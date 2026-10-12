@@ -1,0 +1,49 @@
+{
+  "name": "agstudio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AGstudio: an FL Studio-style DAW in the browser, built to be extended with your own instruments and effects.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run --project unit",
+    "test:audio": "vitest run --project audio",
+    "test:watch": "vitest --project unit",
+    "check": "tsc -b && eslint . && vitest run",
+    "format": "prettier --write .",
+    "new:plugin": "node scripts/new-plugin.mjs"
+  },
+  "dependencies": {
+    "fflate": "0.8.3",
+    "immer": "11.1.21",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/audioworklet": "0.0.100",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "@vitest/browser-playwright": "5.0.4",
+    "eslint": "10.12.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "fast-check": "4.10.2",
+    "globals": "17.13.0",
+    "playwright": "1.64.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  }
+}

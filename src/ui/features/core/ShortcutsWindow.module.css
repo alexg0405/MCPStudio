@@ -1,0 +1,38 @@
+.wrap {
+  height: 100%;
+  overflow: auto;
+  padding: 6px 10px 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table td {
+  padding: 4px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.category {
+  width: 90px;
+  color: var(--ag-text-faint);
+}
+
+.chords {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.chords kbd {
+  display: inline-block;
+  min-width: 22px;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: 3px;
+  background: var(--ag-surface-3);
+  font-family: var(--ag-font);
+  font-size: 11px;
+  text-align: center;
+}

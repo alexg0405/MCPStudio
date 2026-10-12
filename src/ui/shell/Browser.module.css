@@ -1,0 +1,101 @@
+.browser {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ag-surface-1);
+  border-right: 1px solid var(--ag-border);
+}
+
+.hidden {
+  width: 0;
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ag-border);
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 0 12px;
+}
+
+.section + .section {
+  margin-top: 2px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sectionHeader:hover {
+  background: var(--ag-highlight);
+}
+
+.sectionHeader svg:nth-child(2) {
+  color: var(--ag-accent);
+}
+
+.sectionBody {
+  padding: 2px 0 4px;
+}
+
+.resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 3;
+  touch-action: none;
+}
+
+/* Shared list styles used by section bodies. */
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 8px 3px 30px;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text-dim);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--ag-highlight);
+  color: var(--ag-text);
+}
+
+.empty {
+  padding: 3px 8px 3px 30px;
+  color: var(--ag-text-faint);
+  font-style: italic;
+}

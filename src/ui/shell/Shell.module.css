@@ -1,0 +1,248 @@
+.app {
+  display: grid;
+  grid-template-rows: var(--ag-toolbar-h) minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    'toolbar toolbar'
+    'browser workspace';
+  height: 100%;
+}
+
+.app > header {
+  grid-area: toolbar;
+}
+
+.app > aside {
+  grid-area: browser;
+}
+
+.app > main {
+  grid-area: workspace;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ---- Toolbar ---- */
+
+.toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 0 8px 0 0;
+  background: linear-gradient(var(--ag-surface-2), var(--ag-surface-1));
+  border-bottom: 1px solid var(--ag-border);
+  box-shadow: 0 1px 0 var(--ag-highlight) inset;
+  position: relative;
+  z-index: 100000;
+}
+
+.brandBlock {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 0 1 auto;
+  min-width: 120px;
+  overflow: hidden;
+  padding: 3px 8px 3px 8px;
+  border-right: 1px solid var(--ag-border);
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.brand {
+  font-weight: 300;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+  color: var(--ag-accent);
+  padding-right: 4px;
+}
+
+.brand b {
+  font-weight: 700;
+  color: var(--ag-text);
+}
+
+.hintBar {
+  margin-top: 3px;
+  height: 18px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  border: 1px solid var(--ag-border);
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbarGroup {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-right: 1px solid var(--ag-border);
+}
+
+.toolbarGroup:last-child {
+  border-right: 0;
+}
+
+.toolbarSpacer {
+  flex: 1;
+}
+
+.toolButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  color: var(--ag-text-dim);
+  cursor: pointer;
+  box-shadow: 0 1px 0 var(--ag-highlight) inset;
+}
+
+.toolButton:hover:not(:disabled) {
+  color: var(--ag-text);
+  background: linear-gradient(#46525b, var(--ag-surface-3));
+}
+
+.toolButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolButtonOn {
+  color: var(--ag-accent);
+  background: linear-gradient(#4a4036, #3a332c);
+  border-color: #1a140f;
+}
+
+/* ---- Menus ---- */
+
+.menuBar {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 1px;
+  min-width: 0;
+}
+
+.menuRoot {
+  position: relative;
+}
+
+.menuLabel {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.menuLabel:hover,
+.menuLabelOpen {
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+}
+
+.menuDropdown {
+  position: fixed;
+  min-width: 240px;
+  padding: 4px 0;
+  background: var(--ag-surface-2);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  box-shadow: var(--ag-shadow);
+  z-index: 10;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 4px 12px 4px 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--ag-accent-dim);
+  color: #fff;
+}
+
+.menuItem:disabled {
+  color: var(--ag-text-faint);
+  cursor: default;
+}
+
+.menuCheck {
+  width: 16px;
+  color: var(--ag-accent);
+}
+
+.menuText {
+  flex: 1;
+}
+
+.menuChord {
+  color: var(--ag-text-faint);
+  padding-left: 24px;
+  font-size: 11px;
+}
+
+.menuItem:hover:not(:disabled) .menuChord {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.menuSeparator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--ag-border-soft);
+  opacity: 0.6;
+}
+
+/* ---- Toasts ---- */
+
+.toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 200000;
+}
+
+.toast {
+  max-width: 420px;
+  padding: 8px 12px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  border: 1px solid var(--ag-border);
+  box-shadow: var(--ag-shadow);
+  cursor: pointer;
+}
+
+.toastError {
+  border-left: 3px solid var(--ag-danger);
+}

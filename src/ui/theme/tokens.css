@@ -1,0 +1,72 @@
+/*
+ * AGstudio theme tokens. Everything visual reads these, including canvas renderers (via
+ * getComputedStyle). A theme is just a different set of values for these properties.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --ag-bg: #1b2024;
+  --ag-workspace: #232a2f;
+  --ag-surface-1: #2a3238;
+  --ag-surface-2: #323b42;
+  --ag-surface-3: #3c464e;
+  --ag-surface-inset: #1e2428;
+  --ag-border: #12161a;
+  --ag-border-soft: #3f4951;
+  --ag-highlight: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --ag-text: #d9dfe4;
+  --ag-text-dim: #929ca5;
+  --ag-text-faint: #6a747c;
+
+  /* Accents */
+  --ag-accent: #ff9a3c;
+  --ag-accent-dim: #b86a24;
+  --ag-led: #9fde5a;
+  --ag-led-off: #46532f;
+  --ag-danger: #e5574d;
+  --ag-select: #5aa4e8;
+
+  /* Title bars */
+  --ag-title: #2f383f;
+  --ag-title-focused: #3d4851;
+
+  /* Channel rack steps (FL alternates groups of four) */
+  --ag-step-off-a: #4a535b;
+  --ag-step-off-b: #5d4a4c;
+  --ag-step-on: #f1e3d2;
+  --ag-step-current: #ff9a3c;
+
+  /* Timeline grids */
+  --ag-grid-bg: #262e34;
+  --ag-grid-bg-alt: #2a3339;
+  --ag-grid-bar: #12171b;
+  --ag-grid-beat: #1b2126;
+  --ag-grid-step: #222a30;
+  --ag-key-white: #d7dce0;
+  --ag-key-black: #1c2125;
+
+  /* Notes, clips, playhead */
+  --ag-note: #80c977;
+  --ag-note-border: #3d6b38;
+  --ag-note-selected: #ff7b6e;
+  --ag-ghost: rgba(170, 190, 205, 0.18);
+  --ag-playhead: #ff9a3c;
+  --ag-loop: rgba(255, 154, 60, 0.18);
+
+  /* Meters */
+  --ag-meter-lo: #67d05b;
+  --ag-meter-mid: #e3cf46;
+  --ag-meter-hi: #e5574d;
+
+  /* Type & metrics */
+  --ag-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ag-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --ag-font-size: 12px;
+  --ag-radius: 3px;
+  --ag-toolbar-h: 52px;
+  --ag-title-h: 24px;
+  --ag-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}

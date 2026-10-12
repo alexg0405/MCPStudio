@@ -1,0 +1,153 @@
+.workspace {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.025), transparent 60%), var(--ag-workspace);
+  min-width: 0;
+  min-height: 0;
+}
+
+.window {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ag-surface-2);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  box-shadow: var(--ag-shadow);
+  will-change: transform;
+}
+
+.titleBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: var(--ag-title-h);
+  padding: 0 4px 0 9px;
+  background: var(--ag-title);
+  border-bottom: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius) var(--ag-radius) 0 0;
+  cursor: default;
+  touch-action: none;
+}
+
+.focused .titleBar {
+  background: var(--ag-title-focused);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ag-text-dim);
+}
+
+.focused .title {
+  color: var(--ag-text);
+}
+
+.titleButtons {
+  display: flex;
+  gap: 2px;
+}
+
+.titleButton {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ag-text-dim);
+  cursor: pointer;
+}
+
+.titleButton:hover {
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+}
+
+.body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 0 0 var(--ag-radius) var(--ag-radius);
+}
+
+.handle {
+  position: absolute;
+  touch-action: none;
+  z-index: 2;
+}
+
+.h_n,
+.h_s {
+  left: 6px;
+  right: 6px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.h_n {
+  top: -3px;
+}
+
+.h_s {
+  bottom: -3px;
+}
+
+.h_e,
+.h_w {
+  top: 6px;
+  bottom: 6px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.h_e {
+  right: -3px;
+}
+
+.h_w {
+  left: -3px;
+}
+
+.h_ne,
+.h_nw,
+.h_se,
+.h_sw {
+  width: 10px;
+  height: 10px;
+}
+
+.h_ne {
+  top: -4px;
+  right: -4px;
+  cursor: nesw-resize;
+}
+
+.h_sw {
+  bottom: -4px;
+  left: -4px;
+  cursor: nesw-resize;
+}
+
+.h_nw {
+  top: -4px;
+  left: -4px;
+  cursor: nwse-resize;
+}
+
+.h_se {
+  bottom: -4px;
+  right: -4px;
+  cursor: nwse-resize;
+}

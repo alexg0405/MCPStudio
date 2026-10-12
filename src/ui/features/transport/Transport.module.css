@@ -1,0 +1,85 @@
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.modeSwitch {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  height: 34px;
+  padding: 0 7px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.modeSwitch span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ag-led-off);
+}
+
+.modeOn {
+  color: var(--ag-text);
+}
+
+.modeOn .led {
+  background: var(--ag-led);
+  box-shadow: 0 0 6px var(--ag-led);
+}
+
+.play:global(:not(:disabled)) {
+  color: var(--ag-led);
+}
+
+.record:global(:not(:disabled)) {
+  color: var(--ag-danger);
+}
+
+.lcd {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  height: 34px;
+  min-width: 78px;
+  padding: 0 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: #151a1d;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) inset;
+}
+
+.lcdValue {
+  font-family: var(--ag-font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: #e9f3d8;
+  letter-spacing: 0.03em;
+  line-height: 1.1;
+}
+
+.lcdLabel {
+  font-size: 9px;
+  color: var(--ag-text-faint);
+  letter-spacing: 0.08em;
+}
+
+.time {
+  min-width: 100px;
+}

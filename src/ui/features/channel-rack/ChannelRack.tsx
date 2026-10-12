@@ -10,6 +10,7 @@ import { Knob } from '@agstudio/sdk/ui';
 import { addInstrumentChannel, addKitChannel, cloneChannel, deleteChannel, moveChannelBy } from '@app/actions/channels';
 import type { Services } from '@app/services';
 import { useDoc, useServices, useSession, useView } from '../../services-context';
+import { usePluginDef } from '../../plugin-hooks';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { DragNumber } from '../../controls/DragNumber';
@@ -207,7 +208,9 @@ const ChannelRow = memo(function ChannelRow({
   const [renaming, setRenaming] = useState(false);
   const volume = useGestureEdit<number>('Channel volume', (d, v) => setChannelProp(d, id, 'volume', v), `vol:${id}`);
   const pan = useGestureEdit<number>('Channel pan', (d, v) => setChannelProp(d, id, 'pan', v), `pan:${id}`);
+  const def = usePluginDef(ch?.kind === 'instrument' ? ch.plugin.pluginId : undefined);
   if (!ch || ch.kind === 'automation') return null;
+  const missing = ch.kind === 'instrument' && !def;
 
   const menu = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -276,7 +279,7 @@ const ChannelRow = memo(function ChannelRow({
       ) : (
         <button
           tabIndex={-1}
-          className={styles.name}
+          className={`${styles.name} ${missing ? styles.nameMissing : ''}`}
           style={{ ['--ch-color' as string]: ch.color }}
           onPointerDown={(e) => {
             e.preventDefault();
@@ -284,7 +287,11 @@ const ChannelRow = memo(function ChannelRow({
           }}
           onDoubleClick={() => services.commands.run('plugin.openEditor', { channelId: id })}
           onContextMenu={menu}
-          data-hint={`${ch.name}${ch.kind === 'instrument' ? ` (${services.plugins.get(ch.plugin.pluginId)?.name ?? 'missing plugin'})` : ''}. Double-click to open, right-click for options`}
+          data-hint={
+            missing
+              ? `${ch.name}: plugin "${ch.kind === 'instrument' ? ch.plugin.pluginId : ''}" is not installed (settings are kept)`
+              : `${ch.name}${def ? ` (${def.name})` : ''}. Double-click to open, right-click for options`
+          }
         >
           {ch.name}
         </button>

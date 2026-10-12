@@ -15,6 +15,10 @@ export class FakeEngine implements EngineApi {
   applyDocChange(change: DocChange): void {
     this.changes.push(change);
   }
+  pluginChanges: string[][] = [];
+  pluginsChanged(ids: readonly string[]): void {
+    this.pluginChanges.push([...ids]);
+  }
   setTransportView(view: TransportView): void {
     this.view = view;
   }

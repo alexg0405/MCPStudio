@@ -79,6 +79,22 @@ const PATHS = {
   plug: <path d="M6 1.5v3M10 1.5v3M4.5 4.5h7v3a3.5 3.5 0 01-7 0zM8 11v3.5" />,
   metronome: <path d="M5 14.5h6l-1.8-12h-2.4zM8 10l3.5-6" />,
   note: <path d="M6 12.5V3.5l7-1.5v9M6 12.5a2 2 0 11-4 0 2 2 0 014 0zM13 11a2 2 0 11-4 0 2 2 0 014 0z" />,
+  keyboard: (
+    <g>
+      <rect x="1.5" y="3.5" width="13" height="9" rx="1" />
+      <path d="M4.5 3.5v5M8 3.5v5M11.5 3.5v5M3 8.5h2.5M6.8 8.5h2.4M10.5 8.5h2.5" />
+    </g>
+  ),
+  midi: (
+    <g>
+      <circle cx="8" cy="8" r="6" />
+      <circle cx="5" cy="8" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="11" cy="8" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="5.3" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="5.3" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="4.4" r="0.8" fill="currentColor" stroke="none" />
+    </g>
+  ),
   cpu: (
     <g>
       <rect x="4" y="4" width="8" height="8" rx="1" />

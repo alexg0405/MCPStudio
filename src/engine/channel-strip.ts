@@ -142,6 +142,10 @@ export class ChannelStrip {
       rootKey: channel.rootKey,
       offline: this.core.offline,
       requestState: (state: JsonValue) => this.core.requestState({ kind: 'channel', channelId: channel.id }, state),
+      owner: { kind: 'channel', channelId: channel.id },
+      loadModule: (url) => this.core.loadModule(url),
+      ports: this.core.ports,
+      reportFault: (err) => this.fault(err),
     });
     this.pending = (async () => {
       try {

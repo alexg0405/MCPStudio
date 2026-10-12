@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from 'vite';
+import { defineConfig, type EnvironmentModuleNode, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { fileURLToPath } from 'node:url';
@@ -13,10 +13,50 @@ const isolation = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
 };
 
+/**
+ * Hot reload for AudioWorklet code. A processor module can't be re-registered in a running
+ * AudioContext, and Vite would otherwise full-reload the page (worker modules have no importers).
+ * When only audio-thread modules changed, tell the app to reboot its audio engine instead.
+ */
+function workletHmr(): Plugin {
+  const isUrlStub = (url: string) => /[?&]worker(&|$)/.test(url) && !url.includes('worker_file');
+  const audioThreadOnly = (m: EnvironmentModuleNode, seen = new Set<EnvironmentModuleNode>()): boolean => {
+    if (m.url.includes('worker_file')) return true;
+    if (seen.has(m)) return true;
+    seen.add(m);
+    if (m.importers.size === 0) return false;
+    for (const importer of m.importers) if (!audioThreadOnly(importer, seen)) return false;
+    return true;
+  };
+  return {
+    name: 'ag:worklet-hmr',
+    apply: 'serve',
+    hotUpdate({ modules, file }) {
+      if (this.environment.name !== 'client') return;
+      const real = modules.filter((m) => !isUrlStub(m.url));
+      if (real.length > 0 && real.every((m) => audioThreadOnly(m))) {
+        this.environment.hot.send({ type: 'custom', event: 'ag:worklet-changed', data: { file } });
+        return [];
+      }
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
-    // Audio-thread files must never get React Refresh / HMR code injected.
-    react({ exclude: [/\.worklet\.ts$/, /\/src\/sdk\/(worklet|dsp)\//, /\/node_modules\//] }),
+    // Audio-thread files (worklet entries, kernels, shared params, SDK audio modules) must never get
+    // React Refresh / HMR code injected: the AudioWorklet scope has no HMR client.
+    react({
+      exclude: [
+        /\.worklet\.ts$/,
+        /(^|\/)(\w+\.)?kernel\.ts$/,
+        /\/params\.ts$/,
+        /\/src\/sdk\/(worklet|dsp)\//,
+        /\/src\/sdk\/(params|protocol)\.ts$/,
+        /\/node_modules\//,
+      ],
+    }),
+    workletHmr(),
   ],
   resolve: {
     alias: [

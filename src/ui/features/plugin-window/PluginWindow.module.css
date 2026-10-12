@@ -1,0 +1,135 @@
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ag-surface-2);
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface-1);
+}
+
+.pluginName {
+  font-weight: 700;
+  color: var(--ag-accent);
+  letter-spacing: 0.02em;
+}
+
+.headerItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.headerLabel {
+  color: var(--ag-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+.headerItem select {
+  max-width: 150px;
+  padding: 1px 3px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+}
+
+.rootKey {
+  min-width: 36px;
+  padding: 1px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  font-family: var(--ag-font-mono);
+  text-align: center;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+}
+
+.group {
+  flex: 0 1 auto;
+  min-width: 120px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-1);
+}
+
+.groupTitle {
+  margin: 0 0 6px;
+  color: var(--ag-text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 10px;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 48px;
+}
+
+.label {
+  max-width: 64px;
+  overflow: hidden;
+  color: var(--ag-text-dim);
+  font-size: 10px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value {
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.note,
+.missing {
+  padding: 16px;
+  color: var(--ag-text-dim);
+}
+
+.missing p {
+  margin: 6px 0 12px;
+}
+
+.error {
+  color: var(--ag-danger);
+  font-family: var(--ag-font-mono);
+  font-size: 11px;
+}

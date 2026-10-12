@@ -120,6 +120,13 @@
   cursor: pointer;
 }
 
+.nameMissing {
+  border-style: dashed;
+  border-left-color: var(--ag-danger);
+  color: var(--ag-text-faint);
+  text-decoration: line-through;
+}
+
 .rowSelected .name {
   background: linear-gradient(#4b5660, #3c464e);
 }

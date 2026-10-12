@@ -7,11 +7,14 @@ import type { JsonValue } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions } from '@engine/api';
 import { Engine } from '@engine/engine';
 import { createDefaultProject } from './default-project';
+import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
 import { PluginRegistry } from './plugins/registry';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
+import { createPrefsStore, type PrefsStore } from './stores/prefs';
+import { MidiInput } from './midi-input';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -27,8 +30,12 @@ export interface Services {
   readonly history: History;
   readonly view: ViewStore;
   readonly session: SessionStore;
+  readonly prefs: PrefsStore;
+  readonly midi: MidiInput;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
+  /** Replaces the audio engine with a fresh AudioContext (after AudioWorklet code changed). */
+  rebootEngine(): Promise<void>;
   /** Fires after any store, registry or engine change; used to refresh command enabled/checked state. */
   subscribe(fn: () => void): () => void;
 }
@@ -44,18 +51,26 @@ export interface ServiceOptions {
   /** Inject an engine (tests use a fake); default is a realtime Web Audio engine. */
   createEngine?: (opts: EngineOptions) => EngineApi;
   project?: Project;
+  /** A registry already filled by plugin discovery (default: built-ins only). */
+  plugins?: PluginRegistry;
 }
 
 export function createServices(opts: ServiceOptions = {}): Services {
   const platform = opts.platform ?? detectPlatform();
   const commands = new CommandRegistry<Services>();
   const keymap = new Keymap(platform);
-  const plugins = new PluginRegistry();
-  registerBuiltinPlugins(plugins);
+  const plugins = opts.plugins ?? new PluginRegistry();
+  if (!opts.plugins) registerBuiltinPlugins(plugins);
   const { store: doc, history } = createDoc(opts.project ?? createDefaultProject(plugins));
   const view = createViewStore({ currentPatternId: doc.getState().project.patternOrder[0] ?? null });
   const session = createSessionStore();
   session.getState().selectChannel(doc.getState().project.channelOrder[0] ?? null);
+  const prefs = createPrefsStore();
+  let engineRef: EngineApi | null = null;
+  const midi = new MidiInput(
+    () => engineRef as EngineApi,
+    () => session.getState().selectedChannelId,
+  );
 
   const engineOptions: EngineOptions = {
     plugins,
@@ -67,7 +82,10 @@ export function createServices(opts: ServiceOptions = {}): Services {
       session.getState().toast(message, 'error');
     },
   };
-  const engine = (opts.createEngine ?? ((o) => Engine.realtime(o)))(engineOptions);
+  const makeEngine = opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o));
+  const engine = new EngineHost(() => makeEngine(engineOptions));
+  plugins.subscribe((ids) => engine.pluginsChanged(ids));
+  engineRef = engine;
 
   const services: Services = {
     platform,
@@ -77,8 +95,11 @@ export function createServices(opts: ServiceOptions = {}): Services {
     history,
     view,
     session,
+    prefs,
+    midi,
     plugins,
     engine,
+    rebootEngine: () => engine.reboot(),
     subscribe(fn) {
       const unsubs = [
         commands.subscribe(fn),
@@ -87,6 +108,9 @@ export function createServices(opts: ServiceOptions = {}): Services {
         session.subscribe(fn),
         history.onStatus(fn),
         engine.subscribe(fn),
+        plugins.subscribe(fn),
+        prefs.subscribe(fn),
+        midi.subscribe(fn),
       ];
       return () => unsubs.forEach((u) => u());
     },

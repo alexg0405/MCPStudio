@@ -17,6 +17,8 @@ export interface WindowInstance {
   z: number;
   visible: boolean;
   maximized: boolean;
+  /** Steps of the default position's cascade offset (used until the user moves the window). */
+  cascade?: number;
 }
 
 export type TransportMode = 'pattern' | 'song';
@@ -42,6 +44,7 @@ export interface ViewActions {
   focusWindow(id: string | null): void;
   setRect(id: string, rect: Rect): void;
   setMaximized(id: string, maximized: boolean): void;
+  setCascade(id: string, steps: number): void;
   setBrowser(patch: Partial<ViewState['browser']>): void;
   setMode(mode: TransportMode): void;
   setCurrentPattern(id: PatternId | null): void;
@@ -131,6 +134,12 @@ export function createViewStore(initial: Partial<ViewState> = {}): ViewStore {
         const w = s.windows[id];
         if (!w || w.maximized === maximized) return;
         set({ windows: { ...s.windows, [id]: { ...w, maximized } } });
+      },
+
+      setCascade(id, steps) {
+        const s = get();
+        const w = s.windows[id];
+        if (w && w.cascade !== steps) set({ windows: { ...s.windows, [id]: { ...w, cascade: steps } } });
       },
 
       setBrowser(patch) {

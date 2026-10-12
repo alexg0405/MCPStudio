@@ -1,5 +1,6 @@
 import type { Services } from '@app/services';
 import { chordFromEvent } from '@core/commands/keymap';
+import { TypingPiano } from './typing-piano';
 
 function isTextInput(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -18,13 +19,19 @@ function isTextInput(target: EventTarget | null): boolean {
  */
 export function installKeyboard(services: Services): () => void {
   const swallowedKeyUps = new Set<string>();
+  const piano = new TypingPiano(services);
 
   const onKeyDown = (e: KeyboardEvent) => {
+    const inInput = isTextInput(e.target);
+    if (piano.keyDown(e, inInput)) {
+      e.stopPropagation();
+      return;
+    }
     const chord = chordFromEvent(e);
     if (!chord) return;
     const view = services.view.getState();
     const focus = view.focusedId ? (view.windows[view.focusedId]?.type ?? null) : null;
-    const binding = services.keymap.match(chord, { focus, inInput: isTextInput(e.target) });
+    const binding = services.keymap.match(chord, { focus, inInput });
     if (!binding) return;
     if (!services.commands.isEnabled(binding.command)) return;
     e.preventDefault();
@@ -36,16 +43,23 @@ export function installKeyboard(services: Services): () => void {
   };
 
   const onKeyUp = (e: KeyboardEvent) => {
+    if (piano.keyUp(e)) {
+      e.preventDefault();
+      return;
+    }
     if (swallowedKeyUps.delete(e.code)) {
       e.preventDefault();
       e.stopPropagation();
     }
   };
 
+  const onBlur = () => piano.releaseAll();
   window.addEventListener('keydown', onKeyDown, { capture: true });
   window.addEventListener('keyup', onKeyUp, { capture: true });
+  window.addEventListener('blur', onBlur);
   return () => {
     window.removeEventListener('keydown', onKeyDown, { capture: true });
     window.removeEventListener('keyup', onKeyUp, { capture: true });
+    window.removeEventListener('blur', onBlur);
   };
 }

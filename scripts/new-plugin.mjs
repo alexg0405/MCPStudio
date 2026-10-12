@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+// Scaffolds a plugin into plugins/<folder> from templates/.
+//   npm run new:plugin -- --kind instrument --style graph --id user.my-synth [--name "My Synth"]
+import { cpSync, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const args = Object.fromEntries(
+  process.argv.slice(2).reduce((acc, arg, i, all) => {
+    if (arg.startsWith('--')) acc.push([arg.slice(2), all[i + 1]?.startsWith('--') ? 'true' : (all[i + 1] ?? 'true')]);
+    return acc;
+  }, []),
+);
+
+const kind = args.kind ?? 'instrument';
+const style = args.style ?? 'graph';
+const id = args.id;
+const fail = (msg) => {
+  console.error(
+    `\n  ${msg}\n\n  Usage: npm run new:plugin -- --kind instrument|effect --style graph|worklet --id user.my-synth [--name "My Synth"]\n`,
+  );
+  process.exit(1);
+};
+
+if (!['instrument', 'effect'].includes(kind)) fail(`--kind must be "instrument" or "effect" (got "${kind}")`);
+if (!['graph', 'worklet'].includes(style)) fail(`--style must be "graph" or "worklet" (got "${style}")`);
+if (!id || !/^[a-z0-9][a-z0-9._-]*$/i.test(id)) fail('--id is required, e.g. user.my-synth (letters, digits, . _ -)');
+
+const folder = id.split('.').pop();
+const name =
+  args.name ??
+  folder
+    .split(/[-_]/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+const template = join(root, 'templates', `${kind}-${style}`);
+const target = join(root, 'plugins', folder);
+if (existsSync(target)) fail(`plugins/${folder} already exists`);
+
+cpSync(template, target, { recursive: true });
+const fill = (dir) => {
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) fill(path);
+    else
+      writeFileSync(
+        path,
+        readFileSync(path, 'utf8').replaceAll('__PLUGIN_ID__', id).replaceAll('__PLUGIN_NAME__', name),
+      );
+  }
+};
+fill(target);
+
+console.log(`
+  Created plugins/${folder} (${kind}, ${style}) with id "${id}".
+
+  - With "npm run dev" running it already shows up in the browser panel under Plugins.
+  - Edit plugins/${folder}/${style === 'worklet' ? 'dsp.worklet.ts' : 'index.ts'}; changes hot-reload and keep your settings.
+  - Guide: docs/plugin-sdk.md
+`);

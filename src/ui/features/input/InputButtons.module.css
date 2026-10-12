@@ -1,0 +1,9 @@
+.group {
+  display: flex;
+  gap: 4px;
+}
+
+.octave {
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+}

@@ -10,7 +10,7 @@ describe('engine offline render', () => {
   it('plays four-on-the-floor hits with sample-accurate onsets', async () => {
     // A short rim shot so every hit is isolated (a kick's tail overlaps the next beat).
     const { project, patternId } = kitProject([{ generator: 'kit/rim', steps: [0, 4, 8, 12] }], 120);
-    const buffer = await renderOffline(project, {
+    const { buffer, preRoll } = await renderOffline(project, {
       plugins: resolver(),
       view: { mode: 'pattern', patternId, loop: null },
       bars: 2,
@@ -18,8 +18,9 @@ describe('engine offline render', () => {
     });
     expect(rms(buffer)).toBeGreaterThan(0.01);
     const found = onsets(buffer, 0.05, 0.2);
-    // 120 BPM: a beat every 0.5 s over two bars.
-    const expected = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((s) => Math.round(s * SR));
+    // 120 BPM: a beat every 0.5 s over two bars (plus the limiter's 1.3 ms look-ahead).
+    const latency = Math.round(0.0013 * SR);
+    const expected = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5].map((s) => Math.round((s + preRoll) * SR) + latency);
     expect(found).toHaveLength(expected.length);
     found.forEach((f, i) => expect(Math.abs(f - (expected[i] as number))).toBeLessThanOrEqual(48)); // ±1 ms
   });
@@ -27,7 +28,7 @@ describe('engine offline render', () => {
   it('renders silence for a muted channel', async () => {
     const { project, patternId, channels } = kitProject([{ generator: 'kit/snare', steps: [0, 8] }]);
     const muted = produce(project, (d) => setChannelProp(d, channels[0]!, 'muted', true));
-    const buffer = await renderOffline(muted, {
+    const { buffer } = await renderOffline(muted, {
       plugins: resolver(),
       view: { mode: 'pattern', patternId, loop: null },
       bars: 1,
@@ -43,7 +44,7 @@ describe('engine offline render', () => {
       { generator: 'kit/hat-closed', steps: [2, 6, 10, 14] },
     ];
     const { project, patternId, channels } = kitProject(tracks);
-    const loud = await renderOffline(project, {
+    const { buffer: loud } = await renderOffline(project, {
       plugins: resolver(),
       view: { mode: 'pattern', patternId, loop: null },
       bars: 1,
@@ -52,7 +53,7 @@ describe('engine offline render', () => {
     const quiet = produce(project, (d) => {
       for (const id of channels) setChannelProp(d, id, 'volume', 0.39);
     });
-    const half = await renderOffline(quiet, {
+    const { buffer: half } = await renderOffline(quiet, {
       plugins: resolver(),
       view: { mode: 'pattern', patternId, loop: null },
       bars: 1,
@@ -73,8 +74,8 @@ describe('engine offline render', () => {
       bars: 1,
       sampleRate: SR,
     };
-    const a = (await renderOffline(project, opts)).getChannelData(0);
-    const b = (await renderOffline(project, opts)).getChannelData(0);
+    const a = (await renderOffline(project, opts)).buffer.getChannelData(0);
+    const b = (await renderOffline(project, opts)).buffer.getChannelData(0);
     let diff = 0;
     for (let i = 0; i < a.length; i++) diff = Math.max(diff, Math.abs((a[i] as number) - (b[i] as number)));
     expect(diff).toBe(0);

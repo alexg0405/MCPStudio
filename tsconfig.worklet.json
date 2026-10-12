@@ -2,8 +2,12 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worklet.tsbuildinfo",
-    "lib": ["ES2023"],
-    "types": ["audioworklet"]
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "audioworklet"
+    ]
   },
   "include": [
     "src/**/*.worklet.ts",
@@ -11,7 +15,11 @@
     "templates/**/*.worklet.ts",
     "src/sdk/worklet",
     "src/sdk/dsp",
-    "src/sdk/params.ts"
+    "src/sdk/params.ts",
+    "src/sdk/protocol.ts",
+    "test/**/*.worklet.ts"
   ],
-  "exclude": ["**/*.test.ts"]
+  "exclude": [
+    "**/*.test.ts"
+  ]
 }

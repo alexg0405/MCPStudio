@@ -21,6 +21,9 @@ import { SampleCache } from './samples';
 import type { Timeline } from './sched/core';
 import { patternModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
+import { LIMITER_ID } from './limiter-id';
+import type { WorkletPortImpl } from './worklet-port';
+import limiterUrl from './limiter.worklet.ts?worker&url';
 
 const PREVIEW_ID_BASE = 2 ** 30;
 
@@ -59,6 +62,10 @@ export class Engine implements EngineApi, EngineCore {
   private faults = 0;
   private muteKey = '';
   private lastLate = 0;
+  private readonly modules = new Map<string, Promise<void>>();
+  readonly ports = new Set<WorkletPortImpl>();
+  private readonly initDone: Promise<void>;
+  private limiter: AudioWorkletNode | null = null;
 
   constructor(
     ctx: BaseAudioContext,
@@ -90,6 +97,51 @@ export class Engine implements EngineApi, EngineCore {
     if (!offline && typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
       ctx.addEventListener('statechange', () => this.emit());
     }
+    this.initDone = this.init();
+  }
+
+  /** Inserts the master safety limiter once its worklet module has loaded. */
+  private async init(): Promise<void> {
+    try {
+      await this.loadModule(limiterUrl);
+      const node = new AudioWorkletNode(this.ctx, LIMITER_ID, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        channelCount: 2,
+        channelCountMode: 'explicit',
+        processorOptions: { kind: 'effect', state: undefined, seed: 1 },
+      });
+      this.masterOut.disconnect();
+      this.masterOut.connect(node).connect(this.ctx.destination);
+      this.limiter = node;
+    } catch (err) {
+      console.warn('[agstudio] safety limiter unavailable; master is unprotected', err);
+    }
+  }
+
+  loadModule(url: string): Promise<void> {
+    let p = this.modules.get(url);
+    if (!p) {
+      p = this.ctx.audioWorklet.addModule(url);
+      this.modules.set(url, p);
+      p.catch(() => this.modules.delete(url));
+    }
+    return p;
+  }
+
+  /** Resolves once every worklet processor has handled all messages sent so far (export barrier). */
+  async syncWorklets(timeoutMs = 2000): Promise<boolean> {
+    const all = Promise.all([...this.ports].map((p) => p.sync())).then(() => true);
+    const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs));
+    return Promise.race([all, timeout]);
+  }
+
+  /** Plugin definitions changed (hot reload, plugin added/removed): rebuild the affected instances. */
+  pluginsChanged(ids: readonly string[]): void {
+    if (!this.project || ids.length === 0) return;
+    const set = new Set(ids);
+    for (const strip of this.strips.values()) if (set.has(strip.pluginId)) strip.reload(this.project);
   }
 
   /** A realtime engine with its own AudioContext. */
@@ -113,8 +165,9 @@ export class Engine implements EngineApi, EngineCore {
     if (this.ctx instanceof AudioContext && this.ctx.state !== 'running') await this.ctx.resume();
   }
 
-  /** Resolves when every plugin instance has finished loading. */
+  /** Resolves when the master chain and every plugin instance have finished loading. */
   async ready(): Promise<void> {
+    await this.initDone;
     await Promise.all([...this.strips.values()].map((s) => s.ready));
   }
 
@@ -225,11 +278,14 @@ export class Engine implements EngineApi, EngineCore {
     this.emit();
   }
 
-  /** Offline rendering: schedule everything up to `until` seconds at once. */
-  scheduleOffline(fromTick: number, at: number, until: number): void {
+  /** Offline rendering: start the transport on the virtual clock (call pumpOffline per chunk). */
+  startOffline(fromTick: number, at: number): void {
     this.updateModel();
     this.transport.start(fromTick, at);
-    this.transport.pump(until);
+  }
+
+  pumpOffline(horizon: number): void {
+    this.transport.pump(horizon);
   }
 
   playhead(): number {
@@ -355,6 +411,8 @@ export class Engine implements EngineApi, EngineCore {
     this.clock = null;
     for (const s of this.strips.values()) s.dispose();
     this.strips.clear();
+    for (const p of [...this.ports]) p.dispose();
+    this.limiter?.port.postMessage({ t: 'dispose' });
     this.listeners.clear();
     if (typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state !== 'closed') {
       await this.ctx.close();

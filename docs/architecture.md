@@ -218,6 +218,27 @@ first quantum; suspend rounding direction (always schedule through next boundary
 one message + `sync()` before `startRendering()`. Determinism: render twice, compare PCM hashes (plugins use seeded RNG).
 WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the file first (user activation lasts ~5 s).
 
+### What M2 verified in Chrome
+
+- **Worklet note timing offline**: with `suspend()`/`resume()` chunks and a per-port `sync()` barrier, impulse
+  notes at chunk boundary −1/0/+1 land on the exact frame for chunk sizes 128·16, 128·37 and 128·256
+  (`test/browser/worklet.test.ts`). Messages *are* processed while an OfflineAudioContext is suspended.
+- `suspend(0)` is rejected before rendering starts (time must be > currentTime), so the first stop is at
+  frame 128; the 2048-frame pre-roll covers it. Events dispatched before rendering are flushed by that first
+  barrier.
+- The master SafetyLimiter adds `round(0.0013 · sampleRate)` frames of latency (62 at 48 kHz); timing tests
+  account for it.
+- Chrome's native OscillatorNode output can differ by ~1e-8 between two renders; worklet kernels and samplers
+  are bit-exact.
+- Worklet hot reload: Vite reports a processor edit as two modules: the main-thread `?worker&url` stub
+  (imported by the plugin's index.ts) and the `?worker_file&type=module` node (no importers). `ag:worklet-hmr`
+  ignores the stub and sends `ag:worklet-changed` when everything else is audio-thread-only. The app then
+  reboots the engine through `EngineHost` (fresh AudioContext, same project/view/transport; `resume()` is not
+  awaited because it can stay pending without a gesture). Files shared by both threads (`params.ts`) still
+  trigger a page reload, which is fine thanks to session restore.
+- `import.meta.glob` with lazy loaders + `Promise.allSettled` isolates broken user plugins (error entries in
+  the browser panel). Adding or deleting a plugin folder re-runs the self-accepting discovery module.
+
 ## UI (`src/ui`)
 
 - Shell: toolbar (menus + hint bar, transport, PAT/SONG, BPM, position, master volume, CPU, window buttons), browser

@@ -2,7 +2,7 @@
  * Host side of the plugin SDK: param handles bound to document values, sample slots, transport
  * info. One HostImpl per plugin instance.
  */
-import type { PluginInstance, Project, SampleId } from '@core/model/types';
+import type { PluginInstance, PluginOwner, Project, SampleId } from '@core/model/types';
 import {
   encode,
   resolveValues,
@@ -17,8 +17,12 @@ import {
   type PluginHost,
   type SampleSlots,
   type TransportInfo,
+  type WorkletOptions,
+  type WorkletPort,
 } from '@agstudio/sdk';
+import type { ProcessorInit } from '@agstudio/sdk/protocol';
 import type { SampleCache } from './samples';
+import { WorkletPortImpl } from './worklet-port';
 
 type Listener<T extends unknown[]> = (...args: T) => void;
 
@@ -71,6 +75,7 @@ class ParamHandleImpl<S extends ParamSpec> implements ParamHandle<S> {
     node.start();
     this.sources.push({ node, map });
     return {
+      node,
       connect(target: AudioParam) {
         node.connect(target);
         return () => {
@@ -123,12 +128,26 @@ export interface HostDeps {
   ctx: BaseAudioContext;
   def: PluginDef;
   data: PluginInstance;
+  owner: PluginOwner;
   project: Project;
   samples: SampleCache;
   transport: TransportInfo;
   rootKey: number | null;
   offline: boolean;
   requestState(state: JsonValue): void;
+  /** Adds an AudioWorklet module to the context once. */
+  loadModule(url: string): Promise<void>;
+  /** Worklet ports are tracked so export can wait for them (sync barriers). */
+  ports: Set<WorkletPortImpl>;
+  reportFault(error: unknown): void;
+}
+
+/** Stable per-instance seed so kernels' random numbers repeat across renders. */
+function seedFor(owner: PluginOwner, pluginId: string): number {
+  const key = `${pluginId}:${owner.kind === 'channel' ? owner.channelId : owner.slotId}`;
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  return h >>> 0;
 }
 
 /** Applies migrate() when the saved version is older than the definition. */
@@ -202,6 +221,48 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     this.deps.requestState(next as JsonValue);
   }
 
+  private readonly myPorts = new Set<WorkletPortImpl>();
+
+  async worklet(opts: WorkletOptions = {}): Promise<WorkletPort> {
+    const { def, ctx } = this.deps;
+    if (!def.processor) throw new Error(`Plugin "${def.id}" has no processor module`);
+    await this.deps.loadModule(def.processor);
+    if (this.abort.signal.aborted) throw new Error('disposed');
+    const parameterData: Record<string, number> = {};
+    for (const [key, handle] of Object.entries(this.params)) parameterData[key] = encode(handle.spec, handle.value);
+    const processorOptions: ProcessorInit = {
+      kind: def.kind,
+      state: this.stateValue,
+      seed: seedFor(this.deps.owner, def.id),
+    };
+    const numberOfInputs = opts.numberOfInputs ?? (def.kind === 'effect' ? 1 : 0);
+    const node = new AudioWorkletNode(ctx, opts.name ?? def.id, {
+      numberOfInputs,
+      numberOfOutputs: 1,
+      outputChannelCount: opts.outputChannelCount ?? [2],
+      channelCount: 2,
+      channelCountMode: 'explicit',
+      parameterData,
+      processorOptions,
+    });
+    for (const [key, handle] of Object.entries(this.params)) {
+      const param = node.parameters.get(key);
+      if (param) handle.bind(param);
+    }
+    const port = new WorkletPortImpl(
+      node,
+      ctx.sampleRate,
+      (err) => this.deps.reportFault(err),
+      (p) => {
+        this.deps.ports.delete(p);
+        this.myPorts.delete(p);
+      },
+    );
+    this.deps.ports.add(port);
+    this.myPorts.add(port);
+    return port;
+  }
+
   /** Pushes new document data (params, state, samples) into the running instance. */
   apply(data: PluginInstance, project: Project, time: number): void {
     this.project = project;
@@ -231,6 +292,8 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
 
   dispose(): void {
     this.abort.abort();
+    // Ports the plugin forgot to dispose.
+    for (const p of [...this.myPorts]) p.dispose();
     for (const h of Object.values(this.params)) h.dispose();
     for (const e of this.sampleChanges.values()) e.clear();
     this.rootKeyChanges.clear();

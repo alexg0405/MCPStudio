@@ -57,13 +57,6 @@ export function register(services: Services): void {
     enabled: (s) => s.history.status().canRedo,
     run: (s) => void s.history.redo(),
   });
-  // Opening plugin editors arrives with plugin windows (M2).
-  commands.register({
-    id: 'plugin.openEditor',
-    title: 'Open plugin editor',
-    category: 'Channels',
-    run: (s) => s.session.getState().toast('Plugin editors arrive in milestone M2.'),
-  });
 
   keymap.add([
     { chord: 'Mod+N', command: 'file.new' },

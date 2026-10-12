@@ -3,3 +3,4 @@ export * from './types';
 export * from './params';
 export * from './dsp/math';
 export { GraphVoices, type GraphVoice } from './graph-voices';
+export { defineWorkletInstrument, defineWorkletEffect } from './worklet-defs';

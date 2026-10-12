@@ -51,6 +51,8 @@ export interface EngineApi {
   /** Must be called from a user gesture the first time (autoplay policy). */
   resume(): Promise<void>;
   applyDocChange(change: DocChange): void;
+  /** Plugin definitions with these ids changed (hot reload, install/uninstall). */
+  pluginsChanged(ids: readonly string[]): void;
   setTransportView(view: TransportView): void;
   play(fromTick?: Tick): void;
   stop(): void;

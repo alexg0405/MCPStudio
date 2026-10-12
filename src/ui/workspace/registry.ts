@@ -18,6 +18,8 @@ export interface WindowTypeDef<P extends Json = Json> {
   minSize?: Size;
   /** Instance id for these props. Singletons (the default) use the type as id. */
   instanceId?(props: P): string;
+  /** Offset each new instance so windows of this type don't open exactly on top of each other. */
+  cascade?: boolean;
 }
 
 // Window types have heterogeneous props.
@@ -43,7 +45,13 @@ export function windowIdFor(type: string, props: Json = null): string {
 
 export function openWindow(services: Services, type: string, props: Json = null): string {
   const id = windowIdFor(type, props);
-  services.view.getState().showWindow(id, type, props);
+  const view = services.view.getState();
+  const isNew = !view.windows[id];
+  view.showWindow(id, type, props);
+  if (isNew && types.get(type)?.cascade) {
+    const siblings = Object.values(view.windows).filter((w) => w.type === type && w.visible).length;
+    services.view.getState().setCascade(id, siblings % 8);
+  }
   return id;
 }
 

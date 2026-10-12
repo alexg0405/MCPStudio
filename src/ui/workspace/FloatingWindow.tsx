@@ -25,6 +25,10 @@ function applyDrag(mode: DragMode, r: Rect, dx: number, dy: number, min: Size): 
   return { x, y, w, h };
 }
 
+function cascaded(r: Rect, steps: number): Rect {
+  return steps ? { ...r, x: r.x + steps * 26, y: r.y + steps * 26 } : r;
+}
+
 interface Props {
   instance: WindowInstance;
   workspace: Size;
@@ -38,9 +42,8 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
   if (!def) return null;
 
   const min = def.minSize ?? { w: 220, h: 120 };
-  const rect = instance.maximized
-    ? { x: 0, y: 0, w: workspace.w, h: workspace.h }
-    : clampRect(instance.rect ?? def.defaultRect(workspace), workspace, min);
+  const base = instance.rect ?? cascaded(def.defaultRect(workspace), instance.cascade ?? 0);
+  const rect = instance.maximized ? { x: 0, y: 0, w: workspace.w, h: workspace.h } : clampRect(base, workspace, min);
   const Content = def.component;
 
   const startDrag = (e: ReactPointerEvent, mode: DragMode) => {

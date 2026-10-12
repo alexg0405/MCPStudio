@@ -13,7 +13,8 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 - `npm run dev`: dev server (port 5390 by default, or `$PORT`).
 - `npm run check`: everything CI would run: `tsc -b` (all four tsconfigs), `eslint .`, `vitest run` (unit + audio).
 - `npm test`: unit tests only (Node). `npm run test:audio`: browser tests in headless Chrome (installed Chrome, no download).
-- `npm run new:plugin -- --kind instrument|effect --style graph|worklet --id user.my-thing`: scaffold a user plugin.
+- `npm run new:plugin -- --kind instrument|effect --style graph|worklet --id user.my-thing`: scaffold a user plugin
+  into `plugins/` (templates in `templates/`, guide in `docs/plugin-sdk.md`).
 
 ## Layers (enforced by ESLint `no-restricted-imports` + separate tsconfigs)
 
@@ -42,6 +43,10 @@ Cross-layer imports always use aliases (`@core/…`, `@engine/…`, `@app/…`, 
   import, no fetch, no npm deps, no allocation inside `process()`. Load processors with
   `import url from './x.worklet.ts?worker&url'` (never `new URL('./x.ts', import.meta.url)`; it breaks in production).
 - Ticks are integers at **PPQ 960** (a 1/16 step = 240 ticks). Convert to seconds only through the TempoMap.
+- Kernel and shared `params.ts` files must not contain React components (they are excluded from React Refresh
+  in `vite.config.ts`); name pure DSP files `kernel.ts` or `*.kernel.ts`.
+- `services.engine` is an `EngineHost` proxy: always go through it (never cache the inner engine) so engine
+  reboots after worklet edits are transparent.
 - Assets must be self-hosted: the dev/preview servers send COOP/COEP headers (cross-origin isolation).
 
 ## Adding a feature

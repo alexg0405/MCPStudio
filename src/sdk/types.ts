@@ -33,6 +33,8 @@ export interface NoteOff {
 export interface ParamSignal {
   /** Adds the signal to `target` (set the target's own value to 0). Returns a disconnect function. */
   connect(target: AudioParam): () => void;
+  /** The underlying source node, to route the signal through your own nodes (e.g. a scaling GainNode). */
+  readonly node: AudioNode;
 }
 
 export interface ParamHandle<S extends ParamSpec = ParamSpec> {
@@ -72,6 +74,35 @@ export interface ChannelInfo {
   onRootKeyChange(cb: (rootKey: number) => void): () => void;
 }
 
+export interface WorkletOptions {
+  /** Processor name registered with registerKernel(); defaults to the plugin id. */
+  name?: string;
+  /** 0 for instruments (default), 1 for effects. */
+  numberOfInputs?: number;
+  /** Defaults to [2] (stereo). */
+  outputChannelCount?: number[];
+}
+
+/** Main-thread handle to a plugin's AudioWorklet processor. */
+export interface WorkletPort {
+  readonly node: AudioWorkletNode;
+  noteOn(e: NoteOn): void;
+  noteOff(e: NoteOff): void;
+  allNotesOff(time: number, hard?: boolean): void;
+  setState(state: unknown): void;
+  /** Copies a sample's audio to the processor (kernel.onSample). */
+  sendSample(slot: string, buffer: AudioBuffer | null): void;
+  /** Custom message to the kernel (kernel.onMessage). */
+  send(msg: unknown, transfer?: Transferable[]): void;
+  /** Clears the kernel's buffers (kernel.reset). */
+  reset(): void;
+  /** Messages the kernel posted with host.post(). */
+  onMessage(cb: (msg: unknown) => void): () => void;
+  /** Resolves once the processor has handled everything sent before this call. */
+  sync(): Promise<void>;
+  dispose(): void;
+}
+
 export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | undefined> {
   /** Realtime or offline (export) context. Never create your own. */
   readonly audioContext: BaseAudioContext;
@@ -88,6 +119,12 @@ export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | u
   readonly offline: boolean;
   /** Aborted when the instance is disposed. */
   readonly signal: AbortSignal;
+  /**
+   * Creates an AudioWorkletNode running this plugin's `processor` module, with every param bound to
+   * the node's AudioParams. Used by defineWorkletInstrument/defineWorkletEffect; call it directly to
+   * mix native nodes with custom DSP.
+   */
+  worklet(opts?: WorkletOptions): Promise<WorkletPort>;
 }
 
 export interface InstrumentInstance<S = unknown> {
@@ -142,6 +179,8 @@ interface DefBase<P extends ParamSpecs, S> {
   defaultState?: S;
   /** Named sample slots this plugin uses (lets the UI offer drop targets). */
   sampleSlots?: readonly string[];
+  /** URL of the AudioWorklet module: `import processor from './x.worklet.ts?worker&url'`. */
+  processor?: string;
   /** Upgrades data saved by an older `version`. */
   migrate?(old: { version: number; params: Record<string, unknown>; state: unknown }): {
     params: Record<string, unknown>;

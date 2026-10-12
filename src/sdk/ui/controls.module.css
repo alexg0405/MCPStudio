@@ -1,0 +1,79 @@
+/* Shared controls. Colours come from the host theme tokens with fallbacks for standalone use. */
+
+.knob {
+  position: relative;
+  flex: none;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.knobBody {
+  fill: var(--ag-surface-3, #3c464e);
+  stroke: var(--ag-border, #12161a);
+  stroke-width: 1;
+}
+
+.knobTrack {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.knobArc {
+  fill: none;
+  stroke: var(--ag-accent, #ff9a3c);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.knobPointer {
+  stroke: var(--ag-text, #d9dfe4);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: 3px;
+  background: var(--ag-surface-inset, #1e2428);
+  color: var(--ag-text-dim, #929ca5);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.toggle .led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ag-led-off, #46532f);
+}
+
+.toggleOn {
+  color: var(--ag-text, #d9dfe4);
+}
+
+.toggleOn .led {
+  background: var(--ag-led, #9fde5a);
+  box-shadow: 0 0 5px var(--ag-led, #9fde5a);
+}
+
+.select {
+  padding: 2px 4px;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: 3px;
+  background: var(--ag-surface-inset, #1e2428);
+  color: var(--ag-text, #d9dfe4);
+  font: inherit;
+  font-size: 11px;
+}

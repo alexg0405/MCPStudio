@@ -99,3 +99,23 @@
   color: var(--ag-text-faint);
   font-style: italic;
 }
+
+.badge {
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text-faint);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.error {
+  padding: 3px 8px 3px 30px;
+  color: var(--ag-danger);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

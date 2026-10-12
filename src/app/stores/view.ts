@@ -1,5 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { Json } from '@core/model/json';
+import type { PatternId } from '@core/model/types';
 import type { Rect } from '@core/time/geometry';
 
 /**
@@ -23,6 +24,8 @@ export type TransportMode = 'pattern' | 'song';
 export interface ViewState {
   /** FL's PAT/SONG switch: loop the current pattern, or play the playlist. */
   mode: TransportMode;
+  /** The pattern shown in the channel rack / piano roll and looped in pattern mode. */
+  currentPatternId: PatternId | null;
   windows: Record<string, WindowInstance>;
   focusedId: string | null;
   zTop: number;
@@ -41,12 +44,14 @@ export interface ViewActions {
   setMaximized(id: string, maximized: boolean): void;
   setBrowser(patch: Partial<ViewState['browser']>): void;
   setMode(mode: TransportMode): void;
+  setCurrentPattern(id: PatternId | null): void;
 }
 
 export type ViewStore = StoreApi<ViewState & ViewActions>;
 
 export const defaultViewState = (): ViewState => ({
   mode: 'pattern',
+  currentPatternId: null,
   windows: {},
   focusedId: null,
   zTop: 0,
@@ -134,6 +139,10 @@ export function createViewStore(initial: Partial<ViewState> = {}): ViewStore {
 
       setMode(mode) {
         if (get().mode !== mode) set({ mode });
+      },
+
+      setCurrentPattern(id) {
+        if (get().currentPatternId !== id) set({ currentPatternId: id });
       },
     };
   });

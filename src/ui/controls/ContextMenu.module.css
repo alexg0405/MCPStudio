@@ -1,0 +1,88 @@
+.menu {
+  position: fixed;
+  z-index: 300000;
+  min-width: 190px;
+  padding: 4px 0;
+  background: var(--ag-surface-2);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  box-shadow: var(--ag-shadow);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 4px 12px 4px 6px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--ag-accent-dim);
+  color: #fff;
+}
+
+.item:disabled {
+  color: var(--ag-text-faint);
+  cursor: default;
+}
+
+.danger:hover:not(:disabled) {
+  background: var(--ag-danger);
+}
+
+.check {
+  width: 16px;
+  color: var(--ag-accent);
+}
+
+.text {
+  flex: 1;
+}
+
+.shortcut {
+  padding-left: 18px;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+}
+
+.separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--ag-border-soft);
+  opacity: 0.6;
+}
+
+.label {
+  padding: 3px 12px 2px 22px;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(5, 18px);
+  gap: 4px;
+  padding: 4px 12px 4px 22px;
+}
+
+.swatch {
+  width: 18px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.swatchOn,
+.swatch:hover {
+  outline: 2px solid var(--ag-text);
+  outline-offset: 1px;
+}

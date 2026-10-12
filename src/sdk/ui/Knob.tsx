@@ -1,0 +1,162 @@
+import { useRef, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { formatValue, fromNormalized, toNormalized, type ParamSpec, type ParamValue } from '../params';
+import { emitHint } from './hint';
+import styles from './controls.module.css';
+
+export interface KnobProps {
+  spec: ParamSpec;
+  value: ParamValue;
+  label?: string;
+  size?: number;
+  /** Draw the value arc from the centre (pan, detune). */
+  bipolar?: boolean;
+  /** Arc colour (defaults to the theme accent). */
+  color?: string;
+  disabled?: boolean;
+  /** Continuous edit lifecycle (one undo step per drag). */
+  onBegin?(): void;
+  onChange(value: ParamValue): void;
+  onEnd?(): void;
+  /** One-shot edits (wheel, double-click reset). Falls back to begin/change/end. */
+  onCommit?(value: ParamValue): void;
+}
+
+const START = -135;
+const SWEEP = 270;
+/** Pixels of vertical drag for the full range. */
+const TRAVEL = 200;
+
+function polar(cx: number, cy: number, r: number, deg: number) {
+  const a = ((deg - 90) * Math.PI) / 180;
+  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+}
+
+function arc(cx: number, cy: number, r: number, from: number, to: number): string {
+  if (Math.abs(to - from) < 0.01) return '';
+  const a = polar(cx, cy, r, from);
+  const b = polar(cx, cy, r, to);
+  const large = Math.abs(to - from) > 180 ? 1 : 0;
+  const sweep = to > from ? 1 : 0;
+  return `M ${a.x} ${a.y} A ${r} ${r} 0 ${large} ${sweep} ${b.x} ${b.y}`;
+}
+
+/**
+ * FL-style rotary knob: drag vertically (Shift = fine), double-click to reset, wheel to nudge.
+ * Controlled: the host owns the value.
+ */
+export function Knob({
+  spec,
+  value,
+  label,
+  size = 28,
+  bipolar,
+  color,
+  disabled,
+  onBegin,
+  onChange,
+  onEnd,
+  onCommit,
+}: KnobProps) {
+  const drag = useRef<{ startY: number; startN: number; fine: boolean; n: number } | null>(null);
+  const n = toNormalized(spec, value);
+  const deg = START + n * SWEEP;
+  const mid = START + SWEEP / 2;
+  const center = size / 2;
+  const r = size / 2 - 2.5;
+  const text = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${formatValue(spec, value)}`;
+
+  const commit = (v: ParamValue) => {
+    if (onCommit) onCommit(v);
+    else {
+      onBegin?.();
+      onChange(v);
+      onEnd?.();
+    }
+  };
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (disabled || e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { startY: e.clientY, startN: n, fine: e.shiftKey, n };
+    onBegin?.();
+  };
+
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    if (e.shiftKey !== d.fine) {
+      // Re-anchor when Shift changes so the knob doesn't jump.
+      d.startY = e.clientY;
+      d.startN = d.n;
+      d.fine = e.shiftKey;
+    }
+    const delta = ((d.startY - e.clientY) / TRAVEL) * (d.fine ? 0.1 : 1);
+    const next = Math.min(1, Math.max(0, d.startN + delta));
+    if (next === d.n) return;
+    d.n = next;
+    const v = fromNormalized(spec, next);
+    onChange(v);
+    emitHint(e.currentTarget, `${label ?? spec.label ?? ''} ${formatValue(spec, v)}`.trim());
+  };
+
+  const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    onEnd?.();
+  };
+
+  const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
+    if (disabled) return;
+    const step =
+      spec.type === 'enum'
+        ? 1 / Math.max(1, spec.options.length - 1)
+        : spec.type === 'int'
+          ? 1 / Math.max(1, spec.max - spec.min)
+          : 0.02;
+    const next = Math.min(1, Math.max(0, n + (e.deltaY < 0 ? step : -step) * (e.shiftKey ? 0.25 : 1)));
+    if (next !== n) commit(fromNormalized(spec, next));
+  };
+
+  return (
+    <div
+      className={`${styles.knob} ${disabled ? styles.disabled : ''}`}
+      style={{ width: size, height: size }}
+      role="slider"
+      aria-label={label ?? spec.label}
+      aria-valuemin={0}
+      aria-valuemax={1}
+      aria-valuenow={n}
+      aria-valuetext={formatValue(spec, value)}
+      data-hint={text}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onDoubleClick={() => !disabled && commit(spec.default)}
+      onWheel={onWheel}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={center} cy={center} r={r} className={styles.knobBody} />
+        <path d={arc(center, center, r, START, START + SWEEP)} className={styles.knobTrack} />
+        <path
+          d={
+            bipolar
+              ? arc(center, center, r, Math.min(mid, deg), Math.max(mid, deg))
+              : arc(center, center, r, START, deg)
+          }
+          className={styles.knobArc}
+          style={color ? { stroke: color } : undefined}
+        />
+        <line
+          x1={polar(center, center, r * 0.25, deg).x}
+          y1={polar(center, center, r * 0.25, deg).y}
+          x2={polar(center, center, r - 1.5, deg).x}
+          y2={polar(center, center, r - 1.5, deg).y}
+          className={styles.knobPointer}
+        />
+      </svg>
+    </div>
+  );
+}

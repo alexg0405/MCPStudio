@@ -1,7 +1,11 @@
-import { useStore } from 'zustand';
-import { useServices, useView } from '../../services-context';
+import { useEffect, useRef } from 'react';
+import { setBpm } from '@core/ops/notes';
+import { formatBST } from '@core/time/ppq';
+import { useDoc, useEngineStatus, useServices, useView } from '../../services-context';
 import { CommandButton } from '../../shell/Toolbar';
-import { stubTransport } from './stub-transport';
+import { DragNumber } from '../../controls/DragNumber';
+import { useGestureEdit } from '../../edit';
+import { onFrame } from '../../frame-loop';
 import styles from './Transport.module.css';
 
 function ModeSwitch() {
@@ -27,22 +31,62 @@ function ModeSwitch() {
   );
 }
 
+function Tempo() {
+  const bpm = useDoc((p) => p.transport.bpm);
+  const edit = useGestureEdit<number>('Tempo', (d, v) => setBpm(d, Math.round(v * 1000) / 1000), 'tempo');
+  return (
+    <div className={styles.lcd}>
+      <DragNumber
+        className={styles.lcdValue}
+        value={bpm}
+        min={10}
+        max={522}
+        perPixel={0.25}
+        step={1}
+        format={(v) => v.toFixed(3)}
+        {...edit}
+        hint="Tempo in BPM. Drag up/down (Shift = fine), scroll, or double-click to type"
+      />
+      <span className={styles.lcdLabel}>BPM</span>
+    </div>
+  );
+}
+
+/** Song position, updated every frame outside React. */
+function Position() {
+  const services = useServices();
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    let last = '';
+    return onFrame(() => {
+      const ts = services.doc.getState().project.transport.timeSig;
+      const text = formatBST(services.engine.playhead(), ts);
+      if (text !== last && ref.current) {
+        ref.current.textContent = text;
+        last = text;
+      }
+    });
+  }, [services]);
+  return (
+    <div className={`${styles.lcd} ${styles.time}`} data-hint="Song position (bar : step : tick)">
+      <span ref={ref} className={styles.lcdValue}>
+        1:01:000
+      </span>
+      <span className={styles.lcdLabel}>B:S:T</span>
+    </div>
+  );
+}
+
 export function TransportBar() {
-  const playing = useStore(stubTransport, (s) => s.playing);
+  const { playing } = useEngineStatus();
   return (
     <div className={styles.transport}>
       <ModeSwitch />
       <CommandButton command="transport.playPause" icon={playing ? 'pause' : 'play'} className={styles.play} />
       <CommandButton command="transport.stop" icon="stop" />
       <CommandButton command="transport.record" icon="record" className={styles.record} />
-      <div className={styles.lcd} data-hint="Tempo in beats per minute">
-        <span className={styles.lcdValue}>130.000</span>
-        <span className={styles.lcdLabel}>BPM</span>
-      </div>
-      <div className={`${styles.lcd} ${styles.time}`} data-hint="Song position (bar : step : tick)">
-        <span className={styles.lcdValue}>1:01:000</span>
-        <span className={styles.lcdLabel}>B:S:T</span>
-      </div>
+      <Tempo />
+      <Position />
     </div>
   );
 }

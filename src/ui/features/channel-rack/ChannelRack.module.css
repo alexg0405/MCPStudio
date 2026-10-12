@@ -1,0 +1,230 @@
+.rack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ag-surface-2);
+}
+
+.empty {
+  padding: 16px;
+  color: var(--ag-text-faint);
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface-1);
+}
+
+.patternName {
+  min-width: 110px;
+  padding: 2px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  font-weight: 600;
+}
+
+.headerControl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.headerControl select {
+  padding: 1px 2px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.rows {
+  position: relative;
+  padding: 6px 0 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+}
+
+.rowSelected {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.led {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 50%;
+  background: var(--ag-led-off);
+  cursor: pointer;
+}
+
+.ledOn {
+  background: var(--ag-led);
+  box-shadow: 0 0 5px rgba(159, 222, 90, 0.6);
+}
+
+.ledSolo {
+  outline: 2px solid var(--ag-accent);
+  outline-offset: 1px;
+}
+
+.insert {
+  flex: none;
+  width: 26px;
+  height: 20px;
+  line-height: 18px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 11px;
+  text-align: center;
+}
+
+.name {
+  flex: none;
+  width: 110px;
+  height: 22px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-left: 4px solid var(--ch-color, var(--ag-accent));
+  border-radius: 2px;
+  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  color: var(--ag-text);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rowSelected .name {
+  background: linear-gradient(#4b5660, #3c464e);
+}
+
+.rename {
+  flex: none;
+  width: 110px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-accent);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+}
+
+.steps {
+  position: relative;
+  flex: none;
+  height: 22px;
+  margin-left: 6px;
+}
+
+.step {
+  position: absolute;
+  top: 0;
+  width: 17px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: linear-gradient(#56606a, var(--ag-step-off-a));
+  cursor: pointer;
+}
+
+.stepB {
+  background: linear-gradient(#6c5658, var(--ag-step-off-b));
+}
+
+.step:hover {
+  filter: brightness(1.15);
+}
+
+.stepOn,
+.stepB.stepOn {
+  background: linear-gradient(#fff6ea, var(--ag-step-on));
+  box-shadow: 0 0 6px rgba(255, 236, 210, 0.35);
+}
+
+.notesBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  padding: 0 10px;
+  height: 22px;
+  min-width: 200px;
+  border: 1px dashed var(--ag-border-soft);
+  border-radius: 2px;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+}
+
+.select {
+  flex: none;
+  width: 8px;
+  height: 18px;
+  margin-left: 6px;
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  border: 1px solid var(--ag-border);
+}
+
+.selectOn {
+  background: var(--ag-led);
+}
+
+.stepLight {
+  position: absolute;
+  top: 4px;
+  bottom: 40px;
+  left: 0;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px var(--ag-step-current) inset,
+    0 0 8px rgba(255, 154, 60, 0.4);
+  pointer-events: none;
+  transition: opacity 60ms;
+}
+
+.addRow {
+  padding: 6px 8px 0;
+}
+
+.addButton {
+  display: grid;
+  place-items: center;
+  width: 218px;
+  height: 22px;
+  border: 1px dashed var(--ag-border-soft);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ag-text-dim);
+  cursor: pointer;
+}
+
+.addButton:hover {
+  color: var(--ag-accent);
+  border-color: var(--ag-accent-dim);
+}

@@ -1,0 +1,16 @@
+.number {
+  cursor: ns-resize;
+  touch-action: none;
+  white-space: nowrap;
+}
+
+.input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 2px;
+  border: 1px solid var(--ag-accent);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  font-family: var(--ag-font-mono);
+  text-align: right;
+}

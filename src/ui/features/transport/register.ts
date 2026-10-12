@@ -3,7 +3,7 @@ import type { Services } from '@app/services';
 import { addMenuItems, cmd, registerMenu, sep } from '../../shell/menus';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { TransportBar } from './TransportBar';
-import { stubTransport } from './stub-transport';
+import { AudioStatus } from './AudioStatus';
 
 export const order = 10;
 
@@ -16,15 +16,15 @@ export function register(services: Services): void {
     title: 'Play / stop',
     category: 'Transport',
     hint: 'Start or stop playback',
-    run: () => stubTransport.setState((s) => ({ playing: !s.playing })),
-    checked: () => stubTransport.getState().playing,
+    run: (s) => (s.engine.playing ? s.engine.stop() : s.engine.play(0)),
+    checked: (s) => s.engine.playing,
   });
   commands.register({
     id: 'transport.stop',
     title: 'Stop',
     category: 'Transport',
     hint: 'Stop playback and return to the start',
-    run: () => stubTransport.setState({ playing: false }),
+    run: (s) => s.engine.stop(),
   });
   commands.register({
     id: 'transport.record',
@@ -58,4 +58,5 @@ export function register(services: Services): void {
   ]);
 
   addToolbarSlot({ id: 'transport', area: 'transport', order: 0, component: () => createElement(TransportBar) });
+  addToolbarSlot({ id: 'audio-status', area: 'right', order: 0, component: () => createElement(AudioStatus) });
 }

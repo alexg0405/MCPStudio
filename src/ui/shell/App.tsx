@@ -1,4 +1,6 @@
 import { useEffect } from 'react';
+import { HINT_EVENT } from '@agstudio/sdk/ui';
+import { ContextMenuHost } from '../controls/ContextMenu';
 import { useServices, useSession } from '../services-context';
 import { Workspace } from '../workspace/Workspace';
 import { Browser } from './Browser';
@@ -13,8 +15,14 @@ function useHintTracking() {
       const el = (e.target as Element | null)?.closest?.('[data-hint]');
       services.session.getState().setHint(el?.getAttribute('data-hint') ?? '');
     };
+    // Controls report live values while dragging ("Volume 82%").
+    const onHint = (e: Event) => services.session.getState().setHint(String((e as CustomEvent).detail ?? ''));
     document.addEventListener('pointerover', onOver);
-    return () => document.removeEventListener('pointerover', onOver);
+    document.addEventListener(HINT_EVENT, onHint);
+    return () => {
+      document.removeEventListener('pointerover', onOver);
+      document.removeEventListener(HINT_EVENT, onHint);
+    };
   }, [services]);
 }
 
@@ -46,6 +54,7 @@ export function App() {
         <Workspace />
       </main>
       <Toasts />
+      <ContextMenuHost />
     </div>
   );
 }

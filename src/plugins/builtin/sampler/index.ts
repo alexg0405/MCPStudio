@@ -1,0 +1,142 @@
+import { defineInstrument, dbToGain, GraphVoices, p } from '@agstudio/sdk';
+
+/** A copy of the buffer played backwards (cached per buffer). */
+function reversed(ac: BaseAudioContext, buffer: AudioBuffer): AudioBuffer {
+  const out = new AudioBuffer({
+    length: buffer.length,
+    numberOfChannels: buffer.numberOfChannels,
+    sampleRate: buffer.sampleRate,
+  });
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const src = buffer.getChannelData(c);
+    const dst = out.getChannelData(c);
+    for (let i = 0, j = src.length - 1; i < src.length; i++, j--) dst[i] = src[j] as number;
+  }
+  void ac;
+  return out;
+}
+
+/**
+ * FL-style channel sampler. By default notes play the whole sample (like FL with the volume
+ * envelope off); enable the envelope to shape notes with ADSR. Pitch follows the key relative to
+ * the channel's root key.
+ */
+export default defineInstrument({
+  id: 'agstudio.sampler',
+  name: 'Sampler',
+  version: 1,
+  category: 'Samplers',
+  description: 'Plays a sample, pitched by key relative to the channel root note.',
+  sampleSlots: ['main'],
+  params: {
+    gain: p.float(-24, 12, 0, { label: 'Gain', unit: 'dB', scale: 'db', group: 'Sample' }),
+    tune: p.int(-24, 24, 0, { label: 'Tune', unit: 'st', group: 'Sample' }),
+    fine: p.float(-100, 100, 0, { label: 'Fine', unit: 'ct', group: 'Sample' }),
+    start: p.float(0, 0.99, 0, {
+      label: 'Start',
+      unit: '%',
+      group: 'Sample',
+      hint: 'Start playback part-way into the sample',
+    }),
+    reverse: p.bool(false, { label: 'Reverse', group: 'Sample' }),
+    cut: p.bool(false, { label: 'Cut itself', group: 'Sample', hint: 'A new note stops the previous one (open hats)' }),
+    envelope: p.bool(false, {
+      label: 'Envelope',
+      group: 'Envelope',
+      hint: 'Off: every note plays the whole sample. On: attack/decay/sustain/release shape each note.',
+    }),
+    attack: p.float(0.001, 2, 0.002, { label: 'Attack', unit: 's', scale: 'log', group: 'Envelope' }),
+    decay: p.float(0.005, 5, 0.3, { label: 'Decay', unit: 's', scale: 'log', group: 'Envelope' }),
+    sustain: p.float(0, 1, 1, { label: 'Sustain', unit: '%', group: 'Envelope' }),
+    release: p.float(0.005, 5, 0.12, { label: 'Release', unit: 's', scale: 'log', group: 'Envelope' }),
+  },
+
+  create(host) {
+    const ac = host.audioContext;
+    const { params } = host;
+    const out = new GainNode(ac);
+    params.gain.bind(out.gain, dbToGain);
+    const voices = new GraphVoices(ac, out, { max: 32 });
+
+    let buffer = host.samples.get('main');
+    let backwards: AudioBuffer | null = null;
+    const setBuffer = (b: AudioBuffer | null) => {
+      buffer = b;
+      backwards = null;
+    };
+    if (!buffer) void host.samples.load('main').then(setBuffer);
+    const unwatch = host.samples.onChange('main', setBuffer);
+    const current = () => {
+      if (!buffer) return null;
+      if (!params.reverse.value) return buffer;
+      backwards ??= reversed(ac, buffer);
+      return backwards;
+    };
+
+    return {
+      output: out,
+      tailTime: 0.2,
+
+      noteOn({ time, key, velocity, noteId, pan }) {
+        const buf = current();
+        if (!buf) return;
+        const t = Math.max(time, ac.currentTime);
+        if (params.cut.value) voices.cutOthers(t);
+        const root = host.channel?.rootKey ?? 60;
+        const rate = Math.pow(2, (key - root + params.tune.value + params.fine.value / 100) / 12);
+        const src = new AudioBufferSourceNode(ac, { buffer: buf, playbackRate: rate });
+        const vca = new GainNode(ac, { gain: 0 });
+        src.connect(vca);
+        let last: AudioNode = vca;
+        const extra: AudioNode[] = [];
+        if (pan) {
+          const panner = new StereoPannerNode(ac, { pan });
+          vca.connect(panner);
+          extra.push(vca);
+          last = panner;
+        }
+        const offset = params.start.value * buf.duration;
+        const env = params.envelope.value;
+        vca.gain.setValueAtTime(0, t);
+        if (env) {
+          const a = params.attack.value;
+          vca.gain.linearRampToValueAtTime(velocity, t + a);
+          vca.gain.setTargetAtTime(velocity * params.sustain.value, t + a, params.decay.value / 4);
+        } else {
+          vca.gain.linearRampToValueAtTime(velocity, t + 0.001);
+        }
+        src.start(t, offset);
+        const natural = t + (buf.duration - offset) / rate;
+        voices.add(noteId, {
+          start: t,
+          sources: [src],
+          out: last,
+          nodes: extra,
+          end: natural,
+          release: env
+            ? (rt) => {
+                const r = params.release.value;
+                vca.gain.cancelAndHoldAtTime(rt);
+                vca.gain.setTargetAtTime(0, rt, r / 5);
+                return Math.min(natural, rt + r);
+              }
+            : () => null,
+        });
+      },
+
+      noteOff({ noteId, time }) {
+        voices.release(noteId, time);
+      },
+
+      allNotesOff(time, hard) {
+        voices.releaseAll(time, hard);
+      },
+
+      dispose() {
+        unwatch();
+        voices.disposeAll();
+        out.disconnect();
+      },
+    };
+  },
+});

@@ -1,0 +1,252 @@
+import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from 'immer';
+import type { Project } from '../model/types';
+
+enablePatches();
+
+/**
+ * The single write funnel for the project document. Every change is undoable (loading a project
+ * clears history). Recipes are Immer draft mutators; prefer reading from the frozen state and
+ * writing by id on the draft (iterating a draft of 10k notes allocates 10k proxies).
+ */
+
+export type Recipe = (draft: Draft<Project>) => void;
+export type Origin = 'edit' | 'gesture' | 'undo' | 'redo' | 'load';
+
+export interface DocChange {
+  next: Project;
+  prev: Project;
+  /** Forward patches prev → next, or null for a full replacement (load). */
+  patches: Patch[] | null;
+  origin: Origin;
+}
+
+/** Where the document lives (a Zustand store in the app, a plain variable in tests). */
+export interface DocContainer {
+  get(): Project;
+  set(project: Project): void;
+}
+
+export interface HistoryStatus {
+  canUndo: boolean;
+  canRedo: boolean;
+  undoLabel?: string;
+  redoLabel?: string;
+  /** Identifies the current document state; compare with the cursor at save time for "dirty". */
+  cursor: number;
+}
+
+export interface Gesture {
+  /** Applies a recipe on top of the gesture's current state and notifies listeners immediately. */
+  update(recipe: Recipe): void;
+  /** Records everything since the gesture began as one undo entry. */
+  commit(): void;
+  /** Reverts to the state before the gesture (Escape). */
+  cancel(): void;
+  readonly active: boolean;
+}
+
+interface Entry {
+  id: number;
+  label: string;
+  patches: Patch[];
+  inverse: Patch[];
+  mergeKey?: string;
+  time: number;
+}
+
+const samePath = (a: Patch['path'], b: Patch['path']) => a.length === b.length && a.every((p, i) => p === b[i]);
+
+/**
+ * Shrinks replace-only patch sequences (a fader drag) to one patch per path: last value forward,
+ * first value backward. Sequences containing adds/removes are kept verbatim.
+ */
+function compact(patches: Patch[], inverse: Patch[]): { patches: Patch[]; inverse: Patch[] } {
+  if (patches.some((p) => p.op !== 'replace') || inverse.some((p) => p.op !== 'replace')) return { patches, inverse };
+  const fwd: Patch[] = [];
+  for (const p of patches) {
+    const i = fwd.findIndex((q) => samePath(q.path, p.path));
+    if (i >= 0) fwd[i] = p;
+    else fwd.push(p);
+  }
+  // `inverse` is already newest-first; the base value for a path is its last occurrence.
+  const inv: Patch[] = [];
+  for (let k = inverse.length - 1; k >= 0; k--) {
+    const p = inverse[k] as Patch;
+    if (!inv.some((q) => samePath(q.path, p.path))) inv.unshift(p);
+  }
+  return { patches: fwd, inverse: inv };
+}
+
+export class History {
+  private undoStack: Entry[] = [];
+  private redoStack: Entry[] = [];
+  private listeners = new Set<(change: DocChange) => void>();
+  private statusListeners = new Set<() => void>();
+  private seq = 0;
+  private gestureActive: { commit(): void } | null = null;
+  private readonly limit: number;
+  private readonly now: () => number;
+  private readonly mergeWindowMs: number;
+
+  constructor(
+    private readonly container: DocContainer,
+    opts: { limit?: number; now?: () => number; mergeWindowMs?: number } = {},
+  ) {
+    this.limit = opts.limit ?? 500;
+    this.now = opts.now ?? Date.now;
+    this.mergeWindowMs = opts.mergeWindowMs ?? 1000;
+  }
+
+  get project(): Project {
+    return this.container.get();
+  }
+
+  onChange(fn: (change: DocChange) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  /** Applies a recipe as one undo entry. Returns false when the recipe changed nothing. */
+  transact(label: string, recipe: Recipe, opts: { mergeKey?: string } = {}): boolean {
+    this.gestureActive?.commit();
+    const prev = this.container.get();
+    const [next, patches, inverse] = produceWithPatches(prev, recipe);
+    if (patches.length === 0) return false;
+    this.container.set(next);
+    const time = this.now();
+    const top = this.undoStack[this.undoStack.length - 1];
+    if (
+      opts.mergeKey &&
+      top &&
+      top.mergeKey === opts.mergeKey &&
+      this.redoStack.length === 0 &&
+      time - top.time < this.mergeWindowMs
+    ) {
+      const merged = compact([...top.patches, ...patches], [...inverse, ...top.inverse]);
+      top.patches = merged.patches;
+      top.inverse = merged.inverse;
+      top.time = time;
+    } else {
+      this.push({
+        id: ++this.seq,
+        label,
+        patches,
+        inverse,
+        time,
+        ...(opts.mergeKey ? { mergeKey: opts.mergeKey } : {}),
+      });
+    }
+    this.emit({ next, prev, patches, origin: 'edit' });
+    return true;
+  }
+
+  gesture(label: string): Gesture {
+    this.gestureActive?.commit();
+    let forward: Patch[] = [];
+    let backward: Patch[] = [];
+    let active = true;
+    const gesture: Gesture = {
+      get active() {
+        return active;
+      },
+      update: (recipe) => {
+        if (!active) return;
+        const prev = this.container.get();
+        const [next, patches, inverse] = produceWithPatches(prev, recipe);
+        if (patches.length === 0) return;
+        forward = forward.concat(patches);
+        backward = inverse.concat(backward);
+        this.container.set(next);
+        this.emit({ next, prev, patches, origin: 'gesture' });
+      },
+      commit: () => {
+        if (!active) return;
+        active = false;
+        if (this.gestureActive === gesture) this.gestureActive = null;
+        if (forward.length === 0) return;
+        const c = compact(forward, backward);
+        this.push({ id: ++this.seq, label, patches: c.patches, inverse: c.inverse, time: this.now() });
+        this.emitStatus();
+      },
+      cancel: () => {
+        if (!active) return;
+        active = false;
+        if (this.gestureActive === gesture) this.gestureActive = null;
+        if (forward.length === 0) return;
+        const prev = this.container.get();
+        const next = applyPatches(prev, backward);
+        this.container.set(next);
+        this.emit({ next, prev, patches: backward, origin: 'gesture' });
+      },
+    };
+    this.gestureActive = gesture;
+    return gesture;
+  }
+
+  undo(): boolean {
+    this.gestureActive?.commit();
+    const entry = this.undoStack.pop();
+    if (!entry) return false;
+    const prev = this.container.get();
+    const next = applyPatches(prev, entry.inverse);
+    this.container.set(next);
+    this.redoStack.push(entry);
+    this.emit({ next, prev, patches: entry.inverse, origin: 'undo' });
+    return true;
+  }
+
+  redo(): boolean {
+    this.gestureActive?.commit();
+    const entry = this.redoStack.pop();
+    if (!entry) return false;
+    const prev = this.container.get();
+    const next = applyPatches(prev, entry.patches);
+    this.container.set(next);
+    this.undoStack.push(entry);
+    this.emit({ next, prev, patches: entry.patches, origin: 'redo' });
+    return true;
+  }
+
+  /** Replaces the document (open/new project) and clears history. */
+  load(project: Project): void {
+    this.gestureActive = null;
+    const prev = this.container.get();
+    this.undoStack = [];
+    this.redoStack = [];
+    this.container.set(project);
+    this.emit({ next: project, prev, patches: null, origin: 'load' });
+  }
+
+  status(): HistoryStatus {
+    const top = this.undoStack[this.undoStack.length - 1];
+    const redo = this.redoStack[this.redoStack.length - 1];
+    return {
+      canUndo: !!top,
+      canRedo: !!redo,
+      ...(top ? { undoLabel: top.label } : {}),
+      ...(redo ? { redoLabel: redo.label } : {}),
+      cursor: top?.id ?? 0,
+    };
+  }
+
+  /** Status listeners (undo/redo availability) without document payloads. */
+  onStatus(fn: () => void): () => void {
+    this.statusListeners.add(fn);
+    return () => this.statusListeners.delete(fn);
+  }
+
+  private push(entry: Entry): void {
+    this.undoStack.push(entry);
+    if (this.undoStack.length > this.limit) this.undoStack.splice(0, this.undoStack.length - this.limit);
+    this.redoStack = [];
+  }
+
+  private emit(change: DocChange): void {
+    for (const fn of this.listeners) fn(change);
+    this.emitStatus();
+  }
+
+  private emitStatus(): void {
+    for (const fn of this.statusListeners) fn();
+  }
+}

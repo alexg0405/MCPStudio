@@ -13,9 +13,15 @@ const BUTTERWORTH_Q_DB = -3.0103;
 const CURVES = ['soft', 'hard', 'fold'] as const satisfies readonly CurveKind[];
 
 const params = {
-  drive: p.float(0, 36, 12, { label: 'Drive', unit: 'dB', hint: 'Gain into the shaper: more drive, more distortion' }),
+  drive: p.float(0, 36, 12, {
+    label: 'Drive',
+    unit: 'dB',
+    group: 'Shape',
+    hint: 'Gain into the shaper: more drive, more distortion',
+  }),
   curve: p.enum(CURVES, 'soft', {
     label: 'Curve',
+    group: 'Shape',
     labels: { soft: 'Soft clip', hard: 'Hard clip', fold: 'Wavefold' },
     hint: 'Soft: warm saturation. Hard: buzzy clipping. Wavefold: metallic, folds peaks back down',
   }),
@@ -23,10 +29,16 @@ const params = {
     label: 'Tone',
     unit: 'Hz',
     scale: 'log',
+    group: 'Output',
     hint: 'Low-pass after the shaper: lower is darker',
   }),
-  mix: p.float(0, 1, 1, { label: 'Mix', unit: '%', hint: 'Blend with the clean signal (parallel distortion)' }),
-  output: p.float(-24, 12, 0, { label: 'Output', unit: 'dB', scale: 'db' }),
+  mix: p.float(0, 1, 1, {
+    label: 'Mix',
+    unit: '%',
+    group: 'Output',
+    hint: 'Blend with the clean signal (parallel distortion)',
+  }),
+  output: p.float(-24, 12, 0, { label: 'Output', unit: 'dB', scale: 'db', group: 'Output' }),
 };
 
 /**

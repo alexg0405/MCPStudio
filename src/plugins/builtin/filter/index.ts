@@ -6,15 +6,17 @@ type FilterType = (typeof TYPES)[number];
 const params = {
   type: p.enum(TYPES, 'lowpass', {
     label: 'Type',
+    group: 'Filter',
     labels: { lowpass: 'Low-pass', highpass: 'High-pass', bandpass: 'Band-pass', notch: 'Notch' },
   }),
-  cutoff: p.float(20, 20000, 1000, { label: 'Cutoff', unit: 'Hz', scale: 'log', smoothing: 0.015 }),
+  cutoff: p.float(20, 20000, 1000, { label: 'Cutoff', unit: 'Hz', scale: 'log', group: 'Filter', smoothing: 0.015 }),
   resonance: p.float(0.1, 20, 0.707, {
     label: 'Resonance',
     scale: 'log',
+    group: 'Filter',
     hint: 'Q: emphasis at the cutoff (0.71 = no peak); for band-pass and notch, how narrow the band is',
   }),
-  output: p.float(-24, 12, 0, { label: 'Output', unit: 'dB', scale: 'db' }),
+  output: p.float(-24, 12, 0, { label: 'Output', unit: 'dB', scale: 'db', group: 'Output' }),
 };
 
 /**

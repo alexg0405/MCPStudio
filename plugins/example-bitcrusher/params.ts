@@ -5,10 +5,11 @@ import { p } from '@agstudio/sdk/params';
 export const ID = 'user.example-bitcrusher';
 
 export const params = {
-  bits: p.int(1, 16, 8, { label: 'Bits', hint: 'Bit depth: fewer bits, more grit' }),
+  bits: p.int(1, 16, 8, { label: 'Bits', group: 'Crush', hint: 'Bit depth: fewer bits, more grit' }),
   downsample: p.int(1, 32, 4, {
     label: 'Downsample',
+    group: 'Crush',
     hint: 'Holds each sample for this many frames (a lower, aliasing sample rate)',
   }),
-  mix: p.float(0, 1, 1, { label: 'Mix', unit: '%' }),
+  mix: p.float(0, 1, 1, { label: 'Mix', unit: '%', group: 'Output' }),
 };

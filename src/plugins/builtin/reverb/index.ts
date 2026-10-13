@@ -11,12 +11,28 @@ const params = {
     label: 'Decay',
     unit: 's',
     scale: 'log',
+    group: 'Room',
     hint: 'Time for the reverb to fade by 60 dB (RT60)',
   }),
-  preDelay: p.float(0, 0.2, 0.02, { label: 'Pre-delay', unit: 's', hint: 'Gap before the reverb starts' }),
-  damping: p.float(0, 1, 0.5, { label: 'Damping', unit: '%', hint: 'How much faster the highs die away' }),
-  size: p.float(0, 1, 0.6, { label: 'Size', unit: '%', hint: 'Room size: how far apart the early reflections are' }),
-  mix: p.float(0, 1, 0.3, { label: 'Mix', unit: '%' }),
+  preDelay: p.float(0, 0.2, 0.02, {
+    label: 'Pre-delay',
+    unit: 's',
+    group: 'Room',
+    hint: 'Gap before the reverb starts',
+  }),
+  damping: p.float(0, 1, 0.5, {
+    label: 'Damping',
+    unit: '%',
+    group: 'Room',
+    hint: 'How much faster the highs die away',
+  }),
+  size: p.float(0, 1, 0.6, {
+    label: 'Size',
+    unit: '%',
+    group: 'Room',
+    hint: 'Room size: how far apart the early reflections are',
+  }),
+  mix: p.float(0, 1, 0.3, { label: 'Mix', unit: '%', group: 'Output', hint: 'Dry/wet balance (equal power)' }),
 };
 
 // Recently used impulse responses (AudioBuffers aren't tied to a context, so instances share them).

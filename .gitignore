@@ -10,3 +10,7 @@ coverage/
 
 # helper-agent worktrees
 .claude/worktrees/
+
+# local secrets (the Claude API key for the beat assistant)
+.env.local
+.env.*.local

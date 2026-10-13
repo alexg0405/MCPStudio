@@ -1,0 +1,226 @@
+/**
+ * A beat as the assistant describes it: a few tracks of notes on a 1/16-step grid. The AI (and the
+ * offline generator) write this; the app turns it into channels and a pattern. Everything that
+ * comes in is validated and clamped, so a sloppy or hostile model output can't break the project.
+ */
+
+/** Sounds the assistant can ask for. Kit pieces are samplers; the rest are instruments. */
+export const BEAT_SOUNDS = [
+  'kick',
+  'snare',
+  'clap',
+  'hat',
+  'open-hat',
+  'tom-low',
+  'tom-mid',
+  'tom-high',
+  'rim',
+  'cowbell',
+  'crash',
+  '808',
+  'bass',
+  'lead',
+  'pad',
+  'pluck',
+] as const;
+export type BeatSound = (typeof BEAT_SOUNDS)[number];
+
+export const DRUM_SOUNDS: ReadonlySet<BeatSound> = new Set([
+  'kick',
+  'snare',
+  'clap',
+  'hat',
+  'open-hat',
+  'tom-low',
+  'tom-mid',
+  'tom-high',
+  'rim',
+  'cowbell',
+  'crash',
+]);
+
+export interface BeatNote {
+  /** Position in 1/16 steps from the start of the pattern; fractions allowed (0.5 = 1/32). */
+  step: number;
+  /** Length in steps (default 1). Overlapping 808 notes glide. */
+  len?: number;
+  /** MIDI note (60 = C4). Drums ignore it. */
+  key?: number;
+  /** 0..1 (default 0.8). */
+  vel?: number;
+}
+
+export interface BeatTrack {
+  name: string;
+  sound: BeatSound;
+  notes: BeatNote[];
+  /** Channel volume 0..1 (default 0.78). */
+  volume?: number;
+  /** −1..1. */
+  pan?: number;
+  /** Instrument settings by param id (only for '808' and synth sounds; unknown ids are ignored). */
+  params?: Record<string, number>;
+}
+
+export interface BeatSpec {
+  /** Short pattern name, e.g. "Dark trap". */
+  title: string;
+  /** What the assistant did, in a sentence or two, for the user. */
+  message?: string;
+  bpm?: number;
+  /** 0..1. */
+  swing?: number;
+  bars: number;
+  tracks: BeatTrack[];
+}
+
+export const STEPS_PER_BAR = 16;
+export const MAX_BARS = 4;
+export const MAX_TRACKS = 12;
+export const MAX_NOTES_PER_TRACK = 256;
+/** Steps snap to 1/6 step (40 ticks): covers 1/32 notes and 1/24 triplet rolls. */
+const STEP_GRID = 6;
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const snapStep = (v: number) => Math.round(v * STEP_GRID) / STEP_GRID;
+
+function cleanName(v: unknown, fallback: string): string {
+  const s = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+  return s || fallback;
+}
+
+/**
+ * Checks and normalizes a beat from an untrusted source. Bad notes and tracks are dropped (with a
+ * warning) rather than failing the whole beat; an unusable beat gives an error.
+ */
+export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: string[] } | { error: string } {
+  if (!isObj(raw)) return { error: 'The beat is not an object.' };
+  const warnings: string[] = [];
+  const bars = clamp(Math.round(num(raw.bars) ?? 1), 1, MAX_BARS);
+  if (num(raw.bars) !== undefined && num(raw.bars) !== bars) warnings.push(`Bars set to ${bars}.`);
+  const total = bars * STEPS_PER_BAR;
+  const tracks: BeatTrack[] = [];
+  const rawTracks = Array.isArray(raw.tracks) ? raw.tracks : [];
+  const names = new Set<string>();
+  for (const t of rawTracks.slice(0, MAX_TRACKS)) {
+    if (!isObj(t)) continue;
+    const sound = t.sound as BeatSound;
+    if (!BEAT_SOUNDS.includes(sound)) {
+      warnings.push(`Skipped a track with unknown sound "${String(t.sound)}".`);
+      continue;
+    }
+    let name = cleanName(t.name, sound);
+    for (let i = 2; names.has(name.toLowerCase()); i++) name = `${cleanName(t.name, sound)} ${i}`;
+    names.add(name.toLowerCase());
+    const drum = DRUM_SOUNDS.has(sound);
+    const notes: BeatNote[] = [];
+    const seen = new Set<string>();
+    for (const n of Array.isArray(t.notes) ? t.notes.slice(0, MAX_NOTES_PER_TRACK) : []) {
+      if (!isObj(n)) continue;
+      const stepRaw = num(n.step);
+      if (stepRaw === undefined) continue;
+      const step = snapStep(stepRaw);
+      if (step < 0 || step >= total) continue;
+      const len = clamp(snapStep(num(n.len) ?? 1) || 1 / STEP_GRID, 1 / STEP_GRID, total - step);
+      const vel = clamp(num(n.vel) ?? 0.8, 0.05, 1);
+      const note: BeatNote = { step, len, vel };
+      if (!drum) {
+        const key = num(n.key);
+        if (key === undefined) continue;
+        note.key = clamp(Math.round(key), 0, 127);
+      }
+      // A drum hit twice on the same step (or the same pitch twice) is one note.
+      const id = drum ? `${step}` : `${step}:${note.key}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      notes.push(note);
+    }
+    notes.sort((a, b) => a.step - b.step || (a.key ?? 0) - (b.key ?? 0));
+    const track: BeatTrack = { name, sound, notes };
+    const volume = num(t.volume);
+    if (volume !== undefined) track.volume = clamp(volume, 0, 1);
+    const pan = num(t.pan);
+    if (pan !== undefined) track.pan = clamp(pan, -1, 1);
+    if (isObj(t.params)) {
+      const params: Record<string, number> = {};
+      for (const [k, v] of Object.entries(t.params).slice(0, 24)) {
+        const x = num(v);
+        if (x !== undefined && /^[a-zA-Z][a-zA-Z0-9]{0,31}$/.test(k)) params[k] = x;
+      }
+      if (Object.keys(params).length > 0) track.params = params;
+    }
+    tracks.push(track);
+  }
+  if (rawTracks.length > MAX_TRACKS) warnings.push(`Only the first ${MAX_TRACKS} tracks were used.`);
+  if (tracks.length === 0) return { error: 'The beat has no usable tracks.' };
+  const spec: BeatSpec = { title: cleanName(raw.title, 'Assistant beat'), bars, tracks };
+  if (typeof raw.message === 'string' && raw.message.trim()) spec.message = raw.message.trim().slice(0, 600);
+  const bpm = num(raw.bpm);
+  if (bpm !== undefined) spec.bpm = clamp(Math.round(bpm), 50, 220);
+  const swing = num(raw.swing);
+  if (swing !== undefined) spec.swing = clamp(swing, 0, 1);
+  return { spec, warnings };
+}
+
+/** The JSON schema the AI fills in (the `write_beat` tool's input). */
+export const BEAT_SPEC_SCHEMA = {
+  type: 'object',
+  properties: {
+    title: { type: 'string', description: 'Short pattern name (2–4 words), e.g. "Dark trap 808s".' },
+    message: {
+      type: 'string',
+      description: 'One or two plain sentences for the musician: what you made and how it follows their request.',
+    },
+    bpm: { type: 'number', description: 'Tempo. Omit to keep the project tempo.' },
+    swing: { type: 'number', description: '0..1 swing on even 1/16 steps (0 = straight). Omit to keep it.' },
+    bars: { type: 'integer', minimum: 1, maximum: MAX_BARS, description: 'Pattern length in 4/4 bars.' },
+    tracks: {
+      type: 'array',
+      maxItems: MAX_TRACKS,
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Channel name, e.g. "808", "Kick", "Hat".' },
+          sound: { type: 'string', enum: [...BEAT_SOUNDS] },
+          volume: { type: 'number', description: '0..1, default 0.78.' },
+          pan: { type: 'number', description: '-1 (left) .. 1 (right).' },
+          params: {
+            type: 'object',
+            description:
+              'Optional instrument settings. For sound "808": decay (s, 0.1–8), glide (s, 0–0.6), punch (semitones 0–24), drive (0–1), tone (Hz 150–8000).',
+            additionalProperties: { type: 'number' },
+          },
+          notes: {
+            type: 'array',
+            maxItems: MAX_NOTES_PER_TRACK,
+            items: {
+              type: 'object',
+              properties: {
+                step: {
+                  type: 'number',
+                  description:
+                    '1/16 step from the start: bar b, beat q (1-based) starts at (b-1)*16 + (q-1)*4. Fractions for rolls: 0.5 = 1/32, 1/3 for triplets.',
+                },
+                len: {
+                  type: 'number',
+                  description: 'Length in steps (default 1). For 808/bass, overlap the next note to glide.',
+                },
+                key: {
+                  type: 'integer',
+                  description:
+                    'MIDI note (C1 = 24, C2 = 36, C4 = 60). Required for 808/bass/lead/pad/pluck; omit for drums.',
+                },
+                vel: { type: 'number', description: 'Velocity 0..1 (default 0.8). Use lower values for ghost notes.' },
+              },
+              required: ['step'],
+            },
+          },
+        },
+        required: ['name', 'sound', 'notes'],
+      },
+    },
+  },
+  required: ['title', 'bars', 'tracks'],
+} as const;

@@ -1,8 +1,9 @@
 /// <reference types="vitest/config" />
-import { defineConfig, type EnvironmentModuleNode, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type EnvironmentModuleNode, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { fileURLToPath } from 'node:url';
+import { aiProxy } from './tools/ai-proxy.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -42,8 +43,10 @@ function workletHmr(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
+    // The beat assistant talks to Claude through the dev/preview server; the key stays server-side.
+    aiProxy(() => loadEnv(mode, root, '').ANTHROPIC_API_KEY || undefined),
     // Audio-thread files (worklet entries, kernels, shared params, SDK audio modules) must never get
     // React Refresh / HMR code injected: the AudioWorklet scope has no HMR client.
     react({
@@ -75,10 +78,17 @@ export default defineConfig({
   // One app bundle (~560 kB, ~180 kB gzipped) is fine for a desktop DAW that loads once.
   build: { target: 'esnext', chunkSizeWarningLimit: 1024 },
   // PORT lets the preview tooling pick a free port; 5390 is AGstudio's own default.
-  server: { port: Number(process.env.PORT) || 5390, strictPort: true, headers: isolation },
+  server: {
+    port: Number(process.env.PORT) || 5390,
+    strictPort: true,
+    headers: isolation,
+    // Helper-agent worktrees live inside the project folder; their files aren't this app's.
+    watch: { ignored: ['**/.claude/worktrees/**'] },
+  },
   // Optimized up front: a dependency discovered mid-run gets re-bundled under a new hash, and modules
   // that already loaded the old copy end up with a second React (hooks then fail).
   optimizeDeps: {
+    entries: ['index.html'],
     include: [
       'react',
       'react/jsx-runtime',
@@ -129,4 +139,4 @@ export default defineConfig({
       },
     ],
   },
-});
+}));

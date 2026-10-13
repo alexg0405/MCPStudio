@@ -13,7 +13,10 @@ export const LAYOUTS: Record<string, { title: string; windows: Placement[] }> = 
     title: 'Arrange',
     windows: [
       { type: 'playlist', rect: (ws) => ({ x: 8, y: 8, w: ws.w - 16, h: ws.h - 16 }) },
-      { type: 'channel-rack', rect: (ws) => ({ x: 40, y: 32, w: Math.min(640, ws.w - 80), h: Math.min(320, ws.h - 64) }) },
+      {
+        type: 'channel-rack',
+        rect: (ws) => ({ x: 40, y: 32, w: Math.min(640, ws.w - 80), h: Math.min(320, ws.h - 64) }),
+      },
     ],
   },
   compose: {

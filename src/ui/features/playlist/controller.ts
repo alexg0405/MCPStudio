@@ -818,21 +818,32 @@ export class PlaylistController {
   // ---------------------------------------------------------------- drag & drop from the browser
 
   private onDragOver(e: DragEvent): void {
-    if (e.dataTransfer?.types.includes('application/x-agstudio-sound')) {
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.types.includes('application/x-agstudio-sound') || dt.types.includes('application/x-agstudio-pattern')) {
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'copy';
+      dt.dropEffect = 'copy';
     }
   }
 
   private onDrop(e: DragEvent): void {
     const generator = e.dataTransfer?.getData('application/x-agstudio-sound');
-    if (!generator) return;
+    const patternId = e.dataTransfer?.getData('application/x-agstudio-pattern');
+    if (!generator && !patternId) return;
     e.preventDefault();
     const p = this.project();
     const { x, y } = this.local(e);
     const lane = this.laneAtY(y, p);
     if (!lane) return;
     const tick = Math.max(0, snapFloor(this.vp.xToTick(x), this.grid(p)));
-    this.onSampleDrop?.(generator, lane, tick);
+    if (generator) this.onSampleDrop?.(generator, lane, tick);
+    else if (patternId && p.patterns[patternId as keyof typeof p.patterns]) {
+      this.s.view.getState().setCurrentPattern(patternId as never);
+      const clip = this.currentPatternClip(p, lane, tick);
+      if (clip) {
+        this.s.history.transact('Add clip', (d) => addClips(d, [clip]));
+        this.s.editor.getState().selectClips([clip.id]);
+      }
+    }
   }
 }

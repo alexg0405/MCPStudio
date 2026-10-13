@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { Profiler, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createServices } from '@app/services';
 import { installAudioUnlock } from '@app/audio-unlock';
@@ -12,6 +12,12 @@ import { applyDefaultLayout } from './workspace/layouts';
 import { App } from './shell/App';
 import './theme/tokens.css';
 import './theme/base.css';
+
+/** React commit counter (dev): idle playback should not re-render anything. */
+const reactPerf = { commits: 0 };
+function onRender() {
+  reactPerf.commits++;
+}
 
 // Composition root: long-lived objects are created once, outside React.
 const plugins = new PluginRegistry();
@@ -53,7 +59,7 @@ if (import.meta.hot) {
 if (import.meta.env.DEV) {
   // Debug handle for the console and for automated checks: stores, history, commands, engine.
   const { pianoRollPerf } = await import('./features/piano-roll/controller');
-  Object.assign(window, { __ag: Object.assign(services, { perf: { pianoRoll: pianoRollPerf } }) });
+  Object.assign(window, { __ag: Object.assign(services, { perf: { pianoRoll: pianoRollPerf, react: reactPerf } }) });
   const perf = new URLSearchParams(location.search).get('perf');
   if (perf) (await import('./perf-fixtures')).applyPerfFixture(services, perf);
 }
@@ -62,8 +68,10 @@ const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');
 createRoot(root).render(
   <StrictMode>
-    <ServicesProvider services={services}>
-      <App />
-    </ServicesProvider>
+    <Profiler id="app" onRender={onRender}>
+      <ServicesProvider services={services}>
+        <App />
+      </ServicesProvider>
+    </Profiler>
   </StrictMode>,
 );

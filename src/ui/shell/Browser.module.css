@@ -119,3 +119,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.itemOn {
+  color: var(--ag-text);
+  background: rgba(255, 154, 60, 0.1);
+}
+
+.swatch {
+  flex: none;
+  width: 7px;
+  height: 12px;
+  border-radius: 2px;
+}

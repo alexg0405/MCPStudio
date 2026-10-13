@@ -7,7 +7,7 @@ import { registerWindowType, toggleWindow } from '../../workspace/registry';
 import { UndoRedo, WindowButtons } from './WindowButtons';
 import { ShortcutsWindow } from './ShortcutsWindow';
 import { addBrowserSection } from '../../shell/Browser';
-import { PluginsSection, SoundsSection } from './BrowserSections';
+import { PluginsSection, ProjectSection, SoundsSection } from './BrowserSections';
 import { applyLayout, LAYOUTS } from '../../workspace/layouts';
 
 export const order = 0;
@@ -139,4 +139,5 @@ export function register(services: Services): void {
 
   addBrowserSection({ id: 'plugins', title: 'Plugins', icon: 'plug', order: 10, component: PluginsSection });
   addBrowserSection({ id: 'sounds', title: 'Sounds', icon: 'wave', order: 20, component: SoundsSection });
+  addBrowserSection({ id: 'project', title: 'Project patterns', icon: 'note', order: 5, component: ProjectSection });
 }

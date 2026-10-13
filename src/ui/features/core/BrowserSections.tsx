@@ -1,7 +1,9 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { KIT, KIT_VERSION } from '@core/model/kit';
 import { addInstrumentChannel, addKitChannel } from '@app/actions/channels';
-import { useServices } from '../../services-context';
+import { newPattern } from '@app/actions/patterns';
+import type { PatternId } from '@core/model/types';
+import { useDoc, useServices, useView } from '../../services-context';
 import styles from '../../shell/Browser.module.css';
 
 function usePlugins() {
@@ -77,6 +79,41 @@ export function SoundsSection() {
           {k.name}
         </button>
       ))}
+    </>
+  );
+}
+
+/** The project's patterns: click to edit, drag onto the playlist to place. */
+export function ProjectSection() {
+  const services = useServices();
+  const order = useDoc((p) => p.patternOrder);
+  const patterns = useDoc((p) => p.patterns);
+  const current = useView((v) => v.currentPatternId);
+  return (
+    <>
+      {order.map((id) => {
+        const pat = patterns[id];
+        if (!pat) return null;
+        return (
+          <button
+            key={id}
+            className={`${styles.item} ${id === current ? styles.itemOn : ''}`}
+            onClick={() => services.view.getState().setCurrentPattern(id as PatternId)}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('application/x-agstudio-pattern', id);
+              e.dataTransfer.effectAllowed = 'copy';
+            }}
+            data-hint={`${pat.name}: click to edit, drag onto the playlist to place it`}
+          >
+            <span className={styles.swatch} style={{ background: pat.color }} />
+            {pat.name}
+          </button>
+        );
+      })}
+      <button className={styles.item} onClick={() => void newPattern(services)} data-hint="Add an empty pattern (F4)">
+        + New pattern
+      </button>
     </>
   );
 }

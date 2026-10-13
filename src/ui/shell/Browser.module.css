@@ -131,3 +131,12 @@
   height: 12px;
   border-radius: 2px;
 }
+
+.folderRow {
+  color: var(--ag-text);
+}
+
+.folderRow svg {
+  flex: none;
+  color: var(--ag-text-faint);
+}

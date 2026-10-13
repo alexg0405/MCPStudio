@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { HINT_EVENT } from '@agstudio/sdk/ui';
 import { ContextMenuHost } from '../controls/ContextMenu';
 import { DialogHost } from '../controls/Dialog';
@@ -6,6 +6,7 @@ import { useServices, useSession } from '../services-context';
 import { Workspace } from '../workspace/Workspace';
 import { Browser } from './Browser';
 import { Toolbar } from './Toolbar';
+import { getOverlays, overlaysVersion, subscribeOverlays } from './overlays';
 import styles from './Shell.module.css';
 
 /** Shows the `data-hint` of whatever the pointer is over in the hint bar (FL's hint panel). */
@@ -45,6 +46,17 @@ function Toasts() {
   );
 }
 
+function Overlays() {
+  useSyncExternalStore(subscribeOverlays, overlaysVersion);
+  return (
+    <>
+      {getOverlays().map(([id, Overlay]) => (
+        <Overlay key={id} />
+      ))}
+    </>
+  );
+}
+
 export function App() {
   useHintTracking();
   return (
@@ -56,6 +68,7 @@ export function App() {
       </main>
       <Toasts />
       <ContextMenuHost />
+      <Overlays />
       <DialogHost />
     </div>
   );

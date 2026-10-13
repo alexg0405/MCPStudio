@@ -68,6 +68,12 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
+/* A sample dragged over a channel replaces its sound on drop. */
+.rowDrop {
+  background: rgba(255, 154, 60, 0.12);
+  box-shadow: inset 0 0 0 1px var(--ag-accent);
+}
+
 .led {
   flex: none;
   width: 14px;
@@ -217,6 +223,11 @@
 
 .addRow {
   padding: 6px 8px 0;
+}
+
+.addRowDrop .addButton {
+  border-color: var(--ag-accent);
+  color: var(--ag-accent);
 }
 
 .addButton {

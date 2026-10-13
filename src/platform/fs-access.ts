@@ -86,6 +86,19 @@ export async function pickSaveFile(suggestedName: string): Promise<FileSystemFil
   }
 }
 
+const WAV_TYPES: FilePickerAcceptType[] = [{ description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } }];
+
+/** Asks where to save an exported WAV file. Resolves null when the user cancels. */
+export async function pickSaveWavFile(suggestedName: string): Promise<FileSystemFileHandle | null> {
+  const name = suggestedName.toLowerCase().endsWith('.wav') ? suggestedName : `${suggestedName}.wav`;
+  try {
+    return await requirePicker('showSaveFilePicker')({ suggestedName: name, types: WAV_TYPES, id: 'export' });
+  } catch (e) {
+    if (isAbort(e)) return null;
+    throw e;
+  }
+}
+
 /** Asks for a project file to open. Resolves null when the user cancels. */
 export async function pickOpenFile(): Promise<FileSystemFileHandle | null> {
   try {

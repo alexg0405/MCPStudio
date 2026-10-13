@@ -21,13 +21,6 @@ export function register(services: Services): void {
   const { commands, keymap } = services;
 
   commands.register({
-    id: 'file.exportWav',
-    title: 'Export WAV…',
-    hint: 'Export WAV… (arrives in M6)',
-    enabled: () => false,
-    run: () => {},
-  });
-  commands.register({
     id: 'edit.undo',
     title: 'Undo',
     category: 'Edit',
@@ -45,14 +38,12 @@ export function register(services: Services): void {
   });
 
   keymap.add([
-    { chord: 'Mod+R', command: 'file.exportWav' },
     { chord: 'Mod+Z', command: 'edit.undo', repeat: true },
     { chord: 'Mod+Shift+Z', command: 'edit.redo', repeat: true },
     { chord: 'Mod+Y', command: 'edit.redo', repeat: true },
   ]);
 
-  // New/Open/Save live in the files feature.
-  addMenuItems('file', [sep(60), cmd('file.exportWav', 70)]);
+  // File menu items come from the files and export features.
   addMenuItems('edit', [cmd('edit.undo', 10), cmd('edit.redo', 20)]);
 
   commands.register({

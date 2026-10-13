@@ -17,6 +17,7 @@ import { createPrefsStore, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
+import { opfsSampleProvider } from './persistence/project-io';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -84,6 +85,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
 
   const engineOptions: EngineOptions = {
     plugins,
+    // Embedded samples come from the app's sample store (OPFS, or memory when that is unavailable).
+    samples: opfsSampleProvider(),
     onPluginStateRequest: (owner: PluginOwner, state: JsonValue) =>
       history.transact('Plugin state', (d) => setPluginState(d, owner, state)),
     onPluginFault: (_owner, pluginId, error) => {

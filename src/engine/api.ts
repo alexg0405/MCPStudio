@@ -65,6 +65,9 @@ export interface EngineApi {
   previewNoteOff(channelId: ChannelId, noteId: number): void;
   /** Plays a sample on the preview bus (browser clicks). */
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void;
+  /** Decodes and plays an audio file on the preview bus; resolves false if it can't be decoded. */
+  previewAudio(bytes: ArrayBuffer): Promise<boolean>;
+  stopPreview(): void;
   /**
    * Mixer meters: writes the left and right peak (linear, over the last ~43 ms) of each insert in
    * `order` to out[2i], out[2i + 1]. Allocation-free; call it from the frame loop and do peak hold

@@ -14,6 +14,7 @@ import { onFrame } from '../../frame-loop';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { drawClips, drawLaneHeaders, drawLanesGrid, drawPlaylistRuler, HEADER_WIDTH, RULER_HEIGHT } from './render';
+import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 
 export interface PlaylistElements {
   gridHost: HTMLElement;
@@ -160,6 +161,8 @@ export class PlaylistController {
 
   /** Called with a sound dragged in from the browser: the playlist creates an audio clip for it. */
   onSampleDrop?: (generator: string, laneId: LaneId, tick: Tick) => void;
+  /** Audio files dropped from the sample browser or the desktop. */
+  onFilesDrop?: (files: Promise<File[]>, laneId: LaneId, tick: Tick) => void;
 
   // ---------------------------------------------------------------- data
 
@@ -820,23 +823,31 @@ export class PlaylistController {
   private onDragOver(e: DragEvent): void {
     const dt = e.dataTransfer;
     if (!dt) return;
-    if (dt.types.includes('application/x-agstudio-sound') || dt.types.includes('application/x-agstudio-pattern')) {
+    if (
+      dt.types.includes('application/x-agstudio-sound') ||
+      dt.types.includes('application/x-agstudio-pattern') ||
+      dragMayHaveAudio(dt)
+    ) {
       e.preventDefault();
       dt.dropEffect = 'copy';
     }
   }
 
   private onDrop(e: DragEvent): void {
-    const generator = e.dataTransfer?.getData('application/x-agstudio-sound');
-    const patternId = e.dataTransfer?.getData('application/x-agstudio-pattern');
-    if (!generator && !patternId) return;
+    const dt = e.dataTransfer;
+    const generator = dt?.getData('application/x-agstudio-sound');
+    const patternId = dt?.getData('application/x-agstudio-pattern');
+    // Must be read during the event: the DataTransfer is emptied afterwards.
+    const files = !generator && !patternId && dt ? takeAudioFiles(dt) : null;
+    if (!generator && !patternId && !files) return;
     e.preventDefault();
     const p = this.project();
     const { x, y } = this.local(e);
     const lane = this.laneAtY(y, p);
     if (!lane) return;
     const tick = Math.max(0, snapFloor(this.vp.xToTick(x), this.grid(p)));
-    if (generator) this.onSampleDrop?.(generator, lane, tick);
+    if (files) this.onFilesDrop?.(files, lane, tick);
+    else if (generator) this.onSampleDrop?.(generator, lane, tick);
     else if (patternId && p.patterns[patternId as keyof typeof p.patterns]) {
       this.s.view.getState().setCurrentPattern(patternId as never);
       const clip = this.currentPatternClip(p, lane, tick);

@@ -38,9 +38,21 @@ export function showDialog<T extends string>(options: DialogOptions<T>): Promise
   });
 }
 
+let heldModals = 0;
+
+/** For feature modals (e.g. export): global shortcuts stand down until the returned function runs. */
+export function holdModal(): () => void {
+  heldModals++;
+  let held = true;
+  return () => {
+    if (held) heldModals--;
+    held = false;
+  };
+}
+
 /** True while a dialog is up: global shortcuts and the typing keyboard stand down. */
 export function isModalOpen(): boolean {
-  return dialogStore.getState().queue.length > 0;
+  return dialogStore.getState().queue.length > 0 || heldModals > 0;
 }
 
 function close(entry: Open, id: string): void {

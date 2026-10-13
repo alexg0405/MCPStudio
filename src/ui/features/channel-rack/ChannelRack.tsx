@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { KIT } from '@core/model/kit';
+import { KIT, kitPiece } from '@core/model/kit';
 import { MASTER, type ChannelId, type PatternId } from '@core/model/types';
 import { setChannelProp, toggleSoloChannel } from '@core/ops/channels';
 import { setStep, setStepCount, setSwing } from '@core/ops/notes';
@@ -9,6 +9,8 @@ import { PALETTE } from '@core/model/defaults';
 import { p } from '@agstudio/sdk/params';
 import { Knob } from '@agstudio/sdk/ui';
 import { addInstrumentChannel, addKitChannel, cloneChannel, deleteChannel, moveChannelBy } from '@app/actions/channels';
+import { addSampleChannels, importAudioFile, setChannelSample } from '@app/actions/samples';
+import { kitSampleRef } from '@app/default-project';
 import type { Services } from '@app/services';
 import { useDoc, useServices, useSession, useView } from '../../services-context';
 import { usePluginDef } from '../../plugin-hooks';
@@ -17,6 +19,7 @@ import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { DragNumber } from '../../controls/DragNumber';
 import { Icon } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
+import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 import { openWindow } from '../../workspace/registry';
 import { MiniRoll } from './MiniRoll';
 import { PatternPicker } from '../patterns/PatternPicker';
@@ -197,14 +200,45 @@ function InsertBox({ channelId }: { channelId: ChannelId }) {
   );
 }
 
+const SOUND = 'application/x-agstudio-sound';
+
+/**
+ * FL behaviour for drops on the rack: a sound dropped on a sampler (or audio clip) channel replaces
+ * its sample; anywhere else, or several files at once, adds new channels.
+ */
+async function dropOnRack(
+  s: Services,
+  target: ChannelId | undefined,
+  generator: string,
+  files: Promise<File[]> | null,
+): Promise<void> {
+  if (generator) {
+    const ref = { ...kitSampleRef(generator), name: kitPiece(generator)?.short ?? generator };
+    if (!target || !setChannelSample(s, target, ref)) addKitChannel(s, generator);
+    return;
+  }
+  const refs = [];
+  for (const file of (await files) ?? []) {
+    const ref = await importAudioFile(s, file);
+    if (ref) refs.push(ref);
+  }
+  const [first] = refs;
+  if (!first) return;
+  if (target && refs.length === 1 && setChannelSample(s, target, first)) return;
+  const order = s.doc.getState().project.channelOrder;
+  addSampleChannels(s, refs, target ? order.indexOf(target) + 1 : order.length);
+}
+
 const ChannelRow = memo(function ChannelRow({
   id,
   patternId,
   stepCount,
+  dropTarget,
 }: {
   id: ChannelId;
   patternId: PatternId;
   stepCount: number;
+  dropTarget: boolean;
 }) {
   const services = useServices();
   const ch = useDoc((pr) => pr.channels[id]);
@@ -249,7 +283,10 @@ const ChannelRow = memo(function ChannelRow({
   };
 
   return (
-    <div className={`${styles.row} ${selected ? styles.rowSelected : ''}`}>
+    <div
+      className={`${styles.row} ${selected ? styles.rowSelected : ''} ${dropTarget ? styles.rowDrop : ''}`}
+      data-channel-id={id}
+    >
       <button
         tabIndex={-1}
         className={`${styles.led} ${ch.muted ? '' : styles.ledOn} ${ch.solo ? styles.ledSolo : ''}`}
@@ -355,8 +392,12 @@ export function ChannelRack() {
   const pattern = useDoc((pr) => (patternId ? pr.patterns[patternId] : undefined));
   const swing = useDoc((pr) => pr.transport.swing);
   const swingEdit = useGestureEdit<number>('Swing', (d, v) => setSwing(d, v), 'swing');
+  /** Where a drag would drop: a channel, or the end of the rack ('new'). */
+  const [dropTarget, setDropTarget] = useState<ChannelId | 'new' | null>(null);
 
   if (!patternId || !pattern) return <div className={styles.empty}>No pattern</div>;
+  const targetOf = (e: React.DragEvent) =>
+    (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
   const stepCount = pattern.stepCount;
 
   return (
@@ -383,13 +424,35 @@ export function ChannelRack() {
           Swing
         </span>
       </div>
-      <div className={styles.scroll}>
+      <div
+        className={styles.scroll}
+        onDragOver={(e) => {
+          const dt = e.dataTransfer;
+          if (!dt.types.includes(SOUND) && !dragMayHaveAudio(dt)) return;
+          e.preventDefault();
+          dt.dropEffect = 'copy';
+          const target = targetOf(e) ?? 'new';
+          if (target !== dropTarget) setDropTarget(target);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+        }}
+        onDrop={(e) => {
+          setDropTarget(null);
+          const generator = e.dataTransfer.getData(SOUND);
+          // Read during the event: the DataTransfer is emptied afterwards.
+          const files = generator ? null : takeAudioFiles(e.dataTransfer);
+          if (!generator && !files) return;
+          e.preventDefault();
+          void dropOnRack(services, targetOf(e), generator, files);
+        }}
+      >
         <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
           {order.map((id) => (
-            <ChannelRow key={id} id={id} patternId={patternId} stepCount={stepCount} />
+            <ChannelRow key={id} id={id} patternId={patternId} stepCount={stepCount} dropTarget={dropTarget === id} />
           ))}
           <StepLight stepCount={stepCount} />
-          <div className={styles.addRow}>
+          <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
             <button
               tabIndex={-1}
               className={styles.addButton}

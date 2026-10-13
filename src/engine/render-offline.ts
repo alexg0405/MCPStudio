@@ -4,15 +4,24 @@ import { Engine } from './engine';
 
 export interface RenderOptions extends EngineOptions {
   view: TransportView;
-  /** Length to render, in bars of the current pattern/song. */
+  /** Length to render, in bars of the current pattern/song (fractions allowed). */
   bars: number;
+  /** Where rendering starts, in ticks (default 0). */
+  fromTick?: number;
   sampleRate?: number;
   /** Silence before the first note, in seconds (default 2048 frames). */
   preRoll?: number;
-  /** Extra seconds after the last bar for release tails (default 1). */
-  tail?: number;
+  /**
+   * Extra seconds after the last bar for release and effect tails (default 1). 'auto' asks the
+   * project's instruments and effects (capped at 30 s).
+   */
+  tail?: number | 'auto';
   /** Render chunk in frames (multiple of 128). */
   chunk?: number;
+  /** Called after each chunk with the rendered fraction (0..1). */
+  onProgress?(fraction: number): void;
+  /** Aborting rejects with the signal's reason (an AbortError by default). */
+  signal?: AbortSignal;
 }
 
 export interface RenderResult {
@@ -34,27 +43,55 @@ export async function renderOffline(project: Project, opts: RenderOptions): Prom
   const barSeconds = (ts.num * 4 * 60) / (ts.den * project.transport.bpm);
   const preRoll = opts.preRoll ?? 2048 / sampleRate;
   const musical = opts.bars * barSeconds;
-  const length = Math.ceil((preRoll + musical + (opts.tail ?? 1)) * sampleRate);
+  const tail = opts.tail === 'auto' ? await projectTail(project, opts, sampleRate) : (opts.tail ?? 1);
+  opts.signal?.throwIfAborted();
+  const length = Math.ceil((preRoll + musical + tail) * sampleRate);
   const chunk = opts.chunk ?? 128 * 256;
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate });
   const engine = new Engine(ctx, opts, true);
-  engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
-  engine.setTransportView(opts.view);
-  await engine.ready();
+  try {
+    engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
+    engine.setTransportView(opts.view);
+    await engine.ready();
 
-  const end = preRoll + musical - 1e-6;
-  let synced = true;
-  engine.startOffline(0, preRoll);
-  const step = async (frame: number) => {
-    const next = frame + chunk;
-    engine.pumpOffline(Math.min(end, next / sampleRate + 0.05));
-    if (!(await engine.syncWorklets())) synced = false;
-    if (next < length) void ctx.suspend(next / sampleRate).then(() => step(next));
-    await ctx.resume();
-  };
-  // The first stop comes one quantum in: processors exist by then and the pre-roll covers it.
-  void ctx.suspend(128 / sampleRate).then(() => step(128));
-  const buffer = await ctx.startRendering();
-  await engine.dispose();
-  return { buffer, preRoll, synced };
+    const end = preRoll + musical - 1e-6;
+    let synced = true;
+    engine.startOffline(opts.fromTick ?? 0, preRoll);
+    const step = async (frame: number) => {
+      // Aborted: the context stays suspended and is dropped; `aborted` below rejects.
+      if (opts.signal?.aborted) return;
+      const next = frame + chunk;
+      engine.pumpOffline(Math.min(end, next / sampleRate + 0.05));
+      if (!(await engine.syncWorklets())) synced = false;
+      opts.onProgress?.(Math.min(1, frame / length));
+      if (next < length) void ctx.suspend(next / sampleRate).then(() => step(next));
+      await ctx.resume();
+    };
+    const aborted = new Promise<never>((_, reject) => {
+      const signal = opts.signal;
+      if (!signal) return;
+      const fail = () => reject(signal.reason ?? new DOMException('Rendering was cancelled.', 'AbortError'));
+      if (signal.aborted) fail();
+      else signal.addEventListener('abort', fail, { once: true });
+    });
+    // The first stop comes one quantum in: processors exist by then and the pre-roll covers it.
+    void ctx.suspend(128 / sampleRate).then(() => step(128));
+    const buffer = await Promise.race([ctx.startRendering(), aborted]);
+    opts.onProgress?.(1);
+    return { buffer, preRoll, synced };
+  } finally {
+    await engine.dispose();
+  }
+}
+
+/** Release and effect tails of the project's instruments and effects, measured on a tiny context. */
+async function projectTail(project: Project, opts: EngineOptions, sampleRate: number): Promise<number> {
+  const probe = new Engine(new OfflineAudioContext({ numberOfChannels: 2, length: 128, sampleRate }), opts, true);
+  try {
+    probe.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
+    await probe.ready();
+    return probe.tailSeconds();
+  } finally {
+    await probe.dispose();
+  }
 }

@@ -1,8 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
-import { addKitAudioClip } from '@app/actions/samples';
+import { addAudioClip, addKitAudioClip, importAudioFile } from '@app/actions/samples';
 import type { PlaylistTool } from '@app/stores/editor';
+import type { Services } from '@app/services';
+import type { LaneId, Tick } from '@core/model/types';
 import { useServices } from '../../services-context';
 import { PatternPicker } from '../patterns/PatternPicker';
 import { PlaylistController, type PlaylistElements } from './controller';
@@ -108,6 +110,7 @@ export function Playlist() {
     if (Object.values(els).some((el) => !el)) return;
     const c = new PlaylistController(services, els as PlaylistElements);
     c.onSampleDrop = (generator, laneId, tick) => addKitAudioClip(services, generator, laneId, tick);
+    c.onFilesDrop = (files, laneId, tick) => void dropAudioFiles(services, files, laneId, tick);
     controller.current = c;
     c.mount();
     return () => {
@@ -148,4 +151,18 @@ export function Playlist() {
       </div>
     </div>
   );
+}
+
+/** FL behaviour: several files dropped at once go on consecutive tracks, all starting at the drop point. */
+async function dropAudioFiles(s: Services, files: Promise<File[]>, laneId: LaneId, tick: Tick): Promise<void> {
+  const lanes = s.doc.getState().project.playlist.laneOrder;
+  let lane = lanes.indexOf(laneId);
+  for (const file of await files) {
+    const ref = await importAudioFile(s, file);
+    const target = lanes[Math.min(lane, lanes.length - 1)];
+    if (ref && target) {
+      addAudioClip(s, ref, target, tick);
+      lane++;
+    }
+  }
 }

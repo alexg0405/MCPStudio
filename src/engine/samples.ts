@@ -1,6 +1,7 @@
 import type { SampleRef, SampleSource } from '@core/model/types';
 import { generate } from './kit/generators';
 import type { SampleBytesProvider } from './api';
+import { decodeAudio } from './decode';
 
 /**
  * Decoded sample cache keyed by source and sample rate. Built-in (procedural) samples are generated
@@ -42,10 +43,14 @@ export class SampleCache {
       p = (async () => {
         const bytes = await this.provider?.getBytes(ref as SampleRef);
         if (!bytes) return null;
-        // decodeAudioData detaches its input, so give it a copy.
-        const buffer = await ctx.decodeAudioData(bytes.slice(0));
-        this.buffers.set(key, buffer);
-        return buffer;
+        try {
+          const buffer = await decodeAudio(ctx, bytes);
+          this.buffers.set(key, buffer);
+          return buffer;
+        } catch (e) {
+          console.warn(`Can't decode sample "${(ref as SampleRef).name ?? ''}"`, e);
+          return null;
+        }
       })().finally(() => this.pending.delete(key));
       this.pending.set(key, p);
     }

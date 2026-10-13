@@ -238,6 +238,15 @@ first quantum; suspend rounding direction (always schedule through next boundary
 one message + `sync()` before `startRendering()`. Determinism: render twice, compare PCM hashes (plugins use seeded RNG).
 WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the file first (user activation lasts ~5 s).
 
+As built (M6, `app/export`): File > Export WAV (Mod+R) opens a dialog (range: song, current pattern or the playlist's loop
+region; format; sample rate). Its Export button is the user gesture for the save picker, so the picker comes before the
+render. `renderOffline` takes `fromTick` (loop regions), `tail: 'auto'` (instrument and effect tails, measured on a
+128-frame probe context), `onProgress` and an abort `signal` (an aborted render stays suspended and is dropped).
+`trimRender` drops the pre-roll and cuts the silence (< −90 dBFS) after the last tail. Measured in Chrome: the export
+decodes back to the float render within one 24-bit step, and renders of kit/synth projects are hash-identical. The
+exception is **ConvolverNode** (the Reverb): two renders differ by about one float ULP (≤ 6e-8, inaudible), so a
+project with reverb can produce byte-different files. A deterministic convolution would need our own worklet.
+
 ### What M2 verified in Chrome
 
 - **Worklet note timing offline**: with `suspend()`/`resume()` chunks and a per-port `sync()` barrier, impulse
@@ -337,8 +346,15 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   clean project ends clean (on pagehide, save, open or new), so closing a tab with unsaved changes keeps them
   recoverable; only unsaved work is autosaved. The recovery dialog offers the newest candidate first (Recover /
   Discard / Not now); recovering autosaves into this tab before deleting the old copy. `navigator.storage.persist()`.
-- Sample folder: `showDirectoryPicker({ id: 'samples', mode: 'read' })`, handle in IndexedDB, "Reconnect" when
-  permission is `prompt`. Drag-and-drop payload type `application/x-agstudio`; Finder drops via `getAsFileSystemHandle()`.
+- Sample folders (`persistence/sample-folders.ts`, browser section "Sample folders"): `showDirectoryPicker({ id: 'samples',
+  mode: 'read' })`, handles in IndexedDB, "Reconnect…" when permission is `prompt` (usual after a reload), recursive
+  listing capped at 5000 files. Click previews (`engine.previewAudio(bytes)`, nothing stored), double-click adds a
+  sampler channel. Drags carry a token for the file handle (`ui/audio-drag.ts`, type `application/x-agstudio-file`);
+  files dragged from the desktop arrive as DataTransfer files. Drops: on a sampler/audio-clip channel the sound replaces
+  its sample (FL), elsewhere on the rack each file becomes a sampler channel, on the playlist each file becomes an audio
+  clip on consecutive tracks. Imported files are hashed into the sample store and embedded in saved projects.
+- Decoding (`engine/decode.ts`): `decodeAudioData`, falling back to the PCM parser (AIFF and unusual WAVs) at the file's
+  own rate.
 
 ## Testing
 

@@ -8,6 +8,9 @@ export interface PrefsState {
   pianoOctave: number;
   /** Listen to connected MIDI keyboards. */
   midiInput: boolean;
+  /** Last WAV export settings. */
+  exportFormat: 'pcm16' | 'pcm24' | 'float32';
+  exportSampleRate: number;
 }
 
 export interface PrefsActions {
@@ -17,7 +20,13 @@ export interface PrefsActions {
 export type PrefsStore = StoreApi<PrefsState & PrefsActions>;
 
 const KEY = 'agstudio:prefs:v1';
-const DEFAULTS: PrefsState = { typingPiano: false, pianoOctave: 5, midiInput: false };
+const DEFAULTS: PrefsState = {
+  typingPiano: false,
+  pianoOctave: 5,
+  midiInput: false,
+  exportFormat: 'pcm24',
+  exportSampleRate: 48000,
+};
 
 function load(): PrefsState {
   try {

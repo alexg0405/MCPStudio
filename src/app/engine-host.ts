@@ -89,6 +89,12 @@ export class EngineHost implements EngineApi {
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     this.inner.previewSample(ref);
   }
+  previewAudio(bytes: ArrayBuffer): Promise<boolean> {
+    return this.inner.previewAudio(bytes);
+  }
+  stopPreview(): void {
+    this.inner.stopPreview();
+  }
   readMeters(order: readonly InsertId[], out: Float32Array): void {
     this.inner.readMeters(order, out);
   }

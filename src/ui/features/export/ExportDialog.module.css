@@ -1,0 +1,91 @@
+.export {
+  width: min(460px, 100%);
+}
+
+.group {
+  margin: 4px 0 10px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: var(--ag-radius);
+}
+
+.group legend {
+  padding: 0 4px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.optionOff {
+  color: var(--ag-text-faint);
+  cursor: default;
+}
+
+.meta {
+  margin-left: auto;
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 11px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.field select {
+  min-width: 170px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+}
+
+.progress {
+  position: relative;
+  height: 22px;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+}
+
+.bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(var(--ag-accent), var(--ag-accent-dim));
+  opacity: 0.55;
+  transition: width 120ms linear;
+}
+
+.progress span {
+  position: relative;
+  display: block;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--ag-text);
+}
+
+.error {
+  margin: 10px 0 0;
+  color: var(--ag-danger);
+}

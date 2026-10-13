@@ -42,6 +42,10 @@ export class FakeEngine implements EngineApi {
   }
   previewNoteOff(): void {}
   previewSample(): void {}
+  async previewAudio(): Promise<boolean> {
+    return true;
+  }
+  stopPreview(): void {}
   /** Peaks readMeters() reports per insert ([left, right]); everything else reads 0. */
   meterLevels = new Map<InsertId, readonly [number, number]>();
   readMeters(order: readonly InsertId[], out: Float32Array): void {

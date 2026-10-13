@@ -21,6 +21,7 @@ import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
 import { InsertStrip, METER_FRAMES } from './insert-strip';
 import { SampleCache } from './samples';
+import { decodeAudio } from './decode';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
@@ -69,6 +70,7 @@ export class Engine implements EngineApi, EngineCore {
   private readonly listeners = new Set<() => void>();
   private previewSeq = PREVIEW_ID_BASE;
   private previewSource: AudioBufferSourceNode | null = null;
+  private previewToken = 0;
   private faults = 0;
   private muteKey = '';
   private lastLate = 0;
@@ -433,18 +435,41 @@ export class Engine implements EngineApi, EngineCore {
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     void this.resume();
     void this.samples.load(ref, this.ctx).then((buffer) => {
-      if (!buffer) return;
-      try {
-        this.previewSource?.stop();
-      } catch {
-        /* already stopped */
-      }
-      const src = new AudioBufferSourceNode(this.ctx, { buffer });
-      src.connect(this.previewBus);
-      src.onended = () => src.disconnect();
-      src.start();
-      this.previewSource = src;
+      if (buffer) this.playPreview(buffer);
     });
+  }
+
+  async previewAudio(bytes: ArrayBuffer): Promise<boolean> {
+    void this.resume();
+    const token = ++this.previewToken;
+    let buffer: AudioBuffer;
+    try {
+      buffer = await decodeAudio(this.ctx, bytes);
+    } catch {
+      return false;
+    }
+    // A newer preview (or a stop) was requested while this one decoded.
+    if (token === this.previewToken) this.playPreview(buffer);
+    return true;
+  }
+
+  stopPreview(): void {
+    this.previewToken++;
+    try {
+      this.previewSource?.stop();
+    } catch {
+      /* already stopped */
+    }
+    this.previewSource = null;
+  }
+
+  private playPreview(buffer: AudioBuffer): void {
+    this.stopPreview();
+    const src = new AudioBufferSourceNode(this.ctx, { buffer });
+    src.connect(this.previewBus);
+    src.onended = () => src.disconnect();
+    src.start();
+    this.previewSource = src;
   }
 
   // ---- Meters ----

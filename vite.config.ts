@@ -77,6 +77,10 @@ export default defineConfig({
   server: { port: Number(process.env.PORT) || 5390, strictPort: true, headers: isolation },
   preview: { headers: isolation },
   test: {
+    // Vitest's persistent transform cache keys modules by their own source, so an `import.meta.glob`
+    // (plugin discovery, feature registration) keeps its old matches after folders are added or
+    // removed. Discovery is central here, so correctness wins over a slightly faster cold start.
+    fsModuleCache: false,
     projects: [
       {
         extends: true,

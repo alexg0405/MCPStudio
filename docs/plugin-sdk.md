@@ -1,7 +1,7 @@
 # Writing AGstudio plugins
 
 AGstudio's instruments and effects are plugins: TypeScript modules written against `@agstudio/sdk`.
-The built-ins (Sampler, 3xOsc, Pluck, and later the mixer effects) use exactly the same API you do,
+The built-ins (Sampler, 3xOsc, Pluck and the mixer effects) use exactly the same API you do,
 so anything they can do, your plugins can do.
 
 ## Quick start
@@ -13,7 +13,7 @@ npm run new:plugin -- --kind instrument --style graph --id user.my-synth
 That creates `plugins/my-synth/`. With `npm run dev` running it appears in the browser panel
 (Plugins → click to add a channel). Edit it and save: it hot-reloads and keeps its knob settings.
 
-- `--kind instrument|effect`. Effects go in mixer insert slots (the mixer arrives in M5).
+- `--kind instrument|effect`. Effects go in mixer insert slots (see [Effects](#effects)).
 - `--style graph` builds the sound from native Web Audio nodes (oscillators, filters, gains). This is
   the easiest style, it's cheap on CPU, and every built-in except Pluck uses it.
 - `--style worklet` writes your own per-sample DSP in an AudioWorklet kernel (Karplus-Strong,
@@ -174,6 +174,68 @@ to talk back to the main thread (rarely: at most ~30 times a second).
 - Keep pure DSP in a separate `kernel.ts` (or `*.kernel.ts`) if you want to unit-test it in Node,
   like `src/plugins/builtin/pluck/kernel.ts`. Don't put React components in kernel or params files.
 
+## Effects
+
+An effect is `defineEffect({ ..., create(host) })` (native nodes) or `defineWorkletEffect({ ..., processor })`
+(an `EffectKernel`). `create` returns `{ input, output, dispose, latency?, tailTime?, reset?, setState? }`.
+
+```ts
+import { dbToGain, defineEffect, p } from '@agstudio/sdk';
+
+export default defineEffect({
+  id: 'user.warm-filter',
+  name: 'Warm Filter',
+  version: 1,
+  category: 'Filters',
+  params: {
+    cutoff: p.float(40, 18000, 2000, { label: 'Cutoff', unit: 'Hz', scale: 'log' }),
+    output: p.float(-24, 12, 0, { label: 'Output', unit: 'dB', scale: 'db' }),
+  },
+  create({ audioContext: ac, params }) {
+    const filter = new BiquadFilterNode(ac, { type: 'lowpass' });
+    const gain = new GainNode(ac);
+    filter.connect(gain);
+    params.cutoff.bind(filter.frequency);
+    params.output.bind(gain.gain, dbToGain);
+    return { input: filter, output: gain, dispose: () => { filter.disconnect(); gain.disconnect(); } };
+  },
+});
+```
+
+**Where effects appear.** In the browser panel (marked `fx`) and in the mixer (F9): the master and every insert have
+ten effect slots. Click an empty slot to pick an effect (or click an effect in the browser to add it to the insert
+selected in the mixer), double-click a slot to open its editor, right-click it to replace, move or remove it. Slots run
+top to bottom, then the insert's pan, fader and mute.
+
+**Input and output.** The insert's audio arrives at your `input` node: stereo, with every channel routed to the insert
+already summed and the previous slots applied. Send your result (stereo) out of `output`; never connect to
+`audioContext.destination`. With `defineWorkletEffect` the kernel's `process(input, output, n, params)` gets two
+input channels (zeros when nothing plays) and must fill both outputs.
+
+**Bypass and dry/wet belong to the host.** Each slot has an on/off LED and a mix knob (linear dry/wet). Bypassing
+crossfades to the dry signal in about 10 ms and then disconnects your input to save CPU; the instance stays alive. A
+missing or failing effect passes audio through and keeps its settings. Your own `mix` param is still useful when the
+blend belongs inside the effect (an equal-power reverb mix, parallel distortion).
+
+**Latency.** If your effect delays the signal (a look-ahead, oversampling filters), set `latency` in seconds: the host
+delays the slot's dry path by the same amount so the slot mix stays in phase. Delay compensation across inserts isn't
+implemented yet. Measured in Chrome: DynamicsCompressorNode delays by `floor(0.006 · sampleRate)` frames and adds its
+own makeup gain; WaveShaperNode oversampling adds 128 (`'2x'`) or 192 (`'4x'`) frames; every trip around a feedback
+loop through a DelayNode takes one render quantum (128 frames) longer than its `delayTime`. The built-in Compressor,
+Distortion and Delay (`src/plugins/builtin/`) show how to compensate.
+
+**Tails.** `tailTime` (seconds, can be a getter) is how long the effect keeps sounding after its input stops (reverb,
+delay feedback); exports add it to the render length. `reset()` clears internal buffers.
+
+**Tempo and export.** `host.transport.bpm` and `host.transport.onTempo(cb)` (it returns an unsubscribe: call it in
+`dispose`) drive tempo-synced effects. Exports run the same code in an OfflineAudioContext (`host.offline` is true and
+the whole project is applied before rendering starts), so don't rely on timers for correctness: debounce expensive work
+while playing, but do it right away when `host.offline`. Use seeded randomness (`Rng` from `@agstudio/sdk/dsp/random`,
+or `this.host.rand()` in kernels) so two exports are identical.
+
+`plugins/example-bitcrusher` is a complete worklet effect (bits, downsample, mix), and
+`npm run new:plugin -- --kind effect --style graph|worklet --id user.my-effect` scaffolds a new one.
+
 ## Hot reload
 
 | You edit | What happens |
@@ -198,7 +260,8 @@ export default defineInstrument({ ..., ui: MyUI });
 ```
 
 `beginEdit` → `setParam`… → `endEdit` makes one undo step. A UI that throws shows an error card
-with the generated panel underneath. `plugins/example-supersaw` is a complete example.
+with the generated panel underneath. `plugins/example-supersaw` is a complete example. `Knob` also takes
+`format(value)` to show your own text in the hint bar (it defaults to the param's unit formatting).
 
 ## Presets and versions
 

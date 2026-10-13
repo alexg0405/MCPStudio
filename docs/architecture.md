@@ -398,6 +398,38 @@ trackPitch(samples, sampleRate, { minHz?, maxHz?, hop?, window? }) // YIN; FFT/R
   reads as tonal (`mode: 'drums'` fixes it), mic pops on "p"/"b" add low energy, lip smacks are events, and tempo can
   come out at half/double time near the ends of the BPM range.
 
+## Beat assistant (`src/core/beat`, `src/core/voice`, `src/app/assistant`, `tools/ai-proxy.ts`)
+
+- **Beat format** (`core/beat/spec.ts`): `{ title, message?, bpm?, swing?, bars (1–4), tracks: [{ name, sound, notes:
+  [{ step, len?, key?, vel? }], volume?, pan?, params? }] }` on a 1/16-step grid (steps snap to 1/6 step = 40 ticks, so
+  1/32 and triplet rolls fit). `validateBeatSpec` clamps everything and drops what doesn't fit; nothing unvalidated
+  reaches the project. Sounds: the kit pieces (samplers), `808` (`agstudio.bass808`: overlapping notes glide), `bass`,
+  `lead`, `pad` (3xOsc settings) and `pluck`.
+- **Applying** (`app/assistant/apply.ts`): one history transaction writes a pattern and its channels, reusing the
+  project's channels that already play the same kit sound (or its 808), so beats share channels like FL patterns do.
+  Mix and sound settings only go to channels the assistant created. Follow-ups rewrite the same pattern.
+- **Performance**: the engine records the mic on its own clock (`engine/recorder.ts`: an AudioWorklet writing into a
+  SharedArrayBuffer, count-in and click scheduled on the context, optional play-along from bar 1). Bar 1 is located
+  in the audio from the scheduled time plus output and input latency (`MediaTrackSettings.latency`). The voice
+  analysis (`core/voice`) finds onsets, classifies kick/snare/hat/tonal, tracks hummed pitch (YIN), quantizes to the
+  grid and writes a compact text summary for the AI.
+- **Claude** (`app/assistant/claude.ts`, server side in `tools/ai/`): the browser posts each turn to `/api/ai/beat` on
+  the dev/preview server, which keeps the conversation (session id) and answers with the beat as JSON under a
+  structured-output schema (`BEAT_JSON_SCHEMA`: `additionalProperties: false` everywhere, ranges in descriptions,
+  enforced by `validateBeatSpec`; a beat that fails validation is sent back once for a fix). Two backends:
+  - **subscription** (`tools/ai/subscription-backend.ts`): the musician's own Claude Code CLI, signed in with their
+    Claude plan, run in print mode per turn with no tools, resuming its session for follow-ups;
+  - **api** (`tools/ai/api-backend.ts`): the Anthropic SDK with `ANTHROPIC_API_KEY` from `.env.local` (re-read per
+    request): streaming, `output_config` effort `medium` + JSON schema, server-side refusal fallback
+    (`fallbacks: "default"`) on models that have it, an append-only history (thinking blocks kept).
+  "Auto" picks the subscription when it's set up, else the key, else the offline generator. Claude Opus 5.5 and
+  Sonnet 5.5 reject forced tool choice, which is why the answer is a structured output rather than a tool call. The
+  endpoint refuses requests without the `x-agstudio` header or from another origin.
+- **Offline** (`core/beat/local.ts`): when no key is set, a deterministic generator reads style, tempo, key and
+  "busier/simpler" from the description, uses per-style drum grids, writes an 808 that follows the kick, and maps a
+  performance onto drums (beatbox) or an 808/melody (hummed contour moved into register and key, connected notes
+  overlapping so they glide).
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all

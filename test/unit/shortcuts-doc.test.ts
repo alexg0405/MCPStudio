@@ -36,15 +36,21 @@ function render(): string {
   const lines = [
     '# Keyboard shortcuts',
     '',
-    'Generated from the app\'s keymap (`test/unit/shortcuts-doc.test.ts`). In the app, press F1 for the same list.',
+    "Generated from the app's keymap (`test/unit/shortcuts-doc.test.ts`). In the app, press F1 for the same list.",
     'On macOS, F-keys may need Fn; every window toggle also has an Alt+number alternate.',
     '',
   ];
   for (const scope of order) {
     const rows = scopes.get(scope);
     if (!rows?.length) continue;
-    lines.push(`## ${scope === 'Everywhere' ? 'Everywhere' : `When the ${scope} window is focused`}`, '', '| Action | Keys |', '|---|---|');
-    for (const r of rows.sort((a, b) => a.title.localeCompare(b.title))) lines.push(`| ${r.title} | ${r.chords.join(', ')} |`);
+    lines.push(
+      `## ${scope === 'Everywhere' ? 'Everywhere' : `When the ${scope} window is focused`}`,
+      '',
+      '| Action | Keys |',
+      '|---|---|',
+    );
+    for (const r of rows.sort((a, b) => a.title.localeCompare(b.title)))
+      lines.push(`| ${r.title} | ${r.chords.join(', ')} |`);
     lines.push('');
   }
   return lines.join('\n');

@@ -164,23 +164,29 @@ export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: stri
   return { spec, warnings };
 }
 
-/** The JSON schema the AI fills in (the `write_beat` tool's input). */
-export const BEAT_SPEC_SCHEMA = {
+/**
+ * The JSON schema of a beat for Claude's structured outputs (`output_config.format`). Structured
+ * outputs require `additionalProperties: false` on every object and don't take numeric or array
+ * bounds, so ranges are stated in descriptions and enforced by `validateBeatSpec`.
+ */
+export const BEAT_JSON_SCHEMA = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     title: { type: 'string', description: 'Short pattern name (2–4 words), e.g. "Dark trap 808s".' },
     message: {
       type: 'string',
       description: 'One or two plain sentences for the musician: what you made and how it follows their request.',
     },
-    bpm: { type: 'number', description: 'Tempo. Omit to keep the project tempo.' },
+    bpm: { type: 'number', description: 'Tempo (50–220). Omit to keep the project tempo.' },
     swing: { type: 'number', description: '0..1 swing on even 1/16 steps (0 = straight). Omit to keep it.' },
-    bars: { type: 'integer', minimum: 1, maximum: MAX_BARS, description: 'Pattern length in 4/4 bars.' },
+    bars: { type: 'integer', description: `Pattern length in 4/4 bars, 1 to ${MAX_BARS}.` },
     tracks: {
       type: 'array',
-      maxItems: MAX_TRACKS,
+      description: `Up to ${MAX_TRACKS} tracks.`,
       items: {
         type: 'object',
+        additionalProperties: false,
         properties: {
           name: { type: 'string', description: 'Channel name, e.g. "808", "Kick", "Hat".' },
           sound: { type: 'string', enum: [...BEAT_SOUNDS] },
@@ -188,31 +194,39 @@ export const BEAT_SPEC_SCHEMA = {
           pan: { type: 'number', description: '-1 (left) .. 1 (right).' },
           params: {
             type: 'object',
-            description:
-              'Optional instrument settings. For sound "808": decay (s, 0.1–8), glide (s, 0–0.6), punch (semitones 0–24), drive (0–1), tone (Hz 150–8000).',
-            additionalProperties: { type: 'number' },
+            additionalProperties: false,
+            description: 'Optional sound settings, only for sound "808".',
+            properties: {
+              decay: { type: 'number', description: 'Seconds the 808 rings, 0.1–8.' },
+              glide: { type: 'number', description: 'Slide time in seconds, 0–0.6.' },
+              punch: { type: 'number', description: 'Attack pitch drop in semitones, 0–24.' },
+              drive: { type: 'number', description: 'Saturation 0–1.' },
+              tone: { type: 'number', description: 'Low-pass in Hz, 150–8000.' },
+            },
           },
           notes: {
             type: 'array',
-            maxItems: MAX_NOTES_PER_TRACK,
+            description: `Up to ${MAX_NOTES_PER_TRACK} notes.`,
             items: {
               type: 'object',
+              additionalProperties: false,
               properties: {
                 step: {
                   type: 'number',
                   description:
-                    '1/16 step from the start: bar b, beat q (1-based) starts at (b-1)*16 + (q-1)*4. Fractions for rolls: 0.5 = 1/32, 1/3 for triplets.',
+                    '1/16 step from the start: bar b, beat q (1-based) starts at (b-1)*16 + (q-1)*4. Fractions for rolls: 0.5 = 1/32, thirds for triplets.',
                 },
                 len: {
                   type: 'number',
-                  description: 'Length in steps (default 1). For 808/bass, overlap the next note to glide.',
+                  description:
+                    'Length in steps (default 1). For 808/bass, start the next note before this one ends to glide.',
                 },
                 key: {
                   type: 'integer',
                   description:
                     'MIDI note (C1 = 24, C2 = 36, C4 = 60). Required for 808/bass/lead/pad/pluck; omit for drums.',
                 },
-                vel: { type: 'number', description: 'Velocity 0..1 (default 0.8). Use lower values for ghost notes.' },
+                vel: { type: 'number', description: 'Velocity 0..1 (default 0.8). Lower for ghost notes.' },
               },
               required: ['step'],
             },
@@ -222,5 +236,5 @@ export const BEAT_SPEC_SCHEMA = {
       },
     },
   },
-  required: ['title', 'bars', 'tracks'],
+  required: ['title', 'message', 'bars', 'tracks'],
 } as const;

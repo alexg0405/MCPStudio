@@ -343,6 +343,16 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
     }
   }
 
+  // Movement in longer loops: a kick pickup into the turnaround (the 808 follows it).
+  const kickTrack = tracks.find((t) => t.sound === 'kick');
+  if (bars >= 2 && kickTrack && role !== 'drums' && style !== 'house' && style !== 'reggaeton') {
+    const pickup = (bars - 1) * STEPS_PER_BAR + 14;
+    if (!kickTrack.notes.some((n) => n.step === pickup)) {
+      kickTrack.notes.push({ step: pickup, len: 1, vel: 0.7 });
+      kickTrack.notes.sort((a, b) => a.step - b.step);
+    }
+  }
+
   if (!info.drumsOnly) {
     const kick = tracks.find((t) => t.sound === 'kick')?.notes ?? [];
     if (role === '808' && perf) {

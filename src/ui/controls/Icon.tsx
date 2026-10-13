@@ -72,6 +72,11 @@ const PATHS = {
   ),
   close: <path d="M4 4l8 8M12 4l-8 8" />,
   plus: <path d="M8 3v10M3 8h10" />,
+  sparkle: <path d="M8 1.8l1.5 4.7 4.7 1.5-4.7 1.5L8 14.2l-1.5-4.7L1.8 8l4.7-1.5z" />,
+  mic: (
+    <path d="M8 1.8a2 2 0 012 2V8a2 2 0 01-4 0V3.8a2 2 0 012-2zM4.2 7.5a3.8 3.8 0 007.6 0M8 11.3v2.9M5.6 14.2h4.8" />
+  ),
+  send: <path d="M2 8l11.5-5.5L10 14l-2.2-4.6z M7.8 9.4L13.5 2.5" />,
   folder: <path d="M1.5 4.5v8h13v-6.5H7.5l-1.5-1.5z" />,
   chevronRight: <path d="M6 4l4 4-4 4" />,
   chevronDown: <path d="M4 6l4 4 4-4" />,

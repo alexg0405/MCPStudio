@@ -1,0 +1,503 @@
+import { createStore, type StoreApi } from 'zustand/vanilla';
+import { generateLocalBeat, type PerformanceRole } from '@core/beat/local';
+import type { BeatSpec } from '@core/beat/spec';
+import { encodeWav } from '@core/io/wav';
+import {
+  VOICE_SUMMARY_LEGEND,
+  analyzeVoice,
+  describeEvents,
+  estimateBpm,
+  quantizeToGrid,
+  type GridEvent,
+} from '@core/voice';
+import type { RecordingHandle } from '@engine/api';
+import { openMic, type MicInput } from '@platform/mic';
+import type { Services } from '../services';
+import { applyBeatSpec, type AppliedBeat } from './apply';
+import { importMySounds } from './my-sounds';
+import { AiError, ClaudeBeatChat, DEFAULT_MODEL, fetchAiStatus, type AiBackend, type AiStatus } from './claude';
+import { describeProject } from './context';
+
+/**
+ * The beat assistant: you describe a beat (and optionally perform part of it with your voice); it
+ * writes the beat into the project with Claude, or with the offline generator when no Claude key is
+ * set up. Follow-ups change the same pattern. Lives for the whole session (created in services).
+ */
+
+export type AssistantPhase = 'idle' | 'counting-in' | 'recording' | 'analyzing' | 'thinking';
+
+export interface AssistantMessage {
+  id: number;
+  from: 'you' | 'assistant';
+  text: string;
+  /** Small print under the text (what was recorded, which tracks were written). */
+  detail?: string;
+  error?: boolean;
+  /** Made without Claude (offline generator). */
+  offline?: boolean;
+  /** Undo point for this beat (history cursor right after applying it). */
+  beat?: { title: string; cursor: number };
+}
+
+/** A performance on the grid, ready to go with the next request. */
+export interface Take {
+  events: GridEvent[];
+  summary: string;
+  role: PerformanceRole;
+  bars: number;
+  bpm: number;
+  /** The recording itself, for playing it back (null after a page reload: only the events are kept). */
+  audio: { samples: Float32Array; sampleRate: number; startSec: number } | null;
+  /** Claude has it already (sent with an earlier request). */
+  sent: boolean;
+}
+
+export interface AssistantState {
+  phase: AssistantPhase;
+  messages: AssistantMessage[];
+  take: Take | null;
+  /** Live recording: count-in/progress for the UI. */
+  recording: { bars: number; startedAt: number } | null;
+  /** Which ways to reach Claude work (null until checked). */
+  status: AiStatus | null;
+  /** How to reach Claude: auto = the subscription, else an API key, else the offline generator. */
+  backend: 'auto' | AiBackend | 'offline';
+  model: string;
+  /** What the next recording is: drums, an 808 line, a melody (or let the analysis decide). */
+  role: PerformanceRole;
+  bars: number;
+  playAlong: boolean;
+  click: boolean;
+  /** Start playing a new beat as soon as it's written. */
+  autoplay: boolean;
+  /** Build the drums from the take's own beatboxed hits instead of the kit. */
+  mySounds: boolean;
+  /** The pattern the assistant is working on (follow-ups change it). */
+  applied: AppliedBeat | null;
+}
+
+let messageSeq = 0;
+const PREFS_KEY = 'agstudio:assistant:v1';
+const TAB_KEY = 'agstudio:assistant:tab:v1';
+
+function loadPrefs(): Partial<AssistantState> {
+  try {
+    const raw = globalThis.localStorage?.getItem(PREFS_KEY);
+    return raw ? (JSON.parse(raw) as Partial<AssistantState>) : {};
+  } catch {
+    return {};
+  }
+}
+
+export class BeatAssistant {
+  readonly store: StoreApi<AssistantState>;
+  private readonly chat: ClaudeBeatChat;
+  private readonly fetchImpl: typeof fetch;
+  private handle: RecordingHandle | null = null;
+  private mic: MicInput | null = null;
+  private abort: AbortController | null = null;
+  /** Everything asked so far in offline mode (the generator is stateless). */
+  private offlinePrompt = '';
+
+  constructor(
+    private readonly s: Services,
+    deps: { fetch?: typeof fetch } = {},
+  ) {
+    this.fetchImpl = deps.fetch ?? ((...args) => fetch(...args));
+    this.chat = new ClaudeBeatChat(this.fetchImpl);
+    const saved = loadPrefs();
+    this.store = createStore<AssistantState>()(() => ({
+      phase: 'idle',
+      messages: [],
+      take: null,
+      recording: null,
+      status: null,
+      backend:
+        saved.backend === 'subscription' || saved.backend === 'api' || saved.backend === 'offline'
+          ? saved.backend
+          : 'auto',
+      model: typeof saved.model === 'string' ? saved.model : DEFAULT_MODEL,
+      role: saved.role ?? 'auto',
+      bars: saved.bars ?? 2,
+      playAlong: saved.playAlong ?? false,
+      click: saved.click ?? true,
+      autoplay: saved.autoplay ?? true,
+      mySounds: saved.mySounds ?? false,
+      applied: null,
+    }));
+    this.restoreTab();
+    this.store.subscribe(() => this.scheduleTabSave());
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.saveTab());
+    this.store.subscribe((next, prev) => {
+      if (
+        next.backend === prev.backend &&
+        next.model === prev.model &&
+        next.role === prev.role &&
+        next.bars === prev.bars &&
+        next.playAlong === prev.playAlong &&
+        next.click === prev.click &&
+        next.autoplay === prev.autoplay &&
+        next.mySounds === prev.mySounds
+      )
+        return;
+      try {
+        const { backend, model, role, bars, playAlong, click, autoplay, mySounds } = next;
+        globalThis.localStorage?.setItem(
+          PREFS_KEY,
+          JSON.stringify({ backend, model, role, bars, playAlong, click, autoplay, mySounds }),
+        );
+      } catch {
+        /* per-browser convenience only */
+      }
+    });
+  }
+
+  set(patch: Partial<AssistantState>): void {
+    this.store.setState(patch);
+  }
+
+  // ---------------------------------------------------------------- reload survival
+
+  private saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  private scheduleTabSave(): void {
+    if (this.saveTimer === undefined) this.saveTimer = setTimeout(() => this.saveTab(), 500);
+  }
+
+  /** This tab's conversation, current beat and take (without the audio) for a page reload. */
+  private saveTab(): void {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = undefined;
+    const { messages, applied, take } = this.store.getState();
+    try {
+      globalThis.sessionStorage?.setItem(
+        TAB_KEY,
+        JSON.stringify({
+          messages: messages.slice(-40),
+          applied,
+          take: take ? { ...take, audio: null } : null,
+          chat: this.chat.sessionId,
+          offlinePrompt: this.offlinePrompt,
+        }),
+      );
+    } catch {
+      /* storage full or unavailable: the conversation just won't survive a reload */
+    }
+  }
+
+  private restoreTab(): void {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(globalThis.sessionStorage?.getItem(TAB_KEY) ?? 'null');
+    } catch {
+      return;
+    }
+    if (typeof raw !== 'object' || raw === null) return;
+    const r = raw as Partial<{
+      messages: AssistantMessage[];
+      applied: AppliedBeat;
+      take: Take;
+      chat: string;
+      offlinePrompt: string;
+    }>;
+    const messages = Array.isArray(r.messages) ? r.messages.filter((m) => typeof m?.text === 'string') : [];
+    messageSeq = Math.max(messageSeq, ...messages.map((m) => (typeof m.id === 'number' ? m.id : 0)));
+    const applied = r.applied && typeof r.applied.patternId === 'string' && r.applied.channels ? r.applied : null;
+    const take = r.take && Array.isArray(r.take.events) ? { ...r.take, audio: null } : null;
+    this.store.setState({ messages, applied, take });
+    if (typeof r.chat === 'string') this.chat.sessionId = r.chat;
+    if (typeof r.offlinePrompt === 'string') this.offlinePrompt = r.offlinePrompt;
+  }
+
+  async checkAi(): Promise<AiStatus> {
+    const status = await fetchAiStatus(this.fetchImpl);
+    this.store.setState({ status });
+    return status;
+  }
+
+  /** The way this request will reach Claude, or null for the offline generator. */
+  async route(): Promise<AiBackend | null> {
+    const { backend } = this.store.getState();
+    if (backend === 'offline') return null;
+    const status = this.store.getState().status ?? (await this.checkAi());
+    if (backend !== 'auto') return backend;
+    if (status.subscription.ok) return 'subscription';
+    if (status.api.ok) return 'api';
+    return null;
+  }
+
+  private say(from: AssistantMessage['from'], text: string, extra: Partial<AssistantMessage> = {}): void {
+    this.store.setState((st) => ({ messages: [...st.messages, { id: ++messageSeq, from, text, ...extra }] }));
+  }
+
+  // ---------------------------------------------------------------- recording
+
+  /** Records `bars` bars after a one-bar count-in (needs a user gesture for the mic prompt). */
+  async record(): Promise<void> {
+    const st = this.store.getState();
+    if (st.phase !== 'idle') return;
+    const project = this.s.doc.getState().project;
+    try {
+      this.mic = await openMic({ echoCancellation: st.playAlong });
+      // Performing over the beat means the current pattern, not the song.
+      if (st.playAlong) this.s.view.getState().setMode('pattern');
+      const ts = project.transport.timeSig;
+      this.handle = await this.s.engine.record(this.mic.stream, {
+        bpm: project.transport.bpm,
+        beatsPerBar: ts.num,
+        countInBeats: ts.num,
+        bars: st.bars,
+        click: st.click,
+        inputLatency: this.mic.latency,
+        playAlong: st.playAlong,
+      });
+    } catch (e) {
+      this.releaseMic();
+      this.say('assistant', e instanceof Error ? e.message : String(e), { error: true });
+      return;
+    }
+    const handle = this.handle;
+    this.store.setState({ phase: 'counting-in', recording: { bars: st.bars, startedAt: performance.now() } });
+    const tick = setInterval(() => {
+      if (this.handle !== handle) return clearInterval(tick);
+      if (handle.position() >= 0 && this.store.getState().phase === 'counting-in')
+        this.store.setState({ phase: 'recording' });
+    }, 50);
+    try {
+      const rec = await handle.done;
+      this.store.setState({ phase: 'analyzing', recording: null });
+      // Let the UI paint "analyzing" before the (synchronous) analysis runs.
+      await new Promise((r) => setTimeout(r, 30));
+      this.useAudio(rec.samples, rec.sampleRate, rec.barOneSec, project.transport.bpm, st.bars);
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError'))
+        this.say('assistant', `Recording failed: ${e instanceof Error ? e.message : e}`, { error: true });
+    } finally {
+      clearInterval(tick);
+      this.handle = null;
+      this.releaseMic();
+      this.store.setState({ phase: 'idle', recording: null });
+    }
+  }
+
+  /** Input level of the live recording (0..1), for meters on the frame loop. */
+  recordingLevel(): number {
+    return this.handle?.level() ?? 0;
+  }
+
+  /** Seconds since bar 1 of the live recording (negative while counting in), or null. */
+  recordingPosition(): number | null {
+    return this.handle ? this.handle.position() : null;
+  }
+
+  /** Ends the recording now (keeps what was recorded). */
+  stopRecording(): void {
+    this.handle?.stop();
+  }
+
+  cancelRecording(): void {
+    this.handle?.cancel();
+  }
+
+  private releaseMic(): void {
+    this.mic?.close();
+    this.mic = null;
+  }
+
+  /** A recording made elsewhere (phone voice memo, an audio file): bar 1 is where the sound starts. */
+  async importRecording(file: Pick<File, 'name' | 'arrayBuffer'>): Promise<void> {
+    if (this.store.getState().phase !== 'idle') return;
+    this.store.setState({ phase: 'analyzing' });
+    try {
+      const ctx = new OfflineAudioContext(1, 1, 48000);
+      const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
+      const samples = buffer.getChannelData(0).slice();
+      const project = this.s.doc.getState().project;
+      const st = this.store.getState();
+      const raw = analyzeVoice(samples, buffer.sampleRate, { mode: analysisMode(st.role) });
+      if (raw.length === 0) throw new Error("I couldn't hear any sounds in that file.");
+      const bpm = estimateBpm(raw) ?? project.transport.bpm;
+      const startSec = Math.max(0, (raw[0]?.time ?? 0) - 0.01);
+      const bars = Math.max(1, Math.min(4, Math.ceil(((buffer.duration - startSec) * bpm) / 60 / 4)));
+      this.useAudio(samples, buffer.sampleRate, startSec, bpm, bars, raw);
+    } catch (e) {
+      this.say('assistant', e instanceof Error ? e.message : String(e), { error: true });
+    } finally {
+      this.store.setState({ phase: 'idle' });
+    }
+  }
+
+  private useAudio(
+    samples: Float32Array,
+    sampleRate: number,
+    startSec: number,
+    bpm: number,
+    bars: number,
+    analyzed?: ReturnType<typeof analyzeVoice>,
+  ): void {
+    const role = this.store.getState().role;
+    const raw = analyzed ?? analyzeVoice(samples, sampleRate, { mode: analysisMode(role) });
+    const events = quantizeToGrid(raw, { bpm, startSec, bars }, { resolution: 0.5 });
+    if (events.length === 0) {
+      this.say('assistant', "I didn't catch any sounds in that take. Try again a bit louder or closer to the mic.", {
+        error: true,
+      });
+      return;
+    }
+    this.store.setState({
+      take: {
+        events,
+        summary: describeEvents(events),
+        role,
+        bars,
+        bpm,
+        audio: { samples, sampleRate, startSec },
+        sent: false,
+      },
+    });
+  }
+
+  /** The take analyzed again for a specific instrument (null when that finds nothing). */
+  private reanalyze(take: Take, role: PerformanceRole): Take | null {
+    if (!take.audio) return null;
+    const { samples, sampleRate, startSec } = take.audio;
+    const raw = analyzeVoice(samples, sampleRate, { mode: analysisMode(role) });
+    const events = quantizeToGrid(raw, { bpm: take.bpm, startSec, bars: take.bars }, { resolution: 0.5 });
+    if (events.length === 0) return null;
+    return { ...take, events, summary: describeEvents(events), role, sent: false };
+  }
+
+  clearTake(): void {
+    this.store.setState({ take: null });
+  }
+
+  /** Plays the take back (as recorded) on the preview bus. */
+  playTake(): void {
+    const take = this.store.getState().take;
+    if (!take?.audio) return;
+    const { samples, sampleRate, startSec } = take.audio;
+    const from = Math.max(0, Math.floor((startSec - 0.05) * sampleRate));
+    const wav = encodeWav([samples.subarray(from)], sampleRate, { bitDepth: 32 });
+    void this.s.engine.previewAudio(wav.slice().buffer);
+  }
+
+  // ---------------------------------------------------------------- asking
+
+  /** Asks for a beat (or a change to the current one). */
+  async send(prompt: string): Promise<void> {
+    const st = this.store.getState();
+    if (st.phase !== 'idle') return;
+    const text = prompt.trim();
+    let take = st.take;
+    if (!text && !take) return;
+    // "808s that go like this" after a take left on "figure it out": listen again as an 808 line.
+    if (take && take.role === 'auto') {
+      const role = inferRole(text);
+      if (role) {
+        take = this.reanalyze(take, role) ?? take;
+        this.store.setState({ take });
+      }
+    }
+    const takeNote = take
+      ? `with your ${take.bars}-bar take (${take.events.length} sound${take.events.length === 1 ? '' : 's'}${
+          take.role === 'auto' ? '' : `, as ${roleLabel(take.role)}`
+        })`
+      : undefined;
+    this.say('you', text || 'Turn my take into a beat.', takeNote ? { detail: takeNote } : {});
+    this.store.setState({ phase: 'thinking' });
+    const project = this.s.doc.getState().project;
+    let spec: BeatSpec | null = null;
+    let offline = false;
+    const route = await this.route();
+    if (route) {
+      const abort = new AbortController();
+      this.abort = abort;
+      try {
+        const res = await this.chat.request({
+          prompt: text || 'Make a beat from my performance.',
+          project: describeProject(project, this.s.view.getState().currentPatternId),
+          performance:
+            take && !take.sent
+              ? { summary: `${VOICE_SUMMARY_LEGEND}\n${take.summary}`, role: take.role, bars: take.bars, bpm: take.bpm }
+              : null,
+          model: st.model,
+          backend: route,
+          signal: abort.signal,
+        });
+        spec = res.spec;
+        if (take) this.store.setState({ take: { ...take, sent: true } });
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          this.say('assistant', 'Stopped.', {});
+          this.store.setState({ phase: 'idle' });
+          return;
+        }
+        if (e instanceof AiError && e.kind === 'not-configured' && st.backend === 'auto') {
+          // Its setup changed since the last check: write this one offline, and look again.
+          void this.checkAi();
+        } else {
+          this.say('assistant', e instanceof Error ? e.message : String(e), { error: true });
+          this.store.setState({ phase: 'idle' });
+          return;
+        }
+      } finally {
+        this.abort = null;
+      }
+    }
+    if (!spec) {
+      offline = true;
+      this.offlinePrompt = `${this.offlinePrompt} ${text}`.trim();
+      spec = generateLocalBeat({
+        prompt: this.offlinePrompt,
+        bpm: project.transport.bpm,
+        ...(take ? { performance: { events: take.events, role: take.role, bars: take.bars } } : {}),
+      });
+      // A take from a file keeps its own tempo unless the request names one.
+      if (take && spec.bpm === undefined && Math.abs(take.bpm - project.transport.bpm) > 0.5) spec.bpm = take.bpm;
+    }
+    const useHits = !!take?.audio && this.store.getState().mySounds && take.events.some((e) => e.kind !== 'tonal');
+    const samples =
+      take?.audio && useHits ? await importMySounds({ events: take.events, audio: take.audio }).catch(() => ({})) : {};
+    const applied = applyBeatSpec(this.s, spec, this.store.getState().applied, { samples });
+    const parts = spec.tracks.map((t) => t.name).join(', ');
+    this.say('assistant', spec.message ?? `Wrote "${spec.title}".`, {
+      detail: `"${spec.title}": ${parts}${spec.bpm ? ` · ${spec.bpm} BPM` : ''}`,
+      offline,
+      beat: { title: spec.title, cursor: this.s.history.status().cursor },
+    });
+    this.store.setState({ phase: 'idle', applied });
+    if (this.store.getState().autoplay) {
+      this.s.view.getState().setMode('pattern');
+      this.s.engine.play();
+    }
+  }
+
+  /** Stops waiting for Claude. */
+  cancel(): void {
+    this.abort?.abort();
+  }
+
+  /** Forgets the conversation: the next request makes a new pattern. */
+  newBeat(): void {
+    this.chat.reset();
+    this.offlinePrompt = '';
+    this.store.setState({ applied: null, messages: [], take: this.store.getState().take });
+  }
+}
+
+/** What a request says the take is ("808s that go like…", "my beatbox"), if anything. */
+export function inferRole(prompt: string): Exclude<PerformanceRole, 'auto'> | null {
+  const t = prompt.toLowerCase();
+  if (/\b808s?\b|\bbass ?line|\bbass\b|\bsub\b/.test(t)) return '808';
+  if (/\bmelod|\blead\b|\btune\b|\bsing|\bhook\b|\bhumm?(ed|ing)? (a |the )?(melody|tune)/.test(t)) return 'melody';
+  if (/\bbeat ?box|\bdrums?\b|\bkicks?\b|\bsnares?\b|\bhats?\b|\bpercussion\b/.test(t)) return 'drums';
+  return null;
+}
+
+function analysisMode(role: PerformanceRole): 'auto' | 'drums' | 'tonal' {
+  return role === 'drums' ? 'drums' : role === 'auto' ? 'auto' : 'tonal';
+}
+
+export function roleLabel(role: PerformanceRole): string {
+  return { auto: 'auto', drums: 'drums', '808': 'an 808 line', melody: 'a melody' }[role];
+}

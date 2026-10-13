@@ -21,6 +21,7 @@
     "new:plugin": "node scripts/new-plugin.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
     "fflate": "0.8.3",
     "immer": "11.1.21",
     "react": "19.3.0",

@@ -11,6 +11,7 @@ import {
   type PluginOwner,
   type Project,
   type SampleRef,
+  type Tick,
 } from '@core/model/types';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { effectivelyMuted } from '@core/query/queries';
@@ -23,6 +24,7 @@ import { InsertStrip, METER_FRAMES } from './insert-strip';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
 import { waveformOf, type Waveform } from './waveform';
+import { startRecording, type RecordOptions, type RecordingHandle } from './recorder';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
@@ -439,6 +441,29 @@ export class Engine implements EngineApi, EngineCore {
     void this.samples.load(ref, this.ctx).then((buffer) => {
       if (buffer) this.playPreview(buffer);
     });
+  }
+
+  async record(
+    stream: MediaStream,
+    opts: RecordOptions & { playAlong: boolean; fromTick?: Tick },
+  ): Promise<RecordingHandle> {
+    const ctx = this.ctx;
+    if (typeof AudioContext === 'undefined' || !(ctx instanceof AudioContext))
+      throw new Error('Recording needs the realtime engine.');
+    await this.resume();
+    this.stop();
+    const handle = await startRecording(ctx, (url) => this.loadModule(url), stream, opts, this.previewBus);
+    if (opts.playAlong && this.project) {
+      this.updateModel();
+      this.transport.start(opts.fromTick ?? 0, handle.barOneTime);
+      this.startClock();
+      this.emit();
+      handle.done.then(
+        () => this.stop(),
+        () => this.stop(),
+      );
+    }
+    return handle;
   }
 
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {

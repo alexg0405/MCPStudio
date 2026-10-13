@@ -4,7 +4,7 @@ import { DRUM_SOUNDS, type BeatSound, type BeatSpec, type BeatTrack } from '@cor
 import { makePattern, paletteColor } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
 import type { ChannelId, InstrumentChannel, Note, PatternId, Project, SampleRef } from '@core/model/types';
-import { addChannel, addSample } from '@core/ops/channels';
+import { addChannel, addSample, setPluginSample } from '@core/ops/channels';
 import { setBpm, setSwing } from '@core/ops/notes';
 import { addPattern } from '@core/ops/playlist';
 import { TICKS_PER_STEP } from '@core/time/ppq';
@@ -101,7 +101,17 @@ function notesFor(track: BeatTrack, rootKey: number): Note[] {
  * follow-ups), channels for its tracks (reusing the project's matching drum and 808 channels) and
  * their notes. Selects the pattern so the rack and piano roll show it.
  */
-export function applyBeatSpec(s: Services, spec: BeatSpec, previous?: AppliedBeat | null): AppliedBeat {
+export interface ApplyOptions {
+  /** Samples to play instead of the kit for these sounds ("use my sounds"); they get their own channels. */
+  samples?: Partial<Record<BeatSound, SampleRef>>;
+}
+
+export function applyBeatSpec(
+  s: Services,
+  spec: BeatSpec,
+  previous?: AppliedBeat | null,
+  opts: ApplyOptions = {},
+): AppliedBeat {
   const project = s.doc.getState().project;
   const reuse = previous && project.patterns[previous.patternId] ? previous : null;
   const patternId = reuse?.patternId ?? newId.pattern();
@@ -110,11 +120,35 @@ export function applyBeatSpec(s: Services, spec: BeatSpec, previous?: AppliedBea
   const taken = new Set<ChannelId>();
 
   // Decide every track's channel first (new channels are built outside the recipe).
-  const plan: { track: BeatTrack; channelId: ChannelId; make?: InstrumentChannel; sample?: SampleRef }[] = [];
+  const plan: {
+    track: BeatTrack;
+    channelId: ChannelId;
+    make?: InstrumentChannel;
+    sample?: SampleRef;
+    /** A sampler channel of the assistant's that now plays this sample. */
+    swap?: SampleRef;
+  }[] = [];
   let index = project.channelOrder.length;
+  const sampler = s.plugins.get(SAMPLER_ID);
   for (const track of spec.tracks) {
     const key = track.name.toLowerCase();
     const prior = reuse?.channels[key];
+    const own = opts.samples?.[track.sound];
+    if (own && sampler) {
+      const mine = prior && created.has(prior) && !taken.has(prior) ? project.channels[prior] : undefined;
+      if (prior && mine?.kind === 'instrument' && mine.plugin.pluginId === SAMPLER_ID) {
+        taken.add(prior);
+        channels[key] = prior;
+        plan.push({ track, channelId: prior, swap: own });
+      } else {
+        const ch = instrumentChannelFor(sampler, own.name, index++, { main: own.id });
+        created.add(ch.id);
+        taken.add(ch.id);
+        channels[key] = ch.id;
+        plan.push({ track, channelId: ch.id, make: ch, sample: own });
+      }
+      continue;
+    }
     let channelId = prior && project.channels[prior] && !taken.has(prior) ? prior : undefined;
     channelId ??= existingChannel(project, track.sound, taken);
     if (channelId) {
@@ -151,16 +185,23 @@ export function applyBeatSpec(s: Services, spec: BeatSpec, previous?: AppliedBea
     if (!pattern) return;
     pattern.stepCount = spec.bars * 16;
     pattern.length = spec.bars * 16 * TICKS_PER_STEP;
-    for (const { track, channelId, make, sample } of plan) {
+    for (const { track, channelId, make, sample, swap } of plan) {
       if (make) {
-        if (sample) addSample(d, sample);
+        if (sample && !d.samples[sample.id]) addSample(d, sample);
         addChannel(d, make);
       }
       const ch = d.channels[channelId];
       if (!ch || ch.kind !== 'instrument') continue;
+      if (swap) {
+        if (!d.samples[swap.id]) addSample(d, swap);
+        setPluginSample(d, { kind: 'channel', channelId }, 'main', swap.id);
+        ch.name = swap.name;
+      }
       // Only the assistant's own channels take its mix and sound settings.
       if (created.has(channelId)) {
         if (track.volume !== undefined) ch.volume = track.volume;
+        // Headroom: an 808 at full channel volume plus the kick clips the master.
+        else if (make && track.sound === '808') ch.volume = 0.62;
         if (track.pan !== undefined) ch.pan = track.pan;
         const def = s.plugins.get(ch.plugin.pluginId);
         for (const [k, v] of Object.entries(track.params ?? {})) {

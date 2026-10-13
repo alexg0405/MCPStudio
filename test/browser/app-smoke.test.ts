@@ -114,6 +114,29 @@ describe('app smoke test', () => {
     expect(s.view.getState().mode).toBe('song');
   });
 
+  it('writes a beat from a description with the assistant window (offline generator)', async () => {
+    s.commands.run('view.assistant');
+    await until(() => host.textContent!.includes('Describe a beat'));
+    // The test server has no Claude key or Claude Code: the offline generator writes the beat.
+    s.assistant.set({ backend: 'offline' });
+    await until(() => s.assistant.store.getState().status !== null);
+    const box = host.querySelector('textarea') as HTMLTextAreaElement;
+    // Type into the React-controlled field the way a user would.
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(box, 'dark trap with 808s');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    const sendButton = host.querySelector('[data-hint="Send (Enter)"]') as HTMLButtonElement;
+    await until(() => !sendButton.disabled);
+    sendButton.click();
+    await until(() => s.assistant.store.getState().applied !== null);
+    const applied = s.assistant.store.getState().applied!;
+    const p = s.doc.getState().project;
+    expect(p.patterns[applied.patternId]?.name).toMatch(/trap/i);
+    expect(Object.keys(applied.channels)).toEqual(expect.arrayContaining(['kick', '808']));
+    await until(() => host.textContent!.includes('offline'));
+    expect(s.engine.playing).toBe(true);
+    s.engine.stop();
+  });
+
   it('logged no errors', () => {
     expect(errors).toEqual([]);
   });

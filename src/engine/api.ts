@@ -6,8 +6,9 @@ import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PatternId, PluginOwner, SampleRef, Tick } from '@core/model/types';
 import type { JsonValue, PluginDef } from '@agstudio/sdk';
 import type { Waveform } from './waveform';
+import type { RecordOptions, Recording, RecordingHandle } from './recorder';
 
-export type { Waveform };
+export type { Waveform, RecordOptions, Recording, RecordingHandle };
 
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
 
@@ -73,6 +74,11 @@ export interface EngineApi {
    * subscribers are notified when it becomes available).
    */
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null;
+  /**
+   * Records a microphone stream on the engine's clock: count-in clicks, then `bars` bars (optionally
+   * with the project playing along from `fromTick`). Rejects where recording isn't possible.
+   */
+  record(stream: MediaStream, opts: RecordOptions & { playAlong: boolean; fromTick?: Tick }): Promise<RecordingHandle>;
   /** Decodes and plays an audio file on the preview bus; resolves false if it can't be decoded. */
   previewAudio(bytes: ArrayBuffer): Promise<boolean>;
   stopPreview(): void;

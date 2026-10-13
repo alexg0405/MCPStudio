@@ -42,6 +42,9 @@ export class FakeEngine implements EngineApi {
   }
   previewNoteOff(): void {}
   previewSample(): void {}
+  record(): Promise<never> {
+    return Promise.reject(new Error('The test engine cannot record.'));
+  }
   waveform(): null {
     return null;
   }

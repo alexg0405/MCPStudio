@@ -1,11 +1,12 @@
 import type { PerformanceRole } from '@core/beat/local';
-import { BEAT_SPEC_SCHEMA, validateBeatSpec, type BeatSpec } from '@core/beat/spec';
+import { BEAT_JSON_SCHEMA, validateBeatSpec, type BeatSpec } from '@core/beat/spec';
 
 /**
- * The beat assistant's conversation with Claude (through the dev server's /api/ai proxy, which adds
- * the API key). Claude answers by calling the `write_beat` tool; every answer is validated before
- * it touches the project, and follow-ups continue the same conversation so "make the hats busier"
- * changes the last beat instead of starting over.
+ * The beat assistant's conversation with Claude. The dev server does the talking (tools/ai): either
+ * through the musician's own Claude subscription (their signed-in Claude Code) or with an API key,
+ * and keeps the conversation, so "make the hats busier" changes the last beat instead of starting
+ * over. Claude answers with the beat as JSON (structured output); every answer is validated before
+ * it touches the project.
  */
 
 export const AI_MODELS = [
@@ -15,7 +16,21 @@ export const AI_MODELS = [
 ] as const;
 export const DEFAULT_MODEL = AI_MODELS[0].id;
 
-export type AiErrorKind = 'not-configured' | 'auth' | 'rate-limit' | 'overloaded' | 'network' | 'bad-output' | 'other';
+/** How the assistant reaches Claude. */
+export type AiBackend = 'subscription' | 'api';
+
+export interface AiBackendStatus {
+  ok: boolean;
+  reason?: string;
+}
+
+export interface AiStatus {
+  subscription: AiBackendStatus;
+  api: AiBackendStatus;
+}
+
+export type AiErrorKind =
+  'not-configured' | 'auth' | 'rate-limit' | 'overloaded' | 'refused' | 'network' | 'bad-output' | 'other';
 
 export class AiError extends Error {
   constructor(
@@ -35,7 +50,7 @@ export interface PerformanceContext {
   bpm: number;
 }
 
-export const SYSTEM_PROMPT = `You are the beat assistant inside AGstudio, an FL Studio-style DAW. A musician describes the beat they want and may perform part of it with their voice (beatboxing drums, or humming a bass line or melody). You answer only by calling write_beat with a complete pattern, which goes straight into their project.
+export const SYSTEM_PROMPT = `You are the beat assistant inside AGstudio, an FL Studio-style DAW. A musician describes the beat they want and may perform part of it with their voice (beatboxing drums, or humming a bass line or melody). You answer with one complete pattern as JSON in the required format; it goes straight into their project.
 
 Grid: 4/4, 16 steps per bar (1/16 notes). Bar b, beat q (both 1-based) starts at step (b-1)*16 + (q-1)*4. Fractional steps make rolls: +0.5 is a 1/32 note, thirds give triplets. Lengths are in steps.
 
@@ -49,6 +64,7 @@ Make it sound like a finished, professional beat in the requested style:
 - 808s sit around C1–C2 (MIDI 24–40), land the root on the downbeat, follow or answer the kick, ring long, and slide into new notes now and then. Stay in one key.
 - Hats carry the groove: vary velocities (accents and ghost notes) and add 1/32 or triplet rolls into snares and bar ends in trap and drill.
 - Give the last bar some variation (a fill, a roll, an 808 slide) so loops don't feel static.
+- Leave headroom: omit volume unless a part should sit lower; the 808 is set around 0.6 so it and the kick don't clip together.
 - 3–8 tracks; bars 1–4 (2 is a good default for trap and drill).
 
 When the musician performed something, you get it as events on the grid, with the instrument they meant:
@@ -56,28 +72,18 @@ When the musician performed something, you get it as events on the grid, with th
 - For hummed or sung notes, keep the melodic contour (the intervals and where it slides) but move it into the right register and key for that instrument.
 - Build the rest of the beat around the performance so they fit together.
 
-When they ask for a change ("busier hats", "make the 808 slide more", "add a clap"), change only that and keep everything else from your previous beat exactly the same.
+When they ask for a change ("busier hats", "make the 808 slide more", "add a clap"), send the whole beat again with only that changed and everything else exactly as in your previous beat.
 
-The message field is one or two friendly sentences for the musician about what you made. No lists, no step numbers.`;
+The message field is one or two friendly sentences for the musician about what you made. No lists, no step numbers. Performance summaries name notes scientifically (C4 = MIDI 60); the key field is a MIDI number.
 
-const TOOL = {
-  name: 'write_beat',
-  description: 'Writes the beat into the musician’s project as a pattern (replacing your previous version, if any).',
-  input_schema: BEAT_SPEC_SCHEMA,
-};
-
-interface ContentBlock {
-  type: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
-  text?: string;
-}
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string | Record<string, unknown>[];
-}
+Example of the shape (2-bar trap in F minor; the 808 slides from F1 up to A♭1 in bar 2, the hats roll into the snare):
+{"title":"Night drive","bpm":140,"bars":2,"tracks":[
+ {"name":"Kick","sound":"kick","notes":[{"step":0},{"step":7},{"step":10},{"step":16},{"step":23,"vel":0.7},{"step":26}]},
+ {"name":"Clap","sound":"clap","notes":[{"step":8},{"step":24}]},
+ {"name":"Hat","sound":"hat","notes":[{"step":0},{"step":2,"vel":0.6},{"step":4},{"step":6,"vel":0.6},{"step":6.5,"len":0.5,"vel":0.5},{"step":7,"len":0.5,"vel":0.7},{"step":7.5,"len":0.5,"vel":0.8},{"step":10},{"step":12},{"step":14,"vel":0.6},{"step":16},{"step":18,"vel":0.6},{"step":20},{"step":22,"vel":0.6},{"step":24},{"step":26},{"step":28},{"step":29.33,"len":0.33,"vel":0.5},{"step":29.67,"len":0.33,"vel":0.6},{"step":30,"len":0.5,"vel":0.7},{"step":30.5,"len":0.5,"vel":0.8},{"step":31,"len":0.5,"vel":0.9},{"step":31.5,"len":0.5,"vel":1}]},
+ {"name":"808","sound":"808","params":{"glide":0.09,"decay":2.2},"notes":[{"step":0,"len":7,"key":29},{"step":7,"len":3,"key":29},{"step":10,"len":6,"key":29},{"step":16,"len":7,"key":29},{"step":22,"len":4,"key":32},{"step":26,"len":6,"key":29}]}],
+ "message":"A dark, bouncy trap loop: the hats roll into the clap and the 808 slides up at the end."}
+(The 808 note at step 22 starts before the one at 16 ends, so it glides up.)`;
 
 function userText(prompt: string, project: string, performance?: PerformanceContext | null): string {
   let text = `<request>\n${prompt.trim() || 'Make a beat.'}\n</request>\n\n<project>\n${project}\n</project>`;
@@ -95,7 +101,7 @@ function userText(prompt: string, project: string, performance?: PerformanceCont
 
 async function errorFrom(res: Response): Promise<AiError> {
   let type = '';
-  let message = `Claude answered with HTTP ${res.status}.`;
+  let message = `The AGstudio server answered with HTTP ${res.status}.`;
   try {
     const body = (await res.json()) as { error?: { type?: string; message?: string } };
     type = body.error?.type ?? '';
@@ -103,30 +109,42 @@ async function errorFrom(res: Response): Promise<AiError> {
   } catch {
     /* not JSON */
   }
-  if (type === 'not_configured') return new AiError(message, 'not-configured');
-  if (res.status === 401 || type === 'authentication_error')
-    return new AiError('Claude rejected the API key in .env.local.', 'auth');
-  if (res.status === 429) return new AiError('Claude is rate-limiting requests; try again in a moment.', 'rate-limit');
-  if (res.status === 529 || type === 'overloaded_error')
-    return new AiError('Claude is overloaded right now; try again shortly.', 'overloaded');
-  return new AiError(message, 'other');
+  const kinds: Record<string, AiErrorKind> = {
+    not_configured: 'not-configured',
+    not_signed_in: 'not-configured',
+    authentication_error: 'auth',
+    rate_limit_error: 'rate-limit',
+    overloaded_error: 'overloaded',
+    refusal: 'refused',
+    connection_error: 'network',
+    max_tokens: 'bad-output',
+    bad_output: 'bad-output',
+  };
+  return new AiError(message, kinds[type] ?? (res.status === 429 ? 'rate-limit' : 'other'));
 }
 
 export class ClaudeBeatChat {
-  private messages: Message[] = [];
-  /** The tool call of the last beat: the next user turn must answer it. */
-  private pending: string | null = null;
+  /** The server-side conversation (null until the first answer). */
+  private session: string | null = null;
 
   constructor(private readonly fetchImpl: typeof fetch = (...args) => fetch(...args)) {}
 
   /** Starts a new conversation (the next request makes a new beat). */
   reset(): void {
-    this.messages = [];
-    this.pending = null;
+    this.session = null;
+  }
+
+  /** The server-side conversation id, to carry it across a page reload. */
+  get sessionId(): string | null {
+    return this.session;
+  }
+
+  set sessionId(id: string | null) {
+    this.session = id;
   }
 
   get hasHistory(): boolean {
-    return this.messages.length > 0;
+    return this.session !== null;
   }
 
   async request(input: {
@@ -134,65 +152,39 @@ export class ClaudeBeatChat {
     project: string;
     performance?: PerformanceContext | null;
     model: string;
+    backend: AiBackend;
     signal?: AbortSignal;
   }): Promise<{ spec: BeatSpec; warnings: string[] }> {
-    const text = userText(input.prompt, input.project, input.performance);
-    const turn: Message = {
-      role: 'user',
-      content: this.pending
-        ? [
-            { type: 'tool_result', tool_use_id: this.pending, content: 'Applied to the project.' },
-            { type: 'text', text },
-          ]
-        : text,
-    };
-    const messages = [...this.messages, turn];
+    let text = userText(input.prompt, input.project, input.performance);
     // One retry when the beat doesn't validate: Claude sees the problem and fixes it.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const reply = await this.call(messages, input.model, input.signal);
-      const use = reply.content.find((b) => b.type === 'tool_use' && b.name === TOOL.name);
-      if (!use?.id) throw new AiError('Claude answered without writing a beat.', 'bad-output');
-      if (reply.stop_reason === 'max_tokens')
-        throw new AiError('The beat came back cut off. Ask for fewer bars or tracks.', 'bad-output');
-      const checked = validateBeatSpec(use.input);
-      messages.push({ role: 'assistant', content: reply.content as unknown as Record<string, unknown>[] });
-      if ('spec' in checked) {
-        this.messages = messages;
-        this.pending = use.id;
-        return checked;
-      }
-      messages.push({
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: use.id,
-            is_error: true,
-            content: `That beat can't be used: ${checked.error} Call write_beat again with a fixed beat.`,
-          },
-        ],
-      });
+      const reply = await this.call(input.backend, input.model, text, input.signal);
+      this.session = reply.session;
+      const checked = validateBeatSpec(reply.beat);
+      if ('spec' in checked) return checked;
+      text = `That beat can't be used: ${checked.error} Send the whole beat again, fixed.`;
     }
     throw new AiError("Claude's beat couldn't be used. Try rephrasing.", 'bad-output');
   }
 
   private async call(
-    messages: Message[],
+    backend: AiBackend,
     model: string,
+    text: string,
     signal?: AbortSignal,
-  ): Promise<{ content: ContentBlock[]; stop_reason?: string }> {
+  ): Promise<{ session: string; beat: unknown }> {
     let res: Response;
     try {
-      res = await this.fetchImpl('/api/ai/messages', {
+      res = await this.fetchImpl('/api/ai/beat', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-agstudio': '1' },
         body: JSON.stringify({
+          backend,
           model,
-          max_tokens: 12000,
+          session: this.session,
           system: SYSTEM_PROMPT,
-          tools: [TOOL],
-          tool_choice: { type: 'tool', name: TOOL.name },
-          messages,
+          schema: BEAT_JSON_SCHEMA,
+          text,
         }),
         ...(signal ? { signal } : {}),
       });
@@ -201,17 +193,24 @@ export class ClaudeBeatChat {
       throw new AiError("Couldn't reach the AGstudio server. Is `npm run dev` running?", 'network');
     }
     if (!res.ok) throw await errorFrom(res);
-    return (await res.json()) as { content: ContentBlock[]; stop_reason?: string };
+    return (await res.json()) as { session: string; beat: unknown };
   }
 }
 
-/** Whether the dev server has a Claude key. Never throws (false when the server can't be reached). */
-export async function aiConfigured(fetchImpl: typeof fetch = (...args) => fetch(...args)): Promise<boolean> {
+const UNREACHABLE: AiBackendStatus = { ok: false, reason: "The AGstudio server can't be reached." };
+
+/** Which ways to reach Claude work right now. Never throws. */
+export async function fetchAiStatus(fetchImpl: typeof fetch = (...args) => fetch(...args)): Promise<AiStatus> {
   try {
     const res = await fetchImpl('/api/ai/status');
-    if (!res.ok) return false;
-    return ((await res.json()) as { configured?: boolean }).configured === true;
+    if (!res.ok) return { subscription: UNREACHABLE, api: UNREACHABLE };
+    const body = (await res.json()) as Partial<AiStatus>;
+    const pick = (v: unknown): AiBackendStatus =>
+      typeof v === 'object' && v !== null && typeof (v as AiBackendStatus).ok === 'boolean'
+        ? (v as AiBackendStatus)
+        : UNREACHABLE;
+    return { subscription: pick(body.subscription), api: pick(body.api) };
   } catch {
-    return false;
+    return { subscription: UNREACHABLE, api: UNREACHABLE };
   }
 }

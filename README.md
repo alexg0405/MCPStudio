@@ -32,6 +32,41 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float).
 
+## Beat assistant (✦ in the toolbar, or ⌥6)
+
+Describe a beat ("dark trap at 140, 808s that slide") and it gets written into your project as a new pattern,
+with channels for its drums and 808s, and starts playing. Follow-ups ("busier hats", "simpler", "more 808 slides")
+change that same pattern, and every result is a single undo step.
+
+You can also **perform** part of it: press Record, count in with the click, and beatbox the drums or hum the 808
+line or a melody. Pick what your noises stand for ("Noises are…"), or leave it on "Figure it out". The take shows
+up on a little grid (kicks, snares, hats, hummed notes); then say what it should become, e.g. "808s like this, dark
+trap", and the beat follows your rhythm and contour, in a sensible register and key. "Use a recording…" (or dropping
+an audio file on the panel) works with a voice memo you made elsewhere. Turn on "Play my beat along" to perform over
+the current pattern (headphones help).
+
+**Who writes the beats** (the picker in the assistant's header; "Auto" uses the first one that's set up):
+
+1. **Your Claude subscription** (no API key, nothing billed separately; it counts toward your plan's usage like any
+   Claude Code use). Install Claude Code and sign in once, in Terminal:
+
+   ```bash
+   curl -fsSL https://claude.ai/install.sh | bash
+   ```
+
+   ```bash
+   ~/.local/bin/claude auth login
+   ```
+
+   AGstudio's dev server then runs `claude -p` for each request (isolated with `--safe-mode`, no tools), so the
+   page never sees your login. This is for your own use on your machine: don't share the app with others using
+   your login.
+2. **An API key**: copy `.env.example` to `.env.local` and put your key after `ANTHROPIC_API_KEY=` (from
+   https://console.anthropic.com/). The dev server adds it to requests; changes apply without a restart.
+3. **The offline generator**: built in, always available, no account needed.
+
+You can pick the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster) in the assistant's header.
+
 Shortcuts: press F1 in the app, or see [docs/shortcuts.md](docs/shortcuts.md). On a Mac, F-keys may need Fn;
 every window also has an Alt+number shortcut and a toolbar button.
 

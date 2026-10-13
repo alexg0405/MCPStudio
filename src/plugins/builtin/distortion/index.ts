@@ -1,5 +1,5 @@
 import { dbToGain, defineEffect, p } from '@agstudio/sdk';
-import { curve, driveCompensation, type CurveKind } from './curves.kernel';
+import { RANGE, curve, driveCompensation, type CurveKind } from './curves.kernel';
 
 /**
  * Chrome's 4× oversampling (two up/down-sampling FIR stages) delays the WaveShaperNode's output by
@@ -73,7 +73,8 @@ export default defineEffect({
     const output = new GainNode(ac);
     input.connect(drive).connect(shaper).connect(tone).connect(level).connect(wet).connect(output);
     input.connect(dryDelay).connect(dry).connect(output);
-    P.drive.bind(drive.gain, dbToGain);
+    // The curve spans ±RANGE signal units over the shaper's ±1 input, so the drive scales by 1/RANGE.
+    P.drive.bind(drive.gain, (db) => dbToGain(db) / RANGE);
     P.drive.bind(level.gain, (db) => driveCompensation(dbToGain(db)));
     P.tone.bind(tone.frequency);
     P.mix.bind(wet.gain);

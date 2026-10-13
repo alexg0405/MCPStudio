@@ -3,7 +3,7 @@ import { defineConfig, loadEnv, type EnvironmentModuleNode, type Plugin } from '
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { fileURLToPath } from 'node:url';
-import { aiProxy } from './tools/ai-proxy.ts';
+import { aiServer } from './tools/ai/server.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -45,8 +45,8 @@ function workletHmr(): Plugin {
 
 export default defineConfig(({ mode }) => ({
   plugins: [
-    // The beat assistant talks to Claude through the dev/preview server; the key stays server-side.
-    aiProxy(() => loadEnv(mode, root, '').ANTHROPIC_API_KEY || undefined),
+    // The beat assistant reaches Claude through the dev/preview server (subscription or API key).
+    aiServer(() => loadEnv(mode, root, '')),
     // Audio-thread files (worklet entries, kernels, shared params, SDK audio modules) must never get
     // React Refresh / HMR code injected: the AudioWorklet scope has no HMR client.
     react({

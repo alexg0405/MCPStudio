@@ -7,12 +7,14 @@ import { notesSorted } from '@core/query/queries';
 import { layout, note } from '../../../test/helpers/notes';
 import {
   applyNoteScript,
+  applyNoteScriptById,
   checkScriptOutput,
   NoteScriptError,
   runNoteScript,
   ScriptPreview,
   scriptSeed,
   scriptTarget,
+  scriptTargetFor,
 } from './note-scripts';
 
 function setup() {
@@ -158,6 +160,30 @@ describe('note script runner', () => {
     expect(preview.error).toMatch(/nope/);
     expect(notes()).toEqual(['20:60:240', '260:64:240', '710:67:480']);
     preview.commit();
+  });
+
+  it('runs a script by id on an explicit channel, pattern and notes (for the AI)', () => {
+    const { s, cid, pid, notes } = setup();
+    // Another channel is selected in the UI; the target is explicit.
+    s.session.getState().selectChannel(s.doc.getState().project.channelOrder[1] as ChannelId);
+    expect(
+      applyNoteScriptById(
+        s,
+        'agstudio.notes.transpose',
+        { semitones: 12 },
+        { channelId: cid, patternId: pid, noteIds: ['b'] as NoteId[] },
+      ),
+    ).toBe(true);
+    expect(notes()).toEqual(['10:60:240', '250:76:240', '700:67:480']);
+    expect(s.history.status().undoLabel).toBe('Transpose');
+    expect(s.editor.getState().noteSelection).toEqual([]);
+    // The whole channel when no note ids are given; ctx.grid defaults to a step.
+    const t = scriptTargetFor(s, { channelId: cid, patternId: pid })!;
+    expect(t.notes).toHaveLength(3);
+    expect(t.grid).toBe(240);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(applyNoteScriptById(s, 'user.nope', {}, { channelId: cid, patternId: pid })).toBe(false);
+    error.mockRestore();
   });
 
   it('seeds rand from the script, the notes and its seed param only', () => {

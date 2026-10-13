@@ -44,29 +44,51 @@ export interface ScriptTarget extends ScriptInput {
   fromSelection: boolean;
 }
 
-/** The selected instrument channel's notes in the current pattern (the selection, or all of them). */
-export function scriptTarget(s: Services): ScriptTarget | null {
+/** Where a script runs, by id: an instrument channel's notes in a pattern, optionally only some of them. */
+export interface ScriptWhere {
+  channelId: ChannelId;
+  patternId: PatternId;
+  /** Only these notes (ids not in the pattern are ignored); absent or empty = every note of the channel. */
+  noteIds?: readonly NoteId[];
+  /** Grid in ticks for `ctx.grid` (default: one 1/16 step). */
+  grid?: number;
+}
+
+/** A script target from explicit ids (the AI, other tools); null unless the channel is an instrument. */
+export function scriptTargetFor(s: Services, where: ScriptWhere): ScriptTarget | null {
   const project = s.doc.getState().project;
-  const channelId = s.session.getState().selectedChannelId;
-  const patternId = s.view.getState().currentPatternId;
-  const pattern = patternId ? project.patterns[patternId] : undefined;
-  const channel = channelId ? project.channels[channelId] : undefined;
-  if (!channelId || !patternId || !pattern || channel?.kind !== 'instrument') return null;
-  const all = notesSorted(pattern.notes[channelId]);
-  const sel = new Set(s.editor.getState().noteSelection);
-  const selected = sel.size > 0 ? all.filter((n) => sel.has(n.id)) : [];
+  const pattern = project.patterns[where.patternId];
+  const channel = project.channels[where.channelId];
+  if (!pattern || channel?.kind !== 'instrument') return null;
+  const all = notesSorted(pattern.notes[where.channelId]);
+  const only = where.noteIds?.length ? new Set<string>(where.noteIds) : null;
+  const selected = only ? all.filter((n) => only.has(n.id)) : [];
   const { timeSig, key } = project.transport;
-  const pr = s.editor.getState().pianoRoll;
   return {
-    channelId,
-    patternId,
+    channelId: where.channelId,
+    patternId: where.patternId,
     notes: selected.length > 0 ? selected : all,
     fromSelection: selected.length > 0,
-    grid: gridTicks(pr.snap, timeSig, pr.pxPerTick),
+    grid: Math.max(1, Math.round(where.grid ?? PPQ / 4)),
     bar: ticksPerBar(timeSig),
     length: patternLength(pattern, timeSig),
     key: key ?? null,
   };
+}
+
+/** The selected instrument channel's notes in the current pattern (the selection, or all of them). */
+export function scriptTarget(s: Services): ScriptTarget | null {
+  const channelId = s.session.getState().selectedChannelId;
+  const patternId = s.view.getState().currentPatternId;
+  if (!channelId || !patternId) return null;
+  const pr = s.editor.getState().pianoRoll;
+  const timeSig = s.doc.getState().project.transport.timeSig;
+  return scriptTargetFor(s, {
+    channelId,
+    patternId,
+    noteIds: s.editor.getState().noteSelection,
+    grid: gridTicks(pr.snap, timeSig, pr.pxPerTick),
+  });
 }
 
 /** A frozen copy of a note as scripts see it. */
@@ -175,8 +197,31 @@ export function applyNoteScript(
     return false;
   }
   s.history.transact(def.name, (d) => applyNoteReplacement(d, target.patternId, target.channelId, plan));
-  if (target.fromSelection) s.editor.getState().selectNotes(plan.write.map((n) => n.id));
+  // The result stays selected when it came from the piano roll's selection.
+  const shown =
+    s.session.getState().selectedChannelId === target.channelId &&
+    s.view.getState().currentPatternId === target.patternId;
+  if (target.fromSelection && shown) s.editor.getState().selectNotes(plan.write.map((n) => n.id));
   return true;
+}
+
+/**
+ * Runs an installed note script by id with param values, as one undo step: on `where` (an explicit
+ * channel, pattern and optional note ids), or on the piano roll's notes when absent. Returns false
+ * (and toasts) when the script is missing, the target isn't an instrument channel or the script fails.
+ */
+export function applyNoteScriptById(
+  s: Services,
+  scriptId: string,
+  values: Readonly<Record<string, unknown>> = {},
+  where?: ScriptWhere,
+): boolean {
+  const def = s.plugins.script(scriptId);
+  if (!def) {
+    reportScriptError(s, new NoteScriptError(`Note script "${scriptId}" is not installed`));
+    return false;
+  }
+  return applyNoteScript(s, def, values, where ? scriptTargetFor(s, where) : scriptTarget(s));
 }
 
 export function reportScriptError(s: Services, err: unknown): void {

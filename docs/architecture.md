@@ -33,8 +33,9 @@ Enforcement: ESLint `no-restricted-imports` per folder (see `eslint.config.js`),
   generator (seeded in tests). Clone/paste always mints new ids.
 - **Records + order arrays** (`channels` + `channelOrder`, …): Immer patches stay single add/remove/replace ops and every
   entity keeps reference identity, which the engine and canvases use to skip unchanged items.
-- Steps are notes (FL semantics): the rack's step row is a projection of notes on 240-tick boundaries at the channel's
-  root key, ≤ 1 step long. Anything else shows as a mini piano-roll preview.
+- Steps are notes (FL semantics): the rack's step row is a projection of notes on 240-tick boundaries, ≤ 1 step long,
+  one per step. New steps use the channel's root key; a step may have its own key (the graph editor's pitch lane).
+  Anything else shows as a mini piano-roll preview.
 - Audio clips are channels (FL "Audio Clip" channel) so everything that makes sound routes the same way.
 - Pattern clips loop their content: content tick = `(clipLocal + offset) mod patternLength`.
 - Plugin instances are host-owned data: `{ pluginId, pluginVersion, params, state?, stateVersion?, samples? }`. Param values
@@ -482,7 +483,71 @@ _To be written by M10._
 
 ## Composition tools and note scripts (M11)
 
-_To be written by M11._
+Piano-roll tools are note scripts (plugins), music theory lives in a public SDK module, and every tool goes through
+History like any other edit.
+
+- **`@agstudio/sdk/notes`** (`src/sdk/notes/`, pure TS, property-tested with fast-check):
+  - `scales.ts`: 22 scales (`SCALES`, `getScale`; unknown ids read as major), `scaleMask`, `inScale`, `scaleNotes`,
+    `snapToScale(key, root, scale, 'nearest' | 'up' | 'down')` (ties go down, stays in 0–127), absolute scale steps
+    (`scaleStep`/`keyAtStep`), `transposeInScale` (out-of-scale notes keep their offset above the scale note below),
+    `noteName` (FL octaves, 60 = C5), `keyLabel` ("C# minor").
+  - `chords.ts`: 30 chords from power chords to 13ths (`CHORDS`), `chordNotes(root, id, { inversion, voicing })`,
+    `invert`, `voice` (close, open, drop2, drop3, bass, spread), `diatonicChord` (stacked thirds of a scale),
+    `diatonicQuality`, `detectChord` (prefers the reading with the root in the bass).
+  - Transforms on `ScriptNote[]` (new objects; a kept `id` = an edit, no id = a new note): `quantize` (grid, strength,
+    starts, ends or lengths, swing lattice, window; idempotent at 100%), `humanize`, `legato`, `chop` (grid or parts,
+    gate), `glue`, `strum`, `arpeggiate` (8 patterns over overlap groups, rate, gate, octaves, range), `flip` (time or
+    pitch, an involution), `stretch`, `transpose` and `transposeDegrees` (the shift shrinks instead of clipping),
+    `snapNotesToScale`, `limit`, `chordify`, `scaleVelocities` / `fitVelocities` / `rampVelocities`, `randomize`, and
+    `generate` (a fixed number of `rand()` values per grid cell, so raising the density only adds notes). Helpers:
+    `clampNote`, `span`, `chordGroups`, `overlapGroups`, `bend`, `seeded`.
+- **Running a script** (`app/actions/note-scripts.ts`): `scriptTarget(s)` is the selected instrument channel's notes in
+  the current pattern (the selection, or all of them), the piano roll's snap (`gridTicks`), the bar and pattern lengths
+  and `transport.key`; `scriptTargetFor(s, { channelId, patternId, noteIds?, grid? })` builds the same from explicit ids
+  and `applyNoteScriptById(s, id, values, where?)` runs an installed script as one undo step (the entry point for the
+  AI and other tools). `runNoteScript(def, input, values)` freezes the input, resolves values, seeds `rand` from the
+  script id, the notes and the script's `seed` param only (dragging another knob doesn't reshuffle the result), catches
+  errors and checks the output (finite numbers, ≤ 50 000 notes) into `NoteScriptError`s that the UI toasts.
+  `planNoteReplacement` (core, `ops/note-replace.ts`) turns the result into removes and full target notes (an id that
+  isn't an input, or repeats one, becomes a new note; optional fields left out keep the input's value; neutral values
+  clear them) and `applyNoteReplacement` writes it with `writeNotes`, which only touches notes that differ from the
+  state the recipe started from (no draft proxies for 10k unchanged notes).
+- **Live preview** (`ScriptPreview`): one history gesture per dialog. Each `update(values)` re-runs the script on the
+  original notes and applies an absolute recipe on top of the previous preview (new notes reuse a pool of ids; the ones
+  a smaller result no longer needs are removed), so the engine plays the preview and the patches stay small; `commit`
+  is one undo step, `cancel` restores the notes and the selection. `openNoteScript` (ui) coalesces dialog changes to one
+  update per animation frame (50 ms when frames are paused) and remembers each script's last values for the session.
+  Scripts without params run directly; a failed update keeps the last good preview and toasts once per message.
+- **Built-in tools** (`src/plugins/builtin/note-tools`): one module exporting 20 `defineNoteScript`s over the SDK
+  (Quantize, Humanize, Make legato, Strum, Stretch, Chop, Glue, Flip, Set length, Limit range, Transpose, Snap to
+  scale, Make chords, Scale velocities, Velocity range, Velocity ramp, Arpeggiate, Randomize, Generate melody, Chord
+  progression), categories Timing/Edit/Pitch/Velocity/Generate. Descriptions are written as the dialog's first line;
+  labels carry units (note values for times, note names for keys, %, st, beats). `templates/note-script` +
+  `npm run new:plugin -- --kind note-script --id user.x` scaffold a user script.
+- **Menus**: the toolbar's "Tools ▾", Edit > Piano roll tools and the right-click menus list `registry.scripts()` by
+  category, built when they open (hot-reloaded scripts appear at once). The common tools come first by plain name.
+  Dialog tools have FL-style shortcuts (Alt+Shift+Q, Alt+A, Alt+S, Alt+U, Alt+G, Alt+R; Mod+L makes legato).
+- **Right-click in the piano roll**: erases with Draw/Paint/Delete/Mute/Slice (FL). With the Select tool, or with
+  Ctrl/Cmd held, it opens the note menu (on a note: it becomes the selection) or the empty-space menu; a right-click on
+  empty space that doesn't drag or erase anything opens the empty-space menu too. Both menus append
+  `extraMenuItems('pianoRoll.note' | 'pianoRoll.empty')`.
+- **Song key** (`setSongKey`, one undo step): "Key: A minor ▾" in the toolbar and the empty-space menu. "Highlight
+  scale" shades out-of-scale rows, tints the root's rows and dots the scale's keys; "Snap to scale" snaps drawn and
+  painted keys and moves dragged notes by scale steps (`stamp.ts`, pure). Both are editor state, not document.
+- **Chord stamp**: drawing or painting places `stampKeys(key, chord, inversion, songKey)` (any chord type, or the
+  key's triads/7ths) as one "Add chord" step; the outline and the chord's name follow the pointer and the hint bar
+  lists its notes.
+- **Event lanes** (`lanes.ts`): velocity, pan, release or fine pitch (bipolar lanes draw from a centre line with
+  R/L or ±100 ct marks), a live readout in units next to the lane name, right-drag resets. `NoteEdit`/`editNotes` handle
+  pan, muted, release and fine (neutral values remove the field). The Mute tool (T), select same key, mute/unmute and
+  transpose-by-scale-step are commands too.
+- **Step sequencer** (`core/ops/steps.ts`, `ui/features/channel-rack/steps.ts`): fill every 2/4/8 steps, rotate
+  (wraps), shift (drops what falls off), reverse, randomize and clear, from the rack header's "Steps ▾", the channel
+  menu and Patterns > Steps of the selected channel; Mod+Shift+Left/Right rotate. The graph editor (one channel at a
+  time, `editor.stepGraph`) draws velocity, pan, release, pitch (±24 st from the root key) or fine pitch per step on a
+  canvas lined up with the step buttons, redrawn from document subscriptions rather than React renders.
+- Measured (headless Chrome, M-series, `?perf=notes10k`): piano roll redraw median ~1.0 ms, p95 ~2 ms with a song key,
+  the pan lane and a chord stamp on.
 
 ## Metronome, MIDI and note recording (M12)
 

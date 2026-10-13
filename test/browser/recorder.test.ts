@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { Engine } from '@engine/engine';
+import recorderUrl from '@engine/recorder.worklet.ts?worker&url';
+import { REC_MODE, REC_STATE, RECORDER_ID } from '@engine/recorder-id';
 import { resolver } from '../helpers/fixtures';
 
 /**
@@ -64,5 +66,43 @@ describe('recorder', () => {
     const b = await engine.record(dest.stream, opts);
     b.cancel();
     await expect(b.done).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('keeps its timing when the input stalls (the gap becomes silence)', async () => {
+    const sr = 48000;
+    const length = sr / 2;
+    const ctx = new OfflineAudioContext({ numberOfChannels: 1, length, sampleRate: sr });
+    await ctx.audioWorklet.addModule(recorderUrl);
+    const data = new SharedArrayBuffer(length * 4);
+    const state = new SharedArrayBuffer(8);
+    const node = new AudioWorkletNode(ctx, RECORDER_ID, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      processorOptions: { data, state, start: new SharedArrayBuffer(8) },
+    });
+    node.connect(ctx.destination);
+    const src = new ConstantSourceNode(ctx, { offset: 1 });
+    src.connect(node);
+    src.start();
+    Atomics.store(new Int32Array(state), REC_STATE.mode, REC_MODE.recording);
+    // The input goes away for 100 quanta (Chrome then gives the processor zero input channels).
+    const [cut, back] = [128 * 50, 128 * 150];
+    void ctx.suspend(cut / sr).then(() => {
+      src.disconnect();
+      void ctx.resume();
+    });
+    void ctx.suspend(back / sr).then(() => {
+      src.connect(node);
+      void ctx.resume();
+    });
+    await ctx.startRendering();
+    const samples = new Float32Array(data);
+    const written = Atomics.load(new Int32Array(state), REC_STATE.written);
+    // Recorded through to the end on the clock, not shortened by the gap.
+    expect(written).toBe(length);
+    expect(samples[cut - 1]).toBe(1);
+    expect(samples[(cut + back) / 2]).toBe(0);
+    expect(samples[back + 128]).toBe(1);
   });
 });

@@ -4,6 +4,8 @@ import { REC_MODE, REC_STATE, RECORDER_ID } from './recorder-id';
  * Records its (mono-mixed) input into a SharedArrayBuffer: no allocation and no messages on the
  * audio thread. The main thread arms it, reads the write position live (for meters) and copies
  * the samples out when it's done. The context frame of the first recorded sample goes to `start`.
+ * Every later block lands at its own clock position: when the input stream stalls (Chrome then
+ * gives the input zero channels), the gap is filled with silence, so the timing after it holds.
  */
 interface RecorderOptions {
   data: SharedArrayBuffer;
@@ -33,9 +35,14 @@ class RecorderProcessor extends AudioWorkletProcessor {
     const first = channels > 0 ? (input as Float32Array[])[0] : undefined;
     if (!first) return true;
     const n = first.length;
-    const w = Atomics.load(this.state, REC_STATE.written);
+    let w = Atomics.load(this.state, REC_STATE.written);
     if (w === 0) this.start[0] = currentFrame;
-    const m = Math.min(n, this.data.length - w);
+    else {
+      // Blocks the stream didn't deliver become silence.
+      const at = Math.min(this.data.length, Math.round(currentFrame - (this.start[0] as number)));
+      for (; w < at; w++) this.data[w] = 0;
+    }
+    const m = Math.max(0, Math.min(n, this.data.length - w));
     const inv = 1 / channels;
     for (let i = 0; i < m; i++) {
       let v = 0;

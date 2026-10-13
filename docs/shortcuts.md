@@ -39,6 +39,8 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 |---|---|
 | Delete selected channel | `⌥Del` / `Alt+Del`, `⌥⌫` / `Alt+⌫` |
 | Open plugin editor | `↵` |
+| Rotate steps left | `⌘⇧←` / `Ctrl+Shift+←` |
+| Rotate steps right | `⌘⇧→` / `Ctrl+Shift+→` |
 | Route channel to mixer insert | `⌘L` / `Ctrl+L` |
 | Select next channel | `↓` |
 | Select previous channel | `↑` |
@@ -53,6 +55,8 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 
 | Action | Keys |
 |---|---|
+| Arpeggiate… | `⌥A` / `Alt+A` |
+| Chop… | `⌥U` / `Alt+U` |
 | Copy notes | `⌘C` / `Ctrl+C` |
 | Cut notes | `⌘X` / `Ctrl+X` |
 | Delete selected notes | `Del`, `⌫` |
@@ -60,13 +64,19 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Deselect | `Esc` |
 | Draw tool | `P` |
 | Duplicate notes | `⌘B` / `Ctrl+B`, `⌘D` / `Ctrl+D` |
+| Glue… | `⌥G` / `Alt+G` |
+| Make legato | `⌘L` / `Ctrl+L` |
+| Mute tool | `T` |
 | Nudge notes | `→`, `←` |
 | Paint tool | `B` |
 | Paste notes | `⌘V` / `Ctrl+V` |
+| Quantize… | `⌥⇧Q` / `Alt+Shift+Q` |
 | Quick quantize | `⌥Q` / `Alt+Q` |
+| Randomize… | `⌥R` / `Alt+R` |
 | Select all notes | `⌘A` / `Ctrl+A` |
 | Select tool | `E` |
 | Slice tool | `C` |
+| Strum… | `⌥S` / `Alt+S` |
 | Transpose (-1) | `↓` |
 | Transpose (-12) | `⇧↓` / `Shift+↓` |
 | Transpose (1) | `↑` |

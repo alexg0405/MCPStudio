@@ -253,3 +253,92 @@
   border-radius: 2px;
   cursor: pointer;
 }
+
+.headerButton {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.headerButton:hover:not(:disabled) {
+  color: var(--ag-text);
+}
+
+.headerButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.headerButtonOn {
+  background: #4a4036;
+  color: var(--ag-accent);
+}
+
+/* The graph editor: a row under a channel, its canvas lined up with the step buttons. */
+.graphRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 6px;
+}
+
+.graphControls {
+  flex: none;
+  /* led + two knobs + insert box + name, with the row's gaps */
+  width: 206px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.graphControls select {
+  padding: 1px 2px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  font-size: 11px;
+}
+
+.graphValue {
+  margin-left: 8px;
+  color: var(--ag-accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.graphClose {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.graph {
+  flex: none;
+  display: block;
+  margin-left: 6px;
+  border-radius: 2px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.graphEmpty {
+  flex: none;
+  margin-left: 6px;
+  padding: 6px 10px;
+  border: 1px dashed var(--ag-border-soft);
+  border-radius: 2px;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+}

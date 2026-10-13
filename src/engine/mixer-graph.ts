@@ -55,9 +55,10 @@ interface Path {
 }
 
 /**
- * from ─► [DelayNode of `frames` frames] ─► gain ─► to. Changing the delay or the target while the
- * context runs crossfades the old path out over 10 ms (a hard switch would click); before the
- * context starts (offline renders apply everything at time 0) it switches exactly.
+ * from ─► [DelayNode of `frames` frames] ─► gain ─► to. Changing the delay or the target while a
+ * realtime context runs crossfades the old path out over 10 ms (a hard switch would click); before
+ * the context starts, and always offline (exports apply everything at time 0; wall-clock timers
+ * don't follow offline time), it switches exactly.
  */
 export class PadLink {
   private path: Path | null = null;
@@ -67,6 +68,7 @@ export class PadLink {
   constructor(
     private readonly ctx: BaseAudioContext,
     private readonly from: AudioNode,
+    private readonly offline: boolean,
   ) {}
 
   get frames(): number {
@@ -81,7 +83,7 @@ export class PadLink {
     const old = this.path;
     if (old?.to === to && (to === null || old?.frames === frames)) return;
     // Crossfade only while audio runs and there is something to fade from.
-    const fade = !!old && this.ctx.currentTime > 0;
+    const fade = !!old && !this.offline && this.ctx.currentTime > 0;
     const next = to ? this.build(to, frames, fade ? 0 : 1) : null;
     this.path = next;
     if (old && fade) {
@@ -141,13 +143,13 @@ class InsertBus implements InsertTaps {
   /** chIn → routeIn (padded by the arrival latency), or chIn → the master while the insert is gone. */
   readonly chLink: PadLink;
 
-  constructor(ctx: BaseAudioContext) {
+  constructor(ctx: BaseAudioContext, offline: boolean) {
     this.chIn = new GainNode(ctx);
     this.routeIn = new GainNode(ctx);
     this.scTap = new GainNode(ctx);
     this.preTap = new GainNode(ctx);
     this.postTap = new GainNode(ctx);
-    this.chLink = new PadLink(ctx, this.chIn);
+    this.chLink = new PadLink(ctx, this.chIn, offline);
   }
 
   dispose(): void {
@@ -181,7 +183,7 @@ class RouteLink {
     this.unregister = core.params.register(this.lane);
     this.tap = route.pre ? source.preTap : source.postTap;
     this.tap.connect(this.gain);
-    this.pad = new PadLink(ctx, this.gain);
+    this.pad = new PadLink(ctx, this.gain, core.offline);
   }
 
   update(route: Route): void {
@@ -354,7 +356,7 @@ export class MixerGraph {
   private bus(id: InsertId): InsertBus {
     let bus = this.buses.get(id);
     if (!bus) {
-      bus = new InsertBus(this.core.ctx);
+      bus = new InsertBus(this.core.ctx, this.core.offline);
       this.buses.set(id, bus);
       // Until its insert exists (it may never), the bus plays through the master.
       if (id !== MASTER) bus.chLink.set(this.bus(MASTER).chIn, 0);

@@ -63,6 +63,75 @@ export function canRoute(mixer: Mixer, from: InsertId, to: InsertId): boolean {
   return inserts[from].routes.some((r) => r.to === to) || !wouldCycle(inserts, from, to);
 }
 
+const playableCache = new WeakMap<object, readonly RoutingEdge[]>();
+
+/** Insert ids in mixer order, then any insert the order is missing (damaged documents). */
+function idsInOrder(mixer: Mixer): InsertId[] {
+  const out: InsertId[] = [];
+  const seen = new Set<InsertId>();
+  for (const id of mixer.order)
+    if (mixer.inserts[id] && !seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  for (const id of Object.keys(mixer.inserts) as InsertId[])
+    if (!seen.has(id)) {
+      seen.add(id);
+      out.push(id);
+    }
+  return out;
+}
+
+/**
+ * The edges audio actually follows, forming a graph without loops: routes first (mixer order, each
+ * insert's routes in order), then sidechains (mixer order, slot order). Edges from or to a missing
+ * insert, routes from the master, repeated route targets and edges that would close a loop are
+ * skipped: the choices repair makes, so even a damaged document can't make the engine loop.
+ * Memoized by the mixer's identity.
+ */
+export function playableEdges(mixer: Mixer): readonly RoutingEdge[] {
+  const cached = playableCache.get(mixer);
+  if (cached) return cached;
+  const { inserts } = mixer;
+  const next = new Map<InsertId, InsertId[]>();
+  const reachable = (from: InsertId, to: InsertId): boolean => {
+    const seen = new Set<InsertId>();
+    const stack = [from];
+    while (stack.length) {
+      const at = stack.pop()!;
+      if (at === to) return true;
+      if (seen.has(at)) continue;
+      seen.add(at);
+      for (const n of next.get(at) ?? []) stack.push(n);
+    }
+    return false;
+  };
+  const accept = (from: InsertId, to: InsertId): boolean => {
+    if (from === to || !inserts[from] || !inserts[to] || reachable(to, from)) return false;
+    const list = next.get(from);
+    if (list) list.push(to);
+    else next.set(from, [to]);
+    return true;
+  };
+  const out: RoutingEdge[] = [];
+  const ids = idsInOrder(mixer);
+  for (const id of ids) {
+    if (id === MASTER) continue;
+    const targets = new Set<InsertId>();
+    for (const r of inserts[id]!.routes) {
+      if (targets.has(r.to)) continue;
+      targets.add(r.to);
+      if (accept(id, r.to)) out.push({ from: id, to: r.to, kind: 'route' });
+    }
+  }
+  for (const id of ids)
+    for (const slot of inserts[id]!.fx)
+      if (slot.sidechain && accept(slot.sidechain, id))
+        out.push({ from: slot.sidechain, to: id, kind: 'sidechain', slotId: slot.id });
+  playableCache.set(mixer, out);
+  return out;
+}
+
 /** Inserts that route straight into `id`. */
 export function routeSources(inserts: Inserts, id: InsertId): InsertId[] {
   return Object.values(inserts)

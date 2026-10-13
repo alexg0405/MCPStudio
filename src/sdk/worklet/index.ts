@@ -6,5 +6,8 @@ export { KernelRunner } from './runner';
 export { EventQueue } from './event-queue';
 export * from '../dsp/math';
 export { Biquad, type BiquadType } from '../dsp/biquad';
+export { OnePole } from '../dsp/one-pole';
+export { Svf, type SvfType } from '../dsp/svf';
+export { EnvelopeFollower, type EnvelopeMode } from '../dsp/envelope';
 export { Rng } from '../dsp/random';
 export { p, type ParamSpecs } from '../params';

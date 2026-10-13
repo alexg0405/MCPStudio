@@ -159,6 +159,34 @@ describe('KernelRunner', () => {
     expect(out2[0]![1]![10]).toBe(0.25);
   });
 
+  it('pads missing inputs and the sidechain with silence, reusing its buffers', () => {
+    const seen: { inp: Float32Array[]; sc: Float32Array[] | undefined; silent: boolean[] }[] = [];
+    class Keyed extends EffectKernel {
+      process(i: Float32Array[], o: Float32Array[], n: number, _p: unknown, sc?: Float32Array[]) {
+        const silent = (sc ?? []).map((ch) => ch.every((x) => x === 0));
+        seen.push({ inp: [...i], sc: sc ? [...sc] : undefined, silent });
+        for (let c = 0; c < o.length; c++) for (let f = 0; f < n; f++) o[c]![f] = (sc?.[c]?.[f] ?? 0) * 2;
+        if (sc) sc[0]![0] = 9; // a kernel scribbling on the padding must not leak into the next block
+      }
+    }
+    const r = new KernelRunner(new Keyed(host), () => {});
+    const mono = [new Float32Array(128).fill(0.5)];
+    r.process([mono, []], block(), {}, 0); // sidechain unconnected or idle
+    r.process([[], []], block(), {}, 128);
+    const key = [new Float32Array(128).fill(0.25)];
+    const out = block();
+    r.process([mono, key], out, {}, 256);
+    r.process([mono], block(), {}, 384); // not a sidechain effect: no fifth argument
+    expect(seen[0]!.inp).toEqual([mono[0], mono[0]]);
+    expect(seen[0]!.silent).toEqual([true, true]);
+    expect(seen[1]!.sc![0]).toBe(seen[0]!.sc![0]); // same buffer, zeroed again
+    expect(seen[1]!.silent).toEqual([true, true]);
+    expect(seen[1]!.inp[0]!.length).toBe(128);
+    expect(seen[2]!.sc).toEqual([key[0], key[0]]);
+    expect(out[0]![0]![5]).toBe(0.5);
+    expect(seen[3]!.sc).toBeUndefined();
+  });
+
   it('answers sync barriers in order and stops when disposed', () => {
     const msgs: FromProcessor[] = [];
     const r = new KernelRunner(new Impulse(host), (m) => msgs.push(m));

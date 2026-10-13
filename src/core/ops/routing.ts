@@ -43,6 +43,11 @@ export function routeOnlyTo(d: Draft<Project>, from: InsertId, to: InsertId): bo
   return true;
 }
 
+/** Removes every route of the insert (with no route it falls silent). */
+export function clearRoutes(d: Draft<Project>, id: InsertId): void {
+  d.mixer.inserts[id]?.routes.splice(0);
+}
+
 export function setRouteLevel(d: Draft<Project>, from: InsertId, to: InsertId, level: number): void {
   const r = d.mixer.inserts[from]?.routes.find((x) => x.to === to);
   if (r) r.level = clampLevel(level);

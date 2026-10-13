@@ -1,5 +1,5 @@
 import { encodeWav } from '@core/io/wav';
-import { renderOffline } from '@engine/render-offline';
+import { renderOffline, type RenderResult } from '@engine/render-offline';
 import { downloadBytes, isFileSystemAccessSupported, pickSaveWavFile, writeFile } from '@platform/fs-access';
 import { opfsSampleProvider } from '../persistence/project-io';
 import type { Services } from '../services';
@@ -51,6 +51,14 @@ export function trimRender(buffer: AudioBuffer, preRoll: number, musicSeconds: n
   }
   end = Math.min(buffer.length, end + Math.round(0.01 * sr));
   return channels.map((ch) => ch.slice(start, end));
+}
+
+/**
+ * What an export keeps of a render: from where the music is heard (after the pre-roll and the
+ * mixer's delay compensation, which holds the whole mix back) to the end of its tail.
+ */
+export function trimExport(result: RenderResult, musicSeconds: number): Float32Array[] {
+  return trimRender(result.buffer, result.preRoll + result.latency, musicSeconds);
 }
 
 function encodeOptions(format: WavFormat) {
@@ -111,7 +119,7 @@ export async function renderWav(
     signal: hooks.signal,
   });
   hooks.signal?.throwIfAborted();
-  const channels = trimRender(result.buffer, result.preRoll, musical);
+  const channels = trimExport(result, musical);
   const seconds = (channels[0]?.length ?? 0) / opts.sampleRate;
   hooks.onProgress?.({ stage: 'encode', fraction: 0.92 });
   const bytes = await encodeWavOffThread(channels, opts.sampleRate, opts.format);

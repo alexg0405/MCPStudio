@@ -1,7 +1,9 @@
-import { createElement, useEffect, type ComponentType } from 'react';
+import { createElement, useEffect, useMemo, type ComponentType } from 'react';
 import { KIT } from '@core/model/kit';
-import type { ChannelId, PluginOwner } from '@core/model/types';
+import type { ChannelId, InsertId, PluginOwner, SlotId } from '@core/model/types';
 import { addSample, setChannelProp, setPluginSample } from '@core/ops/channels';
+import { setFxSlotEnabled } from '@core/ops/mixer';
+import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
 import { keyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
 import { kitSampleRef } from '@app/default-project';
@@ -14,13 +16,20 @@ import { AutoPanel } from './AutoPanel';
 import styles from './PluginWindow.module.css';
 import type { WindowContentProps } from '../../workspace/registry';
 
-export type PluginWindowProps = { kind: 'channel'; channelId: string };
+/** A channel's instrument, or the effect in a mixer insert's slot. */
+export type PluginWindowProps =
+  { kind: 'channel'; channelId: string } | { kind: 'fx'; insertId: string; slotId: string };
 
-function SampleSlot({ owner, slot }: { owner: PluginOwner & { kind: 'channel' }; slot: string }) {
+function ownerOf(props: PluginWindowProps): PluginOwner {
+  return props.kind === 'fx'
+    ? { kind: 'fx', insertId: props.insertId as InsertId, slotId: props.slotId as SlotId }
+    : { kind: 'channel', channelId: props.channelId as ChannelId };
+}
+
+function SampleSlot({ owner, slot }: { owner: PluginOwner; slot: string }) {
   const services = useServices();
   const sampleName = useDoc((p) => {
-    const ch = p.channels[owner.channelId];
-    const id = ch?.kind === 'instrument' ? ch.plugin.samples?.[slot] : undefined;
+    const id = pluginInstanceOf(p, owner)?.samples?.[slot];
     return id ? (p.samples[id]?.name ?? '?') : null;
   });
   return (
@@ -85,28 +94,51 @@ function RootKey({ channelId }: { channelId: ChannelId }) {
   );
 }
 
+/** Bypass switch for an effect slot (the host owns it; effects don't implement bypass themselves). */
+function SlotPower({ insertId, slotId, name }: { insertId: InsertId; slotId: SlotId; name: string }) {
+  const services = useServices();
+  const enabled = useDoc((p) => fxSlotOf(p, insertId, slotId)?.enabled ?? false);
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      className={`${styles.power} ${enabled ? styles.powerOn : ''}`}
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() =>
+        services.history.transact(`${enabled ? 'Bypass' : 'Enable'} ${name}`, (d) =>
+          setFxSlotEnabled(d, insertId, slotId, !enabled),
+        )
+      }
+      data-hint={`${name} is ${enabled ? 'on' : 'bypassed'}. Click to ${enabled ? 'bypass' : 'enable'} it`}
+      aria-pressed={enabled}
+    >
+      <i className={styles.powerLed} />
+      {enabled ? 'On' : 'Bypassed'}
+    </button>
+  );
+}
+
 export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindowProps>) {
   const services = useServices();
-  const owner: PluginOwner & { kind: 'channel' } = { kind: 'channel', channelId: props.channelId as ChannelId };
-  const instance = useDoc((p) => {
-    const ch = p.channels[owner.channelId];
-    return ch?.kind === 'instrument' ? ch.plugin : undefined;
-  });
-  const exists = useDoc((p) => !!p.channels[owner.channelId]);
+  const owner = useMemo(() => ownerOf(props), [props]);
+  const instance = useDoc((p) => pluginInstanceOf(p, owner));
   const def = usePluginDef(instance?.pluginId);
   const edit = usePluginEditing(owner, def);
 
-  // Close the editor when its channel is deleted.
+  // Close the editor when its channel or effect slot is deleted.
   useEffect(() => {
-    if (!exists) services.view.getState().removeWindow(windowId);
-  }, [exists, services, windowId]);
+    if (!instance) services.view.getState().removeWindow(windowId);
+  }, [instance, services, windowId]);
 
   if (!instance) return null;
   if (!def) {
     return (
       <div className={styles.missing}>
         <strong>Plugin “{instance.pluginId}” isn’t installed.</strong>
-        <p>Its settings are kept with the project and come back as soon as the plugin is available again.</p>
+        <p>
+          Its settings are kept with the project and come back as soon as the plugin is available again.
+          {owner.kind === 'fx' && ' Until then the effect slot passes audio through unchanged.'}
+        </p>
       </div>
     );
   }
@@ -129,6 +161,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
         <span className={styles.pluginName} data-hint={def.description ?? def.name}>
           {def.name}
         </span>
+        {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
         {def.presets && def.presets.length > 0 && (
           <label className={styles.headerItem}>
             <span className={styles.headerLabel}>Preset</span>
@@ -155,7 +188,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
             </select>
           </label>
         )}
-        <RootKey channelId={owner.channelId} />
+        {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
         {def.sampleSlots?.map((slot) => (
           <SampleSlot key={slot} owner={owner} slot={slot} />
         ))}

@@ -1,0 +1,317 @@
+.mixer {
+  display: flex;
+  height: 100%;
+  background: var(--ag-surface-2);
+}
+
+/* ---- Strips ---- */
+
+.strips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.strip {
+  --ins-color: transparent;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 56px;
+  min-height: 0;
+  padding: 4px 3px 5px;
+  border: 1px solid var(--ag-border);
+  border-top: 3px solid var(--ins-color);
+  border-radius: var(--ag-radius);
+  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-1));
+  box-shadow: 0 1px 0 var(--ag-highlight) inset;
+}
+
+.master {
+  width: 64px;
+  margin-right: 6px;
+  background: linear-gradient(#46525b, var(--ag-surface-2));
+}
+
+.stripSelected {
+  border-color: var(--ag-select);
+  border-top-color: var(--ins-color);
+  background: linear-gradient(#4b5862, #343d44);
+  box-shadow: 0 0 0 1px var(--ag-select) inset;
+}
+
+.stripNumber {
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.stripSelected .stripNumber {
+  color: var(--ag-select);
+}
+
+.stripName {
+  width: 100%;
+  overflow: hidden;
+  color: var(--ag-text);
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.rename {
+  width: 100%;
+  height: 16px;
+  padding: 0 2px;
+  border: 1px solid var(--ag-accent);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  font-size: 10px;
+}
+
+.led {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 50%;
+  background: var(--ag-led-off);
+  cursor: pointer;
+}
+
+.ledOn {
+  background: var(--ag-led);
+  box-shadow: 0 0 5px rgba(159, 222, 90, 0.6);
+}
+
+.ledSolo {
+  outline: 2px solid var(--ag-accent);
+  outline-offset: 1px;
+}
+
+.meterFader {
+  flex: 1;
+  min-height: 60px;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.meter {
+  width: 11px;
+  height: 100%;
+  border-radius: 2px;
+  background: #151a1d;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) inset;
+}
+
+.fader {
+  position: relative;
+  width: 22px;
+  height: 100%;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+.faderTrack {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: #12161a;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.faderUnity {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  height: 1px;
+  background: var(--ag-text-faint);
+}
+
+.faderCap {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  height: 12px;
+  border: 1px solid #0e1114;
+  border-radius: 2px;
+  background: linear-gradient(#dfe5ea, #9aa5ae 45%, #6f7a83 55%, #b9c2c9);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.fader:hover .faderCap {
+  background: linear-gradient(#f2f6f9, #aab5be 45%, #7d8891 55%, #cbd3d9);
+}
+
+.stripDb {
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.addInsert {
+  flex: none;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: 4px;
+  border: 1px dashed var(--ag-border-soft);
+  border-radius: var(--ag-radius);
+  background: transparent;
+  color: var(--ag-text-dim);
+  cursor: pointer;
+}
+
+.addInsert:hover {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent);
+}
+
+/* ---- Effect slots ---- */
+
+.rack {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  min-height: 0;
+  border-left: 1px solid var(--ag-border);
+  background: var(--ag-surface-1);
+}
+
+.rackHeader {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 26px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--ag-border);
+}
+
+.rackLabel {
+  color: var(--ag-accent);
+  font-weight: 700;
+}
+
+.rackName {
+  overflow: hidden;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slotList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.25);
+  background: transparent;
+  color: var(--ag-text);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+}
+
+.slot:hover {
+  background: var(--ag-highlight);
+}
+
+.slotEmpty {
+  color: var(--ag-text-faint);
+  cursor: pointer;
+}
+
+.slotEmpty:hover {
+  color: var(--ag-accent);
+}
+
+.slotOff .slotName {
+  color: var(--ag-text-faint);
+}
+
+.slotMissing .slotName {
+  color: var(--ag-danger);
+  text-decoration: line-through;
+}
+
+.slotIndex {
+  flex: none;
+  width: 14px;
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+  text-align: right;
+}
+
+.slotLed {
+  width: 10px;
+  height: 10px;
+}
+
+.slotName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Toolbar master volume ---- */
+
+.masterVolume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.masterLabel {
+  display: flex;
+  flex-direction: column;
+  color: var(--ag-text-faint);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+}
+
+.masterValue {
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+}

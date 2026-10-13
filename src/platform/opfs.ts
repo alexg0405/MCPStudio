@@ -284,7 +284,9 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
       const file = await fileOf(dir, `${hash}.${ext}`);
       return file ? { file, ext } : null;
     };
-    const hinted = hint === undefined ? undefined : hint.replace(/^\./, '').toLowerCase();
+    // Hints come from project data: ignore anything that isn't a valid extension.
+    const cleaned = hint?.replace(/^\./, '').toLowerCase();
+    const hinted = cleaned !== undefined && EXT.test(cleaned) ? cleaned : undefined;
     const found = (await attempt(hinted)) ?? (await attempt(extsOf.get(hash)?.[0]));
     if (found) return found;
     extsOf.delete(hash);
@@ -326,9 +328,15 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
         assertHash(hash);
         const e = normalizeExt(ext);
         const existing = await findBlob(hash, e);
-        if (existing && (existing.ext !== e || existing.file.size === bytes.byteLength)) return;
-        await writeFile(await ensureDir(await root(), BLOBS), `${hash}.${e}`, bytes);
-        remember(hash, e);
+        // Same hash and size: the same content (under any extension), so there is nothing to do.
+        if (existing?.file.size === bytes.byteLength) return;
+        const dir = await ensureDir(await root(), BLOBS);
+        await writeFile(dir, `${hash}.${e}`, bytes);
+        if (existing && existing.ext !== e) {
+          // Replace a damaged copy stored under another extension.
+          await dir.removeEntry(`${hash}.${existing.ext}`).catch(() => {});
+        }
+        extsOf.set(hash, [e]);
       }),
 
     getBlob: (hash, ext) =>

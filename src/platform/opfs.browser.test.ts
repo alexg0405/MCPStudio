@@ -89,6 +89,24 @@ describe.skipIf(!available)(`OPFS blob store${suffix}`, () => {
     expect((await store.getBlob(a.hash))?.bytes).toEqual(a.bytes);
   });
 
+  it('replaces a damaged copy stored under another extension', async () => {
+    const a = await blob(1, 2, 3, 4);
+    const blobs = await root.getDirectoryHandle('blobs', { create: true });
+    await writeRaw(blobs, `${a.hash}.aif`, bytesOf(1, 2)); // wrong size: damaged
+    await store.putBlob(a.hash, 'wav', a.bytes);
+    expect(await fileNames(blobs)).toEqual([`${a.hash}.wav`]);
+    expect(await store.getBlob(a.hash)).toEqual({ ext: 'wav', bytes: a.bytes });
+  });
+
+  it('treats invalid extension hints as no hint', async () => {
+    const a = await blob(4, 4);
+    await store.putBlob(a.hash, 'wav', a.bytes);
+    for (const hint of ['../x', 'a/b', '', 'waytoolongextension']) {
+      expect(await store.getBlob(a.hash, hint)).toEqual({ ext: 'wav', bytes: a.bytes });
+      expect(await store.hasBlob(a.hash, hint)).toBe(true);
+    }
+  });
+
   it('sees blobs written by another store instance', async () => {
     const other = createOpfsStorage({ root: async () => root });
     const a = await blob(7);

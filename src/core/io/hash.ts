@@ -3,6 +3,8 @@
  * browsers (secure contexts only: https or localhost) and in Node ≥ 19. Core has no DOM lib, so the
  * small slice of the API used here is declared locally.
  */
+import { unsharedBytes } from './bytes';
+
 interface SubtleDigest {
   digest(algorithm: 'SHA-256', data: Uint8Array): Promise<ArrayBuffer>;
 }
@@ -16,11 +18,6 @@ export function isSha256Hex(value: unknown): value is string {
   return typeof value === 'string' && SHA256_HEX.test(value);
 }
 
-/** True when the view's memory is a SharedArrayBuffer (realm-independent check). */
-export function isSharedMemory(bytes: Uint8Array): boolean {
-  return Object.prototype.toString.call(bytes.buffer) === '[object SharedArrayBuffer]';
-}
-
 function subtle(): SubtleDigest {
   const c = (globalThis as { crypto?: { subtle?: SubtleDigest } }).crypto;
   if (!c?.subtle) {
@@ -31,9 +28,8 @@ function subtle(): SubtleDigest {
 
 /** Lowercase hex SHA-256 of `bytes` (only the view's own range is hashed). */
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  // Web Crypto rejects views of SharedArrayBuffer memory (the app is cross-origin isolated), so copy those.
-  const input = isSharedMemory(bytes) ? bytes.slice() : bytes;
-  const digest = new Uint8Array(await subtle().digest('SHA-256', input));
+  // Web Crypto rejects views of SharedArrayBuffer memory (the app is cross-origin isolated).
+  const digest = new Uint8Array(await subtle().digest('SHA-256', unsharedBytes(bytes)));
   let hex = '';
   for (let i = 0; i < digest.length; i++) hex += HEX[digest[i] as number];
   return hex;

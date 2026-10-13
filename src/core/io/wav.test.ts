@@ -66,12 +66,12 @@ class Writer {
 }
 
 /** RIFF (little-endian) or FORM (big-endian) container from [id, payload] chunks, with padding. */
-function container(kind: 'RIFF' | 'FORM', type: string, chunks: [string, Uint8Array][]): Uint8Array {
+function container(kind: 'RIFF' | 'FORM', type: string, chunks: [string, Uint8Array][], pad = true): Uint8Array {
   const le = kind === 'RIFF';
   const body = new Writer(le).tag(type);
   for (const [id, payload] of chunks) {
     body.tag(id).u32(payload.length).raw(payload);
-    if (payload.length & 1) body.u8(0);
+    if (pad && payload.length & 1) body.u8(0);
   }
   const b = body.done();
   return new Writer(le).tag(kind).u32(b.length).raw(b).done();
@@ -341,6 +341,21 @@ describe('decodePcm: WAV', () => {
     expect(Array.from(decodePcm(wav)!.channels[0]!)).toEqual([0.5, -0.5]);
   });
 
+  it('reads files whose writer left out the pad byte after odd-sized chunks', () => {
+    const data = le().u16(16384).u16(0xc000).done();
+    const chunks: [string, Uint8Array][] = [
+      ['fmt ', fmtChunk(1, 1, 22050, 16, 2)],
+      ['LIST', Uint8Array.from([1, 2, 3])],
+      ['INFO', Uint8Array.from([0x41])],
+      ['data', data],
+    ];
+    for (const pad of [true, false]) {
+      expect(Array.from(decodePcm(container('RIFF', 'WAVE', chunks, pad))!.channels[0]!)).toEqual([0.5, -0.5]);
+    }
+    // An odd chunk at the very end, padded or not.
+    expect(decodePcm(container('RIFF', 'WAVE', [...chunks, ['junk', new Uint8Array(3)]], false))).not.toBeNull();
+  });
+
   it('decodes the frames present in a truncated file', () => {
     const full = encodeWav([Float32Array.from([0.5, 0.25, -0.5, -0.25])], 8000, { bitDepth: 16 });
     const cut = full.subarray(0, full.length - 3); // drops 1.5 frames
@@ -498,6 +513,22 @@ describe('decodePcm: AIFF / AIFC', () => {
     const noLoop = decodePcm(aiff(inst(0, 60)))!;
     expect(noLoop.rootKey).toBe(60);
     expect(noLoop.loop).toBeUndefined();
+  });
+
+  it('reads AIFF files without pad bytes after odd-sized chunks', () => {
+    for (const pad of [true, false]) {
+      const aiff = container(
+        'FORM',
+        'AIFF',
+        [
+          ['NAME', Uint8Array.from('Pad'.split('').map((c) => c.charCodeAt(0)))],
+          ['COMM', commChunk(1, 2, 16, 44100)],
+          ['SSND', ssndChunk(be16([0x4000, 0xc000]))],
+        ],
+        pad,
+      );
+      expect(Array.from(decodePcm(aiff)!.channels[0]!)).toEqual([0.5, -0.5]);
+    }
   });
 
   it('returns null for compressed AIFC and incomplete files', () => {

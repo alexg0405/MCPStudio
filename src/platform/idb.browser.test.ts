@@ -54,6 +54,33 @@ describe.skipIf(!isIdbAvailable())('IndexedDB key-value store', () => {
     }
   });
 
+  it('adds its store to a database that other code created at a higher version', async () => {
+    await idbSet(key('x'), 1);
+    await new Promise<void>((resolve, reject) => {
+      const del = indexedDB.deleteDatabase('agstudio'); // our open connection closes itself
+      del.onsuccess = () => resolve();
+      del.onerror = () => reject(del.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const req = indexedDB.open('agstudio', 5);
+      req.onupgradeneeded = () => req.result.createObjectStore('other');
+      req.onsuccess = () => (req.result.close(), resolve());
+      req.onerror = () => reject(req.error);
+    });
+    await idbSet(key('y'), 2);
+    expect(await idbGet(key('y'))).toBe(2);
+    const stores = await new Promise<string[]>((resolve, reject) => {
+      const req = indexedDB.open('agstudio');
+      req.onsuccess = () => {
+        const names = [...req.result.objectStoreNames];
+        req.result.close();
+        resolve(names);
+      };
+      req.onerror = () => reject(req.error);
+    });
+    expect(stores.sort()).toEqual(['kv', 'other']);
+  });
+
   it('reconnects after the database is deleted under it', async () => {
     await idbSet(key('before'), 1);
     await new Promise<void>((resolve, reject) => {

@@ -6,7 +6,6 @@
 
 const DB_NAME = 'agstudio';
 const STORE = 'kv';
-const VERSION = 1;
 
 let connection: Promise<IDBDatabase> | null = null;
 
@@ -14,34 +13,45 @@ export function isIdbAvailable(): boolean {
   return typeof indexedDB !== 'undefined';
 }
 
-function open(): Promise<IDBDatabase> {
-  if (connection) return connection;
-  if (!isIdbAvailable()) return Promise.reject(new Error('IndexedDB is not available in this browser.'));
-  const opening = new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, VERSION);
+/** Opens the database at `version` (default: whatever version it has, 1 when new). */
+function openAt(version?: number): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = version === undefined ? indexedDB.open(DB_NAME) : indexedDB.open(DB_NAME, version);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
     };
-    req.onsuccess = () => {
-      const db = req.result;
-      const forget = () => {
-        if (connection === opening) connection = null;
-      };
-      // Another tab upgrading the database, or the browser closing the connection (storage cleared).
-      db.onversionchange = () => {
-        db.close();
-        forget();
-      };
-      db.onclose = forget;
-      resolve(db);
-    };
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error('IndexedDB could not be opened.'));
   });
+}
+
+function open(): Promise<IDBDatabase> {
+  if (connection) return connection;
+  if (!isIdbAvailable()) return Promise.reject(new Error('IndexedDB is not available in this browser.'));
+  const opening = (async () => {
+    // Not pinned to a version, so other code may add object stores to this database later.
+    let db = await openAt();
+    if (!db.objectStoreNames.contains(STORE)) {
+      const next = db.version + 1;
+      db.close();
+      db = await openAt(next);
+    }
+    const forget = () => {
+      if (connection === opening) connection = null;
+    };
+    // Another connection upgrading the database, or the browser closing ours (storage cleared).
+    db.onversionchange = () => {
+      db.close();
+      forget();
+    };
+    db.onclose = forget;
+    return db;
+  })();
   connection = opening;
   opening.catch(() => {
     if (connection === opening) connection = null;
   });
-  return connection;
+  return opening;
 }
 
 async function run<T>(

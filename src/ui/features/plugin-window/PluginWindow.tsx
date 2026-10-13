@@ -6,12 +6,14 @@ import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
 import { keyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
+import { ParamMenuContext } from '@agstudio/sdk/ui';
 import { kitSampleRef } from '@app/default-project';
 import { useDoc, useServices } from '../../services-context';
 import { usePluginDef, usePluginEditing } from '../../plugin-hooks';
 import { DragNumber } from '../../controls/DragNumber';
 import { ErrorBoundary } from '../../controls/ErrorBoundary';
 import { useGestureEdit } from '../../edit';
+import { showParamMenu } from '../../param-menu';
 import { AutoPanel } from './AutoPanel';
 import styles from './PluginWindow.module.css';
 import type { WindowContentProps } from '../../workspace/registry';
@@ -145,6 +147,20 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
 
   const values = resolveValues(def.params as ParamSpecs, instance.params) as Record<string, ParamValue>;
   const Custom = def.ui;
+  const openParamMenu = (param: string, at: { clientX: number; clientY: number }) => {
+    const spec = (def.params as ParamSpecs)[param];
+    if (!spec) return;
+    showParamMenu(
+      at,
+      {
+        target: { kind: 'plugin', owner, paramId: param },
+        spec,
+        label: `${def.name} · ${spec.label ?? param}`,
+        reset: () => edit.setParam(param, spec.default),
+      },
+      services,
+    );
+  };
   const uiProps: PluginUIProps = {
     specs: def.params as ParamSpecs,
     values,
@@ -153,6 +169,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
     setParam: edit.setParam,
     endEdit: edit.endEdit,
     setState: edit.setState,
+    openParamMenu,
   };
 
   return (
@@ -194,22 +211,24 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
         ))}
       </div>
       <div className={styles.body}>
-        <ErrorBoundary
-          resetKey={def}
-          fallback={(error) => (
-            <div className={styles.missing}>
-              <strong>This plugin’s editor crashed.</strong>
-              <p className={styles.error}>{error.message}</p>
+        <ParamMenuContext.Provider value={openParamMenu}>
+          <ErrorBoundary
+            resetKey={def}
+            fallback={(error) => (
+              <div className={styles.missing}>
+                <strong>This plugin’s editor crashed.</strong>
+                <p className={styles.error}>{error.message}</p>
+                <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
+              </div>
+            )}
+          >
+            {Custom ? (
+              createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
+            ) : (
               <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
-            </div>
-          )}
-        >
-          {Custom ? (
-            createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
-          ) : (
-            <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
-          )}
-        </ErrorBoundary>
+            )}
+          </ErrorBoundary>
+        </ParamMenuContext.Provider>
       </div>
     </div>
   );

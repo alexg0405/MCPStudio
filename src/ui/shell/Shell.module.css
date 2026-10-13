@@ -204,9 +204,14 @@
   cursor: pointer;
 }
 
-.menuItem:hover:not(:disabled) {
+.menuItem:hover:not(:disabled),
+.menuItemOpen {
   background: var(--ag-accent-dim);
   color: #fff;
+}
+
+.menuSubRoot {
+  position: relative;
 }
 
 .menuItem:disabled {

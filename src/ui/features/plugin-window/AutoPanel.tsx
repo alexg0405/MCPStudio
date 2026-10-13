@@ -15,14 +15,14 @@ function Control({ id, spec, value, edit }: { id: string; spec: ParamSpec; value
   if (spec.type === 'bool') {
     return (
       <div className={styles.control}>
-        <Toggle spec={spec} value={Boolean(value)} label={label} onCommit={(v) => edit.setParam(id, v)} />
+        <Toggle spec={spec} value={Boolean(value)} label={label} param={id} onCommit={(v) => edit.setParam(id, v)} />
       </div>
     );
   }
   if (spec.type === 'enum') {
     return (
       <div className={styles.control}>
-        <Select spec={spec} value={String(value)} label={label} onCommit={(v) => edit.setParam(id, v)} />
+        <Select spec={spec} value={String(value)} label={label} param={id} onCommit={(v) => edit.setParam(id, v)} />
         <span className={styles.label}>{label}</span>
       </div>
     );
@@ -33,6 +33,7 @@ function Control({ id, spec, value, edit }: { id: string; spec: ParamSpec; value
         spec={spec}
         value={value}
         label={label}
+        param={id}
         size={34}
         bipolar={spec.min < 0 && spec.max > 0}
         onBegin={() => edit.beginEdit(id)}

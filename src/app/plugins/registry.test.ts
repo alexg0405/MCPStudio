@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { defineEffect, defineInstrument, p } from '@agstudio/sdk';
-import { PluginRegistry, validatePluginDef } from './registry';
+import { defineEffect, defineInstrument, defineNoteScript, p } from '@agstudio/sdk';
+import { PluginRegistry, validateNoteScriptDef, validatePluginDef } from './registry';
 
 const synth = defineInstrument({
   id: 'user.synth',
@@ -61,5 +61,41 @@ describe('PluginRegistry', () => {
     expect(reg.get('user.synth')).toBeUndefined();
     expect(events[events.length - 1]).toEqual(['user.synth']);
     expect(reg.list().map((e) => e.def.id)).toEqual(['agstudio.eq']);
+  });
+});
+
+describe('note scripts', () => {
+  const flip = defineNoteScript({
+    id: 'user.flip',
+    name: 'Flip',
+    version: 1,
+    category: 'Edit',
+    params: { axis: p.enum(['time', 'pitch'], 'time') },
+    run: (ctx) => ctx.notes,
+  });
+
+  it('are kept apart from audio plugins and validated', () => {
+    const reg = new PluginRegistry();
+    reg.sync('user', [
+      { path: '/u/flip#0', def: flip },
+      { path: '/u/synth', def: synth },
+      { path: '/u/bad#1', def: { ...flip, id: 'user.bad', run: 'nope' } },
+    ]);
+    expect(reg.script('user.flip')).toBe(flip);
+    expect(reg.get('user.flip')).toBeUndefined();
+    expect(reg.list().map((e) => e.def.id)).toEqual(['user.synth']);
+    expect(reg.scripts().map((e) => e.def.id)).toEqual(['user.flip']);
+    expect(reg.loadErrors()).toEqual([{ path: '/u/bad#1', source: 'user', error: 'run(ctx) is required' }]);
+    expect(validateNoteScriptDef(flip)).toEqual([]);
+
+    reg.sync('user', [{ path: '/u/synth', def: synth }]);
+    expect(reg.script('user.flip')).toBeUndefined();
+  });
+
+  it('share the id namespace with plugins', () => {
+    const reg = new PluginRegistry();
+    reg.sync('builtin', [{ path: '/b/flip', def: { ...flip, id: 'agstudio.flip' } }]);
+    reg.sync('user', [{ path: '/u/x', def: { ...synth, id: 'agstudio.flip' } }]);
+    expect(reg.loadErrors()[0]?.error).toMatch(/already used by a built-in/);
   });
 });

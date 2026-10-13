@@ -83,22 +83,33 @@ come for free. Your plugin only reads them:
 
 | API | Use |
 |---|---|
-| `params.x.value` | current value (read at note time) |
+| `params.x.valueAt(time)` | the value at an AudioContext time, **automation included**: read once-per-note settings (envelope times, wave shapes) with `valueAt(e.time)` in `noteOn` |
+| `params.x.value` | the document value right now (what the knob shows when nothing automates it) |
 | `params.x.bind(audioParam, map?)` | drive an AudioParam, smoothed (no zipper noise) |
 | `params.x.signal(map?)` | one shared smoothed source; `.connect(audioParam)` it to every voice so sounding notes follow the knob. Set the target's own value to 0. `.node` lets you route it through your own nodes |
 | `params.x.onChange((v, time) => …)` | anything else (switching modes, rebuilding curves) |
 
 Unit `%` means the value is 0–1 and displayed as a percentage.
 
+Floats and ints can be automated (automation clips, MIDI controller links) unless you pass
+`automatable: false`, which you should for params whose change is expensive (rebuilding an impulse
+response, a wavetable). Enums and bools are not automatable unless you pass `automatable: true`.
+Never schedule your own events on an AudioParam you `bind()`: the host is its only writer (it
+models what it scheduled to cut and rewind automation without jumps). For your own per-voice
+curves, `ParamLane` (exported by the SDK) gives the same rewindable scheduling.
+
 ### Notes and timing
 
 `noteOn` and `noteOff` arrive **ahead of time** (the engine schedules ~120 ms ahead). Always
-schedule at `e.time` and never "now". A note-off whose time is at or before its note-on means the
+schedule at `e.time` and never "now". `NoteOn.fine` is the note's fine pitch in cents (add it to the
+voice's detune) and `NoteOff.release` its release velocity (0–1). A note-off whose time is at or before its note-on means the
 note was cancelled (for example, the user deleted it before it played). `GraphVoices.release()`
 handles that for you. `GraphVoices` also limits polyphony, steals voices without clicks and cleans
 up finished voices.
 
 `allNotesOff(time, hard)` happens on stop (release) and on panic or plugin swap (`hard`: silence quickly).
+An instrument may also implement `controlChange(cc, value, time)` (MIDI mod wheel and other
+controllers, value 0–1).
 
 ### The host
 
@@ -111,7 +122,9 @@ up finished voices.
 | `state` / `updateState(next)` | small JSON state for non-param data; `updateState` becomes an undoable edit and comes back through `setState()` |
 | `samples` | named sample slots: `get(slot)`, `load(slot)`, `onChange(slot, cb)`, `name(slot)`. Declare `sampleSlots: ['main']` and the editor shows a sample picker |
 | `channel.rootKey` | the channel's root note (steps play at it; samplers play original pitch there) |
-| `transport.bpm`, `transport.onTempo(cb)` | for tempo-synced effects |
+| `channel.pitch` | the channel's pitch in cents (pitch knob, automation, MIDI pitch bend) as a signal: `channel.pitch.connect(voice.detune)` for every voice. `channel.pitchAt(time)` gives its value |
+| `transport.tempoAt(time)`, `transport.onTempo((bpm, time) => …)` | for tempo-synced effects (the tempo can change during the song); `transport.bpm` is the tempo now |
+| `sidechain` | effects declared with `sidechain: true`: the signal of the mixer track chosen as the slot's sidechain source (silent when none). Worklet effects receive it as the fifth argument of `process()` |
 | `offline` | true while exporting |
 | `signal` | an AbortSignal aborted on dispose |
 | `worklet(opts)` | create your processor node (see below) |
@@ -141,8 +154,8 @@ import { InstrumentKernel, registerKernel, VoicePool, at, type ParamBlock } from
 import { ID, params } from './params';
 
 class MySynth extends InstrumentKernel<typeof params> {
-  noteOn(key: number, velocity: number, noteId: number, pan: number) { /* start a voice */ }
-  noteOff(noteId: number, key: number) { /* release it */ }
+  noteOn(key: number, velocity: number, noteId: number, pan: number, fine: number) { /* start a voice */ }
+  noteOff(noteId: number, key: number, release: number) { /* release it */ }
   render(out: Float32Array[], from: number, to: number, p: ParamBlock<typeof params>) {
     // ADD into out[0]/out[1] for frames [from, to). at(p.level, i) reads a param at frame i.
   }
@@ -156,11 +169,15 @@ The SDK owns the actual `AudioWorkletProcessor`. It splits each block at note ev
 - silences NaN/Infinity output and calls your `reset()`;
 - handles block sizes other than 128.
 
-Effects extend `EffectKernel` and implement `process(input, output, n, params)`. In param blocks,
-enums arrive as the option index and booleans as 0/1.
+Effects extend `EffectKernel` and implement `process(input, output, n, params, sidechain?)` (the
+sidechain arrives for effects defined with `sidechain: true`). In param blocks, enums arrive as the
+option index and booleans as 0/1.
+
+Instrument kernels read the channel pitch in cents from `this.pitch` (a param block: `at(this.pitch, i)`),
+and `fine` is the note's own fine pitch.
 
 Optional kernel hooks: `setState(state)`, `onMessage(msg)` (from `port.send`), `onSample(slot, channels, sampleRate)`
-(sample slots are copied to the audio thread for you), `reset()`, `allNotesOff(hard)`.
+(sample slots are copied to the audio thread for you), `reset()`, `allNotesOff(hard)`, `controlChange(cc, value)`.
 Use `this.host.rand()` for randomness (seeded, so exports repeat exactly) and `this.host.post(msg)`
 to talk back to the main thread (rarely: at most ~30 times a second).
 
@@ -259,9 +276,22 @@ function MyUI({ specs, values, beginEdit, setParam, endEdit }: PluginUIProps<typ
 export default defineInstrument({ ..., ui: MyUI });
 ```
 
-`beginEdit` → `setParam`… → `endEdit` makes one undo step. A UI that throws shows an error card
+`beginEdit` → `setParam`… → `endEdit` makes one undo step. Give SDK controls the param id
+(`<Knob param="cutoff" …/>`) and right-clicking them opens the host's param menu (create an
+automation clip, link a MIDI controller, reset); `openParamMenu(param, event)` does the same for your
+own elements. A UI that throws shows an error card
 with the generated panel underneath. `plugins/example-supersaw` is a complete example. `Knob` also takes
 `format(value)` to show your own text in the hint bar (it defaults to the param's unit formatting).
+
+## Note scripts
+
+Piano-roll tools are plugins too: `defineNoteScript({ id, name, version, category?, params, run(ctx) })`
+in a `plugins/<name>/index.ts` (a module may export an array of definitions). `run` gets the notes to
+work on (the selection, or the whole pattern), the dialog's param values, the grid, bar and pattern
+lengths, the song key and a seeded `rand()`, and returns the notes that replace them: keep a note's
+`id` to edit it, drop it to add a note; input notes left out are deleted. The piano roll lists
+scripts in its Tools menu and shows a dialog generated from `params` with a live preview; applying
+it is one undo step.
 
 ## Presets and versions
 

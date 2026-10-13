@@ -1,3 +1,4 @@
+import { targetKey } from '@core/model/targets';
 import { memo, useEffect, useRef, useState } from 'react';
 import { KIT, kitPiece } from '@core/model/kit';
 import { MASTER, type ChannelId, type PatternId } from '@core/model/types';
@@ -16,6 +17,7 @@ import { useDoc, useServices, useSession, useView } from '../../services-context
 import { usePluginDef } from '../../plugin-hooks';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
+import { extraMenuItems } from '../../context-menus';
 import { DragNumber } from '../../controls/DragNumber';
 import { Icon } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
@@ -278,6 +280,8 @@ const ChannelRow = memo(function ChannelRow({
         label: ch.solo ? 'Unsolo' : 'Solo',
         onSelect: () => services.history.transact('Solo', (d) => toggleSoloChannel(d, id)),
       },
+      ...extraMenuItems('rack.channel', { channelId: id }, services),
+      { kind: 'separator' },
       { label: 'Delete', danger: true, onSelect: () => deleteChannel(services, id), shortcut: 'Alt+Del' },
     ]);
   };
@@ -301,8 +305,23 @@ const ChannelRow = memo(function ChannelRow({
         data-hint={`${ch.name}: ${ch.muted ? 'muted' : 'on'}. Click to mute, right-click to solo`}
         aria-label={ch.muted ? 'Unmute' : 'Mute'}
       />
-      <Knob spec={PAN} value={ch.pan} size={20} bipolar label="Pan" {...pan} />
-      <Knob spec={VOLUME} value={ch.volume} size={20} label="Volume" {...volume} />
+      <Knob
+        spec={PAN}
+        value={ch.pan}
+        size={20}
+        bipolar
+        label="Pan"
+        param={targetKey({ kind: 'channel', channelId: id, param: 'pan' })}
+        {...pan}
+      />
+      <Knob
+        spec={VOLUME}
+        value={ch.volume}
+        size={20}
+        label="Volume"
+        param={targetKey({ kind: 'channel', channelId: id, param: 'volume' })}
+        {...volume}
+      />
       <InsertBox channelId={id} />
       {renaming ? (
         <input

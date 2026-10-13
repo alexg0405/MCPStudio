@@ -4,13 +4,18 @@
 export type MenuItem =
   | { kind: 'command'; command: string; args?: unknown; label?: string; order: number }
   | { kind: 'separator'; order: number }
-  | { kind: 'dynamic'; id: string; order: number; entries(): DynamicMenuEntry[] };
+  | { kind: 'dynamic'; id: string; order: number; entries(): DynamicMenuEntry[] }
+  /** A nested menu (its items are computed when it opens). */
+  | { kind: 'submenu'; id: string; label: string; order: number; items(): MenuItem[] };
 
 /** An item computed when the menu opens (recent files and other lists). */
 export interface DynamicMenuEntry {
   label: string;
   hint?: string;
   disabled?: boolean;
+  checked?: boolean;
+  /** Present: the entry opens a nested menu instead of running. */
+  children?: DynamicMenuEntry[];
   run(): void;
 }
 
@@ -75,3 +80,10 @@ export const cmd = (command: string, order: number, label?: string): MenuItem =>
   ...(label ? { label } : {}),
 });
 export const sep = (order: number): MenuItem => ({ kind: 'separator', order });
+export const submenu = (id: string, label: string, order: number, items: () => MenuItem[]): MenuItem => ({
+  kind: 'submenu',
+  id,
+  label,
+  order,
+  items,
+});

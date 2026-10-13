@@ -14,10 +14,17 @@ const user = import.meta.glob<{ default: unknown }>(['/plugins/*/index.{ts,tsx}'
 
 let registry: PluginRegistry | null = (import.meta.hot?.data.registry as PluginRegistry | undefined) ?? null;
 
+/** A module's default export: one definition, or an array of them (e.g. a pack of note scripts). */
+function definitions(path: string, exported: unknown): { path: string; def: unknown }[] {
+  return Array.isArray(exported)
+    ? exported.map((def, i) => ({ path: `${path}#${i}`, def }))
+    : [{ path, def: exported }];
+}
+
 async function syncAll(target: PluginRegistry): Promise<void> {
   target.sync(
     'builtin',
-    Object.entries(builtin).map(([path, mod]) => ({ path, def: mod.default })),
+    Object.entries(builtin).flatMap(([path, mod]) => definitions(path, mod.default)),
   );
   const entries = Object.entries(user);
   const results = await Promise.allSettled(entries.map(([, load]) => load()));
@@ -25,7 +32,7 @@ async function syncAll(target: PluginRegistry): Promise<void> {
   const errors: PluginLoadError[] = [];
   results.forEach((r, i) => {
     const path = entries[i]![0];
-    if (r.status === 'fulfilled') defs.push({ path, def: r.value.default });
+    if (r.status === 'fulfilled') defs.push(...definitions(path, r.value.default));
     else {
       const err = r.reason as Error | undefined;
       console.error(`[agstudio] plugin ${path} failed to load`, err);
@@ -46,7 +53,7 @@ export async function installPluginDiscovery(target: PluginRegistry): Promise<vo
 export function registerBuiltinPlugins(target: PluginRegistry): void {
   target.sync(
     'builtin',
-    Object.entries(builtin).map(([path, mod]) => ({ path, def: mod.default })),
+    Object.entries(builtin).flatMap(([path, mod]) => definitions(path, mod.default)),
   );
 }
 

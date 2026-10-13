@@ -20,9 +20,20 @@
   cursor: pointer;
 }
 
-.item:hover:not(:disabled) {
+.item:hover:not(:disabled),
+.itemOpen {
   background: var(--ag-accent-dim);
   color: #fff;
+}
+
+.subRoot {
+  position: relative;
+}
+
+.arrow {
+  padding-left: 18px;
+  color: var(--ag-text-faint);
+  font-size: 10px;
 }
 
 .item:disabled {

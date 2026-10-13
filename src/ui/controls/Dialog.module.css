@@ -84,3 +84,50 @@
   color: #fff;
   background: var(--ag-danger);
 }
+
+.form {
+  width: min(520px, 100%);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+}
+
+.fieldLabel {
+  width: 140px;
+  flex: none;
+  color: var(--ag-text-dim);
+}
+
+.fieldValue {
+  color: var(--ag-text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--ag-select);
+  outline-offset: 0;
+}

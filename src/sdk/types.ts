@@ -191,6 +191,11 @@ export interface PluginUIProps<P extends ParamSpecs = ParamSpecs, S = unknown> {
   setParam(param: keyof P & string, value: ParamValue): void;
   endEdit(param: keyof P & string): void;
   setState(next: S): void;
+  /**
+   * Opens the host's menu for a param (create automation clip, link to controller…). SDK controls
+   * given a `param` prop do this on right-click by themselves.
+   */
+  openParamMenu?(param: keyof P & string, at: { clientX: number; clientY: number }): void;
 }
 
 export interface Preset<P extends ParamSpecs, S> {

@@ -1,3 +1,4 @@
+import { targetKey } from '@core/model/targets';
 import { memo, useCallback, useEffect, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { PALETTE } from '@core/model/defaults';
 import { formatGain } from '@core/model/fader';
@@ -9,6 +10,7 @@ import { addMixerInsert, deleteInsert, moveInsertBy, routeChannel } from '@app/a
 import { useDoc, useServices, useSession } from '../../services-context';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
+import { extraMenuItems } from '../../context-menus';
 import { Icon } from '../../controls/Icon';
 import { Fader } from './Fader';
 import { FxRack } from './FxRack';
@@ -94,6 +96,7 @@ const Strip = memo(function Strip({ id, index, last, selected, meters }: StripPr
       );
     }
     items.push({ label: 'Insert new track after', onSelect: () => addMixerInsert(services, index) });
+    items.push(...extraMenuItems('mixer.strip', { insertId: id }, services));
     if (!isMaster)
       items.push({ kind: 'separator' }, { label: 'Delete', danger: true, onSelect: () => deleteInsert(services, id) });
     showContextMenu(e, items);
@@ -136,7 +139,15 @@ const Strip = memo(function Strip({ id, index, last, selected, meters }: StripPr
           {insert.name}
         </div>
       )}
-      <Knob spec={PAN} value={insert.pan} size={22} bipolar label={`${label} pan`} {...pan} />
+      <Knob
+        spec={PAN}
+        value={insert.pan}
+        size={22}
+        bipolar
+        label={`${label} pan`}
+        param={targetKey({ kind: 'insert', insertId: id, param: 'pan' })}
+        {...pan}
+      />
       <button
         tabIndex={-1}
         className={`${styles.led} ${insert.muted ? '' : styles.ledOn} ${insert.solo ? styles.ledSolo : ''}`}
@@ -149,7 +160,12 @@ const Strip = memo(function Strip({ id, index, last, selected, meters }: StripPr
       />
       <div className={styles.meterFader}>
         <canvas ref={canvasRef} className={styles.meter} aria-hidden="true" />
-        <Fader value={insert.volume} label={`${label} volume`} {...volume} />
+        <Fader
+          value={insert.volume}
+          label={`${label} volume`}
+          param={targetKey({ kind: 'insert', insertId: id, param: 'volume' })}
+          {...volume}
+        />
       </div>
       <span className={styles.stripDb}>{formatGain(insert.volume)}</span>
     </div>

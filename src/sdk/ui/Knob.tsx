@@ -1,6 +1,7 @@
-import { useRef, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useContext, useRef, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import { formatValue, fromNormalized, toNormalized, type ParamSpec, type ParamValue } from '../params';
 import { emitHint } from './hint';
+import { ParamMenuContext } from './param-menu';
 import styles from './controls.module.css';
 
 export interface KnobProps {
@@ -21,6 +22,8 @@ export interface KnobProps {
   onEnd?(): void;
   /** One-shot edits (wheel, double-click reset). Falls back to begin/change/end. */
   onCommit?(value: ParamValue): void;
+  /** The param's id: right-click opens the host's param menu (automation, controller link…). */
+  param?: string;
 }
 
 const START = -135;
@@ -59,8 +62,10 @@ export function Knob({
   onChange,
   onEnd,
   onCommit,
+  param,
 }: KnobProps) {
   const drag = useRef<{ startY: number; startN: number; fine: boolean; n: number } | null>(null);
+  const openMenu = useContext(ParamMenuContext);
   const n = toNormalized(spec, value);
   const deg = START + n * SWEEP;
   const mid = START + SWEEP / 2;
@@ -138,6 +143,14 @@ export function Knob({
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onDoubleClick={() => !disabled && commit(spec.default)}
+      onContextMenu={
+        param && openMenu
+          ? (e) => {
+              e.preventDefault();
+              openMenu(param, e);
+            }
+          : undefined
+      }
       onWheel={onWheel}
     >
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>

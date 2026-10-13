@@ -15,10 +15,15 @@ import {
   toggleSoloLane,
 } from '@core/ops/playlist';
 import type { MenuEntry } from '../../controls/ContextMenu';
+import { extraMenuItems } from '../../context-menus';
 import { openWindow } from '../../workspace/registry';
 
-/** A clip's ▾ menu (FL's clip menu). */
+/** A clip's ▾ menu (FL's clip menu), with what other features add for clips. */
 export function clipMenu(s: Services, clip: Clip): MenuEntry[] {
+  return [...baseClipMenu(s, clip), ...extraMenuItems('playlist.clip', { clip }, s)];
+}
+
+function baseClipMenu(s: Services, clip: Clip): MenuEntry[] {
   const p = s.doc.getState().project;
   const source = clipSourceKey(clip);
   const same = (c: Clip) => clipSourceKey(c) === source;
@@ -97,6 +102,11 @@ export function clipMenu(s: Services, clip: Clip): MenuEntry[] {
 
 /** Right-click on a track name. */
 export function laneMenu(s: Services, laneId: LaneId, rename: () => void): MenuEntry[] {
+  const base = baseLaneMenu(s, laneId, rename);
+  return base.length ? [...base, ...extraMenuItems('playlist.lane', { laneId }, s)] : base;
+}
+
+function baseLaneMenu(s: Services, laneId: LaneId, rename: () => void): MenuEntry[] {
   const p = s.doc.getState().project;
   const lane = p.playlist.lanes[laneId];
   if (!lane) return [];

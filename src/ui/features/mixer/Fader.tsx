@@ -1,6 +1,6 @@
-import { useEffect, useEffectEvent, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { useContext, useEffect, useEffectEvent, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { faderToGain, formatGain, gainToFader, UNITY_POSITION } from '@core/model/fader';
-import { emitHint } from '@agstudio/sdk/ui';
+import { emitHint, ParamMenuContext } from '@agstudio/sdk/ui';
 import { FADER_CAP, FADER_PAD } from './scale';
 import styles from './Mixer.module.css';
 
@@ -16,6 +16,8 @@ export interface FaderProps {
   onEnd(): void;
   /** One-shot edits (wheel, double-click reset). */
   onCommit(gain: number): void;
+  /** Target key: right-click opens the param menu (automation, controller link…). */
+  param?: string;
 }
 
 /** CSS offset of a fader position from the bottom: the cap centre moves within [PAD, h - PAD]. */
@@ -25,8 +27,9 @@ const bottomFor = (pos: number) => `calc(${FADER_PAD}px + (100% - ${FADER_CAP}px
  * Vertical mixer fader with the dB taper: drag (Shift = fine), wheel, double-click for 0 dB.
  * Controlled: the document owns the value.
  */
-export function Fader({ value, label, onBegin, onChange, onEnd, onCommit }: FaderProps) {
+export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param }: FaderProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const openMenu = useContext(ParamMenuContext);
   const drag = useRef<{ y: number; from: number; at: number; fine: boolean; travel: number } | null>(null);
   const pos = gainToFader(value);
   // Wheel steps accumulate here, so several events before the next render all count.
@@ -97,6 +100,14 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit }: Fade
       aria-valuenow={pos}
       aria-valuetext={text}
       data-hint={`${label}: ${text}. Drag (Shift = fine) or scroll; double-click for 0 dB`}
+      onContextMenu={
+        param && openMenu
+          ? (e) => {
+              e.preventDefault();
+              openMenu(param, e);
+            }
+          : undefined
+      }
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { HINT_EVENT } from '@agstudio/sdk/ui';
 import { ContextMenuHost } from '../controls/ContextMenu';
+import { HostParamMenus } from '../HostParamMenus';
+import { FormDialogHost } from '../controls/FormDialog';
 import { DialogHost } from '../controls/Dialog';
 import { useServices, useSession } from '../services-context';
 import { Workspace } from '../workspace/Workspace';
@@ -60,16 +62,19 @@ function Overlays() {
 export function App() {
   useHintTracking();
   return (
-    <div className={styles.app}>
-      <Toolbar />
-      <Browser />
-      <main>
-        <Workspace />
-      </main>
-      <Toasts />
-      <ContextMenuHost />
-      <Overlays />
-      <DialogHost />
-    </div>
+    <HostParamMenus>
+      <div className={styles.app}>
+        <Toolbar />
+        <Browser />
+        <main>
+          <Workspace />
+        </main>
+        <Toasts />
+        <ContextMenuHost />
+        <Overlays />
+        <DialogHost />
+        <FormDialogHost />
+      </div>
+    </HostParamMenus>
   );
 }

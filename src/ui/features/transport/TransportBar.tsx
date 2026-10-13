@@ -4,6 +4,7 @@ import { formatBST } from '@core/time/ppq';
 import { useDoc, useEngineStatus, useServices, useView } from '../../services-context';
 import { CommandButton } from '../../shell/Toolbar';
 import { DragNumber } from '../../controls/DragNumber';
+import { paramInfoFor, showParamMenu } from '../../param-menu';
 import { useGestureEdit } from '../../edit';
 import { onFrame } from '../../frame-loop';
 import styles from './Transport.module.css';
@@ -32,10 +33,19 @@ function ModeSwitch() {
 }
 
 function Tempo() {
+  const services = useServices();
   const bpm = useDoc((p) => p.transport.bpm);
   const edit = useGestureEdit<number>('Tempo', (d, v) => setBpm(d, Math.round(v * 1000) / 1000), 'tempo');
   return (
-    <div className={styles.lcd}>
+    <div
+      className={styles.lcd}
+      onContextMenu={(e) => {
+        const info = paramInfoFor(services, { kind: 'tempo' });
+        if (!info) return;
+        e.preventDefault();
+        showParamMenu(e, info, services);
+      }}
+    >
       <DragNumber
         className={styles.lcdValue}
         value={bpm}

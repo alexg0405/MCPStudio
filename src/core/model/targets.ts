@@ -54,3 +54,52 @@ export function targetUsesSlot(t: ParamTarget, insertId: InsertId, slotId: SlotI
   if (t.kind === 'slot') return t.insertId === insertId && t.slotId === slotId;
   return t.kind === 'plugin' && t.owner.kind === 'fx' && t.owner.insertId === insertId && t.owner.slotId === slotId;
 }
+
+/** The target a `targetKey()` string stands for, or null for anything else. */
+export function parseTargetKey(key: string): ParamTarget | null {
+  const [kind, ...rest] = key.split(':');
+  switch (kind) {
+    case 'ch': {
+      const [channelId, param] = rest;
+      return channelId && (param === 'volume' || param === 'pan' || param === 'pitch')
+        ? { kind: 'channel', channelId: channelId as ChannelId, param }
+        : null;
+    }
+    case 'ins': {
+      const [insertId, param] = rest;
+      return insertId && (param === 'volume' || param === 'pan')
+        ? { kind: 'insert', insertId: insertId as InsertId, param }
+        : null;
+    }
+    case 'slot': {
+      const [insertId, slotId, param] = rest;
+      return insertId && slotId && param === 'mix'
+        ? { kind: 'slot', insertId: insertId as InsertId, slotId: slotId as SlotId, param }
+        : null;
+    }
+    case 'route': {
+      const [insertId, to] = rest;
+      return insertId && to ? { kind: 'route', insertId: insertId as InsertId, to: to as InsertId } : null;
+    }
+    case 'plug': {
+      const [ownerKind, ...ids] = rest;
+      if (ownerKind === 'ch' && ids.length >= 2) {
+        const [channelId, ...param] = ids;
+        return { kind: 'plugin', owner: { kind: 'channel', channelId: channelId as ChannelId }, paramId: param.join(':') };
+      }
+      if (ownerKind === 'fx' && ids.length >= 3) {
+        const [insertId, slotId, ...param] = ids;
+        return {
+          kind: 'plugin',
+          owner: { kind: 'fx', insertId: insertId as InsertId, slotId: slotId as SlotId },
+          paramId: param.join(':'),
+        };
+      }
+      return null;
+    }
+    case 'tempo':
+      return rest.length === 0 ? { kind: 'tempo' } : null;
+    default:
+      return null;
+  }
+}

@@ -1,3 +1,4 @@
+import { targetKey } from '@core/model/targets';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import type { FxSlot, InsertId } from '@core/model/types';
 import { MAX_FX_SLOTS, setFxSlotMix } from '@core/ops/mixer';
@@ -9,6 +10,7 @@ import { useDoc, useServices } from '../../services-context';
 import { usePluginDef } from '../../plugin-hooks';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu } from '../../controls/ContextMenu';
+import { extraMenuItems } from '../../context-menus';
 import { effectMenu, openEffectEditor } from './menus';
 import styles from './Mixer.module.css';
 
@@ -26,12 +28,9 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
     showContextMenu(at, [
       { label: 'Open editor', onSelect: () => openEffectEditor(services, insertId, slot.id) },
       {
-        label: 'Replace…',
-        onSelect: () =>
-          showContextMenu(
-            at,
-            effectMenu(services, (id) => replaceEffect(services, insertId, slot.id, id), slot.plugin.pluginId),
-          ),
+        kind: 'submenu',
+        label: 'Replace with',
+        items: () => effectMenu(services, (id) => replaceEffect(services, insertId, slot.id, id), slot.plugin.pluginId),
       },
       { label: slot.enabled ? 'Bypass' : 'Enable', onSelect: () => toggleEffect(services, insertId, slot.id) },
       { kind: 'separator' },
@@ -41,6 +40,7 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
         disabled: index >= count - 1,
         onSelect: () => moveEffectBy(services, insertId, slot.id, 1),
       },
+      ...extraMenuItems('mixer.slot', { insertId, slotId: slot.id }, services),
       { kind: 'separator' },
       { label: 'Remove', danger: true, onSelect: () => removeEffect(services, insertId, slot.id) },
     ]);
@@ -68,7 +68,14 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
         aria-pressed={slot.enabled}
       />
       <span className={styles.slotName}>{name}</span>
-      <Knob spec={MIX} value={slot.mix} size={18} label={`${name} mix`} {...mix} />
+      <Knob
+        spec={MIX}
+        value={slot.mix}
+        size={18}
+        label={`${name} mix`}
+        param={targetKey({ kind: 'slot', insertId, slotId: slot.id, param: 'mix' })}
+        {...mix}
+      />
     </div>
   );
 }

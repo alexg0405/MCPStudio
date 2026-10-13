@@ -398,7 +398,7 @@ trackPitch(samples, sampleRate, { minHz?, maxHz?, hop?, window? }) // YIN; FFT/R
   reads as tonal (`mode: 'drums'` fixes it), mic pops on "p"/"b" add low energy, lip smacks are events, and tempo can
   come out at half/double time near the ends of the BPM range.
 
-## Beat assistant (`src/core/beat`, `src/core/voice`, `src/app/assistant`, `tools/ai-proxy.ts`)
+## Beat assistant (`src/core/beat`, `src/core/voice`, `src/app/assistant`, `tools/ai`)
 
 - **Beat format** (`core/beat/spec.ts`): `{ title, message?, bpm?, swing?, bars (1–4), tracks: [{ name, sound, notes:
   [{ step, len?, key?, vel? }], volume?, pan?, params? }] }` on a 1/16-step grid (steps snap to 1/6 step = 40 ticks, so
@@ -429,6 +429,64 @@ trackPitch(samples, sampleRate, { minHz?, maxHz?, hop?, window? }) // YIN; FFT/R
   "busier/simpler" from the description, uses per-style drum grids, writes an 808 that follows the kick, and maps a
   performance onto drums (beatbox) or an 808/melody (hummed contour moved into register and key, connected notes
   overlapping so they glide).
+
+## v2 foundations (M8a)
+
+The contracts the v2 features build on.
+
+- **Schema v2** (`core/model/types.ts`, migration `MIGRATIONS[1]`): `Insert.routes` (one route per target,
+  `{ to, level, pre }`; every insert starts with a route to the master, the master has none; no route =
+  silent), `FxSlot.sidechain` (the insert feeding the slot's sidechain input), `Project.controllers`
+  (MIDI links), `transport.key`, `InstrumentChannel.pitch` (cents), `Note.release`/`fine`, automation
+  point `shape` and channel `range`. Repair breaks routing loops (routes win over sidechains, mixer
+  order decides) and validates targets. Deleting an insert drops the routes and sidechains that
+  pointed at it (an insert left with no route goes to the master) and the controller links to its
+  controls; deleting a channel or slot drops its links.
+- **Targets** (`core/model/targets.ts`): `ParamTarget` covers channel volume/pan/pitch, insert
+  volume/pan, slot mix, route level, plugin params and the tempo; `targetKey()` is the string the engine
+  and UI use for it (`parseTargetKey` is the inverse). Specs of the host's own controls are in
+  `core/model/target-specs.ts`.
+- **Routing graph** (`core/query/routing.ts`, `core/ops/routing.ts`): edges are routes plus sidechains
+  (source → listening insert); `wouldCycle` guards every edit.
+- **Param lanes** (`engine/param-lane.ts`): an `AutoLane` is the only writer of an automatable value.
+  Live edits are `setTargetAtTime` towards the new value (exact `setValueAtTime(v, 0)` before an offline
+  render); `cut(at)` keeps the schedule up to the first breakpoint at or after `at` (never touching a
+  running ramp); `extend` appends linear ramps (steps for discrete params); `release` ramps back to the
+  document value. Bindings made later (voices, async plugins, reboots) get the schedule replayed; `.value`
+  is never written. Plugin params (`engine/param-handle.ts`), channel volume/pan/pitch and insert
+  volume/pan register by target key in `EngineCore.params` (several per key while an instance is
+  replaced). `ParamHandle.valueAt(t)` reads the lane, so instruments read once-per-note settings at
+  the note's time.
+- **Transport observers** (`TransportObserver` in `engine/sched/transport.ts`): `started`, `segment`
+  (called before that segment's notes go out), `reanchored`, `seeked`, `stopped`. The automation driver
+  (`engine/automation/driver.ts`) is one; the metronome and recorders hang off the same hook.
+- **EngineApi additions**: `tickAt`, `contextTimeAt`, `readAutomation`, `touch`, `tempoNow`, `setSession`
+  (metronome, count-in; replayed on reboot), `graphLatency`, `previewControl`, `previewPitchBend`.
+- **SDK 1.1**: `valueAt`, `NoteOn.fine`, `NoteOff.release`, `controlChange`, `ChannelInfo.pitch` (a signal for
+  voice detune; worklet instruments get it as the reserved `__pitch` param and `kernel.pitch`),
+  `pitchAt`, effect `sidechain` (graph: `host.sidechain`; worklet: second input → fifth `process` argument),
+  `tempoAt`/`onTempo(bpm, time)`, `ParamLane`, `sumSignals`, note scripts (`defineNoteScript`, a third
+  definition kind; modules may export arrays).
+- **UI registries**: `addParamMenuItems` (`ui/param-menu.ts`; SDK controls with a `param` prop open it,
+  plugin windows provide it for plugin params and `HostParamMenus` for target keys), `addContextMenuItems`
+  (`ui/context-menus.ts`: playlist clip/lane, mixer strip/slot, rack channel, piano-roll note/empty),
+  submenus in context and menu-bar menus (`kind: 'submenu'`), `showFormDialog` (`ui/controls/FormDialog.tsx`).
+
+## Automation (M9)
+
+_To be written by M9._
+
+## Mixer routing, sidechain and delay compensation (M10)
+
+_To be written by M10._
+
+## Composition tools and note scripts (M11)
+
+_To be written by M11._
+
+## Metronome, MIDI and note recording (M12)
+
+_To be written by M12._
 
 ## Testing
 

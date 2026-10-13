@@ -83,7 +83,7 @@ export default defineConfig(({ mode }) => ({
     strictPort: true,
     headers: isolation,
     // Helper-agent worktrees live inside the project folder; their files aren't this app's.
-    watch: { ignored: ['**/.claude/worktrees/**'] },
+    watch: { ignored: [`${root}.claude/worktrees/**`] },
   },
   // Optimized up front: a dependency discovered mid-run gets re-bundled under a new hash, and modules
   // that already loaded the old copy end up with a second React (hooks then fail).

@@ -163,7 +163,7 @@ export function noteName(key: number): string {
   return `${PITCH_NAMES[pitchClass(k)]}${Math.floor(k / 12)}`;
 }
 
-/** "C# Minor", "F Major pentatonic". */
+/** "C# minor", "F major pentatonic", "D dorian". */
 export function keyLabel(root: number, scaleId: string): string {
-  return `${PITCH_NAMES[pitchClass(root)]} ${getScale(scaleId).label}`;
+  return `${PITCH_NAMES[pitchClass(root)]} ${getScale(scaleId).label.toLowerCase()}`;
 }

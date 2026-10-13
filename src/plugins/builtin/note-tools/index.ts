@@ -1,6 +1,9 @@
 /**
  * The piano roll's built-in tools, written as note scripts against the public SDK (exactly what a
  * user script in plugins/ can do). Each one is a thin wrapper around `@agstudio/sdk/notes`.
+ *
+ * The descriptions are shown as the first line of each tool's dialog, so they say in plain words
+ * what the tool does; param labels carry their units.
  */
 import { defineNoteScript, p, type NoteScriptContext, type ParamSpecs, type ScriptNote } from '@agstudio/sdk';
 import {
@@ -17,6 +20,7 @@ import {
   humanize,
   legato,
   limit,
+  noteName,
   PITCH_NAMES,
   quantize,
   rampVelocities,
@@ -53,38 +57,73 @@ const NOTE_VALUES = {
 type NoteValue = keyof typeof NOTE_VALUES;
 const VALUE_IDS = Object.keys(NOTE_VALUES) as NoteValue[];
 
-const gridParam = (def: 'snap' | NoteValue | 'bar', label = 'Grid') =>
-  p.enum(['snap', ...VALUE_IDS, 'bar'], def, {
-    label,
-    labels: {
-      snap: 'Snap',
-      bar: '1 bar',
-      '1/32t': '1/32 triplet',
-      '1/16t': '1/16 triplet',
-      '1/8t': '1/8 triplet',
-      '1/4t': '1/4 triplet',
-    },
-    hint: '"Snap" follows the piano roll\'s snap setting',
-  });
+const VALUE_LABELS = {
+  snap: 'Piano roll snap',
+  bar: '1 bar',
+  '1/64': '1/64 note',
+  '1/32': '1/32 note',
+  '1/16': '1/16 note (1 step)',
+  '1/8': '1/8 note',
+  '1/4': '1/4 note (1 beat)',
+  '1/2': '1/2 note',
+  '1/32t': '1/32 triplet',
+  '1/16t': '1/16 triplet',
+  '1/8t': '1/8 triplet',
+  '1/4t': '1/4 triplet',
+};
 
-/** Ticks for a grid param value. */
+const gridParam = (def: 'snap' | NoteValue | 'bar', label = 'Grid', hint = 'The note value to use') =>
+  p.enum(['snap', ...VALUE_IDS, 'bar'], def, { label, labels: VALUE_LABELS, hint });
+
+/** Ticks for a grid param value ('0' = none). */
 function ticks(value: string, ctx: NoteScriptContext<ParamSpecs>): number {
+  if (value === '0') return 0;
   if (value === 'snap') return ctx.grid > 1 ? ctx.grid : ctx.ppq / 4;
   if (value === 'bar') return ctx.bar;
   return Math.max(1, Math.round(ctx.ppq * (NOTE_VALUES[value as NoteValue] ?? 0.25)));
 }
 
-const seedParam = () => p.int(1, 999, 1, { label: 'Seed', hint: 'Change it for a different random result' });
+/** A small time amount as a note value, with "none" first. */
+const gapParam = (def: '0' | '1/64' | '1/32' | '1/16' | '1/8' | '1/4', label: string, none: string, hint: string) =>
+  p.enum(['0', '1/64', '1/32', '1/16', '1/8', '1/4'], def, {
+    label,
+    labels: { ...VALUE_LABELS, '0': none },
+    hint,
+  });
+
+/** A key as a note name ("C5" = 60, FL's octave numbering). */
+const KEY_NAMES = Array.from({ length: 128 }, (_, k) => noteName(k));
+const noteParam = (def: number, label: string, hint: string) =>
+  p.enum(KEY_NAMES, KEY_NAMES[def] as string, { label, hint });
+const keyOfName = (name: string) => Math.max(0, KEY_NAMES.indexOf(name));
+
+const seedParam = () => p.int(1, 999, 1, { label: 'Seed', hint: 'Change the seed for a different random result' });
+
+const voicingParam = () =>
+  p.enum(VOICINGS, 'close', {
+    label: 'Voicing',
+    labels: {
+      close: 'Close (stacked)',
+      open: 'Open (spread out)',
+      drop2: 'Drop 2',
+      drop3: 'Drop 3',
+      bass: 'Close + bass note',
+      spread: 'Open + bass note',
+    },
+    hint: 'How the chord notes are spread over the octaves',
+  });
 
 /** The song's key, or C major when none is set. */
 const keyOf = (ctx: NoteScriptContext<ParamSpecs>): KeyLike => ctx.key ?? { root: 0, scale: 'major' };
 
 const ROOTS = ['song', ...PITCH_NAMES] as const;
-const rootParam = () => p.enum(ROOTS, 'song', { label: 'Root', labels: { song: 'Song key' } });
+const rootParam = () =>
+  p.enum(ROOTS, 'song', { label: 'Key root', labels: { song: 'Song key' }, hint: 'The scale’s root note' });
 const scaleParam = () =>
   p.enum(['song', ...SCALES.map((s) => s.id)], 'song', {
     label: 'Scale',
     labels: { song: 'Song key', ...Object.fromEntries(SCALES.map((s) => [s.id, s.label])) },
+    hint: 'The scale to snap to ("Song key" uses the piano roll’s key)',
   });
 
 /** A key from root/scale params that default to the song's key. */
@@ -111,17 +150,21 @@ const quantizeTool = defineNoteScript({
   name: 'Quantize',
   version: 1,
   category: 'Timing',
-  description: 'Moves note starts (and optionally ends) towards the grid.',
+  description: 'Moves notes onto the grid. Strength 50% moves them halfway; Swing makes every second line late.',
   params: {
-    grid: gridParam('snap'),
-    strength: p.float(0, 1, 1, { label: 'Strength', unit: '%' }),
-    starts: p.bool(true, { label: 'Start times' }),
+    grid: gridParam('snap', 'Grid', 'The grid notes move to ("Piano roll snap" follows the toolbar)'),
+    strength: p.float(0, 1, 1, { label: 'Strength', unit: '%', hint: '100% = exactly on the grid' }),
+    starts: p.bool(true, { label: 'Move note starts' }),
     ends: p.enum(['keep', 'snap', 'lengths'], 'keep', {
-      label: 'Ends',
-      labels: { keep: 'Keep lengths', snap: 'Snap ends', lengths: 'Round lengths' },
+      label: 'Note ends',
+      labels: { keep: 'Keep lengths', snap: 'Snap ends to the grid', lengths: 'Round lengths to the grid' },
     }),
-    swing: p.float(0, 1, 0, { label: 'Swing', unit: '%' }),
-    window: p.float(0.05, 1, 1, { label: 'Window', unit: '%', hint: 'Only notes this close to a grid line move' }),
+    swing: p.float(0, 1, 0, { label: 'Swing', unit: '%', hint: 'Every second grid line is late by up to half a cell' }),
+    window: p.float(0.05, 1, 1, {
+      label: 'Window',
+      unit: '%',
+      hint: 'Only notes this close to a grid line move (100% = every note)',
+    }),
   },
   run: (ctx) =>
     quantize(ctx.notes, {
@@ -140,9 +183,13 @@ const humanizeTool = defineNoteScript({
   name: 'Humanize',
   version: 1,
   category: 'Timing',
-  description: 'Small random changes in timing, velocity and length.',
+  description: 'Adds small random changes to timing, velocity and length so the part sounds less mechanical.',
   params: {
-    timing: p.int(0, 240, 20, { label: 'Timing ± (ticks)', hint: '960 ticks = one beat' }),
+    timing: p.float(0, 1, 0.08, {
+      label: 'Timing ± (of a 1/16 note)',
+      unit: '%',
+      hint: 'How far notes may move early or late, as a share of a 1/16 step',
+    }),
     velocity: p.float(0, 0.5, 0.1, { label: 'Velocity ±', unit: '%' }),
     length: p.float(0, 0.5, 0, { label: 'Length ±', unit: '%' }),
     seed: seedParam(),
@@ -150,7 +197,7 @@ const humanizeTool = defineNoteScript({
   run: (ctx) =>
     humanize(ctx.notes, {
       rand: ctx.rand,
-      timing: ctx.values.timing,
+      timing: (ctx.values.timing * ctx.ppq) / 4,
       velocity: ctx.values.velocity,
       length: ctx.values.length,
     }),
@@ -158,19 +205,22 @@ const humanizeTool = defineNoteScript({
 
 const legatoTool = defineNoteScript({
   id: 'agstudio.notes.legato',
-  name: 'Legato',
+  name: 'Make legato',
   version: 1,
   category: 'Timing',
-  description: 'Every note lasts until the next one starts.',
+  description: 'Stretches each note until the next one starts, so the line plays smoothly with no gaps.',
   params: {
-    gap: p.int(0, 240, 0, { label: 'Gap (ticks)' }),
+    gap: gapParam('0', 'Gap before the next note', 'No gap', 'Leave a little silence between notes'),
     last: p.enum(['keep', 'pattern'], 'keep', {
       label: 'Last notes',
-      labels: { keep: 'Keep length', pattern: 'Until the pattern end' },
+      labels: { keep: 'Keep their length', pattern: 'Last until the pattern end' },
     }),
   },
   run: (ctx) =>
-    legato(ctx.notes, { gap: ctx.values.gap, ...(ctx.values.last === 'pattern' ? { until: ctx.length } : {}) }),
+    legato(ctx.notes, {
+      gap: ticks(ctx.values.gap, ctx),
+      ...(ctx.values.last === 'pattern' ? { until: ctx.length } : {}),
+    }),
 });
 
 const strumTool = defineNoteScript({
@@ -178,17 +228,34 @@ const strumTool = defineNoteScript({
   name: 'Strum',
   version: 1,
   category: 'Timing',
-  description: 'Spreads the notes of each chord out in time.',
+  description: 'Spreads the notes of each chord out in time, like strumming a guitar.',
   params: {
-    time: p.float(0, 1, 0.125, { label: 'Time', unit: 'beats' }),
-    direction: p.enum(['up', 'down', 'alternate', 'random'], 'up', { label: 'Direction' }),
-    curve: p.float(-1, 1, 0, { label: 'Curve' }),
-    velocity: p.float(-1, 1, 0, { label: 'Velocity fade', unit: '%' }),
-    tolerance: p.int(0, 240, 20, {
-      label: 'Chord window (ticks)',
-      hint: 'Notes this close together count as one chord',
+    time: p.float(0, 1, 0.125, { label: 'Strum time', unit: 'beats', hint: 'From the first to the last chord note' }),
+    direction: p.enum(['up', 'down', 'alternate', 'random'], 'up', {
+      label: 'Direction',
+      labels: {
+        up: 'Up (low to high)',
+        down: 'Down (high to low)',
+        alternate: 'Alternate up and down',
+        random: 'Random order',
+      },
     }),
-    keepEnds: p.bool(true, { label: 'Keep ends' }),
+    curve: p.float(-1, 1, 0, {
+      label: 'Curve',
+      hint: '0 = even spacing; above 0 starts tight and spreads out, below 0 the reverse',
+    }),
+    velocity: p.float(-1, 1, 0, {
+      label: 'Velocity fade',
+      unit: '%',
+      hint: 'Later notes get softer (−) or louder (+)',
+    }),
+    tolerance: gapParam(
+      '1/64',
+      'Chord window',
+      'Same start only',
+      'Notes that start this close together count as one chord',
+    ),
+    keepEnds: p.bool(true, { label: 'Keep note ends' }),
     seed: seedParam(),
   },
   run: (ctx) =>
@@ -197,7 +264,7 @@ const strumTool = defineNoteScript({
       direction: ctx.values.direction,
       curve: ctx.values.curve,
       velocity: ctx.values.velocity,
-      tolerance: ctx.values.tolerance,
+      tolerance: ticks(ctx.values.tolerance, ctx),
       keepEnds: ctx.values.keepEnds,
       rand: ctx.rand,
     }),
@@ -208,8 +275,8 @@ const stretchTool = defineNoteScript({
   name: 'Stretch',
   version: 1,
   category: 'Timing',
-  description: 'Scales the notes in time (2× = half time).',
-  params: { factor: p.float(0.25, 4, 2, { label: 'Factor', unit: 'x', scale: 'log' }) },
+  description: 'Makes the notes longer or shorter in time: 2× plays at half speed, 0.5× at double speed.',
+  params: { factor: p.float(0.25, 4, 2, { label: 'Length ×', unit: 'x', scale: 'log' }) },
   run: (ctx) => stretch(ctx.notes, { factor: ctx.values.factor }),
 });
 
@@ -221,12 +288,15 @@ const chopTool = defineNoteScript({
   name: 'Chop',
   version: 1,
   category: 'Edit',
-  description: 'Cuts notes into pieces on a grid or into equal parts.',
+  description: 'Cuts each note into shorter pieces, on the grid or into equal parts.',
   params: {
-    mode: p.enum(['grid', 'parts'], 'grid', { label: 'Cut', labels: { grid: 'On the grid', parts: 'Into parts' } }),
-    grid: gridParam('1/16'),
-    parts: p.int(2, 32, 4, { label: 'Parts' }),
-    gate: p.float(0.05, 1, 1, { label: 'Gate', unit: '%' }),
+    mode: p.enum(['grid', 'parts'], 'grid', {
+      label: 'Cut',
+      labels: { grid: 'On the grid', parts: 'Into equal parts' },
+    }),
+    grid: gridParam('1/16', 'Grid', 'Piece length when cutting on the grid'),
+    parts: p.int(2, 32, 4, { label: 'Parts', hint: 'How many pieces when cutting into equal parts' }),
+    gate: p.float(0.05, 1, 1, { label: 'Piece length', unit: '%', hint: '100% = the pieces touch' }),
   },
   run: (ctx) =>
     chop(
@@ -242,9 +312,11 @@ const glueTool = defineNoteScript({
   name: 'Glue',
   version: 1,
   category: 'Edit',
-  description: 'Joins same-key notes that touch (or nearly touch) into one.',
-  params: { gap: p.int(0, 960, 0, { label: 'Max gap (ticks)' }) },
-  run: (ctx) => glue(ctx.notes, { gap: ctx.values.gap }),
+  description: 'Joins notes on the same key that touch (or have a small gap) into one long note.',
+  params: {
+    gap: gapParam('0', 'Join gaps up to', 'Touching notes only', 'Notes on one key this close together become one'),
+  },
+  run: (ctx) => glue(ctx.notes, { gap: ticks(ctx.values.gap, ctx) }),
 });
 
 const flipTool = defineNoteScript({
@@ -252,9 +324,12 @@ const flipTool = defineNoteScript({
   name: 'Flip',
   version: 1,
   category: 'Edit',
-  description: 'Mirrors the notes in time (reverse) or in pitch (upside down).',
+  description: 'Mirrors the notes: in time plays them backwards, in pitch turns the melody upside down.',
   params: {
-    axis: p.enum(['time', 'pitch'], 'time', { label: 'Flip', labels: { time: 'In time', pitch: 'In pitch' } }),
+    axis: p.enum(['time', 'pitch'], 'time', {
+      label: 'Flip',
+      labels: { time: 'In time (backwards)', pitch: 'In pitch (upside down)' },
+    }),
   },
   run: (ctx) => flip(ctx.notes, ctx.values.axis),
 });
@@ -265,7 +340,7 @@ const lengthTool = defineNoteScript({
   version: 1,
   category: 'Edit',
   description: 'Gives every note the same length.',
-  params: { length: gridParam('1/16', 'Length') },
+  params: { length: gridParam('1/16', 'Length', 'The length every note gets') },
   run: (ctx) => {
     const length = ticks(ctx.values.length, ctx);
     return ctx.notes.map((n) => ({ ...n, length }));
@@ -277,12 +352,12 @@ const limitTool = defineNoteScript({
   name: 'Limit range',
   version: 1,
   category: 'Edit',
-  description: 'Moves notes outside a key range into it by octaves.',
+  description: 'Moves notes that are outside a range of keys into it, by whole octaves.',
   params: {
-    low: p.int(0, 127, 48, { label: 'Lowest key', hint: '60 = C5' }),
-    high: p.int(0, 127, 72, { label: 'Highest key', hint: '60 = C5' }),
+    low: noteParam(48, 'Lowest note', 'Notes below it move up by octaves'),
+    high: noteParam(72, 'Highest note', 'Notes above it move down by octaves'),
   },
-  run: (ctx) => limit(ctx.notes, { low: ctx.values.low, high: ctx.values.high }),
+  run: (ctx) => limit(ctx.notes, { low: keyOfName(ctx.values.low), high: keyOfName(ctx.values.high) }),
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -293,10 +368,13 @@ const transposeTool = defineNoteScript({
   name: 'Transpose',
   version: 1,
   category: 'Pitch',
-  description: 'Moves notes by scale steps in the song key and by semitones.',
+  description: 'Moves notes up or down by steps of the song key’s scale and/or by semitones.',
   params: {
-    steps: p.int(-14, 14, 0, { label: 'Scale steps', hint: 'Steps of the song key (C major when none is set)' }),
-    semitones: p.int(-48, 48, 0, { label: 'Semitones', unit: 'st' }),
+    steps: p.int(-14, 14, 0, {
+      label: 'Scale steps (in key)',
+      hint: '+2 = up a third in the song key (C major when no key is set)',
+    }),
+    semitones: p.int(-48, 48, 0, { label: 'Semitones', unit: 'st', hint: '12 = one octave' }),
   },
   run: (ctx) => transpose(transposeDegrees(ctx.notes, ctx.values.steps, keyOf(ctx)), ctx.values.semitones),
 });
@@ -306,11 +384,14 @@ const snapTool = defineNoteScript({
   name: 'Snap to scale',
   version: 1,
   category: 'Pitch',
-  description: 'Moves notes onto the nearest key of a scale.',
+  description: 'Moves notes that are off the scale onto the nearest note of the scale.',
   params: {
     root: rootParam(),
     scale: scaleParam(),
-    direction: p.enum(['nearest', 'up', 'down'], 'nearest', { label: 'Direction' }),
+    direction: p.enum(['nearest', 'up', 'down'], 'nearest', {
+      label: 'Move to',
+      labels: { nearest: 'The nearest scale note', up: 'The scale note above', down: 'The scale note below' },
+    }),
   },
   run: (ctx) => snapNotesToScale(ctx.notes, chosenKey(ctx, ctx.values.root, ctx.values.scale), ctx.values.direction),
 });
@@ -320,18 +401,21 @@ const chordsTool = defineNoteScript({
   name: 'Make chords',
   version: 1,
   category: 'Pitch',
-  description: 'Turns every note into a chord built on it.',
+  description: 'Turns every note into a chord built on it ("In key" uses the song key’s own chords).',
   params: {
     chord: p.enum(['diatonic', 'diatonic7', ...CHORDS.map((c) => c.id)], 'diatonic', {
       label: 'Chord',
       labels: {
         diatonic: 'In key: triads',
-        diatonic7: 'In key: 7ths',
-        ...Object.fromEntries(CHORDS.map((c) => [c.id, c.label])),
+        diatonic7: 'In key: 7th chords',
+        ...Object.fromEntries(CHORDS.map((c) => [c.id, `${c.label} (C${c.symbol})`])),
       },
     }),
-    inversion: p.int(-3, 3, 0, { label: 'Inversion' }),
-    voicing: p.enum(VOICINGS, 'close', { label: 'Voicing' }),
+    inversion: p.int(-3, 3, 0, {
+      label: 'Inversion',
+      hint: '0 = root position; 1 = the lowest note moves up an octave',
+    }),
+    voicing: voicingParam(),
   },
   run: (ctx) => {
     const diatonic = ctx.values.chord === 'diatonic' || ctx.values.chord === 'diatonic7';
@@ -353,10 +437,10 @@ const scaleVelocityTool = defineNoteScript({
   name: 'Scale velocities',
   version: 1,
   category: 'Velocity',
-  description: 'Multiplies velocities and adds an offset.',
+  description: 'Makes notes louder or softer: Amount 0.5× halves every velocity, Offset adds to it.',
   params: {
-    factor: p.float(0, 2, 1, { label: 'Amount', unit: 'x' }),
-    offset: p.float(-1, 1, 0, { label: 'Offset', unit: '%' }),
+    factor: p.float(0, 2, 1, { label: 'Amount', unit: 'x', hint: '1× = unchanged' }),
+    offset: p.float(-1, 1, 0, { label: 'Offset', unit: '%', hint: 'Added to every velocity after scaling' }),
   },
   run: (ctx) => scaleVelocities(ctx.notes, { factor: ctx.values.factor, offset: ctx.values.offset }),
 });
@@ -366,10 +450,10 @@ const velocityRangeTool = defineNoteScript({
   name: 'Velocity range',
   version: 1,
   category: 'Velocity',
-  description: 'Maps the softest note to the minimum and the loudest to the maximum.',
+  description: 'Spreads velocities between a minimum and a maximum: the softest note gets the minimum.',
   params: {
-    min: p.float(0, 1, 0.4, { label: 'Minimum', unit: '%' }),
-    max: p.float(0, 1, 1, { label: 'Maximum', unit: '%' }),
+    min: p.float(0, 1, 0.4, { label: 'Softest', unit: '%' }),
+    max: p.float(0, 1, 1, { label: 'Loudest', unit: '%' }),
   },
   run: (ctx) => fitVelocities(ctx.notes, { min: ctx.values.min, max: ctx.values.max }),
 });
@@ -379,12 +463,12 @@ const velocityRampTool = defineNoteScript({
   name: 'Velocity ramp',
   version: 1,
   category: 'Velocity',
-  description: 'A crescendo or decrescendo across the notes.',
+  description: 'A crescendo or fade across the notes, from the first note’s level to the last one’s.',
   params: {
-    from: p.float(0, 1, 0.3, { label: 'From', unit: '%' }),
-    to: p.float(0, 1, 1, { label: 'To', unit: '%' }),
-    curve: p.float(-1, 1, 0, { label: 'Curve' }),
-    multiply: p.bool(false, { label: 'Scale existing' }),
+    from: p.float(0, 1, 0.3, { label: 'First note', unit: '%' }),
+    to: p.float(0, 1, 1, { label: 'Last note', unit: '%' }),
+    curve: p.float(-1, 1, 0, { label: 'Curve', hint: '0 = straight; above 0 rises late, below 0 rises early' }),
+    multiply: p.bool(false, { label: 'Scale the existing velocities' }),
   },
   run: (ctx) =>
     rampVelocities(ctx.notes, {
@@ -403,23 +487,28 @@ const arpTool = defineNoteScript({
   name: 'Arpeggiate',
   version: 1,
   category: 'Generate',
-  description: 'Plays chords as arpeggios.',
+  description: 'Plays held chords one note at a time in a pattern, at the chosen rate.',
   params: {
     pattern: p.enum(ARP_PATTERNS, 'up', {
       label: 'Pattern',
       labels: {
+        up: 'Up',
+        down: 'Down',
         'up-down': 'Up and down',
         'down-up': 'Down and up',
+        converge: 'Outside in',
+        diverge: 'Inside out',
         'as-played': 'As played',
+        random: 'Random',
       },
     }),
-    rate: gridParam('1/16', 'Rate'),
-    gate: p.float(0.05, 1, 0.9, { label: 'Gate', unit: '%' }),
-    octaves: p.int(1, 4, 1, { label: 'Octaves' }),
+    rate: gridParam('1/16', 'Rate', 'Time between arpeggio notes'),
+    gate: p.float(0.05, 1, 0.9, { label: 'Note length', unit: '%', hint: 'Share of the rate each note lasts' }),
+    octaves: p.int(1, 4, 1, { label: 'Octaves', hint: 'How many octaves the pattern climbs' }),
     range: p.int(0, 48, 0, {
-      label: 'Range',
+      label: 'Range (0 = no limit)',
       unit: 'st',
-      hint: 'Highest interval above the lowest note (0 = no limit)',
+      hint: 'Highest interval above the lowest note',
     }),
     seed: seedParam(),
   },
@@ -439,11 +528,11 @@ const randomizeTool = defineNoteScript({
   name: 'Randomize',
   version: 1,
   category: 'Generate',
-  description: 'Random pitch and velocity changes, staying in the song key.',
+  description: 'Changes pitches and velocities at random, keeping the notes in the song key.',
   params: {
-    pitch: p.int(0, 24, 5, { label: 'Pitch ±', unit: 'st' }),
+    pitch: p.int(0, 24, 5, { label: 'Pitch ±', unit: 'st', hint: 'How far a note may move up or down' }),
     velocity: p.float(0, 0.5, 0.15, { label: 'Velocity ±', unit: '%' }),
-    inKey: p.bool(true, { label: 'Stay in key' }),
+    inKey: p.bool(true, { label: 'Stay in the song key' }),
     seed: seedParam(),
   },
   run: (ctx) =>
@@ -460,29 +549,30 @@ const generateTool = defineNoteScript({
   name: 'Generate melody',
   version: 1,
   category: 'Generate',
-  description: 'Writes random notes in the song key over the bars the notes cover (or the whole pattern).',
+  description: 'Writes new random notes in the song key; change the Seed for a different melody.',
   params: {
-    density: p.float(0, 1, 0.5, { label: 'Density', unit: '%' }),
-    rhythm: gridParam('1/8', 'Rhythm'),
-    low: p.int(0, 127, 60, { label: 'Lowest key', hint: '60 = C5' }),
-    range: p.int(0, 48, 12, { label: 'Range', unit: 'st' }),
-    minLength: p.int(1, 8, 1, { label: 'Shortest (cells)' }),
-    maxLength: p.int(1, 8, 2, { label: 'Longest (cells)' }),
-    smoothness: p.float(0, 1, 0.6, { label: 'Smoothness', unit: '%' }),
-    chords: p.int(1, 4, 1, { label: 'Notes at once' }),
-    replace: p.bool(true, { label: 'Replace notes' }),
+    density: p.float(0, 1, 0.5, { label: 'Density', unit: '%', hint: 'Chance of a note on each rhythm step' }),
+    rhythm: gridParam('1/8', 'Rhythm', 'Where notes may start'),
+    low: noteParam(60, 'Lowest note', 'The bottom of the melody’s range'),
+    range: p.int(0, 48, 12, { label: 'Range', unit: 'st', hint: '12 = one octave above the lowest note' }),
+    minLength: p.int(1, 8, 1, { label: 'Shortest note (× rhythm)' }),
+    maxLength: p.int(1, 8, 2, { label: 'Longest note (× rhythm)' }),
+    smoothness: p.float(0, 1, 0.6, { label: 'Smoothness', unit: '%', hint: 'Higher = smaller jumps between notes' }),
+    chords: p.int(1, 4, 1, { label: 'Notes at once', hint: '1 = a melody, more = chords' }),
+    replace: p.bool(true, { label: 'Replace the existing notes' }),
     seed: seedParam(),
   },
   run: (ctx) => {
     const { start, end } = bars(ctx);
+    const low = keyOfName(ctx.values.low);
     const notes = generate({
       rand: ctx.rand,
       start,
       end,
       grid: ticks(ctx.values.rhythm, ctx),
       density: ctx.values.density,
-      low: ctx.values.low,
-      high: ctx.values.low + ctx.values.range,
+      low,
+      high: low + ctx.values.range,
       minLength: ctx.values.minLength,
       maxLength: ctx.values.maxLength,
       smoothness: ctx.values.smoothness,
@@ -511,19 +601,26 @@ const progressionTool = defineNoteScript({
   name: 'Chord progression',
   version: 1,
   category: 'Generate',
-  description: 'Writes a chord progression in the song key.',
+  description: 'Writes a chord progression in the song key (the numbers are the scale degrees: I = the root chord).',
   params: {
     progression: p.enum(Object.keys(PROGRESSIONS) as Progression[], 'I-V-vi-IV', {
       label: 'Progression',
       labels: Object.fromEntries(Object.keys(PROGRESSIONS).map((k) => [k, k.replaceAll('-', ' – ')])),
+      hint: 'Upper case = major chords, lower case = minor (in a minor key the i is the root chord)',
     }),
-    bars: p.enum(['0.5', '1', '2'], '1', { label: 'Bars per chord' }),
-    size: p.enum(['3', '4', '5'], '3', { label: 'Notes', labels: { '3': 'Triads', '4': '7ths', '5': '9ths' } }),
-    octave: p.int(2, 7, 5, { label: 'Octave', hint: 'Octave of the key root (5 = around C5)' }),
-    inversion: p.int(-2, 3, 0, { label: 'Inversion' }),
-    voicing: p.enum(VOICINGS, 'close', { label: 'Voicing' }),
+    bars: p.enum(['0.5', '1', '2'], '1', {
+      label: 'Chord length',
+      labels: { '0.5': 'Half a bar', '1': '1 bar', '2': '2 bars' },
+    }),
+    size: p.enum(['3', '4', '5'], '3', {
+      label: 'Notes per chord',
+      labels: { '3': '3 (triads)', '4': '4 (7th chords)', '5': '5 (9th chords)' },
+    }),
+    octave: p.int(2, 7, 5, { label: 'Octave', hint: '5 = the octave from C5 (middle C) up' }),
+    inversion: p.int(-2, 3, 0, { label: 'Inversion', hint: '0 = root position' }),
+    voicing: voicingParam(),
     velocity: p.float(0.05, 1, 0.75, { label: 'Velocity', unit: '%' }),
-    replace: p.bool(false, { label: 'Replace notes' }),
+    replace: p.bool(false, { label: 'Replace the existing notes' }),
   },
   run: (ctx) => {
     const name = ctx.values.progression;

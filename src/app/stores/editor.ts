@@ -1,10 +1,17 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { Clip, ClipId, Note, NoteId, Tick } from '@core/model/types';
+import type { ChannelId, Clip, ClipId, Note, NoteId, Tick } from '@core/model/types';
 import type { Snap } from '@core/time/snap';
 import { TICKS_PER_STEP } from '@core/time/ppq';
 
 /** Editor state for the piano roll (and later the playlist): tools, snap, zoom, selection, clipboard. */
-export type PianoRollTool = 'draw' | 'paint' | 'delete' | 'slice' | 'select';
+export type PlaylistTool = 'draw' | 'paint' | 'delete' | 'slice' | 'select';
+export type PianoRollTool = PlaylistTool | 'mute';
+export const PIANO_ROLL_TOOLS: readonly PianoRollTool[] = ['draw', 'paint', 'delete', 'mute', 'slice', 'select'];
+export const PLAYLIST_TOOLS: readonly PlaylistTool[] = ['draw', 'paint', 'delete', 'slice', 'select'];
+
+/** The note property the event lane under the piano roll shows and edits. */
+export type NoteLane = 'velocity' | 'pan' | 'release' | 'fine';
+export const NOTE_LANES: readonly NoteLane[] = ['velocity', 'pan', 'release', 'fine'];
 
 export interface PianoRollViewState {
   tool: PianoRollTool;
@@ -17,10 +24,22 @@ export interface PianoRollViewState {
   scrollTick: number;
   /** Top visible row (0 = key 127); null = center on the content when first shown. */
   scrollRow: number | null;
+  /** The event lane under the grid is shown. */
   velocityLane: boolean;
+  /** What the event lane edits. */
+  lane: NoteLane;
+  /** Shade the rows of keys outside the song key's scale (and mark the root). */
+  scaleHighlight: boolean;
+  /** Drawn, painted and moved notes stay on the song key's scale. */
+  scaleSnap: boolean;
+  /**
+   * Chord stamp: drawing a note draws this chord on it. '' = single notes, 'diatonic' / 'diatonic7'
+   * = the song key's triads / seventh chords, anything else a chord id from `@agstudio/sdk/notes`.
+   */
+  chord: string;
+  /** Inversion of the chord stamp (0–3). */
+  inversion: number;
 }
-
-export type PlaylistTool = PianoRollTool;
 
 export interface PlaylistViewState {
   tool: PlaylistTool;
@@ -41,6 +60,17 @@ export interface EditorState {
   noteSelection: readonly NoteId[];
   /** Copied notes, ticks relative to the first one. */
   noteClipboard: readonly Note[] | null;
+  /** The channel rack's graph editor: the channel whose per-step row is open (one at a time) and what it edits. */
+  stepGraph: StepGraphState;
+}
+
+/** The property the channel rack's graph editor edits per step. */
+export type StepLane = 'velocity' | 'pan' | 'release' | 'key' | 'fine';
+export const STEP_LANES: readonly StepLane[] = ['velocity', 'pan', 'release', 'key', 'fine'];
+
+export interface StepGraphState {
+  channelId: ChannelId | null;
+  lane: StepLane;
 }
 
 export interface EditorActions {
@@ -50,6 +80,7 @@ export interface EditorActions {
   setClipClipboard(clips: readonly Clip[] | null): void;
   selectNotes(ids: readonly NoteId[]): void;
   setNoteClipboard(notes: readonly Note[] | null): void;
+  setStepGraph(patch: Partial<StepGraphState>): void;
 }
 
 export type EditorStore = StoreApi<EditorState & EditorActions>;
@@ -64,6 +95,11 @@ export const defaultPianoRoll = (): PianoRollViewState => ({
   scrollTick: 0,
   scrollRow: null,
   velocityLane: true,
+  lane: 'velocity',
+  scaleHighlight: true,
+  scaleSnap: false,
+  chord: '',
+  inversion: 0,
 });
 
 export const defaultPlaylist = (): PlaylistViewState => ({
@@ -113,6 +149,12 @@ export function createEditorStore(
     },
     setNoteClipboard(notes) {
       set({ noteClipboard: notes });
+    },
+    stepGraph: { channelId: null, lane: 'velocity' },
+    setStepGraph(patch) {
+      const cur = get().stepGraph;
+      if (Object.entries(patch).every(([k, v]) => cur[k as keyof StepGraphState] === v)) return;
+      set({ stepGraph: { ...cur, ...patch } });
     },
   }));
 }

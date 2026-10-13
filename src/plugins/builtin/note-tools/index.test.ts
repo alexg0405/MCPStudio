@@ -85,7 +85,7 @@ describe('built-in note tools', () => {
       '480/480',
     ]);
     expect(run('chop', [n('x', 0, 60, 960)], { mode: 'parts', parts: 3 })).toHaveLength(3);
-    expect(run('glue', [n('x', 0, 60, 240), n('y', 240, 60, 240), n('z', 600, 60, 10)], { gap: 120 })).toHaveLength(1);
+    expect(run('glue', [n('x', 0, 60, 240), n('y', 240, 60, 240), n('z', 600, 60, 10)], { gap: '1/32' })).toHaveLength(1);
   });
 
   it('strum, arpeggiate and flip', () => {

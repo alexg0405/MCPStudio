@@ -3,7 +3,15 @@ import type { Project } from '@core/model/types';
 import type { Rect } from '@core/time/geometry';
 import { SNAP_OPTIONS } from '@core/time/snap';
 import type { Services } from '../services';
-import { defaultPianoRoll, defaultPlaylist, type PianoRollViewState, type PlaylistViewState } from '../stores/editor';
+import {
+  defaultPianoRoll,
+  defaultPlaylist,
+  NOTE_LANES,
+  PIANO_ROLL_TOOLS,
+  PLAYLIST_TOOLS,
+  type PianoRollViewState,
+  type PlaylistViewState,
+} from '../stores/editor';
 import type { TransportMode, ViewState, WindowInstance } from '../stores/view';
 
 /**
@@ -79,27 +87,33 @@ function windows(v: unknown, project: Project): Record<string, WindowInstance> {
   return out;
 }
 
-const TOOLS = new Set(['draw', 'paint', 'delete', 'slice', 'select']);
 const SNAPS = new Set<string>(SNAP_OPTIONS.map((o) => o.value));
+const PIANO_ROLL_CHOICES: Record<string, ReadonlySet<string>> = {
+  tool: new Set(PIANO_ROLL_TOOLS),
+  snap: SNAPS,
+  lane: new Set(NOTE_LANES),
+};
+const PLAYLIST_CHOICES: Record<string, ReadonlySet<string>> = { tool: new Set(PLAYLIST_TOOLS), snap: SNAPS };
 
-/** Keeps only known keys with the default's type, so old or hand-edited files can't break editors. */
-function merge<T extends { tool: string; snap: string }>(defaults: T, v: unknown): T {
+/**
+ * Keeps only known keys with the default's type (and, for `choices`, one of the allowed values), so
+ * old or hand-edited files can't break editors.
+ */
+function merge<T extends object>(defaults: T, v: unknown, choices: Record<string, ReadonlySet<string>>): T {
   const out = { ...defaults };
   if (!isObj(v)) return out;
-  for (const key of Object.keys(defaults) as (keyof T)[]) {
-    const val = v[key as string];
+  for (const key of Object.keys(defaults) as (keyof T & string)[]) {
+    const val = v[key];
     const def = defaults[key];
     if (val === undefined) continue;
-    const ok =
-      key === 'tool'
-        ? TOOLS.has(val as string)
-        : key === 'snap'
-          ? SNAPS.has(val as string)
-          : def === null
-            ? num(val) || val === null
-            : typeof def === 'number'
-              ? num(val) && (def > 0 ? val > 0 : val >= 0)
-              : typeof val === typeof def;
+    const allowed = choices[key];
+    const ok = allowed
+      ? allowed.has(val as string)
+      : def === null
+        ? num(val) || val === null
+        : typeof def === 'number'
+          ? num(val) && (def > 0 ? val > 0 : val >= 0)
+          : typeof val === typeof def;
     if (ok) (out as Record<keyof T, unknown>)[key] = val;
   }
   return out;
@@ -134,8 +148,8 @@ export function applyView(s: Services, raw: unknown, project: Project): boolean 
     browser,
   });
   s.editor.setState({
-    pianoRoll: merge(defaultPianoRoll(), v.pianoRoll),
-    playlist: merge(defaultPlaylist(), v.playlist),
+    pianoRoll: merge(defaultPianoRoll(), v.pianoRoll, PIANO_ROLL_CHOICES),
+    playlist: merge(defaultPlaylist(), v.playlist, PLAYLIST_CHOICES),
     noteSelection: [],
     clipSelection: [],
   });

@@ -144,21 +144,23 @@ function Form({ open }: { open: Open }) {
             const spec = f.spec;
             const value = values[f.key] ?? spec.default;
             const label = spec.label ?? f.key;
+            // The param's hint shows in the hint bar and as a tooltip.
+            const hint = spec.hint ? { 'data-hint': `${label}: ${spec.hint}`, title: spec.hint } : {};
             if (spec.type === 'bool')
               return (
-                <div key={f.key} className={styles.field}>
+                <div key={f.key} className={styles.field} {...hint}>
                   <Toggle spec={spec} value={Boolean(value)} label={label} onCommit={(v) => set(f.key, v)} />
                 </div>
               );
             if (spec.type === 'enum')
               return (
-                <label key={f.key} className={styles.field}>
+                <label key={f.key} className={styles.field} {...hint}>
                   <span className={styles.fieldLabel}>{label}</span>
                   <Select spec={spec} value={String(value)} label={label} onCommit={(v) => set(f.key, v)} />
                 </label>
               );
             return (
-              <div key={f.key} className={styles.field} data-hint={spec.hint}>
+              <div key={f.key} className={styles.field} {...hint}>
                 <span className={styles.fieldLabel}>{label}</span>
                 <Knob spec={spec} value={value} label={label} size={30} onChange={(v) => set(f.key, v)} />
                 <span className={styles.fieldValue}>{formatValue(spec, value)}</span>

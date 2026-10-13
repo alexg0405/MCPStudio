@@ -38,7 +38,7 @@ describe('scales', () => {
     expect(scaleMask(2, 'major-pentatonic').flatMap((on, pc) => (on ? [pc] : []))).toEqual([2, 4, 6, 9, 11]);
     expect(scaleDegree(64, 0, 'major')).toBe(2);
     expect(scaleDegree(63, 0, 'major')).toBeNull();
-    expect(keyLabel(1, 'minor')).toBe('C# Minor');
+    expect(keyLabel(1, 'minor')).toBe('C# minor');
     expect(noteName(60)).toBe('C5');
   });
 

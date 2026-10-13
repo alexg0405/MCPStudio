@@ -3,22 +3,38 @@
  * renders the shell; data changes mark layers dirty and the shared frame loop redraws them.
  *
  * Geometry edits (move/resize/create) preview while dragging and commit one undo step on release.
- * Continuous edits (paint, erase, velocity) are live history gestures.
+ * Continuous edits (paint, erase, mute, event lane) are live history gestures.
+ *
+ * Right-click erases notes (FL) with every tool but Select; with the Select tool, with Ctrl/Cmd
+ * held, or on an empty spot without dragging, it opens the context menu instead (`onMenu`).
  */
 import type { Services } from '@app/services';
 import type { Gesture } from '@core/history/history';
 import { newId } from '@core/model/ids';
-import type { ChannelId, Note, NoteId, Pattern, PatternId, Project, Tick } from '@core/model/types';
-import { addNote, addNotes, editNotes, removeNotes, sliceNote } from '@core/ops/notes';
+import type { ChannelId, Note, NoteId, Pattern, PatternId, Project, SongKey, Tick } from '@core/model/types';
+import { addNotes, editNotes, removeNotes, sliceNote } from '@core/ops/notes';
 import { noteAt, notesInRect } from '@core/query/notes-hit';
 import { notesSorted, patternLength } from '@core/query/queries';
 import { patternTickAt } from '@core/query/playlist';
 import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
+import { noteName, scaleMask } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
-import { drawGhosts, drawGrid, drawKeys, drawNotes, drawRuler, drawVelocity, keyForRow, rowForKey } from './render';
+import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
+import {
+  drawGhosts,
+  drawGrid,
+  drawKeys,
+  drawLane,
+  drawNotes,
+  drawRuler,
+  keyForRow,
+  rowForKey,
+  type ScaleRows,
+} from './render';
+import { drawKey, movedKeys, stampKeys, stampName } from './stamp';
 
 export interface PianoRollElements {
   area: HTMLElement;
@@ -30,10 +46,17 @@ export interface PianoRollElements {
   overlay: HTMLCanvasElement;
   velocity: HTMLCanvasElement;
   velocityHost: HTMLElement;
+  /** Shows the value being drawn in the event lane (the controller owns its text). */
+  laneValue: HTMLElement;
   playhead: HTMLElement;
   hscroll: HTMLElement;
   hthumb: HTMLElement;
 }
+
+/** What a right-click asks the piano roll window to show a menu for. */
+export type PianoRollMenuRequest =
+  | { kind: 'note'; channelId: ChannelId; patternId: PatternId; noteIds: readonly NoteId[]; tick: Tick; key: number }
+  | { kind: 'empty'; channelId: ChannelId; patternId: PatternId; tick: Tick; key: number };
 
 export const KEYS_WIDTH = 64;
 export const RULER_HEIGHT = 20;
@@ -41,7 +64,7 @@ export const RULER_HEIGHT = 20;
 /** Redraw timings for performance checks (`window.__ag.perf` in dev). */
 export const pianoRollPerf = { lastDrawMs: 0, maxDrawMs: 0, draws: 0, notesDrawn: 0 };
 
-type Layer = 'grid' | 'notes' | 'overlay' | 'keys' | 'ruler' | 'velocity';
+type Layer = 'grid' | 'notes' | 'overlay' | 'keys' | 'ruler' | 'lane';
 type Hit = { note: Note; zone: 'body' | 'end' };
 
 type Drag =
@@ -53,15 +76,17 @@ type Drag =
       originals: Note[];
       duplicate: boolean;
       dTick: number;
-      dKey: number;
+      /** New key of each original. */
+      keys: number[];
     }
   | { kind: 'resize'; x0: number; anchor: Note; originals: Note[]; dTick: number }
-  | { kind: 'create'; note: Note; grabOffset: number }
+  | { kind: 'create'; notes: Note[]; grabOffset: number }
   | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; base: NoteId[] }
   | { kind: 'paint'; gesture: Gesture; done: Set<string>; lastTick: number; key: number }
-  | { kind: 'erase'; gesture: Gesture; done: Set<NoteId> }
+  | { kind: 'erase'; gesture: Gesture; done: Set<NoteId>; clientX: number; clientY: number; moved: boolean }
+  | { kind: 'mute'; gesture: Gesture; done: Set<NoteId>; muted: boolean }
   | { kind: 'pan'; x: number; y: number }
-  | { kind: 'velocity'; gesture: Gesture; lastX: number }
+  | { kind: 'lane'; gesture: Gesture; lastX: number; reset: boolean }
   | { kind: 'keys'; key: number };
 
 interface Ctx {
@@ -71,11 +96,14 @@ interface Ctx {
   pattern: Pattern | undefined;
   rootKey: number | null;
   notes: readonly Note[];
+  songKey: SongKey | null;
 }
 
 export class PianoRollController {
   readonly vp = new Viewport(128, 0.004, 2);
-  private dirty = new Set<Layer>(['grid', 'notes', 'overlay', 'keys', 'ruler', 'velocity']);
+  /** Set by the window: shows the context menu for a right-click. */
+  onMenu: ((request: PianoRollMenuRequest, at: { clientX: number; clientY: number }) => void) | null = null;
+  private dirty = new Set<Layer>(['grid', 'notes', 'overlay', 'keys', 'ruler', 'lane']);
   private drag: Drag | null = null;
   private hover: Hit | null = null;
   private preview: Map<NoteId, Note> | null = null;
@@ -86,6 +114,10 @@ export class PianoRollController {
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPlayheadX = NaN;
   private centeredFor: string | null = null;
+  private scaleCache: { key: SongKey | null; rows: ScaleRows | null } = { key: null, rows: null };
+  /** Where the chord stamp would draw, shown as an outline under the pointer. */
+  private stampHover: { tick: Tick; length: Tick; keys: number[]; name: string } | null = null;
+  private lastHint = '';
 
   constructor(
     private readonly s: Services,
@@ -107,17 +139,23 @@ export class PianoRollController {
 
   mount(): void {
     const { s, els } = this;
-    const all = () => this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'velocity');
+    const all = () => this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'lane');
     this.unsubs.push(
       s.doc.subscribe((next, prev) => {
         if (next.project.patterns !== prev.project.patterns || next.project.channels !== prev.project.channels) all();
         if (next.project.transport !== prev.project.transport) all();
       }),
       s.editor.subscribe((next, prev) => {
-        if (next.noteSelection !== prev.noteSelection) this.invalidate('notes', 'velocity');
+        if (next.noteSelection !== prev.noteSelection) this.invalidate('notes', 'lane');
         if (next.pianoRoll.snap !== prev.pianoRoll.snap || next.pianoRoll.ghosts !== prev.pianoRoll.ghosts) all();
-        if (next.pianoRoll.velocityLane !== prev.pianoRoll.velocityLane) all();
-        if (next.pianoRoll.tool !== prev.pianoRoll.tool) this.updateCursor();
+        if (next.pianoRoll.velocityLane !== prev.pianoRoll.velocityLane || next.pianoRoll.lane !== prev.pianoRoll.lane)
+          all();
+        if (next.pianoRoll.scaleHighlight !== prev.pianoRoll.scaleHighlight) this.invalidate('grid', 'keys');
+        if (next.pianoRoll.tool !== prev.pianoRoll.tool || next.pianoRoll.chord !== prev.pianoRoll.chord) {
+          this.stampHover = null;
+          this.invalidate('overlay');
+          this.updateCursor();
+        }
       }),
       s.session.subscribe((next, prev) => {
         if (next.selectedChannelId !== prev.selectedChannelId) {
@@ -151,8 +189,9 @@ export class PianoRollController {
     on(host, 'pointerup', (e) => this.onPointerUp(e));
     on(host, 'pointercancel', () => this.cancelDrag());
     on(host, 'pointerleave', () => {
-      if (!this.drag && this.hover) {
+      if (!this.drag && (this.hover || this.stampHover)) {
         this.hover = null;
+        this.stampHover = null;
         this.invalidate('overlay');
       }
     });
@@ -166,9 +205,11 @@ export class PianoRollController {
     on(els.keys, 'pointerup', (e) => this.onKeysUp(e));
     on(els.keys, 'pointercancel', (e) => this.onKeysUp(e));
 
-    on(els.velocityHost, 'pointerdown', (e) => this.onVelocityDown(e));
-    on(els.velocityHost, 'pointermove', (e) => this.onVelocityMove(e));
-    on(els.velocityHost, 'pointerup', (e) => this.onVelocityUp(e));
+    on(els.velocityHost, 'pointerdown', (e) => this.onLaneDown(e));
+    on(els.velocityHost, 'pointermove', (e) => this.onLaneMove(e));
+    on(els.velocityHost, 'pointerup', (e) => this.onLaneUp(e));
+    on(els.velocityHost, 'pointercancel', () => this.cancelDrag());
+    on(els.velocityHost, 'contextmenu', (e) => e.preventDefault());
 
     on(els.hthumb, 'pointerdown', (e) => this.onThumbDown(e));
 
@@ -208,6 +249,7 @@ export class PianoRollController {
       pattern,
       rootKey: instrument?.rootKey ?? null,
       notes: instrument && pattern ? notesSorted(pattern.notes[instrument.id]) : [],
+      songKey: project.transport.key ?? null,
     };
   }
 
@@ -236,6 +278,16 @@ export class PianoRollController {
     return new Set(this.s.editor.getState().noteSelection);
   }
 
+  /** The song key's rows for drawing (cached per key object); null when highlighting is off. */
+  private scaleRows(c: Ctx): ScaleRows | null {
+    if (!this.s.editor.getState().pianoRoll.scaleHighlight) return null;
+    if (this.scaleCache.key !== c.songKey) {
+      const k = c.songKey;
+      this.scaleCache = { key: k, rows: k ? { mask: scaleMask(k.root, k.scale), root: k.root } : null };
+    }
+    return this.scaleCache.rows;
+  }
+
   // ---------------------------------------------------------------- layout & drawing
 
   invalidate(...layers: Layer[]): void {
@@ -248,7 +300,7 @@ export class PianoRollController {
     this.vp.height = Math.max(1, Math.round(r.height));
     const c = this.ctx();
     this.vp.clampScroll(this.maxTick(c));
-    this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'velocity');
+    this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'lane');
   }
 
   private frame(): void {
@@ -263,13 +315,14 @@ export class PianoRollController {
     const theme = readTheme();
     const { els, vp } = this;
     const ts = c.project.transport.timeSig;
+    const pr = this.s.editor.getState().pianoRoll;
     if (this.dirty.has('grid')) {
-      drawGrid(fitCanvas(els.grid, vp.width, vp.height), vp, theme, ts, this.patternEnd(c));
+      drawGrid(fitCanvas(els.grid, vp.width, vp.height), vp, theme, ts, this.patternEnd(c), this.scaleRows(c));
     }
     if (this.dirty.has('notes')) {
       const ctx = fitCanvas(els.notes, vp.width, vp.height);
       ctx.clearRect(0, 0, vp.width, vp.height);
-      if (this.s.editor.getState().pianoRoll.ghosts && c.pattern) {
+      if (pr.ghosts && c.pattern) {
         for (const [cid, notes] of Object.entries(c.pattern.notes)) {
           if (cid !== c.channelId && notes) drawGhosts(ctx, vp, theme, notesSorted(notes));
         }
@@ -302,15 +355,16 @@ export class PianoRollController {
         KEYS_WIDTH,
         new Set(this.pressedKeys.keys()),
         c.rootKey,
+        this.scaleRows(c),
       );
     }
     if (this.dirty.has('ruler')) {
       drawRuler(fitCanvas(els.ruler, vp.width, RULER_HEIGHT), vp, theme, ts, RULER_HEIGHT, this.patternEnd(c));
     }
-    if (this.dirty.has('velocity') && this.s.editor.getState().pianoRoll.velocityLane) {
+    if (this.dirty.has('lane') && pr.velocityLane) {
       const h = Math.max(1, Math.round(els.velocityHost.getBoundingClientRect().height));
       const style = { color: theme.note, selected: this.selection() };
-      drawVelocity(fitCanvas(els.velocity, vp.width, h), vp, theme, h, c.notes, style, this.preview);
+      drawLane(fitCanvas(els.velocity, vp.width, h), vp, theme, h, c.notes, style, this.preview, pr.lane);
     }
     if (this.dirty.size > 0) {
       this.updateScrollbar(c);
@@ -347,7 +401,60 @@ export class PianoRollController {
         ctx.fillStyle = theme.danger;
         ctx.fillRect(Math.round(this.sliceX), y, 1, vp.rowHeight);
       }
+    } else if (this.stampHover && !d) {
+      // The chord the draw tool would stamp here: dashed outlines and its name.
+      const { tick, length, keys, name } = this.stampHover;
+      const x = vp.tickToX(tick);
+      const w = Math.max(6, length * vp.pxPerTick - 1);
+      ctx.setLineDash([3, 2]);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      let top = Infinity;
+      for (const k of keys) {
+        const y = vp.rowToY(rowForKey(k));
+        top = Math.min(top, y);
+        ctx.strokeRect(x + 0.5, y + 1.5, w, vp.rowHeight - 3);
+      }
+      ctx.setLineDash([]);
+      if (name && Number.isFinite(top)) {
+        ctx.font = `11px ${theme.font}`;
+        ctx.textBaseline = 'bottom';
+        const tw = ctx.measureText(name).width + 8;
+        ctx.fillStyle = 'rgba(20, 24, 28, 0.85)';
+        ctx.fillRect(x, top - 16, tw, 15);
+        ctx.fillStyle = theme.accent;
+        ctx.fillText(name, x + 4, top - 2);
+      }
     }
+  }
+
+  /** The hint bar text, set only when it changes (pointer moves are frequent). */
+  private hint(text: string): void {
+    if (text === this.lastHint) return;
+    this.lastHint = text;
+    this.s.session.getState().setHint(text);
+  }
+
+  /** Updates the chord-stamp outline under the pointer (draw and paint tools with a chord chosen). */
+  private updateStampHover(x: number, y: number, c: Ctx, e: { altKey: boolean }): void {
+    const pr = this.s.editor.getState().pianoRoll;
+    if (!pr.chord || (pr.tool !== 'draw' && pr.tool !== 'paint') || !c.channelId || this.hover) {
+      if (this.stampHover) {
+        this.stampHover = null;
+        this.invalidate('overlay');
+      }
+      return;
+    }
+    const grid = this.snapFor(e, c);
+    const tick = Math.max(0, snapFloor(this.vp.xToTick(x), grid));
+    const keys = stampKeys(this.drawKeyAtY(y, c), pr.chord, pr.inversion, c.songKey);
+    const prev = this.stampHover;
+    if (prev && prev.tick === tick && prev.keys.length === keys.length && prev.keys.every((k, i) => k === keys[i]))
+      return;
+    const name = stampName(keys);
+    const length = pr.tool === 'paint' ? Math.max(grid, Math.min(pr.lastLength, grid * 4)) : pr.lastLength;
+    this.stampHover = { tick, length, keys, name };
+    this.hint(`Click to draw ${name || 'the chord'}: ${keys.map(noteName).join(' ')}`);
+    this.invalidate('overlay');
   }
 
   private sliceX = 0;
@@ -403,7 +510,7 @@ export class PianoRollController {
       const bar = ticksPerBar(c.project.transport.timeSig);
       this.vp.scrollTick = first ? Math.max(0, Math.floor(first.tick / bar) * bar) : 0;
     }
-    this.invalidate('grid', 'notes', 'overlay', 'keys', 'velocity');
+    this.invalidate('grid', 'notes', 'overlay', 'keys', 'lane');
   }
 
   private persistViewport(): void {
@@ -417,7 +524,7 @@ export class PianoRollController {
   }
 
   private viewportChanged(): void {
-    this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'velocity');
+    this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'lane');
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => this.persistViewport(), 300);
   }
@@ -431,6 +538,23 @@ export class PianoRollController {
 
   private keyAtY(y: number): number {
     return clamp(keyForRow(Math.floor(this.vp.yToRow(y))), 0, 127);
+  }
+
+  /** The key a new note drawn at `y` gets (snapped to the scale when that's on). */
+  private drawKeyAtY(y: number, c: Ctx): number {
+    return drawKey(this.keyAtY(y), this.s.editor.getState().pianoRoll.scaleSnap, c.songKey);
+  }
+
+  /** The notes drawing a note at (tick, key) creates: the note, or a chord when a chord stamp is chosen. */
+  private stamp(tick: Tick, key: number, length: Tick, c: Ctx): Note[] {
+    const pr = this.s.editor.getState().pianoRoll;
+    return stampKeys(key, pr.chord, pr.inversion, c.songKey).map((k) => ({
+      id: newId.note(),
+      tick,
+      length,
+      key: k,
+      velocity: 100 / 128,
+    }));
   }
 
   private hitTest(x: number, y: number, c: Ctx): Hit | null {
@@ -450,6 +574,7 @@ export class PianoRollController {
     let cursor = 'default';
     if (this.drag?.kind === 'pan') cursor = 'grabbing';
     else if (tool === 'delete') cursor = 'not-allowed';
+    else if (tool === 'mute') cursor = h ? 'pointer' : 'default';
     else if (tool === 'slice') cursor = h ? 'col-resize' : 'default';
     else if (h?.zone === 'end') cursor = 'ew-resize';
     else if (h) cursor = tool === 'paint' ? 'copy' : 'move';
@@ -474,6 +599,22 @@ export class PianoRollController {
     this.audition = null;
   }
 
+  // ---------------------------------------------------------------- context menu
+
+  private openMenu(e: { clientX: number; clientY: number }, c: Ctx, hit: Hit | null): void {
+    const { channelId, patternId } = c;
+    if (!this.onMenu || !channelId || !patternId) return;
+    const { x, y } = this.local(e);
+    const tick = Math.max(0, Math.floor(this.vp.xToTick(x)));
+    const key = this.keyAtY(y);
+    if (hit) {
+      const editor = this.s.editor.getState();
+      if (!editor.noteSelection.includes(hit.note.id)) editor.selectNotes([hit.note.id]);
+      const noteIds = this.s.editor.getState().noteSelection;
+      this.onMenu({ kind: 'note', channelId, patternId, noteIds, tick, key }, e);
+    } else this.onMenu({ kind: 'empty', channelId, patternId, tick, key }, e);
+  }
+
   // ---------------------------------------------------------------- grid pointer
 
   private onPointerDown(e: PointerEvent): void {
@@ -489,16 +630,21 @@ export class PianoRollController {
     }
     if (!c.channelId || !c.patternId) return;
     e.preventDefault();
-    host.setPointerCapture(e.pointerId);
     this.s.view.getState().focusWindow('piano-roll');
+    this.stampHover = null;
     const editor = this.s.editor.getState();
     const tool = editor.pianoRoll.tool;
     const hit = this.hitTest(x, y, c);
     const mod = e.metaKey || e.ctrlKey;
 
+    if (e.button === 2 && (tool === 'select' || mod)) {
+      this.openMenu(e, c, hit);
+      return;
+    }
+    host.setPointerCapture(e.pointerId);
     if (e.button === 2 || tool === 'delete') {
       const gesture = this.s.history.gesture('Delete notes');
-      this.drag = { kind: 'erase', gesture, done: new Set() };
+      this.drag = { kind: 'erase', gesture, done: new Set(), clientX: e.clientX, clientY: e.clientY, moved: false };
       this.eraseAt(x, y, c);
       return;
     }
@@ -510,6 +656,13 @@ export class PianoRollController {
         const { patternId, channelId } = c;
         this.s.history.transact('Slice note', (d) => sliceNote(d, patternId, channelId, hit.note.id, at));
       }
+      return;
+    }
+
+    if (tool === 'mute') {
+      const gesture = this.s.history.gesture(hit?.note.muted ? 'Unmute notes' : 'Mute notes');
+      this.drag = { kind: 'mute', gesture, done: new Set(), muted: !hit?.note.muted };
+      this.muteAt(x, y, c);
       return;
     }
 
@@ -536,7 +689,7 @@ export class PianoRollController {
           originals,
           duplicate: e.shiftKey,
           dTick: 0,
-          dKey: 0,
+          keys: originals.map((n) => n.key),
         };
         this.auditionKey(hit.note.key, hit.note.velocity);
       }
@@ -545,7 +698,7 @@ export class PianoRollController {
         this.preview = new Map();
         this.previewAdds = originals.map((n) => ({ ...n }));
       }
-      this.invalidate('notes', 'velocity', 'overlay');
+      this.invalidate('notes', 'lane', 'overlay');
       return;
     }
 
@@ -557,7 +710,7 @@ export class PianoRollController {
     }
 
     const grid = this.snapFor(e, c);
-    const key = this.keyAtY(y);
+    const key = this.drawKeyAtY(y, c);
     if (tool === 'paint') {
       const gesture = this.s.history.gesture('Paint notes');
       this.drag = { kind: 'paint', gesture, done: new Set(), lastTick: snapFloor(this.vp.xToTick(x), grid), key };
@@ -566,14 +719,14 @@ export class PianoRollController {
       return;
     }
 
-    // Draw tool on empty space: create a note and keep dragging it into place.
+    // Draw tool on empty space: create a note (or a chord) and keep dragging it into place.
     editor.selectNotes([]);
     const tick = Math.max(0, snapFloor(this.vp.xToTick(x), grid));
-    const note: Note = { id: newId.note(), tick, length: editor.pianoRoll.lastLength, key, velocity: 100 / 128 };
-    this.drag = { kind: 'create', note, grabOffset: this.vp.xToTick(x) - tick };
-    this.previewAdds = [note];
+    const notes = this.stamp(tick, key, editor.pianoRoll.lastLength, c);
+    this.drag = { kind: 'create', notes, grabOffset: this.vp.xToTick(x) - tick };
+    this.previewAdds = notes;
     this.auditionKey(key);
-    this.invalidate('notes', 'velocity');
+    this.invalidate('notes', 'lane');
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -592,6 +745,7 @@ export class PianoRollController {
         this.invalidate('overlay');
         this.updateCursor();
       }
+      this.updateStampHover(x, y, c, e);
       return;
     }
     this.autoScroll(x, y, c);
@@ -609,17 +763,24 @@ export class PianoRollController {
         let dTick = snapRound(rawTick, grid) - d.anchor.tick;
         const minTick = Math.min(...d.originals.map((n) => n.tick));
         if (minTick + dTick < 0) dTick = -minTick;
-        let dKey = this.keyAtY(y) - this.keyAtY(d.y0);
-        const keys = d.originals.map((n) => n.key);
-        dKey = clamp(dKey, -Math.min(...keys), 127 - Math.max(...keys));
-        if (dTick === d.dTick && dKey === d.dKey) return;
+        const toKey = d.anchor.key + this.keyAtY(y) - this.keyAtY(d.y0);
+        const scaleSnap = this.s.editor.getState().pianoRoll.scaleSnap;
+        const keys = movedKeys(
+          d.originals.map((n) => n.key),
+          d.anchor.key,
+          toKey,
+          scaleSnap,
+          c.songKey,
+        );
+        if (dTick === d.dTick && keys.every((k, i) => k === d.keys[i])) return;
         d.dTick = dTick;
-        d.dKey = dKey;
-        const moved = d.originals.map((n) => ({ ...n, tick: n.tick + dTick, key: n.key + dKey }));
+        d.keys = keys;
+        const moved = d.originals.map((n, i) => ({ ...n, tick: n.tick + dTick, key: keys[i] as number }));
         if (d.duplicate) this.previewAdds = moved;
         else this.preview = new Map(moved.map((n) => [n.id, n]));
-        this.auditionKey(d.anchor.key + dKey, d.anchor.velocity);
-        this.invalidate('notes', 'velocity');
+        const anchorIndex = d.originals.findIndex((n) => n.id === d.anchor.id);
+        this.auditionKey(keys[anchorIndex] ?? d.anchor.key, d.anchor.velocity);
+        this.invalidate('notes', 'lane');
         return;
       }
       case 'resize': {
@@ -631,18 +792,19 @@ export class PianoRollController {
         if (dTick === d.dTick) return;
         d.dTick = dTick;
         this.preview = new Map(d.originals.map((n) => [n.id, { ...n, length: n.length + dTick }]));
-        this.invalidate('notes', 'velocity');
+        this.invalidate('notes', 'lane');
         return;
       }
       case 'create': {
         const grid = this.snapFor(e, c);
         const tick = Math.max(0, snapFloor(this.vp.xToTick(x) - d.grabOffset + grid / 2, grid));
-        const key = this.keyAtY(y);
-        if (tick === d.note.tick && key === d.note.key) return;
-        d.note = { ...d.note, tick, key };
-        this.previewAdds = [d.note];
+        const key = this.drawKeyAtY(y, c);
+        const first = d.notes[0] as Note;
+        if (tick === first.tick && key === first.key) return;
+        d.notes = this.stamp(tick, key, first.length, c);
+        this.previewAdds = d.notes;
         this.auditionKey(key);
-        this.invalidate('notes', 'velocity');
+        this.invalidate('notes', 'lane');
         return;
       }
       case 'marquee': {
@@ -659,7 +821,11 @@ export class PianoRollController {
         this.paintAt(x, y, c, e);
         return;
       case 'erase':
+        if (Math.abs(e.clientX - d.clientX) > 3 || Math.abs(e.clientY - d.clientY) > 3) d.moved = true;
         this.eraseAt(x, y, c);
+        return;
+      case 'mute':
+        this.muteAt(x, y, c);
         return;
       default:
         return;
@@ -675,18 +841,18 @@ export class PianoRollController {
     this.stopAudition();
     const { patternId, channelId } = c;
     if (patternId && channelId) {
-      if (d.kind === 'move' && (d.dTick !== 0 || d.dKey !== 0 || d.duplicate)) {
+      if (d.kind === 'move' && (d.dTick !== 0 || d.keys.some((k, i) => k !== d.originals[i]?.key) || d.duplicate)) {
         if (d.duplicate) {
-          const copies = d.originals.map((n) => ({
+          const copies = d.originals.map((n, i) => ({
             ...n,
             id: newId.note(),
             tick: n.tick + d.dTick,
-            key: n.key + d.dKey,
+            key: d.keys[i] as number,
           }));
           this.s.history.transact('Duplicate notes', (draft) => addNotes(draft, patternId, channelId, copies));
           this.s.editor.getState().selectNotes(copies.map((n) => n.id));
         } else {
-          const edits = d.originals.map((n) => ({ id: n.id, tick: n.tick + d.dTick, key: n.key + d.dKey }));
+          const edits = d.originals.map((n, i) => ({ id: n.id, tick: n.tick + d.dTick, key: d.keys[i] as number }));
           this.s.history.transact(d.originals.length > 1 ? 'Move notes' : 'Move note', (draft) =>
             editNotes(draft, patternId, channelId, edits),
           );
@@ -696,28 +862,35 @@ export class PianoRollController {
         this.s.history.transact('Resize notes', (draft) => editNotes(draft, patternId, channelId, edits));
         this.s.editor.getState().setPianoRoll({ lastLength: d.anchor.length + d.dTick });
       } else if (d.kind === 'create') {
-        const note = d.note;
-        this.s.history.transact('Add note', (draft) => addNote(draft, patternId, channelId, note));
-        this.s.editor.getState().selectNotes([note.id]);
-      } else if (d.kind === 'paint' || d.kind === 'erase') {
+        const notes = d.notes;
+        this.s.history.transact(notes.length > 1 ? 'Add chord' : 'Add note', (draft) =>
+          addNotes(draft, patternId, channelId, notes),
+        );
+        this.s.editor.getState().selectNotes(notes.map((n) => n.id));
+      } else if (d.kind === 'paint' || d.kind === 'mute') {
         d.gesture.commit();
+      } else if (d.kind === 'erase') {
+        d.gesture.commit();
+        // A right-click on an empty spot that erased nothing opens the menu.
+        if (e.button === 2 && !d.moved && d.done.size === 0) this.openMenu(e, c, null);
       }
     }
     this.preview = null;
     this.previewAdds = [];
     this.updateCursor();
-    this.invalidate('notes', 'velocity', 'overlay');
+    this.invalidate('notes', 'lane', 'overlay');
   }
 
   private cancelDrag(): void {
     const d = this.drag;
     if (!d) return;
     this.drag = null;
-    if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'velocity') d.gesture.cancel();
+    if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'mute' || d.kind === 'lane') d.gesture.cancel();
+    if (d.kind === 'lane') this.els.laneValue.textContent = '';
     this.preview = null;
     this.previewAdds = [];
     this.stopAudition();
-    this.invalidate('notes', 'velocity', 'overlay');
+    this.invalidate('notes', 'lane', 'overlay');
   }
 
   private paintAt(x: number, y: number, c: Ctx, e: { altKey: boolean }): void {
@@ -727,7 +900,7 @@ export class PianoRollController {
     const editor = this.s.editor.getState();
     const length = Math.max(grid, Math.min(editor.pianoRoll.lastLength, grid * 4));
     const tick = Math.max(0, snapFloor(this.vp.xToTick(x), grid));
-    const key = this.keyAtY(y);
+    const key = this.drawKeyAtY(y, c);
     // Fill every cell between the last and current position (fast drags skip cells).
     const from = Math.min(d.lastTick, tick);
     const to = Math.max(d.lastTick, tick);
@@ -737,8 +910,8 @@ export class PianoRollController {
       const cell = `${t}:${key}`;
       if (d.done.has(cell)) continue;
       d.done.add(cell);
-      if (c.notes.some((n) => n.key === key && n.tick === t)) continue;
-      add.push({ id: newId.note(), tick: t, length, key, velocity: 100 / 128 });
+      for (const n of this.stamp(t, key, length, c))
+        if (!c.notes.some((m) => m.key === n.key && m.tick === t)) add.push(n);
     }
     if (add.length === 0) return;
     const { patternId, channelId } = c;
@@ -756,6 +929,17 @@ export class PianoRollController {
     const id = hit.note.id;
     d.gesture.update((draft) => removeNotes(draft, patternId, channelId, [id]));
     this.hover = null;
+  }
+
+  private muteAt(x: number, y: number, c: Ctx): void {
+    const d = this.drag;
+    if (d?.kind !== 'mute' || !c.patternId || !c.channelId) return;
+    const hit = this.hitTest(x, y, c);
+    if (!hit || d.done.has(hit.note.id)) return;
+    d.done.add(hit.note.id);
+    const { patternId, channelId } = c;
+    const edit = { id: hit.note.id, muted: d.muted };
+    d.gesture.update((draft) => editNotes(draft, patternId, channelId, [edit]));
   }
 
   private autoScroll(x: number, y: number, c: Ctx): void {
@@ -873,38 +1057,44 @@ export class PianoRollController {
     this.invalidate('keys');
   }
 
-  // ---------------------------------------------------------------- velocity lane
+  // ---------------------------------------------------------------- event lane (velocity, pan, release, fine)
 
-  private onVelocityDown(e: PointerEvent): void {
+  private onLaneDown(e: PointerEvent): void {
     const c = this.ctx();
-    if (e.button !== 0 || !c.channelId || !c.patternId) return;
+    if ((e.button !== 0 && e.button !== 2) || !c.channelId || !c.patternId) return;
     e.preventDefault();
     this.els.velocityHost.setPointerCapture(e.pointerId);
     const { x } = this.local(e, this.els.velocityHost);
-    this.drag = { kind: 'velocity', gesture: this.s.history.gesture('Velocity'), lastX: x };
-    this.velocityAt(e, c);
+    const lane = this.s.editor.getState().pianoRoll.lane;
+    // Right-drag resets values to their default.
+    this.drag = { kind: 'lane', gesture: this.s.history.gesture(LANES[lane].label), lastX: x, reset: e.button === 2 };
+    this.laneAt(e, c);
   }
 
-  private onVelocityMove(e: PointerEvent): void {
-    if (this.drag?.kind !== 'velocity') return;
-    this.velocityAt(e, this.ctx());
+  private onLaneMove(e: PointerEvent): void {
+    if (this.drag?.kind !== 'lane') return;
+    this.laneAt(e, this.ctx());
   }
 
-  private onVelocityUp(e: PointerEvent): void {
-    if (this.drag?.kind !== 'velocity') return;
-    this.velocityAt(e, this.ctx());
+  private onLaneUp(e: PointerEvent): void {
+    if (this.drag?.kind !== 'lane') return;
+    this.laneAt(e, this.ctx());
     this.els.velocityHost.releasePointerCapture(e.pointerId);
     this.drag.gesture.commit();
     this.drag = null;
+    this.els.laneValue.textContent = '';
   }
 
-  private velocityAt(e: PointerEvent, c: Ctx): void {
+  private laneAt(e: PointerEvent, c: Ctx): void {
     const d = this.drag;
-    if (d?.kind !== 'velocity' || !c.patternId || !c.channelId) return;
+    if (d?.kind !== 'lane' || !c.patternId || !c.channelId) return;
     const host = this.els.velocityHost;
     const { x, y } = this.local(e, host);
     const h = host.getBoundingClientRect().height;
-    const velocity = clamp(1 - (y - 3) / (h - 6), 0.01, 1);
+    const lane = this.s.editor.getState().pianoRoll.lane;
+    const value = d.reset ? LANES[lane].reset : valueAtY(y, h, lane);
+    this.hint(formatLaneValue(lane, value));
+    this.els.laneValue.textContent = formatLaneAmount(lane, value);
     const x0 = Math.min(d.lastX, x) - 3;
     const x1 = Math.max(d.lastX, x) + 3;
     d.lastX = x;
@@ -913,8 +1103,8 @@ export class PianoRollController {
     const selected = this.s.editor.getState().noteSelection;
     const only = selected.length > 0 ? new Set(selected) : null;
     const edits = c.notes
-      .filter((n) => n.tick >= t0 && n.tick <= t1 && (!only || only.has(n.id)) && n.velocity !== velocity)
-      .map((n) => ({ id: n.id, velocity }));
+      .filter((n) => n.tick >= t0 && n.tick <= t1 && (!only || only.has(n.id)))
+      .map((n) => laneEdit(n.id, lane, value));
     if (edits.length === 0) return;
     const { patternId, channelId } = c;
     d.gesture.update((draft) => editNotes(draft, patternId, channelId, edits));

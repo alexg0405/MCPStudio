@@ -1,4 +1,5 @@
 import type { DocChange } from '@core/history/history';
+import type { InsertId } from '@core/model/types';
 import type { EngineApi, EngineState, EngineStats, TransportView } from './api';
 
 /** An engine stand-in for Node tests and UI work without audio. Records what it was told. */
@@ -41,6 +42,15 @@ export class FakeEngine implements EngineApi {
   }
   previewNoteOff(): void {}
   previewSample(): void {}
+  /** Peaks readMeters() reports per insert ([left, right]); everything else reads 0. */
+  meterLevels = new Map<InsertId, readonly [number, number]>();
+  readMeters(order: readonly InsertId[], out: Float32Array): void {
+    for (let i = 0; i < order.length && i * 2 + 1 < out.length; i++) {
+      const level = this.meterLevels.get(order[i] as InsertId);
+      out[i * 2] = level?.[0] ?? 0;
+      out[i * 2 + 1] = level?.[1] ?? 0;
+    }
+  }
   stats(): EngineStats {
     return {
       state: this.state,

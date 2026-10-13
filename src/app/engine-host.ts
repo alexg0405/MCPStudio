@@ -1,5 +1,5 @@
 import type { DocChange } from '@core/history/history';
-import type { ChannelId, SampleRef, Tick } from '@core/model/types';
+import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
 import type { EngineApi, EngineState, EngineStats, TransportView } from '@engine/api';
 
 /**
@@ -88,6 +88,9 @@ export class EngineHost implements EngineApi {
   }
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     this.inner.previewSample(ref);
+  }
+  readMeters(order: readonly InsertId[], out: Float32Array): void {
+    this.inner.readMeters(order, out);
   }
   stats(): EngineStats {
     return this.inner.stats();

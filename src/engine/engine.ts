@@ -3,6 +3,7 @@
  * project document into a Web Audio graph and drives the lookahead transport.
  */
 import type { DocChange } from '@core/history/history';
+import { makeInsert } from '@core/model/defaults';
 import {
   MASTER,
   type ChannelId,
@@ -11,12 +12,14 @@ import {
   type Project,
   type SampleRef,
 } from '@core/model/types';
+import { effectivelyMutedInserts } from '@core/query/mixer';
 import { effectivelyMuted } from '@core/query/queries';
 import { PPQ, ticksPerBar } from '@core/time/ppq';
 import type { JsonValue, TransportInfo } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions, EngineState, EngineStats, PluginResolver, TransportView } from './api';
 import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
+import { InsertStrip, METER_FRAMES } from './insert-strip';
 import { SampleCache } from './samples';
 import type { Timeline } from './sched/core';
 import { patternModeSource, type EventSource } from './sched/events';
@@ -26,6 +29,8 @@ import type { WorkletPortImpl } from './worklet-port';
 import limiterUrl from './limiter.worklet.ts?worker&url';
 
 const PREVIEW_ID_BASE = 2 ** 30;
+/** Used when a document has no master insert (repair adds one; the engine never runs without). */
+const DEFAULT_MASTER = makeInsert(MASTER, 'Master');
 
 class TempoInfo implements TransportInfo {
   readonly ppq = PPQ;
@@ -48,9 +53,12 @@ export class Engine implements EngineApi, EngineCore {
   readonly samples: SampleCache;
   readonly offline: boolean;
   readonly transportInfo: TempoInfo;
-  private readonly masterIn: GainNode;
+  /** Post-master bus: master insert + previews → safety limiter → destination. */
   private readonly masterOut: GainNode;
   private readonly previewBus: GainNode;
+  private readonly master: InsertStrip;
+  private readonly inserts = new Map<InsertId, InsertStrip>();
+  private readonly meterScratch = new Float32Array(METER_FRAMES);
   private readonly strips = new Map<ChannelId, ChannelStrip>();
   private project: Project | null = null;
   private view: TransportView = { mode: 'pattern', patternId: null, loop: null };
@@ -77,11 +85,13 @@ export class Engine implements EngineApi, EngineCore {
     this.plugins = opts.plugins;
     this.samples = new SampleCache(opts.samples);
     this.transportInfo = new TempoInfo(130);
-    this.masterIn = new GainNode(ctx);
     this.masterOut = new GainNode(ctx);
     this.previewBus = new GainNode(ctx, { gain: 0.8 });
-    this.masterIn.connect(this.masterOut).connect(ctx.destination);
+    this.masterOut.connect(ctx.destination);
     this.previewBus.connect(this.masterOut);
+    // The master insert exists before any document so channels and inserts always have a target.
+    this.master = new InsertStrip(this, DEFAULT_MASTER, null, this.masterOut);
+    this.inserts.set(MASTER, this.master);
 
     const sink: TransportSink = {
       noteOn: (cid, e) => this.strips.get(cid)?.noteOn(e),
@@ -142,6 +152,7 @@ export class Engine implements EngineApi, EngineCore {
     if (!this.project || ids.length === 0) return;
     const set = new Set(ids);
     for (const strip of this.strips.values()) if (set.has(strip.pluginId)) strip.reload(this.project);
+    for (const insert of this.inserts.values()) insert.pluginsChanged(set, this.project);
   }
 
   /** A realtime engine with its own AudioContext. */
@@ -165,10 +176,13 @@ export class Engine implements EngineApi, EngineCore {
     if (this.ctx instanceof AudioContext && this.ctx.state !== 'running') await this.ctx.resume();
   }
 
-  /** Resolves when the master chain and every plugin instance have finished loading. */
+  /** Resolves when the master chain and every plugin instance (instruments and effects) have loaded. */
   async ready(): Promise<void> {
     await this.initDone;
-    await Promise.all([...this.strips.values()].map((s) => s.ready));
+    await Promise.all([
+      ...[...this.strips.values()].map((s) => s.ready),
+      ...[...this.inserts.values()].map((s) => s.ready),
+    ]);
   }
 
   // ---- Document mirroring ----
@@ -182,6 +196,9 @@ export class Engine implements EngineApi, EngineCore {
     if (prev === next) return;
     this.project = next;
     if (!prev || prev.transport.bpm !== next.transport.bpm) this.transportInfo.setBpm(next.transport.bpm);
+
+    // Inserts first (channels connect to them), removals last.
+    const mixer = this.reconcileMixer(prev, next);
 
     if (!prev || prev.channels !== next.channels || prev.samples !== next.samples) {
       const muted = effectivelyMuted(next.channels);
@@ -204,6 +221,8 @@ export class Engine implements EngineApi, EngineCore {
         }
       }
     }
+    if (mixer.topologyChanged) for (const strip of this.strips.values()) strip.reroute();
+    for (const strip of mixer.removed) strip.dispose();
 
     const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
     const schedulingChanged =
@@ -215,6 +234,38 @@ export class Engine implements EngineApi, EngineCore {
       muteKey !== this.muteKey;
     this.muteKey = muteKey;
     if (schedulingChanged) this.updateModel();
+  }
+
+  /**
+   * Keyed add/update of inserts (and their effect slots) plus effective mutes. Removed strips are
+   * returned undisposed so channels can move off them first.
+   */
+  private reconcileMixer(prev: Project | null, next: Project): { topologyChanged: boolean; removed: InsertStrip[] } {
+    const removed: InsertStrip[] = [];
+    let added = false;
+    if (!prev || prev.mixer !== next.mixer) {
+      const inserts = next.mixer.inserts;
+      for (const id of Object.keys(inserts) as InsertId[]) {
+        const insert = inserts[id];
+        if (!insert) continue;
+        const strip = this.inserts.get(id);
+        if (strip) strip.update(insert, next);
+        else {
+          this.inserts.set(id, new InsertStrip(this, insert, next, this.master.input));
+          added = true;
+        }
+      }
+      if (!inserts[MASTER]) this.master.update(DEFAULT_MASTER, next);
+      for (const [id, strip] of this.inserts) {
+        if (id === MASTER || inserts[id]) continue;
+        this.inserts.delete(id);
+        removed.push(strip);
+      }
+      const muted = effectivelyMutedInserts(inserts);
+      for (const [id, strip] of this.inserts) strip.setMuted(muted.has(id));
+    }
+    if (prev && prev.samples !== next.samples) for (const strip of this.inserts.values()) strip.samplesChanged(next);
+    return { topologyChanged: added || removed.length > 0, removed };
   }
 
   setTransportView(view: TransportView): void {
@@ -245,10 +296,9 @@ export class Engine implements EngineApi, EngineCore {
 
   // ---- EngineCore ----
 
-  insertInput(_id: InsertId): AudioNode {
-    // Mixer inserts arrive in M5; everything feeds the master until then.
-    void MASTER;
-    return this.masterIn;
+  /** Where a channel routed to `id` connects (unknown inserts fall back to the master). */
+  insertInput(id: InsertId): AudioNode {
+    return (this.inserts.get(id) ?? this.master).input;
   }
 
   requestState(owner: PluginOwner, state: JsonValue): void {
@@ -366,6 +416,19 @@ export class Engine implements EngineApi, EngineCore {
     });
   }
 
+  // ---- Meters ----
+
+  readMeters(order: readonly InsertId[], out: Float32Array): void {
+    for (let i = 0; i < order.length; i++) {
+      const strip = this.inserts.get(order[i] as InsertId);
+      if (strip) strip.readPeaks(this.meterScratch, out, i * 2);
+      else if (i * 2 + 1 < out.length) {
+        out[i * 2] = 0;
+        out[i * 2 + 1] = 0;
+      }
+    }
+  }
+
   // ---- Status ----
 
   stats(): EngineStats {
@@ -382,11 +445,13 @@ export class Engine implements EngineApi, EngineCore {
     };
   }
 
-  /** Seconds of release tail to add after the last note when exporting. */
+  /** Seconds of tail to add after the last note when exporting (release + effect tails). */
   tailSeconds(): number {
     let tail = 0.5;
     for (const s of this.strips.values()) tail = Math.max(tail, s.tailTime);
-    return Math.min(10, tail);
+    let inserts = 0;
+    for (const [id, s] of this.inserts) if (id !== MASTER) inserts = Math.max(inserts, s.tailTime);
+    return Math.min(30, tail + inserts + this.master.tailTime);
   }
 
   /** Seconds per bar at the current tempo (export/test helper). */
@@ -411,6 +476,8 @@ export class Engine implements EngineApi, EngineCore {
     this.clock = null;
     for (const s of this.strips.values()) s.dispose();
     this.strips.clear();
+    for (const s of this.inserts.values()) s.dispose();
+    this.inserts.clear();
     for (const p of [...this.ports]) p.dispose();
     this.limiter?.port.postMessage({ t: 'dispose' });
     this.listeners.clear();

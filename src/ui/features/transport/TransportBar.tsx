@@ -97,6 +97,7 @@ export function TransportBar() {
       <CommandButton command="transport.playPause" icon={playing ? 'pause' : 'play'} className={styles.play} />
       <CommandButton command="transport.stop" icon="stop" />
       <CommandButton command="transport.record" icon="record" className={styles.record} />
+      <CommandButton command="transport.metronome" icon="metronome" className={styles.metronome} />
       <Tempo />
       <Position />
     </div>

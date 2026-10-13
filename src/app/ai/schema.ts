@@ -231,10 +231,15 @@ export const ACTION_OPS = [
     beatProps,
     ['title', 'bars', 'tracks'],
   ),
-  op('transport', 'Playback, applied after the edits.', {
-    action: { type: 'string', enum: ['play', 'stop'] },
+  op('transport', 'Playback and recording, applied after the edits.', {
+    action: {
+      type: 'string',
+      enum: ['play', 'stop', 'record'],
+      description: 'record = arm recording and play (live MIDI/typing-keyboard notes go into the current pattern).',
+    },
     mode: { type: 'string', enum: ['pattern', 'song'], description: 'Switch pattern/song mode first.' },
     from_bar: int('1-based bar to play from (song mode).'),
+    metronome: bool('Turn the metronome on or off.'),
   }),
   op('open', 'Shows a window, applied after the edits.', {
     window: { type: 'string', enum: ['mixer', 'channel-rack', 'piano-roll', 'playlist', 'plugin'] },

@@ -99,6 +99,19 @@ export async function pickSaveWavFile(suggestedName: string): Promise<FileSystem
   }
 }
 
+const MIDI_TYPES: FilePickerAcceptType[] = [{ description: 'MIDI file', accept: { 'audio/midi': ['.mid'] } }];
+
+/** Asks where to save an exported MIDI file. Resolves null when the user cancels. */
+export async function pickSaveMidiFile(suggestedName: string): Promise<FileSystemFileHandle | null> {
+  const name = /\.midi?$/i.test(suggestedName) ? suggestedName : `${suggestedName}.mid`;
+  try {
+    return await requirePicker('showSaveFilePicker')({ suggestedName: name, types: MIDI_TYPES, id: 'export' });
+  } catch (e) {
+    if (isAbort(e)) return null;
+    throw e;
+  }
+}
+
 /** Asks for a project file to open. Resolves null when the user cancels. */
 export async function pickOpenFile(): Promise<FileSystemFileHandle | null> {
   try {

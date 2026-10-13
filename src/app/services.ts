@@ -16,6 +16,9 @@ import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
 import { createPrefsStore, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
+import { ControllerRouter } from './controllers';
+import { LiveInput } from './live-input';
+import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
 import { BeatAssistant } from './assistant/assistant';
@@ -39,6 +42,10 @@ export interface Services {
   /** Piano roll / playlist tools, snap, zoom, selection and clipboard. */
   readonly editor: EditorStore;
   readonly midi: MidiInput;
+  /** Live notes and controllers from every input (MIDI, typing keyboard, on-screen piano). */
+  readonly live: LiveInput;
+  /** MIDI controller links ("Link to controller"). */
+  readonly controllers: ControllerRouter;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
   /** Record mode and the recorders features register (notes, automation, audio). */
@@ -84,10 +91,11 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const prefs = createPrefsStore();
   const editor = createEditorStore(opts.pianoRoll, opts.playlist);
   let engineRef: EngineApi | null = null;
-  const midi = new MidiInput(
+  const live = new LiveInput(
     () => engineRef as EngineApi,
     () => session.getState().selectedChannelId,
   );
+  const midi = new MidiInput(live);
 
   const engineOptions: EngineOptions = {
     plugins,
@@ -106,8 +114,17 @@ export function createServices(opts: ServiceOptions = {}): Services {
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
   const recording = new RecordController(engine);
+  // The engine plays the metronome and count-in from the prefs (count-in only while record is armed).
+  const syncSession = () => {
+    const pr = prefs.getState();
+    engine.setSession({ metronome: pr.metronome, countInBars: recording.armed ? pr.countInBars : 0 });
+  };
+  prefs.subscribe(syncSession);
+  recording.store.subscribe(syncSession);
+  syncSession();
 
   let files: ProjectFiles | null = null;
+  let controllers: ControllerRouter | null = null;
   let assistant: BeatAssistant | null = null;
   const services: Services = {
     platform,
@@ -120,9 +137,13 @@ export function createServices(opts: ServiceOptions = {}): Services {
     prefs,
     editor,
     midi,
+    live,
     plugins,
     engine,
     recording,
+    get controllers() {
+      return (controllers ??= new ControllerRouter(services));
+    },
     get files() {
       return (files ??= new ProjectFiles(services));
     },
@@ -155,6 +176,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
   };
 
   connectEngine(services);
+  recording.register(new NoteRecorder(services));
+  void services.controllers; // listens to live controllers from the start
   return services;
 }
 

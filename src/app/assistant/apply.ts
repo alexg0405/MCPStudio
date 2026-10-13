@@ -40,7 +40,7 @@ const KIT: Partial<Record<BeatSound, string>> = {
 };
 
 /** 3xOsc settings for the synth sounds (and the 808 when the 808 plugin isn't installed). */
-const SYNTH: Partial<Record<BeatSound, Record<string, number | string>>> = {
+export const SYNTH: Partial<Record<BeatSound, Record<string, number | string>>> = {
   bass: { osc1Coarse: -12, osc2Coarse: -12, attack: 0.002, decay: 0.25, sustain: 0.3, cutoff: 600, filterEnv: 2.5 },
   lead: { attack: 0.004, decay: 0.3, sustain: 0.6, release: 0.25, cutoff: 3200, osc3Level: 0.2 },
   pad: { attack: 0.6, decay: 1.2, sustain: 0.8, release: 1.5, cutoff: 1800, filterEnv: 0.6, osc3Level: 0.2 },

@@ -11,6 +11,14 @@ export interface PrefsState {
   /** Last WAV export settings. */
   exportFormat: 'pcm16' | 'pcm24' | 'float32';
   exportSampleRate: number;
+  /** Metronome clicks while playing. */
+  metronome: boolean;
+  /** Bars of count-in when recording (0 = none). */
+  countInBars: number;
+  /** Grid recorded note starts snap to (ticks; 0 = as played). */
+  recordQuantize: number;
+  /** Recording over existing notes adds to them or replaces what it passes over. */
+  recordMode: 'overdub' | 'replace';
 }
 
 export interface PrefsActions {
@@ -26,6 +34,10 @@ const DEFAULTS: PrefsState = {
   midiInput: false,
   exportFormat: 'pcm24',
   exportSampleRate: 48000,
+  metronome: false,
+  countInBars: 1,
+  recordQuantize: 0,
+  recordMode: 'overdub',
 };
 
 function load(): PrefsState {

@@ -1,5 +1,4 @@
 import type { Services } from '@app/services';
-import type { ChannelId } from '@core/model/types';
 
 /**
  * FL's "typing keyboard to piano keyboard": two rows of the computer keyboard play the selected
@@ -48,7 +47,8 @@ const OFFSETS: Record<string, number> = {
 };
 
 export class TypingPiano {
-  private readonly down = new Map<string, { channelId: ChannelId; noteId: number }>();
+  /** Physical key → the note it plays. */
+  private readonly down = new Map<string, number>();
 
   constructor(private readonly services: Services) {}
 
@@ -60,27 +60,23 @@ export class TypingPiano {
     if (offset === undefined) return false;
     e.preventDefault();
     if (e.repeat || this.down.has(e.code)) return true;
-    const channelId = this.services.session.getState().selectedChannelId;
-    if (!channelId) return true;
     const key = Math.max(0, Math.min(127, prefs.pianoOctave * 12 + offset));
-    const noteId = this.services.engine.previewNoteOn(channelId, key, 0.8);
-    this.down.set(e.code, { channelId, noteId });
+    this.services.live.noteOn(key, 0.8, { source: 'typing' }, e.timeStamp);
+    this.down.set(e.code, key);
     return true;
   }
 
   keyUp(e: KeyboardEvent): boolean {
-    const held = this.down.get(e.code);
-    if (!held) return false;
+    const key = this.down.get(e.code);
+    if (key === undefined) return false;
     this.down.delete(e.code);
-    this.services.engine.previewNoteOff(held.channelId, held.noteId);
+    this.services.live.noteOff(key, 0.5, { source: 'typing' }, e.timeStamp);
     return true;
   }
 
   /** Releases everything (window lost focus while keys were held). */
   releaseAll(): void {
-    for (const [code, held] of this.down) {
-      this.services.engine.previewNoteOff(held.channelId, held.noteId);
-      this.down.delete(code);
-    }
+    this.down.clear();
+    this.services.live.releaseAll('typing');
   }
 }

@@ -82,8 +82,9 @@ export default defineConfig(({ mode }) => ({
     port: Number(process.env.PORT) || 5390,
     strictPort: true,
     headers: isolation,
-    // Helper-agent worktrees live inside the project folder; their files aren't this app's.
-    watch: { ignored: ['**/.claude/worktrees/**'] },
+    // Helper-agent worktrees live inside the project folder; their files aren't this app's. Anchored to
+    // this root, so a dev server started inside a worktree still watches its own files.
+    watch: { ignored: [`${root}.claude/worktrees/**`] },
   },
   // Optimized up front: a dependency discovered mid-run gets re-bundled under a new hash, and modules
   // that already loaded the old copy end up with a second React (hooks then fail).

@@ -15,10 +15,12 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Layout: Arrange | `⌥⇧1` / `Alt+Shift+1` |
 | Layout: Compose | `⌥⇧2` / `Alt+Shift+2` |
 | Layout: Mix | `⌥⇧3` / `Alt+Shift+3` |
+| Metronome | `⌥M` / `Alt+M` |
 | Mixer | `F9`, `⌥4` / `Alt+4` |
 | New pattern | `F4` |
 | New project | `⌘N` / `Ctrl+N`, `⌥N` / `Alt+N` |
 | Next pattern | `Num +` |
+| On-screen keyboard | `⌥7` / `Alt+7` |
 | Open… | `⌘O` / `Ctrl+O` |
 | Pattern / song mode | `L` |
 | Piano roll | `F7`, `⌥3` / `Alt+3` |

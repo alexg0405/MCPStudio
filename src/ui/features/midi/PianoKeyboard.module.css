@@ -1,0 +1,92 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6px;
+  gap: 6px;
+  user-select: none;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.oct {
+  width: 22px;
+  height: 20px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  cursor: pointer;
+}
+
+.label {
+  min-width: 36px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  text-align: center;
+}
+
+.keys {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 60px;
+  touch-action: none;
+}
+
+.white {
+  position: relative;
+  flex: 1;
+  border: 1px solid #1c2226;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(#f4f4f0, #dcdcd6);
+  cursor: pointer;
+}
+
+.white.on {
+  background: linear-gradient(#ffd09a, var(--ag-accent));
+}
+
+.c {
+  position: absolute;
+  bottom: 3px;
+  left: 0;
+  right: 0;
+  color: #6b6f72;
+  font-size: 9px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.blacks {
+  position: absolute;
+  inset: 0 0 38% 0;
+  display: flex;
+  pointer-events: none;
+}
+
+.gap {
+  position: relative;
+  flex: 1;
+}
+
+.black {
+  position: absolute;
+  top: 0;
+  right: -30%;
+  width: 60%;
+  height: 100%;
+  z-index: 1;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(#3a4146, #15191c);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.black.on {
+  background: linear-gradient(#e0904a, #8a4d14);
+}

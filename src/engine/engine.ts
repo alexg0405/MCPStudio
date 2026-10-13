@@ -31,6 +31,7 @@ import { AutomationDriver } from './automation/driver';
 import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
 import { InsertStrip, METER_FRAMES } from './insert-strip';
+import { Metronome } from './metronome';
 import { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
@@ -88,6 +89,9 @@ export class Engine implements EngineApi, EngineCore {
   /** Post-master bus: master insert + previews → safety limiter → destination. */
   private readonly masterOut: GainNode;
   private readonly previewBus: GainNode;
+  /** Metronome and count-in clicks: after the master track, before the limiter; never exported. */
+  private readonly monitorBus: GainNode;
+  private readonly metronome: Metronome | null;
   private readonly master: InsertStrip;
   private readonly inserts = new Map<InsertId, InsertStrip>();
   /** Persistent input node per insert id (see inputNode). */
@@ -125,6 +129,8 @@ export class Engine implements EngineApi, EngineCore {
     this.previewBus = new GainNode(ctx, { gain: 0.8 });
     this.masterOut.connect(ctx.destination);
     this.previewBus.connect(this.masterOut);
+    this.monitorBus = new GainNode(ctx, { gain: 0.9 });
+    this.monitorBus.connect(this.masterOut);
     // The master insert exists before any document so channels and inserts always have a target.
     this.master = new InsertStrip(this, DEFAULT_MASTER, null, this.masterOut);
     this.inserts.set(MASTER, this.master);
@@ -146,6 +152,12 @@ export class Engine implements EngineApi, EngineCore {
     this.transportInfo.sptAt = (time) => this.transport.sptAt(time);
     this.automation = new AutomationDriver({ ctx, params: this.params, offline });
     this.transport.observe(this.automation);
+    this.metronome = offline
+      ? null
+      : new Metronome(ctx, this.monitorBus, () =>
+          this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null,
+        );
+    if (this.metronome) this.transport.observe(this.metronome);
     // Tempo automation: tell tempo-synced plugins when the tempo of the planned segments changes.
     let lastSpt = 0;
     this.transport.observe({
@@ -413,8 +425,21 @@ export class Engine implements EngineApi, EngineCore {
     void this.resume();
     this.updateModel();
     // Playing again while playing is a seek: what was scheduled is cancelled or released first.
-    if (this.transport.playing) this.transport.seek(fromTick, this.ctx.currentTime + 0.05);
-    else this.transport.start(fromTick, this.ctx.currentTime + 0.05);
+    const at = this.ctx.currentTime + 0.05;
+    if (this.transport.playing) this.transport.seek(fromTick, at);
+    else {
+      // Count-in (record mode): clicks first, then playback.
+      const countIn =
+        this.metronome && this.session.countInBars > 0
+          ? this.metronome.countIn(
+              at,
+              this.session.countInBars,
+              this.tempoMap().bpmAt(fromTick),
+              this.project.transport.timeSig,
+            )
+          : 0;
+      this.transport.start(fromTick, at + countIn);
+    }
     this.startClock();
     this.emit();
   }
@@ -633,6 +658,7 @@ export class Engine implements EngineApi, EngineCore {
 
   setSession(session: EngineSession): void {
     this.session = { ...session };
+    if (this.metronome) this.metronome.enabled = session.metronome;
   }
 
   /** Session settings in effect (metronome, count-in). */
@@ -688,6 +714,7 @@ export class Engine implements EngineApi, EngineCore {
   async dispose(): Promise<void> {
     this.transport.stop();
     this.automation.dispose();
+    this.metronome?.dispose();
     this.clock?.terminate();
     this.clock = null;
     for (const s of this.strips.values()) s.dispose();

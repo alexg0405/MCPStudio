@@ -521,7 +521,37 @@ _To be written by M11._
 
 ## Metronome, MIDI and note recording (M12)
 
-_To be written by M12._
+- **Live input** (`app/live-input.ts`): MIDI (`app/midi-input.ts` parses notes, CCs, the sustain pedal and
+  14-bit pitch bend with each message's timestamp), the typing keyboard and the on-screen piano all go
+  through `services.live`: it plays the selected channel (notes, `previewControl` for controllers,
+  `previewPitchBend` ±2 semitones) and tells listeners with the AudioContext time the event was heard
+  at (`engine.contextTimeAt(performance time)`).
+- **Metronome** (`engine/metronome.ts`): a transport observer that schedules a click on every beat of each
+  planned segment (an accent on the downbeat) on the monitor bus (after the master track, before the
+  limiter; realtime engines only, so exports never hear it), cancelled on re-plans, seeks and stop.
+  **Count-in**: while record is armed the engine plays `countInBars` of clicks and starts the transport
+  after them. Session settings come from the prefs (`metronome`, `countInBars`) through `setSession`.
+- **Record mode** (`app/recording.ts`): R arms; Play starts registered recorders. **Note recording**
+  (`app/note-recorder.ts`): live notes go into the current pattern on the selected channel at the tick they
+  were heard (`engine.tickAt`; song mode: where that pattern's clip is under the playhead), starts snapped to
+  the record-quantize grid, loop passes keep adding, "replace" mode removes the notes a new note overlaps;
+  one History gesture per take.
+- **MIDI files** (`core/io/midi.ts`, `app/actions/midi.ts`): SMF formats 0/1 in (running status, FIFO note
+  pairing, PPQ rescaled to 960, tempo/time-signature/name/program meta), format 1 out (conductor track +
+  one track per channel). Import: GM drums go to the kit's sampler channels (reused when present), other
+  parts get an instrument by GM family (keys/pluck/bass/pad/lead), one pattern per track or one for all,
+  optional tempo and time signature, tempo changes as a held tempo automation clip, optional playlist
+  placement; one undo step. Export: the song as it plays (swing included) or the current pattern; kit
+  channels as GM drums on channel 10. File menu and drops of .mid files anywhere.
+- **MIDI learn** (`app/controllers.ts`): "Link to controller…" on every param menu waits for the next
+  control change (sustain, bank select and channel-mode messages are ignored) and stores a link in the
+  project; a linked controller writes its target through `setTargetValue` (`core/ops/targets.ts`) with one
+  merged undo step per move and touches the target so automation lets go while it moves.
+- **Hum to notes** (`app/actions/hum.ts`): record over the pattern after a count-in; the voice analysis
+  (tonal mode) and the grid quantizer turn it into notes on the selected channel (one undo step).
+- **On-screen keyboard** (`ui/features/midi/PianoKeyboard.tsx`, Alt+7): plays with the mouse (velocity
+  from where the key is pressed) and lights up what any input plays.
+- **AI**: `transport` actions can `record` (arm and play) and switch the metronome.
 
 ## AI studio: the AI controls the project (M16a)
 

@@ -562,8 +562,10 @@ export class BeatAssistant {
     for (const a of result.after) {
       if (a.kind === 'mode') this.s.view.getState().setMode(a.mode);
       else if (a.kind === 'stop') this.s.engine.stop();
+      else if (a.kind === 'metronome') this.s.prefs.getState().set({ metronome: a.on });
       else if (a.kind === 'play') {
         if (a.mode) this.s.view.getState().setMode(a.mode);
+        if (a.record) this.s.recording.setArmed(true);
         this.s.engine.play(a.fromTick ?? 0);
       }
     }

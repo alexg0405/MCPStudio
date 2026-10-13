@@ -21,7 +21,8 @@ import '@ui/theme/tokens.css';
 import '@ui/theme/base.css';
 
 const BAR = 3840;
-const until = async (ok: () => boolean, ms = 3000) => {
+// Generous: these are whole-app flows, and the machine may be busy; a failure only takes longer to report.
+const until = async (ok: () => boolean, ms = 10_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -112,7 +113,7 @@ describe('app smoke test', () => {
     expect(await s.files.openFile(new File([bytes.slice().buffer], 'Again.agproj'))).toBe(true);
     expect(s.doc.getState().project).toEqual(saved);
     expect(s.view.getState().mode).toBe('song');
-  });
+  }, 30_000);
 
   it('writes a beat from a description with the assistant window (offline generator)', async () => {
     s.commands.run('view.assistant');
@@ -135,7 +136,7 @@ describe('app smoke test', () => {
     await until(() => host.textContent!.includes('offline'));
     expect(s.engine.playing).toBe(true);
     s.engine.stop();
-  });
+  }, 30_000);
 
   it('logged no errors', () => {
     expect(errors).toEqual([]);

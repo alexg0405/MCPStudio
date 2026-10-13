@@ -51,6 +51,10 @@
   color: var(--ag-danger);
 }
 
+.metronome:global(:not(:disabled)) {
+  color: var(--ag-text-dim);
+}
+
 .lcd {
   display: flex;
   flex-direction: column;

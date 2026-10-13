@@ -66,8 +66,9 @@ export type AfterEdit =
       insertId?: InsertId;
       slotId?: SlotId;
     }
-  | { kind: 'play'; fromTick?: number; mode?: 'pattern' | 'song' }
+  | { kind: 'play'; fromTick?: number; mode?: 'pattern' | 'song'; record?: boolean }
   | { kind: 'stop' }
+  | { kind: 'metronome'; on: boolean }
   | { kind: 'mode'; mode: 'pattern' | 'song' };
 
 export interface AppliedTurn {
@@ -784,14 +785,20 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
   for (const a of answer.actions) {
     if (a.op === 'transport') {
       const mode = a.mode === 'pattern' || a.mode === 'song' ? a.mode : undefined;
+      if (typeof a.metronome === 'boolean') after.push({ kind: 'metronome', on: a.metronome });
       if (a.action === 'stop') after.push({ kind: 'stop' });
-      else if (a.action === 'play') {
+      else if (a.action === 'play' || a.action === 'record') {
         const fromBar = num(a.from_bar);
         const tick =
           fromBar !== undefined
             ? Math.max(0, (fromBar - 1) * ticksPerBar(s.doc.getState().project.transport.timeSig))
             : undefined;
-        after.push({ kind: 'play', ...(tick !== undefined ? { fromTick: tick } : {}), ...(mode ? { mode } : {}) });
+        after.push({
+          kind: 'play',
+          ...(tick !== undefined ? { fromTick: tick } : {}),
+          ...(mode ? { mode } : {}),
+          ...(a.action === 'record' ? { record: true } : {}),
+        });
       } else if (mode) after.push({ kind: 'mode', mode });
     } else if (a.op === 'open') {
       const w = a.window;

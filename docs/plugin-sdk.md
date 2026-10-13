@@ -331,13 +331,115 @@ with the generated panel underneath. `plugins/example-supersaw` is a complete ex
 
 ## Note scripts
 
-Piano-roll tools are plugins too: `defineNoteScript({ id, name, version, category?, params, run(ctx) })`
-in a `plugins/<name>/index.ts` (a module may export an array of definitions). `run` gets the notes to
-work on (the selection, or the whole pattern), the dialog's param values, the grid, bar and pattern
-lengths, the song key and a seeded `rand()`, and returns the notes that replace them: keep a note's
-`id` to edit it, drop it to add a note; input notes left out are deleted. The piano roll lists
-scripts in its Tools menu and shows a dialog generated from `params` with a live preview; applying
-it is one undo step.
+Piano-roll tools are plugins too. Every built-in tool (Quantize, Strum, Arpeggiate, Make chords…,
+`src/plugins/builtin/note-tools`) is a note script, so yours sit right next to them.
+
+```bash
+npm run new:plugin -- --kind note-script --id user.my-tool
+```
+
+That creates `plugins/my-tool/index.ts` (an "Echo" tool to start from). Scripts show up in the piano
+roll's **Tools ▾** menu (grouped by `category`), in its right-click menu under **More tools** and in
+**Edit > Piano roll tools**; menus are rebuilt each time they open, so saving your file is enough.
+Running a script opens a dialog generated from its `params` (the `description` is its first line, so
+write it as one plain sentence) with a **live preview**: the notes change while you turn the knobs,
+**Apply** keeps the result as one undo step and **Cancel** puts the notes back. A script without
+params runs straight away. A module may export one definition or an array of them.
+
+### The contract
+
+```ts
+defineNoteScript({ id, name, version, category?, description?, params, run(ctx) => notes })
+```
+
+| `ctx.` | |
+|---|---|
+| `notes` | the notes to work on: the selected notes, or every note of the channel's pattern when none are selected. Frozen: don't modify them |
+| `values` | the dialog's values, typed from `params` |
+| `ppq` | ticks per beat (960); a 1/16 step is 240 ticks |
+| `grid` | the piano roll's snap in ticks (1 when snapping is off) |
+| `bar`, `length` | ticks per bar, and the pattern's length |
+| `key` | the song key `{ root, scale }` (root 0 = C, scale ids from `SCALES`), or null |
+| `rand()` | seeded random numbers in [0, 1): the same notes give the same result. It is seeded from the script id, the notes and your `seed` param (if you declare one), not from other params, so turning a knob doesn't reshuffle everything; give users a `seed` param to re-roll |
+
+`run` returns the notes that replace `ctx.notes`, each a `ScriptNote`
+`{ id?, tick, length, key, velocity (0–1), pan? (−1…1), release? (0–1), fine? (cents), muted? }`:
+
+- a note that keeps the `id` of an input note **edits** that note;
+- a note without an `id` (or with one you already used) is **added**;
+- input notes you don't return are **deleted**;
+- on edited notes, optional fields you leave out keep their value; set `pan: 0`, `fine: 0`,
+  `release: 0.5` or `muted: false` to reset them.
+
+The host rounds and clamps what you return (ticks ≥ 0, lengths ≥ 1, keys 0–127). If `run` throws or
+returns something malformed, nothing changes and the message is shown as a toast.
+
+### A complete example
+
+```ts
+import { defineNoteScript, p } from '@agstudio/sdk';
+import { chordGroups, clampNote, quantize } from '@agstudio/sdk/notes';
+
+/** Adds a bass note under every chord: its lowest note, one or two octaves down. */
+export default defineNoteScript({
+  id: 'user.octave-bass',
+  name: 'Add bass notes',
+  version: 1,
+  category: 'My tools',
+  description: 'Adds a bass note under each chord: the chord’s lowest note, an octave or two lower.',
+  params: {
+    octaves: p.int(1, 2, 1, { label: 'Octaves down' }),
+    velocity: p.float(0.1, 1, 0.9, { label: 'Velocity', unit: '%' }),
+    tight: p.bool(true, { label: 'Snap the bass to the grid' }),
+  },
+  run(ctx) {
+    const { octaves, velocity, tight } = ctx.values;
+    const bass = chordGroups(ctx.notes, 20).map((chord) => {
+      const low = chord[0]!; // chordGroups sorts each chord by key
+      return clampNote({ tick: low.tick, length: low.length, key: low.key - 12 * octaves, velocity });
+    });
+    // Keep every input note (their ids say "unchanged") and add the new ones (no ids).
+    return [...ctx.notes, ...(tight ? quantize(bass, { grid: ctx.grid }) : bass)];
+  },
+});
+```
+
+### `@agstudio/sdk/notes`
+
+Music theory and note transforms, pure TypeScript (no DOM), usable from note scripts, plugins and the
+host alike. Transforms take `ScriptNote[]`, return new notes and never modify their input; notes that
+keep an `id` are edits of the input note with that id.
+
+- **Scales and keys**: `SCALES` (major, minor, harmonic/melodic minor, the modes, pentatonics, blues,
+  phrygian dominant, whole tone, diminished, chromatic, …), `getScale(id)`, `scaleMask(root, scale)`,
+  `inScale(key, root, scale)`, `scaleNotes(root, scale, low?, high?)`,
+  `snapToScale(key, root, scale, 'nearest' | 'up' | 'down')`, scale-step math (`scaleStep`,
+  `keyAtStep`, `scaleDegree`, `transposeInScale(key, steps, root, scale)`), `noteName(60)` = "C5"
+  (FL's octave numbering), `keyLabel(9, 'minor')` = "A minor", `PITCH_NAMES`.
+- **Chords**: `CHORDS` (major, minor, dim, aug, sus2, sus4, 5, 6, m6, 7, maj7, m7, m(maj7), m7b5,
+  dim7, aug7, 7sus4, add9, madd9, 6/9, 9, maj9, m9, 11, m11, maj11, 13, maj13, m13),
+  `chordNotes(root, id, { inversion, voicing })`, `invert(keys, n)`, `voice(keys, 'close' | 'open' |
+  'drop2' | 'drop3' | 'bass' | 'spread')`, `diatonicChord(key, root, scale, size)` (the key's own
+  triads, 7ths, 9ths), `diatonicQuality(degree, root, scale)`, `detectChord(keys)` → `{ name: 'Am7', … }`,
+  `chordName(root, id)`.
+- **Timing**: `quantize(notes, { grid, strength, starts, ends, lengths, swing, window })`,
+  `humanize(notes, { rand, timing, velocity, length })`, `legato(notes, { gap, until })`,
+  `strum(notes, { time, direction, curve, tolerance, keepEnds, velocity, rand })`,
+  `stretch(notes, { factor, anchor })`, `nearestGridLine(tick, grid, swing)`.
+- **Editing**: `chop(notes, { grid } | { parts }, gate?)`, `glue(notes, { gap })`,
+  `flip(notes, 'time' | 'pitch')`, `limit(notes, { low, high })`.
+- **Pitch**: `transpose(notes, semitones)`, `transposeDegrees(notes, steps, key)` (both shrink the
+  shift rather than push a note out of range), `snapNotesToScale(notes, key, direction?)`,
+  `chordify(notes, { chord, size, inversion, voicing, key })`.
+- **Velocity**: `scaleVelocities(notes, { factor, offset })`, `fitVelocities(notes, { min, max })`,
+  `rampVelocities(notes, { from, to, curve, multiply })`.
+- **Generating**: `arpeggiate(notes, { rate, gate, pattern, octaves, range, rand })` (patterns
+  `ARP_PATTERNS`: up, down, up-down, down-up, converge, diverge, as-played, random),
+  `randomize(notes, { rand, pitch, velocity, key })`, `generate({ rand, start, end, grid, density,
+  low, high, minLength, maxLength, key, polyphony, smoothness })`.
+- **Helpers**: `clampNote`, `withoutId` (turn a copy into a new note), `noteEnd`, `byTime`, `span`,
+  `chordGroups(notes, tolerance)` (notes starting together), `overlapGroups` (notes that overlap),
+  `bend(x, curve)`, `seeded(seed)` (your own seeded random source).
 
 ## Presets and versions
 

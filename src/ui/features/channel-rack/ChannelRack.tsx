@@ -1,5 +1,6 @@
 import { targetKey } from '@core/model/targets';
-import { memo, useEffect, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useRef, useState } from 'react';
+import { useStore } from 'zustand';
 import { KIT, kitPiece } from '@core/model/kit';
 import { MASTER, type ChannelId, type PatternId } from '@core/model/types';
 import { setChannelProp, toggleSoloChannel } from '@core/ops/channels';
@@ -25,18 +26,14 @@ import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 import { openWindow } from '../../workspace/registry';
 import { MiniRoll } from './MiniRoll';
 import { PatternPicker } from '../patterns/PatternPicker';
+import { STEP_W, stepX } from './layout';
+import { StepGraph } from './StepGraph';
+import { stepsMenu, stepTarget, toggleGraph } from './steps';
 import styles from './ChannelRack.module.css';
 
 const VOLUME = p.float(0, 1.25, 0.78, { label: 'Volume', unit: '%' });
 const PAN = p.float(-1, 1, 0, { label: 'Pan' });
 const SWING = p.float(0, 1, 0, { label: 'Swing', unit: '%' });
-const STEP_W = 17;
-const STEP_GAP = 2;
-const GROUP_GAP = 5;
-
-function stepX(i: number): number {
-  return i * (STEP_W + STEP_GAP) + Math.floor(i / 4) * (GROUP_GAP - STEP_GAP);
-}
 
 /** "Add" entries: kit sounds and instrument plugins. */
 export function addChannelMenu(services: Services): MenuEntry[] {
@@ -126,7 +123,7 @@ function StepGrid({
 }) {
   const services = useServices();
   const notes = useDoc((pr) => pr.patterns[patternId]?.notes[channelId]);
-  const view = stepView(notes, stepCount, rootKey);
+  const view = stepView(notes, stepCount);
 
   useEffect(() => {
     window.addEventListener('pointerup', endPaint);
@@ -413,8 +410,19 @@ export function ChannelRack() {
   const swingEdit = useGestureEdit<number>('Swing', (d, v) => setSwing(d, v), 'swing');
   /** Where a drag would drop: a channel, or the end of the rack ('new'). */
   const [dropTarget, setDropTarget] = useState<ChannelId | 'new' | null>(null);
+  const graphChannel = useStore(services.editor, (s) => s.stepGraph.channelId);
+  const selected = useSession((s) => s.selectedChannelId);
+  const selectedName = useDoc((pr) => {
+    const ch = selected ? pr.channels[selected] : undefined;
+    return ch?.kind === 'instrument' ? ch.name : null;
+  });
 
   if (!patternId || !pattern) return <div className={styles.empty}>No pattern</div>;
+  const menuBelow = (e: React.MouseEvent<HTMLElement>, items: MenuEntry[]) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    showContextMenu({ x: r.left, y: r.bottom + 2 }, items);
+  };
+  const noChannel = 'Select an instrument channel first (click its name)';
   const targetOf = (e: React.DragEvent) =>
     (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
   const stepCount = pattern.stepCount;
@@ -442,6 +450,34 @@ export function ChannelRack() {
           <Knob spec={SWING} value={swing} size={20} label="Swing" {...swingEdit} />
           Swing
         </span>
+        <button
+          tabIndex={-1}
+          className={styles.headerButton}
+          disabled={!selectedName}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={(e) => menuBelow(e, stepsMenu(services, selected))}
+          data-hint={
+            selectedName
+              ? `Step tools for ${selectedName}: fill every 2, 4 or 8 steps, rotate, shift, reverse, randomize or clear`
+              : noChannel
+          }
+        >
+          Steps ▾
+        </button>
+        <button
+          tabIndex={-1}
+          className={`${styles.headerButton} ${selected && graphChannel === selected ? styles.headerButtonOn : ''}`}
+          disabled={!selectedName}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => selected && stepTarget(services, selected) && toggleGraph(services, selected)}
+          data-hint={
+            selectedName
+              ? `Graph editor: a row under ${selectedName} to draw each step’s velocity, pan, release, pitch or fine pitch`
+              : noChannel
+          }
+        >
+          Graph editor
+        </button>
       </div>
       <div
         className={styles.scroll}
@@ -468,7 +504,10 @@ export function ChannelRack() {
       >
         <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
           {order.map((id) => (
-            <ChannelRow key={id} id={id} patternId={patternId} stepCount={stepCount} dropTarget={dropTarget === id} />
+            <Fragment key={id}>
+              <ChannelRow id={id} patternId={patternId} stepCount={stepCount} dropTarget={dropTarget === id} />
+              {graphChannel === id && <StepGraph channelId={id} patternId={patternId} stepCount={stepCount} />}
+            </Fragment>
           ))}
           <StepLight stepCount={stepCount} />
           <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>

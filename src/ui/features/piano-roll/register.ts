@@ -2,9 +2,11 @@ import type { Services } from '@app/services';
 import type { PianoRollTool } from '@app/stores/editor';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
-import { addMenuItems, cmd, sep } from '../../shell/menus';
+import { addMenuItems, cmd, sep, submenu } from '../../shell/menus';
 import { PianoRoll } from './PianoRoll';
 import { noteTarget, pianoRollCommands as pr } from './commands';
+import { quickScript, SCRIPT } from './menus';
+import { openNoteScript, scriptMenuBarEntries } from './tools';
 
 export function register(services: Services): void {
   registerWindowType({
@@ -36,6 +38,7 @@ export function register(services: Services): void {
     ['draw', 'P', 'Draw tool'],
     ['paint', 'B', 'Paint tool'],
     ['delete', 'D', 'Delete tool'],
+    ['mute', 'T', 'Mute tool'],
     ['slice', 'C', 'Slice tool'],
     ['select', 'E', 'Select tool'],
   ];
@@ -116,7 +119,88 @@ export function register(services: Services): void {
     run: pr.quantize,
   });
 
+  // ---- M11 composition tools ----
+  commands.register({
+    id: 'pianoRoll.selectSameKey',
+    title: 'Select same key',
+    category: 'Piano roll',
+    hint: 'Select every note on the same key as the selected notes',
+    enabled: hasSelection,
+    run: (s) => pr.selectSameKey(s),
+  });
+  commands.register({
+    id: 'pianoRoll.toggleMute',
+    title: 'Mute selected notes',
+    category: 'Piano roll',
+    hint: 'Mute the selected notes (or unmute them when they are all muted)',
+    enabled: hasSelection,
+    run: pr.toggleMute,
+  });
+  commands.register<number>({
+    id: 'pianoRoll.transposeInKey',
+    title: 'Transpose in key',
+    category: 'Piano roll',
+    hint: 'Move notes by scale steps of the song key',
+    enabled: hasNotes,
+    run: (s, steps) => pr.transposeInKey(s, steps ?? 1),
+  });
+  const hasKey = (s: Services) => !!s.doc.getState().project.transport.key;
+  commands.register({
+    id: 'pianoRoll.scaleSnap',
+    title: 'Snap drawn notes to the scale',
+    category: 'Piano roll',
+    hint: 'Notes you draw, paint or move stay on the song key’s scale',
+    enabled: hasKey,
+    checked: (s) => s.editor.getState().pianoRoll.scaleSnap,
+    run: (s) => s.editor.getState().setPianoRoll({ scaleSnap: !s.editor.getState().pianoRoll.scaleSnap }),
+  });
+  commands.register({
+    id: 'pianoRoll.scaleHighlight',
+    title: 'Highlight the scale’s rows',
+    category: 'Piano roll',
+    hint: 'Shades the rows of keys outside the song key’s scale and marks the root',
+    enabled: hasKey,
+    checked: (s) => s.editor.getState().pianoRoll.scaleHighlight,
+    run: (s) => s.editor.getState().setPianoRoll({ scaleHighlight: !s.editor.getState().pianoRoll.scaleHighlight }),
+  });
+  commands.register<string>({
+    id: 'pianoRoll.runScript',
+    title: 'Run note script',
+    category: 'Piano roll',
+    enabled: hasNotes,
+    run: (s, id) => (id ? openNoteScript(s, id).then(() => {}) : undefined),
+  });
+  commands.register({
+    id: 'pianoRoll.legato',
+    title: 'Make legato',
+    category: 'Piano roll',
+    hint: 'Stretch every note until the next one starts (no dialog)',
+    enabled: hasNotes,
+    run: (s) => void quickScript(s, SCRIPT.legato),
+  });
+  // Dialog tools with FL-style shortcuts (each opens the note script's dialog).
+  const dialogTools: [string, string, string, string][] = [
+    ['pianoRoll.quantizeTool', SCRIPT.quantize, 'Quantize…', 'Alt+Shift+Q'],
+    ['pianoRoll.arpeggiate', SCRIPT.arpeggiate, 'Arpeggiate…', 'Alt+A'],
+    ['pianoRoll.strum', SCRIPT.strum, 'Strum…', 'Alt+S'],
+    ['pianoRoll.chop', SCRIPT.chop, 'Chop…', 'Alt+U'],
+    ['pianoRoll.glue', SCRIPT.glue, 'Glue…', 'Alt+G'],
+    ['pianoRoll.randomize', SCRIPT.randomize, 'Randomize…', 'Alt+R'],
+  ];
+  for (const [id, script, title, chord] of dialogTools) {
+    commands.register({
+      id,
+      title,
+      category: 'Piano roll',
+      hint: services.plugins.script(script)?.description ?? title,
+      enabled: (s) => hasNotes(s) && !!s.plugins.script(script),
+      run: (s) => openNoteScript(s, script).then(() => {}),
+    });
+    keymap.add([{ chord, command: id, when: focus }]);
+  }
+
   keymap.add([
+    { chord: 'Mod+L', command: 'pianoRoll.legato', when: focus },
     { chord: 'Mod+A', command: 'pianoRoll.selectAll', when: focus },
     { chord: 'Escape', command: 'pianoRoll.deselect', when: focus },
     { chord: 'Delete', command: 'pianoRoll.delete', when: focus },
@@ -145,5 +229,12 @@ export function register(services: Services): void {
     cmd('pianoRoll.duplicate', 150),
     cmd('pianoRoll.delete', 160),
     cmd('pianoRoll.quantize', 170),
+    cmd('pianoRoll.legato', 171),
+    cmd('pianoRoll.selectSameKey', 172),
+    cmd('pianoRoll.toggleMute', 173),
+    // Every note script by category, built when the menu opens (hot-reloaded scripts included).
+    submenu('pianoRoll.tools', 'Piano roll tools', 175, () => [
+      { kind: 'dynamic', id: 'note-scripts', order: 0, entries: () => scriptMenuBarEntries(services) },
+    ]),
   ]);
 }

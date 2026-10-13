@@ -110,37 +110,40 @@ export interface StepView {
   isSteps: boolean;
   /** Velocity per step (0 = off), length = stepCount. */
   velocities: number[];
+  /** The note on each step (null = off), for the graph editor. Only meaningful when `isSteps`. */
+  notes: (Note | null)[];
 }
 
-const stepCache = new WeakMap<object, Map<string, StepView>>();
+const stepCache = new WeakMap<object, Map<number, StepView>>();
 
-/** Projects a channel's notes onto the step grid (FL: steps are just notes on 1/16 boundaries at the root key). */
-export function stepView(
-  notes: Readonly<Record<NoteId, Note>> | undefined,
-  stepCount: number,
-  rootKey: number,
-): StepView {
+/**
+ * Projects a channel's notes onto the step grid. FL semantics: steps are just notes that start on
+ * a 1/16 boundary inside the grid, are at most one step long and don't share their step; each step
+ * may have its own key (the graph editor's note pitch). Anything else shows as a mini piano roll.
+ */
+export function stepView(notes: Readonly<Record<NoteId, Note>> | undefined, stepCount: number): StepView {
   const host = notes ?? EMPTY_NOTES;
-  const key = `${stepCount}:${rootKey}`;
-  let byKey = stepCache.get(host);
-  const cached = byKey?.get(key);
+  let byCount = stepCache.get(host);
+  const cached = byCount?.get(stepCount);
   if (cached) return cached;
   const velocities = new Array<number>(stepCount).fill(0);
+  const stepNotes = new Array<Note | null>(stepCount).fill(null);
   let isSteps = true;
   for (const n of notesSorted(notes)) {
     const step = n.tick / TICKS_PER_STEP;
-    if (!Number.isInteger(step) || n.key !== rootKey || n.length > TICKS_PER_STEP || step >= stepCount) {
+    if (!Number.isInteger(step) || n.length > TICKS_PER_STEP || step >= stepCount || stepNotes[step]) {
       isSteps = false;
       continue;
     }
     velocities[step] = Math.max(n.velocity, 0.0001);
+    stepNotes[step] = n;
   }
-  const view = { isSteps, velocities };
-  if (!byKey) {
-    byKey = new Map();
-    stepCache.set(host, byKey);
+  const view = { isSteps, velocities, notes: stepNotes };
+  if (!byCount) {
+    byCount = new Map();
+    stepCache.set(host, byCount);
   }
-  byKey.set(key, view);
+  byCount.set(stepCount, view);
   return view;
 }
 

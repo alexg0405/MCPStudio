@@ -10,6 +10,7 @@ import { noteBounds } from '@core/query/notes-hit';
 import { notesSorted } from '@core/query/queries';
 import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapRound } from '@core/time/snap';
+import { transposeDegrees } from '@agstudio/sdk/notes';
 
 export interface NoteTarget {
   channelId: ChannelId;
@@ -143,6 +144,47 @@ export const pianoRollCommands = {
         ),
       { mergeKey: `nudge:${t.channelId}` },
     );
+  },
+
+  /** Selects every note that shares a key with the selection (or with `keys`). */
+  selectSameKey(s: Services, keys?: readonly number[]) {
+    const t = noteTarget(s);
+    if (!t) return;
+    const wanted = new Set(keys ?? t.selected.map((n) => n.key));
+    if (wanted.size === 0) return;
+    s.editor.getState().selectNotes(t.notes.filter((n) => wanted.has(n.key)).map((n) => n.id));
+  },
+
+  /** Mutes the selected notes, or unmutes them when they are all muted already. */
+  toggleMute(s: Services) {
+    const t = noteTarget(s);
+    if (!t || t.selected.length === 0) return;
+    const mute = !t.selected.every((n) => n.muted);
+    s.history.transact(mute ? 'Mute notes' : 'Unmute notes', (d) =>
+      editNotes(
+        d,
+        t.patternId,
+        t.channelId,
+        t.selected.map((n) => ({ id: n.id, muted: mute })),
+      ),
+    );
+  },
+
+  /** Moves the selection (or every note) by scale steps of the song key (C major when none is set). */
+  transposeInKey(s: Services, steps: number) {
+    const t = noteTarget(s);
+    if (!t) return;
+    const src = selectionOrAll(t);
+    if (src.length === 0) return;
+    const key = s.doc.getState().project.transport.key ?? { root: 0, scale: 'major' };
+    const moved = transposeDegrees(src, steps, key);
+    const edits = src
+      .map((n, i) => ({ id: n.id, key: moved[i]?.key ?? n.key }))
+      .filter((e, i) => e.key !== src[i]?.key);
+    if (edits.length === 0) return;
+    s.history.transact('Transpose in key', (d) => editNotes(d, t.patternId, t.channelId, edits), {
+      mergeKey: `transposeKey:${t.channelId}`,
+    });
   },
 
   /** Snaps note starts to the grid (FL's quick quantize, Alt+Q). */

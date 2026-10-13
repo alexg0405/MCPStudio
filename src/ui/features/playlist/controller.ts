@@ -4,6 +4,7 @@
  */
 import type { Services } from '@app/services';
 import type { Gesture } from '@core/history/history';
+import { clipTickOffset } from '@core/model/clips';
 import { newId } from '@core/model/ids';
 import type { Clip, ClipId, Lane, LaneId, PatternClip, Project, SampleRef, Tick } from '@core/model/types';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
@@ -545,9 +546,7 @@ export class PlaylistController {
           // Left edge trims the start: content stays in place (offset follows).
           let dTick = snapRound(d.anchor.start + (x - d.x0) / this.vp.pxPerTick, grid) - d.anchor.start;
           const maxD = Math.min(...d.originals.map((c) => c.length - Math.max(grid, 1)));
-          const minD = -Math.min(
-            ...d.originals.map((c) => Math.min(c.start, c.kind === 'audio' ? Infinity : c.offset)),
-          );
+          const minD = -Math.min(...d.originals.map((c) => Math.min(c.start, clipTickOffset(c) ?? Infinity)));
           dTick = clamp(dTick, minD, maxD);
           if (dTick === d.dTick) return;
           d.dTick = dTick;

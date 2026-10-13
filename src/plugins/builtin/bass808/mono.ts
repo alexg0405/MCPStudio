@@ -2,8 +2,7 @@
  * The 808's mono voice handling: one sine voice per hit, legato glides inside it, and rescheduling
  * when late events change the performance (see legato.ts for the rules and why).
  */
-import { clamp, mtof, type NoteOff, type NoteOn, type ParamSignal } from '@agstudio/sdk';
-import { Lane } from './lane';
+import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, type ParamSignal } from '@agstudio/sdk';
 import { firstDifference, LegatoTracker, type LegatoAction, type NoteAction, type Phrase } from './legato';
 
 /** Attack ramp of a hit (the sine starts at zero phase, so this only rounds the corner). */
@@ -176,7 +175,8 @@ export interface MonoBassOptions {
   /** Voices start this much before the note time (the output chain's latency). */
   lead: number;
   click: AudioBuffer;
-  settings(): BassSettings;
+  /** Settings in effect at an AudioContext time (they may be automated). */
+  settings(time: number): BassSettings;
 }
 
 /**
@@ -282,7 +282,10 @@ export class MonoBass {
       for (const a of p.actions) {
         if (a.time < from || a === attack) continue;
         if (a.type === 'release') voice.release(this.contextTime(a.time, now));
-        else voice.glide(this.contextTime(a.time, now), a.key, a.velocity, this.o.settings().glide);
+        else {
+          const at = this.contextTime(a.time, now);
+          voice.glide(at, a.key, a.velocity, this.o.settings(at).glide);
+        }
       }
       voice.actions = p.actions;
       next.push(voice);
@@ -296,7 +299,7 @@ export class MonoBass {
     const t = this.contextTime(a.time, now);
     if (previous && previous.stopAt > t) previous.choke(t, CHOKE);
     const o = this.o;
-    return new Voice(o.audioContext, o.destination, o.tune, a, t, o.settings(), o.click);
+    return new Voice(o.audioContext, o.destination, o.tune, a, t, o.settings(t), o.click);
   }
 
   /** Takes a voice out of the performance from `at` on: unplayed voices go at once, others fade. */

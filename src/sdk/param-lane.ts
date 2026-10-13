@@ -1,5 +1,6 @@
 /**
- * An AudioParam whose scheduled automation can be cut and rewound at any time.
+ * An AudioParam whose scheduled automation can be cut and rewound at any time (for plugins that
+ * schedule their own per-voice curves, like the 808's glides: `new ParamLane(osc.frequency, f0)`).
  *
  * Plain Web Audio offers cancelAndHoldAtTime(), but this voice often schedules two changes at the
  * same instant (a release and a retrigger's choke when notes touch), and a cancel at a time that
@@ -41,7 +42,7 @@ function valueOf(s: Segment, t: number): number {
 
 const isRamp = (s: Segment) => s.kind === 'lin' || s.kind === 'exp';
 
-export class Lane {
+export class ParamLane {
   private segs: Segment[] = [];
   /** Time of the latest event scheduled on the param (-Infinity: none). */
   private until = -Infinity;

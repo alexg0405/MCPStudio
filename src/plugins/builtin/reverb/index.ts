@@ -13,6 +13,8 @@ const params = {
     scale: 'log',
     group: 'Room',
     hint: 'Time for the reverb to fade by 60 dB (RT60)',
+    // Each change rebuilds the impulse response: not for automation.
+    automatable: false,
   }),
   preDelay: p.float(0, 0.2, 0.02, {
     label: 'Pre-delay',
@@ -25,12 +27,14 @@ const params = {
     unit: '%',
     group: 'Room',
     hint: 'How much faster the highs die away',
+    automatable: false,
   }),
   size: p.float(0, 1, 0.6, {
     label: 'Size',
     unit: '%',
     group: 'Room',
     hint: 'Room size: how far apart the early reflections are',
+    automatable: false,
   }),
   mix: p.float(0, 1, 0.3, { label: 'Mix', unit: '%', group: 'Output', hint: 'Dry/wet balance (equal power)' }),
 };

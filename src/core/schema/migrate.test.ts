@@ -55,15 +55,26 @@ describe('fixture corpus', () => {
 
 describe('migrateProject', () => {
   it('returns current-schema data untouched without running migrations', () => {
-    const json = fixture('v1-basic');
+    const json = fixture('v2-basic');
     const spy = vi.fn<Migration>((p) => p);
-    const result = migrateProject(json, [spy, spy]);
+    const result = migrateProject(json, [spy, spy, spy]);
     expect(result.project).toBe(json);
-    expect(result.migratedFrom).toBe(1);
+    expect(result.migratedFrom).toBe(2);
     expect(spy).not.toHaveBeenCalled();
   });
 
-  it('runs an injected v0 → v1 migration on a copy', () => {
+  it('upgrades v1: every insert routes to the master, no sidechains, no controller links', () => {
+    const { project } = migrateProject(fixture('v1-basic'));
+    expect(project.schemaVersion).toBe(2);
+    expect(project.mixer.inserts[MASTER]!.routes).toEqual([]);
+    for (const id of project.mixer.order.slice(1))
+      expect(project.mixer.inserts[id]!.routes).toEqual([{ to: MASTER, level: 1, pre: false }]);
+    for (const ins of Object.values(project.mixer.inserts))
+      for (const slot of ins.fx) expect(slot.sidechain).toBeNull();
+    expect(project.controllers).toEqual({});
+  });
+
+  it('runs an injected v0 → v1 migration on a copy, then the real ones', () => {
     const v1 = fixture('v1-basic');
     // A hypothetical v0 that called the project id `id`, kept the title at the top level and had `tempo`.
     const { projectId, meta, transport, ...rest } = v1;
@@ -78,10 +89,10 @@ describe('migrateProject', () => {
         transport: { bpm: tempo, timeSig: { num: 4, den: 4 }, swing: 0.2 },
       };
     };
-    const { project, migratedFrom } = migrateProject(v0, [m0]);
+    const { project, migratedFrom } = migrateProject(v0, [m0, ...MIGRATIONS.slice(1)]);
     expect(migratedFrom).toBe(0);
-    expect(project.schemaVersion).toBe(1); // set by the runner after each step
-    expect(project).toEqual(v1);
+    expect(project.schemaVersion).toBe(SCHEMA_VERSION); // set by the runner after each step
+    expect(project).toEqual(migrateProject(v1).project);
     expect(v0).toEqual(snapshot); // input not mutated
     expect(repairProject(project).repairs).toEqual([]);
   });
@@ -97,7 +108,7 @@ describe('migrateProject', () => {
       t.swing = 0;
       return p;
     };
-    const { project } = migrateProject(v0, [m0]);
+    const { project } = migrateProject(v0, [m0, ...MIGRATIONS.slice(1)]);
     expect(project.transport).toEqual({ bpm: 99, timeSig: { num: 3, den: 4 }, swing: 0 });
     expect(v0.transport).toEqual({ tempo: 99 });
   });
@@ -128,7 +139,9 @@ describe('migrateProject', () => {
     expect(thrown).toMatchObject({ code: 'invalid' });
     expect((thrown as Error).cause).toBe(boom);
     expect(catchError(() => migrateProject(json, [() => null as never]))).toMatchObject({ code: 'invalid' });
-    expect(catchError(() => migrateProject(json, [() => ({})]))).toMatchObject({ code: 'invalid' });
+    expect(catchError(() => migrateProject(json, [() => ({}), ...MIGRATIONS.slice(1)]))).toMatchObject({
+      code: 'invalid',
+    });
   });
 
   it('validates the structure', () => {
@@ -474,6 +487,138 @@ describe('repairProject', () => {
     );
     // Most corruptions get past structural validation and exercise repair.
     expect(repaired).toBeGreaterThan(200);
+  });
+});
+
+describe('repairProject: routing, links and automation (schema v2)', () => {
+  const base = () => {
+    const p = createEmptyProject({ now: new Date(0) });
+    const [a, b, c] = p.mixer.order.slice(1, 4) as [InsertId, InsertId, InsertId];
+    return { p, a, b, c };
+  };
+
+  it('keeps one route per existing target and none from the master', () => {
+    const { p, a, b } = base();
+    p.mixer.inserts[a]!.routes = [
+      { to: MASTER, level: 1, pre: false },
+      { to: b, level: 9, pre: 'yes' as never },
+      { to: b, level: 0.5, pre: false },
+      { to: a, level: 1, pre: false },
+      { to: 'ins_gone' as InsertId, level: 1, pre: false },
+    ];
+    p.mixer.inserts[MASTER]!.routes = [{ to: a, level: 1, pre: false }];
+    (p.mixer.inserts[b] as { routes: unknown }).routes = 'nowhere';
+    const { project, repairs } = repairProject(p);
+    expect(project.mixer.inserts[a]!.routes).toEqual([
+      { to: MASTER, level: 1, pre: false },
+      { to: b, level: 4, pre: false },
+    ]);
+    expect(project.mixer.inserts[MASTER]!.routes).toEqual([]);
+    expect(project.mixer.inserts[b]!.routes).toEqual([{ to: MASTER, level: 1, pre: false }]);
+    expect(repairs).toEqual([
+      'Removed 4 mixer routes to missing or repeated mixer tracks.',
+      'Fixed 1 mixer route with invalid settings.',
+      'Reset the routing of 1 mixer track to the Master track.',
+    ]);
+    expect(projectViolations(project)).toEqual([]);
+  });
+
+  it('breaks routing loops, routes before sidechains', () => {
+    const { p, a, b, c } = base();
+    p.mixer.inserts[a]!.routes.push({ to: b, level: 1, pre: false });
+    p.mixer.inserts[b]!.routes.push({ to: c, level: 1, pre: false });
+    p.mixer.inserts[c]!.routes.push({ to: a, level: 1, pre: false }); // a → b → c → a
+    const slot = {
+      id: 'fx_comp' as never,
+      plugin: makePluginInstance('agstudio.compressor', 1, {}),
+      enabled: true,
+      mix: 1,
+    };
+    p.mixer.inserts[a]!.fx = [{ ...slot, sidechain: c }]; // c → a closes a → b → c
+    p.mixer.inserts[b]!.fx = [{ ...slot, id: 'fx_ok' as never, sidechain: a }]; // a → b already exists: fine
+    const { project, repairs } = repairProject(p);
+    expect(project.mixer.inserts[c]!.routes.map((r) => r.to)).toEqual([MASTER]);
+    expect(project.mixer.inserts[a]!.fx[0]!.sidechain).toBeNull();
+    expect(project.mixer.inserts[b]!.fx[0]!.sidechain).toBe(a);
+    expect(repairs).toEqual([
+      'Removed 1 mixer route that would loop back.',
+      'Cleared 1 sidechain input that would loop back.',
+    ]);
+    expect(projectViolations(project)).toEqual([]);
+    expect(repairProject(project).repairs).toEqual([]);
+  });
+
+  it('clears sidechains from missing tracks or the slot’s own track', () => {
+    const { p, a } = base();
+    const slot = {
+      id: 'fx_comp' as never,
+      plugin: makePluginInstance('agstudio.compressor', 1, {}),
+      enabled: true,
+      mix: 1,
+    };
+    p.mixer.inserts[a]!.fx = [
+      { ...slot, sidechain: a },
+      { ...slot, id: 'fx_b' as never, sidechain: 'ins_gone' as InsertId },
+    ];
+    delete (p.mixer.inserts[a]!.fx[1] as { sidechain?: unknown }).sidechain;
+    const { project, repairs } = repairProject(p);
+    expect(project.mixer.inserts[a]!.fx.map((s) => s.sidechain)).toEqual([null, null]);
+    expect(repairs).toEqual(['Cleared 2 invalid sidechain inputs.']);
+  });
+
+  it('validates controller links, the song key and automation channels', () => {
+    const { p } = base();
+    const target = { kind: 'tempo' } as const;
+    p.controllers = {
+      ['lnk_ok' as never]: { id: 'lnk_ok' as never, cc: 74, channel: null, target, min: -1, max: 2 },
+      ['lnk_bad' as never]: { id: 'lnk_bad' as never, cc: 300, channel: null, target, min: 0, max: 1 },
+      ['lnk_tgt' as never]: {
+        id: 'lnk_tgt' as never,
+        cc: 1,
+        channel: 3,
+        target: { kind: 'nope' } as never,
+        min: 0,
+        max: 1,
+      },
+    };
+    p.transport.key = { root: 14, scale: 'minor' };
+    const auto = {
+      kind: 'automation',
+      id: 'ch_auto' as ChannelId,
+      name: 'Auto',
+      color: '#fff',
+      muted: false,
+      solo: false,
+      target: { kind: 'insert', insertId: 'ins_x', param: 'gain' },
+      points: [
+        { tick: 960, value: 2, shape: 'zigzag' },
+        { tick: 0, value: 0.5, tension: 3 },
+      ],
+      range: { min: 5, max: 900 },
+    };
+    const tempo = { ...auto, id: 'ch_tempo' as ChannelId, target, points: [], range: { min: 5, max: 900 } };
+    p.channels[auto.id] = auto as never;
+    p.channels[tempo.id] = tempo as never;
+    p.channelOrder.push(auto.id, tempo.id);
+    const { project, repairs } = repairProject(p);
+    expect(Object.keys(project.controllers)).toEqual(['lnk_ok']);
+    expect(project.controllers['lnk_ok' as never]).toMatchObject({ min: 0, max: 1 });
+    expect(project.transport.key).toBeUndefined();
+    expect(project.channels[auto.id]).toMatchObject({
+      target: null,
+      points: [
+        { tick: 0, value: 0.5, tension: 1 },
+        { tick: 960, value: 1 },
+      ],
+    });
+    expect(project.channels[tempo.id]).toMatchObject({ range: { min: 10, max: 522 } });
+    expect(repairs).toEqual([
+      'The song key was invalid and was cleared.',
+      'Fixed 2 channels with invalid settings.',
+      'Fixed 1 controller link with an invalid range.',
+      'Removed 2 controller links with invalid settings.',
+    ]);
+    expect(projectViolations(project)).toEqual([]);
   });
 });
 

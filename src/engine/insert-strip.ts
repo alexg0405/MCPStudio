@@ -13,10 +13,13 @@
  * disconnected after the fade to save CPU. Reordering slots only rewires them.
  */
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
+import { INSERT_PAN_SPEC, INSERT_VOLUME_SPEC } from '@core/model/target-specs';
+import { targetKey } from '@core/model/targets';
 import type { FxSlot, Insert, InsertId, PluginOwner, Project, SlotId } from '@core/model/types';
 import type { EffectInstance, JsonValue } from '@agstudio/sdk';
 import type { EngineCore } from './engine-core';
 import { HostImpl } from './host';
+import { AutoLane } from './param-lane';
 
 /** Time constant for enable/disable, mix changes and instance swaps (≈ 10 ms crossfade). */
 const SLOT_TAU = 0.01 / 3;
@@ -278,6 +281,7 @@ export class FxSlotStrip {
       transport: this.core.transportInfo,
       rootKey: null,
       offline: this.core.offline,
+      registry: this.core.params,
       requestState: (state: JsonValue) => this.core.requestState(this.owner, state),
       owner: this.owner,
       loadModule: (url) => this.core.loadModule(url),
@@ -327,6 +331,9 @@ export class InsertStrip {
   private chain: readonly SlotId[] = [];
   private insert: Insert;
   private muted = false;
+  private readonly volLane: AutoLane;
+  private readonly panLane: AutoLane;
+  private readonly unregister: (() => void)[];
 
   constructor(
     private readonly core: EngineCore,
@@ -339,8 +346,20 @@ export class InsertStrip {
     const ctx = core.ctx;
     this.insert = insert;
     this.input = input;
-    this.panner = new StereoPannerNode(ctx, { pan: clamp(insert.pan, -1, 1, 0) });
-    this.fader = new GainNode(ctx, { gain: clamp(insert.volume, 0, MAX_INSERT_VOLUME) });
+    this.panner = new StereoPannerNode(ctx);
+    this.fader = new GainNode(ctx);
+    const key = (param: 'volume' | 'pan') => targetKey({ kind: 'insert', insertId: insert.id, param });
+    this.volLane = new AutoLane(
+      ctx,
+      key('volume'),
+      INSERT_VOLUME_SPEC,
+      clamp(insert.volume, 0, MAX_INSERT_VOLUME),
+      STRIP_TAU,
+    );
+    this.panLane = new AutoLane(ctx, key('pan'), INSERT_PAN_SPEC, clamp(insert.pan, -1, 1, 0), STRIP_TAU);
+    this.volLane.bind(this.fader.gain);
+    this.panLane.bind(this.panner.pan);
+    this.unregister = [core.params.register(this.volLane), core.params.register(this.panLane)];
     this.mute = new GainNode(ctx);
     this.input.connect(this.panner);
     this.panner.connect(this.fader);
@@ -376,8 +395,8 @@ export class InsertStrip {
     if (prev === next) return;
     this.insert = next;
     const ctx = this.core.ctx;
-    if (prev.volume !== next.volume) glide(this.fader.gain, clamp(next.volume, 0, MAX_INSERT_VOLUME), ctx, STRIP_TAU);
-    if (prev.pan !== next.pan) glide(this.panner.pan, clamp(next.pan, -1, 1, 0), ctx, STRIP_TAU);
+    if (prev.volume !== next.volume) this.volLane.setBase(clamp(next.volume, 0, MAX_INSERT_VOLUME), ctx.currentTime);
+    if (prev.pan !== next.pan) this.panLane.setBase(clamp(next.pan, -1, 1, 0), ctx.currentTime);
     if (prev.fx !== next.fx) this.syncSlots(next.fx, project);
   }
 
@@ -416,6 +435,9 @@ export class InsertStrip {
   dispose(): void {
     for (const s of this.slots.values()) s.dispose();
     this.slots.clear();
+    for (const off of this.unregister) off();
+    this.volLane.dispose();
+    this.panLane.dispose();
     this.input.disconnect();
     this.panner.disconnect();
     this.fader.disconnect();

@@ -24,6 +24,34 @@ export interface GraphVoice {
   end?: number;
 }
 
+/**
+ * One signal that is the sum of several (e.g. a transpose knob plus the channel pitch), for nodes
+ * that should follow all of them.
+ */
+export function sumSignals(
+  ac: BaseAudioContext,
+  ...signals: { readonly node: AudioNode }[]
+): {
+  readonly node: AudioNode;
+  connect(target: AudioParam): () => void;
+} {
+  const node = new GainNode(ac);
+  for (const s of signals) s.node.connect(node);
+  return {
+    node,
+    connect(target: AudioParam) {
+      node.connect(target);
+      return () => {
+        try {
+          node.disconnect(target);
+        } catch {
+          /* already disconnected */
+        }
+      };
+    },
+  };
+}
+
 interface Live extends GraphVoice {
   noteId: number;
   kill: GainNode;

@@ -18,6 +18,14 @@ export interface TransportView {
   loop: { start: Tick; end: Tick } | null;
 }
 
+/** Settings of the current session the engine applies while playing (not part of the document). */
+export interface EngineSession {
+  /** Metronome clicks while playing. */
+  metronome: boolean;
+  /** Bars of count-in before recording starts (0 = none). */
+  countInBars: number;
+}
+
 export interface EngineStats {
   state: EngineState;
   sampleRate: number;
@@ -67,6 +75,10 @@ export interface EngineApi {
   playheadIteration(): number;
   previewNoteOn(channelId: ChannelId, key: number, velocity?: number): number;
   previewNoteOff(channelId: ChannelId, noteId: number): void;
+  /** A live MIDI control change (mod wheel = 1, …) for the channel's instrument, value 0–1. */
+  previewControl(channelId: ChannelId, cc: number, value: number): void;
+  /** Live MIDI pitch bend for the channel, in cents (added to its pitch knob). */
+  previewPitchBend(channelId: ChannelId, cents: number): void;
   /** Plays a sample on the preview bus (browser clicks). */
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void;
   /**
@@ -88,6 +100,25 @@ export interface EngineApi {
    * and decay in the UI. Unknown inserts (and offline engines) read 0.
    */
   readMeters(order: readonly InsertId[], out: Float32Array): void;
+  /**
+   * The tick (and loop pass) at an AudioContext time, extrapolated past what is planned; the stop
+   * position while stopped. Recording uses it to place live input.
+   */
+  tickAt(contextTime: number): { tick: number; iter: number };
+  /** The AudioContext time that was being heard at a `performance.now()` timestamp (MIDI events). */
+  contextTimeAt(performanceMs: number): number;
+  /**
+   * For knobs that follow automation: writes the value (spec units) automation gives each target key
+   * at the audible time into out[i], NaN where nothing drives it. Allocation-free (frame loop).
+   */
+  readAutomation(keys: readonly string[], out: Float64Array): void;
+  /** A control is being touched (knob drag, MIDI CC stream, recording): automation lets go of it meanwhile. */
+  touch(key: string, on: boolean): void;
+  /** The tempo being heard (it moves with tempo automation). */
+  tempoNow(): number;
+  setSession(session: EngineSession): void;
+  /** Seconds of latency the mixer adds (plugin delay compensation); the playhead already accounts for it. */
+  graphLatency(): number;
   stats(): EngineStats;
   /** Fires on playing/stopped and state changes. */
   subscribe(fn: () => void): () => void;

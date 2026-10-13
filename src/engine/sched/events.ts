@@ -45,6 +45,10 @@ export interface NoteEvent {
   pitch: number;
   velocity: number;
   pan?: number;
+  /** Fine pitch in cents. */
+  fine?: number;
+  /** Release velocity 0–1. */
+  release?: number;
   /** Seconds into the sound to start at (audio clips, or starting playback inside one). */
   offsetSec?: number;
 }
@@ -183,6 +187,8 @@ export function collectNotes(source: EventSource, from: number, to: number, out:
             pitch: n.key,
             velocity: n.velocity,
             ...(n.pan !== undefined ? { pan: n.pan } : {}),
+            ...(n.fine !== undefined ? { fine: n.fine } : {}),
+            ...(n.release !== undefined ? { release: n.release } : {}),
           });
         }
       }

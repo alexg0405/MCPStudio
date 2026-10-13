@@ -12,6 +12,7 @@ export class EventQueue {
   private keys: Float32Array;
   private vels: Float32Array;
   private pans: Float32Array;
+  private fines: Float32Array;
   private head = 0;
   private size = 0;
 
@@ -22,6 +23,7 @@ export class EventQueue {
     this.keys = new Float32Array(capacity);
     this.vels = new Float32Array(capacity);
     this.pans = new Float32Array(capacity);
+    this.fines = new Float32Array(capacity);
   }
 
   get length(): number {
@@ -43,11 +45,12 @@ export class EventQueue {
         data[i + 3] as number,
         data[i + 4] as number,
         data[i + 5] as number,
+        data[i + 6] as number,
       );
     }
   }
 
-  push(type: number, frame: number, id: number, key: number, vel: number, pan: number): void {
+  push(type: number, frame: number, id: number, key: number, vel: number, pan: number, fine = 0): void {
     if (type === EV_NOTE_OFF) {
       // Cancel a note that has not started yet.
       for (let k = 0; k < this.size; k++) {
@@ -82,11 +85,20 @@ export class EventQueue {
     this.keys[j] = key;
     this.vels[j] = vel;
     this.pans[j] = pan;
+    this.fines[j] = fine;
     this.size++;
   }
 
   /** Removes the earliest event; call peek* before. */
-  shift(out: { type: number; frame: number; id: number; key: number; vel: number; pan: number }): boolean {
+  shift(out: {
+    type: number;
+    frame: number;
+    id: number;
+    key: number;
+    vel: number;
+    pan: number;
+    fine: number;
+  }): boolean {
     if (this.size === 0) return false;
     const j = this.head;
     out.type = this.types[j] as number;
@@ -95,6 +107,7 @@ export class EventQueue {
     out.key = this.keys[j] as number;
     out.vel = this.vels[j] as number;
     out.pan = this.pans[j] as number;
+    out.fine = this.fines[j] as number;
     this.head = (this.head + 1) % this.frames.length;
     this.size--;
     return true;
@@ -116,6 +129,7 @@ export class EventQueue {
     this.keys[to] = this.keys[from] as number;
     this.vels[to] = this.vels[from] as number;
     this.pans[to] = this.pans[from] as number;
+    this.fines[to] = this.fines[from] as number;
   }
 
   private removeAt(k: number): void {
@@ -137,6 +151,7 @@ export class EventQueue {
     this.keys = remap(this.keys, (m) => new Float32Array(m));
     this.vels = remap(this.vels, (m) => new Float32Array(m));
     this.pans = remap(this.pans, (m) => new Float32Array(m));
+    this.fines = remap(this.fines, (m) => new Float32Array(m));
     this.head = 0;
   }
 }

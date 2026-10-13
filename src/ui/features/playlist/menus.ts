@@ -1,4 +1,5 @@
 import type { Services } from '@app/services';
+import { clipSourceKey } from '@core/model/clips';
 import { PALETTE, makeLane } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
 import type { Clip, LaneId } from '@core/model/types';
@@ -19,10 +20,8 @@ import { openWindow } from '../../workspace/registry';
 /** A clip's ▾ menu (FL's clip menu). */
 export function clipMenu(s: Services, clip: Clip): MenuEntry[] {
   const p = s.doc.getState().project;
-  const same = (c: Clip) =>
-    clip.kind === 'pattern'
-      ? c.kind === 'pattern' && c.patternId === clip.patternId
-      : c.kind !== 'pattern' && c.channelId === clip.channelId;
+  const source = clipSourceKey(clip);
+  const same = (c: Clip) => clipSourceKey(c) === source;
   const common: MenuEntry[] = [
     {
       label: clip.kind === 'pattern' ? 'Select all clips of this pattern' : 'Select all clips of this sound',

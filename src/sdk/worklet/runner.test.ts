@@ -46,7 +46,7 @@ describe('EventQueue', () => {
     q.push(EV_NOTE_ON, 100, 2, 61, 1, 0);
     q.push(EV_NOTE_ON, 300, 3, 62, 1, 0);
     q.push(EV_NOTE_ON, 200, 4, 63, 1, 0); // forces growth
-    const ev = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0 };
+    const ev = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0, fine: 0 };
     const ids: number[] = [];
     while (q.shift(ev)) ids.push(ev.id);
     expect(ids).toEqual([2, 4, 1, 3]);
@@ -68,7 +68,7 @@ describe('EventQueue', () => {
     q.push(EV_NOTE_ON, 900, 2, 60, 1, 0);
     q.push(EV_ALL_OFF, 500, 0, 0, 0, 0);
     q.push(EV_NOTE_ON, 600, 3, 60, 1, 0); // arrives after: kept
-    const ev = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0 };
+    const ev = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0, fine: 0 };
     const seen: string[] = [];
     while (q.shift(ev)) seen.push(`${ev.type}@${ev.frame}`);
     expect(seen).toEqual([`${EV_NOTE_ON}@100`, `${EV_ALL_OFF}@500`, `${EV_NOTE_ON}@600`]);

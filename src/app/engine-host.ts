@@ -2,6 +2,7 @@ import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
 import type {
   EngineApi,
+  EngineSession,
   EngineState,
   EngineStats,
   RecordOptions,
@@ -21,6 +22,7 @@ export class EngineHost implements EngineApi {
   private detach: () => void;
   private lastDoc: DocChange | null = null;
   private view: TransportView | null = null;
+  private session: EngineSession | null = null;
   private rebooting: Promise<void> | null = null;
 
   constructor(private readonly factory: () => EngineApi) {
@@ -39,6 +41,7 @@ export class EngineHost implements EngineApi {
       if (this.lastDoc)
         next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
       if (this.view) next.setTransportView(this.view);
+      if (this.session) next.setSession(this.session);
       this.inner = next;
       this.detach = next.subscribe(() => this.emit());
       await old.dispose();
@@ -94,6 +97,12 @@ export class EngineHost implements EngineApi {
   previewNoteOff(channelId: ChannelId, noteId: number): void {
     this.inner.previewNoteOff(channelId, noteId);
   }
+  previewControl(channelId: ChannelId, cc: number, value: number): void {
+    this.inner.previewControl(channelId, cc, value);
+  }
+  previewPitchBend(channelId: ChannelId, cents: number): void {
+    this.inner.previewPitchBend(channelId, cents);
+  }
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     this.inner.previewSample(ref);
   }
@@ -111,6 +120,28 @@ export class EngineHost implements EngineApi {
   }
   readMeters(order: readonly InsertId[], out: Float32Array): void {
     this.inner.readMeters(order, out);
+  }
+  tickAt(contextTime: number): { tick: number; iter: number } {
+    return this.inner.tickAt(contextTime);
+  }
+  contextTimeAt(performanceMs: number): number {
+    return this.inner.contextTimeAt(performanceMs);
+  }
+  readAutomation(keys: readonly string[], out: Float64Array): void {
+    this.inner.readAutomation(keys, out);
+  }
+  touch(key: string, on: boolean): void {
+    this.inner.touch(key, on);
+  }
+  tempoNow(): number {
+    return this.inner.tempoNow();
+  }
+  setSession(session: EngineSession): void {
+    this.session = { ...session };
+    this.inner.setSession(session);
+  }
+  graphLatency(): number {
+    return this.inner.graphLatency();
   }
   stats(): EngineStats {
     return this.inner.stats();

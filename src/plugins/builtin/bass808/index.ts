@@ -1,4 +1,4 @@
-import { dbToGain, defineInstrument, p } from '@agstudio/sdk';
+import { dbToGain, defineInstrument, p, sumSignals } from '@agstudio/sdk';
 import { clickWave, CURVE_RANGE, driveCurve, driveGain, driveMakeup } from './curves.kernel';
 import { MonoBass } from './mono';
 
@@ -117,15 +117,22 @@ export default defineInstrument({
     const mono = new MonoBass({
       audioContext: ac,
       destination: bus,
-      tune: P.tune.signal((st) => st * 100),
+      // The tune knob (semitones) plus the channel's pitch and MIDI pitch bend.
+      tune: host.channel
+        ? sumSignals(
+            ac,
+            P.tune.signal((st) => st * 100),
+            host.channel.pitch,
+          )
+        : P.tune.signal((st) => st * 100),
       lead: SHAPER_LATENCY_FRAMES / ac.sampleRate,
       click: clickBuffer(ac.sampleRate),
-      settings: () => ({
-        punch: P.punch.value,
-        punchTau: P.punchTime.value / 1000 / TIME_TO_TAU,
-        decayTau: P.decay.value / TIME_TO_TAU,
-        click: P.click.value,
-        glide: P.glide.value,
+      settings: (t) => ({
+        punch: P.punch.valueAt(t),
+        punchTau: P.punchTime.valueAt(t) / 1000 / TIME_TO_TAU,
+        decayTau: P.decay.valueAt(t) / TIME_TO_TAU,
+        click: P.click.valueAt(t),
+        glide: P.glide.valueAt(t),
       }),
     });
 

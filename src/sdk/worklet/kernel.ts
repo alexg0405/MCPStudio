@@ -41,10 +41,20 @@ abstract class KernelBase {
 }
 
 export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extends KernelBase {
-  abstract noteOn(key: number, velocity: number, noteId: number, pan: number): void;
-  abstract noteOff(noteId: number, key: number): void;
+  /**
+   * The channel's pitch in cents for the current block (its pitch knob, automation and MIDI pitch
+   * bend): length 1 when constant, else one value per frame (read it with `at`).
+   */
+  pitch: Float32Array = new Float32Array(1);
+
+  /** `fine` is the note's fine pitch in cents. */
+  abstract noteOn(key: number, velocity: number, noteId: number, pan: number, fine: number): void;
+  /** `release` is the release velocity 0–1. */
+  abstract noteOff(noteId: number, key: number, release: number): void;
   /** Release everything (or silence it immediately when `hard`). */
   allNotesOff(_hard: boolean): void {}
+  /** A MIDI control change (mod wheel = 1, …), value 0–1. */
+  controlChange?(cc: number, value: number): void;
   /**
    * ADD audio into out[channel][from..to). Outputs start zeroed each block; the SDK splits blocks at
    * note events so `from`/`to` mark the frames between events.
@@ -53,9 +63,21 @@ export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extend
 }
 
 export abstract class EffectKernel<P extends ParamSpecs = ParamSpecs> extends KernelBase {
-  /** Writes `n` frames from `input` into `output` (input always has as many channels as output). */
-  abstract process(input: Float32Array[], output: Float32Array[], n: number, params: ParamBlock<P>): void;
+  /**
+   * Writes `n` frames from `input` into `output` (input always has as many channels as output).
+   * Effects defined with `sidechain: true` also get the sidechain signal (silent when none is
+   * connected), with as many channels as `output`.
+   */
+  abstract process(
+    input: Float32Array[],
+    output: Float32Array[],
+    n: number,
+    params: ParamBlock<P>,
+    sidechain?: Float32Array[],
+  ): void;
 }
+
+export { PITCH_PARAM } from '../protocol';
 
 export type KernelClass<P extends ParamSpecs = ParamSpecs> = new (
   host: KernelHost,

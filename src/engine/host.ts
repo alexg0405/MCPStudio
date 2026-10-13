@@ -2,13 +2,14 @@
  * Host side of the plugin SDK: param handles bound to document values, sample slots, transport
  * info. One HostImpl per plugin instance.
  */
+import { targetKey } from '@core/model/targets';
 import type { PluginInstance, PluginOwner, Project, SampleId } from '@core/model/types';
 import {
   encode,
+  isAutomatable,
   resolveValues,
   type ChannelInfo,
   type JsonValue,
-  type ParamHandle,
   type ParamSignal,
   type ParamSpec,
   type ParamSpecs,
@@ -20,109 +21,12 @@ import {
   type WorkletOptions,
   type WorkletPort,
 } from '@agstudio/sdk';
-import type { ProcessorInit } from '@agstudio/sdk/protocol';
+import { PITCH_PARAM, type ProcessorInit } from '@agstudio/sdk/protocol';
+import { Emitter } from './emitter';
+import { ParamHandleImpl } from './param-handle';
+import type { ParamRegistry } from './param-lane';
 import type { SampleCache } from './samples';
 import { WorkletPortImpl } from './worklet-port';
-
-type Listener<T extends unknown[]> = (...args: T) => void;
-
-class Emitter<T extends unknown[]> {
-  private fns = new Set<Listener<T>>();
-  on(fn: Listener<T>): () => void {
-    this.fns.add(fn);
-    return () => this.fns.delete(fn);
-  }
-  emit(...args: T): void {
-    for (const fn of this.fns) fn(...args);
-  }
-  clear(): void {
-    this.fns.clear();
-  }
-}
-
-const identity = (v: number) => v;
-
-class ParamHandleImpl<S extends ParamSpec> implements ParamHandle<S> {
-  private bindings: { target: AudioParam; map: (v: number) => number }[] = [];
-  private sources: { node: ConstantSourceNode; map: (v: number) => number }[] = [];
-  private changes = new Emitter<[ParamValue, number]>();
-
-  constructor(
-    private readonly ctx: BaseAudioContext,
-    readonly spec: S,
-    private current: ParamValue,
-  ) {}
-
-  get value() {
-    return this.current as never;
-  }
-
-  private numeric(): number {
-    return encode(this.spec, this.current);
-  }
-
-  bind(target: AudioParam, map: (v: number) => number = identity): () => void {
-    const entry = { target, map };
-    target.value = map(this.numeric());
-    this.bindings.push(entry);
-    return () => {
-      this.bindings = this.bindings.filter((b) => b !== entry);
-    };
-  }
-
-  signal(map: (v: number) => number = identity): ParamSignal {
-    const node = new ConstantSourceNode(this.ctx, { offset: map(this.numeric()) });
-    node.start();
-    this.sources.push({ node, map });
-    return {
-      node,
-      connect(target: AudioParam) {
-        node.connect(target);
-        return () => {
-          try {
-            node.disconnect(target);
-          } catch {
-            /* already disconnected */
-          }
-        };
-      },
-    };
-  }
-
-  onChange(cb: (value: never, time: number) => void): () => void {
-    return this.changes.on(cb as Listener<[ParamValue, number]>);
-  }
-
-  set(value: ParamValue, time: number): void {
-    if (value === this.current) return;
-    this.current = value;
-    const v = this.numeric();
-    const smooth = this.spec.type === 'float' ? (this.spec.smoothing ?? 0.008) / 3 : 0;
-    for (const b of this.bindings) {
-      if (smooth > 0) b.target.setTargetAtTime(b.map(v), time, smooth);
-      else b.target.setValueAtTime(b.map(v), time);
-    }
-    for (const s of this.sources) {
-      if (smooth > 0) s.node.offset.setTargetAtTime(s.map(v), time, smooth);
-      else s.node.offset.setValueAtTime(s.map(v), time);
-    }
-    this.changes.emit(value, time);
-  }
-
-  dispose(): void {
-    for (const s of this.sources) {
-      try {
-        s.node.stop();
-      } catch {
-        /* not started */
-      }
-      s.node.disconnect();
-    }
-    this.sources = [];
-    this.bindings = [];
-    this.changes.clear();
-  }
-}
 
 export interface HostDeps {
   ctx: BaseAudioContext;
@@ -133,7 +37,11 @@ export interface HostDeps {
   samples: SampleCache;
   transport: TransportInfo;
   rootKey: number | null;
+  /** The channel's pitch signal (instruments on a channel) and its value in cents at a time. */
+  pitch?: ParamSignal & { pitchAt(time: number): number };
   offline: boolean;
+  /** Where automatable params register (automation, controller links). */
+  registry: ParamRegistry;
   requestState(state: JsonValue): void;
   /** Adds an AudioWorklet module to the context once. */
   loadModule(url: string): Promise<void>;
@@ -164,8 +72,10 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   readonly transport: TransportInfo;
   readonly samples: SampleSlots;
   readonly channel: ChannelInfo | null;
+  readonly sidechain: GainNode | null;
   readonly offline: boolean;
   private readonly abort = new AbortController();
+  private readonly unregister: (() => void)[] = [];
   private stateValue: unknown;
   private slots: Record<string, SampleId>;
   private project: Project;
@@ -183,12 +93,21 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     const m = migrated(deps.def, deps.data);
     const values = resolveValues(deps.def.params as ParamSpecs, m.params);
     for (const [key, spec] of Object.entries(deps.def.params as ParamSpecs)) {
-      this.params[key] = new ParamHandleImpl(deps.ctx, spec, values[key] as ParamValue);
+      const handle = new ParamHandleImpl(
+        deps.ctx,
+        targetKey({ kind: 'plugin', owner: deps.owner, paramId: key }),
+        spec,
+        values[key] as ParamValue,
+      );
+      this.params[key] = handle;
+      if (isAutomatable(spec)) this.unregister.push(deps.registry.register(handle.lane));
     }
+    this.sidechain = deps.def.kind === 'effect' && deps.def.sidechain ? new GainNode(deps.ctx) : null;
     this.stateValue = m.state;
     this.slots = { ...(deps.data.samples ?? {}) };
     this.rootKeyValue = deps.rootKey ?? 60;
     const readRootKey = () => this.rootKeyValue;
+    const pitch = deps.pitch ?? silentSignal(deps.ctx);
     this.channel =
       deps.rootKey === null
         ? null
@@ -197,6 +116,8 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
               return readRootKey();
             },
             onRootKeyChange: (cb) => this.rootKeyChanges.on(cb),
+            pitch,
+            pitchAt: (time: number) => deps.pitch?.pitchAt(time) ?? 0,
           };
     this.samples = {
       get: (slot) => this.sampleFor(slot),
@@ -249,6 +170,9 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       const param = node.parameters.get(key);
       if (param) handle.bind(param);
     }
+    // Instrument kernels read the channel pitch (cents) from a reserved param.
+    const pitchParam = node.parameters.get(PITCH_PARAM);
+    if (pitchParam && this.channel) this.channel.pitch.connect(pitchParam);
     const port = new WorkletPortImpl(
       node,
       ctx.sampleRate,
@@ -294,7 +218,9 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     this.abort.abort();
     // Ports the plugin forgot to dispose.
     for (const p of [...this.myPorts]) p.dispose();
+    for (const off of this.unregister) off();
     for (const h of Object.values(this.params)) h.dispose();
+    this.sidechain?.disconnect();
     for (const e of this.sampleChanges.values()) e.clear();
     this.rootKeyChanges.clear();
   }
@@ -322,4 +248,22 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     const ref = this.refFor(slot);
     return ref ? this.deps.samples.load(ref, this.deps.ctx) : null;
   }
+}
+
+/** A pitch signal stuck at 0 cents (an instrument hosted outside a channel strip). */
+function silentSignal(ctx: BaseAudioContext): ParamSignal {
+  const node = new GainNode(ctx, { gain: 0 });
+  return {
+    node,
+    connect(target: AudioParam) {
+      node.connect(target);
+      return () => {
+        try {
+          node.disconnect(target);
+        } catch {
+          /* already disconnected */
+        }
+      };
+    },
+  };
 }

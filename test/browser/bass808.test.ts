@@ -5,6 +5,7 @@ import type { ChannelId, NoteId, PatternId } from '@core/model/types';
 import { addChannel } from '@core/ops/channels';
 import { addNote } from '@core/ops/notes';
 import { HostImpl } from '@engine/host';
+import { ParamRegistry } from '@engine/param-lane';
 import { renderOffline } from '@engine/render-offline';
 import { SampleCache } from '@engine/samples';
 import { defaultValues, mtof, type InstrumentInstance, type ParamValue, type PluginDef } from '@agstudio/sdk';
@@ -149,9 +150,10 @@ async function direct(play: (i: InstrumentInstance) => void, params: Params = {}
     owner: { kind: 'channel', channelId: 'ch_test' as ChannelId },
     project: createEmptyProject(),
     samples: new SampleCache(),
-    transport: { bpm: BPM, ppq: 960, onTempo: () => () => {} },
+    transport: { bpm: BPM, ppq: 960, tempoAt: () => BPM, onTempo: () => () => {} },
     rootKey: 60,
     offline: true,
+    registry: new ParamRegistry(),
     requestState: () => {},
     loadModule: (url) => ctx.audioWorklet.addModule(url),
     ports: new Set(),

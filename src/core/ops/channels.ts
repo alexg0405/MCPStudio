@@ -1,11 +1,14 @@
 import type { Draft } from 'immer';
 import type { ParamValue } from '@agstudio/sdk/params';
+import { clipChannelId } from '../model/clips';
 import type { Json } from '../model/json';
+import { targetUsesChannel } from '../model/targets';
 import {
   MASTER,
   type Channel,
   type ChannelId,
   type InsertId,
+  type ParamTarget,
   type PluginOwner,
   type Project,
   type SampleId,
@@ -20,7 +23,7 @@ export function addChannel(d: Draft<Project>, channel: Channel, index?: number):
   d.channelOrder.splice(at, 0, channel.id);
 }
 
-/** Removes a channel and everything that references it (its notes and audio clips). */
+/** Removes a channel and everything that references it (its notes, clips and controller links). */
 export function removeChannel(d: Draft<Project>, id: ChannelId): void {
   if (!d.channels[id]) return;
   delete d.channels[id];
@@ -31,8 +34,15 @@ export function removeChannel(d: Draft<Project>, id: ChannelId): void {
     if (pattern && pattern.notes[id]) delete pattern.notes[id];
   }
   for (const [clipId, clip] of Object.entries(d.playlist.clips)) {
-    if (clip.kind !== 'pattern' && clip.channelId === id)
-      delete d.playlist.clips[clipId as keyof typeof d.playlist.clips];
+    if (clipChannelId(clip) === id) delete d.playlist.clips[clipId as keyof typeof d.playlist.clips];
+  }
+  dropControllers(d, (t) => targetUsesChannel(t, id));
+}
+
+/** Removes the controller links whose target matches. */
+export function dropControllers(d: Draft<Project>, matches: (t: ParamTarget) => boolean): void {
+  for (const [id, link] of Object.entries(d.controllers)) {
+    if (matches(link.target)) delete d.controllers[id as keyof typeof d.controllers];
   }
 }
 

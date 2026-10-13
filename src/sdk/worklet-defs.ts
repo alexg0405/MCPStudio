@@ -44,6 +44,7 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
         noteOn: (e) => port.noteOn(e),
         noteOff: (e) => port.noteOff(e),
         allNotesOff: (time, hard) => port.allNotesOff(time, hard),
+        controlChange: (cc, value, time) => port.controlChange(cc, value, time),
         setState: (state) => port.setState(state),
         dispose: () => {
           stopSamples();
@@ -61,8 +62,10 @@ export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
     ...def,
     kind: 'effect',
     async create(host) {
-      const port = await host.worklet({ numberOfInputs: 1, outputChannelCount: [2] });
+      const port = await host.worklet({ numberOfInputs: def.sidechain ? 2 : 1, outputChannelCount: [2] });
       const stopSamples = forwardSamples(host as PluginHost<ParamSpecs, unknown>, port, def.sampleSlots);
+      // The sidechain reaches the kernel as the node's second input.
+      if (def.sidechain && host.sidechain) host.sidechain.connect(port.node, 0, 1);
       return {
         input: port.node,
         output: port.node,

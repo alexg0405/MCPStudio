@@ -6,7 +6,7 @@ import { decodePcm, encodeWav } from '@core/io/wav';
 import { createEmptyProject } from '@core/model/defaults';
 import { seededBytes, setIdSource } from '@core/model/ids';
 import { KIT_VERSION } from '@core/model/kit';
-import type { Project, SampleRef } from '@core/model/types';
+import { SCHEMA_VERSION, type Project, type SampleRef } from '@core/model/types';
 import { StorageError, type BlobStore } from '@platform/opfs';
 import { createMemoryBlobStore, createSampleStore } from './blob-store';
 import {
@@ -157,7 +157,13 @@ describe('openProjectFile', () => {
     const { project, file, hash } = await savedProject();
     const store = createMemoryBlobStore();
     const opened = await openProjectFile(file, { store });
-    expect(opened).toEqual({ project, view: { mode: 'pattern' }, repairs: [], migratedFrom: 1, missingSamples: [] });
+    expect(opened).toEqual({
+      project,
+      view: { mode: 'pattern' },
+      repairs: [],
+      migratedFrom: SCHEMA_VERSION,
+      missingSamples: [],
+    });
     expect((await store.getBlob(hash))?.bytes).toEqual(wavBytes(800));
   });
 

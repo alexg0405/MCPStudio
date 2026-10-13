@@ -6,8 +6,10 @@
 import {
   EV_ALL_OFF,
   EV_ALL_OFF_HARD,
+  EV_CC,
   EV_NOTE_OFF,
   EV_NOTE_ON,
+  PITCH_PARAM,
   type FromProcessor,
   type ToProcessor,
 } from '../protocol';
@@ -22,8 +24,10 @@ export class KernelRunner {
   faulted = false;
   private nanReported = false;
   private lastF0 = -Infinity;
-  private readonly ev = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0 };
+  private readonly ev = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0, fine: 0 };
   private readonly silence: Float32Array[] = [new Float32Array(MAX_BLOCK), new Float32Array(MAX_BLOCK)];
+  private readonly scSilence: Float32Array[] = [new Float32Array(MAX_BLOCK), new Float32Array(MAX_BLOCK)];
+  private readonly noPitch = new Float32Array(1);
 
   constructor(
     readonly kernel: InstrumentKernel | EffectKernel,
@@ -80,8 +84,10 @@ export class KernelRunner {
     for (let c = 0; c < out.length; c++) (out[c] as Float32Array).fill(0);
 
     const block = params as unknown as ParamBlock;
-    if (this.kernel instanceof InstrumentKernel) this.runInstrument(this.kernel, out, n, f0, block);
-    else this.runEffect(this.kernel, inputs[0] ?? [], out, n, block);
+    if (this.kernel instanceof InstrumentKernel) {
+      this.kernel.pitch = params[PITCH_PARAM] ?? this.noPitch;
+      this.runInstrument(this.kernel, out, n, f0, block);
+    } else this.runEffect(this.kernel, inputs[0] ?? [], inputs[1], out, n, block);
 
     this.scrub(out);
     return this.alive;
@@ -112,25 +118,40 @@ export class KernelRunner {
     while (this.queue.peekFrame() <= frame && this.queue.shift(ev)) {
       if (this.faulted) continue;
       try {
-        if (ev.type === EV_NOTE_ON) k.noteOn(ev.key, ev.vel, ev.id, ev.pan);
-        else if (ev.type === EV_NOTE_OFF) k.noteOff(ev.id, ev.key);
+        if (ev.type === EV_NOTE_ON) k.noteOn(ev.key, ev.vel, ev.id, ev.pan, ev.fine);
+        else if (ev.type === EV_NOTE_OFF) k.noteOff(ev.id, ev.key, ev.vel);
         else if (ev.type === EV_ALL_OFF) k.allNotesOff(false);
         else if (ev.type === EV_ALL_OFF_HARD) k.allNotesOff(true);
+        else if (ev.type === EV_CC) k.controlChange?.(ev.key, ev.vel);
       } catch (err) {
         this.fault(err);
       }
     }
   }
 
-  private runEffect(k: EffectKernel, input: Float32Array[], out: Float32Array[], n: number, params: ParamBlock): void {
+  private runEffect(
+    k: EffectKernel,
+    input: Float32Array[],
+    sidechain: Float32Array[] | undefined,
+    out: Float32Array[],
+    n: number,
+    params: ParamBlock,
+  ): void {
     const inp = input.length >= out.length ? input : this.padInput(input, out.length, n);
+    // A second input exists only for sidechain effects; unconnected, it arrives with zero channels.
+    const sc =
+      sidechain === undefined
+        ? undefined
+        : sidechain.length >= out.length
+          ? sidechain
+          : this.padInput(sidechain, out.length, n, this.scSilence);
     if (this.faulted) {
       // A broken effect is bypassed rather than silencing the insert.
       for (let c = 0; c < out.length; c++) (out[c] as Float32Array).set((inp[c] as Float32Array).subarray(0, n));
       return;
     }
     try {
-      k.process(inp, out, n, params);
+      k.process(inp, out, n, params, sc);
     } catch (err) {
       this.fault(err);
       for (let c = 0; c < out.length; c++) (out[c] as Float32Array).set((inp[c] as Float32Array).subarray(0, n));
@@ -138,13 +159,13 @@ export class KernelRunner {
   }
 
   /** An unconnected input arrives with zero channels; a mono one is duplicated. */
-  private padInput(input: Float32Array[], channels: number, n: number): Float32Array[] {
+  private padInput(input: Float32Array[], channels: number, n: number, silence = this.silence): Float32Array[] {
     const padded: Float32Array[] = [];
     for (let c = 0; c < channels; c++) {
       const src = input[c] ?? input[0];
       if (src) padded.push(src);
       else {
-        const z = (this.silence[c] ?? (this.silence[c] = new Float32Array(MAX_BLOCK))).subarray(0, n);
+        const z = (silence[c] ?? (silence[c] = new Float32Array(MAX_BLOCK))).subarray(0, n);
         z.fill(0);
         padded.push(z);
       }

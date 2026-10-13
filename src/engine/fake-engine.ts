@@ -1,6 +1,6 @@
 import type { DocChange } from '@core/history/history';
 import type { InsertId } from '@core/model/types';
-import type { EngineApi, EngineState, EngineStats, TransportView } from './api';
+import type { EngineApi, EngineSession, EngineState, EngineStats, TransportView } from './api';
 
 /** An engine stand-in for Node tests and UI work without audio. Records what it was told. */
 export class FakeEngine implements EngineApi {
@@ -41,6 +41,15 @@ export class FakeEngine implements EngineApi {
     return ++this.noteSeq;
   }
   previewNoteOff(): void {}
+  /** Live controls it was sent: [channelId, cc, value] and [channelId, cents]. */
+  controls: [string, number, number][] = [];
+  bends: [string, number][] = [];
+  previewControl(channelId: string, cc: number, value: number): void {
+    this.controls.push([channelId, cc, value]);
+  }
+  previewPitchBend(channelId: string, cents: number): void {
+    this.bends.push([channelId, cents]);
+  }
   previewSample(): void {}
   record(): Promise<never> {
     return Promise.reject(new Error('The test engine cannot record.'));
@@ -60,6 +69,39 @@ export class FakeEngine implements EngineApi {
       out[i * 2] = level?.[0] ?? 0;
       out[i * 2 + 1] = level?.[1] ?? 0;
     }
+  }
+  /** Settable clock and tempo for timing tests: tickAt() maps time to ticks from `startTime` at `tempo`. */
+  clockTime = 0;
+  startTime = 0;
+  startTick = 0;
+  tempo = 130;
+  tickAt(contextTime: number): { tick: number; iter: number } {
+    if (!this.playing) return { tick: this.startTick, iter: 0 };
+    return { tick: this.startTick + ((contextTime - this.startTime) * this.tempo * 960) / 60, iter: 0 };
+  }
+  contextTimeAt(performanceMs: number): number {
+    return performanceMs / 1000;
+  }
+  /** Values readAutomation() reports per key (absent = NaN). */
+  automation = new Map<string, number>();
+  readAutomation(keys: readonly string[], out: Float64Array): void {
+    for (let i = 0; i < keys.length && i < out.length; i++)
+      out[i] = this.automation.get(keys[i] as string) ?? Number.NaN;
+  }
+  touched = new Set<string>();
+  touch(key: string, on: boolean): void {
+    if (on) this.touched.add(key);
+    else this.touched.delete(key);
+  }
+  tempoNow(): number {
+    return this.tempo;
+  }
+  session: EngineSession = { metronome: false, countInBars: 0 };
+  setSession(session: EngineSession): void {
+    this.session = { ...session };
+  }
+  graphLatency(): number {
+    return 0;
   }
   stats(): EngineStats {
     return {

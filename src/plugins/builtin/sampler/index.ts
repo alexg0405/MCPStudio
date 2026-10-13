@@ -66,9 +66,9 @@ export default defineInstrument({
     };
     if (!buffer) void host.samples.load('main').then(setBuffer);
     const unwatch = host.samples.onChange('main', setBuffer);
-    const current = () => {
+    const current = (reverse: boolean) => {
       if (!buffer) return null;
-      if (!params.reverse.value) return buffer;
+      if (!reverse) return buffer;
       backwards ??= reversed(ac, buffer);
       return backwards;
     };
@@ -77,14 +77,16 @@ export default defineInstrument({
       output: out,
       tailTime: 0.2,
 
-      noteOn({ time, key, velocity, noteId, pan }) {
-        const buf = current();
-        if (!buf) return;
+      noteOn({ time, key, velocity, noteId, pan, fine }) {
         const t = Math.max(time, ac.currentTime);
-        if (params.cut.value) voices.cutOthers(t);
+        const buf = current(params.reverse.valueAt(t));
+        if (!buf) return;
+        if (params.cut.valueAt(t)) voices.cutOthers(t);
         const root = host.channel?.rootKey ?? 60;
-        const rate = Math.pow(2, (key - root + params.tune.value + params.fine.value / 100) / 12);
-        const src = new AudioBufferSourceNode(ac, { buffer: buf, playbackRate: rate });
+        const rate = Math.pow(2, (key - root + params.tune.valueAt(t) + params.fine.valueAt(t) / 100) / 12);
+        const src = new AudioBufferSourceNode(ac, { buffer: buf, playbackRate: rate, detune: fine ?? 0 });
+        const cleanup = host.channel ? [host.channel.pitch.connect(src.detune)] : [];
+        const speed = rate * Math.pow(2, ((fine ?? 0) + (host.channel?.pitchAt(t) ?? 0)) / 1200);
         const vca = new GainNode(ac, { gain: 0 });
         src.connect(vca);
         let last: AudioNode = vca;
@@ -95,27 +97,28 @@ export default defineInstrument({
           extra.push(vca);
           last = panner;
         }
-        const offset = params.start.value * buf.duration;
-        const env = params.envelope.value;
+        const offset = params.start.valueAt(t) * buf.duration;
+        const env = params.envelope.valueAt(t);
         vca.gain.setValueAtTime(0, t);
         if (env) {
-          const a = params.attack.value;
+          const a = params.attack.valueAt(t);
           vca.gain.linearRampToValueAtTime(velocity, t + a);
-          vca.gain.setTargetAtTime(velocity * params.sustain.value, t + a, params.decay.value / 4);
+          vca.gain.setTargetAtTime(velocity * params.sustain.valueAt(t), t + a, params.decay.valueAt(t) / 4);
         } else {
           vca.gain.linearRampToValueAtTime(velocity, t + 0.001);
         }
         src.start(t, offset);
-        const natural = t + (buf.duration - offset) / rate;
+        const natural = t + (buf.duration - offset) / speed;
         voices.add(noteId, {
           start: t,
           sources: [src],
           out: last,
           nodes: extra,
+          cleanup,
           end: natural,
           release: env
             ? (rt) => {
-                const r = params.release.value;
+                const r = params.release.valueAt(rt);
                 vca.gain.cancelAndHoldAtTime(rt);
                 vca.gain.setTargetAtTime(0, rt, r / 5);
                 return Math.min(natural, rt + r);

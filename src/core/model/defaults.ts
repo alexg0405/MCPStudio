@@ -40,8 +40,14 @@ export function paletteColor(index: number): string {
   return PALETTE[((index % PALETTE.length) + PALETTE.length) % PALETTE.length] ?? '#5f8fbf';
 }
 
+/** A new insert: unity gain, no effects, routed to the master (the master itself routes nowhere). */
 export function makeInsert(id: InsertId, name: string): Insert {
-  return { id, name, volume: 1, pan: 0, muted: false, solo: false, fx: [] };
+  return { id, name, volume: 1, pan: 0, muted: false, solo: false, fx: [], routes: masterRoutes(id) };
+}
+
+/** The default routing of an insert: the master, post-fader at unity. */
+export function masterRoutes(id: InsertId): Insert['routes'] {
+  return id === MASTER ? [] : [{ to: MASTER, level: 1, pre: false }];
 }
 
 export function makePattern(name: string, color: string, id: PatternId = newId.pattern()): Pattern {
@@ -114,5 +120,6 @@ export function createEmptyProject(opts: { title?: string; now?: Date } = {}): P
     playlist: { lanes, laneOrder, clips: {} },
     mixer: { inserts, order },
     samples: {},
+    controllers: {},
   };
 }

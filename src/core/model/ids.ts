@@ -1,4 +1,4 @@
-import type { ChannelId, ClipId, InsertId, LaneId, NoteId, PatternId, SampleId, SlotId } from './types';
+import type { ChannelId, ClipId, InsertId, LaneId, LinkId, NoteId, PatternId, SampleId, SlotId } from './types';
 
 /**
  * Ids are a short prefix plus 10 random base64url characters (60 bits). The random source is
@@ -58,5 +58,6 @@ export const newId = {
   insert: () => randomId('ins') as InsertId,
   slot: () => randomId('fx') as SlotId,
   sample: () => randomId('smp') as SampleId,
+  link: () => randomId('lnk') as LinkId,
   project: () => randomId('prj'),
 };

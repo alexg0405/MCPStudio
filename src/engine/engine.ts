@@ -17,10 +17,20 @@ import { effectivelyMutedInserts } from '@core/query/mixer';
 import { effectivelyMuted } from '@core/query/queries';
 import { PPQ, ticksPerBar } from '@core/time/ppq';
 import type { JsonValue, TransportInfo } from '@agstudio/sdk';
-import type { EngineApi, EngineOptions, EngineState, EngineStats, PluginResolver, TransportView } from './api';
+import type {
+  EngineApi,
+  EngineOptions,
+  EngineSession,
+  EngineState,
+  EngineStats,
+  PluginResolver,
+  TransportView,
+} from './api';
+import { AutomationDriver } from './automation/driver';
 import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
 import { InsertStrip, METER_FRAMES } from './insert-strip';
+import { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
 import { waveformOf, type Waveform } from './waveform';
@@ -38,16 +48,22 @@ const DEFAULT_MASTER = makeInsert(MASTER, 'Master');
 
 class TempoInfo implements TransportInfo {
   readonly ppq = PPQ;
-  private fns = new Set<(bpm: number) => void>();
-  constructor(public bpm: number) {}
-  onTempo(cb: (bpm: number) => void): () => void {
+  private fns = new Set<(bpm: number, time: number) => void>();
+  constructor(
+    public bpm: number,
+    private readonly clock: { readonly currentTime: number },
+  ) {}
+  tempoAt(_time: number): number {
+    return this.bpm;
+  }
+  onTempo(cb: (bpm: number, time: number) => void): () => void {
     this.fns.add(cb);
     return () => this.fns.delete(cb);
   }
-  setBpm(bpm: number): void {
+  setBpm(bpm: number, time = this.clock.currentTime): void {
     if (bpm === this.bpm) return;
     this.bpm = bpm;
-    for (const fn of this.fns) fn(bpm);
+    for (const fn of this.fns) fn(bpm, time);
   }
 }
 
@@ -57,6 +73,9 @@ export class Engine implements EngineApi, EngineCore {
   readonly samples: SampleCache;
   readonly offline: boolean;
   readonly transportInfo: TempoInfo;
+  readonly params = new ParamRegistry();
+  private readonly automation: AutomationDriver;
+  private session: EngineSession = { metronome: false, countInBars: 0 };
   /** Post-master bus: master insert + previews → safety limiter → destination. */
   private readonly masterOut: GainNode;
   private readonly previewBus: GainNode;
@@ -92,7 +111,7 @@ export class Engine implements EngineApi, EngineCore {
     this.offline = offline;
     this.plugins = opts.plugins;
     this.samples = new SampleCache(opts.samples);
-    this.transportInfo = new TempoInfo(130);
+    this.transportInfo = new TempoInfo(130, ctx);
     this.masterOut = new GainNode(ctx);
     this.previewBus = new GainNode(ctx, { gain: 0.8 });
     this.masterOut.connect(ctx.destination);
@@ -111,6 +130,8 @@ export class Engine implements EngineApi, EngineCore {
     const empty: EventSource = { project: null as unknown as Project, clips: [] };
     this.transport = new Transport(ctx, sink, empty, { spt: 1, loop: { start: 0, end: 1 }, endTick: 1 });
     this.transport.onEnded = () => this.emit();
+    this.automation = new AutomationDriver({ ctx, params: this.params, offline });
+    this.transport.observe(this.automation);
 
     if (!offline && typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
       ctx.addEventListener('statechange', () => this.emit());
@@ -243,6 +264,7 @@ export class Engine implements EngineApi, EngineCore {
       muteKey !== this.muteKey;
     this.muteKey = muteKey;
     if (schedulingChanged) this.updateModel();
+    this.automation.update(next, this.view);
   }
 
   /**
@@ -308,6 +330,7 @@ export class Engine implements EngineApi, EngineCore {
       return;
     this.view = view;
     this.updateModel();
+    if (this.project) this.automation.update(this.project, view);
   }
 
   private model(): { source: EventSource; timeline: Timeline } | null {
@@ -436,6 +459,14 @@ export class Engine implements EngineApi, EngineCore {
     this.strips.get(channelId)?.noteOff({ time: this.ctx.currentTime, noteId, key: 0 });
   }
 
+  previewControl(channelId: ChannelId, cc: number, value: number): void {
+    this.strips.get(channelId)?.controlChange(cc, value, this.ctx.currentTime);
+  }
+
+  previewPitchBend(channelId: ChannelId, cents: number): void {
+    this.strips.get(channelId)?.setBend(cents, this.ctx.currentTime);
+  }
+
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     void this.resume();
     void this.samples.load(ref, this.ctx).then((buffer) => {
@@ -525,6 +556,49 @@ export class Engine implements EngineApi, EngineCore {
     }
   }
 
+  // ---- Timeline, automation, session ----
+
+  tickAt(contextTime: number): { tick: number; iter: number } {
+    return this.transport.tickAt(contextTime);
+  }
+
+  contextTimeAt(performanceMs: number): number {
+    const ctx = this.ctx;
+    if (typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
+      const ts = ctx.getOutputTimestamp();
+      if (ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.performanceTime > 0)
+        return ts.contextTime + (performanceMs - ts.performanceTime) / 1000;
+      return ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency + (performanceMs - performance.now()) / 1000;
+    }
+    return ctx.currentTime;
+  }
+
+  readAutomation(keys: readonly string[], out: Float64Array): void {
+    const t = this.audibleTime();
+    for (let i = 0; i < keys.length && i < out.length; i++) out[i] = this.automation.readValue(keys[i] as string, t);
+  }
+
+  touch(key: string, on: boolean): void {
+    this.automation.touch(key, on);
+  }
+
+  tempoNow(): number {
+    return this.transportInfo.tempoAt(this.audibleTime());
+  }
+
+  setSession(session: EngineSession): void {
+    this.session = { ...session };
+  }
+
+  /** Session settings in effect (metronome, count-in). */
+  get sessionSettings(): EngineSession {
+    return this.session;
+  }
+
+  graphLatency(): number {
+    return 0;
+  }
+
   // ---- Status ----
 
   stats(): EngineStats {
@@ -568,6 +642,7 @@ export class Engine implements EngineApi, EngineCore {
 
   async dispose(): Promise<void> {
     this.transport.stop();
+    this.automation.dispose();
     this.clock?.terminate();
     this.clock = null;
     for (const s of this.strips.values()) s.dispose();

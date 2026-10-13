@@ -144,9 +144,12 @@ export function stepView(
   return view;
 }
 
-/** Channels that are silent because they are muted or because another channel is soloed. */
+/**
+ * Audible channels that are silent because they are muted or because another channel is soloed
+ * (automation channels make no sound, so their solo flags don't count).
+ */
 export const effectivelyMuted = memo1((channels: Readonly<Record<ChannelId, Channel>>): ReadonlySet<ChannelId> => {
-  const list = Object.values(channels);
+  const list = Object.values(channels).filter((c) => c.kind !== 'automation');
   const anySolo = list.some((c) => c.solo);
   const out = new Set<ChannelId>();
   for (const c of list) if (c.muted || (anySolo && !c.solo)) out.add(c.id);

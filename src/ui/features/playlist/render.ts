@@ -13,6 +13,7 @@ import type {
   Tick,
   TimeSignature,
 } from '@core/model/types';
+import { clipChannelId } from '@core/model/clips';
 import { notesSorted, patternLength } from '@core/query/queries';
 import { PPQ, ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
@@ -127,7 +128,8 @@ export function drawClips(
     const x = vp.tickToX(c.start);
     const w = Math.max(3, c.length * vp.pxPerTick - 1);
     const pattern = c.kind === 'pattern' ? project.patterns[c.patternId] : undefined;
-    const channel = c.kind !== 'pattern' ? project.channels[c.channelId] : undefined;
+    const channelId = clipChannelId(c);
+    const channel = channelId ? project.channels[channelId] : undefined;
     const base = /^#[0-9a-f]{6}$/i.test(c.color ?? '')
       ? (c.color as string)
       : (pattern?.color ?? channel?.color ?? '#5f8fbf');

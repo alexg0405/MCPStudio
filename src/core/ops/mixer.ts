@@ -10,7 +10,9 @@ import {
   type Project,
   type SlotId,
 } from '../model/types';
-import { retargetChannels } from './channels';
+import { targetUsesInsert, targetUsesSlot } from '../model/targets';
+import { dropControllers, retargetChannels } from './channels';
+import { dropRoutesTo } from './routing';
 
 // Pure draft mutators for the mixer. Call them inside history.transact()/gesture() recipes.
 
@@ -86,13 +88,18 @@ export function addInsert(d: Draft<Project>, insert: Insert, index?: number): vo
   order.splice(at, 0, insert.id);
 }
 
-/** Removes an insert (never the master); channels that played through it go to the master. */
+/**
+ * Removes an insert (never the master). Channels that played through it go to the master, routes
+ * and sidechains from it go, and controller links to its controls are removed.
+ */
 export function removeInsert(d: Draft<Project>, id: InsertId): void {
   if (id === MASTER || !d.mixer.inserts[id]) return;
   delete d.mixer.inserts[id];
   const i = d.mixer.order.indexOf(id);
   if (i >= 0) d.mixer.order.splice(i, 1);
   retargetChannels(d, id);
+  dropRoutesTo(d, id);
+  dropControllers(d, (t) => targetUsesInsert(t, id));
 }
 
 /** Moves an insert to `toIndex` in the final order (the master stays first). */
@@ -128,7 +135,7 @@ export function addFxSlot(
 ): SlotId | null {
   const fx = slotsOf(d, insertId);
   if (!fx || fx.length >= MAX_FX_SLOTS || fx.some((s) => s.id === id)) return null;
-  const slot: FxSlot = { id, plugin, enabled: true, mix: 1 };
+  const slot: FxSlot = { id, plugin, enabled: true, mix: 1, sidechain: null };
   const at = index === undefined ? fx.length : Math.max(0, Math.min(Math.round(index), fx.length));
   fx.splice(at, 0, slot as Draft<FxSlot>);
   return id;
@@ -137,7 +144,10 @@ export function addFxSlot(
 export function removeFxSlot(d: Draft<Project>, insertId: InsertId, slotId: SlotId): void {
   const fx = slotsOf(d, insertId);
   const i = fx?.findIndex((s) => s.id === slotId) ?? -1;
-  if (fx && i >= 0) fx.splice(i, 1);
+  if (fx && i >= 0) {
+    fx.splice(i, 1);
+    dropControllers(d, (t) => targetUsesSlot(t, insertId, slotId));
+  }
 }
 
 /** Moves a slot within its insert; the slot keeps its id (and the engine keeps its instance). */

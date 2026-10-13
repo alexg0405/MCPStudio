@@ -43,10 +43,11 @@ export class PluckKernel extends InstrumentKernel<typeof pluckParams> {
     super(host);
   }
 
-  noteOn(key: number, velocity: number, noteId: number, pan: number): void {
+  noteOn(key: number, velocity: number, noteId: number, pan: number, fine = 0): void {
     const v = this.pool.start(noteId, key);
     const sr = this.sampleRate;
-    v.freq = mtof(key);
+    // A string's length is fixed while it rings: the note's fine pitch and the channel pitch apply at the pluck.
+    v.freq = mtof(key + (fine + at(this.pitch, 0)) / 100);
     // Loop delay = N (buffer) + 0.5 (averaging filter) + d (all-pass) = sr / f.
     const total = Math.min(MAX_DELAY - 1, sr / v.freq);
     const n = Math.max(2, Math.floor(total - 0.5 - 0.01));

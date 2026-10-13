@@ -66,7 +66,8 @@ export default defineInstrument({
   params,
   ui: SupersawUI,
 
-  create({ audioContext: ac, params: P }) {
+  create(host) {
+    const { audioContext: ac, params: P } = host;
     const out = new GainNode(ac);
     P.level.bind(out.gain, dbToGain);
     const voices = new GraphVoices(ac, out, { max: 12 });
@@ -79,9 +80,11 @@ export default defineInstrument({
       output: out,
       tailTime: 1,
 
-      noteOn({ time, key, velocity, noteId }) {
+      noteOn({ time, key, velocity, noteId, fine }) {
         const t = Math.max(time, ac.currentTime);
-        const n = P.saws.value;
+        // Read once-per-note settings at the note's time (they may be automated).
+        const n = P.saws.valueAt(t);
+        const spread = P.spread.valueAt(t);
         const filter = new BiquadFilterNode(ac, { type: 'lowpass', frequency: 0, Q: 0 });
         const vca = new GainNode(ac, { gain: 0 });
         filter.connect(vca);
@@ -91,10 +94,11 @@ export default defineInstrument({
         for (let i = 0; i < n; i++) {
           // Spread each saw from -1..1 in detune and stereo position.
           const pos = n === 1 ? 0 : (i / (n - 1)) * 2 - 1;
-          const osc = new OscillatorNode(ac, { type: 'sawtooth', frequency: mtof(key), detune: 0 });
+          const osc = new OscillatorNode(ac, { type: 'sawtooth', frequency: mtof(key), detune: fine ?? 0 });
           const amount = new GainNode(ac, { gain: pos });
           detune.node.connect(amount).connect(osc.detune);
-          const pan = new StereoPannerNode(ac, { pan: pos * P.spread.value });
+          if (host.channel) cleanup.push(host.channel.pitch.connect(osc.detune));
+          const pan = new StereoPannerNode(ac, { pan: pos * spread });
           const g = new GainNode(ac, { gain: 1 / Math.sqrt(n) });
           osc.connect(g).connect(pan).connect(filter);
           osc.start(t);
@@ -103,7 +107,7 @@ export default defineInstrument({
           cleanup.push(() => detune.node.disconnect(amount));
         }
         vca.gain.setValueAtTime(0, t);
-        vca.gain.linearRampToValueAtTime(velocity, t + P.attack.value);
+        vca.gain.linearRampToValueAtTime(velocity, t + P.attack.valueAt(t));
         voices.add(noteId, {
           start: t,
           sources,
@@ -111,7 +115,7 @@ export default defineInstrument({
           nodes,
           cleanup,
           release: (rt) => {
-            const r = P.release.value;
+            const r = P.release.valueAt(rt);
             vca.gain.cancelAndHoldAtTime(rt);
             vca.gain.setTargetAtTime(0, rt, r / 5);
             return rt + r;

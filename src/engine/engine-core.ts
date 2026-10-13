@@ -1,6 +1,7 @@
 import type { InsertId, PluginOwner } from '@core/model/types';
 import type { JsonValue, TransportInfo } from '@agstudio/sdk';
 import type { PluginResolver } from './api';
+import type { ParamRegistry } from './param-lane';
 import type { SampleCache } from './samples';
 import type { WorkletPortImpl } from './worklet-port';
 
@@ -11,6 +12,8 @@ export interface EngineCore {
   readonly samples: SampleCache;
   readonly transportInfo: TransportInfo;
   readonly offline: boolean;
+  /** Automatable params by target key (automation, controller links, knobs that follow automation). */
+  readonly params: ParamRegistry;
   insertInput(id: InsertId): AudioNode;
   requestState(owner: PluginOwner, state: JsonValue): void;
   reportFault(owner: PluginOwner, pluginId: string, err: unknown): void;

@@ -96,7 +96,7 @@ export default defineInstrument({
       output: out,
       tailTime: 1,
 
-      noteOn({ time, key, velocity, noteId }) {
+      noteOn({ time, key, velocity, noteId, fine }) {
         const t = Math.max(time, ac.currentTime);
         const freq = mtof(key);
         const sum = new GainNode(ac, { gain: 1 / 2 });
@@ -108,12 +108,13 @@ export default defineInstrument({
         const nodes: AudioNode[] = [sum, filter];
 
         for (const n of [1, 2, 3] as const) {
-          const o = new OscillatorNode(ac, { type: P[`osc${n}Wave`].value, frequency: freq, detune: 0 });
+          const o = new OscillatorNode(ac, { type: P[`osc${n}Wave`].valueAt(t), frequency: freq, detune: fine ?? 0 });
           const g = new GainNode(ac, { gain: 0 });
           o.connect(g).connect(sum);
           cleanup.push(signals.level[n - 1]!.connect(g.gain));
           cleanup.push(signals.coarse[n - 1]!.connect(o.detune));
           cleanup.push(signals.fine[n - 1]!.connect(o.detune));
+          if (host.channel) cleanup.push(host.channel.pitch.connect(o.detune));
           o.start(t);
           sources.push(o);
           nodes.push(g);
@@ -126,17 +127,17 @@ export default defineInstrument({
         cleanup.push(signals.envAmount.connect(envDepth.gain));
         env.offset.setValueAtTime(0, t);
         env.offset.linearRampToValueAtTime(1, t + 0.003);
-        env.offset.setTargetAtTime(0, t + 0.003, P.filterDecay.value / 3);
+        env.offset.setTargetAtTime(0, t + 0.003, P.filterDecay.valueAt(t) / 3);
         env.start(t);
         sources.push(env);
         nodes.push(envDepth);
 
         // Amp ADSR.
-        const a = P.attack.value;
+        const a = P.attack.valueAt(t);
         const peak = velocity;
         vca.gain.setValueAtTime(0, t);
         vca.gain.linearRampToValueAtTime(peak, t + a);
-        vca.gain.setTargetAtTime(peak * P.sustain.value, t + a, P.decay.value / 4);
+        vca.gain.setTargetAtTime(peak * P.sustain.valueAt(t), t + a, P.decay.valueAt(t) / 4);
 
         voices.add(noteId, {
           start: t,
@@ -145,7 +146,7 @@ export default defineInstrument({
           nodes,
           cleanup,
           release: (rt) => {
-            const r = P.release.value;
+            const r = P.release.valueAt(rt);
             vca.gain.cancelAndHoldAtTime(rt);
             vca.gain.setTargetAtTime(0, rt, r / 5);
             return rt + r;

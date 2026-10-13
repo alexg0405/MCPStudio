@@ -152,6 +152,11 @@ export function fromNormalized(spec: ParamSpec, n: number): ParamValue {
   }
 }
 
+/** Whether automation and controller links may drive the param (floats and ints unless they opt out). */
+export function isAutomatable(spec: ParamSpec): boolean {
+  return spec.automatable ?? (spec.type === 'float' || spec.type === 'int');
+}
+
 /** Numeric encoding used for AudioParams: enum → index, bool → 0/1. */
 export function encode(spec: ParamSpec, value: ParamValue): number {
   switch (spec.type) {

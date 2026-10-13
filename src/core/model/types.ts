@@ -1,12 +1,12 @@
 /**
- * Project document, schema v1. This is what gets saved (project.json) and what undo/redo operates on.
+ * Project document, schema v2. This is what gets saved (project.json) and what undo/redo operates on.
  * Every value is JSON-serializable. Entities live in Record<Id, T> maps plus order arrays so Immer
  * patches stay small and every entity keeps its reference identity until it changes.
  */
 import type { ParamValue } from '@agstudio/sdk/params';
 import type { Json } from './json';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Integer ticks at PPQ 960. */
 export type Tick = number;
@@ -22,6 +22,7 @@ export type ClipId = Id<'clip'>;
 export type InsertId = Id<'ins'>;
 export type SlotId = Id<'fx'>;
 export type SampleId = Id<'smp'>;
+export type LinkId = Id<'lnk'>;
 
 /** The master insert has a fixed id. */
 export const MASTER = 'master' as InsertId;
@@ -39,6 +40,8 @@ export interface Project {
   playlist: Playlist;
   mixer: Mixer;
   samples: Record<SampleId, SampleRef>;
+  /** MIDI controller links ("Link to controller"), keyed by id. */
+  controllers: Record<LinkId, ControllerLink>;
 }
 
 export interface ProjectMeta {
@@ -58,6 +61,15 @@ export interface TransportSettings {
   timeSig: TimeSignature;
   /** Global swing 0–1: delays every second 1/16 step by up to half a step. */
   swing: number;
+  /** The song's key (scale highlighting and snapping, the AI); absent = no key set. */
+  key?: SongKey;
+}
+
+export interface SongKey {
+  /** Pitch class of the tonic, 0 (C) – 11 (B). */
+  root: number;
+  /** Scale id from `@agstudio/sdk/notes` (e.g. 'major', 'minor'); unknown ids read as major. */
+  scale: string;
 }
 
 /** A plugin's saved data. The host owns it; plugins receive it and request changes. */
@@ -95,6 +107,8 @@ export interface InstrumentChannel extends ChannelBase, Audible {
   plugin: PluginInstance;
   /** Key used by step-sequencer notes and as the sampler's original pitch (60 = FL's C5). */
   rootKey: number;
+  /** Channel pitch in cents (−2400…2400, FL's pitch knob); absent = 0. Reaches instruments as `host.channel.pitch`. */
+  pitch?: number;
 }
 
 /** FL's "audio clip" channel: what playlist audio clips play through. */
@@ -103,11 +117,18 @@ export interface AudioClipChannel extends ChannelBase, Audible {
   sampleId: SampleId;
 }
 
-/** Reserved for automation clips (not creatable in v1). */
+/** An automation clip's curve (FL keeps it as a channel); its playlist clips play it. */
 export interface AutomationChannel extends ChannelBase {
   kind: 'automation';
+  /** What it drives; null (or a target whose owner was deleted) drives nothing. */
   target: ParamTarget | null;
+  /** Sorted by tick (ticks from the start of the clip's content). */
   points: AutoPoint[];
+  /**
+   * Plain-unit range the normalized point values span (tempo: BPM, default 60–180); absent = the
+   * target's own range.
+   */
+  range?: { min: number; max: number };
 }
 
 export type Channel = InstrumentChannel | AudioClipChannel | AutomationChannel;
@@ -135,6 +156,10 @@ export interface Note {
   velocity: number;
   pan?: number;
   muted?: boolean;
+  /** Release velocity 0–1 (FL's "release"); absent = 0.5. */
+  release?: number;
+  /** Fine pitch in cents, −100…100; absent = 0. */
+  fine?: number;
 }
 
 export interface Playlist {
@@ -175,10 +200,11 @@ export interface AudioClip extends ClipBase {
   offsetSec: number;
 }
 
-/** Reserved for automation clips (not creatable in v1). */
+/** Plays an automation channel's curve over its span (content does not repeat). */
 export interface AutomationClip extends ClipBase {
   kind: 'automation';
   channelId: ChannelId;
+  /** Content offset: content tick = clipLocal + offset. */
   offset: Tick;
 }
 
@@ -187,17 +213,42 @@ export type Clip = PatternClip | AudioClip | AutomationClip;
 export type PluginOwner =
   { kind: 'channel'; channelId: ChannelId } | { kind: 'fx'; insertId: InsertId; slotId: SlotId };
 
+/** Something automation, MIDI links and the AI can drive. */
 export type ParamTarget =
-  | { kind: 'channel'; channelId: ChannelId; param: 'volume' | 'pan' }
+  | { kind: 'channel'; channelId: ChannelId; param: 'volume' | 'pan' | 'pitch' }
   | { kind: 'insert'; insertId: InsertId; param: 'volume' | 'pan' }
+  | { kind: 'slot'; insertId: InsertId; slotId: SlotId; param: 'mix' }
+  | { kind: 'route'; insertId: InsertId; to: InsertId }
   | { kind: 'plugin'; owner: PluginOwner; paramId: string }
   | { kind: 'tempo' };
+
+/** How the curve gets from a point to the next one. */
+export type AutoShape = 'curve' | 'hold' | 'stairs' | 'smooth';
+export const AUTO_SHAPES: readonly AutoShape[] = ['curve', 'hold', 'stairs', 'smooth'];
 
 export interface AutoPoint {
   tick: Tick;
   /** Normalized 0–1. */
   value: number;
+  /** Bend of the segment leaving this point, −1…1 (0 = straight). */
   tension?: number;
+  /** Shape of the segment leaving this point; absent = 'curve'. */
+  shape?: AutoShape;
+}
+
+/** "Link to controller": a MIDI control change that drives a target. */
+export interface ControllerLink {
+  id: LinkId;
+  /** Controller number 0–127. */
+  cc: number;
+  /** MIDI channel 0–15, or null for any channel. */
+  channel: number | null;
+  /** Input device name to match; absent = any input. */
+  device?: string;
+  target: ParamTarget;
+  /** Normalized range the controller sweeps (min may exceed max to invert it). */
+  min: number;
+  max: number;
 }
 
 export interface Mixer {
@@ -217,6 +268,19 @@ export interface Insert {
   solo: boolean;
   /** Ordered effect slots, no gaps. */
   fx: FxSlot[];
+  /**
+   * Where this insert's output goes (at most one route per target). New inserts route to the
+   * master; the master has none. No routes = silent. The routes and sidechains form no cycle.
+   */
+  routes: Route[];
+}
+
+export interface Route {
+  to: InsertId;
+  /** Linear send gain (1 = 0 dB). */
+  level: number;
+  /** Taken before the insert's pan and fader instead of after them. */
+  pre: boolean;
 }
 
 export interface FxSlot {
@@ -225,6 +289,8 @@ export interface FxSlot {
   enabled: boolean;
   /** Dry/wet 0–1. */
   mix: number;
+  /** Insert whose output feeds this effect's sidechain input (effects that declare one); null = none. */
+  sidechain: InsertId | null;
 }
 
 export type SampleSource =

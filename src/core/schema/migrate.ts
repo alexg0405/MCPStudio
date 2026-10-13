@@ -14,19 +14,37 @@ import {
   DEFAULT_ROOT_KEY,
   makeInsert,
   makePattern,
+  masterRoutes,
   paletteColor,
 } from '../model/defaults';
 import { isSha256Hex } from '../io/hash';
 import { newId } from '../model/ids';
-import { MASTER, SCHEMA_VERSION, type Project } from '../model/types';
+import { AUTO_SHAPES, MASTER, SCHEMA_VERSION, type InsertId, type Project } from '../model/types';
 
 /** A project as parsed from JSON, before it is known to match the current types. */
 export type UntypedProject = Record<string, unknown>;
 /** Upgrades a schema-n project to schema n + 1 (it may mutate and return its argument). */
 export type Migration = (project: UntypedProject) => UntypedProject;
 
-/** `MIGRATIONS[n]` upgrades schema n to n + 1. Schema 1 is the first version, so the list is empty. */
-export const MIGRATIONS: readonly (Migration | undefined)[] = [];
+/**
+ * v1 → v2: mixer routing (every insert routes to the master, as v1 did implicitly), effect-slot
+ * sidechains (none) and MIDI controller links (none). Tolerates damaged data; repair handles it.
+ */
+const v1ToV2: Migration = (p) => {
+  const mixer = p.mixer;
+  if (isObject(mixer) && isObject(mixer.inserts)) {
+    for (const [id, ins] of Object.entries(mixer.inserts)) {
+      if (!isObject(ins)) continue;
+      ins.routes = id === MASTER ? [] : [{ to: MASTER, level: 1, pre: false }];
+      if (Array.isArray(ins.fx)) for (const slot of ins.fx) if (isObject(slot)) slot.sidechain = null;
+    }
+  }
+  p.controllers = {};
+  return p;
+};
+
+/** `MIGRATIONS[n]` upgrades schema n to n + 1. Schema 1 is the first version. */
+export const MIGRATIONS: readonly (Migration | undefined)[] = [undefined, v1ToV2];
 
 export type SchemaErrorCode = 'invalid' | 'too-new' | 'too-old';
 
@@ -152,6 +170,8 @@ const NOTE = noun('note');
 const LANE = noun('playlist track');
 const CLIP = noun('playlist clip');
 const SLOT = noun('effect slot');
+const ROUTE = noun('mixer route');
+const LINK = noun('controller link');
 
 /** Collects fixes; counted fixes become one message per kind (in first-seen order). */
 class RepairLog {
@@ -322,6 +342,19 @@ function repairTransport(p: Obj, log: RepairLog): void {
   }
   if (clampField(t, 'swing', 0, 1, 0))
     log.add(`The swing amount was out of range and was set to ${t.swing as number}.`);
+  if (
+    optionalField(
+      t,
+      'key',
+      (v) =>
+        isObject(v) &&
+        Number.isInteger(v.root) &&
+        (v.root as number) >= 0 &&
+        (v.root as number) <= 11 &&
+        isString(v.scale),
+    )
+  )
+    log.add('The song key was invalid and was cleared.');
 }
 
 function repairSamples(p: Obj, log: RepairLog): void {
@@ -386,6 +419,7 @@ function repairMixer(p: Obj, log: RepairLog): void {
     clamped = clampField(ins, 'pan', -1, 1, 0) || clamped;
     if (clamped) log.count('level', (n) => `Clamped ${count(n, noun('volume or pan setting'))} into range.`);
 
+    repairRoutes(ins, id, inserts, log);
     const damagedSlot = () => log.count('fx-damaged', (n) => `Removed ${count(n, prefixed('damaged', SLOT))}.`);
     if (!Array.isArray(ins.fx)) {
       ins.fx = [];
@@ -406,10 +440,85 @@ function repairMixer(p: Obj, log: RepairLog): void {
       let slotFixed = requireField(slot, 'enabled', isBoolean, true);
       slotFixed = clampField(slot, 'mix', 0, 1, 1) || slotFixed;
       if (slotFixed) log.count('fx-fields', (n) => `Fixed ${count(n, SLOT)} with invalid settings.`);
+      if (!(
+        slot.sidechain === null ||
+        (isString(slot.sidechain) && has(inserts, slot.sidechain) && slot.sidechain !== id)
+      )) {
+        slot.sidechain = null;
+        log.count('fx-sidechain', (n) => `Cleared ${count(n, noun('invalid sidechain input'))}.`);
+      }
       return true;
     });
   });
   log.flush();
+  breakRoutingCycles(ids, inserts, log);
+  log.flush();
+}
+
+/** One route per target, to an existing insert other than itself; the master routes nowhere. */
+function repairRoutes(ins: Obj, id: string, inserts: Obj, log: RepairLog): void {
+  if (!Array.isArray(ins.routes)) {
+    ins.routes = masterRoutes(id as InsertId);
+    log.count('routes-reset', (n) => `Reset the routing of ${count(n, INSERT)} to the Master track.`);
+    return;
+  }
+  const targets = new Set<string>();
+  ins.routes = (ins.routes as unknown[]).filter((r) => {
+    const ok =
+      id !== MASTER && isObject(r) && isString(r.to) && r.to !== id && has(inserts, r.to) && !targets.has(r.to);
+    if (!ok) {
+      log.count('routes-bad', (n) => `Removed ${count(n, ROUTE)} to missing or repeated mixer tracks.`);
+      return false;
+    }
+    targets.add(r.to as string);
+    let fixed = clampField(r, 'level', 0, INSERT_VOLUME_MAX, 1);
+    fixed = requireField(r, 'pre', isBoolean, false) || fixed;
+    if (fixed) log.count('routes-fields', (n) => `Fixed ${count(n, ROUTE)} with invalid settings.`);
+    return true;
+  });
+}
+
+/**
+ * Audio may not loop: routes (insert → target) and sidechains (source → the slot's insert) form a
+ * graph without cycles. Keeps routes before sidechains, each in mixer order, dropping the edges that
+ * would close a loop.
+ */
+function breakRoutingCycles(order: readonly string[], inserts: Obj, log: RepairLog): void {
+  const out = new Map<string, Set<string>>();
+  const reaches = (from: string, to: string): boolean => {
+    const stack = [from];
+    const seen = new Set<string>();
+    while (stack.length) {
+      const at = stack.pop()!;
+      if (at === to) return true;
+      if (seen.has(at)) continue;
+      seen.add(at);
+      for (const next of out.get(at) ?? []) stack.push(next);
+    }
+    return false;
+  };
+  const accept = (from: string, to: string): boolean => {
+    if (from === to || reaches(to, from)) return false;
+    let set = out.get(from);
+    if (!set) out.set(from, (set = new Set()));
+    set.add(to);
+    return true;
+  };
+  for (const id of order) {
+    const ins = inserts[id] as Obj;
+    ins.routes = (ins.routes as Obj[]).filter((r) => {
+      if (accept(id, r.to as string)) return true;
+      log.count('routes-loop', (n) => `Removed ${count(n, ROUTE)} that would loop back.`);
+      return false;
+    });
+  }
+  for (const id of order) {
+    for (const slot of (inserts[id] as Obj).fx as Obj[]) {
+      if (slot.sidechain === null || accept(slot.sidechain as string, id)) continue;
+      slot.sidechain = null;
+      log.count('sidechain-loop', (n) => `Cleared ${count(n, noun('sidechain input'))} that would loop back.`);
+    }
+  }
 }
 
 function describeChannels(names: readonly string[]): string {
@@ -447,20 +556,25 @@ function repairChannels(p: Obj, log: RepairLog): void {
     fixed = requireField(ch, 'color', isString, paletteColor(0)) || fixed;
     fixed = requireField(ch, 'muted', isBoolean, false) || fixed;
     fixed = requireField(ch, 'solo', isBoolean, false) || fixed;
-    if (kind === 'instrument') fixed = clampField(ch, 'rootKey', 0, 127, DEFAULT_ROOT_KEY, true) || fixed;
+    if (kind === 'instrument') {
+      fixed = clampField(ch, 'rootKey', 0, 127, DEFAULT_ROOT_KEY, true) || fixed;
+      if (has(ch, 'pitch') && ch.pitch !== undefined) fixed = clampField(ch, 'pitch', -2400, 2400, 0) || fixed;
+    }
     if (kind === 'automation') {
-      fixed = requireField(ch, 'target', (v) => v === null || isObject(v), null) || fixed;
-      if (!Array.isArray(ch.points)) {
-        ch.points = [];
-        fixed = true;
-      } else {
-        const points = (ch.points as unknown[]).filter(isObject);
-        if (points.length !== (ch.points as unknown[]).length) fixed = true;
-        for (const pt of points) {
-          fixed = clampField(pt, 'tick', 0, Number.MAX_SAFE_INTEGER, 0, true) || fixed;
-          fixed = clampField(pt, 'value', 0, 1, 0) || fixed;
+      fixed = requireField(ch, 'target', (v) => v === null || isParamTarget(v), null) || fixed;
+      fixed = repairPoints(ch) || fixed;
+      fixed = optionalField(ch, 'range', isRange) || fixed;
+      if (isObject(ch.target) && ch.target.kind === 'tempo' && isRange(ch.range)) {
+        const r = ch.range as Obj;
+        const lo = Math.min(BPM_MAX, Math.max(BPM_MIN, r.min as number));
+        const hi = Math.min(BPM_MAX, Math.max(BPM_MIN, r.max as number));
+        if (lo < hi && (lo !== r.min || hi !== r.max)) {
+          ch.range = { min: lo, max: hi };
+          fixed = true;
+        } else if (lo >= hi) {
+          delete ch.range;
+          fixed = true;
         }
-        ch.points = points;
       }
     } else {
       let clamped = clampField(ch, 'volume', 0, CHANNEL_VOLUME_MAX, DEFAULT_CHANNEL_VOLUME);
@@ -486,6 +600,8 @@ function repairNote(note: Obj, log: RepairLog): void {
   fixed = clampField(note, 'length', 1, Number.MAX_SAFE_INTEGER, DEFAULT_NOTE_LENGTH, true) || fixed;
   fixed = clampField(note, 'key', 0, 127, DEFAULT_ROOT_KEY, true) || fixed;
   if (has(note, 'pan') && note.pan !== undefined) fixed = clampField(note, 'pan', -1, 1, 0) || fixed;
+  if (has(note, 'release') && note.release !== undefined) fixed = clampField(note, 'release', 0, 1, 0.5) || fixed;
+  if (has(note, 'fine') && note.fine !== undefined) fixed = clampField(note, 'fine', -100, 100, 0) || fixed;
   fixed = optionalField(note, 'muted', isBoolean) || fixed;
   if (fixed) log.count('note-fields', (n) => `Fixed ${count(n, NOTE)} with an invalid position, length or key.`);
   if (clampField(note, 'velocity', 0, 1, DEFAULT_VELOCITY)) {
@@ -588,6 +704,93 @@ function repairPlaylist(p: Obj, log: RepairLog): void {
   log.flush();
 }
 
+const isId = (v: unknown) => isString(v) && v !== '';
+
+/** A structurally valid automation/controller target (it may refer to things that were deleted). */
+export function isParamTarget(v: unknown): boolean {
+  if (!isObject(v)) return false;
+  switch (v.kind) {
+    case 'channel':
+      return isId(v.channelId) && (v.param === 'volume' || v.param === 'pan' || v.param === 'pitch');
+    case 'insert':
+      return isId(v.insertId) && (v.param === 'volume' || v.param === 'pan');
+    case 'slot':
+      return isId(v.insertId) && isId(v.slotId) && v.param === 'mix';
+    case 'route':
+      return isId(v.insertId) && isId(v.to);
+    case 'plugin': {
+      const o = v.owner;
+      const owner =
+        isObject(o) &&
+        ((o.kind === 'channel' && isId(o.channelId)) || (o.kind === 'fx' && isId(o.insertId) && isId(o.slotId)));
+      return owner && isId(v.paramId);
+    }
+    case 'tempo':
+      return true;
+    default:
+      return false;
+  }
+}
+
+const isRange = (v: unknown) =>
+  isObject(v) && isFiniteNumber(v.min) && isFiniteNumber(v.max) && (v.min as number) < (v.max as number);
+
+/** Points: objects with a tick and a normalized value, sorted, with valid shapes and tensions. */
+function repairPoints(ch: Obj): boolean {
+  if (!Array.isArray(ch.points)) {
+    ch.points = [];
+    return true;
+  }
+  const raw = ch.points as unknown[];
+  const points = raw.filter(isObject);
+  let fixed = points.length !== raw.length;
+  for (const pt of points) {
+    fixed = clampField(pt, 'tick', 0, Number.MAX_SAFE_INTEGER, 0, true) || fixed;
+    fixed = clampField(pt, 'value', 0, 1, 0) || fixed;
+    if (has(pt, 'tension') && pt.tension !== undefined) fixed = clampField(pt, 'tension', -1, 1, 0) || fixed;
+    fixed = optionalField(pt, 'shape', (v) => AUTO_SHAPES.includes(v as never)) || fixed;
+  }
+  for (let i = 1; i < points.length; i++) {
+    if ((points[i]!.tick as number) < (points[i - 1]!.tick as number)) {
+      points.sort((a, b) => (a.tick as number) - (b.tick as number));
+      fixed = true;
+      break;
+    }
+  }
+  ch.points = points;
+  return fixed;
+}
+
+function repairControllers(p: Obj, log: RepairLog): void {
+  if (!isObject(p.controllers)) {
+    p.controllers = {};
+    log.add('Reset the damaged MIDI controller links.');
+    return;
+  }
+  const links = p.controllers;
+  repairRecords(links, LINK, log);
+  for (const [id, raw] of Object.entries(links)) {
+    const link = raw as Obj;
+    const valid =
+      Number.isInteger(link.cc) &&
+      (link.cc as number) >= 0 &&
+      (link.cc as number) <= 127 &&
+      (link.channel === null ||
+        (Number.isInteger(link.channel) && (link.channel as number) >= 0 && (link.channel as number) <= 15)) &&
+      isParamTarget(link.target);
+    if (!valid) {
+      delete links[id];
+      log.count('link-bad', (n) => `Removed ${count(n, LINK)} with invalid settings.`);
+      continue;
+    }
+    let fixed = clampField(link, 'min', 0, 1, 0);
+    fixed = clampField(link, 'max', 0, 1, 1) || fixed;
+    fixed = optionalField(link, 'device', isString) || fixed;
+    if (fixed) log.count('link-fields', (n) => `Fixed ${count(n, LINK)} with an invalid range.`);
+  }
+  log.flush();
+}
+
 /**
  * Returns a repaired deep copy of a structurally valid project (see migrateProject) and one
  * human-readable line per kind of fix. Never mutates the input. A project that needs no repair comes
@@ -603,6 +806,7 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairChannels(p, log);
   repairPatterns(p, log);
   repairPlaylist(p, log);
+  repairControllers(p, log);
   log.flush();
   return { project: p as unknown as Project, repairs: log.messages };
 }

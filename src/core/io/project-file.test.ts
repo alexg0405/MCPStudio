@@ -3,7 +3,7 @@ import { strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { createEmptyProject } from '../model/defaults';
 import { seededBytes, setIdSource } from '../model/ids';
 import { SCHEMA_VERSION, type Project } from '../model/types';
-import type { Migration } from '../schema/migrate';
+import { MIGRATIONS, migrateProject, type Migration } from '../schema/migrate';
 import { sha256Hex } from './hash';
 import {
   ProjectFileError,
@@ -15,7 +15,9 @@ import {
 import { encodeWav } from './wav';
 
 const FIXTURES = import.meta.glob<unknown>('/test/fixtures/projects/*.json', { eager: true, import: 'default' });
-const basic = () => JSON.parse(JSON.stringify(FIXTURES['/test/fixtures/projects/v1-basic.json'])) as Project;
+const fixture = (name: string) =>
+  JSON.parse(JSON.stringify(FIXTURES[`/test/fixtures/projects/${name}.json`])) as Project;
+const basic = () => fixture('v2-basic');
 
 const NOW = new Date('2026-10-12T10:30:00.000Z');
 const VIEW = { mode: 'song', currentPatternId: 'pat_intro00001', windows: { mixer: { visible: true, z: 3 } } };
@@ -141,17 +143,27 @@ describe('writeProjectFile / readProjectFile', () => {
   });
 
   it('runs migrations for older project versions', () => {
-    const v1 = basic();
+    const v1 = fixture('v1-basic');
     const v0 = { ...v1, schemaVersion: 0, transport: { tempo: 128 } };
     const m0: Migration = (p) => ({
       ...p,
       transport: { bpm: (p.transport as { tempo: number }).tempo, timeSig: { num: 4, den: 4 }, swing: 0.2 },
     });
     const read = readProjectFile(zip({ 'meta.json': '{"format":1}', 'project.json': JSON.stringify(v0) }), {
-      migrations: [m0],
+      migrations: [m0, ...MIGRATIONS.slice(1)],
     });
     expect(read.migratedFrom).toBe(0);
-    expect(read.project).toEqual(v1);
+    expect(read.project).toEqual(migrateProject(v1).project);
+    expect(read.repairs).toEqual([]);
+  });
+
+  it('upgrades a v1 file with the built-in migrations', () => {
+    const read = readProjectFile(
+      zip({ 'meta.json': '{"format":1}', 'project.json': JSON.stringify(fixture('v1-basic')) }),
+    );
+    expect(read.migratedFrom).toBe(1);
+    expect(read.project.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(read.repairs).toEqual([]);
   });
 
   it('tolerates a missing or damaged meta.json and view.json', () => {

@@ -22,6 +22,26 @@ export interface Clock {
   readonly currentTime: number;
 }
 
+/**
+ * Follows the transport's timeline (the metronome, the automation driver, note recording). Calls
+ * happen on the main thread while planning, ahead of the audio.
+ */
+export interface TransportObserver {
+  /** Playback starts at `tick`, heard from `time`. */
+  started?(tick: Tick, time: number): void;
+  /** A newly planned segment, before its notes go out. `wrapped`: it starts the loop again. */
+  segment?(seg: Segment, wrapped: boolean): void;
+  /**
+   * The model changed while playing and everything from `time` on is planned again
+   * (`timelineChanged`: tempo, loop or length changed too).
+   */
+  reanchored?(time: number, timelineChanged: boolean): void;
+  /** Playback jumped to `tick`, heard from `time` (a seek while playing). */
+  seeked?(tick: Tick, time: number): void;
+  /** Playback stopped at `time`. */
+  stopped?(time: number): void;
+}
+
 interface Scheduled {
   ev: NoteEvent;
   noteId: number;
@@ -47,6 +67,7 @@ export class Transport {
   private scanOngoing = false;
   lookahead: number;
   lateEvents = 0;
+  private readonly observers = new Set<TransportObserver>();
 
   constructor(
     private readonly clock: Clock,
@@ -62,6 +83,12 @@ export class Transport {
     return this.playingFlag;
   }
 
+  /** Adds an observer of the timeline; returns its removal. */
+  observe(o: TransportObserver): () => void {
+    this.observers.add(o);
+    return () => this.observers.delete(o);
+  }
+
   /** Number of notes awaiting a noteOn or noteOff (diagnostics/tests). */
   get pendingNotes(): number {
     return this.notes.size;
@@ -73,12 +100,17 @@ export class Transport {
     this.endTime = null;
     this.scanOngoing = true;
     this.cursor = { tick: fromTick, time: at, iter: 0 };
+    for (const o of this.observers) o.started?.(fromTick, at);
     this.pump();
   }
 
   /** Stops playback; FL returns the playhead to the start. */
   stop(returnTo: Tick = 0): void {
-    if (this.playingFlag) this.sink.allNotesOff(this.clock.currentTime);
+    if (this.playingFlag) {
+      const now = this.clock.currentTime;
+      this.sink.allNotesOff(now);
+      for (const o of this.observers) o.stopped?.(now);
+    }
     this.reset();
     this.playingFlag = false;
     this.stoppedTick = returnTo;
@@ -93,7 +125,10 @@ export class Transport {
       return;
     }
     const p = plan(this.cursor, horizon, this.timeline);
+    const L = this.timeline.loop;
     for (const seg of p.segs) {
+      const wrapped = !!L && seg.iter > 0 && seg.tick0 === L.start;
+      for (const o of this.observers) o.segment?.(seg, wrapped);
       this.process(seg);
       this.segs.push(seg);
     }
@@ -165,7 +200,25 @@ export class Transport {
       if (n.iter === pos.iter && n.endTick <= tick) this.release(n, safe);
     }
     this.scanOngoing = true;
+    for (const o of this.observers) o.reanchored?.(safe, timelineChanged);
     this.pump();
+  }
+
+  /**
+   * The tick (and loop pass) at audio-clock `time`, extrapolated at the current tempo before and
+   * after what is planned; the stop position while stopped.
+   */
+  tickAt(time: number): { tick: number; iter: number } {
+    if (!this.playingFlag) return { tick: this.stoppedTick, iter: 0 };
+    const hit = tickAtTime(this.segs, time);
+    const last = this.segs[this.segs.length - 1];
+    const first = this.segs[0];
+    if (hit && !(last && time > segmentEndTime(last))) return hit;
+    if (last && time > segmentEndTime(last))
+      return { tick: last.tick1 + (time - segmentEndTime(last)) / last.spt, iter: last.iter };
+    if (first) return { tick: first.tick0 - (first.time0 - time) / first.spt, iter: first.iter };
+    const c = this.cursor;
+    return c ? { tick: c.tick + (time - c.time) / this.timeline.spt, iter: c.iter } : { tick: 0, iter: 0 };
   }
 
   /** Tick heard at audio-clock `time` (the UI passes the output-latency-corrected time). */
@@ -202,6 +255,7 @@ export class Transport {
         key: ev.pitch,
         velocity: ev.velocity,
         ...(ev.pan !== undefined ? { pan: ev.pan } : {}),
+        ...(ev.fine !== undefined ? { fine: ev.fine } : {}),
         ...(ev.offsetSec !== undefined ? { offset: ev.offsetSec } : {}),
       });
     }
@@ -221,7 +275,12 @@ export class Transport {
     n.offSent = true;
     // A release at the start time would cancel the note; nudge it just past the start.
     const t = time <= n.startTime ? n.startTime + 1e-4 : time;
-    this.sink.noteOff(n.ev.channelId, { time: t, noteId: n.noteId, key: n.ev.pitch });
+    this.sink.noteOff(n.ev.channelId, {
+      time: t,
+      noteId: n.noteId,
+      key: n.ev.pitch,
+      ...(n.ev.release !== undefined ? { release: n.ev.release } : {}),
+    });
   }
 
   private trim(): void {

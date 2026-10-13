@@ -6,9 +6,9 @@
  * main thread (types, tests) is harmless.
  */
 import { descriptors, type ParamSpecs } from '../params';
-import type { FromProcessor, ProcessorInit, ToProcessor } from '../protocol';
+import { PITCH_PARAM, type FromProcessor, type ProcessorInit, type ToProcessor } from '../protocol';
 import { Rng } from '../dsp/random';
-import type { KernelClass, KernelHost } from './kernel';
+import { InstrumentKernel, type KernelClass, type KernelHost } from './kernel';
 import { KernelRunner } from './runner';
 
 interface WorkletProcessorInstance {
@@ -36,6 +36,15 @@ export function registerKernel<P extends ParamSpecs>(id: string, params: P, Kern
   }
   registered.add(id);
   const paramDescriptors = descriptors(params);
+  // Instruments also get the channel pitch (cents), which the host feeds from host.channel.pitch.
+  if (Kernel.prototype instanceof InstrumentKernel)
+    paramDescriptors.push({
+      name: PITCH_PARAM,
+      defaultValue: 0,
+      minValue: -9600,
+      maxValue: 9600,
+      automationRate: 'a-rate',
+    });
 
   class KernelProcessor extends scope.AudioWorkletProcessor {
     static get parameterDescriptors() {

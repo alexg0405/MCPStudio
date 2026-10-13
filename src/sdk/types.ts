@@ -20,6 +20,8 @@ export interface NoteOn {
   velocity: number;
   /** -1 … 1, from the note's pan. */
   pan?: number;
+  /** Fine pitch in cents (−100…100), from the note. Add it to the voice's detune. */
+  fine?: number;
   /** Seconds into the sound to start at (set for audio clips that start mid-way). */
   offset?: number;
 }
@@ -29,6 +31,8 @@ export interface NoteOff {
   time: number;
   noteId: number;
   key: number;
+  /** Release velocity 0–1 (the note's "release"); absent = 0.5. */
+  release?: number;
 }
 
 /** One smoothed control signal that can feed many AudioParams (e.g. a cutoff for every voice). */
@@ -43,6 +47,12 @@ export interface ParamHandle<S extends ParamSpec = ParamSpec> {
   readonly spec: S;
   /** The current value (host-owned; changes when the user turns a knob, undoes, loads a preset…). */
   readonly value: ValueOf<S>;
+  /**
+   * The value in effect at an AudioContext time, automation included. Read params you use once per
+   * note (envelope times, wave shapes) with `valueAt(e.time)` in noteOn: notes are scheduled ahead of
+   * time, so `value` is "now", not when the note plays.
+   */
+  valueAt(time: number): ValueOf<S>;
   /** Drives an AudioParam with this param (smoothed). `map` converts units, e.g. dbToGain. */
   bind(target: AudioParam, map?: (v: number) => number): () => void;
   /** A shared smoothed signal for fan-out to voices. */
@@ -65,21 +75,32 @@ export interface SampleSlots {
 }
 
 export interface TransportInfo {
+  /** The tempo now (it can change during the song with tempo automation). */
   readonly bpm: number;
   readonly ppq: number;
-  onTempo(cb: (bpm: number) => void): () => void;
+  /** The tempo in effect at an AudioContext time (scheduled audio uses this, not `bpm`). */
+  tempoAt(time: number): number;
+  /** Called when the tempo changes, with the AudioContext time the new tempo starts at. */
+  onTempo(cb: (bpm: number, time: number) => void): () => void;
 }
 
 export interface ChannelInfo {
   /** The channel's root key: step-sequencer notes use it and samplers play original pitch there. */
   readonly rootKey: number;
   onRootKeyChange(cb: (rootKey: number) => void): () => void;
+  /**
+   * The channel's pitch in cents (its pitch knob, automation and MIDI pitch bend), as a signal:
+   * connect it to every voice's `detune` (leave the detune's own value for the note's tuning).
+   */
+  readonly pitch: ParamSignal;
+  /** The channel's pitch in cents at an AudioContext time (e.g. to know how long a sample plays). */
+  pitchAt(time: number): number;
 }
 
 export interface WorkletOptions {
   /** Processor name registered with registerKernel(); defaults to the plugin id. */
   name?: string;
-  /** 0 for instruments (default), 1 for effects. */
+  /** 0 for instruments (default), 1 for effects, 2 for effects with a sidechain (input 1). */
   numberOfInputs?: number;
   /** Defaults to [2] (stereo). */
   outputChannelCount?: number[];
@@ -91,6 +112,8 @@ export interface WorkletPort {
   noteOn(e: NoteOn): void;
   noteOff(e: NoteOff): void;
   allNotesOff(time: number, hard?: boolean): void;
+  /** A MIDI control change for the kernel (kernel.controlChange), value 0–1. */
+  controlChange(cc: number, value: number, time: number): void;
   setState(state: unknown): void;
   /** Copies a sample's audio to the processor (kernel.onSample). */
   sendSample(slot: string, buffer: AudioBuffer | null): void;
@@ -117,6 +140,11 @@ export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | u
   readonly samples: SampleSlots;
   /** Present for instruments on a channel. */
   readonly channel: ChannelInfo | null;
+  /**
+   * Effects that declare `sidechain: true`: the signal of the mixer track chosen as the slot's
+   * sidechain source (silent when none is chosen). null otherwise.
+   */
+  readonly sidechain: AudioNode | null;
   /** True while rendering an export. */
   readonly offline: boolean;
   /** Aborted when the instance is disposed. */
@@ -135,6 +163,8 @@ export interface InstrumentInstance<S = unknown> {
   noteOff(e: NoteOff): void;
   /** Releases everything sounding at `time` and drops anything scheduled at or after it. */
   allNotesOff(time: number, hard?: boolean): void;
+  /** A MIDI control change (mod wheel = 1, …), value 0–1. Pitch bend arrives as `host.channel.pitch`. */
+  controlChange?(cc: number, value: number, time: number): void;
   setState?(state: S): void;
   dispose(): void;
   /** Seconds of release tail after the last note (export padding). */
@@ -200,6 +230,8 @@ export interface InstrumentDef<P extends ParamSpecs = ParamSpecs, S = unknown> e
 
 export interface EffectDef<P extends ParamSpecs = ParamSpecs, S = unknown> extends DefBase<P, S> {
   kind: 'effect';
+  /** The effect listens to a sidechain (a compressor keyed by the kick): `host.sidechain` carries it. */
+  sidechain?: boolean;
   create(host: PluginHost<P, S>): EffectInstance<S> | Promise<EffectInstance<S>>;
 }
 
@@ -220,4 +252,66 @@ export function defineEffect<const P extends ParamSpecs, S = undefined>(
   def: Omit<EffectDef<P, S>, 'kind'>,
 ): EffectDef<P, S> {
   return { kind: 'effect', ...def };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Note scripts: piano-roll tools (quantize, strum, arpeggiate, …) written as plugins.
+
+/** A note as a script sees it (ticks at PPQ 960, pattern-relative). */
+export interface ScriptNote {
+  /** Present on notes that already exist; keep it to edit that note, drop it to add a new one. */
+  readonly id?: string;
+  tick: number;
+  /** ≥ 1 tick. */
+  length: number;
+  /** MIDI key 0–127. */
+  key: number;
+  /** 0–1. */
+  velocity: number;
+  pan?: number;
+  release?: number;
+  fine?: number;
+  muted?: boolean;
+}
+
+export interface NoteScriptContext<P extends ParamSpecs = ParamSpecs> {
+  /** The notes to work on: the selection, or every note of the channel's pattern when none is selected. */
+  readonly notes: readonly ScriptNote[];
+  /** The script's parameter values from its dialog. */
+  readonly values: { readonly [K in keyof P]: ValueOf<P[K]> };
+  /** Ticks per quarter note (960). */
+  readonly ppq: number;
+  /** The piano roll's snap in ticks. */
+  readonly grid: number;
+  /** Ticks per bar. */
+  readonly bar: number;
+  /** Length of the pattern in ticks. */
+  readonly length: number;
+  /** The song's key, when one is set (root 0 = C; scale ids from '@agstudio/sdk/notes'). */
+  readonly key: { readonly root: number; readonly scale: string } | null;
+  /** Deterministic random number in [0, 1) (same inputs, same result). */
+  rand(): number;
+}
+
+export interface NoteScriptDef<P extends ParamSpecs = ParamSpecs> {
+  kind: 'note-script';
+  id: string;
+  name: string;
+  version: number;
+  /** Groups scripts in the Tools menu. */
+  category?: string;
+  description?: string;
+  params: P;
+  /**
+   * Returns the notes that replace `ctx.notes`: notes keeping an `id` are edited in place, notes
+   * without one are added, input notes that are missing are deleted. Must not mutate its input.
+   */
+  run(ctx: NoteScriptContext<P>): readonly ScriptNote[];
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyNoteScriptDef = NoteScriptDef<any>;
+
+export function defineNoteScript<const P extends ParamSpecs>(def: Omit<NoteScriptDef<P>, 'kind'>): NoteScriptDef<P> {
+  return { kind: 'note-script', ...def };
 }

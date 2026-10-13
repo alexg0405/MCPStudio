@@ -26,9 +26,10 @@ class SynthVoice implements Voice {
 class Synth extends InstrumentKernel<typeof params> {
   private readonly pool = new VoicePool(16, () => new SynthVoice());
 
-  noteOn(key: number, velocity: number, noteId: number): void {
+  noteOn(key: number, velocity: number, noteId: number, _pan: number, fine: number): void {
     const v = this.pool.start(noteId, key);
-    v.inc = mtof(key) / this.sampleRate;
+    // `fine` is the note's fine pitch, `this.pitch` the channel pitch (both in cents).
+    v.inc = mtof(key + (fine + at(this.pitch, 0)) / 100) / this.sampleRate;
     v.amp = velocity;
     v.env = 0;
   }

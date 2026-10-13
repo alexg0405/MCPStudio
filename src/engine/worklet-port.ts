@@ -2,6 +2,7 @@ import type { NoteOff, NoteOn, WorkletPort } from '@agstudio/sdk';
 import {
   EV_ALL_OFF,
   EV_ALL_OFF_HARD,
+  EV_CC,
   EV_NOTE_OFF,
   EV_NOTE_ON,
   type FromProcessor,
@@ -31,15 +32,19 @@ export class WorkletPortImpl implements WorkletPort {
   }
 
   noteOn(e: NoteOn): void {
-    this.push(EV_NOTE_ON, e.time, e.noteId, e.key, e.velocity, e.pan ?? 0);
+    this.push(EV_NOTE_ON, e.time, e.noteId, e.key, e.velocity, e.pan ?? 0, e.fine ?? 0);
   }
 
   noteOff(e: NoteOff): void {
-    this.push(EV_NOTE_OFF, e.time, e.noteId, e.key, 0, 0);
+    this.push(EV_NOTE_OFF, e.time, e.noteId, e.key, e.release ?? 0.5, 0, 0);
   }
 
   allNotesOff(time: number, hard = false): void {
-    this.push(hard ? EV_ALL_OFF_HARD : EV_ALL_OFF, time, 0, 0, 0, 0);
+    this.push(hard ? EV_ALL_OFF_HARD : EV_ALL_OFF, time, 0, 0, 0, 0, 0);
+  }
+
+  controlChange(cc: number, value: number, time: number): void {
+    this.push(EV_CC, time, 0, cc, value, 0, 0);
   }
 
   setState(state: unknown): void {
@@ -91,9 +96,9 @@ export class WorkletPortImpl implements WorkletPort {
     this.onDispose(this);
   }
 
-  private push(type: number, time: number, id: number, key: number, vel: number, pan: number): void {
+  private push(type: number, time: number, id: number, key: number, vel: number, pan: number, fine: number): void {
     if (this.disposed) return;
-    this.pending.push(type, Math.round(time * this.sampleRate), id, key, vel, pan);
+    this.pending.push(type, Math.round(time * this.sampleRate), id, key, vel, pan, fine);
     if (!this.flushQueued) {
       this.flushQueued = true;
       queueMicrotask(() => this.flush());

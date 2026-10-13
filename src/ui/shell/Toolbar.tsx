@@ -93,7 +93,7 @@ export function Toolbar() {
       <div className={styles.toolbarGroup}>
         <ToolbarSlots area="transport" />
       </div>
-      <div className={styles.toolbarGroup}>
+      <div className={`${styles.toolbarGroup} ${styles.toolbarGroupShrink}`}>
         <ToolbarSlots area="center" />
       </div>
       <div className={styles.toolbarSpacer} />

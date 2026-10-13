@@ -44,3 +44,9 @@
   color: var(--ag-text-faint);
   font-size: 10px;
 }
+
+@media (max-width: 1180px) {
+  .picker:not(.compact) {
+    min-width: 96px;
+  }
+}

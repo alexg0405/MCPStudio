@@ -2,7 +2,7 @@ import type { Services } from '@app/services';
 import type { PianoRollTool } from '@app/stores/editor';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
-import { addMenuItems, cmd, registerMenu, sep } from '../../shell/menus';
+import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { PianoRoll } from './PianoRoll';
 import { noteTarget, pianoRollCommands as pr } from './commands';
 
@@ -135,17 +135,15 @@ export function register(services: Services): void {
     { chord: 'Alt+Q', command: 'pianoRoll.quantize', when: focus },
   ]);
 
-  registerMenu({ id: 'notes', label: 'Notes', order: 45 });
-  addMenuItems('notes', [
-    cmd('pianoRoll.selectAll', 10),
-    cmd('pianoRoll.deselect', 20),
-    sep(30),
-    cmd('pianoRoll.cut', 40),
-    cmd('pianoRoll.copy', 50),
-    cmd('pianoRoll.paste', 60),
-    cmd('pianoRoll.duplicate', 70),
-    cmd('pianoRoll.delete', 80),
-    sep(90),
-    cmd('pianoRoll.quantize', 100),
+  // Note editing sits in the Edit menu (after undo/redo).
+  addMenuItems('edit', [
+    sep(100),
+    cmd('pianoRoll.selectAll', 110),
+    cmd('pianoRoll.cut', 120),
+    cmd('pianoRoll.copy', 130),
+    cmd('pianoRoll.paste', 140),
+    cmd('pianoRoll.duplicate', 150),
+    cmd('pianoRoll.delete', 160),
+    cmd('pianoRoll.quantize', 170),
   ]);
 }

@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
-import { addMenuItems, cmd, registerMenu, sep } from '../../shell/menus';
+import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { TransportBar } from './TransportBar';
 import { AudioStatus } from './AudioStatus';
@@ -9,7 +9,6 @@ export const order = 10;
 
 export function register(services: Services): void {
   const { commands, keymap } = services;
-  registerMenu({ id: 'transport', label: 'Transport', order: 40 });
 
   commands.register({
     id: 'transport.playPause',
@@ -55,13 +54,8 @@ export function register(services: Services): void {
     { chord: 'R', command: 'transport.record' },
   ]);
 
-  addMenuItems('transport', [
-    cmd('transport.playPause', 10),
-    cmd('transport.stop', 20),
-    cmd('transport.record', 30),
-    sep(40),
-    cmd('transport.toggleMode', 50),
-  ]);
+  // Transport lives on the toolbar; the Options menu keeps the mode switch reachable from menus.
+  addMenuItems('options', [sep(1), cmd('transport.toggleMode', 2)]);
 
   addToolbarSlot({ id: 'transport', area: 'transport', order: 0, component: () => createElement(TransportBar) });
   addToolbarSlot({ id: 'audio-status', area: 'right', order: 0, component: () => createElement(AudioStatus) });

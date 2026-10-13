@@ -89,6 +89,9 @@ export default defineConfig({
       },
       {
         extends: true,
+        // The dev server's strictPort would otherwise apply to the browser-test server too; parallel
+        // runs (another terminal, a worktree) should take the next free port instead of failing.
+        server: { strictPort: false },
         test: {
           name: 'audio',
           include: ['src/**/*.browser.test.{ts,tsx}', 'test/browser/**/*.test.ts'],

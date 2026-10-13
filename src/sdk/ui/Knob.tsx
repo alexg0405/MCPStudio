@@ -1,7 +1,13 @@
-import { useContext, useRef, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import {
+  useContext,
+  useEffect,
+  useRef,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+} from 'react';
 import { formatValue, fromNormalized, toNormalized, type ParamSpec, type ParamValue } from '../params';
 import { emitHint } from './hint';
-import { ParamMenuContext } from './param-menu';
+import { ParamFollowContext, ParamMenuContext } from './param-menu';
 import styles from './controls.module.css';
 
 export interface KnobProps {
@@ -66,11 +72,48 @@ export function Knob({
 }: KnobProps) {
   const drag = useRef<{ startY: number; startN: number; fine: boolean; n: number } | null>(null);
   const openMenu = useContext(ParamMenuContext);
+  const follow = useContext(ParamFollowContext);
+  const arcRef = useRef<SVGPathElement>(null);
+  const pointerRef = useRef<SVGLineElement>(null);
   const n = toNormalized(spec, value);
   const deg = START + n * SWEEP;
   const mid = START + SWEEP / 2;
   const center = size / 2;
   const r = size / 2 - 2.5;
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  // While automation drives the param, draw its value (imperatively: no React render per frame).
+  useEffect(() => {
+    if (!param || !follow) return;
+    let shown: number | null = null;
+    const paint = (norm: number) => {
+      const d = START + norm * SWEEP;
+      arcRef.current?.setAttribute(
+        'd',
+        bipolar ? arc(center, center, r, Math.min(mid, d), Math.max(mid, d)) : arc(center, center, r, START, d),
+      );
+      const a = polar(center, center, r * 0.25, d);
+      const b = polar(center, center, r - 1.5, d);
+      pointerRef.current?.setAttribute('x1', String(a.x));
+      pointerRef.current?.setAttribute('y1', String(a.y));
+      pointerRef.current?.setAttribute('x2', String(b.x));
+      pointerRef.current?.setAttribute('y2', String(b.y));
+    };
+    return follow(param, (v) => {
+      if (v === null) {
+        if (shown !== null) paint(toNormalized(spec, valueRef.current));
+        shown = null;
+        return;
+      }
+      const next = toNormalized(spec, v);
+      if (next === shown) return;
+      shown = next;
+      paint(next);
+    });
+  }, [param, follow, spec, bipolar, center, r, mid]);
   const text = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
 
   const commit = (v: ParamValue) => {
@@ -157,6 +200,7 @@ export function Knob({
         <circle cx={center} cy={center} r={r} className={styles.knobBody} />
         <path d={arc(center, center, r, START, START + SWEEP)} className={styles.knobTrack} />
         <path
+          ref={arcRef}
           d={
             bipolar
               ? arc(center, center, r, Math.min(mid, deg), Math.max(mid, deg))
@@ -166,6 +210,7 @@ export function Knob({
           style={color ? { stroke: color } : undefined}
         />
         <line
+          ref={pointerRef}
           x1={polar(center, center, r * 0.25, deg).x}
           y1={polar(center, center, r * 0.25, deg).y}
           x2={polar(center, center, r - 1.5, deg).x}

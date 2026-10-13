@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { constantTempo } from '../time/ppq';
 import { produce } from 'immer';
 import { createEmptyProject, makeInstrumentChannel, makePattern, makePluginInstance } from '../model/defaults';
 import type { ClipId, LaneId, NoteId, PatternClip, PatternId, Project } from '../model/types';
@@ -72,7 +73,7 @@ describe('clip ops and queries', () => {
 
   it('splits pattern clips with a continuing offset', () => {
     const { p } = setup();
-    const next = produce(p, (d) => splitClip(d, 'c2' as ClipId, 3840 * 3, 0.001, 'c3' as ClipId));
+    const next = produce(p, (d) => splitClip(d, 'c2' as ClipId, 3840 * 3, constantTempo(62.5), 'c3' as ClipId));
     const left = next.playlist.clips['c2' as ClipId] as PatternClip;
     const right = next.playlist.clips['c3' as ClipId] as PatternClip;
     expect([left.start, left.length, left.offset]).toEqual([7680, 3840, 0]);

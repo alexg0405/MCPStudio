@@ -5,7 +5,7 @@ import type { AudioClip, AudioClipChannel, ChannelId, LaneId, SampleRef, Tick } 
 import { DEFAULT_CHANNEL_VOLUME, paletteColor } from '@core/model/defaults';
 import { addChannel, addSample, setPluginSample } from '@core/ops/channels';
 import { addClips } from '@core/ops/playlist';
-import { PPQ } from '@core/time/ppq';
+import { tempoMapOf } from '@core/automation/tempo';
 import { generate } from '@engine/kit/generators';
 import type { Services } from '../services';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
@@ -129,7 +129,9 @@ export function addAudioClip(s: Services, ref: SampleRef, laneId: LaneId, start:
     output: project.mixer.order[0] ?? ('master' as AudioClipChannel['output']),
     sampleId: ref.id,
   };
-  const ticks = Math.max(1, Math.round((seconds * project.transport.bpm * PPQ) / 60));
+  // The clip lasts as long as the sample at the tempo where it lands.
+  const tempo = tempoMapOf(project, 'song');
+  const ticks = Math.max(1, Math.round(tempo.secondsToTick(tempo.tickToSeconds(start) + seconds) - start));
   const clip: AudioClip = {
     kind: 'audio',
     id: newId.clip(),

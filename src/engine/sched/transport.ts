@@ -7,9 +7,9 @@
  * cancels it), planning restarts 10 ms from now with the new model, and sounding notes whose
  * source was deleted are released.
  */
-import type { ChannelId, Tick } from '@core/model/types';
+import type { ChannelId, Clip, Tick } from '@core/model/types';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
-import { plan, segmentEndTime, tickAtTime, type Cursor, type Segment, type Timeline } from './core';
+import { plan, segmentEndTime, tickAtTime, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
 import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
 
 export interface TransportSink {
@@ -50,6 +50,8 @@ interface Scheduled {
   /** Absolute end tick (may change on live edits). */
   endTick: number;
   offSent: boolean;
+  /** Audio events: the playlist clip as it was when its sample started. */
+  clip?: Clip;
 }
 
 const SAFETY = 0.01;
@@ -104,6 +106,31 @@ export class Transport {
     this.pump();
   }
 
+  /**
+   * Jumps while playing: notes that haven't started are cancelled, sounding ones are released at
+   * `at`, and playback continues from `tick` at `at`. While stopped it only moves the stop position.
+   */
+  seek(tick: Tick, at: number = this.clock.currentTime + 0.04): void {
+    if (!this.playingFlag || !this.cursor) {
+      this.stoppedTick = tick;
+      return;
+    }
+    const now = this.clock.currentTime;
+    for (const n of this.notes.values()) {
+      if (n.startTime >= now + SAFETY) {
+        this.sink.noteOff(n.ev.channelId, { time: n.startTime, noteId: n.noteId, key: n.ev.pitch });
+        n.offSent = true;
+      } else if (!n.offSent) this.release(n, at);
+    }
+    this.notes.clear();
+    this.segs = [];
+    this.endTime = null;
+    this.scanOngoing = true;
+    this.cursor = { tick, time: at, iter: 0 };
+    for (const o of this.observers) o.seeked?.(tick, at);
+    this.pump();
+  }
+
   /** Stops playback; FL returns the playhead to the start. */
   stop(returnTo: Tick = 0): void {
     if (this.playingFlag) {
@@ -146,11 +173,10 @@ export class Transport {
    */
   setModel(source: EventSource, timeline: Timeline): void {
     this.source = source;
+    const loopChanged =
+      timeline.loop?.start !== this.timeline.loop?.start || timeline.loop?.end !== this.timeline.loop?.end;
     const timelineChanged =
-      timeline.spt !== this.timeline.spt ||
-      timeline.endTick !== this.timeline.endTick ||
-      timeline.loop?.start !== this.timeline.loop?.start ||
-      timeline.loop?.end !== this.timeline.loop?.end;
+      timeline.tempo !== this.timeline.tempo || timeline.endTick !== this.timeline.endTick || loopChanged;
     this.timeline = timeline;
     if (!this.playingFlag || !this.cursor) return;
     const safe = this.clock.currentTime + SAFETY;
@@ -170,7 +196,7 @@ export class Transport {
 
     let tick = pos.tick;
     const L = timeline.loop;
-    if (timelineChanged && L && L.end > L.start && (tick >= L.end || tick < L.start)) {
+    if (loopChanged && L && L.end > L.start && (tick >= L.end || tick < L.start)) {
       tick = L.start + ((((tick - L.start) % (L.end - L.start)) + (L.end - L.start)) % (L.end - L.start));
     }
     this.cursor = { tick, time: safe, iter: pos.iter };
@@ -185,7 +211,9 @@ export class Transport {
       let end: number | null = null;
       if (ev.kind === 'audio') {
         const clip = project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
-        if (clip?.kind === 'audio' && clip.channelId === ev.channelId) end = clip.start + clip.length;
+        // An edited clip (moved, trimmed…) restarts from the new model; an untouched one keeps playing.
+        if (clip?.kind === 'audio' && clip.channelId === ev.channelId && clip === n.clip)
+          end = clip.start + clip.length;
       } else if (ev.patternId && ev.noteId) {
         const note = project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
         const clipGone =
@@ -218,7 +246,21 @@ export class Transport {
       return { tick: last.tick1 + (time - segmentEndTime(last)) / last.spt, iter: last.iter };
     if (first) return { tick: first.tick0 - (first.time0 - time) / first.spt, iter: first.iter };
     const c = this.cursor;
-    return c ? { tick: c.tick + (time - c.time) / this.timeline.spt, iter: c.iter } : { tick: 0, iter: 0 };
+    return c
+      ? { tick: c.tick + (time - c.time) / this.timeline.tempo.secondsPerTick(c.tick), iter: c.iter }
+      : { tick: 0, iter: 0 };
+  }
+
+  /** Seconds per tick heard at audio-clock `time` (the timeline's tempo at the stop position when stopped). */
+  sptAt(time: number): number {
+    for (let i = this.segs.length - 1; i >= 0; i--) {
+      const s = this.segs[i] as Segment;
+      if (time >= s.time0) return s.spt;
+    }
+    const first = this.segs[0];
+    return first
+      ? first.spt
+      : this.timeline.tempo.secondsPerTick(this.playingFlag ? (this.cursor?.tick ?? 0) : this.stoppedTick);
   }
 
   /** Tick heard at audio-clock `time` (the UI passes the output-latency-corrected time). */
@@ -239,15 +281,29 @@ export class Transport {
     const events: NoteEvent[] = [];
     collectNotes(this.source, seg.tick0, seg.tick1, events);
     const L = this.timeline.loop;
-    // Audio clips also start mid-way after a start/seek/edit, or when the loop wraps into one.
+    const tempo = this.timeline.tempo;
+    // Audio clips also start mid-way after a start/seek/edit, or when the loop wraps into one, unless
+    // their sample is still playing from before an edit.
     const wrapped = !!L && seg.iter > 0 && seg.tick0 === L.start;
-    collectAudio(this.source, seg.tick0, seg.tick1, events, this.scanOngoing || wrapped ? seg.tick0 : null, seg.spt);
+    const scan = this.scanOngoing || wrapped;
+    let sounding: Set<string> | undefined;
+    if (scan) {
+      sounding = new Set();
+      for (const n of this.notes.values())
+        if (n.ev.kind === 'audio' && !n.offSent && n.iter === seg.iter) sounding.add(n.ev.clipId);
+    }
+    collectAudio(this.source, seg.tick0, seg.tick1, events, scan ? seg.tick0 : null, tempo, sounding);
     this.scanOngoing = false;
+    const clips = this.source.project?.playlist.clips;
     for (const ev of events) {
-      const time = seg.time0 + (ev.start - seg.tick0) * seg.spt;
+      const time = timeInSegment(seg, ev.start, tempo);
       if (time < now) this.lateEvents++;
       const noteId = ++this.noteSeq;
       const n: Scheduled = { ev, noteId, startTime: time, iter: seg.iter, endTick: ev.end, offSent: false };
+      if (ev.kind === 'audio' && clips) {
+        const clip = clips[ev.clipId as keyof typeof clips];
+        if (clip) n.clip = clip;
+      }
       this.notes.set(noteId, n);
       this.sink.noteOn(ev.channelId, {
         time,
@@ -266,7 +322,7 @@ export class Transport {
       if (n.offSent) continue;
       if (n.iter < seg.iter) this.release(n, seg.time0);
       else if (n.iter === seg.iter && n.endTick < seg.tick1) {
-        this.release(n, Math.max(n.startTime, seg.time0 + (n.endTick - seg.tick0) * seg.spt));
+        this.release(n, Math.max(n.startTime, timeInSegment(seg, n.endTick, tempo)));
       } else if (n.iter === seg.iter && (atLoopEnd || atSongEnd)) this.release(n, segEnd);
     }
   }

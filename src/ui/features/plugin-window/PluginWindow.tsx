@@ -6,7 +6,9 @@ import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
 import { keyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
-import { ParamMenuContext } from '@agstudio/sdk/ui';
+import { ParamFollowContext, ParamMenuContext } from '@agstudio/sdk/ui';
+import { targetKey } from '@core/model/targets';
+import { followersOf } from '../../HostParamMenus';
 import { kitSampleRef } from '@app/default-project';
 import { useDoc, useServices } from '../../services-context';
 import { usePluginDef, usePluginEditing } from '../../plugin-hooks';
@@ -161,6 +163,11 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
       services,
     );
   };
+  const follow = (param: string, paint: (v: ParamValue | null) => void) => {
+    const spec = (def.params as ParamSpecs)[param];
+    if (!spec) return () => {};
+    return followersOf(services).follow(targetKey({ kind: 'plugin', owner, paramId: param }), spec, paint);
+  };
   const uiProps: PluginUIProps = {
     specs: def.params as ParamSpecs,
     values,
@@ -212,22 +219,24 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
       </div>
       <div className={styles.body}>
         <ParamMenuContext.Provider value={openParamMenu}>
-          <ErrorBoundary
-            resetKey={def}
-            fallback={(error) => (
-              <div className={styles.missing}>
-                <strong>This plugin’s editor crashed.</strong>
-                <p className={styles.error}>{error.message}</p>
+          <ParamFollowContext.Provider value={follow}>
+            <ErrorBoundary
+              resetKey={def}
+              fallback={(error) => (
+                <div className={styles.missing}>
+                  <strong>This plugin’s editor crashed.</strong>
+                  <p className={styles.error}>{error.message}</p>
+                  <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
+                </div>
+              )}
+            >
+              {Custom ? (
+                createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
+              ) : (
                 <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
-              </div>
-            )}
-          >
-            {Custom ? (
-              createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
-            ) : (
-              <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
-            )}
-          </ErrorBoundary>
+              )}
+            </ErrorBoundary>
+          </ParamFollowContext.Provider>
         </ParamMenuContext.Provider>
       </div>
     </div>

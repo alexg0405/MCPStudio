@@ -5,7 +5,7 @@ import type { AudioClipChannel, ChannelId, ClipId, LaneId, PatternId, Project, S
 import { addChannel } from '@core/ops/channels';
 import { setStep } from '@core/ops/notes';
 import { addClips } from '@core/ops/playlist';
-import { PPQ } from '@core/time/ppq';
+import { PPQ, constantTempo } from '@core/time/ppq';
 import { collectAudio, collectNotes, songModeSource, type NoteEvent } from './events';
 import { Transport } from './transport';
 
@@ -63,10 +63,10 @@ describe('song mode events', () => {
     const { source } = songModeSource(p);
     const spt = 60 / (120 * PPQ);
     const out: NoteEvent[] = [];
-    collectAudio(source, 0, 9999, out, null, spt);
+    collectAudio(source, 0, 9999, out, null, constantTempo(120));
     expect(out.map((e) => [e.start, e.offsetSec])).toEqual([[3840, 0.25]]);
     const mid: NoteEvent[] = [];
-    collectAudio(source, 4800, 5000, mid, 4800, spt);
+    collectAudio(source, 4800, 5000, mid, 4800, constantTempo(120));
     expect(mid[0]!.start).toBe(4800);
     expect(mid[0]!.offsetSec).toBeCloseTo(0.25 + 960 * spt, 9);
   });
@@ -96,7 +96,7 @@ describe('song mode events', () => {
         allNotesOff: () => {},
       },
       source,
-      { spt, loop: { start: 0, end: length }, endTick: length },
+      { tempo: constantTempo(120), loop: { start: 0, end: length }, endTick: length },
     );
     t.start(4800, 0);
     clock.currentTime = 0.1;
@@ -104,5 +104,55 @@ describe('song mode events', () => {
     const audio = ons.find((o) => o.channelId === 'ch_audio');
     expect(audio?.time).toBe(0);
     expect(audio?.offset).toBeCloseTo(0.25 + 960 * spt, 9);
+  });
+});
+
+describe('audio clips across edits', () => {
+  it("an edit elsewhere doesn't restart a sample that is playing; editing the clip does", () => {
+    const { p, pid } = project();
+    const clock = { currentTime: 0 };
+    const ons: { channelId: string; time: number; offset?: number }[] = [];
+    const offs: { channelId: string; time: number }[] = [];
+    const model = (proj: Project) => {
+      const { source, length } = songModeSource(proj);
+      return { source, timeline: { tempo: constantTempo(120), loop: { start: 0, end: length }, endTick: length } };
+    };
+    const m = model(p);
+    const t = new Transport(
+      clock,
+      {
+        noteOn: (c, e) =>
+          ons.push({ channelId: c, time: e.time, ...(e.offset !== undefined ? { offset: e.offset } : {}) }),
+        noteOff: (c, e) => offs.push({ channelId: c, time: e.time }),
+        allNotesOff: () => {},
+      },
+      m.source,
+      m.timeline,
+    );
+    t.start(4800, 0); // inside the audio clip (3840…7680)
+    clock.currentTime = 0.1;
+    t.pump();
+    expect(ons.filter((o) => o.channelId === 'ch_audio')).toHaveLength(1);
+    // An unrelated edit (a new step in the pattern): the sample keeps playing, not a second copy.
+    const edited = produce(p, (d) => {
+      setStep(d, pid, Object.keys(d.channels)[0] as ChannelId, 4, true, { rootKey: 60 });
+    });
+    const m2 = model(edited);
+    t.setModel(m2.source, m2.timeline);
+    clock.currentTime = 0.3;
+    t.pump();
+    expect(ons.filter((o) => o.channelId === 'ch_audio')).toHaveLength(1);
+    expect(offs.filter((o) => o.channelId === 'ch_audio')).toHaveLength(0);
+    // Trimming the clip itself restarts it from the new model.
+    const trimmed = produce(edited, (d) => {
+      const c = d.playlist.clips['a1' as ClipId];
+      if (c?.kind === 'audio') c.offsetSec = 0.5;
+    });
+    const m3 = model(trimmed);
+    t.setModel(m3.source, m3.timeline);
+    clock.currentTime = 0.4;
+    t.pump();
+    expect(offs.filter((o) => o.channelId === 'ch_audio')).toHaveLength(1);
+    expect(ons.filter((o) => o.channelId === 'ch_audio')).toHaveLength(2);
   });
 });

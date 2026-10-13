@@ -472,6 +472,41 @@ The contracts the v2 features build on.
   (`ui/context-menus.ts`: playlist clip/lane, mixer strip/slot, rack channel, piano-roll note/empty),
   submenus in context and menu-bar menus (`kind: 'submenu'`), `showFormDialog` (`ui/controls/FormDialog.tsx`).
 
+### Time and automation model (M8b)
+
+- **Tempo maps** (`core/time/tempo.ts`, interface in `core/time/ppq.ts`): piecewise-constant
+  (`steppedTempo(steps)`, equal neighbours merged; `constantTempo(bpm)` when it never changes) with
+  cumulative seconds, `bpmAt`, `secondsPerTick`, `tickToSeconds`/`secondsToTick` and `nextChange`.
+  `tempoMapOf(project, mode)` (`core/automation/tempo.ts`): the base tempo, plus tempo automation clips
+  in song mode evaluated once per 1/16 step (range per clip, default 60–180 BPM). It returns the same
+  object while its inputs are unchanged and while the result describes the same tempo, so the
+  transport re-anchors only on real tempo changes.
+- **Scheduler**: `Timeline.tempo` replaces the constant seconds-per-tick; `plan()` splits segments at
+  tempo changes (each `Segment` keeps its own `spt`, so the playhead mapping is unchanged), reads the
+  tempo at the loop start after a wrap, and `timeInSegment` places swung starts and releases that fall
+  past a segment's end on the map. Change detection compares the map by identity; the position is
+  folded into the loop only when the loop itself changed. Audio-clip trims, splits, left-trims,
+  waveforms, dropped-clip lengths, render length, export trim and the export dialog all convert through
+  the map (audio keeps its speed through tempo changes; a clip's tick length doesn't follow later
+  tempo edits, as in FL). Tempo-synced plugins get `tempoAt(time)` from the planned segments and
+  `onTempo(bpm, time)` at scheduled changes (the Delay retimes at that time).
+- **Seek while playing** (`Transport.seek`, used by `Engine.play` when already playing): notes that
+  haven't started are cancelled, sounding ones released, then playback continues. (Before, seeking
+  dropped the note table without note-offs: held notes hung and lookahead notes still played.)
+- **Audio clips across edits**: after a re-anchor, a clip whose sample is still sounding isn't started
+  a second time (it was, about 6 dB too loud); a clip that was itself edited restarts from the new model.
+- **Automation model** (`core/automation/`): `curve.ts` (shapes curve/hold/stairs/smooth, tension bend,
+  `curveAt`), `targets.ts` (`resolveTarget`: spec, document value and the 0–1 mapping per target;
+  volume faders and send levels use the fader taper, plugin params their own scale, tempo its clip
+  range), `model.ts` (`automationModelOf`: spans per target key, structurally shared so unchanged
+  targets keep their object; `automationAt`: base before the first clip, the curve inside, hold after,
+  latest-starting clip wins; muted clips, lanes and automation channels don't count).
+- **Recording** (`app/recording.ts`): R arms record mode; Play then starts every registered recorder
+  (`services.recording.register({ id, start, stop })`) and Stop stops them.
+- **Knobs follow automation**: SDK controls given a `param` subscribe through `ParamFollowContext`
+  (`sdk/ui/param-menu.ts`); `ui/follow-automation.ts` reads every followed key once per frame with
+  `engine.readAutomation` and repaints knobs imperatively (no React commits during playback).
+
 ## Automation (M9)
 
 _To be written by M9._

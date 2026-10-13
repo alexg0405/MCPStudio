@@ -15,7 +15,8 @@ import {
 } from '@core/model/types';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { effectivelyMuted } from '@core/query/queries';
-import { PPQ, ticksPerBar } from '@core/time/ppq';
+import { tempoMapOf } from '@core/automation/tempo';
+import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { JsonValue, TransportInfo } from '@agstudio/sdk';
 import type {
   EngineApi,
@@ -46,15 +47,23 @@ const PREVIEW_ID_BASE = 2 ** 30;
 /** Used when a document has no master insert (repair adds one; the engine never runs without). */
 const DEFAULT_MASTER = makeInsert(MASTER, 'Master');
 
+/**
+ * Tempo as plugins see it: the tempo now, the tempo at a scheduled time (from the transport's
+ * planned segments, so tempo automation is followed), and change notifications with the time the
+ * new tempo starts at.
+ */
 class TempoInfo implements TransportInfo {
   readonly ppq = PPQ;
   private fns = new Set<(bpm: number, time: number) => void>();
+  /** Seconds per tick → BPM at a context time (set once the transport exists). */
+  sptAt: ((time: number) => number) | null = null;
   constructor(
     public bpm: number,
     private readonly clock: { readonly currentTime: number },
   ) {}
-  tempoAt(_time: number): number {
-    return this.bpm;
+  tempoAt(time: number): number {
+    const spt = this.sptAt?.(time);
+    return spt ? Math.round((60 / (spt * PPQ)) * 1e6) / 1e6 : this.bpm;
   }
   onTempo(cb: (bpm: number, time: number) => void): () => void {
     this.fns.add(cb);
@@ -128,10 +137,31 @@ export class Engine implements EngineApi, EngineCore {
       },
     };
     const empty: EventSource = { project: null as unknown as Project, clips: [] };
-    this.transport = new Transport(ctx, sink, empty, { spt: 1, loop: { start: 0, end: 1 }, endTick: 1 });
+    this.transport = new Transport(ctx, sink, empty, {
+      tempo: constantTempo(130),
+      loop: { start: 0, end: 1 },
+      endTick: 1,
+    });
     this.transport.onEnded = () => this.emit();
+    this.transportInfo.sptAt = (time) => this.transport.sptAt(time);
     this.automation = new AutomationDriver({ ctx, params: this.params, offline });
     this.transport.observe(this.automation);
+    // Tempo automation: tell tempo-synced plugins when the tempo of the planned segments changes.
+    let lastSpt = 0;
+    this.transport.observe({
+      started: () => {
+        lastSpt = 0;
+      },
+      segment: (seg) => {
+        if (seg.spt !== lastSpt) {
+          if (lastSpt !== 0) this.transportInfo.setBpm(Math.round((60 / (seg.spt * PPQ)) * 1e6) / 1e6, seg.time0);
+          lastSpt = seg.spt;
+        }
+      },
+      stopped: (time) => {
+        if (this.project) this.transportInfo.setBpm(this.project.transport.bpm, time);
+      },
+    });
 
     if (!offline && typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
       ctx.addEventListener('statechange', () => this.emit());
@@ -336,17 +366,22 @@ export class Engine implements EngineApi, EngineCore {
   private model(): { source: EventSource; timeline: Timeline } | null {
     const p = this.project;
     if (!p) return null;
-    const spt = 60 / (p.transport.bpm * PPQ);
+    const tempo = tempoMapOf(p, this.view.mode);
     if (this.view.mode === 'song') {
       // Song mode loops the loop region, or the whole song (FL's default).
       const { source, length } = songModeSource(p);
       const songEnd = Math.max(length, ticksPerBar(p.transport.timeSig));
       const loop =
         this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : { start: 0, end: songEnd };
-      return { source, timeline: { spt, loop, endTick: songEnd } };
+      return { source, timeline: { tempo, loop, endTick: songEnd } };
     }
     const { source, length } = patternModeSource(p, this.view.patternId ?? p.patternOrder[0] ?? null);
-    return { source, timeline: { spt, loop: { start: 0, end: length }, endTick: length } };
+    return { source, timeline: { tempo, loop: { start: 0, end: length }, endTick: length } };
+  }
+
+  /** The tempo map playback uses now (song mode follows tempo automation). */
+  tempoMap(): TempoMap {
+    return this.project ? tempoMapOf(this.project, this.view.mode) : constantTempo(this.transportInfo.bpm);
   }
 
   private updateModel(): void {
@@ -377,7 +412,9 @@ export class Engine implements EngineApi, EngineCore {
     if (!this.project) return;
     void this.resume();
     this.updateModel();
-    this.transport.start(fromTick, this.ctx.currentTime + 0.05);
+    // Playing again while playing is a seek: what was scheduled is cancelled or released first.
+    if (this.transport.playing) this.transport.seek(fromTick, this.ctx.currentTime + 0.05);
+    else this.transport.start(fromTick, this.ctx.currentTime + 0.05);
     this.startClock();
     this.emit();
   }
@@ -483,7 +520,15 @@ export class Engine implements EngineApi, EngineCore {
       throw new Error('Recording needs the realtime engine.');
     await this.resume();
     this.stop();
-    const handle = await startRecording(ctx, (url) => this.loadModule(url), stream, opts, this.previewBus);
+    // Count in at the tempo where playback starts (tempo automation can change it later).
+    const bpm = this.project ? this.tempoMap().bpmAt(opts.fromTick ?? 0) : opts.bpm;
+    const handle = await startRecording(
+      ctx,
+      (url) => this.loadModule(url),
+      stream,
+      { ...opts, bpm: opts.playAlong ? bpm : opts.bpm },
+      this.previewBus,
+    );
     if (opts.playAlong && this.project) {
       this.updateModel();
       this.transport.start(opts.fromTick ?? 0, handle.barOneTime);
@@ -624,11 +669,11 @@ export class Engine implements EngineApi, EngineCore {
     return Math.min(30, tail + inserts + this.master.tailTime);
   }
 
-  /** Seconds per bar at the current tempo (export/test helper). */
+  /** Seconds of the first bar (export/test helper; later bars can differ with tempo automation). */
   barSeconds(): number {
     const p = this.project;
     if (!p) return 0;
-    return ticksPerBar(p.transport.timeSig) * (60 / (p.transport.bpm * PPQ));
+    return this.tempoMap().tickToSeconds(ticksPerBar(p.transport.timeSig));
   }
 
   subscribe(fn: () => void): () => void {

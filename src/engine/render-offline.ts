@@ -1,5 +1,7 @@
 import type { Project } from '@core/model/types';
 import type { EngineOptions, TransportView } from './api';
+import { tempoMapOf } from '@core/automation/tempo';
+import { ticksPerBar } from '@core/time/ppq';
 import { Engine } from './engine';
 
 export interface RenderOptions extends EngineOptions {
@@ -40,9 +42,11 @@ export interface RenderResult {
 export async function renderOffline(project: Project, opts: RenderOptions): Promise<RenderResult> {
   const sampleRate = opts.sampleRate ?? 48000;
   const ts = project.transport.timeSig;
-  const barSeconds = (ts.num * 4 * 60) / (ts.den * project.transport.bpm);
   const preRoll = opts.preRoll ?? 2048 / sampleRate;
-  const musical = opts.bars * barSeconds;
+  // The rendered span follows the tempo map (tempo automation in song mode).
+  const from = opts.fromTick ?? 0;
+  const tempo = tempoMapOf(project, opts.view.mode);
+  const musical = tempo.tickToSeconds(from + opts.bars * ticksPerBar(ts)) - tempo.tickToSeconds(from);
   const tail = opts.tail === 'auto' ? await projectTail(project, opts, sampleRate) : (opts.tail ?? 1);
   opts.signal?.throwIfAborted();
   const length = Math.ceil((preRoll + musical + tail) * sampleRate);

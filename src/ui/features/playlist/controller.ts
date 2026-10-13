@@ -4,12 +4,13 @@
  */
 import type { Services } from '@app/services';
 import type { Gesture } from '@core/history/history';
+import { tempoMapOf } from '@core/automation/tempo';
 import { clipTickOffset } from '@core/model/clips';
 import { newId } from '@core/model/ids';
 import type { Clip, ClipId, Lane, LaneId, PatternClip, Project, SampleRef, Tick } from '@core/model/types';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
-import { PPQ, ticksPerBar } from '@core/time/ppq';
+import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { onFrame } from '../../frame-loop';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
@@ -428,8 +429,8 @@ export class PlaylistController {
     if (tool === 'slice') {
       if (hit) {
         const at = snapRound(this.vp.xToTick(x), this.grid(p, e));
-        const spt = 60 / (p.transport.bpm * PPQ);
-        this.s.history.transact('Slice clip', (d) => splitClip(d, hit.clip.id, at, spt));
+        const tempo = tempoMapOf(p, 'song');
+        this.s.history.transact('Slice clip', (d) => splitClip(d, hit.clip.id, at, tempo));
       }
       return;
     }
@@ -550,14 +551,17 @@ export class PlaylistController {
           dTick = clamp(dTick, minD, maxD);
           if (dTick === d.dTick) return;
           d.dTick = dTick;
-          const spt = 60 / (p.transport.bpm * PPQ);
+          const tempo = tempoMapOf(p, 'song');
           this.preview = d.originals.map((c) =>
             c.kind === 'audio'
               ? {
                   ...c,
                   start: c.start + dTick,
                   length: c.length - dTick,
-                  offsetSec: Math.max(0, c.offsetSec + dTick * spt),
+                  offsetSec: Math.max(
+                    0,
+                    c.offsetSec + tempo.tickToSeconds(c.start + dTick) - tempo.tickToSeconds(c.start),
+                  ),
                 }
               : { ...c, start: c.start + dTick, length: c.length - dTick, offset: c.offset + dTick },
           );

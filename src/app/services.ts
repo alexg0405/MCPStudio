@@ -10,6 +10,7 @@ import { createDefaultProject } from './default-project';
 import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
 import { PluginRegistry } from './plugins/registry';
+import { RecordController } from './recording';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
@@ -40,6 +41,8 @@ export interface Services {
   readonly midi: MidiInput;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
+  /** Record mode and the recorders features register (notes, automation, audio). */
+  readonly recording: RecordController;
   /** The open project's file: new, open, save, save as, recent files. */
   readonly files: ProjectFiles;
   /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). */
@@ -102,6 +105,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const engine = new EngineHost(() => makeEngine(engineOptions));
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
+  const recording = new RecordController(engine);
 
   let files: ProjectFiles | null = null;
   let assistant: BeatAssistant | null = null;
@@ -118,6 +122,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     midi,
     plugins,
     engine,
+    recording,
     get files() {
       return (files ??= new ProjectFiles(services));
     },
@@ -137,6 +142,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
         prefs.subscribe(fn),
         editor.subscribe(fn),
         midi.subscribe(fn),
+        recording.store.subscribe(fn),
         services.files.store.subscribe(fn),
       ];
       return () => unsubs.forEach((u) => u());

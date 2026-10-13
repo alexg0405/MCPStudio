@@ -22,21 +22,34 @@ export function ceilToBars(ticks: Tick, ts: TimeSignature): Tick {
   return Math.max(bar, Math.ceil(ticks / bar) * bar);
 }
 
-/** Converts between ticks and seconds. v1 has one constant tempo; this interface allows tempo automation later. */
+/**
+ * Converts between ticks and seconds. The tempo is piecewise constant (tempo automation is
+ * evaluated into steps, see core/time/tempo.ts); `bpm` is the tempo at tick 0.
+ */
 export interface TempoMap {
   readonly bpm: number;
+  /** Tempo in effect at a tick. */
+  bpmAt(tick: Tick): number;
   secondsPerTick(tick: Tick): number;
+  /** Seconds from tick 0. */
   tickToSeconds(tick: Tick): number;
   secondsToTick(seconds: number): number;
+  /** The first tick after `tick` where the tempo changes (Infinity when it never does). */
+  nextChange(tick: Tick): Tick;
+  /** True when the tempo never changes. */
+  readonly constant: boolean;
 }
 
 export function constantTempo(bpm: number): TempoMap {
   const spt = 60 / (bpm * PPQ);
   return {
     bpm,
+    constant: true,
+    bpmAt: () => bpm,
     secondsPerTick: () => spt,
     tickToSeconds: (tick) => tick * spt,
     secondsToTick: (seconds) => seconds / spt,
+    nextChange: () => Infinity,
   };
 }
 

@@ -85,12 +85,12 @@ export default defineEffect({
       nodes.push(n);
       return n;
     };
-    const seconds = () => Math.min(MAX_DELAY, (BEATS[P.time.value] * 60) / Math.max(1, host.transport.bpm));
+    const seconds = (bpm = host.transport.bpm) => Math.min(MAX_DELAY, (BEATS[P.time.value] * 60) / Math.max(1, bpm));
     const quantumSize = (ac as BaseAudioContext & { renderQuantumSize?: number }).renderQuantumSize;
     const quantum =
       (typeof quantumSize === 'number' && quantumSize > 0 ? quantumSize : DEFAULT_QUANTUM) / ac.sampleRate;
     /** A delay time shortened by the quantum its cycle adds. */
-    const inLoop = () => Math.max(quantum, seconds() - quantum);
+    const inLoop = (bpm?: number) => Math.max(quantum, seconds(bpm) - quantum);
 
     const input = node(new GainNode(ac));
     const output = node(new GainNode(ac));
@@ -145,13 +145,14 @@ export default defineEffect({
       pingIn.gain.setTargetAtTime(on ? 1 : 0, time, 0.01);
     });
 
-    const retime = (time: number) => {
-      straight.delay.delayTime.setTargetAtTime(inLoop(), time, 0.02);
-      left.delay.delayTime.setTargetAtTime(seconds(), time, 0.02);
-      right.delay.delayTime.setTargetAtTime(inLoop(), time, 0.02);
+    const retime = (time: number, bpm?: number) => {
+      straight.delay.delayTime.setTargetAtTime(inLoop(bpm), time, 0.02);
+      left.delay.delayTime.setTargetAtTime(seconds(bpm), time, 0.02);
+      right.delay.delayTime.setTargetAtTime(inLoop(bpm), time, 0.02);
     };
-    P.time.onChange((_, time) => retime(time));
-    const offTempo = host.transport.onTempo(() => retime(ac.currentTime));
+    P.time.onChange((_, time) => retime(time, host.transport.tempoAt(time)));
+    // Tempo automation: follow the tempo from the time it changes (scheduled ahead, like notes).
+    const offTempo = host.transport.onTempo((bpm, time) => retime(Math.max(time, ac.currentTime), bpm));
 
     return {
       input,

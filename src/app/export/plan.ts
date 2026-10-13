@@ -1,3 +1,4 @@
+import { tempoMapOf } from '@core/automation/tempo';
 import type { PatternId, Project, Tick } from '@core/model/types';
 import { patternLength } from '@core/query/queries';
 import { songLength } from '@core/query/playlist';
@@ -35,4 +36,11 @@ export function planExport(
   const length = songLength(project);
   if (length <= 0) return { error: 'The playlist is empty: add clips, or export the current pattern instead.' };
   return { mode: 'song', patternId, fromTick: 0, bars: length / bar };
+}
+
+/** Seconds the planned span lasts (it follows tempo automation in song mode). */
+export function planSeconds(project: Project, plan: ExportPlan): number {
+  const tempo = tempoMapOf(project, plan.mode);
+  const end = plan.fromTick + plan.bars * ticksPerBar(project.transport.timeSig);
+  return tempo.tickToSeconds(end) - tempo.tickToSeconds(plan.fromTick);
 }

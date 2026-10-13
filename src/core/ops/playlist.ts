@@ -1,5 +1,6 @@
 import type { Draft } from 'immer';
 import { newId } from '../model/ids';
+import type { TempoMap } from '../time/ppq';
 import type {
   ChannelId,
   Clip,
@@ -147,13 +148,13 @@ export function editClips(d: Draft<Project>, edits: readonly ClipEdit[]): void {
 
 /**
  * Splits a clip at `at` (song ticks) into two; the right half continues where the left ended.
- * `secondsPerTick` converts the split point into the audio trim for audio clips.
+ * The tempo map converts the split point into the audio trim for audio clips.
  */
 export function splitClip(
   d: Draft<Project>,
   id: ClipId,
   at: Tick,
-  secondsPerTick: number,
+  tempo: TempoMap,
   rightId: ClipId = newId.clip(),
 ): void {
   const c = d.playlist.clips[id];
@@ -162,7 +163,8 @@ export function splitClip(
   const right = { ...c, id: rightId, start: at, length: c.length - leftLen } as Clip;
   if (right.kind === 'pattern' || right.kind === 'automation')
     right.offset = (c.kind === 'audio' ? 0 : c.offset) + leftLen;
-  if (right.kind === 'audio' && c.kind === 'audio') right.offsetSec = c.offsetSec + leftLen * secondsPerTick;
+  if (right.kind === 'audio' && c.kind === 'audio')
+    right.offsetSec = c.offsetSec + tempo.tickToSeconds(at) - tempo.tickToSeconds(c.start);
   c.length = leftLen;
   d.playlist.clips[rightId] = right as Draft<Clip>;
 }

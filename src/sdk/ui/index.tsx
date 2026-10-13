@@ -6,7 +6,7 @@ import styles from './controls.module.css';
 
 export { Knob, type KnobProps } from './Knob';
 export { emitHint, HINT_EVENT } from './hint';
-export { ParamMenuContext } from './param-menu';
+export { ParamFollowContext, ParamMenuContext } from './param-menu';
 
 /** Right-click handler that opens the host's param menu for `param` (undefined without one). */
 function useParamMenu(param: string | undefined) {

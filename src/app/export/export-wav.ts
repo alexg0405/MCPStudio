@@ -3,7 +3,7 @@ import { renderOffline } from '@engine/render-offline';
 import { downloadBytes, isFileSystemAccessSupported, pickSaveWavFile, writeFile } from '@platform/fs-access';
 import { opfsSampleProvider } from '../persistence/project-io';
 import type { Services } from '../services';
-import { planExport, type ExportRange } from './plan';
+import { planExport, planSeconds, type ExportRange } from './plan';
 
 /**
  * WAV export: renders with the same engine code as playback (OfflineAudioContext), drops the
@@ -98,8 +98,7 @@ export async function renderWav(
   const plan = planExport(project, s.view.getState(), opts.range);
   if ('error' in plan) throw new ExportError(plan.error);
   s.engine.stop();
-  const ts = project.transport.timeSig;
-  const barSeconds = (ts.num * 4 * 60) / (ts.den * project.transport.bpm);
+  const musical = planSeconds(project, plan);
   const result = await renderOffline(project, {
     plugins: s.plugins,
     samples: opfsSampleProvider(),
@@ -112,7 +111,7 @@ export async function renderWav(
     signal: hooks.signal,
   });
   hooks.signal?.throwIfAborted();
-  const channels = trimRender(result.buffer, result.preRoll, plan.bars * barSeconds);
+  const channels = trimRender(result.buffer, result.preRoll, musical);
   const seconds = (channels[0]?.length ?? 0) / opts.sampleRate;
   hooks.onProgress?.({ stage: 'encode', fraction: 0.92 });
   const bytes = await encodeWavOffThread(channels, opts.sampleRate, opts.format);

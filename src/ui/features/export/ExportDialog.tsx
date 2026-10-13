@@ -9,7 +9,7 @@ import {
   type ExportProgress,
   type WavFormat,
 } from '@app/export/export-wav';
-import { planExport, type ExportRange } from '@app/export/plan';
+import { planExport, planSeconds, type ExportRange } from '@app/export/plan';
 import { holdModal } from '../../controls/Dialog';
 import { useDoc, useServices, useView } from '../../services-context';
 import dialog from '../../controls/Dialog.module.css';
@@ -69,8 +69,7 @@ function ExportDialog() {
   const describe = (r: ExportRange) => {
     const plan = planExport(project, view, r);
     if ('error' in plan) return null;
-    const ts = project.transport.timeSig;
-    const seconds = (plan.bars * ts.num * 4 * 60) / (ts.den * project.transport.bpm);
+    const seconds = planSeconds(project, plan);
     const bars = Math.round(plan.bars * 100) / 100;
     return `${bars} bar${bars === 1 ? '' : 's'}, ${formatTime(seconds)}`;
   };

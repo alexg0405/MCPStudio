@@ -5,7 +5,7 @@
 import type { ChannelId, NoteId, PatternId, Project, Tick } from '@core/model/types';
 import { effectivelyMuted, lowerBound, notesSorted, patternLength } from '@core/query/queries';
 import { audibleClips, songLength } from '@core/query/playlist';
-import { TICKS_PER_STEP } from '@core/time/ppq';
+import { TICKS_PER_STEP, type TempoMap } from '@core/time/ppq';
 
 /** A pattern placed on the timeline: a playlist clip, or the virtual clip used in pattern mode. */
 export interface PlayClip {
@@ -82,7 +82,9 @@ export function collectAudio(
   to: number,
   out: NoteEvent[],
   ongoingAt: number | null,
-  secondsPerTick: number,
+  tempo: TempoMap,
+  /** Clips whose sample is already playing (not started again mid-way). */
+  sounding?: ReadonlySet<string>,
 ): void {
   if (!source.audio?.length) return;
   const muted = effectivelyMuted(source.project.channels);
@@ -92,9 +94,16 @@ export function collectAudio(
     let at: number;
     let offsetSec = c.offsetSec;
     if (c.start >= from && c.start < to) at = c.start;
-    else if (ongoingAt !== null && c.start < ongoingAt && ongoingAt < end && ongoingAt >= from && ongoingAt < to) {
+    else if (
+      ongoingAt !== null &&
+      c.start < ongoingAt &&
+      ongoingAt < end &&
+      ongoingAt >= from &&
+      ongoingAt < to &&
+      !sounding?.has(c.clipId)
+    ) {
       at = ongoingAt;
-      offsetSec += (ongoingAt - c.start) * secondsPerTick;
+      offsetSec += tempo.tickToSeconds(ongoingAt) - tempo.tickToSeconds(c.start);
     } else continue;
     out.push({
       kind: 'audio',

@@ -15,7 +15,8 @@ import type {
 } from '@core/model/types';
 import { clipChannelId } from '@core/model/clips';
 import { notesSorted, patternLength } from '@core/query/queries';
-import { PPQ, ticksPerBar, ticksPerBeat } from '@core/time/ppq';
+import { tempoMapOf } from '@core/automation/tempo';
+import { ticksPerBar, ticksPerBeat, type TempoMap } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
 import { shade, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
@@ -167,20 +168,20 @@ export function drawClips(
       const ref = channel?.kind === 'audioClip' ? project.samples[channel.sampleId] : undefined;
       const wave = ref ? style.waveform?.(ref) : null;
       ctx.fillStyle = shade(base, 0.4);
-      if (wave) drawWaveform(ctx, vp, wave, c, 60 / (project.transport.bpm * PPQ), x, w, bodyY, bodyH);
+      if (wave) drawWaveform(ctx, vp, wave, c, tempoMapOf(project, 'song'), x, w, bodyY, bodyH);
       else ctx.fillRect(x, bodyY + bodyH / 2, w, 1);
     }
     ctx.globalAlpha = 1;
   }
 }
 
-/** The part of the sample the clip plays (from its trim point, at the current tempo). */
+/** The part of the sample the clip plays (from its trim point; audio keeps its speed through tempo changes). */
 function drawWaveform(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
   wave: Waveform,
   clip: AudioClip,
-  secondsPerTick: number,
+  tempo: TempoMap,
   x: number,
   w: number,
   y: number,
@@ -189,11 +190,13 @@ function drawWaveform(
   const mid = y + h / 2;
   const amp = h / 2;
   const buckets = wave.peaks.length / 2;
-  const perPx = secondsPerTick / vp.pxPerTick;
   const from = Math.max(Math.floor(x), 0);
   const to = Math.min(Math.ceil(x + w), vp.width);
+  const clipSec = tempo.tickToSeconds(clip.start);
   for (let px = from; px < to; px++) {
-    const t0 = clip.offsetSec + (px - x) * perPx;
+    const tick = clip.start + (px - x) / vp.pxPerTick;
+    const t0 = clip.offsetSec + tempo.tickToSeconds(tick) - clipSec;
+    const perPx = tempo.secondsPerTick(tick) / vp.pxPerTick;
     if (t0 >= wave.duration) break;
     const b0 = Math.max(0, Math.floor((t0 * wave.sampleRate) / wave.bucket));
     const b1 = Math.min(buckets, Math.max(b0 + 1, Math.ceil(((t0 + perPx) * wave.sampleRate) / wave.bucket)));

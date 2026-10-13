@@ -35,9 +35,9 @@ export function register(services: Services): void {
     id: 'transport.record',
     title: 'Record',
     category: 'Transport',
-    hint: 'Recording arrives after v1',
-    enabled: () => false,
-    run: () => {},
+    hint: 'Arm recording: press Play to record notes and knob moves (R)',
+    run: (s) => s.recording.toggle(),
+    checked: (s) => s.recording.armed,
   });
   commands.register({
     id: 'transport.toggleMode',

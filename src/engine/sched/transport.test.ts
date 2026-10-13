@@ -4,7 +4,7 @@ import { createEmptyProject, makeInstrumentChannel, makePluginInstance } from '@
 import type { ChannelId, PatternId, Project } from '@core/model/types';
 import { addChannel, setChannelProp } from '@core/ops/channels';
 import { setStep } from '@core/ops/notes';
-import { PPQ } from '@core/time/ppq';
+import { constantTempo } from '@core/time/ppq';
 import { patternModeSource } from './events';
 import { Transport, type TransportSink } from './transport';
 
@@ -29,10 +29,10 @@ function setup(steps = [0, 4, 8, 12], bpm = 120) {
     noteOff: (_c, e) => calls.push({ t: 'off', time: e.time, noteId: e.noteId }),
     allNotesOff: (time) => calls.push({ t: 'all', time }),
   };
-  const spt = 60 / (bpm * PPQ);
+  const tempo = constantTempo(bpm);
   const model = (p: Project) => {
     const { source, length } = patternModeSource(p, pid);
-    return { source, timeline: { spt, loop: { start: 0, end: length }, endTick: length } };
+    return { source, timeline: { tempo, loop: { start: 0, end: length }, endTick: length } };
   };
   const m = model(project);
   const transport = new Transport(clock, sink, m.source, m.timeline);
@@ -121,9 +121,8 @@ describe('Transport', () => {
     const faster = produce(s.project, (d) => {
       d.transport.bpm = 240;
     });
-    const spt = 60 / (240 * PPQ);
     const { source, length } = patternModeSource(faster, s.pid);
-    s.transport.setModel(source, { spt, loop: { start: 0, end: length }, endTick: length });
+    s.transport.setModel(source, { tempo: constantTempo(240), loop: { start: 0, end: length }, endTick: length });
     s.run(1.5);
     const ons = s.calls.filter((c) => c.t === 'on').map((c) => +c.time.toFixed(4));
     // Step 4 (tick 960) was at 0.5 s at 120 BPM; at 240 BPM from t≈0.235 it lands much earlier.
@@ -137,5 +136,33 @@ describe('Transport', () => {
     s.transport.start(0, 0);
     s.run(0.6);
     expect(s.transport.positionAt(0.25)).toBeCloseTo(480, 6);
+  });
+});
+
+describe('Transport.seek', () => {
+  it('cancels what has not started and releases what sounds, then plays from the new tick', () => {
+    const { transport, clock, calls, run } = setup([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    transport.start(0, 0);
+    run(0.3); // notes are scheduled ~120 ms ahead
+    const before = calls.length;
+    transport.seek(1920, clock.currentTime + 0.04);
+    const after = calls.slice(before);
+    const offs = after.filter((c) => c.t === 'off');
+    // Every note dispatched before the seek got a note-off (cancel or release), so nothing hangs.
+    const ons = calls.slice(0, before).filter((c) => c.t === 'on');
+    const offed = new Set(calls.filter((c) => c.t === 'off').map((c) => c.noteId));
+    for (const on of ons) expect(offed.has(on.noteId)).toBe(true);
+    expect(offs.length).toBeGreaterThan(0);
+    // Playback continues from tick 1920 (one step = 0.125 s at 120 BPM).
+    const first = after.find((c) => c.t === 'on');
+    expect(first?.time).toBeCloseTo(clock.currentTime + 0.04, 9);
+    expect(transport.positionAt(clock.currentTime + 0.04)).toBeCloseTo(1920, 6);
+  });
+
+  it('only moves the stop position while stopped', () => {
+    const { transport } = setup();
+    transport.seek(960);
+    expect(transport.playing).toBe(false);
+    expect(transport.positionAt(0)).toBe(960);
   });
 });

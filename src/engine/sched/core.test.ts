@@ -4,10 +4,12 @@ import { createEmptyProject, makeInstrumentChannel, makePluginInstance } from '@
 import type { NoteId, PatternId } from '@core/model/types';
 import { addChannel, setChannelProp } from '@core/ops/channels';
 import { addNote, setStep } from '@core/ops/notes';
-import { plan, tickAtTime, type Timeline } from './core';
+import { constantTempo } from '@core/time/ppq';
+import { steppedTempo } from '@core/time/tempo';
+import { plan, tickAtTime, timeInSegment, type Timeline } from './core';
 import { collectNotes, patternModeSource, type NoteEvent } from './events';
 
-const tl = (loop: Timeline['loop'], endTick = 1e9): Timeline => ({ spt: 0.001, loop, endTick });
+const tl = (loop: Timeline['loop'], endTick = 1e9): Timeline => ({ tempo: constantTempo(62.5), loop, endTick });
 
 describe('plan', () => {
   it('covers the window in one segment when nothing wraps', () => {
@@ -110,5 +112,39 @@ describe('collectNotes', () => {
     // Content 960..2460 → notes at content 960 and 1920 land at 10000 and 10960.
     expect(out.map((e) => e.start)).toEqual([10000, 10960]);
     expect(out.every((e) => e.end <= 11500)).toBe(true);
+  });
+});
+
+describe('plan with tempo changes', () => {
+  // 120 BPM for the first bar, then 60 BPM.
+  const tempo = steppedTempo([
+    { tick: 0, bpm: 120 },
+    { tick: 3840, bpm: 60 },
+  ]);
+  const timeline: Timeline = { tempo, loop: null, endTick: 1e9 };
+
+  it('splits segments where the tempo changes and keeps times on the map', () => {
+    const p = plan({ tick: 3000, time: 0, iter: 0 }, 1, timeline);
+    expect(p.segs.map((s) => [s.tick0, s.tick1])).toEqual([
+      [3000, 3840],
+      [3840, expect.closeTo(3840 + (1 - 840 * (60 / (120 * 960))) / (60 / (60 * 960)), 6)],
+    ]);
+    const [a, b] = p.segs;
+    expect(b!.time0).toBeCloseTo(tempo.tickToSeconds(3840) - tempo.tickToSeconds(3000), 12);
+    expect(a!.spt).toBeCloseTo(60 / (120 * 960), 15);
+    expect(b!.spt).toBeCloseTo(60 / (60 * 960), 15);
+    expect(p.next.time).toBeCloseTo(1, 12);
+  });
+
+  it('places swung notes past a segment end with the map', () => {
+    const p = plan({ tick: 3700, time: 5, iter: 0 }, 5.05, timeline);
+    const seg = p.segs[0]!;
+    const late = 3900;
+    expect(timeInSegment(seg, late, tempo)).toBeCloseTo(5 + tempo.tickToSeconds(late) - tempo.tickToSeconds(3700), 12);
+  });
+
+  it('wraps the loop at a tempo change, reading the tempo at the loop start again', () => {
+    const p = plan({ tick: 3800, time: 0, iter: 0 }, 0.5, { tempo, loop: { start: 0, end: 3840 }, endTick: 3840 });
+    expect(p.segs[1]).toMatchObject({ tick0: 0, iter: 1, spt: expect.closeTo(60 / (120 * 960), 15) });
   });
 });

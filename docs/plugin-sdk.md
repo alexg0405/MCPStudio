@@ -124,7 +124,7 @@ controllers, value 0–1).
 | `channel.rootKey` | the channel's root note (steps play at it; samplers play original pitch there) |
 | `channel.pitch` | the channel's pitch in cents (pitch knob, automation, MIDI pitch bend) as a signal: `channel.pitch.connect(voice.detune)` for every voice. `channel.pitchAt(time)` gives its value |
 | `transport.tempoAt(time)`, `transport.onTempo((bpm, time) => …)` | for tempo-synced effects (the tempo can change during the song); `transport.bpm` is the tempo now |
-| `sidechain` | effects declared with `sidechain: true`: the signal of the mixer track chosen as the slot's sidechain source (silent when none). Worklet effects receive it as the fifth argument of `process()` |
+| `sidechain` | effects declared with `sidechain: true`: the mixer track chosen as the slot's sidechain source, or the effect's own input when none is chosen (see [Sidechain effects](#sidechain-effects)). Worklet effects receive it as the fifth argument of `process()` |
 | `offline` | true while exporting |
 | `signal` | an AbortSignal aborted on dispose |
 | `worklet(opts)` | create your processor node (see below) |
@@ -172,6 +172,12 @@ The SDK owns the actual `AudioWorkletProcessor`. It splits each block at note ev
 Effects extend `EffectKernel` and implement `process(input, output, n, params, sidechain?)` (the
 sidechain arrives for effects defined with `sidechain: true`). In param blocks, enums arrive as the
 option index and booleans as 0/1.
+
+`@agstudio/sdk/worklet` also has DSP building blocks (allocation-free, and plain classes, so they
+work on the main thread and in Node tests too): `Biquad` (RBJ cookbook), `Svf` (state-variable filter
+that stays stable while you sweep it every sample: low/high/band-pass, notch, peak, all-pass, bell,
+shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `EnvelopeFollower`
+(peak or RMS level with attack/release), `Rng`, `mtof`, `dbToGain`, `flush`.
 
 Instrument kernels read the channel pitch in cents from `this.pitch` (a param block: `at(this.pitch, i)`),
 and `fine` is the note's own fine pitch.
@@ -222,9 +228,9 @@ export default defineEffect({
 **Where effects appear.** In the browser panel (marked `fx`) and in the mixer (F9): the master and every insert have
 ten effect slots. Click an empty slot to pick an effect (or click an effect in the browser to add it to the insert
 selected in the mixer), double-click a slot to open its editor, right-click it to replace, move or remove it. Slots run
-top to bottom, then the insert's pan, fader and mute.
+top to bottom, then the insert's mute/solo, pan and fader, then its sends to other tracks.
 
-**Input and output.** The insert's audio arrives at your `input` node: stereo, with every channel routed to the insert
+**Input and output.** The insert's audio arrives at your `input` node: stereo, with every channel and every track routed to the insert
 already summed and the previous slots applied. Send your result (stereo) out of `output`; never connect to
 `audioContext.destination`. With `defineWorkletEffect` the kernel's `process(input, output, n, params)` gets two
 input channels (zeros when nothing plays) and must fill both outputs.
@@ -234,12 +240,15 @@ crossfades to the dry signal in about 10 ms and then disconnects your input to s
 missing or failing effect passes audio through and keeps its settings. Your own `mix` param is still useful when the
 blend belongs inside the effect (an equal-power reverb mix, parallel distortion).
 
-**Latency.** If your effect delays the signal (a look-ahead, oversampling filters), set `latency` in seconds: the host
-delays the slot's dry path by the same amount so the slot mix stays in phase. Delay compensation across inserts isn't
-implemented yet. Measured in Chrome: DynamicsCompressorNode delays by `floor(0.006 · sampleRate)` frames and adds its
-own makeup gain; WaveShaperNode oversampling adds 128 (`'2x'`) or 192 (`'4x'`) frames; every trip around a feedback
-loop through a DelayNode takes one render quantum (128 frames) longer than its `delayTime`. The built-in Compressor,
-Distortion and Delay (`src/plugins/builtin/`) show how to compensate.
+**Latency.** If your effect delays the signal (a look-ahead, oversampling filters), set `latency` in seconds (it is
+rounded to whole frames): the host delays the slot's dry path by the same amount so the slot mix stays in phase, and
+the mixer compensates it across tracks (delay compensation: every other path, sends and sidechains included, is held
+back by the same amount, and the playhead follows). The value is read once, when `create()` resolves; it only counts
+while the slot is on. Measured in Chrome: DynamicsCompressorNode delays by `floor(0.006 · sampleRate)` frames and adds
+its own makeup gain; WaveShaperNode oversampling adds 128 (`'2x'`) or 192 (`'4x'`) frames; every trip around a feedback
+loop through a DelayNode takes one render quantum (128 frames) longer than its `delayTime`; a DelayNode set to
+`n / sampleRate` delays by exactly n frames. The built-in Distortion and Delay (`src/plugins/builtin/`) show how to
+compensate.
 
 **Tails.** `tailTime` (seconds, can be a getter) is how long the effect keeps sounding after its input stops (reverb,
 delay feedback); exports add it to the render length. `reset()` clears internal buffers.
@@ -252,6 +261,43 @@ or `this.host.rand()` in kernels) so two exports are identical.
 
 `plugins/example-bitcrusher` is a complete worklet effect (bits, downsample, mix), and
 `npm run new:plugin -- --kind effect --style graph|worklet --id user.my-effect` scaffolds a new one.
+
+### Sidechain effects
+
+Declare `sidechain: true` and the effect gets a second input: the audio of another mixer track that the user
+chooses (the slot's right-click menu, "Sidechain from ▸", or "Sidechain to this track" on that track's strip). Use it
+to duck a bass under the kick, gate a pad with a hi-hat, or key a compressor.
+
+- What arrives: the chosen track after its own effects, before its mute/solo, pan and fader (a muted or solo-silenced
+  kick still keys). Delay compensation lines it up with your input.
+- With no source chosen, the host feeds your **own input** there, so a sidechain compressor or gate just works on its
+  own. Changing the source only rewires; your instance is never recreated for it.
+- Graph effects: connect `host.sidechain` (an AudioNode) to whatever detects the level. Worklet effects: the kernel's
+  fifth `process()` argument has as many channels as the output (zeros while the source plays nothing).
+- Choices that would make audio loop back are refused by the mixer.
+
+```ts
+// dsp.worklet.ts: a ducker in a few lines (see src/plugins/builtin/ducker for a full one)
+import { at, EffectKernel, EnvelopeFollower, registerKernel, type ParamBlock } from '@agstudio/sdk/worklet';
+import { ID, params } from './params'; // params = { depth: p.float(0, 1, 0.8, { unit: '%' }) }
+
+class Duck extends EffectKernel<typeof params> {
+  private readonly env = new EnvelopeFollower(this.sampleRate, 1, 120);
+  process(input: Float32Array[], output: Float32Array[], n: number, p: ParamBlock<typeof params>, key?: Float32Array[]) {
+    for (let i = 0; i < n; i++) {
+      const level = this.env.process(key ? (key[0] as Float32Array)[i] as number : 0);
+      const g = 1 - at(p.depth, i) * Math.min(1, level * 4);
+      for (let c = 0; c < output.length; c++) (output[c] as Float32Array)[i] = ((input[c] as Float32Array)[i] as number) * g;
+    }
+  }
+}
+registerKernel(ID, params, Duck);
+
+// index.ts
+export default defineWorkletEffect({ id: ID, name: 'Duck', version: 1, params, processor, sidechain: true });
+```
+
+The built-in Compressor (with a sidechain high-pass and "Listen to sidechain"), Ducker and Gate are complete examples.
 
 ## Hot reload
 

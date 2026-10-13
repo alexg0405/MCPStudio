@@ -141,8 +141,9 @@ export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | u
   /** Present for instruments on a channel. */
   readonly channel: ChannelInfo | null;
   /**
-   * Effects that declare `sidechain: true`: the signal of the mixer track chosen as the slot's
-   * sidechain source (silent when none is chosen). null otherwise.
+   * Effects that declare `sidechain: true`: the mixer track chosen as the slot's sidechain source
+   * (after its effects, before its mute, pan and fader; aligned by delay compensation), or the
+   * effect's own input when none is chosen. null otherwise.
    */
   readonly sidechain: AudioNode | null;
   /** True while rendering an export. */

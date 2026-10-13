@@ -4,6 +4,7 @@ import { MASTER, type ChannelId, type PatternId } from '@core/model/types';
 import { setChannelProp, toggleSoloChannel } from '@core/ops/channels';
 import { setStep, setStepCount, setSwing } from '@core/ops/notes';
 import { stepView } from '@core/query/queries';
+import { patternTickAt } from '@core/query/playlist';
 import { PALETTE } from '@core/model/defaults';
 import { p } from '@agstudio/sdk/params';
 import { Knob } from '@agstudio/sdk/ui';
@@ -18,6 +19,7 @@ import { Icon } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
 import { openWindow } from '../../workspace/registry';
 import { MiniRoll } from './MiniRoll';
+import { PatternPicker } from '../patterns/PatternPicker';
 import styles from './ChannelRack.module.css';
 
 const VOLUME = p.float(0, 1.25, 0.78, { label: 'Volume', unit: '%' });
@@ -325,8 +327,15 @@ function StepLight({ stepCount }: { stepCount: number }) {
     return onFrame(() => {
       const el = ref.current;
       if (!el) return;
-      const playing = services.engine.playing && services.view.getState().mode === 'pattern';
-      const step = playing ? Math.floor(services.engine.playhead() / 240) : -1;
+      const v = services.view.getState();
+      let step = -1;
+      if (services.engine.playing && v.currentPatternId) {
+        const tick =
+          v.mode === 'pattern'
+            ? services.engine.playhead()
+            : patternTickAt(services.doc.getState().project, services.engine.playhead(), v.currentPatternId);
+        if (tick !== null) step = Math.floor(tick / 240);
+      }
       const visible = step >= 0 && step < stepCount ? step : -1;
       if (visible === last) return;
       last = visible;
@@ -353,9 +362,7 @@ export function ChannelRack() {
   return (
     <div className={styles.rack}>
       <div className={styles.header}>
-        <span className={styles.patternName} data-hint="Current pattern (pattern picker arrives in M4)">
-          {pattern.name}
-        </span>
+        <PatternPicker compact />
         <label className={styles.headerControl} data-hint="Number of steps in this pattern">
           Steps
           <select

@@ -16,7 +16,13 @@ export function register(services: Services): void {
     title: 'Play / stop',
     category: 'Transport',
     hint: 'Start or stop playback',
-    run: (s) => (s.engine.playing ? s.engine.stop() : s.engine.play(0)),
+    run: (s) => {
+      if (s.engine.playing) s.engine.stop();
+      else {
+        const v = s.view.getState();
+        s.engine.play(v.mode === 'song' ? v.songStart : 0);
+      }
+    },
     checked: (s) => s.engine.playing,
   });
   commands.register({

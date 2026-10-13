@@ -67,7 +67,12 @@ export function SoundsSection() {
             })
           }
           onDoubleClick={() => void addKitChannel(services, k.generator)}
-          data-hint={`${k.name}: click to preview, double-click to add a channel`}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData('application/x-agstudio-sound', k.generator);
+            e.dataTransfer.effectAllowed = 'copy';
+          }}
+          data-hint={`${k.name}: click to preview, double-click to add a channel, drag onto the playlist for an audio clip`}
         >
           {k.name}
         </button>

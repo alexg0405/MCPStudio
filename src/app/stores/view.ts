@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { Json } from '@core/model/json';
-import type { PatternId } from '@core/model/types';
+import type { PatternId, Tick } from '@core/model/types';
 import type { Rect } from '@core/time/geometry';
 
 /**
@@ -28,6 +28,10 @@ export interface ViewState {
   mode: TransportMode;
   /** The pattern shown in the channel rack / piano roll and looped in pattern mode. */
   currentPatternId: PatternId | null;
+  /** Song-mode loop region (the playlist's time selection); null loops the whole song. */
+  loop: { start: Tick; end: Tick } | null;
+  /** Song position marker: song-mode playback starts (and stop returns) here. */
+  songStart: Tick;
   windows: Record<string, WindowInstance>;
   focusedId: string | null;
   zTop: number;
@@ -48,6 +52,8 @@ export interface ViewActions {
   setBrowser(patch: Partial<ViewState['browser']>): void;
   setMode(mode: TransportMode): void;
   setCurrentPattern(id: PatternId | null): void;
+  setLoop(loop: { start: Tick; end: Tick } | null): void;
+  setSongStart(tick: Tick): void;
 }
 
 export type ViewStore = StoreApi<ViewState & ViewActions>;
@@ -55,6 +61,8 @@ export type ViewStore = StoreApi<ViewState & ViewActions>;
 export const defaultViewState = (): ViewState => ({
   mode: 'pattern',
   currentPatternId: null,
+  loop: null,
+  songStart: 0,
   windows: {},
   focusedId: null,
   zTop: 0,
@@ -157,6 +165,17 @@ export function createViewStore(initial: Partial<ViewState> = {}): ViewStore {
 
       setCurrentPattern(id) {
         if (get().currentPatternId !== id) set({ currentPatternId: id });
+      },
+
+      setSongStart(tick) {
+        const t = Math.max(0, Math.round(tick));
+        if (get().songStart !== t) set({ songStart: t });
+      },
+
+      setLoop(loop) {
+        const cur = get().loop;
+        if (cur?.start === loop?.start && cur?.end === loop?.end) return;
+        set({ loop: loop && loop.end > loop.start ? loop : null });
       },
     };
   });

@@ -19,7 +19,7 @@ import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
 import { SampleCache } from './samples';
 import type { Timeline } from './sched/core';
-import { patternModeSource, type EventSource } from './sched/events';
+import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
 import { LIMITER_ID } from './limiter-id';
 import type { WorkletPortImpl } from './worklet-port';
@@ -187,7 +187,7 @@ export class Engine implements EngineApi, EngineCore {
       const muted = effectivelyMuted(next.channels);
       for (const id of next.channelOrder) {
         const ch = next.channels[id];
-        if (!ch || ch.kind !== 'instrument') continue;
+        if (!ch || ch.kind === 'automation') continue;
         const strip = this.strips.get(id);
         if (!strip) this.strips.set(id, new ChannelStrip(this, ch, next));
         else {
@@ -198,7 +198,8 @@ export class Engine implements EngineApi, EngineCore {
         this.strips.get(id)?.setMuted(muted.has(id));
       }
       for (const [id, strip] of this.strips) {
-        if (next.channels[id]?.kind !== 'instrument') {
+        const kind = next.channels[id]?.kind;
+        if (kind !== 'instrument' && kind !== 'audioClip') {
           strip.dispose();
           this.strips.delete(id);
         }
@@ -233,7 +234,14 @@ export class Engine implements EngineApi, EngineCore {
     const p = this.project;
     if (!p) return null;
     const spt = 60 / (p.transport.bpm * PPQ);
-    // Song mode arrives with the playlist (M4); until then both modes loop the current pattern.
+    if (this.view.mode === 'song') {
+      // Song mode loops the loop region, or the whole song (FL's default).
+      const { source, length } = songModeSource(p);
+      const songEnd = Math.max(length, ticksPerBar(p.transport.timeSig));
+      const loop =
+        this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : { start: 0, end: songEnd };
+      return { source, timeline: { spt, loop, endTick: songEnd } };
+    }
     const { source, length } = patternModeSource(p, this.view.patternId ?? p.patternOrder[0] ?? null);
     return { source, timeline: { spt, loop: { start: 0, end: length }, endTick: length } };
   }

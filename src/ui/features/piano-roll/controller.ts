@@ -12,6 +12,7 @@ import type { ChannelId, Note, NoteId, Pattern, PatternId, Project, Tick } from 
 import { addNote, addNotes, editNotes, removeNotes, sliceNote } from '@core/ops/notes';
 import { noteAt, notesInRect } from '@core/query/notes-hit';
 import { notesSorted, patternLength } from '@core/query/queries';
+import { patternTickAt } from '@core/query/playlist';
 import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { onFrame } from '../../frame-loop';
@@ -354,8 +355,13 @@ export class PianoRollController {
   private updatePlayhead(c: Ctx): void {
     const { engine, view } = this.s;
     let x = NaN;
-    if (engine.playing && view.getState().mode === 'pattern' && c.pattern) {
-      x = this.vp.tickToX(engine.playhead() % this.patternEnd(c));
+    if (engine.playing && c.pattern && c.patternId) {
+      if (view.getState().mode === 'pattern') x = this.vp.tickToX(engine.playhead() % this.patternEnd(c));
+      else {
+        // Song mode: follow the clip of this pattern that's playing, if any.
+        const t = patternTickAt(c.project, engine.playhead(), c.patternId);
+        if (t !== null) x = this.vp.tickToX(t);
+      }
     }
     if (x === this.lastPlayheadX) return;
     this.lastPlayheadX = x;

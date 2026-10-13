@@ -10,7 +10,7 @@
 import type { ChannelId, Tick } from '@core/model/types';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
 import { plan, segmentEndTime, tickAtTime, type Cursor, type Segment, type Timeline } from './core';
-import { collectNotes, type EventSource, type NoteEvent } from './events';
+import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
 
 export interface TransportSink {
   noteOn(channelId: ChannelId, e: NoteOn): void;
@@ -43,6 +43,8 @@ export class Transport {
   private noteSeq = 0;
   private endTime: number | null = null;
   private stoppedTick: Tick = 0;
+  /** Next segment should also start audio clips already in progress (after start/seek/re-anchor). */
+  private scanOngoing = false;
   lookahead: number;
   lateEvents = 0;
 
@@ -69,6 +71,7 @@ export class Transport {
     this.reset();
     this.playingFlag = true;
     this.endTime = null;
+    this.scanOngoing = true;
     this.cursor = { tick: fromTick, time: at, iter: 0 };
     this.pump();
   }
@@ -138,18 +141,30 @@ export class Transport {
     this.cursor = { tick, time: safe, iter: pos.iter };
     this.endTime = null;
 
-    // Sounding notes: release ones whose source note disappeared, follow length changes.
+    // Sounding notes: release ones whose source disappeared, follow length changes.
+    const project = this.source.project;
     for (const n of [...this.notes.values()]) {
       if (n.offSent) continue;
-      const note = this.source.project.patterns[n.ev.patternId]?.notes[n.ev.channelId]?.[n.ev.noteId];
-      const channel = this.source.project.channels[n.ev.channelId];
-      if (!note || !channel) {
+      const ev = n.ev;
+      const channel = project.channels[ev.channelId];
+      let end: number | null = null;
+      if (ev.kind === 'audio') {
+        const clip = project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
+        if (clip?.kind === 'audio' && clip.channelId === ev.channelId) end = clip.start + clip.length;
+      } else if (ev.patternId && ev.noteId) {
+        const note = project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
+        const clipGone =
+          ev.clipId !== 'pattern' && !project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
+        if (note && !clipGone) end = Math.min(ev.start + note.length, ev.clipEnd);
+      }
+      if (end === null || !channel) {
         this.release(n, safe);
         continue;
       }
-      n.endTick = Math.min(n.ev.start + note.length, n.ev.clipEnd);
+      n.endTick = end;
       if (n.iter === pos.iter && n.endTick <= tick) this.release(n, safe);
     }
+    this.scanOngoing = true;
     this.pump();
   }
 
@@ -170,6 +185,11 @@ export class Transport {
     const now = this.clock.currentTime;
     const events: NoteEvent[] = [];
     collectNotes(this.source, seg.tick0, seg.tick1, events);
+    const L = this.timeline.loop;
+    // Audio clips also start mid-way after a start/seek/edit, or when the loop wraps into one.
+    const wrapped = !!L && seg.iter > 0 && seg.tick0 === L.start;
+    collectAudio(this.source, seg.tick0, seg.tick1, events, this.scanOngoing || wrapped ? seg.tick0 : null, seg.spt);
+    this.scanOngoing = false;
     for (const ev of events) {
       const time = seg.time0 + (ev.start - seg.tick0) * seg.spt;
       if (time < now) this.lateEvents++;
@@ -182,9 +202,9 @@ export class Transport {
         key: ev.pitch,
         velocity: ev.velocity,
         ...(ev.pan !== undefined ? { pan: ev.pan } : {}),
+        ...(ev.offsetSec !== undefined ? { offset: ev.offsetSec } : {}),
       });
     }
-    const L = this.timeline.loop;
     const atLoopEnd = !!L && seg.tick1 >= L.end - 1e-9;
     const atSongEnd = !L && seg.tick1 >= this.timeline.endTick - 1e-9;
     const segEnd = segmentEndTime(seg);

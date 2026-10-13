@@ -21,15 +21,17 @@ const services = createServices({
   plugins,
   ...(restored ? { project: restored.project } : {}),
   ...(restored?.view.pianoRoll ? { pianoRoll: restored.view.pianoRoll } : {}),
+  ...(restored?.view.playlist ? { playlist: restored.view.playlist } : {}),
 });
 registerFeatures(services);
 installKeyboard(services);
 installAudioUnlock(services.engine);
 if (restored?.view && Object.keys(restored.view.windows ?? {}).length > 0) {
   const pattern = restored.view.currentPatternId;
-  const { pianoRoll: _pianoRoll, ...savedView } = restored.view;
+  const { pianoRoll: _pianoRoll, playlist: _playlist, ...savedView } = restored.view;
   services.view.setState({
     ...savedView,
+    loop: savedView.loop ?? null,
     currentPatternId:
       pattern && restored.project.patterns[pattern] ? pattern : services.view.getState().currentPatternId,
   });

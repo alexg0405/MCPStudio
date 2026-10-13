@@ -1,6 +1,7 @@
-import type { InstrumentChannel, Project } from '@core/model/types';
+import type { AudioClipChannel, InstrumentChannel, Project } from '@core/model/types';
 import type { InstrumentInstance, JsonValue, NoteOff, NoteOn } from '@agstudio/sdk';
 import { HostImpl } from './host';
+import { createClipPlayer } from './clip-player';
 import type { EngineCore } from './engine-core';
 
 /**
@@ -17,14 +18,16 @@ export class ChannelStrip {
   private generation = 0;
   private pending: Promise<void> = Promise.resolve();
   private muted = false;
-  private channel: InstrumentChannel;
+  private channel: InstrumentChannel | AudioClipChannel;
   private project: Project;
+  /** Audio-clip channels: the sample being played. */
+  private clipBuffer: AudioBuffer | null = null;
   /** True when the plugin is missing or failed to load (silent placeholder; data is kept). */
   faulted = false;
 
   constructor(
     private readonly core: EngineCore,
-    channel: InstrumentChannel,
+    channel: InstrumentChannel | AudioClipChannel,
     project: Project,
   ) {
     const ctx = core.ctx;
@@ -43,7 +46,7 @@ export class ChannelStrip {
     return this.pending;
   }
 
-  update(next: InstrumentChannel, project: Project): void {
+  update(next: InstrumentChannel | AudioClipChannel, project: Project): void {
     const prev = this.channel;
     this.channel = next;
     this.project = project;
@@ -54,6 +57,15 @@ export class ChannelStrip {
       this.out.disconnect();
       this.out.connect(this.core.insertInput(next.output));
     }
+    if (prev.kind !== next.kind) {
+      this.load(next, project);
+      return;
+    }
+    if (next.kind === 'audioClip') {
+      if (prev.kind === 'audioClip' && prev.sampleId !== next.sampleId) this.loadClipBuffer(next, project);
+      return;
+    }
+    if (prev.kind !== 'instrument') return;
     if (prev.plugin.pluginId !== next.plugin.pluginId) {
       this.load(next, project);
       return;
@@ -65,7 +77,8 @@ export class ChannelStrip {
   /** The project's sample table changed (a sample was added or replaced). */
   samplesChanged(project: Project): void {
     this.project = project;
-    this.host?.apply(this.channel.plugin, project, this.core.ctx.currentTime);
+    if (this.channel.kind === 'audioClip') this.loadClipBuffer(this.channel, project);
+    else this.host?.apply(this.channel.plugin, project, this.core.ctx.currentTime);
   }
 
   /** Re-creates the instrument (plugin code was hot-reloaded). */
@@ -75,7 +88,7 @@ export class ChannelStrip {
   }
 
   get pluginId(): string {
-    return this.channel.plugin.pluginId;
+    return this.channel.kind === 'instrument' ? this.channel.plugin.pluginId : '';
   }
 
   setMuted(muted: boolean): void {
@@ -122,9 +135,32 @@ export class ChannelStrip {
     this.input.disconnect();
   }
 
-  private load(channel: InstrumentChannel, project: Project): void {
+  private loadClipBuffer(channel: AudioClipChannel, project: Project): void {
+    const ref = project.samples[channel.sampleId];
+    if (!ref) {
+      this.clipBuffer = null;
+      return;
+    }
+    this.clipBuffer = this.core.samples.getSync(ref, this.core.ctx.sampleRate);
+    if (!this.clipBuffer) {
+      void this.core.samples.load(ref, this.core.ctx).then((b) => {
+        if (this.channel.kind === 'audioClip' && this.channel.sampleId === channel.sampleId) this.clipBuffer = b;
+      });
+    }
+  }
+
+  private load(channel: InstrumentChannel | AudioClipChannel, project: Project): void {
     const gen = ++this.generation;
     this.disposePlugin();
+    if (channel.kind === 'audioClip') {
+      this.loadClipBuffer(channel, project);
+      const inst = createClipPlayer(this.core.ctx, () => this.clipBuffer);
+      inst.output.connect(this.input);
+      this.instance = inst;
+      this.faulted = false;
+      this.pending = Promise.resolve();
+      return;
+    }
     const def = this.core.plugins.get(channel.plugin.pluginId);
     if (!def || def.kind !== 'instrument') {
       this.faulted = true;
@@ -161,8 +197,10 @@ export class ChannelStrip {
         this.host = host;
         this.faulted = false;
         // Catch up with edits made while the plugin was loading.
-        host.setRootKey(this.channel.rootKey);
-        host.apply(this.channel.plugin, this.project, this.core.ctx.currentTime);
+        if (this.channel.kind === 'instrument') {
+          host.setRootKey(this.channel.rootKey);
+          host.apply(this.channel.plugin, this.project, this.core.ctx.currentTime);
+        }
       } catch (err) {
         host.dispose();
         if (gen === this.generation) this.fault(err);
@@ -189,6 +227,6 @@ export class ChannelStrip {
 
   private fault(err: unknown): void {
     this.faulted = true;
-    this.core.reportFault({ kind: 'channel', channelId: this.channel.id }, this.channel.plugin.pluginId, err);
+    this.core.reportFault({ kind: 'channel', channelId: this.channel.id }, this.pluginId, err);
   }
 }

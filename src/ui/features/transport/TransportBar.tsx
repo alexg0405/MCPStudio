@@ -60,7 +60,9 @@ function Position() {
     let last = '';
     return onFrame(() => {
       const ts = services.doc.getState().project.transport.timeSig;
-      const text = formatBST(services.engine.playhead(), ts);
+      const v = services.view.getState();
+      const tick = services.engine.playing ? services.engine.playhead() : v.mode === 'song' ? v.songStart : 0;
+      const text = formatBST(tick, ts);
       if (text !== last && ref.current) {
         ref.current.textContent = text;
         last = text;

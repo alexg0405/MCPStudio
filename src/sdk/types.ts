@@ -20,6 +20,8 @@ export interface NoteOn {
   velocity: number;
   /** -1 … 1, from the note's pan. */
   pan?: number;
+  /** Seconds into the sound to start at (set for audio clips that start mid-way). */
+  offset?: number;
 }
 
 export interface NoteOff {

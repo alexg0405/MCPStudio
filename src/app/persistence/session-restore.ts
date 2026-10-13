@@ -1,6 +1,6 @@
 import { SCHEMA_VERSION, type Project } from '@core/model/types';
 import type { ViewState } from '../stores/view';
-import type { PianoRollViewState } from '../stores/editor';
+import type { PianoRollViewState, PlaylistViewState } from '../stores/editor';
 import type { Services } from '../services';
 
 /**
@@ -9,8 +9,9 @@ import type { Services } from '../services';
  */
 const KEY = 'agstudio:session:v1';
 
-type SavedView = Pick<ViewState, 'mode' | 'currentPatternId' | 'windows' | 'browser'> & {
+type SavedView = Pick<ViewState, 'mode' | 'currentPatternId' | 'windows' | 'browser' | 'loop'> & {
   pianoRoll?: PianoRollViewState;
+  playlist?: PlaylistViewState;
 };
 
 export interface SavedSession {
@@ -59,7 +60,9 @@ export function installSessionSave(s: Services): () => void {
         currentPatternId: v.currentPatternId,
         windows: v.windows,
         browser: v.browser,
+        loop: v.loop,
         pianoRoll: s.editor.getState().pianoRoll,
+        playlist: s.editor.getState().playlist,
       },
     };
     try {
@@ -74,7 +77,7 @@ export function installSessionSave(s: Services): () => void {
   const offDoc = s.history.onChange(schedule);
   const offView = s.view.subscribe(schedule);
   const offEditor = s.editor.subscribe((next, prev) => {
-    if (next.pianoRoll !== prev.pianoRoll) schedule();
+    if (next.pianoRoll !== prev.pianoRoll || next.playlist !== prev.playlist) schedule();
   });
   const onHide = () => {
     if (document.visibilityState === 'hidden') save();

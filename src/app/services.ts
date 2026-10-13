@@ -14,7 +14,7 @@ import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
 import { createPrefsStore, type PrefsStore } from './stores/prefs';
-import { createEditorStore, type EditorStore, type PianoRollViewState } from './stores/editor';
+import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { MidiInput } from './midi-input';
 
 /**
@@ -58,6 +58,7 @@ export interface ServiceOptions {
   plugins?: PluginRegistry;
   /** Restored piano roll settings. */
   pianoRoll?: Partial<PianoRollViewState>;
+  playlist?: Partial<PlaylistViewState>;
 }
 
 export function createServices(opts: ServiceOptions = {}): Services {
@@ -71,7 +72,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const session = createSessionStore();
   session.getState().selectChannel(doc.getState().project.channelOrder[0] ?? null);
   const prefs = createPrefsStore();
-  const editor = createEditorStore(opts.pianoRoll);
+  const editor = createEditorStore(opts.pianoRoll, opts.playlist);
   let engineRef: EngineApi | null = null;
   const midi = new MidiInput(
     () => engineRef as EngineApi,
@@ -142,16 +143,23 @@ function connectEngine(s: Services): void {
 
   const pushView = () => {
     const v = view.getState();
-    engine.setTransportView({ mode: v.mode, patternId: v.currentPatternId, loop: null });
+    engine.setTransportView({ mode: v.mode, patternId: v.currentPatternId, loop: v.loop });
   };
   pushView();
   view.subscribe((next, prev) => {
-    if (next.mode !== prev.mode || next.currentPatternId !== prev.currentPatternId) pushView();
+    if (next.mode !== prev.mode || next.currentPatternId !== prev.currentPatternId || next.loop !== prev.loop)
+      pushView();
   });
 
   // A note selection belongs to one channel in one pattern.
   s.session.subscribe((next, prev) => {
     if (next.selectedChannelId !== prev.selectedChannelId) s.editor.getState().selectNotes([]);
+  });
+  // Drop selected clips that no longer exist (undo, delete).
+  history.onChange(({ next }) => {
+    const sel = s.editor.getState().clipSelection;
+    if (sel.some((id) => !next.playlist.clips[id]))
+      s.editor.getState().selectClips(sel.filter((id) => next.playlist.clips[id]));
   });
   view.subscribe((next, prev) => {
     if (next.currentPatternId !== prev.currentPatternId) s.editor.getState().selectNotes([]);

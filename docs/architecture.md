@@ -160,6 +160,14 @@ master : input → slots → pan → fader → mute → masterOut → SafetyLimi
   5 ms fade-in, unit energy, `disableNormalization`. Pre-delay is a DelayNode. Decay/damping/size changes: debounce
   150 ms (immediately when offline), regenerate on the main thread (10–25 ms for a 10 s tail; a Worker can come later),
   crossfade two ConvolverNodes over 120 ms (setting `.buffer` in place would click and cut the tail). IRs are cached.
+- 808 Bass (`plugins/builtin/bass808`, graph instrument, mono legato): each hit is a fresh zero-phase sine whose pitch
+  starts `punch` semitones up (the oscillator's initial detune: Chrome feeds a starting oscillator automation from up to
+  127 frames earlier in its first render quantum) and decays with τ = punchTime/4; amp e^(−t·4/decay), 50 ms release,
+  8 ms choke of the previous hit. A note that starts while the current one is held glides (exponential frequency ramp,
+  no attack). The performance is re-derived from all known notes after every event (`legato.ts`) and rescheduled from
+  the first difference with rewindable AudioParam lanes (`lane.ts`), so the scheduler's note-ons-before-note-offs order,
+  cancellations and swing don't change the sound; times within 1e-6 frames of a frame are snapped onto it. tanh drive
+  (4× WaveShaper, voices start 192 frames early to cancel its latency), Butterworth low-pass tone.
 
 ## Plugin SDK (`src/sdk`)
 

@@ -8,6 +8,7 @@ import { addFxSlot, setFxSlotEnabled, setFxSlotMix, setInsertProp } from '@core/
 import { setStep } from '@core/ops/notes';
 import { defaultValues, type ParamValue, type PluginDef } from '@agstudio/sdk';
 import sampler from '../../src/plugins/builtin/sampler';
+import bass808 from '../../src/plugins/builtin/bass808';
 import eq from '../../src/plugins/builtin/eq';
 import filter from '../../src/plugins/builtin/filter';
 import delay from '../../src/plugins/builtin/delay';
@@ -19,10 +20,13 @@ import bitcrusher from '../../plugins/example-bitcrusher';
 /** Every effect the mixer tests use: the built-ins plus the example worklet effect. */
 export const EFFECTS: readonly PluginDef[] = [eq, filter, delay, reverb, compressor, distortion, bitcrusher];
 
-/** Resolves the sampler, every effect in EFFECTS, and any extra definitions. */
+/** Instruments the tests use. */
+export const INSTRUMENTS: readonly PluginDef[] = [sampler, bass808];
+
+/** Resolves every instrument in INSTRUMENTS, every effect in EFFECTS, and any extra definitions. */
 export const resolver = (...defs: PluginDef[]) => {
   const all = new Map<string, PluginDef>([
-    [sampler.id, sampler as PluginDef],
+    ...INSTRUMENTS.map((d) => [d.id, d] as const),
     ...EFFECTS.map((d) => [d.id, d] as const),
     ...defs.map((d) => [d.id, d] as const),
   ]);

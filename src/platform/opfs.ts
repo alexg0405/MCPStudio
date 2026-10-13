@@ -9,7 +9,9 @@
  * the previous version. An autosave slot is valid when its data matches the size and hash recorded in
  * its meta file; the writer alternates slots so one valid copy always survives an interrupted save.
  */
-import { isSha256Hex, isSharedMemory, sha256Hex } from '@core/io/hash';
+import { isSha256Hex, sha256Hex } from '@core/io/hash';
+import { normalizeSampleExt } from '@core/io/project-file';
+import { writeFile as writeHandle } from './fs-access';
 
 export interface StoredBlob {
   ext: string;
@@ -21,9 +23,13 @@ export interface BlobInfo {
   ext: string;
 }
 
-/** Content-addressed sample storage. Callers guarantee `hash` is the SHA-256 of `bytes`. */
+/**
+ * Content-addressed sample storage. Callers guarantee `hash` is the SHA-256 of `bytes`. A stored copy
+ * with the right hash and size is trusted (writes are atomic, so only media corruption could break
+ * that); stored copies are not re-hashed on every read.
+ */
 export interface BlobStore {
-  /** Stores the bytes unless a blob with this hash is already there. */
+  /** Stores the bytes unless a blob with this hash (and size) is already there. */
   putBlob(hash: string, ext: string, bytes: Uint8Array): Promise<void>;
   /** `ext` is a lookup hint (the SampleRef's extension); the result has the stored extension. */
   getBlob(hash: string, ext?: string): Promise<StoredBlob | null>;
@@ -93,7 +99,6 @@ export async function requestPersistentStorage(): Promise<boolean> {
 const BLOBS = 'blobs';
 const AUTOSAVE = 'autosave';
 const BLOB_NAME = /^([0-9a-f]{64})\.([a-z0-9]{1,10})$/;
-const EXT = /^[a-z0-9]{1,10}$/;
 const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const SLOTS: readonly AutosaveSlot[] = ['a', 'b'];
 
@@ -136,20 +141,8 @@ async function guard<T>(action: string, fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function asBufferSource(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
-  return (isSharedMemory(bytes) ? bytes.slice() : bytes) as Uint8Array<ArrayBuffer>;
-}
-
 async function writeFile(dir: FileSystemDirectoryHandle, name: string, bytes: Uint8Array): Promise<void> {
-  const handle = await dir.getFileHandle(name, { create: true });
-  const writable = await handle.createWritable();
-  try {
-    await writable.write(asBufferSource(bytes));
-    await writable.close();
-  } catch (e) {
-    await writable.abort().catch(() => {});
-    throw e;
-  }
+  await writeHandle(await dir.getFileHandle(name, { create: true }), bytes);
 }
 
 async function fileOf(dir: FileSystemDirectoryHandle, name: string): Promise<File | null> {
@@ -184,9 +177,11 @@ function assertHash(hash: string): void {
   if (!isSha256Hex(hash)) throw new StorageError('invalid', `"${hash}" is not a SHA-256 hex hash.`);
 }
 
-function normalizeExt(ext: string): string {
-  const e = ext.replace(/^\./, '').toLowerCase();
-  if (!EXT.test(e)) throw new StorageError('invalid', `"${ext}" is not a valid file extension.`);
+/** Validates a blob's key for any BlobStore; returns the normalized extension. Throws StorageError. */
+export function checkBlobKey(hash: string, ext: string): string {
+  assertHash(hash);
+  const e = normalizeSampleExt(ext);
+  if (!e) throw new StorageError('invalid', `"${ext}" is not a valid file extension.`);
   return e;
 }
 
@@ -285,10 +280,12 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
       return file ? { file, ext } : null;
     };
     // Hints come from project data: ignore anything that isn't a valid extension.
-    const cleaned = hint?.replace(/^\./, '').toLowerCase();
-    const hinted = cleaned !== undefined && EXT.test(cleaned) ? cleaned : undefined;
+    const hinted = hint === undefined ? undefined : (normalizeSampleExt(hint) ?? undefined);
     const found = (await attempt(hinted)) ?? (await attempt(extsOf.get(hash)?.[0]));
-    if (found) return found;
+    if (found) {
+      remember(hash, found.ext); // e.g. written by another tab after our last scan
+      return found;
+    }
     extsOf.delete(hash);
     // With a hint, one scan per store finds blobs saved under another extension; without one, a miss
     // rescans because another tab may have added the blob since.
@@ -308,10 +305,14 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
     return records.sort(newestFirst);
   }
 
-  /** The newest slot whose data file has the recorded size (cheap check, no hashing). */
-  async function newestIntact(dir: FileSystemDirectoryHandle): Promise<SlotRecord | null> {
-    for (const r of await slotRecords(dir)) {
-      if ((await fileOf(dir, `${r.slot}.agproj`))?.size === r.size) return r;
+  /**
+   * The newest slot whose data matches the size and SHA-256 its meta records. listAutosaves,
+   * readAutosave and markAutosaveClean all use this one rule (autosaves are thin, so hashing is cheap).
+   */
+  async function newestValid(dir: FileSystemDirectoryHandle): Promise<{ record: SlotRecord; data: Uint8Array } | null> {
+    for (const record of await slotRecords(dir)) {
+      const data = await readBytes(dir, `${record.slot}.agproj`);
+      if (data && data.byteLength === record.size && (await sha256Hex(data)) === record.sha256) return { record, data };
     }
     return null;
   }
@@ -325,8 +326,7 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
   return {
     putBlob: (hash, ext, bytes) =>
       guard('store a sample', async () => {
-        assertHash(hash);
-        const e = normalizeExt(ext);
+        const e = checkBlobKey(hash, ext);
         const existing = await findBlob(hash, e);
         // Same hash and size: the same content (under any extension), so there is nothing to do.
         if (existing?.file.size === bytes.byteLength) return;
@@ -354,8 +354,9 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
         assertHash(hash);
         const dir = await getDir(await root(), BLOBS);
         if (!dir) return;
-        // Scanning once per store keeps a garbage-collection pass (list, then delete many) linear.
-        if (!scanned) await scanBlobs(dir);
+        // A GC pass lists (scans) once and then deletes many, so trust the index when it knows the
+        // hash; otherwise rescan, since another tab may have added the blob after our last scan.
+        if (!scanned || !extsOf.has(hash)) await scanBlobs(dir);
         for (const ext of extsOf.get(hash) ?? []) {
           try {
             await dir.removeEntry(`${hash}.${ext}`);
@@ -399,13 +400,8 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
     readAutosave: (sessionId) =>
       guard('read an autosave', async () => {
         const dir = await sessionDir(sessionId);
-        if (!dir) return null;
-        for (const r of await slotRecords(dir)) {
-          const data = await readBytes(dir, `${r.slot}.agproj`);
-          if (!data || data.byteLength !== r.size || (await sha256Hex(data)) !== r.sha256) continue;
-          return { data, meta: toMeta(r, sessionId) };
-        }
-        return null;
+        const valid = dir ? await newestValid(dir) : null;
+        return valid ? { data: valid.data, meta: toMeta(valid.record, sessionId) } : null;
       }),
 
     listAutosaves: () =>
@@ -416,8 +412,8 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
         for await (const [name, handle] of autosave.entries()) {
           if (handle.kind !== 'directory' || !SESSION_ID.test(name)) continue;
           try {
-            const r = await newestIntact(handle);
-            if (r) metas.push(toMeta(r, name));
+            const valid = await newestValid(handle);
+            if (valid) metas.push(toMeta(valid.record, name));
           } catch {
             // A session deleted or half-written by another tab while we looked: skip it.
           }
@@ -440,9 +436,8 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
     markAutosaveClean: (sessionId) =>
       guard('update an autosave', async () => {
         const dir = await sessionDir(sessionId);
-        if (!dir) return;
-        const r = await newestIntact(dir);
-        if (!r || r.clean) return;
+        const r = dir ? (await newestValid(dir))?.record : undefined;
+        if (!dir || !r || r.clean) return;
         await writeFile(dir, `${r.slot}.json`, new TextEncoder().encode(JSON.stringify({ ...r, clean: true })));
       }),
   };

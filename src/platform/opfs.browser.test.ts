@@ -115,6 +115,20 @@ describe.skipIf(!available)(`OPFS blob store${suffix}`, () => {
     expect(await store.getBlob(a.hash)).toEqual({ ext: 'flac', bytes: a.bytes });
   });
 
+  it('deletes blobs another store instance added after our last scan', async () => {
+    await store.listBlobs(); // scanned (empty)
+    const other = createOpfsStorage({ root: async () => root });
+    const a = await blob(3, 1, 4);
+    const b = await blob(2, 7);
+    await other.putBlob(a.hash, 'wav', a.bytes);
+    await other.putBlob(b.hash, 'aif', b.bytes);
+    expect(await store.getBlob(a.hash, 'wav')).not.toBeNull(); // found through the hint
+    await store.deleteBlob(a.hash);
+    await store.deleteBlob(b.hash); // never looked up here at all
+    expect(await fileNames(await root.getDirectoryHandle('blobs'))).toEqual([]);
+    expect(await other.hasBlob(a.hash)).toBe(false);
+  });
+
   it('accepts bytes in SharedArrayBuffer memory', async () => {
     const shared = new Uint8Array(new SharedArrayBuffer(4));
     shared.set([5, 6, 7, 8]);
@@ -187,6 +201,18 @@ describe.skipIf(!available)(`OPFS autosave slots${suffix}`, () => {
     expect(got?.meta.slot).toBe('a');
     await writeRaw(dir, 'a.agproj', bytesOf(1)); // now both are bad
     expect(await store.readAutosave('s1')).toBeNull();
+  });
+
+  it('lists and marks clean only slots whose data verifies', async () => {
+    await store.writeAutosave('s1', 'a', bytesOf(1, 1), meta({ savedAt: '2026-10-12T10:00:00.000Z' }));
+    await store.writeAutosave('s1', 'b', bytesOf(2, 2), meta({ slot: 'b', savedAt: '2026-10-12T10:00:03.000Z' }));
+    const dir = await (await root.getDirectoryHandle('autosave')).getDirectoryHandle('s1');
+    await writeRaw(dir, 'b.agproj', bytesOf(9, 9)); // right size, wrong content
+    expect(await store.listAutosaves()).toEqual([meta({ slot: 'a', savedAt: '2026-10-12T10:00:00.000Z' })]);
+    await store.markAutosaveClean('s1');
+    expect(await store.readAutosave('s1')).toMatchObject({ data: bytesOf(1, 1), meta: { slot: 'a', clean: true } });
+    const bMeta = JSON.parse(await (await (await dir.getFileHandle('b.json')).getFile()).text()) as AutosaveMeta;
+    expect(bMeta.clean).toBe(false); // the unverifiable slot was left alone
   });
 
   it('ignores slots whose meta file is missing or unreadable', async () => {

@@ -16,12 +16,23 @@ export function isIdbAvailable(): boolean {
 /** Opens the database at `version` (default: whatever version it has, 1 when new). */
 function openAt(version?: number): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    let failed = false;
     const req = version === undefined ? indexedDB.open(DB_NAME) : indexedDB.open(DB_NAME, version);
     req.onupgradeneeded = () => {
       if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // An upgrade that was blocked can still complete later; we already gave up on it.
+      if (failed) req.result.close();
+      else resolve(req.result);
+    };
     req.onerror = () => reject(req.error ?? new Error('IndexedDB could not be opened.'));
+    // An upgrade waits until every other connection closes. A connection that ignores versionchange
+    // (e.g. an older build in another tab) would make it wait forever, so fail instead.
+    req.onblocked = () => {
+      failed = true;
+      reject(new Error('Browser storage is in use by another AGstudio tab. Close other tabs and try again.'));
+    };
   });
 }
 

@@ -81,6 +81,27 @@ describe.skipIf(!isIdbAvailable())('IndexedDB key-value store', () => {
     expect(stores.sort()).toEqual(['kv', 'other']);
   });
 
+  it('fails instead of hanging when another connection blocks the upgrade, then recovers', async () => {
+    await idbSet(key('x'), 1);
+    await new Promise<void>((resolve, reject) => {
+      const del = indexedDB.deleteDatabase('agstudio');
+      del.onsuccess = () => resolve();
+      del.onerror = () => reject(del.error);
+    });
+    // Another tab's connection (no kv store, ignores versionchange) keeps the database open.
+    const foreign = await new Promise<IDBDatabase>((resolve, reject) => {
+      const req = indexedDB.open('agstudio', 3);
+      req.onupgradeneeded = () => req.result.createObjectStore('other');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    await expect(idbGet(key('x'))).rejects.toThrow('in use by another AGstudio tab');
+    foreign.close();
+    expect(await idbGet(key('x'))).toBeUndefined();
+    await idbSet(key('x'), 2);
+    expect(await idbGet(key('x'))).toBe(2);
+  });
+
   it('reconnects after the database is deleted under it', async () => {
     await idbSet(key('before'), 1);
     await new Promise<void>((resolve, reject) => {

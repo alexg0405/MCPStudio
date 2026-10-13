@@ -49,8 +49,10 @@ export function register(services: Services): void {
     hint: 'Add an insert track to the mixer',
     run: (s) => void addMixerInsert(s),
   });
+  // FL's Ctrl+L, from either window.
   services.keymap.add([
-    { chord: 'Mod+L', command: 'mixer.routeSelectedChannel', when: { focus: ['mixer', 'channel-rack'] } },
+    { chord: 'Mod+L', command: 'mixer.routeSelectedChannel', when: { focus: ['mixer'] } },
+    { chord: 'Mod+L', command: 'mixer.routeSelectedChannel', when: { focus: ['channel-rack'] } },
   ]);
   addMenuItems('add', [cmd('mixer.addInsert', 50)]);
 

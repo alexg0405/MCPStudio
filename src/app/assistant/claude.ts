@@ -85,6 +85,17 @@ Example of the shape (2-bar trap in F minor; the 808 slides from F1 up to A♭1 
  "message":"A dark, bouncy trap loop: the hats roll into the clap and the 808 slides up at the end."}
 (The 808 note at step 22 starts before the one at 16 ends, so it glides up.)`;
 
+/** The performance block of a turn (what the musician beatboxed or hummed, on the grid). */
+export function performanceBlock(performance: PerformanceContext): string {
+  const meant = {
+    auto: 'figure it out from the sounds',
+    drums: 'drums (beatbox)',
+    '808': 'the 808 bass line',
+    melody: 'a melody',
+  }[performance.role];
+  return `<performance instrument="${meant}" bars="${performance.bars}" bpm="${performance.bpm}">\n${performance.summary}\n</performance>`;
+}
+
 function userText(prompt: string, project: string, performance?: PerformanceContext | null): string {
   let text = `<request>\n${prompt.trim() || 'Make a beat.'}\n</request>\n\n<project>\n${project}\n</project>`;
   if (performance) {
@@ -121,6 +132,90 @@ async function errorFrom(res: Response): Promise<AiError> {
     bad_output: 'bad-output',
   };
   return new AiError(message, kinds[type] ?? (res.status === 429 ? 'rate-limit' : 'other'));
+}
+
+/**
+ * A conversation with Claude through the AGstudio server: each turn sends a system prompt, a JSON
+ * schema for the answer and the turn's text; the server keeps the history (session id). `read`
+ * validates the answer; when it fails, Claude is told why once and asked again.
+ */
+export class ClaudeChat {
+  private session: string | null = null;
+
+  constructor(private readonly fetchImpl: typeof fetch = (...args) => fetch(...args)) {}
+
+  reset(): void {
+    this.session = null;
+  }
+
+  get sessionId(): string | null {
+    return this.session;
+  }
+
+  set sessionId(id: string | null) {
+    this.session = id;
+  }
+
+  get hasHistory(): boolean {
+    return this.session !== null;
+  }
+
+  async ask<T>(input: {
+    system: string;
+    schema: object;
+    text: string;
+    model: string;
+    backend: AiBackend;
+    signal?: AbortSignal;
+    read(raw: unknown): { value: T } | { error: string };
+  }): Promise<T> {
+    let text = input.text;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const reply = await postTurn(this.fetchImpl, {
+        backend: input.backend,
+        model: input.model,
+        session: this.session,
+        system: input.system,
+        schema: input.schema,
+        text,
+        ...(input.signal ? { signal: input.signal } : {}),
+      });
+      this.session = reply.session;
+      const checked = input.read(reply.beat);
+      if ('value' in checked) return checked.value;
+      text = `That answer can't be used: ${checked.error}. Send the whole answer again, fixed, in the required format.`;
+    }
+    throw new AiError("Claude's answer couldn't be used. Try rephrasing.", 'bad-output');
+  }
+}
+
+async function postTurn(
+  fetchImpl: typeof fetch,
+  body: {
+    backend: AiBackend;
+    model: string;
+    session: string | null;
+    system: string;
+    schema: object;
+    text: string;
+    signal?: AbortSignal;
+  },
+): Promise<{ session: string; beat: unknown }> {
+  const { signal, ...payload } = body;
+  let res: Response;
+  try {
+    res = await fetchImpl('/api/ai/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-agstudio': '1' },
+      body: JSON.stringify(payload),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new AiError("Couldn't reach the AGstudio server. Is `npm run dev` running?", 'network');
+  }
+  if (!res.ok) throw await errorFrom(res);
+  return (await res.json()) as { session: string; beat: unknown };
 }
 
 export class ClaudeBeatChat {
@@ -167,33 +262,21 @@ export class ClaudeBeatChat {
     throw new AiError("Claude's beat couldn't be used. Try rephrasing.", 'bad-output');
   }
 
-  private async call(
+  private call(
     backend: AiBackend,
     model: string,
     text: string,
     signal?: AbortSignal,
   ): Promise<{ session: string; beat: unknown }> {
-    let res: Response;
-    try {
-      res = await this.fetchImpl('/api/ai/beat', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-agstudio': '1' },
-        body: JSON.stringify({
-          backend,
-          model,
-          session: this.session,
-          system: SYSTEM_PROMPT,
-          schema: BEAT_JSON_SCHEMA,
-          text,
-        }),
-        ...(signal ? { signal } : {}),
-      });
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') throw e;
-      throw new AiError("Couldn't reach the AGstudio server. Is `npm run dev` running?", 'network');
-    }
-    if (!res.ok) throw await errorFrom(res);
-    return (await res.json()) as { session: string; beat: unknown };
+    return postTurn(this.fetchImpl, {
+      backend,
+      model,
+      session: this.session,
+      system: SYSTEM_PROMPT,
+      schema: BEAT_JSON_SCHEMA,
+      text,
+      ...(signal ? { signal } : {}),
+    });
   }
 }
 

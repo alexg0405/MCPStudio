@@ -341,3 +341,19 @@
 .toolbarButton {
   color: var(--ag-accent);
 }
+
+.changes {
+  margin: 4px 0 0 16px;
+  padding: 0;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.changes li::marker {
+  color: var(--ag-accent);
+}
+
+.warnings {
+  color: var(--ag-warning, #c9a24a);
+}

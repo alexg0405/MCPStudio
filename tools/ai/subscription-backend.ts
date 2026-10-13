@@ -123,7 +123,7 @@ interface CliResult {
 export function cliArgs(req: BeatRequest): string[] {
   const args = [
     '-p',
-    'Write the beat described below. Answer only with the beat in the required JSON format.',
+    'Do what the request below asks. Answer only in the required JSON format.',
     '--safe-mode',
     '--tools',
     '',

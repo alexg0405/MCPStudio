@@ -1,0 +1,289 @@
+/**
+ * What the AI answers with: a message for the musician and a list of actions on the project. A JSON
+ * schema for structured outputs (every object `additionalProperties: false`, ranges in descriptions —
+ * structured outputs take no numeric bounds; the applier validates and clamps everything).
+ */
+import { BEAT_JSON_SCHEMA } from '@core/beat/spec';
+
+const str = (description: string) => ({ type: 'string', description });
+const num = (description: string) => ({ type: 'number', description });
+const int = (description: string) => ({ type: 'integer', description });
+const bool = (description: string) => ({ type: 'boolean', description });
+
+const CHANNEL = str('A channel: its id (ch_…), its exact name, or @ref of a channel added earlier in this answer.');
+const INSERT = str(
+  'A mixer track: "master", its number ("3"), its id (ins_…), its name, or @ref of one added earlier.',
+);
+const EFFECT = str('An effect slot: its id (fx_…) or @ref of one added earlier in this answer.');
+const PATTERN = str('A pattern: "current", its id (pat_…), its exact name, or @ref of one added earlier.');
+const PLUGIN = str('Plugin id from the catalog (e.g. "agstudio.3xosc").');
+const REF = str('Optional name to refer to what this creates in later actions of the same answer, e.g. "@bass".');
+const PRESET = str('A preset name from the catalog for this plugin (applied before params).');
+const PARAMS = {
+  type: 'array',
+  description:
+    'Plugin settings: name = param id from the catalog; value in the unit listed there (params marked 0–1 % take 0–1, enums take an option id, on/off params take true/false).',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      name: { type: 'string' },
+      value: { anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'boolean' }] },
+    },
+    required: ['name', 'value'],
+  },
+};
+
+const op = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
+  type: 'object',
+  description,
+  additionalProperties: false,
+  properties: { op: { type: 'string', const: name }, ...properties },
+  required: ['op', ...required],
+});
+
+const { message: _message, ...beatProps } = BEAT_JSON_SCHEMA.properties;
+
+export const ACTION_OPS = [
+  op('song', 'Song settings.', {
+    bpm: num('Tempo in BPM (10–522).'),
+    swing: num('0..1 swing on even 1/16 steps.'),
+    key: str('Song key like "F minor", "C# dorian", or "none".'),
+    time_signature: str('Like "4/4" or "3/4".'),
+  }),
+  op(
+    'add_channel',
+    'Adds a channel to the channel rack with an instrument.',
+    {
+      ref: REF,
+      plugin: PLUGIN,
+      name: str('Channel name.'),
+      sample: str(
+        'For the Sampler: a built-in kit sound (kick, snare, clap, hat, open-hat, tom-low, tom-mid, tom-high, rim, cowbell, crash).',
+      ),
+      preset: PRESET,
+      params: PARAMS,
+      volume_db: num('Channel volume in dB (−60…+1.9; default −2.2).'),
+      pan: num('−1 (left) … 1 (right).'),
+      insert: { ...INSERT, description: `${INSERT.description} The mixer track it plays through (default Master).` },
+      color: str('A CSS hex color like "#c76b5b".'),
+    },
+    ['plugin'],
+  ),
+  op(
+    'edit_channel',
+    'Changes a channel. "plugin" swaps its instrument (settings reset unless params/preset are given).',
+    {
+      channel: CHANNEL,
+      name: str('New name.'),
+      plugin: PLUGIN,
+      preset: PRESET,
+      params: PARAMS,
+      volume_db: num('Channel volume in dB.'),
+      pan: num('−1 … 1.'),
+      mute: bool('Mute it.'),
+      solo: bool('Solo it.'),
+      pitch_cents: num('Channel pitch in cents (−2400…2400).'),
+      insert: INSERT,
+      color: str('Hex color.'),
+    },
+    ['channel'],
+  ),
+  op('remove_channel', 'Deletes a channel and its notes and clips.', { channel: CHANNEL }, ['channel']),
+  op('add_insert', 'Adds a mixer track (routed to Master).', {
+    ref: REF,
+    name: str('Track name, e.g. "Drum bus".'),
+    volume_db: num('Fader in dB (−60…+5.6).'),
+    pan: num('−1 … 1.'),
+    color: str('Hex color.'),
+  }),
+  op(
+    'edit_insert',
+    'Changes a mixer track.',
+    {
+      insert: INSERT,
+      name: str('New name.'),
+      volume_db: num('Fader in dB (−60…+5.6; 0 = unity).'),
+      pan: num('−1 … 1.'),
+      mute: bool('Mute it.'),
+      solo: bool('Solo it (FL-style: its sources keep playing).'),
+      color: str('Hex color.'),
+    },
+    ['insert'],
+  ),
+  op('remove_insert', 'Deletes a mixer track (its channels go to Master).', { insert: INSERT }, ['insert']),
+  op(
+    'add_effect',
+    'Adds an effect to a mixer track’s slots.',
+    {
+      ref: REF,
+      insert: INSERT,
+      plugin: PLUGIN,
+      preset: PRESET,
+      params: PARAMS,
+      mix: num('Dry/wet 0..1 (default 1).'),
+      enabled: bool('false to add it bypassed.'),
+      position: int('1-based slot position (default: after the last).'),
+    },
+    ['insert', 'plugin'],
+  ),
+  op(
+    'edit_effect',
+    'Changes an effect slot. "plugin" replaces the effect.',
+    {
+      effect: EFFECT,
+      plugin: PLUGIN,
+      preset: PRESET,
+      params: PARAMS,
+      mix: num('Dry/wet 0..1.'),
+      enabled: bool('false bypasses it.'),
+      position: int('Move it to this 1-based slot.'),
+    },
+    ['effect'],
+  ),
+  op('remove_effect', 'Removes an effect slot.', { effect: EFFECT }, ['effect']),
+  op(
+    'route',
+    'Sends a mixer track into another track (adds the route, or changes its level).',
+    {
+      from: INSERT,
+      to: INSERT,
+      level_db: num('Send level in dB (default 0).'),
+      pre: bool('Take it before the fader (pre-fader send).'),
+    },
+    ['from', 'to'],
+  ),
+  op('unroute', 'Removes the route from one track to another.', { from: INSERT, to: INSERT }, ['from', 'to']),
+  op(
+    'route_only',
+    'FL’s "Route to this track only": the track’s only route becomes `to`.',
+    { from: INSERT, to: INSERT },
+    ['from', 'to'],
+  ),
+  op(
+    'sidechain',
+    'Feeds an effect’s sidechain input (effects marked "has a sidechain input") from a mixer track, or "none".',
+    { effect: EFFECT, from: INSERT },
+    ['effect', 'from'],
+  ),
+  op('add_pattern', 'Adds an empty pattern.', {
+    ref: REF,
+    name: str('Pattern name.'),
+    bars: num('Length in bars (default: grows with its notes).'),
+  }),
+  op(
+    'edit_pattern',
+    'Changes a pattern.',
+    { pattern: PATTERN, name: str('New name.'), color: str('Hex color.'), bars: num('Length in bars.') },
+    ['pattern'],
+  ),
+  op('remove_pattern', 'Deletes a pattern and its playlist clips.', { pattern: PATTERN }, ['pattern']),
+  op(
+    'write_notes',
+    'Writes notes for one channel in a pattern.',
+    {
+      pattern: PATTERN,
+      channel: CHANNEL,
+      replace: bool("true (default) replaces that channel's notes in the pattern; false adds to them."),
+      notes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            step: num('1/16 step from the pattern start (bar b beat q = (b-1)*16+(q-1)*4); fractions allowed.'),
+            len: num('Length in steps (default 1).'),
+            key: int('MIDI note (C4 = 60). Omit for drum channels (they play their root key).'),
+            vel: num('Velocity 0..1 (default 0.8).'),
+          },
+          required: ['step'],
+        },
+      },
+    },
+    ['pattern', 'channel', 'notes'],
+  ),
+  op(
+    'clear_notes',
+    "Removes a channel's notes from a pattern (all channels when channel is omitted).",
+    { pattern: PATTERN, channel: CHANNEL },
+    ['pattern'],
+  ),
+  op(
+    'place_pattern',
+    'Places a pattern on the playlist (song mode).',
+    {
+      pattern: PATTERN,
+      bar: int('1-based bar where it starts.'),
+      track: int('1-based playlist track (default: the first free track there).'),
+      bars: num('Clip length in bars (default: the pattern length).'),
+      times: int('Place it this many times back to back (default 1).'),
+    },
+    ['pattern', 'bar'],
+  ),
+  op('clear_playlist', 'Removes playlist clips (all, or those overlapping the bars / on the track given).', {
+    from_bar: int('1-based first bar.'),
+    to_bar: int('1-based last bar (inclusive).'),
+    track: int('1-based playlist track.'),
+  }),
+  op(
+    'beat',
+    'Writes a complete drum/808/melody pattern (the beat writer; follow-ups with a beat change the same pattern).',
+    beatProps,
+    ['title', 'bars', 'tracks'],
+  ),
+  op('transport', 'Playback, applied after the edits.', {
+    action: { type: 'string', enum: ['play', 'stop'] },
+    mode: { type: 'string', enum: ['pattern', 'song'], description: 'Switch pattern/song mode first.' },
+    from_bar: int('1-based bar to play from (song mode).'),
+  }),
+  op('open', 'Shows a window, applied after the edits.', {
+    window: { type: 'string', enum: ['mixer', 'channel-rack', 'piano-roll', 'playlist', 'plugin'] },
+    channel: CHANNEL,
+    effect: EFFECT,
+  }),
+] as const;
+
+export const ACTIONS_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    message: {
+      type: 'string',
+      description:
+        'What you did (or your answer), in one to three plain sentences for the musician. If something they asked for is impossible, say so.',
+    },
+    actions: {
+      type: 'array',
+      description: 'The edits, in order (empty for questions). They are applied together as one undo step.',
+      items: { anyOf: ACTION_OPS },
+    },
+  },
+  required: ['message', 'actions'],
+} as const;
+
+/** A param value as the AI sends it. */
+export interface ParamEntry {
+  name: string;
+  value: number | string | boolean;
+}
+
+/** One action as received (validated field by field when applied). */
+export type AiAction = { op: string } & Record<string, unknown>;
+
+export interface AiAnswer {
+  message: string;
+  actions: AiAction[];
+}
+
+/** Checks the answer's outer shape; drops actions that aren't objects with a known op. */
+export function readAnswer(raw: unknown): { answer: AiAnswer; dropped: number } | { error: string } {
+  if (typeof raw !== 'object' || raw === null) return { error: 'the answer is not an object' };
+  const r = raw as Record<string, unknown>;
+  if (typeof r.message !== 'string') return { error: 'the answer has no message' };
+  if (!Array.isArray(r.actions)) return { error: 'the answer has no actions list' };
+  const known = new Set<string>(ACTION_OPS.map((o) => o.properties.op.const));
+  const actions = r.actions.filter(
+    (a): a is AiAction => typeof a === 'object' && a !== null && known.has((a as { op?: string }).op ?? ''),
+  );
+  return { answer: { message: r.message.trim(), actions }, dropped: r.actions.length - actions.length };
+}

@@ -523,6 +523,36 @@ _To be written by M11._
 
 _To be written by M12._
 
+## AI studio: the AI controls the project (M16a)
+
+The assistant window is an AI studio: every turn, Claude answers with `{ message, actions[] }`
+(`app/ai/schema.ts`, structured output: `anyOf` per op, closed objects, plugin settings as
+`[{ name, value }]`), and `app/ai/apply.ts` applies the actions as **one History transaction**
+(one undo step per answer).
+- **Ops**: `song` (tempo, swing, key, time signature), channels (`add_channel` with plugin, kit sample,
+  preset, params, volume, pan, mixer track; `edit_channel` incl. instrument swap; `remove_channel`),
+  mixer (`add_insert`, `edit_insert`, `remove_insert`, `add_effect`, `edit_effect` incl. replace and
+  move, `remove_effect`, `route`, `unroute`, `route_only`, `sidechain`), patterns (`add_pattern`,
+  `edit_pattern`, `remove_pattern`, `write_notes`, `clear_notes`), the playlist (`place_pattern`,
+  `clear_playlist`), `beat` (the beat writer, sharing `planBeat`/`writeBeat` with the beat assistant),
+  and after the edit `transport` (play/stop/mode) and `open` (windows).
+- **References**: ids from the context, exact names, mixer numbers or "master", and `@refs` for things
+  created earlier in the same answer. Plugin settings are coerced to each param's spec (option ids or
+  labels, on/off, "50" for a 0–1 % param, clamped ranges); levels are dB. An action that can't apply is
+  skipped with a warning (shown in the chat and sent back with the next turn); the rest still apply.
+- **Context** (`app/ai/context.ts`) each turn: song, channels with non-default plugin settings and
+  routing, mixer tracks with levels, routes, effects (settings, bypass, sidechains), patterns (notes of
+  the current one), playlist clips and the selection. The **plugin catalog** (`app/ai/catalog.ts`:
+  every param with type, range, unit, default, plus presets) is sent at the start of a conversation
+  and whenever it changes. The system prompt (`app/ai/prompt.ts`) carries the control rules and the
+  beat/mixing know-how.
+- **Transport**: `ClaudeChat` (`app/assistant/claude.ts`) posts each turn to `/api/ai/chat` (`/beat`
+  still works) with the system prompt, schema and text; a malformed answer is sent back once for a fix.
+  The subscription backend's CLI prompt is task-neutral. Without Claude, beat requests still go to the
+  offline generator.
+- **Rule for new features**: each feature adds its ops here (and what the context needs), so the AI can
+  drive it.
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all

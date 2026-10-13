@@ -20,12 +20,13 @@ const IDEAS = [
   'Dark trap at 140, 808s that slide',
   'Boom bap at 90 with swing',
   'Drill with sliding 808s',
-  'Chill lofi',
-  'House at 124',
   'Busier hats',
-  'Simpler',
   'More 808 slides',
-  'Make a variation',
+  'Put the snare on its own track with a plate reverb',
+  'Make a reverb bus and send the lead to it',
+  'Swap the lead for a pluck',
+  'Turn the 808 down 3 dB',
+  'Arrange it: 4 bars, then 8 bars with the hats',
 ];
 
 export function AssistantWindow() {
@@ -180,9 +181,9 @@ function Header({ st }: { st: AssistantState }) {
         className={styles.small}
         disabled={st.phase !== 'idle' || st.messages.length === 0}
         onClick={() => a.newBeat()}
-        data-hint="Start over: the next request makes a new pattern"
+        data-hint="Start over: a new conversation (the next beat makes a new pattern)"
       >
-        New beat
+        New chat
       </button>
     </div>
   );
@@ -200,10 +201,12 @@ function Messages({ st }: { st: AssistantState }) {
         <div className={styles.intro}>
           <Icon name="sparkle" size={18} />
           <p>
-            Describe a beat, or perform part of it: <b>beatbox</b> the drums or <b>hum</b> an 808 line, then say what
-            you want.
+            Ask for anything: a <b>beat</b> (“dark trap at 140”), a change to your <b>mixer</b> or <b>plugins</b>
+            (“add reverb to the snare”, “swap the lead for the supersaw”), routing, tempo or the song arrangement.
           </p>
-          <p className={styles.dim}>Try “dark trap at 140, 808s that go like this” after recording a take.</p>
+          <p className={styles.dim}>
+            You can also perform: <b>beatbox</b> the drums or <b>hum</b> an 808 line, then say “808s that go like this”.
+          </p>
         </div>
       )}
       {st.messages.map((m) => (
@@ -217,37 +220,56 @@ function Messages({ st }: { st: AssistantState }) {
 function Message({ m }: { m: AssistantMessage }) {
   const services = useServices();
   const status = useHistoryStatus();
-  const canUndo = !!m.beat && status.cursor === m.beat.cursor;
+  const undoAt = m.undo ?? m.beat?.cursor;
+  const canUndo = undoAt !== undefined && status.cursor === undoAt;
   return (
     <div className={`${styles.message} ${m.from === 'you' ? styles.mine : ''} ${m.error ? styles.errorMessage : ''}`}>
       <div className={styles.bubble}>
         {m.from === 'assistant' && !m.error && <Icon name="sparkle" size={12} className={styles.spark} />}
         {m.text}
       </div>
-      {(m.detail || m.offline || m.beat) && (
+      {m.changes && m.changes.length > 0 && (
+        <ul className={styles.changes}>
+          {m.changes.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+      )}
+      {m.warnings && m.warnings.length > 0 && (
+        <ul className={`${styles.changes} ${styles.warnings}`}>
+          {m.warnings.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+      )}
+      {(m.detail || m.offline || m.beat || undoAt !== undefined) && (
         <div className={styles.detail}>
           {m.detail}
           {m.offline && <span className={styles.badge}>offline</span>}
           {m.beat && (
-            <>
-              <button
-                className={styles.link}
-                onClick={() => {
-                  services.view.getState().setMode('pattern');
-                  services.engine.play();
-                }}
-              >
-                Play
-              </button>
-              <button
-                className={styles.link}
-                disabled={!canUndo}
-                onClick={() => services.history.undo()}
-                data-hint={canUndo ? 'Undo this beat' : 'Use Undo (Cmd+Z) to step back through later changes first'}
-              >
-                Undo
-              </button>
-            </>
+            <button
+              className={styles.link}
+              onClick={() => {
+                services.view.getState().setMode('pattern');
+                services.engine.play();
+              }}
+            >
+              Play
+            </button>
+          )}
+          {undoAt !== undefined && (
+            <button
+              className={styles.link}
+              disabled={!canUndo}
+              onClick={() => services.history.undo()}
+              data-hint={
+                canUndo
+                  ? 'Undo everything this answer did'
+                  : 'Use Undo (Cmd+Z) to step back through later changes first'
+              }
+            >
+              Undo
+            </button>
           )}
         </div>
       )}
@@ -266,7 +288,7 @@ function Thinking() {
     <div className={styles.message}>
       <div className={`${styles.bubble} ${styles.thinking}`}>
         <Icon name="sparkle" size={12} className={styles.spark} />
-        Writing your beat… {seconds > 2 ? `${seconds}s` : ''}
+        Working on it… {seconds > 2 ? `${seconds}s` : ''}
       </div>
     </div>
   );

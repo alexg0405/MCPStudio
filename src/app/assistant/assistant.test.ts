@@ -96,10 +96,16 @@ describe('BeatAssistant', () => {
           session: 'sess-1',
           model: 'claude-opus-5-5',
           beat: {
-            title: 'Claude beat',
             message: 'Here you go.',
-            bars: 1,
-            tracks: [{ name: 'Kick', sound: 'kick', notes: [{ step: 0 }, { step: 8 }] }],
+            actions: [
+              {
+                op: 'beat',
+                title: 'Claude beat',
+                bars: 1,
+                tracks: [{ name: 'Kick', sound: 'kick', notes: [{ step: 0 }, { step: 8 }] }],
+              },
+              { op: 'song', bpm: 126 },
+            ],
           },
         }),
         { status: 200 },
@@ -109,8 +115,19 @@ describe('BeatAssistant', () => {
     await a.send('four on the floor');
     let st = a.store.getState();
     expect(calls[0]).toMatchObject({ backend: 'subscription', session: null });
-    expect(st.messages[1]).toMatchObject({ text: 'Here you go.', offline: false });
+    expect(st.messages[1]).toMatchObject({ text: 'Here you go.' });
+    expect(st.messages[1]?.offline).toBeUndefined();
+    expect(st.messages[1]?.changes).toEqual(['Wrote the beat “Claude beat” (Kick)', 'Song: tempo 126 BPM']);
     expect(s.doc.getState().project.patterns[st.applied!.patternId]?.name).toBe('Claude beat');
+    expect(s.doc.getState().project.transport.bpm).toBe(126);
+    // The first turn carries the plugin catalog and the project; later ones only what changed.
+    expect(String(calls[0]!.text)).toContain('<plugins>');
+    expect(String(calls[0]!.text)).toContain('<project>');
+    // One undo step undoes the whole answer.
+    s.history.undo();
+    expect(s.doc.getState().project.transport.bpm).not.toBe(126);
+    expect(s.doc.getState().project.patterns[st.applied!.patternId]).toBeUndefined();
+    s.history.redo();
     await a.send('busier');
     st = a.store.getState();
     expect(calls[1]).toMatchObject({ session: 'sess-1' });

@@ -13,10 +13,22 @@ import {
 import type { RecordingHandle } from '@engine/api';
 import { openMic, type MicInput } from '@platform/mic';
 import type { Services } from '../services';
+import { applyAnswer, type AfterEdit } from '../ai/apply';
+import { pluginCatalog } from '../ai/catalog';
+import { projectContext } from '../ai/context';
+import { STUDIO_PROMPT } from '../ai/prompt';
+import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
 import { applyBeatSpec, type AppliedBeat } from './apply';
 import { importMySounds } from './my-sounds';
-import { AiError, ClaudeBeatChat, DEFAULT_MODEL, fetchAiStatus, type AiBackend, type AiStatus } from './claude';
-import { describeProject } from './context';
+import {
+  AiError,
+  ClaudeChat,
+  DEFAULT_MODEL,
+  fetchAiStatus,
+  performanceBlock,
+  type AiBackend,
+  type AiStatus,
+} from './claude';
 
 /**
  * The beat assistant: you describe a beat (and optionally perform part of it with your voice); it
@@ -37,6 +49,12 @@ export interface AssistantMessage {
   offline?: boolean;
   /** Undo point for this beat (history cursor right after applying it). */
   beat?: { title: string; cursor: number };
+  /** What an AI turn changed, one line each. */
+  changes?: string[];
+  /** What it couldn't do. */
+  warnings?: string[];
+  /** Undo point of an AI turn that edited the project (history cursor right after it). */
+  undo?: number;
 }
 
 /** A performance on the grid, ready to go with the next request. */
@@ -74,6 +92,8 @@ export interface AssistantState {
   mySounds: boolean;
   /** The pattern the assistant is working on (follow-ups change it). */
   applied: AppliedBeat | null;
+  /** Windows the last answer asked to show (the UI opens them and clears this). */
+  uiRequests: AfterEdit[];
 }
 
 let messageSeq = 0;
@@ -91,7 +111,11 @@ function loadPrefs(): Partial<AssistantState> {
 
 export class BeatAssistant {
   readonly store: StoreApi<AssistantState>;
-  private readonly chat: ClaudeBeatChat;
+  private readonly chat: ClaudeChat;
+  /** Catalog key Claude has in this conversation (sent again when the plugins change). */
+  private catalogSent: string | null = null;
+  /** What the last turn couldn't do, told to Claude with the next request. */
+  private lastProblems: string[] = [];
   private readonly fetchImpl: typeof fetch;
   private handle: RecordingHandle | null = null;
   private mic: MicInput | null = null;
@@ -104,7 +128,7 @@ export class BeatAssistant {
     deps: { fetch?: typeof fetch } = {},
   ) {
     this.fetchImpl = deps.fetch ?? ((...args) => fetch(...args));
-    this.chat = new ClaudeBeatChat(this.fetchImpl);
+    this.chat = new ClaudeChat(this.fetchImpl);
     const saved = loadPrefs();
     this.store = createStore<AssistantState>()(() => ({
       phase: 'idle',
@@ -124,6 +148,7 @@ export class BeatAssistant {
       autoplay: saved.autoplay ?? true,
       mySounds: saved.mySounds ?? false,
       applied: null,
+      uiRequests: [],
     }));
     this.restoreTab();
     this.store.subscribe(() => this.scheduleTabSave());
@@ -177,6 +202,7 @@ export class BeatAssistant {
           applied,
           take: take ? { ...take, audio: null } : null,
           chat: this.chat.sessionId,
+          catalog: this.catalogSent,
           offlinePrompt: this.offlinePrompt,
         }),
       );
@@ -198,6 +224,7 @@ export class BeatAssistant {
       applied: AppliedBeat;
       take: Take;
       chat: string;
+      catalog: string;
       offlinePrompt: string;
     }>;
     const messages = Array.isArray(r.messages) ? r.messages.filter((m) => typeof m?.text === 'string') : [];
@@ -206,6 +233,7 @@ export class BeatAssistant {
     const take = r.take && Array.isArray(r.take.events) ? { ...r.take, audio: null } : null;
     this.store.setState({ messages, applied, take });
     if (typeof r.chat === 'string') this.chat.sessionId = r.chat;
+    if (typeof r.catalog === 'string') this.catalogSent = r.catalog;
     if (typeof r.offlinePrompt === 'string') this.offlinePrompt = r.offlinePrompt;
   }
 
@@ -413,19 +441,21 @@ export class BeatAssistant {
       const abort = new AbortController();
       this.abort = abort;
       try {
-        const res = await this.chat.request({
-          prompt: text || 'Make a beat from my performance.',
-          project: describeProject(project, this.s.view.getState().currentPatternId),
-          performance:
-            take && !take.sent
-              ? { summary: `${VOICE_SUMMARY_LEGEND}\n${take.summary}`, role: take.role, bars: take.bars, bpm: take.bpm }
-              : null,
+        const answer = await this.chat.ask<AiAnswer>({
+          system: STUDIO_PROMPT,
+          schema: ACTIONS_SCHEMA,
+          text: this.turnText(text || 'Make a beat from my performance.', take),
           model: st.model,
           backend: route,
           signal: abort.signal,
+          read: (raw) => {
+            const r = readAnswer(raw);
+            return 'error' in r ? { error: r.error } : { value: r.answer };
+          },
         });
-        spec = res.spec;
         if (take) this.store.setState({ take: { ...take, sent: true } });
+        this.applyTurn(answer, take, text);
+        return;
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
           this.say('assistant', 'Stopped.', {});
@@ -472,14 +502,93 @@ export class BeatAssistant {
     }
   }
 
+  /** This turn's message to Claude: the request, the project, and what Claude doesn't have yet. */
+  private turnText(prompt: string, take: Take | null): string {
+    const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
+    const catalog = pluginCatalog(this.s.plugins);
+    if (!this.chat.hasHistory || this.catalogSent !== catalog.key) {
+      parts.push(`<plugins>\n${catalog.text}\n</plugins>`);
+      this.catalogSent = catalog.key;
+    }
+    if (take && !take.sent)
+      parts.push(
+        performanceBlock({
+          summary: `${VOICE_SUMMARY_LEGEND}\n${take.summary}`,
+          role: take.role,
+          bars: take.bars,
+          bpm: take.bpm,
+        }),
+      );
+    if (this.lastProblems.length)
+      parts.push(
+        `<last-turn-problems>\nThese actions of your last answer couldn't be applied:\n- ${this.lastProblems.join('\n- ')}\n</last-turn-problems>`,
+      );
+    return parts.join('\n\n');
+  }
+
+  /** Applies Claude's answer as one undo step and reports it in the chat. */
+  private applyTurn(answer: AiAnswer, take: Take | null, request: string): void {
+    let result: ReturnType<typeof applyAnswer>;
+    try {
+      result = applyAnswer(this.s, answer, {
+        previousBeat: this.store.getState().applied,
+        ...(request ? { label: request } : {}),
+      });
+    } catch (e) {
+      console.error('[agstudio] applying the AI answer failed', e);
+      this.say('assistant', `Something went wrong applying that: ${e instanceof Error ? e.message : e}`, {
+        error: true,
+      });
+      this.store.setState({ phase: 'idle' });
+      return;
+    }
+    this.lastProblems = result.warnings;
+    const cursor = this.s.history.status().cursor;
+    this.say('assistant', answer.message || (result.changes.length ? 'Done.' : 'Nothing to change.'), {
+      ...(result.changes.length ? { changes: result.changes } : {}),
+      ...(result.warnings.length ? { warnings: result.warnings } : {}),
+      ...(result.edited ? { undo: cursor } : {}),
+      ...(result.beat
+        ? { beat: { title: this.s.doc.getState().project.patterns[result.beat.patternId]?.name ?? 'Beat', cursor } }
+        : {}),
+    });
+    this.store.setState({
+      phase: 'idle',
+      ...(result.beat ? { applied: result.beat } : {}),
+      uiRequests: result.after.filter((a) => a.kind === 'open'),
+    });
+    void take;
+    // Playback the answer asked for (or a new beat with autoplay on).
+    for (const a of result.after) {
+      if (a.kind === 'mode') this.s.view.getState().setMode(a.mode);
+      else if (a.kind === 'stop') this.s.engine.stop();
+      else if (a.kind === 'play') {
+        if (a.mode) this.s.view.getState().setMode(a.mode);
+        this.s.engine.play(a.fromTick ?? 0);
+      }
+    }
+    const played = result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
+    if (result.beat && !played && this.store.getState().autoplay) {
+      this.s.view.getState().setMode('pattern');
+      this.s.engine.play();
+    }
+  }
+
+  /** The UI opened the windows the last answer asked for. */
+  clearUiRequests(): void {
+    if (this.store.getState().uiRequests.length) this.store.setState({ uiRequests: [] });
+  }
+
   /** Stops waiting for Claude. */
   cancel(): void {
     this.abort?.abort();
   }
 
-  /** Forgets the conversation: the next request makes a new pattern. */
+  /** Forgets the conversation: the next request starts fresh (and makes a new pattern). */
   newBeat(): void {
     this.chat.reset();
+    this.catalogSent = null;
+    this.lastProblems = [];
     this.offlinePrompt = '';
     this.store.setState({ applied: null, messages: [], take: this.store.getState().take });
   }

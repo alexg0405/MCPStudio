@@ -7,7 +7,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 
 | Action | Keys |
 |---|---|
-| Beat assistant | `⌥6` / `Alt+6` |
+| AI studio | `⌥6` / `Alt+6` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
 | Export WAV… | `⌘R` / `Ctrl+R` |

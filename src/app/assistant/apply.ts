@@ -1,3 +1,4 @@
+import type { Draft } from 'immer';
 import type { ParamSpec } from '@agstudio/sdk/params';
 import { defaultValues, type PluginDef } from '@agstudio/sdk';
 import { DRUM_SOUNDS, type BeatSound, type BeatSpec, type BeatTrack } from '@core/beat/spec';
@@ -121,7 +122,46 @@ export function applyBeatSpec(
   previous?: AppliedBeat | null,
   opts: ApplyOptions = {},
 ): AppliedBeat {
-  const project = s.doc.getState().project;
+  const plan = planBeat(s, s.doc.getState().project, spec, previous, opts);
+  s.history.transact(`Assistant: ${spec.title}`, (d) => writeBeat(s, d, spec, plan));
+  return showBeat(s, plan);
+}
+
+/** Where each track of a beat goes (decided before the edit: new channels are built outside the recipe). */
+export interface BeatPlan {
+  patternId: PatternId;
+  reuse: AppliedBeat | null;
+  channels: Record<string, ChannelId>;
+  created: Set<ChannelId>;
+  tracks: {
+    track: BeatTrack;
+    channelId: ChannelId;
+    make?: InstrumentChannel;
+    sample?: SampleRef;
+    /** A sampler channel of the assistant's that now plays this sample. */
+    swap?: SampleRef;
+  }[];
+}
+
+/** Selects the beat's pattern and first channel; returns where the beat lives (for follow-ups). */
+export function showBeat(s: Services, plan: BeatPlan): AppliedBeat {
+  s.view.getState().setCurrentPattern(plan.patternId);
+  const first = Object.values(plan.channels)[0];
+  if (first) s.session.getState().selectChannel(first);
+  return { patternId: plan.patternId, channels: plan.channels, created: [...plan.created] };
+}
+
+/**
+ * Plans a beat against a project (or a draft of one, inside a larger edit): which channels its tracks
+ * reuse and which it creates.
+ */
+export function planBeat(
+  s: Services,
+  project: Project,
+  spec: BeatSpec,
+  previous?: AppliedBeat | null,
+  opts: ApplyOptions = {},
+): BeatPlan {
   const reuse = previous && project.patterns[previous.patternId] ? previous : null;
   const patternId = reuse?.patternId ?? newId.pattern();
   const channels: Record<string, ChannelId> = {};
@@ -179,7 +219,14 @@ export function applyBeatSpec(
     plan.push({ track, channelId: ch.id, make: ch, ...(sample ? { sample } : {}) });
   }
 
-  s.history.transact(`Assistant: ${spec.title}`, (d) => {
+  return { patternId, reuse, channels, created, tracks: plan };
+}
+
+/** Writes a planned beat into a draft (part of an undoable edit). */
+export function writeBeat(s: Services, d: Draft<Project>, spec: BeatSpec, beat: BeatPlan): void {
+  const { patternId, reuse, created } = beat;
+  const plan = beat.tracks;
+  {
     if (spec.bpm !== undefined && spec.bpm !== d.transport.bpm) setBpm(d, spec.bpm);
     if (spec.swing !== undefined) setSwing(d, spec.swing);
     let pattern = d.patterns[patternId];
@@ -222,9 +269,5 @@ export function applyBeatSpec(
       for (const n of notesFor(track, ch.rootKey)) byId[n.id] = n;
       pattern.notes[channelId] = byId as never;
     }
-  });
-  s.view.getState().setCurrentPattern(patternId);
-  const first = Object.values(channels)[0];
-  if (first) s.session.getState().selectChannel(first);
-  return { patternId, channels, created: [...created] };
+  }
 }

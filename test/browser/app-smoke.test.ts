@@ -116,7 +116,7 @@ describe('app smoke test', () => {
 
   it('writes a beat from a description with the assistant window (offline generator)', async () => {
     s.commands.run('view.assistant');
-    await until(() => host.textContent!.includes('Describe a beat'));
+    await until(() => host.textContent!.includes('Ask for anything'));
     // The test server has no Claude key or Claude Code: the offline generator writes the beat.
     s.assistant.set({ backend: 'offline' });
     await until(() => s.assistant.store.getState().status !== null);

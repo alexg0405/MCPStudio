@@ -5,10 +5,10 @@ import { subscriptionBackend } from './subscription-backend.ts';
 import { AiServerError, type Backend, type BackendId, type BeatRequest } from './types.ts';
 
 /**
- * The beat assistant's server side, on the dev and preview servers (the browser never holds a key):
+ * The AI studio's server side, on the dev and preview servers (the browser never holds a key):
  *
  *   GET  /api/ai/status → { subscription: BackendStatus, api: BackendStatus }
- *   POST /api/ai/beat   → BeatRequest → BeatReply, or { error: { type, message } }
+ *   POST /api/ai/chat   → BeatRequest → BeatReply, or { error: { type, message } } (also /api/ai/beat)
  *
  * Two ways to reach Claude: the musician's Claude subscription through their signed-in Claude Code
  * CLI, or an API key from .env.local through the Anthropic SDK. Only same-origin requests carrying
@@ -95,7 +95,7 @@ export function aiServer(env: () => Record<string, string | undefined>): Plugin 
       send(res, 200, { subscription, api });
       return;
     }
-    if (path !== '/beat') return next();
+    if (path !== '/chat' && path !== '/beat') return next();
     if (req.method !== 'POST') return fail(res, 405, 'invalid_request_error', 'Use POST.');
     if (req.headers['x-agstudio'] !== '1' || !sameOrigin(req))
       return fail(res, 403, 'permission_error', 'Only AGstudio itself may use this endpoint.');

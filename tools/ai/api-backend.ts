@@ -70,7 +70,7 @@ export function apiBackend(getKey: () => string | undefined): Backend {
         throw new AiServerError(`Claude declined this request${why ? `: ${why}` : '.'}`, 'refusal', 422);
       }
       if (message.stop_reason === 'max_tokens')
-        throw new AiServerError('The beat came back cut off. Ask for fewer bars or tracks.', 'max_tokens', 502);
+        throw new AiServerError('The answer came back cut off. Ask for a little less at once.', 'max_tokens', 502);
       const text = message.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
       let beat: unknown;
       try {

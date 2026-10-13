@@ -87,12 +87,14 @@ export function register(services: Services): void {
     id: 'help.shortcuts',
     title: 'Keyboard shortcuts',
     category: 'Help',
+    hint: 'Every keyboard shortcut, grouped by window',
     run: (s) => toggleWindow(s, 'shortcuts'),
   });
   commands.register({
     id: 'help.about',
     title: 'About AGstudio',
     category: 'Help',
+    hint: 'Which version this is',
     run: (s) =>
       s.session.getState().toast('AGstudio 0.1: an FL Studio-style DAW you can extend with your own plugins.'),
   });

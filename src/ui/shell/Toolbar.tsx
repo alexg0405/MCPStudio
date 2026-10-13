@@ -24,6 +24,7 @@ export function CommandButton({
   label,
   args,
   className,
+  tour,
   children,
 }: {
   command: string;
@@ -31,6 +32,8 @@ export function CommandButton({
   label?: string;
   args?: unknown;
   className?: string;
+  /** Anchor for the guided tour (`data-tour`). */
+  tour?: string;
   children?: ReactNode;
 }) {
   const services = useServices();
@@ -49,6 +52,7 @@ export function CommandButton({
       data-hint={hint}
       aria-label={title}
       aria-pressed={def?.checked ? checked : undefined}
+      data-tour={tour}
     >
       {icon && <Icon name={icon} />}
       {label && <span>{label}</span>}
@@ -58,10 +62,22 @@ export function CommandButton({
 }
 
 function HintBar() {
+  const services = useServices();
   const hint = useSession((s) => s.hint);
+  const chord = services.keymap.chordsFor('help.palette')[0];
   return (
-    <div className={styles.hintBar} title={hint}>
-      {hint || ' '}
+    <div className={styles.hintBar} title={hint} data-tour="hints">
+      {hint || (
+        <span className={styles.hintIdle}>
+          Point at anything to see what it does
+          {chord && (
+            <>
+              {' · '}
+              <kbd>{formatChord(chord, services.platform)}</kbd> finds any action
+            </>
+          )}
+        </span>
+      )}
     </div>
   );
 }
@@ -90,14 +106,14 @@ export function Toolbar() {
         </div>
         <HintBar />
       </div>
-      <div className={styles.toolbarGroup}>
+      <div className={styles.toolbarGroup} data-tour="transport">
         <ToolbarSlots area="transport" />
       </div>
       <div className={`${styles.toolbarGroup} ${styles.toolbarGroupShrink}`}>
         <ToolbarSlots area="center" />
       </div>
       <div className={styles.toolbarSpacer} />
-      <div className={styles.toolbarGroup}>
+      <div className={styles.toolbarGroup} data-tour="windows">
         <ToolbarSlots area="right" />
       </div>
     </header>

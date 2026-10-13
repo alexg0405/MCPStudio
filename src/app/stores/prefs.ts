@@ -19,6 +19,12 @@ export interface PrefsState {
   recordQuantize: number;
   /** Recording over existing notes adds to them or replaces what it passes over. */
   recordMode: 'overdub' | 'replace';
+  /** Hover a control for a moment to see what it does (the hint bar shows it either way). */
+  tooltips: boolean;
+  /** The welcome dialog was closed once; it no longer opens by itself. */
+  welcomeSeen: boolean;
+  /** Most recent first: what the action search ranks higher. */
+  recentActions: string[];
 }
 
 export interface PrefsActions {
@@ -38,12 +44,23 @@ const DEFAULTS: PrefsState = {
   countInBars: 1,
   recordQuantize: 0,
   recordMode: 'overdub',
+  tooltips: true,
+  welcomeSeen: false,
+  recentActions: [],
 };
 
 function load(): PrefsState {
   try {
     const raw = globalThis.localStorage?.getItem(KEY);
-    return raw ? { ...DEFAULTS, ...(JSON.parse(raw) as Partial<PrefsState>) } : DEFAULTS;
+    if (!raw) return DEFAULTS;
+    const saved = JSON.parse(raw) as Record<string, unknown>;
+    // Known keys with the right type only: a stale or hand-edited entry falls back to its default.
+    const out: Record<string, unknown> = { ...DEFAULTS };
+    for (const [k, v] of Object.entries(DEFAULTS)) {
+      const got = saved[k];
+      if (got !== undefined && typeof got === typeof v && Array.isArray(got) === Array.isArray(v)) out[k] = got;
+    }
+    return out as unknown as PrefsState;
   } catch {
     return DEFAULTS;
   }
@@ -56,8 +73,8 @@ export function createPrefsStore(): PrefsStore {
   }));
   store.subscribe((s) => {
     try {
-      const { typingPiano, pianoOctave, midiInput } = s;
-      globalThis.localStorage?.setItem(KEY, JSON.stringify({ typingPiano, pianoOctave, midiInput }));
+      const saved = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, s[k as keyof PrefsState]]));
+      globalThis.localStorage?.setItem(KEY, JSON.stringify(saved));
     } catch {
       /* storage unavailable */
     }

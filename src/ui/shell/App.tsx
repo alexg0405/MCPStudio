@@ -7,6 +7,7 @@ import { DialogHost } from '../controls/Dialog';
 import { useServices, useSession } from '../services-context';
 import { Workspace } from '../workspace/Workspace';
 import { Browser } from './Browser';
+import { HoverTip } from './HoverTip';
 import { Toolbar } from './Toolbar';
 import { getOverlays, overlaysVersion, subscribeOverlays } from './overlays';
 import styles from './Shell.module.css';
@@ -74,6 +75,7 @@ export function App() {
         <Overlays />
         <DialogHost />
         <FormDialogHost />
+        <HoverTip />
       </div>
     </HostParamMenus>
   );

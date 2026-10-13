@@ -270,3 +270,55 @@
 .toastError {
   border-left: 3px solid var(--ag-danger);
 }
+
+/* Hover tooltips (HoverTip): a control's data-hint, shown next to it. */
+.tip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 500000;
+  max-width: 340px;
+  padding: 5px 8px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: 4px;
+  background: #11161a;
+  color: var(--ag-text);
+  font-size: 11.5px;
+  line-height: 1.4;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  white-space: pre-line;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip kbd {
+  margin-left: 8px;
+  padding: 0 4px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: 3px;
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font);
+  font-size: 10.5px;
+}
+
+.tipLive {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* What the hint bar says when nothing is hovered. */
+.hintIdle {
+  color: var(--ag-text-faint);
+}
+
+.hintIdle kbd {
+  padding: 0 3px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: 2px;
+  font-family: var(--ag-font);
+  font-size: 10px;
+}

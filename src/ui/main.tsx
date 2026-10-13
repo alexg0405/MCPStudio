@@ -72,3 +72,6 @@ createRoot(root).render(
 );
 
 if (start.recovery.length > 0) void offerRecovery(services, start.recovery, persistence);
+// First start: say what everything is (Help → Getting started brings it back). Not over crash recovery.
+else if (!services.prefs.getState().welcomeSeen && !new URLSearchParams(location.search).has('perf'))
+  services.commands.run('help.welcome');

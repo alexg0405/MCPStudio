@@ -127,6 +127,18 @@
   font: inherit;
 }
 
+.number {
+  flex: none;
+  width: 96px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fieldRange {
+  margin-left: auto;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+}
+
 .input:focus-visible {
   outline: 2px solid var(--ag-select);
   outline-offset: 0;

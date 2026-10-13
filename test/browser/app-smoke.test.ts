@@ -138,6 +138,21 @@ describe('app smoke test', () => {
     s.engine.stop();
   }, 30_000);
 
+  it('finds and runs an action by typing what you want (action search)', async () => {
+    const before = s.prefs.getState().metronome;
+    s.commands.run('help.palette');
+    await until(() => !!host.querySelector('[aria-label="Search actions"]'));
+    const input = host.querySelector('[aria-label="Search actions"] input') as HTMLInputElement;
+    // "click" is what newcomers call the metronome.
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'click');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await until(() => !!host.querySelector('[role="option"][aria-selected="true"]')?.textContent?.includes('Metronome'));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await until(() => s.prefs.getState().metronome !== before);
+    expect(host.querySelector('[aria-label="Search actions"]')).toBeNull();
+    s.prefs.getState().set({ metronome: before });
+  });
+
   it('logged no errors', () => {
     expect(errors).toEqual([]);
   });

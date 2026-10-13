@@ -81,7 +81,7 @@ export function Browser() {
   };
 
   return (
-    <aside className={styles.browser} style={{ width: browser.width }}>
+    <aside className={styles.browser} style={{ width: browser.width }} data-tour="browser">
       <div className={styles.header}>
         <span>Browser</span>
       </div>

@@ -54,6 +54,11 @@ export function register(services: Services): void {
     area: 'center',
     order: 1,
     component: () =>
-      createElement(CommandButton, { command: 'view.assistant', icon: 'sparkle', className: styles.toolbarButton }),
+      createElement(CommandButton, {
+        command: 'view.assistant',
+        icon: 'sparkle',
+        className: styles.toolbarButton,
+        tour: 'assistant',
+      }),
   });
 }

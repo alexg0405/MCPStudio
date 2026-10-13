@@ -14,6 +14,8 @@ export type FormField =
   | { kind: 'param'; key: string; spec: ParamSpec }
   | { kind: 'text'; key: string; label: string; placeholder?: string; multiline?: boolean }
   | { kind: 'choice'; key: string; label: string; options: readonly { value: string; label: string }[] }
+  /** A typed number (tempo, bars…): clearer than a knob when the exact value matters. */
+  | { kind: 'number'; key: string; label: string; min: number; max: number; step?: number | 'any'; unit?: string }
   | { kind: 'info'; text: string };
 
 export type FormValues = Record<string, ParamValue>;
@@ -52,6 +54,35 @@ function finish(open: Open, values: FormValues | null): void {
 export function FormDialogHost() {
   const open = useStore(formStore, (s) => s.open);
   return open ? <Form key={String(open.options.title)} open={open} /> : null;
+}
+
+/** Reports only in-range numbers while typing; leaving the field shows the last good value again. */
+function NumberField({
+  field,
+  value,
+  onChange,
+}: {
+  field: Extract<FormField, { kind: 'number' }>;
+  value: number;
+  onChange(v: number): void;
+}) {
+  const [text, setText] = useState(String(value));
+  return (
+    <input
+      type="number"
+      className={`${styles.input} ${styles.number}`}
+      value={text}
+      min={field.min}
+      max={field.max}
+      step={field.step ?? 1}
+      onChange={(e) => {
+        setText(e.target.value);
+        const n = Number(e.target.value);
+        if (e.target.value.trim() !== '' && Number.isFinite(n) && n >= field.min && n <= field.max) onChange(n);
+      }}
+      onBlur={() => setText(String(value))}
+    />
+  );
 }
 
 function Form({ open }: { open: Open }) {
@@ -122,6 +153,17 @@ function Form({ open }: { open: Open }) {
                       onChange={(e) => set(f.key, e.target.value)}
                     />
                   )}
+                </label>
+              );
+            if (f.kind === 'number')
+              return (
+                <label key={f.key} className={styles.field}>
+                  <span className={styles.fieldLabel}>{f.label}</span>
+                  <NumberField field={f} value={Number(values[f.key] ?? f.min)} onChange={(v) => set(f.key, v)} />
+                  {f.unit && <span className={styles.fieldValue}>{f.unit}</span>}
+                  <span className={styles.fieldRange}>
+                    {f.min}–{f.max}
+                  </span>
                 </label>
               );
             if (f.kind === 'choice')

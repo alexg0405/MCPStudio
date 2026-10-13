@@ -317,6 +317,25 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   < 1 ms; zero React commits during idle playback.
 - Theme: CSS custom properties in `ui/theme/tokens.css`; canvases resolve tokens via `getComputedStyle` and re-resolve
   when a theme version counter changes.
+- Help that explains the app as you use it (the user asked for a UI that is very easy to understand):
+  - Every control's `data-hint` shows in the hint bar and, after a short hover, as a tooltip next to it
+    (`shell/HoverTip.tsx`, imperative, one element). Tooltips skip canvases, menu items, `data-hint-tip="off"` and hints
+    that only repeat the label. A dragged control's live value (`HINT_EVENT`) follows the control.
+    Options → Show tooltips turns them off.
+  - Action search, Mod+K (`features/palette`):
+    - It lists every menu entry (submenus and dynamic entries included, with their menu path), every entry from
+      `addActionProvider()` (`shell/actions.ts`), and every command no menu shows. A command whose bindings all pass
+      arguments, or that has `palette: false`, is left out.
+    - Ranking is pure (`search.ts`): every query word must match, word starts and labels count most, a synonym table
+      maps newcomer words (bpm → tempo, click → metronome), and recent actions float up.
+    - The last row hands the text to the AI studio.
+  - Getting started (`features/help`):
+    - A welcome screen opens the first time the app starts (from `main.tsx`, never over crash recovery). Help → Getting
+      started brings it back.
+    - The guided tour highlights each area through `data-tour` / `data-window-type` anchors, followed every frame.
+      Each step opens the window it explains.
+  - New features ship with plain labels, hints with units, empty states that say what to do, and menu or right-click
+    entry points, not shortcut-only.
 
 ## Persistence (`src/app/persistence`, `src/platform`)
 

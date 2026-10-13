@@ -12,6 +12,11 @@ export interface CommandDef<Ctx, A = void> {
   enabled?(ctx: Ctx): boolean;
   /** For toggles: menus show a check mark when this returns true. */
   checked?(ctx: Ctx): boolean;
+  /**
+   * False leaves it out of the action search unless a menu offers it (it needs arguments that a menu
+   * item or key binding supplies).
+   */
+  palette?: boolean;
 }
 
 // The registry stores commands with heterogeneous argument types.

@@ -1,11 +1,46 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
+import { setBpm, setSwing } from '@core/ops/notes';
+import { showFormDialog } from '../../controls/FormDialog';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { TransportBar } from './TransportBar';
 import { AudioStatus } from './AudioStatus';
 
 export const order = 10;
+
+const BEAT_UNITS = [
+  { value: '2', label: 'Half notes (2)' },
+  { value: '4', label: 'Quarter notes (4)' },
+  { value: '8', label: 'Eighth notes (8)' },
+  { value: '16', label: 'Sixteenth notes (16)' },
+] as const;
+
+/** Tempo, time signature and swing in one plain dialog (one undo step). */
+async function songSettings(s: Services): Promise<void> {
+  const t = s.doc.getState().project.transport;
+  const values = await showFormDialog({
+    title: 'Song settings',
+    message: 'These apply to the whole song. Swing delays every other 1/16 step for a groovier feel.',
+    fields: [
+      { kind: 'number', key: 'bpm', label: 'Tempo', min: 10, max: 522, step: 'any', unit: 'BPM' },
+      { kind: 'number', key: 'beats', label: 'Beats per bar', min: 1, max: 32 },
+      { kind: 'choice', key: 'unit', label: 'Beat length', options: BEAT_UNITS },
+      { kind: 'number', key: 'swing', label: 'Swing', min: 0, max: 100, unit: '%' },
+    ],
+    values: { bpm: t.bpm, beats: t.timeSig.num, unit: String(t.timeSig.den), swing: Math.round(t.swing * 100) },
+    okLabel: 'Apply',
+  });
+  if (!values) return;
+  const den = Number(values.unit);
+  s.history.transact('Song settings', (d) => {
+    setBpm(d, Number(values.bpm));
+    // A fractional swing (33.3%) is kept unless its field was changed.
+    if (Number(values.swing) !== Math.round(t.swing * 100)) setSwing(d, Number(values.swing) / 100);
+    const num = Math.round(Number(values.beats));
+    if (num >= 1 && num <= 32 && [2, 4, 8, 16].includes(den)) d.transport.timeSig = { num, den };
+  });
+}
 
 export function register(services: Services): void {
   const { commands, keymap } = services;
@@ -69,6 +104,13 @@ export function register(services: Services): void {
     run: (s, mode) => s.prefs.getState().set({ recordMode: mode === 'replace' ? 'replace' : 'overdub' }),
   });
   commands.register({
+    id: 'song.settings',
+    title: 'Song settings…',
+    category: 'Song',
+    hint: 'Tempo (BPM), time signature (beats per bar) and swing for the whole song',
+    run: (s) => songSettings(s),
+  });
+  commands.register({
     id: 'transport.toggleMode',
     title: 'Pattern / song mode',
     category: 'Transport',
@@ -88,6 +130,7 @@ export function register(services: Services): void {
   addMenuItems('options', [
     sep(1),
     cmd('transport.toggleMode', 2),
+    cmd('song.settings', 3),
     sep(70),
     cmd('transport.metronome', 71),
     cmd('transport.record', 72, 'Record (arm)'),

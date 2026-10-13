@@ -1,0 +1,183 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ag-surface-2);
+}
+
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface-1);
+}
+
+.tools {
+  display: flex;
+  gap: 2px;
+}
+
+.tool {
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool:hover {
+  color: var(--ag-text);
+}
+
+.toolOn {
+  background: #4a4036;
+  color: var(--ag-accent);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.field select {
+  padding: 1px 2px;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+}
+
+.zoom {
+  display: flex;
+  gap: 2px;
+}
+
+.zoom button {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  cursor: pointer;
+}
+
+.selCount {
+  margin-left: auto;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+}
+
+.area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+}
+
+.corner {
+  background: var(--ag-surface-1);
+  border-right: 1px solid var(--ag-border);
+}
+
+.ruler,
+.keys {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ruler {
+  cursor: default;
+}
+
+.keys {
+  cursor: pointer;
+  touch-action: none;
+}
+
+.gridHost,
+.velocityHost {
+  position: relative;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ag-text-dim);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.velocityLabel {
+  padding: 4px 6px;
+  border-right: 1px solid var(--ag-border);
+  border-top: 1px solid var(--ag-border);
+  background: var(--ag-surface-1);
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+}
+
+.velocityHost {
+  cursor: ns-resize;
+}
+
+.hscroll {
+  position: relative;
+  background: var(--ag-surface-inset);
+  border-top: 1px solid var(--ag-border);
+}
+
+.hthumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  min-width: 24px;
+  border-radius: 4px;
+  background: var(--ag-surface-3);
+  cursor: grab;
+  touch-action: none;
+}
+
+.hthumb:hover {
+  background: #4a555e;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 12px;
+  width: 1px;
+  background: var(--ag-playhead);
+  box-shadow: 0 0 4px var(--ag-playhead);
+  pointer-events: none;
+  display: none;
+}

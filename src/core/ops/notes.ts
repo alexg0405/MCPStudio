@@ -114,3 +114,68 @@ export function sanitizeNote(n: Note): Note {
     velocity: Math.max(0, Math.min(1, n.velocity)),
   };
 }
+
+// ---- Multi-note edits (piano roll) ----
+
+export interface NoteEdit {
+  id: NoteId;
+  tick?: Tick;
+  length?: Tick;
+  key?: number;
+  velocity?: number;
+}
+
+/** Applies absolute edits to existing notes (missing ids are ignored). */
+export function editNotes(
+  d: Draft<Project>,
+  patternId: PatternId,
+  channelId: ChannelId,
+  edits: readonly NoteEdit[],
+): void {
+  const notes = d.patterns[patternId]?.notes[channelId];
+  if (!notes) return;
+  for (const e of edits) {
+    const n = notes[e.id];
+    if (!n) continue;
+    const next = sanitizeNote({
+      ...n,
+      ...(e.tick !== undefined ? { tick: e.tick } : {}),
+      ...(e.length !== undefined ? { length: e.length } : {}),
+      ...(e.key !== undefined ? { key: e.key } : {}),
+      ...(e.velocity !== undefined ? { velocity: e.velocity } : {}),
+    });
+    if (next.tick !== n.tick) n.tick = next.tick;
+    if (next.length !== n.length) n.length = next.length;
+    if (next.key !== n.key) n.key = next.key;
+    if (next.velocity !== n.velocity) n.velocity = next.velocity;
+  }
+}
+
+export function addNotes(d: Draft<Project>, patternId: PatternId, channelId: ChannelId, notes: readonly Note[]): void {
+  for (const n of notes) addNote(d, patternId, channelId, n);
+}
+
+export function removeNotes(
+  d: Draft<Project>,
+  patternId: PatternId,
+  channelId: ChannelId,
+  ids: readonly NoteId[],
+): void {
+  for (const id of ids) removeNote(d, patternId, channelId, id);
+}
+
+/** Splits a note at `at` (pattern ticks) into two notes; returns nothing if `at` is outside the note. */
+export function sliceNote(
+  d: Draft<Project>,
+  patternId: PatternId,
+  channelId: ChannelId,
+  noteId: NoteId,
+  at: Tick,
+  secondId: NoteId = newId.note(),
+): void {
+  const n = d.patterns[patternId]?.notes[channelId]?.[noteId];
+  if (!n || at <= n.tick || at >= n.tick + n.length) return;
+  const end = n.tick + n.length;
+  n.length = at - n.tick;
+  addNote(d, patternId, channelId, { ...n, id: secondId, tick: at, length: end - at });
+}

@@ -14,6 +14,7 @@ import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
 import { createPrefsStore, type PrefsStore } from './stores/prefs';
+import { createEditorStore, type EditorStore, type PianoRollViewState } from './stores/editor';
 import { MidiInput } from './midi-input';
 
 /**
@@ -31,6 +32,8 @@ export interface Services {
   readonly view: ViewStore;
   readonly session: SessionStore;
   readonly prefs: PrefsStore;
+  /** Piano roll / playlist tools, snap, zoom, selection and clipboard. */
+  readonly editor: EditorStore;
   readonly midi: MidiInput;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
@@ -53,6 +56,8 @@ export interface ServiceOptions {
   project?: Project;
   /** A registry already filled by plugin discovery (default: built-ins only). */
   plugins?: PluginRegistry;
+  /** Restored piano roll settings. */
+  pianoRoll?: Partial<PianoRollViewState>;
 }
 
 export function createServices(opts: ServiceOptions = {}): Services {
@@ -66,6 +71,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const session = createSessionStore();
   session.getState().selectChannel(doc.getState().project.channelOrder[0] ?? null);
   const prefs = createPrefsStore();
+  const editor = createEditorStore(opts.pianoRoll);
   let engineRef: EngineApi | null = null;
   const midi = new MidiInput(
     () => engineRef as EngineApi,
@@ -96,6 +102,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     view,
     session,
     prefs,
+    editor,
     midi,
     plugins,
     engine,
@@ -110,6 +117,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
         engine.subscribe(fn),
         plugins.subscribe(fn),
         prefs.subscribe(fn),
+        editor.subscribe(fn),
         midi.subscribe(fn),
       ];
       return () => unsubs.forEach((u) => u());
@@ -139,6 +147,14 @@ function connectEngine(s: Services): void {
   pushView();
   view.subscribe((next, prev) => {
     if (next.mode !== prev.mode || next.currentPatternId !== prev.currentPatternId) pushView();
+  });
+
+  // A note selection belongs to one channel in one pattern.
+  s.session.subscribe((next, prev) => {
+    if (next.selectedChannelId !== prev.selectedChannelId) s.editor.getState().selectNotes([]);
+  });
+  view.subscribe((next, prev) => {
+    if (next.currentPatternId !== prev.currentPatternId) s.editor.getState().selectNotes([]);
   });
 
   // Keep the current pattern and selected channel valid as the document changes.

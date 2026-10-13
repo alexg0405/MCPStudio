@@ -63,13 +63,18 @@ export const defaultViewState = (): ViewState => ({
 
 export function createViewStore(initial: Partial<ViewState> = {}): ViewStore {
   return createStore<ViewState & ViewActions>()((set, get) => {
+    // The top of the stack is derived from the windows themselves (restored layouts keep their order).
+    const topZ = (windows: Record<string, WindowInstance>) =>
+      Object.values(windows).reduce((m, w) => (w.z > m ? w.z : m), 0);
     const raise = (id: string) => {
       const s = get();
       const w = s.windows[id];
       if (!w) return;
-      if (s.focusedId === id && w.z === s.zTop && w.visible) return;
-      const z = w.z === s.zTop && s.zTop > 0 ? w.z : s.zTop + 1;
-      set({ windows: { ...s.windows, [id]: { ...w, z, visible: true } }, focusedId: id, zTop: Math.max(z, s.zTop) });
+      const top = topZ(s.windows);
+      const alone = Object.values(s.windows).filter((o) => o.z === top).length === 1;
+      if (s.focusedId === id && w.z === top && alone && w.visible) return;
+      const z = w.z === top && alone ? w.z : top + 1;
+      set({ windows: { ...s.windows, [id]: { ...w, z, visible: true } }, focusedId: id, zTop: Math.max(z, top) });
     };
 
     return {
@@ -79,7 +84,7 @@ export function createViewStore(initial: Partial<ViewState> = {}): ViewStore {
       showWindow(id, type, props = null) {
         const s = get();
         if (!s.windows[id]) {
-          const z = s.zTop + 1;
+          const z = topZ(s.windows) + 1;
           set({
             windows: { ...s.windows, [id]: { id, type, props, rect: null, z, visible: true, maximized: false } },
             focusedId: id,

@@ -1,4 +1,4 @@
-import { memo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useRef, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
 import type { WindowInstance } from '@app/stores/view';
 import type { Rect, Size } from '@core/time/geometry';
 import { useServices } from '../services-context';
@@ -39,6 +39,9 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
   const services = useServices();
   const elRef = useRef<HTMLDivElement>(null);
   const def = getWindowType(instance.type);
+  // Titles can depend on app state (e.g. the piano roll's channel), so follow it.
+  const subscribe = useCallback((fn: () => void) => services.subscribe(fn), [services]);
+  const title = useSyncExternalStore(subscribe, () => def?.title(instance.props, services) ?? '');
   if (!def) return null;
 
   const min = def.minSize ?? { w: 220, h: 120 };
@@ -91,7 +94,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
       data-window-type={instance.type}
     >
       <div className={styles.titleBar} onPointerDown={(e) => startDrag(e, 'move')} onDoubleClick={toggleMax}>
-        <span className={styles.title}>{def.title(instance.props, services)}</span>
+        <span className={styles.title}>{title}</span>
         <div className={styles.titleButtons}>
           <button
             className={styles.titleButton}

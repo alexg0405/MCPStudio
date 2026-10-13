@@ -16,6 +16,8 @@ import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { DragNumber } from '../../controls/DragNumber';
 import { Icon } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
+import { openWindow } from '../../workspace/registry';
+import { MiniRoll } from './MiniRoll';
 import styles from './ChannelRack.module.css';
 
 const VOLUME = p.float(0, 1.25, 0.78, { label: 'Volume', unit: '%' });
@@ -130,8 +132,8 @@ function StepGrid({
 
   if (!view.isSteps) {
     return (
-      <div className={styles.notesBar} data-hint="This channel has piano-roll notes (piano roll arrives in M3)">
-        <Icon name="note" size={12} /> notes
+      <div className={styles.steps} data-steps style={{ width: stepX(stepCount - 1) + STEP_W }}>
+        <MiniRoll channelId={channelId} patternId={patternId} width={stepX(stepCount - 1) + STEP_W} />
       </div>
     );
   }
@@ -216,6 +218,14 @@ const ChannelRow = memo(function ChannelRow({
     e.preventDefault();
     services.session.getState().selectChannel(id);
     showContextMenu(e, [
+      {
+        label: 'Piano roll',
+        shortcut: 'F7',
+        onSelect: () => {
+          services.session.getState().selectChannel(id);
+          openWindow(services, 'piano-roll');
+        },
+      },
       { label: 'Rename…', onSelect: () => setRenaming(true) },
       {
         kind: 'swatches',

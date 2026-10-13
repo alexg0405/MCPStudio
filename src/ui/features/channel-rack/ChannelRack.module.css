@@ -235,3 +235,10 @@
   color: var(--ag-accent);
   border-color: var(--ag-accent-dim);
 }
+
+.miniRoll {
+  display: block;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  cursor: pointer;
+}

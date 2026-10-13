@@ -7,3 +7,6 @@ coverage/
 *.log
 # local exports / scratch
 *.agproj.tmp
+
+# helper-agent worktrees
+.claude/worktrees/

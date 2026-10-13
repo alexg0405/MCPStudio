@@ -17,14 +17,19 @@ import './theme/base.css';
 const plugins = new PluginRegistry();
 await installPluginDiscovery(plugins);
 const restored = loadSession();
-const services = createServices({ plugins, ...(restored ? { project: restored.project } : {}) });
+const services = createServices({
+  plugins,
+  ...(restored ? { project: restored.project } : {}),
+  ...(restored?.view.pianoRoll ? { pianoRoll: restored.view.pianoRoll } : {}),
+});
 registerFeatures(services);
 installKeyboard(services);
 installAudioUnlock(services.engine);
 if (restored?.view && Object.keys(restored.view.windows ?? {}).length > 0) {
   const pattern = restored.view.currentPatternId;
+  const { pianoRoll: _pianoRoll, ...savedView } = restored.view;
   services.view.setState({
-    ...restored.view,
+    ...savedView,
     currentPatternId:
       pattern && restored.project.patterns[pattern] ? pattern : services.view.getState().currentPatternId,
   });
@@ -45,7 +50,10 @@ if (import.meta.hot) {
 
 if (import.meta.env.DEV) {
   // Debug handle for the console and for automated checks: stores, history, commands, engine.
-  Object.assign(window, { __ag: services });
+  const { pianoRollPerf } = await import('./features/piano-roll/controller');
+  Object.assign(window, { __ag: Object.assign(services, { perf: { pianoRoll: pianoRollPerf } }) });
+  const perf = new URLSearchParams(location.search).get('perf');
+  if (perf) (await import('./perf-fixtures')).applyPerfFixture(services, perf);
 }
 
 const root = document.getElementById('root');

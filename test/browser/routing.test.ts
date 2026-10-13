@@ -6,7 +6,13 @@ import { removeInsert, setFxSlotEnabled, setInsertProp, toggleSoloInsert } from 
 import { clearRoutes, routeOnlyTo, setRoute, setSlotSidechain } from '@core/ops/routing';
 import { targetKey } from '@core/model/targets';
 import { dbToGain } from '@agstudio/sdk';
-import { maxDiff, peak, resolver, rms } from '../helpers/fixtures';
+import { makeInstrumentChannel, makePluginInstance } from '@core/model/defaults';
+import type { NoteId } from '@core/model/types';
+import { addChannel } from '@core/ops/channels';
+import { addNote } from '@core/ops/notes';
+import type { ParamValue, PluginDef } from '@agstudio/sdk';
+import ducker from '../../src/plugins/builtin/ducker';
+import { kitProject, maxDiff, peak, resolver, rms } from '../helpers/fixtures';
 import {
   addEffect,
   argmax,
@@ -17,6 +23,7 @@ import {
   latentEffect,
   maxDiffShifted,
   renderDocs,
+  rmsRange,
   sine,
   SR,
 } from '../helpers/routing';
@@ -265,6 +272,42 @@ describe('sidechains', () => {
     });
     expect(arrival).toBe(LATENT);
     expect(maxDiffShifted(late, heard, LATENT)).toBe(0);
+  });
+
+  it('a kick-sidechained ducker lowers the bass on every hit', async () => {
+    // Four-on-the-floor kick on insert 1, a steady bass (sine) on insert 2 with the Ducker keyed by insert 1.
+    const kit = kitProject([{ generator: 'kit/kick', steps: [0, 4, 8, 12] }]);
+    const ins = kit.project.mixer.order;
+    const [kick, bass] = [ins[1]!, ins[2]!];
+    const bassCh = makeInstrumentChannel('Bass', makePluginInstance(sine.id, 1, { level: 0.3 }));
+    let slot!: SlotId;
+    const base = produce(kit.project, (d) => {
+      setChannelProp(d, kit.channels[0]!, 'output', kick);
+      addChannel(d, bassCh);
+      setChannelProp(d, bassCh.id, 'output', bass);
+      addNote(d, kit.patternId, bassCh.id, { id: 'nb' as NoteId, tick: 0, length: BAR, key: 33, velocity: 1 });
+      clearRoutes(d, kick); // only the bass is heard; the kick still keys the ducker
+      slot = addEffect(d, bass, ducker as PluginDef, ducker.presets![0]!.params as Record<string, ParamValue>);
+    });
+    const keyed = produce(base, (d) => {
+      setSlotSidechain(d, bass, slot, kick);
+    });
+    const dry = await renderDocs(
+      [produce(base, (d) => setFxSlotEnabled(d, bass, slot, false))],
+      kit.patternId,
+      plugins,
+    );
+    const out = await renderDocs([keyed], kit.patternId, plugins);
+    const beat = SR / 2;
+    const start = 2048;
+    for (let hit = 0; hit < 4; hit++) {
+      const at = start + hit * beat;
+      const onHit = (b: AudioBuffer) => rmsRange(b, at + 0.005 * SR, at + 0.06 * SR);
+      const between = (b: AudioBuffer) => rmsRange(b, at + 0.35 * SR, at + 0.48 * SR);
+      expect(onHit(out) / onHit(dry)).toBeLessThan(0.4);
+      expect(between(out) / between(dry)).toBeGreaterThan(0.97);
+    }
+    expect(rms(out)).toBeLessThan(rms(dry) * 0.9);
   });
 
   it('takes the key before the mute/solo gate', async () => {

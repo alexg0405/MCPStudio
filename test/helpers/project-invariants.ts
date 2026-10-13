@@ -38,6 +38,8 @@ export function projectViolations(p: Project): string[] {
   };
   for (const ch of Object.values(p.channels)) {
     if (ch.kind === 'automation') continue;
+    if (ch.kind === 'audioClip' && !has(p.samples, ch.sampleId))
+      out.push(`channel ${ch.id}: missing sample ${ch.sampleId}`);
     if (!has(p.mixer.inserts, ch.output)) out.push(`channel ${ch.id}: output ${ch.output} missing`);
     if (!inRange(ch.volume, 0, 1.25)) out.push(`channel ${ch.id}: volume ${ch.volume}`);
     if (!inRange(ch.pan, -1, 1)) out.push(`channel ${ch.id}: pan ${ch.pan}`);

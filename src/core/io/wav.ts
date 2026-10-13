@@ -186,9 +186,21 @@ function readChunks(bytes: Uint8Array, view: DataView, littleEndian: boolean): C
     const declared = view.getUint32(o + 4, littleEndian);
     const start = o + 8;
     chunks.push({ id: readTag(bytes, o), start, size: Math.min(declared, bytes.length - start) });
-    o = start + declared + (declared & 1); // chunks are padded to an even size
+    const end = start + declared;
+    // Odd-sized chunks are followed by a zero pad byte, but some writers leave it out. A chunk id is
+    // four printable characters, so a non-zero byte that starts one means the pad is missing.
+    o = declared & 1 && bytes[end] !== 0 && isChunkId(bytes, end) ? end : end + (declared & 1);
   }
   return chunks;
+}
+
+function isChunkId(bytes: Uint8Array, o: number): boolean {
+  if (o + 4 > bytes.length) return false;
+  for (let i = o; i < o + 4; i++) {
+    const c = bytes[i] as number;
+    if (c < 0x20 || c > 0x7e) return false;
+  }
+  return true;
 }
 
 function decodeWav(bytes: Uint8Array, view: DataView): DecodedPcm | null {

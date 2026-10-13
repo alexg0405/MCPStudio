@@ -16,6 +16,7 @@ import {
   makePattern,
   paletteColor,
 } from '../model/defaults';
+import { isSha256Hex } from '../io/hash';
 import { newId } from '../model/ids';
 import { MASTER, SCHEMA_VERSION, type Project } from '../model/types';
 
@@ -335,7 +336,7 @@ function repairSamples(p: Obj, log: RepairLog): void {
       valid = isString(src.generator) && isFiniteNumber(src.version);
     } else if (isObject(src) && src.kind === 'embedded' && isString(src.hash) && isString(src.ext)) {
       const hash = src.hash.toLowerCase();
-      valid = /^[0-9a-f]{64}$/.test(hash);
+      valid = isSha256Hex(hash);
       if (valid && hash !== src.hash) {
         src.hash = hash;
         detailsFixed();
@@ -436,9 +437,10 @@ function repairChannels(p: Obj, log: RepairLog): void {
       log.count('ch-plugin', (n) => `Removed ${count(n, CHANNEL)} whose instrument data was missing.`);
       continue;
     }
-    if (kind === 'audioClip' && !isString(ch.sampleId)) {
+    if (kind === 'audioClip' && !(isString(ch.sampleId) && has(samples, ch.sampleId))) {
+      // Nothing can play without the sample entry; its clips go too (as orphans, in repairPlaylist).
       delete channels[id];
-      log.count('ch-sample', (n) => `Removed ${count(n, noun('audio clip channel'))} with no sample.`);
+      log.count('ch-sample', (n) => `Removed ${count(n, noun('audio clip channel'))} whose sample entry is missing.`);
       continue;
     }
     let fixed = requireField(ch, 'name', isString, 'Channel');

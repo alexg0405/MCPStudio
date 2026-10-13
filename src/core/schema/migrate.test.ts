@@ -165,6 +165,21 @@ describe('migrateProject', () => {
 });
 
 describe('repairProject', () => {
+  const builtinSample = (id: string) =>
+    ({ id, name: id, source: { kind: 'builtin', generator: 'kit/kick', version: 1 } }) as Project['samples'][never];
+  const audioChannel = (id: string, sampleId: string) =>
+    ({
+      kind: 'audioClip',
+      id,
+      name: id,
+      color: '#fff',
+      muted: false,
+      solo: false,
+      volume: 1,
+      pan: 0,
+      output: MASTER,
+      sampleId,
+    }) as Project['channels'][ChannelId];
   const base = () => {
     const p = createEmptyProject({ now: new Date(0) });
     const ch = makeInstrumentChannel('Kick', makePluginInstance('agstudio.sampler', 1, { gain: 0 }));
@@ -226,16 +241,9 @@ describe('repairProject', () => {
 
   it('drops clips whose pattern, channel or lane is missing', () => {
     const { p, ch, pat, lane } = base();
-    const audio = { kind: 'audioClip' as const, id: 'ch_audio00001' as ChannelId, name: 'Loop', color: '#fff' };
-    p.channels[audio.id] = {
-      ...audio,
-      muted: false,
-      solo: false,
-      volume: 1,
-      pan: 0,
-      output: MASTER,
-      sampleId: 'smp_x' as never,
-    };
+    const audio = audioChannel('ch_audio00001', 'smp_x');
+    p.samples['smp_x' as never] = builtinSample('smp_x');
+    p.channels[audio.id] = audio;
     p.channelOrder.push(audio.id);
     const clip = (id: string, extra: object) => ({ id, laneId: lane, start: 0, length: 3840, ...extra });
     p.playlist.clips = {
@@ -341,6 +349,33 @@ describe('repairProject', () => {
       'Removed 1 channel of an unknown type.',
       'Removed 1 channel whose instrument data was missing.',
     ]);
+  });
+
+  it('removes audio clip channels whose sample entry is missing, with their clips', () => {
+    const { p, lane } = base();
+    p.samples['smp_ok' as never] = builtinSample('smp_ok');
+    p.channels['ch_ok' as ChannelId] = audioChannel('ch_ok', 'smp_ok');
+    p.channels['ch_lost' as ChannelId] = audioChannel('ch_lost', 'smp_lost');
+    p.channelOrder.push('ch_ok' as ChannelId, 'ch_lost' as ChannelId);
+    const clip = (id: string, channelId: string) => ({
+      kind: 'audio',
+      id,
+      laneId: lane,
+      start: 0,
+      length: 960,
+      channelId,
+      offsetSec: 0,
+    });
+    p.playlist.clips = { a: clip('a', 'ch_ok'), b: clip('b', 'ch_lost') } as unknown as Project['playlist']['clips'];
+    const { project, repairs } = repairProject(p);
+    expect(Object.keys(project.channels)).not.toContain('ch_lost');
+    expect(project.channelOrder).not.toContain('ch_lost');
+    expect(Object.keys(project.playlist.clips)).toEqual(['a']);
+    expect(repairs).toEqual([
+      'Removed 1 audio clip channel whose sample entry is missing.',
+      'Removed 1 playlist clip whose pattern, channel or track no longer exists.',
+    ]);
+    expect(projectViolations(project)).toEqual([]);
   });
 
   it('removes plugin sample slots that point at missing samples', () => {

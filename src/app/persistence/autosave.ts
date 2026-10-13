@@ -205,7 +205,11 @@ const newestFirst = (a: AutosaveMeta, b: AutosaveMeta) => savedTime(b) - savedTi
 
 /**
  * Autosaves worth offering for recovery: not marked clean, lock not held by a live tab, not this
- * session. Newest first, one per project (its newest).
+ * session. Newest first, one per project (its newest unclean one).
+ *
+ * A newer clean session of the same project does not hide an older crash: the crash can hold edits
+ * that were never saved anywhere else (e.g. the user reopened the project from its file). So once the
+ * user recovers or discards a candidate, delete it (deleteAutosave) or it will be offered again.
  */
 export function selectRecoveryCandidates(
   metas: readonly AutosaveMeta[],

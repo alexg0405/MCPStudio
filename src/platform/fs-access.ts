@@ -4,7 +4,7 @@
  * Pickers need a user gesture (transient activation lasts about 5 s), so call them first in a
  * command handler, before any slow work.
  */
-import { isSharedMemory } from '@core/io/hash';
+import { unsharedBytes } from '@core/io/bytes';
 import { PROJECT_FILE_EXTENSION, PROJECT_FILE_MIME } from '@core/io/project-file';
 
 // Not in TypeScript's DOM lib (WICG File System Access).
@@ -139,7 +139,7 @@ export async function ensurePermission(
 export async function writeFile(handle: FileSystemFileHandle, bytes: Uint8Array): Promise<void> {
   const writable = await handle.createWritable();
   try {
-    await writable.write(toArrayBufferView(bytes));
+    await writable.write(unsharedBytes(bytes));
     await writable.close();
   } catch (e) {
     await writable.abort().catch(() => {});
@@ -185,7 +185,7 @@ export async function listAudioFiles(
 
 /** Fallback save: downloads the bytes through a temporary object URL. */
 export function downloadBytes(name: string, bytes: Uint8Array, mime: string): void {
-  const url = URL.createObjectURL(new Blob([toArrayBufferView(bytes)], { type: mime }));
+  const url = URL.createObjectURL(new Blob([unsharedBytes(bytes)], { type: mime }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -219,9 +219,4 @@ export function uploadFile(accept: string): Promise<File | null> {
     document.body.append(input);
     input.click();
   });
-}
-
-/** DOM APIs take ArrayBuffer-backed views only; copy views of SharedArrayBuffer memory. */
-function toArrayBufferView(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
-  return (isSharedMemory(bytes) ? bytes.slice() : bytes) as Uint8Array<ArrayBuffer>;
 }

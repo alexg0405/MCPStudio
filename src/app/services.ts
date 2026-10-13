@@ -180,4 +180,11 @@ function connectEngine(s: Services): void {
     const sel = s.session.getState().selectedChannelId;
     if (sel && !next.channels[sel]) s.session.getState().selectChannel(next.channelOrder[0] ?? null);
   });
+
+  // M5 mixer: when the selected insert is deleted (or undone away), select the master again
+  // (null = master, see SessionState.selectedInsertId).
+  history.onChange(({ next }) => {
+    const ins = s.session.getState().selectedInsertId;
+    if (ins && !next.mixer.inserts[ins]) s.session.getState().selectInsert(null);
+  });
 }

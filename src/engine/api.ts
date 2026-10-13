@@ -3,7 +3,7 @@
  * engine instance through app services.
  */
 import type { DocChange } from '@core/history/history';
-import type { ChannelId, PatternId, PluginOwner, SampleRef, Tick } from '@core/model/types';
+import type { ChannelId, InsertId, PatternId, PluginOwner, SampleRef, Tick } from '@core/model/types';
 import type { JsonValue, PluginDef } from '@agstudio/sdk';
 
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
@@ -65,6 +65,12 @@ export interface EngineApi {
   previewNoteOff(channelId: ChannelId, noteId: number): void;
   /** Plays a sample on the preview bus (browser clicks). */
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void;
+  /**
+   * Mixer meters: writes the left and right peak (linear, over the last ~43 ms) of each insert in
+   * `order` to out[2i], out[2i + 1]. Allocation-free; call it from the frame loop and do peak hold
+   * and decay in the UI. Unknown inserts (and offline engines) read 0.
+   */
+  readMeters(order: readonly InsertId[], out: Float32Array): void;
   stats(): EngineStats;
   /** Fires on playing/stopped and state changes. */
   subscribe(fn: () => void): () => void;

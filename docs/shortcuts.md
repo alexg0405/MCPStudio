@@ -38,8 +38,15 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 |---|---|
 | Delete selected channel | `⌥Del` / `Alt+Del`, `⌥⌫` / `Alt+⌫` |
 | Open plugin editor | `↵` |
+| Route channel to mixer insert | `⌘L` / `Ctrl+L` |
 | Select next channel | `↓` |
 | Select previous channel | `↑` |
+
+## When the mixer window is focused
+
+| Action | Keys |
+|---|---|
+| Route channel to mixer insert | `⌘L` / `Ctrl+L` |
 
 ## When the piano-roll window is focused
 

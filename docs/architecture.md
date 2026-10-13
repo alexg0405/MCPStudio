@@ -113,19 +113,37 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
 ### Graph
 
 ```
-channel: instrument.output → vol → StereoPanner → mute ──► insert.in
-insert : in → slot1…slotN → pan → fader → mute ──► master.in   (+ meter tap: ChannelSplitter → 2× AnalyserNode)
-slot   : in ─► dry ─────────────────────────► out
-          └─► fx.input … fx.output ─► wet ─► out   (bypass = 10 ms crossfade, then disconnect fx.input)
-master : in → slots → fader → SafetyLimiter (worklet) → destination;  monitor bus (metronome) → limiter only
+channel: instrument.output → vol → StereoPanner → mute ──► insert input
+insert : input → slot 1…N → StereoPanner → fader → mute ──► master input   (+ meter tap: ChannelSplitter → 2× AnalyserNode)
+slot   : in ─► dry ─────────────────────────────────► out
+          ├─► fx.input … fx.output ─► wet ──────────► out   (bypass = 10 ms crossfade, then disconnect fx.input)
+          └─► DelayNode(fx.latency) ─► aligned dry ─► out   (only for effects that report latency)
+master : input → slots → pan → fader → mute → masterOut → SafetyLimiter (worklet) → destination
+         preview bus → masterOut;  monitor bus (metronome, later) → limiter only
 ```
 
-- Reconcile `DocChange` by reference identity: keyed add/update/remove of inserts, channels, slots; insert removals last.
-  `plugin.id` change = async replace guarded by a generation token (stale completions are disposed; meanwhile
-  instruments drop events and effects pass audio). Missing plugin = silent placeholder that keeps its data on save.
+- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too) and `FxSlotStrip`. Every insert id has one
+  persistent input node (`Engine.insertInput(id)`): it feeds the insert's strip while the insert exists and the master
+  otherwise (not created yet, deleted, unknown id), so channels never reconnect when inserts come and go, undo included.
+- Reconcile `DocChange` by reference identity: inserts first (keyed by id; removals after the channels), then channels.
+  Slots are keyed by `SlotId`: moving one only rewires the chain, enable/mix only change gains, a new `pluginId` replaces
+  the instance. `plugin.id` change = async replace guarded by a generation token (stale completions are disposed;
+  meanwhile instruments drop events and effects pass audio; a replaced effect fades out over 80 ms). Missing plugin =
+  silent placeholder (effects: pass-through) that keeps its data on save. Insert mutes come from
+  `query/mixer.ts` `effectivelyMutedInserts` (muted, or another non-master insert soloed; the master always plays).
+- Slot gains: dry = 1 − mix, wet = mix (linear); bypassed, loading, missing or failed = dry 1, wet 0. Changes glide
+  (~10 ms) while the context runs and are set exactly before it starts: offline renders apply the document at time 0,
+  so a bypassed slot renders bit-exact with no slot and nothing depends on timers.
+- An effect's `latency` delays the slot's dry path, so the slot mix stays phase-aligned. There is no delay compensation
+  across inserts yet.
 - Param changes from the UI: `setTargetAtTime(v, now, spec.smoothing ?? 8 ms)`. Enums/bools change via `onChange`.
-- Meters: AnalyserNode (fftSize 2048) per insert channel read on the frame loop into a shared scratch buffer; peak-hold
-  and decay in the UI. Exact clip detection only in the master limiter.
+- Meters: per insert, after the mute, a ChannelSplitter → 2 AnalyserNodes (fftSize 2048; realtime engines only).
+  `EngineApi.readMeters(order, out)` writes [peakL, peakR] per insert through one scratch buffer (no allocation). The
+  mixer's `MeterBank` (`ui/features/mixer/meters.ts`) calls it once per frame, does the ballistics (26 dB/s fall, 1.5 s
+  peak hold) and repaints a canvas only when it changes. Exact clip detection only in the master limiter.
+- Insert volume is linear gain up to 1.905 (+5.6 dB). Faders and the toolbar master knob use the taper in
+  `core/model/fader.ts` (0 dB at 80 % of travel, gain = (pos / 0.8)^k); meters share that scale so they line up with
+  the fader cap.
 - SafetyLimiter: SDK `EffectKernel`, ~1.3 ms lookahead sliding-window max, −0.3 dBFS ceiling, 50 ms release, final clamp,
   NaN/Inf scrub. (Not DynamicsCompressorNode: it adds makeup gain and a fixed 6 ms look-ahead.)
 
@@ -137,9 +155,11 @@ master : in → slots → fader → SafetyLimiter (worklet) → destination;  mo
   snare = sine modes 185/330 Hz (~80 ms) + noise HP 1.5 kHz (~180 ms); clap = noise BP 1.2 kHz, 3 bursts 10 ms apart,
   150 ms tail; hats = 6 detuned squares at 808-style ratios, BP 10 kHz + HP 7 kHz (closed 50 ms, open 400 ms);
   toms = kick at 90/130/180 Hz; rim, cowbell (540 + 800 Hz squares), crash.
-- Reverb IR: decorrelated L/R noise × e^(−6.91·t/RT60), 3 bands with own decay (lows ×1.3, highs ×0.5), 8–12 early
-  reflections 10–80 ms, 5 ms fade-in, energy normalization, `normalize: false`. Pre-delay is a DelayNode. Size/decay
-  changes: debounce 150 ms, generate in a Worker, crossfade two ConvolverNodes (setting `.buffer` is synchronous).
+- Reverb IR (`plugins/builtin/reverb/ir.kernel.ts`): decorrelated L/R noise (seeded) × e^(−6.91·t/RT60), 3 bands
+  with their own decay (lows ×1.3, highs ×(1 − 0.8·damping)), 8–12 early reflections from 10 ms to 12–80 ms (size),
+  5 ms fade-in, unit energy, `disableNormalization`. Pre-delay is a DelayNode. Decay/damping/size changes: debounce
+  150 ms (immediately when offline), regenerate on the main thread (10–25 ms for a 10 s tail; a Worker can come later),
+  crossfade two ConvolverNodes over 120 ms (setting `.buffer` in place would click and cut the tail). IRs are cached.
 
 ## Plugin SDK (`src/sdk`)
 
@@ -239,6 +259,23 @@ WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the fil
 - `import.meta.glob` with lazy loaders + `Promise.allSettled` isolates broken user plugins (error entries in
   the browser panel). Adding or deleting a plugin folder re-runs the self-accepting discovery module.
 
+### What M5 verified in Chrome
+
+Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them):
+
+- DynamicsCompressorNode delays its output by `floor(0.006 · sampleRate)` frames (288 at 48 kHz, 264 at 44.1 kHz) and
+  multiplies it by an automatic makeup gain `(1 / curve(1.0))^0.6`. `compressor/makeup.kernel.ts` reproduces
+  Chromium's curve (within ~1e-4), the Compressor divides it out and reports the look-ahead as `latency`.
+- WaveShaperNode oversampling delays by 128 frames (`'2x'`) or 192 frames (`'4x'`) at every sample rate. ConvolverNode
+  adds no latency. Biquads, convolvers, compressors and shapers render identically twice offline.
+- A feedback cycle through a DelayNode takes one render quantum (128 frames) longer per trip than its `delayTime`:
+  Chrome breaks the cycle by reading one link's previous quantum (the link into the cycle node first reached from the
+  destination). The Delay compensates (straight loop one quantum short behind a one-quantum pre-delay; in ping-pong
+  the right delay is one quantum short) and its echoes land within 2 frames of the beat.
+- AnalyserNodes run in an OfflineAudioContext too; the meter test reads them during a `suspend()`.
+- Vitest 5's persistent module cache (`fsModuleCache`) keys a module by its own source, so an `import.meta.glob`
+  kept stale matches after plugin folders were added. It is off in `vite.config.ts`.
+
 ## UI (`src/ui`)
 
 - Shell: toolbar (menus + hint bar, transport, PAT/SONG, BPM, position, master volume, CPU, window buttons), browser
@@ -251,7 +288,9 @@ WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the fil
   are swallowed (also on keyup) and toolbar buttons never take focus, so Space can't click a button. Mac F-keys need Fn:
   every F-key binding has an Alt+digit alternate. Chrome reserves Cmd+W/T/N/Q.
 - Controls (`sdk/ui`, public so plugin UIs match): Knob (vertical drag 200 px/full range, Shift fine ×0.1, double-click
-  reset, wheel with `mergeKey`), Fader (dB taper), StepButton (paint/erase drag = one gesture), Meter (canvas).
+  reset, wheel with `mergeKey`, optional `format` for the displayed value), Fader (dB taper), StepButton (paint/erase
+  drag = one gesture), Meter (canvas). The mixer's Fader and canvas meters live in `features/mixer` for now; they can
+  move to `sdk/ui` once a plugin UI needs them.
 - Timeline canvas core (Piano Roll + Playlist): `Viewport` (scrollTick, pxPerTick, scrollRow, rowHeight; tick↔x,
   row↔y), snap grids incl. triplets and zoom-adaptive auto, `ItemSource` with sorted-by-start arrays + binary search
   (extended back by the longest item), layered canvases (grid / content / overlay), 1-px DOM playhead moved with

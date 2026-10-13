@@ -1,5 +1,5 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { ChannelId } from '@core/model/types';
+import type { ChannelId, InsertId } from '@core/model/types';
 
 /** In-memory session state: never saved, never undoable. */
 export interface Toast {
@@ -14,6 +14,8 @@ export interface SessionState {
   toasts: Toast[];
   /** The channel that receives keyboard/MIDI input and opens in the piano roll. */
   selectedChannelId: ChannelId | null;
+  /** The mixer insert whose effect slots the mixer shows (null = the master). */
+  selectedInsertId: InsertId | null;
 }
 
 export interface SessionActions {
@@ -21,6 +23,7 @@ export interface SessionActions {
   toast(text: string, kind?: Toast['kind']): void;
   dismissToast(id: number): void;
   selectChannel(id: ChannelId | null): void;
+  selectInsert(id: InsertId | null): void;
 }
 
 export type SessionStore = StoreApi<SessionState & SessionActions>;
@@ -32,6 +35,7 @@ export function createSessionStore(): SessionStore {
     hint: '',
     toasts: [],
     selectedChannelId: null,
+    selectedInsertId: null,
     setHint(hint) {
       if (get().hint !== hint) set({ hint });
     },
@@ -45,6 +49,9 @@ export function createSessionStore(): SessionStore {
     },
     selectChannel(id) {
       if (get().selectedChannelId !== id) set({ selectedChannelId: id });
+    },
+    selectInsert(id) {
+      if (get().selectedInsertId !== id) set({ selectedInsertId: id });
     },
   }));
 }

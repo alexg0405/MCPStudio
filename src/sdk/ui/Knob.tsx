@@ -13,6 +13,8 @@ export interface KnobProps {
   /** Arc colour (defaults to the theme accent). */
   color?: string;
   disabled?: boolean;
+  /** Display text for a value (hint bar); defaults to the spec's formatting. */
+  format?(value: ParamValue): string;
   /** Continuous edit lifecycle (one undo step per drag). */
   onBegin?(): void;
   onChange(value: ParamValue): void;
@@ -52,6 +54,7 @@ export function Knob({
   bipolar,
   color,
   disabled,
+  format = (v) => formatValue(spec, v),
   onBegin,
   onChange,
   onEnd,
@@ -63,7 +66,7 @@ export function Knob({
   const mid = START + SWEEP / 2;
   const center = size / 2;
   const r = size / 2 - 2.5;
-  const text = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${formatValue(spec, value)}`;
+  const text = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
 
   const commit = (v: ParamValue) => {
     if (onCommit) onCommit(v);
@@ -97,7 +100,7 @@ export function Knob({
     d.n = next;
     const v = fromNormalized(spec, next);
     onChange(v);
-    emitHint(e.currentTarget, `${label ?? spec.label ?? ''} ${formatValue(spec, v)}`.trim());
+    emitHint(e.currentTarget, `${label ?? spec.label ?? ''} ${format(v)}`.trim());
   };
 
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
@@ -128,7 +131,7 @@ export function Knob({
       aria-valuemin={0}
       aria-valuemax={1}
       aria-valuenow={n}
-      aria-valuetext={formatValue(spec, value)}
+      aria-valuetext={format(value)}
       data-hint={text}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

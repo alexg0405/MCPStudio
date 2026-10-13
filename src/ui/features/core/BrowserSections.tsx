@@ -1,5 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { KIT, KIT_VERSION } from '@core/model/kit';
+import { addEffectToSelectedInsert } from '@app/actions/mixer';
+import { openWindow } from '../../workspace/registry';
 import { addInstrumentChannel, addKitChannel } from '@app/actions/channels';
 import { newPattern } from '@app/actions/patterns';
 import type { PatternId } from '@core/model/types';
@@ -13,7 +15,10 @@ function usePlugins() {
   return plugins;
 }
 
-/** Instruments and effects (built-in and user). Click an instrument to add it as a channel. */
+/**
+ * Instruments and effects (built-in and user). Click an instrument to add it as a channel, an
+ * effect to add it to the insert selected in the mixer.
+ */
 export function PluginsSection() {
   const services = useServices();
   const plugins = usePlugins();
@@ -34,15 +39,19 @@ export function PluginsSection() {
         </button>
       ))}
       {effects.map((e) => (
-        <div
+        <button
           key={e.def.id}
           className={styles.item}
-          data-hint={`${e.def.description ?? e.def.name} (effects go in mixer slots, M5)`}
+          onClick={() => {
+            const added = addEffectToSelectedInsert(services, e.def.id);
+            if (added) openWindow(services, 'plugin', { kind: 'fx', ...added });
+          }}
+          data-hint={`${e.def.description ?? e.def.name}. Click to add it to the selected mixer insert.`}
         >
           {e.def.name}
           <span className={styles.badge}>fx</span>
           {e.source === 'user' && <span className={styles.badge}>user</span>}
-        </div>
+        </button>
       ))}
       {errors.map((err) => (
         <div key={err.path} className={styles.error} title={err.error} data-hint={err.error}>

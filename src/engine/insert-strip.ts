@@ -333,10 +333,12 @@ export class InsertStrip {
     insert: Insert,
     project: Project | null,
     destination: AudioNode,
+    /** The engine keeps one input node per insert id (it outlives the strip); dispose() disconnects it. */
+    input: GainNode = new GainNode(core.ctx),
   ) {
     const ctx = core.ctx;
     this.insert = insert;
-    this.input = new GainNode(ctx);
+    this.input = input;
     this.panner = new StereoPannerNode(ctx, { pan: clamp(insert.pan, -1, 1, 0) });
     this.fader = new GainNode(ctx, { gain: clamp(insert.volume, 0, MAX_INSERT_VOLUME) });
     this.mute = new GainNode(ctx);

@@ -19,8 +19,6 @@ export class ChannelStrip {
   private muted = false;
   private channel: InstrumentChannel;
   private project: Project;
-  /** The insert input this channel currently feeds. */
-  private dest: AudioNode;
   /** True when the plugin is missing or failed to load (silent placeholder; data is kept). */
   faulted = false;
 
@@ -37,8 +35,7 @@ export class ChannelStrip {
     this.panner = new StereoPannerNode(ctx, { pan: channel.pan });
     this.out = new GainNode(ctx);
     this.input.connect(this.vol).connect(this.panner).connect(this.out);
-    this.dest = core.insertInput(channel.output);
-    this.out.connect(this.dest);
+    this.out.connect(core.insertInput(channel.output));
     this.load(channel, project);
   }
 
@@ -53,22 +50,16 @@ export class ChannelStrip {
     const t = this.core.ctx.currentTime;
     if (prev.volume !== next.volume) this.vol.gain.setTargetAtTime(next.volume, t, 0.004);
     if (prev.pan !== next.pan) this.panner.pan.setTargetAtTime(next.pan, t, 0.004);
-    if (prev.output !== next.output) this.reroute();
+    if (prev.output !== next.output) {
+      this.out.disconnect();
+      this.out.connect(this.core.insertInput(next.output));
+    }
     if (prev.plugin.pluginId !== next.plugin.pluginId) {
       this.load(next, project);
       return;
     }
     if (prev.rootKey !== next.rootKey) this.host?.setRootKey(next.rootKey);
     if (prev.plugin !== next.plugin) this.host?.apply(next.plugin, project, t);
-  }
-
-  /** Reconnects to the channel's insert if it now resolves to a different node (inserts added/removed). */
-  reroute(): void {
-    const dest = this.core.insertInput(this.channel.output);
-    if (dest === this.dest) return;
-    this.out.disconnect();
-    this.out.connect(dest);
-    this.dest = dest;
   }
 
   /** The project's sample table changed (a sample was added or replaced). */

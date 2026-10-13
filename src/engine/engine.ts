@@ -58,6 +58,8 @@ export class Engine implements EngineApi, EngineCore {
   private readonly previewBus: GainNode;
   private readonly master: InsertStrip;
   private readonly inserts = new Map<InsertId, InsertStrip>();
+  /** Persistent input node per insert id (see inputNode). */
+  private readonly insertInputs = new Map<InsertId, GainNode>();
   private readonly meterScratch = new Float32Array(METER_FRAMES);
   private readonly strips = new Map<ChannelId, ChannelStrip>();
   private project: Project | null = null;
@@ -198,7 +200,7 @@ export class Engine implements EngineApi, EngineCore {
     if (!prev || prev.transport.bpm !== next.transport.bpm) this.transportInfo.setBpm(next.transport.bpm);
 
     // Inserts first (channels connect to them), removals last.
-    const mixer = this.reconcileMixer(prev, next);
+    const removedInserts = this.reconcileMixer(prev, next);
 
     if (!prev || prev.channels !== next.channels || prev.samples !== next.samples) {
       const muted = effectivelyMuted(next.channels);
@@ -221,8 +223,8 @@ export class Engine implements EngineApi, EngineCore {
         }
       }
     }
-    if (mixer.topologyChanged) for (const strip of this.strips.values()) strip.reroute();
-    for (const strip of mixer.removed) strip.dispose();
+    // Insert removals last; anything still routed to a removed insert falls back to the master.
+    for (const strip of removedInserts) this.removeInsertStrip(strip);
 
     const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
     const schedulingChanged =
@@ -237,12 +239,11 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   /**
-   * Keyed add/update of inserts (and their effect slots) plus effective mutes. Removed strips are
-   * returned undisposed so channels can move off them first.
+   * Keyed add/update of inserts (and their effect slots) plus effective mutes. Strips of removed
+   * inserts are returned, still connected, for removeInsertStrip() once channels are reconciled.
    */
-  private reconcileMixer(prev: Project | null, next: Project): { topologyChanged: boolean; removed: InsertStrip[] } {
+  private reconcileMixer(prev: Project | null, next: Project): InsertStrip[] {
     const removed: InsertStrip[] = [];
-    let added = false;
     if (!prev || prev.mixer !== next.mixer) {
       const inserts = next.mixer.inserts;
       for (const id of Object.keys(inserts) as InsertId[]) {
@@ -251,8 +252,10 @@ export class Engine implements EngineApi, EngineCore {
         const strip = this.inserts.get(id);
         if (strip) strip.update(insert, next);
         else {
-          this.inserts.set(id, new InsertStrip(this, insert, next, this.master.input));
-          added = true;
+          // Take the insert's input over from the master fallback.
+          const input = this.inputNode(id);
+          input.disconnect();
+          this.inserts.set(id, new InsertStrip(this, insert, next, this.master.input, input));
         }
       }
       if (!inserts[MASTER]) this.master.update(DEFAULT_MASTER, next);
@@ -265,7 +268,27 @@ export class Engine implements EngineApi, EngineCore {
       for (const [id, strip] of this.inserts) strip.setMuted(muted.has(id));
     }
     if (prev && prev.samples !== next.samples) for (const strip of this.inserts.values()) strip.samplesChanged(next);
-    return { topologyChanged: added || removed.length > 0, removed };
+    return removed;
+  }
+
+  /**
+   * The input node of insert `id`, which channels connect to. It outlives the insert's strip: while
+   * the insert doesn't exist (not created yet, deleted, or an unknown id) it feeds the master, so
+   * deleting or restoring an insert never has to reconnect channels.
+   */
+  private inputNode(id: InsertId): GainNode {
+    let node = this.insertInputs.get(id);
+    if (!node) {
+      node = new GainNode(this.ctx);
+      node.connect(this.master.input);
+      this.insertInputs.set(id, node);
+    }
+    return node;
+  }
+
+  private removeInsertStrip(strip: InsertStrip): void {
+    strip.dispose();
+    this.insertInputs.get(strip.id)?.connect(this.master.input);
   }
 
   setTransportView(view: TransportView): void {
@@ -296,9 +319,9 @@ export class Engine implements EngineApi, EngineCore {
 
   // ---- EngineCore ----
 
-  /** Where a channel routed to `id` connects (unknown inserts fall back to the master). */
+  /** Where a channel routed to `id` connects (unknown inserts play through the master). */
   insertInput(id: InsertId): AudioNode {
-    return (this.inserts.get(id) ?? this.master).input;
+    return id === MASTER ? this.master.input : this.inputNode(id);
   }
 
   requestState(owner: PluginOwner, state: JsonValue): void {
@@ -478,6 +501,8 @@ export class Engine implements EngineApi, EngineCore {
     this.strips.clear();
     for (const s of this.inserts.values()) s.dispose();
     this.inserts.clear();
+    for (const node of this.insertInputs.values()) node.disconnect();
+    this.insertInputs.clear();
     for (const p of [...this.ports]) p.dispose();
     this.limiter?.port.postMessage({ t: 'dispose' });
     this.listeners.clear();

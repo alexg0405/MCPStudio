@@ -58,6 +58,15 @@ const SYNTH: Partial<Record<BeatSound, Record<string, number | string>>> = {
   },
 };
 
+/** Channel volumes for new pitched parts that sit under the drums (kit channels keep 0.78). */
+const DEFAULT_VOLUME: Partial<Record<BeatSound, number>> = {
+  '808': 0.62,
+  bass: 0.62,
+  pad: 0.45,
+  lead: 0.55,
+  pluck: 0.6,
+};
+
 function clampParam(spec: ParamSpec | undefined, v: number): number | null {
   if (!spec || (spec.type !== 'float' && spec.type !== 'int')) return null;
   const x = Math.min(spec.max, Math.max(spec.min, v));
@@ -200,8 +209,8 @@ export function applyBeatSpec(
       // Only the assistant's own channels take its mix and sound settings.
       if (created.has(channelId)) {
         if (track.volume !== undefined) ch.volume = track.volume;
-        // Headroom: an 808 at full channel volume plus the kick clips the master.
-        else if (make && track.sound === '808') ch.volume = 0.62;
+        // Headroom: at full channel volume an 808 or pad on top of the drums clips the master.
+        else if (make && DEFAULT_VOLUME[track.sound] !== undefined) ch.volume = DEFAULT_VOLUME[track.sound] as number;
         if (track.pan !== undefined) ch.pan = track.pan;
         const def = s.plugins.get(ch.plugin.pluginId);
         for (const [k, v] of Object.entries(track.params ?? {})) {

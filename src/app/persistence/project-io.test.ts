@@ -265,6 +265,42 @@ describe('sample stores', () => {
     expect(onFallback).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps working in memory when the primary store is unavailable (e.g. OPFS blocked)', async () => {
+    const blocked = new StorageError('unavailable', 'Browser storage is blocked');
+    const reject = async () => {
+      throw blocked;
+    };
+    const primary: BlobStore = {
+      putBlob: vi.fn(reject),
+      getBlob: vi.fn(reject),
+      hasBlob: vi.fn(reject),
+      deleteBlob: vi.fn(reject),
+      listBlobs: vi.fn(reject),
+    };
+    const store = createSampleStore(primary);
+    const onFallback = vi.fn();
+    store.onFallback(onFallback);
+    expect(store.memoryOnly).toBe(false);
+    const ref = await importSampleBytes(wavBytes(), 'kick.wav', { store }); // hasBlob fails first
+    expect(store.memoryOnly).toBe(true);
+    const hash = (ref.source as { hash: string }).hash;
+    expect(onFallback).toHaveBeenCalledWith(blocked, hash);
+    expect(primary.hasBlob).toHaveBeenCalledTimes(1);
+    expect(primary.putBlob).not.toHaveBeenCalled(); // known to be down: not retried
+    expect(new Uint8Array((await opfsSampleProvider({ store }).getBytes(ref))!)).toEqual(wavBytes());
+    expect(await store.listBlobs()).toEqual([{ hash, ext: 'wav' }]);
+    const file = await buildProjectFile(withSamples(ref), null, '1', { store });
+    expect((await openProjectFile(file, { store })).missingSamples).toEqual([]);
+  });
+
+  it('surfaces real I/O errors from the primary store on reads', async () => {
+    const primary = createMemoryBlobStore();
+    vi.spyOn(primary, 'getBlob').mockRejectedValue(new StorageError('io', 'disk error'));
+    const store = createSampleStore(primary);
+    await expect(store.getBlob(hash)).rejects.toMatchObject({ code: 'io' });
+    expect(store.memoryOnly).toBe(false);
+  });
+
   it('reads through to the primary store and merges listings', async () => {
     const primary: BlobStore = createMemoryBlobStore();
     await primary.putBlob(hash, 'flac', Uint8Array.from([7]));

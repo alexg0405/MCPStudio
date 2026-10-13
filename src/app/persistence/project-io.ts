@@ -1,10 +1,12 @@
-import { isSharedMemory, sha256Hex } from '@core/io/hash';
+import { exactArrayBuffer } from '@core/io/bytes';
+import { sha256Hex } from '@core/io/hash';
 import { readProjectFile, writeProjectFile, type EmbeddedSample } from '@core/io/project-file';
 import { decodePcm, encodeWav } from '@core/io/wav';
 import type { Project, SampleRef } from '@core/model/types';
 import type { SampleBytesProvider } from '@engine/api';
 import type { BlobStore } from '@platform/opfs';
 import { defaultSampleStore } from './blob-store';
+import { sniffAudioExt } from './sample-import';
 
 /**
  * Save/open glue between the project file format (core) and the sample blob store (OPFS). Embedded
@@ -118,18 +120,13 @@ export async function openProjectFile(bytes: Uint8Array, opts: { store?: BlobSto
   return { project: file.project, view: file.view, repairs, migratedFrom: file.migratedFrom, missingSamples };
 }
 
-function isAiff(bytes: Uint8Array): boolean {
-  const tag = (o: number) =>
-    String.fromCharCode(bytes[o] ?? 0, bytes[o + 1] ?? 0, bytes[o + 2] ?? 0, bytes[o + 3] ?? 0);
-  return bytes.length >= 12 && tag(0) === 'FORM' && (tag(8) === 'AIFF' || tag(8) === 'AIFC');
-}
-
 /**
  * Bytes that Chrome's decodeAudioData can read. AIFF/AIFC isn't supported there, so those are
  * re-encoded as 32-bit float WAV (lossless for PCM up to 24 bits); everything else passes through.
  */
 export function decodableBytes(bytes: Uint8Array): Uint8Array {
-  if (!isAiff(bytes)) return bytes;
+  const kind = sniffAudioExt(bytes);
+  if (kind !== 'aiff' && kind !== 'aifc') return bytes;
   try {
     const pcm = decodePcm(bytes);
     if (!pcm || pcm.channels.length === 0) return bytes;
@@ -137,11 +134,6 @@ export function decodableBytes(bytes: Uint8Array): Uint8Array {
   } catch {
     return bytes;
   }
-}
-
-function exactArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
-  return whole && !isSharedMemory(bytes) ? (bytes.buffer as ArrayBuffer) : bytes.slice().buffer;
 }
 
 /**

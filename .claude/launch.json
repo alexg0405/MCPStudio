@@ -9,6 +9,18 @@
       ],
       "port": 5390,
       "autoPort": true
+    },
+    {
+      "name": "agstudio-prod",
+      "runtimeExecutable": "/Users/alexanderguo/.local/node/bin/node",
+      "runtimeArgs": [
+        "node_modules/vite/bin/vite.js",
+        "preview",
+        "--port",
+        "5391",
+        "--strictPort"
+      ],
+      "port": 5391
     }
   ]
 }

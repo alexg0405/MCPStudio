@@ -72,9 +72,25 @@ export default defineConfig({
   // 'es' is required for AudioWorklet modules: the default 'iife' rewrites import.meta.url to
   // self.location, and AudioWorkletGlobalScope has no `self`.
   worker: { format: 'es' },
-  build: { target: 'esnext' },
+  // One app bundle (~560 kB, ~180 kB gzipped) is fine for a desktop DAW that loads once.
+  build: { target: 'esnext', chunkSizeWarningLimit: 1024 },
   // PORT lets the preview tooling pick a free port; 5390 is AGstudio's own default.
   server: { port: Number(process.env.PORT) || 5390, strictPort: true, headers: isolation },
+  // Optimized up front: a dependency discovered mid-run gets re-bundled under a new hash, and modules
+  // that already loaded the old copy end up with a second React (hooks then fail).
+  optimizeDeps: {
+    include: [
+      'react',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
+      'react-dom',
+      'react-dom/client',
+      'zustand',
+      'zustand/vanilla',
+      'immer',
+      'fflate',
+    ],
+  },
   preview: { headers: isolation },
   test: {
     // Vitest's persistent transform cache keys modules by their own source, so an `import.meta.glob`

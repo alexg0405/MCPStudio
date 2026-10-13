@@ -1,0 +1,120 @@
+/**
+ * End-to-end smoke test: the whole app (real engine, all features, React shell) in headless Chrome.
+ * Open a project file → play → seek → stop → save → reopen.
+ */
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { createServices, type Services } from '@app/services';
+import { installPluginDiscovery } from '@app/plugins/discover';
+import { PluginRegistry } from '@app/plugins/registry';
+import { newId } from '@core/model/ids';
+import type { PatternClip } from '@core/model/types';
+import { setStep } from '@core/ops/notes';
+import { addClips } from '@core/ops/playlist';
+import { registerFeatures } from '@ui/features';
+import { installKeyboard } from '@ui/keyboard';
+import { ServicesProvider } from '@ui/services-context';
+import { App } from '@ui/shell/App';
+import { applyDefaultLayout } from '@ui/workspace/layouts';
+import '@ui/theme/tokens.css';
+import '@ui/theme/base.css';
+
+const BAR = 3840;
+const until = async (ok: () => boolean, ms = 3000) => {
+  const end = performance.now() + ms;
+  while (!ok()) {
+    if (performance.now() > end) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 20));
+  }
+};
+
+describe('app smoke test', () => {
+  let s: Services;
+  let root: Root;
+  let host: HTMLDivElement;
+  const errors: unknown[] = [];
+
+  beforeAll(async () => {
+    vi.spyOn(console, 'error').mockImplementation((...args) => void errors.push(args));
+    host = document.createElement('div');
+    host.style.cssText = 'position:fixed;inset:0;width:1280px;height:800px';
+    host.id = 'root';
+    document.body.append(host);
+    const plugins = new PluginRegistry();
+    await installPluginDiscovery(plugins);
+    s = createServices({ plugins });
+    registerFeatures(s);
+    installKeyboard(s);
+    applyDefaultLayout(s);
+    root = createRoot(host);
+    root.render(createElement(ServicesProvider, { services: s, children: createElement(App) }));
+    await s.engine.resume();
+  });
+
+  afterAll(async () => {
+    root.unmount();
+    host.remove();
+    await s.engine.dispose();
+    vi.restoreAllMocks();
+  });
+
+  it('renders the shell and its default windows', async () => {
+    await until(() => !!host.querySelector('header') && host.textContent!.includes('Channel rack'));
+    expect(host.textContent).toContain('Playlist');
+    expect(host.querySelectorAll('[role="menuitem"]').length).toBe(0); // menus closed
+  });
+
+  it('opens a project file, plays, seeks, stops, saves and reopens it', async () => {
+    // A two-bar song: a beat in Pattern 1, placed twice on the playlist.
+    const p = s.doc.getState().project;
+    const pat = p.patternOrder[0]!;
+    const [kick, clap] = p.channelOrder;
+    s.history.transact('Beat', (d) => {
+      for (const i of [0, 4, 8, 12]) setStep(d, pat, kick!, i, true, { rootKey: 60 });
+      for (const i of [4, 12]) setStep(d, pat, clap!, i, true, { rootKey: 60 });
+      const clips: PatternClip[] = [0, BAR].map((start) => ({
+        kind: 'pattern',
+        id: newId.clip(),
+        laneId: d.playlist.laneOrder[0]!,
+        start,
+        length: BAR,
+        patternId: pat,
+        offset: 0,
+      }));
+      addClips(d, clips);
+    });
+    const fixture = await s.files.build();
+    const saved = s.doc.getState().project;
+    s.history.markSaved();
+    await s.files.newProject();
+    expect(s.doc.getState().project.playlist.clips).toEqual({});
+
+    expect(await s.files.openFile(new File([fixture.slice().buffer], 'Smoke song.agproj'))).toBe(true);
+    expect(s.doc.getState().project).toEqual(saved);
+    await until(() => document.title === 'Smoke song – AGstudio');
+
+    s.view.getState().setMode('song');
+    s.commands.run('transport.playPause');
+    await until(() => s.engine.playing && s.engine.playhead() > 240);
+
+    // Seek into the second bar: playback continues from there.
+    s.engine.play(BAR + 480);
+    await until(() => s.engine.playhead() >= BAR + 480);
+    expect(s.engine.playhead()).toBeLessThan(2 * BAR + 960);
+
+    s.commands.run('transport.stop');
+    await until(() => !s.engine.playing);
+    expect(s.engine.stats().lateEvents).toBe(0);
+
+    const bytes = await s.files.build();
+    await s.files.newProject();
+    expect(await s.files.openFile(new File([bytes.slice().buffer], 'Again.agproj'))).toBe(true);
+    expect(s.doc.getState().project).toEqual(saved);
+    expect(s.view.getState().mode).toBe('song');
+  });
+
+  it('logged no errors', () => {
+    expect(errors).toEqual([]);
+  });
+});

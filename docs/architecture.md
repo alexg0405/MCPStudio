@@ -362,8 +362,14 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   = initial), params, migrations, zip, WAV, DSP kernels, generators.
 - Audio (Vitest browser mode, headless installed Chrome via Playwright `channel: 'chrome'`): offline-render fixtures
   returning `{ rms, peak, onsets, hash }`; onsets ±1 frame for worklets, ±1–2 ms for graph plugins; mute → silence;
-  gain math; limiter ceiling; determinism; export chunk-boundary matrix.
-- In the app: `window.__ag` (dev) exposes services; `__ag.selfTest()` runs the fixtures and returns JSON.
+  gain math; limiter ceiling; determinism; export chunk-boundary matrix; WAV export (hash-identical renders,
+  24-bit round trip, trimming, start tick, progress and cancel).
+- App smoke test (`test/browser/app-smoke.test.ts`): the whole app with the real engine and React shell in headless
+  Chrome: open a project file → play → seek → stop → save → reopen, with no errors logged and no late events.
+- In the app: `window.__ag` (dev) exposes services (stores, history, commands, engine, files) and `__ag.perf`
+  (piano roll draw times, React commit count; `?perf=notes10k` loads a 10k-note fixture).
+- Measured at M7 (Chrome, M-series Mac): piano roll redraw with 10k notes median 0.6 ms, p95 0.9 ms; 0 React
+  commits during idle playback (mixer open); an 8-bar song with reverb and delay exports (24-bit) in ~1.1 s.
 
 ## Risks to keep in mind
 

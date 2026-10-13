@@ -4,7 +4,16 @@ import { createEmptyProject, makeInstrumentChannel, makePattern, makePluginInsta
 import type { ClipId, LaneId, NoteId, PatternClip, PatternId, Project } from '../model/types';
 import { addChannel } from './channels';
 import { addNote } from './notes';
-import { addClips, clonePattern, editClips, removePattern, splitClip, toggleSoloLane } from './playlist';
+import {
+  addClips,
+  clonePattern,
+  editClips,
+  makeClipUnique,
+  removeLane,
+  removePattern,
+  splitClip,
+  toggleSoloLane,
+} from './playlist';
 import { audibleClips, clipAt, mutedLanes, patternTickAt, songLength } from '../query/playlist';
 
 function setup() {
@@ -100,5 +109,32 @@ describe('clip ops and queries', () => {
     const sorted = audibleClips(p);
     expect(clipAt(sorted, 100, lanes[0]!)?.id).toBe('c1');
     expect(clipAt(sorted, 100, lanes[1]!)).toBeUndefined();
+  });
+});
+
+describe('lane and clip menu ops', () => {
+  it('deletes a lane with its clips and keeps the last lane', () => {
+    const { p, lanes } = setup();
+    const q = produce(p, (d) => removeLane(d, lanes[1]!));
+    expect(q.playlist.laneOrder).not.toContain(lanes[1]);
+    expect(q.playlist.clips['c2' as ClipId]).toBeUndefined();
+    expect(q.playlist.clips['c1' as ClipId]).toBeDefined();
+    let only = p;
+    for (const id of p.playlist.laneOrder) only = produce(only, (d) => removeLane(d, id));
+    expect(only.playlist.laneOrder).toHaveLength(1);
+  });
+
+  it('makes a clip unique with its own copy of the pattern', () => {
+    const { p, pid } = setup();
+    const copy = 'pat_copy' as PatternId;
+    const q = produce(p, (d) => makeClipUnique(d, 'c2' as ClipId, copy, 'Pattern 1 #2'));
+    const c1 = q.playlist.clips['c1' as ClipId] as PatternClip;
+    const c2 = q.playlist.clips['c2' as ClipId] as PatternClip;
+    expect(c1.patternId).toBe(pid);
+    expect(c2.patternId).toBe(copy);
+    expect(q.patterns[copy]?.name).toBe('Pattern 1 #2');
+    const notes = (id: PatternId) => Object.values(q.patterns[id]!.notes).flatMap((m) => Object.values(m ?? {}));
+    expect(notes(copy).map((n) => n.key)).toEqual(notes(pid).map((n) => n.key));
+    expect(notes(copy)[0]?.id).not.toBe(notes(pid)[0]?.id);
   });
 });

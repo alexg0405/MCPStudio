@@ -1,5 +1,6 @@
 /** Playlist drawing: lanes, clips (with pattern note previews), lane headers and the ruler. */
 import type {
+  AudioClip,
   Clip,
   ClipId,
   Lane,
@@ -8,17 +9,22 @@ import type {
   Pattern,
   PatternClip,
   Project,
+  SampleRef,
   Tick,
   TimeSignature,
 } from '@core/model/types';
 import { notesSorted, patternLength } from '@core/query/queries';
-import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
+import { PPQ, ticksPerBar, ticksPerBeat } from '@core/time/ppq';
+import type { Waveform } from '@engine/api';
 import { shade, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 
 export const HEADER_WIDTH = 132;
 export const RULER_HEIGHT = 22;
 const TITLE_H = 13;
+/** The ▾ clip-menu button at a clip's top-left corner (clips narrower than the minimum have none). */
+export const CLIP_MENU_SIZE = 12;
+export const CLIP_MENU_MIN_WIDTH = 30;
 
 export function drawLanesGrid(
   ctx: CanvasRenderingContext2D,
@@ -93,6 +99,8 @@ export interface ClipStyle {
   selected: ReadonlySet<ClipId>;
   /** Clip ids hidden because they're being dragged. */
   skip?: ReadonlySet<ClipId>;
+  /** Peak overview of an audio clip's sample (null while it decodes). */
+  waveform?(ref: SampleRef): Waveform | null;
 }
 
 export function drawClips(
@@ -133,9 +141,20 @@ export function drawClips(
     ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,0.6)';
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     const label = pattern?.name ?? c.name ?? channel?.name ?? '?';
+    const menu = w >= CLIP_MENU_MIN_WIDTH && h >= TITLE_H;
+    if (menu) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.beginPath();
+      ctx.moveTo(x + 3, y + 4.5);
+      ctx.lineTo(x + 9, y + 4.5);
+      ctx.lineTo(x + 6, y + 8.5);
+      ctx.closePath();
+      ctx.fill();
+    }
     if (w > 18) {
       ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillText(label, x + 4, y + TITLE_H / 2 + 0.5, w - 8);
+      const lx = menu ? x + CLIP_MENU_SIZE : x + 4;
+      ctx.fillText(label, lx, y + TITLE_H / 2 + 0.5, x + w - 4 - lx);
     }
     // Body: notes for pattern clips, a waveform hint for audio clips.
     const bodyY = y + TITLE_H + 1;
@@ -143,14 +162,47 @@ export function drawClips(
     if (bodyH > 3 && pattern && c.kind === 'pattern')
       drawPatternBody(ctx, vp, pattern, ts, c, x, w, bodyY, bodyH, shade(base, 0.55));
     else if (bodyH > 3 && c.kind === 'audio') {
+      const ref = channel?.kind === 'audioClip' ? project.samples[channel.sampleId] : undefined;
+      const wave = ref ? style.waveform?.(ref) : null;
       ctx.fillStyle = shade(base, 0.4);
-      const mid = bodyY + bodyH / 2;
-      for (let px = 0; px < w; px += 3) {
-        const a = Math.abs(Math.sin((px + c.start * 0.01) * 0.37) * Math.cos(px * 0.051)) * (bodyH / 2);
-        ctx.fillRect(x + px, mid - a, 2, Math.max(1, a * 2));
-      }
+      if (wave) drawWaveform(ctx, vp, wave, c, 60 / (project.transport.bpm * PPQ), x, w, bodyY, bodyH);
+      else ctx.fillRect(x, bodyY + bodyH / 2, w, 1);
     }
     ctx.globalAlpha = 1;
+  }
+}
+
+/** The part of the sample the clip plays (from its trim point, at the current tempo). */
+function drawWaveform(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  wave: Waveform,
+  clip: AudioClip,
+  secondsPerTick: number,
+  x: number,
+  w: number,
+  y: number,
+  h: number,
+): void {
+  const mid = y + h / 2;
+  const amp = h / 2;
+  const buckets = wave.peaks.length / 2;
+  const perPx = secondsPerTick / vp.pxPerTick;
+  const from = Math.max(Math.floor(x), 0);
+  const to = Math.min(Math.ceil(x + w), vp.width);
+  for (let px = from; px < to; px++) {
+    const t0 = clip.offsetSec + (px - x) * perPx;
+    if (t0 >= wave.duration) break;
+    const b0 = Math.max(0, Math.floor((t0 * wave.sampleRate) / wave.bucket));
+    const b1 = Math.min(buckets, Math.max(b0 + 1, Math.ceil(((t0 + perPx) * wave.sampleRate) / wave.bucket)));
+    let lo = 0;
+    let hi = 0;
+    for (let b = b0; b < b1; b++) {
+      lo = Math.min(lo, wave.peaks[b * 2] as number);
+      hi = Math.max(hi, wave.peaks[b * 2 + 1] as number);
+    }
+    const top = Math.max(y, mid - hi * amp);
+    ctx.fillRect(px, top, 1, Math.max(1, Math.min(y + h, mid - lo * amp) - top));
   }
 }
 

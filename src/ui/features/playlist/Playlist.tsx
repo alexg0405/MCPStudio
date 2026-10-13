@@ -8,6 +8,8 @@ import type { LaneId, Tick } from '@core/model/types';
 import { useServices } from '../../services-context';
 import { PatternPicker } from '../patterns/PatternPicker';
 import { PlaylistController, type PlaylistElements } from './controller';
+import { clipMenu, laneMenu } from './menus';
+import { showContextMenu } from '../../controls/ContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT } from './render';
 import styles from './Playlist.module.css';
 
@@ -16,7 +18,7 @@ const TOOLS: { tool: PlaylistTool; label: string; key: string; hint: string }[] 
     tool: 'draw',
     label: 'Draw',
     key: 'P',
-    hint: 'Draw: click to place the current pattern, drag clips to move, drag edges to resize',
+    hint: 'Draw: click to place the current pattern, drag clips to move, drag edges to resize, right-click to delete; a clip’s ▾ opens its menu',
   },
   { tool: 'paint', label: 'Paint', key: 'B', hint: 'Paint: drag to place repeats of the current pattern' },
   { tool: 'delete', label: 'Delete', key: 'D', hint: 'Delete: click or drag over clips' },
@@ -111,6 +113,12 @@ export function Playlist() {
     const c = new PlaylistController(services, els as PlaylistElements);
     c.onSampleDrop = (generator, laneId, tick) => addKitAudioClip(services, generator, laneId, tick);
     c.onFilesDrop = (files, laneId, tick) => void dropAudioFiles(services, files, laneId, tick);
+    c.onClipMenu = (clip, at) => showContextMenu(at, clipMenu(services, clip));
+    c.onLaneMenu = (laneId, at) =>
+      showContextMenu(
+        at,
+        laneMenu(services, laneId, () => c.renameLane(laneId)),
+      );
     controller.current = c;
     c.mount();
     return () => {
@@ -135,7 +143,7 @@ export function Playlist() {
         <canvas
           ref={headers}
           className={styles.headers}
-          data-hint="Tracks: click the light to mute, right-click to solo, double-click a name to rename"
+          data-hint="Tracks: click the light to mute, right-click it to solo; double-click a name to rename, right-click it for options"
         />
         <div ref={gridHost} className={styles.gridHost}>
           <canvas ref={grid} className={styles.layer} />

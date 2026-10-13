@@ -22,6 +22,7 @@ import type { EngineCore } from './engine-core';
 import { InsertStrip, METER_FRAMES } from './insert-strip';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
+import { waveformOf, type Waveform } from './waveform';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
@@ -71,6 +72,7 @@ export class Engine implements EngineApi, EngineCore {
   private previewSeq = PREVIEW_ID_BASE;
   private previewSource: AudioBufferSourceNode | null = null;
   private previewToken = 0;
+  private readonly waveformsLoading = new Set<string>();
   private faults = 0;
   private muteKey = '';
   private lastLate = 0;
@@ -437,6 +439,19 @@ export class Engine implements EngineApi, EngineCore {
     void this.samples.load(ref, this.ctx).then((buffer) => {
       if (buffer) this.playPreview(buffer);
     });
+  }
+
+  waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
+    const buffer = this.samples.getSync(ref, this.ctx.sampleRate);
+    if (buffer) return waveformOf(buffer);
+    const key = ref.source.kind === 'embedded' ? ref.source.hash : ref.source.generator;
+    if (!this.waveformsLoading.has(key)) {
+      this.waveformsLoading.add(key);
+      void this.samples.load(ref, this.ctx).then((b) => {
+        if (b) this.emit();
+      });
+    }
+    return null;
   }
 
   async previewAudio(bytes: ArrayBuffer): Promise<boolean> {

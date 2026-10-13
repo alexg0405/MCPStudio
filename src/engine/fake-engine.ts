@@ -42,6 +42,9 @@ export class FakeEngine implements EngineApi {
   }
   previewNoteOff(): void {}
   previewSample(): void {}
+  waveform(): null {
+    return null;
+  }
   async previewAudio(): Promise<boolean> {
     return true;
   }

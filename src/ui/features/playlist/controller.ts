@@ -5,7 +5,7 @@
 import type { Services } from '@app/services';
 import type { Gesture } from '@core/history/history';
 import { newId } from '@core/model/ids';
-import type { Clip, ClipId, Lane, LaneId, PatternClip, Project, Tick } from '@core/model/types';
+import type { Clip, ClipId, Lane, LaneId, PatternClip, Project, SampleRef, Tick } from '@core/model/types';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
 import { PPQ, ticksPerBar } from '@core/time/ppq';
@@ -13,7 +13,16 @@ import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { onFrame } from '../../frame-loop';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
-import { drawClips, drawLaneHeaders, drawLanesGrid, drawPlaylistRuler, HEADER_WIDTH, RULER_HEIGHT } from './render';
+import {
+  CLIP_MENU_MIN_WIDTH,
+  CLIP_MENU_SIZE,
+  drawClips,
+  drawLaneHeaders,
+  drawLanesGrid,
+  drawPlaylistRuler,
+  HEADER_WIDTH,
+  RULER_HEIGHT,
+} from './render';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 
 export interface PlaylistElements {
@@ -100,6 +109,8 @@ export class PlaylistController {
         if (next.loop !== prev.loop || next.mode !== prev.mode) this.invalidate('ruler');
         if (next.currentPatternId !== prev.currentPatternId) this.invalidate('clips');
       }),
+      // A sample finished decoding: its clips can show their waveform now.
+      s.engine.subscribe(() => this.invalidate('clips')),
       onFrame(() => this.frame()),
     );
     const ro = new ResizeObserver(() => this.resize());
@@ -163,6 +174,13 @@ export class PlaylistController {
   onSampleDrop?: (generator: string, laneId: LaneId, tick: Tick) => void;
   /** Audio files dropped from the sample browser or the desktop. */
   onFilesDrop?: (files: Promise<File[]>, laneId: LaneId, tick: Tick) => void;
+
+  /** The ▾ menu of a clip was clicked. */
+  onClipMenu?: (clip: Clip, at: { clientX: number; clientY: number }) => void;
+  /** A track name was right-clicked. */
+  onLaneMenu?: (laneId: LaneId, at: { clientX: number; clientY: number }) => void;
+
+  private readonly waveform = (ref: SampleRef) => this.s.engine.waveform(ref);
 
   // ---------------------------------------------------------------- data
 
@@ -233,12 +251,12 @@ export class PlaylistController {
           p,
           clipsSorted(p.playlist.clips),
           laneIndex,
-          { selected, ...(skip ? { skip } : {}) },
+          { selected, waveform: this.waveform, ...(skip ? { skip } : {}) },
           muted,
         );
         if (this.preview) {
           const sel = new Set(this.preview.map((c) => c.id));
-          drawClips(ctx, vp, theme, p, this.preview, laneIndex, { selected: sel }, muted);
+          drawClips(ctx, vp, theme, p, this.preview, laneIndex, { selected: sel, waveform: this.waveform }, muted);
         }
       }
       if (this.dirty.has('overlay')) this.drawOverlay();
@@ -393,6 +411,12 @@ export class PlaylistController {
     const hit = this.hitTest(x, y, p);
     const mod = e.metaKey || e.ctrlKey;
 
+    if (e.button === 0 && hit && this.onMenuButton(hit.clip, x, y, p)) {
+      host.releasePointerCapture(e.pointerId);
+      editor.selectClips([hit.clip.id]);
+      this.onClipMenu?.(hit.clip, e);
+      return;
+    }
     if (e.button === 2 || tool === 'delete') {
       this.drag = { kind: 'erase', gesture: this.s.history.gesture('Delete clips'), done: new Set() };
       this.eraseAt(x, y, p);
@@ -695,12 +719,25 @@ export class PlaylistController {
 
   // ---------------------------------------------------------------- headers, ruler, wheel
 
+  /** The ▾ button in a clip's title bar (FL's clip menu). */
+  private onMenuButton(c: Clip, x: number, y: number, p: Project): boolean {
+    const row = p.playlist.laneOrder.indexOf(c.laneId);
+    if (row < 0 || c.length * this.vp.pxPerTick < CLIP_MENU_MIN_WIDTH) return false;
+    const cx = this.vp.tickToX(c.start);
+    const cy = this.vp.rowToY(row) + 1;
+    return x >= cx && x < cx + CLIP_MENU_SIZE && y >= cy && y < cy + CLIP_MENU_SIZE;
+  }
+
   private onHeaderDown(e: PointerEvent): void {
     const p = this.project();
     const { x, y } = this.local(e, this.els.headers);
     const lane = this.laneAtY(y, p);
     if (!lane) return;
     e.preventDefault();
+    if (x >= 24 && e.button === 2) {
+      this.onLaneMenu?.(lane, e);
+      return;
+    }
     if (x < 24) {
       if (e.button === 2) this.s.history.transact('Solo track', (d) => toggleSoloLane(d, lane));
       else if (e.button === 0) {
@@ -714,8 +751,14 @@ export class PlaylistController {
     const p = this.project();
     const { x, y } = this.local(e, this.els.headers);
     const laneId = this.laneAtY(y, p);
-    const lane = laneId ? p.playlist.lanes[laneId] : undefined;
-    if (!lane || x < 24) return;
+    if (laneId && x >= 24) this.renameLane(laneId);
+  }
+
+  /** Shows the inline rename field on a track header. */
+  renameLane(laneId: LaneId): void {
+    const p = this.project();
+    const lane = p.playlist.lanes[laneId];
+    if (!lane) return;
     const input = this.els.rename;
     const row = this.laneRow(p, lane.id);
     input.style.display = 'block';

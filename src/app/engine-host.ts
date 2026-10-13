@@ -1,6 +1,6 @@
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
-import type { EngineApi, EngineState, EngineStats, TransportView } from '@engine/api';
+import type { EngineApi, EngineState, EngineStats, TransportView, Waveform } from '@engine/api';
 
 /**
  * A stable EngineApi that delegates to a replaceable engine. Rebooting (new AudioContext) is how
@@ -88,6 +88,9 @@ export class EngineHost implements EngineApi {
   }
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     this.inner.previewSample(ref);
+  }
+  waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
+    return this.inner.waveform(ref);
   }
   previewAudio(bytes: ArrayBuffer): Promise<boolean> {
     return this.inner.previewAudio(bytes);

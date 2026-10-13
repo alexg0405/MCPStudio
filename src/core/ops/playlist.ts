@@ -88,6 +88,16 @@ export function setLaneProps(
   if (patch.solo !== undefined) lane.solo = patch.solo;
 }
 
+/** Deletes a lane and its clips; the playlist always keeps at least one lane. */
+export function removeLane(d: Draft<Project>, id: LaneId): void {
+  if (!d.playlist.lanes[id] || d.playlist.laneOrder.length <= 1) return;
+  delete d.playlist.lanes[id];
+  d.playlist.laneOrder.splice(d.playlist.laneOrder.indexOf(id), 1);
+  for (const [cid, clip] of Object.entries(d.playlist.clips)) {
+    if (clip.laneId === id) delete d.playlist.clips[cid as ClipId];
+  }
+}
+
 /** FL-style exclusive lane solo (soloing the only soloed lane clears it). */
 export function toggleSoloLane(d: Draft<Project>, id: LaneId): void {
   const lane = d.playlist.lanes[id];
@@ -155,6 +165,17 @@ export function splitClip(
   if (right.kind === 'audio' && c.kind === 'audio') right.offsetSec = c.offsetSec + leftLen * secondsPerTick;
   c.length = leftLen;
   d.playlist.clips[rightId] = right as Draft<Clip>;
+}
+
+/**
+ * FL's "Make unique": the clip gets its own copy of its pattern (fresh note ids), so editing it no
+ * longer changes the other clips of that pattern.
+ */
+export function makeClipUnique(d: Draft<Project>, clipId: ClipId, copyId: PatternId, name: string): void {
+  const clip = d.playlist.clips[clipId];
+  if (!clip || clip.kind !== 'pattern' || !d.patterns[clip.patternId]) return;
+  clonePattern(d, clip.patternId, copyId, name);
+  clip.patternId = copyId;
 }
 
 export function sanitizeClip<C extends Clip>(c: C): C {

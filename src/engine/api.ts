@@ -5,6 +5,9 @@
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PatternId, PluginOwner, SampleRef, Tick } from '@core/model/types';
 import type { JsonValue, PluginDef } from '@agstudio/sdk';
+import type { Waveform } from './waveform';
+
+export type { Waveform };
 
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
 
@@ -65,6 +68,11 @@ export interface EngineApi {
   previewNoteOff(channelId: ChannelId, noteId: number): void;
   /** Plays a sample on the preview bus (browser clicks). */
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void;
+  /**
+   * A sample's peak overview for drawing, or null while it is still being decoded (the engine's
+   * subscribers are notified when it becomes available).
+   */
+  waveform(ref: Pick<SampleRef, 'source'>): Waveform | null;
   /** Decodes and plays an audio file on the preview bus; resolves false if it can't be decoded. */
   previewAudio(bytes: ArrayBuffer): Promise<boolean>;
   stopPreview(): void;

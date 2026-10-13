@@ -30,6 +30,11 @@ export interface RenderResult {
   buffer: AudioBuffer;
   /** Seconds of silence before the music starts. */
   preRoll: number;
+  /**
+   * Seconds the mixer delays everything by (plugin delay compensation): the music is heard from
+   * `preRoll + latency`. Not trimmed here; exports may drop it along with the pre-roll.
+   */
+  latency: number;
   /** False if a worklet sync barrier timed out (worklet notes may be late). */
   synced: boolean;
 }
@@ -82,7 +87,7 @@ export async function renderOffline(project: Project, opts: RenderOptions): Prom
     void ctx.suspend(128 / sampleRate).then(() => step(128));
     const buffer = await Promise.race([ctx.startRendering(), aborted]);
     opts.onProgress?.(1);
-    return { buffer, preRoll, synced };
+    return { buffer, preRoll, synced, latency: engine.graphLatency() };
   } finally {
     await engine.dispose();
   }

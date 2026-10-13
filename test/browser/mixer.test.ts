@@ -18,6 +18,7 @@ import {
 } from '@agstudio/sdk';
 import processor from './impulse.worklet.ts?worker&url';
 import { EFFECTS, kitProject, maxDiff, peak, resolver, rms, withInsert, type FxSpec } from '../helpers/fixtures';
+import { latentEffect } from '../helpers/routing';
 
 const SR = 48000;
 const CEILING = Math.pow(10, -0.3 / 20);
@@ -55,7 +56,10 @@ const sine = defineInstrument({
   },
 });
 
-const plugins = resolver(impulse as PluginDef, sine as PluginDef);
+/** An effect with 288 frames of latency (what the v1 Compressor's DynamicsCompressorNode had at 48 kHz). */
+const latent = latentEffect(288);
+
+const plugins = resolver(impulse as PluginDef, sine as PluginDef, latent);
 
 async function render(project: Project, patternId: PatternId, bars = 1) {
   return (
@@ -209,19 +213,11 @@ describe('effect slots', () => {
 
   it('keeps dry and wet aligned for effects with latency', async () => {
     const { project, patternId, channel } = singleChannel(impulse as PluginDef);
-    const compressor = byId('agstudio.compressor');
-    const linear = { threshold: 0, ratio: 1, knee: 0 };
     const bare = await render(withInsert(project, [channel]).project, patternId);
-    const wet = await render(
-      withInsert(project, [channel], { fx: [{ def: compressor, params: linear }] }).project,
-      patternId,
-    );
-    const half = await render(
-      withInsert(project, [channel], { fx: [{ def: compressor, params: linear, mix: 0.5 }] }).project,
-      patternId,
-    );
+    const wet = await render(withInsert(project, [channel], { fx: [{ def: latent }] }).project, patternId);
+    const half = await render(withInsert(project, [channel], { fx: [{ def: latent, mix: 0.5 }] }).project, patternId);
     const i0 = argmax(bare);
-    const latency = Math.floor(0.006 * SR);
+    const latency = 288;
     expect(argmax(wet) - i0).toBe(latency);
     expect(argmax(half) - i0).toBe(latency);
     // Nothing comes through undelayed: the slot's dry path is delayed to match.
@@ -238,6 +234,8 @@ describe('built-in effects', () => {
     'agstudio.reverb',
     'agstudio.compressor',
     'agstudio.distortion',
+    'agstudio.ducker',
+    'agstudio.gate',
   ];
 
   it('are all discovered as effects with presets', () => {
@@ -299,7 +297,7 @@ describe('built-in effects', () => {
     }
   });
 
-  it('the compressor leaves quiet signals at unity and reports its look-ahead', async () => {
+  it('the compressor leaves quiet signals at unity and adds no latency', async () => {
     const { project, patternId, channel } = singleChannel(sine as PluginDef);
     const compressor = byId('agstudio.compressor');
     const bare = await render(withInsert(project, [channel]).project, patternId);
@@ -308,7 +306,16 @@ describe('built-in effects', () => {
         .project,
       patternId,
     );
-    expect(rms(comp) / rms(bare)).toBeCloseTo(1, 2);
+    expect(maxDiff(comp, bare)).toBe(0);
+    const pulse = singleChannel(impulse as PluginDef);
+    const dry = await render(withInsert(pulse.project, [pulse.channel]).project, pulse.patternId);
+    const squashed = await render(
+      withInsert(pulse.project, [pulse.channel], {
+        fx: [{ def: compressor, params: { threshold: -40, ratio: 20, knee: 0, attack: 0.5 } }],
+      }).project,
+      pulse.patternId,
+    );
+    expect(argmax(squashed)).toBe(argmax(dry));
     const loud = await render(
       withInsert(
         produce(project, (d) => setChannelProp(d, channel, 'volume', 1.25)),
@@ -320,7 +327,8 @@ describe('built-in effects', () => {
       ).project,
       patternId,
     );
-    expect(peak(loud)).toBeLessThan(peak(bare));
+    // No look-ahead: the onset passes until the attack catches it, so compare levels, not peaks.
+    expect(rms(loud)).toBeLessThan(rms(bare) / 2);
   });
 
   it('the distortion reports the wave shaper’s real latency', async () => {

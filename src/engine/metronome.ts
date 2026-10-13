@@ -31,6 +31,8 @@ export class Metronome implements TransportObserver {
     private readonly ctx: BaseAudioContext,
     private readonly out: AudioNode,
     private readonly timeline: () => { tempo: TempoMap; timeSig: TimeSignature } | null,
+    /** The mixer's delay compensation: music scheduled at t is heard at t + latency, so clicks wait too. */
+    private readonly latency: () => number = () => 0,
   ) {}
 
   segment(seg: Segment): void {
@@ -68,13 +70,15 @@ export class Metronome implements TransportObserver {
     this.cancelFrom(0);
   }
 
+  /** `time` is a scheduling time (like a note's); the click sounds when the music at that time is heard. */
   private click(time: number, accent: boolean): void {
-    if (time < this.ctx.currentTime) return;
+    const at = time + this.latency();
+    if (at < this.ctx.currentTime) return;
     this.accent ??= clickBuffer(this.ctx, 1760, 0.55);
     this.beat ??= clickBuffer(this.ctx, 1175, 0.4);
     const src = new AudioBufferSourceNode(this.ctx, { buffer: accent ? this.accent : this.beat });
     src.connect(this.out);
-    src.start(time);
+    src.start(at);
     src.onended = () => src.disconnect();
     this.scheduled.push({ time, src });
     // Forget clicks that have played.

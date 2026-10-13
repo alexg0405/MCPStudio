@@ -65,8 +65,9 @@ export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extend
 export abstract class EffectKernel<P extends ParamSpecs = ParamSpecs> extends KernelBase {
   /**
    * Writes `n` frames from `input` into `output` (input always has as many channels as output).
-   * Effects defined with `sidechain: true` also get the sidechain signal (silent when none is
-   * connected), with as many channels as `output`.
+   * Effects defined with `sidechain: true` also get the sidechain signal (the chosen track, or the
+   * effect's own input when none is chosen; zeros while the source plays nothing), with as many
+   * channels as `output`.
    */
   abstract process(
     input: Float32Array[],

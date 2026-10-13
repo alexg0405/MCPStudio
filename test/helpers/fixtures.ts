@@ -15,10 +15,25 @@ import delay from '../../src/plugins/builtin/delay';
 import reverb from '../../src/plugins/builtin/reverb';
 import compressor from '../../src/plugins/builtin/compressor';
 import distortion from '../../src/plugins/builtin/distortion';
+import ducker from '../../src/plugins/builtin/ducker';
+import gate from '../../src/plugins/builtin/gate';
 import bitcrusher from '../../plugins/example-bitcrusher';
 
-/** Every effect the mixer tests use: the built-ins plus the example worklet effect. */
-export const EFFECTS: readonly PluginDef[] = [eq, filter, delay, reverb, compressor, distortion, bitcrusher];
+/**
+ * Every effect the mixer tests use: the built-ins plus the example worklet effect. Sidechain effects
+ * key from their own input when no sidechain is chosen, so their presets change the sound here too.
+ */
+export const EFFECTS: readonly PluginDef[] = [
+  eq,
+  filter,
+  delay,
+  reverb,
+  compressor,
+  distortion,
+  ducker,
+  gate,
+  bitcrusher,
+];
 
 /** Instruments the tests use. */
 export const INSTRUMENTS: readonly PluginDef[] = [sampler, bass808];

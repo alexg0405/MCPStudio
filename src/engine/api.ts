@@ -101,8 +101,9 @@ export interface EngineApi {
    */
   readMeters(order: readonly InsertId[], out: Float32Array): void;
   /**
-   * The tick (and loop pass) at an AudioContext time, extrapolated past what is planned; the stop
-   * position while stopped. Recording uses it to place live input.
+   * The tick (and loop pass) being heard at an AudioContext time as `contextTimeAt` gives it (the
+   * mixer's delay compensation is taken into account), extrapolated past what is planned; the stop
+   * position while stopped. Recording uses it to place live input where the player heard it.
    */
   tickAt(contextTime: number): { tick: number; iter: number };
   /** The AudioContext time that was being heard at a `performance.now()` timestamp (MIDI events). */
@@ -120,7 +121,7 @@ export interface EngineApi {
   /** Seconds of latency the mixer adds (plugin delay compensation); the playhead already accounts for it. */
   graphLatency(): number;
   stats(): EngineStats;
-  /** Fires on playing/stopped and state changes. */
+  /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;
   dispose(): Promise<void>;
 }

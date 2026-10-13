@@ -113,31 +113,34 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
 ### Graph
 
 ```
-channel: instrument.output → vol → StereoPanner → mute ──► insert input
-insert : input → slot 1…N → StereoPanner → fader → mute ──► master input   (+ meter tap: ChannelSplitter → 2× AnalyserNode)
-slot   : in ─► dry ─────────────────────────────────► out
-          ├─► fx.input … fx.output ─► wet ──────────► out   (bypass = 10 ms crossfade, then disconnect fx.input)
-          └─► DelayNode(fx.latency) ─► aligned dry ─► out   (only for effects that report latency)
-master : input → slots → pan → fader → mute → masterOut → SafetyLimiter (worklet) → destination
+channel: instrument.output → vol → StereoPanner → mute ──► insert chIn
+insert : chIn/routeIn → slot 1…N → scTap → mute/solo gate → preTap → StereoPanner → fader → postTap ──► routes
+slot   : in ─► bypass / dry / latency-aligned dry / fx … wet ─► out   (gates crossfade ~10 ms)
+master : the same strip; postTap → masterOut → SafetyLimiter (worklet) → destination
          preview bus → masterOut;  monitor bus (metronome, later) → limiter only
 ```
 
-- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too) and `FxSlotStrip`. Every insert id has one
-  persistent input node (`Engine.insertInput(id)`): it feeds the insert's strip while the insert exists and the master
-  otherwise (not created yet, deleted, unknown id), so channels never reconnect when inserts come and go, undo included.
+Routes, sidechains, delay compensation and the persistent per-insert nodes are described in
+[Mixer routing, sidechain and delay compensation (M10)](#mixer-routing-sidechain-and-delay-compensation-m10).
+
+- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too) and `FxSlotStrip`; `engine/mixer-graph.ts` owns
+  them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
+  insert exists and the master otherwise (not created yet, deleted, unknown id), so channels never reconnect when
+  inserts come and go, undo included.
 - Reconcile `DocChange` by reference identity: inserts first (keyed by id; removals after the channels), then channels.
   Slots are keyed by `SlotId`: moving one only rewires the chain, enable/mix only change gains, a new `pluginId` replaces
   the instance. `plugin.id` change = async replace guarded by a generation token (stale completions are disposed;
   meanwhile instruments drop events and effects pass audio; a replaced effect fades out over 80 ms). Missing plugin =
   silent placeholder (effects: pass-through) that keeps its data on save. Insert mutes come from
-  `query/mixer.ts` `effectivelyMutedInserts` (muted, or another non-master insert soloed; the master always plays).
-- Slot gains: dry = 1 − mix, wet = mix (linear); bypassed, loading, missing or failed = dry 1, wet 0. Changes glide
-  (~10 ms) while the context runs and are set exactly before it starts: offline renders apply the document at time 0,
-  so a bypassed slot renders bit-exact with no slot and nothing depends on timers.
-- An effect's `latency` delays the slot's dry path, so the slot mix stays phase-aligned. There is no delay compensation
-  across inserts yet.
+  `query/mixer.ts` `effectivelyMutedInserts` (muted, or left out by a solo: see `soloState`; the master always plays).
+- Slot gains: dry = 1 − mix, wet = mix (linear, from the slot's mix ConstantSource); bypassed, loading, missing or
+  failed = the input alone. Changes glide (~10 ms) while the context runs and are set exactly before it starts:
+  offline renders apply the document at time 0, so a bypassed slot renders bit-exact with no slot and nothing depends
+  on timers.
+- An effect's `latency` delays the slot's dry path, so the slot mix stays phase-aligned, and the mixer compensates
+  it across inserts (PDC, see M10).
 - Param changes from the UI: `setTargetAtTime(v, now, spec.smoothing ?? 8 ms)`. Enums/bools change via `onChange`.
-- Meters: per insert, after the mute, a ChannelSplitter → 2 AnalyserNodes (fftSize 2048; realtime engines only).
+- Meters: per insert, after the fader (postTap), a ChannelSplitter → 2 AnalyserNodes (fftSize 2048; realtime engines only).
   `EngineApi.readMeters(order, out)` writes [peakL, peakR] per insert through one scratch buffer (no allocation). The
   mixer's `MeterBank` (`ui/features/mixer/meters.ts`) calls it once per frame, does the ballistics (26 dB/s fall, 1.5 s
   peak hold) and repaints a canvas only when it changes. Exact clip detection only in the master limiter.
@@ -204,7 +207,7 @@ abstract class InstrumentKernel<P> { noteOn(key, vel, noteId); noteOff(noteId, k
   render(out: Float32Array[], from: number, to: number, params: ParamBlock<P>)  /* ADD into out */ }
 abstract class EffectKernel<P> { process(inp, out, n, params); reset?() }
 registerKernel(id, params, KernelClass)   // duplicate registration warns instead of throwing
-VoicePool, dsp/* (OnePole, SVF, DelayLine, ADSR, PolyBLEP, mtof, dbToGain, flush)
+VoicePool, dsp/* (OnePole, Svf, EnvelopeFollower, Biquad, Rng, mtof, dbToGain, flush)
 ```
 
 The SDK-owned processor: preallocated sorted event ring; splits each block at event frames (late events land at the
@@ -281,8 +284,8 @@ project with reverb can produce byte-different files. A deterministic convolutio
 Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them):
 
 - DynamicsCompressorNode delays its output by `floor(0.006 · sampleRate)` frames (288 at 48 kHz, 264 at 44.1 kHz) and
-  multiplies it by an automatic makeup gain `(1 / curve(1.0))^0.6`. `compressor/makeup.kernel.ts` reproduces
-  Chromium's curve (within ~1e-4), the Compressor divides it out and reports the look-ahead as `latency`.
+  multiplies it by an automatic makeup gain `(1 / curve(1.0))^0.6`. The v1 Compressor divided out a model of
+  Chromium's curve; since M10 the Compressor is an SDK worklet kernel with no look-ahead.
 - WaveShaperNode oversampling delays by 128 frames (`'2x'`) or 192 frames (`'4x'`) at every sample rate. ConvolverNode
   adds no latency. Biquads, convolvers, compressors and shapers render identically twice offline.
 - A feedback cycle through a DelayNode takes one render quantum (128 frames) longer per trip than its `delayTime`:
@@ -532,7 +535,130 @@ _To be written by M9._
 
 ## Mixer routing, sidechain and delay compensation (M10)
 
-_To be written by M10._
+The mixer is `engine/mixer-graph.ts` (`MixerGraph`, owned by the Engine), with the strips in
+`engine/insert-strip.ts` and the delay compensation math in `engine/pdc.ts` (pure, unit-tested in Node).
+
+### Graph
+
+Every insert id has persistent nodes (an `InsertBus`) that outlive its strip, so channels, routes and
+sidechains never reconnect when a strip is rebuilt, deleted or restored by undo:
+
+```
+channels ──► chIn ─[pad: arrival]─► routeIn ─► slot 1 … slot N ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
+other inserts' routes ─[pad]──────► routeIn            sidechain out ◄─┘  mute/solo  pre sends ◄─┘   post sends, meters ◄─┘
+                                                                                     (master: postTap → masterOut → limiter)
+route  : tap (pre or post) ─► level (AutoLane, `route:from:to`) ─[pad]─► target routeIn
+key    : source scTap ─[pad]─► the slot's effect host.sidechain   (the slot's own input when no source is chosen)
+slot   : in ─► bypass ──────────────────────────────────────► out   1 while not live (bypassed, loading, missing, failed)
+          ├─► dryGate ──────────────────┐
+          ├─► DelayNode(latency) ─► align ┴─► dryMix (1 − mix) ─► out   dryGate without latency, align with it
+          └─► fx.input … fx.output ─► wetGate ─► wetMix (mix) ───► out
+          mix = one ConstantSourceNode (offset written only by the `slot:…:mix` AutoLane) → wetMix.gain, → ×(−1) → dryMix.gain
+```
+
+- **Gate and tap order.** The mute/solo gate sits after the effects and before the pre-fader tap, so muting an insert
+  (or a solo that leaves it out) silences its pre-fader sends too. The sidechain tap is taken before the gate: a
+  muted or solo-silenced kick still keys a ducker, so soloing a ducked bass still ducks. The sidechain tap is also
+  before pan and fader (the kick's fader doesn't change how hard it keys).
+- **Channels** connect to `chIn` (`Engine.insertInput(id)`): it feeds the insert while it exists and the master
+  otherwise (not created yet, deleted, unknown id). Routes land on `routeIn`. A route to a missing insert carries
+  nothing; an insert with no route is silent.
+- **Edges and loops.** The engine follows `playableEdges(mixer)` (`core/query/routing.ts`): routes in mixer order (each
+  insert's routes in order), then sidechains (mixer order, slot order), skipping edges from or to a missing insert,
+  routes from the master, repeated targets and anything that would close a loop. Repair and the ops refuse loops
+  already; this keeps even a damaged document from looping. Each edit disconnects what went away (routes, and
+  sidechain inputs whose source changed, which fall back to their own input) before anything new is connected, so
+  audio never loops, not even for one render quantum.
+- **Sidechains.** A slot with `sidechain = S` gets S's `scTap` into its effect's `host.sidechain` (worklet effects: the
+  node's second input, the kernel's fifth `process()` argument). With no source chosen the slot feeds its **own input**
+  to the sidechain, so sidechain effects key from themselves (a compressor compresses on its input) and their presets
+  work anywhere. Changing the source only rewires; the effect is never recreated. Each instance owns its key
+  connection: a replaced instance keeps its key while it fades out, a new one is keyed when its async `create()`
+  resolves, and a bypassed effect's input and key are both disconnected after the fade.
+- **Slot mix** is automatable through its own ConstantSource (target `slot:insert:slot:mix`); bypass, loading,
+  missing, failed and instance swaps are separate gates that glide (~10 ms; exact at time 0 offline). A slot that isn't
+  live is exactly its input: bypass 1, every other path 0, so a bypassed slot renders bit-exact with no slot.
+
+### Delay compensation (PDC)
+
+In whole frames: an effect's `latency` (seconds) is rounded to `Math.round(latency · sampleRate)` frames.
+
+- Only live slots count (enabled, loaded, not faulted; an effect's latency is only known once its async `create()`
+  resolves). Slots report changes (load, enable, bypass, replace, fault) and every routing edit recomputes; edits are
+  batched per reconcile.
+- For an insert X: `before(X, k)` is the latency ahead of slot k and `fx(X)` that of all its slots.
+  `arrival(X) = max(0, out(S) for every route S → X, out(S) − before(X, k) for every sidechain S → X keying a live slot k)`
+  and `out(X) = arrival(X) + fx(X)` (the latency at X's taps), solved in topological order (Kahn).
+- Every shorter edge is padded up to that: channels into X by `arrival(X)` (on `chIn → routeIn`), a route S → X by
+  `arrival(X) − out(S)`, a sidechain S → X (slot k) by `arrival(X) + before(X, k) − out(S)`. So a sidechain key arrives
+  at its effect at the same time as the audio it controls, and a track keyed by a latent track waits for it.
+- Paddings are DelayNodes of exactly `n / sampleRate`, created only where the padding is above 0, so paths without
+  latency stay plain connections and bit-exact. Each padded link (`PadLink`) has its own gain: when its delay or
+  target changes while a realtime context plays, the old path fades out over 10 ms as the new one fades in (a brief
+  comb, instead of a click); offline and before the context starts it switches exactly.
+- `graphLatency()` is `out(master)`: the longest path to the master's output, in seconds. The playhead, the step
+  lights, `readAutomation` and `tempoNow` read the transport at `audibleTime() − graphLatency()`, so they follow what is
+  heard. The engine notifies subscribers when it changes (the mixer shows "Delay comp. N ms").
+- `tailSeconds()` follows the routing depth (effect tails add up along the deepest route path to the master) plus the
+  latency. `renderOffline` keeps its defaults and reports `latency` in its result; WAV export doesn't trim it yet.
+- Not compensated: automation of a control that sits after latent effects (an insert fader, a send level) lands early by
+  that latency; the automation driver could offset by `MixerGraph.compensation.out(insert)` per target. The master
+  limiter's 1.3 ms isn't part of `graphLatency()`.
+
+### Solo
+
+FL's rule, `soloState(inserts)` in `core/query/mixer.ts` (memoized; `effectivelyMutedInserts` uses it): with any
+non-master insert soloed, the soloed inserts, everything routed into them (recursively: their sources play fully),
+everything they route to (recursively, so they still reach the master) and the master stay audible; every other
+insert is gated. Routes count, sidechains don't (see the tap order above). Channels routed straight to the master are
+never silenced by an insert solo. The mixer dims strips a solo silences.
+
+### Effects
+
+- **Compressor** (`plugins/builtin/compressor`): a worklet kernel with the v1 param ids and ranges plus `scFilter`
+  (12 dB/oct high-pass on the key, off at its 20 Hz minimum) and `listen` (hear the filtered key). Zero latency (no
+  look-ahead, so it adds no delay compensation): a stereo-linked peak detector, the Giannoulis/Massberg/Reiss soft-knee
+  static curve, and the gain reduction smoothed in dB by an `EnvelopeFollower` (attack/release time constants). Below
+  the threshold it is bit-exact unity.
+- **Ducker** (`plugins/builtin/ducker`): finds hits on the key (its envelope crossing the threshold, re-armed 3 dB
+  below it, or jumping 6 dB within 8 ms on a tail that is still above it, with a 30 ms refractory time) and plays the
+  same duck for each: down to 1 − depth over `attack`, `hold`, back up over `release` bent by `curve`. So a long kick
+  tail doesn't hold the duck down and every hit pumps the same. Tempo-synced shapes need transport in kernels (later).
+- **Gate** (`plugins/builtin/gate`): peak follower on the key, open above the threshold, closing 4 dB below it
+  (hysteresis) after `hold`; exponential attack/release; `range` is the closed level; `listen` hears the key.
+- New SDK DSP (`sdk/dsp`, exported from `@agstudio/sdk` and `/worklet`): `OnePole` (cutoff or time constant,
+  low/high-pass), `Svf` (Cytomic trapezoidal state-variable filter: low/high/band/notch/peak/all-pass/bell/shelves,
+  stable under per-sample modulation; `low + band + high` is the input), `EnvelopeFollower` (peak or RMS,
+  attack/release). The worklet runner pads missing inputs and the sidechain without allocating.
+
+### UI (`ui/features/mixer`)
+
+Routing is relative to the selected insert, FL-style. Every strip says where it goes ("→ Master", "→ Reverb bus,
+Master", "→ Speakers"); every other strip has a send arrow (lit when the selected insert sends there, disabled with
+the reason when it would loop) and, when sending, a "Send to <name>" knob in dB (target `route:from:to`, so the
+automation/MIDI param menu works). Badges: IN (feeds the selected insert), SC (keys one of its effects). Right-clicking
+a strip keeps the selection and offers, for the selected insert: Send to this track, Route only to this track, Send
+before the fader (pre), Sidechain to this track (its sidechain effects, or add a Ducker or Compressor keyed by it);
+and for the strip itself: Route only to Master, Remove all sends. A slot's menu has "Sidechain from ▸" (tracks by
+name, current checked, loops disabled); keyed slots show "SC: <name>". Menu entries carry hints, so disabled choices
+explain themselves in the hint bar. Every edit is one undo step (`app/actions/mixer.ts`: `toggleRoute`, `routeOnly`,
+`setRoutePre`, `removeAllRoutes`, `setSidechain`, `addSidechainEffect`).
+
+### What M10 verified in Chrome
+
+Measured with offline renders (`test/browser/routing.test.ts`, `mixer.test.ts` keep checking them):
+
+- A DelayNode set to `n / sampleRate` delays by exactly n frames, bit-exact, at 22.05, 44.1, 48 and 96 kHz (any n
+  tried, 1–2047), so delay compensation keeps parallel paths sample-identical: an impulse through a 375-frame effect
+  and its dry parallel send sum to the bare impulse shifted by 375 frames, exactly.
+- An AudioWorkletNode input connected to a node with nothing playing arrives with zero channels (it had 2 while its
+  source was scheduled but not started), so a kernel can't tell "no sidechain" from "a silent one"; hence the host
+  feeds a sidechain effect's own input when no source is chosen.
+- Gains driven by a ConstantSourceNode into a GainNode's gain param (intrinsic 0 for wet, 1 + inverted mix for dry) are
+  exact at mix 0 and 1.
+- A −6 dB send adds exactly the expected energy: alone the target hears the source at the send level (energy × level²);
+  in parallel the sum is 1 + level, sample for sample (≤ 1e-6).
+- Disabled `<button>`s still receive `pointerover`, so the hint bar shows why a menu choice is disabled.
 
 ## Composition tools and note scripts (M11)
 

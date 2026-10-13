@@ -1,6 +1,13 @@
 import { makeInsert, makePluginInstance } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
-import { MASTER, type ChannelId, type InsertId, type PluginInstance, type SlotId } from '@core/model/types';
+import {
+  MASTER,
+  type ChannelId,
+  type InsertId,
+  type PluginInstance,
+  type Project,
+  type SlotId,
+} from '@core/model/types';
 import { setChannelProp } from '@core/ops/channels';
 import {
   addFxSlot,
@@ -13,7 +20,9 @@ import {
   replaceFxPlugin,
   setFxSlotEnabled,
 } from '@core/ops/mixer';
+import { clearRoutes, removeRoute, routeOnlyTo, setRoute, setSlotSidechain } from '@core/ops/routing';
 import { fxSlotOf, insertLabel } from '@core/query/mixer';
+import { canRoute, wouldCycle } from '@core/query/routing';
 import { defaultValues } from '@agstudio/sdk';
 import type { Services } from '../services';
 
@@ -124,4 +133,87 @@ export function routeChannel(s: Services, channelId: ChannelId, insertId: Insert
   s.history.transact(`Route ${ch.name} to ${insertLabel(project, insertId)}`, (d) =>
     setChannelProp(d, channelId, 'output', insertId),
   );
+}
+
+// ---- Routing (each is one undoable edit; impossible ones, such as loops, are refused) ----
+
+/** What people call an insert in undo labels: its name ("Kick"), or "Master". */
+function trackName(project: Project, id: InsertId): string {
+  return id === MASTER ? 'Master' : (project.mixer.inserts[id]?.name ?? insertLabel(project, id));
+}
+
+/** FL's send arrow: adds the route from → to (unity, post-fader) or removes it. */
+export function toggleRoute(s: Services, from: InsertId, to: InsertId): boolean {
+  const project = s.doc.getState().project;
+  const src = project.mixer.inserts[from];
+  if (!src || !project.mixer.inserts[to]) return false;
+  const label = `${trackName(project, from)} to ${trackName(project, to)}`;
+  if (src.routes.some((r) => r.to === to))
+    return s.history.transact(`Stop sending ${label}`, (d) => removeRoute(d, from, to));
+  if (!canRoute(project.mixer, from, to)) return false;
+  let ok = false;
+  s.history.transact(`Send ${label}`, (d) => {
+    ok = setRoute(d, from, to);
+  });
+  return ok;
+}
+
+/** FL's "Route to this track only": `to` becomes the insert's only route. */
+export function routeOnly(s: Services, from: InsertId, to: InsertId): boolean {
+  const project = s.doc.getState().project;
+  if (!project.mixer.inserts[from] || !canRoute(project.mixer, from, to)) return false;
+  let ok = false;
+  s.history.transact(`Route ${trackName(project, from)} only to ${trackName(project, to)}`, (d) => {
+    ok = routeOnlyTo(d, from, to);
+  });
+  return ok;
+}
+
+/** Takes the send from → to before (pre) or after the source's pan and fader. */
+export function setRoutePre(s: Services, from: InsertId, to: InsertId, pre: boolean): void {
+  const project = s.doc.getState().project;
+  if (!project.mixer.inserts[from]?.routes.some((r) => r.to === to)) return;
+  const label = `${trackName(project, from)} to ${trackName(project, to)}`;
+  s.history.transact(`Send ${label} ${pre ? 'before' : 'after'} the fader`, (d) => {
+    setRoute(d, from, to, { pre });
+  });
+}
+
+/** Removes every route of the insert (it falls silent). */
+export function removeAllRoutes(s: Services, id: InsertId): void {
+  const project = s.doc.getState().project;
+  if (!project.mixer.inserts[id]?.routes.length) return;
+  s.history.transact(`Remove all sends of ${trackName(project, id)}`, (d) => clearRoutes(d, id));
+}
+
+/** Feeds the slot's sidechain input from `source` (null: the effect keys from its own input). */
+export function setSidechain(s: Services, insertId: InsertId, slotId: SlotId, source: InsertId | null): boolean {
+  const project = s.doc.getState().project;
+  const slot = fxSlotOf(project, insertId, slotId);
+  if (!slot || slot.sidechain === source) return false;
+  const name = s.plugins.get(slot.plugin.pluginId)?.name ?? 'effect';
+  let ok = false;
+  s.history.transact(
+    source ? `Sidechain ${name} from ${trackName(project, source)}` : `${name} listens to its own input`,
+    (d) => {
+      ok = setSlotSidechain(d, insertId, slotId, source);
+    },
+  );
+  return ok;
+}
+
+/** Adds an effect to `insertId` keyed by `source`, in one step (FL's "Sidechain to this track"). */
+export function addSidechainEffect(s: Services, insertId: InsertId, pluginId: string, source: InsertId): SlotId | null {
+  const fx = effectData(s, pluginId);
+  const project = s.doc.getState().project;
+  const insert = project.mixer.inserts[insertId];
+  if (!fx || !insert || insert.fx.length >= MAX_FX_SLOTS || !project.mixer.inserts[source]) return null;
+  if (wouldCycle(project.mixer.inserts, source, insertId)) return null;
+  const id = newId.slot();
+  let added: SlotId | null = null;
+  s.history.transact(`Add ${fx.name} reacting to ${trackName(project, source)}`, (d) => {
+    added = addFxSlot(d, insertId, fx.data, undefined, id);
+    if (added) setSlotSidechain(d, insertId, added, source);
+  });
+  return added;
 }

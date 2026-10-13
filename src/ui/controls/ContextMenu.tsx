@@ -11,12 +11,14 @@ export type MenuEntry =
       checked?: boolean;
       shortcut?: string;
       danger?: boolean;
+      /** Hint bar text on hover (say why when disabled). */
+      hint?: string;
     }
   | { kind: 'separator' }
   | { kind: 'swatches'; colors: readonly string[]; selected?: string; onSelect(color: string): void }
   | { kind: 'label'; label: string }
   /** Opens a nested menu to the side (items may be computed when it opens). */
-  | { kind: 'submenu'; label: string; items: MenuEntry[] | (() => MenuEntry[]); disabled?: boolean };
+  | { kind: 'submenu'; label: string; items: MenuEntry[] | (() => MenuEntry[]); disabled?: boolean; hint?: string };
 
 interface MenuState {
   open: { x: number; y: number; items: MenuEntry[] } | null;
@@ -133,6 +135,7 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
                 aria-expanded={isOpen}
                 className={`${styles.item} ${isOpen ? styles.itemOpen : ''}`}
                 disabled={item.disabled}
+                data-hint={item.hint}
                 onPointerDown={(e) => e.preventDefault()}
                 onPointerEnter={(e) => openSub(i, e.currentTarget)}
                 onClick={(e) => openSub(i, e.currentTarget)}
@@ -151,6 +154,7 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
             role="menuitem"
             className={`${styles.item} ${item.danger ? styles.danger : ''}`}
             disabled={item.disabled}
+            data-hint={item.hint}
             onPointerDown={(e) => e.preventDefault()}
             onPointerEnter={() => setSub(null)}
             onClick={() => {

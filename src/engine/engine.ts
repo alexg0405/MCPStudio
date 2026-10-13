@@ -3,17 +3,7 @@
  * project document into a Web Audio graph and drives the lookahead transport.
  */
 import type { DocChange } from '@core/history/history';
-import { makeInsert } from '@core/model/defaults';
-import {
-  MASTER,
-  type ChannelId,
-  type InsertId,
-  type PluginOwner,
-  type Project,
-  type SampleRef,
-  type Tick,
-} from '@core/model/types';
-import { effectivelyMutedInserts } from '@core/query/mixer';
+import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from '@core/model/types';
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
@@ -30,8 +20,8 @@ import type {
 import { AutomationDriver } from './automation/driver';
 import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
-import { InsertStrip, METER_FRAMES } from './insert-strip';
 import { Metronome } from './metronome';
+import { MixerGraph } from './mixer-graph';
 import { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
@@ -45,8 +35,6 @@ import type { WorkletPortImpl } from './worklet-port';
 import limiterUrl from './limiter.worklet.ts?worker&url';
 
 const PREVIEW_ID_BASE = 2 ** 30;
-/** Used when a document has no master insert (repair adds one; the engine never runs without). */
-const DEFAULT_MASTER = makeInsert(MASTER, 'Master');
 
 /**
  * Tempo as plugins see it: the tempo now, the tempo at a scheduled time (from the transport's
@@ -92,11 +80,8 @@ export class Engine implements EngineApi, EngineCore {
   /** Metronome and count-in clicks: after the master track, before the limiter; never exported. */
   private readonly monitorBus: GainNode;
   private readonly metronome: Metronome | null;
-  private readonly master: InsertStrip;
-  private readonly inserts = new Map<InsertId, InsertStrip>();
-  /** Persistent input node per insert id (see inputNode). */
-  private readonly insertInputs = new Map<InsertId, GainNode>();
-  private readonly meterScratch = new Float32Array(METER_FRAMES);
+  /** Inserts, routes, sidechains and delay compensation (engine/mixer-graph.ts). */
+  readonly mixer: MixerGraph;
   private readonly strips = new Map<ChannelId, ChannelStrip>();
   private project: Project | null = null;
   private view: TransportView = { mode: 'pattern', patternId: null, loop: null };
@@ -131,9 +116,7 @@ export class Engine implements EngineApi, EngineCore {
     this.previewBus.connect(this.masterOut);
     this.monitorBus = new GainNode(ctx, { gain: 0.9 });
     this.monitorBus.connect(this.masterOut);
-    // The master insert exists before any document so channels and inserts always have a target.
-    this.master = new InsertStrip(this, DEFAULT_MASTER, null, this.masterOut);
-    this.inserts.set(MASTER, this.master);
+    this.mixer = new MixerGraph(this, this.masterOut, () => this.emit());
 
     const sink: TransportSink = {
       noteOn: (cid, e) => this.strips.get(cid)?.noteOn(e),
@@ -154,8 +137,11 @@ export class Engine implements EngineApi, EngineCore {
     this.transport.observe(this.automation);
     this.metronome = offline
       ? null
-      : new Metronome(ctx, this.monitorBus, () =>
-          this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null,
+      : new Metronome(
+          ctx,
+          this.monitorBus,
+          () => (this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null),
+          () => this.mixer.latency,
         );
     if (this.metronome) this.transport.observe(this.metronome);
     // Tempo automation: tell tempo-synced plugins when the tempo of the planned segments changes.
@@ -223,7 +209,7 @@ export class Engine implements EngineApi, EngineCore {
     if (!this.project || ids.length === 0) return;
     const set = new Set(ids);
     for (const strip of this.strips.values()) if (set.has(strip.pluginId)) strip.reload(this.project);
-    for (const insert of this.inserts.values()) insert.pluginsChanged(set, this.project);
+    this.mixer.pluginsChanged(set, this.project);
   }
 
   /** A realtime engine with its own AudioContext. */
@@ -250,10 +236,7 @@ export class Engine implements EngineApi, EngineCore {
   /** Resolves when the master chain and every plugin instance (instruments and effects) have loaded. */
   async ready(): Promise<void> {
     await this.initDone;
-    await Promise.all([
-      ...[...this.strips.values()].map((s) => s.ready),
-      ...[...this.inserts.values()].map((s) => s.ready),
-    ]);
+    await Promise.all([...[...this.strips.values()].map((s) => s.ready), this.mixer.ready]);
   }
 
   // ---- Document mirroring ----
@@ -269,7 +252,7 @@ export class Engine implements EngineApi, EngineCore {
     if (!prev || prev.transport.bpm !== next.transport.bpm) this.transportInfo.setBpm(next.transport.bpm);
 
     // Inserts first (channels connect to them), removals last.
-    const removedInserts = this.reconcileMixer(prev, next);
+    const removedInserts = this.mixer.reconcile(prev, next);
 
     if (!prev || prev.channels !== next.channels || prev.samples !== next.samples) {
       const muted = effectivelyMuted(next.channels);
@@ -294,7 +277,7 @@ export class Engine implements EngineApi, EngineCore {
       }
     }
     // Insert removals last; anything still routed to a removed insert falls back to the master.
-    for (const strip of removedInserts) this.removeInsertStrip(strip);
+    this.mixer.removeStrips(removedInserts);
 
     const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
     const schedulingChanged =
@@ -307,59 +290,6 @@ export class Engine implements EngineApi, EngineCore {
     this.muteKey = muteKey;
     if (schedulingChanged) this.updateModel();
     this.automation.update(next, this.view);
-  }
-
-  /**
-   * Keyed add/update of inserts (and their effect slots) plus effective mutes. Strips of removed
-   * inserts are returned, still connected, for removeInsertStrip() once channels are reconciled.
-   */
-  private reconcileMixer(prev: Project | null, next: Project): InsertStrip[] {
-    const removed: InsertStrip[] = [];
-    if (!prev || prev.mixer !== next.mixer) {
-      const inserts = next.mixer.inserts;
-      for (const id of Object.keys(inserts) as InsertId[]) {
-        const insert = inserts[id];
-        if (!insert) continue;
-        const strip = this.inserts.get(id);
-        if (strip) strip.update(insert, next);
-        else {
-          // Take the insert's input over from the master fallback.
-          const input = this.inputNode(id);
-          input.disconnect();
-          this.inserts.set(id, new InsertStrip(this, insert, next, this.master.input, input));
-        }
-      }
-      if (!inserts[MASTER]) this.master.update(DEFAULT_MASTER, next);
-      for (const [id, strip] of this.inserts) {
-        if (id === MASTER || inserts[id]) continue;
-        this.inserts.delete(id);
-        removed.push(strip);
-      }
-      const muted = effectivelyMutedInserts(inserts);
-      for (const [id, strip] of this.inserts) strip.setMuted(muted.has(id));
-    }
-    if (prev && prev.samples !== next.samples) for (const strip of this.inserts.values()) strip.samplesChanged(next);
-    return removed;
-  }
-
-  /**
-   * The input node of insert `id`, which channels connect to. It outlives the insert's strip: while
-   * the insert doesn't exist (not created yet, deleted, or an unknown id) it feeds the master, so
-   * deleting or restoring an insert never has to reconnect channels.
-   */
-  private inputNode(id: InsertId): GainNode {
-    let node = this.insertInputs.get(id);
-    if (!node) {
-      node = new GainNode(this.ctx);
-      node.connect(this.master.input);
-      this.insertInputs.set(id, node);
-    }
-    return node;
-  }
-
-  private removeInsertStrip(strip: InsertStrip): void {
-    strip.dispose();
-    this.insertInputs.get(strip.id)?.connect(this.master.input);
   }
 
   setTransportView(view: TransportView): void {
@@ -405,7 +335,7 @@ export class Engine implements EngineApi, EngineCore {
 
   /** Where a channel routed to `id` connects (unknown inserts play through the master). */
   insertInput(id: InsertId): AudioNode {
-    return id === MASTER ? this.master.input : this.inputNode(id);
+    return this.mixer.insertInput(id);
   }
 
   requestState(owner: PluginOwner, state: JsonValue): void {
@@ -461,11 +391,20 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   playhead(): number {
-    return this.transport.positionAt(this.audibleTime());
+    return this.transport.positionAt(this.heardTime());
   }
 
   playheadIteration(): number {
-    return this.transport.iterationAt(this.audibleTime());
+    return this.transport.iterationAt(this.heardTime());
+  }
+
+  /**
+   * The scheduling time of what is being heard: the audible time minus the mixer's latency (delay
+   * compensation holds every path back to the longest one, so music scheduled at t is heard at
+   * t + graphLatency).
+   */
+  private heardTime(): number {
+    return this.audibleTime() - this.mixer.latency;
   }
 
   /** Context time currently coming out of the speakers. */
@@ -616,20 +555,14 @@ export class Engine implements EngineApi, EngineCore {
   // ---- Meters ----
 
   readMeters(order: readonly InsertId[], out: Float32Array): void {
-    for (let i = 0; i < order.length; i++) {
-      const strip = this.inserts.get(order[i] as InsertId);
-      if (strip) strip.readPeaks(this.meterScratch, out, i * 2);
-      else if (i * 2 + 1 < out.length) {
-        out[i * 2] = 0;
-        out[i * 2 + 1] = 0;
-      }
-    }
+    this.mixer.readMeters(order, out);
   }
 
   // ---- Timeline, automation, session ----
 
   tickAt(contextTime: number): { tick: number; iter: number } {
-    return this.transport.tickAt(contextTime);
+    // What is heard at t was scheduled at t − latency (delay compensation holds the music back).
+    return this.transport.tickAt(contextTime - this.mixer.latency);
   }
 
   contextTimeAt(performanceMs: number): number {
@@ -644,7 +577,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   readAutomation(keys: readonly string[], out: Float64Array): void {
-    const t = this.audibleTime();
+    const t = this.heardTime();
     for (let i = 0; i < keys.length && i < out.length; i++) out[i] = this.automation.readValue(keys[i] as string, t);
   }
 
@@ -653,7 +586,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   tempoNow(): number {
-    return this.transportInfo.tempoAt(this.audibleTime());
+    return this.transportInfo.tempoAt(this.heardTime());
   }
 
   setSession(session: EngineSession): void {
@@ -667,7 +600,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   graphLatency(): number {
-    return 0;
+    return this.mixer.latency;
   }
 
   // ---- Status ----
@@ -686,13 +619,14 @@ export class Engine implements EngineApi, EngineCore {
     };
   }
 
-  /** Seconds of tail to add after the last note when exporting (release + effect tails). */
+  /**
+   * Seconds of tail to add after the last note when exporting: the longest instrument release plus
+   * the effect tails along the deepest route path (capped at 30 s), plus the mixer's latency.
+   */
   tailSeconds(): number {
     let tail = 0.5;
     for (const s of this.strips.values()) tail = Math.max(tail, s.tailTime);
-    let inserts = 0;
-    for (const [id, s] of this.inserts) if (id !== MASTER) inserts = Math.max(inserts, s.tailTime);
-    return Math.min(30, tail + inserts + this.master.tailTime);
+    return Math.min(30, tail + this.mixer.tailSeconds()) + this.mixer.latency;
   }
 
   /** Seconds of the first bar (export/test helper; later bars can differ with tempo automation). */
@@ -719,10 +653,7 @@ export class Engine implements EngineApi, EngineCore {
     this.clock = null;
     for (const s of this.strips.values()) s.dispose();
     this.strips.clear();
-    for (const s of this.inserts.values()) s.dispose();
-    this.inserts.clear();
-    for (const node of this.insertInputs.values()) node.disconnect();
-    this.insertInputs.clear();
+    this.mixer.dispose();
     for (const p of [...this.ports]) p.dispose();
     this.limiter?.port.postMessage({ t: 'dispose' });
     this.listeners.clear();

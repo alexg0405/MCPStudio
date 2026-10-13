@@ -187,6 +187,110 @@
   color: var(--ag-accent);
 }
 
+/* ---- Routing (relative to the selected insert) ---- */
+
+.stripSilenced {
+  opacity: 0.55;
+}
+
+.badgeIn,
+.badgeSc {
+  margin-left: 3px;
+  padding: 0 2px;
+  border-radius: 2px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 11px;
+  vertical-align: 1px;
+}
+
+.badgeIn {
+  background: var(--ag-accent-dim);
+  color: #1b2024;
+}
+
+.badgeSc {
+  background: var(--ag-select);
+  color: #1b2024;
+}
+
+.routeRow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  height: 20px;
+}
+
+/* Where the strip goes ("→ Master, Reverb bus"): up to two lines, the rest in the hint. */
+.routeLine {
+  flex: none;
+  display: -webkit-box;
+  width: 100%;
+  height: 22px;
+  overflow: hidden;
+  color: var(--ag-text-faint);
+  font-size: 9px;
+  line-height: 11px;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.routeLineSelected {
+  color: var(--ag-accent);
+}
+
+.sendKnob {
+  display: inline-flex;
+}
+
+.knobGap {
+  width: 18px;
+  height: 18px;
+}
+
+.routeArrow {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 50%;
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-faint);
+  cursor: pointer;
+}
+
+.routeArrow:hover:not(:disabled) {
+  color: var(--ag-accent);
+}
+
+.routeArrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.routeOn {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent);
+  color: #1b2024;
+  box-shadow: 0 0 5px rgba(255, 154, 60, 0.5);
+}
+
+.routeOn:hover:not(:disabled) {
+  color: #1b2024;
+}
+
+.routePre {
+  border-style: dashed;
+}
+
 /* ---- Effect slots ---- */
 
 .rack {
@@ -286,6 +390,30 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slotKey {
+  flex: none;
+  max-width: 72px;
+  overflow: hidden;
+  padding: 0 3px;
+  border-radius: 2px;
+  background: var(--ag-select);
+  color: #1b2024;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdc {
+  margin-left: auto;
+  flex: none;
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
   white-space: nowrap;
 }
 

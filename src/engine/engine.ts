@@ -101,7 +101,7 @@ export class Engine implements EngineApi, EngineCore {
     this.previewBus = new GainNode(ctx, { gain: 0.8 });
     this.masterOut.connect(ctx.destination);
     this.previewBus.connect(this.masterOut);
-    this.mixer = new MixerGraph(this, this.masterOut);
+    this.mixer = new MixerGraph(this, this.masterOut, () => this.emit());
 
     const sink: TransportSink = {
       noteOn: (cid, e) => this.strips.get(cid)?.noteOn(e),

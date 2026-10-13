@@ -1,5 +1,5 @@
 import { targetKey } from '@core/model/targets';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import { useCallback, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react';
 import type { FxSlot, InsertId } from '@core/model/types';
 import { MAX_FX_SLOTS, setFxSlotMix } from '@core/ops/mixer';
 import { insertLabel } from '@core/query/mixer';
@@ -12,15 +12,27 @@ import { useGestureEdit } from '../../edit';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
 import { effectMenu, openEffectEditor } from './menus';
+import { insertName } from './routing';
 import styles from './Mixer.module.css';
 
 const MIX = p.float(0, 1, 1, { label: 'Mix', unit: '%' });
+
+/** The mixer's delay compensation in seconds (re-renders when it changes). */
+function useGraphLatency(): number {
+  const { engine } = useServices();
+  const subscribe = useCallback((fn: () => void) => engine.subscribe(fn), [engine]);
+  return useSyncExternalStore(subscribe, () => engine.graphLatency());
+}
 
 function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: FxSlot; index: number; count: number }) {
   const services = useServices();
   const def = usePluginDef(slot.plugin.pluginId);
   const mix = useGestureEdit<number>('Effect mix', (d, v) => setFxSlotMix(d, insertId, slot.id, v), `fxmix:${slot.id}`);
   const name = def?.name ?? slot.plugin.pluginId;
+  const listens = def?.kind === 'effect' && !!def.sidechain;
+  const keyName = useDoc((pr) =>
+    slot.sidechain && pr.mixer.inserts[slot.sidechain] ? insertName(pr, slot.sidechain) : null,
+  );
 
   const menu = (e: ReactMouseEvent) => {
     e.preventDefault();
@@ -53,7 +65,7 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
       onContextMenu={menu}
       data-hint={
         def
-          ? `${name}${slot.enabled ? '' : ' (bypassed)'}. Double-click to edit, right-click for options`
+          ? `${name}${slot.enabled ? '' : ' (bypassed: audio passes through untouched)'}${listens ? (keyName ? `. Sidechain: reacts to “${keyName}”` : '. Sidechain: reacts to its own input') : ''}. Double-click to edit, right-click for options${listens ? ' (Sidechain from…)' : ''}`
           : `"${slot.plugin.pluginId}" is not installed: audio passes through and its settings are kept`
       }
     >
@@ -63,16 +75,24 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
         className={`${styles.led} ${styles.slotLed} ${slot.enabled ? styles.ledOn : ''}`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={() => toggleEffect(services, insertId, slot.id)}
-        data-hint={`${name}: ${slot.enabled ? 'on' : 'bypassed'}. Click to toggle`}
+        data-hint={`${name}: ${slot.enabled ? 'on' : 'bypassed (audio passes through untouched)'}. Click to ${slot.enabled ? 'bypass' : 'turn it on'}`}
         aria-label={slot.enabled ? `Bypass ${name}` : `Enable ${name}`}
         aria-pressed={slot.enabled}
       />
       <span className={styles.slotName}>{name}</span>
+      {listens && keyName && (
+        <span
+          className={styles.slotKey}
+          data-hint={`${name} reacts to “${keyName}” (sidechain). Right-click to change`}
+        >
+          SC: {keyName}
+        </span>
+      )}
       <Knob
         spec={MIX}
         value={slot.mix}
         size={18}
-        label={`${name} mix`}
+        label={`${name} dry/wet`}
         param={targetKey({ kind: 'slot', insertId, slotId: slot.id, param: 'mix' })}
         {...mix}
       />
@@ -111,13 +131,23 @@ function EmptySlot({ insertId, index }: { insertId: InsertId; index: number }) {
 export function FxRack({ insertId }: { insertId: InsertId }) {
   const insert = useDoc((pr) => pr.mixer.inserts[insertId]);
   const label = useDoc((pr) => insertLabel(pr, insertId));
+  const latency = useGraphLatency();
   if (!insert) return null;
   const fx = insert.fx;
+  const ms = (latency * 1000).toFixed(1);
   return (
     <div className={styles.rack}>
-      <div className={styles.rackHeader} data-hint="Effects run top to bottom on this insert">
+      <div className={styles.rackHeader} data-hint={`Effects on ${insert.name} run top to bottom`}>
         <span className={styles.rackLabel}>{label}</span>
         {insert.name !== label && <span className={styles.rackName}>{insert.name}</span>}
+        {latency > 0 && (
+          <span
+            className={styles.pdc}
+            data-hint={`Delay compensation: ${ms} ms. Some effects delay their audio (look-ahead, oversampling), so the mixer holds every other path back by the same amount and everything stays in time. The playhead accounts for it`}
+          >
+            Delay comp. {ms} ms
+          </span>
+        )}
       </div>
       <div className={styles.slotList}>
         {Array.from({ length: MAX_FX_SLOTS }, (_, i) => {

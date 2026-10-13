@@ -4,10 +4,12 @@ import { MASTER } from '@core/model/types';
 import { addMixerInsert, routeChannel } from '@app/actions/mixer';
 import { addMenuItems, cmd } from '../../shell/menus';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
+import { addContextMenuItems } from '../../context-menus';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { Mixer } from './Mixer';
 import { MasterVolume } from './MasterVolume';
+import { slotRoutingItems, stripRoutingItems } from './routing';
 
 export function register(services: Services): void {
   registerWindowType({
@@ -55,6 +57,9 @@ export function register(services: Services): void {
     { chord: 'Mod+L', command: 'mixer.routeSelectedChannel', when: { focus: ['channel-rack'] } },
   ]);
   addMenuItems('add', [cmd('mixer.addInsert', 50)]);
+  // Routing relative to the selected insert, appended to the strip and slot menus.
+  addContextMenuItems('mixer.strip', stripRoutingItems);
+  addContextMenuItems('mixer.slot', slotRoutingItems);
 
   addToolbarSlot({ id: 'master-volume', area: 'center', order: 20, component: () => createElement(MasterVolume) });
 }

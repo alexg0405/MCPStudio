@@ -120,7 +120,7 @@ export interface EngineApi {
   /** Seconds of latency the mixer adds (plugin delay compensation); the playhead already accounts for it. */
   graphLatency(): number;
   stats(): EngineStats;
-  /** Fires on playing/stopped and state changes. */
+  /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;
   dispose(): Promise<void>;
 }

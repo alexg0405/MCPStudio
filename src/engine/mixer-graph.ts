@@ -221,6 +221,8 @@ export class MixerGraph {
   constructor(
     private readonly core: EngineCore,
     masterOut: AudioNode,
+    /** Called when the mixer's total latency changes (the playhead and the UI follow it). */
+    private readonly onLatency: () => void = () => {},
   ) {
     const bus = this.bus(MASTER);
     bus.postTap.connect(masterOut);
@@ -421,6 +423,7 @@ export class MixerGraph {
         keyed: s.listens,
       })),
     );
+    const changed = this.pdc !== null && this.pdc.total !== pdc.total;
     this.pdc = pdc;
     const masterIn = this.bus(MASTER).chIn;
     for (const [id, bus] of this.buses) {
@@ -433,5 +436,6 @@ export class MixerGraph {
       const slot = this.strips.get(e.to)?.slotStrips.find((s) => s.id === e.slotId);
       slot?.setKey(this.bus(e.from).scTap, pdc.keyPad(e.from, e.to, e.slotId));
     }
+    if (changed) this.onLatency();
   }
 }

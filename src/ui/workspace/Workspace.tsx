@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { Size } from '@core/time/geometry';
 import { useServices, useView } from '../services-context';
 import { FloatingWindow } from './FloatingWindow';
+import { workspaceSize } from './layouts';
 import styles from './Workspace.module.css';
 
 /** The area holding FL-style floating windows. */
@@ -18,6 +19,8 @@ export function Workspace() {
     const ro = new ResizeObserver(([entry]) => {
       if (!entry) return;
       const { width, height } = entry.contentRect;
+      workspaceSize.w = Math.round(width);
+      workspaceSize.h = Math.round(height);
       setSize((prev) =>
         prev.w === Math.round(width) && prev.h === Math.round(height)
           ? prev

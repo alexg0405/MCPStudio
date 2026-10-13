@@ -8,6 +8,7 @@ import { UndoRedo, WindowButtons } from './WindowButtons';
 import { ShortcutsWindow } from './ShortcutsWindow';
 import { addBrowserSection } from '../../shell/Browser';
 import { PluginsSection, SoundsSection } from './BrowserSections';
+import { applyLayout, LAYOUTS } from '../../workspace/layouts';
 
 export const order = 0;
 
@@ -92,7 +93,23 @@ export function register(services: Services): void {
     { chord: 'Alt+F8', command: 'view.browser' },
     { chord: 'Alt+5', command: 'view.browser' },
   ]);
-  addMenuItems('view', [sep(80), cmd('view.browser', 90)]);
+  addMenuItems('view', [sep(80), cmd('view.browser', 90), sep(100)]);
+  let order = 110;
+  for (const [name, layout] of Object.entries(LAYOUTS)) {
+    commands.register({
+      id: `view.layout.${name}`,
+      title: `Layout: ${layout.title}`,
+      category: 'View',
+      hint: `Arrange the windows for ${layout.title.toLowerCase()}`,
+      run: (s) => applyLayout(s, name),
+    });
+    addMenuItems('view', [cmd(`view.layout.${name}`, order++)]);
+  }
+  keymap.add([
+    { chord: 'Alt+Shift+1', command: 'view.layout.arrange' },
+    { chord: 'Alt+Shift+2', command: 'view.layout.compose' },
+    { chord: 'Alt+Shift+3', command: 'view.layout.mix' },
+  ]);
 
   registerWindowType({
     type: 'shortcuts',

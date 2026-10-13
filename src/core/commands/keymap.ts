@@ -210,6 +210,11 @@ const KEY_LABELS: Record<string, string> = {
   Slash: '/',
   Backslash: '\\',
   Backquote: '`',
+  NumpadAdd: 'Num +',
+  NumpadSubtract: 'Num −',
+  NumpadMultiply: 'Num ×',
+  NumpadDivide: 'Num ÷',
+  NumpadEnter: 'Num ↵',
 };
 
 /** Human-readable label for a canonical chord ('⇧⌘Z' on macOS, 'Ctrl+Shift+Z' elsewhere). */

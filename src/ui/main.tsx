@@ -2,11 +2,14 @@ import { Profiler, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createServices } from '@app/services';
 import { installAudioUnlock } from '@app/audio-unlock';
-import { installSessionSave, loadSession } from '@app/persistence/session-restore';
+import { installSessionPersistence, startSession } from '@app/persistence/session';
+import { loadRecentFiles } from '@app/persistence/recent-files';
+import { applyView } from '@app/persistence/view-snapshot';
 import { installPluginDiscovery } from '@app/plugins/discover';
 import { PluginRegistry } from '@app/plugins/registry';
 import { ServicesProvider } from './services-context';
 import { registerFeatures } from './features';
+import { offerRecovery } from './features/files/recovery';
 import { installKeyboard } from './keyboard';
 import { applyDefaultLayout } from './workspace/layouts';
 import { App } from './shell/App';
@@ -22,29 +25,21 @@ function onRender() {
 // Composition root: long-lived objects are created once, outside React.
 const plugins = new PluginRegistry();
 await installPluginDiscovery(plugins);
-const restored = loadSession();
-const services = createServices({
-  plugins,
-  ...(restored ? { project: restored.project } : {}),
-  ...(restored?.view.pianoRoll ? { pianoRoll: restored.view.pianoRoll } : {}),
-  ...(restored?.view.playlist ? { playlist: restored.view.playlist } : {}),
-});
+// This tab's state before a reload, and crashed sessions to offer for recovery.
+const start = await startSession();
+const restored = start.restored;
+const services = createServices({ plugins, ...(restored ? { project: restored.project } : {}) });
 registerFeatures(services);
 installKeyboard(services);
 installAudioUnlock(services.engine);
-if (restored?.view && Object.keys(restored.view.windows ?? {}).length > 0) {
-  const pattern = restored.view.currentPatternId;
-  const { pianoRoll: _pianoRoll, playlist: _playlist, ...savedView } = restored.view;
-  services.view.setState({
-    ...savedView,
-    loop: savedView.loop ?? null,
-    currentPatternId:
-      pattern && restored.project.patterns[pattern] ? pattern : services.view.getState().currentPatternId,
-  });
-} else {
-  applyDefaultLayout(services);
+if (restored) {
+  const { name, fileKey, dirty } = restored.file;
+  services.files.store.setState({ name, fileKey, handle: restored.handle });
+  if (dirty) services.history.markUnsaved();
 }
-installSessionSave(services);
+if (!restored || !applyView(services, restored.view, restored.project)) applyDefaultLayout(services);
+const persistence = installSessionPersistence(services, start.sessionId);
+void loadRecentFiles();
 
 if (import.meta.hot) {
   // AudioWorklet code changed (see the ag:worklet-hmr Vite plugin): restart audio with a fresh context.
@@ -75,3 +70,5 @@ createRoot(root).render(
     </Profiler>
   </StrictMode>,
 );
+
+if (start.recovery.length > 0) void offerRecovery(services, start.recovery, persistence);

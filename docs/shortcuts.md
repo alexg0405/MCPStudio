@@ -16,7 +16,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Layout: Mix | `⌥⇧3` / `Alt+Shift+3` |
 | Mixer | `F9`, `⌥4` / `Alt+4` |
 | New pattern | `F4` |
-| New project | `⌘N` / `Ctrl+N` |
+| New project | `⌘N` / `Ctrl+N`, `⌥N` / `Alt+N` |
 | Next pattern | `Num +` |
 | Open… | `⌘O` / `Ctrl+O` |
 | Pattern / song mode | `L` |

@@ -114,6 +114,116 @@ describe('History', () => {
     expect(h.doc.transport.bpm).toBe(130);
   });
 
+  describe('saved state', () => {
+    it('is clean after load and dirty after an edit, clean again after undo', () => {
+      const h = setup();
+      expect(h.history.status().dirty).toBe(false);
+      h.history.transact('Tempo', (d) => setBpm(d, 140));
+      expect(h.history.status().dirty).toBe(true);
+      h.history.undo();
+      expect(h.history.status().dirty).toBe(false);
+      h.history.redo();
+      expect(h.history.status().dirty).toBe(true);
+    });
+
+    it('marks the current state saved and tracks undo/redo around it', () => {
+      const h = setup();
+      h.history.transact('A', (d) => setBpm(d, 100));
+      h.history.transact('B', (d) => setBpm(d, 110));
+      h.history.markSaved();
+      expect(h.history.status().dirty).toBe(false);
+      h.history.undo();
+      expect(h.history.status().dirty).toBe(true);
+      h.history.redo();
+      expect(h.history.status().dirty).toBe(false);
+    });
+
+    it('stops merging into the saved entry', () => {
+      const h = setup();
+      h.history.transact('Tempo', (d) => setBpm(d, 100), { mergeKey: 'bpm' });
+      h.history.markSaved();
+      h.tick(10);
+      h.history.transact('Tempo', (d) => setBpm(d, 101), { mergeKey: 'bpm' });
+      expect(h.history.status().dirty).toBe(true);
+      h.history.undo();
+      expect(h.doc.transport.bpm).toBe(100);
+      expect(h.history.status().dirty).toBe(false);
+    });
+
+    it('becomes unreachable when the saved state is in the discarded redo stack', () => {
+      const h = setup();
+      h.history.transact('A', (d) => setBpm(d, 100));
+      h.history.markSaved();
+      h.history.undo();
+      h.history.transact('B', (d) => setBpm(d, 120));
+      expect(h.history.status().dirty).toBe(true);
+      h.history.undo();
+      // Back at the loaded state, which was never saved after "A".
+      expect(h.history.status().dirty).toBe(true);
+    });
+
+    it('counts an uncommitted gesture as a change', () => {
+      const h = setup();
+      const ch = channel('Kick');
+      h.history.transact('Add', (d) => addChannel(d, ch));
+      h.history.markSaved();
+      const g = h.history.gesture('Volume');
+      expect(h.history.status().dirty).toBe(false);
+      g.update((d) => setChannelProp(d, ch.id, 'volume', 0.3));
+      expect(h.history.status().dirty).toBe(true);
+      g.cancel();
+      expect(h.history.status().dirty).toBe(false);
+    });
+
+    it('saves a checkpoint taken before edits that happened during the save', () => {
+      const h = setup();
+      h.history.transact('A', (d) => setBpm(d, 100));
+      const cp = h.history.checkpoint();
+      h.history.transact('B', (d) => setBpm(d, 110));
+      h.history.markSaved(cp);
+      expect(h.history.status().dirty).toBe(true);
+      h.history.undo();
+      expect(h.history.status().dirty).toBe(false);
+    });
+
+    it('treats a checkpoint discarded during the save as unreachable', () => {
+      const h = setup();
+      h.history.transact('A', (d) => setBpm(d, 100));
+      const cp = h.history.checkpoint();
+      h.history.undo();
+      h.history.transact('B', (d) => setBpm(d, 110));
+      h.history.markSaved(cp);
+      expect(h.history.status().dirty).toBe(true);
+      h.history.undo();
+      expect(h.history.status().dirty).toBe(true);
+    });
+
+    it('loads recovered work as dirty', () => {
+      const h = setup();
+      h.history.load(h.doc, { dirty: true });
+      expect(h.history.status().dirty).toBe(true);
+      h.history.markSaved();
+      expect(h.history.status().dirty).toBe(false);
+    });
+
+    it('keeps the saved state across trimming when it is the new bottom', () => {
+      let doc = createEmptyProject({ now: new Date(0) });
+      const history = new History({ get: () => doc, set: (p) => void (doc = p) }, { limit: 3 });
+      history.transact('1', (d) => setBpm(d, 101));
+      history.markSaved();
+      history.transact('2', (d) => setBpm(d, 102));
+      history.transact('3', (d) => setBpm(d, 103));
+      history.transact('4', (d) => setBpm(d, 104)); // drops "1": its result is the new bottom
+      for (let i = 0; i < 3; i++) history.undo();
+      expect(doc.transport.bpm).toBe(101);
+      expect(history.status().dirty).toBe(false);
+      for (let i = 0; i < 3; i++) history.redo();
+      history.transact('5', (d) => setBpm(d, 105)); // drops "2": the saved state is gone
+      for (let i = 0; i < 3; i++) history.undo();
+      expect(history.status().dirty).toBe(true);
+    });
+  });
+
   it('random edit sequences fully undo back to the initial document', () => {
     type Op =
       | { t: 'add'; name: string }

@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { HINT_EVENT } from '@agstudio/sdk/ui';
 import { ContextMenuHost } from '../controls/ContextMenu';
+import { DialogHost } from '../controls/Dialog';
 import { useServices, useSession } from '../services-context';
 import { Workspace } from '../workspace/Workspace';
 import { Browser } from './Browser';
@@ -55,6 +56,7 @@ export function App() {
       </main>
       <Toasts />
       <ContextMenuHost />
+      <DialogHost />
     </div>
   );
 }

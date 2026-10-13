@@ -16,6 +16,7 @@ import { createViewStore, type ViewStore } from './stores/view';
 import { createPrefsStore, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { MidiInput } from './midi-input';
+import { ProjectFiles } from './project-files';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -37,6 +38,8 @@ export interface Services {
   readonly midi: MidiInput;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
+  /** The open project's file: new, open, save, save as, recent files. */
+  readonly files: ProjectFiles;
   /** Replaces the audio engine with a fresh AudioContext (after AudioWorklet code changed). */
   rebootEngine(): Promise<void>;
   /** Fires after any store, registry or engine change; used to refresh command enabled/checked state. */
@@ -94,6 +97,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
 
+  let files: ProjectFiles | null = null;
   const services: Services = {
     platform,
     commands,
@@ -107,6 +111,9 @@ export function createServices(opts: ServiceOptions = {}): Services {
     midi,
     plugins,
     engine,
+    get files() {
+      return (files ??= new ProjectFiles(services));
+    },
     rebootEngine: () => engine.reboot(),
     subscribe(fn) {
       const unsubs = [
@@ -120,6 +127,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
         prefs.subscribe(fn),
         editor.subscribe(fn),
         midi.subscribe(fn),
+        services.files.store.subscribe(fn),
       ];
       return () => unsubs.forEach((u) => u());
     },

@@ -3,7 +3,16 @@
  */
 export type MenuItem =
   | { kind: 'command'; command: string; args?: unknown; label?: string; order: number }
-  | { kind: 'separator'; order: number };
+  | { kind: 'separator'; order: number }
+  | { kind: 'dynamic'; id: string; order: number; entries(): DynamicMenuEntry[] };
+
+/** An item computed when the menu opens (recent files and other lists). */
+export interface DynamicMenuEntry {
+  label: string;
+  hint?: string;
+  disabled?: boolean;
+  run(): void;
+}
 
 export interface MenuDef {
   id: string;

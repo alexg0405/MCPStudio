@@ -21,7 +21,7 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 | Folder | What | May import |
 |---|---|---|
 | `src/sdk` | Public plugin API (`@agstudio/sdk`, `/params`, `/worklet`, `/dsp`, `/ui`) | react only in `sdk/ui` |
-| `src/core` | Model, ops, history, time, queries, commands/keymap, schema, io. **No DOM** (tsconfig.core has no DOM lib) | immer, `@agstudio/sdk/params` |
+| `src/core` | Model, ops, history, time, queries, commands/keymap, schema, io. **No DOM** (tsconfig.core has no DOM lib) | immer, fflate, `@agstudio/sdk/params` |
 | `src/engine` | Web Audio engine, scheduler, reconcile, offline render | core, sdk |
 | `src/plugins/builtin` | Built-in instruments/effects | `@agstudio/sdk*` and react only |
 | `src/platform` | File System Access, OPFS, IndexedDB, Web Locks | core |

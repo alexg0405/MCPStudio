@@ -1,5 +1,6 @@
 import type { Services } from '@app/services';
 import { chordFromEvent } from '@core/commands/keymap';
+import { isModalOpen } from './controls/Dialog';
 import { TypingPiano } from './typing-piano';
 
 function isTextInput(target: EventTarget | null): boolean {
@@ -22,6 +23,8 @@ export function installKeyboard(services: Services): () => void {
   const piano = new TypingPiano(services);
 
   const onKeyDown = (e: KeyboardEvent) => {
+    // A dialog handles its own keys (Enter, Escape); nothing else should react meanwhile.
+    if (isModalOpen()) return;
     const inInput = isTextInput(e.target);
     if (piano.keyDown(e, inInput)) {
       e.stopPropagation();

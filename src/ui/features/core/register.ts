@@ -1,6 +1,5 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
-import { createDefaultProject } from '@app/default-project';
 import { addMenuItems, cmd, registerMenu, sep } from '../../shell/menus';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { registerWindowType, toggleWindow } from '../../workspace/registry';
@@ -21,27 +20,13 @@ export function register(services: Services): void {
 
   const { commands, keymap } = services;
 
-  // File commands are placeholders until persistence lands (M4/M6); features re-register them.
-  const later = (id: string, title: string, milestone: string) =>
-    commands.register({ id, title, hint: `${title} (arrives in ${milestone})`, enabled: () => false, run: () => {} });
   commands.register({
-    id: 'file.new',
-    title: 'New project',
-    category: 'File',
-    hint: 'Start a new project from the default template',
-    run: (s) => {
-      if (s.history.status().canUndo && !window.confirm('Start a new project? Unsaved changes will be lost.')) return;
-      s.engine.stop();
-      s.history.load(createDefaultProject(s.plugins));
-      const p = s.doc.getState().project;
-      s.view.getState().setCurrentPattern(p.patternOrder[0] ?? null);
-      s.session.getState().selectChannel(p.channelOrder[0] ?? null);
-    },
+    id: 'file.exportWav',
+    title: 'Export WAV…',
+    hint: 'Export WAV… (arrives in M6)',
+    enabled: () => false,
+    run: () => {},
   });
-  later('file.open', 'Open…', 'M4');
-  later('file.save', 'Save', 'M4');
-  later('file.saveAs', 'Save as…', 'M4');
-  later('file.exportWav', 'Export WAV…', 'M6');
   commands.register({
     id: 'edit.undo',
     title: 'Undo',
@@ -60,25 +45,14 @@ export function register(services: Services): void {
   });
 
   keymap.add([
-    { chord: 'Mod+N', command: 'file.new' },
-    { chord: 'Mod+O', command: 'file.open' },
-    { chord: 'Mod+S', command: 'file.save', when: { allowInInput: true } },
-    { chord: 'Mod+Shift+S', command: 'file.saveAs', when: { allowInInput: true } },
     { chord: 'Mod+R', command: 'file.exportWav' },
     { chord: 'Mod+Z', command: 'edit.undo', repeat: true },
     { chord: 'Mod+Shift+Z', command: 'edit.redo', repeat: true },
     { chord: 'Mod+Y', command: 'edit.redo', repeat: true },
   ]);
 
-  addMenuItems('file', [
-    cmd('file.new', 10),
-    cmd('file.open', 20),
-    sep(30),
-    cmd('file.save', 40),
-    cmd('file.saveAs', 50),
-    sep(60),
-    cmd('file.exportWav', 70),
-  ]);
+  // New/Open/Save live in the files feature.
+  addMenuItems('file', [sep(60), cmd('file.exportWav', 70)]);
   addMenuItems('edit', [cmd('edit.undo', 10), cmd('edit.redo', 20)]);
 
   commands.register({

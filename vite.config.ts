@@ -77,6 +77,9 @@ export default defineConfig({
   server: { port: Number(process.env.PORT) || 5390, strictPort: true, headers: isolation },
   preview: { headers: isolation },
   test: {
+    // Vitest 5 persists transforms across runs keyed by file content, which misses new files that
+    // an import.meta.glob matches (features, plugins): a new folder would stay invisible to tests.
+    fsModuleCache: false,
     projects: [
       {
         extends: true,

@@ -31,8 +31,10 @@ export interface HistoryStatus {
   canRedo: boolean;
   undoLabel?: string;
   redoLabel?: string;
-  /** Identifies the current document state; compare with the cursor at save time for "dirty". */
+  /** Identifies the current document state (the id of the newest undo entry, 0 for none). */
   cursor: number;
+  /** The document differs from the last saved (or loaded) state. See `markSaved()`. */
+  dirty: boolean;
 }
 
 export interface Gesture {
@@ -83,7 +85,11 @@ export class History {
   private listeners = new Set<(change: DocChange) => void>();
   private statusListeners = new Set<() => void>();
   private seq = 0;
+  /** Cursor of the saved state; -1 when no saved state is reachable by undo/redo. */
+  private savedCursor = 0;
   private gestureActive: { commit(): void } | null = null;
+  /** The active gesture has changed the document (it isn't in the undo stack until it commits). */
+  private gestureChanged = false;
   private readonly limit: number;
   private readonly now: () => number;
   private readonly mergeWindowMs: number;
@@ -156,13 +162,17 @@ export class History {
         if (patches.length === 0) return;
         forward = forward.concat(patches);
         backward = inverse.concat(backward);
+        this.gestureChanged = true;
         this.container.set(next);
         this.emit({ next, prev, patches, origin: 'gesture' });
       },
       commit: () => {
         if (!active) return;
         active = false;
-        if (this.gestureActive === gesture) this.gestureActive = null;
+        if (this.gestureActive === gesture) {
+          this.gestureActive = null;
+          this.gestureChanged = false;
+        }
         if (forward.length === 0) return;
         const c = compact(forward, backward);
         this.push({ id: ++this.seq, label, patches: c.patches, inverse: c.inverse, time: this.now() });
@@ -171,7 +181,10 @@ export class History {
       cancel: () => {
         if (!active) return;
         active = false;
-        if (this.gestureActive === gesture) this.gestureActive = null;
+        if (this.gestureActive === gesture) {
+          this.gestureActive = null;
+          this.gestureChanged = false;
+        }
         if (forward.length === 0) return;
         const prev = this.container.get();
         const next = applyPatches(prev, backward);
@@ -207,14 +220,48 @@ export class History {
     return true;
   }
 
-  /** Replaces the document (open/new project) and clears history. */
-  load(project: Project): void {
+  /**
+   * Replaces the document (open/new project) and clears history. The loaded state counts as saved
+   * unless `dirty` (e.g. work recovered after a crash, which exists in no file yet).
+   */
+  load(project: Project, opts: { dirty?: boolean } = {}): void {
     this.gestureActive = null;
+    this.gestureChanged = false;
     const prev = this.container.get();
     this.undoStack = [];
     this.redoStack = [];
+    this.savedCursor = opts.dirty ? -1 : 0;
     this.container.set(project);
     this.emit({ next: project, prev, patches: null, origin: 'load' });
+  }
+
+  /**
+   * Pins the current document state for a save that finishes later: commits an open gesture, stops
+   * the newest entry from merging (so later edits register as changes) and returns its cursor.
+   */
+  checkpoint(): number {
+    this.gestureActive?.commit();
+    const top = this.undoStack[this.undoStack.length - 1];
+    if (top) delete top.mergeKey;
+    return top?.id ?? 0;
+  }
+
+  /**
+   * Records a state as saved: the current one, or the `checkpoint()` a save captured before it
+   * started (edits made while saving keep the document dirty). Undoing or redoing back to the saved
+   * state makes the document clean again.
+   */
+  markSaved(cursor: number = this.checkpoint()): void {
+    const reachable =
+      cursor === 0 || this.undoStack.some((e) => e.id === cursor) || this.redoStack.some((e) => e.id === cursor);
+    this.savedCursor = reachable ? cursor : -1;
+    this.emitStatus();
+  }
+
+  /** Forgets the saved state (e.g. the file it was saved to is gone): the document is dirty. */
+  markUnsaved(): void {
+    this.savedCursor = -1;
+    this.emitStatus();
   }
 
   status(): HistoryStatus {
@@ -226,6 +273,7 @@ export class History {
       ...(top ? { undoLabel: top.label } : {}),
       ...(redo ? { redoLabel: redo.label } : {}),
       cursor: top?.id ?? 0,
+      dirty: (top?.id ?? 0) !== this.savedCursor || this.gestureChanged,
     };
   }
 
@@ -237,7 +285,15 @@ export class History {
 
   private push(entry: Entry): void {
     this.undoStack.push(entry);
-    if (this.undoStack.length > this.limit) this.undoStack.splice(0, this.undoStack.length - this.limit);
+    if (this.undoStack.length > this.limit) {
+      const dropped = this.undoStack.splice(0, this.undoStack.length - this.limit);
+      // The state after the last dropped entry is the new bottom (cursor 0); anything older is gone.
+      const base = (dropped[dropped.length - 1] as Entry).id;
+      if (this.savedCursor === base) this.savedCursor = 0;
+      else if (this.savedCursor === 0 || dropped.some((e) => e.id === this.savedCursor)) this.savedCursor = -1;
+    }
+    // Redo entries are discarded; if the saved state was among them, it is unreachable now.
+    if (this.redoStack.some((e) => e.id === this.savedCursor)) this.savedCursor = -1;
     this.redoStack = [];
   }
 

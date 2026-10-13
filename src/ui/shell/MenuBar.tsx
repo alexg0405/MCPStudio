@@ -93,6 +93,25 @@ function MenuDropdown({
     <div className={styles.menuDropdown} role="menu" style={position}>
       {items.map((item, i) => {
         if (item.kind === 'separator') return <div key={`sep${i}`} className={styles.menuSeparator} />;
+        if (item.kind === 'dynamic')
+          return item.entries().map((entry, j) => (
+            <button
+              key={`${item.id}:${j}`}
+              role="menuitem"
+              className={styles.menuItem}
+              disabled={entry.disabled}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onClose();
+                entry.run();
+              }}
+              data-hint={entry.hint ?? entry.label}
+            >
+              <span className={styles.menuCheck} />
+              <span className={styles.menuText}>{entry.label}</span>
+              <span className={styles.menuChord} />
+            </button>
+          ));
         const def = commands.get(item.command);
         if (!def) return null;
         const enabled = commands.isEnabled(item.command);

@@ -1,0 +1,150 @@
+import type { Services } from '@app/services';
+import { recentFiles } from '@app/persistence/recent-files';
+import { PROJECT_FILE_EXTENSION } from '@core/io/project-file';
+import { showDialog } from '../../controls/Dialog';
+import { addMenuItems, cmd, sep, type DynamicMenuEntry } from '../../shell/menus';
+import { applyDefaultLayout } from '../../workspace/layouts';
+
+/** New / Open / Save / Save As / Open Recent, the window title and project files dropped on the app. */
+export const order = 5;
+
+const RECENT_SHOWN = 8;
+
+export function register(services: Services): void {
+  const { commands, keymap, files } = services;
+
+  files.setUi({
+    askUnsaved: (name) =>
+      showDialog({
+        title: 'Unsaved changes',
+        message: `Save the changes to "${name}" first?`,
+        detail: "If you don't save, your changes since the last save will be lost.",
+        buttons: [
+          { id: 'cancel', label: 'Cancel' },
+          { id: 'discard', label: "Don't save", danger: true },
+          { id: 'save', label: 'Save', primary: true },
+        ],
+        cancelId: 'cancel',
+      }),
+    defaultLayout: () => applyDefaultLayout(services),
+  });
+
+  const idle = (s: Services) => s.files.store.getState().busy === null;
+  commands.register({
+    id: 'file.new',
+    title: 'New project',
+    category: 'File',
+    hint: 'Start a new project from the default template',
+    enabled: idle,
+    run: (s) => void s.files.newProject(),
+  });
+  commands.register({
+    id: 'file.open',
+    title: 'Open…',
+    category: 'File',
+    hint: `Open an AGstudio project (${PROJECT_FILE_EXTENSION})`,
+    enabled: idle,
+    run: (s) => void s.files.open(),
+  });
+  commands.register({
+    id: 'file.save',
+    title: 'Save',
+    category: 'File',
+    hint: 'Save the project to its file (asks where the first time)',
+    enabled: idle,
+    run: (s) => void s.files.save(),
+  });
+  commands.register({
+    id: 'file.saveAs',
+    title: 'Save as…',
+    category: 'File',
+    hint: 'Save the project to a new file',
+    enabled: idle,
+    run: (s) => void s.files.saveAs(),
+  });
+
+  keymap.add([
+    // Chrome keeps ⌘N/Ctrl+N for a new window (it works in an installed app window), so Alt+N too.
+    { chord: 'Mod+N', command: 'file.new' },
+    { chord: 'Alt+N', command: 'file.new' },
+    { chord: 'Mod+O', command: 'file.open' },
+    { chord: 'Mod+S', command: 'file.save', when: { allowInInput: true } },
+    { chord: 'Mod+Shift+S', command: 'file.saveAs', when: { allowInInput: true } },
+  ]);
+
+  const recentEntries = (): DynamicMenuEntry[] => {
+    const list = recentFiles().slice(0, RECENT_SHOWN);
+    if (list.length === 0) return [{ label: 'No recent projects', disabled: true, run: () => {} }];
+    return list.map((f) => ({
+      label: f.name.replace(/\.agproj$/i, ''),
+      hint: `Open ${f.name} (last used ${new Date(f.usedAt).toLocaleString()})`,
+      disabled: !idle(services),
+      run: () => void services.files.openRecent(f.key),
+    }));
+  };
+  addMenuItems('file', [
+    cmd('file.new', 10),
+    cmd('file.open', 20),
+    sep(22),
+    { kind: 'dynamic', id: 'recent-files', order: 24, entries: recentEntries },
+    sep(30),
+    cmd('file.save', 40),
+    cmd('file.saveAs', 50),
+  ]);
+
+  if (typeof window === 'undefined') return; // Node tests
+  installTitle(services);
+  installFileDrops(services);
+  if (!import.meta.env.DEV) installUnloadGuard(services);
+}
+
+/** "● Song – AGstudio" while there are unsaved changes. */
+function installTitle(s: Services): void {
+  const update = () => {
+    const { name } = s.files.store.getState();
+    document.title = `${s.history.status().dirty ? '● ' : ''}${name} – AGstudio`;
+  };
+  s.files.store.subscribe(update);
+  s.history.onStatus(update);
+  update();
+}
+
+/**
+ * A project file dropped anywhere opens it. Other drops that no editor took (stray audio files) are
+ * swallowed: by default the browser would navigate to the file and leave the app.
+ */
+function installFileDrops(s: Services): void {
+  window.addEventListener('dragover', (e) => {
+    // An editor that accepts the drop has already handled it.
+    if (e.defaultPrevented || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  window.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (!dt?.types.includes('Files') || e.defaultPrevented) return;
+    e.preventDefault();
+    const index = [...dt.files].findIndex((f) => f.name.toLowerCase().endsWith(PROJECT_FILE_EXTENSION));
+    if (index < 0) {
+      if (dt.files.length > 0) s.session.getState().toast('Drop audio files on the channel rack or the playlist.');
+      return;
+    }
+    const file = dt.files[index] as File;
+    // Chrome hands out a file handle for dropped files, so Save writes back to the same file.
+    const item = [...dt.items].filter((i) => i.kind === 'file')[index] as
+      (DataTransferItem & { getAsFileSystemHandle?(): Promise<FileSystemHandle | null> }) | undefined;
+    const handle = item?.getAsFileSystemHandle?.() ?? Promise.resolve(null);
+    void handle
+      .catch(() => null)
+      .then((h) => s.files.openFile(file, h?.kind === 'file' ? (h as FileSystemFileHandle) : null));
+  });
+}
+
+/** Production builds warn before closing a tab with unsaved changes (autosave keeps a copy too). */
+function installUnloadGuard(s: Services): void {
+  window.addEventListener('beforeunload', (e) => {
+    if (!s.history.status().dirty) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}

@@ -274,14 +274,30 @@ WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the fil
   unreferenced blobs (count references from autosaves too). `decodeAudioData` resamples and detaches its input; Chrome
   rejects AIFF, so the engine's bytes provider transcodes AIFF to float WAV with the PCM parser in `core/io/wav.ts`
   (which also reads `smpl` and AIFF `INST`/`MARK` loop/root data).
-- Save/Open: `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for Cmd+S, `createWritable()` swaps atomically.
-  Fallback: `<input type=file>` / `<a download>`. `beforeunload` guard while dirty.
+- Save/Open (`app/project-files.ts`, `services.files`): `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for
+  Cmd+S, `createWritable()` swaps atomically. Fallback: `<input type=file>` / `<a download>`. Pickers need a recent
+  user gesture, so a command shows its picker before any slow work, and the unsaved-changes prompt is an in-app dialog
+  (its button click is a fresh gesture). Handles of recent files live in IndexedDB (`persistence/recent-files.ts`);
+  a reopened handle asks for permission again when the browser wants it. `.agproj` files dropped on the window open
+  (Chrome gives a handle for them, so Save writes back). `beforeunload` guard while dirty (production builds only:
+  in dev it would block Vite's full reloads).
+- Dirty state is History's: `checkpoint()` pins the state a save writes (edits made during the save stay unsaved) and
+  `markSaved(cursor)` records it, so undoing back to the saved state is clean again; `load(project, { dirty })` marks
+  recovered work as unsaved.
+- `view.json` (`persistence/view-snapshot.ts`): mode, current pattern, loop, song position, windows, browser, piano
+  roll/playlist settings, selected channel. Applying it validates every field and drops windows whose channel or
+  insert is gone; a project without a layout gets the default one.
+- Reloads (`persistence/session.ts`): each tab keeps a session id in sessionStorage and mirrors project, view and file
+  link there (synchronously on pagehide), so a reload, including a dev full reload, returns to the same state and
+  still saves to the same file. A duplicated tab copies sessionStorage, so its id is already locked: it takes a new id.
 - Autosave: OPFS `autosave/<session>/{a,b}.agproj` plus `{a,b}.json` (meta with size and SHA-256, written after the
   data, so an interrupted save leaves the other slot valid). 3 s after the last edit (≤ every 30 s) and on tab hide,
   alternating A/B slots. Autosaves are thin: no sample bytes (samples stay in the blob store). Encoding runs on the main
   thread for now; the storage interface allows moving it to a worker. Each tab holds a Web Lock
-  `agstudio:session:<id>`; on startup, autosaves whose lock is free and not marked clean (pagehide after a successful
-  flush) are recovery candidates. `navigator.storage.persist()`.
+  `agstudio:session:<id>`; on startup, autosaves whose lock is free and not marked clean are recovery candidates. Only a
+  clean project ends clean (on pagehide, save, open or new), so closing a tab with unsaved changes keeps them
+  recoverable; only unsaved work is autosaved. The recovery dialog offers the newest candidate first (Recover /
+  Discard / Not now); recovering autosaves into this tab before deleting the old copy. `navigator.storage.persist()`.
 - Sample folder: `showDirectoryPicker({ id: 'samples', mode: 'read' })`, handle in IndexedDB, "Reconnect" when
   permission is `prompt`. Drag-and-drop payload type `application/x-agstudio`; Finder drops via `getAsFileSystemHandle()`.
 

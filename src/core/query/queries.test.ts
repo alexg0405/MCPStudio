@@ -74,11 +74,11 @@ describe('pattern queries', () => {
       setStep(d, pid, cid, 0, true, { rootKey: 60 });
       setStep(d, pid, cid, 4, true, { rootKey: 60, velocity: 0.5 });
     });
-    const view = stepView(p2.patterns[pid]!.notes[cid], 16, 60);
+    const view = stepView(p2.patterns[pid]!.notes[cid], 16);
     expect(view.isSteps).toBe(true);
     expect(view.velocities.map((v) => (v > 0 ? 1 : 0)).join('')).toBe('1000100000000000');
     const p3 = produce(p2, (d) => addNote(d, pid, cid, n('long', 0, 960, 64)));
-    expect(stepView(p3.patterns[pid]!.notes[cid], 16, 60).isSteps).toBe(false);
+    expect(stepView(p3.patterns[pid]!.notes[cid], 16).isSteps).toBe(false);
   });
 
   it('setStep off removes the note and grows stepCount when needed', () => {

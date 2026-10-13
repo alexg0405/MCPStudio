@@ -126,7 +126,7 @@ function StepGrid({
 }) {
   const services = useServices();
   const notes = useDoc((pr) => pr.patterns[patternId]?.notes[channelId]);
-  const view = stepView(notes, stepCount, rootKey);
+  const view = stepView(notes, stepCount);
 
   useEffect(() => {
     window.addEventListener('pointerup', endPaint);

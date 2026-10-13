@@ -149,6 +149,43 @@ describe('AutoLane', () => {
     expect(late.at(2.5)).toBeCloseTo(50);
   });
 
+  it('cuts holds, constant ramps and steps right at the cut time', () => {
+    const lane = new AutoLane(ctx(1), 'k', p.float(0, 10, 0), 0, 0.01);
+    const a = new FakeParam();
+    lane.bind(a as unknown as AudioParam);
+    lane.cut(1);
+    lane.extend([1.1, 5, 3, 5]); // a ramp to 5, then holding 5 until 3 s
+    expect(lane.cut(1.5)).toBe(1.5);
+    expect(a.events.map((e) => e[2])).toEqual([1, 1.1, 1.5]);
+    lane.extend([1.6, 0]);
+    expect(a.at(1.55)).toBeCloseTo(2.5, 9);
+    // Discrete lanes: a later step can always go.
+    const steps = new AutoLane(ctx(1), 's', p.int(0, 8, 0), 0, 0);
+    const b = new FakeParam();
+    steps.bind(b as unknown as AudioParam);
+    steps.cut(1);
+    steps.extend([2, 3, 4, 6]);
+    expect(steps.cut(2.5)).toBe(2.5);
+    expect(b.events.at(-1)).toEqual(['set', 3, 2.5]);
+  });
+
+  it('starts exactly before a render and reports scheduled changes', () => {
+    const lane = new AutoLane(ctx(0), 'k', p.float(0, 1, 0), 0.5, 0.01);
+    const a = new FakeParam();
+    lane.bind(a as unknown as AudioParam);
+    const heard: [number, number][] = [];
+    lane.onScheduled = (v, t) => heard.push([v, t]);
+    lane.start(0.25);
+    expect(a.events).toEqual([['set', 0.25, 0]]);
+    expect(lane.driven).toBe(true);
+    lane.extend([0.5, 0.25, 1, 0.75]);
+    expect(heard).toEqual([
+      [0.25, 0],
+      [0.75, 1],
+    ]);
+    expect(lane.scheduledUntil).toBe(1);
+  });
+
   it('clamps automated values into the spec range and skips non-finite ones', () => {
     const lane = new AutoLane(ctx(1), 'k', p.float(-1, 1, 0), 0, 0.01);
     const a = new FakeParam();

@@ -85,6 +85,11 @@ export class Transport {
     return this.playingFlag;
   }
 
+  /** The timeline being planned (tempo map, loop, end): the one segments come from. */
+  get currentTimeline(): Timeline {
+    return this.timeline;
+  }
+
   /** Adds an observer of the timeline; returns its removal. */
   observe(o: TransportObserver): () => void {
     this.observers.add(o);

@@ -7,7 +7,9 @@ import { addNote } from '@core/ops/notes';
 import { renderOffline } from '@engine/render-offline';
 import { defaultValues, defineWorkletInstrument, type PluginDef } from '@agstudio/sdk';
 import processor from './impulse.worklet.ts?worker&url';
-import { resolver } from '../helpers/fixtures';
+import { peak, resolver } from '../helpers/fixtures';
+import { automate, firstDifference, pt } from '../helpers/automation';
+import { heldNote, tone } from '../helpers/tone';
 
 const SR = 48000;
 const impulse = defineWorkletInstrument({ id: 'test.impulse', name: 'Impulse', version: 1, params: {}, processor });
@@ -107,4 +109,48 @@ describe('built-in instruments', () => {
       expect(diff).toBeLessThan(1e-6);
     });
   }
+});
+
+describe('automation offline', () => {
+  it('renders bit-exact at chunk sizes 128·16, 128·37 and 128·256', async () => {
+    const BAR = 3840;
+    const { project: base, pid, ch } = heldNote(tone, 4, 120, 960);
+    const owner = { kind: 'channel' as const, channelId: ch };
+    // A bent curve on the kernel's own a-rate param, a stairs volume over a clip boundary, pan holds.
+    let project = automate(
+      base,
+      { kind: 'plugin', owner, paramId: 'level' },
+      [pt(0, 0.2), pt(1920, 1, { tension: 0.5 }), pt(5760, 0.1, { shape: 'smooth' }), pt(7680, 0.6)],
+      [{ start: 0, length: 2 * BAR, lane: 1 }],
+    ).project;
+    project = automate(
+      project,
+      { kind: 'channel', channelId: ch, param: 'volume' },
+      [pt(0, 0.9, { shape: 'stairs' }), pt(3840, 0.3), pt(7680, 1)],
+      [{ start: 1920, length: 3 * BAR, lane: 2 }],
+    ).project;
+    project = automate(
+      project,
+      { kind: 'channel', channelId: ch, param: 'pan' },
+      [pt(0, 0, { shape: 'hold' }), pt(960, 1, { shape: 'hold' }), pt(1920, 0.5)],
+      [{ start: 0, length: 4 * BAR, lane: 3 }],
+    ).project;
+    const render = async (chunk: number, pr = project) =>
+      (
+        await renderOffline(pr, {
+          plugins: resolver(tone),
+          // The loop wraps once inside the render.
+          view: { mode: 'song', patternId: pid, loop: { start: 960, end: 3 * BAR + 480 } },
+          bars: 5,
+          sampleRate: SR,
+          tail: 0.05,
+          chunk,
+        })
+      ).buffer;
+    const a = await render(128 * 16);
+    expect(peak(a)).toBeGreaterThan(0.05);
+    for (const chunk of [128 * 37, 128 * 256]) expect(firstDifference(a, await render(chunk))).toBe(-1);
+    // (The automation is what's being compared: without it the render differs early on.)
+    expect(firstDifference(a, await render(128 * 16, base))).toBeLessThan(SR);
+  });
 });

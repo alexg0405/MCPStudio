@@ -264,16 +264,24 @@ WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the fil
 
 ## Persistence (`src/app/persistence`, `src/platform`)
 
-- `.agproj` = zip (fflate): `project.json`, `view.json`, `meta.json`, `samples/<sha256>.<ext>` (original bytes, stored
-  uncompressed). Plugin code is never embedded; plugins are referenced by id + version.
-- Runtime sample store: OPFS `blobs/<sha256>.<ext>`; decode per `(hash, sampleRate)`; undo removes references, not
-  blobs; idle GC of unreferenced blobs. `decodeAudioData` resamples and detaches its input; AIFF isn't reliably decodable
-  in Chrome, so a small WAV/AIFF PCM parser is the fallback (also reads `smpl` loop/root chunks).
+- `.agproj` = zip (fflate, `core/io/project-file.ts`): `meta.json` (`{ format: 1, appVersion, savedAt }`),
+  `project.json` and `view.json` (deflate 6), `samples/<sha256>.<ext>` (original bytes, stored uncompressed). Plugin code
+  is never embedded; plugins are referenced by id + version. Reading migrates and repairs (`core/schema/migrate.ts`) and
+  throws `ProjectFileError` with a user-facing message; a damaged `meta.json`/`view.json` is tolerated and reported in
+  `repairs`. Opening verifies each embedded sample against its hash before it enters the store.
+- Runtime sample store: OPFS `blobs/<sha256>.<ext>` (`platform/opfs.ts`), layered over memory when OPFS is missing or
+  full (`app/persistence/blob-store.ts`); decode per `(hash, sampleRate)`; undo removes references, not blobs; idle GC of
+  unreferenced blobs (count references from autosaves too). `decodeAudioData` resamples and detaches its input; Chrome
+  rejects AIFF, so the engine's bytes provider transcodes AIFF to float WAV with the PCM parser in `core/io/wav.ts`
+  (which also reads `smpl` and AIFF `INST`/`MARK` loop/root data).
 - Save/Open: `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for Cmd+S, `createWritable()` swaps atomically.
   Fallback: `<input type=file>` / `<a download>`. `beforeunload` guard while dirty.
-- Autosave: OPFS, 3 s after the last edit (≤ every 30 s) and on tab hide, alternating A/B slots, written by a worker.
-  Each tab holds a Web Lock `agstudio:session:<id>`; on startup, autosaves whose lock is free and not marked clean are
-  recovery candidates. `navigator.storage.persist()`.
+- Autosave: OPFS `autosave/<session>/{a,b}.agproj` plus `{a,b}.json` (meta with size and SHA-256, written after the
+  data, so an interrupted save leaves the other slot valid). 3 s after the last edit (≤ every 30 s) and on tab hide,
+  alternating A/B slots. Autosaves are thin: no sample bytes (samples stay in the blob store). Encoding runs on the main
+  thread for now; the storage interface allows moving it to a worker. Each tab holds a Web Lock
+  `agstudio:session:<id>`; on startup, autosaves whose lock is free and not marked clean (pagehide after a successful
+  flush) are recovery candidates. `navigator.storage.persist()`.
 - Sample folder: `showDirectoryPicker({ id: 'samples', mode: 'read' })`, handle in IndexedDB, "Reconnect" when
   permission is `prompt`. Drag-and-drop payload type `application/x-agstudio`; Finder drops via `getAsFileSystemHandle()`.
 

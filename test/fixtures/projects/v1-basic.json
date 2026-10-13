@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "projectId": "prj_fixture001",
+  "meta": {
+    "title": "Fixture: basic",
+    "author": "AGstudio tests",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "appVersion": "0.1.0"
+  },
+  "transport": { "bpm": 128, "timeSig": { "num": 4, "den": 4 }, "swing": 0.2 },
+  "channels": {
+    "ch_kick000001": {
+      "kind": "instrument",
+      "id": "ch_kick000001",
+      "name": "Kick",
+      "color": "#5f8fbf",
+      "muted": false,
+      "solo": false,
+      "volume": 0.78,
+      "pan": 0,
+      "output": "ins_drums00001",
+      "plugin": {
+        "pluginId": "agstudio.sampler",
+        "pluginVersion": 1,
+        "params": {
+          "gain": 0,
+          "tune": 0,
+          "fine": 0,
+          "start": 0,
+          "reverse": false,
+          "cut": false,
+          "envelope": false,
+          "attack": 0.002,
+          "decay": 0.3,
+          "sustain": 1,
+          "release": 0.12
+        },
+        "samples": { "main": "smp_kick000001" }
+      },
+      "rootKey": 60
+    },
+    "ch_synth00001": {
+      "kind": "instrument",
+      "id": "ch_synth00001",
+      "name": "Lead",
+      "color": "#9a72c2",
+      "muted": false,
+      "solo": false,
+      "volume": 0.65,
+      "pan": 0.2,
+      "output": "ins_synth00001",
+      "plugin": {
+        "pluginId": "agstudio.3xosc",
+        "pluginVersion": 1,
+        "params": {
+          "osc1Wave": "sawtooth",
+          "osc1Coarse": 0,
+          "osc1Fine": 0,
+          "osc1Level": 0.8,
+          "osc2Wave": "sawtooth",
+          "osc2Coarse": 0,
+          "osc2Fine": 7,
+          "osc2Level": 0.6,
+          "osc3Wave": "square",
+          "osc3Coarse": -12,
+          "osc3Fine": 0,
+          "osc3Level": 0.4,
+          "cutoff": 2500,
+          "resonance": 2,
+          "level": -9
+        },
+        "state": { "preset": "Init", "favorites": [1, 2] }
+      },
+      "rootKey": 60
+    },
+    "ch_audio00001": {
+      "kind": "audioClip",
+      "id": "ch_audio00001",
+      "name": "Drum loop",
+      "color": "#c9a24a",
+      "muted": false,
+      "solo": false,
+      "volume": 1,
+      "pan": -0.25,
+      "output": "master",
+      "sampleId": "smp_loop000001"
+    }
+  },
+  "channelOrder": ["ch_kick000001", "ch_synth00001", "ch_audio00001"],
+  "patterns": {
+    "pat_intro00001": {
+      "id": "pat_intro00001",
+      "name": "Pattern 1",
+      "color": "#5f8fbf",
+      "stepCount": 16,
+      "notes": {
+        "ch_kick000001": {
+          "n_k000000001": { "id": "n_k000000001", "tick": 0, "length": 240, "key": 60, "velocity": 0.78125 },
+          "n_k000000002": { "id": "n_k000000002", "tick": 960, "length": 240, "key": 60, "velocity": 0.78125 },
+          "n_k000000003": { "id": "n_k000000003", "tick": 1920, "length": 240, "key": 60, "velocity": 1 },
+          "n_k000000004": { "id": "n_k000000004", "tick": 2880, "length": 240, "key": 60, "velocity": 0.5 }
+        },
+        "ch_synth00001": {
+          "n_s000000001": { "id": "n_s000000001", "tick": 0, "length": 1920, "key": 64, "velocity": 0.8, "pan": 0.1 },
+          "n_s000000002": {
+            "id": "n_s000000002",
+            "tick": 1920,
+            "length": 1920,
+            "key": 67,
+            "velocity": 0.7,
+            "muted": true
+          }
+        }
+      }
+    },
+    "pat_verse00001": {
+      "id": "pat_verse00001",
+      "name": "Pattern 2",
+      "color": "#6aa86b",
+      "stepCount": 32,
+      "length": 7680,
+      "notes": {}
+    }
+  },
+  "patternOrder": ["pat_intro00001", "pat_verse00001"],
+  "playlist": {
+    "lanes": {
+      "lane_track00001": { "id": "lane_track00001", "name": "Track 1", "muted": false },
+      "lane_track00002": { "id": "lane_track00002", "name": "Track 2", "muted": false, "color": "#c76b5b" },
+      "lane_track00003": { "id": "lane_track00003", "name": "Track 3", "muted": true, "solo": false }
+    },
+    "laneOrder": ["lane_track00001", "lane_track00002", "lane_track00003"],
+    "clips": {
+      "clip_patclip001": {
+        "kind": "pattern",
+        "id": "clip_patclip001",
+        "laneId": "lane_track00001",
+        "start": 0,
+        "length": 3840,
+        "patternId": "pat_intro00001",
+        "offset": 0
+      },
+      "clip_patclip002": {
+        "kind": "pattern",
+        "id": "clip_patclip002",
+        "laneId": "lane_track00001",
+        "start": 3840,
+        "length": 7680,
+        "patternId": "pat_verse00001",
+        "offset": 960,
+        "name": "Verse"
+      },
+      "clip_audclip001": {
+        "kind": "audio",
+        "id": "clip_audclip001",
+        "laneId": "lane_track00002",
+        "start": 0,
+        "length": 7680,
+        "channelId": "ch_audio00001",
+        "offsetSec": 0.5,
+        "muted": false
+      }
+    }
+  },
+  "mixer": {
+    "inserts": {
+      "master": { "id": "master", "name": "Master", "volume": 1, "pan": 0, "muted": false, "solo": false, "fx": [] },
+      "ins_drums00001": {
+        "id": "ins_drums00001",
+        "name": "Drums",
+        "color": "#5f8fbf",
+        "volume": 0.8,
+        "pan": 0,
+        "muted": false,
+        "solo": false,
+        "fx": [
+          {
+            "id": "fx_delay00001",
+            "plugin": {
+              "pluginId": "user.my-delay",
+              "pluginVersion": 2,
+              "params": { "time": 0.25, "feedback": 0.4, "sync": true, "mode": "pingpong" }
+            },
+            "enabled": true,
+            "mix": 0.3
+          }
+        ]
+      },
+      "ins_synth00001": {
+        "id": "ins_synth00001",
+        "name": "Synth",
+        "volume": 1.2,
+        "pan": -0.1,
+        "muted": false,
+        "solo": false,
+        "fx": []
+      }
+    },
+    "order": ["master", "ins_drums00001", "ins_synth00001"]
+  },
+  "samples": {
+    "smp_kick000001": {
+      "id": "smp_kick000001",
+      "name": "Kick",
+      "source": { "kind": "builtin", "generator": "kit/kick", "version": 1 }
+    },
+    "smp_loop000001": {
+      "id": "smp_loop000001",
+      "name": "Drum loop",
+      "source": {
+        "kind": "embedded",
+        "hash": "ee248313be9a583d2f715d46334ab3c5c6ec529f0552b20199681bcdf3ebffb1",
+        "ext": "wav",
+        "originalName": "Drum loop.wav"
+      },
+      "durationSec": 2,
+      "sampleRate": 44100,
+      "channels": 2
+    }
+  }
+}

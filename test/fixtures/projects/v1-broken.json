@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "projectId": "prj_broken0001",
+  "meta": { "title": "Fixture: broken", "createdAt": "2026-01-02T00:00:00.000Z", "appVersion": "0.1.0" },
+  "transport": { "bpm": 900, "timeSig": { "num": 4, "den": 4 }, "swing": 0 },
+  "channels": {
+    "ch_kick000001": {
+      "kind": "instrument",
+      "id": "ch_kick000001",
+      "name": "Kick",
+      "color": "#5f8fbf",
+      "muted": false,
+      "solo": false,
+      "volume": 3.5,
+      "pan": 7,
+      "output": "ins_drums00001",
+      "plugin": {
+        "pluginId": "agstudio.sampler",
+        "pluginVersion": 1,
+        "params": { "gain": 0, "tune": 0 },
+        "samples": { "main": "smp_kick000001", "layer": "smp_gone000001" }
+      },
+      "rootKey": 60
+    },
+    "ch_synth00001": {
+      "kind": "instrument",
+      "id": "ch_synth00001",
+      "name": "Lead",
+      "color": "#9a72c2",
+      "muted": false,
+      "solo": false,
+      "volume": 0.65,
+      "pan": 0,
+      "output": "ins_gone000001",
+      "plugin": { "pluginId": "agstudio.3xosc", "pluginVersion": 1, "params": { "cutoff": 2500 } },
+      "rootKey": 60
+    },
+    "ch_audio00001": {
+      "kind": "audioClip",
+      "id": "ch_audio00001",
+      "name": "Drum loop",
+      "color": "#c9a24a",
+      "muted": false,
+      "solo": false,
+      "volume": -1,
+      "pan": 0,
+      "output": "master",
+      "sampleId": "smp_kick000001"
+    }
+  },
+  "channelOrder": ["ch_kick000001", "ch_ghost00001", "ch_kick000001"],
+  "patterns": {
+    "pat_intro00001": {
+      "id": "pat_intro00001",
+      "name": "Pattern 1",
+      "color": "#5f8fbf",
+      "stepCount": 16,
+      "notes": {
+        "ch_kick000001": {
+          "n_k000000001": { "id": "n_k000000001", "tick": 0, "length": 240, "key": 60, "velocity": 1.7 },
+          "n_k000000002": { "id": "n_k000000002", "tick": -240, "length": 0, "key": 60, "velocity": 0.5 },
+          "n_k000000003": { "id": "n_k000000003", "tick": 960, "length": 240, "key": 60, "velocity": -0.2 }
+        },
+        "ch_deleted0001": {
+          "n_d000000001": { "id": "n_d000000001", "tick": 0, "length": 240, "key": 60, "velocity": 0.8 }
+        }
+      }
+    },
+    "pat_verse00001": { "id": "pat_verse00001", "name": "Pattern 2", "color": "#6aa86b", "stepCount": 16, "notes": {} }
+  },
+  "patternOrder": ["pat_intro00001", "pat_missing001"],
+  "playlist": {
+    "lanes": {
+      "lane_track00001": { "id": "lane_track00001", "name": "Track 1", "muted": false },
+      "lane_track00002": { "id": "lane_track00002", "name": "Track 2", "muted": false }
+    },
+    "laneOrder": ["lane_track00001", "lane_track00002", "lane_track00002"],
+    "clips": {
+      "clip_good00001": {
+        "kind": "pattern",
+        "id": "clip_good00001",
+        "laneId": "lane_track00001",
+        "start": 0,
+        "length": 3840,
+        "patternId": "pat_intro00001",
+        "offset": 0
+      },
+      "clip_nopat0001": {
+        "kind": "pattern",
+        "id": "clip_nopat0001",
+        "laneId": "lane_track00001",
+        "start": 3840,
+        "length": 3840,
+        "patternId": "pat_missing001",
+        "offset": 0
+      },
+      "clip_nolane001": {
+        "kind": "pattern",
+        "id": "clip_nolane001",
+        "laneId": "lane_gone00001",
+        "start": 0,
+        "length": 3840,
+        "patternId": "pat_verse00001",
+        "offset": 0
+      },
+      "clip_nochan001": {
+        "kind": "audio",
+        "id": "clip_nochan001",
+        "laneId": "lane_track00002",
+        "start": 0,
+        "length": 3840,
+        "channelId": "ch_gone000001",
+        "offsetSec": 0
+      }
+    }
+  },
+  "mixer": {
+    "inserts": {
+      "master": { "id": "master", "name": "Master", "volume": 1, "pan": 0, "muted": false, "solo": false, "fx": [] },
+      "ins_drums00001": {
+        "id": "ins_drums00001",
+        "name": "Drums",
+        "volume": 9,
+        "pan": -3,
+        "muted": false,
+        "solo": false,
+        "fx": []
+      },
+      "ins_synth00001": {
+        "id": "ins_synth00001",
+        "name": "Synth",
+        "volume": 1,
+        "pan": 0,
+        "muted": false,
+        "solo": false,
+        "fx": []
+      }
+    },
+    "order": ["ins_drums00001", "master", "ins_ghost00001", "ins_drums00001"]
+  },
+  "samples": {
+    "smp_kick000001": {
+      "id": "smp_kick000001",
+      "name": "Kick",
+      "source": { "kind": "builtin", "generator": "kit/kick", "version": 1 }
+    }
+  }
+}

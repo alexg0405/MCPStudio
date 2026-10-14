@@ -895,6 +895,34 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   offline generator.
 - **Rule for new features**: each feature adds its ops here (and what the context needs), so the AI can
   drive it.
+- **More ops since M16a**:
+  - `automate`: an automation clip for any target, with points in the control's own unit or an LFO;
+  - `note_tool`: any piano-roll tool from the catalog;
+  - `steps`;
+  - `marker`;
+  - `edit_audio_clip`, and audio-channel pitch, reverse and tempo-follow through `edit_channel`;
+  - `build_plugin` (below).
+- **App commands**:
+  - The `command` action runs any registered command by id (`app/ai/commands.ts`). The first turn, and any
+    turn after the list changes, sends `<commands>` with every command's id, title, hint and `argsHint`.
+    So every menu entry, button and shortcut is something the AI can do: save, export, undo, windows,
+    layouts, settings… New features' commands join automatically.
+  - `CommandDef.gesture` marks commands that open a file dialog. The AI studio shows a one-click
+    confirmation, and that click is the user activation the browser needs.
+  - `ai: false` keeps a command away from the AI.
+  - The context's App line names the file and its saved state, recent projects, what is switched on, and
+    what Undo would revert.
+- **Plugin builder** (`app/ai/builder*.ts`, `tools/ai/drafts.ts`, `plugin-test.html`):
+  1. `build_plugin` hands a spec to a separate builder conversation. Its system prompt is the SDK guide
+     plus the templates, and it answers with files.
+  2. The dev server writes the draft to `plugins/_drafts/<name>/` and checks it: flat names, size caps, SDK
+     and React imports only, no network, storage, eval or dynamic import, then `tsc` in the main and worklet
+     scopes, run with the server's own Node.
+  3. A hidden iframe renders it offline: it must define a valid plugin, make sound, stay finite and stay
+     under the master limiter.
+  4. Problems go back to Claude, for at most three fix rounds.
+  5. Install moves the folder to `plugins/<name>/`, backing up an older one in `plugins/_backup/`, and hot
+     reload registers it. `plugins/_*` is outside `tsc -b`, eslint, vitest and git.
 
 ## Wave 2 foundations
 

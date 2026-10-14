@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createStore, useStore } from 'zustand';
+import { holdModal } from './Dialog';
+import { focusFirstItem, moveInPanel, submenuOf } from './menu-nav';
 import styles from './ContextMenu.module.css';
 
 export type MenuEntry =
@@ -57,6 +59,8 @@ export function ContextMenuHost() {
 
   useEffect(() => {
     if (!open) return;
+    // The open menu has the keyboard: shortcuts and the typing piano wait until it closes.
+    const release = holdModal();
     const onDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) closeContextMenu();
     };
@@ -64,12 +68,20 @@ export function ContextMenuHost() {
       if (e.key === 'Escape') {
         e.stopPropagation();
         closeContextMenu();
+        return;
+      }
+      // Opened with the mouse: the first arrow key moves into the menu.
+      const menu = ref.current;
+      if (menu && !menu.contains(document.activeElement) && moveInPanel(e, menu)) {
+        e.preventDefault();
+        e.stopPropagation();
       }
     };
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey, true);
     window.addEventListener('blur', closeContextMenu);
     return () => {
+      release();
       window.removeEventListener('pointerdown', onDown, true);
       window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('blur', closeContextMenu);
@@ -84,10 +96,19 @@ export function ContextMenuHost() {
       style={pos ? { left: pos.left, top: pos.top } : { left: open.x, top: open.y, visibility: 'hidden' }}
       role="menu"
       onContextMenu={(e) => e.preventDefault()}
+      onKeyDown={panelKeys}
     >
       <MenuItems items={open.items} />
     </div>
   );
+}
+
+/** ↑ ↓ Home End and letters move within the panel the key came from. */
+function panelKeys(e: ReactKeyboardEvent<HTMLDivElement>) {
+  if (moveInPanel(e, e.currentTarget)) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
 }
 
 /** The entries of one menu panel; a submenu opens its own panel beside its row. */
@@ -128,7 +149,19 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
         if (item.kind === 'submenu') {
           const isOpen = sub?.index === i;
           return (
-            <div key={i} className={styles.subRoot}>
+            <div
+              key={i}
+              className={styles.subRoot}
+              onKeyDown={(e) => {
+                // ← in the submenu goes back to its row.
+                const row = e.currentTarget.querySelector<HTMLElement>(':scope > [role="menuitem"]');
+                if (e.key !== 'ArrowLeft' || !isOpen || e.target === row) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setSub(null);
+                row?.focus();
+              }}
+            >
               <button
                 role="menuitem"
                 aria-haspopup="menu"
@@ -139,6 +172,14 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
                 onPointerDown={(e) => e.preventDefault()}
                 onPointerEnter={(e) => openSub(i, e.currentTarget)}
                 onClick={(e) => openSub(i, e.currentTarget)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'Enter' && e.key !== ' ') return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const row = e.currentTarget;
+                  openSub(i, row);
+                  focusFirstItem(() => submenuOf(row));
+                }}
               >
                 <span className={styles.check} />
                 <span className={styles.text}>{item.label}</span>
@@ -188,6 +229,7 @@ function SubPanel({ items, at }: { items: MenuEntry[]; at: { top: number; left: 
       className={styles.menu}
       role="menu"
       style={pos ? { left: pos.left, top: pos.top } : { left: at.left, top: at.top, visibility: 'hidden' }}
+      onKeyDown={panelKeys}
     >
       {items.length ? <MenuItems items={items} /> : <div className={styles.label}>Nothing here</div>}
     </div>

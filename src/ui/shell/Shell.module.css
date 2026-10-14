@@ -209,6 +209,7 @@
 }
 
 .menuItem:hover:not(:disabled),
+.menuItem:focus-visible,
 .menuItemOpen {
   background: var(--ag-accent-dim);
   color: #fff;
@@ -325,4 +326,13 @@
   border-radius: 2px;
   font-family: var(--ag-font);
   font-size: 10px;
+}
+
+.menuItem:focus-visible,
+.menuLabel:focus-visible {
+  outline: none;
+}
+
+.menuLabel:focus-visible {
+  box-shadow: 0 0 0 1px var(--ag-select) inset;
 }

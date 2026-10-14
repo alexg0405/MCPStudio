@@ -21,6 +21,7 @@
 }
 
 .item:hover:not(:disabled),
+.item:focus-visible,
 .itemOpen {
   background: var(--ag-accent-dim);
   color: #fff;
@@ -96,4 +97,8 @@
 .swatch:hover {
   outline: 2px solid var(--ag-text);
   outline-offset: 1px;
+}
+
+.item:focus-visible {
+  outline: none;
 }

@@ -73,6 +73,11 @@ export interface EngineApi {
   setTransportView(view: TransportView): void;
   play(fromTick?: Tick): void;
   stop(): void;
+  /**
+   * Stops all sound right now: playback, every note (hard), previews, and audio-thread plugins'
+   * buffers; the output ducks for a moment so ringing reverb and delay tails stop too.
+   */
+  panic(): void;
   readonly playing: boolean;
   /** The tick being heard right now (output latency included). */
   playhead(): number;

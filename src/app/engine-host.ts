@@ -85,6 +85,9 @@ export class EngineHost implements EngineApi {
   stop(): void {
     this.inner.stop();
   }
+  panic(): void {
+    this.inner.panic();
+  }
   playhead(): number {
     return this.inner.playhead();
   }

@@ -1,6 +1,7 @@
 import type { Services } from '@app/services';
 import { recentFiles } from '@app/persistence/recent-files';
 import { newFromTemplate, TEMPLATES } from '@app/templates';
+import { showProjectInfo } from './project-info';
 import { PROJECT_FILE_EXTENSION } from '@core/io/project-file';
 import { showDialog } from '../../controls/Dialog';
 import { addMenuItems, cmd, sep, type DynamicMenuEntry } from '../../shell/menus';
@@ -67,6 +68,13 @@ export function register(services: Services): void {
     run: (s) => void s.files.saveAs(),
   });
 
+  commands.register({
+    id: 'file.projectInfo',
+    title: 'Project info…',
+    category: 'File',
+    hint: 'The title and author, and what is in the project (length, channels, notes…)',
+    run: (s) => void showProjectInfo(s),
+  });
   commands.register<string>({
     id: 'file.newFromTemplate',
     title: 'New from template',
@@ -147,6 +155,8 @@ export function register(services: Services): void {
     sep(30),
     cmd('file.save', 40),
     cmd('file.saveAs', 50),
+    sep(52),
+    cmd('file.projectInfo', 54),
   ]);
 
   if (typeof window === 'undefined') return; // Node tests

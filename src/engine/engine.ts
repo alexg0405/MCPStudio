@@ -411,6 +411,20 @@ export class Engine implements EngineApi, EngineCore {
     this.emit();
   }
 
+  panic(): void {
+    this.stop();
+    const now = this.ctx.currentTime;
+    for (const s of this.strips.values()) s.allNotesOff(now, true);
+    for (const port of this.ports) port.reset();
+    // Graph effects can't be flushed: duck the output while their tails ring out.
+    const g = this.masterOut.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(g.value, now);
+    g.linearRampToValueAtTime(0, now + 0.01);
+    g.setValueAtTime(0, now + 0.6);
+    g.linearRampToValueAtTime(1, now + 0.65);
+  }
+
   /** Offline rendering: start the transport on the virtual clock (call pumpOffline per chunk). */
   startOffline(fromTick: number, at: number): void {
     this.updateModel();

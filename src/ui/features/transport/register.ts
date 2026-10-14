@@ -107,6 +107,13 @@ export function register(services: Services): void {
     run: (s, mode) => s.prefs.getState().set({ recordMode: mode === 'replace' ? 'replace' : 'overdub' }),
   });
   commands.register({
+    id: 'transport.panic',
+    title: 'Stop all sound',
+    category: 'Transport',
+    hint: 'Stops playback and silences every note and echo right away (when something keeps sounding)',
+    run: (s) => s.engine.panic(),
+  });
+  commands.register({
     id: 'song.settings',
     title: 'Song settings…',
     category: 'Song',
@@ -135,6 +142,7 @@ export function register(services: Services): void {
     cmd('transport.toggleMode', 2),
     cmd('song.settings', 3),
     sep(70),
+    cmd('transport.panic', 69),
     cmd('transport.metronome', 71),
     cmd('transport.record', 72, 'Record (arm)'),
     {

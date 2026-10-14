@@ -31,6 +31,12 @@ export class FakeEngine implements EngineApi {
     this.playing = false;
     this.emit();
   }
+  /** How many times panic() ran. */
+  panics = 0;
+  panic(): void {
+    this.panics++;
+    this.stop();
+  }
   playhead(): number {
     return 0;
   }

@@ -15,6 +15,7 @@ import { patternLength } from '@core/query/queries';
 import { ticksPerBar } from '@core/time/ppq';
 import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { channelSound, noteName } from '../assistant/context';
+import { recentFiles } from '../persistence/recent-files';
 import { aiCommands } from './commands';
 import type { Services } from '../services';
 
@@ -69,12 +70,16 @@ function appLine(s: Services): string {
   const on = aiCommands(s)
     .filter((d) => d.checked && s.commands.isChecked(d.id))
     .map((d) => d.title);
+  const recent = recentFiles()
+    .slice(0, 8)
+    .map((f) => `"${f.name.replace(/\.agproj$/i, '')}"`);
   const parts = [
     `file "${file.name}"${h.dirty ? ' (unsaved changes)' : ' (saved)'}`,
+    recent.length ? `recent projects: ${recent.join(', ')}` : '',
     on.length ? `on right now: ${on.join(', ')}` : 'no toggles on',
     h.undoLabel ? `undo would revert “${h.undoLabel}”` : 'nothing to undo',
   ];
-  return `App: ${parts.join('; ')}.`;
+  return `App: ${parts.filter(Boolean).join('; ')}.`;
 }
 
 function channelLine(s: Services, p: Project, ch: Channel, index: number): string {

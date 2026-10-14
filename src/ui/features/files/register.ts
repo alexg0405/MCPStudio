@@ -66,6 +66,32 @@ export function register(services: Services): void {
     run: (s) => void s.files.saveAs(),
   });
 
+  commands.register<string>({
+    id: 'file.openRecent',
+    title: 'Open recent project',
+    category: 'File',
+    hint: 'Open one of the recently used projects by its name',
+    gesture: true,
+    argsHint: 'the project name, as listed under recent projects',
+    // The File menu lists each recent project; this is for the AI studio.
+    palette: false,
+    enabled: idle,
+    run: (s, name) => {
+      const want = String(name ?? '')
+        .trim()
+        .toLowerCase()
+        .replace(/\.agproj$/, '');
+      const plain = (f: { name: string }) => f.name.replace(/\.agproj$/i, '').toLowerCase();
+      const list = recentFiles();
+      const hit = list.find((f) => plain(f) === want) ?? list.find((f) => want && plain(f).includes(want));
+      if (!hit) {
+        s.session.getState().toast(`There is no recent project called “${String(name ?? '')}”.`, 'error');
+        return;
+      }
+      void s.files.openRecent(hit.key);
+    },
+  });
+
   keymap.add([
     // Chrome keeps ⌘N/Ctrl+N for a new window (it works in an installed app window), so Alt+N too.
     { chord: 'Mod+N', command: 'file.new' },

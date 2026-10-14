@@ -7,6 +7,7 @@ import type {
   EngineStats,
   RecordOptions,
   RecordingHandle,
+  SampleData,
   TransportView,
   Waveform,
 } from '@engine/api';
@@ -114,6 +115,9 @@ export class EngineHost implements EngineApi {
   }
   previewAudio(bytes: ArrayBuffer): Promise<boolean> {
     return this.inner.previewAudio(bytes);
+  }
+  sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
+    return this.inner.sampleData(ref);
   }
   stopPreview(): void {
     this.inner.stopPreview();

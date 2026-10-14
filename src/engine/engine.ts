@@ -16,6 +16,7 @@ import type {
   EngineState,
   EngineStats,
   PluginResolver,
+  SampleData,
   TransportView,
 } from './api';
 import { AutomationDriver } from './automation/driver';
@@ -616,6 +617,13 @@ export class Engine implements EngineApi, EngineCore {
       });
     }
     return null;
+  }
+
+  async sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
+    const buffer = await this.samples.load(ref, this.ctx);
+    if (!buffer) return null;
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+    return { sampleRate: buffer.sampleRate, channels, duration: buffer.duration };
   }
 
   async previewAudio(bytes: ArrayBuffer): Promise<boolean> {

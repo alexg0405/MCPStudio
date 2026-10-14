@@ -1,6 +1,7 @@
 import type { DocChange } from '@core/history/history';
 import type { InsertId } from '@core/model/types';
-import type { EngineApi, EngineSession, EngineState, EngineStats, TransportView } from './api';
+import type { SampleRef } from '@core/model/types';
+import type { EngineApi, EngineSession, EngineState, EngineStats, SampleData, TransportView } from './api';
 
 /** An engine stand-in for Node tests and UI work without audio. Records what it was told. */
 export class FakeEngine implements EngineApi {
@@ -56,6 +57,11 @@ export class FakeEngine implements EngineApi {
   }
   waveform(): null {
     return null;
+  }
+  /** Decoded audio sampleData() serves, by sample name. */
+  sampleAudio = new Map<string, SampleData>();
+  async sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
+    return this.sampleAudio.get(ref.name) ?? null;
   }
   async previewAudio(): Promise<boolean> {
     return true;

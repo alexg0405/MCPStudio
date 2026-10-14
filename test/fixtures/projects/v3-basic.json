@@ -107,7 +107,8 @@
       "pitch": -200,
       "reverse": false,
       "stretch": "stretch",
-      "sourceBpm": 90
+      "sourceBpm": 90,
+      "frozenFrom": "ch_synth00001"
     },
     "ch_auto0000001": {
       "kind": "automation",

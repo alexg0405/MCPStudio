@@ -10,7 +10,7 @@ import {
 import { requestStretch, reversedBuffer, stretchedBuffer } from './audio-buffers';
 import type { AudioOn } from './sched/transport';
 
-/** Ramp from silence when a clip starts on a non-zero envelope (playback started inside it, no fade-in). */
+/** Ramp from silence when a clip starts inside its sound on a non-zero envelope (no fade-in). */
 const ANTI_CLICK = 0.002;
 /** Fade when a clip is cut short (stop, loop wrap, seek) or ends without a fade-out. */
 const RELEASE = 0.004;
@@ -123,11 +123,16 @@ export function createClipPlayer(
     const clipSec = tempo.tickToSeconds(clip.start);
     const dur = tempo.tickToSeconds(clipEnd) - clipSec;
     const x0 = secAt - clipSec;
-    const sched: Schedule = [[t, 0]];
-    g.setValueAtTime(0, t);
-    let lastX = x0;
     const points = envelopeBreakpoints(clip, dur, x0);
-    if ((points[0]?.[1] ?? 0) > 0) {
+    const v0 = points[0]?.[1] ?? 0;
+    // Starting inside the sound on a non-zero envelope would click: ramp in from silence. At the
+    // very beginning of the sound it starts there anyway (and a frozen or consolidated render must
+    // keep its attack), so it starts at the envelope's value.
+    const ramp = v0 > 0 && (x0 > 1e-9 || srcSec > 1e-9);
+    const sched: Schedule = [[t, ramp ? 0 : v0]];
+    g.setValueAtTime(sched[0]![1], t);
+    let lastX = x0;
+    if (ramp) {
       lastX = Math.min(dur, x0 + ANTI_CLICK);
       sched.push([t + (lastX - x0), clipEnvelopeAt(clip, lastX, dur)]);
     }

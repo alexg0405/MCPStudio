@@ -10,6 +10,7 @@ import { tempoMapOf } from '@core/automation/tempo';
 import { clipTickOffset } from '@core/model/clips';
 import { newId } from '@core/model/ids';
 import type {
+  AudioClip,
   AutomationChannel,
   AutomationClip,
   ChannelId,
@@ -24,6 +25,9 @@ import type {
   Tick,
 } from '@core/model/types';
 import { addAutomationPoint, moveAutomationPoint, setAutomationPointTension } from '@core/ops/automation';
+import { setAudioClipEdits } from '@core/ops/audio-edits';
+import { clipGain, dbToGain, formatDb, formatSeconds, gainToDb, MAX_CLIP_GAIN, type ClipLevels } from '@core/audio/envelope';
+import { playbackMode, sourceSecondsAt, tickAtSourceSeconds } from '@core/audio/playback';
 import { markersSorted } from '@core/ops/markers';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
@@ -59,6 +63,7 @@ import {
   type MarkerBox,
 } from './render';
 import { markerRename } from './markers';
+import { hitAudioHandle, type AudioHandle } from './audio-clip';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 
 export interface PlaylistElements {
@@ -99,6 +104,7 @@ type Drag =
   | { kind: 'pan'; x: number; y: number }
   | { kind: 'loop'; t0: Tick; moved: boolean }
   | { kind: 'marker'; id: MarkerId; x0: number; grab: number; tick: Tick; moved: boolean }
+  | { kind: 'level'; clip: AudioClip; handle: AudioHandle; x0: number; y0: number; start: ClipLevels; now: ClipLevels }
   | {
       kind: 'point';
       gesture: Gesture;
@@ -145,6 +151,8 @@ export class PlaylistController {
   private markerBoxes: MarkerBox[] = [];
   private markerHot: MarkerId | null = null;
   private markerDrag: { id: MarkerId; tick: Tick } | null = null;
+  /** The audio clip gain/fade handle under the pointer. */
+  private audioHot: { clipId: ClipId; handle: AudioHandle } | null = null;
 
   constructor(
     private readonly s: Services,
@@ -345,6 +353,7 @@ export class PlaylistController {
         const skip = hideOriginals ? new Set(this.preview?.map((c) => c.id)) : undefined;
         const label = (c: Clip) => (c.kind === 'automation' ? this.autoLabel(c, p) : undefined);
         const automation = (c: AutomationClip) => this.autoDraw(c, p, selected);
+        const audio = this.audioStyle(selected);
         drawClips(
           ctx,
           vp,
@@ -352,7 +361,7 @@ export class PlaylistController {
           p,
           clipsSorted(p.playlist.clips),
           laneIndex,
-          { selected, waveform: this.waveform, label, automation, ...(skip ? { skip } : {}) },
+          { selected, waveform: this.waveform, label, automation, ...audio, ...(skip ? { skip } : {}) },
           muted,
         );
         if (this.preview) {
@@ -364,7 +373,13 @@ export class PlaylistController {
             p,
             this.preview,
             laneIndex,
-            { selected: sel, waveform: this.waveform, label, automation: (c) => this.autoDraw(c, p, sel) },
+            {
+              selected: sel,
+              waveform: this.waveform,
+              label,
+              automation: (c) => this.autoDraw(c, p, sel),
+              ...this.audioStyle(sel),
+            },
             muted,
           );
         }
@@ -623,8 +638,11 @@ export class PlaylistController {
     const h = this.hover;
     let cursor = 'default';
     const auto = this.autoHover?.hit.part;
+    const level = this.drag?.kind === 'level' ? this.drag.handle : this.audioHot?.handle;
     if (this.drag?.kind === 'pan' || this.drag?.kind === 'point') cursor = 'grabbing';
     else if (this.drag?.kind === 'tension') cursor = 'ns-resize';
+    else if (level === 'gain' && tool !== 'delete' && tool !== 'slice') cursor = 'ns-resize';
+    else if (level && tool !== 'delete' && tool !== 'slice') cursor = 'ew-resize';
     else if (tool === 'delete') cursor = 'not-allowed';
     else if (auto === 'point') cursor = 'grab';
     else if (auto === 'handle') cursor = 'ns-resize';
@@ -732,6 +750,18 @@ export class PlaylistController {
       return;
     }
 
+    // Audio clips: the gain and fade handles along the top of the body.
+    const handle = hit && !mod ? this.audioHandleAt(hit, x, y, p) : null;
+    if (hit?.clip.kind === 'audio' && handle) {
+      editor.selectClips([hit.clip.id]);
+      const clip = hit.clip;
+      const levels: ClipLevels = { gain: clipGain(clip), fadeIn: clip.fadeIn ?? 0, fadeOut: clip.fadeOut ?? 0 };
+      this.drag = { kind: 'level', clip, handle, x0: x, y0: y, start: levels, now: levels };
+      this.updateCursor();
+      this.invalidate('clips');
+      return;
+    }
+
     if (hit && tool !== 'paint') {
       const sel = editor.clipSelection;
       if (mod) {
@@ -799,10 +829,14 @@ export class PlaylistController {
         this.updateCursor();
       }
       this.updateAutoHover(hit, x, y, p);
+      this.updateAudioHover(hit, x, y, p);
       return;
     }
     this.autoScroll(x, y, p);
     switch (d.kind) {
+      case 'level':
+        this.dragLevel(d, x, y, e);
+        return;
       case 'point':
         this.dragAutoPoint(d, x, y, e);
         return;
@@ -851,7 +885,7 @@ export class PlaylistController {
           // Left edge trims the start: content stays in place (offset follows).
           let dTick = snapRound(d.anchor.start + (x - d.x0) / this.vp.pxPerTick, grid) - d.anchor.start;
           const maxD = Math.min(...d.originals.map((c) => c.length - Math.max(grid, 1)));
-          const minD = -Math.min(...d.originals.map((c) => Math.min(c.start, clipTickOffset(c) ?? Infinity)));
+          const minD = -Math.min(...d.originals.map((c) => Math.min(c.start, this.trimRoom(c, p))));
           dTick = clamp(dTick, minD, maxD);
           if (dTick === d.dTick) return;
           d.dTick = dTick;
@@ -862,10 +896,8 @@ export class PlaylistController {
                   ...c,
                   start: c.start + dTick,
                   length: c.length - dTick,
-                  offsetSec: Math.max(
-                    0,
-                    c.offsetSec + tempo.tickToSeconds(c.start + dTick) - tempo.tickToSeconds(c.start),
-                  ),
+                  // The trim follows the clip's playback (pitch, tempo follow), so the audio stays put.
+                  offsetSec: Math.max(0, sourceSecondsAt(c, this.modeOf(c, p), tempo, c.start + dTick)),
                 }
               : { ...c, start: c.start + dTick, length: c.length - dTick, offset: c.offset + dTick },
           );
@@ -949,6 +981,11 @@ export class PlaylistController {
       editor.selectClips([clip.id]);
     } else if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'point' || d.kind === 'tension') {
       d.gesture.commit();
+    } else if (d.kind === 'level') {
+      const { now, start, clip } = d;
+      const changed = now.gain !== start.gain || now.fadeIn !== start.fadeIn || now.fadeOut !== start.fadeOut;
+      const label = d.handle === 'gain' ? 'Clip gain' : d.handle === 'fadeIn' ? 'Fade in' : 'Fade out';
+      if (changed) this.s.history.transact(label, (draft) => setAudioClipEdits(draft, clip.id, now));
     }
     this.preview = null;
     this.updateCursor();
@@ -973,6 +1010,15 @@ export class PlaylistController {
     const p = this.project();
     const { x, y } = this.local(e);
     const hit = this.hitTest(x, y, p);
+    const handle = hit ? this.audioHandleAt(hit, x, y, p) : null;
+    if (hit?.clip.kind === 'audio' && handle) {
+      // Double-click a handle: back to 0 dB, or no fade.
+      const id = hit.clip.id;
+      const reset = handle === 'gain' ? { gain: 1 } : handle === 'fadeIn' ? { fadeIn: 0 } : { fadeOut: 0 };
+      const label = handle === 'gain' ? 'Clip gain 0 dB' : handle === 'fadeIn' ? 'Remove fade in' : 'Remove fade out';
+      this.s.history.transact(label, (d) => setAudioClipEdits(d, id, reset));
+      return;
+    }
     const auto = this.autoAt(hit, x, y, p);
     if (auto) {
       // Double-click: straighten a curve handle, or add a point on the curve.
@@ -988,6 +1034,95 @@ export class PlaylistController {
       this.s.view.getState().setCurrentPattern(hit.clip.patternId);
       this.s.view.getState().showWindow('channel-rack', 'channel-rack');
     }
+  }
+
+  // ---------------------------------------------------------------- audio clips
+
+  private modeOf(c: AudioClip, p: Project) {
+    const ch = p.channels[c.channelId];
+    return playbackMode(ch?.kind === 'audioClip' ? ch : {});
+  }
+
+  /** How far left an audio clip's start can go before its trim reaches the sample's start (ticks). */
+  private trimRoom(c: Clip, p: Project): number {
+    if (c.kind !== 'audio') return clipTickOffset(c) ?? Infinity;
+    const first = tickAtSourceSeconds(c, this.modeOf(c, p), tempoMapOf(p, 'song'), 0);
+    return Math.max(0, Math.floor(c.start - first));
+  }
+
+  /** Gain, fades and handle state for drawing audio clips (a level drag previews its values). */
+  private audioStyle(selected: ReadonlySet<ClipId>) {
+    const d = this.drag;
+    return {
+      levels: (c: AudioClip): ClipLevels => (d?.kind === 'level' && d.clip.id === c.id ? d.now : c),
+      audioHandles: (c: AudioClip) => {
+        const dragging = d?.kind === 'level' && d.clip.id === c.id;
+        const hot = dragging ? d.handle : this.audioHot?.clipId === c.id ? this.audioHot.handle : null;
+        return { show: selected.has(c.id) || this.hover?.clip.id === c.id || dragging, hot };
+      },
+      stretching: (channelId: ChannelId) => this.s.engine.isStretching(channelId),
+    };
+  }
+
+  /** The audio clip handle under the pointer (only with tools that edit clips). */
+  private audioHandleAt(hit: Hit, x: number, y: number, p: Project): AudioHandle | null {
+    const tool = this.s.editor.getState().playlist.tool;
+    if (hit.clip.kind !== 'audio' || tool === 'delete' || tool === 'slice') return null;
+    const box = this.boxOf(hit.clip, p);
+    return box ? hitAudioHandle(this.vp, hit.clip, hit.clip, tempoMapOf(p, 'song'), box, x, y) : null;
+  }
+
+  private levelText(handle: AudioHandle, v: ClipLevels): string {
+    if (handle === 'gain') return `Clip gain ${formatDb(v.gain ?? 1)} · drag up or down (Shift: fine) · double-click for 0 dB`;
+    const s = handle === 'fadeIn' ? (v.fadeIn ?? 0) : (v.fadeOut ?? 0);
+    const name = handle === 'fadeIn' ? 'Fade in' : 'Fade out';
+    return `${name} ${s > 0 ? formatSeconds(s) : 'off'} · drag left or right · double-click to remove`;
+  }
+
+  private updateAudioHover(hit: Hit | null, x: number, y: number, p: Project): void {
+    const handle = hit ? this.audioHandleAt(hit, x, y, p) : null;
+    const next = handle && hit ? { clipId: hit.clip.id, handle } : null;
+    const a = this.audioHot;
+    if (a?.clipId === next?.clipId && a?.handle === next?.handle) return;
+    this.audioHot = next;
+    this.invalidate('clips');
+    this.updateCursor();
+    if (next && hit?.clip.kind === 'audio') {
+      const text = this.levelText(next.handle, hit.clip);
+      this.lastHint = text;
+      emitHint(this.els.gridHost, text);
+    } else if (!this.autoHover) {
+      this.lastHint = null;
+      emitHint(this.els.gridHost, this.els.gridHost.getAttribute('data-hint') ?? '');
+    }
+  }
+
+  /** Dragging a gain or fade handle: previews on the clip, one undo step on release. */
+  private dragLevel(d: Extract<Drag, { kind: 'level' }>, x: number, y: number, e: PointerEvent): void {
+    const p = this.project();
+    const tempo = tempoMapOf(p, 'song');
+    const clip = d.clip;
+    const startSec = tempo.tickToSeconds(clip.start);
+    const dur = tempo.tickToSeconds(clip.start + clip.length) - startSec;
+    let now: ClipLevels;
+    if (d.handle === 'gain') {
+      // 0.2 dB per pixel (Shift: 0.02), −48 … +12 dB.
+      const db0 = gainToDb(Math.max(1e-6, d.start.gain ?? 1));
+      const db = clamp(db0 + ((d.y0 - y) * (e.shiftKey ? 0.02 : 0.2)), -48, 20 * Math.log10(MAX_CLIP_GAIN));
+      const g = Math.abs(db) < 0.05 ? 1 : dbToGain(db);
+      now = { ...d.start, gain: Math.round(g * 10000) / 10000 };
+    } else {
+      const tick = clamp(this.vp.xToTick(x), clip.start, clip.start + clip.length);
+      const sec = tempo.tickToSeconds(tick) - startSec;
+      const other = d.handle === 'fadeIn' ? (d.start.fadeOut ?? 0) : (d.start.fadeIn ?? 0);
+      const len = clamp(d.handle === 'fadeIn' ? sec : dur - sec, 0, Math.max(0, dur - other));
+      // Under 2 ms is no fade.
+      const v = len < 0.002 ? 0 : Math.round(len * 10000) / 10000;
+      now = d.handle === 'fadeIn' ? { ...d.start, fadeIn: v } : { ...d.start, fadeOut: v };
+    }
+    d.now = now;
+    emitHint(this.els.gridHost, this.levelText(d.handle, now));
+    this.invalidate('clips');
   }
 
   private paintAt(x: number, p: Project, e: { altKey: boolean }): void {
@@ -1031,7 +1166,7 @@ export class PlaylistController {
   private autoScroll(x: number, y: number, p: Project): void {
     const d = this.drag;
     // Points stay inside their clip: no scrolling while editing them.
-    if (!d || d.kind === 'pan' || d.kind === 'point' || d.kind === 'tension') return;
+    if (!d || d.kind === 'pan' || d.kind === 'point' || d.kind === 'tension' || d.kind === 'level') return;
     const edge = 24;
     let dx = 0;
     let dy = 0;

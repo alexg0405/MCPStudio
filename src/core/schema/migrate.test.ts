@@ -80,6 +80,22 @@ describe('migrateProject', () => {
     expect(repairProject(project).repairs).toEqual([]);
   });
 
+  it('unlinks frozen audio from a channel that is gone (M15 optional field)', () => {
+    const p = fixture('v3-basic');
+    const ch = Object.values(p.channels).find((c) => c.kind === 'audioClip');
+    if (ch?.kind !== 'audioClip') throw new Error('fixture has no audio clip channel');
+    expect(ch.frozenFrom).toBe('ch_synth00001');
+    expect(repairProject(p).repairs).toEqual([]);
+    for (const bad of ['ch_missing', 42, ch.id, 'ch_auto0000001']) {
+      const q = fixture('v3-basic');
+      const c = q.channels[ch.id] as unknown as Record<string, unknown>;
+      c.frozenFrom = bad;
+      const { project, repairs } = repairProject(q);
+      expect(project.channels[ch.id]).not.toHaveProperty('frozenFrom');
+      expect(repairs.join(' ')).toMatch(/frozen channel/);
+    }
+  });
+
   it('repairs v3 audio edits and markers', () => {
     const p = fixture('v3-basic');
     const audio = Object.values(p.playlist.clips).find((c) => c.kind === 'audio');

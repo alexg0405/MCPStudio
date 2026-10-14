@@ -2,6 +2,7 @@
 import type {
   AudioClip,
   AutomationClip,
+  ChannelId,
   Clip,
   ClipId,
   Lane,
@@ -19,10 +20,12 @@ import type {
 import { clipChannelId } from '@core/model/clips';
 import { notesSorted, patternLength } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
-import { ticksPerBar, ticksPerBeat, type TempoMap } from '@core/time/ppq';
+import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
 import { shade, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
+import type { ClipLevels } from '@core/audio/envelope';
+import { audioClipTags, drawAudioBody, type AudioHandle } from './audio-clip';
 import { drawAutomationBody, type AutoDraw } from './automation';
 import { clipBox, TITLE_H } from './clip-geometry';
 
@@ -111,6 +114,12 @@ export interface ClipStyle {
   label?(clip: Clip): string | undefined;
   /** How an automation clip shows its points and notes (default: points when selected). */
   automation?(clip: AutomationClip): AutoDraw;
+  /** An audio clip's gain and fades as drawn (a drag previews new ones). */
+  levels?(clip: AudioClip): ClipLevels;
+  /** Whether an audio clip shows its gain and fade handles, and which one is under the pointer. */
+  audioHandles?(clip: AudioClip): { show: boolean; hot: AudioHandle | null };
+  /** True while an audio clip channel's sample is being time-stretched. */
+  stretching?(channelId: ChannelId): boolean;
 }
 
 export function drawClips(
@@ -149,7 +158,11 @@ export function drawClips(
     ctx.fillRect(x, y, w, Math.min(TITLE_H, h));
     ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,0.6)';
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    const label = pattern?.name ?? c.name ?? style.label?.(c) ?? channel?.name ?? '?';
+    let label = pattern?.name ?? c.name ?? style.label?.(c) ?? channel?.name ?? '?';
+    if (c.kind === 'audio' && channel?.kind === 'audioClip') {
+      const tags = audioClipTags(c, channel, tempoMapOf(project, 'song'), !!style.stretching?.(channel.id));
+      if (tags.length) label = `${label} · ${tags.join(' · ')}`;
+    }
     const menu = w >= CLIP_MENU_MIN_WIDTH && h >= TITLE_H;
     if (menu) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -176,48 +189,17 @@ export function drawClips(
       drawPatternBody(ctx, vp, pattern, ts, c, x, w, bodyY, bodyH, shade(base, 0.55));
     else if (bodyH > 3 && c.kind === 'audio') {
       const ref = channel?.kind === 'audioClip' ? project.samples[channel.sampleId] : undefined;
-      const wave = ref ? style.waveform?.(ref) : null;
-      ctx.fillStyle = shade(base, 0.4);
-      if (wave) drawWaveform(ctx, vp, wave, c, tempoMapOf(project, 'song'), x, w, bodyY, bodyH);
-      else ctx.fillRect(x, bodyY + bodyH / 2, w, 1);
+      const wave = ref ? (style.waveform?.(ref) ?? null) : null;
+      if (channel?.kind === 'audioClip') {
+        const levels = style.levels?.(c) ?? c;
+        const handles = style.audioHandles?.(c) ?? { show: selected, hot: null };
+        drawAudioBody(ctx, vp, wave, c, channel, levels, tempoMapOf(project, 'song'), box, shade(base, 0.4), handles);
+      } else {
+        ctx.fillStyle = shade(base, 0.4);
+        ctx.fillRect(x, bodyY + bodyH / 2, w, 1);
+      }
     }
     ctx.globalAlpha = 1;
-  }
-}
-
-/** The part of the sample the clip plays (from its trim point; audio keeps its speed through tempo changes). */
-function drawWaveform(
-  ctx: CanvasRenderingContext2D,
-  vp: Viewport,
-  wave: Waveform,
-  clip: AudioClip,
-  tempo: TempoMap,
-  x: number,
-  w: number,
-  y: number,
-  h: number,
-): void {
-  const mid = y + h / 2;
-  const amp = h / 2;
-  const buckets = wave.peaks.length / 2;
-  const from = Math.max(Math.floor(x), 0);
-  const to = Math.min(Math.ceil(x + w), vp.width);
-  const clipSec = tempo.tickToSeconds(clip.start);
-  for (let px = from; px < to; px++) {
-    const tick = clip.start + (px - x) / vp.pxPerTick;
-    const t0 = clip.offsetSec + tempo.tickToSeconds(tick) - clipSec;
-    const perPx = tempo.secondsPerTick(tick) / vp.pxPerTick;
-    if (t0 >= wave.duration) break;
-    const b0 = Math.max(0, Math.floor((t0 * wave.sampleRate) / wave.bucket));
-    const b1 = Math.min(buckets, Math.max(b0 + 1, Math.ceil(((t0 + perPx) * wave.sampleRate) / wave.bucket)));
-    let lo = 0;
-    let hi = 0;
-    for (let b = b0; b < b1; b++) {
-      lo = Math.min(lo, wave.peaks[b * 2] as number);
-      hi = Math.max(hi, wave.peaks[b * 2 + 1] as number);
-    }
-    const top = Math.max(y, mid - hi * amp);
-    ctx.fillRect(px, top, 1, Math.max(1, Math.min(y + h, mid - lo * amp) - top));
   }
 }
 

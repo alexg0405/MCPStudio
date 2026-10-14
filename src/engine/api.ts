@@ -12,6 +12,14 @@ export type { Waveform, RecordOptions, Recording, RecordingHandle };
 
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
 
+/** A decoded sample's audio (at the engine's sample rate). Read-only: it is the engine's own copy. */
+export interface SampleData {
+  sampleRate: number;
+  channels: readonly Float32Array[];
+  /** Seconds. */
+  duration: number;
+}
+
 export interface TransportView {
   mode: 'pattern' | 'song';
   patternId: PatternId | null;
@@ -91,6 +99,11 @@ export interface EngineApi {
    * subscribers are notified when it becomes available).
    */
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null;
+  /**
+   * A sample's decoded audio for analysis (normalize, slicing at transients, tempo detection);
+   * null when it can't be decoded. Don't modify the channels.
+   */
+  sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null>;
   /**
    * Records a microphone stream on the engine's clock: count-in clicks, then `bars` bars (optionally
    * with the project playing along from `fromTick`). Rejects where recording isn't possible.

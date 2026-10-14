@@ -36,6 +36,8 @@ export function removeChannel(d: Draft<Project>, id: ChannelId): void {
   for (const [clipId, clip] of Object.entries(d.playlist.clips)) {
     if (clipChannelId(clip) === id) delete d.playlist.clips[clipId as keyof typeof d.playlist.clips];
   }
+  // Frozen copies of it stay as ordinary audio.
+  for (const ch of Object.values(d.channels)) if (ch.kind === 'audioClip' && ch.frozenFrom === id) delete ch.frozenFrom;
   dropControllers(d, (t) => targetUsesChannel(t, id));
 }
 

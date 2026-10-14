@@ -18,8 +18,21 @@ import { MASTER, type InsertId, type Project, type SlotId } from '@core/model/ty
 import { canRoute, wouldCycle } from '@core/query/routing';
 import type { MenuEntry } from '../../controls/ContextMenu';
 
-/** Built-in effects offered when a track has nothing that listens to a sidechain yet. */
-const SIDECHAIN_EFFECTS = ['agstudio.ducker', 'agstudio.compressor'];
+/** Offered first when a track has nothing that listens to a sidechain yet (then every other such effect). */
+const USUAL_SIDECHAIN_EFFECTS = ['agstudio.ducker', 'agstudio.compressor'];
+
+/** Installed effects with a sidechain input, the usual ones first. */
+function sidechainEffects(s: Services) {
+  const rank = (id: string) => {
+    const i = USUAL_SIDECHAIN_EFFECTS.indexOf(id);
+    return i < 0 ? USUAL_SIDECHAIN_EFFECTS.length : i;
+  };
+  return s.plugins
+    .list('effect')
+    .map((e) => e.def)
+    .filter((def) => def.kind === 'effect' && def.sidechain)
+    .sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name));
+}
 
 export const LOOP_HINT = 'Not possible: it would create a feedback loop (audio coming back into itself)';
 
@@ -172,15 +185,12 @@ function sidechainTargets(s: Services, project: Project, source: InsertId, targe
       onSelect: () => setSidechain(s, target, slot.slotId, slot.source === source ? null : source),
     }));
   const out: MenuEntry[] = [{ kind: 'label', label: 'No effect here listens to a sidechain yet' }];
-  for (const id of SIDECHAIN_EFFECTS) {
-    const def = s.plugins.get(id);
-    if (def?.kind === 'effect')
-      out.push({
-        label: `Add a ${def.name} that reacts to “${from}”`,
-        hint: `Adds ${def.name} to “${insertName(project, target)}” with “${from}” as its sidechain`,
-        onSelect: () => addSidechainEffect(s, target, id, source),
-      });
-  }
+  for (const def of sidechainEffects(s))
+    out.push({
+      label: `Add a ${def.name} that reacts to “${from}”`,
+      hint: `Adds ${def.name} to “${insertName(project, target)}” with “${from}” as its sidechain${def.description ? `: ${def.description}` : ''}`,
+      onSelect: () => addSidechainEffect(s, target, def.id, source),
+    });
   return out;
 }
 

@@ -414,7 +414,9 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
               const ref = kitSampleRef(generator);
               addSample(d, ref);
               samples = { main: ref.id };
-            } else warnings.push(`"${name}" has no sample yet (say which kit sound it should play)`);
+            } else if (def.id === SAMPLER_ID)
+              // Other sample players have a sound of their own until they get one (the Slicer's demo break).
+              warnings.push(`"${name}" has no sample yet (say which kit sound it should play)`);
           }
           const ch = instrumentChannelFor(def, name, d.channelOrder.length, samples);
           const parts = settings(ch.plugin as Draft<PluginInstance>, def, a);

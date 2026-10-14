@@ -25,6 +25,8 @@ export interface PrefsState {
   welcomeSeen: boolean;
   /** Most recent first: what the action search ranks higher. */
   recentActions: string[];
+  /** Your own keyboard shortcuts by command id (they replace its built-in ones; [] = none). */
+  customKeys: Record<string, string[]>;
 }
 
 export interface PrefsActions {
@@ -47,6 +49,7 @@ const DEFAULTS: PrefsState = {
   tooltips: true,
   welcomeSeen: false,
   recentActions: [],
+  customKeys: {},
 };
 
 function load(): PrefsState {

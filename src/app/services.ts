@@ -15,7 +15,7 @@ import { AutomationService } from './automation';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
-import { createPrefsStore, type PrefsStore } from './stores/prefs';
+import { createPrefsStore, type PrefsState, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { ControllerRouter } from './controllers';
 import { LiveInput } from './live-input';
@@ -92,6 +92,16 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const session = createSessionStore();
   session.getState().selectChannel(doc.getState().project.channelOrder[0] ?? null);
   const prefs = createPrefsStore();
+  // Your own shortcuts (Help → Keyboard shortcuts), kept in prefs.
+  let appliedKeys: PrefsState['customKeys'] | null = null;
+  const applyKeys = () => {
+    const keys = prefs.getState().customKeys;
+    if (keys === appliedKeys) return;
+    appliedKeys = keys;
+    keymap.setUserBindings(keys);
+  };
+  prefs.subscribe(applyKeys);
+  applyKeys();
   const editor = createEditorStore(opts.pianoRoll, opts.playlist);
   let engineRef: EngineApi | null = null;
   const live = new LiveInput(

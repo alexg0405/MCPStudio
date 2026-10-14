@@ -129,3 +129,43 @@ describe('CommandRegistry', () => {
     expect(reg.get('a')?.title).toBe('2');
   });
 });
+
+describe('user shortcuts', () => {
+  const ctx = { focus: null, inInput: false };
+  const setup = () => {
+    const km = new Keymap('mac');
+    km.add([
+      { chord: 'Space', command: 'play' },
+      { chord: 'Mod+S', command: 'save' },
+      { chord: 'Delete', command: 'delete-note', when: { focus: ['piano-roll'] } },
+    ]);
+    return km;
+  };
+
+  it('replace a command’s built-in chords, and win a clash with another command', () => {
+    const km = setup();
+    km.setUserBindings({ save: ['Mod+Shift+K'], 'open-mixer': ['Space'] });
+    expect(km.chordsFor('save')).toEqual(['Shift+Meta+K']);
+    expect(km.match('Meta+S', ctx)).toBeUndefined();
+    expect(km.match('Shift+Meta+K', ctx)?.command).toBe('save');
+    // Space now opens the mixer instead of playing.
+    expect(km.commandForChord('Space')).toBe('open-mixer');
+    expect(km.isCustomized('save')).toBe(true);
+    expect(km.defaultChordsFor('save')).toEqual(['Meta+S']);
+  });
+
+  it('can leave a command without a shortcut, and reset back to the built-ins', () => {
+    const km = setup();
+    km.setUserBindings({ 'delete-note': [] });
+    expect(km.match('Delete', { focus: 'piano-roll', inInput: false })).toBeUndefined();
+    km.setUserBindings({});
+    expect(km.match('Delete', { focus: 'piano-roll', inInput: false })?.command).toBe('delete-note');
+    expect(km.isCustomized('delete-note')).toBe(false);
+  });
+
+  it('never fires while typing in a text field', () => {
+    const km = setup();
+    km.setUserBindings({ play: ['K'] });
+    expect(km.match('K', { focus: null, inInput: true })).toBeUndefined();
+  });
+});

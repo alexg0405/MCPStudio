@@ -239,8 +239,47 @@ export class Keymap {
   private readonly entries: Entry[] = [];
   private readonly listeners = new Set<() => void>();
   private seq = 0;
+  /** The musician's own shortcuts by command (canonical chords); they replace that command's built-in ones. */
+  private user = new Map<string, Entry[]>();
 
   constructor(readonly platform: Platform) {}
+
+  /**
+   * The musician's shortcuts: for each command listed, its chords replace every built-in binding of
+   * that command (an empty list leaves it without a shortcut). They are global and win over any
+   * built-in binding of the same chord.
+   */
+  setUserBindings(map: Readonly<Record<string, readonly string[]>>): void {
+    this.user = new Map();
+    for (const [command, chords] of Object.entries(map)) {
+      const entries: Entry[] = [];
+      for (const chord of chords) {
+        try {
+          entries.push({ binding: { command, chord }, canonical: parseChord(chord, this.platform), seq: ++this.seq });
+        } catch {
+          // A chord that no longer parses (hand-edited prefs) is dropped.
+        }
+      }
+      this.user.set(command, entries);
+    }
+    this.emit();
+  }
+
+  /** True when the musician changed this command's shortcuts. */
+  isCustomized(commandId: string): boolean {
+    return this.user.has(commandId);
+  }
+
+  /** The built-in chords of a command (what "Reset" goes back to). */
+  defaultChordsFor(commandId: string): string[] {
+    return this.builtIn(commandId).map((e) => e.canonical);
+  }
+
+  private builtIn(commandId: string): Entry[] {
+    return this.entries
+      .filter((e) => e.binding.command === commandId)
+      .sort((a, b) => Number(!!a.binding.when?.focus) - Number(!!b.binding.when?.focus) || a.seq - b.seq);
+  }
 
   /** Adds bindings; later bindings override earlier ones for the same chord. Returns a remover. */
   add(bindings: readonly Binding[]): () => void {
@@ -262,10 +301,13 @@ export class Keymap {
 
   /** Finds the binding for a canonical chord. Focus-scoped bindings beat global ones; newest wins within a tier. */
   match(chord: string, ctx: MatchContext): Binding | undefined {
+    // The musician's own shortcuts come first (not while typing in a text field).
+    if (!ctx.inInput)
+      for (const list of this.user.values()) for (const e of list) if (e.canonical === chord) return e.binding;
     let best: Entry | undefined;
     let bestTier = -1;
     for (const e of this.entries) {
-      if (e.canonical !== chord) continue;
+      if (e.canonical !== chord || this.user.has(e.binding.command)) continue;
       const when = e.binding.when;
       if (ctx.inInput && !when?.allowInInput) continue;
       let tier: number;
@@ -281,12 +323,15 @@ export class Keymap {
     return best?.binding;
   }
 
-  /** Canonical chords bound to a command (global bindings first), for menus and tooltips. */
+  /** Canonical chords bound to a command (the musician's own, else built-ins with global ones first). */
   chordsFor(commandId: string): string[] {
-    return this.entries
-      .filter((e) => e.binding.command === commandId)
-      .sort((a, b) => Number(!!a.binding.when?.focus) - Number(!!b.binding.when?.focus) || a.seq - b.seq)
-      .map((e) => e.canonical);
+    const own = this.user.get(commandId);
+    return own ? own.map((e) => e.canonical) : this.defaultChordsFor(commandId);
+  }
+
+  /** The command a chord runs globally right now (shortcut editors use it to spot clashes). */
+  commandForChord(canonical: string): string | null {
+    return this.match(canonical, { focus: null, inInput: false })?.command ?? null;
   }
 
   all(): readonly Binding[] {

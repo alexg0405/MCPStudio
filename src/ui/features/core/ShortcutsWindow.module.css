@@ -36,3 +36,128 @@
   font-size: 11px;
   text-align: center;
 }
+
+.bar {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -6px -10px 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface-2);
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ag-text-dim);
+  white-space: nowrap;
+}
+
+.reset,
+.resetOne {
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.reset {
+  height: 24px;
+  padding: 0 10px;
+}
+
+.reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.resetOne {
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.note {
+  margin: 0 0 6px;
+  padding: 6px 8px;
+  border-radius: var(--ag-radius);
+  background: rgba(90, 164, 232, 0.14);
+  color: var(--ag-text);
+}
+
+.recording td {
+  background: rgba(255, 154, 60, 0.12);
+}
+
+.changed {
+  color: var(--ag-accent);
+  font-size: 11px;
+}
+
+.chords kbd {
+  position: relative;
+}
+
+.remove {
+  display: none;
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--ag-border);
+  border-radius: 50%;
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  cursor: pointer;
+  place-items: center;
+}
+
+.chords kbd:hover .remove {
+  display: grid;
+}
+
+.add {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0;
+  border: 1px dashed var(--ag-border-soft);
+  border-radius: 3px;
+  background: none;
+  color: var(--ag-text-faint);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.add:hover {
+  border-color: var(--ag-accent);
+  color: var(--ag-accent);
+}
+
+.empty {
+  padding: 12px 6px;
+  color: var(--ag-text-faint);
+}

@@ -180,7 +180,8 @@ export class LoudnessMeter {
   /** Mean of the last `count` block mean squares. */
   private mean(count: number): number {
     let sum = 0;
-    for (let i = 1; i <= count; i++) sum += this.blocks[(this.blockPos - i + SHORT_TERM_BLOCKS) % SHORT_TERM_BLOCKS] as number;
+    for (let i = 1; i <= count; i++)
+      sum += this.blocks[(this.blockPos - i + SHORT_TERM_BLOCKS) % SHORT_TERM_BLOCKS] as number;
     return sum / count;
   }
 

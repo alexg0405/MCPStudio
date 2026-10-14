@@ -1,0 +1,176 @@
+/* EQ Pro editor. Colours come from the host theme tokens, with fallbacks. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  min-width: 280px;
+}
+
+.graph {
+  position: relative;
+  height: 230px;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: var(--ag-radius, 3px);
+  background: var(--ag-surface-inset, #1e2428);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.graph canvas,
+.graph svg {
+  position: absolute;
+  inset: 0;
+}
+
+.gridLine {
+  stroke: rgba(255, 255, 255, 0.06);
+  stroke-width: 1;
+}
+
+.gridZero {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1;
+}
+
+.gridLabel {
+  fill: var(--ag-text-faint, #6a747c);
+  font-size: 9px;
+  font-family: var(--ag-font-mono, monospace);
+  pointer-events: none;
+}
+
+.curve {
+  fill: none;
+  stroke: var(--ag-accent, #ff9a3c);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.bandFill {
+  stroke: none;
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.handle {
+  cursor: grab;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.handleDot {
+  stroke: var(--ag-border, #12161a);
+  stroke-width: 1.5;
+}
+
+.handleOff .handleDot {
+  fill: var(--ag-surface-3, #3c464e);
+  stroke-dasharray: 2 2;
+}
+
+.handleSelected .handleDot {
+  stroke: #fff;
+  stroke-width: 2;
+}
+
+.handleNumber {
+  fill: #12161a;
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.handleOff .handleNumber {
+  fill: var(--ag-text-dim, #929ca5);
+}
+
+.readout {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--ag-text, #d9dfe4);
+  font-family: var(--ag-font-mono, monospace);
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: 2px;
+  background: var(--ag-surface-1, #2a3238);
+  color: var(--ag-text-dim, #929ca5);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tabSelected {
+  background: var(--ag-surface-3, #3c464e);
+  color: var(--ag-text, #d9dfe4);
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.swatchOff {
+  opacity: 0.35;
+}
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 14px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: var(--ag-radius, 3px);
+  background: var(--ag-surface-1, #2a3238);
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 52px;
+}
+
+.label {
+  color: var(--ag-text-dim, #929ca5);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.value {
+  color: var(--ag-text-faint, #6a747c);
+  font-family: var(--ag-font-mono, monospace);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}

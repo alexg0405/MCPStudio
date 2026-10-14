@@ -143,7 +143,13 @@ export function runEffect<P extends ParamSpecs>(
     transport.blockStart = at;
     const view = (a: Float32Array) => (n === block ? a : a.subarray(0, n));
     const o = [view(outL), view(outR)];
-    k.process([view(inL), view(inR)], o, n, params as ParamBlock<P>, opts.sidechain ? [view(scL), view(scR)] : undefined);
+    k.process(
+      [view(inL), view(inR)],
+      o,
+      n,
+      params as ParamBlock<P>,
+      opts.sidechain ? [view(scL), view(scR)] : undefined,
+    );
     out[0].set(o[0] as Float32Array, at);
     out[1].set(o[1] as Float32Array, at);
   }

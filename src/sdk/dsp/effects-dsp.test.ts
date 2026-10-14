@@ -26,8 +26,10 @@ function amplitude(x: ArrayLike<number>, freq: number, rate: number, from = 0, t
   return (2 * Math.hypot(c, s)) / n;
 }
 
-const sine = (freq: number, rate: number, amp = 1, phase = 0) => (i: number) =>
-  amp * Math.sin((2 * Math.PI * freq * i) / rate + phase);
+const sine =
+  (freq: number, rate: number, amp = 1, phase = 0) =>
+  (i: number) =>
+    amp * Math.sin((2 * Math.PI * freq * i) / rate + phase);
 
 describe('Halfband / Oversampler', () => {
   it('designs short filters for the usual specs', () => {
@@ -241,7 +243,10 @@ describe('TruePeak', () => {
 describe('LoudnessMeter (BS.1770)', () => {
   it('K-weighting at 48 kHz has the standard’s coefficients', () => {
     // The standard's two biquads, run directly (BS.1770-4, table 1 and 2).
-    const pre = { b: [1.53512485958697, -2.69169618940638, 1.19839281085285], a: [-1.69065929318241, 0.73248077421585] };
+    const pre = {
+      b: [1.53512485958697, -2.69169618940638, 1.19839281085285],
+      a: [-1.69065929318241, 0.73248077421585],
+    };
     const rlb = { b: [1, -2, 1], a: [-1.99004745483398, 0.99007225036621] };
     const biquad = (c: { b: number[]; a: number[] }) => {
       let x1 = 0;

@@ -29,7 +29,10 @@ export const NOTE_LENGTHS = Object.keys(NOTE_BEATS) as NoteLength[];
 
 /** Display names: "1/8 dotted", "1/4 triplet". */
 export const NOTE_LABELS: Record<NoteLength, string> = Object.fromEntries(
-  NOTE_LENGTHS.map((n) => [n, n.endsWith('d') ? `${n.slice(0, -1)} dotted` : n.endsWith('t') ? `${n.slice(0, -1)} triplet` : n]),
+  NOTE_LENGTHS.map((n) => [
+    n,
+    n.endsWith('d') ? `${n.slice(0, -1)} dotted` : n.endsWith('t') ? `${n.slice(0, -1)} triplet` : n,
+  ]),
 ) as Record<NoteLength, string>;
 
 /** Beats in a note length ('1/8d' → 0.75); 0 for anything else ('off', 'free'). */

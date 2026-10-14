@@ -6,7 +6,8 @@ import { stereoParams } from './params';
 const SR = 48000;
 const stereo: TestSignal = (i, c) =>
   0.4 * Math.sin((2 * Math.PI * 300 * i) / SR) + (c ? -0.2 : 0.2) * Math.sin((2 * Math.PI * 1700 * i) / SR);
-const rms = (a: Float32Array, from = 0) => Math.sqrt(a.subarray(from).reduce((s, v) => s + v * v, 0) / (a.length - from));
+const rms = (a: Float32Array, from = 0) =>
+  Math.sqrt(a.subarray(from).reduce((s, v) => s + v * v, 0) / (a.length - from));
 const run = (params: Record<string, number | string>, x: TestSignal = stereo, frames = SR / 2) =>
   runEffect(StereoKernel, stereoParams, x, frames, { params });
 
@@ -20,8 +21,16 @@ describe('StereoKernel', () => {
   });
 
   it('width scales the side: 0% is mono, 200% doubles the difference', () => {
-    const side = (out: Float32Array[]) => rms(Float32Array.from(out[0]!, (v, i) => (v - out[1]![i]!) / 2), 1000);
-    const mid = (out: Float32Array[]) => rms(Float32Array.from(out[0]!, (v, i) => (v + out[1]![i]!) / 2), 1000);
+    const side = (out: Float32Array[]) =>
+      rms(
+        Float32Array.from(out[0]!, (v, i) => (v - out[1]![i]!) / 2),
+        1000,
+      );
+    const mid = (out: Float32Array[]) =>
+      rms(
+        Float32Array.from(out[0]!, (v, i) => (v + out[1]![i]!) / 2),
+        1000,
+      );
     const ref = run({});
     expect(side(run({ width: 0 }))).toBeLessThan(1e-7);
     expect(side(run({ width: 2 })) / side(ref)).toBeCloseTo(2, 4);

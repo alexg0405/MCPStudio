@@ -5,7 +5,20 @@ import { NOTE_LABELS, noteBeats, type NoteLength } from '@agstudio/sdk/dsp/tempo
 export const CHORUS_ID = 'agstudio.chorus';
 
 /** Tempo-synced rates (one cycle per note length); 'off' uses the Rate knob. */
-export const SYNC = ['off', '4 bars', '2 bars', '1 bar', '1/2', '1/4', '1/4d', '1/4t', '1/8', '1/8d', '1/8t', '1/16'] as const;
+export const SYNC = [
+  'off',
+  '4 bars',
+  '2 bars',
+  '1 bar',
+  '1/2',
+  '1/4',
+  '1/4d',
+  '1/4t',
+  '1/8',
+  '1/8d',
+  '1/8t',
+  '1/16',
+] as const;
 /** Beats per cycle for each SYNC option (0 = free-running). */
 export const SYNC_BEATS = SYNC.map((s) => noteBeats(s));
 

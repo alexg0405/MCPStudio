@@ -70,7 +70,7 @@ export class Yin {
     this.threshold = opts.threshold ?? 0.15;
     this.maxAperiodicity = opts.maxAperiodicity ?? 0.35;
     const cutoff = Math.min(0.45 * this.analysisRate, 2.5 * maxHz);
-    this.aa1.set('lowpass', cutoff, 0.54119610, sampleRate);
+    this.aa1.set('lowpass', cutoff, 0.5411961, sampleRate);
     this.aa2.set('lowpass', cutoff, 1.30656296, sampleRate);
   }
 

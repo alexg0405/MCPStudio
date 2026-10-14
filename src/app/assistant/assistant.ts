@@ -28,6 +28,7 @@ import {
 } from '../ai/builder';
 import { smokeTest } from '../ai/smoke';
 import { analyzeMix, formatMixReport, summarizeMixReport } from '../analysis/mix';
+import { audition } from './audition';
 import { projectContext } from '../ai/context';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
@@ -150,6 +151,8 @@ export class BeatAssistant {
   private readonly smoke: (folder: string) => Promise<SmokeReport>;
   private readonly analyze: typeof analyzeMix;
   private buildAbort: AbortController | null = null;
+  /** Stops the phrase an answer is auditioning (a new one replaces it). */
+  private stopAudition: (() => void) | null = null;
   /** Everything asked so far in offline mode (the generator is stateless). */
   private offlinePrompt = '';
 
@@ -628,6 +631,12 @@ export class BeatAssistant {
       }
     }
     for (const a of result.after) if (a.kind === 'build_plugin') void this.buildPlugin(a.spec);
+    // Let the musician hear the sound it made (not over the playing song).
+    const listenTo = result.after.find((a) => a.kind === 'audition');
+    if (listenTo?.kind === 'audition' && !this.s.engine.playing) {
+      this.stopAudition?.();
+      this.stopAudition = audition(this.s, listenTo.channelId, listenTo.phrase);
+    }
     const played = result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
     if (result.beat && !played && this.store.getState().autoplay) {
       this.s.view.getState().setMode('pattern');

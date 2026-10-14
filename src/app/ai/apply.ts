@@ -96,7 +96,11 @@ export type AfterEdit =
   /** A new plugin for the plugin builder to write. */
   | { kind: 'build_plugin'; spec: PluginSpec }
   /** Listen to the mix first: the analysis comes back to the AI with the request. */
-  | { kind: 'analyze_mix' };
+  | { kind: 'analyze_mix' }
+  /** Play a short phrase on a channel (preview notes, nothing written). */
+  | { kind: 'audition'; channelId: ChannelId; phrase: AuditionPhrase };
+
+export type AuditionPhrase = 'chord' | 'riff' | 'bass' | 'hits';
 
 export interface AppliedTurn {
   /** One line per change, for the chat. */
@@ -216,7 +220,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
     | { kind: 'effect'; insertId: InsertId; slotId: SlotId }
     | { kind: 'pattern'; id: PatternId };
   const refs = new Map<string, Ref>();
-  const UI_OPS = new Set(['transport', 'open', 'command', 'build_plugin', 'analyze_mix']);
+  const UI_OPS = new Set(['transport', 'open', 'command', 'build_plugin', 'analyze_mix', 'audition']);
   const docActions = answer.actions.filter((a) => !UI_OPS.has(a.op));
   const words = (ctx.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
   const label = words.length > 48 ? `${words.slice(0, 47).trimEnd()}…` : words || 'edit';
@@ -1171,6 +1175,17 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           ...(a.action === 'record' ? { record: true } : {}),
         });
       } else if (mode) after.push({ kind: 'mode', mode });
+    } else if (a.op === 'audition') {
+      const p = s.doc.getState().project;
+      const chRef = str(a.channel) ?? '';
+      const r = refs.get(lower(chRef.startsWith('@') ? chRef : `@${chRef}`));
+      const channelId =
+        r?.kind === 'channel'
+          ? r.id
+          : Object.values(p.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id;
+      const phrase = a.phrase === 'riff' || a.phrase === 'bass' || a.phrase === 'hits' ? a.phrase : 'chord';
+      if (!channelId || p.channels[channelId]?.kind === 'automation') warnings.push(`audition: there is no channel "${chRef}"`);
+      else if (!after.some((x) => x.kind === 'audition')) after.push({ kind: 'audition', channelId, phrase });
     } else if (a.op === 'analyze_mix') {
       if (!after.some((x) => x.kind === 'analyze_mix')) after.push({ kind: 'analyze_mix' });
     } else if (a.op === 'build_plugin') {

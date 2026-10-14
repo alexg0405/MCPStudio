@@ -13,14 +13,14 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 - `npm run dev`: dev server (port 5390 by default, or `$PORT`).
 - `npm run check`: everything CI would run: `tsc -b` (all four tsconfigs), `eslint .`, `vitest run` (unit + audio).
 - `npm test`: unit tests only (Node). `npm run test:audio`: browser tests in headless Chrome (installed Chrome, no download).
-- `npm run new:plugin -- --kind instrument|effect --style graph|worklet --id user.my-thing`: scaffold a user plugin
+- `npm run new:plugin -- --kind instrument|effect --style graph|worklet|faust --id user.my-thing`: scaffold a user plugin
   into `plugins/` (templates in `templates/`, guide in `docs/plugin-sdk.md`).
 
 ## Layers (enforced by ESLint `no-restricted-imports` + separate tsconfigs)
 
 | Folder | What | May import |
 |---|---|---|
-| `src/sdk` | Public plugin API (`@agstudio/sdk`, `/params`, `/worklet`, `/dsp`, `/notes`, `/ui`) | react only in `sdk/ui` |
+| `src/sdk` | Public plugin API (`@agstudio/sdk`, `/params`, `/worklet`, `/dsp`, `/notes`, `/faust`, `/ui`) | react only in `sdk/ui` |
 | `src/core` | Model, ops, history, time, queries, commands/keymap, schema, io. **No DOM** (tsconfig.core has no DOM lib) | immer, fflate, `@agstudio/sdk/params` |
 | `src/engine` | Web Audio engine, scheduler, reconcile, offline render | core, sdk |
 | `src/plugins/builtin` | Built-in instruments/effects | `@agstudio/sdk*` and react only |

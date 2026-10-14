@@ -15,6 +15,8 @@
     "templates/**/*.worklet.ts",
     "src/sdk/worklet",
     "src/sdk/dsp",
+    "src/sdk/faust/kernel.ts",
+    "src/sdk/faust/params.ts",
     "src/sdk/params.ts",
     "src/sdk/protocol.ts",
     "test/**/*.worklet.ts"

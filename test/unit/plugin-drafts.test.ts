@@ -21,6 +21,10 @@ describe('plugin drafts', () => {
       { path: 'README.md', content: '# Tape stop' },
     ];
     expect(checkFiles(ok)).toHaveLength(5);
+    // A Faust plugin: index.ts plus its .dsp (Faust code isn't scanned: it can only compute audio).
+    expect(checkFiles([{ path: 'index.ts', content: '' }, { path: 'filter.dsp', content: 'process = _;' }])).toHaveLength(2);
+    expect(scanSource({ path: 'filter.dsp', content: 'process = _; // fetch(' })).toEqual([]);
+    expect(scanSource({ path: 'index.ts', content: `import dsp from './filter.dsp';\nimport { defineFaustEffect } from '@agstudio/sdk/faust';` })).toEqual([]);
     expect(() => checkFiles([{ path: 'params.ts', content: '' }])).toThrow(/index\.ts/);
     expect(() => checkFiles([...ok, { path: '../evil.ts', content: '' }])).toThrow(/allowed file name/);
     expect(() => checkFiles([...ok, { path: 'tsconfig.json', content: '' }])).toThrow(/allowed file name/);

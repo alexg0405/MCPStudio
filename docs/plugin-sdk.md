@@ -207,6 +207,51 @@ to talk back to the main thread (rarely: at most ~30 times a second).
 - Keep pure DSP in a separate `kernel.ts` (or `*.kernel.ts`) if you want to unit-test it in Node,
   like `src/plugins/builtin/pluck/kernel.ts`. Don't put React components in kernel or params files.
 
+## Faust plugins
+
+Write the DSP in [Faust](https://faustdoc.grame.fr) and let AGstudio do the rest. Two files:
+
+```
+plugins/my-filter/
+  index.ts       // defineFaustEffect({ ..., dsp }) or defineFaustInstrument({ ..., dsp })
+  effect.dsp     // the Faust code
+```
+
+```ts
+// index.ts
+import { defineFaustEffect } from '@agstudio/sdk/faust';
+import dsp from './effect.dsp';
+export default defineFaustEffect({ id: 'user.my-filter', name: 'My Filter', version: 1, dsp });
+```
+
+`npm run new:plugin -- --kind effect --style faust --id user.my-filter` scaffolds this (`--kind instrument`
+for a synth voice). The dev server compiles the `.dsp` to WebAssembly when the plugin loads, and every edit
+recompiles and hot-reloads. A compile error shows as a broken plugin with the Faust message and its line.
+
+How Faust controls become knobs:
+- Each `hslider`, `vslider` and `nentry` is a knob, and each `checkbox` and `button` is a switch. The knob takes
+  its label, range, default and step from the control.
+- `[1]`, `[2]`… in a label set the order of the knobs; Faust sorts them by label otherwise.
+- `[unit:Hz]` (also dB, ms, s, st, ct), `[scale:log]` and `[tooltip:…]` give the knob a unit, a log scale and a
+  hint.
+- Controls inside `hgroup`/`vgroup` boxes are grouped under the box's label.
+- A number entry, or a slider with whole-number steps over a short range, makes a whole-number knob.
+- Param ids are the label in camelCase ("Filter Q" → `filterQ`). Presets and automation use them.
+
+Effects: a DSP with one input hears both sides mixed, and one with two gets left and right. One output feeds both
+sides.
+
+Instruments: a DSP with a `gate` control is a voice.
+- Notes set its `freq` (Hz, with the channel's pitch and the note's fine tune), `gain` (velocity 0–1) and `gate`;
+  `key` and `vel` work too.
+- AGstudio runs 8 voices and steals the oldest one when they are all busy. A released voice is freed once it falls
+  silent.
+- A mono voice is panned per note.
+
+It all runs in the same audio-thread kernel as other plugins: notes land on their exact sample, knobs are
+automatable, and exports are bit-exact. The standard Faust libraries (`import("stdfaust.lib");`) are available. Not
+yet supported: your own `.lib` files, `soundfile`, and sidechain inputs.
+
 ## Effects
 
 An effect is `defineEffect({ ..., create(host) })` (native nodes) or `defineWorkletEffect({ ..., processor })`

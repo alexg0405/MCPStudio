@@ -3,10 +3,14 @@
  * templates, verbatim), the rules the checks enforce, and the answer format.
  */
 import sdkGuide from '../../../docs/plugin-sdk.md?raw';
+import effectFaustDsp from '../../../templates/effect-faust/effect.dsp?raw';
+import effectFaustIndex from '../../../templates/effect-faust/index.ts?raw';
 import effectGraph from '../../../templates/effect-graph/index.ts?raw';
 import effectWorkletDsp from '../../../templates/effect-worklet/dsp.worklet.ts?raw';
 import effectWorkletIndex from '../../../templates/effect-worklet/index.ts?raw';
 import effectWorkletParams from '../../../templates/effect-worklet/params.ts?raw';
+import instrumentFaustDsp from '../../../templates/instrument-faust/voice.dsp?raw';
+import instrumentFaustIndex from '../../../templates/instrument-faust/index.ts?raw';
 import instrumentGraph from '../../../templates/instrument-graph/index.ts?raw';
 import instrumentWorkletDsp from '../../../templates/instrument-worklet/dsp.worklet.ts?raw';
 import instrumentWorkletIndex from '../../../templates/instrument-worklet/index.ts?raw';
@@ -21,8 +25,9 @@ export const BUILDER_PROMPT = `You write plugins for AGstudio, an FL Studio-styl
 
 Rules (the checks enforce them):
 - The plugin id is "user.<name>" with a lowercase name of letters, digits and dashes, e.g. "user.tape-stop".
-- Files are flat (no folders): index.ts (the definition as the default export), plus params.ts and dsp.worklet.ts for worklet plugins, optionally kernel.ts (pure DSP) and README.md. Nothing else.
-- Imports: @agstudio/sdk and its modules (/params, /ui, /notes, /worklet), react, and the plugin's own files ("./params", "./kernel"). Audio-thread files (*.worklet.ts) import only @agstudio/sdk/worklet and @agstudio/sdk/params, plus the plugin's own kernel or params files.
+- Files are flat (no folders): index.ts (the definition as the default export), plus params.ts and dsp.worklet.ts for worklet plugins, or one .dsp file for a Faust plugin, optionally kernel.ts (pure DSP) and README.md. Nothing else.
+- Faust is often the best choice: filters, delays, reverbs, distortion, modulation, oscillators and envelopes are a few lines with the standard Faust libraries (import("stdfaust.lib")). Write the DSP in a .dsp file and define the plugin with defineFaustEffect or defineFaustInstrument from @agstudio/sdk/faust (see "Faust plugins" in the guide and the faust templates). Give every Faust control a [1]-style order prefix, a [unit:…] where it has one and a [tooltip:…].
+- Imports: @agstudio/sdk and its modules (/params, /ui, /notes, /worklet, /faust), react, and the plugin's own files ("./params", "./kernel", "./effect.dsp"). Audio-thread files (*.worklet.ts) import only @agstudio/sdk/worklet and @agstudio/sdk/params, plus the plugin's own kernel or params files.
 - Load an audio-thread processor exactly like this: import processor from './dsp.worklet.ts?worker&url';
 - No network, browser storage, eval/new Function or dynamic import.
 - Audio-thread code: no allocation inside render()/process(), no DOM. Flush tiny feedback values (flush()).
@@ -40,7 +45,9 @@ ${sdkGuide.trim()}
 Templates (the starting points AGstudio's own scaffolder uses; __PLUGIN_ID__ and __PLUGIN_NAME__ get replaced):
 ${template('effect-graph', { 'index.ts': effectGraph })}
 ${template('effect-worklet', { 'index.ts': effectWorkletIndex, 'params.ts': effectWorkletParams, 'dsp.worklet.ts': effectWorkletDsp })}
+${template('effect-faust', { 'index.ts': effectFaustIndex, 'effect.dsp': effectFaustDsp })}
 ${template('instrument-graph', { 'index.ts': instrumentGraph })}
+${template('instrument-faust', { 'index.ts': instrumentFaustIndex, 'voice.dsp': instrumentFaustDsp })}
 ${template('instrument-worklet', {
   'index.ts': instrumentWorkletIndex,
   'params.ts': instrumentWorkletParams,

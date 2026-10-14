@@ -56,8 +56,8 @@ export function checkFiles(files: unknown): DraftFile[] {
     const path = (f as DraftFile | null)?.path;
     const content = (f as DraftFile | null)?.content;
     if (typeof path !== 'string' || typeof content !== 'string') throw new DraftError('Every file needs a path and text.');
-    if (!/^[a-z0-9][a-z0-9_-]{0,48}(\.(worklet|kernel))?\.(ts|tsx|md)$/i.test(path) || /^tsconfig/i.test(path))
-      throw new DraftError(`"${path}" is not an allowed file name (flat names ending in .ts, .tsx or .md).`);
+    if (!/^[a-z0-9][a-z0-9_-]{0,48}(\.(worklet|kernel))?\.(ts|tsx|md|dsp)$/i.test(path) || /^tsconfig/i.test(path))
+      throw new DraftError(`"${path}" is not an allowed file name (flat names ending in .ts, .tsx, .dsp or .md).`);
     if (seen.has(path.toLowerCase())) throw new DraftError(`"${path}" appears twice.`);
     seen.add(path.toLowerCase());
     const bytes = Buffer.byteLength(content, 'utf8');
@@ -70,9 +70,9 @@ export function checkFiles(files: unknown): DraftFile[] {
   return out;
 }
 
-const MAIN_IMPORTS = /^(@agstudio\/sdk(\/(params|ui|notes|worklet|dsp))?|react|react\/jsx-runtime)$/;
+const MAIN_IMPORTS = /^(@agstudio\/sdk(\/(params|ui|notes|worklet|dsp|faust))?|react|react\/jsx-runtime)$/;
 const WORKLET_IMPORTS = /^@agstudio\/sdk\/(worklet|params)$/;
-const LOCAL_IMPORT = /^\.\/[A-Za-z0-9_.-]+?(\.(ts|tsx))?(\?worker&url)?$/;
+const LOCAL_IMPORT = /^\.\/[A-Za-z0-9_.-]+?(\.(ts|tsx|dsp))?(\?worker&url)?$/;
 
 const FORBIDDEN: readonly [RegExp, string][] = [
   [/\bfetch\s*\(/, 'network access (fetch)'],
@@ -86,7 +86,8 @@ const FORBIDDEN: readonly [RegExp, string][] = [
 
 /** Problems with what a file imports or uses (plugins are sound code: no network, storage or eval). */
 export function scanSource(file: DraftFile): string[] {
-  if (file.path.endsWith('.md')) return [];
+  // Faust code can only compute audio; Markdown is text.
+  if (file.path.endsWith('.md') || file.path.endsWith('.dsp')) return [];
   const problems: string[] = [];
   const worklet = /\.worklet\.ts$/.test(file.path);
   const specifiers = [
@@ -129,11 +130,13 @@ function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promi
 /** Type-checks the draft like the app does: main-thread files with the DOM, worklet files with the AudioWorklet scope. */
 export async function typeCheck(root: string, dir: string): Promise<string[]> {
   const base = relative(dir, join(root, 'tsconfig.base.json'));
+  // `import dsp from './x.dsp'` in Faust plugins.
+  const dspModules = relative(dir, join(root, 'src', 'sdk', 'faust', 'modules.d.ts'));
   const configs = {
     '.check-main.json': {
       extends: base,
       compilerOptions: { lib: ['ES2023', 'DOM', 'DOM.Iterable'], types: ['vite/client'], jsx: 'react-jsx', noEmit: true },
-      include: ['./*.ts', './*.tsx'],
+      include: ['./*.ts', './*.tsx', dspModules],
       exclude: ['./*.worklet.ts'],
     },
     '.check-worklet.json': {

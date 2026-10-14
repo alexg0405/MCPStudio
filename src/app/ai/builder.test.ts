@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PluginBuilder, type SmokeReport } from './builder';
-import { readBuilderAnswer } from './builder-prompt';
+import { BUILDER_PROMPT, readBuilderAnswer } from './builder-prompt';
 
 const file = (content: string) => [{ path: 'index.ts', content }];
 
@@ -93,5 +93,17 @@ describe('readBuilderAnswer', () => {
     expect(readBuilderAnswer({ plugin: { id: 'user.x', name: 'X', kind: 'effect', files: [] } })).toEqual({
       error: 'the plugin has no files',
     });
+  });
+});
+
+describe('BUILDER_PROMPT', () => {
+  it('carries the SDK guide and every template (Faust included), within the server’s prompt limit', () => {
+    expect(BUILDER_PROMPT).toContain('## Faust plugins');
+    for (const t of ['effect-graph', 'effect-worklet', 'effect-faust', 'instrument-graph', 'instrument-worklet', 'instrument-faust'])
+      expect(BUILDER_PROMPT).toContain(`<template name="${t}">`);
+    // The Faust templates arrive as their source text, not compiled.
+    expect(BUILDER_PROMPT).toContain('hslider("[1]Cutoff');
+    // tools/ai/server.ts refuses system prompts over 60 000 characters.
+    expect(BUILDER_PROMPT.length).toBeLessThan(60_000);
   });
 });

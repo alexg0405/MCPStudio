@@ -938,6 +938,31 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
 - Shared DSP in `src/sdk/dsp` (exported from `@agstudio/sdk` and `/worklet`): `Adsr`, `BlepOscillator`/`polyBlep`,
   `DelayLine` (linear/cubic), `Lfo` (free or `atBeat`), next to `Biquad`, `Svf`, `OnePole` and `EnvelopeFollower`.
 
+## Faust plugins (M18)
+
+- `tools/faust/compile.ts` compiles `.dsp` source with faustwasm's own WebAssembly build of the Faust compiler,
+  in Node: `-ftz 2`, single precision, results cached by a hash of the source.
+- `tools/faust/vite-plugin.ts` (also registered for worker bundles) turns `import dsp from './x.dsp'` into
+  `{ name, kind, meta, processor, processorName }`.
+  - `processor` is a virtual worklet module `x.dsp.<hash>.faust.js`. Its `.js` name makes the dev server serve it
+    as a module, and the hash makes each edit a new module and processor name (a context can't re-register one).
+  - That module calls `registerFaustKernel(name, meta, base64Wasm, kind)`.
+  - A compile error becomes an import error (a broken plugin with the Faust line). `?raw` passes through.
+- `@agstudio/sdk/faust`:
+  - `faustControls(meta)` (shared by both threads) maps the Faust UI JSON to ParamSpecs: labels, ranges, units,
+    log scale, tooltips, groups, camelCase ids, `[n]` order. For instruments it sets the voice controls
+    (`freq/gain/gate/key/vel`) apart.
+  - `defineFaustEffect` and `defineFaustInstrument` build plugin definitions on `host.worklet({ name })`.
+- The kernel (`sdk/faust/kernel.ts`):
+  - It instantiates the wasm (internal memory, math imports only) with faustwasm's layout: the struct at 0, then
+    the channel pointer arrays, then one 128-frame buffer per channel.
+  - It sets changed params per block and computes in 128-frame slices.
+  - Instruments get 8 voice instances, with frame-exact notes, the channel pitch on `freq`, per-note pan and
+    oldest-first stealing; a released voice is freed after 50 ms of silence.
+- The plugin builder's drafts may contain `.dsp` files, and its prompt includes the Faust templates.
+- Tests: `test/unit/faust.test.ts` (compile, controls, errors) and `test/browser/faust.test.ts` (effect params,
+  polyphonic onsets, release, chunk-size determinism).
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all

@@ -20,7 +20,7 @@ const style = args.style ?? 'graph';
 const id = args.id;
 const fail = (msg) => {
   console.error(
-    `\n  ${msg}\n\n  Usage: npm run new:plugin -- --kind instrument|effect --style graph|worklet --id user.my-synth [--name "My Synth"]` +
+    `\n  ${msg}\n\n  Usage: npm run new:plugin -- --kind instrument|effect --style graph|worklet|faust --id user.my-synth [--name "My Synth"]` +
       `\n         npm run new:plugin -- --kind note-script --id user.my-tool [--name "My Tool"]\n`,
   );
   process.exit(1);
@@ -28,7 +28,8 @@ const fail = (msg) => {
 
 if (!['instrument', 'effect', 'note-script'].includes(kind))
   fail(`--kind must be "instrument", "effect" or "note-script" (got "${kind}")`);
-if (!script && !['graph', 'worklet'].includes(style)) fail(`--style must be "graph" or "worklet" (got "${style}")`);
+if (!script && !['graph', 'worklet', 'faust'].includes(style))
+  fail(`--style must be "graph", "worklet" or "faust" (got "${style}")`);
 if (!id || !/^[a-z0-9][a-z0-9._-]*$/i.test(id)) fail('--id is required, e.g. user.my-synth (letters, digits, . _ -)');
 
 const folder = id.split('.').pop();
@@ -69,7 +70,7 @@ console.log(
   Created plugins/${folder} (${kind}, ${style}) with id "${id}".
 
   - With "npm run dev" running it already shows up in the browser panel under Plugins.
-  - Edit plugins/${folder}/${style === 'worklet' ? 'dsp.worklet.ts' : 'index.ts'}; changes hot-reload and keep your settings.
+  - Edit plugins/${folder}/${style === 'worklet' ? 'dsp.worklet.ts' : style === 'faust' ? (kind === 'instrument' ? 'voice.dsp' : 'effect.dsp') : 'index.ts'}; changes hot-reload and keep your settings.
   - Guide: docs/plugin-sdk.md
 `,
 );

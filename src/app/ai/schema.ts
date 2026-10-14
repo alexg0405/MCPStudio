@@ -125,6 +125,14 @@ export const ACTION_OPS = [
       pitch_cents: num('Channel pitch in cents (−2400…2400).'),
       insert: INSERT,
       color: str('Hex color.'),
+      reverse: bool('Audio clip channels: play the sample backwards.'),
+      follow_tempo: {
+        type: 'string',
+        enum: ['off', 'resample', 'stretch'],
+        description:
+          'Audio clip channels: off = its own speed; resample = speed (and pitch) follow the song tempo; stretch = tempo follows, pitch stays. Needs source_bpm.',
+      },
+      source_bpm: num('Audio clip channels: the tempo the audio was recorded at (20–999).'),
     },
     ['channel'],
   ),
@@ -329,6 +337,29 @@ export const ACTION_OPS = [
       times: int('Place it this many times back to back (default 1).'),
     },
     ['pattern', 'bar'],
+  ),
+  op(
+    'edit_audio_clip',
+    'Changes one audio clip on the playlist (ids are in the playlist listing): its gain and fades.',
+    {
+      clip: str('The clip id (clip_…).'),
+      gain_db: num('Clip gain in dB (−60…+12; 0 = as recorded).'),
+      fade_in: num('Fade-in length in seconds (0 = none).'),
+      fade_out: num('Fade-out length in seconds (0 = none).'),
+    },
+    ['clip'],
+  ),
+  op(
+    'marker',
+    'Adds, renames, moves or removes a playlist marker (a named song position like "Verse" or "Drop").',
+    {
+      action: { type: 'string', enum: ['add', 'edit', 'remove'] },
+      marker: str('edit/remove: the marker’s id (mk_…) or exact name.'),
+      name: str('add/edit: its name.'),
+      bar: num('add/edit: the 1-based bar it sits at (fractions allowed).'),
+      color: str('Hex color.'),
+    },
+    ['action'],
   ),
   op('clear_playlist', 'Removes playlist clips (all, or those overlapping the bars / on the track given).', {
     from_bar: int('1-based first bar.'),

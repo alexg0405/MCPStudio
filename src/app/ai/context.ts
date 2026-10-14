@@ -85,7 +85,15 @@ function channelLine(s: Services, p: Project, ch: Channel, index: number): strin
   const mix = `vol ${db(ch.volume)}, pan ${r2(ch.pan)}${ch.kind === 'instrument' && ch.pitch ? `, pitch ${ch.pitch} ct` : ''}${
     flags ? `, ${flags}` : ''
   }`;
-  if (ch.kind === 'audioClip') return `${head} — audio clip "${p.samples[ch.sampleId]?.name ?? '?'}"; ${mix}; ${out}`;
+  if (ch.kind === 'audioClip') {
+    const edits = [
+      ch.pitch ? `pitch ${ch.pitch} ct` : '',
+      ch.reverse ? 'reversed' : '',
+      ch.stretch && ch.stretch !== 'off' ? `follows the tempo (${ch.stretch})` : '',
+      ch.sourceBpm ? `recorded at ${ch.sourceBpm} BPM` : '',
+    ].filter(Boolean);
+    return `${head} — audio clip "${p.samples[ch.sampleId]?.name ?? '?'}"${edits.length ? ` (${edits.join(', ')})` : ''}; ${mix}; ${out}`;
+  }
   const sample = ch.plugin.samples?.main ? p.samples[ch.plugin.samples.main] : undefined;
   const kit = sample?.source.kind === 'builtin' ? kitPiece(sample.source.generator)?.name : sample?.name;
   return `${head} — ${pluginName(s, ch.plugin.pluginId)} (${ch.plugin.pluginId})${kit ? ` sample "${kit}"` : ''}; ${mix}; ${out}\n   settings: ${paramSummary(s, ch.plugin)}`;
@@ -203,11 +211,19 @@ export function projectContext(s: Services): string {
   const byLane = new Map<string, string[]>();
   for (const c of clips) {
     const lane = p.playlist.laneOrder.indexOf(c.laneId) + 1;
+    const audioEdits =
+      c.kind === 'audio'
+        ? [
+            c.gain !== undefined ? `gain ${db(c.gain)}` : '',
+            c.fadeIn ? `fade-in ${Math.round(c.fadeIn * 1000)} ms` : '',
+            c.fadeOut ? `fade-out ${Math.round(c.fadeOut * 1000)} ms` : '',
+          ].filter(Boolean)
+        : [];
     const what =
       c.kind === 'pattern'
         ? `"${p.patterns[c.patternId]?.name ?? '?'}"`
         : c.kind === 'audio'
-          ? `audio "${p.channels[c.channelId]?.name ?? '?'}"`
+          ? `audio "${p.channels[c.channelId]?.name ?? '?'}"${audioEdits.length ? ` (${audioEdits.join(', ')})` : ''}`
           : `automation "${p.channels[c.channelId]?.name ?? '?'}"`;
     const from = r2(c.start / bar + 1);
     const to = r2((c.start + c.length) / bar + 1);
@@ -216,6 +232,12 @@ export function projectContext(s: Services): string {
     byLane.set(String(lane), list);
   }
   for (const [lane, list] of byLane) lines.push(`- Track ${lane}: ${list.slice(0, 40).join('; ')}`);
+  const markers = Object.values(p.playlist.markers).sort((a, b) => a.tick - b.tick);
+  lines.push(
+    markers.length
+      ? `Markers: ${markers.map((m) => `"${m.name}" bar ${r2(m.tick / bar + 1)} ${m.id}`).join('; ')}`
+      : 'Markers: none',
+  );
 
   const sel = session.selectedChannelId ? p.channels[session.selectedChannelId] : undefined;
   const selIns = session.selectedInsertId ? p.mixer.inserts[session.selectedInsertId] : undefined;

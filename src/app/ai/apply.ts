@@ -16,9 +16,12 @@ import { newId } from '@core/model/ids';
 import { KIT } from '@core/model/kit';
 import {
   MASTER,
+  type AudioClip,
   type AutoPoint,
   type AutoShape,
   type ChannelId,
+  type ClipId,
+  type MarkerId,
   type Clip,
   type FxSlot,
   type InsertId,
@@ -31,7 +34,9 @@ import {
   type Project,
   type SlotId,
 } from '@core/model/types';
+import { setAudioChannelEdits, setAudioClipEdits } from '@core/ops/audio-edits';
 import { createAutomationClip } from '@core/ops/automation';
+import { addMarker, moveMarker, removeMarker, renameMarker } from '@core/ops/markers';
 import { addChannel, addSample, removeChannel, setChannelProp } from '@core/ops/channels';
 import {
   addFxSlot,
@@ -451,6 +456,25 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
             }
           } else if (a.plugin !== undefined || a.params !== undefined || a.preset !== undefined)
             warnings.push(`“${ch.name}” has no instrument`);
+          if (ch.kind === 'audioClip') {
+            const pitch = num(a.pitch_cents);
+            const reverse = bool(a.reverse);
+            const follow = (['off', 'resample', 'stretch'] as const).find((x) => x === str(a.follow_tempo));
+            const bpm = num(a.source_bpm);
+            setAudioChannelEdits(d, id, {
+              ...(pitch !== undefined ? { pitch } : {}),
+              ...(reverse !== undefined ? { reverse } : {}),
+              ...(follow ? { stretch: follow } : {}),
+              ...(bpm !== undefined ? { sourceBpm: bpm } : {}),
+            });
+            if (pitch !== undefined) out.push(`pitch ${ch.pitch ?? 0} ct`);
+            if (reverse !== undefined) out.push(reverse ? 'reversed' : 'forwards');
+            if (follow) out.push(follow === 'off' ? 'own speed' : `follows the tempo (${follow})`);
+            if (bpm !== undefined) out.push(`recorded at ${ch.sourceBpm} BPM`);
+            if (follow && follow !== 'off' && ch.sourceBpm === undefined)
+              warnings.push(`“${ch.name}” needs source_bpm to follow the tempo`);
+          } else if (a.reverse !== undefined || a.follow_tempo !== undefined || a.source_bpm !== undefined)
+            warnings.push(`“${ch.name}” is not an audio clip channel`);
           const name = str(a.name);
           if (name) {
             setChannelProp(d, id, 'name', name);
@@ -979,6 +1003,64 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           });
           remember(a.ref, { kind: 'channel', id: made.channelId });
           return `Automation “${name}”, bars ${r2(start / barT + 1)}–${r2((start + length) / barT + 1)}: ${shapeText}`;
+        },
+
+        edit_audio_clip: (a) => {
+          const id = (str(a.clip) ?? fail('which audio clip?')) as ClipId;
+          const clip = d.playlist.clips[id];
+          if (clip?.kind !== 'audio') fail(`there is no audio clip "${id}"`);
+          const gain = num(a.gain_db);
+          const fadeIn = num(a.fade_in);
+          const fadeOut = num(a.fade_out);
+          setAudioClipEdits(d, id, {
+            ...(gain !== undefined ? { gain: gain <= -60 ? 0 : dbToGain(Math.min(12, gain)) } : {}),
+            ...(fadeIn !== undefined ? { fadeIn } : {}),
+            ...(fadeOut !== undefined ? { fadeOut } : {}),
+          });
+          const after = d.playlist.clips[id] as Draft<AudioClip>;
+          const name = d.channels[after.channelId]?.name ?? 'audio';
+          const out = [
+            gain !== undefined ? `gain ${r2(gain)} dB` : '',
+            fadeIn !== undefined ? `fade-in ${Math.round((after.fadeIn ?? 0) * 1000)} ms` : '',
+            fadeOut !== undefined ? `fade-out ${Math.round((after.fadeOut ?? 0) * 1000)} ms` : '',
+          ].filter(Boolean);
+          return `Audio clip “${name}”: ${out.join(', ') || 'unchanged'}`;
+        },
+
+        marker: (a) => {
+          const action = str(a.action);
+          const barT = bar();
+          const at = num(a.bar);
+          const tick = at !== undefined ? Math.max(0, Math.round((at - 1) * barT)) : undefined;
+          const find = (): MarkerId => {
+            const ref = str(a.marker) ?? fail('which marker?');
+            if (d.playlist.markers[ref as MarkerId]) return ref as MarkerId;
+            const hit = Object.values(d.playlist.markers).find((m) => lower(m.name) === lower(ref));
+            return (hit?.id ?? fail(`there is no marker "${ref}"`)) as MarkerId;
+          };
+          const color = str(a.color);
+          const okColor = color && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined;
+          if (action === 'add') {
+            const name = str(a.name) ?? 'Marker';
+            addMarker(d, tick ?? 0, name, okColor ? { color: okColor } : {});
+            return `Marker “${name}” at bar ${r2((tick ?? 0) / barT + 1)}`;
+          }
+          if (action === 'edit') {
+            const id = find();
+            const name = str(a.name);
+            if (name) renameMarker(d, id, name);
+            if (tick !== undefined) moveMarker(d, id, tick);
+            if (okColor) d.playlist.markers[id]!.color = okColor;
+            const m = d.playlist.markers[id]!;
+            return `Marker “${m.name}” at bar ${r2(m.tick / barT + 1)}`;
+          }
+          if (action === 'remove') {
+            const id = find();
+            const name = d.playlist.markers[id]!.name;
+            removeMarker(d, id);
+            return `Removed the marker “${name}”`;
+          }
+          return fail(`unknown marker action "${String(a.action)}"`);
         },
 
         place_pattern: (a) => {

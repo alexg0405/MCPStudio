@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MASTER, type ChannelId, type InsertId } from '@core/model/types';
+import { MASTER, type ChannelId, type ClipId, type InsertId, type SampleId } from '@core/model/types';
 import { createTestServices } from '../testing';
 import { resolveTarget } from '@core/automation/targets';
 import { applyAnswer, coerceParam, parseKey } from './apply';
@@ -288,6 +288,75 @@ describe('AI automation', () => {
     ]);
     expect(res.warnings).toEqual([expect.stringContaining('there is no channel')]);
     expect(s.doc.getState().project.transport.bpm).toBe(101);
+  });
+});
+
+describe('AI markers', () => {
+  it('adds, renames, moves and removes markers by name', () => {
+    const s = createTestServices();
+    run(s, [
+      { op: 'marker', action: 'add', name: 'Verse', bar: 9 },
+      { op: 'marker', action: 'add', name: 'Drop', bar: 17, color: '#e5574d' },
+    ]);
+    let markers = Object.values(s.doc.getState().project.playlist.markers);
+    expect(markers.map((m) => [m.name, m.tick])).toEqual([
+      ['Verse', 8 * 3840],
+      ['Drop', 16 * 3840],
+    ]);
+    const res = run(s, [
+      { op: 'marker', action: 'edit', marker: 'drop', name: 'Big drop', bar: 25 },
+      { op: 'marker', action: 'remove', marker: 'Verse' },
+      { op: 'marker', action: 'remove', marker: 'Bridge' },
+    ]);
+    markers = Object.values(s.doc.getState().project.playlist.markers);
+    expect(markers).toEqual([expect.objectContaining({ name: 'Big drop', tick: 24 * 3840, color: '#e5574d' })]);
+    expect(res.warnings).toEqual(['marker: there is no marker "Bridge"']);
+  });
+});
+
+describe('AI audio clip edits', () => {
+  it('sets clip gain and fades, and audio channel pitch, reverse and tempo-follow', () => {
+    const s = createTestServices();
+    const sampleId = 'smp_loop' as SampleId;
+    const channelId = 'ch_loop' as ChannelId;
+    const clipId = 'clip_loop' as ClipId;
+    s.history.transact('setup', (d) => {
+      d.samples[sampleId] = { id: sampleId, name: 'Loop', source: { kind: 'builtin', generator: 'kit/kick' } } as never;
+      d.channels[channelId] = {
+        kind: 'audioClip',
+        id: channelId,
+        name: 'Loop',
+        color: '#888888',
+        muted: false,
+        solo: false,
+        volume: 0.8,
+        pan: 0,
+        output: MASTER,
+        sampleId,
+      };
+      d.channelOrder.push(channelId);
+      d.playlist.clips[clipId] = {
+        kind: 'audio',
+        id: clipId,
+        laneId: d.playlist.laneOrder[0]!,
+        start: 0,
+        length: 3840,
+        channelId,
+        offsetSec: 0,
+      };
+    });
+    const res = run(s, [
+      { op: 'edit_audio_clip', clip: clipId, gain_db: -6, fade_in: 0.01, fade_out: 0.5 },
+      { op: 'edit_channel', channel: 'Loop', pitch_cents: -300, reverse: true, follow_tempo: 'stretch', source_bpm: 92 },
+    ]);
+    expect(res.warnings).toEqual([]);
+    const p = s.doc.getState().project;
+    expect(p.playlist.clips[clipId]).toMatchObject({ gain: expect.closeTo(0.501, 3), fadeIn: 0.01, fadeOut: 0.5 });
+    expect(p.channels[channelId]).toMatchObject({ pitch: -300, reverse: true, stretch: 'stretch', sourceBpm: 92 });
+    expect(res.changes).toEqual([
+      'Audio clip “Loop”: gain -6 dB, fade-in 10 ms, fade-out 500 ms',
+      '“Loop”: pitch -300 ct, reversed, follows the tempo (stretch), recorded at 92 BPM',
+    ]);
   });
 });
 

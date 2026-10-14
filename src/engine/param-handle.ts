@@ -22,6 +22,8 @@ export class ParamHandleImpl<S extends ParamSpec> implements ParamHandle<S> {
   ) {
     const tau = spec.type === 'float' ? (spec.smoothing ?? 0.008) / 3 : 0;
     this.lane = new AutoLane(ctx, key, spec, encode(spec, current), tau);
+    // Params a plugin only reads through onChange hear automation at the scheduled times.
+    this.lane.onScheduled = (v, time) => this.emitScheduled(decode(spec, v), time);
   }
 
   get value() {

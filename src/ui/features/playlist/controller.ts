@@ -4,15 +4,41 @@
  */
 import type { Services } from '@app/services';
 import type { Gesture } from '@core/history/history';
+import { pointBefore } from '@core/automation/curve';
 import { tempoMapOf } from '@core/automation/tempo';
 import { clipTickOffset } from '@core/model/clips';
 import { newId } from '@core/model/ids';
-import type { Clip, ClipId, Lane, LaneId, PatternClip, Project, SampleRef, Tick } from '@core/model/types';
+import type {
+  AutomationChannel,
+  AutomationClip,
+  ChannelId,
+  Clip,
+  ClipId,
+  Lane,
+  LaneId,
+  PatternClip,
+  Project,
+  SampleRef,
+  Tick,
+} from '@core/model/types';
+import { addAutomationPoint, moveAutomationPoint, setAutomationPointTension } from '@core/ops/automation';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
-import { ticksPerBar } from '@core/time/ppq';
+import { formatBST, ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
+import { emitHint } from '@agstudio/sdk/ui';
 import { onFrame } from '../../frame-loop';
+import {
+  AUTO_HINTS,
+  contentToTick,
+  drawReadout,
+  hitAutomation,
+  tickToContent,
+  yToValue,
+  type AutoDraw,
+  type AutoHit,
+} from './automation';
+import { clipBox, type ClipBox } from './clip-geometry';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import {
@@ -61,7 +87,35 @@ type Drag =
   | { kind: 'paint'; gesture: Gesture; lane: LaneId; last: Tick; done: Set<Tick> }
   | { kind: 'erase'; gesture: Gesture; done: Set<ClipId> }
   | { kind: 'pan'; x: number; y: number }
-  | { kind: 'loop'; t0: Tick; moved: boolean };
+  | { kind: 'loop'; t0: Tick; moved: boolean }
+  | {
+      kind: 'point';
+      gesture: Gesture;
+      clip: AutomationClip;
+      channelId: ChannelId;
+      index: number;
+      readout: { x: number; y: number; text: string } | null;
+    }
+  | {
+      kind: 'tension';
+      gesture: Gesture;
+      clip: AutomationClip;
+      channelId: ChannelId;
+      index: number;
+      y0: number;
+      t0: number;
+      /** +1 when dragging up bends a falling segment's curve up, −1 for a rising one. */
+      sign: number;
+      readout: { x: number; y: number; text: string } | null;
+    };
+
+/** What the pointer is over inside an automation clip. */
+interface AutoTarget {
+  clip: AutomationClip;
+  ch: AutomationChannel;
+  box: ClipBox;
+  hit: AutoHit;
+}
 
 export class PlaylistController {
   readonly vp = new Viewport(32, 0.0015, 0.5);
@@ -73,6 +127,9 @@ export class PlaylistController {
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPlayheadX = NaN;
   private sliceX = -1;
+  /** The automation clip part under the pointer (its points show, the hint bar explains it). */
+  private autoHover: { clipId: ClipId; hit: AutoHit } | null = null;
+  private lastHint: string | null = null;
 
   constructor(
     private readonly s: Services,
@@ -140,6 +197,11 @@ export class PlaylistController {
         this.hover = null;
         this.invalidate('overlay');
       }
+      if (!this.drag && this.autoHover) {
+        this.autoHover = null;
+        this.lastHint = null;
+        this.invalidate('clips');
+      }
     });
     for (const el of [host, els.headers, els.ruler]) on(el, 'wheel', (e) => this.onWheel(e), { passive: false });
     on(els.headers, 'pointerdown', (e) => this.onHeaderDown(e));
@@ -179,6 +241,8 @@ export class PlaylistController {
 
   /** The ▾ menu of a clip was clicked. */
   onClipMenu?: (clip: Clip, at: { clientX: number; clientY: number }) => void;
+  /** An automation point was right-clicked. */
+  onPointMenu?: (clip: AutomationClip, index: number, at: { clientX: number; clientY: number }) => void;
   /** A track name was right-clicked. */
   onLaneMenu?: (laneId: LaneId, at: { clientX: number; clientY: number }) => void;
 
@@ -246,6 +310,8 @@ export class PlaylistController {
         const d = this.drag;
         const hideOriginals = this.preview && (d?.kind === 'resize' || (d?.kind === 'move' && !d.duplicate));
         const skip = hideOriginals ? new Set(this.preview?.map((c) => c.id)) : undefined;
+        const label = (c: Clip) => (c.kind === 'automation' ? this.autoLabel(c, p) : undefined);
+        const automation = (c: AutomationClip) => this.autoDraw(c, p, selected);
         drawClips(
           ctx,
           vp,
@@ -253,12 +319,21 @@ export class PlaylistController {
           p,
           clipsSorted(p.playlist.clips),
           laneIndex,
-          { selected, waveform: this.waveform, ...(skip ? { skip } : {}) },
+          { selected, waveform: this.waveform, label, automation, ...(skip ? { skip } : {}) },
           muted,
         );
         if (this.preview) {
           const sel = new Set(this.preview.map((c) => c.id));
-          drawClips(ctx, vp, theme, p, this.preview, laneIndex, { selected: sel, waveform: this.waveform }, muted);
+          drawClips(
+            ctx,
+            vp,
+            theme,
+            p,
+            this.preview,
+            laneIndex,
+            { selected: sel, waveform: this.waveform, label, automation: (c) => this.autoDraw(c, p, sel) },
+            muted,
+          );
         }
       }
       if (this.dirty.has('overlay')) this.drawOverlay();
@@ -297,7 +372,151 @@ export class PlaylistController {
       const row = this.laneRow(this.project(), this.hover.clip.laneId);
       ctx.fillStyle = readTheme().danger;
       ctx.fillRect(Math.round(this.sliceX), vp.rowToY(row), 1, vp.rowHeight);
+    } else if ((d?.kind === 'point' || d?.kind === 'tension') && d.readout) {
+      // The value being set, in its units (and where).
+      drawReadout(ctx, readTheme(), d.readout.x, d.readout.y, d.readout.text, vp);
     }
+  }
+
+  // ---------------------------------------------------------------- automation clips
+
+  private autoChannel(c: AutomationClip, p: Project): AutomationChannel | null {
+    const ch = p.channels[c.channelId];
+    return ch?.kind === 'automation' ? ch : null;
+  }
+
+  /** What an automation clip shows as its title: what it drives ("Cutoff · 3xOsc"). */
+  private autoLabel(c: AutomationClip, p: Project): string | undefined {
+    const ch = this.autoChannel(c, p);
+    return ch ? this.s.automation.labelOf(ch, p) : undefined;
+  }
+
+  private autoDraw(c: AutomationClip, p: Project, selected: ReadonlySet<ClipId>): AutoDraw {
+    const ch = this.autoChannel(c, p);
+    const d = this.drag;
+    const dragging = (d?.kind === 'point' || d?.kind === 'tension') && d.clip.id === c.id;
+    const hovered = this.autoHover?.clipId === c.id;
+    const hot: AutoHit | null = dragging
+      ? { part: d.kind === 'point' ? 'point' : 'handle', index: d.index }
+      : hovered
+        ? (this.autoHover?.hit ?? null)
+        : null;
+    let note: string | null = null;
+    let noteIsWarning = false;
+    if (ch && (!ch.target || this.s.automation.nameOf(ch.target, p) === null)) {
+      note = 'Drives nothing: what it controlled was deleted';
+      noteIsWarning = true;
+    } else if (ch && ch.points.length <= 2 && ch.points.every((pt) => pt.value === ch.points[0]?.value)) {
+      note = 'Flat: double-click to add points';
+    }
+    return { showPoints: selected.has(c.id) || hovered || dragging, hot, note, noteIsWarning };
+  }
+
+  private boxOf(c: Clip, p: Project): ClipBox | null {
+    const row = this.laneRow(p, c.laneId);
+    return row < 0 ? null : clipBox(this.vp, row, c);
+  }
+
+  /** The automation clip part at (x, y), when `hit` is an automation clip and the tool edits clips. */
+  private autoAt(hit: Hit | null, x: number, y: number, p: Project): AutoTarget | null {
+    const tool = this.s.editor.getState().playlist.tool;
+    if (!hit || hit.clip.kind !== 'automation' || tool === 'delete' || tool === 'slice') return null;
+    const ch = this.autoChannel(hit.clip, p);
+    const box = this.boxOf(hit.clip, p);
+    if (!ch || !box) return null;
+    const h = hitAutomation(this.vp, hit.clip, ch, box, x, y);
+    return h ? { clip: hit.clip, ch, box, hit: h } : null;
+  }
+
+  /** Hover inside automation clips: points show, the cursor and the hint bar explain what a drag does. */
+  private updateAutoHover(hit: Hit | null, x: number, y: number, p: Project): void {
+    const at = this.autoAt(hit, x, y, p);
+    let next: { clipId: ClipId; hit: AutoHit } | null = null;
+    let hint: string | null = null;
+    if (at) {
+      const label = this.s.automation.labelOf(at.ch, p);
+      const editable = at.hit.part === 'point' || at.hit.part === 'handle' || hit?.zone === 'body';
+      next = editable ? { clipId: at.clip.id, hit: at.hit } : null;
+      hint = !editable
+        ? AUTO_HINTS.title(label)
+        : at.hit.part === 'curve'
+          ? AUTO_HINTS.curve(label)
+          : at.hit.part === 'small'
+            ? AUTO_HINTS.small
+            : AUTO_HINTS[at.hit.part];
+    } else if (hit?.clip.kind === 'automation') {
+      const ch = this.autoChannel(hit.clip, p);
+      if (ch) hint = AUTO_HINTS.title(this.s.automation.labelOf(ch, p));
+    }
+    const a = this.autoHover;
+    const same =
+      a === next ||
+      (!!a &&
+        !!next &&
+        a.clipId === next.clipId &&
+        a.hit.part === next.hit.part &&
+        ('index' in a.hit ? a.hit.index : -1) === ('index' in next.hit ? next.hit.index : -1));
+    if (!same) {
+      this.autoHover = next;
+      this.invalidate('clips');
+      this.updateCursor();
+    }
+    if (hint !== this.lastHint) {
+      this.lastHint = hint;
+      emitHint(this.els.gridHost, hint ?? this.els.gridHost.getAttribute('data-hint') ?? '');
+    }
+  }
+
+  /** Song tick and content tick under x (on the grid unless Alt), kept inside the clip. */
+  private autoTickAt(clip: AutomationClip, x: number, p: Project, e: { altKey: boolean }): Tick {
+    const song = Math.max(0, snapRound(this.vp.xToTick(x), this.grid(p, e)));
+    return clamp(tickToContent(clip, song), clip.offset, clip.offset + clip.length);
+  }
+
+  private pointText(ch: AutomationChannel, clip: AutomationClip, tick: Tick, value: number, p: Project): string {
+    const v = ch.target ? this.s.automation.format(ch.target, value, ch.range) : `${Math.round(value * 100)}%`;
+    return `${v} · ${formatBST(contentToTick(clip, tick), p.transport.timeSig)}`;
+  }
+
+  /** Adds a point under the pointer (it takes the shape of the stretch it lands in). */
+  private addAutoPoint(at: AutoTarget, x: number, y: number, p: Project, e: { altKey: boolean }): void {
+    const tick = this.autoTickAt(at.clip, x, p, e);
+    const value = yToValue(y, at.box);
+    const before = pointBefore(at.ch.points, tick);
+    const shape = before >= 0 ? at.ch.points[before]?.shape : undefined;
+    const id = at.ch.id;
+    this.s.history.transact('Add automation point', (d) => {
+      addAutomationPoint(d, id, { tick, value, ...(shape ? { shape } : {}) });
+    });
+    this.s.editor.getState().selectClips([at.clip.id]);
+    emitHint(this.els.gridHost, `Added a point: ${this.pointText(at.ch, at.clip, tick, value, p)} · drag it to adjust`);
+  }
+
+  private dragAutoPoint(d: Extract<Drag, { kind: 'point' }>, x: number, y: number, e: PointerEvent): void {
+    const p = this.project();
+    const box = this.boxOf(d.clip, p);
+    if (!box) return;
+    const tick = this.autoTickAt(d.clip, x, p, e);
+    const value = yToValue(y, box);
+    d.gesture.update((dr) => moveAutomationPoint(dr, d.channelId, d.index, tick, value));
+    const now = this.project();
+    const ch = this.autoChannel(d.clip, now);
+    const pt = ch?.points[d.index];
+    if (!ch || !pt) return;
+    const text = this.pointText(ch, d.clip, pt.tick, pt.value, now);
+    d.readout = { x, y, text };
+    emitHint(this.els.gridHost, `${this.s.automation.labelOf(ch, now)}: ${text}`);
+    this.invalidate('overlay');
+  }
+
+  private dragAutoTension(d: Extract<Drag, { kind: 'tension' }>, x: number, y: number): void {
+    const t = clamp(d.t0 + ((d.y0 - y) / 60) * d.sign, -1, 1);
+    const tension = Math.abs(t) < 0.02 ? 0 : t;
+    d.gesture.update((dr) => setAutomationPointTension(dr, d.channelId, d.index, tension));
+    const text = tension === 0 ? 'Straight' : `Bend ${Math.round(Math.abs(tension) * 100)}%`;
+    d.readout = { x, y, text };
+    emitHint(this.els.gridHost, `Curve: ${text} · drag up or down · double-click to straighten`);
+    this.invalidate('overlay');
   }
 
   private updatePlayhead(): void {
@@ -369,8 +588,12 @@ export class PlaylistController {
     const tool = this.s.editor.getState().playlist.tool;
     const h = this.hover;
     let cursor = 'default';
-    if (this.drag?.kind === 'pan') cursor = 'grabbing';
+    const auto = this.autoHover?.hit.part;
+    if (this.drag?.kind === 'pan' || this.drag?.kind === 'point') cursor = 'grabbing';
+    else if (this.drag?.kind === 'tension') cursor = 'ns-resize';
     else if (tool === 'delete') cursor = 'not-allowed';
+    else if (auto === 'point') cursor = 'grab';
+    else if (auto === 'handle') cursor = 'ns-resize';
     else if (tool === 'slice') cursor = h ? 'col-resize' : 'default';
     else if (h && h.zone !== 'body') cursor = 'ew-resize';
     else if (h) cursor = 'move';
@@ -419,9 +642,49 @@ export class PlaylistController {
       this.onClipMenu?.(hit.clip, e);
       return;
     }
+    // Automation clips: points and curve handles are edited in place.
+    const auto = this.autoAt(hit, x, y, p);
+    if (auto && e.button === 2 && auto.hit.part !== 'small') {
+      host.releasePointerCapture(e.pointerId);
+      if (auto.hit.part === 'point') {
+        editor.selectClips([auto.clip.id]);
+        this.onPointMenu?.(auto.clip, auto.hit.index, e);
+      } else this.addAutoPoint(auto, x, y, p, e);
+      return;
+    }
+    if (auto && e.button === 0 && (auto.hit.part === 'point' || auto.hit.part === 'handle')) {
+      editor.selectClips([auto.clip.id]);
+      const index = auto.hit.index;
+      if (auto.hit.part === 'point') {
+        this.drag = {
+          kind: 'point',
+          gesture: this.s.history.gesture('Move automation point'),
+          clip: auto.clip,
+          channelId: auto.ch.id,
+          index,
+          readout: null,
+        };
+      } else {
+        const a = auto.ch.points[index];
+        const b = auto.ch.points[index + 1];
+        this.drag = {
+          kind: 'tension',
+          gesture: this.s.history.gesture('Bend automation curve'),
+          clip: auto.clip,
+          channelId: auto.ch.id,
+          index,
+          y0: y,
+          t0: a?.tension ?? 0,
+          sign: a && b && b.value > a.value ? -1 : 1,
+          readout: null,
+        };
+      }
+      this.updateCursor();
+      this.invalidate('clips');
+      return;
+    }
     if (e.button === 2 || tool === 'delete') {
-      this.drag = { kind: 'erase', gesture: this.s.history.gesture('Delete clips'), done: new Set() };
-      this.eraseAt(x, y, p);
+      this.startErase(x, y, p);
       return;
     }
     if (e.button !== 0) return;
@@ -501,10 +764,17 @@ export class PlaylistController {
         this.invalidate('overlay');
         this.updateCursor();
       }
+      this.updateAutoHover(hit, x, y, p);
       return;
     }
     this.autoScroll(x, y, p);
     switch (d.kind) {
+      case 'point':
+        this.dragAutoPoint(d, x, y, e);
+        return;
+      case 'tension':
+        this.dragAutoTension(d, x, y);
+        return;
       case 'pan':
         this.vp.scrollBy(d.x - e.clientX, d.y - e.clientY, this.maxTick(p));
         d.x = e.clientX;
@@ -643,7 +913,7 @@ export class PlaylistController {
       const clip = d.clip;
       this.s.history.transact('Add clip', (draft) => addClips(draft, [clip]));
       editor.selectClips([clip.id]);
-    } else if (d.kind === 'paint' || d.kind === 'erase') {
+    } else if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'point' || d.kind === 'tension') {
       d.gesture.commit();
     }
     this.preview = null;
@@ -655,8 +925,9 @@ export class PlaylistController {
     const d = this.drag;
     if (!d) return;
     this.drag = null;
-    if (d.kind === 'paint' || d.kind === 'erase') d.gesture.cancel();
+    if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'point' || d.kind === 'tension') d.gesture.cancel();
     this.preview = null;
+    this.updateCursor();
     this.invalidate('clips', 'overlay');
   }
 
@@ -664,6 +935,16 @@ export class PlaylistController {
     const p = this.project();
     const { x, y } = this.local(e);
     const hit = this.hitTest(x, y, p);
+    const auto = this.autoAt(hit, x, y, p);
+    if (auto) {
+      // Double-click: straighten a curve handle, or add a point on the curve.
+      if (auto.hit.part === 'handle') {
+        const { index } = auto.hit;
+        const id = auto.ch.id;
+        this.s.history.transact('Straighten curve', (d) => setAutomationPointTension(d, id, index, 0));
+      } else if (auto.hit.part === 'curve') this.addAutoPoint(auto, x, y, p, e);
+      return;
+    }
     if (hit?.clip.kind === 'pattern') {
       // FL: double-clicking a pattern clip opens that pattern.
       this.s.view.getState().setCurrentPattern(hit.clip.patternId);
@@ -693,6 +974,11 @@ export class PlaylistController {
     if (add.length > 0) d.gesture.update((draft) => addClips(draft, add));
   }
 
+  private startErase(x: number, y: number, p: Project): void {
+    this.drag = { kind: 'erase', gesture: this.s.history.gesture('Delete clips'), done: new Set() };
+    this.eraseAt(x, y, p);
+  }
+
   private eraseAt(x: number, y: number, p: Project): void {
     const d = this.drag;
     if (d?.kind !== 'erase') return;
@@ -706,7 +992,8 @@ export class PlaylistController {
 
   private autoScroll(x: number, y: number, p: Project): void {
     const d = this.drag;
-    if (!d || d.kind === 'pan') return;
+    // Points stay inside their clip: no scrolling while editing them.
+    if (!d || d.kind === 'pan' || d.kind === 'point' || d.kind === 'tension') return;
     const edge = 24;
     let dx = 0;
     let dy = 0;

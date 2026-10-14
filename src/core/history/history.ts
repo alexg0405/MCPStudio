@@ -107,6 +107,11 @@ export class History {
     return this.container.get();
   }
 
+  /** A gesture (a drag) is in progress: its edits arrive with origin 'gesture' until it commits. */
+  get inGesture(): boolean {
+    return this.gestureActive !== null;
+  }
+
   onChange(fn: (change: DocChange) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);

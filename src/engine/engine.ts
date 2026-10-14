@@ -7,7 +7,7 @@ import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from 
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
-import type { JsonValue, TransportInfo } from '@agstudio/sdk';
+import type { JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
 import type {
   EngineApi,
   EngineOptions,
@@ -133,7 +133,13 @@ export class Engine implements EngineApi, EngineCore {
     });
     this.transport.onEnded = () => this.emit();
     this.transportInfo.sptAt = (time) => this.transport.sptAt(time);
-    this.automation = new AutomationDriver({ ctx, params: this.params, offline });
+    this.automation = new AutomationDriver({
+      ctx,
+      params: this.params,
+      offline,
+      specsOf: (pluginId) => this.plugins.get(pluginId)?.params as ParamSpecs | undefined,
+      timeline: () => this.transport.currentTimeline,
+    });
     this.transport.observe(this.automation);
     this.metronome = offline
       ? null
@@ -288,8 +294,9 @@ export class Engine implements EngineApi, EngineCore {
       prev.channelOrder !== next.channelOrder ||
       muteKey !== this.muteKey;
     this.muteKey = muteKey;
-    if (schedulingChanged) this.updateModel();
+    // Automation first: a re-planning transport then schedules segments with the new curves.
     this.automation.update(next, this.view);
+    if (schedulingChanged) this.updateModel();
   }
 
   setTransportView(view: TransportView): void {
@@ -301,8 +308,8 @@ export class Engine implements EngineApi, EngineCore {
     )
       return;
     this.view = view;
-    this.updateModel();
     if (this.project) this.automation.update(this.project, view);
+    this.updateModel();
   }
 
   private model(): { source: EventSource; timeline: Timeline } | null {

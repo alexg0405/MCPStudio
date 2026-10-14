@@ -7,8 +7,9 @@
  *
  * - live edits while nothing drives it: `setTargetAtTime` towards the new value (steps for discrete
  *   params, and exact `setValueAtTime(v, 0)` before an offline render starts);
- * - `cut(at)` keeps everything up to the first breakpoint at or after `at` (a ramp that is running is
- *   never touched) and cancels the rest; `extend` appends linear ramps (steps for discrete params);
+ * - `cut(at)` keeps a ramp that is running at `at` (up to its end) and cancels the rest; where nothing
+ *   moves at `at` (a step, a hold, a constant ramp, a setTarget) it cancels from `at` on and anchors the
+ *   value there. `extend` appends linear ramps (steps for discrete params);
  * - `release` hands the value back to its base (the document value) with a short ramp.
  *
  * It never writes `.value` (offline renders must be exact), never uses value curves, exponential
@@ -26,8 +27,8 @@ export interface AutomatableParam {
   /** True while automation owns the value (live edits then only change `base`). */
   readonly driven: boolean;
   /**
-   * Keeps the schedule up to the first breakpoint at or after `at` and drops the rest. Returns that
-   * breakpoint's time: append from there with `extend`.
+   * Keeps the schedule up to `at` (a ramp running at `at` is kept up to its end) and drops the rest.
+   * Returns the time the schedule now ends at (`at`, or that ramp's end): append from there with `extend`.
    */
   cut(at: number): number;
   /** Takes the value over and appends (time, value) pairs, strictly after the last cut, in spec units. */
@@ -36,6 +37,13 @@ export interface AutomatableParam {
   release(at: number, ramp?: number): void;
   /** The value the lane has at `time` (spec units, numeric encoding). */
   valueAt(time: number): number;
+  /** Time of the last scheduled event (the value holds after it). */
+  readonly scheduledUntil: number;
+  /**
+   * Before a render starts (context time 0): takes the value over at exactly `value` from time 0,
+   * with no ramp (offline renders start exact).
+   */
+  start(value: number): void;
 }
 
 type Map = (v: number) => number;
@@ -142,44 +150,87 @@ export class AutoLane implements AutomatableParam {
   }
 
   cut(at: number): number {
-    const tb = this.breakpointAtOrAfter(at);
-    if (tb !== null) {
-      // Keep the event at tb (a running ramp's end), drop what follows.
-      for (const b of this.bindings) b.param.cancelScheduledValues(tb + EPS);
-      // Drop segments that start after tb or ramp past it (their end events are gone).
-      for (let s = this.segs[this.segs.length - 1]; s && this.segs.length > 1 && (s.t > tb || s.end > tb);) {
-        this.segs.pop();
-        s = this.segs[this.segs.length - 1];
-      }
-      return tb;
+    const segs = this.segs;
+    let i = segs.length - 1;
+    while (i > 0 && (segs[i] as Seg).t > at) i--;
+    const s = segs[i] as Seg;
+    if (s.kind === 'lin' && s.t < at && at < s.end && s.v0 !== s.v) {
+      // A ramp is running at `at`: cancelling its end would make the value jump. Keep it, drop what follows.
+      for (const b of this.bindings) b.param.cancelScheduledValues(s.end + EPS);
+      segs.length = i + 1;
+      return s.end;
     }
-    // Nothing scheduled after `at` (a hold or a running setTarget): anchor the model value there.
+    // Nothing moves at `at` (a step, a hold, a constant ramp, a setTarget): everything after it can
+    // go without the value jumping.
     const v = this.valueAt(at);
+    for (let s2 = segs[segs.length - 1] as Seg; segs.length > 1; s2 = segs[segs.length - 1] as Seg) {
+      // Ramps and setTargets starting at `at` go too (a linear ramp must not follow a setTarget).
+      if (s2.t > at || (s2.t === at && s2.kind !== 'set')) segs.pop();
+      else break;
+    }
+    const last = segs[segs.length - 1] as Seg;
+    if (last.end === at && last.kind !== 'target') {
+      // An event exactly at `at` (a ramp ending or a step there) already anchors the value.
+      for (const b of this.bindings) b.param.cancelScheduledValues(at + EPS);
+      return at;
+    }
     for (const b of this.bindings) b.param.cancelScheduledValues(at);
-    while (this.segs.length > 1 && (this.segs[this.segs.length - 1] as Seg).t >= at) this.segs.pop();
+    // A constant ramp that ran past `at` lost its end event: it now ends at `at`.
+    if (last.kind === 'lin' && last.end > at) last.end = at;
+    // Anchor: later ramps start from here (not from the start of whatever held before).
     this.push({ kind: 'set', t: at, v0: v, v, end: at, tau: 0 });
     for (const b of this.bindings) this.schedule(b, 'set', at, v, 0);
     return at;
   }
+
+  start(value: number): void {
+    const v = this.clamp(value);
+    if (this.ctx.currentTime > 0) {
+      // Already rendering: the closest thing is a step at the next opportunity.
+      this.cut(this.ctx.currentTime);
+      this.extend([this.ctx.currentTime + 1e-4, v]);
+      return;
+    }
+    for (const b of this.bindings) b.param.cancelScheduledValues(0);
+    this.segs = [{ kind: 'set', t: 0, v0: v, v, end: 0, tau: 0 }];
+    for (const b of this.bindings) this.schedule(b, 'set', 0, v, 0);
+    this.drivenFlag = true;
+    this.onScheduled?.(v, 0);
+  }
+
+  get scheduledUntil(): number {
+    return this.lastTime();
+  }
+
+  /** Segments the lane remembers (they are trimmed to about a second behind the clock). */
+  get segmentCount(): number {
+    return this.segs.length;
+  }
+
+  /** Told about every value change the lane schedules for automation (onChange-only plugin params). */
+  onScheduled?: (value: number, time: number) => void;
 
   extend(points: ArrayLike<number>): void {
     const tail = this.segs[this.segs.length - 1] as Seg;
     // A linear ramp must not follow a running setTarget: anchor it first.
     if (tail.kind === 'target') this.cut(Math.max(this.ctx.currentTime, tail.t));
     this.drivenFlag = true;
+    const report = this.onScheduled;
     for (let i = 0; i + 1 < points.length; i += 2) {
       const t = points[i] as number;
       const raw = points[i + 1] as number;
       const last = this.lastTime();
-      if (!(t > last) || !Number.isFinite(raw)) continue;
+      if (!(t > last) || !Number.isFinite(t) || !Number.isFinite(raw)) continue;
       const v = this.clamp(raw);
+      const before = this.valueAt(last);
       if (this.discrete) {
         this.push({ kind: 'set', t, v0: v, v, end: t, tau: 0 });
         for (const b of this.bindings) this.schedule(b, 'set', t, v, 0);
       } else {
-        this.push({ kind: 'lin', t: last, v0: this.valueAt(last), v, end: t, tau: 0 });
+        this.push({ kind: 'lin', t: last, v0: before, v, end: t, tau: 0 });
         for (const b of this.bindings) this.schedule(b, 'lin', t, v, 0);
       }
+      if (report && v !== before) report(v, t);
     }
     this.trim();
   }
@@ -206,18 +257,6 @@ export class AutoLane implements AutomatableParam {
   private lastTime(): number {
     const s = this.segs[this.segs.length - 1] as Seg;
     return s.end;
-  }
-
-  /** The earliest segment start or ramp end at or after `at`, or null when nothing is scheduled there. */
-  private breakpointAtOrAfter(at: number): number | null {
-    let best: number | null = null;
-    for (let i = this.segs.length - 1; i >= 0; i--) {
-      const s = this.segs[i] as Seg;
-      if (s.end >= at) best = s.end;
-      if (s.t >= at) best = s.t;
-      if (s.end < at) break;
-    }
-    return best;
   }
 
   private cancel(t: number): void {
@@ -276,16 +315,28 @@ export class AutoLane implements AutomatableParam {
 /** Every automatable param, by target key (several per key while an instance is being replaced). */
 export class ParamRegistry {
   private readonly byKey = new Map<string, Set<AutomatableParam>>();
+  private readonly listeners = new Set<(p: AutomatableParam, added: boolean) => void>();
 
   register(p: AutomatableParam): () => void {
     let set = this.byKey.get(p.key);
     if (!set) this.byKey.set(p.key, (set = new Set()));
     set.add(p);
+    for (const fn of this.listeners) fn(p, true);
+    let done = false;
     return () => {
+      if (done) return;
+      done = true;
       const s = this.byKey.get(p.key);
       s?.delete(p);
       if (s && s.size === 0) this.byKey.delete(p.key);
+      for (const fn of this.listeners) fn(p, false);
     };
+  }
+
+  /** Called after a param registers (`added`) or unregisters (the automation driver picks new ones up). */
+  subscribe(fn: (p: AutomatableParam, added: boolean) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
   }
 
   /** All params registered under `key` (newest last). */

@@ -12,6 +12,36 @@
   cursor: default;
 }
 
+/* A control an automation clip drives (blue), whose clip is muted (ring), or being recorded (red). */
+.statusDot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ag-select, #5aa4e8);
+  box-shadow: 0 0 0 1px var(--ag-border, #12161a);
+  pointer-events: none;
+}
+
+.statusDot[data-kind='muted'] {
+  background: var(--ag-surface-1, #2a3238);
+  border: 1.5px solid var(--ag-select, #5aa4e8);
+  box-sizing: border-box;
+}
+
+.statusDot[data-kind='recording'] {
+  background: var(--ag-danger, #e5574d);
+  animation: ag-rec-pulse 1s ease-in-out infinite;
+}
+
+@keyframes ag-rec-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .knobBody {
   fill: var(--ag-surface-3, #3c464e);
   stroke: var(--ag-border, #12161a);

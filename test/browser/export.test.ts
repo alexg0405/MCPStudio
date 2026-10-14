@@ -4,6 +4,8 @@ import { decodePcm, encodeWav } from '@core/io/wav';
 import { renderOffline } from '@engine/render-offline';
 import { trimRender } from '@app/export/export-wav';
 import { kitProject, onsets, resolver } from '../helpers/fixtures';
+import { automate, pt } from '../helpers/automation';
+import { heldNote, tone } from '../helpers/tone';
 
 const SR = 48000;
 
@@ -29,6 +31,31 @@ describe('WAV export', () => {
     };
     const [a, b] = [await render(), await render()];
     expect(await sha256Hex(a)).toBe(await sha256Hex(b));
+  });
+
+  it('exports automation hash-identically, whatever the render chunk', async () => {
+    const { project: base, pid, ch } = heldNote(tone, 2, 128, 960);
+    const { project } = automate(
+      base,
+      { kind: 'channel', channelId: ch, param: 'volume' },
+      [pt(0, 0.1), pt(3840, 1, { tension: -0.4 }), pt(7680, 0.5, { shape: 'stairs' })],
+      [{ start: 0, length: 7680, lane: 1 }],
+    );
+    const render = async (chunk: number) => {
+      const r = await renderOffline(project, {
+        plugins: resolver(tone),
+        view: { mode: 'song', patternId: pid, loop: null },
+        bars: 2,
+        sampleRate: SR,
+        tail: 'auto',
+        chunk,
+      });
+      const channels = trimRender(r.buffer, r.preRoll, (2 * 4 * 60) / 128);
+      return encodeWav(channels, SR, { bitDepth: 24 });
+    };
+    const a = await sha256Hex(await render(128 * 256));
+    expect(await sha256Hex(await render(128 * 256))).toBe(a);
+    expect(await sha256Hex(await render(128 * 37))).toBe(a);
   });
 
   it('decodes a 24-bit export back to the float render within one step', async () => {

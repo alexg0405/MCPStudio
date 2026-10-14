@@ -1,4 +1,4 @@
-import { createContext } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type { ParamValue } from '../params';
 
 /**
@@ -17,3 +17,32 @@ export const ParamMenuContext = createContext<
 export const ParamFollowContext = createContext<
   ((param: string, paint: (value: ParamValue | null) => void) => () => void) | null
 >(null);
+
+/** What the host says drives a param: an automation clip, a muted one, or recording in progress. */
+export interface ParamStatus {
+  kind: 'automated' | 'muted' | 'recording';
+  /** Added to the control's hint, e.g. "Automated by clip ‘Cutoff · Lead’ – right-click to edit". */
+  hint: string;
+}
+
+/**
+ * Provided by the host: `watch(param, cb)` calls `cb` with the param's status now and whenever it
+ * changes (null when nothing drives it); returns the unsubscribe function. Controls show a small
+ * indicator and add the status to their hint.
+ */
+export const ParamStatusContext = createContext<
+  ((param: string, cb: (status: ParamStatus | null) => void) => () => void) | null
+>(null);
+
+/** The host's status for a param (null without a host, a param, or anything driving it). */
+export function useParamStatus(param: string | undefined): ParamStatus | null {
+  const watch = useContext(ParamStatusContext);
+  const [status, setStatus] = useState<ParamStatus | null>(null);
+  useEffect(() => {
+    if (!param || !watch) return;
+    return watch(param, (next) =>
+      setStatus((prev) => (prev && next && prev.kind === next.kind && prev.hint === next.hint ? prev : next)),
+    );
+  }, [param, watch]);
+  return param && watch ? status : null;
+}

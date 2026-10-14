@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo, type ComponentType } from 'react';
+import { createElement, useCallback, useEffect, useMemo, type ComponentType } from 'react';
 import { KIT } from '@core/model/kit';
 import type { ChannelId, InsertId, PluginOwner, SlotId } from '@core/model/types';
 import { addSample, setChannelProp, setPluginSample } from '@core/ops/channels';
@@ -6,7 +6,7 @@ import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
 import { keyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
-import { ParamFollowContext, ParamMenuContext } from '@agstudio/sdk/ui';
+import { ParamFollowContext, ParamMenuContext, ParamStatusContext, type ParamStatus } from '@agstudio/sdk/ui';
 import { targetKey } from '@core/model/targets';
 import { followersOf } from '../../HostParamMenus';
 import { kitSampleRef } from '@app/default-project';
@@ -128,6 +128,12 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
   const instance = useDoc((p) => pluginInstanceOf(p, owner));
   const def = usePluginDef(instance?.pluginId);
   const edit = usePluginEditing(owner, def);
+  // Knobs show when an automation clip drives their param.
+  const status = useCallback(
+    (param: string, cb: (s: ParamStatus | null) => void) =>
+      services.automation.watch(targetKey({ kind: 'plugin', owner, paramId: param }), cb),
+    [services, owner],
+  );
 
   // Close the editor when its channel or effect slot is deleted.
   useEffect(() => {
@@ -220,22 +226,24 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
       <div className={styles.body}>
         <ParamMenuContext.Provider value={openParamMenu}>
           <ParamFollowContext.Provider value={follow}>
-            <ErrorBoundary
-              resetKey={def}
-              fallback={(error) => (
-                <div className={styles.missing}>
-                  <strong>This plugin’s editor crashed.</strong>
-                  <p className={styles.error}>{error.message}</p>
+            <ParamStatusContext.Provider value={status}>
+              <ErrorBoundary
+                resetKey={def}
+                fallback={(error) => (
+                  <div className={styles.missing}>
+                    <strong>This plugin’s editor crashed.</strong>
+                    <p className={styles.error}>{error.message}</p>
+                    <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
+                  </div>
+                )}
+              >
+                {Custom ? (
+                  createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
+                ) : (
                   <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
-                </div>
-              )}
-            >
-              {Custom ? (
-                createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
-              ) : (
-                <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
-              )}
-            </ErrorBoundary>
+                )}
+              </ErrorBoundary>
+            </ParamStatusContext.Provider>
           </ParamFollowContext.Provider>
         </ParamMenuContext.Provider>
       </div>

@@ -11,6 +11,7 @@ import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
 import { PluginRegistry } from './plugins/registry';
 import { RecordController } from './recording';
+import { AutomationService } from './automation';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
@@ -50,6 +51,8 @@ export interface Services {
   readonly engine: EngineApi;
   /** Record mode and the recorders features register (notes, automation, audio). */
   readonly recording: RecordController;
+  /** Automation clips: create, labels, touch while dragging, recording knob moves, control status. */
+  readonly automation: AutomationService;
   /** The open project's file: new, open, save, save as, recent files. */
   readonly files: ProjectFiles;
   /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). */
@@ -122,6 +125,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
   prefs.subscribe(syncSession);
   recording.store.subscribe(syncSession);
   syncSession();
+  // Before connectEngine: a drag's first edit lets automation go of the control before the engine hears it.
+  const automation = new AutomationService({ history, doc, engine, recording, view, editor, plugins, session });
 
   let files: ProjectFiles | null = null;
   let controllers: ControllerRouter | null = null;
@@ -144,6 +149,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     get controllers() {
       return (controllers ??= new ControllerRouter(services));
     },
+    automation,
     get files() {
       return (files ??= new ProjectFiles(services));
     },

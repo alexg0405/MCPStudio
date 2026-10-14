@@ -10,6 +10,7 @@ import type {
   TransportView,
   Waveform,
 } from '@engine/api';
+import type { AudioTap } from '@agstudio/sdk';
 
 /**
  * A stable EngineApi that delegates to a replaceable engine. Rebooting (new AudioContext) is how
@@ -152,6 +153,27 @@ export class EngineHost implements EngineApi {
   }
   graphLatency(): number {
     return this.inner.graphLatency();
+  }
+  /** One view for good: it reads whichever engine runs now, so visualizers keep drawing across reboots. */
+  private readonly outView: AudioTap = (() => {
+    const tap = () => this.inner.outputTap();
+    return {
+      get active() {
+        return tap().active;
+      },
+      get sampleRate() {
+        return tap().sampleRate;
+      },
+      get fftSize() {
+        return tap().fftSize;
+      },
+      spectrum: (out) => tap().spectrum(out),
+      waveform: (out, channel) => tap().waveform(out, channel),
+      reading: (name) => tap().reading(name),
+    };
+  })();
+  outputTap(): AudioTap {
+    return this.outView;
   }
   stats(): EngineStats {
     return this.inner.stats();

@@ -29,6 +29,8 @@ export interface PrefsState {
   customKeys: Record<string, string[]>;
   /** The audio output device ('' = the system default). */
   outputDevice: string;
+  /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
+  scopeMode: 'scope' | 'spectrum' | 'off';
 }
 
 export interface PrefsActions {
@@ -53,6 +55,7 @@ const DEFAULTS: PrefsState = {
   recentActions: [],
   customKeys: {},
   outputDevice: '',
+  scopeMode: 'scope',
 };
 
 function load(): PrefsState {

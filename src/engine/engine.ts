@@ -8,6 +8,7 @@ import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
+import { INACTIVE_TAP, TapImpl } from './tap';
 import type {
   EngineApi,
   EngineOptions,
@@ -668,6 +669,12 @@ export class Engine implements EngineApi, EngineCore {
     return this.mixer.latency;
   }
 
+  private outTap: TapImpl | null = null;
+  outputTap(): AudioTap {
+    if (this.offline) return INACTIVE_TAP;
+    return (this.outTap ??= new TapImpl(this.ctx, this.masterOut, { fftSize: 4096, smoothing: 0.8 }));
+  }
+
   // ---- Status ----
 
   stats(): EngineStats {
@@ -722,6 +729,7 @@ export class Engine implements EngineApi, EngineCore {
     this.mixer.dispose();
     for (const p of [...this.ports]) p.dispose();
     this.limiter?.port.postMessage({ t: 'dispose' });
+    this.outTap?.dispose();
     this.listeners.clear();
     if (typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state !== 'closed') {
       await this.ctx.close();

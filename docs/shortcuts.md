@@ -37,6 +37,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Typing keyboard octave up | `⌥↑` / `Alt+↑` |
 | Undo | `⌘Z` / `Ctrl+Z` |
 | Undo history | `⌥H` / `Alt+H` |
+| Visualizer | `⌥V` / `Alt+V` |
 
 ## When the channel-rack window is focused
 

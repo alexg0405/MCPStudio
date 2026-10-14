@@ -140,6 +140,11 @@ export interface EngineApi {
   setSession(session: EngineSession): void;
   /** Seconds of latency the mixer adds (plugin delay compensation); the playhead already accounts for it. */
   graphLatency(): number;
+  /**
+   * What goes to the speakers (the master track, previews and clicks) for visualizers: spectrum and
+   * waveform, read on the frame loop. Inactive offline and in tests.
+   */
+  outputTap(): AudioTap;
   stats(): EngineStats;
   /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;

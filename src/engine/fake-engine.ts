@@ -1,6 +1,8 @@
 import type { DocChange } from '@core/history/history';
 import type { InsertId } from '@core/model/types';
+import type { AudioTap } from '@agstudio/sdk';
 import type { EngineApi, EngineSession, EngineState, EngineStats, TransportView } from './api';
+import { INACTIVE_TAP } from './tap';
 
 /** An engine stand-in for Node tests and UI work without audio. Records what it was told. */
 export class FakeEngine implements EngineApi {
@@ -113,6 +115,9 @@ export class FakeEngine implements EngineApi {
   }
   graphLatency(): number {
     return 0;
+  }
+  outputTap(): AudioTap {
+    return INACTIVE_TAP;
   }
   stats(): EngineStats {
     return {

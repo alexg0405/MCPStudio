@@ -23,6 +23,16 @@ function fftSizeOf(requested: number | undefined): number {
 /** A tap that ignores everything (offline renders, hosts without editors). */
 export const NO_TAP: PluginTap = { publish: () => {} };
 
+/** An AudioTap with nothing to show (offline engines, tests). */
+export const INACTIVE_TAP: AudioTap = {
+  active: false,
+  sampleRate: 0,
+  fftSize: 0,
+  spectrum: () => false,
+  waveform: () => false,
+  reading: () => undefined,
+};
+
 export class TapImpl implements AudioTap, PluginTap {
   readonly sampleRate: number;
   readonly fftSize: number;

@@ -121,13 +121,6 @@
   white-space: nowrap;
 }
 
-/* Narrow windows: the sample-rate/latency readout yields its space (the "audio off" button stays). */
-@media (max-width: 1440px) {
-  .audioStatus {
-    display: none;
-  }
-}
-
 @media (max-width: 1180px) {
   .time {
     min-width: 84px;

@@ -199,5 +199,16 @@ export function register(services: Services): void {
   ]);
 
   addToolbarSlot({ id: 'transport', area: 'transport', order: 0, component: () => createElement(TransportBar) });
-  addToolbarSlot({ id: 'audio-status', area: 'right', order: 0, component: () => createElement(AudioStatus) });
+  addToolbarSlot({
+    id: 'audio-enable',
+    area: 'right',
+    order: 0,
+    component: () => createElement(AudioStatus, { show: 'enable' }),
+  });
+  addToolbarSlot({
+    id: 'audio-status',
+    area: 'center',
+    order: 100,
+    component: () => createElement(AudioStatus, { show: 'stats' }),
+  });
 }

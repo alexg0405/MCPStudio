@@ -3,8 +3,12 @@ import { useEngineStatus, useServices } from '../../services-context';
 import { onFrame } from '../../frame-loop';
 import styles from './Transport.module.css';
 
-/** Audio state, sample rate, latency and late-note count; click to enable audio. */
-export function AudioStatus() {
+/**
+ * Audio state, sample rate, latency and late-note count; click to enable audio.
+ * Registered twice: the "Audio off" button sits with the window buttons so it is always visible, while the
+ * stats live in the center area and are the first thing to move into the toolbar's overflow menu.
+ */
+export function AudioStatus({ show }: { show: 'enable' | 'stats' }) {
   const services = useServices();
   const { state } = useEngineStatus();
   const ref = useRef<HTMLSpanElement>(null);
@@ -25,6 +29,7 @@ export function AudioStatus() {
   }, [services]);
 
   if (state !== 'running') {
+    if (show === 'stats') return null;
     return (
       <button
         className={styles.audioOff}
@@ -36,6 +41,7 @@ export function AudioStatus() {
       </button>
     );
   }
+  if (show === 'enable') return null;
   return (
     <span className={styles.audioStatus} data-hint="Sample rate, output latency and late notes (scheduling hiccups)">
       <span ref={ref} />

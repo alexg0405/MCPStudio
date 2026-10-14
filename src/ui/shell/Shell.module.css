@@ -100,15 +100,52 @@
   border-right: 0;
 }
 
-/* Gives way first on narrow windows so the window buttons on the right stay reachable. */
-.toolbarGroupShrink {
-  flex: 0 1 auto;
-  min-width: 0;
+/* Takes the leftover width; slots that don't fit move into its "More" dropdown (see OverflowSlots). */
+.toolbarGroupFill {
+  flex: 1 1 0;
+  /* Room for the "More" button at least. */
+  min-width: 46px;
   overflow: hidden;
+  border-right: 0;
 }
 
-.toolbarSpacer {
-  flex: 1;
+.toolbarGroupRight {
+  border-left: 1px solid var(--ag-border);
+}
+
+.toolbarSlot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbarSlot:empty {
+  display: none;
+}
+
+.toolbarOverflow {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px;
+  background: var(--ag-surface-2);
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  box-shadow: var(--ag-shadow);
+  z-index: 10;
+}
+
+.toolbarOverflowItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbarOverflowItem:empty {
+  display: none;
 }
 
 .toolButton {
@@ -169,7 +206,20 @@
   cursor: pointer;
 }
 
-@media (max-width: 1100px) {
+/* Narrow windows: the wordmark and menu spacing give way so the transport and window buttons keep fitting. */
+@media (max-width: 1280px) {
+  .brand {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .hideNarrow {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
   .toolbar {
     gap: 2px;
   }

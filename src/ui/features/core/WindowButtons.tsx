@@ -1,5 +1,6 @@
 import { CommandButton } from '../../shell/Toolbar';
 import { useHistoryStatus } from '../../services-context';
+import shellStyles from '../../shell/Shell.module.css';
 
 /** Quick toggles for the main windows (FL keeps these at the right of the toolbar). */
 export function WindowButtons() {
@@ -19,8 +20,9 @@ export function UndoRedo() {
   useHistoryStatus();
   return (
     <>
-      <CommandButton command="edit.undo" icon="undo" />
-      <CommandButton command="edit.redo" icon="redo" />
+      {/* Hidden on narrow windows; Edit > Undo/Redo and the shortcuts still work. */}
+      <CommandButton command="edit.undo" icon="undo" className={shellStyles.hideNarrow} />
+      <CommandButton command="edit.redo" icon="redo" className={shellStyles.hideNarrow} />
     </>
   );
 }

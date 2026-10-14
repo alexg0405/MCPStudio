@@ -28,6 +28,19 @@ export interface PrefsState {
   recordQuantize: number;
   /** Recording over existing notes adds to them or replaces what it passes over. */
   recordMode: 'overdub' | 'replace';
+  /** What record mode records: notes and knob moves, and/or audio from the input. */
+  recordNotes: boolean;
+  recordAudio: boolean;
+  /** The audio input ('' = the system default), mono or stereo. */
+  audioInputDevice: string;
+  audioInputChannels: 'mono' | 'stereo';
+  /** Hear the input through a mixer track while recording (off: speakers would feed back into the mic). */
+  audioMonitor: boolean;
+  /** Mixer track the input is monitored through and recorded audio plays on ('' = Master). */
+  audioInputTrack: string;
+  /** Measured round-trip latency in ms (−1: use the browser's estimate), and a manual correction. */
+  recordLatencyMs: number;
+  recordLatencyOffsetMs: number;
   /** Hover a control for a moment to see what it does (the hint bar shows it either way). */
   tooltips: boolean;
   /** The welcome dialog was closed once; it no longer opens by itself. */
@@ -60,6 +73,14 @@ const DEFAULTS: PrefsState = {
   countInBars: 1,
   recordQuantize: 0,
   recordMode: 'overdub',
+  recordNotes: true,
+  recordAudio: false,
+  audioInputDevice: '',
+  audioInputChannels: 'mono',
+  audioMonitor: false,
+  audioInputTrack: '',
+  recordLatencyMs: -1,
+  recordLatencyOffsetMs: 0,
   tooltips: true,
   welcomeSeen: false,
   recentActions: [],

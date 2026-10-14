@@ -11,6 +11,8 @@ import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
 import { PluginRegistry } from './plugins/registry';
 import { RecordController } from './recording';
+import { AudioInputService } from './audio-input';
+import { AudioRecorder } from './audio-recorder';
 import { AutomationService } from './automation';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
@@ -51,6 +53,10 @@ export interface Services {
   readonly engine: EngineApi;
   /** Record mode and the recorders features register (notes, automation, audio). */
   readonly recording: RecordController;
+  /** The audio input recording uses: device, mono/stereo, meter, monitoring, latency. */
+  readonly audioInput: AudioInputService;
+  /** Audio recording into the playlist (takes, the live clip while recording). */
+  readonly audioRecorder: AudioRecorder;
   /** Automation clips: create, labels, touch while dragging, recording knob moves, control status. */
   readonly automation: AutomationService;
   /** The open project's file: new, open, save, save as, recent files. */
@@ -73,6 +79,8 @@ export interface ServiceOptions {
   platform?: Platform;
   /** Inject an engine (tests use a fake); default is a realtime Web Audio engine. */
   createEngine?: (opts: EngineOptions) => EngineApi;
+  /** Opens the audio input's stream (tests pass a generated one; default: getUserMedia). */
+  openAudioStream?: ConstructorParameters<typeof AudioInputService>[0]['openStream'];
   project?: Project;
   /** A registry already filled by plugin discovery (default: built-ins only). */
   plugins?: PluginRegistry;
@@ -116,7 +124,15 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const engine = new EngineHost(() => makeEngine(engineOptions));
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
-  const recording = new RecordController(engine);
+  const recording = new RecordController(engine, (kind) =>
+    kind === 'audio' ? prefs.getState().recordAudio : prefs.getState().recordNotes,
+  );
+  const audioInput = new AudioInputService({
+    engine,
+    prefs,
+    doc,
+    ...(opts.openAudioStream ? { openStream: opts.openAudioStream } : {}),
+  });
   // The engine plays the metronome and count-in from the prefs (count-in only while record is armed).
   const syncSession = () => {
     const pr = prefs.getState();
@@ -129,6 +145,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const automation = new AutomationService({ history, doc, engine, recording, view, editor, plugins, session });
 
   let files: ProjectFiles | null = null;
+  let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
   let assistant: BeatAssistant | null = null;
   const services: Services = {
@@ -146,6 +163,10 @@ export function createServices(opts: ServiceOptions = {}): Services {
     plugins,
     engine,
     recording,
+    audioInput,
+    get audioRecorder() {
+      return audioRecorder as AudioRecorder;
+    },
     get controllers() {
       return (controllers ??= new ControllerRouter(services));
     },
@@ -170,6 +191,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
         editor.subscribe(fn),
         midi.subscribe(fn),
         recording.store.subscribe(fn),
+        audioInput.store.subscribe(fn),
         services.files.store.subscribe(fn),
       ];
       return () => unsubs.forEach((u) => u());
@@ -183,8 +205,39 @@ export function createServices(opts: ServiceOptions = {}): Services {
 
   connectEngine(services);
   recording.register(new NoteRecorder(services));
+  audioRecorder = new AudioRecorder(services, audioInput);
+  recording.register(audioRecorder);
+  connectAudioRecording(services);
   void services.controllers; // listens to live controllers from the start
   return services;
+}
+
+/**
+ * Arming record mode with audio on: song mode (audio goes into the playlist), playback that runs on
+ * past the song's end (no wrapping while you record), and the input opened ahead of the take.
+ */
+function connectAudioRecording(s: Services): void {
+  let wasArmed = false;
+  const sync = () => {
+    const armed = s.recording.armed && s.prefs.getState().recordAudio;
+    s.engine.setSongOpenEnded(armed);
+    if (!armed || wasArmed) {
+      wasArmed = armed;
+      return;
+    }
+    wasArmed = true;
+    if (s.view.getState().mode !== 'song') {
+      s.view.getState().setMode('song');
+      s.session.getState().toast('Audio records into the playlist, so AGstudio switched to Song mode.');
+    }
+    void s.audioInput.open().then((input) => {
+      if (!input) s.session.getState().toast(s.audioInput.store.getState().error ?? 'The audio input could not be opened.', 'error');
+    });
+  };
+  s.recording.store.subscribe(sync);
+  s.prefs.subscribe((next, prev) => {
+    if (next.recordAudio !== prev.recordAudio) sync();
+  });
 }
 
 /** Keeps the engine in sync with the document and the transport view. */

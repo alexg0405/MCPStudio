@@ -30,6 +30,7 @@ import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
 import { waveformOf, type Waveform } from './waveform';
 import { startRecording, type RecordOptions, type RecordingHandle } from './recorder';
+import { openAudioInput, type AudioInput } from './audio-input';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
@@ -134,6 +135,11 @@ export class Engine implements EngineApi, EngineCore {
   /** Scheduler cadence (see EngineStats.maxPumpGapMs). */
   private lastPumpAt = 0;
   private maxPumpGap = 0;
+  /** Live inputs (closed with the engine). */
+  private readonly inputs = new Set<AudioInput>();
+  /** Song mode without a loop region plays past the end (recording) instead of looping. */
+  private openEnded = false;
+  private testClick: AudioBuffer | null = null;
 
   constructor(
     ctx: BaseAudioContext,
@@ -405,12 +411,13 @@ export class Engine implements EngineApi, EngineCore {
     if (!p) return null;
     const tempo = tempoMapOf(p, this.view.mode);
     if (this.view.mode === 'song') {
-      // Song mode loops the loop region, or the whole song (FL's default).
+      // Song mode loops the loop region, or the whole song (FL's default); while recording audio
+      // without a loop region it plays on past the end.
       const { source, length } = songModeSource(p);
       const songEnd = Math.max(length, ticksPerBar(p.transport.timeSig));
-      const loop =
-        this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : { start: 0, end: songEnd };
-      return { source, timeline: { tempo, loop, endTick: songEnd } };
+      const region = this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : null;
+      if (!region && this.openEnded) return { source, timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER } };
+      return { source, timeline: { tempo, loop: region ?? { start: 0, end: songEnd }, endTick: songEnd } };
     }
     const { source, length } = patternModeSource(p, this.view.patternId ?? p.patternOrder[0] ?? null);
     return { source, timeline: { tempo, loop: { start: 0, end: length }, endTick: length } };
@@ -606,6 +613,63 @@ export class Engine implements EngineApi, EngineCore {
     return handle;
   }
 
+  async openAudioInput(
+    stream: MediaStream,
+    opts: { channels: 1 | 2; label?: string; latency?: number },
+  ): Promise<AudioInput> {
+    const ctx = this.ctx;
+    if (typeof AudioContext === 'undefined' || !(ctx instanceof AudioContext))
+      throw new Error('Recording needs the realtime engine.');
+    await this.resume();
+    const input = await openAudioInput(
+      ctx,
+      {
+        loadModule: (url) => this.loadModule(url),
+        insertInput: (id) => this.insertInput(id),
+        // Output latency plus the master limiter's look-ahead (music and clicks pass through it).
+        outputLatency: () => ctx.baseLatency + (ctx.outputLatency || 0) + Math.round(0.0013 * ctx.sampleRate) / ctx.sampleRate,
+      },
+      stream,
+      opts,
+    );
+    const close = input.close.bind(input);
+    input.close = () => {
+      this.inputs.delete(input);
+      close();
+    };
+    this.inputs.add(input);
+    return input;
+  }
+
+  playTestClicks(count: number, interval: number): number[] {
+    const ctx = this.ctx;
+    if (!this.testClick) {
+      const n = Math.round(0.004 * ctx.sampleRate);
+      const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: ctx.sampleRate });
+      const d = b.getChannelData(0);
+      // A sharp, loud-ish tick: easy to find in a recording.
+      for (let i = 0; i < n; i++) d[i] = 0.8 * Math.sin((2 * Math.PI * 2000 * i) / ctx.sampleRate) * Math.exp(-i / (0.001 * ctx.sampleRate));
+      this.testClick = b;
+    }
+    const t0 = ctx.currentTime + 0.3;
+    const times: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const at = t0 + i * interval;
+      const src = new AudioBufferSourceNode(ctx, { buffer: this.testClick });
+      src.connect(this.monitorBus);
+      src.onended = () => src.disconnect();
+      src.start(at);
+      times.push(at);
+    }
+    return times;
+  }
+
+  setSongOpenEnded(on: boolean): void {
+    if (on === this.openEnded) return;
+    this.openEnded = on;
+    this.updateModel();
+  }
+
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
     const buffer = this.samples.getSync(ref, this.ctx.sampleRate);
     if (buffer) return waveformOf(buffer);
@@ -763,6 +827,7 @@ export class Engine implements EngineApi, EngineCore {
     this.strips.clear();
     this.mixer.dispose();
     for (const p of [...this.ports]) p.dispose();
+    for (const input of [...this.inputs]) input.close();
     this.limiter?.port.postMessage({ t: 'dispose' });
     this.listeners.clear();
     if (typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state !== 'closed') {

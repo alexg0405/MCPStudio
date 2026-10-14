@@ -7,8 +7,9 @@ import type { ChannelId, InsertId, PatternId, PluginOwner, SampleRef, Tick } fro
 import type { JsonValue, PluginDef } from '@agstudio/sdk';
 import type { Waveform } from './waveform';
 import type { RecordOptions, Recording, RecordingHandle } from './recorder';
+import type { AudioCapture, AudioInput, CapturedAudio } from './audio-input';
 
-export type { Waveform, RecordOptions, Recording, RecordingHandle };
+export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio };
 
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
 
@@ -109,6 +110,16 @@ export interface EngineApi {
    * with the project playing along from `fromTick`). Rejects where recording isn't possible.
    */
   record(stream: MediaStream, opts: RecordOptions & { playAlong: boolean; fromTick?: Tick }): Promise<RecordingHandle>;
+  /**
+   * Opens a live input (a getUserMedia stream) on the engine's clock: a level meter, monitoring
+   * through a mixer track, and captures of any length (audio recording). Realtime engines with
+   * cross-origin isolation only; rejects otherwise.
+   */
+  openAudioInput(stream: MediaStream, opts: { channels: 1 | 2; label?: string; latency?: number }): Promise<AudioInput>;
+  /** Short clicks on the monitor bus (never exported), for latency calibration; returns when each plays (context time). */
+  playTestClicks(count: number, interval: number): number[];
+  /** While on, song mode without a loop region plays on past the song's end instead of looping (audio recording). */
+  setSongOpenEnded(on: boolean): void;
   /** Decodes and plays an audio file on the preview bus; resolves false if it can't be decoded. */
   previewAudio(bytes: ArrayBuffer): Promise<boolean>;
   stopPreview(): void;

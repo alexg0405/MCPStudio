@@ -1,6 +1,6 @@
 /**
  * FL-style record mode: R arms recording, Play starts it, Stop ends it. Features register recorders
- * (note recording from MIDI and the typing keyboard, automation from knob moves, audio later); the
+ * (note recording from MIDI and the typing keyboard, automation from knob moves, audio); the
  * controller starts every registered recorder when playback starts while armed and stops them when it
  * stops. Recorders write their takes through History themselves.
  */
@@ -9,6 +9,8 @@ import type { EngineApi } from '@engine/api';
 
 export interface Recorder {
   id: string;
+  /** Which record setting runs it: 'notes' (notes and knob moves, the default) or 'audio'. */
+  kind?: 'notes' | 'audio';
   /** Playback started with recording armed. `tick`: where playback started. */
   start(info: { tick: number }): void;
   /** Playback stopped (or recording was disarmed while playing). */
@@ -25,10 +27,21 @@ export interface RecordState {
 export class RecordController {
   readonly store: StoreApi<RecordState> = createStore<RecordState>(() => ({ armed: false, recording: false }));
   private readonly recorders = new Map<string, Recorder>();
+  /** The recorders this take started. */
+  private running: Recorder[] = [];
   private wasPlaying = false;
 
-  constructor(private readonly engine: EngineApi) {
+  constructor(
+    private readonly engine: EngineApi,
+    /** Whether record mode records this kind (Options › Record: notes, audio). */
+    private readonly records: (kind: 'notes' | 'audio') => boolean = () => true,
+  ) {
     engine.subscribe(() => this.sync());
+  }
+
+  /** The recorders of a kind that are registered (the UI says what record mode will record). */
+  has(kind: 'notes' | 'audio'): boolean {
+    return [...this.recorders.values()].some((r) => (r.kind ?? 'notes') === kind);
   }
 
   register(r: Recorder): () => void {
@@ -64,7 +77,8 @@ export class RecordController {
     if (playing && this.armed) {
       this.store.setState({ recording: true });
       const tick = this.engine.playhead();
-      for (const r of this.recorders.values()) {
+      this.running = [...this.recorders.values()].filter((r) => this.records(r.kind ?? 'notes'));
+      for (const r of this.running) {
         try {
           r.start({ tick });
         } catch (err) {
@@ -76,7 +90,9 @@ export class RecordController {
 
   private stopAll(): void {
     this.store.setState({ recording: false });
-    for (const r of this.recorders.values()) {
+    const running = this.running;
+    this.running = [];
+    for (const r of running) {
       try {
         r.stop();
       } catch (err) {

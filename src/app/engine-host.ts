@@ -1,6 +1,7 @@
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
 import type {
+  AudioInput,
   EngineApi,
   EngineSession,
   EngineState,
@@ -25,6 +26,7 @@ export class EngineHost implements EngineApi {
   private view: TransportView | null = null;
   private session: EngineSession | null = null;
   private rebooting: Promise<void> | null = null;
+  private openEnded = false;
 
   constructor(private readonly factory: () => EngineApi) {
     this.inner = factory();
@@ -43,6 +45,7 @@ export class EngineHost implements EngineApi {
         next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
       if (this.view) next.setTransportView(this.view);
       if (this.session) next.setSession(this.session);
+      if (this.openEnded) next.setSongOpenEnded(true);
       this.inner = next;
       this.detach = next.subscribe(() => this.emit());
       await old.dispose();
@@ -118,6 +121,16 @@ export class EngineHost implements EngineApi {
   }
   sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
     return this.inner.sampleData(ref);
+  }
+  openAudioInput(stream: MediaStream, opts: { channels: 1 | 2; label?: string; latency?: number }): Promise<AudioInput> {
+    return this.inner.openAudioInput(stream, opts);
+  }
+  playTestClicks(count: number, interval: number): number[] {
+    return this.inner.playTestClicks(count, interval);
+  }
+  setSongOpenEnded(on: boolean): void {
+    this.openEnded = on;
+    this.inner.setSongOpenEnded(on);
   }
   stopPreview(): void {
     this.inner.stopPreview();

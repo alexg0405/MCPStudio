@@ -60,13 +60,13 @@ const SONG: AiAction[] = [
     op: 'write_notes',
     pattern: '@a',
     channel: '@bass',
-    notes: [0, 6, 16, 22].map((step) => ({ step, key: 33, length: 4 })),
+    notes: [0, 6, 16, 22].map((step) => ({ step, key: 33, len: 4 })),
   },
   {
     op: 'write_notes',
     pattern: '@a',
     channel: '@lead',
-    notes: [0, 4, 8, 12, 16, 20, 24, 28].map((step, i) => ({ step, key: [69, 72, 76, 74][i % 4], length: 3 })),
+    notes: [0, 4, 8, 12, 16, 20, 24, 28].map((step, i) => ({ step, key: [69, 72, 76, 74][i % 4], len: 3 })),
   },
   { op: 'place_pattern', pattern: '@a', bar: 1, times: 2 },
   {

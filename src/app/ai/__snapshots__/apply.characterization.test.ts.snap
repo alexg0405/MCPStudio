@@ -10,9 +10,9 @@ exports[`AI applier characterization > applies every op the same way 1`] = `
     ],
     "created": 1,
   },
-  "currentPattern": "pat_L7bEiBV9yY",
+  "currentPattern": "pat_E-a-QwOud1",
   "edited": true,
-  "selectedChannel": "ch_JHNNF0tsI4",
+  "selectedChannel": "ch_L7bEiBV9yY",
   "undo": [
     "setup",
     "AI: everything",
@@ -65,7 +65,6 @@ exports[`AI applier characterization > applies every op the same way 2`] = `
   "Automation “Tempo”, bars 5–9: 142 BPM → 200 BPM",
   "Placed “Verse A” on track 3 at bar 3 ×2",
   "Placed “Verse A” on track 2 at bar 1",
-  "Placed “Verse A” on track 1 at bar 9",
   "Audio clip “Loop”: gain -6 dB, fade-in 10 ms, fade-out 500 ms",
   "Marker “Verse” at bar 3",
   "Marker “Drop” at bar 9",
@@ -103,6 +102,7 @@ exports[`AI applier characterization > applies every op the same way 3`] = `
   "automate: that control does not exist",
   "automate: there is no channel "nobody"",
   "automate: can't automate "wobble"",
+  "place pattern: there is no playlist track 40 (there are 32)",
   "edit audio clip: there is no audio clip "clip_none"",
   "marker: there is no marker "Bridge"",
   "marker: unknown marker action "jump"",
@@ -128,10 +128,6 @@ exports[`AI applier characterization > applies every op the same way 4`] = `
   {
     "kind": "open",
     "window": "channel-rack",
-  },
-  {
-    "kind": "mode",
-    "mode": "song",
   },
   {
     "kind": "mode",
@@ -188,7 +184,7 @@ exports[`AI applier characterization > applies every op the same way 4`] = `
 ]
 `;
 
-exports[`AI applier characterization > applies every op the same way 5`] = `"7ac748ff"`;
+exports[`AI applier characterization > applies every op the same way 5`] = `"af40a583"`;
 
 exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 [
@@ -218,6 +214,9 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "edit_audio_clip",
   "marker",
   "clear_playlist",
+  "clip",
+  "track",
+  "tidy",
   "beat",
   "transport",
   "audition",
@@ -228,6 +227,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"a0699bad"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"3b36ba1f"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"2f749c16"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"83798b22"`;

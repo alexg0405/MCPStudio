@@ -1,6 +1,7 @@
 import type { Services } from '@app/services';
 import { addInstrumentChannel } from '@app/actions/channels';
 import { addEffect, addMixerInsert } from '@app/actions/mixer';
+import { buildStackedSong } from '@core/fixtures/stacked-song';
 import { newId } from '@core/model/ids';
 import type { InsertId, Note, PatternId } from '@core/model/types';
 import { addNotes, setStepCount } from '@core/ops/notes';
@@ -59,12 +60,21 @@ function mix30(s: Services): void {
   openWindow(s, 'mixer');
 }
 
+/** A 113-bar song shaped like one an earlier AI arranged, with its ending stacked three times. */
+function stackedSong(s: Services): void {
+  s.history.transact('Perf fixture', (d) => void buildStackedSong(d));
+  s.view.getState().setMode('song');
+  openWindow(s, 'playlist');
+}
+
 /**
- * Dev-only stress fixtures: `?perf=notes10k` adds a channel with 10,000 notes and opens it;
- * `?perf=mix30` builds a busy song (30 channels, 20 effects) to play.
+ * Dev-only fixtures: `?perf=notes10k` adds a channel with 10,000 notes and opens it;
+ * `?perf=mix30` builds a busy song (30 channels, 20 effects) to play; `?perf=stacked-song` loads a long
+ * AI-arranged song with stacked copies (for Clean up the song and asking about parts).
  */
 export function applyPerfFixture(s: Services, name: string): void {
   if (name === 'mix30') return mix30(s);
+  if (name === 'stacked-song') return stackedSong(s);
   if (name !== 'notes10k') return;
   const cid = addInstrumentChannel(s, 'agstudio.3xosc');
   const pid = s.view.getState().currentPatternId as PatternId | null;

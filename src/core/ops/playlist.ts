@@ -187,3 +187,43 @@ export function makeClipUnique(d: Draft<Project>, clipId: ClipId, copyId: Patter
 export function sanitizeClip<C extends Clip>(c: C): C {
   return { ...c, start: Math.max(0, Math.round(c.start)), length: Math.max(1, Math.round(c.length)) };
 }
+
+/**
+ * Removes the clips over from–to (on `lanes`, or on every track). With `trim`, a clip that reaches
+ * past an edge is cut there and keeps its part outside the range; without it, every clip touching
+ * the range goes.
+ */
+export function clearRange(
+  d: Draft<Project>,
+  from: Tick,
+  to: Tick,
+  opts: { lanes?: ReadonlySet<LaneId>; trim?: boolean; tempo: TempoMap },
+): { removed: number; cut: number } {
+  let removed = 0;
+  let cut = 0;
+  for (const c of Object.values(d.playlist.clips)) {
+    if (opts.lanes && !opts.lanes.has(c.laneId)) continue;
+    const end = c.start + c.length;
+    if (c.start >= to || end <= from) continue;
+    if (!opts.trim || (c.start >= from && end <= to)) {
+      delete d.playlist.clips[c.id];
+      removed++;
+      continue;
+    }
+    let middle = c.id;
+    if (c.start < from) {
+      const right = newId.clip();
+      splitClip(d, c.id, from, opts.tempo, right);
+      middle = right;
+      cut++;
+    }
+    const m = d.playlist.clips[middle]!;
+    if (m.start + m.length > to) {
+      splitClip(d, middle, to, opts.tempo, newId.clip());
+      cut++;
+    }
+    delete d.playlist.clips[middle];
+    removed++;
+  }
+  return { removed, cut };
+}

@@ -387,3 +387,47 @@ describe('inferRole', () => {
     expect(inferRole('make it darker')).toBeNull();
   });
 });
+
+describe('after an answer', () => {
+  const answering = (actions: unknown[]) =>
+    (async (url: string) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      return new Response(
+        JSON.stringify({ session: 'sess-a', model: 'claude-opus-5-5', beat: { message: 'Done.', actions } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+  it('plays what it arranged in song mode, from a bar before the change', async () => {
+    const { s, a } = setup(answering([{ op: 'place_pattern', pattern: 'current', bar: 9, times: 2 }]));
+    await a.send('put the beat at bar 9');
+    expect(s.view.getState().mode).toBe('song');
+    expect(s.engine.playing).toBe(true);
+    expect(s.fakeEngine.lastPlayFrom).toBe(7 * 3840);
+  });
+
+  it('finishes follow-up steps before playing, inside the answer’s undo step', async () => {
+    const { registerAfterStep } = await import('./after-steps');
+    const order: string[] = [];
+    const off = registerAfterStep('mode', async (_item, c) => {
+      order.push(`step (playing: ${c.s.engine.playing})`);
+      c.s.history.transact('Level the mix', (d) => void (d.transport.bpm = 141), c.entry !== null ? { amend: c.entry } : {});
+      return { message: 'Leveled the mix.', changes: ['tempo 141'] };
+    });
+    try {
+      const { s, a } = setup(answering([{ op: 'place_pattern', pattern: 'current', bar: 1 }]));
+      const steps = s.history.steps().done.length;
+      await a.send('arrange it');
+      order.push(`after (playing: ${s.engine.playing})`);
+      expect(order).toEqual(['step (playing: false)', 'after (playing: true)']);
+      expect(s.history.steps().done).toHaveLength(steps + 1);
+      expect(a.store.getState().messages.at(-1)).toMatchObject({ text: 'Leveled the mix.', changes: ['tempo 141'] });
+      s.history.undo();
+      expect(s.doc.getState().project.transport.bpm).not.toBe(141);
+      expect(Object.keys(s.doc.getState().project.playlist.clips)).toHaveLength(0);
+    } finally {
+      off();
+    }
+  });
+});

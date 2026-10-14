@@ -125,8 +125,12 @@ export class History {
     return () => this.listeners.delete(fn);
   }
 
-  /** Applies a recipe as one undo entry. Returns false when the recipe changed nothing. */
-  transact(label: string, recipe: Recipe, opts: { mergeKey?: string } = {}): boolean {
+  /**
+   * Applies a recipe as one undo entry. Returns false when the recipe changed nothing.
+   * `amend`: fold the edit into that entry (keeping its id and label) while it is still the newest
+   * one; a follow-up that finishes later (e.g. leveling the mix after an AI answer) then undoes with it.
+   */
+  transact(label: string, recipe: Recipe, opts: { mergeKey?: string; amend?: number } = {}): boolean {
     this.gestureActive?.commit();
     const prev = this.container.get();
     const [next, patches, inverse] = produceWithPatches(prev, recipe);
@@ -134,7 +138,14 @@ export class History {
     this.container.set(next);
     const time = this.now();
     const top = this.undoStack[this.undoStack.length - 1];
-    if (
+    if (opts.amend !== undefined && top && top.id === opts.amend && this.redoStack.length === 0) {
+      const merged = compact([...top.patches, ...patches], [...inverse, ...top.inverse]);
+      top.patches = merged.patches;
+      top.inverse = merged.inverse;
+      top.time = time;
+      // A save of the amended state is no longer the document's state.
+      if (this.savedCursor === top.id) this.savedCursor = -1;
+    } else if (
       opts.mergeKey &&
       top &&
       top.mergeKey === opts.mergeKey &&

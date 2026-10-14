@@ -3,12 +3,16 @@
  * clip, a mixer strip, …) and the window that owns the menu appends them to its own.
  */
 import type { Services } from '@app/services';
-import type { ChannelId, Clip, InsertId, LaneId, NoteId, PatternId, SlotId, Tick } from '@core/model/types';
+import type { ChannelId, Clip, InsertId, LaneId, MarkerId, NoteId, PatternId, SlotId, Tick } from '@core/model/types';
 import type { MenuEntry } from './controls/ContextMenu';
 
 export interface MenuScopes {
   'playlist.clip': { clip: Clip };
   'playlist.lane': { laneId: LaneId };
+  /** Right-click on a marker flag in the ruler. */
+  'playlist.marker': { markerId: MarkerId };
+  /** Right-click on an empty spot of the ruler (the song position there). */
+  'playlist.ruler': { tick: Tick };
   'mixer.strip': { insertId: InsertId };
   'mixer.slot': { insertId: InsertId; slotId: SlotId };
   'rack.channel': { channelId: ChannelId };

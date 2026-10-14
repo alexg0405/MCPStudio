@@ -2,6 +2,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { generateLocalBeat, type PerformanceRole } from '@core/beat/local';
 import type { BeatSpec } from '@core/beat/spec';
 import { encodeWav } from '@core/io/wav';
+import { ticksPerBar } from '@core/time/ppq';
 import {
   VOICE_SUMMARY_LEGEND,
   analyzeVoice,
@@ -28,6 +29,7 @@ import {
 } from '../ai/builder';
 import { smokeTest } from '../ai/smoke';
 import { analyzeMix, formatMixReport, summarizeMixReport } from '../analysis/mix';
+import { afterStepFor } from './after-steps';
 import { audition } from './audition';
 import { projectContext } from '../ai/context';
 import { STUDIO_PROMPT } from '../ai/prompt';
@@ -496,7 +498,7 @@ export class BeatAssistant {
           },
         });
         if (take) this.store.setState({ take: { ...take, sent: true } });
-        if (this.applyTurn(answer, take, text)) await this.listenAndAsk(text, false);
+        if (await this.applyTurn(answer, take, text)) await this.listenAndAsk(text, false);
         return;
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
@@ -578,7 +580,7 @@ export class BeatAssistant {
    * Applies Claude's answer as one undo step and reports it in the chat. True when the answer asked
    * to hear the mix first (and this turn wasn't already the answer to an analysis).
    */
-  private applyTurn(answer: AiAnswer, take: Take | null, request: string, analyzed = false): boolean {
+  private async applyTurn(answer: AiAnswer, take: Take | null, request: string, analyzed = false): Promise<boolean> {
     let result: ReturnType<typeof applyAnswer>;
     try {
       result = applyAnswer(this.s, answer, {
@@ -619,7 +621,9 @@ export class BeatAssistant {
       uiRequests: result.after.filter((a) => a.kind === 'open' || (a.kind === 'command' && a.gesture)),
     });
     void take;
-    // Playback the answer asked for (or a new beat with autoplay on).
+    // Follow-up steps (leveling the mix…) finish before anything plays, in the answer's undo step.
+    await this.runAfterSteps(result.after, result.edited ? cursor : null);
+    // Playback the answer asked for (or, with autoplay on, what it arranged or a new beat).
     for (const a of result.after) {
       if (a.kind === 'mode') this.s.view.getState().setMode(a.mode);
       else if (a.kind === 'stop') this.s.engine.stop();
@@ -638,11 +642,48 @@ export class BeatAssistant {
       this.stopAudition = audition(this.s, listenTo.channelId, listenTo.phrase);
     }
     const played = result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
-    if (result.beat && !played && this.store.getState().autoplay) {
-      this.s.view.getState().setMode('pattern');
-      this.s.engine.play();
+    if (!played && this.store.getState().autoplay) {
+      if (result.touched) {
+        // The song around what changed: from a bar before it.
+        const bar = ticksPerBar(this.s.doc.getState().project.transport.timeSig);
+        this.s.view.getState().setMode('song');
+        this.s.engine.play(Math.max(0, result.touched.from - bar));
+      } else if (result.beat) {
+        this.s.view.getState().setMode('pattern');
+        this.s.engine.play();
+      }
     }
     return listen && !analyzed;
+  }
+
+  /** Runs the answer's follow-up steps (see after-steps.ts) with progress; Stop cancels them. */
+  private async runAfterSteps(after: readonly AfterEdit[], entry: number | null): Promise<void> {
+    const items = after.filter((a) => afterStepFor(a.kind));
+    if (!items.length) return;
+    const abort = new AbortController();
+    this.abort = abort;
+    this.store.setState({ phase: 'listening', listening: { label: 'Finishing up', fraction: 0 } });
+    try {
+      for (const item of items) {
+        const res = await afterStepFor(item.kind)!(item, {
+          s: this.s,
+          entry,
+          signal: abort.signal,
+          progress: (label, fraction) => this.store.setState({ listening: { label, fraction } }),
+        });
+        if (res)
+          this.say('assistant', res.message, {
+            ...(res.changes?.length ? { changes: res.changes } : {}),
+            ...(res.warnings?.length ? { warnings: res.warnings } : {}),
+          });
+      }
+    } catch (e) {
+      const stopped = e instanceof DOMException && e.name === 'AbortError';
+      if (!stopped) this.say('assistant', `I couldn't finish: ${e instanceof Error ? e.message : String(e)}`, { error: true });
+    } finally {
+      if (this.abort === abort) this.abort = null;
+      this.store.setState({ phase: 'idle', listening: null });
+    }
   }
 
   // ---------------------------------------------------------------- listening to the mix
@@ -704,7 +745,7 @@ export class BeatAssistant {
           return 'error' in r ? { error: r.error } : { value: r.answer };
         },
       });
-      this.applyTurn(answer, null, request, true);
+      await this.applyTurn(answer, null, request, true);
     } catch (e) {
       const stopped = e instanceof DOMException && e.name === 'AbortError';
       this.say('assistant', stopped ? 'Stopped.' : e instanceof Error ? e.message : String(e), {

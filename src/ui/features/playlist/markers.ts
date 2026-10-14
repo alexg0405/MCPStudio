@@ -14,6 +14,7 @@ import type { MarkerId, Tick } from '@core/model/types';
 import { markersSorted, recolorMarker } from '@core/ops/markers';
 import { formatBST } from '@core/time/ppq';
 import type { MenuEntry } from '../../controls/ContextMenu';
+import { extraMenuItems } from '../../context-menus';
 
 /** A marker to rename inline on the ruler (Alt+T asks for a name right away); the playlist takes it. */
 export const markerRename = createStore<{ id: MarkerId | null }>(() => ({ id: null }));
@@ -33,7 +34,7 @@ export function markerMenu(s: Services, id: MarkerId): MenuEntry[] {
       onSelect: () => markerRename.setState({ id }),
     },
     {
-      label: next ? `Loop to the next marker (${next.name})` : 'Loop to the end of the song',
+      label: next ? `Loop this section (to ${next.name})` : 'Loop this section (to the end of the song)',
       hint: 'Set the loop region from this marker to the next one, so playback repeats that part',
       onSelect: () => void loopToNextMarker(s, id),
     },
@@ -43,6 +44,7 @@ export function markerMenu(s: Services, id: MarkerId): MenuEntry[] {
       selected: m.color,
       onSelect: (color) => s.history.transact('Marker color', (d) => recolorMarker(d, id, color)),
     },
+    ...extraMenuItems('playlist.marker', { markerId: id }, s),
     { kind: 'separator' },
     { label: 'Delete marker', danger: true, onSelect: () => deleteMarker(s, id) },
   ];
@@ -71,5 +73,6 @@ export function rulerMenu(s: Services, tick: Tick): MenuEntry[] {
       hint: loop ? 'Play the whole song again (or double-click the ruler)' : 'There is no loop region',
       onSelect: () => s.view.getState().setLoop(null),
     },
+    ...extraMenuItems('playlist.ruler', { tick }, s),
   ];
 }

@@ -32,6 +32,8 @@
   margin: 0;
   line-height: 1.45;
   color: var(--ag-text);
+  /* Messages with several lines (a list of what will change) keep their line breaks. */
+  white-space: pre-line;
 }
 
 .detail {

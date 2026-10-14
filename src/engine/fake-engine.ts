@@ -107,8 +107,11 @@ export class FakeEngine implements EngineApi {
   setTransportView(view: TransportView): void {
     this.view = view;
   }
-  play(): void {
+  /** Where the last `play()` started (undefined = from the start or the song position). */
+  lastPlayFrom: number | undefined = undefined;
+  play(fromTick?: number): void {
     this.playing = true;
+    this.lastPlayFrom = fromTick;
     this.emit();
   }
   stop(): void {

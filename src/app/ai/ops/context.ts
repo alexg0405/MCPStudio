@@ -180,6 +180,9 @@ export function createOpContext(
   const findPattern = (raw: unknown): PatternId => {
     const ref = str(raw) ?? fail('which pattern?');
     if (lower(ref) === 'current') {
+      // A pattern made earlier in this answer (add_pattern, beat) is the current one from then on.
+      const fresh = state.selectPattern ?? state.beatPlan?.patternId;
+      if (fresh && d.patterns[fresh]) return fresh;
       const cur = s.view.getState().currentPatternId;
       if (cur && d.patterns[cur]) return cur;
       return (d.patternOrder[0] as PatternId | undefined) ?? fail('there are no patterns');

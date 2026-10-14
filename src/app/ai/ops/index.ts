@@ -7,6 +7,7 @@ import type { OpSchema } from '../schema/parts';
 import { automation } from './automation';
 import { beat } from './beat';
 import { channels } from './channels';
+import { clips } from './clips';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
 import { mixer } from './mixer';
@@ -16,7 +17,7 @@ import { playlist } from './playlist';
 import { song } from './song';
 import { ui } from './ui';
 
-export const MODULES: readonly OpModule[] = [song, channels, mixer, patterns, notes, automation, playlist, beat, ui];
+export const MODULES: readonly OpModule[] = [song, channels, mixer, patterns, notes, automation, playlist, clips, beat, ui];
 
 /** Handlers of the actions that edit the project (the UI ones run after the edit). */
 export const DOC_OPS: Readonly<Record<string, OpHandler>> = Object.assign({}, ...MODULES.map((m) => m.handlers));

@@ -97,11 +97,14 @@ export class AnalyzerKernel extends EffectKernel<P> {
       this.ll += (l * l - this.ll) * c;
       this.rr += (r * r - this.rr) * c;
       this.lr += (l * r - this.lr) * c;
-      // The listening filters always run, so switching between modes doesn't start them cold.
-      this.lowL.split(l);
-      this.lowR.split(r);
-      this.highL.split(l);
-      this.highR.split(r);
+      // The listening filters only run in their own modes (switching to one starts it from silence).
+      if (listen === LOWS) {
+        this.lowL.split(l);
+        this.lowR.split(r);
+      } else if (listen === HIGHS) {
+        this.highL.split(l);
+        this.highR.split(r);
+      }
       switch (listen) {
         case STEREO:
           outL[i] = l;

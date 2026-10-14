@@ -55,7 +55,20 @@ export const tuneParams = {
   key: p.enum(KEYS, 'C', {
     label: 'Key',
     group: 'Correction',
-    labels: { 'C#': 'C# / Db', 'D#': 'D# / Eb', 'F#': 'F# / Gb', 'G#': 'G# / Ab', 'A#': 'A# / Bb' },
+    labels: {
+      C: 'C',
+      'C#': 'C# / Db',
+      D: 'D',
+      'D#': 'D# / Eb',
+      E: 'E',
+      F: 'F',
+      'F#': 'F# / Gb',
+      G: 'G',
+      'G#': 'G# / Ab',
+      A: 'A',
+      'A#': 'A# / Bb',
+      B: 'B',
+    },
     hint: 'The key of the song: notes are pulled to this key’s scale',
   }),
   scale: p.enum(SCALE_IDS, 'chromatic', {

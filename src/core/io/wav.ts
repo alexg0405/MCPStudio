@@ -122,6 +122,43 @@ export function encodeWav(channels: Float32Array[], sampleRate: number, opts: En
   return out;
 }
 
+/**
+ * The integers encodeWav writes at 16 or 24 bits (the same clipping, rounding and, for the same
+ * seed, the same TPDF dither noise), one Int32Array per channel. The FLAC encoder writes these, so
+ * a FLAC and a WAV export of one render decode to the same samples.
+ */
+export function quantizePcm(
+  channels: Float32Array[],
+  bitDepth: 16 | 24,
+  opts: { dither?: boolean; seed?: number | undefined } = {},
+): Int32Array[] {
+  const frames = channels[0]?.length ?? 0;
+  if (channels.some((c) => c.length !== frames)) throw new RangeError('quantizePcm: all channels must have the same length.');
+  const out = channels.map(() => new Int32Array(frames));
+  const n = channels.length;
+  if (bitDepth === 16) {
+    const rand = opts.dither ? mulberry32(opts.seed ?? DEFAULT_DITHER_SEED) : null;
+    for (let i = 0; i < frames; i++) {
+      for (let c = 0; c < n; c++) {
+        let s = clip((channels[c] as Float32Array)[i] as number) * 32768;
+        if (rand) s += rand() - rand();
+        s = Math.round(s);
+        (out[c] as Int32Array)[i] = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
+      }
+    }
+  } else {
+    for (let c = 0; c < n; c++) {
+      const src = channels[c] as Float32Array;
+      const dst = out[c] as Int32Array;
+      for (let i = 0; i < frames; i++) {
+        const s = Math.round(clip(src[i] as number) * 8388608);
+        dst[i] = s > 8388607 ? 8388607 : s;
+      }
+    }
+  }
+  return out;
+}
+
 function clip(x: number): number {
   return x > 1 ? 1 : x < -1 ? -1 : x === x ? x : 0;
 }

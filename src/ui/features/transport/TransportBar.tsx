@@ -63,6 +63,7 @@ function Tempo() {
     <div
       ref={box}
       className={`${styles.lcd} ${status ? styles.lcdAutomated : ''}`}
+      data-tour="tempo"
       onContextMenu={(e) => {
         const info = paramInfoFor(services, { kind: 'tempo' });
         if (!info) return;

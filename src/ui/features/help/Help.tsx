@@ -7,6 +7,7 @@ import { Icon, type IconName } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
+import { startLesson } from './Lesson';
 import { TOUR } from './tour';
 import styles from './Help.module.css';
 
@@ -161,6 +162,16 @@ function Welcome() {
           ))}
         </div>
         <div className={styles.buttons}>
+          <button
+            className={styles.button}
+            onClick={() => {
+              close();
+              void startLesson(services, 'first-beat');
+            }}
+            data-hint="A 2-minute lesson: make a beat step by step (it starts a new project)"
+          >
+            Learn by doing
+          </button>
           <button className={styles.button} onClick={tour}>
             Show me around
           </button>

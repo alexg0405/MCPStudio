@@ -3,6 +3,8 @@ import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
 import { setWindowHelp } from '../../workspace/window-help';
 import { showWelcome, startTour, TourOverlay, WelcomeOverlay } from './Help';
+import { LessonOverlay, startLesson } from './Lesson';
+import { LESSONS } from './lessons';
 import { windowHelpTexts } from './window-help';
 
 /**
@@ -33,7 +35,37 @@ export function register(services: Services): void {
     run: (s) => s.prefs.getState().set({ tooltips: !s.prefs.getState().tooltips }),
     checked: (s) => s.prefs.getState().tooltips,
   });
-  addMenuItems('help', [cmd('help.welcome', 1), cmd('help.tour', 2), sep(3)]);
+  commands.register<string>({
+    id: 'help.lesson',
+    title: 'Start a lesson',
+    category: 'Help',
+    hint: 'Learn by doing: a few steps that check themselves as you go',
+    argsHint: LESSONS.map((l) => `'${l.id}' (${l.title})`).join(', '),
+    palette: false,
+    run: (s, id) => void startLesson(s, String(id ?? 'first-beat')),
+  });
+  addMenuItems('help', [
+    cmd('help.welcome', 1),
+    cmd('help.tour', 2),
+    {
+      kind: 'dynamic',
+      id: 'lessons',
+      order: 2.5,
+      entries: () => [
+        {
+          label: 'Lessons',
+          run: () => {},
+          children: LESSONS.map((l, i) => ({
+            label: `${i + 1}. ${l.title} (${l.minutes} min)`,
+            hint: l.summary,
+            run: () => void startLesson(services, l.id),
+          })),
+        },
+      ],
+    },
+    sep(3),
+  ]);
+  addOverlay('help-lesson', LessonOverlay);
   // The "?" in each window's title bar.
   const mac = services.platform === 'mac';
   for (const [type, help] of Object.entries(windowHelpTexts(mac ? '⌘' : 'Ctrl', mac ? '⌥' : 'Alt')))

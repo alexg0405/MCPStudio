@@ -248,3 +248,88 @@
   color: var(--ag-text);
   text-decoration: underline;
 }
+
+/* Lessons: a card bottom left (never blocking clicks elsewhere) and a pulsing outline. */
+.lessonCard {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 300000;
+  width: min(380px, calc(100vw - 32px));
+  padding: 10px 12px 8px;
+  border: 1px solid var(--ag-accent-dim);
+  border-radius: 8px;
+  background: var(--ag-surface-2);
+  box-shadow: var(--ag-shadow);
+}
+
+.lessonHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.lessonHead b {
+  color: var(--ag-text);
+}
+
+.lessonDots {
+  display: flex;
+  gap: 4px;
+}
+
+.lessonDots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ag-surface-3);
+}
+
+.lessonDots i.dotNow {
+  background: var(--ag-accent);
+}
+
+.lessonDots i.dotDone {
+  background: var(--ag-led);
+}
+
+.lessonText {
+  margin: 6px 0 4px;
+  color: var(--ag-text);
+  line-height: 1.5;
+}
+
+.lessonNice {
+  color: var(--ag-led);
+}
+
+.lessonButtons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.lessonRing {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 299999;
+  border: 2px solid var(--ag-accent);
+  border-radius: 6px;
+  pointer-events: none;
+  animation: ag-lesson-pulse 1.4s ease-in-out infinite;
+}
+
+.lessonRingDone {
+  border-color: var(--ag-led);
+  animation: none;
+}
+
+@keyframes ag-lesson-pulse {
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 154, 60, 0.18);
+  }
+}

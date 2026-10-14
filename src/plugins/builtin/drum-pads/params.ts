@@ -71,10 +71,15 @@ export const padParam = (n: number) =>
 /** Decay at or above this plays the whole sound (no fade). */
 export const FULL_DECAY = 10;
 
+/**
+ * Per-pad settings apply when a pad is hit, so they aren't automatable: that keeps them off
+ * AudioParams (16 pads × 7 settings would cost the browser time every block, playing or not).
+ */
 function padSpecs(n: number): Record<string, ParamSpec> {
   const kit = GM_KIT[n - 1] ?? { sound: 'none' as SoundId };
   const id = padParam(n);
   const group = `Pad ${n}`;
+  const automatable = false;
   return {
     [id.sound]: p.enum(SOUND_IDS, kit.sound, {
       label: `Pad ${n} sound`,
@@ -86,6 +91,7 @@ function padSpecs(n: number): Record<string, ParamSpec> {
       label: `Pad ${n} tune`,
       unit: 'st',
       group,
+      automatable,
       hint: 'Pitch up or down in semitones (like a sampler: higher is also shorter)',
     }),
     [id.level]: p.float(-36, 6, 0, {
@@ -93,20 +99,23 @@ function padSpecs(n: number): Record<string, ParamSpec> {
       unit: 'dB',
       scale: 'db',
       group,
+      automatable,
       hint: 'How loud the pad is',
     }),
-    [id.pan]: p.float(-1, 1, 0, { label: `Pad ${n} pan`, group, hint: 'Left (−1) to right (+1)' }),
+    [id.pan]: p.float(-1, 1, 0, { label: `Pad ${n} pan`, group, automatable, hint: 'Left (−1) to right (+1)' }),
     [id.decay]: p.float(0.02, FULL_DECAY, FULL_DECAY, {
       label: `Pad ${n} decay`,
       unit: 's',
       scale: 'log',
       group,
+      automatable,
       hint: 'Fades the hit out over this time; at the maximum the whole sound plays',
     }),
     [id.reverse]: p.bool(false, { label: `Pad ${n} reverse`, group, hint: 'Plays the sound backwards' }),
     [id.choke]: p.int(0, 4, kit.choke ?? 0, {
       label: `Pad ${n} choke group`,
       group,
+      automatable,
       hint: 'Pads in the same group (1–4) cut each other off, like closed and open hats; 0 = none',
     }),
   };

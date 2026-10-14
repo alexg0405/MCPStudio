@@ -270,6 +270,15 @@ Two kernel patterns the built-ins use:
 - Keep pure DSP in a separate `kernel.ts` (or `*.kernel.ts`) if you want to unit-test it in Node,
   like `src/plugins/builtin/pluck/kernel.ts`. Don't put React components in kernel or params files.
 
+How the host keeps worklet plugins cheap (you don't need to do anything):
+- Only automatable params are AudioParams. Enums, switches and `automatable: false` params reach your
+  kernel as timed events, in the same `params` object (one value, `params.x[0]`, changing at the frame
+  it changed). Every AudioParam costs the browser time each block, used or not, so a plugin with dozens
+  of per-voice or per-pad settings should mark the ones it reads at note-on `automatable: false`.
+- A kernel sleeps: an instrument with no notes held whose output has been silent (under −120 dBFS) for
+  a second, or an effect whose input and output have been, isn't called until a note, an event or
+  sound arrives. Output that never falls silent (a drone, a noise generator) keeps it running.
+
 ## Faust plugins
 
 Write the DSP in [Faust](https://faustdoc.grame.fr) and let AGstudio do the rest. Two files:

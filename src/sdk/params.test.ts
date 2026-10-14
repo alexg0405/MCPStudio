@@ -4,6 +4,7 @@ import {
   descriptors,
   formatValue,
   fromNormalized,
+  messageParamNames,
   p,
   resolveValues,
   sanitize,
@@ -48,10 +49,15 @@ describe('params', () => {
     expect(resolveValues(specs, { cutoff: 500 })).toEqual({ cutoff: 500, level: -6, voices: 8, wave: 'saw', on: true });
   });
 
-  it('builds AudioParam descriptors', () => {
+  it('builds AudioParam descriptors for the params automation can drive; the rest travel as events', () => {
     const d = descriptors(specs);
     expect(d.find((x) => x.name === 'cutoff')).toMatchObject({ automationRate: 'a-rate', minValue: 20 });
-    expect(d.find((x) => x.name === 'wave')).toMatchObject({ automationRate: 'k-rate', defaultValue: 1, maxValue: 2 });
+    expect(d.find((x) => x.name === 'voices')).toMatchObject({ automationRate: 'k-rate' });
+    expect(d.map((x) => x.name)).not.toContain('wave');
+    expect(messageParamNames(specs)).toEqual(['wave', 'on']);
+    // An enum that opts in to automation is an AudioParam (k-rate, by option index).
+    const opted = descriptors({ wave: p.enum(['a', 'b', 'c'] as const, 'b', { automatable: true }) });
+    expect(opted[0]).toMatchObject({ name: 'wave', automationRate: 'k-rate', defaultValue: 1, maxValue: 2 });
   });
 
   it('formats values with units', () => {

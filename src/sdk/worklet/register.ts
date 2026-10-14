@@ -5,7 +5,7 @@
  * AudioWorklet globals are accessed lazily through `globalThis`, so importing this module on the
  * main thread (types, tests) is harmless.
  */
-import { descriptors, type ParamSpecs } from '../params';
+import { descriptors, encode, messageParamNames, type ParamSpecs } from '../params';
 import { PITCH_PARAM, type FromProcessor, type ProcessorInit, type ToProcessor } from '../protocol';
 import { Rng } from '../dsp/random';
 import { InstrumentKernel, type KernelClass, type KernelHost } from './kernel';
@@ -36,6 +36,8 @@ export function registerKernel<P extends ParamSpecs>(id: string, params: P, Kern
   }
   registered.add(id);
   const paramDescriptors = descriptors(params);
+  const audioParamNames = paramDescriptors.map((d) => d.name);
+  const messageNames = messageParamNames(params);
   // Instruments also get the channel pitch (cents), which the host feeds from host.channel.pitch.
   if (Kernel.prototype instanceof InstrumentKernel)
     paramDescriptors.push({
@@ -66,7 +68,12 @@ export function registerKernel<P extends ParamSpecs>(id: string, params: P, Kern
       };
       // If the kernel's constructor throws, so does this one: the node then fires `processorerror`
       // on the main thread and the host reports the plugin as faulted.
-      this.runner = new KernelRunner(new Kernel(host), post);
+      // Params that aren't AudioParams start at the values the host sent (else their defaults).
+      const start = init.params ?? {};
+      const messageParams = messageNames.map(
+        (name) => [name, start[name] ?? encode(params[name] as ParamSpecs[string], (params[name] as ParamSpecs[string]).default)] as const,
+      );
+      this.runner = new KernelRunner(new Kernel(host), post, audioParamNames, messageParams);
       this.port.onmessage = (e: MessageEvent<ToProcessor>) => this.runner.onMessage(e.data);
       post({ t: 'ready' });
     }

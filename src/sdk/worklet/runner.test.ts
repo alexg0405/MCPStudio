@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EV_ALL_OFF, EV_NOTE_OFF, EV_NOTE_ON, EV_STRIDE, EV_TRANSPORT, type FromProcessor } from '../protocol';
+import { EV_ALL_OFF, EV_NOTE_OFF, EV_NOTE_ON, EV_PARAM, EV_STRIDE, EV_TRANSPORT, type FromProcessor } from '../protocol';
 import { EventQueue } from './event-queue';
 import { EffectKernel, InstrumentKernel, type KernelHost } from './kernel';
 import { KernelRunner } from './runner';
@@ -310,5 +310,119 @@ describe('kernel transport', () => {
     expect(k.beats[0]).toBe(8);
     expect(k.beats[1]).toBeCloseTo(9, 12);
     expect(out[0]![0]![5]).toBe(0.25);
+  });
+});
+
+describe('KernelRunner sleep', () => {
+  /** A decaying tone per note that counts its render calls. */
+  class Tone extends InstrumentKernel {
+    renders = 0;
+    level = 0;
+    held = false;
+    noteOn() {
+      this.level = 0.5;
+      this.held = true;
+    }
+    noteOff() {
+      this.held = false;
+    }
+    render(out: Float32Array[], from: number, to: number) {
+      this.renders++;
+      for (let i = from; i < to; i++) {
+        for (const ch of out) ch[i] = this.level;
+        if (!this.held) this.level *= 0.99;
+      }
+    }
+  }
+  const SECOND = 48000 / 128;
+  const run = (r: KernelRunner, blocks: number, from: number) => {
+    for (let b = 0; b < blocks; b++) r.process([], block(), {}, from + b * 128);
+    return from + blocks * 128;
+  };
+
+  it('stops calling an instrument after a second of silence, and wakes for the next note', () => {
+    const k = new Tone(host);
+    const r = new KernelRunner(k, () => {});
+    let f = run(r, 10, 0);
+    expect(r.asleep).toBe(false);
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, f, 1, 60, 1, 0, 0]) });
+    f = run(r, 20, f);
+    // Held: never sleeps, however long.
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_OFF, f, 1, 60, 0.5, 0, 0]) });
+    f = run(r, 3 * SECOND, f);
+    expect(r.asleep).toBe(true);
+    const calls = k.renders;
+    f = run(r, SECOND, f);
+    expect(k.renders).toBe(calls);
+    // The next note wakes it in the block it starts in, at its frame.
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, f + 64, 2, 62, 1, 0, 0]) });
+    const out = block();
+    r.process([], out, {}, f);
+    expect(r.asleep).toBe(false);
+    expect(out[0]![0]![63]).toBe(0);
+    expect(out[0]![0]![64]).toBe(0.5);
+  });
+
+  it('never sleeps while it makes sound on its own', () => {
+    class Drone extends InstrumentKernel {
+      noteOn() {}
+      noteOff() {}
+      render(out: Float32Array[], from: number, to: number) {
+        for (let i = from; i < to; i++) for (const ch of out) ch[i] = 0.1;
+      }
+    }
+    const r = new KernelRunner(new Drone(host), () => {});
+    run(r, 3 * SECOND, 0);
+    expect(r.asleep).toBe(false);
+  });
+
+  it('lets an effect sleep on silent input and wakes it when sound arrives', () => {
+    class Echo extends EffectKernel {
+      calls = 0;
+      process(inp: Float32Array[], out: Float32Array[], n: number) {
+        this.calls++;
+        for (let c = 0; c < out.length; c++) for (let i = 0; i < n; i++) out[c]![i] = inp[c]![i]! * 0.5;
+      }
+    }
+    const k = new Echo(host);
+    const r = new KernelRunner(k, () => {});
+    const silent = () => [[new Float32Array(128), new Float32Array(128)]];
+    for (let b = 0; b < 3 * SECOND; b++) r.process(silent(), block(), {}, b * 128);
+    expect(r.asleep).toBe(true);
+    const calls = k.calls;
+    r.process(silent(), block(), {}, 3 * SECOND * 128);
+    expect(k.calls).toBe(calls);
+    const loud = [[new Float32Array(128).fill(0.4), new Float32Array(128).fill(0.4)]];
+    const out = block();
+    r.process(loud, out, {}, (3 * SECOND + 1) * 128);
+    expect(r.asleep).toBe(false);
+    expect(out[0]![0]![0]).toBeCloseTo(0.2);
+  });
+});
+
+describe('KernelRunner event params', () => {
+  it('gives the kernel event params next to AudioParams, changing at their frame', () => {
+    class Reader extends InstrumentKernel {
+      seen: [number, number, number][] = [];
+      noteOn() {}
+      noteOff() {}
+      render(out: Float32Array[], from: number, to: number, params: Record<string, Float32Array>) {
+        this.seen.push([from, params.mode![0]!, params.cutoff![0]!]);
+        for (let i = from; i < to; i++) out[0]![i] = 0.1; // keeps it awake
+      }
+    }
+    const k = new Reader(host);
+    const r = new KernelRunner(k, () => {}, ['cutoff'], [['mode', 2]]);
+    const cutoff = new Float32Array([440]);
+    r.process([], block(), { cutoff }, 0);
+    expect(k.seen.at(-1)).toEqual([0, 2, 440]);
+    // Index 0 (mode) becomes 1 at frame 128 + 40.
+    r.onMessage({ t: 'ev', data: pack([EV_PARAM, 168, 0, 0, 1, 0, 0]) });
+    k.seen = [];
+    r.process([], block(), { cutoff }, 128);
+    expect(k.seen).toEqual([
+      [0, 2, 440],
+      [40, 1, 440],
+    ]);
   });
 });

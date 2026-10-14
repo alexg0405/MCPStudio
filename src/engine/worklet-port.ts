@@ -5,6 +5,7 @@ import {
   EV_CC,
   EV_NOTE_OFF,
   EV_NOTE_ON,
+  EV_PARAM,
   EV_TRANSPORT,
   type FromProcessor,
   type ToProcessor,
@@ -46,6 +47,11 @@ export class WorkletPortImpl implements WorkletPort {
 
   controlChange(cc: number, value: number, time: number): void {
     this.push(EV_CC, time, 0, cc, value, 0, 0);
+  }
+
+  /** A param that isn't an AudioParam changes at `time` (see EV_PARAM): its event index and encoded value. */
+  param(index: number, value: number, time: number): void {
+    this.push(EV_PARAM, time, 0, index, value, 0, 0);
   }
 
   /** The song's transport from `time` on (see EV_TRANSPORT; engine/kernel-transport.ts sends these). */

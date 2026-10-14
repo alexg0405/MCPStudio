@@ -24,6 +24,13 @@ export const EV_PITCH = 6;
  * after its frame: the transport re-planned (seek, edit, stop) and they no longer hold.
  */
 export const EV_TRANSPORT = 7;
+/**
+ * A param that isn't an AudioParam (enums, on/off switches, params with `automatable: false`):
+ * [EV_PARAM, frame, 0, index, value, 0, 0]. `index` is its position in `messageParamNames(specs)`,
+ * `value` the encoded value (enum index, 0/1). AudioParams cost the browser time every block even
+ * when nothing moves them, so only the params automation can drive are AudioParams.
+ */
+export const EV_PARAM = 8;
 
 /** Name of the a-rate AudioParam (cents) that carries an instrument's channel pitch. */
 export const PITCH_PARAM = '__pitch';
@@ -49,4 +56,6 @@ export interface ProcessorInit {
   state: unknown;
   /** Seed for the kernel's deterministic random generator. */
   seed: number;
+  /** Starting (encoded) values of the params that arrive as EV_PARAM events. */
+  params?: Record<string, number>;
 }

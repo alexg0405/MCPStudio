@@ -1319,6 +1319,21 @@ by id, name or number (1-based in song order), so commands take any of them; the
 - Tests: `test/unit/faust.test.ts` (compile, controls, errors) and `test/browser/faust.test.ts` (effect params,
   polyphonic onsets, release, chunk-size determinism).
 
+## Performance (M19)
+
+- `?perf=mix30` (dev) builds a busy song: 26 instruments across the built-ins plus the kit, 20 effects on
+  10 mixer tracks, 1100 notes in 4 bars played 8 times. On a loaded machine it plays at 60 fps (p95
+  17.7 ms) with no late notes, and renders offline at 1.2× realtime.
+- Idle cost is mostly the browser's per-node work: each AudioParam on an AudioWorkletNode costs
+  ~0.02% of a core per instance, used or not (100 params ≈ 1.8%). So worklet params that automation
+  can't drive travel as `EV_PARAM` events (`messageParamNames`, starting values in
+  `processorOptions.params`); the runner merges them into the kernel's `params`. Drum Pads' per-pad
+  settings are `automatable: false`: idle cost 2.9% → 0.2% per instance.
+- `KernelRunner` sleeps a silent kernel (no notes held, output and, for effects, input under −120 dBFS for
+  1 s) until an event or sound arrives; deterministic, since it depends only on the audio.
+- An effect slot costs 0.5–1.2% of a core while silent (its gains, the slot mix's ConstantSource,
+  editor taps); a 4-bar offline render of one muted instrument runs at ~34× realtime.
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all

@@ -191,9 +191,15 @@ export interface ParamDescriptorLike {
   automationRate: 'a-rate' | 'k-rate';
 }
 
-/** AudioParam descriptors for an AudioWorkletProcessor: floats are a-rate, everything else k-rate. */
+/**
+ * AudioParam descriptors for an AudioWorkletProcessor: the params automation can drive (floats
+ * a-rate, ints k-rate). Enums, switches and `automatable: false` params reach the kernel as events
+ * instead (see messageParamNames): every AudioParam costs the browser time each block.
+ */
 export function descriptors(specs: ParamSpecs): ParamDescriptorLike[] {
-  return Object.entries(specs).map(([name, spec]) => {
+  return Object.entries(specs)
+    .filter(([, spec]) => isAutomatable(spec))
+    .map(([name, spec]) => {
     switch (spec.type) {
       case 'float':
         return { name, defaultValue: spec.default, minValue: spec.min, maxValue: spec.max, automationRate: 'a-rate' };
@@ -211,6 +217,13 @@ export function descriptors(specs: ParamSpecs): ParamDescriptorLike[] {
         return { name, defaultValue: spec.default ? 1 : 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' };
     }
   });
+}
+
+/** The params a worklet kernel gets as events, not AudioParams (their order is the event index). */
+export function messageParamNames(specs: ParamSpecs): string[] {
+  return Object.entries(specs)
+    .filter(([, spec]) => !isAutomatable(spec))
+    .map(([name]) => name);
 }
 
 function trimNumber(v: number, digits: number): string {

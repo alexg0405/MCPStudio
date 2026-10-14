@@ -7,6 +7,7 @@ import type { PluginInstance, PluginOwner, Project, SampleId } from '@core/model
 import {
   encode,
   isAutomatable,
+  messageParamNames,
   resolveValues,
   type ChannelInfo,
   type JsonValue,
@@ -167,12 +168,16 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     if (!def.processor) throw new Error(`Plugin "${def.id}" has no processor module`);
     await this.deps.loadModule(def.processor);
     if (this.abort.signal.aborted) throw new Error('disposed');
+    // Params automation can drive are AudioParams; the rest (enums, switches…) travel as events.
     const parameterData: Record<string, number> = {};
-    for (const [key, handle] of Object.entries(this.params)) parameterData[key] = encode(handle.spec, handle.value);
+    const messageData: Record<string, number> = {};
+    for (const [key, handle] of Object.entries(this.params))
+      (isAutomatable(handle.spec) ? parameterData : messageData)[key] = encode(handle.spec, handle.value);
     const processorOptions: ProcessorInit = {
       kind: def.kind,
       state: this.stateValue,
       seed: seedFor(this.deps.owner, def.id),
+      params: messageData,
     };
     const numberOfInputs = opts.numberOfInputs ?? (def.kind === 'effect' ? 1 : 0);
     const node = new AudioWorkletNode(ctx, opts.name ?? def.id, {
@@ -188,6 +193,13 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       const param = node.parameters.get(key);
       if (param) handle.bind(param);
     }
+    const messageNames = messageParamNames(def.params as ParamSpecs);
+    const unsubs = messageNames.map((key, index) => {
+      const handle = this.params[key];
+      return handle
+        ? handle.onChange((value, time) => port.param(index, encode(handle.spec, value as ParamValue), time))
+        : () => {};
+    });
     // Instrument kernels read the channel pitch (cents) from a reserved param.
     const pitchParam = node.parameters.get(PITCH_PARAM);
     if (pitchParam && this.channel) this.channel.pitch.connect(pitchParam);
@@ -198,6 +210,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       (p) => {
         this.deps.ports.delete(p);
         this.myPorts.delete(p);
+        for (const off of unsubs) off();
       },
     );
     this.deps.ports.add(port);

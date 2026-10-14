@@ -39,6 +39,8 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
   (spectrum, LUFS, true peak).
 - **Recording and MIDI**: metronome and count-in, note recording from MIDI or the computer keyboard (quantize,
   overdub or replace), an on-screen keyboard, MIDI learn for any knob, MIDI file import and export, hum to notes.
+  FL's score log: everything you play is kept for 5 minutes, so Patterns → Dump what I played… turns a riff you
+  played without recording into a pattern. Tap tempo (Shift+T or Options → Tap tempo).
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files
   from Finder). Samples are embedded in saved projects.
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave

@@ -21,6 +21,7 @@ import { createPrefsStore, type PrefsState, type PrefsStore } from './stores/pre
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { ControllerRouter } from './controllers';
 import { LiveInput } from './live-input';
+import { ScoreLog } from './score-log';
 import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
@@ -49,6 +50,8 @@ export interface Services {
   readonly midi: MidiInput;
   /** Live notes and controllers from every input (MIDI, typing keyboard, on-screen piano). */
   readonly live: LiveInput;
+  /** The last five minutes of live notes, recording or not (FL's score log). */
+  readonly scoreLog: ScoreLog;
   /** MIDI controller links ("Link to controller"). */
   readonly controllers: ControllerRouter;
   readonly plugins: PluginRegistry;
@@ -138,6 +141,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     () => session.getState().selectedChannelId,
   );
   const midi = new MidiInput(live);
+  const scoreLog = new ScoreLog(live);
   const taps = new TapRegistry();
 
   const engineOptions: EngineOptions = {
@@ -199,6 +203,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     editor,
     midi,
     live,
+    scoreLog,
     plugins,
     engine,
     taps,

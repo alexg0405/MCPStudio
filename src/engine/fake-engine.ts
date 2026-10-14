@@ -54,6 +54,7 @@ export class FakeAudioInput implements AudioInput {
       },
       peaks: new Float32Array(0),
       buckets: 0,
+      bucket: 256,
       stop: async (): Promise<CapturedAudio> => {
         const n = frames();
         const channels = Array.from({ length: this.channelCount }, (_, ch) => {

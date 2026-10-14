@@ -3,6 +3,7 @@
  * ruler and clips, redrawn on the frame loop when dirty; geometry drags preview and commit once.
  */
 import type { Services } from '@app/services';
+import type { LiveTake } from '@app/audio-recorder';
 import { describeMarker, jumpToMarker, moveMarkerTo, renameMarkerTo } from '@app/actions/markers';
 import type { Gesture } from '@core/history/history';
 import { pointBefore } from '@core/automation/curve';
@@ -194,6 +195,8 @@ export class PlaylistController {
       // A sample finished decoding: its clips can show their waveform now.
       s.engine.subscribe(() => this.invalidate('clips')),
       onFrame(() => this.frame()),
+      // A take being recorded grows on the playlist.
+      s.audioRecorder.live.subscribe(() => this.invalidate('overlay')),
       // Alt+T and "Rename…" ask for a marker's name right on the ruler.
       markerRename.subscribe(({ id }) => {
         if (!id) return;
@@ -402,13 +405,62 @@ export class PlaylistController {
       this.updateScrollbar(p);
       this.dirty.clear();
     }
+    // A take being recorded grows every frame.
+    if (this.s.audioRecorder.live.getState().take) this.invalidate('overlay');
     this.updatePlayhead();
+  }
+
+  /** The take being recorded: a red clip from where it started to now, with its waveform so far. */
+  private drawLiveTake(ctx: CanvasRenderingContext2D, live: LiveTake): void {
+    const { vp } = this;
+    const p = this.project();
+    const theme = readTheme();
+    const x0 = vp.tickToX(live.start);
+    const x1 = Math.max(x0 + 2, vp.tickToX(Math.max(live.start, live.now)));
+    const y = vp.rowToY(live.lane) + 1;
+    const h = vp.rowHeight - 2;
+    if (x1 < 0 || x0 > vp.width || y > vp.height || y + h < 0) return;
+    ctx.fillStyle = 'rgba(229, 87, 77, 0.28)';
+    ctx.fillRect(x0, y, x1 - x0, h);
+    ctx.fillStyle = 'rgba(229, 87, 77, 0.85)';
+    ctx.fillRect(x0, y, x1 - x0, Math.min(13, h));
+    ctx.strokeStyle = theme.danger;
+    ctx.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, h - 1);
+    const tempo = tempoMapOf(p, 'song');
+    const seconds = Math.max(0, tempo.tickToSeconds(live.now) - tempo.tickToSeconds(live.start));
+    ctx.font = `600 10px ${theme.font}`;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`● Recording… ${seconds.toFixed(1)} s`, x0 + 4, y + 7, Math.max(0, x1 - x0 - 8));
+    const c = live.capture;
+    const bodyY = y + 14;
+    const bodyH = h - 16;
+    if (bodyH < 4 || c.buckets === 0) return;
+    const mid = bodyY + bodyH / 2;
+    const startSec = tempo.tickToSeconds(live.start);
+    ctx.fillStyle = 'rgba(255, 220, 215, 0.85)';
+    for (let px = Math.max(0, Math.floor(x0)); px < Math.min(vp.width, x1); px++) {
+      const a = live.startFrame + (tempo.tickToSeconds(vp.xToTick(px)) - startSec) * c.sampleRate;
+      const b = live.startFrame + (tempo.tickToSeconds(vp.xToTick(px + 1)) - startSec) * c.sampleRate;
+      const b0 = Math.max(0, Math.floor(a / c.bucket));
+      const b1 = Math.min(c.buckets, Math.max(b0 + 1, Math.ceil(b / c.bucket)));
+      let lo = 0;
+      let hi = 0;
+      for (let k = b0; k < b1; k++) {
+        lo = Math.min(lo, c.peaks[k * 2] as number);
+        hi = Math.max(hi, c.peaks[k * 2 + 1] as number);
+      }
+      const top = Math.max(bodyY, mid - hi * (bodyH / 2));
+      ctx.fillRect(px, top, 1, Math.max(1, Math.min(bodyY + bodyH, mid - lo * (bodyH / 2)) - top));
+    }
   }
 
   private drawOverlay(): void {
     const { vp, els } = this;
     const ctx = fitCanvas(els.overlay, vp.width, vp.height);
     ctx.clearRect(0, 0, vp.width, vp.height);
+    const live = this.s.audioRecorder.live.getState().take;
+    if (live) this.drawLiveTake(ctx, live);
     const d = this.drag;
     if (d?.kind === 'marquee') {
       const x = Math.min(d.x0, d.x1);

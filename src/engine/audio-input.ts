@@ -31,9 +31,10 @@ export interface AudioCapture {
   readonly startTime: number;
   /** Frames captured so far. */
   readonly frames: number;
-  /** Live peak overview: interleaved [min, max] per CAPTURE_BUCKET frames, `buckets` of them filled. */
+  /** Live peak overview: interleaved [min, max] per `bucket` frames, `buckets` of them filled. */
   readonly peaks: Float32Array;
   readonly buckets: number;
+  readonly bucket: number;
   /** Ends the capture after `tail` more seconds (audio still on its way through the input). */
   stop(tail?: number): Promise<CapturedAudio>;
   /** Drops it. */
@@ -215,6 +216,7 @@ export async function openAudioInput(
       get buckets() {
         return buckets;
       },
+      bucket: CAPTURE_BUCKET,
       drain,
       stop(tail = 0) {
         if (done) return Promise.reject(new Error('The capture has already ended.'));

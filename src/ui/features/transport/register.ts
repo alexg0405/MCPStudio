@@ -70,7 +70,7 @@ export function register(services: Services): void {
     id: 'transport.record',
     title: 'Record',
     category: 'Transport',
-    hint: 'Arm recording: press Play to record notes and knob moves (R)',
+    hint: 'Arm recording: press Play to record what the chip next to it says (notes and knob moves, audio, or both)',
     run: (s) => s.recording.toggle(),
     checked: (s) => s.recording.armed,
   });

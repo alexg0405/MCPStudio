@@ -202,9 +202,45 @@ function Recording() {
   const countIn = useStore(s.prefs, (p) => p.countInBars);
   const quantize = useStore(s.prefs, (p) => p.recordQuantize);
   const mode = useStore(s.prefs, (p) => p.recordMode);
+  const notes = useStore(s.prefs, (p) => p.recordNotes);
+  const audio = useStore(s.prefs, (p) => p.recordAudio);
+  const device = useStore(s.prefs, (p) => p.audioInputDevice);
+  const channels = useStore(s.prefs, (p) => p.audioInputChannels);
+  const latency = useStore(s.prefs, (p) => p.recordLatencyMs);
+  const offset = useStore(s.prefs, (p) => p.recordLatencyOffsetMs);
   const record = formatChord(s.keymap.chordsFor('transport.record')[0] ?? 'R', s.platform);
   return (
-    <Section title="Recording" intro={`Press ${record} (or the record button) to arm recording, then play: notes you play are written into the pattern.`}>
+    <Section
+      title="Recording"
+      intro={`Press ${record} (or the record button) to arm recording, then play: notes go into the pattern, audio onto the playlist.`}
+    >
+      <Row label="Records" hint="What record mode captures when you play.">
+        <Switch checked={notes} onChange={() => s.commands.run('transport.recordNotes')} label="Notes and knob moves" />
+        <Switch checked={audio} onChange={() => s.commands.run('transport.recordAudio')} label="Audio from the input" />
+      </Row>
+      <Row
+        label="Audio input"
+        hint="The microphone or audio interface you record from, its level, and monitoring (use headphones when monitoring)."
+      >
+        <span className={styles.value}>
+          {device ? 'Chosen device' : 'System default'} · {channels === 'stereo' ? 'stereo' : 'mono'}
+        </span>
+        <button className={styles.button} onClick={() => s.commands.run('options.audioInput')}>
+          Audio input…
+        </button>
+      </Row>
+      <Row
+        label="Delay"
+        hint="Recordings are moved back by the time sound takes to go out and come back in, so they land on the beat."
+      >
+        <span className={styles.value}>
+          {latency >= 0 ? `${Math.round(latency)} ms measured` : 'the browser’s estimate'}
+          {offset ? ` ${offset > 0 ? '+' : '−'} ${Math.abs(offset)} ms` : ''}
+        </span>
+        <button className={styles.button} onClick={() => s.commands.run('audio.calibrateLatency')}>
+          Calibrate…
+        </button>
+      </Row>
       <Row label="Metronome" hint="A click on every beat while playing (never in exports).">
         <Switch checked={metronome} onChange={() => s.commands.run('transport.metronome')} label="Click while playing" />
       </Row>

@@ -342,3 +342,14 @@
   color: var(--ag-text-faint);
   font-size: 11px;
 }
+
+/* Automation rows: where the knobs and the mixer box sit on a sound's row, so names line up. */
+.autoSpacer {
+  flex: none;
+  width: 74px;
+}
+
+.autoBar {
+  color: var(--ag-text-dim);
+  cursor: pointer;
+}

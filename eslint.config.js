@@ -15,9 +15,11 @@ const noImmer = { group: ['immer'], message: 'Plugins get state from the host, n
 const restrict = (...patterns) => ({ 'no-restricted-imports': ['error', { patterns }] });
 
 export default defineConfig([
-  globalIgnores(['dist', 'coverage', 'node_modules']),
+  // .claude holds helper-agent worktrees (whole copies of the repo): they lint themselves.
+  globalIgnores(['dist', 'coverage', 'node_modules', '.claude']),
   js.configs.recommended,
   tseslint.configs.recommended,
+  { languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } } },
   reactHooks.configs.flat['recommended-latest'],
   {
     rules: {

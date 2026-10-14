@@ -92,10 +92,11 @@ describe('automation (offline renders)', () => {
     for (let i = 1; i < levels.length; i++) expect(levels[i]).toBeGreaterThan(levels[i - 1]! * 2);
     // Early (cutoff ~250 Hz) against late (~6 kHz): far more than 20 dB apart.
     expect(10 * Math.log10(levels[3]! / levels[0]!)).toBeGreaterThan(20);
-    // Without the clip the filter stays at its own 1 kHz.
+    // Without the clip the filter stays at its own 1 kHz. (The noise differs per run: channel ids,
+    // and so the kernel's seed, are random. Its band estimate wanders by a few dB; the sweep moves 20+.)
     const still = await render(routed);
     const flat = [0.3, 3.3].map((t) => band(t, still.buffer));
-    expect(Math.abs(10 * Math.log10(flat[1]! / flat[0]!))).toBeLessThan(3);
+    expect(Math.abs(10 * Math.log10(flat[1]! / flat[0]!))).toBeLessThan(6);
   });
 
   it('a tempo ramp: hits land where the tempo map puts them', async () => {

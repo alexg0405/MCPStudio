@@ -18,25 +18,42 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 
 ## What's in it
 
-- **Channel rack** with step sequencer, mini piano-roll previews, volume/pan, mute/solo, insert routing.
-- **Piano roll**: draw, paint, select, slice, delete tools; snap (incl. triplets); velocity lane; ghost notes;
-  copy/paste/duplicate; quantize; typing-keyboard and MIDI keyboard input.
-- **Playlist**: pattern and audio clips, move/resize/slice, loop region and song position on the ruler, PAT/SONG
-  modes, track mute/solo, clip menus (make unique, colors) and track menus.
-- **Mixer**: master + 16 inserts with dB faders, pan, mute/solo and meters; 10 effect slots per insert with
-  bypass and dry/wet.
-- **Built-in sounds**: Sampler, 3xOsc, Pluck (worklet Karplus-Strong), a procedurally generated drum kit;
-  EQ, Filter, Delay, Reverb, Compressor, Distortion.
+- **Help everywhere**: point at anything for a tooltip and the hint bar; a **?** on every window explains it;
+  **⌘K / Ctrl+K** finds any action by typing what you want (or hands the words to the AI); a welcome screen,
+  a guided tour (Help → Take the tour) and project templates (Trap, Boom bap, House, Lo-fi, Drill).
+- **Channel rack**: step sequencer with fill/rotate/shift/reverse/randomize tools and a per-step graph editor
+  (velocity, pan, release, pitch), mini piano-roll previews, volume/pan, mute/solo, mixer routing, automation rows.
+- **Piano roll**: draw, paint, select, slice, mute and delete tools; snap (incl. triplets); song key with scale
+  highlight and snap; chord stamps; velocity, pan, release and fine-pitch lanes; 20 note tools (quantize, humanize,
+  strum, arpeggiate, legato, chop, chords, transpose in key, generate…) with live previews; your own note scripts.
+- **Playlist**: pattern, audio and automation clips; automation with curve/hold/stairs/smooth points, LFO
+  generation and recording; tempo automation; loop region and song position; PAT/SONG modes.
+- **Mixer**: master + inserts with dB faders, pan, mute/solo (FL's solo rule) and meters; sends between tracks
+  (pre or post fader), sidechains, automatic delay compensation; 10 effect slots per track.
+- **Built-in sounds**: Sampler, 3xOsc, 808 Bass, Pluck, a generated drum kit; EQ, Filter, Delay, Reverb,
+  Compressor (with sidechain), Ducker, Gate, Distortion.
+- **Recording and MIDI**: metronome and count-in, note recording from MIDI or the computer keyboard (quantize,
+  overdub or replace), an on-screen keyboard, MIDI learn for any knob, MIDI file import and export, hum to notes.
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files
   from Finder). Samples are embedded in saved projects.
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
-  with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float).
+  with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
+  and shortcuts you can change (Help → Keyboard shortcuts).
 
-## Beat assistant (✦ in the toolbar, or ⌥6)
+## AI studio (✦ in the toolbar, or ⌥6)
 
-Describe a beat ("dark trap at 140, 808s that slide") and it gets written into your project as a new pattern,
-with channels for its drums and 808s, and starts playing. Follow-ups ("busier hats", "simpler", "more 808 slides")
-change that same pattern, and every result is a single undo step.
+Ask for anything in your own words, and the AI does it in your project as **one undoable step**: write a beat
+("dark trap at 140, 808s that slide"), change the mix ("put the snare on its own track with a plate reverb, duck
+the 808 with the kick"), swap or tweak instruments and effects, write melodies and chords, run note tools, draw
+automation ("filter sweep over the last 4 bars", "speed up to 150 BPM by the drop"), drop markers, arrange the
+playlist, or use the app itself ("save it", "export a WAV", "undo that", "open the mixer"). It can run every
+command in the app; file dialogs just ask you for one click.
+
+It can even **write a new plugin**: ask for an instrument or effect nothing in the browser can make, and the AI
+codes it on the plugin SDK, AGstudio checks it (TypeScript, safe imports) and test-renders it in a sandbox, sends
+any problems back for fixes, then shows you the code with an **Install** button.
+
+### Performing a beat
 
 You can also **perform** part of it: press Record, count in with the click, and beatbox the drums or hum the 808
 line or a melody. Pick what your noises stand for ("Noises are…"), or leave it on "Figure it out". The take shows
@@ -45,7 +62,7 @@ trap", and the beat follows your rhythm and contour, in a sensible register and 
 an audio file on the panel) works with a voice memo you made elsewhere. Turn on "Play my beat along" to perform over
 the current pattern (headphones help).
 
-**Who writes the beats** (the picker in the assistant's header; "Auto" uses the first one that's set up):
+**Who answers** (the picker in the AI studio's header; "Auto" uses the first one that's set up):
 
 1. **Your Claude subscription** (no API key, nothing billed separately; it counts toward your plan's usage like any
    Claude Code use). Install Claude Code and sign in once, in Terminal:
@@ -70,11 +87,13 @@ You can pick the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster)
 Shortcuts: press F1 in the app, or see [docs/shortcuts.md](docs/shortcuts.md). On a Mac, F-keys may need Fn;
 every window also has an Alt+number shortcut and a toolbar button.
 
-## Write your own instrument or effect
+## Write your own instrument, effect or note tool
 
 ```bash
 export PATH="$HOME/.local/node/bin:$PATH"; npm run new:plugin -- --kind instrument --style graph --id user.my-synth
 ```
+
+(`--kind note-script` makes a piano-roll tool. Or ask the AI studio to write the plugin for you.)
 
 It appears in the browser's Plugins list right away; edit `plugins/my-synth/index.ts` and it hot-reloads, keeping
 its settings. Use `--style worklet` for per-sample DSP in an AudioWorklet, and `--kind effect` for effects. The guide
@@ -91,6 +110,6 @@ examples.
 ## Known limits
 
 - Chrome/Edge only (Web Audio, AudioWorklet, File System Access). No VST/AU hosting.
-- Not yet: automation clips, audio recording, sends/sidechain, tempo changes, MIDI file import/export.
+- Not yet: audio recording into the playlist and audio clip editing (in progress), MP3 export, Faust plugins.
 - Chrome's ConvolverNode (the Reverb) differs by about one float ULP between renders, so exports of projects with
   reverb aren't byte-identical (they are otherwise).

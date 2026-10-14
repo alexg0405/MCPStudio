@@ -128,6 +128,7 @@ controllers, value 0–1).
 | `offline` | true while exporting |
 | `signal` | an AbortSignal aborted on dispose |
 | `worklet(opts)` | create your processor node (see below) |
+| `tap?(node, options)` | let your editor see `node`'s audio and your readings (see [Live audio in your editor](#live-audio-in-your-editor)) |
 
 ## Worklet plugins (custom DSP)
 
@@ -180,7 +181,17 @@ shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `
 (peak or RMS level with attack/release), `Adsr` (envelope; retriggers from its current value),
 `BlepOscillator` (sine, saw, square, pulse and triangle with little aliasing; `polyBlep` for your
 own), `DelayLine` (fractional reads, linear or cubic), `Lfo` (seven shapes, free-running or locked to
-the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`.
+the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`. For effects:
+
+| Block | |
+|---|---|
+| `Oversampler(2 \| 4)`, `Halfband`, `halfbandCoefficients` | run a nonlinearity at 2× or 4×: `os.up(x)` fills `os.buffer[0..factor)`, shape those samples in place, `os.down()` returns one. Polyphase IIR halfbands (100 dB of image and alias rejection, flat to ~22 kHz at 48 kHz, no latency) |
+| `LinkwitzRiley` | 24 dB/oct crossover: `split(x)` → `.low`, `.high`, which sum to an allpass (flat). For three bands split the high band again and pass the low band through the upper crossover's `allpass()` |
+| `Yin` | monophonic pitch detection: `push(x)` every sample, `detect()` now and then → Hz (0 = no pitch), `.confidence` |
+| `TruePeak` | 4× interpolated peak between samples (`process(x)`, `LATENCY` = 8 frames; `sample(x)` gives the plain sample peak with the same timing) |
+| `LoudnessMeter`, `KWeighting`, `loudnessOf` | BS.1770 / EBU R128 loudness: `.momentary` (400 ms), `.shortTerm` (3 s), `.integrated` (gated) in LUFS |
+| `PhaseClock`, `SYNC_OPTIONS`, `SYNC_LABELS`, `SYNC_BEATS`, `NOTE_BEATS`, `noteBeats` | tempo-synced LFOs: `clock.next(this.transport, i, rateHz, periodBeats)` follows the song while it plays and runs freely while it is stopped. `p.enum(SYNC_OPTIONS, 'off', { labels: SYNC_LABELS })` is a ready-made Sync param; `SYNC_BEATS[index]` its cycle in beats |
+| `Readings` | meter values for your editor, posted ~30 times a second (see below) |
 
 Every kernel can see the song: `this.transport.playing`, `this.transport.bpm` and
 `this.transport.beatAt(i)` (the song position in quarter-note beats at frame `i` of the block; it
@@ -258,7 +269,9 @@ while the slot is on. Measured in Chrome: DynamicsCompressorNode delays by `floo
 its own makeup gain; WaveShaperNode oversampling adds 128 (`'2x'`) or 192 (`'4x'`) frames; every trip around a feedback
 loop through a DelayNode takes one render quantum (128 frames) longer than its `delayTime`; a DelayNode set to
 `n / sampleRate` delays by exactly n frames. The built-in Distortion and Delay (`src/plugins/builtin/`) show how to
-compensate.
+compensate. Worklet effects pass `latency` to `defineWorkletEffect`, as seconds or as a function of the sample rate for
+a whole number of frames at every rate: `latency: (sampleRate) => frames(sampleRate) / sampleRate`, with the kernel using
+the same `frames(sampleRate)` (the Limiter, Lo-Fi and Tune do this).
 
 **Tails.** `tailTime` (seconds, can be a getter) is how long the effect keeps sounding after its input stops (reverb,
 delay feedback); exports add it to the render length. `reset()` clears internal buffers.
@@ -340,6 +353,55 @@ automation clip drives them (a blue dot, explained in the hint bar); for your ow
 `useParamStatus(param)` from `@agstudio/sdk/ui` returns that status (`{ kind, hint }` or null). A UI that throws shows an error card
 with the generated panel underneath. `plugins/example-supersaw` is a complete example. `Knob` also takes
 `format(value)` to show your own text in the hint bar (it defaults to the param's unit formatting).
+
+Give your own controls a `data-hint` (with units) so the hint bar and tooltips explain them, and call
+`emitHint(element, text)` while dragging to show the live value. A drag that moves two params (an EQ
+handle: frequency and gain) is one undo step: `beginEdit` one of them, `setParam` both, `endEdit` it.
+
+### Live audio in your editor
+
+An editor can show what its instance is doing: a spectrum, a waveform, meters. Tap the audio in
+`create()` and read it from the editor on the frame loop:
+
+```ts
+// index.ts (graph style): any node you want to see, usually your output
+create(host) {
+  const out = new GainNode(host.audioContext);
+  const tap = host.tap?.(out, { fftSize: 4096, smoothing: 0.8 });
+  tap?.publish({ gr: 0 }); // readings: any numbers your editor shows
+  …
+}
+// Worklet plugins: `tap: true` (or the options) in defineWorkletEffect/Instrument taps the processor's
+// output, and kernel messages `{ readings: {...} }` become readings. The Readings helper posts them:
+//   private readonly meter = new Readings(this.host, ['gr'] as const);
+//   process(…) { …; this.meter.values.gr = reduction; this.meter.tick(n); }
+```
+
+```tsx
+// The editor: props.tap is an AudioTap, the same object for as long as the window is open.
+import { useFrame } from '@agstudio/sdk/ui';
+function MyUI({ tap }: PluginUIProps<typeof params>) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const bins = useRef(new Float32Array(2048));
+  useFrame(() => {
+    if (!tap?.spectrum(bins.current)) return; // false while nothing is tapped
+    draw(canvas.current, bins.current, tap.sampleRate, tap.fftSize, tap.reading('gr'));
+  });
+  return <canvas ref={canvas} />;
+}
+```
+
+| `AudioTap` | |
+|---|---|
+| `active`, `sampleRate`, `fftSize` | whether a running instance is tapped (not while loading, missing or in an export), its rate and FFT size |
+| `spectrum(out)` | magnitude spectrum of the tapped audio (left and right mixed) in dBFS: a full-scale sine reads 0 dB in its bin. Bin k is at k · sampleRate / fftSize Hz |
+| `waveform(out, channel)` | the newest `out.length` frames (up to fftSize) of the left (0) or right (1) channel |
+| `reading(name)` | the latest value published under `name`, or undefined |
+
+`useFrame(draw)` runs `draw` on the host's frame loop (one requestAnimationFrame for the app) and
+never re-renders your component: draw on a canvas or set DOM properties from refs. The host listens
+with AnalyserNodes (the per-channel ones only once you ask for a waveform); exports don't tap at all.
+EQ Pro and the Analyzer (`src/plugins/builtin/eq-pro`, `…/analyzer`) are complete examples.
 
 ## Note scripts
 
@@ -465,6 +527,11 @@ upgraded when they load.
 ## Testing
 
 - Pure kernels: plain Vitest in Node (`src/plugins/builtin/pluck/kernel.test.ts` checks tuning by
-  autocorrelation).
+  autocorrelation). `@agstudio/sdk/testing` runs a kernel without an AudioContext:
+  `runEffect(MyKernel, params, (frame, channel) => x, frames, { params: { drive: 12 }, sidechain, transport })`
+  returns the left and right output (128-frame blocks; params in their own units, or functions of the
+  frame for automation; `transport: { playing: true, bpm: 120, beat: 0 }` for tempo-synced kernels;
+  `onPost` sees what the kernel posts). `runInstrument`, `testHost`, `testTransport` and `paramBlock`
+  are there too; every built-in effect's `kernel.test.ts` uses them.
 - Whole plugins: browser tests render offline in headless Chrome (`test/browser/worklet.test.ts`).
   `npm run test:audio` runs them; `npm run check` runs everything.

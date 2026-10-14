@@ -36,13 +36,14 @@ const loop = () =>
     { generator: 'kit/hat-closed', steps: [2, 6, 10, 14] },
   ]);
 
-async function render(project: Parameters<typeof renderOffline>[0], patternId: string, bars = 1) {
+async function render(project: Parameters<typeof renderOffline>[0], patternId: string, bars = 1, tail = 1) {
   return (
     await renderOffline(project, {
       plugins,
       view: { mode: 'pattern', patternId: patternId as never, loop: null },
       bars,
       sampleRate: SR,
+      tail,
     })
   ).buffer;
 }
@@ -74,7 +75,8 @@ describe('M14 effects', () => {
       const { project, patternId, channels } = loop();
       for (const preset of def.presets ?? []) {
         const fx: FxSpec = { def, params: preset.params as Record<string, ParamValue> };
-        const out = await render(withInsert(project, channels, { fx: [fx] }).project, patternId);
+        // Half a bar (a kick, a snare, two hats) keeps these many renders light next to realtime tests.
+        const out = await render(withInsert(project, channels, { fx: [fx] }).project, patternId, 0.5, 0.2);
         for (let c = 0; c < 2; c++)
           for (const x of out.getChannelData(c)) if (!Number.isFinite(x)) throw new Error(`${preset.name}: not finite`);
         expect(peak(out), preset.name).toBeLessThanOrEqual(CEILING + 1e-6);

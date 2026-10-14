@@ -26,7 +26,9 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 - **Mixer**: master + 16 inserts with dB faders, pan, mute/solo and meters; 10 effect slots per insert with
   bypass and dry/wet.
 - **Built-in sounds**: Sampler, 3xOsc, Pluck (worklet Karplus-Strong), a procedurally generated drum kit;
-  EQ, Filter, Delay, Reverb, Compressor, Distortion.
+  EQ, Filter, Delay, Reverb, Compressor, Distortion, Ducker (sidechain or tempo pump), Gate; EQ Pro (8 bands on a
+  draggable curve over a live spectrum), Limiter (true peak, look-ahead compensated), Multiband, Transient Shaper,
+  Saturator, Chorus, Flanger, Phaser, Stereo, Lo-Fi, Stutter, Vocoder, Tune and Analyzer (LUFS, true peak).
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files
   from Finder). Samples are embedded in saved projects.
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave

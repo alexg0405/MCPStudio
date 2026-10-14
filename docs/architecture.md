@@ -727,7 +727,8 @@ never silenced by an insert solo. The mixer dims strips a solo silences.
 - **Ducker** (`plugins/builtin/ducker`): finds hits on the key (its envelope crossing the threshold, re-armed 3 dB
   below it, or jumping 6 dB within 8 ms on a tail that is still above it, with a 30 ms refractory time) and plays the
   same duck for each: down to 1 − depth over `attack`, `hold`, back up over `release` bent by `curve`. So a long kick
-  tail doesn't hold the duck down and every hit pumps the same. Tempo-synced shapes need transport in kernels (later).
+  tail doesn't hold the duck down and every hit pumps the same. Since M14 its tempo mode pumps on the song's grid with
+  no sidechain at all.
 - **Gate** (`plugins/builtin/gate`): peak follower on the key, open above the threshold, closing 4 dB below it
   (hysteresis) after `hold`; exponential attack/release; `range` is the closed level; `listen` hears the key.
 - New SDK DSP (`sdk/dsp`, exported from `@agstudio/sdk` and `/worklet`): `OnePole` (cutoff or time constant,
@@ -909,6 +910,88 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   - A port created mid-song gets the recent anchors replayed (`PortSet.onAdd`).
 - Shared DSP in `src/sdk/dsp` (exported from `@agstudio/sdk` and `/worklet`): `Adsr`, `BlepOscillator`/`polyBlep`,
   `DelayLine` (linear/cubic), `Lfo` (free or `atBeat`), next to `Biquad`, `Svf`, `OnePole` and `EnvelopeFollower`.
+
+## Effects (M14)
+
+Fourteen new built-in effects, all SDK worklet kernels (`src/plugins/builtin/<name>/`: `params.ts`, a pure `kernel.ts`
+with Node tests, `<name>.worklet.ts`, `index.ts` with presets), plus a tempo pump for the Ducker. Every param has a
+label, a unit where one applies, a hint and a group; every enum option has a label; every effect has a one-sentence
+description and five or more descriptive presets, so the AI catalog (`app/ai/catalog.ts`) describes them well.
+
+| Effect (id) | What it does | Latency |
+|---|---|---|
+| EQ Pro (`agstudio.eq-pro`) | 8 bands (bell, shelves, 12/24/48 dB/oct cuts, notch) of SDK Svf sections designed by `design.kernel.ts`, which the editor also draws from; bands crossfade when switched; all off = bit-exact | 0 |
+| Limiter (`agstudio.limiter`) | look-ahead brickwall: detector (true peak 4× or sample peak, same timing) → sliding minimum over look-ahead + detector span → release → box filter as long as the look-ahead; the delayed audio × that gain cannot exceed the ceiling | 5 ms + 14 frames |
+| Multiband (`agstudio.multiband`) | Linkwitz-Riley 3-way (low band through the upper allpass: sums flat), a compressor per band (evaluated every 4 frames on the peak, gain ramped), solo/bypass | 0 |
+| Transient Shaper (`agstudio.transient`) | fast/slow attack and fast/slow release envelope pairs → attack and sustain gains in dB | 0 |
+| Saturator (`agstudio.saturator`) | tape/tube/clip at 2× or 4× (SDK Oversampler); dry/wet mixed in the oversampled domain; tilt EQ | 0 |
+| Chorus, Flanger, Phaser | modulated delay lines / allpass chains; `PhaseClock` follows the song when synced and free-runs when stopped; control-rate targets ramped, delay changes slew-limited so a jumping synced LFO glides | 0 |
+| Stereo (`agstudio.stereo`) | M/S width, mono bass (LR4 high-pass on the side + matching allpass on the mid), Haas widener, balance, phase flips; defaults bit-exact | 0 |
+| Lo-Fi (`agstudio.lofi`) | wow/flutter delay line, sample-and-hold, mid-tread bits, tone, seeded hiss and crackle | 8 ms |
+| Stutter (`agstudio.stutter`) | gate patterns, beat repeat (slice from the grid line, the played part from an 8 s history), tape stop; acts only while the song plays | 0 |
+| Vocoder (`agstudio.vocoder`, sidechain) | 16/24/32 two-stage SVF bands on modulator (the sidechain) and carrier (the input), state in flat arrays | 0 |
+| Tune (`agstudio.tune`) | YIN → nearest scale note (hysteresis) → glide → pitch-synchronous splicer (a second head a whole number of periods away, 4 ms crossfade); rests at its centre delay when nothing needs correcting | 12 ms |
+| Analyzer (`agstudio.analyzer`) | pass-through; measures BS.1770 loudness, true peak and correlation exactly in the kernel and publishes them; listen modes | 0 |
+| Ducker (`agstudio.ducker`) | new `mode` (`sidechain` / `tempo`) and `rate`: in tempo mode every grid line of the song is a hit, the release fits in one step | 0 |
+
+Latencies are whole frames at every sample rate (`latency: (sr) => frames(sr) / sr`, the kernel using the same
+function), and each latent effect reads its dry signal for the mix at the same delay, so delay compensation and the
+slot's dry path line up exactly (`test/browser/effects.test.ts` checks the Limiter against a dry parallel path).
+
+### Visualization taps
+
+- SDK: `PluginHost.tap?(node, options) → PluginTap` (`publish(readings)`), `PluginUIProps.tap?: AudioTap`
+  (`active`, `sampleRate`, `fftSize`, `spectrum(out)`, `waveform(out, channel)`, `reading(name)`), `tap: true | options`
+  in `defineWorkletEffect`/`defineWorkletInstrument` (taps the processor's output and turns kernel posts
+  `{ readings }` into readings; `Readings` in `@agstudio/sdk/worklet` posts them at ~30 Hz), and `useFrame(draw)` /
+  `FrameContext` in `@agstudio/sdk/ui`.
+- Engine: `HostImpl.tap()` makes an `engine/tap.ts` `TapImpl` (an AnalyserNode on the node for the spectrum; a splitter
+  and two analysers for waveforms, created on the first `waveform()` call) and reports it through `HostDeps.reportTap`
+  → `EngineCore.reportTap` → `EngineOptions.onPluginTap(owner, tap, live)` (additive, optional; `EngineApi` is
+  unchanged). Offline hosts return a no-op tap. The tap is disposed with the host.
+- App: `services.taps` (`app/taps.ts`) keeps the live tap per owner and hands out a stable `view(owner)`, so an editor
+  keeps drawing across instance swaps (hot reload, engine reboot) without re-rendering; a replaced instance's removal
+  only clears its own tap. `PluginWindow` passes `tap` in the UI props and provides the app's frame loop as
+  `FrameContext`.
+- `getFloatFrequencyData` reads a full-scale sine at 20·log10(0.42 / 2) ≈ −13.6 dB (Blackman window, 1/N scaling);
+  `TapImpl.spectrum` adds that back, so a full-scale sine reads 0 dBFS in its bin (`test/browser/taps.test.ts`).
+- Editors: a 2-D drag (EQ Pro handles move frequency and gain) is one undo step: `usePluginEditing.setParam` joins the
+  gesture in progress for a param without its own (`ui/plugin-hooks.ts`).
+
+### Shared DSP and test helpers (`src/sdk/dsp`, `src/sdk/testing.ts`)
+
+`Halfband`/`Oversampler` (HIIR-style polyphase allpass halfbands: 9 coefficients at 100 dB / 0.04 transition for the
+first 2× stage, 4 for the second), `LinkwitzRiley`, `Yin` (real-time, decimated to ≥ 8 kHz, parabolic interpolation
+on the raw difference), `TruePeak` (65-tap Kaiser-windowed sinc, phase 0 is the sample itself), `KWeighting`/
+`LoudnessMeter` (analog-prototype K-weighting matching BS.1770's 48 kHz coefficients to 1e-8; integrated loudness from
+a 0.05 LU histogram of 400 ms blocks; `resetIntegrated()` waits for a block of new audio), `PhaseClock` and the
+`SYNC_*`/`NOTE_*` tables, and `Readings`. `@agstudio/sdk/testing` (`runEffect`, `runInstrument`, `testHost`,
+`testTransport`, `paramBlock`) runs kernels in Node; every M14 kernel test uses it. Unit tests: halfbands reject images
+and aliases by > 90 dB, crossovers sum flat (to 1e-12 for the impulse response), YIN within 0.3 %, a −20 dBFS 1 kHz sine
+reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine at ±45° within 0.1 dB.
+
+### Measured (headless Chrome, M-series Mac)
+
+- Cost per instance at 48 kHz (share of one core, best of three 2 s runs, busiest preset): Stutter 0.07 %, Ducker
+  0.09 %, Transient 0.15 %, Stereo 0.15 %, Phaser 0.18 %, Flanger 0.19 %, Chorus 0.23 %, Lo-Fi 0.31 %, EQ Pro 0.34 %,
+  Tune 0.37 %, Multiband 0.38 %, Limiter 0.42 %, Saturator 0.47 % (4×), Analyzer 0.59 %, Vocoder 0.72 % (32 bands). A busy
+  machine reads up to about twice that; the test allows 1.5 % (5 % for Tune, Vocoder, Analyzer).
+- The Limiter delays quiet audio bit-exactly by its latency, never lets a sample past the ceiling (noise, sines up to
+  19 kHz, squares, impulse trains at +24 dB) and, with True peak on, keeps the true peak under it too (the target sits
+  0.05 dB under the ceiling: where a deeper gain ramp begins next to a peak, the reconstruction can move by a hair).
+- Tune: 446 Hz corrected to 440 Hz within 3 cents; a 90-cent correction within 3 cents at a level steady to 1 dB.
+
+### Not done / fragile
+
+- The mixer's "Sidechain to this track" offers a Ducker or Compressor; the Vocoder (and Gate) could join that list
+  (`ui/features/mixer/routing.ts`, left alone here).
+- Editors: only EQ Pro and the Analyzer have custom UIs; the Limiter, Multiband and Tune publish readings (gain
+  reduction, detected pitch) that no editor shows yet.
+- Tune is monophonic; polyphonic or very breathy input makes YIN unvoiced and the correction lets go. Its formant
+  moves with the pitch (no formant preservation).
+- Beat repeat holds slices up to 2 s (a 1/2 note down to 60 BPM); Stutter's history is 8 s.
+- Tap readings arrive at ~30 Hz through the worklet port; the spectrum/waveform come from AnalyserNodes, so they are
+  snapshots, not every sample (the Analyzer's loudness and peak are measured in the kernel for that reason).
 
 ## Testing
 

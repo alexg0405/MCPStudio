@@ -1,6 +1,7 @@
 /** Playlist drawing: lanes, clips (with pattern note previews), lane headers and the ruler. */
 import type {
   AudioClip,
+  AutomationClip,
   Clip,
   ClipId,
   Lane,
@@ -20,10 +21,11 @@ import { ticksPerBar, ticksPerBeat, type TempoMap } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
 import { shade, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
+import { drawAutomationBody, type AutoDraw } from './automation';
+import { clipBox, TITLE_H } from './clip-geometry';
 
 export const HEADER_WIDTH = 132;
 export const RULER_HEIGHT = 22;
-const TITLE_H = 13;
 /** The ▾ clip-menu button at a clip's top-left corner (clips narrower than the minimum have none). */
 export const CLIP_MENU_SIZE = 12;
 export const CLIP_MENU_MIN_WIDTH = 30;
@@ -103,6 +105,10 @@ export interface ClipStyle {
   skip?: ReadonlySet<ClipId>;
   /** Peak overview of an audio clip's sample (null while it decodes). */
   waveform?(ref: SampleRef): Waveform | null;
+  /** A clip's title instead of its pattern/channel name (automation clips say what they drive). */
+  label?(clip: Clip): string | undefined;
+  /** How an automation clip shows its points and notes (default: points when selected). */
+  automation?(clip: AutomationClip): AutoDraw;
 }
 
 export function drawClips(
@@ -123,11 +129,9 @@ export function drawClips(
     if (c.start > t1 || c.start + c.length < t0 || style.skip?.has(c.id)) continue;
     const row = laneIndex.get(c.laneId);
     if (row === undefined) continue;
-    const y = vp.rowToY(row) + 1;
-    const h = vp.rowHeight - 2;
+    const box = clipBox(vp, row, c);
+    const { x, y, w, h } = box;
     if (y + h < 0 || y > vp.height) continue;
-    const x = vp.tickToX(c.start);
-    const w = Math.max(3, c.length * vp.pxPerTick - 1);
     const pattern = c.kind === 'pattern' ? project.patterns[c.patternId] : undefined;
     const channelId = clipChannelId(c);
     const channel = channelId ? project.channels[channelId] : undefined;
@@ -143,7 +147,7 @@ export function drawClips(
     ctx.fillRect(x, y, w, Math.min(TITLE_H, h));
     ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,0.6)';
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    const label = pattern?.name ?? c.name ?? channel?.name ?? '?';
+    const label = pattern?.name ?? c.name ?? style.label?.(c) ?? channel?.name ?? '?';
     const menu = w >= CLIP_MENU_MIN_WIDTH && h >= TITLE_H;
     if (menu) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -159,10 +163,14 @@ export function drawClips(
       const lx = menu ? x + CLIP_MENU_SIZE : x + 4;
       ctx.fillText(label, lx, y + TITLE_H / 2 + 0.5, x + w - 4 - lx);
     }
-    // Body: notes for pattern clips, a waveform hint for audio clips.
-    const bodyY = y + TITLE_H + 1;
-    const bodyH = h - TITLE_H - 3;
-    if (bodyH > 3 && pattern && c.kind === 'pattern')
+    // Body: notes for pattern clips, a waveform hint for audio clips, the curve for automation clips.
+    const { bodyY, bodyH } = box;
+    if (c.kind === 'automation') {
+      if (channel?.kind === 'automation') {
+        const d = style.automation?.(c) ?? { showPoints: selected, hot: null, note: null, noteIsWarning: false };
+        drawAutomationBody(ctx, vp, theme, c, channel, box, base, d);
+      }
+    } else if (bodyH > 3 && pattern && c.kind === 'pattern')
       drawPatternBody(ctx, vp, pattern, ts, c, x, w, bodyY, bodyH, shade(base, 0.55));
     else if (bodyH > 3 && c.kind === 'audio') {
       const ref = channel?.kind === 'audioClip' ? project.samples[channel.sampleId] : undefined;

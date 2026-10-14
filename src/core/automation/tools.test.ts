@@ -207,15 +207,23 @@ describe('targetsChangedBy', () => {
 describe('generated curves', () => {
   const opts = { period: 960, depth: 0.8, center: 0.5, phase: 0 };
   it('makes LFO shapes that follow their waves', () => {
+    // A cycle starts low and peaks halfway: whole cycles need only their peaks.
     const sine = lfoPoints(0, 3840, { ...opts, shape: 'sine' });
+    expect(sine).toHaveLength(9);
     for (let t = 0; t <= 3840; t += 37) {
-      const want = 0.5 + 0.4 * Math.sin((2 * Math.PI * t) / 960);
-      expect(curveAt(sine, t)!).toBeCloseTo(want, 1);
+      const want = 0.5 - 0.4 * Math.cos((2 * Math.PI * t) / 960);
+      expect(curveAt(sine, t)!).toBeCloseTo(want, 6);
     }
-    expect(curveAt(sine, 240)).toBeCloseTo(0.9, 6);
-    expect(curveAt(sine, 720)).toBeCloseTo(0.1, 6);
+    expect(curveAt(sine, 480)).toBeCloseTo(0.9, 6);
+    expect(curveAt(sine, 960)).toBeCloseTo(0.1, 6);
+    // A phase that isn't a whole half cycle samples the part before the first peak.
+    const shifted = lfoPoints(0, 1920, { ...opts, shape: 'sine', phase: 0.1 });
+    for (let t = 0; t <= 1920; t += 23) {
+      const want = 0.5 - 0.4 * Math.cos(2 * Math.PI * (t / 960 + 0.1));
+      expect(curveAt(shifted, t)!).toBeCloseTo(want, 2);
+    }
     const tri = lfoPoints(0, 1920, { ...opts, shape: 'triangle' });
-    expect(curveAt(tri, 120)).toBeCloseTo(0.7, 6);
+    expect(curveAt(tri, 120)).toBeCloseTo(0.3, 6);
     const saw = lfoPoints(0, 1920, { ...opts, shape: 'saw' });
     expect(curveAt(saw, 480)).toBeCloseTo(0.5, 6);
     expect(curveAt(saw, 959)).toBeCloseTo(0.9, 2);

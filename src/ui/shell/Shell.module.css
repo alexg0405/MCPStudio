@@ -70,6 +70,10 @@
 }
 
 .hintBar {
+  /* As wide as the menu row above it: a long hint is cut off instead of pushing the transport over. */
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
   margin-top: 3px;
   height: 18px;
   padding: 1px 6px;

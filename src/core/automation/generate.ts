@@ -47,31 +47,37 @@ export function lfoPoints(from: Tick, length: Tick, o: LfoOptions): AutoPoint[] 
   switch (o.shape) {
     case 'sine':
     case 'triangle': {
-      // Peaks at cycle start + period/4 (high) and + 3/4 (low). Between two peaks a sine is exactly a
-      // half cosine ('smooth') and a triangle a line; the part before the first peak and after the
-      // last one is sampled (a sine there is no half cosine).
+      // A cycle starts at its low point and peaks halfway. Between two peaks a sine is exactly a
+      // half cosine ('smooth') and a triangle a line; a part before the first peak or after the last
+      // one (a phase or length that isn't a whole half cycle) is sampled.
       const sine = o.shape === 'sine';
       const wave = (t: number) => {
         const x = frac((t - cycle0) / period);
-        if (sine) return lo + (hi - lo) * (0.5 + 0.5 * Math.sin(2 * Math.PI * x));
-        const tri = x < 0.25 ? 0.5 + 2 * x : x < 0.75 ? 1.5 - 2 * x : 2 * x - 1.5;
-        return lo + (hi - lo) * tri;
+        if (sine) return lo + (hi - lo) * (0.5 - 0.5 * Math.cos(2 * Math.PI * x));
+        return lo + (hi - lo) * (x < 0.5 ? 2 * x : 2 - 2 * x);
       };
+      const half = period / 2;
       const peaks: { t: number; v: number }[] = [];
-      for (let k = Math.floor((from - cycle0) / (period / 2)) - 1; ; k++) {
-        const t = cycle0 + period / 4 + (k * period) / 2;
-        if (t >= end) break;
-        if (t > from) peaks.push({ t, v: k % 2 === 0 ? hi : lo });
+      for (let k = Math.ceil((from - cycle0) / half - 1e-9); ; k++) {
+        const t = cycle0 + k * half;
+        if (t > end + 1e-9) break;
+        peaks.push({ t, v: ((k % 2) + 2) % 2 === 0 ? lo : hi });
       }
       const sampled = (a: number, b: number) => {
         const step = period / 32;
         for (let t = a + step; sine && t < b - step / 2; t += step) push(t, wave(t));
       };
-      push(from, wave(from));
-      sampled(from, peaks[0]?.t ?? end);
+      const first = peaks[0]?.t ?? end;
+      const last = peaks[peaks.length - 1]?.t ?? from;
+      if (first > from + 0.5) {
+        push(from, wave(from));
+        sampled(from, first);
+      }
       peaks.forEach((pk, i) => push(pk.t, pk.v, sine && i + 1 < peaks.length ? { shape: 'smooth' } : {}));
-      if (peaks.length > 0) sampled((peaks[peaks.length - 1] as { t: number }).t, end);
-      push(end, wave(end));
+      if (last < end - 0.5) {
+        sampled(last, end);
+        push(end, wave(end));
+      }
       break;
     }
     case 'saw': {

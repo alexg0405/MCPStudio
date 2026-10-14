@@ -29,7 +29,12 @@ function baseClipMenu(s: Services, clip: Clip): MenuEntry[] {
   const same = (c: Clip) => clipSourceKey(c) === source;
   const common: MenuEntry[] = [
     {
-      label: clip.kind === 'pattern' ? 'Select all clips of this pattern' : 'Select all clips of this sound',
+      label:
+        clip.kind === 'pattern'
+          ? 'Select all clips of this pattern'
+          : clip.kind === 'automation'
+            ? 'Select all clips of this automation'
+            : 'Select all clips of this sound',
       onSelect: () =>
         s.editor.getState().selectClips(
           Object.values(p.playlist.clips)
@@ -83,8 +88,12 @@ function baseClipMenu(s: Services, clip: Clip): MenuEntry[] {
     ];
   }
   const channel = p.channels[clip.channelId];
+  const title =
+    channel?.kind === 'automation'
+      ? `Automation: ${s.automation.labelOf(channel, p)}`
+      : (channel?.name ?? (clip.kind === 'automation' ? 'Automation clip' : 'Audio clip'));
   return [
-    { kind: 'label', label: channel?.name ?? 'Audio clip' },
+    { kind: 'label', label: title },
     ...(channel
       ? [
           {

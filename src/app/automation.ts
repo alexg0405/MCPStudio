@@ -248,6 +248,7 @@ export class AutomationService {
         take.latched.add(key);
         if (target.kind !== 'tempo' && !this.dragged.has(key)) this.s.engine.touch(key, true);
         this.refresh();
+        this.s.session.getState().toast(`Recording automation: ${this.nameOf(target, c.next) ?? 'control'}`);
       }
       // The loop wrapped: a new pass (it replaces what earlier passes recorded where it overlaps).
       if (iter !== rec.lastIter || tick < rec.lastTick - 1) rec.passes.push([]);

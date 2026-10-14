@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { automationModelOf } from '@core/automation/model';
+import { tempoMapOf } from '@core/automation/tempo';
+import { readProjectFile, writeProjectFile } from '@core/io/project-file';
+import { setAutomationPoints } from '@core/ops/automation';
 import { seededBytes, setIdSource } from '@core/model/ids';
 import { targetKey } from '@core/model/targets';
 import type { AutomationChannel, ChannelId, ParamTarget, Project } from '@core/model/types';
@@ -150,6 +153,44 @@ describe('AutomationService', () => {
     expect(pts[0]).toEqual({ tick: 0, value: expect.closeTo(base, 9) });
     expect(pts.some((x) => x.value === 1)).toBe(true);
     expect(pts.at(-1)!.value).toBeCloseTo(base, 9);
+  });
+
+  it('round-trips automation through undo/redo and save/open', () => {
+    const { s, ch, vol } = setup();
+    s.view.getState().setSongStart(0);
+    const before = s.doc.getState().project;
+    const a = s.automation.createClip(vol)!;
+    s.history.transact('Points', (d) =>
+      setAutomationPoints(d, a.channelId, [
+        { tick: 0, value: 0.2, shape: 'stairs' },
+        { tick: 3840, value: 0.9, tension: -0.5 },
+        { tick: 3840, value: 0.4, shape: 'hold' },
+        { tick: 7680, value: 0.6, shape: 'smooth' },
+        { tick: 15360, value: 1 },
+      ]),
+    );
+    const tempo = s.automation.createClip({ kind: 'tempo' }, { start: 3840, length: 7680 })!;
+    s.history.transact('Tempo ramp', (d) =>
+      setAutomationPoints(d, tempo.channelId, [
+        { tick: 0, value: 0.5 },
+        { tick: 7680, value: 1 },
+      ]),
+    );
+    const after = s.doc.getState().project;
+    for (let i = 0; i < 4; i++) s.history.undo();
+    expect(s.doc.getState().project).toEqual(before);
+    for (let i = 0; i < 4; i++) s.history.redo();
+    expect(s.doc.getState().project).toEqual(after);
+
+    const bytes = writeProjectFile({ project: after, view: null, samples: new Map(), appVersion: 'test' });
+    const opened = readProjectFile(bytes);
+    expect(opened.repairs).toEqual([]);
+    expect(opened.project).toEqual(after);
+    expect([...automationModelOf(opened.project).targets.keys()].sort()).toEqual(['tempo', targetKey(vol)].sort());
+    // 120 → 180 BPM over the clip (60–180 range), held after it.
+    expect(tempoMapOf(opened.project, 'song').bpmAt(3840)).toBe(120);
+    expect(tempoMapOf(opened.project, 'song').bpmAt(3840 + 7680)).toBe(180);
+    void ch;
   });
 
   it('reports automated targets to controls (and stops when the clip goes)', () => {

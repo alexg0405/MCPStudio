@@ -80,6 +80,19 @@
   letter-spacing: 0.08em;
 }
 
+/* The tempo is automated (a tempo clip): blue frame; while it moves, the value turns blue too. */
+.lcdAutomated {
+  border-color: var(--ag-select);
+}
+
+.lcdAutomated .lcdLabel {
+  color: var(--ag-select);
+}
+
+.lcd[data-live] .lcdValue {
+  color: #a9d4ff;
+}
+
 .time {
   min-width: 100px;
 }
@@ -121,12 +134,8 @@
   }
 }
 
-/* Recording isn't implemented yet, so its (disabled) button is the first to go. */
+/* Narrow windows: tighter displays (the record button stays: record mode must always be visible). */
 @media (max-width: 1100px) {
-  .record {
-    display: none;
-  }
-
   .lcd {
     min-width: 66px;
     padding: 0 6px;

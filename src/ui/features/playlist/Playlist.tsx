@@ -9,6 +9,7 @@ import { useServices } from '../../services-context';
 import { PatternPicker } from '../patterns/PatternPicker';
 import { PlaylistController, type PlaylistElements } from './controller';
 import { clipMenu, laneMenu } from './menus';
+import { pointMenu } from '../automation/actions';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT } from './render';
 import styles from './Playlist.module.css';
@@ -84,6 +85,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
 
 export function Playlist() {
   const services = useServices();
+  const tool = useStore(services.editor, (s) => s.playlist.tool);
   const controller = useRef<PlaylistController | null>(null);
   const gridHost = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLCanvasElement>(null);
@@ -114,6 +116,7 @@ export function Playlist() {
     c.onSampleDrop = (generator, laneId, tick) => addKitAudioClip(services, generator, laneId, tick);
     c.onFilesDrop = (files, laneId, tick) => void dropAudioFiles(services, files, laneId, tick);
     c.onClipMenu = (clip, at) => showContextMenu(at, clipMenu(services, clip));
+    c.onPointMenu = (clip, index, at) => showContextMenu(at, pointMenu(services, clip, index));
     c.onLaneMenu = (laneId, at) =>
       showContextMenu(
         at,
@@ -145,7 +148,7 @@ export function Playlist() {
           className={styles.headers}
           data-hint="Tracks: click the light to mute, right-click it to solo; double-click a name to rename, right-click it for options"
         />
-        <div ref={gridHost} className={styles.gridHost}>
+        <div ref={gridHost} className={styles.gridHost} data-hint={TOOLS.find((t) => t.tool === tool)?.hint}>
           <canvas ref={grid} className={styles.layer} />
           <canvas ref={clips} className={styles.layer} />
           <canvas ref={overlay} className={styles.layer} />

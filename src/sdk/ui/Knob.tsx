@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { formatValue, fromNormalized, toNormalized, type ParamSpec, type ParamValue } from '../params';
 import { emitHint } from './hint';
-import { ParamFollowContext, ParamMenuContext } from './param-menu';
+import { ParamFollowContext, ParamMenuContext, useParamStatus } from './param-menu';
 import styles from './controls.module.css';
 
 export interface KnobProps {
@@ -114,7 +114,10 @@ export function Knob({
       paint(next);
     });
   }, [param, follow, spec, bipolar, center, r, mid]);
-  const text = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
+  // Automated (or being recorded): a small dot, and the hint says by what.
+  const status = useParamStatus(param);
+  const plain = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
+  const text = status ? `${plain} · ${status.hint}` : plain;
 
   const commit = (v: ParamValue) => {
     if (onCommit) onCommit(v);
@@ -218,6 +221,7 @@ export function Knob({
           className={styles.knobPointer}
         />
       </svg>
+      {status && <i className={styles.statusDot} data-kind={status.kind} aria-hidden />}
     </div>
   );
 }

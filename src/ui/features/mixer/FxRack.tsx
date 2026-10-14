@@ -100,7 +100,7 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
   );
 }
 
-function EmptySlot({ insertId, index }: { insertId: InsertId; index: number }) {
+function EmptySlot({ insertId, index, first }: { insertId: InsertId; index: number; first: boolean }) {
   const services = useServices();
   const add = (e: ReactMouseEvent) => {
     e.preventDefault();
@@ -122,7 +122,8 @@ function EmptySlot({ insertId, index }: { insertId: InsertId; index: number }) {
       data-hint="Empty effect slot. Click to add an effect"
     >
       <span className={styles.slotIndex}>{index + 1}</span>
-      <span className={styles.slotName}>(none)</span>
+      {/* Only the next free slot says it out loud; the rest stay quiet. */}
+      <span className={styles.slotName}>{first ? '+ Add effect' : ''}</span>
     </button>
   );
 }
@@ -155,7 +156,7 @@ export function FxRack({ insertId }: { insertId: InsertId }) {
           return slot ? (
             <SlotRow key={slot.id} insertId={insertId} slot={slot} index={i} count={fx.length} />
           ) : (
-            <EmptySlot key={`empty-${i}`} insertId={insertId} index={i} />
+            <EmptySlot key={`empty-${i}`} insertId={insertId} index={i} first={i === fx.length} />
           );
         })}
       </div>

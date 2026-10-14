@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ParamValue } from '@agstudio/sdk';
-import { paramBlock, peak, renderInstrument, rms, testHost } from '@agstudio/sdk/worklet/testing';
+import { paramBlock, peak, renderInstrument, rms, testHost } from '@agstudio/sdk/testing';
 import { DrumSynthKernel } from './kernel';
 import { DRUMS, drumSynthParams } from './params';
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ParamValue } from '@agstudio/sdk';
-import { paramBlock, peak, renderInstrument, rms, testHost, type KernelEvent } from '@agstudio/sdk/worklet/testing';
+import { paramBlock, peak, renderInstrument, rms, testHost, type KernelEvent } from '@agstudio/sdk/testing';
 import { DrumPadsKernel } from './kernel';
 import { drumPadsParams, PADS, SOUND_IDS } from './params';
 import { builtinSound } from './sounds.kernel';

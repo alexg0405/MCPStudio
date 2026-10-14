@@ -661,10 +661,10 @@ older versions are upgraded when they load.
   returns the left and right output (128-frame blocks; params in their own units, or functions of the
   frame for automation; `transport: { playing: true, bpm: 120, beat: 0 }` for tempo-synced kernels;
   `onPost` sees what the kernel posts). `runInstrument`, `testHost`, `testTransport` and `paramBlock`
-  are there too; every built-in effect's `kernel.test.ts` uses them.
-  For instruments, `@agstudio/sdk/worklet/testing` has `paramBlock(params, values)`, `testHost()`,
-  `TestTransport` (a playing song for tempo-synced kernels) and `renderInstrument(kernel, frames,
-  params, events)`, which splits blocks at event frames like the real processor:
+  are there too; every built-in effect's `kernel.test.ts` uses them. For instruments,
+  `renderInstrument(kernel, frames, params, events)` plays notes at exact frames (it splits blocks at
+  event frames like the real processor), `testTransport({ bpm })` is a playing song for tempo-synced
+  kernels, and `rms` / `peak` measure the output:
 
   ```ts
   const k = new MyKernel(testHost(48000));

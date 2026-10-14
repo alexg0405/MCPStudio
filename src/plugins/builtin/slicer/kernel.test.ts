@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ParamValue } from '@agstudio/sdk';
-import { paramBlock, peak, renderInstrument, rms, testHost, type KernelEvent } from '@agstudio/sdk/worklet/testing';
+import { paramBlock, peak, renderInstrument, rms, testHost, type KernelEvent } from '@agstudio/sdk/testing';
 import { demoLoop, DEMO_RATE, DEMO_SECONDS } from './demo.kernel';
 import { SlicerKernel } from './kernel';
 import { slicerParams } from './params';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ParamValue } from '@agstudio/sdk';
 import { FM_ALGORITHMS } from '@agstudio/sdk/worklet';
-import { paramBlock, peak, renderInstrument, rms, testHost } from '@agstudio/sdk/worklet/testing';
+import { paramBlock, peak, renderInstrument, rms, testHost } from '@agstudio/sdk/testing';
 import { FmKernel } from './kernel';
 import { fmParams, opParam } from './params';
 

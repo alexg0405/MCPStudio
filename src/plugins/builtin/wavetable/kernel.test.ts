@@ -6,9 +6,9 @@ import {
   renderInstrument,
   rms,
   testHost,
-  TestTransport,
+  testTransport,
   type KernelEvent,
-} from '@agstudio/sdk/worklet/testing';
+} from '@agstudio/sdk/testing';
 import { WavetableKernel } from './kernel';
 import { TABLE_OPTIONS, wavetableParams } from './params';
 import { factoryBank, TABLES } from './tables';
@@ -150,7 +150,7 @@ describe('Wavetable kernel', () => {
 
   it('a tempo-synced LFO follows the song position: a square on the volume switches on the beat', () => {
     const k = kernel();
-    k.transport = new TestTransport(120, SR); // a beat every 0.5 s
+    k.transport = testTransport({ bpm: 120, sampleRate: SR }); // a beat every 0.5 s
     const [x] = play(
       {
         lfo1Sync: true,

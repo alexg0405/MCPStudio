@@ -5,6 +5,8 @@ import { isAudioFileName } from '@app/persistence/sample-folders';
  * DataTransfer, so the drag carries a token) or straight from the desktop (DataTransfer files).
  */
 export const AUDIO_FILE_TYPE = 'application/x-agstudio-file';
+/** A built-in kit sound dragged from the browser panel (the data is its generator id). */
+export const KIT_SOUND_TYPE = 'application/x-agstudio-sound';
 
 const dragged = new Map<string, FileSystemFileHandle>();
 let seq = 0;

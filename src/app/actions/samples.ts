@@ -1,7 +1,7 @@
 import { decodePcm } from '@core/io/wav';
 import { newId } from '@core/model/ids';
 import { kitPiece } from '@core/model/kit';
-import type { AudioClip, AudioClipChannel, ChannelId, LaneId, SampleRef, Tick } from '@core/model/types';
+import type { AudioClip, AudioClipChannel, ChannelId, LaneId, PluginOwner, SampleRef, Tick } from '@core/model/types';
 import { DEFAULT_CHANNEL_VOLUME, paletteColor } from '@core/model/defaults';
 import { addChannel, addSample, setPluginSample } from '@core/ops/channels';
 import { addClips } from '@core/ops/playlist';
@@ -10,6 +10,7 @@ import { generate } from '@engine/kit/generators';
 import type { Services } from '../services';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import { importSampleBytes } from '../persistence/sample-import';
+import { AUDIO_EXTENSIONS, uploadFile } from '@platform/fs-access';
 
 // User-level sample actions: kit sounds and audio files as sampler channels and playlist clips.
 
@@ -68,6 +69,22 @@ export async function importAudioFile(
   }
   const ref = await importSampleBytes(bytes, file.name);
   return { ...ref, ...facts };
+}
+
+/** The browser's file chooser for one audio file (null when cancelled). */
+export function pickAudioFile(): Promise<File | null> {
+  return uploadFile(['audio/*', ...AUDIO_EXTENSIONS.map((e) => `.${e}`)].join(','));
+}
+
+/**
+ * Puts a sample into one of a plugin's sample slots, or empties the slot with null (one undo step):
+ * Drum Pads' pads, a slicer's sample, any plugin that declares `sampleSlots`.
+ */
+export function setPluginSlotSample(s: Services, owner: PluginOwner, slot: string, ref: SampleRef | null): void {
+  s.history.transact(ref ? `Load ${ref.name}` : 'Remove sample', (d) => {
+    if (ref) addSample(d, ref);
+    setPluginSample(d, owner, slot, ref ? ref.id : null);
+  });
 }
 
 /** Adds sampler channels for samples (one undo step), after the selected channel. */

@@ -1,0 +1,130 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.algorithm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.algorithmControls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.output {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  align-items: start;
+  gap: 6px 10px;
+}
+
+.diagram {
+  flex: none;
+}
+
+.diagram rect {
+  stroke-width: 1;
+}
+
+.diagram text {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.carrier rect {
+  fill: var(--ag-accent);
+  stroke: var(--ag-accent-dim);
+}
+
+.carrier text {
+  fill: var(--ag-bg);
+}
+
+.modulator rect {
+  fill: var(--ag-surface-3);
+  stroke: var(--ag-border-soft);
+}
+
+.modulator text {
+  fill: var(--ag-text);
+}
+
+.silent {
+  opacity: 0.35;
+}
+
+.arrow {
+  fill: none;
+  stroke: var(--ag-text-dim);
+  stroke-width: 1.4;
+}
+
+.arrowHead {
+  fill: var(--ag-text-dim);
+}
+
+.out {
+  stroke: var(--ag-accent);
+  stroke-width: 2;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-1);
+}
+
+.opLabel {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 1px;
+  width: 78px;
+  padding-left: 6px;
+  border-left: 3px solid var(--ag-border-soft);
+}
+
+.opHeard {
+  border-left-color: var(--ag-accent);
+}
+
+.opName {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.opRole {
+  color: var(--ag-text-dim);
+  font-size: 10px;
+}
+
+.opRatio {
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+}
+
+.knobs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}

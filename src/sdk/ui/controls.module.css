@@ -107,3 +107,78 @@
   font: inherit;
   font-size: 11px;
 }
+
+/* Param-bound controls and sections (param-controls.tsx). */
+
+.paramControl {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 48px;
+}
+
+.paramLabel {
+  max-width: 72px;
+  overflow: hidden;
+  color: var(--ag-text-dim, #929ca5);
+  font-size: 10px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paramValue {
+  color: var(--ag-text-faint, #6f7a83);
+  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.paramSelect {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.paramSelect .paramLabel,
+.paramSelectInline .paramLabel {
+  max-width: none;
+  text-align: left;
+}
+
+.paramSelectInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section {
+  flex: 0 1 auto;
+  min-width: 120px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: var(--ag-radius, 4px);
+  background: var(--ag-surface-1, #2a3238);
+}
+
+.sectionWide {
+  flex: 1 1 100%;
+}
+
+.sectionTitle {
+  margin: 0 0 6px;
+  color: var(--ag-text-dim, #929ca5);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sectionBody {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 10px;
+}

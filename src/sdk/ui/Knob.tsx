@@ -30,6 +30,8 @@ export interface KnobProps {
   onCommit?(value: ParamValue): void;
   /** The param's id: right-click opens the host's param menu (automation, controller link…). */
   param?: string;
+  /** What the knob does, added to its hint after the value ("Cutoff: 1.20 kHz — How bright it sounds"). */
+  hint?: string;
 }
 
 const START = -135;
@@ -69,6 +71,7 @@ export function Knob({
   onEnd,
   onCommit,
   param,
+  hint,
 }: KnobProps) {
   const drag = useRef<{ startY: number; startN: number; fine: boolean; n: number } | null>(null);
   const openMenu = useContext(ParamMenuContext);
@@ -116,7 +119,8 @@ export function Knob({
   }, [param, follow, spec, bipolar, center, r, mid]);
   // Automated (or being recorded): a small dot, and the hint says by what.
   const status = useParamStatus(param);
-  const plain = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
+  const valued = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
+  const plain = hint ? `${valued} — ${hint}` : valued;
   const text = status ? `${plain} · ${status.hint}` : plain;
 
   const commit = (v: ParamValue) => {

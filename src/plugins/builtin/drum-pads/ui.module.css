@@ -1,0 +1,161 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, 84px);
+  grid-auto-rows: 58px;
+  gap: 5px;
+}
+
+.pad {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: 4px;
+  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  color: var(--ag-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--ag-highlight);
+}
+
+.pad:hover {
+  border-color: var(--ag-border-soft);
+}
+
+.selected {
+  border-color: var(--ag-accent);
+  box-shadow:
+    inset 0 1px 0 var(--ag-highlight),
+    0 0 0 1px var(--ag-accent);
+}
+
+.over {
+  border-color: var(--ag-select);
+  border-style: dashed;
+  background: var(--ag-surface-inset);
+}
+
+.lit {
+  background: var(--ag-accent);
+  color: var(--ag-bg);
+}
+
+.padTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.padNumber {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.padNote {
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+}
+
+.lit .padNote {
+  color: inherit;
+}
+
+.padSample,
+.padBuiltin {
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.padBuiltin {
+  color: var(--ag-text-dim);
+  font-style: italic;
+}
+
+.lit .padBuiltin {
+  color: inherit;
+}
+
+.kitKnobs {
+  display: flex;
+  gap: 8px;
+}
+
+.sampleRow {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.sampleName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+}
+
+.dim {
+  color: var(--ag-text-dim);
+}
+
+.sampleButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.button,
+.kitSelect {
+  padding: 2px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: 3px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.kitSelect {
+  background: var(--ag-surface-inset);
+}
+
+.button:hover {
+  border-color: var(--ag-accent);
+}
+
+.controls {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  margin-top: 4px;
+}
+
+.toggle {
+  align-self: center;
+}

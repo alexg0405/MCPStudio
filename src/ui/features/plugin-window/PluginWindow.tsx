@@ -17,6 +17,7 @@ import { ErrorBoundary } from '../../controls/ErrorBoundary';
 import { useGestureEdit } from '../../edit';
 import { showParamMenu } from '../../param-menu';
 import { AutoPanel } from './AutoPanel';
+import { usePluginSamples } from './plugin-samples';
 import { PresetBar } from './PresetBar';
 import styles from './PluginWindow.module.css';
 import type { WindowContentProps } from '../../workspace/registry';
@@ -129,6 +130,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
   const instance = useDoc((p) => pluginInstanceOf(p, owner));
   const def = usePluginDef(instance?.pluginId);
   const edit = usePluginEditing(owner, def);
+  const samples = usePluginSamples(owner, def);
   // Knobs show when an automation clip drives their param.
   const status = useCallback(
     (param: string, cb: (s: ParamStatus | null) => void) =>
@@ -175,6 +177,14 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
     if (!spec) return () => {};
     return followersOf(services).follow(targetKey({ kind: 'plugin', owner, paramId: param }), spec, paint);
   };
+  // Instruments can play notes from their editor (pads, slice previews).
+  const playNote =
+    owner.kind === 'channel'
+      ? (key: number, velocity = 0.8) => {
+          const noteId = services.engine.previewNoteOn(owner.channelId, key, velocity);
+          return () => services.engine.previewNoteOff(owner.channelId, noteId);
+        }
+      : undefined;
   const uiProps: PluginUIProps = {
     specs: def.params as ParamSpecs,
     values,
@@ -184,6 +194,8 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
     endEdit: edit.endEdit,
     setState: edit.setState,
     openParamMenu,
+    samples,
+    playNote,
   };
 
   return (
@@ -195,9 +207,8 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
         {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
         <PresetBar owner={owner} def={def} instance={instance} />
         {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
-        {def.sampleSlots?.map((slot) => (
-          <SampleSlot key={slot} owner={owner} slot={slot} />
-        ))}
+        {def.samplePickers !== false &&
+          def.sampleSlots?.map((slot) => <SampleSlot key={slot} owner={owner} slot={slot} />)}
       </div>
       <div className={styles.body}>
         <ParamMenuContext.Provider value={openParamMenu}>

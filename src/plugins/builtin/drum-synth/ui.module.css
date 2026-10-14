@@ -1,0 +1,87 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-1);
+}
+
+.pad,
+.label {
+  flex: none;
+  width: 84px;
+}
+
+.pad {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pad:hover:not(:disabled) {
+  filter: brightness(1.15);
+  border-color: var(--ag-accent);
+}
+
+.pad:active:not(:disabled) {
+  background: var(--ag-accent);
+  color: var(--ag-bg);
+}
+
+.pad:disabled {
+  cursor: default;
+}
+
+.padName {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.padKey {
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+}
+
+.pad:active:not(:disabled) .padKey {
+  color: inherit;
+}
+
+.label {
+  padding-left: 8px;
+  color: var(--ag-text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.knobs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.toggle {
+  align-self: center;
+  margin-left: 4px;
+}

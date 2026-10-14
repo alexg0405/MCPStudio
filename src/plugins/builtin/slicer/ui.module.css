@@ -1,0 +1,138 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sampleBar {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sampleName {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--ag-text-dim);
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.empty:hover {
+  color: var(--ag-accent);
+}
+
+.buttons {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+.button {
+  padding: 2px 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: 3px;
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--ag-accent);
+}
+
+.waveBox {
+  flex: 1 1 100%;
+  border: 1px solid var(--ag-border);
+  border-radius: 3px;
+  background: var(--ag-surface-inset);
+}
+
+.over {
+  border-color: var(--ag-select);
+  border-style: dashed;
+}
+
+.wave {
+  display: block;
+}
+
+.peaks {
+  fill: var(--ag-note);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.slice {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.odd {
+  fill: rgba(255, 255, 255, 0.04);
+}
+
+.slice:hover {
+  fill: rgba(255, 154, 60, 0.12);
+}
+
+.lit {
+  fill: rgba(255, 154, 60, 0.3);
+}
+
+.marker {
+  stroke: var(--ag-accent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.label {
+  fill: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  color: var(--ag-text-dim);
+}
+
+.summary {
+  flex: 1 1 100%;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: center;
+}

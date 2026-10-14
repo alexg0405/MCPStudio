@@ -197,6 +197,53 @@ export interface PluginUIProps<P extends ParamSpecs = ParamSpecs, S = unknown> {
    * given a `param` prop do this on right-click by themselves.
    */
   openParamMenu?(param: keyof P & string, at: { clientX: number; clientY: number }): void;
+  /** The plugin's sample slots (plugins that declare `sampleSlots`), for editors that show their own. */
+  samples?: PluginUISamples;
+  /**
+   * Plays a note on the instrument's channel right away (pads that play when clicked, a slice
+   * preview); returns the function that releases it. Absent for effects.
+   */
+  playNote?(key: number, velocity?: number): () => void;
+}
+
+/** A sample's peak overview for drawing: min and max per `bucket` frames, interleaved `[min0, max0, …]`. */
+export interface SampleOverview {
+  readonly peaks: Float32Array;
+  readonly bucket: number;
+  readonly sampleRate: number;
+  readonly duration: number;
+}
+
+/**
+ * Sample slots as an editor sees them (FPC-style pads, a slicer's waveform). Every change is one
+ * undoable edit of the project, and the plugin hears it through `host.samples.onChange`.
+ */
+export interface PluginUISamples {
+  /** Display name of the sample in a slot, or null when the slot is empty. */
+  name(slot: string): string | null;
+  /** Opens the browser's file chooser; the chosen audio file goes into the slot. */
+  choose(slot: string): void;
+  /** The built-in kit sounds (`id` for `loadKit`, `name` to show). */
+  readonly kit: readonly { readonly id: string; readonly name: string }[];
+  /** Puts a built-in kit sound into the slot. */
+  loadKit(slot: string, id: string): void;
+  /** Empties the slot. */
+  clear(slot: string): void;
+  /**
+   * True when a drag may carry a sample: audio files (desktop or the sample browser) or a kit sound
+   * from the browser panel. Call it in `onDragOver` and `preventDefault()` to accept the drop.
+   */
+  canDrop(data: DataTransfer): boolean;
+  /**
+   * Loads what a drop carries into the slot. Call it in `onDrop` (it reads the DataTransfer right
+   * away); returns false when the drop carries no sample.
+   */
+  drop(slot: string, data: DataTransfer): boolean;
+  /**
+   * The slot's sample as a peak overview (256 frames per bucket, at the engine's sample rate), or
+   * null when empty or still decoding (the editor re-renders once it is ready).
+   */
+  waveform(slot: string): SampleOverview | null;
 }
 
 export interface Preset<P extends ParamSpecs, S> {
@@ -217,6 +264,11 @@ interface DefBase<P extends ParamSpecs, S> {
   defaultState?: S;
   /** Named sample slots this plugin uses (lets the UI offer drop targets). */
   sampleSlots?: readonly string[];
+  /**
+   * false: the custom editor shows its own sample pickers (through `PluginUIProps.samples`), so the
+   * editor window's header leaves them out. Default true.
+   */
+  samplePickers?: boolean;
   /** URL of the AudioWorklet module: `import processor from './x.worklet.ts?worker&url'`. */
   processor?: string;
   /** Upgrades data saved by an older `version`. */

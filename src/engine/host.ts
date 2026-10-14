@@ -16,7 +16,9 @@ import {
   type ParamValue,
   type PluginDef,
   type PluginHost,
+  type PluginTap,
   type SampleSlots,
+  type TapOptions,
   type TransportInfo,
   type WorkletOptions,
   type WorkletPort,
@@ -26,6 +28,7 @@ import { Emitter } from './emitter';
 import { ParamHandleImpl } from './param-handle';
 import type { ParamRegistry } from './param-lane';
 import type { SampleCache } from './samples';
+import { NO_TAP, TapImpl } from './tap';
 import { WorkletPortImpl } from './worklet-port';
 
 export interface HostDeps {
@@ -48,6 +51,11 @@ export interface HostDeps {
   /** Worklet ports are tracked so export can wait for them (sync barriers). */
   ports: Set<WorkletPortImpl>;
   reportFault(error: unknown): void;
+  /**
+   * The plugin tapped a node for its editor (`host.tap()`), or (live false) that tap went away with
+   * the instance. Without it (and offline) taps are no-ops.
+   */
+  reportTap?(tap: TapImpl, live: boolean): void;
 }
 
 /** Stable per-instance seed so kernels' random numbers repeat across renders. */
@@ -143,6 +151,16 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   }
 
   private readonly myPorts = new Set<WorkletPortImpl>();
+  private readonly taps = new Set<TapImpl>();
+
+  tap(node: AudioNode, options?: TapOptions): PluginTap {
+    const report = this.deps.reportTap;
+    if (this.offline || !report || this.abort.signal.aborted) return NO_TAP;
+    const tap = new TapImpl(this.deps.ctx, node, options);
+    this.taps.add(tap);
+    report(tap, true);
+    return tap;
+  }
 
   async worklet(opts: WorkletOptions = {}): Promise<WorkletPort> {
     const { def, ctx } = this.deps;
@@ -218,6 +236,11 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     this.abort.abort();
     // Ports the plugin forgot to dispose.
     for (const p of [...this.myPorts]) p.dispose();
+    for (const t of this.taps) {
+      t.dispose();
+      this.deps.reportTap?.(t, false);
+    }
+    this.taps.clear();
     for (const off of this.unregister) off();
     for (const h of Object.values(this.params)) h.dispose();
     this.sidechain?.disconnect();

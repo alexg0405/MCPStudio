@@ -3,19 +3,40 @@
  * kernel lives in a `*.worklet.ts` file that calls registerKernel(sameId, params, Kernel).
  */
 import type { ParamSpecs } from './params';
-import type { EffectDef, InstrumentDef, PluginHost, WorkletPort } from './types';
+import type { EffectDef, InstrumentDef, PluginHost, TapOptions, WorkletPort } from './types';
 
 type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, 'kind' | 'create'> & {
   processor: string;
   /** Seconds of release tail after the last note (export padding). Default 1. */
   tailTime?: number;
+  /**
+   * Show the processor's output in the editor (`PluginUIProps.tap`); messages the kernel posts as
+   * `{ readings: { name: value } }` (the `Readings` helper) become the tap's readings.
+   */
+  tap?: boolean | TapOptions;
 };
 
 type WorkletEffectDef<P extends ParamSpecs, S> = Omit<EffectDef<P, S>, 'kind' | 'create'> & {
   processor: string;
   tailTime?: number;
-  latency?: number;
+  /**
+   * Seconds the effect delays its audio (a look-ahead): the host compensates it. A function gets the
+   * sample rate, for latencies that are a whole number of frames: `(sr) => 64 / sr`.
+   */
+  latency?: number | ((sampleRate: number) => number);
+  /** See the instrument option: the editor sees the effect's output and the kernel's readings. */
+  tap?: boolean | TapOptions;
 };
+
+/** Taps the processor's output for the editor and forwards the kernel's `{ readings }` posts. */
+function tapPort(host: PluginHost<ParamSpecs, unknown>, port: WorkletPort, tap: boolean | TapOptions | undefined) {
+  if (!tap || !host.tap) return () => {};
+  const t = host.tap(port.node, tap === true ? undefined : tap);
+  return port.onMessage((msg) => {
+    const readings = (msg as { readings?: unknown } | null)?.readings;
+    if (readings && typeof readings === 'object') t.publish(readings as Record<string, number>);
+  });
+}
 
 /** Keeps the processor's copy of every declared sample slot up to date. */
 function forwardSamples(host: PluginHost<ParamSpecs, unknown>, port: WorkletPort, slots: readonly string[] = []) {
@@ -38,6 +59,7 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
     async create(host) {
       const port = await host.worklet({ numberOfInputs: 0, outputChannelCount: [2] });
       const stopSamples = forwardSamples(host as PluginHost<ParamSpecs, unknown>, port, def.sampleSlots);
+      const stopTap = tapPort(host as PluginHost<ParamSpecs, unknown>, port, def.tap);
       return {
         output: port.node,
         tailTime: def.tailTime ?? 1,
@@ -48,6 +70,7 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
         setState: (state) => port.setState(state),
         dispose: () => {
           stopSamples();
+          stopTap();
           port.dispose();
         },
       };
@@ -66,15 +89,18 @@ export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
       const stopSamples = forwardSamples(host as PluginHost<ParamSpecs, unknown>, port, def.sampleSlots);
       // The sidechain reaches the kernel as the node's second input.
       if (def.sidechain && host.sidechain) host.sidechain.connect(port.node, 0, 1);
+      const stopTap = tapPort(host as PluginHost<ParamSpecs, unknown>, port, def.tap);
+      const latency = typeof def.latency === 'function' ? def.latency(host.audioContext.sampleRate) : def.latency;
       return {
         input: port.node,
         output: port.node,
         tailTime: def.tailTime ?? 0,
-        latency: def.latency ?? 0,
+        latency: latency ?? 0,
         setState: (state) => port.setState(state),
         reset: () => port.reset(),
         dispose: () => {
           stopSamples();
+          stopTap();
           port.dispose();
         },
       };

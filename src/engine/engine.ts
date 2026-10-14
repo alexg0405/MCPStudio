@@ -7,7 +7,7 @@ import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from 
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
-import type { JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
+import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
 import type {
   EngineApi,
   EngineOptions,
@@ -374,6 +374,10 @@ export class Engine implements EngineApi, EngineCore {
     this.faults++;
     this.opts.onPluginFault?.(owner, pluginId, err);
     this.emit();
+  }
+
+  reportTap(owner: PluginOwner, tap: AudioTap, live: boolean): void {
+    this.opts.onPluginTap?.(owner, tap, live);
   }
 
   // ---- Transport ----

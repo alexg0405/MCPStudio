@@ -24,6 +24,7 @@ import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
 import { BeatAssistant } from './assistant/assistant';
 import { opfsSampleProvider } from './persistence/project-io';
+import { TapRegistry } from './taps';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -49,6 +50,8 @@ export interface Services {
   readonly controllers: ControllerRouter;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
+  /** Live audio of running plugin instances for their editors (`host.tap()`; `view(owner)`). */
+  readonly taps: TapRegistry;
   /** Record mode and the recorders features register (notes, automation, audio). */
   readonly recording: RecordController;
   /** Automation clips: create, labels, touch while dragging, recording knob moves, control status. */
@@ -99,6 +102,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     () => session.getState().selectedChannelId,
   );
   const midi = new MidiInput(live);
+  const taps = new TapRegistry();
 
   const engineOptions: EngineOptions = {
     plugins,
@@ -111,6 +115,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
       console.error(message, error);
       session.getState().toast(message, 'error');
     },
+    onPluginTap: (owner, tap, live) => taps.report(owner, tap, live),
   };
   const makeEngine = opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o));
   const engine = new EngineHost(() => makeEngine(engineOptions));
@@ -145,6 +150,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     live,
     plugins,
     engine,
+    taps,
     recording,
     get controllers() {
       return (controllers ??= new ControllerRouter(services));

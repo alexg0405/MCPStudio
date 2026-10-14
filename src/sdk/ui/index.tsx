@@ -6,6 +6,7 @@ import styles from './controls.module.css';
 
 export { Knob, type KnobProps } from './Knob';
 export { emitHint, HINT_EVENT } from './hint';
+export { FrameContext, useFrame, type FrameScheduler } from './frame';
 export {
   ParamFollowContext,
   ParamMenuContext,

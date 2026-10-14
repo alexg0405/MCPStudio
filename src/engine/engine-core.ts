@@ -1,5 +1,5 @@
 import type { InsertId, PluginOwner } from '@core/model/types';
-import type { JsonValue, TransportInfo } from '@agstudio/sdk';
+import type { AudioTap, JsonValue, TransportInfo } from '@agstudio/sdk';
 import type { PluginResolver } from './api';
 import type { ParamRegistry } from './param-lane';
 import type { SampleCache } from './samples';
@@ -17,6 +17,8 @@ export interface EngineCore {
   insertInput(id: InsertId): AudioNode;
   requestState(owner: PluginOwner, state: JsonValue): void;
   reportFault(owner: PluginOwner, pluginId: string, err: unknown): void;
+  /** A plugin instance tapped its audio for its editor (or, live false, the tap went away). */
+  reportTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
   loadModule(url: string): Promise<void>;
   readonly ports: Set<WorkletPortImpl>;
 }

@@ -128,6 +128,48 @@ export interface WorkletPort {
   dispose(): void;
 }
 
+/** Options for `host.tap()`. */
+export interface TapOptions {
+  /** FFT size of the editor's spectrum and length of its waveforms (a power of two, 32–32768; default 4096). */
+  fftSize?: number;
+  /** How much the spectrum is smoothed over time, 0–1 (default 0.75). */
+  smoothing?: number;
+}
+
+/** A plugin's side of its tap (`host.tap()`): readings for the editor. */
+export interface PluginTap {
+  /**
+   * Sets named readings the editor shows (gain reduction, loudness, a detected pitch): it reads the
+   * latest with `tap.reading(name)`. Cheap; call it whenever values change (≤ 60 times a second).
+   */
+  publish(readings: Readonly<Record<string, number>>): void;
+}
+
+/**
+ * Live audio and readings of a running plugin instance, for its editor (`PluginUIProps.tap`).
+ * Read it on the frame loop (`useFrame` from '@agstudio/sdk/ui') and draw on a canvas: it never
+ * causes React renders. It works whenever the editor is open; `active` is false while the instance
+ * loads, is missing, or doesn't tap anything (and in exports, which have no editor).
+ */
+export interface AudioTap {
+  /** A running instance is tapped right now. */
+  readonly active: boolean;
+  /** Sample rate of the tapped audio (0 while inactive). */
+  readonly sampleRate: number;
+  /** FFT size: `spectrum()` fills fftSize / 2 bins (bin k is at k · sampleRate / fftSize Hz). */
+  readonly fftSize: number;
+  /**
+   * The magnitude spectrum of the tapped audio (left and right mixed) in dBFS: a full-scale sine
+   * reads about 0 dB in its bin. Fills up to `out.length` bins; false (and `out` untouched) while
+   * inactive.
+   */
+  spectrum(out: Float32Array<ArrayBuffer>): boolean;
+  /** The last `out.length` frames (up to fftSize) of one channel: 0 = left, 1 = right. */
+  waveform(out: Float32Array<ArrayBuffer>, channel?: 0 | 1): boolean;
+  /** The latest value the plugin published under `name` (undefined until it does). */
+  reading(name: string): number | undefined;
+}
+
 export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | undefined> {
   /** Realtime or offline (export) context. Never create your own. */
   readonly audioContext: BaseAudioContext;
@@ -156,6 +198,14 @@ export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | u
    * mix native nodes with custom DSP.
    */
   worklet(opts?: WorkletOptions): Promise<WorkletPort>;
+  /**
+   * Lets the plugin's editor see `node`'s audio (`PluginUIProps.tap`: spectrum and waveforms) and
+   * the readings you publish. Call it once in create(), usually with your output node. Cheap: the
+   * host listens with AnalyserNodes and only analyses while the editor reads. Hosts without an
+   * editor (exports) return a tap that ignores everything. Worklet plugins can pass `tap: true` to
+   * defineWorkletEffect/defineWorkletInstrument instead.
+   */
+  tap?(node: AudioNode, options?: TapOptions): PluginTap;
 }
 
 export interface InstrumentInstance<S = unknown> {
@@ -197,6 +247,11 @@ export interface PluginUIProps<P extends ParamSpecs = ParamSpecs, S = unknown> {
    * given a `param` prop do this on right-click by themselves.
    */
   openParamMenu?(param: keyof P & string, at: { clientX: number; clientY: number }): void;
+  /**
+   * The running instance's audio and readings (see `host.tap()`), the same object for as long as the
+   * editor is open: read it from `useFrame` and draw imperatively.
+   */
+  tap?: AudioTap;
 }
 
 export interface Preset<P extends ParamSpecs, S> {

@@ -281,6 +281,7 @@ export class ChannelStrip {
       loadModule: (url) => this.core.loadModule(url),
       ports: this.core.ports,
       reportFault: (err) => this.fault(err),
+      reportTap: (tap, live) => this.core.reportTap?.({ kind: 'channel', channelId: channel.id }, tap, live),
     });
     this.pending = (async () => {
       try {

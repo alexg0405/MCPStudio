@@ -6,7 +6,13 @@ import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
 import { keyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
-import { ParamFollowContext, ParamMenuContext, ParamStatusContext, type ParamStatus } from '@agstudio/sdk/ui';
+import {
+  FrameContext,
+  ParamFollowContext,
+  ParamMenuContext,
+  ParamStatusContext,
+  type ParamStatus,
+} from '@agstudio/sdk/ui';
 import { targetKey } from '@core/model/targets';
 import { followersOf } from '../../HostParamMenus';
 import { kitSampleRef } from '@app/default-project';
@@ -16,6 +22,7 @@ import { DragNumber } from '../../controls/DragNumber';
 import { ErrorBoundary } from '../../controls/ErrorBoundary';
 import { useGestureEdit } from '../../edit';
 import { showParamMenu } from '../../param-menu';
+import { onFrame } from '../../frame-loop';
 import { AutoPanel } from './AutoPanel';
 import styles from './PluginWindow.module.css';
 import type { WindowContentProps } from '../../workspace/registry';
@@ -128,6 +135,8 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
   const instance = useDoc((p) => pluginInstanceOf(p, owner));
   const def = usePluginDef(instance?.pluginId);
   const edit = usePluginEditing(owner, def);
+  // The running instance's audio for custom editors (stable while the window shows this owner).
+  const tap = useMemo(() => services.taps.view(owner), [services, owner]);
   // Knobs show when an automation clip drives their param.
   const status = useCallback(
     (param: string, cb: (s: ParamStatus | null) => void) =>
@@ -183,6 +192,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
     endEdit: edit.endEdit,
     setState: edit.setState,
     openParamMenu,
+    tap,
   };
 
   return (
@@ -227,6 +237,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
         <ParamMenuContext.Provider value={openParamMenu}>
           <ParamFollowContext.Provider value={follow}>
             <ParamStatusContext.Provider value={status}>
+              <FrameContext.Provider value={onFrame}>
               <ErrorBoundary
                 resetKey={def}
                 fallback={(error) => (
@@ -243,6 +254,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
                   <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
                 )}
               </ErrorBoundary>
+              </FrameContext.Provider>
             </ParamStatusContext.Provider>
           </ParamFollowContext.Provider>
         </ParamMenuContext.Provider>

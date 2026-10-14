@@ -6,6 +6,8 @@ import type {
   ClipId,
   Lane,
   LaneId,
+  Marker,
+  MarkerId,
   Note,
   Pattern,
   PatternClip,
@@ -25,7 +27,7 @@ import { drawAutomationBody, type AutoDraw } from './automation';
 import { clipBox, TITLE_H } from './clip-geometry';
 
 export const HEADER_WIDTH = 132;
-export const RULER_HEIGHT = 22;
+export const RULER_HEIGHT = 34;
 /** The ▾ clip-menu button at a clip's top-left corner (clips narrower than the minimum have none). */
 export const CLIP_MENU_SIZE = 12;
 export const CLIP_MENU_MIN_WIDTH = 30;
@@ -295,6 +297,33 @@ export function drawLaneHeaders(
   ctx.fillRect(width - 1, 0, 1, vp.height);
 }
 
+/** The ruler's marker lane: below the bar numbers. */
+export const MARKER_LANE_Y = 18;
+export const MARKER_COLOR = '#d9c25b';
+
+/** Where a marker's flag was drawn (hit testing on the ruler). */
+export interface MarkerBox {
+  id: MarkerId;
+  tick: Tick;
+  /** Flag and label span in ruler pixels. */
+  x0: number;
+  x1: number;
+}
+
+export interface RulerMarkers {
+  markers: readonly Marker[];
+  /** The marker under the pointer or being dragged (drawn brighter). */
+  hot?: MarkerId | null;
+  /** A marker being dragged: drawn at this tick instead. */
+  drag?: { id: MarkerId; tick: Tick } | null;
+}
+
+/** Marker positions with a drag applied, sorted. */
+function placedMarkers(m: RulerMarkers): Marker[] {
+  const list = m.markers.map((x) => (m.drag?.id === x.id ? { ...x, tick: m.drag.tick } : x));
+  return list.sort((a, b) => a.tick - b.tick);
+}
+
 export function drawPlaylistRuler(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
@@ -302,15 +331,19 @@ export function drawPlaylistRuler(
   ts: TimeSignature,
   loop: { start: Tick; end: Tick } | null,
   songEnd: Tick,
-): void {
+  markers: RulerMarkers = { markers: [] },
+): MarkerBox[] {
   const h = RULER_HEIGHT;
+  const top = MARKER_LANE_Y;
   ctx.fillStyle = theme.surface;
   ctx.fillRect(0, 0, vp.width, h);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(0, top, vp.width, h - top);
   if (loop) {
     const x0 = vp.tickToX(loop.start);
     const x1 = vp.tickToX(loop.end);
     ctx.fillStyle = 'rgba(255, 154, 60, 0.32)';
-    ctx.fillRect(x0, 0, x1 - x0, h);
+    ctx.fillRect(x0, 0, x1 - x0, top);
     ctx.fillStyle = theme.accent;
     ctx.fillRect(x0, 0, 1, h);
     ctx.fillRect(x1 - 1, 0, 1, h);
@@ -324,10 +357,10 @@ export function drawPlaylistRuler(
   for (let b = Math.floor(t0 / bar); b * bar <= t1; b++) {
     const x = Math.round(vp.tickToX(b * bar));
     ctx.fillStyle = theme.textDim;
-    ctx.fillRect(x, h - (b % labelEvery === 0 ? 9 : 5), 1, b % labelEvery === 0 ? 9 : 5);
+    ctx.fillRect(x, top - (b % labelEvery === 0 ? 8 : 4), 1, b % labelEvery === 0 ? 8 : 4);
     if (b % labelEvery === 0) {
       ctx.fillStyle = theme.text;
-      ctx.fillText(String(b + 1), x + 3, 4);
+      ctx.fillText(String(b + 1), x + 3, 3);
     }
   }
   if (songEnd > 0) {
@@ -337,6 +370,52 @@ export function drawPlaylistRuler(
       ctx.fillRect(Math.round(x), 0, 1, h);
     }
   }
+  // Markers: a flag on the lane with the name, up to the next marker.
+  const boxes: MarkerBox[] = [];
+  const placed = placedMarkers(markers);
+  ctx.font = `600 10px ${theme.font}`;
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < placed.length; i++) {
+    const m = placed[i] as Marker;
+    const x = Math.round(vp.tickToX(m.tick));
+    const next = placed[i + 1];
+    const limit = next ? vp.tickToX(next.tick) - 2 : vp.width;
+    const textW = ctx.measureText(m.name).width;
+    const x1 = Math.max(x + 6, Math.min(limit, x + textW + 10));
+    boxes.push({ id: m.id, tick: m.tick, x0: x - 3, x1 });
+    if (x1 < 0 || x - 3 > vp.width) continue;
+    const color = /^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : MARKER_COLOR;
+    const hot = markers.hot === m.id || markers.drag?.id === m.id;
+    ctx.fillStyle = shade(color, hot ? 0.25 : -0.15);
+    ctx.fillRect(x, top + 1, Math.max(2, x1 - x), h - top - 3);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, top, 2, h - top);
+    if (x1 - x > 14) {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillText(m.name, x + 5, top + (h - top) / 2, x1 - x - 7);
+    }
+  }
   ctx.fillStyle = theme.border;
   ctx.fillRect(0, h - 1, vp.width, 1);
+  return boxes;
+}
+
+/** The marker whose flag is at ruler x (the last drawn wins where they touch). */
+export function markerAtX(boxes: readonly MarkerBox[], x: number): MarkerBox | null {
+  let hit: MarkerBox | null = null;
+  for (const b of boxes) if (x >= b.x0 && x < b.x1) hit = b;
+  return hit;
+}
+
+/** Faint lines down the lanes where markers are. */
+export function drawMarkerLines(ctx: CanvasRenderingContext2D, vp: Viewport, markers: RulerMarkers): void {
+  for (const m of placedMarkers(markers)) {
+    const x = Math.round(vp.tickToX(m.tick));
+    if (x < 0 || x > vp.width) continue;
+    const color = /^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : MARKER_COLOR;
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, 0, 1, vp.height);
+    ctx.globalAlpha = 1;
+  }
 }

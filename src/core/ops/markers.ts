@@ -32,6 +32,14 @@ export function renameMarker(d: Draft<Project>, id: MarkerId, name: string): voi
   if (m) m.name = cleanName(name);
 }
 
+/** A '#rrggbb' colour, or null for the default. */
+export function recolorMarker(d: Draft<Project>, id: MarkerId, color: string | null): void {
+  const m = d.playlist.markers[id];
+  if (!m) return;
+  if (color && /^#[0-9a-f]{6}$/i.test(color)) m.color = color;
+  else delete m.color;
+}
+
 export function removeMarker(d: Draft<Project>, id: MarkerId): void {
   delete d.playlist.markers[id];
 }

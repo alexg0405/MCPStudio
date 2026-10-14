@@ -3,6 +3,7 @@
  * ruler and clips, redrawn on the frame loop when dirty; geometry drags preview and commit once.
  */
 import type { Services } from '@app/services';
+import { describeMarker, jumpToMarker, moveMarkerTo, renameMarkerTo } from '@app/actions/markers';
 import type { Gesture } from '@core/history/history';
 import { pointBefore } from '@core/automation/curve';
 import { tempoMapOf } from '@core/automation/tempo';
@@ -16,12 +17,14 @@ import type {
   ClipId,
   Lane,
   LaneId,
+  MarkerId,
   PatternClip,
   Project,
   SampleRef,
   Tick,
 } from '@core/model/types';
 import { addAutomationPoint, moveAutomationPoint, setAutomationPointTension } from '@core/ops/automation';
+import { markersSorted } from '@core/ops/markers';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
 import { formatBST, ticksPerBar } from '@core/time/ppq';
@@ -47,10 +50,15 @@ import {
   drawClips,
   drawLaneHeaders,
   drawLanesGrid,
+  drawMarkerLines,
   drawPlaylistRuler,
   HEADER_WIDTH,
+  MARKER_LANE_Y,
+  markerAtX,
   RULER_HEIGHT,
+  type MarkerBox,
 } from './render';
+import { markerRename } from './markers';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 
 export interface PlaylistElements {
@@ -64,6 +72,8 @@ export interface PlaylistElements {
   hscroll: HTMLElement;
   hthumb: HTMLElement;
   rename: HTMLInputElement;
+  /** Inline rename field for markers on the ruler. */
+  markerRename: HTMLInputElement;
 }
 
 type Layer = 'grid' | 'clips' | 'overlay' | 'headers' | 'ruler';
@@ -88,6 +98,7 @@ type Drag =
   | { kind: 'erase'; gesture: Gesture; done: Set<ClipId> }
   | { kind: 'pan'; x: number; y: number }
   | { kind: 'loop'; t0: Tick; moved: boolean }
+  | { kind: 'marker'; id: MarkerId; x0: number; grab: number; tick: Tick; moved: boolean }
   | {
       kind: 'point';
       gesture: Gesture;
@@ -130,6 +141,10 @@ export class PlaylistController {
   /** The automation clip part under the pointer (its points show, the hint bar explains it). */
   private autoHover: { clipId: ClipId; hit: AutoHit } | null = null;
   private lastHint: string | null = null;
+  /** Marker flags as last drawn on the ruler, the one under the pointer, and one being dragged. */
+  private markerBoxes: MarkerBox[] = [];
+  private markerHot: MarkerId | null = null;
+  private markerDrag: { id: MarkerId; tick: Tick } | null = null;
 
   constructor(
     private readonly s: Services,
@@ -171,6 +186,13 @@ export class PlaylistController {
       // A sample finished decoding: its clips can show their waveform now.
       s.engine.subscribe(() => this.invalidate('clips')),
       onFrame(() => this.frame()),
+      // Alt+T and "Rename…" ask for a marker's name right on the ruler.
+      markerRename.subscribe(({ id }) => {
+        if (!id) return;
+        markerRename.setState({ id: null });
+        // After the new marker is drawn, so the field sits on its flag.
+        requestAnimationFrame(() => this.renameMarker(id));
+      }),
     );
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(els.gridHost);
@@ -210,7 +232,10 @@ export class PlaylistController {
     on(els.ruler, 'pointerdown', (e) => this.onRulerDown(e));
     on(els.ruler, 'pointermove', (e) => this.onRulerMove(e));
     on(els.ruler, 'pointerup', (e) => this.onRulerUp(e));
-    on(els.ruler, 'dblclick', () => this.s.view.getState().setLoop(null));
+    on(els.ruler, 'pointercancel', () => this.cancelDrag());
+    on(els.ruler, 'contextmenu', (e) => e.preventDefault());
+    on(els.ruler, 'pointerleave', () => this.setMarkerHot(null));
+    on(els.ruler, 'dblclick', (e) => this.onRulerDouble(e));
     on(els.hthumb, 'pointerdown', (e) => this.onThumbDown(e));
     on(host, 'dragover', (e) => this.onDragOver(e));
     on(host, 'drop', (e) => this.onDrop(e));
@@ -245,6 +270,10 @@ export class PlaylistController {
   onPointMenu?: (clip: AutomationClip, index: number, at: { clientX: number; clientY: number }) => void;
   /** A track name was right-clicked. */
   onLaneMenu?: (laneId: LaneId, at: { clientX: number; clientY: number }) => void;
+  /** A marker on the ruler was right-clicked. */
+  onMarkerMenu?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
+  /** An empty spot of the ruler was right-clicked (at a snapped song tick). */
+  onRulerMenu?: (tick: Tick, at: { clientX: number; clientY: number }) => void;
 
   private readonly waveform = (ref: SampleRef) => this.s.engine.waveform(ref);
 
@@ -300,8 +329,12 @@ export class PlaylistController {
       const theme = readTheme();
       const ts = p.transport.timeSig;
       const muted = mutedLanes(p.playlist);
-      if (this.dirty.has('grid'))
-        drawLanesGrid(fitCanvas(els.grid, vp.width, vp.height), vp, theme, ts, vp.rows, songLength(p));
+      const markers = { markers: markersSorted(p), hot: this.markerHot, drag: this.markerDrag };
+      if (this.dirty.has('grid')) {
+        const g = fitCanvas(els.grid, vp.width, vp.height);
+        drawLanesGrid(g, vp, theme, ts, vp.rows, songLength(p));
+        drawMarkerLines(g, vp, markers);
+      }
       if (this.dirty.has('clips')) {
         const ctx = fitCanvas(els.clips, vp.width, vp.height);
         ctx.clearRect(0, 0, vp.width, vp.height);
@@ -341,13 +374,14 @@ export class PlaylistController {
         drawLaneHeaders(fitCanvas(els.headers, HEADER_WIDTH, vp.height), vp, theme, this.lanes(p), muted, HEADER_WIDTH);
       }
       if (this.dirty.has('ruler')) {
-        drawPlaylistRuler(
+        this.markerBoxes = drawPlaylistRuler(
           fitCanvas(els.ruler, vp.width, RULER_HEIGHT),
           vp,
           theme,
           ts,
           this.s.view.getState().loop,
           songLength(p),
+          markers,
         );
       }
       this.updateScrollbar(p);
@@ -925,6 +959,10 @@ export class PlaylistController {
     const d = this.drag;
     if (!d) return;
     this.drag = null;
+    if (d.kind === 'marker') {
+      this.markerDrag = null;
+      this.invalidate('ruler', 'grid');
+    }
     if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'point' || d.kind === 'tension') d.gesture.cancel();
     this.preview = null;
     this.updateCursor();
@@ -1073,21 +1111,66 @@ export class PlaylistController {
     };
   }
 
+  /** The marker flag under a ruler position (markers live in the lower part of the ruler). */
+  private markerHit(x: number, y: number): MarkerBox | null {
+    return y >= MARKER_LANE_Y - 2 ? markerAtX(this.markerBoxes, x) : null;
+  }
+
+  private setMarkerHot(id: MarkerId | null): void {
+    if (id === this.markerHot) return;
+    this.markerHot = id;
+    this.invalidate('ruler');
+    const m = id ? this.project().playlist.markers[id] : undefined;
+    emitHint(
+      this.els.ruler,
+      m
+        ? `Marker ${describeMarker(this.s, m)}: click to jump there, drag to move it, double-click to rename, right-click for more`
+        : (this.els.ruler.getAttribute('data-hint') ?? ''),
+    );
+  }
+
   private onRulerDown(e: PointerEvent): void {
+    const p = this.project();
+    const { x, y } = this.local(e, this.els.ruler);
+    const hit = this.markerHit(x, y);
+    if (e.button === 2) {
+      e.preventDefault();
+      if (hit) this.onMarkerMenu?.(hit.id, e);
+      else this.onRulerMenu?.(Math.max(0, snapRound(this.vp.xToTick(x), this.grid(p, e))), e);
+      return;
+    }
     if (e.button !== 0) return;
     e.preventDefault();
     this.els.ruler.setPointerCapture(e.pointerId);
-    const p = this.project();
-    const t = Math.max(
-      0,
-      snapRound(this.vp.xToTick(this.local(e, this.els.ruler).x), ticksPerBar(p.transport.timeSig) / 4),
-    );
+    if (hit) {
+      this.drag = { kind: 'marker', id: hit.id, x0: x, grab: this.vp.xToTick(x) - hit.tick, tick: hit.tick, moved: false };
+      return;
+    }
+    const t = Math.max(0, snapRound(this.vp.xToTick(x), ticksPerBar(p.transport.timeSig) / 4));
     this.drag = { kind: 'loop', t0: t, moved: false };
   }
 
   private onRulerMove(e: PointerEvent): void {
     const d = this.drag;
-    if (d?.kind !== 'loop') return;
+    if (!d) {
+      const { x, y } = this.local(e, this.els.ruler);
+      this.setMarkerHot(this.markerHit(x, y)?.id ?? null);
+      return;
+    }
+    if (d.kind === 'marker') {
+      const p = this.project();
+      const { x } = this.local(e, this.els.ruler);
+      if (!d.moved && Math.abs(x - d.x0) < 3) return;
+      d.moved = true;
+      // Snapped to the playlist grid (Alt: free).
+      d.tick = Math.max(0, snapRound(this.vp.xToTick(x) - d.grab, this.grid(p, e)));
+      this.markerDrag = { id: d.id, tick: d.tick };
+      const m = p.playlist.markers[d.id];
+      if (m) emitHint(this.els.ruler, `Move ‘${m.name}’ to ${formatBST(d.tick, p.transport.timeSig)} · release to drop it`);
+      this.invalidate('ruler', 'grid');
+      return;
+    }
+    if (d.kind !== 'loop') return;
     const p = this.project();
     const t = Math.max(
       0,
@@ -1100,6 +1183,16 @@ export class PlaylistController {
 
   private onRulerUp(e: PointerEvent): void {
     const d = this.drag;
+    if (d?.kind === 'marker') {
+      this.els.ruler.releasePointerCapture(e.pointerId);
+      this.drag = null;
+      this.markerDrag = null;
+      // A click on a marker sets the song position there; a drag moves it (one undo step).
+      if (d.moved) moveMarkerTo(this.s, d.id, d.tick);
+      else jumpToMarker(this.s, d.id);
+      this.invalidate('ruler', 'grid');
+      return;
+    }
     if (d?.kind !== 'loop') return;
     this.els.ruler.releasePointerCapture(e.pointerId);
     this.drag = null;
@@ -1110,6 +1203,42 @@ export class PlaylistController {
       if (v.mode !== 'song') v.setMode('song');
       if (this.s.engine.playing) this.s.engine.play(d.t0);
     }
+  }
+
+  private onRulerDouble(e: MouseEvent): void {
+    const { x, y } = this.local(e, this.els.ruler);
+    const hit = this.markerHit(x, y);
+    if (hit) this.renameMarker(hit.id);
+    else this.s.view.getState().setLoop(null);
+  }
+
+  /** Shows the inline rename field on a marker's flag. */
+  renameMarker(id: MarkerId): void {
+    const m = this.project().playlist.markers[id];
+    const box = this.markerBoxes.find((b) => b.id === id);
+    if (!m) return;
+    const input = this.els.markerRename;
+    const x = box ? box.x0 + 3 : this.vp.tickToX(m.tick);
+    input.style.display = 'block';
+    input.style.left = `${HEADER_WIDTH + Math.max(0, Math.min(this.vp.width - 120, x))}px`;
+    input.style.top = `${MARKER_LANE_Y}px`;
+    input.style.height = `${RULER_HEIGHT - MARKER_LANE_Y - 1}px`;
+    input.style.width = `${Math.max(120, box ? box.x1 - box.x0 : 0)}px`;
+    input.value = m.name;
+    input.focus();
+    input.select();
+    const finish = (save: boolean) => {
+      input.style.display = 'none';
+      input.onblur = null;
+      input.onkeydown = null;
+      if (save) renameMarkerTo(this.s, id, input.value);
+    };
+    input.onblur = () => finish(true);
+    input.onkeydown = (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') finish(true);
+      if (ev.key === 'Escape') finish(false);
+    };
   }
 
   private onWheel(e: WheelEvent): void {

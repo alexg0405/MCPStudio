@@ -9,6 +9,7 @@ import { useServices } from '../../services-context';
 import { PatternPicker } from '../patterns/PatternPicker';
 import { PlaylistController, type PlaylistElements } from './controller';
 import { clipMenu, laneMenu } from './menus';
+import { markerMenu, rulerMenu } from './markers';
 import { pointMenu } from '../automation/actions';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT } from './render';
@@ -78,7 +79,9 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
           +
         </button>
       </span>
-      <span className={styles.help}>Drag on the ruler to loop a range · click it to set the song position</span>
+      <span className={styles.help}>
+        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker
+      </span>
     </div>
   );
 }
@@ -97,6 +100,7 @@ export function Playlist() {
   const hscroll = useRef<HTMLDivElement>(null);
   const hthumb = useRef<HTMLDivElement>(null);
   const rename = useRef<HTMLInputElement>(null);
+  const markerRename = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const els = {
@@ -110,6 +114,7 @@ export function Playlist() {
       hscroll: hscroll.current,
       hthumb: hthumb.current,
       rename: rename.current,
+      markerRename: markerRename.current,
     };
     if (Object.values(els).some((el) => !el)) return;
     const c = new PlaylistController(services, els as PlaylistElements);
@@ -117,6 +122,8 @@ export function Playlist() {
     c.onFilesDrop = (files, laneId, tick) => void dropAudioFiles(services, files, laneId, tick);
     c.onClipMenu = (clip, at) => showContextMenu(at, clipMenu(services, clip));
     c.onPointMenu = (clip, index, at) => showContextMenu(at, pointMenu(services, clip, index));
+    c.onMarkerMenu = (id, at) => showContextMenu(at, markerMenu(services, id));
+    c.onRulerMenu = (tick, at) => showContextMenu(at, rulerMenu(services, tick));
     c.onLaneMenu = (laneId, at) =>
       showContextMenu(
         at,
@@ -141,7 +148,7 @@ export function Playlist() {
         <canvas
           ref={ruler}
           className={styles.ruler}
-          data-hint="Drag to set a loop region, click to set the song position, double-click to clear the loop"
+          data-hint="Drag to set a loop region, click to set the song position, double-click to clear the loop · right-click to add a marker (or Alt+T)"
         />
         <canvas
           ref={headers}
@@ -159,6 +166,7 @@ export function Playlist() {
         </div>
         <div ref={playhead} className={styles.playhead} />
         <input ref={rename} className={styles.rename} style={{ width: HEADER_WIDTH - 30 }} />
+        <input ref={markerRename} className={styles.markerRename} aria-label="Marker name" />
       </div>
     </div>
   );

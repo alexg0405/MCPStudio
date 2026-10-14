@@ -208,3 +208,15 @@
   background: var(--ag-surface-inset);
   z-index: 3;
 }
+
+.markerRename {
+  position: absolute;
+  display: none;
+  padding: 0 4px;
+  border: 1px solid #d9c25b;
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font-size: 11px;
+  z-index: 3;
+}

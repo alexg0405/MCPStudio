@@ -27,6 +27,8 @@ export interface PrefsState {
   recentActions: string[];
   /** Your own keyboard shortcuts by command id (they replace its built-in ones; [] = none). */
   customKeys: Record<string, string[]>;
+  /** The audio output device ('' = the system default). */
+  outputDevice: string;
 }
 
 export interface PrefsActions {
@@ -50,6 +52,7 @@ const DEFAULTS: PrefsState = {
   welcomeSeen: false,
   recentActions: [],
   customKeys: {},
+  outputDevice: '',
 };
 
 function load(): PrefsState {

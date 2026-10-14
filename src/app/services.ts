@@ -102,6 +102,19 @@ export function createServices(opts: ServiceOptions = {}): Services {
   };
   prefs.subscribe(applyKeys);
   applyKeys();
+  // The chosen output device (the engine host remembers it across reboots).
+  let appliedOutput = '';
+  const applyOutput = () => {
+    const id = prefs.getState().outputDevice;
+    if (id === appliedOutput) return;
+    appliedOutput = id;
+    void engineRef?.setOutputDevice(id).then((ok) => {
+      if (!ok && id && prefs.getState().outputDevice === id)
+        session
+          .getState()
+          .toast('Your chosen sound output isn’t available, so the system default plays (Options → Settings…).', 'error');
+    });
+  };
   const editor = createEditorStore(opts.pianoRoll, opts.playlist);
   let engineRef: EngineApi | null = null;
   const live = new LiveInput(
@@ -126,6 +139,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const engine = new EngineHost(() => makeEngine(engineOptions));
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
+  prefs.subscribe(applyOutput);
+  applyOutput();
   const recording = new RecordController(engine);
   // The engine plays the metronome and count-in from the prefs (count-in only while record is armed).
   const syncSession = () => {

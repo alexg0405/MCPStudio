@@ -32,6 +32,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Save | `⌘S` / `Ctrl+S` |
 | Save as… | `⌘⇧S` / `Ctrl+Shift+S` |
 | Search actions… | `⌘K` / `Ctrl+K` |
+| Settings… | `F10` |
 | Typing keyboard octave down | `⌥↓` / `Alt+↓` |
 | Typing keyboard octave up | `⌥↑` / `Alt+↑` |
 | Undo | `⌘Z` / `Ctrl+Z` |

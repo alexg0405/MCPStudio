@@ -78,6 +78,11 @@ export interface EngineApi {
    * buffers; the output ducks for a moment so ringing reverb and delay tails stop too.
    */
   panic(): void;
+  /**
+   * Plays through this output device (`MediaDeviceInfo.deviceId`; '' = the system default).
+   * Resolves false where the browser can't choose (no AudioContext.setSinkId) or the device is gone.
+   */
+  setOutputDevice(deviceId: string): Promise<boolean>;
   readonly playing: boolean;
   /** The tick being heard right now (output latency included). */
   playhead(): number;

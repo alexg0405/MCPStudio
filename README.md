@@ -39,6 +39,8 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
   and shortcuts you can change (Help → Keyboard shortcuts).
+- **Settings** (Options → Settings…, F10): which speakers or headphones to play through (with a left/right test
+  sound), MIDI devices, the typing piano, recording options and tooltips, in one window.
 
 ## AI studio (✦ in the toolbar, or ⌥6)
 

@@ -411,6 +411,17 @@ export class Engine implements EngineApi, EngineCore {
     this.emit();
   }
 
+  async setOutputDevice(deviceId: string): Promise<boolean> {
+    const ctx = this.ctx as BaseAudioContext & { setSinkId?(id: string): Promise<void> };
+    if (this.offline || typeof ctx.setSinkId !== 'function') return false;
+    try {
+      await ctx.setSinkId(deviceId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   panic(): void {
     this.stop();
     const now = this.ctx.currentTime;

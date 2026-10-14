@@ -31,6 +31,11 @@ export class FakeEngine implements EngineApi {
     this.playing = false;
     this.emit();
   }
+  outputDevice = '';
+  setOutputDevice(deviceId: string): Promise<boolean> {
+    this.outputDevice = deviceId;
+    return Promise.resolve(true);
+  }
   /** How many times panic() ran. */
   panics = 0;
   panic(): void {

@@ -35,4 +35,16 @@ describe('EngineHost', () => {
     made[0]!.play();
     expect(notified).toBe(before);
   });
+
+  it('keeps playing through the chosen output device after a reboot', async () => {
+    const made: FakeEngine[] = [];
+    const host = new EngineHost(() => {
+      const e = new FakeEngine();
+      made.push(e);
+      return e;
+    });
+    expect(await host.setOutputDevice('headphones')).toBe(true);
+    await host.reboot();
+    expect(made[1]?.outputDevice).toBe('headphones');
+  });
 });

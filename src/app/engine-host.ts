@@ -23,6 +23,8 @@ export class EngineHost implements EngineApi {
   private lastDoc: DocChange | null = null;
   private view: TransportView | null = null;
   private session: EngineSession | null = null;
+  /** The chosen output device, replayed on a reboot ('' = default). */
+  private outputDevice = '';
   private rebooting: Promise<void> | null = null;
 
   constructor(private readonly factory: () => EngineApi) {
@@ -42,6 +44,7 @@ export class EngineHost implements EngineApi {
         next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
       if (this.view) next.setTransportView(this.view);
       if (this.session) next.setSession(this.session);
+      if (this.outputDevice) void next.setOutputDevice(this.outputDevice);
       this.inner = next;
       this.detach = next.subscribe(() => this.emit());
       await old.dispose();
@@ -87,6 +90,10 @@ export class EngineHost implements EngineApi {
   }
   panic(): void {
     this.inner.panic();
+  }
+  setOutputDevice(deviceId: string): Promise<boolean> {
+    this.outputDevice = deviceId;
+    return this.inner.setOutputDevice(deviceId);
   }
   playhead(): number {
     return this.inner.playhead();

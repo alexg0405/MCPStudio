@@ -923,6 +923,39 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   offline generator.
 - **Rule for new features**: each feature adds its ops here (and what the context needs), so the AI can
   drive it.
+- **Layout (v3)**: `apply.ts` is a short orchestrator over `app/ai/ops/`.
+  - One module per group of actions (`song`, `channels`, `mixer`, `patterns`, `notes`, `automation`, `playlist`,
+    `clips`, `beat`, `ui`), each an `OpModule` with its handlers, its schemas (built from `app/ai/schema/parts.ts`),
+    its section of the studio prompt and an optional `beforeCommit` hook. `ops/index.ts` is the only list.
+  - Handlers get an `OpContext` (`ops/context.ts`): the draft, the project before the answer (`base`), the lookups
+    (`channel`, `insert`, `effect`, `pattern`, `plugin`, `lane`, `clip` by id or track + bar), `@refs`, `warn`,
+    `note`, `touch` (the playlist span it edited: autoplay starts a bar before it) and the answer's state.
+  - **The draft rule**: inside a recipe, read with plain loops; identity-memoized queries (`notesSorted`,
+    `patternLength`, `clipsSorted`…) keep the draft proxy and go stale after a later action of the same answer.
+  - The prompt (`app/ai/prompt.ts`) is assembled from sections by `order`: intro 0, how to act 10, playlist editing
+    15, song craft 20, working on a part 30, beat writing 80, notes 85, the example 90.
+  - `apply.characterization.test.ts` pins every action's output; refactors must keep it.
+  - The focus guard (`ops/focus-guard.ts`) is the seam for edits limited to a part of the song (see "Asking about a
+    part"); without a focus every check passes.
+- **The playlist as the AI reads it** (`context.ts` `playlistLines`, `core/query/arrangement.ts`):
+  - Every track in full, its back-to-back repeats as runs ("“Drop” ×8 bars 37–52"), split at the marker sections
+    (listed first). Bar ranges are 1-based and inclusive (`core/time/bars.ts`). Short runs list their clip ids.
+  - Patterns say where they play; notes show velocities other than 0.8 (`@.45`).
+  - The **song check** (`songCheck`): parts stacked on themselves (the same clips playing 2–3 times at once), a
+    pattern overlapping itself, more than 4 unchanged repeats, unnamed tracks, repeated automation curves.
+  - Background: the listing used to cut each track at 40 clips without saying so; on a 113-bar song the AI could not
+    see bars 81–112 and placed them again, twice.
+- **Never stacked**: `place_pattern` skips clips that would play a pattern where it already plays (any track);
+  `replace: true` clears the track there first (trimming at the edges); a missing track fails. A `beforeCommit` safety
+  net removes clips of the answer that exactly repeat clips already there. `clear_playlist` can `trim`.
+- **One clip at a time** (`ops/clips.ts`): `clip` (edit: mute, move, length; split; make_unique, so one repeat of a
+  loop can change alone; remove), `track` (name, color, mute, solo) and `tidy` (`core/ops/tidy.ts`: removes stacked
+  copies, merges same-curve automation channels, names one-thing tracks). "Clean up the song…" in the Playlist menu
+  (`ui/features/song-tidy`) does the same after a confirmation that lists what it will change.
+- **Follow-up steps** (`app/assistant/after-steps.ts`): an after-edit request with a registered step (e.g. leveling
+  the mix) runs after the answer is applied and before anything plays, with progress and Stop; its edit is folded into
+  the answer's undo entry with `history.transact(label, recipe, { amend: entry })` (only while that entry is still the
+  newest one).
 - **More ops since M16a**:
   - `automate`: an automation clip for any target, with points in the control's own unit or an LFO;
   - `note_tool`: any piano-roll tool from the catalog;
@@ -1291,7 +1324,7 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
 
 The ruler has a marker lane (the ruler is 34 px: bar numbers above, markers below), with a faint line down the tracks
 per marker. Click a marker to set the song position there, drag it to move it (playlist snap, Alt free), double-click
-to rename in place, right-click for Jump here / Rename / Loop to the next marker / colour / Delete; right-click empty
+to rename in place, right-click for Jump here / Rename / Loop this section / colour / Delete (features add items through the `playlist.marker` and `playlist.ruler` menu scopes); right-click empty
 ruler for Add marker here. Alt+T adds one at the song position and asks for its name on the ruler. Markers are found
 by id, name or number (1-based in song order), so commands take any of them; the action search lists "Jump to marker:
 …" and "Loop from marker: …". They live in `playlist.markers`, so they are saved with the project.

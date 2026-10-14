@@ -42,6 +42,26 @@ describe('History', () => {
     expect(h.doc.transport.bpm).toBe(140);
   });
 
+  it('lists its steps and jumps to any of them (undo history)', () => {
+    const t = setup();
+    for (const bpm of [100, 110, 120, 130]) {
+      t.history.transact(`Tempo ${bpm}`, (d) => setBpm(d, bpm));
+      t.tick(2000);
+    }
+    const ids = t.history.steps().done.map((x) => x.id);
+    expect(t.history.steps().done.map((x) => x.label)).toEqual(['Tempo 100', 'Tempo 110', 'Tempo 120', 'Tempo 130']);
+    // Back to just after "Tempo 110": two steps undone, listed next-redo first.
+    expect(t.history.goTo(ids[1]!)).toBe(2);
+    expect(t.doc.transport.bpm).toBe(110);
+    expect(t.history.steps().undone.map((x) => x.label)).toEqual(['Tempo 120', 'Tempo 130']);
+    // Forward again to "Tempo 130", then all the way back to the start.
+    expect(t.history.goTo(ids[3]!)).toBe(2);
+    expect(t.doc.transport.bpm).toBe(130);
+    expect(t.history.goTo(0)).toBe(4);
+    expect(t.history.steps().done).toEqual([]);
+    expect(t.history.goTo(12345)).toBe(0);
+  });
+
   it('ignores recipes that change nothing', () => {
     const h = setup();
     expect(h.history.transact('Noop', () => {})).toBe(false);

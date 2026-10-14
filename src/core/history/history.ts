@@ -47,6 +47,14 @@ export interface Gesture {
   readonly active: boolean;
 }
 
+/** One undoable step, as the undo history window lists it. */
+export interface HistoryStep {
+  id: number;
+  label: string;
+  /** When it was made (ms, the history's clock). */
+  time: number;
+}
+
 interface Entry {
   id: number;
   label: string;
@@ -223,6 +231,30 @@ export class History {
     this.undoStack.push(entry);
     this.emit({ next, prev, patches: entry.patches, origin: 'redo' });
     return true;
+  }
+
+  /** The steps as the undo history shows them: done ones (oldest first), then undone ones (next redo first). */
+  steps(): { done: HistoryStep[]; undone: HistoryStep[] } {
+    const step = (e: Entry): HistoryStep => ({ id: e.id, label: e.label, time: e.time });
+    return { done: this.undoStack.map(step), undone: [...this.redoStack].reverse().map(step) };
+  }
+
+  /**
+   * Undoes or redoes until step `id` is the last one done (0: before every step still in history).
+   * Returns how many steps it moved (0 when `id` is unknown or already current).
+   */
+  goTo(id: number): number {
+    this.gestureActive?.commit();
+    let moved = 0;
+    if (id === 0 || this.undoStack.some((e) => e.id === id)) {
+      while (this.undoStack.length > 0 && this.undoStack[this.undoStack.length - 1]!.id !== id && this.undo()) moved++;
+    } else if (this.redoStack.some((e) => e.id === id)) {
+      while (this.redoStack.length > 0 && this.redo()) {
+        moved++;
+        if (this.undoStack[this.undoStack.length - 1]!.id === id) break;
+      }
+    }
+    return moved;
   }
 
   /**

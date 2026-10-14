@@ -1,4 +1,5 @@
 import type { Services } from '@app/services';
+import { isAtPreset, presetChoices } from '@app/presets';
 import { MASTER, type ChannelId, type Project } from '@core/model/types';
 import { openWindow } from '../../workspace/registry';
 
@@ -53,8 +54,31 @@ const synthId = (s: Services): ChannelId | null =>
     return c?.kind === 'instrument' && c.plugin.pluginId === 'agstudio.3xosc';
   }) ?? null;
 
+const WAVETABLE = 'agstudio.wavetable';
+const wavetableId = (s: Services): ChannelId | null =>
+  project(s).channelOrder.find((id) => {
+    const c = project(s).channels[id];
+    return c?.kind === 'instrument' && c.plugin.pluginId === WAVETABLE;
+  }) ?? null;
+/** The Wavetable's settings, and whether they are exactly one of its factory presets. */
+const wavetable = (s: Services) => {
+  const id = wavetableId(s);
+  const c = id ? project(s).channels[id] : undefined;
+  const def = s.plugins.get(WAVETABLE);
+  if (!c || c.kind !== 'instrument' || !def) return null;
+  const atFactory = presetChoices(def, s.presets).some((p) => p.source === 'factory' && isAtPreset(def, c.plugin, p));
+  const atAny = atFactory || presetChoices(def, s.presets).some((p) => isAtPreset(def, c.plugin, p));
+  return { id: id as ChannelId, key: JSON.stringify(c.plugin.params), atFactory, atAny };
+};
+
 /** Values a step compares against (set by its prepare). */
-const memo: { bpm: number; notes: string; volume: number } = { bpm: 0, notes: '', volume: 0 };
+const memo: { bpm: number; notes: string; volume: number; sound: string; presets: number } = {
+  bpm: 0,
+  notes: '',
+  volume: 0,
+  sound: '',
+  presets: 0,
+};
 const notesKey = (s: Services, id: ChannelId | null) =>
   JSON.stringify(Object.values((id ? pattern(s)?.notes[id] : undefined) ?? {}).map((n) => [n.tick, n.key, n.length, n.velocity]));
 
@@ -208,6 +232,56 @@ export const LESSONS: readonly Lesson[] = [
         },
       },
     ],
-    next: 'That’s the whole loop. Ask the AI studio (✦) for anything else, or press ⌘K to find any action.',
+    next: 'Next: “Make your own sound”, in Help → Lessons.',
+  },
+  {
+    id: 'sound',
+    title: 'Make your own sound',
+    summary: 'Pick a synth preset, tweak it and save it as your own.',
+    minutes: 3,
+    steps: [
+      {
+        text: 'Add a synth: click Wavetable under Plugins in the browser on the left.',
+        anchor: () => '[data-tour="browser"]',
+        done: (s) => wavetableId(s) !== null,
+      },
+      {
+        text: 'Open it: double-click the Wavetable’s name in the channel rack.',
+        anchor: (s) => {
+          const id = wavetableId(s);
+          return id ? `[data-channel-id="${id}"]` : '[data-window-type="channel-rack"]';
+        },
+        done: (s) => {
+          const id = wavetableId(s);
+          return Object.values(s.view.getState().windows).some(
+            (w) => w.type === 'plugin' && w.visible && (w.props as { channelId?: string } | null)?.channelId === id,
+          );
+        },
+      },
+      {
+        text: 'Find a sound you like: click ▶ next to the preset name at the top of its window. Play it with your computer keys (turn on the typing piano: the keyboard button in the toolbar, then Z X C V…).',
+        anchor: () => '[data-tour="preset-bar"]',
+        prepare: (s) => void (memo.sound = wavetable(s)?.key ?? ''),
+        done: (s) => {
+          const w = wavetable(s);
+          return !!w && w.key !== memo.sound && w.atFactory;
+        },
+      },
+      {
+        text: 'Make it yours: turn any knob a little (drag it up or down) and listen.',
+        anchor: () => '[data-window-type="plugin"]',
+        done: (s) => {
+          const w = wavetable(s);
+          return !!w && !w.atAny;
+        },
+      },
+      {
+        text: 'Keep it: click Save… in the preset bar, give it a name and press Enter.',
+        anchor: () => '[data-tour="preset-bar"]',
+        prepare: (s) => void (memo.presets = s.presets.forPlugin(WAVETABLE).length),
+        done: (s) => s.presets.forPlugin(WAVETABLE).length > memo.presets,
+      },
+    ],
+    next: 'It’s under Presets in the browser now: click it there to add it to any project. Ask the AI studio (✦) for anything else, or press ⌘K to find any action.',
   },
 ];

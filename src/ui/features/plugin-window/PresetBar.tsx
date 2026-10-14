@@ -238,7 +238,7 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
 
   const hasChoices = choices.length > 0;
   return (
-    <div className={styles.bar}>
+    <div className={styles.bar} data-tour="preset-bar">
       <button
         type="button"
         tabIndex={-1}

@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { createTestServices } from '@app/testing';
 import type { ChannelId, PatternId } from '@core/model/types';
 import { setStep } from '@core/ops/notes';
+import { addInstrumentChannel } from '@app/actions/channels';
+import { applyPreset, presetChoices } from '@app/presets';
+import { openWindow } from '../../workspace/registry';
 import { LESSONS } from './lessons';
 
 /** The lesson checks pass exactly when the project shows the step was done. */
@@ -39,6 +42,35 @@ describe('lessons', () => {
     expect(tempo!.done(s)).toBe(true);
     // Every step points somewhere to look.
     for (const step of lesson.steps) expect(step.anchor?.(s)).toBeTruthy();
+  });
+
+  it('“Make your own sound” follows a preset, a tweak and a save', () => {
+    const s = createTestServices();
+    const lesson = LESSONS.find((l) => l.id === 'sound')!;
+    const [add, open, pick, tweak, save] = lesson.steps;
+    expect(add!.done(s)).toBe(false);
+    const id = addInstrumentChannel(s, 'agstudio.wavetable')!;
+    expect(add!.done(s)).toBe(true);
+    expect(open!.done(s)).toBe(false);
+    openWindow(s, 'plugin', { kind: 'channel', channelId: id });
+    expect(open!.done(s)).toBe(true);
+    pick!.prepare!(s);
+    const def = s.plugins.get('agstudio.wavetable')!;
+    const owner = { kind: 'channel' as const, channelId: id };
+    const second = presetChoices(def, s.presets).filter((c) => c.source === 'factory')[1]!;
+    applyPreset(s, owner, def, second);
+    expect(pick!.done(s)).toBe(true);
+    expect(tweak!.done(s)).toBe(false);
+    const [param, spec] = Object.entries(def.params).find(([, sp]) => sp.type === 'float')!;
+    s.history.transact('tweak', (d) => {
+      const c = d.channels[id]!;
+      if (c.kind === 'instrument') c.plugin.params[param] = (spec as { max: number }).max;
+    });
+    expect(tweak!.done(s)).toBe(true);
+    save!.prepare!(s);
+    expect(save!.done(s)).toBe(false);
+    s.presets.save({ pluginId: def.id, version: def.version, name: 'Mine', params: {} });
+    expect(save!.done(s)).toBe(true);
   });
 
   it('every lesson has steps with plain instructions', () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { KernelHost } from '@agstudio/sdk/worklet';
+import { paramBlock, runEffect } from '@agstudio/sdk/testing';
 import { DuckerKernel, shapeDuck } from './kernel';
 import { duckerParams } from './params';
 
@@ -7,12 +8,7 @@ const SR = 48000;
 const host: KernelHost = { sampleRate: SR, state: undefined, post: () => {}, rand: () => 0.5 };
 type Key = keyof typeof duckerParams;
 
-function params(overrides: Partial<Record<Key, number>> = {}) {
-  const out: Record<string, Float32Array> = {};
-  for (const [k, spec] of Object.entries(duckerParams))
-    out[k] = new Float32Array([overrides[k as Key] ?? spec.default]);
-  return out as never;
-}
+const params = (overrides: Partial<Record<Key, number>> = {}) => paramBlock(duckerParams, overrides);
 
 /** The ducker's gain over time for a key (main input held at 1). */
 function gains(overrides: Partial<Record<Key, number>>, key: (i: number) => number, seconds: number): Float32Array {
@@ -99,5 +95,49 @@ describe('DuckerKernel', () => {
     expect(second).toBeLessThan(ms(106));
     expect(g[second - 1]).toBeGreaterThan(0);
     expect(Math.min(...g.subarray(second, second + ms(15)))).toBeCloseTo(0, 6);
+  });
+
+  describe('tempo pump (no sidechain)', () => {
+    const pump = (opts: { bpm?: number; playing?: boolean; beat?: number; params?: Record<string, number | string> }) =>
+      runEffect(DuckerKernel, duckerParams, () => 1, 2 * SR, {
+        params: { mode: 'tempo', depth: 0.8, attack: 1, hold: 10, release: 200, curve: 0, ...opts.params },
+        transport: { bpm: opts.bpm ?? 120, playing: opts.playing ?? true, beat: opts.beat ?? 0 },
+      })[0];
+
+    it('ducks on every beat of the song, whatever the key does', () => {
+      const g = pump({});
+      const beat = SR / 2; // 120 BPM
+      for (let b = 0; b < 4; b++) {
+        const t0 = b * beat;
+        expect(g[t0 + ms(0.5)]).toBeLessThan(1);
+        expect(g[t0 + ms(2)]).toBeCloseTo(0.2, 6); // down to 1 − depth after the attack
+        expect(g[t0 + ms(10)]).toBeCloseTo(0.2, 6); // hold
+        expect(g[t0 + ms(300)]).toBe(1); // back up well before the next beat
+        if (b > 0) expect(g[t0 - 1]).toBe(1);
+      }
+    });
+
+    it('follows the tempo and the grid', () => {
+      const g = pump({ bpm: 90, params: { rate: '1/8' } });
+      const step = Math.round((SR * 60) / 90 / 2);
+      for (let k = 1; k < 5; k++) {
+        expect(g[k * step - 2]).toBe(1);
+        expect(g[k * step + ms(2)]).toBeCloseTo(0.2, 4);
+      }
+      // Starting mid-beat waits for the next grid line.
+      const late = pump({ beat: 0.5 });
+      expect(late[ms(5)]).toBe(1);
+      expect(late[SR / 4 + ms(2)]).toBeCloseTo(0.2, 4);
+    });
+
+    it('fits the release into one step, so fast pumps still come back up', () => {
+      const g = pump({ params: { rate: '1/16', release: 2000, hold: 0 } });
+      const step = SR / 8; // a 1/16 at 120 BPM
+      for (let k = 1; k < 6; k++) expect(g[k * step - 1]).toBeGreaterThan(0.99);
+    });
+
+    it('does nothing while the song is stopped', () => {
+      expect(pump({ playing: false }).every((v) => v === 1)).toBe(true);
+    });
   });
 });

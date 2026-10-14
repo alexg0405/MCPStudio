@@ -51,13 +51,19 @@ export class TruePeak {
   private readonly history = new Float64Array(2 * (TAPS_PER_PHASE + 1));
   private pos = 0;
 
+  /**
+   * Feeds one sample without interpolating: returns |the sample LATENCY frames back| (its sample
+   * peak, with the same timing as `process`). Switching between the two is seamless.
+   */
+  sample(x: number): number {
+    this.write(x);
+    const s = this.history[this.pos + TruePeak.LATENCY] as number;
+    return s < 0 ? -s : s;
+  }
+
   /** Feeds one sample; returns |peak| of the reconstructed signal around the sample LATENCY frames back. */
   process(x: number): number {
-    const len = TAPS_PER_PHASE + 1;
-    // A doubled ring: the newest `len` samples are always contiguous at [pos, pos + len).
-    this.pos = this.pos > 0 ? this.pos - 1 : len - 1;
-    this.history[this.pos] = x;
-    this.history[this.pos + len] = x;
+    this.write(x);
     const h = this.history;
     const at = this.pos;
     // Phase 0 is the sample itself (LATENCY frames back).
@@ -77,5 +83,13 @@ export class TruePeak {
   reset(): void {
     this.history.fill(0);
     this.pos = 0;
+  }
+
+  /** A doubled ring: the newest TAPS_PER_PHASE + 1 samples are always contiguous from `pos`. */
+  private write(x: number): void {
+    const len = TAPS_PER_PHASE + 1;
+    this.pos = this.pos > 0 ? this.pos - 1 : len - 1;
+    this.history[this.pos] = x;
+    this.history[this.pos + len] = x;
   }
 }

@@ -56,18 +56,19 @@ export class PhaseClock {
 
   /**
    * The phase at frame `i` of the block. `periodBeats` > 0 syncs one cycle to that many beats
-   * (`noteBeats('1/4')`); otherwise the clock runs at `hz`. `offset` (0–1) shifts the synced phase.
+   * (`noteBeats('1/4')`); otherwise the clock runs at `hz`. Free-running, each call advances it by
+   * `frames` samples (call it once per control step of `frames` samples, or once per sample).
    */
-  next(transport: KernelTransport, i: number, hz: number, periodBeats = 0, offset = 0): number {
+  next(transport: KernelTransport, i: number, hz: number, periodBeats = 0, frames = 1): number {
     if (periodBeats > 0 && transport.playing) {
-      const pos = transport.beatAt(i) / periodBeats + offset;
+      const pos = transport.beatAt(i) / periodBeats;
       const n = Math.floor(pos);
       this.cycle = n;
       this.phase = pos - n;
       return this.phase;
     }
     const rate = periodBeats > 0 ? transport.bpm / 60 / periodBeats : hz;
-    let phase = this.phase + rate / this.sampleRate;
+    let phase = this.phase + (rate * frames) / this.sampleRate;
     if (phase >= 1) {
       const whole = Math.floor(phase);
       phase -= whole;

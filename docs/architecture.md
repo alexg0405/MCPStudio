@@ -4,11 +4,16 @@ This is the design reference. `CLAUDE.md` has the short rules; this file explain
 
 ## Goals
 
-- Recreate FL Studio's core workflow in Chrome: Channel Rack (step sequencer), Patterns, Piano Roll, Playlist (pattern and
-  audio clips, PAT/SONG modes), Mixer with insert FX, Browser, save/open, WAV export.
+- Recreate FL Studio's workflow in Chrome: Channel Rack (step sequencer), Patterns, Piano Roll, Playlist (pattern, audio
+  and automation clips, markers, PAT/SONG modes), Mixer (inserts, sends, sidechains, delay compensation), Browser,
+  recording (notes and audio), save/open, and export (WAV, FLAC, MP3, stems, MIDI).
 - Make the owner's **custom instruments and effects** first-class: a plugin is a folder in `plugins/` that shows up in the
-  browser like the built-ins and hot-reloads. Built-ins are written against the same public SDK.
-- Leave room for later: automation, MIDI mapping, themes, note scripts, WASM/Faust DSP, a desktop wrapper.
+  browser like the built-ins and hot-reloads, written in TypeScript (graph or worklet style) or Faust. Built-ins
+  (9 instruments, 22 effects) are written against the same public SDK.
+- An **AI studio** that can drive every feature (it acts through the same ops and commands as the UI), listens to the
+  mix, and can write new plugins.
+- The UI explains itself: hints and tooltips on everything, a "?" on every window, the action search, lessons.
+- Still open: a desktop wrapper, a clip launcher.
 
 ## Layers
 
@@ -193,7 +198,8 @@ ParamHandle: { spec, value, bind(audioParam, map?) → unbind, signal(map?) → 
 ```
 
 - Params (`sdk/params.ts`): `p.float/int/enum/bool`, scale linear/log/db, units, normalization for knobs, AudioParam
-  descriptors (float a-rate, others k-rate). Values are host-owned in the document: undo, presets, save, hot reload free.
+  descriptors for the automatable ones (float a-rate, int k-rate; the rest travel as `EV_PARAM` events, see
+  Performance). Values are host-owned in the document: undo, presets, save, hot reload free.
 - `ParamSignal` = one smoothed ConstantSourceNode fanned out to many voices (target intrinsic value must be 0).
 - `GraphVoices` (main thread): per-note node bookkeeping, polyphony cap, steal with 5 ms fade, cancel-before-start,
   proactive `gc(now)` (don't rely on `onended`; export needs determinism).
@@ -321,8 +327,8 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   pinch = wheel + ctrlKey → zoom at cursor), edge auto-scroll, `devicePixelContentBoxSize` for crisp canvases.
 - Performance budgets: 60 fps with 10k notes (3k visible) and 2k clips; content redraw < 4 ms; single-note transact
   < 1 ms; zero React commits during idle playback.
-- Theme: CSS custom properties in `ui/theme/tokens.css`; canvases resolve tokens via `getComputedStyle` and re-resolve
-  when a theme version counter changes.
+- Theme: CSS custom properties in `ui/theme/tokens.css` (and `themes.css`, below); canvases resolve tokens via
+  `getComputedStyle` and re-resolve on `invalidateTheme()`.
 - Help that explains the app as you use it (the user asked for a UI that is very easy to understand):
   - Every control's `data-hint` shows in the hint bar and, after a short hover, as a tooltip next to it
     (`shell/HoverTip.tsx`, imperative, one element). Tooltips skip canvases, menu items, `data-hint-tip="off"` and hints
@@ -340,6 +346,10 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
       started brings it back.
     - The guided tour highlights each area through `data-tour` / `data-window-type` anchors, followed every frame.
       Each step opens the window it explains.
+  - Lessons (Help → Lessons): short tasks that check themselves as you go (a beat, a melody, a song, a mix, your own
+    sound), with an outline around where to look.
+  - Every window's title bar has a "?" with its main moves (`workspace/window-help.ts`).
+  - Menus work from the keyboard (`controls/menu-nav.ts`); the hint bar follows keyboard focus.
   - New features ship with plain labels, hints with units, empty states that say what to do, and menu or right-click
     entry points, not shortcut-only.
 

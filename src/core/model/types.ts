@@ -6,7 +6,7 @@
 import type { ParamValue } from '@agstudio/sdk/params';
 import type { Json } from './json';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /** Integer ticks at PPQ 960. */
 export type Tick = number;
@@ -23,6 +23,7 @@ export type InsertId = Id<'ins'>;
 export type SlotId = Id<'fx'>;
 export type SampleId = Id<'smp'>;
 export type LinkId = Id<'lnk'>;
+export type MarkerId = Id<'mk'>;
 
 /** The master insert has a fixed id. */
 export const MASTER = 'master' as InsertId;
@@ -115,7 +116,22 @@ export interface InstrumentChannel extends ChannelBase, Audible {
 export interface AudioClipChannel extends ChannelBase, Audible {
   kind: 'audioClip';
   sampleId: SampleId;
+  /** Pitch shift in cents (−2400…2400; absent = 0). With stretch 'off' it also changes the speed. */
+  pitch?: number;
+  /** Plays the sample backwards. */
+  reverse?: boolean;
+  /**
+   * How the audio follows the song tempo: 'off' plays it at its own speed (absent = off),
+   * 'resample' speeds it up or down with the tempo (pitch follows, like a turntable), 'stretch'
+   * keeps its pitch (time-stretch). Both need `sourceBpm`.
+   */
+  stretch?: AudioStretch;
+  /** The tempo the audio was recorded at (20–999 BPM), for stretch. */
+  sourceBpm?: number;
 }
+
+export type AudioStretch = 'off' | 'resample' | 'stretch';
+export const AUDIO_STRETCH: readonly AudioStretch[] = ['off', 'resample', 'stretch'];
 
 /** An automation clip's curve (FL keeps it as a channel); its playlist clips play it. */
 export interface AutomationChannel extends ChannelBase {
@@ -166,6 +182,15 @@ export interface Playlist {
   lanes: Record<LaneId, Lane>;
   laneOrder: LaneId[];
   clips: Record<ClipId, Clip>;
+  /** Named song positions ("Verse", "Drop") shown on the playlist ruler. */
+  markers: Record<MarkerId, Marker>;
+}
+
+export interface Marker {
+  id: MarkerId;
+  tick: Tick;
+  name: string;
+  color?: string;
 }
 
 export interface Lane {
@@ -198,6 +223,11 @@ export interface AudioClip extends ClipBase {
   channelId: ChannelId;
   /** Trim into the sample, in seconds (unaffected by tempo changes). */
   offsetSec: number;
+  /** Clip gain, linear 0–4 (absent = 1). */
+  gain?: number;
+  /** Fade-in and fade-out lengths in seconds (absent = none). */
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 /** Plays an automation channel's curve over its span (content does not repeat). */

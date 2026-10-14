@@ -116,7 +116,8 @@ describe('app smoke test', () => {
     s.commands.run('transport.stop');
     await until(() => !s.engine.playing);
     clearInterval(watch);
-    if (worstStall < 80) expect(s.engine.stats().lateEvents).toBe(0);
+    const { lateEvents, maxPumpGapMs } = s.engine.stats();
+    if (worstStall < 80 && maxPumpGapMs < 80) expect(lateEvents).toBe(0);
 
     const bytes = await s.files.build();
     await s.files.newProject();

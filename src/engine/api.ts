@@ -34,6 +34,11 @@ export interface EngineStats {
   outputLatency: number;
   lookahead: number;
   lateEvents: number;
+  /**
+   * The longest wait between two scheduler runs since playback started (ms). Late notes only point
+   * at a scheduling bug when this stayed well under the lookahead; a busy machine can stall it.
+   */
+  maxPumpGapMs: number;
   /** Plugin instances that failed to load or threw. */
   faults: number;
 }

@@ -3,7 +3,15 @@ import fc from 'fast-check';
 import { projectViolations } from '../../../test/helpers/project-invariants';
 import { createEmptyProject, makeInstrumentChannel, makePluginInstance } from '../model/defaults';
 import { seededBytes, setIdSource } from '../model/ids';
-import { MASTER, SCHEMA_VERSION, type ChannelId, type InsertId, type PatternId, type Project } from '../model/types';
+import {
+  MASTER,
+  SCHEMA_VERSION,
+  type ChannelId,
+  type InsertId,
+  type MarkerId,
+  type PatternId,
+  type Project,
+} from '../model/types';
 import { MIGRATIONS, SchemaError, migrateProject, repairProject, type Migration } from './migrate';
 
 /** Every saved-project fixture; each schema bump adds one (files named *broken* need repairs). */
@@ -55,17 +63,44 @@ describe('fixture corpus', () => {
 
 describe('migrateProject', () => {
   it('returns current-schema data untouched without running migrations', () => {
-    const json = fixture('v2-basic');
+    const json = fixture('v3-basic');
     const spy = vi.fn<Migration>((p) => p);
-    const result = migrateProject(json, [spy, spy, spy]);
+    const result = migrateProject(json, [spy, spy, spy, spy]);
     expect(result.project).toBe(json);
-    expect(result.migratedFrom).toBe(2);
+    expect(result.migratedFrom).toBe(3);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('upgrades v2: no markers yet; audio clips keep playing as before', () => {
+    const v2 = fixture('v2-basic');
+    const { project } = migrateProject(v2);
+    expect(project.schemaVersion).toBe(3);
+    expect(project.playlist.markers).toEqual({});
+    expect(project.playlist.clips).toEqual(v2.playlist.clips);
+    expect(repairProject(project).repairs).toEqual([]);
+  });
+
+  it('repairs v3 audio edits and markers', () => {
+    const p = fixture('v3-basic');
+    const audio = Object.values(p.playlist.clips).find((c) => c.kind === 'audio');
+    if (audio?.kind === 'audio') Object.assign(audio, { gain: 9, fadeIn: -1 });
+    const ch = Object.values(p.channels).find((c) => c.kind === 'audioClip');
+    if (ch?.kind === 'audioClip') Object.assign(ch, { stretch: 'warp', pitch: 9000 });
+    Object.assign(p.playlist.markers, { mk_bad: { id: 'mk_bad', tick: -5, name: 42 }, junk: 'x' });
+    const { project, repairs } = repairProject(p);
+    const fixedClip = Object.values(project.playlist.clips).find((c) => c.kind === 'audio');
+    expect(fixedClip).toMatchObject({ gain: 4, fadeIn: 0 });
+    const fixedCh = Object.values(project.channels).find((c) => c.kind === 'audioClip');
+    expect(fixedCh).toMatchObject({ pitch: 2400 });
+    expect(fixedCh && 'stretch' in fixedCh ? fixedCh.stretch : undefined).toBeUndefined();
+    expect(project.playlist.markers['mk_bad' as MarkerId]).toEqual({ id: 'mk_bad', tick: 0, name: 'Marker' });
+    expect(Object.keys(project.playlist.markers)).not.toContain('junk');
+    expect(repairs.length).toBeGreaterThan(0);
   });
 
   it('upgrades v1: every insert routes to the master, no sidechains, no controller links', () => {
     const { project } = migrateProject(fixture('v1-basic'));
-    expect(project.schemaVersion).toBe(2);
+    expect(project.schemaVersion).toBe(3);
     expect(project.mixer.inserts[MASTER]!.routes).toEqual([]);
     for (const id of project.mixer.order.slice(1))
       expect(project.mixer.inserts[id]!.routes).toEqual([{ to: MASTER, level: 1, pre: false }]);

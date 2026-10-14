@@ -19,7 +19,15 @@ import {
 } from '../model/defaults';
 import { isSha256Hex } from '../io/hash';
 import { newId } from '../model/ids';
-import { AUTO_SHAPES, MASTER, SCHEMA_VERSION, type InsertId, type Project } from '../model/types';
+import {
+  AUDIO_STRETCH,
+  AUTO_SHAPES,
+  MASTER,
+  SCHEMA_VERSION,
+  type AudioStretch,
+  type InsertId,
+  type Project,
+} from '../model/types';
 
 /** A project as parsed from JSON, before it is known to match the current types. */
 export type UntypedProject = Record<string, unknown>;
@@ -43,8 +51,17 @@ const v1ToV2: Migration = (p) => {
   return p;
 };
 
+/**
+ * v2 → v3: playlist markers (none). The new audio-clip edits (gain, fades, pitch, reverse, stretch)
+ * are optional, so v2 clips are already valid v3 clips.
+ */
+const v2ToV3: Migration = (p) => {
+  if (isObject(p.playlist)) p.playlist.markers = {};
+  return p;
+};
+
 /** `MIGRATIONS[n]` upgrades schema n to n + 1. Schema 1 is the first version. */
-export const MIGRATIONS: readonly (Migration | undefined)[] = [undefined, v1ToV2];
+export const MIGRATIONS: readonly (Migration | undefined)[] = [undefined, v1ToV2, v2ToV3];
 
 export type SchemaErrorCode = 'invalid' | 'too-new' | 'too-old';
 
@@ -94,6 +111,7 @@ const SHAPE: readonly [path: readonly string[], kind: 'object' | 'array'][] = [
   [['playlist', 'lanes'], 'object'],
   [['playlist', 'laneOrder'], 'array'],
   [['playlist', 'clips'], 'object'],
+  [['playlist', 'markers'], 'object'],
   [['mixer'], 'object'],
   [['mixer', 'inserts'], 'object'],
   [['mixer', 'order'], 'array'],
@@ -172,6 +190,7 @@ const CLIP = noun('playlist clip');
 const SLOT = noun('effect slot');
 const ROUTE = noun('mixer route');
 const LINK = noun('controller link');
+const MARKER = noun('playlist marker');
 
 /** Collects fixes; counted fixes become one message per kind (in first-seen order). */
 class RepairLog {
@@ -560,6 +579,12 @@ function repairChannels(p: Obj, log: RepairLog): void {
       fixed = clampField(ch, 'rootKey', 0, 127, DEFAULT_ROOT_KEY, true) || fixed;
       if (has(ch, 'pitch') && ch.pitch !== undefined) fixed = clampField(ch, 'pitch', -2400, 2400, 0) || fixed;
     }
+    if (kind === 'audioClip') {
+      if (has(ch, 'pitch') && ch.pitch !== undefined) fixed = clampField(ch, 'pitch', -2400, 2400, 0) || fixed;
+      fixed = optionalField(ch, 'reverse', isBoolean) || fixed;
+      fixed = optionalField(ch, 'stretch', (v) => AUDIO_STRETCH.includes(v as AudioStretch)) || fixed;
+      if (has(ch, 'sourceBpm') && ch.sourceBpm !== undefined) fixed = clampField(ch, 'sourceBpm', 20, 999, 120) || fixed;
+    }
     if (kind === 'automation') {
       fixed = requireField(ch, 'target', (v) => v === null || isParamTarget(v), null) || fixed;
       fixed = repairPoints(ch) || fixed;
@@ -694,12 +719,31 @@ function repairPlaylist(p: Obj, log: RepairLog): void {
     }
     let fixed = clampField(clip, 'start', 0, Number.MAX_SAFE_INTEGER, 0, true);
     fixed = clampField(clip, 'length', 1, Number.MAX_SAFE_INTEGER, DEFAULT_CLIP_LENGTH, true) || fixed;
-    if (kind === 'audio') fixed = clampField(clip, 'offsetSec', 0, Number.MAX_VALUE, 0) || fixed;
-    else fixed = clampField(clip, 'offset', 0, Number.MAX_SAFE_INTEGER, 0, true) || fixed;
+    if (kind === 'audio') {
+      fixed = clampField(clip, 'offsetSec', 0, Number.MAX_VALUE, 0) || fixed;
+      if (has(clip, 'gain') && clip.gain !== undefined) fixed = clampField(clip, 'gain', 0, 4, 1) || fixed;
+      for (const fade of ['fadeIn', 'fadeOut'])
+        if (has(clip, fade) && clip[fade] !== undefined) fixed = clampField(clip, fade, 0, 3600, 0) || fixed;
+    } else fixed = clampField(clip, 'offset', 0, Number.MAX_SAFE_INTEGER, 0, true) || fixed;
     fixed = optionalField(clip, 'muted', isBoolean) || fixed;
     fixed = optionalField(clip, 'name', isString) || fixed;
     fixed = optionalField(clip, 'color', isString) || fixed;
     if (fixed) log.count('clip-fields', (n) => `Fixed ${count(n, CLIP)} with an invalid position or length.`);
+  }
+  log.flush();
+
+  const markers = playlist.markers as Obj;
+  repairRecords(markers, MARKER, log);
+  for (const raw of Object.values(markers)) {
+    const m = raw as Obj;
+    let fixed = clampField(m, 'tick', 0, Number.MAX_SAFE_INTEGER, 0, true);
+    fixed = requireField(m, 'name', isString, 'Marker') || fixed;
+    if ((m.name as string).length > 64) {
+      m.name = (m.name as string).slice(0, 64);
+      fixed = true;
+    }
+    fixed = optionalField(m, 'color', isString) || fixed;
+    if (fixed) log.count('marker-fields', (n) => `Fixed ${count(n, MARKER)} with an invalid position or name.`);
   }
   log.flush();
 }

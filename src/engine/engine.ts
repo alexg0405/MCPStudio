@@ -110,6 +110,9 @@ export class Engine implements EngineApi, EngineCore {
   readonly ports = new PortSet();
   private readonly initDone: Promise<void>;
   private limiter: AudioWorkletNode | null = null;
+  /** Scheduler cadence (see EngineStats.maxPumpGapMs). */
+  private lastPumpAt = 0;
+  private maxPumpGap = 0;
 
   constructor(
     ctx: BaseAudioContext,
@@ -450,6 +453,8 @@ export class Engine implements EngineApi, EngineCore {
 
   private startClock(): void {
     if (this.offline) return;
+    this.lastPumpAt = 0;
+    if (!this.transport.playing || this.maxPumpGap < 0) this.maxPumpGap = 0;
     if (!this.clock) {
       this.clock = new Worker(new URL('./sched/clock.worker.ts', import.meta.url), { type: 'module' });
       this.clock.onmessage = () => this.tick();
@@ -463,6 +468,9 @@ export class Engine implements EngineApi, EngineCore {
 
   private tick(): void {
     const wasPlaying = this.transport.playing;
+    const now = performance.now();
+    if (wasPlaying && this.lastPumpAt > 0) this.maxPumpGap = Math.max(this.maxPumpGap, now - this.lastPumpAt);
+    this.lastPumpAt = now;
     this.transport.pump();
     // Raise the lookahead when notes arrive late (main-thread jank).
     if (this.transport.lateEvents > this.lastLate) {
@@ -643,6 +651,7 @@ export class Engine implements EngineApi, EngineCore {
       outputLatency: realtime ? ctx.outputLatency || 0 : 0,
       lookahead: this.transport.lookahead,
       lateEvents: this.transport.lateEvents,
+      maxPumpGapMs: Math.round(this.maxPumpGap),
       faults: this.faults,
     };
   }

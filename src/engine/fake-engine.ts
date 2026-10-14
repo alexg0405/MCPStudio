@@ -111,6 +111,7 @@ export class FakeEngine implements EngineApi {
       outputLatency: 0,
       lookahead: 0.12,
       lateEvents: 0,
+      maxPumpGapMs: 0,
       faults: 0,
     };
   }

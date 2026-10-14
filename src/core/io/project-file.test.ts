@@ -17,7 +17,7 @@ import { encodeWav } from './wav';
 const FIXTURES = import.meta.glob<unknown>('/test/fixtures/projects/*.json', { eager: true, import: 'default' });
 const fixture = (name: string) =>
   JSON.parse(JSON.stringify(FIXTURES[`/test/fixtures/projects/${name}.json`])) as Project;
-const basic = () => fixture('v2-basic');
+const basic = () => fixture('v3-basic');
 
 const NOW = new Date('2026-10-12T10:30:00.000Z');
 const VIEW = { mode: 'song', currentPatternId: 'pat_intro00001', windows: { mixer: { visible: true, z: 3 } } };

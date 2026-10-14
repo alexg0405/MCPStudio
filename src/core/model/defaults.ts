@@ -117,7 +117,7 @@ export function createEmptyProject(opts: { title?: string; now?: Date } = {}): P
     channelOrder: [],
     patterns: { [pattern.id]: pattern },
     patternOrder: [pattern.id],
-    playlist: { lanes, laneOrder, clips: {} },
+    playlist: { lanes, laneOrder, clips: {}, markers: {} },
     mixer: { inserts, order },
     samples: {},
     controllers: {},

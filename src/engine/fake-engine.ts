@@ -103,6 +103,11 @@ export class FakeEngine implements EngineApi {
   graphLatency(): number {
     return 0;
   }
+  /** Channels reported as being time-stretched. */
+  stretching = new Set<string>();
+  isStretching(channelId: string): boolean {
+    return this.stretching.has(channelId);
+  }
   stats(): EngineStats {
     return {
       state: this.state,

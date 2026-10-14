@@ -125,6 +125,11 @@ export interface EngineApi {
   setSession(session: EngineSession): void;
   /** Seconds of latency the mixer adds (plugin delay compensation); the playhead already accounts for it. */
   graphLatency(): number;
+  /**
+   * True while a time-stretched copy of an audio clip channel's sample is being computed (its clips
+   * play in time, at the wrong pitch, until then). Subscribers hear when it finishes.
+   */
+  isStretching(channelId: ChannelId): boolean;
   stats(): EngineStats;
   /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;

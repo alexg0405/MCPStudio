@@ -143,6 +143,9 @@ export class EngineHost implements EngineApi {
   graphLatency(): number {
     return this.inner.graphLatency();
   }
+  isStretching(channelId: ChannelId): boolean {
+    return this.inner.isStretching(channelId);
+  }
   stats(): EngineStats {
     return this.inner.stats();
   }

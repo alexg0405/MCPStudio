@@ -7,15 +7,28 @@
  * cancels it), planning restarts 10 ms from now with the new model, and sounding notes whose
  * source was deleted are released.
  */
-import type { ChannelId, Clip, Tick } from '@core/model/types';
+import type { AudioClip, ChannelId, Clip, Tick } from '@core/model/types';
+import { followsTempo, playbackKey, playbackMode } from '@core/audio/playback';
+import type { TempoMap } from '@core/time/ppq';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
 import { plan, segmentEndTime, tickAtTime, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
 import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
+
+/** An audio clip starting to play: its note-on plus where it starts in the song and the tempo it plays at. */
+export interface AudioOn extends NoteOn {
+  clip: AudioClip;
+  /** Song tick at `time`: the clip's start, or later when playback starts inside the clip. */
+  tick: number;
+  /** The tempo map of this run: the context time of a later tick is `time + T(tick') − T(tick)`. */
+  tempo: TempoMap;
+}
 
 export interface TransportSink {
   noteOn(channelId: ChannelId, e: NoteOn): void;
   noteOff(channelId: ChannelId, e: NoteOff): void;
   allNotesOff(time: number): void;
+  /** Audio clip starts (gain, fades, pitch, tempo follow need the clip); without it they arrive as noteOn. */
+  audioOn?(channelId: ChannelId, e: AudioOn): void;
 }
 
 export interface Clock {
@@ -52,6 +65,9 @@ interface Scheduled {
   offSent: boolean;
   /** Audio events: the playlist clip as it was when its sample started. */
   clip?: Clip;
+  /** Audio events: how the channel played it (see playbackKey) and whether its speed follows the tempo. */
+  audioKey?: string;
+  follows?: boolean;
 }
 
 const SAFETY = 0.01;
@@ -180,8 +196,8 @@ export class Transport {
     this.source = source;
     const loopChanged =
       timeline.loop?.start !== this.timeline.loop?.start || timeline.loop?.end !== this.timeline.loop?.end;
-    const timelineChanged =
-      timeline.tempo !== this.timeline.tempo || timeline.endTick !== this.timeline.endTick || loopChanged;
+    const tempoChanged = timeline.tempo !== this.timeline.tempo;
+    const timelineChanged = tempoChanged || timeline.endTick !== this.timeline.endTick || loopChanged;
     this.timeline = timeline;
     if (!this.playingFlag || !this.cursor) return;
     const safe = this.clock.currentTime + SAFETY;
@@ -216,9 +232,17 @@ export class Transport {
       let end: number | null = null;
       if (ev.kind === 'audio') {
         const clip = project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
-        // An edited clip (moved, trimmed…) restarts from the new model; an untouched one keeps playing.
-        if (clip?.kind === 'audio' && clip.channelId === ev.channelId && clip === n.clip)
-          end = clip.start + clip.length;
+        // An edited clip (moved, trimmed…) restarts from the new model; an untouched one keeps playing,
+        // unless its channel now plays it differently (pitch, reverse, tempo follow, another sample) or
+        // the tempo changed under a clip that follows it.
+        const same =
+          clip?.kind === 'audio' &&
+          clip.channelId === ev.channelId &&
+          clip === n.clip &&
+          channel?.kind === 'audioClip' &&
+          playbackKey(channel) === n.audioKey &&
+          !(tempoChanged && n.follows);
+        if (same) end = clip.start + clip.length;
       } else if (ev.patternId && ev.noteId) {
         const note = project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
         const clipGone =
@@ -305,12 +329,19 @@ export class Transport {
       if (time < now) this.lateEvents++;
       const noteId = ++this.noteSeq;
       const n: Scheduled = { ev, noteId, startTime: time, iter: seg.iter, endTick: ev.end, offSent: false };
+      let audioClip: AudioClip | null = null;
       if (ev.kind === 'audio' && clips) {
         const clip = clips[ev.clipId as keyof typeof clips];
+        const channel = this.source.project.channels[ev.channelId];
         if (clip) n.clip = clip;
+        if (clip?.kind === 'audio') audioClip = clip;
+        if (channel?.kind === 'audioClip') {
+          n.audioKey = playbackKey(channel);
+          n.follows = followsTempo(playbackMode(channel));
+        }
       }
       this.notes.set(noteId, n);
-      this.sink.noteOn(ev.channelId, {
+      const on: NoteOn = {
         time,
         noteId,
         key: ev.pitch,
@@ -318,7 +349,9 @@ export class Transport {
         ...(ev.pan !== undefined ? { pan: ev.pan } : {}),
         ...(ev.fine !== undefined ? { fine: ev.fine } : {}),
         ...(ev.offsetSec !== undefined ? { offset: ev.offsetSec } : {}),
-      });
+      };
+      if (audioClip && this.sink.audioOn) this.sink.audioOn(ev.channelId, { ...on, clip: audioClip, tick: ev.start, tempo });
+      else this.sink.noteOn(ev.channelId, on);
     }
     const atLoopEnd = !!L && seg.tick1 >= L.end - 1e-9;
     const atSongEnd = !L && seg.tick1 >= this.timeline.endTick - 1e-9;

@@ -1,0 +1,233 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AI applier characterization > applies every op the same way 1`] = `
+{
+  "beat": {
+    "channels": [
+      "808",
+      "hat",
+      "kick",
+    ],
+    "created": 1,
+  },
+  "currentPattern": "pat_L7bEiBV9yY",
+  "edited": true,
+  "selectedChannel": "ch_JHNNF0tsI4",
+  "undo": [
+    "setup",
+    "AI: everything",
+  ],
+}
+`;
+
+exports[`AI applier characterization > applies every op the same way 2`] = `
+[
+  "Song: tempo 142 BPM, swing 12%, key F minor, time signature 4/4",
+  "Added channel “Lead” (3xOsc: Cutoff 1.20 kHz, volume -6 dB, pan 0.25)",
+  "Added channel “Rim” (Sampler)",
+  "Added channel “Mystery” (Sampler)",
+  "“Lead 2”: renamed “Lead 2”, volume -4 dB, pan -0.5, muted, unsolo",
+  "“Lead 2”: pitch 2400 ct, unmuted",
+  "Added mixer track Insert 17 “Lead bus” (fader -3 dB, pan 0.1)",
+  "Added mixer track Insert 18 “Reverb”",
+  "“Lead 2”: → Insert 17",
+  "Insert 17: renamed “Leads”, muted, solo",
+  "Insert 17: unmuted, unsolo",
+  "Added Reverb to Insert 18 (preset Hall)",
+  "Added EQ to Insert 17",
+  "EQ on Insert 17: mix 50%, bypassed, slot 1",
+  "EQ on Insert 17: on",
+  "Insert 17 → Insert 18 at -8 dB (pre-fader)",
+  "Insert 17 no longer routes to Insert 18",
+  "Insert 17 now routes only to Master",
+  "Added Ducker to Insert 17",
+  "Ducker on Insert 17 listens to Insert 1",
+  "Ducker on Insert 17: no sidechain",
+  "Removed EQ from Insert 17",
+  "Added pattern “Verse”",
+  "Added pattern “Temp”",
+  "Pattern “Verse A”: renamed “Verse A”, 2 bars",
+  "Deleted pattern “Temp”",
+  "Wrote 4 notes for “Lead 2” in “Verse A”",
+  "Wrote 2 notes for “Rim” in “Verse A”",
+  "Wrote 1 note for “Rim” in “Verse A”",
+  "Transpose on “Lead 2” in “Verse A” (Semitones +2 st)",
+  "Transpose on “Lead 2” in “Verse A”",
+  "Filled every 4 steps of “Rim” in “Verse A”",
+  "Rotated “Rim” in “Verse A” by 2 steps",
+  "Shifted “Rim” in “Verse A” by -1 steps",
+  "Reversed “Rim” in “Verse A”",
+  "Randomized “Rim” in “Verse A” (50% of the steps)",
+  "Cleared “Rim” in “Verse A”",
+  "Wrote 2 notes for “Rim” in “Verse A”",
+  "Automation “Cutoff · Lead 2”, bars 2–6: 400 Hz → 4.00 kHz",
+  "Automation “Volume · Insert 17”, bars 1–3: sine wave every 1 beat",
+  "Automation “Tempo”, bars 5–9: 142 BPM → 200 BPM",
+  "Placed “Verse A” on track 3 at bar 3 ×2",
+  "Placed “Verse A” on track 2 at bar 1",
+  "Placed “Verse A” on track 1 at bar 9",
+  "Audio clip “Loop”: gain -6 dB, fade-in 10 ms, fade-out 500 ms",
+  "Marker “Verse” at bar 3",
+  "Marker “Drop” at bar 9",
+  "Marker “Big drop” at bar 11",
+  "Removed the marker “Verse”",
+  "Removed 2 playlist clips",
+  "Wrote the beat “Test beat” (Kick, Hat, 808)",
+  "Deleted channel “Rim”",
+]
+`;
+
+exports[`AI applier characterization > applies every op the same way 3`] = `
+[
+  "can't read the key "H major"",
+  "can't use the time signature "5/3"",
+  "3xOsc has no setting "nope"",
+  "3xOsc osc1Wave: can't use "not-a-wave"",
+  ""Mystery" has no sample yet (say which kit sound it should play)",
+  "add channel: there is no plugin "agstudio.nothing"",
+  "add channel: "Reverb" is an effect, not an instrument",
+  "3xOsc has no preset "No such preset"",
+  "“Lead 2” is not an audio clip channel",
+  "edit channel: there is no channel "nobody"",
+  "edit insert: there is no mixer track 99",
+  "EQ has no setting "nope"",
+  "add effect: "3xOsc" is an instrument, not an effect",
+  "route: Insert 18 can't route to Insert 17 (it would loop back)",
+  "sidechain: Reverb has no sidechain input",
+  "remove insert: the Master track can't be deleted",
+  "remove pattern: there is no pattern "nothing"",
+  "Transpose: can't set "semitones" to "x"",
+  "note tool: there is no piano-roll tool "agstudio.notes.teleport"",
+  "steps: unknown step action "wiggle"",
+  "automation point {"bar":4,"value":"loud"} skipped",
+  "automate: that control does not exist",
+  "automate: there is no channel "nobody"",
+  "automate: can't automate "wobble"",
+  "edit audio clip: there is no audio clip "clip_none"",
+  "marker: there is no marker "Bridge"",
+  "marker: unknown marker action "jump"",
+  "beat: the beat can't be used: The beat has no usable tracks.",
+  "remove channel: there is no channel "Rim"",
+  "audition: there is no channel "nobody"",
+  "build plugin: it needs a name and a kind (instrument or effect)",
+  "command: there is no command "file.save"",
+  "command: there is no command "no.such.command"",
+]
+`;
+
+exports[`AI applier characterization > applies every op the same way 4`] = `
+[
+  {
+    "kind": "open",
+    "window": "channel-rack",
+  },
+  {
+    "kind": "open",
+    "window": "channel-rack",
+  },
+  {
+    "kind": "open",
+    "window": "channel-rack",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
+  },
+  {
+    "kind": "metronome",
+    "on": true,
+  },
+  {
+    "fromTick": 7680,
+    "kind": "play",
+    "mode": "song",
+  },
+  {
+    "kind": "mode",
+    "mode": "pattern",
+  },
+  {
+    "channelId": "ch_StkqygTd9m",
+    "kind": "audition",
+    "phrase": "riff",
+  },
+  {
+    "kind": "analyze_mix",
+  },
+  {
+    "kind": "build_plugin",
+    "spec": {
+      "description": "Slows to a halt.",
+      "kind": "effect",
+      "name": "Tape Stop",
+    },
+  },
+  {
+    "kind": "open",
+    "window": "mixer",
+  },
+  {
+    "insertId": "ins_MeoTeeGQOk",
+    "kind": "open",
+    "slotId": "fx_9mpEVux-Lv",
+    "window": "plugin",
+  },
+  {
+    "channelId": "ch_StkqygTd9m",
+    "kind": "open",
+    "window": "piano-roll",
+  },
+]
+`;
+
+exports[`AI applier characterization > applies every op the same way 5`] = `"7ac748ff"`;
+
+exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
+[
+  "song",
+  "add_channel",
+  "edit_channel",
+  "remove_channel",
+  "add_insert",
+  "edit_insert",
+  "remove_insert",
+  "add_effect",
+  "edit_effect",
+  "remove_effect",
+  "route",
+  "unroute",
+  "route_only",
+  "sidechain",
+  "add_pattern",
+  "edit_pattern",
+  "remove_pattern",
+  "write_notes",
+  "clear_notes",
+  "note_tool",
+  "steps",
+  "automate",
+  "place_pattern",
+  "edit_audio_clip",
+  "marker",
+  "clear_playlist",
+  "beat",
+  "transport",
+  "audition",
+  "analyze_mix",
+  "build_plugin",
+  "command",
+  "open",
+]
+`;
+
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"a0699bad"`;
+
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"2f749c16"`;

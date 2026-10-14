@@ -36,12 +36,15 @@ import {
   setFxSlotMix,
   setInsertProp,
 } from '@core/ops/mixer';
-import { addNotes, setBpm, setSwing } from '@core/ops/notes';
+import { applyNoteReplacement, planNoteReplacement } from '@core/ops/note-replace';
+import { addNotes, setBpm, setSongKey, setSwing } from '@core/ops/notes';
+import { clearSteps, fillSteps, randomizeSteps, reverseSteps, rotateSteps, shiftSteps } from '@core/ops/steps';
 import { addClips, addPattern, removeClips, removePattern, setPatternProps } from '@core/ops/playlist';
 import { removeRoute, routeOnlyTo, setRoute, setSlotSidechain } from '@core/ops/routing';
 import { insertLabel } from '@core/query/mixer';
-import { patternLength } from '@core/query/queries';
-import { stepsPerBar, ticksPerBar, TICKS_PER_STEP } from '@core/time/ppq';
+import { notesSorted, patternLength } from '@core/query/queries';
+import { PPQ, stepsPerBar, ticksPerBar, TICKS_PER_STEP } from '@core/time/ppq';
+import { SCALES } from '@agstudio/sdk/notes';
 import {
   dbToGain,
   defaultValues,
@@ -52,6 +55,7 @@ import {
   type ParamValue,
   type PluginDef,
 } from '@agstudio/sdk';
+import { NoteScriptError, runNoteScript } from '../actions/note-scripts';
 import { planBeat, showBeat, writeBeat, type AppliedBeat, type BeatPlan } from '../assistant/apply';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import type { Services } from '../services';
@@ -97,7 +101,22 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 
 const NOTE_NAMES: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
 
-/** "F# minor" → { root: 6, scale: 'minor' }; "none" → null; undefined if unreadable. */
+const SCALE_ALIASES: Record<string, string> = {
+  '': 'major',
+  m: 'minor',
+  min: 'minor',
+  maj: 'major',
+  ionian: 'major',
+  aeolian: 'minor',
+  'natural-minor': 'minor',
+  'pentatonic-minor': 'minor-pentatonic',
+  'pentatonic-major': 'major-pentatonic',
+  pentatonic: 'major-pentatonic',
+  'minor-blues': 'blues',
+  'blues-major': 'major-blues',
+};
+
+/** "F# minor" → { root: 6, scale: 'minor' }; "none" → null; undefined if unreadable. Scales are the SDK's ids. */
 export function parseKey(text: string): { root: number; scale: string } | null | undefined {
   const t = lower(text);
   if (t === 'none' || t === 'no key' || t === '') return null;
@@ -106,8 +125,11 @@ export function parseKey(text: string): { root: number; scale: string } | null |
   let root = NOTE_NAMES[m[1]!]!;
   if (m[2] === '#' || m[2] === '♯') root += 1;
   if (m[2] === 'b' || m[2] === '♭') root -= 1;
-  const scale = (m[3] ?? '').replace(/\s+/g, '-').replace(/^min$/, 'minor').replace(/^maj$/, 'major') || 'major';
-  return { root: ((root % 12) + 12) % 12, scale };
+  const words = (m[3] ?? '').replace(/\b(scale|mode|key)\b/g, '').trim().replace(/\s+/g, '-');
+  const scale =
+    SCALE_ALIASES[words] ??
+    SCALES.find((sc) => sc.id === words || lower(sc.label).replace(/\s+/g, '-') === words)?.id;
+  return scale ? { root: ((root % 12) + 12) % 12, scale } : undefined;
 }
 
 /** A value the AI wrote, turned into a valid value of the param (null when it can't be). */
@@ -338,12 +360,9 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           if (keyText) {
             const key = parseKey(keyText);
             if (key === undefined) warnings.push(`can't read the key "${keyText}"`);
-            else if (key === null) {
-              delete d.transport.key;
-              out.push('no key');
-            } else {
-              d.transport.key = key;
-              out.push(`key ${keyText}`);
+            else {
+              setSongKey(d, key);
+              out.push(key ? `key ${keyText}` : 'no key');
             }
           }
           const sig = str(a.time_signature);
@@ -702,6 +721,94 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           }
           pat.notes = {} as never;
           return `Cleared “${pat.name}”`;
+        },
+
+        note_tool: (a) => {
+          const id = str(a.tool) ?? fail('which tool?');
+          const def =
+            s.plugins.script(id) ??
+            s.plugins.scripts().find((e) => lower(e.def.name) === lower(id) || lower(e.def.id) === lower(id))?.def;
+          if (!def) fail(`there is no piano-roll tool "${id}"`);
+          const pid = pattern(a.pattern);
+          const cid = channel(a.channel);
+          const ch = d.channels[cid]!;
+          if (ch.kind !== 'instrument') fail(`“${ch.name}” has no notes`);
+          const pat = d.patterns[pid]!;
+          const values: Record<string, ParamValue> = {};
+          const set: string[] = [];
+          if (Array.isArray(a.params)) {
+            const specs = def!.params as ParamSpecs;
+            for (const e of a.params) {
+              if (!isObj(e) || typeof e.name !== 'string') continue;
+              const pidm = findParamId(specs, e.name);
+              const v = pidm ? coerceParam(specs[pidm] as ParamSpec, e.value) : null;
+              if (!pidm || v === null) {
+                warnings.push(`${def!.name}: can't set "${e.name}" to ${JSON.stringify(e.value)}`);
+                continue;
+              }
+              values[pidm] = v;
+              set.push(`${(specs[pidm] as ParamSpec).label ?? pidm} ${formatValue(specs[pidm] as ParamSpec, v)}`);
+            }
+          }
+          // On the draft: notes written earlier in this answer are shaped too.
+          const notes = notesSorted(pat.notes[cid]) as Note[];
+          let out;
+          try {
+            out = runNoteScript(
+              def!,
+              {
+                notes,
+                grid: PPQ / 4,
+                bar: bar(),
+                length: patternLength(pat as never, d.transport.timeSig),
+                key: d.transport.key ?? null,
+              },
+              values,
+            );
+          } catch (err) {
+            fail(err instanceof NoteScriptError ? err.message : String(err));
+          }
+          if (notes.length === 0 && out!.length === 0)
+            fail(`“${ch.name}” has no notes in “${pat.name}” for ${def!.name} to work on`);
+          const plan = planNoteReplacement(notes, out!, () => newId.note());
+          applyNoteReplacement(d, pid, cid, plan);
+          return `${def!.name} on “${ch.name}” in “${pat.name}”${set.length ? ` (${set.join(', ')})` : ''}`;
+        },
+
+        steps: (a) => {
+          const pid = pattern(a.pattern);
+          const cid = channel(a.channel);
+          const ch = d.channels[cid]!;
+          if (ch.kind !== 'instrument') fail(`“${ch.name}” has no steps`);
+          const rootKey = ch.kind === 'instrument' ? ch.rootKey : 60;
+          const where = `“${ch.name}” in “${d.patterns[pid]!.name}”`;
+          const by = Math.round(num(a.by) ?? 1);
+          switch (str(a.action)) {
+            case 'fill': {
+              const every = Math.max(1, Math.min(64, Math.round(num(a.every) ?? 4)));
+              fillSteps(d, pid, cid, every, { rootKey });
+              return `Filled every ${every} steps of ${where}`;
+            }
+            case 'rotate':
+              rotateSteps(d, pid, cid, by);
+              return `Rotated ${where} by ${by} steps`;
+            case 'shift':
+              shiftSteps(d, pid, cid, by);
+              return `Shifted ${where} by ${by} steps`;
+            case 'reverse':
+              reverseSteps(d, pid, cid);
+              return `Reversed ${where}`;
+            case 'randomize': {
+              const density = Math.min(1, Math.max(0, num(a.density) ?? 0.4));
+              randomizeSteps(d, pid, cid, { rootKey, rand: Math.random, density });
+              return `Randomized ${where} (${Math.round(density * 100)}% of the steps)`;
+            }
+            case 'clear':
+              clearSteps(d, pid, cid);
+              return `Cleared the steps of ${where}`;
+            default:
+              return fail(`unknown step action "${String(a.action)}"`);
+          }
         },
 
         place_pattern: (a) => {

@@ -3,6 +3,7 @@
  * schema for structured outputs (every object `additionalProperties: false`, ranges in descriptions —
  * structured outputs take no numeric bounds; the applier validates and clamps everything).
  */
+import { SCALES } from '@agstudio/sdk/notes';
 import { BEAT_JSON_SCHEMA } from '@core/beat/spec';
 
 const str = (description: string) => ({ type: 'string', description });
@@ -48,7 +49,9 @@ export const ACTION_OPS = [
   op('song', 'Song settings.', {
     bpm: num('Tempo in BPM (10–522).'),
     swing: num('0..1 swing on even 1/16 steps.'),
-    key: str('Song key like "F minor", "C# dorian", or "none".'),
+    key: str(
+      `Song key: a root and a scale, like "F minor", "C# dorian", "A minor-pentatonic", or "none". Scales: ${SCALES.map((sc) => sc.id).join(', ')}.`,
+    ),
     time_signature: str('Like "4/4" or "3/4".'),
   }),
   op(
@@ -207,6 +210,35 @@ export const ACTION_OPS = [
     "Removes a channel's notes from a pattern (all channels when channel is omitted).",
     { pattern: PATTERN, channel: CHANNEL },
     ['pattern'],
+  ),
+  op(
+    'note_tool',
+    'Runs a piano-roll tool from the catalog ("Piano-roll tools") on one channel’s notes in a pattern: quantize, humanize, strum, arpeggiate, legato, chords, transpose, generate… It sees notes written earlier in the same answer.',
+    {
+      tool: str('Tool id from the catalog, e.g. "agstudio.notes.humanize".'),
+      pattern: PATTERN,
+      channel: CHANNEL,
+      params: { ...PARAMS, description: 'Tool settings: name = param id from the catalog; value in its unit.' },
+    },
+    ['tool', 'pattern', 'channel'],
+  ),
+  op(
+    'steps',
+    'Step-sequencer tools for one channel in a pattern (drum and other step parts).',
+    {
+      pattern: PATTERN,
+      channel: CHANNEL,
+      action: {
+        type: 'string',
+        enum: ['fill', 'rotate', 'shift', 'reverse', 'randomize', 'clear'],
+        description:
+          'fill = a hit every N steps; rotate wraps around the pattern; shift moves without wrapping; randomize replaces the steps with random hits.',
+      },
+      every: int('fill: a hit every N steps (2 = eighths, 4 = quarter notes, 8 = half notes).'),
+      by: int('rotate/shift: how many 1/16 steps (negative = earlier).'),
+      density: num('randomize: share of steps that get a hit, 0..1 (default 0.4).'),
+    },
+    ['pattern', 'channel', 'action'],
   ),
   op(
     'place_pattern',

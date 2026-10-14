@@ -148,6 +148,71 @@ describe('AI actions', () => {
   });
 });
 
+describe('AI actions on notes and steps', () => {
+  const pat = (s: ReturnType<typeof createTestServices>) => s.doc.getState().project.patternOrder[0]!;
+  const instrument = (s: ReturnType<typeof createTestServices>) => {
+    const p = s.doc.getState().project;
+    return p.channelOrder.find((id) => p.channels[id]?.kind === 'instrument')!;
+  };
+
+  it('runs a piano-roll tool on notes written earlier in the same answer', () => {
+    const s = createTestServices();
+    const ch = instrument(s);
+    const res = run(s, [
+      {
+        op: 'write_notes',
+        pattern: pat(s),
+        channel: ch,
+        notes: [
+          { step: 0, len: 2, key: 60 },
+          { step: 4, len: 2, key: 64 },
+        ],
+      },
+      {
+        op: 'note_tool',
+        tool: 'agstudio.notes.transpose',
+        pattern: pat(s),
+        channel: ch,
+        params: [{ name: 'semitones', value: 12 }],
+      },
+    ]);
+    expect(res.warnings).toEqual([]);
+    expect(res.changes.at(-1)).toMatch(/^Transpose on/);
+    const notes = Object.values(s.doc.getState().project.patterns[pat(s)]!.notes[ch]!);
+    expect(notes.map((n) => n.key).sort()).toEqual([72, 76]);
+    // One undo step for the whole answer.
+    s.history.undo();
+    expect(s.doc.getState().project.patterns[pat(s)]!.notes[ch]).toBeUndefined();
+  });
+
+  it('warns about an unknown tool and keeps the rest of the answer', () => {
+    const s = createTestServices();
+    const res = run(s, [
+      { op: 'song', bpm: 99 },
+      { op: 'note_tool', tool: 'agstudio.notes.teleport', pattern: 'current', channel: instrument(s) },
+    ]);
+    expect(res.warnings).toEqual([expect.stringContaining('there is no piano-roll tool')]);
+    expect(s.doc.getState().project.transport.bpm).toBe(99);
+  });
+
+  it('fills, rotates and clears a channel’s steps', () => {
+    const s = createTestServices();
+    const ch = instrument(s);
+    const ticks = () =>
+      Object.values(s.doc.getState().project.patterns[pat(s)]!.notes[ch] ?? {})
+        .map((n) => n.tick)
+        .sort((a, b) => a - b);
+    run(s, [{ op: 'steps', pattern: pat(s), channel: ch, action: 'clear' }]);
+    run(s, [{ op: 'steps', pattern: pat(s), channel: ch, action: 'fill', every: 4 }]);
+    expect(ticks()).toEqual([0, 960, 1920, 2880]);
+    run(s, [{ op: 'steps', pattern: pat(s), channel: ch, action: 'rotate', by: 2 }]);
+    expect(ticks()).toEqual([480, 1440, 2400, 3360]);
+    const res = run(s, [{ op: 'steps', pattern: pat(s), channel: ch, action: 'clear' }]);
+    expect(res.changes).toEqual([expect.stringMatching(/^Cleared the steps of/)]);
+    expect(ticks()).toEqual([]);
+  });
+});
+
 describe('answer parsing and value coercion', () => {
   it('reads answers and drops unknown actions', () => {
     const r = readAnswer({ message: 'hi', actions: [{ op: 'song', bpm: 1 }, { op: 'launch_rockets' }, 'x'] });
@@ -165,6 +230,12 @@ describe('answer parsing and value coercion', () => {
     expect(parseKey('F# dorian')).toEqual({ root: 6, scale: 'dorian' });
     expect(parseKey('Bb minor')).toEqual({ root: 10, scale: 'minor' });
     expect(parseKey('none')).toBeNull();
+    // Scale names map to the SDK's scale ids (what the piano roll highlights).
+    expect(parseKey('Am')).toEqual({ root: 9, scale: 'minor' });
+    expect(parseKey('E pentatonic minor')).toEqual({ root: 4, scale: 'minor-pentatonic' });
+    expect(parseKey('C lydian mode')).toEqual({ root: 0, scale: 'lydian' });
+    expect(parseKey('G harmonic minor')).toEqual({ root: 7, scale: 'harmonic-minor' });
+    expect(parseKey('F# sparkly')).toBeUndefined();
   });
 
   it('has a schema structured outputs accept (no numeric bounds, closed objects)', () => {

@@ -20,7 +20,7 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 
 | Folder | What | May import |
 |---|---|---|
-| `src/sdk` | Public plugin API (`@agstudio/sdk`, `/params`, `/worklet`, `/dsp`, `/ui`) | react only in `sdk/ui` |
+| `src/sdk` | Public plugin API (`@agstudio/sdk`, `/params`, `/worklet`, `/dsp`, `/notes`, `/ui`) | react only in `sdk/ui` |
 | `src/core` | Model, ops, history, time, queries, commands/keymap, schema, io. **No DOM** (tsconfig.core has no DOM lib) | immer, fflate, `@agstudio/sdk/params` |
 | `src/engine` | Web Audio engine, scheduler, reconcile, offline render | core, sdk |
 | `src/plugins/builtin` | Built-in instruments/effects | `@agstudio/sdk*` and react only |
@@ -56,6 +56,14 @@ Create `src/ui/features/<name>/register.ts` exporting `register(services)`. It i
 key bindings (`services.keymap.add`), menu items (`addMenuItems`), toolbar slots (`addToolbarSlot`) and browser sections
 (`addBrowserSection`) there. Put pure logic in `src/core` with unit tests next to it (`*.test.ts`); browser-only
 tests are `*.browser.test.ts` or live in `test/browser/`.
+
+The UI must explain itself:
+- Give every command a plain `hint` and every control a `data-hint` with units. They show in the hint bar and as
+  tooltips.
+- Reach features from a menu or right-click, not only a shortcut. The action search (Mod+K) finds every menu entry;
+  add others with `addActionProvider`.
+- Empty windows say what to do next.
+- Give the AI studio matching actions (`src/app/ai/`) so the chat can drive the feature too.
 
 ## Debugging
 

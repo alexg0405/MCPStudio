@@ -40,16 +40,18 @@ function describePlugin(def: PluginDef): string {
 export function pluginCatalog(registry: PluginRegistry): { text: string; key: string } {
   const instruments = registry.list('instrument').map((e) => describePlugin(e.def));
   const effects = registry.list('effect').map((e) => describePlugin(e.def));
-  const scripts = registry
-    .scripts()
-    .map((e) => `- ${e.def.id} "${e.def.name}"${e.def.description ? `: ${e.def.description}` : ''}`);
+  const scripts = registry.scripts().map((e) => {
+    const params = Object.entries(e.def.params).map(([id, spec]) => describeParam(id, spec as ParamSpec));
+    const head = `- ${e.def.id} "${e.def.name}"${e.def.description ? `: ${e.def.description}` : ''}`;
+    return params.length ? `${head}\n  params: ${params.join('; ')}` : head;
+  });
   const text = [
     'Instruments (for channels):',
     ...instruments,
     '',
     'Effects (for mixer track slots, up to 10 per track):',
     ...effects,
-    ...(scripts.length ? ['', 'Piano-roll tools (note scripts):', ...scripts] : []),
+    ...(scripts.length ? ['', 'Piano-roll tools (note_tool action):', ...scripts] : []),
   ].join('\n');
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);

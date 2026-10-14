@@ -4,6 +4,7 @@
  */
 import type { ParamSpec, PluginDef } from '@agstudio/sdk';
 import type { PluginRegistry } from '@app/plugins/registry';
+import type { PresetLibrary } from '@app/presets';
 
 function describeParam(id: string, spec: ParamSpec): string {
   const label = spec.label && spec.label.toLowerCase() !== id.toLowerCase() ? ` "${spec.label}"` : '';
@@ -24,7 +25,7 @@ function describeParam(id: string, spec: ParamSpec): string {
   }
 }
 
-function describePlugin(def: PluginDef): string {
+function describePlugin(def: PluginDef, presets?: PresetLibrary): string {
   const head = `- ${def.id} "${def.name}"${def.category ? ` [${def.category}]` : ''}${
     def.kind === 'effect' && def.sidechain ? ' (has a sidechain input)' : ''
   }${def.description ? `: ${def.description}` : ''}`;
@@ -33,13 +34,15 @@ function describePlugin(def: PluginDef): string {
   if (params.length) lines.push(`  params: ${params.join('; ')}`);
   if (def.sampleSlots?.length) lines.push(`  plays a sample (set it with "sample" when adding the channel)`);
   if (def.presets?.length) lines.push(`  presets: ${def.presets.map((p) => p.name).join(', ')}`);
+  const mine = presets?.forPlugin(def.id) ?? [];
+  if (mine.length) lines.push(`  the musician's own presets: ${mine.map((p) => p.name).join(', ')}`);
   return lines.join('\n');
 }
 
 /** The catalog text and a key that changes when it does. */
-export function pluginCatalog(registry: PluginRegistry): { text: string; key: string } {
-  const instruments = registry.list('instrument').map((e) => describePlugin(e.def));
-  const effects = registry.list('effect').map((e) => describePlugin(e.def));
+export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary): { text: string; key: string } {
+  const instruments = registry.list('instrument').map((e) => describePlugin(e.def, presets));
+  const effects = registry.list('effect').map((e) => describePlugin(e.def, presets));
   const scripts = registry.scripts().map((e) => {
     const params = Object.entries(e.def.params).map(([id, spec]) => describeParam(id, spec as ParamSpec));
     const head = `- ${e.def.id} "${e.def.name}"${e.def.description ? `: ${e.def.description}` : ''}`;

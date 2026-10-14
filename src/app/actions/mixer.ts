@@ -25,19 +25,31 @@ import { fxSlotOf, insertLabel } from '@core/query/mixer';
 import { canRoute, wouldCycle } from '@core/query/routing';
 import { defaultValues } from '@agstudio/sdk';
 import type { Services } from '../services';
+import { presetValues, type PresetChoice } from '../presets';
 
 // User-level mixer actions: each is one undoable edit, used by the mixer, menus and the browser.
 
-/** Fresh plugin data (default params) for an effect, or null if the id isn't an installed effect. */
-function effectData(s: Services, pluginId: string): { name: string; data: PluginInstance } | null {
+/** Fresh plugin data (default params, or a preset's) for an effect, or null if the id isn't an installed effect. */
+function effectData(s: Services, pluginId: string, preset?: PresetChoice): { name: string; data: PluginInstance } | null {
   const def = s.plugins.get(pluginId);
   if (!def || def.kind !== 'effect') return null;
-  return { name: def.name, data: makePluginInstance(def.id, def.version, defaultValues(def.params)) };
+  if (!preset) return { name: def.name, data: makePluginInstance(def.id, def.version, defaultValues(def.params)) };
+  const { params, state } = presetValues(def, preset);
+  return {
+    name: `${def.name}: ${preset.name}`,
+    data: makePluginInstance(def.id, def.version, params, state !== undefined ? { state } : {}),
+  };
 }
 
 /** Adds an effect to an insert (after its last effect by default). Returns the new slot, or null. */
-export function addEffect(s: Services, insertId: InsertId, pluginId: string, index?: number): SlotId | null {
-  const fx = effectData(s, pluginId);
+export function addEffect(
+  s: Services,
+  insertId: InsertId,
+  pluginId: string,
+  index?: number,
+  preset?: PresetChoice,
+): SlotId | null {
+  const fx = effectData(s, pluginId, preset);
   const insert = s.doc.getState().project.mixer.inserts[insertId];
   if (!fx || !insert || insert.fx.length >= MAX_FX_SLOTS) return null;
   const id = newId.slot();
@@ -45,6 +57,7 @@ export function addEffect(s: Services, insertId: InsertId, pluginId: string, ind
   s.history.transact(`Add ${fx.name}`, (d) => {
     added = addFxSlot(d, insertId, fx.data, index, id);
   });
+  if (added && preset) s.presets.noteLoaded({ kind: 'fx', insertId, slotId: added }, preset.name);
   return added;
 }
 
@@ -55,11 +68,12 @@ export function addEffect(s: Services, insertId: InsertId, pluginId: string, ind
 export function addEffectToSelectedInsert(
   s: Services,
   pluginId: string,
+  preset?: PresetChoice,
 ): { insertId: InsertId; slotId: SlotId } | null {
   const project = s.doc.getState().project;
   const selected = s.session.getState().selectedInsertId;
   const insertId = selected && project.mixer.inserts[selected] ? selected : MASTER;
-  const slotId = addEffect(s, insertId, pluginId);
+  const slotId = addEffect(s, insertId, pluginId, undefined, preset);
   if (!slotId) {
     const full = (project.mixer.inserts[insertId]?.fx.length ?? 0) >= MAX_FX_SLOTS;
     if (full) s.session.getState().toast(`${insertLabel(project, insertId)} has no free effect slot`, 'error');

@@ -387,6 +387,13 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   clip on consecutive tracks. Imported files are hashed into the sample store and embedded in saved projects.
 - Decoding (`engine/decode.ts`): `decodeAudioData`, falling back to the PCM parser (AIFF and unusual WAVs) at the file's
   own rate.
+- User presets (`app/presets.ts`, `services.presets`): a list in IndexedDB (`user-presets:v1`), loaded at startup;
+  writes wait for that load so an early save can't replace what's stored. Each stores every param, the state and the
+  plugin's `version` (older ones go through the plugin's `migrate` when loaded). `presetChoices(def, library)` is the
+  factory presets then yours; `applyPreset` is one undo step and notes the name per owner (session only), so the preset
+  bar shows "Name (edited)" after a tweak. Randomize keeps params that look like output levels. `.agpreset` files are
+  JSON (`format: "agstudio-preset"`). Samples aren't part of a preset. The AI catalog lists your presets and
+  `preset: "<name>"` finds yours before the factory ones.
 
 ## Voice analysis (`src/core/voice`)
 

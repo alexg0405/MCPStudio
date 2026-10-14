@@ -500,12 +500,15 @@ keep an `id` are edits of the input note with that id.
 
 ## Presets and versions
 
-`presets: [{ name, params: { … } }]` adds a preset menu to the editor. Params a preset leaves out go
-back to their defaults.
+`presets: [{ name, params: { … } }]` are your plugin's factory presets: they show in the preset bar at
+the top of its window (◀ name ▶) and in the browser's preset search. Params a preset leaves out go
+back to their defaults; give a preset `state` to set the plugin's state too (otherwise it keeps it).
+Musicians save their own presets next to yours (kept in the browser, or exported as `.agpreset`
+files). A user preset stores every param, the state and your plugin's `version`.
 
 When you change params or state incompatibly, bump `version` and add
-`migrate({ version, params, state }) => ({ params, state })`. Projects saved with older versions are
-upgraded when they load.
+`migrate({ version, params, state }) => ({ params, state })`. Projects and user presets saved with
+older versions are upgraded when they load.
 
 ## Testing
 

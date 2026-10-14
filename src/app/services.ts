@@ -24,6 +24,7 @@ import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
 import { BeatAssistant } from './assistant/assistant';
 import { opfsSampleProvider } from './persistence/project-io';
+import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -57,6 +58,8 @@ export interface Services {
   readonly files: ProjectFiles;
   /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). */
   readonly assistant: BeatAssistant;
+  /** Your own presets (kept in this browser) and which preset each plugin loaded last. */
+  readonly presets: PresetLibrary;
   /** Replaces the audio engine with a fresh AudioContext (after AudioWorklet code changed). */
   rebootEngine(): Promise<void>;
   /** Fires after any store, registry or engine change; used to refresh command enabled/checked state. */
@@ -79,6 +82,8 @@ export interface ServiceOptions {
   /** Restored piano roll settings. */
   pianoRoll?: Partial<PianoRollViewState>;
   playlist?: Partial<PlaylistViewState>;
+  /** Where your presets live (default: IndexedDB). */
+  presetStorage?: PresetStorage;
 }
 
 export function createServices(opts: ServiceOptions = {}): Services {
@@ -153,6 +158,10 @@ export function createServices(opts: ServiceOptions = {}): Services {
   // Before connectEngine: a drag's first edit lets automation go of the control before the engine hears it.
   const automation = new AutomationService({ history, doc, engine, recording, view, editor, plugins, session });
 
+  const presets = new PresetLibrary(opts.presetStorage ?? idbPresetStorage, (message) =>
+    session.getState().toast(message, 'error'),
+  );
+  void presets.load();
   let files: ProjectFiles | null = null;
   let controllers: ControllerRouter | null = null;
   let assistant: BeatAssistant | null = null;
@@ -181,6 +190,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     get assistant() {
       return (assistant ??= new BeatAssistant(services));
     },
+    presets,
     rebootEngine: () => engine.reboot(),
     subscribe(fn) {
       const unsubs = [
@@ -196,6 +206,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
         midi.subscribe(fn),
         recording.store.subscribe(fn),
         services.files.store.subscribe(fn),
+        presets.subscribe(fn),
       ];
       return () => unsubs.forEach((u) => u());
     },

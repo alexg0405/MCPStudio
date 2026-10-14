@@ -17,6 +17,7 @@ import { ErrorBoundary } from '../../controls/ErrorBoundary';
 import { useGestureEdit } from '../../edit';
 import { showParamMenu } from '../../param-menu';
 import { AutoPanel } from './AutoPanel';
+import { PresetBar } from './PresetBar';
 import styles from './PluginWindow.module.css';
 import type { WindowContentProps } from '../../workspace/registry';
 
@@ -192,32 +193,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
           {def.name}
         </span>
         {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
-        {def.presets && def.presets.length > 0 && (
-          <label className={styles.headerItem}>
-            <span className={styles.headerLabel}>Preset</span>
-            <select
-              value=""
-              onChange={(e) => {
-                const preset = def.presets?.find((pr) => pr.name === e.target.value);
-                if (!preset) return;
-                const next: Record<string, ParamValue> = {};
-                for (const [key, spec] of Object.entries(def.params as ParamSpecs))
-                  next[key] = (preset.params as Record<string, ParamValue> | undefined)?.[key] ?? spec.default;
-                edit.setParams(next, `${def.name}: ${preset.name}`);
-                if (preset.state !== undefined) edit.setState(preset.state);
-              }}
-            >
-              <option value="" disabled>
-                Choose…
-              </option>
-              {def.presets.map((pr) => (
-                <option key={pr.name} value={pr.name}>
-                  {pr.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <PresetBar owner={owner} def={def} instance={instance} />
         {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
         {def.sampleSlots?.map((slot) => (
           <SampleSlot key={slot} owner={owner} slot={slot} />

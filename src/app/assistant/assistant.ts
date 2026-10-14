@@ -531,7 +531,7 @@ export class BeatAssistant {
   /** This turn's message to Claude: the request, the project, and what Claude doesn't have yet. */
   private turnText(prompt: string, take: Take | null): string {
     const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
-    const catalog = pluginCatalog(this.s.plugins);
+    const catalog = pluginCatalog(this.s.plugins, this.s.presets);
     const commands = commandCatalog(this.s);
     const key = `${catalog.key}:${commands.key}`;
     if (!this.chat.hasHistory || this.catalogSent !== key) {

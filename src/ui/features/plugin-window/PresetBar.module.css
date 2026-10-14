@@ -1,0 +1,69 @@
+.bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.arrow,
+.name,
+.save {
+  height: 22px;
+  border: 1px solid var(--ag-border);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.arrow {
+  width: 20px;
+  padding: 0;
+  border-radius: var(--ag-radius);
+  color: var(--ag-text-dim);
+  font-size: 9px;
+}
+
+.arrow:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  max-width: 220px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--ag-radius);
+  text-align: left;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.caret {
+  flex: none;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+}
+
+.save {
+  margin-left: 4px;
+  padding: 0 8px;
+  border-radius: var(--ag-radius);
+  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+}
+
+.arrow:not(:disabled):hover,
+.name:hover,
+.save:hover {
+  border-color: var(--ag-border-soft);
+  color: var(--ag-text);
+}

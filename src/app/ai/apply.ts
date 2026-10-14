@@ -64,7 +64,6 @@ import {
   encode,
   formatValue,
   isAutomatable,
-  type JsonValue,
   type ParamSpec,
   type ParamSpecs,
   type ParamValue,
@@ -76,6 +75,7 @@ import type { PluginSpec } from './builder';
 import { planBeat, showBeat, writeBeat, type AppliedBeat, type BeatPlan } from '../assistant/apply';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import type { Services } from '../services';
+import { presetChoices, presetValues } from '../presets';
 import type { AiAction, AiAnswer } from './schema';
 
 /** What the UI should do after the edit. */
@@ -310,11 +310,15 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
         const out: string[] = [];
         const presetName = str(a.preset);
         if (presetName) {
-          const preset = def.presets?.find((p) => lower(p.name) === lower(presetName));
+          // The musician's own presets first (they name them), then the factory ones.
+          const preset = presetChoices(def, s.presets)
+            .reverse()
+            .find((p) => lower(p.name) === lower(presetName));
           if (!preset) warnings.push(`${def.name} has no preset "${presetName}"`);
           else {
-            inst.params = { ...defaultValues(def.params), ...(preset.params as Record<string, ParamValue>) };
-            if (preset.state !== undefined) inst.state = preset.state as JsonValue as never;
+            const values = presetValues(def, preset);
+            inst.params = values.params;
+            if (values.state !== undefined) inst.state = values.state as never;
             out.push(`preset ${preset.name}`);
           }
         }

@@ -4,6 +4,7 @@ import type { ChannelId, InstrumentChannel } from '@core/model/types';
 import { addChannel, addSample, moveChannel, removeChannel } from '@core/ops/channels';
 import type { Services } from '../services';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
+import { presetValues, type PresetChoice } from '../presets';
 
 // User-level channel actions: each is one undoable edit, used by the rack, menus and browser.
 
@@ -31,14 +32,22 @@ export function addKitChannel(s: Services, generator: string): ChannelId | null 
   return channel.id;
 }
 
-/** Adds a channel with an instrument plugin (default params). */
-export function addInstrumentChannel(s: Services, pluginId: string): ChannelId | null {
+/** Adds a channel with an instrument plugin (default params, or a preset's; the channel is named after it). */
+export function addInstrumentChannel(s: Services, pluginId: string, preset?: PresetChoice): ChannelId | null {
   const def = s.plugins.get(pluginId);
   if (!def || def.kind !== 'instrument') return null;
   const project = s.doc.getState().project;
-  const channel = instrumentChannelFor(def, def.name, project.channelOrder.length);
-  s.history.transact(`Add ${def.name}`, (d) => addChannel(d, channel, insertIndex(s)));
+  const channel = instrumentChannelFor(def, preset?.name ?? def.name, project.channelOrder.length);
+  if (preset) {
+    const { params, state } = presetValues(def, preset);
+    channel.plugin.params = params;
+    if (state !== undefined) channel.plugin.state = state;
+  }
+  s.history.transact(`Add ${preset ? `${def.name}: ${preset.name}` : def.name}`, (d) =>
+    addChannel(d, channel, insertIndex(s)),
+  );
   s.session.getState().selectChannel(channel.id);
+  if (preset) s.presets.noteLoaded({ kind: 'channel', channelId: channel.id }, preset.name);
   return channel.id;
 }
 

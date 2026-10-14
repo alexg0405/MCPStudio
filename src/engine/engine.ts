@@ -138,6 +138,8 @@ export class Engine implements EngineApi, EngineCore {
     ctx: BaseAudioContext,
     private readonly opts: EngineOptions,
     offline = false,
+    /** Offline renders may leave out the master safety limiter (renders that become clips again). */
+    private readonly build: { limiter?: boolean } = {},
   ) {
     this.ctx = ctx;
     this.offline = offline;
@@ -220,6 +222,7 @@ export class Engine implements EngineApi, EngineCore {
 
   /** Inserts the master safety limiter once its worklet module has loaded. */
   private async init(): Promise<void> {
+    if (this.build.limiter === false) return;
     try {
       await this.loadModule(limiterUrl);
       const node = new AudioWorkletNode(this.ctx, LIMITER_ID, {

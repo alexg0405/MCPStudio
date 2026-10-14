@@ -1,12 +1,11 @@
-import { encodeWav } from '@core/io/wav';
+import { encodeAudioAsync, type EncodeSpec } from './encode';
 
-// Encodes WAV off the main thread. The channel buffers are transferred in and the file is
-// transferred back, so nothing large is copied.
+// Encodes WAV, FLAC or MP3 off the main thread. The channel buffers are transferred in and the file
+// is transferred back, so nothing large is copied.
 interface Request {
   channels: Float32Array[];
   sampleRate: number;
-  bitDepth: 16 | 24 | 32;
-  dither: boolean;
+  spec: EncodeSpec;
 }
 
 const scope = self as unknown as {
@@ -14,10 +13,10 @@ const scope = self as unknown as {
   postMessage(message: unknown, transfer?: Transferable[]): void;
 };
 
-scope.onmessage = (e) => {
+scope.onmessage = async (e) => {
   try {
-    const { channels, sampleRate, bitDepth, dither } = e.data;
-    const bytes = encodeWav(channels, sampleRate, { bitDepth, dither, seed: 1 });
+    const { channels, sampleRate, spec } = e.data;
+    const bytes = await encodeAudioAsync(channels, sampleRate, spec);
     scope.postMessage({ ok: true, bytes }, [bytes.buffer as ArrayBuffer]);
   } catch (err) {
     scope.postMessage({ ok: false, error: err instanceof Error ? err.message : String(err) });

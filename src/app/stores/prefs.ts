@@ -8,9 +8,18 @@ export interface PrefsState {
   pianoOctave: number;
   /** Listen to connected MIDI keyboards. */
   midiInput: boolean;
-  /** Last WAV export settings. */
+  /** Last export settings: WAV bit depth, sample rate… */
   exportFormat: 'pcm16' | 'pcm24' | 'float32';
   exportSampleRate: number;
+  /** …file format, FLAC bit depth, MP3 bit rate (kbps)… */
+  exportCodec: 'wav' | 'flac' | 'mp3';
+  exportFlacBits: number;
+  exportMp3Kbps: number;
+  /** …normalize to −0.3 dBFS, stems, stems through the master chain, stems into a folder or a .zip. */
+  exportNormalize: boolean;
+  exportStems: boolean;
+  exportMasterChain: boolean;
+  exportStemsTo: 'folder' | 'zip';
   /** Metronome clicks while playing. */
   metronome: boolean;
   /** Bars of count-in when recording (0 = none). */
@@ -40,6 +49,13 @@ const DEFAULTS: PrefsState = {
   midiInput: false,
   exportFormat: 'pcm24',
   exportSampleRate: 48000,
+  exportCodec: 'wav',
+  exportFlacBits: 24,
+  exportMp3Kbps: 320,
+  exportNormalize: false,
+  exportStems: false,
+  exportMasterChain: true,
+  exportStemsTo: 'folder',
   metronome: false,
   countInBars: 1,
   recordQuantize: 0,

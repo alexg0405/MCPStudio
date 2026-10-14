@@ -86,17 +86,33 @@ export async function pickSaveFile(suggestedName: string): Promise<FileSystemFil
   }
 }
 
-const WAV_TYPES: FilePickerAcceptType[] = [{ description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } }];
+/** Audio export file kinds: what the save picker offers, by extension. */
+const AUDIO_TYPES: Record<string, FilePickerAcceptType> = {
+  wav: { description: 'WAV audio', accept: { 'audio/wav': ['.wav'] } },
+  flac: { description: 'FLAC audio (lossless, smaller)', accept: { 'audio/flac': ['.flac'] } },
+  mp3: { description: 'MP3 audio', accept: { 'audio/mpeg': ['.mp3'] } },
+  zip: { description: 'Zip archive', accept: { 'application/zip': ['.zip'] } },
+};
 
-/** Asks where to save an exported WAV file. Resolves null when the user cancels. */
-export async function pickSaveWavFile(suggestedName: string): Promise<FileSystemFileHandle | null> {
-  const name = suggestedName.toLowerCase().endsWith('.wav') ? suggestedName : `${suggestedName}.wav`;
+/**
+ * Asks where to save an exported file of a kind ('wav', 'flac', 'mp3', 'zip'). Resolves null when
+ * the user cancels.
+ */
+export async function pickSaveExportFile(suggestedName: string, ext: string): Promise<FileSystemFileHandle | null> {
+  const name = suggestedName.toLowerCase().endsWith(`.${ext}`) ? suggestedName : `${suggestedName}.${ext}`;
+  const type = AUDIO_TYPES[ext];
   try {
-    return await requirePicker('showSaveFilePicker')({ suggestedName: name, types: WAV_TYPES, id: 'export' });
+    return await requirePicker('showSaveFilePicker')({ suggestedName: name, types: type ? [type] : [], id: 'export' });
   } catch (e) {
     if (isAbort(e)) return null;
     throw e;
   }
+}
+
+/** Writes (creating or replacing) a file inside a folder the user picked. */
+export async function writeFileInDirectory(dir: FileSystemDirectoryHandle, name: string, bytes: Uint8Array): Promise<void> {
+  const handle = await dir.getFileHandle(name, { create: true });
+  await writeFile(handle, bytes);
 }
 
 const MIDI_TYPES: FilePickerAcceptType[] = [{ description: 'MIDI file', accept: { 'audio/midi': ['.mid'] } }];

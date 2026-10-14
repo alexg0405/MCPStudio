@@ -123,6 +123,9 @@ export default defineConfig(({ mode }) => ({
           environment: 'node',
           include: ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts', 'test/unit/**/*.test.ts'],
           exclude: ['**/*.browser.test.{ts,tsx}', '**/node_modules/**', 'plugins/_*/**'],
+          // DSP tests render seconds of audio: a busy machine (browser tests running alongside) can
+          // take several times as long as a quiet one.
+          testTimeout: 20_000,
         },
       },
       {

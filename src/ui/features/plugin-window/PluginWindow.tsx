@@ -217,6 +217,18 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
         </span>
         {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
         <PresetBar owner={owner} def={def} instance={instance} />
+        {services.plugins.entry(def.id)?.source === 'user' && (
+          <button
+            type="button"
+            tabIndex={-1}
+            className={styles.editCode}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={() => services.commands.run('plugins.editCode', def.id)}
+            data-hint="Open this plugin’s code in your code editor: every save hot-reloads it, settings stay"
+          >
+            {'</>'} Edit code
+          </button>
+        )}
         {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
         {def.samplePickers !== false &&
           def.sampleSlots?.map((slot) => <SampleSlot key={slot} owner={owner} slot={slot} />)}

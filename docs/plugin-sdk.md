@@ -8,6 +8,12 @@ custom editors, Drum Pads and Slicer show sample slots in a custom editor.
 
 ## Quick start
 
+In the app: **Add → New plugin…** (or right-click a plugin in the browser). Pick a name, what it is
+and how it's written; AGstudio writes it into `plugins/<name>/`, adds it to your project and opens
+the file in your code editor. Every user plugin's window has an **Edit code** button.
+
+Or from a terminal:
+
 ```bash
 npm run new:plugin -- --kind instrument --style graph --id user.my-synth
 ```

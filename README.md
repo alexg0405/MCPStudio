@@ -109,6 +109,10 @@ every window also has an Alt+number shortcut and a toolbar button.
 
 ## Write your own instrument, effect or note tool
 
+In the app: **Add → New plugin…**. Name it, pick what it is (instrument, effect or piano-roll tool) and how it's
+written (Faust, Web Audio nodes or your own worklet DSP); AGstudio writes it into `plugins/`, puts it in your project
+and opens it in your code editor. Any of your plugins' windows has **Edit code**. From a terminal:
+
 ```bash
 export PATH="$HOME/.local/node/bin:$PATH"; npm run new:plugin -- --kind instrument --style graph --id user.my-synth
 ```

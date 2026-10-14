@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { KIT, KIT_VERSION } from '@core/model/kit';
 import { addEffectToSelectedInsert } from '@app/actions/mixer';
+import { showContextMenu } from '../../controls/ContextMenu';
 import { openWindow } from '../../workspace/registry';
 import { addInstrumentChannel, addKitChannel } from '@app/actions/channels';
 import { newPattern } from '@app/actions/patterns';
@@ -25,12 +26,33 @@ export function PluginsSection() {
   const instruments = plugins.list('instrument');
   const effects = plugins.list('effect');
   const errors = plugins.loadErrors();
+  const pluginMenu = (ev: React.MouseEvent, id: string, source: 'builtin' | 'user') => {
+    ev.preventDefault();
+    showContextMenu(ev, [
+      ...(source === 'user'
+        ? [
+            {
+              label: 'Edit code',
+              onSelect: () => services.commands.run('plugins.editCode', id),
+              hint: 'Open its code in your code editor (saving hot-reloads it)',
+            },
+            { kind: 'separator' as const },
+          ]
+        : []),
+      {
+        label: 'New plugin…',
+        onSelect: () => services.commands.run('plugins.new'),
+        hint: 'Start your own instrument, effect or piano-roll tool from a template',
+      },
+    ]);
+  };
   return (
     <>
       {instruments.map((e) => (
         <button
           key={e.def.id}
           className={styles.item}
+          onContextMenu={(ev) => pluginMenu(ev, e.def.id, e.source)}
           onClick={() => void addInstrumentChannel(services, e.def.id)}
           data-hint={`${e.def.description ?? e.def.name}. Click to add a channel.`}
         >
@@ -42,6 +64,7 @@ export function PluginsSection() {
         <button
           key={e.def.id}
           className={styles.item}
+          onContextMenu={(ev) => pluginMenu(ev, e.def.id, e.source)}
           onClick={() => {
             const added = addEffectToSelectedInsert(services, e.def.id);
             if (added) openWindow(services, 'plugin', { kind: 'fx', ...added });

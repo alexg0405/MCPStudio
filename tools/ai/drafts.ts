@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join, relative } from 'node:path';
 import type { Plugin } from 'vite';
@@ -206,6 +206,37 @@ export function draftServer(root: string): Plugin {
       const folder = draftFolder(body.id);
       await rm(join(drafts, folder), { recursive: true, force: true });
       return { folder };
+    },
+    // A new plugin of your own from a template (what `npm run new:plugin` does), for Add → New plugin….
+    async '/new'(body) {
+      const folder = draftFolder(body.id);
+      const kind = body.kind === 'effect' || body.kind === 'note-script' ? body.kind : 'instrument';
+      const style = body.style === 'worklet' || body.style === 'faust' ? body.style : 'graph';
+      const name =
+        typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60).replace(/['"`$\\]/g, '') : folder;
+      const template = join(root, 'templates', kind === 'note-script' ? 'note-script' : `${kind}-${style}`);
+      const target = join(plugins, folder);
+      if (await exists(target)) throw new DraftError(`There already is a plugin folder plugins/${folder}.`, 409);
+      await cp(template, target, { recursive: true });
+      const files: string[] = [];
+      const fill = async (dir: string, rel: string) => {
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
+          const path = join(dir, entry.name);
+          if (entry.isDirectory()) await fill(path, `${rel}${entry.name}/`);
+          else {
+            const text = await readFile(path, 'utf8');
+            await writeFile(path, text.replaceAll('__PLUGIN_ID__', String(body.id)).replaceAll('__PLUGIN_NAME__', name));
+            files.push(`${rel}${entry.name}`);
+          }
+        }
+      };
+      await fill(target, '');
+      // The file to start editing: the DSP for worklet and Faust plugins, else the definition.
+      const main =
+        kind === 'note-script' || style === 'graph'
+          ? 'index.ts'
+          : (files.find((f) => f.endsWith('.worklet.ts') || f.endsWith('.dsp')) ?? 'index.ts');
+      return { folder, files, main: `plugins/${folder}/${main}` };
     },
   };
 

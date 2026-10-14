@@ -212,3 +212,20 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+
+.editCode {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.editCode:hover {
+  color: var(--ag-text);
+  border-color: var(--ag-border-soft);
+}

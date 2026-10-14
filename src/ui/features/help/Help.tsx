@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createStore, useStore } from 'zustand';
+import { newFromTemplate, TEMPLATES } from '@app/templates';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
 import { Icon, type IconName } from '../../controls/Icon';
@@ -143,6 +144,22 @@ function Welcome() {
             </>
           )}
         </p>
+        <div className={styles.templates}>
+          <span className={styles.templatesLabel}>Or start from a ready beat:</span>
+          {TEMPLATES.map((t) => (
+            <button
+              key={t.id}
+              className={styles.chip}
+              data-hint={t.description}
+              onClick={() => {
+                close();
+                void newFromTemplate(services, t.id);
+              }}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
         <div className={styles.buttons}>
           <button className={styles.button} onClick={tour}>
             Show me around

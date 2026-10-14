@@ -88,9 +88,10 @@ export class ProjectFiles {
     return true;
   }
 
-  async newProject(): Promise<boolean> {
+  /** A new, untitled project: the default template, or the given starting point. */
+  async newProject(start?: Project): Promise<boolean> {
     if (!(await this.confirmReplace())) return false;
-    this.replace(createDefaultProject(this.s.plugins), null, { name: UNTITLED, handle: null, fileKey: null });
+    this.replace(start ?? createDefaultProject(this.s.plugins), null, { name: UNTITLED, handle: null, fileKey: null });
     return true;
   }
 

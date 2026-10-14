@@ -103,6 +103,35 @@
   margin-top: 18px;
 }
 
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.templatesLabel {
+  margin-right: 2px;
+  color: var(--ag-text-dim);
+}
+
+.chip {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: 12px;
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--ag-accent);
+  color: var(--ag-accent);
+}
+
 .button {
   display: inline-flex;
   align-items: center;

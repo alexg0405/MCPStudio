@@ -1,5 +1,6 @@
 import type { Services } from '@app/services';
 import { recentFiles } from '@app/persistence/recent-files';
+import { newFromTemplate, TEMPLATES } from '@app/templates';
 import { PROJECT_FILE_EXTENSION } from '@core/io/project-file';
 import { showDialog } from '../../controls/Dialog';
 import { addMenuItems, cmd, sep, type DynamicMenuEntry } from '../../shell/menus';
@@ -67,6 +68,16 @@ export function register(services: Services): void {
   });
 
   commands.register<string>({
+    id: 'file.newFromTemplate',
+    title: 'New from template',
+    category: 'File',
+    hint: 'Start a new project with a ready beat in a style (trap, boom bap, house, lo-fi, drill)',
+    argsHint: TEMPLATES.map((t) => `'${t.id}'`).join(', '),
+    palette: false,
+    enabled: idle,
+    run: (s, id) => void newFromTemplate(s, String(id ?? 'trap')),
+  });
+  commands.register<string>({
     id: 'file.openRecent',
     title: 'Open recent project',
     category: 'File',
@@ -113,6 +124,23 @@ export function register(services: Services): void {
   };
   addMenuItems('file', [
     cmd('file.new', 10),
+    {
+      kind: 'dynamic',
+      id: 'templates',
+      order: 12,
+      entries: () => [
+        {
+          label: 'New from template',
+          run: () => {},
+          children: TEMPLATES.map((t) => ({
+            label: t.name,
+            hint: t.description,
+            disabled: !idle(services),
+            run: () => void newFromTemplate(services, t.id),
+          })),
+        },
+      ],
+    },
     cmd('file.open', 20),
     sep(22),
     { kind: 'dynamic', id: 'recent-files', order: 24, entries: recentEntries },

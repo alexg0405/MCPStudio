@@ -110,6 +110,8 @@ export class LoudnessMeter {
   private blockCount = 0;
   private acc = 0;
   private accFrames = 0;
+  /** Blocks counted before this one don't join the integrated measurement (after resetIntegrated). */
+  private gateFrom = 0;
   /** Histogram of 400 ms gating blocks: count and summed mean square per bin. */
   private readonly binCount: Float64Array;
   private readonly binPower: Float64Array;
@@ -146,14 +148,17 @@ export class LoudnessMeter {
     this.accFrames = 0;
     this.binCount.fill(0);
     this.binPower.fill(0);
+    this.gateFrom = 0;
     this.momentary = this.shortTerm = this.integrated = -Infinity;
   }
 
-  /** Forgets the integrated loudness only (a new measurement from now on). */
+  /** Forgets the integrated loudness only: a new measurement of what comes from now on. */
   resetIntegrated(): void {
     this.binCount.fill(0);
     this.binPower.fill(0);
     this.integrated = -Infinity;
+    // The gating blocks overlap by 300 ms: wait until one is made of new audio only.
+    this.gateFrom = this.blockCount + MOMENTARY_BLOCKS;
   }
 
   private endBlock(): void {
@@ -166,7 +171,7 @@ export class LoudnessMeter {
     this.momentary = this.blockCount >= MOMENTARY_BLOCKS ? loudnessOf(m) : -Infinity;
     this.shortTerm = this.blockCount >= SHORT_TERM_BLOCKS ? loudnessOf(this.mean(SHORT_TERM_BLOCKS)) : -Infinity;
     // Every 100 ms a 400 ms gating block (75 % overlap) joins the integrated measurement.
-    if (this.blockCount >= MOMENTARY_BLOCKS) {
+    if (this.blockCount >= MOMENTARY_BLOCKS && this.blockCount >= this.gateFrom) {
       const level = loudnessOf(m);
       if (level > ABSOLUTE_GATE) {
         const bin = Math.min(this.binCount.length - 1, Math.floor((level - ABSOLUTE_GATE) / BIN_LU));

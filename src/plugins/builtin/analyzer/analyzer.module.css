@@ -1,0 +1,142 @@
+/* Analyzer editor. Colours come from the host theme tokens, with fallbacks. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  min-width: 300px;
+}
+
+.panel {
+  position: relative;
+  border: 1px solid var(--ag-border, #12161a);
+  border-radius: var(--ag-radius, 3px);
+  background: var(--ag-surface-inset, #1e2428);
+  overflow: hidden;
+}
+
+.panel canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spectrum {
+  height: 150px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  min-height: 120px;
+}
+
+.scope {
+  flex: 1;
+  min-width: 140px;
+  height: 120px;
+}
+
+.caption {
+  position: absolute;
+  top: 3px;
+  left: 6px;
+  color: var(--ag-text-faint, #6a747c);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.meters {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-content: start;
+  gap: 3px 10px;
+  width: 190px;
+  padding: 6px 8px;
+}
+
+.name {
+  color: var(--ag-text-dim, #929ca5);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.number {
+  color: var(--ag-text, #d9dfe4);
+  font-family: var(--ag-font-mono, monospace);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.big {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.over {
+  color: var(--ag-danger, #e5574d);
+}
+
+.bars {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.bar {
+  position: relative;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--ag-surface-1, #2a3238);
+  overflow: hidden;
+}
+
+.barFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--ag-meter-lo, #67d05b);
+}
+
+.corr {
+  position: relative;
+  height: 9px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(229, 87, 77, 0.35), rgba(255, 255, 255, 0.06) 50%, rgba(103, 208, 91, 0.35));
+}
+
+.corrMark {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: 50%;
+  width: 3px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ag-text, #d9dfe4);
+}
+
+.corrScale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--ag-text-faint, #6a747c);
+  font-size: 9px;
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.note {
+  color: var(--ag-text-faint, #6a747c);
+  font-size: 10px;
+}

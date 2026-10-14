@@ -1,7 +1,9 @@
 import type { Services } from '@app/services';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
+import { setWindowHelp } from '../../workspace/window-help';
 import { showWelcome, startTour, TourOverlay, WelcomeOverlay } from './Help';
+import { windowHelpTexts } from './window-help';
 
 /**
  * Getting started: the welcome dialog (opens by itself the first time AGstudio starts), a guided
@@ -32,6 +34,10 @@ export function register(services: Services): void {
     checked: (s) => s.prefs.getState().tooltips,
   });
   addMenuItems('help', [cmd('help.welcome', 1), cmd('help.tour', 2), sep(3)]);
+  // The "?" in each window's title bar.
+  const mac = services.platform === 'mac';
+  for (const [type, help] of Object.entries(windowHelpTexts(mac ? '⌘' : 'Ctrl', mac ? '⌥' : 'Alt')))
+    setWindowHelp(type, help);
   addMenuItems('options', [sep(89), cmd('options.tooltips', 90)]);
   addOverlay('help-welcome', WelcomeOverlay);
   addOverlay('help-tour', TourOverlay);

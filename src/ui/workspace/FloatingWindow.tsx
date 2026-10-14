@@ -1,9 +1,18 @@
-import { memo, useCallback, useRef, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { WindowInstance } from '@app/stores/view';
 import type { Rect, Size } from '@core/time/geometry';
 import { useServices } from '../services-context';
 import { Icon } from '../controls/Icon';
 import { clampRect, getWindowType } from './registry';
+import { subscribeWindowHelp, windowHelp, type WindowHelp } from './window-help';
 import styles from './Workspace.module.css';
 
 type DragMode = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -42,6 +51,8 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
   // Titles can depend on app state (e.g. the piano roll's channel), so follow it.
   const subscribe = useCallback((fn: () => void) => services.subscribe(fn), [services]);
   const title = useSyncExternalStore(subscribe, () => def?.title(instance.props, services) ?? '');
+  const help = useSyncExternalStore(subscribeWindowHelp, () => windowHelp(instance.type));
+  const [helpOpen, setHelpOpen] = useState(false);
   if (!def) return null;
 
   const min = def.minSize ?? { w: 220, h: 120 };
@@ -96,6 +107,17 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
       <div className={styles.titleBar} onPointerDown={(e) => startDrag(e, 'move')} onDoubleClick={toggleMax}>
         <span className={styles.title}>{title}</span>
         <div className={styles.titleButtons}>
+          {help && (
+            <button
+              className={`${styles.titleButton} ${helpOpen ? styles.titleButtonOn : ''}`}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => setHelpOpen((o) => !o)}
+              data-hint="How this window works: what it is for, and its mouse and key moves"
+              aria-expanded={helpOpen}
+            >
+              <span className={styles.helpMark}>?</span>
+            </button>
+          )}
           <button
             className={styles.titleButton}
             onPointerDown={(e) => e.preventDefault()}
@@ -116,6 +138,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
       </div>
       <div className={styles.body}>
         <Content windowId={instance.id} props={instance.props} />
+        {help && helpOpen && <HelpPanel help={help} onClose={() => setHelpOpen(false)} />}
       </div>
       {!instance.maximized &&
         HANDLES.map((h) => (
@@ -124,3 +147,34 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
     </div>
   );
 });
+
+/** The window's how-to, over its content (Escape or the × closes it). */
+function HelpPanel({ help, onClose }: { help: WindowHelp; onClose(): void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  return (
+    <div className={styles.helpPanel} role="note" onPointerDown={(e) => e.stopPropagation()}>
+      <button className={styles.helpClose} onClick={onClose} data-hint="Close this help (Esc)">
+        <Icon name="close" size={11} />
+      </button>
+      <p className={styles.helpIntro}>{help.intro}</p>
+      <table className={styles.helpMoves}>
+        <tbody>
+          {help.moves.map(([how, what]) => (
+            <tr key={how}>
+              <td>{how}</td>
+              <td>{what}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

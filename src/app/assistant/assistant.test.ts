@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { GridEvent } from '@core/voice';
+import { MASTER } from '@core/model/types';
 import { createTestServices } from '../testing';
 import { BeatAssistant, inferRole, type Take } from './assistant';
 
@@ -259,6 +260,88 @@ describe('BeatAssistant', () => {
     await installing;
     expect(posted).toContain('/api/plugins/install');
     expect(a.store.getState().messages.at(-1)!.plugin!.state).toBe('installed');
+  });
+
+  it('listens to the mix when the answer asks, then asks again with the analysis', async () => {
+    const texts: string[] = [];
+    let turn = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      const body = JSON.parse(String(init?.body ?? '{}')) as { text?: string };
+      texts.push(String(body.text ?? ''));
+      const answer =
+        turn++ === 0
+          ? { message: 'Listening to your mix…', actions: [{ op: 'analyze_mix' }] }
+          : { message: 'Turned the master down.', actions: [{ op: 'edit_insert', insert: 'master', volume_db: -2 }] };
+      return new Response(JSON.stringify({ session: 'studio', model: 'claude-opus-5-5', beat: answer }), { status: 200 });
+    }) as typeof fetch;
+    const s = createTestServices();
+    const master = { lufs: -7, shortTermMax: -6, peakDb: -0.1, truePeakDb: 0.4, rmsDb: -8, crestDb: 8, bands: [20, 30, 20, 15, 10, 5], width: 0.2, correlation: 0.9, silent: false };
+    const analyze = vi.fn(async (_s: unknown, opts?: { onProgress?(f: number, l: string): void }) => {
+      opts?.onProgress?.(0.5, 'Drums');
+      return { what: '8 s: bars 1–4 of the song', seconds: 8, master, tracks: [], notes: ['The master is very loud (−7.0 LUFS).'] };
+    });
+    const a = new BeatAssistant(s, { fetch: fetchImpl, analyze });
+    await a.send('mix my song');
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).not.toContain('<mix-analysis>');
+    expect(texts[1]).toContain('<mix-analysis>');
+    expect(texts[1]).toContain('Master (what you hear, after its effects): −7.0 LUFS');
+    expect(texts[1]).toContain('<request>\nmix my song\n</request>');
+    const st = a.store.getState();
+    expect(st.phase).toBe('idle');
+    const heard = st.messages.find((m) => m.findings);
+    expect(heard?.text).toBe('I listened to 8 s: bars 1–4 of the song.');
+    expect(heard?.findings).toEqual(['The master is very loud (−7.0 LUFS).']);
+    expect(st.messages.at(-1)?.text).toBe('Turned the master down.');
+    expect(s.doc.getState().project.mixer.inserts[MASTER]?.volume).toBeLessThan(1);
+  });
+
+  it('“Check my mix” listens first and asks once', async () => {
+    let calls = 0;
+    const fetchImpl = (async (url: string) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      calls++;
+      // Even if it asks to listen again, the follow-up doesn't loop.
+      return new Response(
+        JSON.stringify({ session: 'studio', model: 'm', beat: { message: 'Done.', actions: [{ op: 'analyze_mix' }] } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const s = createTestServices();
+    const analyze = vi.fn(async () => ({
+      what: '8 s',
+      seconds: 8,
+      master: { lufs: -14, shortTermMax: -12, peakDb: -3, truePeakDb: -2, rmsDb: -15, crestDb: 12, bands: [10, 20, 25, 25, 15, 5], width: 0.2, correlation: 0.8, silent: false },
+      tracks: [],
+      notes: [],
+    }));
+    const a = new BeatAssistant(s, { fetch: fetchImpl, analyze });
+    await a.checkMix();
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(calls).toBe(1);
+    expect(a.store.getState().messages[0]?.from).toBe('you');
+    expect(a.store.getState().phase).toBe('idle');
+  });
+
+  it('shows what it hears even without Claude', async () => {
+    const s = createTestServices();
+    const analyze = vi.fn(async () => ({
+      what: '8 s',
+      seconds: 8,
+      master: { lufs: -24, shortTermMax: -22, peakDb: -9, truePeakDb: -8.5, rmsDb: -25, crestDb: 16, bands: [10, 20, 25, 25, 15, 5], width: 0.2, correlation: 0.8, silent: false },
+      tracks: [],
+      notes: ['The master is quiet (−24.0 LUFS).'],
+    }));
+    const a = new BeatAssistant(s, { fetch: offline, analyze });
+    await a.checkMix();
+    const msgs = a.store.getState().messages;
+    expect(msgs.find((m) => m.findings)?.findings).toEqual(['The master is quiet (−24.0 LUFS).']);
+    expect(msgs.at(-1)).toMatchObject({ offline: true });
+    expect(a.store.getState().phase).toBe('idle');
   });
 
   it('keeps the conversation and its pattern across a page reload', async () => {

@@ -68,7 +68,7 @@ export function AssistantWindow() {
           }}
           data-hint="Describe the beat or the change you want; Enter sends, Shift+Enter makes a new line"
         />
-        {st.phase === 'thinking' ? (
+        {st.phase === 'thinking' || st.phase === 'listening' ? (
           <button className={styles.sendButton} onClick={() => a.cancel()} data-hint="Stop waiting">
             <Icon name="stop" size={14} />
           </button>
@@ -84,6 +84,14 @@ export function AssistantWindow() {
         )}
       </div>
       <div className={styles.ideas}>
+        <button
+          className={`${styles.idea} ${styles.ideaMain}`}
+          disabled={busy}
+          onClick={() => void a.checkMix()}
+          data-hint="The AI listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step"
+        >
+          ✦ Check my mix
+        </button>
         {IDEAS.map((idea) => (
           <button
             key={idea}
@@ -213,7 +221,24 @@ function Messages({ st }: { st: AssistantState }) {
         <Message key={m.id} m={m} />
       ))}
       {st.phase === 'thinking' && <Thinking />}
+      {st.phase === 'listening' && st.listening && <Listening listening={st.listening} />}
       {st.building && <Building building={st.building} />}
+    </div>
+  );
+}
+
+/** A mix analysis at work: which track it is rendering. */
+function Listening({ listening }: { listening: NonNullable<AssistantState['listening']> }) {
+  const services = useServices();
+  return (
+    <div className={styles.message}>
+      <div className={`${styles.bubble} ${styles.thinking}`}>
+        <Icon name="wave" size={12} className={styles.spark} />
+        Listening to your mix: {listening.label} ({Math.round(listening.fraction * 100)}%)…
+        <button className={styles.link} onClick={() => services.assistant.cancel()} data-hint="Stop listening">
+          Stop
+        </button>
+      </div>
     </div>
   );
 }
@@ -327,6 +352,13 @@ function Message({ m }: { m: AssistantMessage }) {
       {m.changes && m.changes.length > 0 && (
         <ul className={styles.changes}>
           {m.changes.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+      )}
+      {m.findings && m.findings.length > 0 && (
+        <ul className={`${styles.changes} ${styles.findings}`}>
+          {m.findings.map((c, i) => (
             <li key={i}>{c}</li>
           ))}
         </ul>

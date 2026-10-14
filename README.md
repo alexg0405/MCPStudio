@@ -61,6 +61,11 @@ automation ("filter sweep over the last 4 bars", "speed up to 150 BPM by the dro
 playlist, or use the app itself ("save it", "export a WAV", "undo that", "open the mixer"). It can run every
 command in the app; file dialogs just ask you for one click.
 
+It **listens before it mixes**: ask it to mix or master (or press **✦ Check my mix**) and it renders the mix and
+every mixer track, measures loudness (LUFS), peaks and true peak, tone per band, stereo width and clashes in the low
+end, tells you what it hears, then fixes it with those numbers in front of it (faders, EQ, sidechain, the master's
+loudness).
+
 It can even **write a new plugin**: ask for an instrument or effect nothing in the browser can make, and the AI
 codes it on the plugin SDK, AGstudio checks it (TypeScript, safe imports) and test-renders it in a sandbox, sends
 any problems back for fixes, then shows you the code with an **Install** button.

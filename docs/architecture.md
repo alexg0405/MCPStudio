@@ -933,6 +933,22 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   5. Install moves the folder to `plugins/<name>/`, backing up an older one in `plugins/_backup/`, and hot
      reload registers it. `plugins/_*` is outside `tsc -b`, eslint, vitest and git.
 
+### Listening to the mix (M16b)
+
+- `app/analysis/measure.ts` (pure, Node-tested): `Measurer` takes stereo audio in pieces and gives integrated and
+  max short-term loudness (the SDK's BS.1770 `LoudnessMeter`), sample and (optionally) true peak, RMS, crest, the
+  share of energy in six bands (cascaded Linkwitz-Riley splits of the mid signal at 60/250/1k/4k/10k Hz), side/mid
+  width and correlation.
+- `app/analysis/mix.ts` `analyzeMix(s)`: at most 30 s (the loop region in song mode, else the song from bar 1, else
+  the current pattern looped to ≥ 8 s); renders the mix (master chain, limiter on) and one raw stem per mixer
+  track (`planStems` on `withoutMasterChain`), measures each, and derives plain-words findings (`mixNotes`: loudness
+  vs −14 LUFS, true peak over −1 dBTP, low correlation, bass-heavy or dull tone, tracks clipping or silent, two loud
+  tracks sharing the low end, wide bass, a track far louder than the rest). It yields with `scheduler.yield()` (or a
+  MessageChannel): `setTimeout` is throttled to 1 s in hidden tabs.
+- AI: the `analyze_mix` action (UI-only) makes the assistant run the analysis, post "I listened to…" with the
+  findings, and ask Claude again with a `<mix-analysis>` block (`formatMixReport`); that follow-up can't ask again.
+  "✦ Check my mix" starts the same flow from the UI; without Claude it still shows the findings.
+
 ## Wave 2 foundations
 
 - Kernel transport:

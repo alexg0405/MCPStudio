@@ -27,6 +27,7 @@ import {
   type SmokeReport,
 } from '../ai/builder';
 import { smokeTest } from '../ai/smoke';
+import { analyzeMix, formatMixReport, summarizeMixReport } from '../analysis/mix';
 import { projectContext } from '../ai/context';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
@@ -48,7 +49,7 @@ import {
  * set up. Follow-ups change the same pattern. Lives for the whole session (created in services).
  */
 
-export type AssistantPhase = 'idle' | 'counting-in' | 'recording' | 'analyzing' | 'thinking';
+export type AssistantPhase = 'idle' | 'counting-in' | 'recording' | 'analyzing' | 'listening' | 'thinking';
 
 export interface AssistantMessage {
   id: number;
@@ -69,6 +70,8 @@ export interface AssistantMessage {
   undo?: number;
   /** A plugin the builder wrote: install or discard it from the message. */
   plugin?: PluginMessage;
+  /** What a mix analysis found, one line each. */
+  findings?: string[];
 }
 
 export interface PluginMessage {
@@ -116,6 +119,8 @@ export interface AssistantState {
   uiRequests: AfterEdit[];
   /** The plugin builder at work (one plugin at a time). */
   building: { name: string; kind: 'instrument' | 'effect'; stage: BuildStage; round: number } | null;
+  /** A mix analysis in progress: which part it is rendering, 0–1. */
+  listening: { label: string; fraction: number } | null;
 }
 
 let messageSeq = 0;
@@ -143,16 +148,23 @@ export class BeatAssistant {
   private mic: MicInput | null = null;
   private abort: AbortController | null = null;
   private readonly smoke: (folder: string) => Promise<SmokeReport>;
+  private readonly analyze: typeof analyzeMix;
   private buildAbort: AbortController | null = null;
   /** Everything asked so far in offline mode (the generator is stateless). */
   private offlinePrompt = '';
 
   constructor(
     private readonly s: Services,
-    deps: { fetch?: typeof fetch; smoke?: (folder: string) => Promise<SmokeReport> } = {},
+    deps: {
+      fetch?: typeof fetch;
+      smoke?: (folder: string) => Promise<SmokeReport>;
+      /** Mix analysis (tests pass a fake: Node has no OfflineAudioContext). */
+      analyze?: typeof analyzeMix;
+    } = {},
   ) {
     this.fetchImpl = deps.fetch ?? ((...args) => fetch(...args));
     this.smoke = deps.smoke ?? smokeTest;
+    this.analyze = deps.analyze ?? analyzeMix;
     this.chat = new ClaudeChat(this.fetchImpl);
     const saved = loadPrefs();
     this.store = createStore<AssistantState>()(() => ({
@@ -175,6 +187,7 @@ export class BeatAssistant {
       applied: null,
       uiRequests: [],
       building: null,
+      listening: null,
     }));
     this.restoreTab();
     this.store.subscribe(() => this.scheduleTabSave());
@@ -480,7 +493,7 @@ export class BeatAssistant {
           },
         });
         if (take) this.store.setState({ take: { ...take, sent: true } });
-        this.applyTurn(answer, take, text);
+        if (this.applyTurn(answer, take, text)) await this.listenAndAsk(text, false);
         return;
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
@@ -529,8 +542,12 @@ export class BeatAssistant {
   }
 
   /** This turn's message to Claude: the request, the project, and what Claude doesn't have yet. */
-  private turnText(prompt: string, take: Take | null): string {
+  private turnText(prompt: string, take: Take | null, analysis?: string): string {
     const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
+    if (analysis)
+      parts.push(
+        `<mix-analysis>\n${analysis}\n</mix-analysis>\nThis is how the mix sounds right now (rendered and measured just now). Answer the request with it; don't ask for another analysis.`,
+      );
     const catalog = pluginCatalog(this.s.plugins, this.s.presets);
     const commands = commandCatalog(this.s);
     const key = `${catalog.key}:${commands.key}`;
@@ -554,8 +571,11 @@ export class BeatAssistant {
     return parts.join('\n\n');
   }
 
-  /** Applies Claude's answer as one undo step and reports it in the chat. */
-  private applyTurn(answer: AiAnswer, take: Take | null, request: string): void {
+  /**
+   * Applies Claude's answer as one undo step and reports it in the chat. True when the answer asked
+   * to hear the mix first (and this turn wasn't already the answer to an analysis).
+   */
+  private applyTurn(answer: AiAnswer, take: Take | null, request: string, analyzed = false): boolean {
     let result: ReturnType<typeof applyAnswer>;
     try {
       result = applyAnswer(this.s, answer, {
@@ -568,8 +588,9 @@ export class BeatAssistant {
         error: true,
       });
       this.store.setState({ phase: 'idle' });
-      return;
+      return false;
     }
+    const listen = result.after.some((a) => a.kind === 'analyze_mix');
     this.lastProblems = result.warnings;
     const cursor = this.s.history.status().cursor;
     // App commands: most run now; file dialogs wait for the musician's click (the UI asks).
@@ -612,6 +633,86 @@ export class BeatAssistant {
       this.s.view.getState().setMode('pattern');
       this.s.engine.play();
     }
+    return listen && !analyzed;
+  }
+
+  // ---------------------------------------------------------------- listening to the mix
+
+  /**
+   * Renders and measures the mix (every mixer track too), shows what it found, and asks Claude again
+   * with the analysis so it can mix with real numbers. `fromUser`: the musician asked for a mix check
+   * (their message goes in the chat first). Without Claude it still shows the findings.
+   */
+  async listenAndAsk(request: string, fromUser: boolean): Promise<void> {
+    const st = this.store.getState();
+    if (fromUser) {
+      if (st.phase !== 'idle') return;
+      this.say('you', request);
+    }
+    const abort = new AbortController();
+    this.abort = abort;
+    this.store.setState({ phase: 'listening', listening: { label: 'The mix', fraction: 0 } });
+    let analysis: string;
+    try {
+      const report = await this.analyze(this.s, {
+        signal: abort.signal,
+        onProgress: (fraction, label) => this.store.setState({ listening: { label, fraction } }),
+      });
+      analysis = formatMixReport(report);
+      this.say('assistant', `I listened to ${report.what}.`, {
+        detail: summarizeMixReport(report),
+        ...(report.notes.length ? { findings: report.notes } : {}),
+      });
+    } catch (e) {
+      const stopped = e instanceof DOMException && e.name === 'AbortError';
+      this.say('assistant', stopped ? 'Stopped.' : `I couldn't listen to the mix: ${e instanceof Error ? e.message : e}`, {
+        ...(stopped ? {} : { error: true }),
+      });
+      this.store.setState({ phase: 'idle', listening: null });
+      this.abort = null;
+      return;
+    }
+    this.store.setState({ phase: 'thinking', listening: null });
+    const route = await this.route();
+    if (!route) {
+      this.say('assistant', 'Connect Claude (✦ settings) and I can make these changes for you; the findings above are a start.', {
+        offline: true,
+      });
+      this.store.setState({ phase: 'idle' });
+      this.abort = null;
+      return;
+    }
+    try {
+      const answer = await this.chat.ask<AiAnswer>({
+        system: STUDIO_PROMPT,
+        schema: ACTIONS_SCHEMA,
+        text: this.turnText(request, null, analysis),
+        model: this.store.getState().model,
+        backend: route,
+        signal: abort.signal,
+        read: (raw) => {
+          const r = readAnswer(raw);
+          return 'error' in r ? { error: r.error } : { value: r.answer };
+        },
+      });
+      this.applyTurn(answer, null, request, true);
+    } catch (e) {
+      const stopped = e instanceof DOMException && e.name === 'AbortError';
+      this.say('assistant', stopped ? 'Stopped.' : e instanceof Error ? e.message : String(e), {
+        ...(stopped ? {} : { error: true }),
+      });
+      this.store.setState({ phase: 'idle' });
+    } finally {
+      this.abort = null;
+    }
+  }
+
+  /** The "Check my mix" button: listen, then let Claude improve the mix with the numbers. */
+  checkMix(): Promise<void> {
+    return this.listenAndAsk(
+      'Listen to my mix and make it sound better: balance the levels, fix what clashes or sounds harsh, muddy or thin, and get the master to a good loudness without clipping. Tell me what you changed and why.',
+      true,
+    );
   }
 
   // ---------------------------------------------------------------- plugin builder

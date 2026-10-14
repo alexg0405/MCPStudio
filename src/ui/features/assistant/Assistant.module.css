@@ -358,6 +358,20 @@
   color: var(--ag-warning, #c9a24a);
 }
 
+/* What a mix analysis found. */
+.findings {
+  color: var(--ag-text);
+}
+
+.findings li::marker {
+  color: var(--ag-accent);
+}
+
+.ideaMain {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-text);
+}
+
 /* A plugin the builder wrote. */
 .pluginCard {
   margin: 6px 0 2px 18px;

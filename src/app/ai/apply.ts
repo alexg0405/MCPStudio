@@ -94,7 +94,9 @@ export type AfterEdit =
   /** An app command; `gesture` ones (file dialogs) wait for the musician's click. */
   | { kind: 'command'; id: string; args?: unknown; gesture: boolean }
   /** A new plugin for the plugin builder to write. */
-  | { kind: 'build_plugin'; spec: PluginSpec };
+  | { kind: 'build_plugin'; spec: PluginSpec }
+  /** Listen to the mix first: the analysis comes back to the AI with the request. */
+  | { kind: 'analyze_mix' };
 
 export interface AppliedTurn {
   /** One line per change, for the chat. */
@@ -214,7 +216,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
     | { kind: 'effect'; insertId: InsertId; slotId: SlotId }
     | { kind: 'pattern'; id: PatternId };
   const refs = new Map<string, Ref>();
-  const UI_OPS = new Set(['transport', 'open', 'command', 'build_plugin']);
+  const UI_OPS = new Set(['transport', 'open', 'command', 'build_plugin', 'analyze_mix']);
   const docActions = answer.actions.filter((a) => !UI_OPS.has(a.op));
   const words = (ctx.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
   const label = words.length > 48 ? `${words.slice(0, 47).trimEnd()}…` : words || 'edit';
@@ -1169,6 +1171,8 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           ...(a.action === 'record' ? { record: true } : {}),
         });
       } else if (mode) after.push({ kind: 'mode', mode });
+    } else if (a.op === 'analyze_mix') {
+      if (!after.some((x) => x.kind === 'analyze_mix')) after.push({ kind: 'analyze_mix' });
     } else if (a.op === 'build_plugin') {
       const name = str(a.name);
       const kind = a.kind === 'instrument' || a.kind === 'effect' ? a.kind : null;

@@ -383,6 +383,11 @@ export const ACTION_OPS = [
     metronome: bool('Turn the metronome on or off.'),
   }),
   op(
+    'analyze_mix',
+    'Listens to the mix before you change it: renders the mix and every mixer track and sends you their loudness (LUFS), peaks, true peak, crest, tone per band, stereo width and findings; then you get the request again with the analysis. Use it alone (with a short message such as "Listening to your mix…") when asked to mix, master, balance, fix or judge how the song sounds and you have no analysis of the current mix yet.',
+    {},
+  ),
+  op(
     'build_plugin',
     'Writes a brand-new instrument or effect plugin from a description (the plugin builder): it is coded, checked and test-rendered for you, then the musician installs it with one click. Use it when they ask for a new plugin, or for a sound or effect no plugin in the catalog can make.',
     {

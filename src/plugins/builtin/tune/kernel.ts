@@ -21,7 +21,7 @@ const SPLICE_SECONDS = 0.004;
 const FALLBACK_PERIOD = 0.005;
 
 /** Pitch-class masks (bit n = n semitones above the root) of every scale, by enum index. */
-const MASKS = TUNE_SCALES.map((s) => s.intervals.reduce((m, i) => m | (1 << i), 0));
+const MASKS = TUNE_SCALES.map((s) => s.intervals.reduce<number>((m, i) => m | (1 << i), 0));
 
 /**
  * The nearest note of a key and scale to a pitch (fractional MIDI note), keeping `current` while

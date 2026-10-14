@@ -39,7 +39,8 @@ Enforcement: ESLint `no-restricted-imports` per folder (see `eslint.config.js`),
 - Pattern clips loop their content: content tick = `(clipLocal + offset) mod patternLength`.
 - Plugin instances are host-owned data: `{ pluginId, pluginVersion, params, state?, stateVersion?, samples? }`. Param values
   are plain (numbers in declared units, booleans, enum option ids).
-- Automation types exist but are not creatable in v1 so `switch (clip.kind)` stays exhaustive.
+- Automation clips are channels too (FL): an automation channel holds the target, the points and
+  (tempo) the range; its playlist clips play that curve, so they all show the same points (M9).
 - `schemaVersion` + `migrations[n]` (untyped JSON n → n+1) + `repairProject()` that reports fixes. Each bump adds a
   fixture in `test/fixtures/projects/`; tests migrate every fixture.
 
@@ -509,7 +510,109 @@ The contracts the v2 features build on.
 
 ## Automation (M9)
 
-_To be written by M9._
+Automation clips play through the param lanes (M8a) like notes play through the transport: the
+driver plans every segment before its notes go out, so a plugin reading `valueAt(noteTime)` in
+noteOn sees the curve.
+
+### Driver (`engine/automation/driver.ts`, `curve-plan.ts`)
+
+- **Breakpoints in ticks** (`CurvePlanner`, pure): a target's spans become pieces on the song
+  timeline (automationAt's rules: document value before the first clip, the latest-starting clip
+  inside, hold after), each piece a run of intervals: constants (holds, stairs steps, before the
+  first / after the last point) and curve segments between two points. Breakpoints are the interval
+  boundaries plus an equal subdivision of each curve interval: at most 25 ms apart, at least 1 ms,
+  and dense enough that the lane's linear ramps stay within the error target in the domain the
+  target's AudioParams most likely live in (`rampError`: volumes and send levels 0.1 dB with a
+  −60 dB floor, Hz and log-scaled params 1 cent, cents/semitones 1 ct, dB params 0.1 dB both in dB
+  and in the gain they are usually bound through, anything else 0.2 % of the range). The density
+  comes from 16 probe sub-intervals per curve (error ∝ length², ×1.5 margin). Where the value jumps
+  at a boundary (a hold or stairs step, a clip starting on another value, two points on one tick)
+  the jump becomes a 3 ms ramp. Discrete params (int/enum/bool opted in) get exact steps where their
+  value changes (grid search + bisection).
+- **Times** come from the *run* the breakpoints belong to: where playback started, was sought, or
+  the loop last wrapped, plus the tempo map (`time = run.time + T(tick) − T(run.tick)`), never from
+  the transport's accumulated segment times. The breakpoints don't depend on how the timeline was cut
+  into segments, so offline renders are bit-exact at any chunk size (verified at 128·16, 128·37 and
+  128·256, and WAV exports hash-identical). A wrap computes its run start from the previous run's
+  loop-end time.
+- **Per segment**: each lane is scheduled from its last breakpoint through the first breakpoint at
+  or after the segment's end (never past the loop end), so a ramp's end is always scheduled before
+  the audio reaches its start. Holds extend in one long constant ramp (endless holds 2 bars at a
+  time).
+- **Re-anchoring** (a target's model, document value or spec changed, a touch ended, a param was
+  registered, playback started or sought, the tempo or loop changed): `cut(now + guard)` (guard ≥
+  20 ms and ≥ base latency + 2 render quanta) and a short ramp from the value there to the new curve
+  (3 ms; 5 ms from the held value on play; 30 ms after a touch). Only targets whose
+  `TargetAutomation` changed are re-planned; a timeline change starts a new run for all. Changes are
+  picked up at the next segment, so there is at most one re-anchor per lane per pump. Offline
+  renders start exactly: `AutoLane.start(value)` at time 0, the value at the start tick.
+- **Stalls**: a continuous lane whose schedule ended in the past (the main thread was busy) starts
+  again from its current value at now + guard instead of jumping along a stale ramp.
+- **Touch** (`touch(key, on)`): the drag's target is released to its document value (a 20 ms ramp)
+  so the drag is heard; when the touch ends it ramps back to the curve over 30 ms. Edits that
+  aren't gestures (undo, presets, typed values, wheel) only change the document value, which the
+  curve uses before the target's first clip.
+- **Stopped**: automated params hold the value being heard (`cut(now + guard)`); an edit of a held
+  target lets it go (it's heard); playing again ramps from the held value. **Pattern mode** plays
+  no playlist automation: every target goes back to its document value. Targets that lose their
+  automation are released the same way. Tempo automation isn't the driver's: `tempoMapOf` turns it
+  into the transport's map.
+- Params that a plugin reads only through `onChange` hear every scheduled value change at its time
+  (`AutoLane.onScheduled` → `ParamHandleImpl.emitScheduled`).
+- **Lane changes** (`engine/param-lane.ts`): `cut(at)` keeps only a *running non-constant* ramp
+  (whose end can't be cancelled without a jump); holds, constant ramps, steps and setTargets are cut
+  right at `at`, so touches and edits take effect within the guard even in a long hold.
+  `scheduledUntil`, `start(value)`, `onScheduled`, `segmentCount`; `ParamRegistry.subscribe` tells
+  the driver about params registered while playing (a replaced plugin instance picks the curve up).
+- Measured (Node, M-series): 50 automated log-scale targets, a pump every 25 ms with 120 ms
+  lookahead: mean 0.10 ms, p95 0.38 ms; lanes stay under ~240 remembered segments. A bent 10-octave
+  cutoff sweep stays within 0.61 cent and a fader-taper fade within 0.045 dB of the curve.
+
+### App (`app/automation.ts`, `services.automation`)
+
+- `createClip(target, at?)`: "Create automation clip": an automation channel named after the target
+  (`targetName`: "Cutoff · 3xOsc", "Volume · Insert 3", "Mix · Reverb (Insert 2)", "Tempo") with two
+  points at its current value, and a clip on the first free track (a new track when none is free)
+  over the loop region, or 4 bars from the song position. Tempo clips span 60–180 BPM, wider when
+  the tempo is outside. One undo step; the clip is selected.
+- Touch from History: a gesture's changed targets (`targetsChangedBy`, read from the patches) are
+  touched while it lasts (`History.inGesture`); the service listens before the engine, so automation
+  lets go before the engine hears the first edit.
+- Recording (`services.recording`, id `automation`): while recording in Song mode every gesture or
+  edit of a target adds a sample at the audible tick and latches the touch until the take ends.
+  Passes through the loop replace each other where they overlap (`mergePasses`); a take is thinned
+  with Ramer–Douglas–Peucker (0.005) and goes into the clip of that target that covers it
+  (`spliceCurve` keeps the curve around it) or a new clip over the bars it was recorded in, holding
+  the value from before the first move. One undo step per take; toasts say what is being recorded
+  and what was.
+- `watch(key, cb)` / `statusOf(key)`: automated, muted or recording, with the hint text controls show.
+
+### UI
+
+- Playlist (`features/playlist/automation.ts`, controller): automation clips are titled by what they
+  drive and draw their curve; points and curve handles show when the clip is selected or under the
+  pointer (smaller, then only the one under the pointer, when they crowd). Drag a point (playlist
+  grid, Alt = off the grid; it stays between its neighbours and inside the clip), drag a handle up
+  or down to bend a curve segment, double-click or right-click the curve to add a point (it takes
+  the shape of the stretch it lands in), right-click a point for Point shape (Curve / Hold / Stairs
+  / Smooth) / Straighten curve / Delete point, double-click a handle to straighten it. The title bar
+  behaves like any clip's (move, resize with content offset, slice, right-click deletes). Every
+  part explains itself in the hint bar, drags show a value readout in the target's units, and clips
+  that are flat or whose target was deleted say so. Each drag is one gesture.
+- Clip ▾ menu (`features/automation`): Generate LFO… (`showFormDialog` with a live preview through a
+  gesture: shape, one cycle every 1 step … 4 bars, depth, center, start; `lfoPoints` puts sine and
+  triangle points only on the peaks, exactly, unless phase or length cut a half cycle), Shape of
+  every point, Show what this controls, Delete this automation (all its clips).
+- Param menus: "Create automation clip" on every automatable control (hidden otherwise) and "Show
+  its automation in the playlist" once it has some.
+- Controls: `ParamStatusContext` / `useParamStatus` (`sdk/ui`): an SDK Knob driven by a clip shows a
+  blue dot (a ring when its clip is muted, pulsing red while recording) and adds "Automated by clip
+  ‘…’ – right-click to edit" to its hint. The host provides it around its own knobs and in plugin
+  windows. The BPM display gets a blue frame when the tempo is automated and shows the tempo being
+  heard while playing (written on the frame loop; no React renders).
+
+Not done: automation channels have no channel-rack row yet, and the mixer's faders don't show the
+status dot (`useParamStatus(param)` is all a control needs).
 
 ## Mixer routing, sidechain and delay compensation (M10)
 

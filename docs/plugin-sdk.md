@@ -279,7 +279,9 @@ export default defineInstrument({ ..., ui: MyUI });
 `beginEdit` → `setParam`… → `endEdit` makes one undo step. Give SDK controls the param id
 (`<Knob param="cutoff" …/>`) and right-clicking them opens the host's param menu (create an
 automation clip, link a MIDI controller, reset); `openParamMenu(param, event)` does the same for your
-own elements. A UI that throws shows an error card
+own elements. Knobs with a `param` also follow automation while playing and mark themselves when an
+automation clip drives them (a blue dot, explained in the hint bar); for your own controls,
+`useParamStatus(param)` from `@agstudio/sdk/ui` returns that status (`{ kind, hint }` or null). A UI that throws shows an error card
 with the generated panel underneath. `plugins/example-supersaw` is a complete example. `Knob` also takes
 `format(value)` to show your own text in the hint bar (it defaults to the param's unit formatting).
 

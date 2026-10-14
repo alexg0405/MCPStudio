@@ -30,8 +30,13 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
   generation and recording; tempo automation; loop region and song position; PAT/SONG modes.
 - **Mixer**: master + inserts with dB faders, pan, mute/solo (FL's solo rule) and meters; sends between tracks
   (pre or post fader), sidechains, automatic delay compensation; 10 effect slots per track.
-- **Built-in sounds**: Sampler, 3xOsc, 808 Bass, Pluck, a generated drum kit; EQ, Filter, Delay, Reverb,
-  Compressor (with sidechain), Ducker, Gate, Distortion.
+- **Built-in instruments**: Sampler, 3xOsc, 808 Bass, Pluck, Wavetable (two morphing oscillators, unison, a
+  6-slot mod matrix), FM (4 operators, 8 algorithms), Drum Pads (16 pads with choke groups; drop your samples on
+  them), Slicer (chops a loop across the keys), Drum Synth, and a generated drum kit.
+- **Built-in effects**: EQ, EQ Pro (8 bands on a draggable curve over a live spectrum), Filter, Delay, Reverb,
+  Compressor (with sidechain), Limiter (true peak), Multiband, Transient Shaper, Saturator, Distortion, Ducker
+  (sidechain or tempo pump), Gate, Chorus, Flanger, Phaser, Stereo, Lo-Fi, Stutter, Vocoder, Tune and Analyzer
+  (spectrum, LUFS, true peak).
 - **Recording and MIDI**: metronome and count-in, note recording from MIDI or the computer keyboard (quantize,
   overdub or replace), an on-screen keyboard, MIDI learn for any knob, MIDI file import and export, hum to notes.
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files

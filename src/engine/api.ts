@@ -4,7 +4,7 @@
  */
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PatternId, PluginOwner, SampleRef, Tick } from '@core/model/types';
-import type { JsonValue, PluginDef } from '@agstudio/sdk';
+import type { AudioTap, JsonValue, PluginDef } from '@agstudio/sdk';
 import type { Waveform } from './waveform';
 import type { RecordOptions, Recording, RecordingHandle } from './recorder';
 
@@ -60,6 +60,11 @@ export interface EngineOptions {
   onPluginStateRequest?(owner: PluginOwner, state: JsonValue): void;
   /** A plugin failed to create or threw; the app shows it. */
   onPluginFault?(owner: PluginOwner, pluginId: string, error: unknown): void;
+  /**
+   * A running plugin instance tapped its audio for its editor (`host.tap()`); `live` false when that
+   * instance went away. The app hands editors a stable view of the latest tap per owner.
+   */
+  onPluginTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
 }
 
 export interface EngineApi {

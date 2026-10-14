@@ -18,6 +18,7 @@ import distortion from '../../src/plugins/builtin/distortion';
 import ducker from '../../src/plugins/builtin/ducker';
 import gate from '../../src/plugins/builtin/gate';
 import bitcrusher from '../../plugins/example-bitcrusher';
+import { M14_EFFECTS } from './effects';
 
 /**
  * Every effect the mixer tests use: the built-ins plus the example worklet effect. Sidechain effects
@@ -33,6 +34,7 @@ export const EFFECTS: readonly PluginDef[] = [
   ducker,
   gate,
   bitcrusher,
+  ...M14_EFFECTS,
 ];
 
 /** Instruments the tests use. */

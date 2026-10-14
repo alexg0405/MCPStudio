@@ -24,7 +24,10 @@ export function usePluginEditing(owner: PluginOwner, def: PluginDef | undefined)
       gestures.current.set(param, services.history.gesture(label(param)));
     },
     setParam(param: string, value: ParamValue) {
-      const g = gestures.current.get(param);
+      // A param without its own gesture joins one in progress (a 2-D drag that moves two params is
+      // one undo step); a separate edit would end that gesture.
+      let g = gestures.current.get(param);
+      if (!g?.active) for (const other of gestures.current.values()) if (other.active) g = other;
       const recipe = (d: Parameters<typeof setPluginParam>[0]) => setPluginParam(d, owner, param, value);
       if (g?.active) g.update(recipe);
       else services.history.transact(label(param), recipe, { mergeKey: `param:${param}` });

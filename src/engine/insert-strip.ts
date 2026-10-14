@@ -446,6 +446,7 @@ export class FxSlotStrip {
       reportFault: (err) => {
         if (gen === this.generation) this.fault(err);
       },
+      reportTap: (tap, live) => this.core.reportTap?.(this.owner, tap, live),
     });
     this.pending = (async () => {
       try {

@@ -14,6 +14,7 @@ import drumSynth from '../../src/plugins/builtin/drum-synth';
 import drumPads from '../../src/plugins/builtin/drum-pads';
 import fm from '../../src/plugins/builtin/fm';
 import wavetable from '../../src/plugins/builtin/wavetable';
+import slicer from '../../src/plugins/builtin/slicer';
 
 /** The master limiter's ceiling is −0.3 dBFS (0.966): staying below 0.95 means it never had to act. */
 const BELOW_LIMITER = 0.95;
@@ -65,6 +66,13 @@ const cases: Case[] = [
       { at: 2, len: 0.5, key: 69 },
       { at: 2.5, len: 1, key: 72, velocity: 0.7 },
     ],
+    opts: { tail: 2 },
+    silentAfter: 2.6,
+  },
+  {
+    def: slicer as PluginDef,
+    // The demo loop's first twelve slices, rearranged.
+    notes: [0, 3, 1, 2, 5, 4, 7, 6, 9, 8, 11, 10].map((slice, i) => ({ at: i * 0.25, len: 0.25, key: 60 + slice })),
     opts: { tail: 2 },
     silentAfter: 2.6,
   },
@@ -132,6 +140,21 @@ describe('M13 instruments', () => {
         samples: { pad2: 'kit/clap' },
       });
       expect(maxDiff(sampled, other)).toBeLessThan(1e-6);
+    });
+  });
+
+  describe('Slicer samples', () => {
+    it('slices a sample in its slot instead of the demo loop', async () => {
+      const notes = [{ at: 0, len: 1, key: 60 }];
+      const demo = await renderNotes(slicer as PluginDef, notes);
+      const crash = await renderNotes(slicer as PluginDef, notes, { samples: { main: 'kit/crash' } });
+      expect(analyze(crash).peak).toBeGreaterThan(0.05);
+      expect(fingerprintDistance(demo, crash)).toBeGreaterThan(3);
+      // A one-shot crash is a single slice: key 61 has nothing to play.
+      const second = await renderNotes(slicer as PluginDef, [{ at: 0, len: 1, key: 61 }], {
+        samples: { main: 'kit/crash' },
+      });
+      expect(analyze(second).peak).toBe(0);
     });
   });
 

@@ -41,6 +41,33 @@ export function noteBeats(name: string): number {
 }
 
 /**
+ * Options for an LFO's tempo-sync param: 'off' (use a rate in Hz) and the usual note lengths.
+ * `p.enum(SYNC_OPTIONS, 'off', { labels: SYNC_LABELS })`; in the kernel `SYNC_BEATS[index]` is the
+ * cycle length in beats (0 = free-running) for `PhaseClock.next`.
+ */
+export const SYNC_OPTIONS = [
+  'off',
+  '4 bars',
+  '2 bars',
+  '1 bar',
+  '1/2',
+  '1/4',
+  '1/4d',
+  '1/4t',
+  '1/8',
+  '1/8d',
+  '1/8t',
+  '1/16',
+] as const;
+export type SyncOption = (typeof SYNC_OPTIONS)[number];
+export const SYNC_LABELS: Record<SyncOption, string> = {
+  ...(NOTE_LABELS as Record<Exclude<SyncOption, 'off'>, string>),
+  off: 'Off (use Rate)',
+};
+/** Beats per cycle of each SYNC_OPTIONS entry (0 for 'off'). */
+export const SYNC_BEATS: readonly number[] = SYNC_OPTIONS.map((o) => noteBeats(o));
+
+/**
  * A cycle position (`phase`, 0–1, and the whole `cycle` count) for LFOs and other repeating
  * shapes. While the song plays, a tempo-synced clock is locked to the song position, so it lands on
  * the beat on every playback and in exports; while the song is stopped (or with no sync) it runs

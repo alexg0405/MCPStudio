@@ -1,26 +1,11 @@
 import { p } from '@agstudio/sdk/params';
-import { NOTE_LABELS, noteBeats, type NoteLength } from '@agstudio/sdk/dsp/tempo';
+import { SYNC_LABELS, SYNC_OPTIONS } from '@agstudio/sdk/dsp/tempo';
 
 // Shared by the main-thread definition (index.ts) and the audio-thread kernel (kernel.ts).
 export const CHORUS_ID = 'agstudio.chorus';
 
-/** Tempo-synced rates (one cycle per note length); 'off' uses the Rate knob. */
-export const SYNC = [
-  'off',
-  '4 bars',
-  '2 bars',
-  '1 bar',
-  '1/2',
-  '1/4',
-  '1/4d',
-  '1/4t',
-  '1/8',
-  '1/8d',
-  '1/8t',
-  '1/16',
-] as const;
-/** Beats per cycle for each SYNC option (0 = free-running). */
-export const SYNC_BEATS = SYNC.map((s) => noteBeats(s));
+/** Beats per cycle of each Sync option (0 = free-running), for the kernel. */
+export { SYNC_BEATS } from '@agstudio/sdk/dsp/tempo';
 
 export const chorusParams = {
   rate: p.float(0.05, 8, 0.6, {
@@ -30,10 +15,10 @@ export const chorusParams = {
     group: 'Motion',
     hint: 'How fast the voices drift, in cycles per second (used when Sync is off)',
   }),
-  sync: p.enum(SYNC, 'off', {
+  sync: p.enum(SYNC_OPTIONS, 'off', {
     label: 'Sync',
     group: 'Motion',
-    labels: { off: 'Off (use Rate)', ...(NOTE_LABELS as Partial<Record<NoteLength, string>>) },
+    labels: SYNC_LABELS,
     hint: 'Locks the drift to the song: one cycle per note length. Off uses the Rate knob',
   }),
   depth: p.float(0, 1, 0.5, {

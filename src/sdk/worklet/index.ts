@@ -26,7 +26,18 @@ export { LinkwitzRiley } from '../dsp/crossover';
 export { Yin, type YinOptions } from '../dsp/yin';
 export { TruePeak } from '../dsp/true-peak';
 export { KWeighting, LoudnessMeter, loudnessOf } from '../dsp/loudness';
-export { NOTE_BEATS, NOTE_LABELS, NOTE_LENGTHS, noteBeats, PhaseClock, type NoteLength } from '../dsp/tempo';
+export {
+  NOTE_BEATS,
+  NOTE_LABELS,
+  NOTE_LENGTHS,
+  noteBeats,
+  PhaseClock,
+  SYNC_BEATS,
+  SYNC_LABELS,
+  SYNC_OPTIONS,
+  type NoteLength,
+  type SyncOption,
+} from '../dsp/tempo';
 export { Readings } from './readings';
 export { Rng } from '../dsp/random';
 export { p, type ParamSpecs } from '../params';

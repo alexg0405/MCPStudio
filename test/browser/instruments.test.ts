@@ -13,6 +13,7 @@ import {
 import drumSynth from '../../src/plugins/builtin/drum-synth';
 import drumPads from '../../src/plugins/builtin/drum-pads';
 import fm from '../../src/plugins/builtin/fm';
+import wavetable from '../../src/plugins/builtin/wavetable';
 
 /** The master limiter's ceiling is −0.3 dBFS (0.966): staying below 0.95 means it never had to act. */
 const BELOW_LIMITER = 0.95;
@@ -53,6 +54,19 @@ const cases: Case[] = [
     ],
     opts: { tail: 2 },
     silentAfter: 3,
+  },
+  {
+    def: wavetable as PluginDef,
+    notes: [
+      { at: 0, len: 1, key: 48 },
+      { at: 0, len: 1, key: 55 },
+      { at: 0, len: 1, key: 64 },
+      { at: 1.5, len: 0.5, key: 67 },
+      { at: 2, len: 0.5, key: 69 },
+      { at: 2.5, len: 1, key: 72, velocity: 0.7 },
+    ],
+    opts: { tail: 2 },
+    silentAfter: 2.6,
   },
 ];
 
@@ -118,6 +132,61 @@ describe('M13 instruments', () => {
         samples: { pad2: 'kit/clap' },
       });
       expect(maxDiff(sampled, other)).toBeLessThan(1e-6);
+    });
+  });
+
+  describe('Wavetable', () => {
+    it('a tempo-synced LFO lands on the beat (song position from the engine)', async () => {
+      // A square LFO, one cycle per beat, on the volume: silent for the first half of every beat.
+      const params = {
+        lfo1Sync: true,
+        lfo1Length: '1/4',
+        lfo1Shape: 'square',
+        mod1Source: 'lfo1',
+        mod1Target: 'amp',
+        mod1Amount: -1,
+        osc1Position: 0,
+        velocity: 0,
+      };
+      for (const bpm of [120, 93]) {
+        const beat = 60 / bpm;
+        const buffer = await renderNotes(wavetable as PluginDef, [{ at: 0, len: 8, key: 69 }], {
+          params,
+          bpm,
+          bars: 2,
+          tail: 0.5,
+        });
+        for (let b = 0; b < 7; b++) {
+          const t = b * beat;
+          expect(rmsAt(buffer, t + 0.06 * beat, t + 0.44 * beat), `${bpm} BPM, beat ${b + 1}, first half`).toBeLessThan(
+            1e-3,
+          );
+          expect(
+            rmsAt(buffer, t + 0.56 * beat, t + 0.94 * beat),
+            `${bpm} BPM, beat ${b + 1}, second half`,
+          ).toBeGreaterThan(0.02);
+        }
+      }
+    });
+
+    it('renders 16 voices with 4-voice unison on both oscillators well under real time', async () => {
+      const notes = Array.from({ length: 16 }, (_, i) => ({ at: 0, len: 16, key: 43 + i }));
+      const opts: InstrumentRender = {
+        params: { unison: 4, osc2Level: 0.5, osc2Table: 'vocal', filterType: 'lp24', cutoff: 3000, level: -20 },
+        bars: 4,
+        tail: 0.5,
+      };
+      await renderNotes(wavetable as PluginDef, notes.slice(0, 1), { ...opts, bars: 0.25 }); // warm up
+      const t0 = performance.now();
+      const buffer = await renderNotes(wavetable as PluginDef, notes, opts);
+      const seconds = (performance.now() - t0) / 1000;
+      const factor = buffer.duration / seconds;
+      console.info(
+        `[M13] Wavetable 16 voices × 4 unison × 2 oscillators: ${buffer.duration.toFixed(1)} s of audio in ` +
+          `${seconds.toFixed(2)} s (${factor.toFixed(1)}× real time)`,
+      );
+      expect(analyze(buffer).finite).toBe(true);
+      expect(factor).toBeGreaterThan(2);
     });
   });
 });

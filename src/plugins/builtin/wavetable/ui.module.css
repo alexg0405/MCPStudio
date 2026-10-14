@@ -1,0 +1,114 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px 12px;
+}
+
+.heading {
+  margin: 6px 0 0;
+  color: var(--ag-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.oscTop {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shape {
+  flex: none;
+  border: 1px solid var(--ag-border);
+  border-radius: 3px;
+  background: var(--ag-surface-inset);
+}
+
+.off {
+  opacity: 0.4;
+}
+
+.axis {
+  stroke: var(--ag-border-soft);
+  stroke-width: 1;
+}
+
+.wave {
+  fill: none;
+  stroke: var(--ag-accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.envelope {
+  align-self: center;
+  margin-right: 4px;
+}
+
+.toggles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.modRow,
+.modHeader {
+  display: grid;
+  grid-template-columns: 14px minmax(110px, 150px) 14px minmax(150px, 230px) 22px 44px;
+  align-items: center;
+  gap: 6px;
+}
+
+.modHeader {
+  color: var(--ag-text-faint);
+  font-size: 10px;
+}
+
+.modHeader span:last-child {
+  grid-column: 5 / span 2;
+}
+
+.modRow select {
+  min-width: 0;
+}
+
+.modAmount {
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+}
+
+.modOff {
+  opacity: 0.6;
+}
+
+.modIndex {
+  width: 12px;
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: 10px;
+  text-align: right;
+}
+
+.modArrow {
+  color: var(--ag-text-dim);
+}

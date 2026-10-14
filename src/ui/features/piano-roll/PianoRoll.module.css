@@ -43,7 +43,7 @@
 }
 
 .toolOn {
-  background: #4a4036;
+  background: var(--ag-active);
   color: var(--ag-accent);
 }
 
@@ -173,7 +173,7 @@
 }
 
 .hthumb:hover {
-  background: #4a555e;
+  background: var(--ag-hover-flat);
 }
 
 .playhead {

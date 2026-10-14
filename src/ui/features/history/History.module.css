@@ -49,12 +49,12 @@
 }
 
 .current {
-  background: rgba(90, 164, 232, 0.18);
+  background: var(--ag-select-tint);
 }
 
 .current .dot {
   background: var(--ag-select);
-  box-shadow: 0 0 0 3px rgba(90, 164, 232, 0.25);
+  box-shadow: 0 0 0 3px var(--ag-select-glow);
 }
 
 .undone {

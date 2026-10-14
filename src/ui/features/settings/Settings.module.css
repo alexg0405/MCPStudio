@@ -101,7 +101,7 @@
 
 .button:hover,
 .small:hover {
-  background: linear-gradient(#46525b, var(--ag-surface-3));
+  background: linear-gradient(var(--ag-hover), var(--ag-surface-3));
 }
 
 .switch {
@@ -140,4 +140,28 @@
   margin: 10px 0 0;
   color: var(--ag-text-faint);
   font-size: 11px;
+}
+
+.swatches {
+  display: flex;
+  gap: 6px;
+}
+
+.swatch {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--ag-surface-1);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--ag-border);
+  cursor: pointer;
+}
+
+.swatchOn {
+  box-shadow: 0 0 0 2px var(--ag-text);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--ag-select);
+  outline-offset: 2px;
 }

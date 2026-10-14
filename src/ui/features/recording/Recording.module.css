@@ -97,7 +97,7 @@
 .meterBar {
   width: 0;
   height: 100%;
-  background: linear-gradient(90deg, #6aa86b 0%, #6aa86b 70%, #c9a24a 85%, #e5574d 100%);
+  background: linear-gradient(90deg, var(--ag-meter-lo) 0%, var(--ag-meter-lo) 70%, var(--ag-meter-mid) 85%, var(--ag-meter-hi) 100%);
   background-size: 100% 100%;
 }
 
@@ -149,15 +149,15 @@
 }
 
 .sourceArmed {
-  color: #ff8a80;
-  border-color: #7a2f2a;
+  color: var(--ag-danger-text);
+  border-color: var(--ag-danger-deep);
 }
 
 .mon {
   padding: 0 3px;
   border-radius: 2px;
-  background: #4a6f3a;
-  color: #e8f5dc;
+  background: var(--ag-ok-bg);
+  color: var(--ag-ok-text);
   font-size: 9px;
 }
 

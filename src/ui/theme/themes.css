@@ -1,0 +1,129 @@
+/*
+ * The other themes and the accent colors: each overrides tokens from tokens.css. `data-theme` and
+ * `data-accent` on <html> pick them (Options → Settings… → Interface).
+ */
+:root[data-theme='midnight'] {
+  --ag-bg: #0f1215;
+  --ag-workspace: #14181c;
+  --ag-surface-1: #191e22;
+  --ag-surface-2: #1f252a;
+  --ag-surface-3: #283037;
+  --ag-surface-inset: #111417;
+  --ag-border: #07090b;
+  --ag-border-soft: #2b333a;
+  --ag-title: #1c2227;
+  --ag-title-focused: #252d33;
+  --ag-grid-bg: #161b1f;
+  --ag-grid-bg-alt: #1a2025;
+  --ag-grid-bar: #07090b;
+  --ag-grid-beat: #0f1316;
+  --ag-grid-step: #13181c;
+  --ag-step-off-a: #343c43;
+  --ag-step-off-b: #46383a;
+  --ag-hover: #323b42;
+  --ag-hover-flat: #333d45;
+  --ag-raised: #363f46;
+  --ag-active: #3b332b;
+  --ag-active-2: #2d2721;
+  --ag-lcd: #0b0e10;
+  --ag-well: #090b0d;
+  --ag-tooltip: #090b0d;
+}
+
+:root[data-theme='graphite'] {
+  --ag-bg: #1e1e1e;
+  --ag-workspace: #262626;
+  --ag-surface-1: #2d2d2d;
+  --ag-surface-2: #353535;
+  --ag-surface-3: #404040;
+  --ag-surface-inset: #222222;
+  --ag-border: #141414;
+  --ag-border-soft: #4a4a4a;
+  --ag-text: #e2e2e2;
+  --ag-text-dim: #9d9d9d;
+  --ag-text-faint: #727272;
+  --ag-title: #333333;
+  --ag-title-focused: #424242;
+  --ag-grid-bg: #2a2a2a;
+  --ag-grid-bg-alt: #2f2f2f;
+  --ag-grid-bar: #151515;
+  --ag-grid-beat: #1e1e1e;
+  --ag-grid-step: #262626;
+  --ag-key-white: #dcdcdc;
+  --ag-key-black: #202020;
+  --ag-step-off-a: #4f4f4f;
+  --ag-step-off-b: #5e4b4b;
+  --ag-hover: #4a4a4a;
+  --ag-hover-flat: #4d4d4d;
+  --ag-raised: #4f4f4f;
+  --ag-lcd: #161616;
+  --ag-well: #131313;
+  --ag-tooltip: #111111;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --ag-bg: #e6e9ec;
+  --ag-workspace: #d9dee2;
+  --ag-surface-1: #f3f5f7;
+  --ag-surface-2: #eaedf0;
+  --ag-surface-3: #dfe3e7;
+  --ag-surface-inset: #ffffff;
+  --ag-border: #b4bcc3;
+  --ag-border-soft: #c9d0d6;
+  --ag-highlight: rgba(0, 0, 0, 0.05);
+  --ag-text: #1d2327;
+  --ag-text-dim: #55606a;
+  --ag-text-faint: #85909a;
+  --ag-led: #45a823;
+  --ag-led-off: #c3d1ba;
+  --ag-danger: #d6453b;
+  --ag-select: #2f7fd0;
+  --ag-title: #dce1e5;
+  --ag-title-focused: #ccd4da;
+  --ag-step-off-a: #c6ccd2;
+  --ag-step-off-b: #d8c6c8;
+  --ag-step-on: #384047;
+  --ag-grid-bg: #f8f9fa;
+  --ag-grid-bg-alt: #eef1f3;
+  --ag-grid-bar: #98a2ab;
+  --ag-grid-beat: #c2c9cf;
+  --ag-grid-step: #dfe3e7;
+  --ag-key-white: #ffffff;
+  --ag-key-black: #3a4046;
+  --ag-note: #4c9c42;
+  --ag-note-border: #2d6727;
+  --ag-note-selected: #e0564a;
+  --ag-ghost: rgba(60, 80, 95, 0.16);
+  --ag-hover: #fafbfc;
+  --ag-hover-flat: #d2d9de;
+  --ag-raised: #ffffff;
+  --ag-active: #f2dfc4;
+  --ag-active-2: #e8cfa9;
+  --ag-active-border: #c4a273;
+  --ag-sheen: rgba(0, 0, 0, 0.02);
+  --ag-line-faint: rgba(0, 0, 0, 0.07);
+  --ag-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  --ag-meter-lo: #3fae35;
+  --ag-meter-mid: #d1b21f;
+}
+
+/* Accent colors (orange is the default, in tokens.css). */
+:root[data-accent='blue'] {
+  --ag-accent: #4da3ff;
+}
+:root[data-accent='green'] {
+  --ag-accent: #5cc96b;
+}
+:root[data-accent='purple'] {
+  --ag-accent: #a77bff;
+}
+:root[data-accent='pink'] {
+  --ag-accent: #ff6fae;
+}
+:root[data-accent='yellow'] {
+  --ag-accent: #f2c94c;
+}
+:root[data-accent='red'] {
+  --ag-accent: #ff5f56;
+}

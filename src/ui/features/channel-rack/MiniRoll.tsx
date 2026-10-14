@@ -4,6 +4,7 @@ import { notesSorted, patternLength } from '@core/query/queries';
 import { useDoc, useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
+import { useThemeVersion } from '../../theme/use-theme';
 import styles from './ChannelRack.module.css';
 
 /** FL-style preview of a channel's piano-roll notes in the channel rack. Click to open the piano roll. */
@@ -21,6 +22,7 @@ export function MiniRoll({
   const notes = useDoc((p) => p.patterns[patternId]?.notes[channelId]);
   const pattern = useDoc((p) => p.patterns[patternId]);
   const ts = useDoc((p) => p.transport.timeSig);
+  const themed = useThemeVersion();
 
   useEffect(() => {
     const canvas = ref.current;
@@ -46,7 +48,7 @@ export function MiniRoll({
       const y = h - 2 - ((n.key - lo + pad + 1) / range) * (h - 4);
       ctx.fillRect(n.tick * sx, y, Math.max(1.5, n.length * sx - 0.5), Math.max(1.5, (h - 4) / range));
     }
-  }, [notes, pattern, ts, width]);
+  }, [notes, pattern, ts, width, themed]);
 
   return (
     <canvas

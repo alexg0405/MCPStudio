@@ -6,6 +6,7 @@
 import type { Services } from '@app/services';
 import type { InsertId } from '@core/model/types';
 import { onFrame } from '../../frame-loop';
+import { onThemeChange } from '../../timeline/canvas';
 import { dbToPosition, FADER_PAD, FLOOR_DB } from './scale';
 
 /** Displayed level falls this fast once the signal drops (dB per second). */
@@ -75,8 +76,14 @@ export class MeterBank {
     });
     for (const m of this.meters.values()) this.observer.observe(m.canvas);
     const stop = onFrame((now) => this.frame(services, now));
+    // A new theme or accent: new colors, and every meter's gradient and drawing again.
+    const offTheme = onThemeChange(() => {
+      this.resolveColors();
+      for (const m of this.meters.values()) this.buildGradient(m);
+    });
     return () => {
       stop();
+      offTheme();
       this.observer?.disconnect();
       this.observer = null;
       this.lastTime = 0;
@@ -123,6 +130,12 @@ export class MeterBank {
     m.dpr = dpr;
     m.canvas.width = w;
     m.canvas.height = h;
+    this.buildGradient(m);
+  }
+
+  /** The meter's fill (green to red up the scale) for its size and the theme's colors. */
+  private buildGradient(m: Meter): void {
+    const { dpr, h } = m;
     m.drawn = '';
     m.gradient = null;
     if (m.g && h > 0) {

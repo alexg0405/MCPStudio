@@ -48,7 +48,7 @@
 }
 
 .white.on {
-  background: linear-gradient(#ffd09a, var(--ag-accent));
+  background: linear-gradient(var(--ag-accent-light), var(--ag-accent));
 }
 
 .c {
@@ -88,5 +88,5 @@
 }
 
 .black.on {
-  background: linear-gradient(#e0904a, #8a4d14);
+  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-deep));
 }

@@ -1,6 +1,8 @@
 /*
  * AGstudio theme tokens. Everything visual reads these, including canvas renderers (via
- * getComputedStyle). A theme is just a different set of values for these properties.
+ * getComputedStyle). A theme is just a different set of values for these properties (themes.css
+ * has the others; `data-theme` and `data-accent` on <html> pick them). Tokens below "Derived" follow
+ * the accent and the surfaces by themselves.
  */
 :root {
   color-scheme: dark;
@@ -23,7 +25,7 @@
 
   /* Accents */
   --ag-accent: #ff9a3c;
-  --ag-accent-dim: #b86a24;
+  --ag-accent-dim: color-mix(in srgb, var(--ag-accent) 72%, #000);
   --ag-led: #9fde5a;
   --ag-led-off: #46532f;
   --ag-danger: #e5574d;
@@ -37,7 +39,7 @@
   --ag-step-off-a: #4a535b;
   --ag-step-off-b: #5d4a4c;
   --ag-step-on: #f1e3d2;
-  --ag-step-current: #ff9a3c;
+  --ag-step-current: var(--ag-accent);
 
   /* Timeline grids */
   --ag-grid-bg: #262e34;
@@ -53,8 +55,48 @@
   --ag-note-border: #3d6b38;
   --ag-note-selected: #ff7b6e;
   --ag-ghost: rgba(170, 190, 205, 0.18);
-  --ag-playhead: #ff9a3c;
-  --ag-loop: rgba(255, 154, 60, 0.18);
+  --ag-playhead: var(--ag-accent);
+  --ag-loop: var(--ag-accent-soft);
+
+  /* Controls: hover and raised tops, the "on" state of tool buttons, LCD displays, tooltips */
+  --ag-hover: #46525b;
+  --ag-hover-flat: #4a555e;
+  --ag-raised: #4b5660;
+  --ag-active: #4a4036;
+  --ag-active-2: #3a332c;
+  --ag-active-border: #1a140f;
+  --ag-lcd: #151a1d;
+  --ag-lcd-text: #e9f3d8;
+  --ag-lcd-text-alt: #a9d4ff;
+  --ag-well: #12161a;
+  --ag-tooltip: #11161a;
+  --ag-marker: #d9c25b;
+  --ag-warning: #c9a24a;
+  --ag-ok-bg: #4a6f3a;
+  --ag-ok-text: #e8f5dc;
+  /* Text on dark fills (accent, danger) and on light ones (LEDs, the LCD's lit segments). */
+  --ag-on-accent: #fff;
+  --ag-on-light: #1b2024;
+  /* Faint sheens and separators over surfaces, and the scrim behind dialogs. */
+  --ag-sheen: rgba(255, 255, 255, 0.025);
+  --ag-line-faint: rgba(255, 255, 255, 0.04);
+  --ag-scrim: rgba(10, 13, 15, 0.55);
+
+  /* Derived */
+  --ag-accent-strong: color-mix(in srgb, var(--ag-accent) 88%, #000);
+  --ag-accent-deep: color-mix(in srgb, var(--ag-accent) 42%, #000);
+  --ag-accent-tint: color-mix(in srgb, var(--ag-accent) 12%, transparent);
+  --ag-accent-soft: color-mix(in srgb, var(--ag-accent) 18%, transparent);
+  --ag-accent-glow: color-mix(in srgb, var(--ag-accent) 45%, transparent);
+  --ag-accent-light: color-mix(in srgb, var(--ag-accent) 45%, #fff);
+  --ag-select-tint: color-mix(in srgb, var(--ag-select) 16%, transparent);
+  --ag-select-glow: color-mix(in srgb, var(--ag-select) 25%, transparent);
+  --ag-danger-tint: color-mix(in srgb, var(--ag-danger) 18%, transparent);
+  --ag-danger-line: color-mix(in srgb, var(--ag-danger) 50%, transparent);
+  --ag-danger-strong: color-mix(in srgb, var(--ag-danger) 75%, #000);
+  --ag-danger-deep: color-mix(in srgb, var(--ag-danger) 38%, #000);
+  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 60%, #fff);
+  --ag-led-glow: color-mix(in srgb, var(--ag-led) 60%, transparent);
 
   /* Meters */
   --ag-meter-lo: #67d05b;

@@ -256,7 +256,7 @@ export function drawLaneHeaders(
     const lane = lanes[row] as Lane;
     const y = vp.rowToY(row);
     const h = vp.rowHeight;
-    ctx.fillStyle = row % 2 ? '#2e363c' : '#2a3238';
+    ctx.fillStyle = row % 2 ? theme.surface2 : theme.surface;
     ctx.fillRect(0, y, width, h);
     ctx.fillStyle = theme.bar;
     ctx.fillRect(0, y + h - 1, width, 1);
@@ -264,7 +264,7 @@ export function drawLaneHeaders(
     const on = !muted.has(lane.id);
     ctx.beginPath();
     ctx.arc(13, y + h / 2, 5, 0, Math.PI * 2);
-    ctx.fillStyle = on ? '#9fde5a' : '#46532f';
+    ctx.fillStyle = on ? theme.led : theme.ledOff;
     ctx.fill();
     if (lane.solo) {
       ctx.strokeStyle = theme.accent;
@@ -324,7 +324,7 @@ export function drawPlaylistRuler(
   if (loop) {
     const x0 = vp.tickToX(loop.start);
     const x1 = vp.tickToX(loop.end);
-    ctx.fillStyle = 'rgba(255, 154, 60, 0.32)';
+    ctx.fillStyle = theme.accentSoft;
     ctx.fillRect(x0, 0, x1 - x0, top);
     ctx.fillStyle = theme.accent;
     ctx.fillRect(x0, 0, 1, h);

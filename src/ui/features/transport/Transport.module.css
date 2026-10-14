@@ -65,7 +65,7 @@
   padding: 0 8px;
   border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius);
-  background: #151a1d;
+  background: var(--ag-lcd);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) inset;
 }
 
@@ -73,7 +73,7 @@
   font-family: var(--ag-font-mono);
   font-size: 15px;
   font-weight: 600;
-  color: #e9f3d8;
+  color: var(--ag-lcd-text);
   letter-spacing: 0.03em;
   line-height: 1.1;
 }
@@ -94,7 +94,7 @@
 }
 
 .lcd[data-live] .lcdValue {
-  color: #a9d4ff;
+  color: var(--ag-lcd-text-alt);
 }
 
 .time {
@@ -113,7 +113,7 @@
   padding: 4px 10px;
   border: 1px solid var(--ag-accent-dim);
   border-radius: var(--ag-radius);
-  background: rgba(255, 154, 60, 0.12);
+  background: var(--ag-accent-tint);
   color: var(--ag-accent);
   font-size: 11px;
   font-weight: 600;

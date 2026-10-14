@@ -1,6 +1,7 @@
 import type { Services } from '@app/services';
 import { canChooseOutput, findOutput, listOutputs } from '@app/audio-devices';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
+import { ACCENTS, applyTheme, findAccent, findTheme, THEMES } from '../../theme/apply';
 import { registerWindowType, toggleWindow } from '../../workspace/registry';
 import { setWindowHelp } from '../../workspace/window-help';
 import { SettingsWindow } from './SettingsWindow';
@@ -49,8 +50,70 @@ export function register(services: Services): void {
       toast(`Playing through ${out.label}`);
     },
   });
+  // The look: theme and accent color (kept in prefs, applied to <html>).
+  const look = () => applyTheme(services.prefs.getState().theme, services.prefs.getState().accent);
+  services.prefs.subscribe(look);
+  look();
+  commands.register<string>({
+    id: 'options.theme',
+    title: 'Theme',
+    category: 'Options',
+    hint: 'How AGstudio looks: Dark, Midnight, Graphite or Light',
+    argsHint: THEMES.map((t) => `'${t.id}'`).join(', '),
+    palette: false,
+    run: (s, name) => {
+      const theme = findTheme(String(name ?? ''));
+      if (!theme) return s.session.getState().toast(`There is no theme called “${String(name)}”.`, 'error');
+      s.prefs.getState().set({ theme });
+    },
+  });
+  commands.register<string>({
+    id: 'options.accent',
+    title: 'Accent color',
+    category: 'Options',
+    hint: 'The highlight color of buttons, the playhead and selections',
+    argsHint: ACCENTS.map((a) => `'${a.id}'`).join(', '),
+    palette: false,
+    run: (s, name) => {
+      const accent = findAccent(String(name ?? ''));
+      if (!accent) return s.session.getState().toast(`There is no accent color called “${String(name)}”.`, 'error');
+      s.prefs.getState().set({ accent });
+    },
+  });
   services.keymap.add([{ chord: 'F10', command: 'options.settings' }]);
-  addMenuItems('options', [cmd('options.settings', 0), sep(0.5)]);
+  addMenuItems('options', [
+    cmd('options.settings', 0),
+    {
+      kind: 'dynamic',
+      id: 'look',
+      order: 0.2,
+      entries: () => {
+        const pr = services.prefs.getState();
+        return [
+          {
+            label: 'Theme',
+            run: () => {},
+            children: THEMES.map((t) => ({
+              label: t.label,
+              hint: t.hint,
+              checked: (findTheme(pr.theme) ?? 'dark') === t.id,
+              run: () => services.commands.run('options.theme', t.id),
+            })),
+          },
+          {
+            label: 'Accent color',
+            run: () => {},
+            children: ACCENTS.map((a) => ({
+              label: a.label,
+              checked: (findAccent(pr.accent) ?? 'orange') === a.id,
+              run: () => services.commands.run('options.accent', a.id),
+            })),
+          },
+        ];
+      },
+    },
+    sep(0.5),
+  ]);
   setWindowHelp('settings', {
     intro: 'Settings for this browser: where the sound plays, MIDI keyboards, the typing piano, recording and help.',
     moves: [
@@ -59,6 +122,7 @@ export function register(services: Services): void {
       ['MIDI input', 'Play from a MIDI keyboard (Chrome asks once)'],
       ['Typing piano', 'Your letter keys play the selected sound'],
       ['Recording', 'Metronome, count-in and note snapping'],
+      ['Theme and accent', 'Dark, Midnight, Graphite or Light, in your color'],
     ],
   });
 }

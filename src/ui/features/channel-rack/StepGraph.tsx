@@ -7,6 +7,7 @@ import { editNotes, type NoteEdit } from '@core/ops/notes';
 import { stepView } from '@core/query/queries';
 import { useDoc, useServices } from '../../services-context';
 import { fitCanvas, readTheme } from '../../timeline/canvas';
+import { useThemeVersion } from '../../theme/use-theme';
 import { STEP_W, stepAtX, stepsWidth, stepX } from './layout';
 import { formatStepValue, STEP_LANE_INFO, stepEdit, stepReset, stepValue } from './steps';
 import styles from './ChannelRack.module.css';
@@ -42,6 +43,7 @@ export function StepGraph({
   const info = STEP_LANE_INFO[lane];
 
   // Redraw whenever this channel's notes change.
+  const themed = useThemeVersion();
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
@@ -65,7 +67,7 @@ export function StepGraph({
         const x = stepX(i);
         // Every other group of four is shaded, like the step buttons.
         if (Math.floor(i / 4) % 2) {
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.025)';
+          ctx.fillStyle = theme.sheen;
           ctx.fillRect(x, 0, STEP_W, GRAPH_H);
         }
         const n = view.notes[i];
@@ -87,7 +89,7 @@ export function StepGraph({
     };
     draw();
     return services.doc.subscribe(draw);
-  }, [services, channelId, patternId, stepCount, width, lane, rootKey, info.bipolar, isSteps, isInstrument]);
+  }, [services, channelId, patternId, stepCount, width, lane, rootKey, info.bipolar, isSteps, isInstrument, themed]);
 
   // ---- drawing values (imperative; one gesture per drag) ----
   const drag = useRef<{ gesture: Gesture; last: number; reset: boolean } | null>(null);

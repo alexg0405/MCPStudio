@@ -47,7 +47,7 @@ import {
   type AutoHit,
 } from './automation';
 import { clipBox, type ClipBox } from './clip-geometry';
-import { fitCanvas, readTheme } from '../../timeline/canvas';
+import { fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import {
   CLIP_MENU_MIN_WIDTH,
@@ -194,6 +194,7 @@ export class PlaylistController {
       }),
       // A sample finished decoding: its clips can show their waveform now.
       s.engine.subscribe(() => this.invalidate('clips')),
+      onThemeChange(() => this.invalidate('grid', 'clips', 'overlay', 'headers', 'ruler')),
       onFrame(() => this.frame()),
       // A take being recorded grows on the playlist.
       s.audioRecorder.live.subscribe(() => this.invalidate('overlay')),
@@ -463,10 +464,11 @@ export class PlaylistController {
     if (live) this.drawLiveTake(ctx, live);
     const d = this.drag;
     if (d?.kind === 'marquee') {
+      const theme = readTheme();
       const x = Math.min(d.x0, d.x1);
       const y = Math.min(d.y0, d.y1);
-      ctx.fillStyle = 'rgba(90, 164, 232, 0.12)';
-      ctx.strokeStyle = 'rgba(90, 164, 232, 0.9)';
+      ctx.fillStyle = theme.selectTint;
+      ctx.strokeStyle = theme.select;
       ctx.fillRect(x, y, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
       ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
     } else if (this.hover && !d && this.s.editor.getState().playlist.tool === 'slice' && this.sliceX >= 0) {

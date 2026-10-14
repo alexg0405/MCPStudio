@@ -11,7 +11,7 @@
 
 .table td {
   padding: 4px 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--ag-line-faint);
 }
 
 .category {
@@ -100,12 +100,12 @@
   margin: 0 0 6px;
   padding: 6px 8px;
   border-radius: var(--ag-radius);
-  background: rgba(90, 164, 232, 0.14);
+  background: var(--ag-select-tint);
   color: var(--ag-text);
 }
 
 .recording td {
-  background: rgba(255, 154, 60, 0.12);
+  background: var(--ag-accent-tint);
 }
 
 .changed {

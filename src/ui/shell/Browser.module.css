@@ -122,7 +122,7 @@
 
 .itemOn {
   color: var(--ag-text);
-  background: rgba(255, 154, 60, 0.1);
+  background: var(--ag-accent-tint);
 }
 
 .swatch {

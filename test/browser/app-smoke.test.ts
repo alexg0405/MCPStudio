@@ -18,6 +18,7 @@ import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
 import { applyDefaultLayout } from '@ui/workspace/layouts';
 import '@ui/theme/tokens.css';
+import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 
 const BAR = 3840;

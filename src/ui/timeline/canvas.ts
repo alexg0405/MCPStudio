@@ -21,6 +21,18 @@ export interface TimelineTheme {
   surface: string;
   border: string;
   danger: string;
+  select: string;
+  led: string;
+  ledOff: string;
+  marker: string;
+  /** Track headers (alternating rows). */
+  surface2: string;
+  surface3: string;
+  /** Accent and selection tints (the loop range on the ruler, a rubber-band selection). */
+  accentSoft: string;
+  accentStrong: string;
+  selectTint: string;
+  sheen: string;
   /** Font family for canvas text. */
   font: string;
 }
@@ -51,14 +63,40 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     surface: v('--ag-surface-1', '#2a3238'),
     border: v('--ag-border', '#12161a'),
     danger: v('--ag-danger', '#e5574d'),
+    select: v('--ag-select', '#5aa4e8'),
+    led: v('--ag-led', '#9fde5a'),
+    ledOff: v('--ag-led-off', '#46532f'),
+    marker: v('--ag-marker', '#d9c25b'),
+    surface2: v('--ag-surface-2', '#323b42'),
+    surface3: v('--ag-surface-3', '#3c464e'),
+    accentSoft: v('--ag-accent-soft', 'rgba(255,154,60,0.18)'),
+    accentStrong: v('--ag-accent-strong', '#e08a37'),
+    selectTint: v('--ag-select-tint', 'rgba(90,164,232,0.16)'),
+    sheen: v('--ag-sheen', 'rgba(255,255,255,0.025)'),
     font: v('--ag-font', 'system-ui, sans-serif'),
   };
   return cached;
 }
 
-/** Call after the theme changes (theme switching arrives post-v1). */
+const themeListeners = new Set<() => void>();
+let version = 0;
+
+/** Call after the theme changes: canvases read it again and redraw (see onThemeChange). */
 export function invalidateTheme(): void {
   cached = null;
+  version++;
+  for (const fn of themeListeners) fn();
+}
+
+/** Counts theme changes (for React canvases: put it in an effect's dependencies). */
+export function themeVersion(): number {
+  return version;
+}
+
+/** Redraw when the theme or accent color changes. */
+export function onThemeChange(fn: () => void): () => void {
+  themeListeners.add(fn);
+  return () => themeListeners.delete(fn);
 }
 
 /**

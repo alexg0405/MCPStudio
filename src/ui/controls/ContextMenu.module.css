@@ -24,7 +24,7 @@
 .item:focus-visible,
 .itemOpen {
   background: var(--ag-accent-dim);
-  color: #fff;
+  color: var(--ag-on-accent);
 }
 
 .subRoot {

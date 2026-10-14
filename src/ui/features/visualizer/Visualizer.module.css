@@ -89,5 +89,5 @@
 }
 
 .button:hover {
-  background: linear-gradient(#46525b, var(--ag-surface-3));
+  background: linear-gradient(var(--ag-hover), var(--ag-surface-3));
 }

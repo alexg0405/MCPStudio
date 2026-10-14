@@ -43,8 +43,8 @@ export function drawGrid(
       ctx.fillStyle = !scale.mask[pc]
         ? 'rgba(0, 0, 0, 0.32)'
         : pc === scale.root
-          ? 'rgba(255, 154, 60, 0.12)'
-          : 'rgba(255, 255, 255, 0.035)';
+          ? theme.accentSoft
+          : theme.sheen;
       ctx.fillRect(0, y, width, vp.rowHeight);
     } else if (isBlackKey(key)) {
       ctx.fillStyle = theme.bgAlt;
@@ -169,7 +169,7 @@ export function drawKeys(
     const black = isBlackKey(key);
     const isPressed = pressed.has(key);
     if (black) {
-      ctx.fillStyle = isPressed ? theme.accent : '#22282d';
+      ctx.fillStyle = isPressed ? theme.accent : theme.keyBlack;
       ctx.fillRect(0, y, width * 0.62, h);
       ctx.fillStyle = theme.keyWhite;
       ctx.fillRect(width * 0.62, y, width * 0.38, h);

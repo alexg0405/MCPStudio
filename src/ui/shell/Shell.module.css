@@ -129,7 +129,7 @@
 
 .toolButton:hover:not(:disabled) {
   color: var(--ag-text);
-  background: linear-gradient(#46525b, var(--ag-surface-3));
+  background: linear-gradient(var(--ag-hover), var(--ag-surface-3));
 }
 
 .toolButton:disabled {
@@ -139,8 +139,8 @@
 
 .toolButtonOn {
   color: var(--ag-accent);
-  background: linear-gradient(#4a4036, #3a332c);
-  border-color: #1a140f;
+  background: linear-gradient(var(--ag-active), var(--ag-active-2));
+  border-color: var(--ag-active-border);
 }
 
 /* ---- Menus ---- */
@@ -212,7 +212,7 @@
 .menuItem:focus-visible,
 .menuItemOpen {
   background: var(--ag-accent-dim);
-  color: #fff;
+  color: var(--ag-on-accent);
 }
 
 .menuSubRoot {
@@ -240,7 +240,7 @@
 }
 
 .menuItem:hover:not(:disabled) .menuChord {
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in srgb, var(--ag-on-accent) 75%, transparent);
 }
 
 .menuSeparator {
@@ -286,7 +286,7 @@
   padding: 5px 8px;
   border: 1px solid var(--ag-border-soft);
   border-radius: 4px;
-  background: #11161a;
+  background: var(--ag-tooltip);
   color: var(--ag-text);
   font-size: 11.5px;
   line-height: 1.4;

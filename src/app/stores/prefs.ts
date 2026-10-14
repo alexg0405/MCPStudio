@@ -53,6 +53,9 @@ export interface PrefsState {
   outputDevice: string;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
   scopeMode: 'scope' | 'spectrum' | 'off';
+  /** The look: theme (dark, midnight, graphite, light) and accent color (orange, blue…). */
+  theme: string;
+  accent: string;
 }
 
 export interface PrefsActions {
@@ -93,6 +96,8 @@ const DEFAULTS: PrefsState = {
   customKeys: {},
   outputDevice: '',
   scopeMode: 'scope',
+  theme: 'dark',
+  accent: 'orange',
 };
 
 function load(): PrefsState {

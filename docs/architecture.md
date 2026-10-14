@@ -343,6 +343,15 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   - New features ship with plain labels, hints with units, empty states that say what to do, and menu or right-click
     entry points, not shortcut-only.
 
+- Themes: `ui/theme/tokens.css` is the default (Dark, orange); `themes.css` overrides tokens under
+  `:root[data-theme=…]` (midnight, graphite, light) and `:root[data-accent=…]`. Tints, glows and the darker
+  shades of the accent, select and danger colors are `color-mix()` tokens, so a new accent recolors everything
+  (canvas accepts color-mix in Chrome). `ui/theme/apply.ts` puts the attributes on <html> from prefs (`theme`,
+  `accent`; commands `options.theme` / `options.accent`) and calls `invalidateTheme()`: canvas controllers
+  (`onThemeChange`) mark every layer dirty, the mixer meters rebuild their gradients, React canvases redraw
+  through `useThemeVersion()`. No component hard-codes a surface or text color; what is left in CSS is
+  shadows, the piano's keys and the metal fader caps.
+
 ## Persistence (`src/app/persistence`, `src/platform`)
 
 - `.agproj` = zip (fflate, `core/io/project-file.ts`): `meta.json` (`{ format: 1, appVersion, savedAt }`),

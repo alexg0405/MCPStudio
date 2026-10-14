@@ -37,13 +37,13 @@
 .master {
   width: 64px;
   margin-right: 6px;
-  background: linear-gradient(#46525b, var(--ag-surface-2));
+  background: linear-gradient(var(--ag-hover), var(--ag-surface-2));
 }
 
 .stripSelected {
   border-color: var(--ag-select);
   border-top-color: var(--ins-color);
-  background: linear-gradient(#4b5862, #343d44);
+  background: linear-gradient(var(--ag-raised), var(--ag-surface-2));
   box-shadow: 0 0 0 1px var(--ag-select) inset;
 }
 
@@ -93,7 +93,7 @@
 
 .ledOn {
   background: var(--ag-led);
-  box-shadow: 0 0 5px rgba(159, 222, 90, 0.6);
+  box-shadow: 0 0 5px var(--ag-led-glow);
 }
 
 .ledSolo {
@@ -113,7 +113,7 @@
   width: 11px;
   height: 100%;
   border-radius: 2px;
-  background: #151a1d;
+  background: var(--ag-lcd);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) inset;
 }
 
@@ -163,8 +163,8 @@
   width: 4px;
   transform: translateX(-50%);
   border-radius: 2px;
-  background: #12161a;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  background: var(--ag-well);
+  box-shadow: 0 0 0 1px var(--ag-line-faint);
 }
 
 .faderUnity {
@@ -237,12 +237,12 @@
 
 .badgeIn {
   background: var(--ag-accent-dim);
-  color: #1b2024;
+  color: var(--ag-on-light);
 }
 
 .badgeSc {
   background: var(--ag-select);
-  color: #1b2024;
+  color: var(--ag-on-light);
 }
 
 .routeRow {
@@ -309,12 +309,12 @@
 .routeOn {
   border-color: var(--ag-accent-dim);
   background: var(--ag-accent);
-  color: #1b2024;
-  box-shadow: 0 0 5px rgba(255, 154, 60, 0.5);
+  color: var(--ag-on-light);
+  box-shadow: 0 0 5px var(--ag-accent-glow);
 }
 
 .routeOn:hover:not(:disabled) {
-  color: #1b2024;
+  color: var(--ag-on-light);
 }
 
 .routePre {
@@ -430,7 +430,7 @@
   padding: 0 3px;
   border-radius: 2px;
   background: var(--ag-select);
-  color: #1b2024;
+  color: var(--ag-on-light);
   font-size: 9px;
   font-weight: 700;
   line-height: 13px;

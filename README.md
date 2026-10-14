@@ -50,7 +50,8 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
   delete, reset, randomize ("vary a little" to "everything"), export and import `.agpreset` files. The browser's
   Presets section lists yours and searches every preset; click one to add it.
 - **Settings** (Options → Settings…, F10): which speakers or headphones to play through (with a left/right test
-  sound), MIDI devices, the typing piano, recording options and tooltips, in one window.
+  sound), MIDI devices, the typing piano, recording options, tooltips, and the look: four themes (Dark, Midnight,
+  Graphite, Light) and seven accent colors (also in Options → Theme and Accent color).
 
 ## AI studio (✦ in the toolbar, or ⌥6)
 

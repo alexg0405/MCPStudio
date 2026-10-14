@@ -133,6 +133,6 @@
 }
 
 .segmentOn {
-  background: linear-gradient(#e08a37, var(--ag-accent-dim));
-  color: #fff;
+  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
+  color: var(--ag-on-accent);
 }

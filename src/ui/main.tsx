@@ -14,6 +14,7 @@ import { installKeyboard } from './keyboard';
 import { applyDefaultLayout } from './workspace/layouts';
 import { App } from './shell/App';
 import './theme/tokens.css';
+import './theme/themes.css';
 import './theme/base.css';
 
 /** React commit counter (dev): idle playback should not re-render anything. */

@@ -3,6 +3,7 @@ import { useStore } from 'zustand';
 import { canChooseOutput, listOutputs, onDevicesChange, revealDevices, type AudioOutput } from '@app/audio-devices';
 import { formatChord } from '@core/commands/keymap';
 import { useServices } from '../../services-context';
+import { ACCENTS, findAccent, findTheme, THEMES } from '../../theme/apply';
 import { testSoundWav } from './test-sound';
 import styles from './Settings.module.css';
 
@@ -287,8 +288,40 @@ function Recording() {
 function Interface() {
   const s = useServices();
   const tooltips = useStore(s.prefs, (p) => p.tooltips);
+  const theme = findTheme(useStore(s.prefs, (p) => p.theme)) ?? 'dark';
+  const accent = findAccent(useStore(s.prefs, (p) => p.accent)) ?? 'orange';
   return (
-    <Section title="Help and interface">
+    <Section title="Look, help and interface">
+      <Row label="Theme" hint={THEMES.find((t) => t.id === theme)?.hint}>
+        <select
+          className={styles.select}
+          value={theme}
+          onChange={(e) => s.commands.run('options.theme', e.target.value)}
+          data-hint="How AGstudio looks (remembered in this browser)"
+        >
+          {THEMES.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.label}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <Row label="Accent color" hint="Buttons, the playhead, the loop and selections take this color.">
+        <span className={styles.swatches} role="radiogroup" aria-label="Accent color">
+          {ACCENTS.map((a) => (
+            <button
+              key={a.id}
+              role="radio"
+              aria-checked={accent === a.id}
+              aria-label={a.label}
+              className={`${styles.swatch} ${accent === a.id ? styles.swatchOn : ''}`}
+              style={{ background: a.color }}
+              onClick={() => s.commands.run('options.accent', a.id)}
+              data-hint={`Accent color: ${a.label}`}
+            />
+          ))}
+        </span>
+      </Row>
       <Row label="Tooltips" hint="The bar at the bottom of the screen explains whatever you point at either way.">
         <Switch checked={tooltips} onChange={() => s.commands.run('options.tooltips')} label="Explain controls in a bubble" />
       </Row>

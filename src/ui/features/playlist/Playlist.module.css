@@ -37,7 +37,7 @@
 }
 
 .toolOn {
-  background: #4a4036;
+  background: var(--ag-active);
   color: var(--ag-accent);
 }
 
@@ -167,7 +167,7 @@
 }
 
 .hthumb:hover {
-  background: #4a555e;
+  background: var(--ag-hover-flat);
 }
 
 .playhead {
@@ -213,7 +213,7 @@
   position: absolute;
   display: none;
   padding: 0 4px;
-  border: 1px solid #d9c25b;
+  border: 1px solid var(--ag-marker);
   border-radius: 2px;
   background: var(--ag-surface-inset);
   color: var(--ag-text);

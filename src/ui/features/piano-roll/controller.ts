@@ -20,7 +20,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { noteName, scaleMask } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
-import { fitCanvas, readTheme } from '../../timeline/canvas';
+import { fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
 import {
@@ -166,6 +166,7 @@ export class PianoRollController {
       s.view.subscribe((next, prev) => {
         if (next.currentPatternId !== prev.currentPatternId) all();
       }),
+      onThemeChange(all),
       onFrame(() => this.frame()),
     );
 
@@ -387,8 +388,8 @@ export class PianoRollController {
     if (d?.kind === 'marquee') {
       const x = Math.min(d.x0, d.x1);
       const y = Math.min(d.y0, d.y1);
-      ctx.fillStyle = 'rgba(90, 164, 232, 0.12)';
-      ctx.strokeStyle = 'rgba(90, 164, 232, 0.9)';
+      ctx.fillStyle = theme.selectTint;
+      ctx.strokeStyle = theme.select;
       ctx.fillRect(x, y, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
       ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
     } else if (this.hover && !d) {

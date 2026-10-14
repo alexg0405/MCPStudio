@@ -138,12 +138,12 @@
 
 .mine .bubble {
   background: var(--ag-accent-dim);
-  color: #fff;
+  color: var(--ag-on-accent);
 }
 
 .errorMessage .bubble {
-  background: rgba(229, 87, 77, 0.18);
-  border: 1px solid rgba(229, 87, 77, 0.5);
+  background: var(--ag-danger-tint);
+  border: 1px solid var(--ag-danger-line);
 }
 
 .thinking {
@@ -203,10 +203,10 @@
   gap: 6px;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid #5a1f1b;
+  border: 1px solid var(--ag-danger-deep);
   border-radius: 14px;
-  background: linear-gradient(#d9554b, #a8362e);
-  color: #fff;
+  background: linear-gradient(var(--ag-danger), var(--ag-danger-strong));
+  color: var(--ag-on-accent);
   font-weight: 600;
   cursor: pointer;
 }
@@ -222,7 +222,7 @@
 
 @keyframes pulse {
   50% {
-    box-shadow: 0 0 0 4px rgba(229, 87, 77, 0.25);
+    box-shadow: 0 0 0 4px var(--ag-danger-tint);
   }
 }
 
@@ -302,8 +302,8 @@
 }
 
 .sendReady:not(:disabled) {
-  background: linear-gradient(#e08a37, var(--ag-accent-dim));
-  color: #fff;
+  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
+  color: var(--ag-on-accent);
 }
 
 .sendButton:disabled {
@@ -355,7 +355,7 @@
 }
 
 .warnings {
-  color: var(--ag-warning, #c9a24a);
+  color: var(--ag-warning);
 }
 
 /* What a mix analysis found. */
@@ -433,16 +433,16 @@
 .primaryButton {
   height: 24px;
   padding: 0 12px;
-  border: 1px solid #6b3b10;
+  border: 1px solid var(--ag-accent-deep);
   border-radius: var(--ag-radius);
-  background: linear-gradient(#e08a37, var(--ag-accent-dim));
-  color: #fff;
+  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
+  color: var(--ag-on-accent);
   font: inherit;
   cursor: pointer;
 }
 
 .primaryButton:hover {
-  background: linear-gradient(#f0984a, #c47530);
+  background: linear-gradient(var(--ag-accent), var(--ag-accent-strong));
 }
 
 .ok {

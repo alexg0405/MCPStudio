@@ -42,7 +42,7 @@ export default defineWorkletInstrument({
   version: 1,
   category: 'Drums',
   description:
-    'Sixteen drum pads on keys 36–51 (C3 up, General MIDI layout) that play your own samples or built-in drum sounds, with tune, level, pan, decay, reverse and choke groups per pad.',
+    'Sixteen drum pads on keys 36–51 (C3 up, General MIDI layout) that play your own samples or, while a pad is empty, the built-in drum sound its Sound setting picks; tune, level, pan, decay, reverse and choke group per pad.',
   params: drumPadsParams,
   processor,
   sampleSlots: PAD_SLOTS,

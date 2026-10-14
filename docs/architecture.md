@@ -910,6 +910,139 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
 - Shared DSP in `src/sdk/dsp` (exported from `@agstudio/sdk` and `/worklet`): `Adsr`, `BlepOscillator`/`polyBlep`,
   `DelayLine` (linear/cubic), `Lfo` (free or `atBeat`), next to `Biquad`, `Svf`, `OnePole` and `EnvelopeFollower`.
 
+## Instruments (M13)
+
+Five worklet instruments in `src/plugins/builtin/` (public SDK only), each with a custom editor, presets, kernel tests
+in Node (`*/kernel.test.ts`) and offline renders through the real engine (`test/browser/instruments.test.ts`).
+
+### Shared patterns
+
+- **Heavy data is built on the main thread.** `defineWorkletInstrument({ setup(port, host) })` (new, additive) runs
+  once the processor exists and before any note reaches it: the Wavetable sends its bank, Drum Pads its rendered
+  sounds, the Slicer its demo loop. Building them in a kernel constructor would stall the audio thread (the bank
+  takes ~40 ms). The bank lives in a `SharedArrayBuffer` when the page is cross-origin isolated (dev, preview), so
+  every kernel reads one copy; elsewhere (Vitest's browser) each port gets a structured-clone copy (3.3 MB).
+- **Notes start inside `render`.** Params only arrive with `render()`, and an event at frame 0 of a block reaches
+  `noteOn` before that block renders. So `noteOn`/`noteOff` queue and the queue is handled at the top of the next
+  `render(from, …)`, which starts at the event's frame, with `at(p.x, from)`. Presets and voice modes therefore
+  apply from the first note of an export (a test renders the first note with two settings and compares).
+- **Control rate.** Wavetable (every 32 samples) and FM (16) run envelopes (`new Adsr(sampleRate / CONTROL)`),
+  LFOs, the mod matrix, pitch and filter coefficients per step and glide levels, morphs and gains linearly in
+  between; voices render in segments that end at control points, with their hot state in locals.
+- **Click-free stealing.** A stolen voice keeps its level and oscillator phases and restarts its envelopes from
+  where they are (Adsr retriggers from its value); a new voice resets phases (FM: Yamaha-style phase 0).
+- **Determinism.** Unison start phases come from `host.rand()` at note start, noise from per-voice seeded `Noise`,
+  drum hits from seeded models: two renders are bit-identical, also at other chunk sizes (tested).
+- **One-shot drums.** Drum Pads, Drum Synth and the one-shot Slicer ignore note lengths; hard all-notes-off fades
+  or cuts within 5 ms; a note-off before the voice rendered cancels it.
+
+### Wavetable (`wavetable/`)
+
+- **Bank** (`sdk/dsp/wavetable.ts`): tables are `WavetableSpec`s writing a Fourier series per morph position
+  (k = 1…256): `addPiecewise` integrates straight-line shapes exactly (saw, pulse, hard-sync saw: no aliasing even
+  at level 0), `addSampled` FFTs smooth curves at 8192 points. Each frame is synthesized at 9 mip levels by inverse
+  FFT: level m keeps harmonics 1…256≫m, stored at 2048, 1024, 512 and then 256 samples (+1 wrap-around sample), so
+  linear reads stay ≥ 8 samples per period of the top harmonic; frames are normalized to peak 1 at level 0.
+  `levelFor(cyclesPerSample)` = ⌈log2(512·f/sr)⌉: the richest level whose top harmonic stays below Nyquist (for the
+  highest unison copy, per control step). 10 tables × 16 frames = 3.3 MB, ~40–50 ms to build. The private radix-2
+  FFT in wavetable.ts only builds tables (the effects milestone owns the SDK's FFT file; consolidate later).
+- **Tables** (`tables.ts`, in the order of the `oscNTable` enum): basic (sine → triangle → saw → square, all with a
+  +sin fundamental so blends don't cancel), pulse width (50 % → 3 %), sync sweep (slave 1× → 8×), harmonic series
+  (1 → 24 partials), vocal (a e i o u formants at a 110 Hz voice), formant sweep, organ registrations, glass, CZ-style
+  resonant sweep, digital grit. Additive tables use Schroeder phases (low crest factor, so they stay loud).
+- **Voice**: 2 oscillators × 1–8 unison copies (detune spread evenly, ±spread across the stereo field, 1/√n gain),
+  morph between adjacent frames (crossing a frame boundary is continuous, neighbours share a frame); a sub (sine,
+  triangle, PolyBLEP square; 1 or 2 octaves down) and one-pole-filtered noise; drive (`softClip`, normalized) into
+  the `Svf` (12 dB, 24 dB = two stages, high-pass, band-pass, notch), cutoff × 2^(8·(envAmount·modEnv + mods) +
+  keyTrack·(pitch − 60)/12); amp ADSR × velocity × volume mod; balance pan.
+- **Mod matrix** (6 slots, amount −1…1): sources mod env (0…1), LFO 1/2 (−1…1), velocity, mod wheel (CC 1,
+  smoothed 20 ms), key ((key − 60)/60); destinations pitch (100 % = ±24 st), positions (±1), cutoff (±8 octaves),
+  resonance (±1), volume (×(1 + m), 0…2), pan (±1), LFO speeds (×2^(4m), from the previous step, so an LFO can't
+  feed its own rate).
+- **LFOs** are per voice: synced and playing → `lfo.atBeat(transport.beatAt(i), beats)` (lands on the beat, tested at
+  120 and 93 BPM through the engine); synced while stopped → free at the tempo's rate (so previewing still wobbles);
+  "Restart each note" off → a voice starts at a shared free-running phase.
+- **Voice modes**: poly (16 voices; glide slides each new note from the last one), mono and legato on voice 0 with a
+  note stack (last-note priority, releasing returns to the newest held key without a new attack); legato doesn't
+  retrigger overlapping notes; glide is constant-time and linear in semitones.
+
+### FM (`fm/`)
+
+- `FM_ALGORITHMS` (`sdk/dsp/fm.ts`): the TX81Z/DX21 set — 1: 4→3→2→1, 2: (3+4)→2→1, 3: (4 + 3→2)→1,
+  4: (4→3 + 2)→1, 5: 2→1 and 4→3, 6: 4→(1, 2, 3), 7: 4→3 plus 1 and 2, 8: 1+2+3+4. Modulators always have higher
+  numbers, so the kernel computes 4, 3, 2, 1 each sample through a 4×4 matrix (no branches per algorithm).
+- Operator: `sinCycles` (4096-point table) with phase modulation in radians; a modulator at full level shifts by 2π
+  (`MOD_DEPTH`); levels follow level² × envelope × velocity factor; frequency = note × ratio (0 = ½) × (1 + fine),
+  capped below Nyquist. Operator 4's feedback averages its last two outputs (Yamaha) and is capped at 1.5 rad, where
+  it is a saw; above ~1.7 rad it turns to noise (measured). Carriers sum × 1/√n; an optional `Svf` low-pass (off at
+  the top of its range); vibrato; the mod wheel brightens (modulators × (1 + wheel)) or adds 50 ct of vibrato.
+- The editor draws the algorithm from the same table (heard operators orange, the feedback loop when on) and names
+  each operator's role and effective ratio. Kernel tests check each algorithm: heard operators are pure sines at
+  their frequencies, modulators alone are silent, a first-order sideband exists on a heard operator exactly where
+  an arrow points, and a modulator changes nothing once the operator it feeds is silenced.
+
+### Drum Pads (`drum-pads/`)
+
+- Sample slots `pad1…pad16` on keys 36–51; an empty pad plays the built-in sound its `padNSound` enum picks (21
+  sounds rendered from the SDK drum models on the main thread, cached per sample rate, each normalized to a mixed-
+  kit peak level: kicks 0.9 … cymbals 0.35–0.4). The default kit is the General MIDI map 36–51 (hats in choke group
+  1), so GM drum files and the AI's beats play it directly, and kits are just params (presets, AI).
+- Per pad: tune (resampling: `SampleReader` speed = srcRate/sr × 2^(st/12)), level, pan (balance: the centre keeps
+  both sides at full level, like the Sampler with stereo sounds), decay (T60 fade; the maximum plays everything),
+  reverse, choke group 0–4. A hit fades out (4 ms) every sounding voice whose pad is in its group, earlier hits of the
+  same pad included. 32 voices, oldest stolen.
+- Editor: FPC layout (pad 1 bottom left); a press plays the pad (higher up = louder) and selects it; drops go through
+  `PluginUIProps.samples.drop` (desktop files, sample-browser files, browser-panel kit sounds); the selected pad's
+  strip has Choose file…, Kit sound…, Remove sample and its params.
+
+### Slicer (`slicer/`)
+
+- Sample slot `main`; slice n plays on key 60 + n (up to 64). While the slot is empty it slices a built-in demo
+  break (`demo.kernel.ts`: two bars at 120 BPM from the drum models, rendered at a fixed 48 kHz so the editor and the
+  kernel slice identical audio; the kernel resamples).
+- Slicing (`slices.kernel.ts`, shared by kernel and editor) runs on the 256-frame peak overview — in the editor the
+  host's `waveform(slot)`, in the kernel `peakOverview` of the same decoded buffer — so markers and playback agree.
+  `detectSlicesInto`: a bucket starts a slice when its level (dB) jumps above the quietest of the previous three
+  buckets by 14 dB (sensitivity 0) … 2 dB (1) and is no quieter than −30 … −60 dB under the loudest point; only the
+  first bucket of a rise counts; hits closer than the shortest slice merge; silence before the first hit is skipped
+  (sound before it stays in slice 1). Grid mode cuts equal parts. Slices are recomputed (O(buckets), no allocation)
+  only when the audio or a slicing setting changes; slicing params aren't automatable (it would remap keys).
+- Playback: one-shot (to the slice end, 2 ms end fade) or gated (linear release); cut fades the previous slice (4 ms);
+  tune (resampling), reverse, attack, velocity.
+- Caveat: an export at another sample rate decodes the sample at that rate, so a borderline hit can slice
+  differently than in the editor (the demo loop never does: it is always 48 kHz).
+
+### Drum Synth (`drum-synth/`)
+
+- Seven models from `sdk/dsp/drums.ts` on the GM keys: kick 35/36 (sine with an exponential pitch drop, noise click,
+  drive), perc 37 (two PolyBLEP squares through a band-pass: cowbell at ratio 1.48, rim/clave near 1), snare 38/40
+  (two head modes + high-passed noise), clap 39 (band-passed noise, three bursts and a tail), closed hat 42 (44 =
+  shorter, darker pedal hat) and open hat 46 (the 808's six square oscillators at its metallic ratios, band- and
+  high-passed), tom 45 with 41/43/47/48/50 at −7, −4, +3, +5, +8 st. Small voice pools per model (2–4), oldest
+  stolen; "Closed cuts open" (default on) chokes ringing open hats on any hat hit.
+
+### What M13 verified
+
+- Wavetable mips: for keys 84–120 the energy that isn't a harmonic stays below −63 dB (C7) … −90 dB (a naive saw at
+  the same pitch is above −30 dB); a note whose 2nd harmonic would pass Nyquist plays a pure sine (< −60 dB).
+- 16 voices × 4 unison × 2 oscillators (lp24, osc 2 on): 8.5 s of audio renders in 0.57 s, **about 15× real time**
+  (headless Chrome, M-series Mac; `instruments.test.ts` logs the factor and asserts > 2×).
+- Every instrument: sound at the first note, nothing before it, silence after the release, finite, peak below 0.95 (the
+  limiter never acts), no DC; bit-identical renders at chunk sizes 128·256 and 128·37; every pair of presets differs by
+  more than 1.5 dB in a spectrum + loudness-envelope fingerprint.
+
+### Limits and follow-ups
+
+- The AI can't fill Drum Pads' pads with samples: `add_channel`'s `sample` only sets a `main` slot. It drives the kit
+  through `padNSound`/`padNTune`/… and the kit presets; the Slicer takes a kit sound as its `main` sample (or plays
+  the demo loop, though the AI still warns "has no sample yet"). The catalog grows by ~26 KB for these five plugins,
+  mostly the 21-option pad-sound enum repeated 16 times: `catalog.ts` could print shared option lists once.
+- Pad and slice clicks in the editors play through `engine.previewNoteOn` and aren't recorded into patterns.
+- Wavetable: no crossfade between mip levels (a fast pitch sweep across an octave boundary drops the top octave of
+  harmonics at once); the shape preview shows the knob's position, not the modulated one. FM: operator envelope
+  times are read at note start.
+- Slices are derived, not stored: no hand-moved markers yet.
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all

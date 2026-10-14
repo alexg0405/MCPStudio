@@ -45,12 +45,12 @@ function opSpecs(n: number): Record<string, ParamSpec> {
   const group = `Operator ${n}`;
   return {
     [id.ratio]: p.int(0, 16, 1, {
-      label: `Op ${n} ratio`,
+      label: `Op ${n} ratio (0 = ½)`,
       group,
       hint: 'Frequency as a multiple of the note: 1 = the note, 2 = an octave up, 3 = an octave and a fifth, 0 = half',
     }),
     [id.fine]: p.float(0, 1, 0, {
-      label: `Op ${n} fine`,
+      label: `Op ${n} fine (+% of ratio)`,
       unit: '%',
       group,
       hint: 'Raises the frequency by up to 100% of the ratio (ratio 1 + 41% = 1.41): odd values give bells and metal',

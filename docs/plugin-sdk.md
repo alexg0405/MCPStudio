@@ -1,8 +1,10 @@
 # Writing AGstudio plugins
 
 AGstudio's instruments and effects are plugins: TypeScript modules written against `@agstudio/sdk`.
-The built-ins (Sampler, 3xOsc, Pluck and the mixer effects) use exactly the same API you do,
-so anything they can do, your plugins can do.
+The built-ins (Sampler, 3xOsc, Pluck, 808 Bass, Wavetable, FM, Drum Pads, Slicer, Drum Synth and the
+mixer effects) use exactly the same API you do, so anything they can do, your plugins can do.
+`src/plugins/builtin/<name>/` has each one's source: Wavetable and FM are full worklet synths with
+custom editors, Drum Pads and Slicer show sample slots in a custom editor.
 
 ## Quick start
 
@@ -180,7 +182,27 @@ shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `
 (peak or RMS level with attack/release), `Adsr` (envelope; retriggers from its current value),
 `BlepOscillator` (sine, saw, square, pulse and triangle with little aliasing; `polyBlep` for your
 own), `DelayLine` (fractional reads, linear or cubic), `Lfo` (seven shapes, free-running or locked to
-the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`.
+the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`. For instruments:
+
+- `WavetableBank` / `WavetableOscillator`: morphing wavetables, every frame stored at nine mip levels
+  (harmonics 1–256 down to a sine) and band-limited exactly, so nothing aliases: pick the level with
+  `WavetableBank.levelFor(hz / sampleRate)` once per block. Describe a table as a `WavetableSpec`
+  whose `frame(position, sin, cos)` writes a Fourier series; `addPiecewise(points, sin, cos)` gives the
+  exact series of any shape drawn with straight lines (saws, pulses, synced saws), `addSampled(fn, …)`
+  that of a smooth curve. `WavetableBank.build(specs, frames, shared)` takes tens of milliseconds:
+  build it on the main thread and send `bank.data` to the kernel (see `setup` below), where
+  `WavetableBank.wrap(data, tables, frames)` reads it.
+- `FmOperator` (a sine with phase modulation and smooth self-feedback), `sinCycles` (a fast table
+  sine) and `FM_ALGORITHMS` (the eight classic 4-operator routings: modulators, carriers, labels).
+- `Kick`, `Snare`, `Clap`, `HiHat`, `Tom`, `Perc`: synthesized drum voices (808/909-style) with a few
+  public settings each, `trigger(velocity)`, `next()`, `choke()`; `renderDrum(voice)` renders one hit
+  into a buffer (to build a sample kit at load time); `softClip` is a cheap tanh.
+- `Noise` (seeded white, pink or brown), `SampleReader` (plays part of a sample at any speed,
+  forwards or backwards, with interpolation).
+- `peakOverview` (min/max per 256 frames: the same overview the host draws waveforms from),
+  `detectSlicesInto` / `detectSlices` (hits in an overview, with a sensitivity and a shortest slice) and
+  `gridSlicesInto` (equal slices): slicing an overview the editor also has keeps its markers in line
+  with what the kernel plays.
 
 Every kernel can see the song: `this.transport.playing`, `this.transport.bpm` and
 `this.transport.beatAt(i)` (the song position in quarter-note beats at frame `i` of the block; it
@@ -196,6 +218,34 @@ Optional kernel hooks: `setState(state)`, `onMessage(msg)` (from `port.send`), `
 (sample slots are copied to the audio thread for you), `reset()`, `allNotesOff(hard)`, `controlChange(cc, value)`.
 Use `this.host.rand()` for randomness (seeded, so exports repeat exactly) and `this.host.post(msg)`
 to talk back to the main thread (rarely: at most ~30 times a second).
+
+Heavy setup (wavetables, a rendered sample kit) doesn't belong on the audio thread: a long kernel
+constructor makes everything else that plays drop out. Build it on the main thread and send it from
+`setup(port, host)`, which `defineWorkletInstrument` / `defineWorkletEffect` call once the processor
+exists and before any note or audio reaches it (it may return a cleanup function):
+
+```ts
+export default defineWorkletInstrument({
+  id: ID, name: 'My Synth', version: 1, params, processor,
+  setup(port) {
+    const bank = myBank(); // built once per page, cached in a module variable
+    port.send({ type: 'bank', data: bank.data, tables: bank.tables, frames: bank.frames });
+  },
+});
+// in the kernel: override onMessage(msg) { if (msg.type === 'bank') this.bank = WavetableBank.wrap(...) }
+```
+
+A `SharedArrayBuffer` (the dev and preview servers are cross-origin isolated) reaches every kernel
+without a copy; `WavetableBank.build(specs, frames, true)` uses one when it can.
+
+Two kernel patterns the built-ins use:
+- **Start notes in `render`.** Param values only arrive with `render()`, and a note at the first frame
+  of a block reaches `noteOn` before that block renders. Queue note events in `noteOn`/`noteOff` and
+  handle them at the top of `render()` (which starts at the event's frame), reading `at(p.x, from)`:
+  settings, voice modes and presets then apply from the very first note of an export.
+- **Control rate.** Run envelopes, LFOs and the mod matrix every 16–32 samples and glide levels
+  linearly in between (`new Adsr(sampleRate / 32)` counts in those steps): a 16-voice, 4× unison
+  wavetable patch renders at about 15× real time this way.
 
 ### Rules for audio-thread code
 
@@ -340,6 +390,35 @@ automation clip drives them (a blue dot, explained in the hint bar); for your ow
 `useParamStatus(param)` from `@agstudio/sdk/ui` returns that status (`{ kind, hint }` or null). A UI that throws shows an error card
 with the generated panel underneath. `plugins/example-supersaw` is a complete example. `Knob` also takes
 `format(value)` to show your own text in the hint bar (it defaults to the param's unit formatting).
+`Knob`, `Toggle` and `Select` take an optional `hint` that the hint bar shows after the value
+("Cutoff: 1.20 kHz — Where the filter starts working").
+
+The param-bound controls do all of that in one line each: `<ParamKnob ui={props} param="cutoff" />`
+(knob, label, value with units, the param's `hint`, undo, the param menu), `ParamToggle`,
+`ParamSelect` and `Section` (a titled box like the generated panel's; its `hint` covers its empty
+space). `formatPan` shows pan as C / L 40% / R 25%.
+
+```tsx
+function MyUI(ui: PluginUIProps<typeof params>) {
+  return (
+    <Section title="Filter" hint="Shapes the tone">
+      <ParamKnob ui={ui} param="cutoff" />
+      <ParamKnob ui={ui} param="pan" format={formatPan} />
+      <ParamToggle ui={ui} param="sync" />
+    </Section>
+  );
+}
+```
+
+Editors of instruments also get `playNote(key, velocity?)`, which plays the key on the plugin's
+channel right away and returns the function that releases it (pads, slice previews). Plugins with
+`sampleSlots` get `samples`: `name(slot)`, `choose(slot)` (the file chooser), `kit` and
+`loadKit(slot, id)` (the app's kit sounds), `clear(slot)`, `canDrop(dataTransfer)` and
+`drop(slot, dataTransfer)` for drops from the desktop, the sample browser and the browser panel
+(call `drop` in `onDrop`), and `waveform(slot)` (the sample's peak overview, null while it decodes;
+the editor re-renders when it is ready). Every change is one undo step, and the plugin hears it
+through `host.samples.onChange`. With `samplePickers: false` in the definition the header leaves out
+its own sample pickers (Drum Pads has sixteen slots and shows them on its pads).
 
 ## Note scripts
 
@@ -465,6 +544,16 @@ upgraded when they load.
 ## Testing
 
 - Pure kernels: plain Vitest in Node (`src/plugins/builtin/pluck/kernel.test.ts` checks tuning by
-  autocorrelation).
+  autocorrelation). `@agstudio/sdk/worklet/testing` has `paramBlock(params, values)`, `testHost()`,
+  `TestTransport` (a playing song for tempo-synced kernels) and `renderInstrument(kernel, frames,
+  params, events)`, which splits blocks at event frames like the real processor:
+
+  ```ts
+  const k = new MyKernel(testHost(48000));
+  const [left] = renderInstrument(k, 48000, paramBlock(params, { cutoff: 500 }), [
+    { frame: 0, run: () => k.noteOn(60, 1, 1, 0, 0) },
+    { frame: 24000, run: () => k.noteOff(1, 60, 0.5) },
+  ]);
+  ```
 - Whole plugins: browser tests render offline in headless Chrome (`test/browser/worklet.test.ts`).
   `npm run test:audio` runs them; `npm run check` runs everything.

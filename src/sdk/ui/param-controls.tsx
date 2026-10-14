@@ -10,6 +10,13 @@ import styles from './controls.module.css';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EditorProps<P extends ParamSpecs> = PluginUIProps<P, any>;
 
+/** A pan value (−1…1) as "C", "L 40%" or "R 25%" (pass it as a knob's `format`). */
+export function formatPan(value: ParamValue): string {
+  const x = Number(value);
+  if (Math.abs(x) < 0.005) return 'C';
+  return `${x < 0 ? 'L' : 'R'} ${Math.round(Math.abs(x) * 100)}%`;
+}
+
 interface Common<P extends ParamSpecs> {
   /** The editor's props (what your `ui` component receives). */
   ui: EditorProps<P>;

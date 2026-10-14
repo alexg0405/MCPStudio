@@ -1,7 +1,7 @@
 import { useRef } from 'react';
-import type { ParamValue, PluginUIProps } from '@agstudio/sdk';
+import type { PluginUIProps } from '@agstudio/sdk';
 import { noteName } from '@agstudio/sdk/notes';
-import { ParamKnob, ParamToggle } from '@agstudio/sdk/ui';
+import { formatPan, ParamKnob, ParamToggle } from '@agstudio/sdk/ui';
 import { DRUMS, type DrumId, type DrumSynthParams } from './params';
 import styles from './ui.module.css';
 
@@ -18,13 +18,6 @@ const KNOBS: Record<DrumId, Param[]> = {
   tom: ['tomPitch', 'tomSweep', 'tomDecay', 'tomLevel', 'tomPan'],
   ohat: ['ohatDecay', 'ohatTone', 'ohatLevel', 'ohatPan'],
 };
-
-/** Pan as "C", "L 40%", "R 25%". */
-export function panText(v: ParamValue): string {
-  const x = Number(v);
-  if (Math.abs(x) < 0.005) return 'C';
-  return `${x < 0 ? 'L' : 'R'} ${Math.round(Math.abs(x) * 100)}%`;
-}
 
 /** A pad that plays the drum while pressed. */
 function Pad({ ui, name, keys }: { ui: Props; name: string; keys: readonly number[] }) {
@@ -70,7 +63,7 @@ export function DrumSynthUI(ui: Props) {
           <Pad ui={ui} name={d.name} keys={d.keys} />
           <div className={styles.knobs}>
             {KNOBS[d.id].map((id) => (
-              <ParamKnob key={id} ui={ui} param={id} size={26} {...(id.endsWith('Pan') ? { format: panText } : {})} />
+              <ParamKnob key={id} ui={ui} param={id} size={26} {...(id.endsWith('Pan') ? { format: formatPan } : {})} />
             ))}
             {d.id === 'ohat' && (
               <div className={styles.toggle}>

@@ -11,11 +11,14 @@ import {
   type TestNote,
 } from '../helpers/instruments';
 import drumSynth from '../../src/plugins/builtin/drum-synth';
+import drumPads from '../../src/plugins/builtin/drum-pads';
+
+/** The master limiter's ceiling is −0.3 dBFS (0.966): staying below 0.95 means it never had to act. */
+const BELOW_LIMITER = 0.95;
 
 /** How each instrument is played in the shared checks. */
 interface Case {
   def: PluginDef;
-  /** A short phrase (within the first bar at 120 BPM). */
   notes: TestNote[];
   opts?: InstrumentRender;
   /** Seconds after the music starts by which everything has died away. */
@@ -29,17 +32,24 @@ const cases: Case[] = [
     opts: { tail: 2.5 },
     silentAfter: 3.5,
   },
+  {
+    def: drumPads as PluginDef,
+    // Every pad once, an eighth note apart (two bars).
+    notes: Array.from({ length: 16 }, (_, i) => ({ at: i * 0.5, len: 0.25, key: 36 + i })),
+    opts: { bars: 2, tail: 3 },
+    silentAfter: 6.5,
+  },
 ];
 
 describe('M13 instruments', () => {
   for (const c of cases) {
     describe(c.def.name, () => {
-      it('makes sound, stops after release, and stays finite, below clipping and without DC', async () => {
+      it('makes sound, stops after release, and stays finite, below the limiter and without DC', async () => {
         const buffer = await renderNotes(c.def, c.notes, c.opts);
         const all = analyze(buffer);
         expect(all.finite).toBe(true);
         expect(all.peak).toBeGreaterThan(0.05);
-        expect(all.peak).toBeLessThan(0.97);
+        expect(all.peak).toBeLessThan(BELOW_LIMITER);
         // Nothing before the first note.
         expect(analyze(buffer, 0, START - 1).peak).toBe(0);
         expect(rmsAt(buffer, 0, 0.5)).toBeGreaterThan(0.01);
@@ -69,7 +79,7 @@ describe('M13 instruments', () => {
           ),
         );
         for (let a = 0; a < renders.length; a++) {
-          expect(analyze(renders[a]!).peak, presets[a]!.name).toBeLessThan(0.97);
+          expect(analyze(renders[a]!).peak, presets[a]!.name).toBeLessThan(BELOW_LIMITER);
           expect(analyze(renders[a]!).peak, presets[a]!.name).toBeGreaterThan(0.02);
           for (let b = a + 1; b < renders.length; b++)
             expect(
@@ -80,4 +90,19 @@ describe('M13 instruments', () => {
       });
     });
   }
+
+  describe('Drum Pads samples', () => {
+    it('a sample in a pad slot replaces its built-in sound', async () => {
+      const notes = [{ at: 0, len: 0.25, key: 36 }];
+      const builtin = await renderNotes(drumPads as PluginDef, notes);
+      const sampled = await renderNotes(drumPads as PluginDef, notes, { samples: { pad1: 'kit/clap' } });
+      expect(analyze(sampled).peak).toBeGreaterThan(0.05);
+      expect(fingerprintDistance(builtin, sampled)).toBeGreaterThan(3);
+      // The same kit sound on two pads plays the same.
+      const other = await renderNotes(drumPads as PluginDef, [{ at: 0, len: 0.25, key: 37 }], {
+        samples: { pad2: 'kit/clap' },
+      });
+      expect(maxDiff(sampled, other)).toBeLessThan(1e-6);
+    });
+  });
 });

@@ -7,10 +7,11 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 
 | Action | Keys |
 |---|---|
+| Add marker at the song position | `⌥T` / `Alt+T` |
 | AI studio | `⌥6` / `Alt+6` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
-| Export WAV… | `⌘R` / `Ctrl+R` |
+| Export audio… | `⌘R` / `Ctrl+R` |
 | Keyboard shortcuts | `F1` |
 | Layout: Arrange | `⌥⇧1` / `Alt+Shift+1` |
 | Layout: Compose | `⌥⇧2` / `Alt+Shift+2` |

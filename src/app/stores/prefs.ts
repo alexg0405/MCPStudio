@@ -8,9 +8,18 @@ export interface PrefsState {
   pianoOctave: number;
   /** Listen to connected MIDI keyboards. */
   midiInput: boolean;
-  /** Last WAV export settings. */
+  /** Last export settings: WAV bit depth, sample rate… */
   exportFormat: 'pcm16' | 'pcm24' | 'float32';
   exportSampleRate: number;
+  /** …file format, FLAC bit depth, MP3 bit rate (kbps)… */
+  exportCodec: 'wav' | 'flac' | 'mp3';
+  exportFlacBits: number;
+  exportMp3Kbps: number;
+  /** …normalize to −0.3 dBFS, stems, stems through the master chain, stems into a folder or a .zip. */
+  exportNormalize: boolean;
+  exportStems: boolean;
+  exportMasterChain: boolean;
+  exportStemsTo: 'folder' | 'zip';
   /** Metronome clicks while playing. */
   metronome: boolean;
   /** Bars of count-in when recording (0 = none). */
@@ -19,6 +28,19 @@ export interface PrefsState {
   recordQuantize: number;
   /** Recording over existing notes adds to them or replaces what it passes over. */
   recordMode: 'overdub' | 'replace';
+  /** What record mode records: notes and knob moves, and/or audio from the input. */
+  recordNotes: boolean;
+  recordAudio: boolean;
+  /** The audio input ('' = the system default), mono or stereo. */
+  audioInputDevice: string;
+  audioInputChannels: 'mono' | 'stereo';
+  /** Hear the input through a mixer track while recording (off: speakers would feed back into the mic). */
+  audioMonitor: boolean;
+  /** Mixer track the input is monitored through and recorded audio plays on ('' = Master). */
+  audioInputTrack: string;
+  /** Measured round-trip latency in ms (−1: use the browser's estimate), and a manual correction. */
+  recordLatencyMs: number;
+  recordLatencyOffsetMs: number;
   /** Hover a control for a moment to see what it does (the hint bar shows it either way). */
   tooltips: boolean;
   /** The welcome dialog was closed once; it no longer opens by itself. */
@@ -46,10 +68,25 @@ const DEFAULTS: PrefsState = {
   midiInput: false,
   exportFormat: 'pcm24',
   exportSampleRate: 48000,
+  exportCodec: 'wav',
+  exportFlacBits: 24,
+  exportMp3Kbps: 320,
+  exportNormalize: false,
+  exportStems: false,
+  exportMasterChain: true,
+  exportStemsTo: 'folder',
   metronome: false,
   countInBars: 1,
   recordQuantize: 0,
   recordMode: 'overdub',
+  recordNotes: true,
+  recordAudio: false,
+  audioInputDevice: '',
+  audioInputChannels: 'mono',
+  audioMonitor: false,
+  audioInputTrack: '',
+  recordLatencyMs: -1,
+  recordLatencyOffsetMs: 0,
   tooltips: true,
   welcomeSeen: false,
   recentActions: [],

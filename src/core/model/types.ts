@@ -128,6 +128,11 @@ export interface AudioClipChannel extends ChannelBase, Audible {
   stretch?: AudioStretch;
   /** The tempo the audio was recorded at (20–999 BPM), for stretch. */
   sourceBpm?: number;
+  /**
+   * "Freeze channel": this channel's audio is a render of that channel, which is muted meanwhile
+   * (Unfreeze deletes this one and unmutes it). Absent for ordinary audio. Added in M15 (optional).
+   */
+  frozenFrom?: ChannelId;
 }
 
 export type AudioStretch = 'off' | 'resample' | 'stretch';

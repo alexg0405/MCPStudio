@@ -107,6 +107,8 @@ export default defineConfig(({ mode }) => ({
       'zustand/vanilla',
       'immer',
       'fflate',
+      // MP3 export: only the encoder Worker imports it, which the dependency scan doesn't see.
+      '@breezystack/lamejs',
     ],
   },
   preview: { headers: isolation },

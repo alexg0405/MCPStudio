@@ -6,6 +6,7 @@ import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from '@core/model/types';
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
+import { playbackKey, playbackMode, stretchScale } from '@core/audio/playback';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
 import { INACTIVE_TAP, TapImpl } from './tap';
@@ -16,6 +17,7 @@ import type {
   EngineState,
   EngineStats,
   PluginResolver,
+  SampleData,
   TransportView,
 } from './api';
 import { AutomationDriver } from './automation/driver';
@@ -29,6 +31,7 @@ import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
 import { waveformOf, type Waveform } from './waveform';
 import { startRecording, type RecordOptions, type RecordingHandle } from './recorder';
+import { openAudioInput, type AudioInput } from './audio-input';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
@@ -37,6 +40,23 @@ import type { WorkletPortImpl } from './worklet-port';
 import limiterUrl from './limiter.worklet.ts?worker&url';
 
 const PREVIEW_ID_BASE = 2 ** 30;
+
+const audioKeys = new WeakMap<Project['channels'], string>();
+
+/** One string for how every audio clip channel plays (see playbackKey), memoized per channels record. */
+function audioKeyOf(p: Project): string {
+  let key = audioKeys.get(p.channels);
+  if (key === undefined) {
+    const parts: string[] = [];
+    for (const id of p.channelOrder) {
+      const ch = p.channels[id];
+      if (ch?.kind === 'audioClip') parts.push(`${id}:${playbackKey(ch)}`);
+    }
+    key = parts.join(',');
+    audioKeys.set(p.channels, key);
+  }
+  return key;
+}
 
 /**
  * Tempo as plugins see it: the tempo now, the tempo at a scheduled time (from the transport's
@@ -106,6 +126,8 @@ export class Engine implements EngineApi, EngineCore {
   private readonly waveformsLoading = new Set<string>();
   private faults = 0;
   private muteKey = '';
+  /** How every audio clip channel plays its sample (playing clips restart when it changes). */
+  private audioKey = '';
   private lastLate = 0;
   private readonly modules = new Map<string, Promise<void>>();
   readonly ports = new PortSet();
@@ -114,11 +136,18 @@ export class Engine implements EngineApi, EngineCore {
   /** Scheduler cadence (see EngineStats.maxPumpGapMs). */
   private lastPumpAt = 0;
   private maxPumpGap = 0;
+  /** Live inputs (closed with the engine). */
+  private readonly inputs = new Set<AudioInput>();
+  /** Song mode without a loop region plays past the end (recording) instead of looping. */
+  private openEnded = false;
+  private testClick: AudioBuffer | null = null;
 
   constructor(
     ctx: BaseAudioContext,
     private readonly opts: EngineOptions,
     offline = false,
+    /** Offline renders may leave out the master safety limiter (renders that become clips again). */
+    private readonly build: { limiter?: boolean } = {},
   ) {
     this.ctx = ctx;
     this.offline = offline;
@@ -135,6 +164,7 @@ export class Engine implements EngineApi, EngineCore {
 
     const sink: TransportSink = {
       noteOn: (cid, e) => this.strips.get(cid)?.noteOn(e),
+      audioOn: (cid, e) => this.strips.get(cid)?.audioOn(e),
       noteOff: (cid, e) => this.strips.get(cid)?.noteOff(e),
       allNotesOff: (time) => {
         for (const s of this.strips.values()) s.allNotesOff(time);
@@ -200,6 +230,7 @@ export class Engine implements EngineApi, EngineCore {
 
   /** Inserts the master safety limiter once its worklet module has loaded. */
   private async init(): Promise<void> {
+    if (this.build.limiter === false) return;
     try {
       await this.loadModule(limiterUrl);
       const node = new AudioWorkletNode(this.ctx, LIMITER_ID, {
@@ -311,17 +342,56 @@ export class Engine implements EngineApi, EngineCore {
     this.mixer.removeStrips(removedInserts);
 
     const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
+    const audioKey = !prev || prev.channels !== next.channels ? audioKeyOf(next) : this.audioKey;
     const schedulingChanged =
       !prev ||
       prev.patterns !== next.patterns ||
       prev.playlist !== next.playlist ||
       prev.transport !== next.transport ||
       prev.channelOrder !== next.channelOrder ||
-      muteKey !== this.muteKey;
+      muteKey !== this.muteKey ||
+      audioKey !== this.audioKey;
     this.muteKey = muteKey;
+    this.audioKey = audioKey;
+    if (
+      !prev ||
+      prev.playlist !== next.playlist ||
+      prev.channels !== next.channels ||
+      prev.transport !== next.transport ||
+      prev.samples !== next.samples
+    )
+      this.planStretches(next);
     // Automation first: a re-planning transport then schedules segments with the new curves.
     this.automation.update(next, this.view);
     if (schedulingChanged) this.updateModel();
+  }
+
+  /** Tells each audio clip channel in 'stretch' mode which stretched copies its clips need. */
+  private planStretches(p: Project): void {
+    const tempo = tempoMapOf(p, 'song');
+    const scales = new Map<ChannelId, Set<number>>();
+    for (const clip of Object.values(p.playlist.clips)) {
+      if (clip.kind !== 'audio') continue;
+      const ch = p.channels[clip.channelId];
+      if (ch?.kind !== 'audioClip') continue;
+      const mode = playbackMode(ch);
+      if (mode.follow !== 'stretch') continue;
+      const k = stretchScale(mode, tempo, clip.start);
+      if (k === 1) continue;
+      let set = scales.get(ch.id);
+      if (!set) scales.set(ch.id, (set = new Set()));
+      set.add(k);
+    }
+    for (const [id, strip] of this.strips) strip.setStretches([...(scales.get(id) ?? [])].sort((a, b) => a - b));
+  }
+
+  /** True while a time-stretched copy of the channel's sample is being computed. */
+  isStretching(channelId: ChannelId): boolean {
+    return this.strips.get(channelId)?.isStretching ?? false;
+  }
+
+  notify(): void {
+    this.emit();
   }
 
   setTransportView(view: TransportView): void {
@@ -342,12 +412,13 @@ export class Engine implements EngineApi, EngineCore {
     if (!p) return null;
     const tempo = tempoMapOf(p, this.view.mode);
     if (this.view.mode === 'song') {
-      // Song mode loops the loop region, or the whole song (FL's default).
+      // Song mode loops the loop region, or the whole song (FL's default); while recording audio
+      // without a loop region it plays on past the end.
       const { source, length } = songModeSource(p);
       const songEnd = Math.max(length, ticksPerBar(p.transport.timeSig));
-      const loop =
-        this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : { start: 0, end: songEnd };
-      return { source, timeline: { tempo, loop, endTick: songEnd } };
+      const region = this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : null;
+      if (!region && this.openEnded) return { source, timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER } };
+      return { source, timeline: { tempo, loop: region ?? { start: 0, end: songEnd }, endTick: songEnd } };
     }
     const { source, length } = patternModeSource(p, this.view.patternId ?? p.patternOrder[0] ?? null);
     return { source, timeline: { tempo, loop: { start: 0, end: length }, endTick: length } };
@@ -572,6 +643,63 @@ export class Engine implements EngineApi, EngineCore {
     return handle;
   }
 
+  async openAudioInput(
+    stream: MediaStream,
+    opts: { channels: 1 | 2; label?: string; latency?: number },
+  ): Promise<AudioInput> {
+    const ctx = this.ctx;
+    if (typeof AudioContext === 'undefined' || !(ctx instanceof AudioContext))
+      throw new Error('Recording needs the realtime engine.');
+    await this.resume();
+    const input = await openAudioInput(
+      ctx,
+      {
+        loadModule: (url) => this.loadModule(url),
+        insertInput: (id) => this.insertInput(id),
+        // Output latency plus the master limiter's look-ahead (music and clicks pass through it).
+        outputLatency: () => ctx.baseLatency + (ctx.outputLatency || 0) + Math.round(0.0013 * ctx.sampleRate) / ctx.sampleRate,
+      },
+      stream,
+      opts,
+    );
+    const close = input.close.bind(input);
+    input.close = () => {
+      this.inputs.delete(input);
+      close();
+    };
+    this.inputs.add(input);
+    return input;
+  }
+
+  playTestClicks(count: number, interval: number): number[] {
+    const ctx = this.ctx;
+    if (!this.testClick) {
+      const n = Math.round(0.004 * ctx.sampleRate);
+      const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: ctx.sampleRate });
+      const d = b.getChannelData(0);
+      // A sharp, loud-ish tick: easy to find in a recording.
+      for (let i = 0; i < n; i++) d[i] = 0.8 * Math.sin((2 * Math.PI * 2000 * i) / ctx.sampleRate) * Math.exp(-i / (0.001 * ctx.sampleRate));
+      this.testClick = b;
+    }
+    const t0 = ctx.currentTime + 0.3;
+    const times: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const at = t0 + i * interval;
+      const src = new AudioBufferSourceNode(ctx, { buffer: this.testClick });
+      src.connect(this.monitorBus);
+      src.onended = () => src.disconnect();
+      src.start(at);
+      times.push(at);
+    }
+    return times;
+  }
+
+  setSongOpenEnded(on: boolean): void {
+    if (on === this.openEnded) return;
+    this.openEnded = on;
+    this.updateModel();
+  }
+
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
     const buffer = this.samples.getSync(ref, this.ctx.sampleRate);
     if (buffer) return waveformOf(buffer);
@@ -583,6 +711,13 @@ export class Engine implements EngineApi, EngineCore {
       });
     }
     return null;
+  }
+
+  async sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
+    const buffer = await this.samples.load(ref, this.ctx);
+    if (!buffer) return null;
+    const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+    return { sampleRate: buffer.sampleRate, channels, duration: buffer.duration };
   }
 
   async previewAudio(bytes: ArrayBuffer): Promise<boolean> {
@@ -728,6 +863,7 @@ export class Engine implements EngineApi, EngineCore {
     this.strips.clear();
     this.mixer.dispose();
     for (const p of [...this.ports]) p.dispose();
+    for (const input of [...this.inputs]) input.close();
     this.limiter?.port.postMessage({ t: 'dispose' });
     this.outTap?.dispose();
     this.listeners.clear();

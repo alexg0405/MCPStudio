@@ -8,6 +8,7 @@ import { paramInfoFor, showParamMenu } from '../../param-menu';
 import { useGestureEdit } from '../../edit';
 import { onFrame } from '../../frame-loop';
 import { useParamStatus } from '@agstudio/sdk/ui';
+import { RecordSource } from '../recording/RecordSource';
 import styles from './Transport.module.css';
 
 function ModeSwitch() {
@@ -122,6 +123,7 @@ export function TransportBar() {
       <CommandButton command="transport.playPause" icon={playing ? 'pause' : 'play'} className={styles.play} />
       <CommandButton command="transport.stop" icon="stop" />
       <CommandButton command="transport.record" icon="record" className={styles.record} />
+      <RecordSource />
       <CommandButton command="transport.metronome" icon="metronome" className={styles.metronome} />
       <Tempo />
       <Position />

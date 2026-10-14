@@ -1,11 +1,14 @@
 import type { Services } from '@app/services';
 import type { PlaylistTool } from '@app/stores/editor';
+import { registerMenu } from '../../shell/menus';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { Playlist } from './Playlist';
 import { playlistCommands as pl } from './commands';
 
 export function register(services: Services): void {
+  // Markers, audio clip edits and recording add their entries to it.
+  registerMenu({ id: 'playlist', label: 'Playlist', order: 44 });
   registerWindowType({
     type: 'playlist',
     title: () => 'Playlist - Arrangement',

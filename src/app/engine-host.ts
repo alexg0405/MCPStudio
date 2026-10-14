@@ -1,12 +1,14 @@
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
 import type {
+  AudioInput,
   EngineApi,
   EngineSession,
   EngineState,
   EngineStats,
   RecordOptions,
   RecordingHandle,
+  SampleData,
   TransportView,
   Waveform,
 } from '@engine/api';
@@ -27,6 +29,7 @@ export class EngineHost implements EngineApi {
   /** The chosen output device, replayed on a reboot ('' = default). */
   private outputDevice = '';
   private rebooting: Promise<void> | null = null;
+  private openEnded = false;
 
   constructor(private readonly factory: () => EngineApi) {
     this.inner = factory();
@@ -46,6 +49,7 @@ export class EngineHost implements EngineApi {
       if (this.view) next.setTransportView(this.view);
       if (this.session) next.setSession(this.session);
       if (this.outputDevice) void next.setOutputDevice(this.outputDevice);
+      if (this.openEnded) next.setSongOpenEnded(true);
       this.inner = next;
       this.detach = next.subscribe(() => this.emit());
       await old.dispose();
@@ -126,6 +130,19 @@ export class EngineHost implements EngineApi {
   previewAudio(bytes: ArrayBuffer): Promise<boolean> {
     return this.inner.previewAudio(bytes);
   }
+  sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
+    return this.inner.sampleData(ref);
+  }
+  openAudioInput(stream: MediaStream, opts: { channels: 1 | 2; label?: string; latency?: number }): Promise<AudioInput> {
+    return this.inner.openAudioInput(stream, opts);
+  }
+  playTestClicks(count: number, interval: number): number[] {
+    return this.inner.playTestClicks(count, interval);
+  }
+  setSongOpenEnded(on: boolean): void {
+    this.openEnded = on;
+    this.inner.setSongOpenEnded(on);
+  }
   stopPreview(): void {
     this.inner.stopPreview();
   }
@@ -174,6 +191,9 @@ export class EngineHost implements EngineApi {
   })();
   outputTap(): AudioTap {
     return this.outView;
+  }
+  isStretching(channelId: ChannelId): boolean {
+    return this.inner.isStretching(channelId);
   }
   stats(): EngineStats {
     return this.inner.stats();

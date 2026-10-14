@@ -618,6 +618,16 @@ function repairChannels(p: Obj, log: RepairLog): void {
     log.add(`Routed ${describeChannels(rerouted)} to the Master track because ${why}.`);
   }
   p.channelOrder = repairOrder(p.channelOrder as unknown[], channels, known, 'channel list', CHANNEL, log);
+  // Frozen audio points at the channel it was rendered from: unlink it when that one is gone.
+  for (const raw of Object.values(channels)) {
+    const ch = raw as Obj;
+    if (ch.kind !== 'audioClip' || !has(ch, 'frozenFrom') || ch.frozenFrom === undefined) continue;
+    const from = isString(ch.frozenFrom) ? (channels[ch.frozenFrom] as Obj | undefined) : undefined;
+    if (from && from !== ch && (from.kind === 'instrument' || from.kind === 'audioClip')) continue;
+    delete ch.frozenFrom;
+    log.count('frozen', (n) => `Unlinked ${count(n, noun('frozen channel'))} from a channel that no longer exists.`);
+  }
+  log.flush();
 }
 
 function repairNote(note: Obj, log: RepairLog): void {

@@ -1,0 +1,172 @@
+.dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.note {
+  margin: 4px 0 8px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.status {
+  margin: 4px 0 10px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.error {
+  margin: 4px 0 10px;
+  color: var(--ag-danger);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin: 6px 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.field select {
+  min-width: 200px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.number {
+  width: 72px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+.allow {
+  margin: 4px 0 8px;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 8px 0 4px;
+}
+
+.meterRow {
+  height: 8px;
+  overflow: hidden;
+  border: 1px solid var(--ag-border);
+  border-radius: 2px;
+  background: var(--ag-surface-inset);
+}
+
+.meterBar {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #6aa86b 0%, #6aa86b 70%, #c9a24a 85%, #e5574d 100%);
+  background-size: 100% 100%;
+}
+
+.meterBar[data-clip='true'] {
+  background: var(--ag-danger);
+}
+
+.group {
+  margin: 10px 0 0;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: var(--ag-radius);
+}
+
+.group legend {
+  padding: 0 4px;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+
+/* The record-source chip next to the record button. */
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  margin-left: -2px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-border);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.source:hover {
+  color: var(--ag-text);
+}
+
+.sourceArmed {
+  color: #ff8a80;
+  border-color: #7a2f2a;
+}
+
+.mon {
+  padding: 0 3px;
+  border-radius: 2px;
+  background: #4a6f3a;
+  color: #e8f5dc;
+  font-size: 9px;
+}
+
+.recording {
+  animation: ag-rec-blink 1s steps(2, start) infinite;
+}
+
+@keyframes ag-rec-blink {
+  to {
+    visibility: hidden;
+  }
+}

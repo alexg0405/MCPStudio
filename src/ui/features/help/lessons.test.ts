@@ -4,6 +4,7 @@ import type { ChannelId, PatternId } from '@core/model/types';
 import { setStep } from '@core/ops/notes';
 import { addInstrumentChannel } from '@app/actions/channels';
 import { applyPreset, presetChoices } from '@app/presets';
+import type { ParamSpecs } from '@agstudio/sdk';
 import { openWindow } from '../../workspace/registry';
 import { LESSONS } from './lessons';
 
@@ -61,10 +62,10 @@ describe('lessons', () => {
     applyPreset(s, owner, def, second);
     expect(pick!.done(s)).toBe(true);
     expect(tweak!.done(s)).toBe(false);
-    const [param, spec] = Object.entries(def.params).find(([, sp]) => sp.type === 'float')!;
+    const [param, spec] = Object.entries(def.params as ParamSpecs).find(([, sp]) => sp.type === 'float')!;
     s.history.transact('tweak', (d) => {
       const c = d.channels[id]!;
-      if (c.kind === 'instrument') c.plugin.params[param] = (spec as { max: number }).max;
+      if (c.kind === 'instrument' && spec.type === 'float') c.plugin.params[param] = spec.max;
     });
     expect(tweak!.done(s)).toBe(true);
     save!.prepare!(s);

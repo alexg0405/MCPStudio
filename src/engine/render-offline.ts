@@ -24,6 +24,11 @@ export interface RenderOptions extends EngineOptions {
   onProgress?(fraction: number): void;
   /** Aborting rejects with the signal's reason (an AbortError by default). */
   signal?: AbortSignal;
+  /**
+   * The master safety limiter (−0.3 dBFS, 1.3 ms look-ahead). On by default; renders that become
+   * audio clips again (freeze, consolidate) or raw stems leave it out.
+   */
+  limiter?: boolean;
 }
 
 export interface RenderResult {
@@ -52,12 +57,12 @@ export async function renderOffline(project: Project, opts: RenderOptions): Prom
   const from = opts.fromTick ?? 0;
   const tempo = tempoMapOf(project, opts.view.mode);
   const musical = tempo.tickToSeconds(from + opts.bars * ticksPerBar(ts)) - tempo.tickToSeconds(from);
-  const tail = opts.tail === 'auto' ? await projectTail(project, opts, sampleRate) : (opts.tail ?? 1);
+  const tail = opts.tail === 'auto' ? await measureTail(project, opts, sampleRate) : (opts.tail ?? 1);
   opts.signal?.throwIfAborted();
   const length = Math.ceil((preRoll + musical + tail) * sampleRate);
   const chunk = opts.chunk ?? 128 * 256;
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate });
-  const engine = new Engine(ctx, opts, true);
+  const engine = new Engine(ctx, opts, true, { limiter: opts.limiter ?? true });
   try {
     engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
     engine.setTransportView(opts.view);
@@ -93,8 +98,12 @@ export async function renderOffline(project: Project, opts: RenderOptions): Prom
   }
 }
 
-/** Release and effect tails of the project's instruments and effects, measured on a tiny context. */
-async function projectTail(project: Project, opts: EngineOptions, sampleRate: number): Promise<number> {
+/**
+ * Release and effect tails of the project's instruments and effects (seconds, capped at 30 s, plus
+ * the mixer's latency), measured on a tiny context. Renders of variants of one project (stems) pass
+ * the same number so their files come out the same length.
+ */
+export async function measureTail(project: Project, opts: EngineOptions, sampleRate: number): Promise<number> {
   const probe = new Engine(new OfflineAudioContext({ numberOfChannels: 2, length: 128, sampleRate }), opts, true);
   try {
     probe.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });

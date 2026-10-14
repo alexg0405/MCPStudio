@@ -7,10 +7,19 @@ import type { ChannelId, InsertId, PatternId, PluginOwner, SampleRef, Tick } fro
 import type { AudioTap, JsonValue, PluginDef } from '@agstudio/sdk';
 import type { Waveform } from './waveform';
 import type { RecordOptions, Recording, RecordingHandle } from './recorder';
+import type { AudioCapture, AudioInput, CapturedAudio } from './audio-input';
 
-export type { Waveform, RecordOptions, Recording, RecordingHandle };
+export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio };
 
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
+
+/** A decoded sample's audio (at the engine's sample rate). Read-only: it is the engine's own copy. */
+export interface SampleData {
+  sampleRate: number;
+  channels: readonly Float32Array[];
+  /** Seconds. */
+  duration: number;
+}
 
 export interface TransportView {
   mode: 'pattern' | 'song';
@@ -107,10 +116,25 @@ export interface EngineApi {
    */
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null;
   /**
+   * A sample's decoded audio for analysis (normalize, slicing at transients, tempo detection);
+   * null when it can't be decoded. Don't modify the channels.
+   */
+  sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null>;
+  /**
    * Records a microphone stream on the engine's clock: count-in clicks, then `bars` bars (optionally
    * with the project playing along from `fromTick`). Rejects where recording isn't possible.
    */
   record(stream: MediaStream, opts: RecordOptions & { playAlong: boolean; fromTick?: Tick }): Promise<RecordingHandle>;
+  /**
+   * Opens a live input (a getUserMedia stream) on the engine's clock: a level meter, monitoring
+   * through a mixer track, and captures of any length (audio recording). Realtime engines with
+   * cross-origin isolation only; rejects otherwise.
+   */
+  openAudioInput(stream: MediaStream, opts: { channels: 1 | 2; label?: string; latency?: number }): Promise<AudioInput>;
+  /** Short clicks on the monitor bus (never exported), for latency calibration; returns when each plays (context time). */
+  playTestClicks(count: number, interval: number): number[];
+  /** While on, song mode without a loop region plays on past the song's end instead of looping (audio recording). */
+  setSongOpenEnded(on: boolean): void;
   /** Decodes and plays an audio file on the preview bus; resolves false if it can't be decoded. */
   previewAudio(bytes: ArrayBuffer): Promise<boolean>;
   stopPreview(): void;
@@ -145,6 +169,11 @@ export interface EngineApi {
    * waveform, read on the frame loop. Inactive offline and in tests.
    */
   outputTap(): AudioTap;
+  /**
+   * True while a time-stretched copy of an audio clip channel's sample is being computed (its clips
+   * play in time, at the wrong pitch, until then). Subscribers hear when it finishes.
+   */
+  isStretching(channelId: ChannelId): boolean;
   stats(): EngineStats;
   /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;

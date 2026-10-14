@@ -1,8 +1,87 @@
 import type { DocChange } from '@core/history/history';
-import type { InsertId } from '@core/model/types';
+import type { InsertId, SampleRef } from '@core/model/types';
 import type { AudioTap } from '@agstudio/sdk';
-import type { EngineApi, EngineSession, EngineState, EngineStats, TransportView } from './api';
+import type {
+  AudioCapture,
+  AudioInput,
+  CapturedAudio,
+  EngineApi,
+  EngineSession,
+  EngineState,
+  EngineStats,
+  SampleData,
+  TransportView,
+} from './api';
 import { INACTIVE_TAP } from './tap';
+
+/**
+ * A live input for Node tests: `feed()` appends audio as if it arrived from the microphone; a
+ * capture holds everything fed after it started, timed from `startTime`.
+ */
+export class FakeAudioInput implements AudioInput {
+  closed = false;
+  monitor: InsertId | null = null;
+  level = 0;
+  capture: (AudioCapture & { fed: Float32Array[][] }) | null = null;
+  constructor(
+    readonly channelCount: 1 | 2,
+    readonly label: string,
+    readonly estimatedLatency: number,
+    private readonly clock: () => number,
+    private readonly sampleRate = 48000,
+  ) {}
+  levels(out: Float32Array): void {
+    out[0] = this.level;
+    out[1] = this.level;
+  }
+  setMonitor(track: InsertId | null): void {
+    this.monitor = track;
+  }
+  /** Audio arriving now (one array per channel). */
+  feed(channels: Float32Array[]): void {
+    this.capture?.fed.push(channels);
+  }
+  startCapture(): AudioCapture {
+    const sr = this.sampleRate;
+    const fed: Float32Array[][] = [];
+    const startTime = this.clock();
+    const frames = () => fed.reduce((n, f) => n + (f[0]?.length ?? 0), 0);
+    const c = {
+      fed,
+      sampleRate: sr,
+      channelCount: this.channelCount,
+      startTime,
+      get frames() {
+        return frames();
+      },
+      peaks: new Float32Array(0),
+      buckets: 0,
+      bucket: 256,
+      stop: async (): Promise<CapturedAudio> => {
+        const n = frames();
+        const channels = Array.from({ length: this.channelCount }, (_, ch) => {
+          const all = new Float32Array(n);
+          let o = 0;
+          for (const f of fed) {
+            all.set(f[ch] ?? f[0] ?? new Float32Array(0), o);
+            o += f[0]?.length ?? 0;
+          }
+          return all;
+        });
+        this.capture = null;
+        return { channels, sampleRate: sr, startTime, dropped: 0 };
+      },
+      cancel: () => {
+        this.capture = null;
+      },
+    };
+    this.capture = c;
+    return c;
+  }
+  close(): void {
+    this.closed = true;
+  }
+}
 
 /** An engine stand-in for Node tests and UI work without audio. Records what it was told. */
 export class FakeEngine implements EngineApi {
@@ -44,8 +123,9 @@ export class FakeEngine implements EngineApi {
     this.panics++;
     this.stop();
   }
+  /** Where playback (is set to) start: see startTick below. */
   playhead(): number {
-    return 0;
+    return this.startTick;
   }
   playheadIteration(): number {
     return 0;
@@ -69,6 +149,27 @@ export class FakeEngine implements EngineApi {
   }
   waveform(): null {
     return null;
+  }
+  /** Decoded audio sampleData() serves, by sample name. */
+  sampleAudio = new Map<string, SampleData>();
+  async sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
+    return this.sampleAudio.get(ref.name) ?? null;
+  }
+  /** The inputs openAudioInput() gave out (tests feed them audio). */
+  inputs: FakeAudioInput[] = [];
+  /** Round trip the fake inputs report (seconds). */
+  inputLatency = 0.01;
+  async openAudioInput(_stream: MediaStream, opts: { channels: 1 | 2; label?: string }): Promise<AudioInput> {
+    const input = new FakeAudioInput(opts.channels, opts.label ?? 'Test input', this.inputLatency, () => this.clockTime);
+    this.inputs.push(input);
+    return input;
+  }
+  playTestClicks(count: number, interval: number): number[] {
+    return Array.from({ length: count }, (_, i) => this.clockTime + 0.3 + i * interval);
+  }
+  openEnded = false;
+  setSongOpenEnded(on: boolean): void {
+    this.openEnded = on;
   }
   async previewAudio(): Promise<boolean> {
     return true;
@@ -118,6 +219,11 @@ export class FakeEngine implements EngineApi {
   }
   outputTap(): AudioTap {
     return INACTIVE_TAP;
+  }
+  /** Channels reported as being time-stretched. */
+  stretching = new Set<string>();
+  isStretching(channelId: string): boolean {
+    return this.stretching.has(channelId);
   }
   stats(): EngineStats {
     return {

@@ -21,4 +21,6 @@ export interface EngineCore {
   reportTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
   loadModule(url: string): Promise<void>;
   readonly ports: Set<WorkletPortImpl>;
+  /** Something subscribers show changed (e.g. a time-stretch started or finished). */
+  notify?(): void;
 }

@@ -4,6 +4,7 @@
  * structured outputs take no numeric bounds; the applier validates and clamps everything).
  */
 import { SCALES } from '@agstudio/sdk/notes';
+import { LFO_SHAPES } from '@core/automation/generate';
 import { BEAT_JSON_SCHEMA } from '@core/beat/spec';
 
 const str = (description: string) => ({ type: 'string', description });
@@ -44,6 +45,41 @@ const op = (name: string, description: string, properties: Record<string, unknow
 });
 
 const { message: _message, ...beatProps } = BEAT_JSON_SCHEMA.properties;
+
+const VALUE = (description: string) => ({ anyOf: [{ type: 'number' }, { type: 'string' }, { type: 'boolean' }], description });
+const IN_UNIT =
+  'In the control’s own unit: dB for volumes and sends, −1…1 for pan, cents for pitch, 0..1 for effect mix, BPM for tempo, the catalog unit or option id for plugin params.';
+
+/** What an automation clip moves. */
+const AUTOMATION_TARGET = {
+  type: 'object',
+  description: 'The control the automation moves.',
+  additionalProperties: false,
+  properties: {
+    kind: {
+      type: 'string',
+      enum: [
+        'channel_volume',
+        'channel_pan',
+        'channel_pitch',
+        'track_volume',
+        'track_pan',
+        'send',
+        'effect_mix',
+        'plugin',
+        'tempo',
+      ],
+      description:
+        'channel_* use "channel"; track_* use "insert"; send uses "insert" (from) and "to"; effect_mix uses "effect"; plugin uses "param" plus "channel" (its instrument) or "effect"; tempo needs nothing else.',
+    },
+    channel: CHANNEL,
+    insert: INSERT,
+    to: { ...INSERT, description: 'For a send: the mixer track it goes to.' },
+    effect: EFFECT,
+    param: str('For kind plugin: the param id from the catalog.'),
+  },
+  required: ['kind'],
+};
 
 export const ACTION_OPS = [
   op('song', 'Song settings.', {
@@ -239,6 +275,48 @@ export const ACTION_OPS = [
       density: num('randomize: share of steps that get a hit, 0..1 (default 0.4).'),
     },
     ['pattern', 'channel', 'action'],
+  ),
+  op(
+    'automate',
+    'Draws an automation clip on the playlist that moves one control over time when the song plays: fades, filter sweeps, risers, send throws, tempo ramps, wobbles. Give points, or an lfo for a repeating wave.',
+    {
+      ref: REF,
+      target: AUTOMATION_TARGET,
+      from_bar: int('1-based bar where the clip starts (default 1).'),
+      bars: num('Length in bars (default 4).'),
+      points: {
+        type: 'array',
+        description: 'The curve, in order.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            bar: num('Bars from the clip start: 0 is its start, fractions allowed.'),
+            value: VALUE(IN_UNIT),
+            shape: {
+              type: 'string',
+              enum: ['curve', 'hold', 'stairs', 'smooth'],
+              description: 'How it moves on to the next point: curve (a line, bent by tension), hold, stairs, smooth (S-shape).',
+            },
+            tension: num('−1…1: bends the move to the next point (negative starts slowly, positive starts fast).'),
+          },
+          required: ['bar', 'value'],
+        },
+      },
+      lfo: {
+        type: 'object',
+        description: 'Instead of points: a repeating wave over the whole clip.',
+        additionalProperties: false,
+        properties: {
+          shape: { type: 'string', enum: [...LFO_SHAPES] },
+          beats: num('Cycle length in beats (1 = a quarter note, 0.5 = an eighth, 4 = a bar of 4/4).'),
+          depth: num('0..1: how much of the control’s range it sweeps, peak to peak.'),
+          center: VALUE(`The middle of the wave. ${IN_UNIT} Default: the control’s current value.`),
+        },
+        required: ['shape', 'beats', 'depth'],
+      },
+    },
+    ['target'],
   ),
   op(
     'place_pattern',

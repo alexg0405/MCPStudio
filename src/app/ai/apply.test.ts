@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MASTER, type ChannelId, type InsertId } from '@core/model/types';
 import { createTestServices } from '../testing';
+import { resolveTarget } from '@core/automation/targets';
 import { applyAnswer, coerceParam, parseKey } from './apply';
 import { ACTIONS_SCHEMA, readAnswer, type AiAction } from './schema';
 import { p } from '@agstudio/sdk';
@@ -210,6 +211,83 @@ describe('AI actions on notes and steps', () => {
     const res = run(s, [{ op: 'steps', pattern: pat(s), channel: ch, action: 'clear' }]);
     expect(res.changes).toEqual([expect.stringMatching(/^Cleared the steps of/)]);
     expect(ticks()).toEqual([]);
+  });
+});
+
+describe('AI automation', () => {
+  const automations = (s: ReturnType<typeof createTestServices>) =>
+    Object.values(s.doc.getState().project.channels).filter((c) => c.kind === 'automation');
+
+  it('fades a channel in over four bars, in dB, as one clip on the playlist', () => {
+    const s = createTestServices();
+    const p0 = s.doc.getState().project;
+    const ch = p0.channelOrder.find((id) => p0.channels[id]?.kind === 'instrument')!;
+    const res = run(s, [
+      {
+        op: 'automate',
+        target: { kind: 'channel_volume', channel: ch },
+        from_bar: 3,
+        bars: 4,
+        points: [
+          { bar: 0, value: -60, tension: -0.5 },
+          { bar: 4, value: -6 },
+        ],
+      },
+    ]);
+    expect(res.warnings).toEqual([]);
+    expect(res.changes[0]).toMatch(/^Automation “.+”, bars 3–7: /);
+    const [auto] = automations(s);
+    expect(auto?.kind === 'automation' && auto.target).toEqual({ kind: 'channel', channelId: ch, param: 'volume' });
+    if (auto?.kind !== 'automation') return;
+    const p = s.doc.getState().project;
+    const resolved = resolveTarget(p, auto.target!, (id) => s.plugins.get(id)?.params as never)!;
+    expect(resolved.fromNormalized(auto.points[1]!.value)).toBeCloseTo(10 ** (-6 / 20), 3);
+    expect(auto.points[0]).toMatchObject({ tick: 0, tension: -0.5 });
+    const clip = Object.values(p.playlist.clips).find((c) => c.kind === 'automation')!;
+    expect(clip).toMatchObject({ start: 2 * 3840, length: 4 * 3840 });
+  });
+
+  it('wobbles a synth setting with an LFO and ramps the tempo past 180 BPM', () => {
+    const s = createTestServices();
+    const res = run(s, [
+      { op: 'add_channel', ref: '@lead', plugin: 'agstudio.3xosc', name: 'Lead' },
+      {
+        op: 'automate',
+        target: { kind: 'plugin', channel: '@lead', param: 'cutoff' },
+        bars: 2,
+        lfo: { shape: 'sine', beats: 0.5, depth: 0.6 },
+      },
+      {
+        op: 'automate',
+        target: { kind: 'tempo' },
+        bars: 8,
+        points: [
+          { bar: 0, value: 140 },
+          { bar: 8, value: 200 },
+        ],
+      },
+    ]);
+    expect(res.warnings).toEqual([]);
+    const [wobble, tempo] = automations(s);
+    expect(wobble?.kind === 'automation' && wobble.points.length).toBeGreaterThan(8);
+    if (tempo?.kind !== 'automation') throw new Error('no tempo automation');
+    expect(tempo.target).toEqual({ kind: 'tempo' });
+    // The range grows to fit 200 BPM; the points still read back as BPM.
+    expect(tempo.range!.max).toBeGreaterThanOrEqual(200);
+    const p = s.doc.getState().project;
+    const r = resolveTarget(p, tempo.target!, () => undefined, tempo.range)!;
+    expect(r.fromNormalized(tempo.points[0]!.value)).toBeCloseTo(140, 6);
+    expect(r.fromNormalized(tempo.points[1]!.value)).toBeCloseTo(200, 6);
+  });
+
+  it('warns about a control it cannot find and applies the rest', () => {
+    const s = createTestServices();
+    const res = run(s, [
+      { op: 'song', bpm: 101 },
+      { op: 'automate', target: { kind: 'plugin', channel: 'nobody', param: 'cutoff' }, points: [{ bar: 0, value: 1 }] },
+    ]);
+    expect(res.warnings).toEqual([expect.stringContaining('there is no channel')]);
+    expect(s.doc.getState().project.transport.bpm).toBe(101);
   });
 });
 

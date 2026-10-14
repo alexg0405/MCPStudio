@@ -1,6 +1,6 @@
 import { useContext, useEffect, useEffectEvent, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { faderToGain, formatGain, gainToFader, UNITY_POSITION } from '@core/model/fader';
-import { emitHint, ParamMenuContext } from '@agstudio/sdk/ui';
+import { emitHint, ParamMenuContext, useParamStatus } from '@agstudio/sdk/ui';
 import { FADER_CAP, FADER_PAD } from './scale';
 import styles from './Mixer.module.css';
 
@@ -89,6 +89,9 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
   };
 
   const text = formatGain(value);
+  // Automated (or being recorded): a dot on the fader, and the hint says by what.
+  const status = useParamStatus(param);
+  const hint = `${label}: ${text}. Drag (Shift = fine) or scroll; double-click for 0 dB`;
   return (
     <div
       ref={ref}
@@ -99,7 +102,7 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
       aria-valuemax={1}
       aria-valuenow={pos}
       aria-valuetext={text}
-      data-hint={`${label}: ${text}. Drag (Shift = fine) or scroll; double-click for 0 dB`}
+      data-hint={status ? `${hint} · ${status.hint}` : hint}
       onContextMenu={
         param && openMenu
           ? (e) => {
@@ -117,6 +120,7 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
       <div className={styles.faderTrack} />
       <div className={styles.faderUnity} style={{ bottom: bottomFor(UNITY_POSITION) }} />
       <div className={styles.faderCap} style={{ bottom: bottomFor(pos), marginBottom: -FADER_PAD }} />
+      {status && <i className={styles.faderStatus} data-kind={status.kind} aria-hidden />}
     </div>
   );
 }

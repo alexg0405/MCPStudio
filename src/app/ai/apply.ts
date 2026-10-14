@@ -6,6 +6,9 @@
  * are returned for the caller to run after the edit.
  */
 import type { Draft } from 'immer';
+import { LFO_SHAPES, lfoPoints, type LfoShape } from '@core/automation/generate';
+import { formatAutomationValue, targetName } from '@core/automation/labels';
+import { resolveTarget, TEMPO_RANGE, type ResolvedTarget } from '@core/automation/targets';
 import { validateBeatSpec } from '@core/beat/spec';
 import { makeInsert, makePattern, makePluginInstance, paletteColor } from '@core/model/defaults';
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
@@ -13,17 +16,22 @@ import { newId } from '@core/model/ids';
 import { KIT } from '@core/model/kit';
 import {
   MASTER,
+  type AutoPoint,
+  type AutoShape,
   type ChannelId,
   type Clip,
   type FxSlot,
   type InsertId,
   type Note,
   type PatternClip,
+  type ParamTarget,
   type PatternId,
   type PluginInstance,
+  type PluginOwner,
   type Project,
   type SlotId,
 } from '@core/model/types';
+import { createAutomationClip } from '@core/ops/automation';
 import { addChannel, addSample, removeChannel, setChannelProp } from '@core/ops/channels';
 import {
   addFxSlot,
@@ -48,7 +56,9 @@ import { SCALES } from '@agstudio/sdk/notes';
 import {
   dbToGain,
   defaultValues,
+  encode,
   formatValue,
+  isAutomatable,
   type JsonValue,
   type ParamSpec,
   type ParamSpecs,
@@ -56,6 +66,7 @@ import {
   type PluginDef,
 } from '@agstudio/sdk';
 import { NoteScriptError, runNoteScript } from '../actions/note-scripts';
+import { tempoRange } from '../automation';
 import { planBeat, showBeat, writeBeat, type AppliedBeat, type BeatPlan } from '../assistant/apply';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import type { Services } from '../services';
@@ -809,6 +820,163 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
             default:
               return fail(`unknown step action "${String(a.action)}"`);
           }
+        },
+
+        automate: (a) => {
+          const t = isObj(a.target) ? a.target : fail('what should the automation move?');
+          const kind = str(t.kind);
+          let target: ParamTarget;
+          switch (kind) {
+            case 'channel_volume':
+            case 'channel_pan':
+            case 'channel_pitch':
+              target = {
+                kind: 'channel',
+                channelId: channel(t.channel),
+                param: kind === 'channel_volume' ? 'volume' : kind === 'channel_pan' ? 'pan' : 'pitch',
+              };
+              break;
+            case 'track_volume':
+            case 'track_pan':
+              target = { kind: 'insert', insertId: insert(t.insert), param: kind === 'track_volume' ? 'volume' : 'pan' };
+              break;
+            case 'send':
+              target = { kind: 'route', insertId: insert(t.insert), to: insert(t.to) };
+              break;
+            case 'effect_mix': {
+              const e = effect(t.effect);
+              target = { kind: 'slot', insertId: e.insertId, slotId: e.slotId, param: 'mix' };
+              break;
+            }
+            case 'plugin': {
+              const name = str(t.param) ?? fail('which setting should it move?');
+              let owner: PluginOwner;
+              let pluginId: string;
+              if (t.effect !== undefined) {
+                const e = effect(t.effect);
+                owner = { kind: 'fx', insertId: e.insertId, slotId: e.slotId };
+                pluginId = d.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin.pluginId;
+              } else {
+                const cid = channel(t.channel);
+                const ch = d.channels[cid]!;
+                if (ch.kind !== 'instrument') fail(`“${ch.name}” has no instrument settings`);
+                owner = { kind: 'channel', channelId: cid };
+                pluginId = (ch as { plugin: { pluginId: string } }).plugin.pluginId;
+              }
+              const def = s.plugins.get(pluginId) ?? fail(`the plugin ${pluginId} isn't installed`);
+              const paramId = findParamId(def.params as ParamSpecs, name) ?? fail(`${def.name} has no setting "${name}"`);
+              target = { kind: 'plugin', owner, paramId };
+              break;
+            }
+            case 'tempo':
+              target = { kind: 'tempo' };
+              break;
+            default:
+              return fail(`can't automate "${String(t.kind)}"`);
+          }
+          const specsOf = (id: string) => s.plugins.get(id)?.params as ParamSpecs | undefined;
+          const lfo = isObj(a.lfo) ? a.lfo : null;
+          const rawPoints = Array.isArray(a.points) ? a.points.filter(isObj) : [];
+          // Tempo clips span 60–180 BPM unless the ramp goes further.
+          let range: { min: number; max: number } | undefined;
+          if (target.kind === 'tempo') {
+            const bpms = [d.transport.bpm, ...rawPoints.map((pt) => num(pt.value)).filter((v) => v !== undefined)];
+            if (lfo && num(lfo.center) !== undefined) bpms.push(num(lfo.center)!);
+            const lo = Math.min(...(bpms as number[]));
+            const hi = Math.max(...(bpms as number[]));
+            range =
+              lo < TEMPO_RANGE.min || hi > TEMPO_RANGE.max
+                ? { min: tempoRange(lo).min, max: tempoRange(hi).max }
+                : { ...TEMPO_RANGE };
+          }
+          const res: ResolvedTarget =
+            resolveTarget(project, target, specsOf, range) ?? fail('that control does not exist');
+          if (!isAutomatable(res.spec)) fail(`${res.spec.label ?? 'that setting'} can't be automated`);
+          // A value in the control's own unit → 0–1 on the clip.
+          const norm = (raw: unknown): number | null => {
+            switch (target.kind) {
+              case 'channel':
+              case 'insert':
+              case 'route': {
+                const v = num(raw);
+                if (v === undefined) return null;
+                const isLevel = target.kind === 'route' || target.param === 'volume';
+                return res.toNormalized(isLevel ? (v <= -100 ? 0 : dbToGain(v)) : v);
+              }
+              case 'slot': {
+                const v = num(raw);
+                return v === undefined ? null : res.toNormalized(v > 1 && v <= 100 ? v / 100 : v);
+              }
+              case 'plugin': {
+                const v = coerceParam(res.spec, raw);
+                return v === null ? null : res.toNormalized(encode(res.spec, v));
+              }
+              case 'tempo': {
+                const v = num(raw);
+                return v === undefined ? null : res.toNormalized(v);
+              }
+            }
+          };
+          const barT = bar();
+          const start = Math.max(0, Math.round(((num(a.from_bar) ?? 1) - 1) * barT));
+          const length = Math.max(1, Math.round((num(a.bars) ?? 4) * barT));
+          let points: AutoPoint[];
+          let shapeText: string;
+          if (lfo) {
+            const shape = LFO_SHAPES.find((x) => x === str(lfo.shape)) ?? fail(`unknown LFO shape "${String(lfo.shape)}"`);
+            const beats = Math.max(1 / 16, num(lfo.beats) ?? 1);
+            const center = lfo.center === undefined ? res.toNormalized(res.base) : norm(lfo.center);
+            if (center === null) fail(`can't use ${JSON.stringify(lfo.center)} as the middle of the wave`);
+            points = lfoPoints(0, length, {
+              shape: shape as LfoShape,
+              period: beats * PPQ,
+              depth: Math.min(1, Math.max(0, num(lfo.depth) ?? 0.5)),
+              center: center!,
+              phase: 0,
+            });
+            shapeText = `${shape} wave every ${r2(beats)} beat${beats === 1 ? '' : 's'}`;
+          } else {
+            points = [];
+            for (const pt of rawPoints) {
+              const value = norm(pt.value);
+              const at = num(pt.bar);
+              if (value === null || at === undefined) {
+                warnings.push(`automation point ${JSON.stringify(pt)} skipped`);
+                continue;
+              }
+              const shape = (['curve', 'hold', 'stairs', 'smooth'] as const).find((x) => x === str(pt.shape));
+              const tension = num(pt.tension);
+              points.push({
+                tick: Math.min(length, Math.max(0, Math.round(at * barT))),
+                value,
+                ...(shape && shape !== 'curve' ? { shape: shape as AutoShape } : {}),
+                ...(tension !== undefined && tension !== 0 ? { tension: Math.min(1, Math.max(-1, tension)) } : {}),
+              });
+            }
+            if (points.length === 0) fail('the automation needs points or an lfo');
+            points.sort((x, y) => x.tick - y.tick);
+            // One point is a held value.
+            if (points.length === 1) points.push({ tick: length, value: points[0]!.value });
+            const fmt = (pt: AutoPoint) => formatAutomationValue(res, target, pt.value);
+            shapeText = `${fmt(points[0]!)} → ${fmt(points[points.length - 1]!)}`;
+          }
+          const pluginInfo = (id: string) => {
+            const def = s.plugins.get(id);
+            return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
+          };
+          const name = targetName(project, target, pluginInfo) ?? 'Automation';
+          const automationCount = Object.values(d.channels).filter((c) => c?.kind === 'automation').length;
+          const made = createAutomationClip(d, {
+            target,
+            name,
+            color: paletteColor(automationCount * 3 + 5),
+            start,
+            length,
+            points,
+            ...(range ? { range } : {}),
+          });
+          remember(a.ref, { kind: 'channel', id: made.channelId });
+          return `Automation “${name}”, bars ${r2(start / barT + 1)}–${r2((start + length) / barT + 1)}: ${shapeText}`;
         },
 
         place_pattern: (a) => {

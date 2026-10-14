@@ -125,6 +125,36 @@
   touch-action: none;
 }
 
+/* Automated: the same dot knobs show (blue; a ring when the clip is muted; pulsing red when recording). */
+.faderStatus {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ag-select);
+  box-shadow: 0 0 0 1px var(--ag-border);
+  pointer-events: none;
+}
+
+.faderStatus[data-kind='muted'] {
+  background: var(--ag-surface-1);
+  border: 1.5px solid var(--ag-select);
+  box-sizing: border-box;
+}
+
+.faderStatus[data-kind='recording'] {
+  background: var(--ag-danger);
+  animation: ag-fader-rec 1s ease-in-out infinite;
+}
+
+@keyframes ag-fader-rec {
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .faderTrack {
   position: absolute;
   top: 6px;

@@ -4,6 +4,8 @@
  * selected. Ids are included so actions can refer to things exactly; only settings that differ from
  * the plugin defaults are listed.
  */
+import { formatAutomationValue, targetName } from '@core/automation/labels';
+import { resolveTarget } from '@core/automation/targets';
 import { DRUM_SOUNDS, type BeatSound } from '@core/beat/spec';
 import { gainToDecibels } from '@core/model/fader';
 import { kitPiece } from '@core/model/kit';
@@ -41,10 +43,28 @@ function pluginName(s: Services, pluginId: string): string {
   return s.plugins.get(pluginId)?.name ?? `${pluginId} (missing)`;
 }
 
+/** "automation of “Cutoff · 3xOsc”: 3 points, 400 Hz → 8.0 kHz" (values as the control shows them). */
+function automationSummary(s: Services, p: Project, ch: Extract<Channel, { kind: 'automation' }>): string {
+  const info = (id: string) => {
+    const def = s.plugins.get(id);
+    return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
+  };
+  const target = ch.target;
+  if (!target) return `automation that drives nothing yet: ${ch.points.length} points`;
+  const what = targetName(p, target, info) ?? 'a control that no longer exists';
+  const res = resolveTarget(p, target, (id) => s.plugins.get(id)?.params as ParamSpecs | undefined, ch.range);
+  const pts = ch.points;
+  const span =
+    res && pts.length > 0
+      ? `, ${formatAutomationValue(res, target, pts[0]!.value)} → ${formatAutomationValue(res, target, pts[pts.length - 1]!.value)}`
+      : '';
+  return `automation of “${what}”: ${pts.length} point${pts.length === 1 ? '' : 's'}${span}`;
+}
+
 function channelLine(s: Services, p: Project, ch: Channel, index: number): string {
   const head = `${index}. "${ch.name}" ${ch.id}`;
   const flags = [ch.muted ? 'muted' : '', ch.solo ? 'solo' : ''].filter(Boolean).join(', ');
-  if (ch.kind === 'automation') return `${head} — automation clip channel${flags ? ` (${flags})` : ''}`;
+  if (ch.kind === 'automation') return `${head} — ${automationSummary(s, p, ch)}${flags ? ` (${flags})` : ''}`;
   const out = `→ ${insertLabel(p, ch.output)}${ch.output === MASTER ? '' : ` "${p.mixer.inserts[ch.output]?.name ?? ''}"`}`;
   const mix = `vol ${db(ch.volume)}, pan ${r2(ch.pan)}${ch.kind === 'instrument' && ch.pitch ? `, pitch ${ch.pitch} ct` : ''}${
     flags ? `, ${flags}` : ''

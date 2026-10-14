@@ -12,6 +12,7 @@ import {
 } from '../helpers/instruments';
 import drumSynth from '../../src/plugins/builtin/drum-synth';
 import drumPads from '../../src/plugins/builtin/drum-pads';
+import fm from '../../src/plugins/builtin/fm';
 
 /** The master limiter's ceiling is −0.3 dBFS (0.966): staying below 0.95 means it never had to act. */
 const BELOW_LIMITER = 0.95;
@@ -38,6 +39,20 @@ const cases: Case[] = [
     notes: Array.from({ length: 16 }, (_, i) => ({ at: i * 0.5, len: 0.25, key: 36 + i })),
     opts: { bars: 2, tail: 3 },
     silentAfter: 6.5,
+  },
+  {
+    def: fm as PluginDef,
+    // A chord, then a little melody.
+    notes: [
+      { at: 0, len: 1, key: 60 },
+      { at: 0, len: 1, key: 64 },
+      { at: 0, len: 1, key: 67 },
+      { at: 1.5, len: 0.5, key: 72 },
+      { at: 2, len: 0.5, key: 69 },
+      { at: 2.5, len: 1, key: 65, velocity: 0.6 },
+    ],
+    opts: { tail: 2 },
+    silentAfter: 3,
   },
 ];
 

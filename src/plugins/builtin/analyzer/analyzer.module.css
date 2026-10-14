@@ -4,6 +4,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-sizing: border-box;
+  height: 100%;
   padding: 8px 10px 10px;
   min-width: 300px;
 }
@@ -23,19 +25,20 @@
 }
 
 .spectrum {
-  height: 150px;
+  flex: 1;
+  min-height: 90px;
 }
 
 .row {
+  flex: none;
   display: flex;
   gap: 8px;
-  min-height: 120px;
+  height: 168px;
 }
 
 .scope {
   flex: 1;
   min-width: 140px;
-  height: 120px;
 }
 
 .caption {
@@ -54,7 +57,7 @@
   grid-template-columns: auto auto;
   align-content: start;
   gap: 3px 10px;
-  width: 190px;
+  width: 200px;
   padding: 6px 8px;
 }
 
@@ -130,6 +133,7 @@
 }
 
 .footer {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

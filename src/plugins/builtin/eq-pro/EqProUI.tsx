@@ -227,6 +227,11 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
   const onHandleMove = (e: ReactPointerEvent<SVGGElement>, band: BandView) => {
     const d = drag.current;
     if (!d || d.band !== band.b) return;
+    // The button was released somewhere we didn't hear about: the drag is over.
+    if (e.buttons === 0) {
+      onHandleUp(e, band);
+      return;
+    }
     const at = pointerIn(e);
     const fine = e.shiftKey ? 0.1 : 1;
     const ids = bandIds(band.b);
@@ -242,12 +247,12 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
     emitHint(e.currentTarget, describe(next, specs));
   };
 
-  const onHandleUp = (e: ReactPointerEvent<SVGGElement>, band: BandView) => {
+  function onHandleUp(e: ReactPointerEvent<SVGGElement>, band: BandView) {
     if (!drag.current || drag.current.band !== band.b) return;
     drag.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
     end(bandIds(band.b).freq);
-  };
+  }
 
   /** Double-click on empty space: switch on a free band right there. */
   const onGraphDoubleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -333,6 +338,7 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
                 onPointerMove={(e) => onHandleMove(e, band)}
                 onPointerUp={(e) => onHandleUp(e, band)}
                 onPointerCancel={(e) => onHandleUp(e, band)}
+                onLostPointerCapture={(e) => onHandleUp(e, band)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setParam(ids.on, !band.on);
@@ -354,25 +360,25 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
         </svg>
         <div className={styles.readout}>{describe(sel, specs)}</div>
       </div>
-      <div className={styles.tabs}>
-        {bands.map((band) => (
-          <button
-            key={band.b}
-            type="button"
-            tabIndex={-1}
-            className={`${styles.tab} ${band.b === selected ? styles.tabSelected : ''}`}
-            onClick={() => setSelected(band.b)}
-            data-hint={`${describe(band, specs)} — click to edit this band`}
-          >
-            <i
-              className={`${styles.swatch} ${band.on ? '' : styles.swatchOff}`}
-              style={{ background: COLORS[band.b - 1] }}
-            />
-            {band.b} {TYPE_LABELS[band.type].replace(/ \d+ dB\/oct$/, '')}
-          </button>
-        ))}
-      </div>
       <div className={styles.strip}>
+        <div className={styles.picker} role="tablist" aria-label="Bands">
+          {bands.map((band) => (
+            <button
+              key={band.b}
+              type="button"
+              role="tab"
+              aria-selected={band.b === selected}
+              tabIndex={-1}
+              className={`${styles.tab} ${band.b === selected ? styles.tabSelected : ''} ${band.on ? '' : styles.tabOff}`}
+              style={{ borderColor: band.b === selected ? COLORS[band.b - 1] : undefined }}
+              onClick={() => setSelected(band.b)}
+              data-hint={`${describe(band, specs)} — click to edit this band below`}
+            >
+              <i className={styles.swatch} style={{ background: COLORS[band.b - 1] }} />
+              {band.b}
+            </button>
+          ))}
+        </div>
         <div className={styles.control}>
           <Toggle
             spec={specs[selIds.on as 'b1On']}

@@ -4,13 +4,16 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-sizing: border-box;
+  height: 100%;
   padding: 8px 10px 10px;
   min-width: 280px;
 }
 
 .graph {
   position: relative;
-  height: 230px;
+  flex: 1;
+  min-height: 150px;
   border: 1px solid var(--ag-border, #12161a);
   border-radius: var(--ag-radius, 3px);
   background: var(--ag-surface-inset, #1e2428);
@@ -104,23 +107,25 @@
   pointer-events: none;
 }
 
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.picker {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 3px;
+  align-self: center;
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 7px;
+  gap: 4px;
+  padding: 1px 6px;
   border: 1px solid var(--ag-border, #12161a);
   border-radius: 2px;
-  background: var(--ag-surface-1, #2a3238);
+  background: var(--ag-surface-2, #323b42);
   color: var(--ag-text-dim, #929ca5);
   font: inherit;
   font-size: 11px;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -129,14 +134,14 @@
   color: var(--ag-text, #d9dfe4);
 }
 
+.tabOff .swatch {
+  opacity: 0.3;
+}
+
 .swatch {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-}
-
-.swatchOff {
-  opacity: 0.35;
 }
 
 .strip {

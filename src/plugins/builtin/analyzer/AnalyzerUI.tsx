@@ -32,8 +32,9 @@ function prepare(c: HTMLCanvasElement | null): { ctx: CanvasRenderingContext2D; 
   return { ctx, w, h };
 }
 
-const lufs = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '–' : v.toFixed(1));
-const dbtp = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '–' : v.toFixed(1));
+const signed = (v: number) => `${v > 0.05 ? '+' : ''}${v.toFixed(1)}`;
+const lufs = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '– LUFS' : `${signed(v)} LUFS`);
+const dbtp = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '– dBTP' : `${signed(v)} dBTP`);
 
 /** Spectrum, oscilloscope, loudness, true peak and correlation, all painted on the frame loop. */
 export function AnalyzerUI({ specs, values, setParam, tap }: Props) {

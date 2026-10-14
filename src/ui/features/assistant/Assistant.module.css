@@ -357,3 +357,80 @@
 .warnings {
   color: var(--ag-warning, #c9a24a);
 }
+
+/* A plugin the builder wrote. */
+.pluginCard {
+  margin: 6px 0 2px 18px;
+  padding: 8px 10px;
+  border: 1px solid var(--ag-border-soft);
+  border-radius: 6px;
+  background: var(--ag-surface-1);
+}
+
+.pluginHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text);
+}
+
+.pluginHead svg {
+  color: var(--ag-accent);
+}
+
+.pluginCode {
+  margin-top: 6px;
+}
+
+.pluginCode summary {
+  cursor: pointer;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+}
+
+.pluginFile {
+  margin-top: 6px;
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font-mono);
+  font-size: 10.5px;
+}
+
+.pluginPre {
+  max-height: 220px;
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: 4px;
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font-family: var(--ag-font-mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.pluginActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.primaryButton {
+  height: 24px;
+  padding: 0 12px;
+  border: 1px solid #6b3b10;
+  border-radius: var(--ag-radius);
+  background: linear-gradient(#e08a37, var(--ag-accent-dim));
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.primaryButton:hover {
+  background: linear-gradient(#f0984a, #c47530);
+}
+
+.ok {
+  color: var(--ag-led);
+}

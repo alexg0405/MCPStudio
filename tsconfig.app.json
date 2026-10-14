@@ -19,6 +19,7 @@
     "test"
   ],
   "exclude": [
-    "**/*.worklet.ts"
+    "**/*.worklet.ts",
+    "plugins/_*/**"
   ]
 }

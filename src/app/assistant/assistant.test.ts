@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { GridEvent } from '@core/voice';
 import { createTestServices } from '../testing';
 import { BeatAssistant, inferRole, type Take } from './assistant';
@@ -190,6 +190,75 @@ describe('BeatAssistant', () => {
     expect(text).toMatch(/App: file "Untitled" \(saved\)/);
     await a.send('again');
     expect(String(calls[1]!.text)).not.toContain('<commands>');
+  });
+
+  it('builds a plugin the answer asks for, then installs it with one click', async () => {
+    const posted: string[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      posted.push(url);
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      if (url === '/api/ai/chat' && String(body.system).startsWith('You write plugins'))
+        return new Response(
+          JSON.stringify({
+            session: 'build',
+            model: 'claude-opus-5-5',
+            beat: {
+              message: 'Tape Stop slows your track to a halt.',
+              plugin: {
+                id: 'user.tape-stop',
+                name: 'Tape Stop',
+                kind: 'effect',
+                files: [{ path: 'index.ts', content: 'export default {};' }],
+              },
+            },
+          }),
+          { status: 200 },
+        );
+      if (url === '/api/ai/chat')
+        return new Response(
+          JSON.stringify({
+            session: 'studio',
+            model: 'claude-opus-5-5',
+            beat: {
+              message: 'Building you a tape stop effect.',
+              actions: [{ op: 'build_plugin', name: 'Tape Stop', kind: 'effect', description: 'Slows audio to a stop.' }],
+            },
+          }),
+          { status: 200 },
+        );
+      if (url === '/api/plugins/draft')
+        return new Response(JSON.stringify({ folder: 'tape-stop', problems: [] }), { status: 200 });
+      if (url === '/api/plugins/install')
+        return new Response(JSON.stringify({ folder: 'tape-stop', replaced: false }), { status: 200 });
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+    const s = createTestServices();
+    const a = new BeatAssistant(s, { fetch: fetchImpl, smoke: async () => ({ problems: [], peakDb: -12 }) });
+    await a.send('make me a tape stop plugin');
+    await vi.waitFor(() => expect(a.store.getState().building).toBeNull());
+    const card = a.store.getState().messages.at(-1)!;
+    expect(card.plugin).toMatchObject({ state: 'draft', draft: { id: 'user.tape-stop', folder: 'tape-stop' } });
+    expect(card.detail).toContain('peak -12 dBFS');
+    // Install: the draft moves into plugins/, and hot reload brings it into the registry.
+    const installing = a.installPlugin(card.id);
+    s.plugins.sync('user', [
+      {
+        path: '/plugins/tape-stop/index.ts',
+        def: {
+          kind: 'effect',
+          id: 'user.tape-stop',
+          name: 'Tape Stop',
+          version: 1,
+          params: {},
+          create: () => ({ input: null, output: null, dispose: () => {} }),
+        },
+      },
+    ]);
+    await installing;
+    expect(posted).toContain('/api/plugins/install');
+    expect(a.store.getState().messages.at(-1)!.plugin!.state).toBe('installed');
   });
 
   it('keeps the conversation and its pattern across a page reload', async () => {

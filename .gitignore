@@ -14,3 +14,6 @@ coverage/
 # local secrets (the Claude API key for the beat assistant)
 .env.local
 .env.*.local
+# AI plugin builder drafts and replaced plugins
+plugins/_drafts/
+plugins/_backup/

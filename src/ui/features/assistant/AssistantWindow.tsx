@@ -213,6 +213,102 @@ function Messages({ st }: { st: AssistantState }) {
         <Message key={m.id} m={m} />
       ))}
       {st.phase === 'thinking' && <Thinking />}
+      {st.building && <Building building={st.building} />}
+    </div>
+  );
+}
+
+const STAGES: Record<NonNullable<AssistantState['building']>['stage'], string> = {
+  writing: 'Writing the code',
+  checking: 'Checking the code',
+  testing: 'Test-rendering it',
+  fixing: 'Fixing what the checks found',
+};
+
+/** The plugin builder at work: what it is doing now, and a way to stop it. */
+function Building({ building }: { building: NonNullable<AssistantState['building']> }) {
+  const services = useServices();
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const t0 = performance.now();
+    const id = setInterval(() => setSeconds(Math.floor((performance.now() - t0) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className={styles.message}>
+      <div className={`${styles.bubble} ${styles.thinking}`}>
+        <Icon name="plug" size={12} className={styles.spark} />
+        Building the {building.kind} “{building.name}”: {STAGES[building.stage].toLowerCase()}
+        {building.round > 0 ? ` (fix ${building.round} of 3)` : ''}… {seconds > 2 ? `${seconds}s` : ''}
+        <button
+          className={styles.link}
+          onClick={() => services.assistant.cancelBuild()}
+          data-hint="Stop building this plugin"
+        >
+          Stop
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A plugin the builder wrote: what it is, what the checks said, its code, Install and Discard. */
+function PluginCard({ m }: { m: AssistantMessage }) {
+  const services = useServices();
+  const plugin = m.plugin!;
+  const { draft, state } = plugin;
+  return (
+    <div className={styles.pluginCard}>
+      <div className={styles.pluginHead}>
+        <Icon name="plug" size={14} />
+        <b>{draft.name}</b>
+        <span className={styles.dim}>
+          {draft.kind} · {draft.id}
+        </span>
+      </div>
+      <details className={styles.pluginCode}>
+        <summary data-hint="Show the plugin's source files">
+          View the code ({draft.files.length} file{draft.files.length === 1 ? '' : 's'})
+        </summary>
+        {draft.files.map((f) => (
+          <div key={f.path}>
+            <div className={styles.pluginFile}>{f.path}</div>
+            <pre className={styles.pluginPre}>{f.content}</pre>
+          </div>
+        ))}
+      </details>
+      <div className={styles.pluginActions}>
+        {state === 'draft' && (
+          <>
+            <button
+              className={styles.primaryButton}
+              onClick={() => void services.assistant.installPlugin(m.id)}
+              data-hint={`Add it to your plugins (plugins/${draft.folder}); it then appears in the browser`}
+            >
+              Install
+            </button>
+            <button
+              className={styles.link}
+              onClick={() => void services.assistant.discardPlugin(m.id)}
+              data-hint="Throw this draft away"
+            >
+              Discard
+            </button>
+          </>
+        )}
+        {state === 'failed' && (
+          <button
+            className={styles.link}
+            onClick={() => void services.assistant.discardPlugin(m.id)}
+            data-hint="Throw this draft away (it didn't pass the checks)"
+          >
+            Discard draft
+          </button>
+        )}
+        {state === 'installing' && <span className={styles.dim}>Installing…</span>}
+        {state === 'installed' && <span className={styles.ok}>Installed ✓ It's in the browser under Plugins.</span>}
+        {state === 'discarded' && <span className={styles.dim}>Discarded.</span>}
+      </div>
     </div>
   );
 }
@@ -242,6 +338,7 @@ function Message({ m }: { m: AssistantMessage }) {
           ))}
         </ul>
       )}
+      {m.plugin && <PluginCard m={m} />}
       {(m.detail || m.offline || m.beat || undoAt !== undefined) && (
         <div className={styles.detail}>
           {m.detail}

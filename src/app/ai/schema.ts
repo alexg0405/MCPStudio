@@ -383,6 +383,18 @@ export const ACTION_OPS = [
     metronome: bool('Turn the metronome on or off.'),
   }),
   op(
+    'build_plugin',
+    'Writes a brand-new instrument or effect plugin from a description (the plugin builder): it is coded, checked and test-rendered for you, then the musician installs it with one click. Use it when they ask for a new plugin, or for a sound or effect no plugin in the catalog can make.',
+    {
+      name: str('The plugin’s name, e.g. "Tape Stop".'),
+      kind: { type: 'string', enum: ['instrument', 'effect'] },
+      description: str(
+        'Everything it should do, specifically: the sound or processing, the controls it needs (with ranges and units), presets, how it reacts to notes or audio.',
+      ),
+    },
+    ['name', 'kind', 'description'],
+  ),
+  op(
     'command',
     'Runs any app command from the <commands> list, after the edits: save, save as, open, export, undo or redo, show windows, layouts, metronome, the tour… Commands that open a file dialog ask the musician to confirm with one click.',
     {

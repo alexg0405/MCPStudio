@@ -16,6 +16,17 @@ import type { Services } from '../services';
 import { applyAnswer, type AfterEdit } from '../ai/apply';
 import { pluginCatalog } from '../ai/catalog';
 import { commandCatalog } from '../ai/commands';
+import {
+  discardDraft,
+  installDraft,
+  MAX_FIX_ROUNDS,
+  PluginBuilder,
+  type BuildStage,
+  type PluginDraft,
+  type PluginSpec,
+  type SmokeReport,
+} from '../ai/builder';
+import { smokeTest } from '../ai/smoke';
 import { projectContext } from '../ai/context';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
@@ -56,6 +67,14 @@ export interface AssistantMessage {
   warnings?: string[];
   /** Undo point of an AI turn that edited the project (history cursor right after it). */
   undo?: number;
+  /** A plugin the builder wrote: install or discard it from the message. */
+  plugin?: PluginMessage;
+}
+
+export interface PluginMessage {
+  draft: PluginDraft;
+  /** draft: checked and ready to install; failed: still has problems (view only). */
+  state: 'draft' | 'failed' | 'installing' | 'installed' | 'discarded';
 }
 
 /** A performance on the grid, ready to go with the next request. */
@@ -95,6 +114,8 @@ export interface AssistantState {
   applied: AppliedBeat | null;
   /** Windows the last answer asked to show, and file commands waiting for a click (the UI handles and clears them). */
   uiRequests: AfterEdit[];
+  /** The plugin builder at work (one plugin at a time). */
+  building: { name: string; kind: 'instrument' | 'effect'; stage: BuildStage; round: number } | null;
 }
 
 let messageSeq = 0;
@@ -121,14 +142,17 @@ export class BeatAssistant {
   private handle: RecordingHandle | null = null;
   private mic: MicInput | null = null;
   private abort: AbortController | null = null;
+  private readonly smoke: (folder: string) => Promise<SmokeReport>;
+  private buildAbort: AbortController | null = null;
   /** Everything asked so far in offline mode (the generator is stateless). */
   private offlinePrompt = '';
 
   constructor(
     private readonly s: Services,
-    deps: { fetch?: typeof fetch } = {},
+    deps: { fetch?: typeof fetch; smoke?: (folder: string) => Promise<SmokeReport> } = {},
   ) {
     this.fetchImpl = deps.fetch ?? ((...args) => fetch(...args));
+    this.smoke = deps.smoke ?? smokeTest;
     this.chat = new ClaudeChat(this.fetchImpl);
     const saved = loadPrefs();
     this.store = createStore<AssistantState>()(() => ({
@@ -150,6 +174,7 @@ export class BeatAssistant {
       mySounds: saved.mySounds ?? false,
       applied: null,
       uiRequests: [],
+      building: null,
     }));
     this.restoreTab();
     this.store.subscribe(() => this.scheduleTabSave());
@@ -581,11 +606,126 @@ export class BeatAssistant {
         this.s.engine.play(a.fromTick ?? 0);
       }
     }
+    for (const a of result.after) if (a.kind === 'build_plugin') void this.buildPlugin(a.spec);
     const played = result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
     if (result.beat && !played && this.store.getState().autoplay) {
       this.s.view.getState().setMode('pattern');
       this.s.engine.play();
     }
+  }
+
+  // ---------------------------------------------------------------- plugin builder
+
+  /**
+   * Has the plugin builder write a new plugin (asked for by an answer's build_plugin action). Its
+   * result arrives as a message with Install and Discard.
+   */
+  async buildPlugin(spec: PluginSpec): Promise<void> {
+    const busy = this.store.getState().building;
+    if (busy) {
+      this.say('assistant', `I'm still building “${busy.name}”; one plugin at a time.`, { error: true });
+      return;
+    }
+    const route = await this.route();
+    if (!route) {
+      this.say('assistant', 'Writing a plugin needs Claude (your subscription or an API key); it is not set up.', {
+        error: true,
+      });
+      return;
+    }
+    const abort = new AbortController();
+    this.buildAbort = abort;
+    const at = (stage: BuildStage, round: number) =>
+      this.store.setState({ building: { name: spec.name, kind: spec.kind, stage, round } });
+    at('writing', 0);
+    try {
+      const builder = new PluginBuilder({ fetch: this.fetchImpl, smoke: this.smoke });
+      const taken = [...this.s.plugins.list().map((e) => e.def.id), ...this.s.plugins.scripts().map((e) => e.def.id)];
+      const result = await builder.build(spec, {
+        model: this.store.getState().model,
+        backend: route,
+        signal: abort.signal,
+        progress: at,
+        taken,
+      });
+      if (result.ok) {
+        const { draft } = result;
+        const level = draft.report?.peakDb != null ? ` Test render peak ${Math.round(draft.report.peakDb)} dBFS.` : '';
+        this.say('assistant', draft.message || `“${draft.name}” is ready.`, {
+          detail: `Checked and test-rendered${draft.rounds ? ` after ${draft.rounds} fix${draft.rounds === 1 ? '' : 'es'}` : ''}.${level}`,
+          plugin: { draft, state: 'draft' },
+        });
+      } else {
+        this.say('assistant', `I couldn't get “${spec.name}” working after ${MAX_FIX_ROUNDS} rounds of fixes.`, {
+          error: true,
+          warnings: result.problems.slice(0, 8),
+          ...(result.draft ? { plugin: { draft: result.draft, state: 'failed' as const } } : {}),
+        });
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') this.say('assistant', `Stopped building “${spec.name}”.`);
+      else this.say('assistant', e instanceof Error ? e.message : String(e), { error: true });
+    } finally {
+      this.buildAbort = null;
+      this.store.setState({ building: null });
+    }
+  }
+
+  cancelBuild(): void {
+    this.buildAbort?.abort();
+  }
+
+  /** Installs a checked draft: it moves into plugins/ and hot reload adds it to the browser. */
+  async installPlugin(messageId: number): Promise<void> {
+    const msg = this.store.getState().messages.find((m) => m.id === messageId);
+    if (!msg?.plugin || msg.plugin.state !== 'draft') return;
+    const { draft } = msg.plugin;
+    this.setPluginState(messageId, 'installing');
+    try {
+      const { replaced } = await installDraft(this.fetchImpl, draft.id);
+      const loaded = await this.waitForPlugin(draft.id);
+      this.setPluginState(messageId, 'installed');
+      this.s.session
+        .getState()
+        .toast(
+          loaded
+            ? `Installed “${draft.name}”${replaced ? ' (the old version is in plugins/_backup)' : ''}. Find it in the browser under Plugins.`
+            : `Installed “${draft.name}” in plugins/${draft.folder}; it appears once the app reloads it.`,
+        );
+    } catch (e) {
+      this.setPluginState(messageId, 'draft');
+      this.s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
+    }
+  }
+
+  async discardPlugin(messageId: number): Promise<void> {
+    const msg = this.store.getState().messages.find((m) => m.id === messageId);
+    if (!msg?.plugin || (msg.plugin.state !== 'draft' && msg.plugin.state !== 'failed')) return;
+    this.setPluginState(messageId, 'discarded');
+    await discardDraft(this.fetchImpl, msg.plugin.draft.id).catch(() => {});
+  }
+
+  private setPluginState(messageId: number, state: PluginMessage['state']): void {
+    this.store.setState((st) => ({
+      messages: st.messages.map((m) => (m.id === messageId && m.plugin ? { ...m, plugin: { ...m.plugin, state } } : m)),
+    }));
+  }
+
+  /** Waits for hot reload to bring a newly installed plugin into the registry. */
+  private waitForPlugin(id: string, ms = 15_000): Promise<boolean> {
+    if (this.s.plugins.get(id)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const stop = this.s.plugins.subscribe(() => {
+        if (!this.s.plugins.get(id)) return;
+        clearTimeout(timer);
+        stop();
+        resolve(true);
+      });
+      const timer = setTimeout(() => {
+        stop();
+        resolve(false);
+      }, ms);
+    });
   }
 
   /** The UI opened the windows the last answer asked for. */

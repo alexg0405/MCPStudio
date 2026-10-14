@@ -72,6 +72,7 @@ import {
 } from '@agstudio/sdk';
 import { NoteScriptError, runNoteScript } from '../actions/note-scripts';
 import { tempoRange } from '../automation';
+import type { PluginSpec } from './builder';
 import { planBeat, showBeat, writeBeat, type AppliedBeat, type BeatPlan } from '../assistant/apply';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import type { Services } from '../services';
@@ -91,7 +92,9 @@ export type AfterEdit =
   | { kind: 'metronome'; on: boolean }
   | { kind: 'mode'; mode: 'pattern' | 'song' }
   /** An app command; `gesture` ones (file dialogs) wait for the musician's click. */
-  | { kind: 'command'; id: string; args?: unknown; gesture: boolean };
+  | { kind: 'command'; id: string; args?: unknown; gesture: boolean }
+  /** A new plugin for the plugin builder to write. */
+  | { kind: 'build_plugin'; spec: PluginSpec };
 
 export interface AppliedTurn {
   /** One line per change, for the chat. */
@@ -211,7 +214,8 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
     | { kind: 'effect'; insertId: InsertId; slotId: SlotId }
     | { kind: 'pattern'; id: PatternId };
   const refs = new Map<string, Ref>();
-  const docActions = answer.actions.filter((a) => a.op !== 'transport' && a.op !== 'open' && a.op !== 'command');
+  const UI_OPS = new Set(['transport', 'open', 'command', 'build_plugin']);
+  const docActions = answer.actions.filter((a) => !UI_OPS.has(a.op));
   const words = (ctx.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
   const label = words.length > 48 ? `${words.slice(0, 47).trimEnd()}…` : words || 'edit';
 
@@ -1159,6 +1163,11 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           ...(a.action === 'record' ? { record: true } : {}),
         });
       } else if (mode) after.push({ kind: 'mode', mode });
+    } else if (a.op === 'build_plugin') {
+      const name = str(a.name);
+      const kind = a.kind === 'instrument' || a.kind === 'effect' ? a.kind : null;
+      if (!name || !kind) warnings.push('build plugin: it needs a name and a kind (instrument or effect)');
+      else after.push({ kind: 'build_plugin', spec: { name, kind, description: str(a.description) ?? name } });
     } else if (a.op === 'command') {
       const id = str(a.id) ?? '';
       const def = s.commands.get(id);

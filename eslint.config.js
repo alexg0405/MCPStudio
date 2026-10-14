@@ -16,7 +16,8 @@ const restrict = (...patterns) => ({ 'no-restricted-imports': ['error', { patter
 
 export default defineConfig([
   // .claude holds helper-agent worktrees (whole copies of the repo): they lint themselves.
-  globalIgnores(['dist', 'coverage', 'node_modules', '.claude']),
+  // plugins/_* : AI drafts and backups (the plugin builder checks drafts itself).
+  globalIgnores(['dist', 'coverage', 'node_modules', '.claude', 'plugins/_*']),
   js.configs.recommended,
   tseslint.configs.recommended,
   { languageOptions: { parserOptions: { tsconfigRootDir: import.meta.dirname } } },

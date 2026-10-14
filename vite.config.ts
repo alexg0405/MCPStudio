@@ -3,6 +3,7 @@ import { defineConfig, loadEnv, type EnvironmentModuleNode, type Plugin } from '
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { fileURLToPath } from 'node:url';
+import { draftServer } from './tools/ai/drafts.ts';
 import { aiServer } from './tools/ai/server.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
@@ -47,6 +48,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     // The beat assistant reaches Claude through the dev/preview server (subscription or API key).
     aiServer(() => loadEnv(mode, root, '')),
+    // Plugins the AI studio writes: drafts in plugins/_drafts, checked, installed on request.
+    draftServer(root),
     // Audio-thread files (worklet entries, kernels, shared params, SDK audio modules) must never get
     // React Refresh / HMR code injected: the AudioWorklet scope has no HMR client.
     react({
@@ -115,7 +118,7 @@ export default defineConfig(({ mode }) => ({
           name: 'unit',
           environment: 'node',
           include: ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts', 'test/unit/**/*.test.ts'],
-          exclude: ['**/*.browser.test.{ts,tsx}', '**/node_modules/**'],
+          exclude: ['**/*.browser.test.{ts,tsx}', '**/node_modules/**', 'plugins/_*/**'],
         },
       },
       {

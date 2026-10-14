@@ -29,11 +29,11 @@ describe('LofiKernel', () => {
     const x = sine(1000);
     const out = run(CLEAN, x);
     let worst = 0;
-    for (let i = D + 2000; i < out.length; i++) worst = Math.max(worst, Math.abs((out[i] as number) - x(i - D, 0)));
+    for (let i = D + 2000; i < out.length; i++) worst = Math.max(worst, Math.abs((out[i] as number) - x(i - D)));
     expect(worst).toBeLessThan(2e-3);
     // Mix 0 is the dry signal, exactly aligned.
     const dry = run({ ...CLEAN, bits: 2, mix: 0 }, x);
-    for (let i = D; i < 3000; i++) expect(dry[i]).toBeCloseTo(x(i - D, 0), 6);
+    for (let i = D; i < 3000; i++) expect(dry[i]).toBeCloseTo(x(i - D), 6);
   });
 
   it('reduces bits and sample rate', () => {

@@ -24,6 +24,7 @@ import { useGestureEdit } from '../../edit';
 import { showParamMenu } from '../../param-menu';
 import { onFrame } from '../../frame-loop';
 import { AutoPanel } from './AutoPanel';
+import { Meters } from './Meters';
 import { usePluginSamples } from './plugin-samples';
 import { PresetBar } from './PresetBar';
 import styles from './PluginWindow.module.css';
@@ -238,7 +239,10 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
                 {Custom ? (
                   createElement(Custom as unknown as ComponentType<PluginUIProps>, uiProps)
                 ) : (
-                  <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
+                  <>
+                    {def.meters && def.meters.length > 0 && <Meters meters={def.meters} tap={tap} />}
+                    <AutoPanel specs={def.params as ParamSpecs} values={values} {...edit} />
+                  </>
                 )}
               </ErrorBoundary>
               </FrameContext.Provider>

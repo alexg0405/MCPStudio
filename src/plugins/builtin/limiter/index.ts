@@ -16,6 +16,14 @@ export default defineWorkletEffect({
   processor,
   latency: (sampleRate) => latencyFrames(sampleRate) / sampleRate,
   tap: true,
+  meters: [
+    {
+      reading: 'gr',
+      label: 'Gain reduction',
+      kind: 'reduction',
+      hint: 'How much the limiter is turning the loudest moments down right now. A few dB is normal; a lot sounds squashed.',
+    },
+  ],
   presets: [
     { name: 'Brickwall master −1 dB', params: { input: 0, ceiling: -1, release: 80, truePeak: true } },
     { name: 'Loud master (+6 dB)', params: { input: 6, ceiling: -1, release: 60, truePeak: true } },

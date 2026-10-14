@@ -301,6 +301,22 @@ export interface PluginUISamples {
   waveform(slot: string): SampleOverview | null;
 }
 
+/** A live value in the generated editor (see `meters`). */
+export interface PluginMeter {
+  /** The reading's name, as the kernel publishes it. */
+  reading: string;
+  label: string;
+  /**
+   * How to show it: 'reduction' = dB of gain reduction (0 = none) as a bar up to `max` dB (default
+   * 12); 'db' = a level in dB; 'hz' = a frequency (0 = none); 'note' = a MIDI note number (below 0 =
+   * none); 'cents' = a ± amount in cents.
+   */
+  kind: 'reduction' | 'db' | 'hz' | 'note' | 'cents';
+  max?: number;
+  /** What it tells you (hint bar). */
+  hint?: string;
+}
+
 export interface Preset<P extends ParamSpecs, S> {
   name: string;
   params?: Partial<{ [K in keyof P]: ValueOf<P[K]> }>;
@@ -334,6 +350,11 @@ interface DefBase<P extends ParamSpecs, S> {
   /** Optional custom editor. Without it the host generates a knob panel from `params`. */
   ui?: PluginUIComponent<PluginUIProps<P, S>>;
   presets?: readonly Preset<P, S>[];
+  /**
+   * Live values the generated editor shows above the knobs (plugins without a custom `ui`): what the
+   * kernel publishes with `Readings` (worklet defines need `tap: true`), e.g. gain reduction.
+   */
+  meters?: readonly PluginMeter[];
 }
 
 export interface InstrumentDef<P extends ParamSpecs = ParamSpecs, S = unknown> extends DefBase<P, S> {

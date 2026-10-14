@@ -13,6 +13,11 @@ export default defineWorkletEffect({
   params: multibandParams,
   processor,
   tap: true,
+  meters: [
+    { reading: 'lowGr', label: 'Low', kind: 'reduction', hint: 'How much the low band is being turned down right now' },
+    { reading: 'midGr', label: 'Mid', kind: 'reduction', hint: 'How much the middle band is being turned down right now' },
+    { reading: 'highGr', label: 'High', kind: 'reduction', hint: 'How much the high band is being turned down right now' },
+  ],
   presets: [
     {
       name: 'Gentle master glue',

@@ -17,6 +17,11 @@ export default defineWorkletEffect({
   processor,
   latency: (sampleRate) => tuneLatencyFrames(sampleRate) / sampleRate,
   tap: true,
+  meters: [
+    { reading: 'pitch', label: 'Hears', kind: 'hz', hint: 'The pitch Tune detects in the input (— while it hears no clear note)' },
+    { reading: 'target', label: 'Pulls to', kind: 'note', hint: 'The note of the key and scale it is tuning to' },
+    { reading: 'cents', label: 'Correction', kind: 'cents', hint: 'How far it is moving the pitch right now (100 ct = a semitone)' },
+  ],
   tailTime: 0.05,
   presets: [
     { name: 'Natural vocal tune (C major)', params: { key: 'C', scale: 'major', speed: 60, mix: 1 } },

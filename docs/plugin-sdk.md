@@ -529,6 +529,19 @@ never re-renders your component: draw on a canvas or set DOM properties from ref
 with AnalyserNodes (the per-channel ones only once you ask for a waveform); exports don't tap at all.
 EQ Pro and the Analyzer (`src/plugins/builtin/eq-pro`, `…/analyzer`) are complete examples.
 
+Without a custom editor you can still show readings: list them as `meters` and the generated panel
+shows them live above the knobs (the Limiter, Multiband and Tune do this):
+
+```ts
+meters: [
+  { reading: 'gr', label: 'Gain reduction', kind: 'reduction', hint: 'How much it turns the peaks down' },
+  { reading: 'pitch', label: 'Hears', kind: 'hz' },
+],
+```
+
+`kind` is `'reduction'` (dB of reduction as a bar, up to `max`, default 12), `'db'`, `'hz'` (0 =
+nothing), `'note'` (a MIDI note number; below 0 = nothing) or `'cents'`.
+
 ## Note scripts
 
 Piano-roll tools are plugins too. Every built-in tool (Quantize, Strum, Arpeggiate, Make chords…,

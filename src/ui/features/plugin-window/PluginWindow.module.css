@@ -164,3 +164,51 @@
   background: var(--ag-led);
   box-shadow: 0 0 5px var(--ag-led);
 }
+
+.meters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--ag-border);
+  background: var(--ag-surface-inset);
+}
+
+.meter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.meterLabel {
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.meterTrack {
+  position: relative;
+  width: 70px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ag-surface-3);
+  overflow: hidden;
+}
+
+/* Gain reduction grows from the right, like on a hardware meter. */
+.meterBar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  background: var(--ag-accent);
+}
+
+.meterValue {
+  min-width: 52px;
+  color: var(--ag-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

@@ -4,27 +4,17 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from 'react';
 import { formatChord } from '@core/commands/keymap';
 import { useServices, useSession } from '../services-context';
+import { useCommandState } from './command-state';
 import { Icon, type IconName } from '../controls/Icon';
 import { MenuBar } from './MenuBar';
 import { getToolbarSlots, subscribeToolbar } from './toolbar-slots';
 import styles from './Shell.module.css';
 
-/** A command's enabled/checked state; re-renders only when it actually changes. */
-export function useCommandState(id: string) {
-  const services = useServices();
-  const subscribe = useCallback((fn: () => void) => services.subscribe(fn), [services]);
-  const snap = useSyncExternalStore(
-    subscribe,
-    () => `${services.commands.isEnabled(id) ? 1 : 0}${services.commands.isChecked(id) ? 1 : 0}`,
-  );
-  return { enabled: snap[0] === '1', checked: snap[1] === '1' };
-}
 
 /** A toolbar button bound to a command. Never takes focus, so Space keeps meaning play/stop. */
 export function CommandButton({

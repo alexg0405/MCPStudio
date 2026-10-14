@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createStore, useStore } from 'zustand';
+import { useStore } from 'zustand';
 import {
   MP3_BITRATES,
   chooseExportTarget,
@@ -16,10 +16,9 @@ import { ticksPerBar } from '@core/time/ppq';
 import { holdModal } from '../../controls/Dialog';
 import { useDoc, useServices, useView } from '../../services-context';
 import dialog from '../../controls/Dialog.module.css';
+import { exportStore } from './export-store';
 import styles from './ExportDialog.module.css';
 
-/** Whether the dialog is open (File > Export audio / Export stems). */
-export const exportStore = createStore<{ open: boolean }>(() => ({ open: false }));
 
 const RATES = [44100, 48000, 96000];
 

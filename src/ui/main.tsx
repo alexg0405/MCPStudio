@@ -2,6 +2,7 @@ import { Profiler, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createServices } from '@app/services';
 import { installAudioUnlock } from '@app/audio-unlock';
+import { resumeAfterReload } from '@app/resume-playback';
 import { installSessionPersistence, startSession } from '@app/persistence/session';
 import { loadRecentFiles } from '@app/persistence/recent-files';
 import { applyView } from '@app/persistence/view-snapshot';
@@ -41,6 +42,8 @@ if (restored) {
 if (!restored || !applyView(services, restored.view, restored.project)) applyDefaultLayout(services);
 const persistence = installSessionPersistence(services, start.sessionId);
 void loadRecentFiles();
+// Reloaded mid-song (the dev server does that when code changes): carry on playing.
+resumeAfterReload(services, restored?.transport);
 
 if (import.meta.hot) {
   // AudioWorklet code changed (see the ag:worklet-hmr Vite plugin): restart audio with a fresh context.

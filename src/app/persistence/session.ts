@@ -44,11 +44,21 @@ export interface SessionFile {
   dirty: boolean;
 }
 
+/** Whether the tab was playing when it went away, and where (so a reload can carry on). */
+export interface SessionTransport {
+  playing: boolean;
+  /** The tick being heard. */
+  tick: number;
+  /** Date.now() when it was written. */
+  at: number;
+}
+
 export interface RestoredProject {
   project: Project;
   view: unknown;
   file: SessionFile;
   handle: FileSystemFileHandle | null;
+  transport?: SessionTransport;
 }
 
 export interface SessionStart {
@@ -94,7 +104,18 @@ function readSnapshot(): Omit<RestoredProject, 'handle'> | null {
     if (!raw) return null;
     const data = JSON.parse(raw) as Record<string, unknown>;
     const project = usableProject(data.project);
-    return project ? { project, view: data.view ?? null, file: sessionFile(data.file, project.meta.title) } : null;
+    if (!project) return null;
+    const t = isObj(data.transport) ? data.transport : null;
+    const transport =
+      t && typeof t.playing === 'boolean' && typeof t.tick === 'number' && typeof t.at === 'number'
+        ? { playing: t.playing, tick: Math.max(0, t.tick), at: t.at }
+        : undefined;
+    return {
+      project,
+      view: data.view ?? null,
+      file: sessionFile(data.file, project.meta.title),
+      ...(transport ? { transport } : {}),
+    };
   } catch {
     return null;
   }
@@ -200,9 +221,10 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
     const storage = tabStorage();
     if (!storage) return;
     try {
+      const transport: SessionTransport = { playing: s.engine.playing, tick: s.engine.playhead(), at: Date.now() };
       storage.setItem(
         SNAPSHOT_KEY,
-        JSON.stringify({ project: s.doc.getState().project, view: captureView(s), file: fileInfo() }),
+        JSON.stringify({ project: s.doc.getState().project, view: captureView(s), file: fileInfo(), transport }),
       );
       tooBig = false;
     } catch {

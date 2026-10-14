@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { createStore, useStore } from 'zustand';
+import { useStore } from 'zustand';
 import { newFromTemplate, TEMPLATES } from '@app/templates';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
@@ -7,15 +7,12 @@ import { Icon, type IconName } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
-import { startLesson } from './Lesson';
+import { helpStore, startTour } from './help-state';
+import { startLesson } from './lesson-state';
 import { TOUR } from './tour';
 import styles from './Help.module.css';
 
 /** What help is on screen: the welcome dialog, or the tour at a step. */
-export const helpStore = createStore<{ welcome: boolean; tour: number | null }>(() => ({ welcome: false, tour: null }));
-
-export const showWelcome = () => helpStore.setState({ welcome: true, tour: null });
-export const startTour = () => helpStore.setState({ welcome: false, tour: 0 });
 
 const PARTS: { icon: IconName; title: string; text: string; command: string }[] = [
   {

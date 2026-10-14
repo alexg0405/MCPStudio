@@ -76,6 +76,9 @@ export class EngineHost implements EngineApi {
   resume(): Promise<void> {
     return this.inner.resume();
   }
+  ready(): Promise<void> {
+    return this.inner.ready();
+  }
   applyDocChange(change: DocChange): void {
     this.lastDoc = change;
     this.inner.applyDocChange(change);

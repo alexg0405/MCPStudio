@@ -11,7 +11,8 @@ import type { ExportRange } from '@app/export/plan';
 import type { PrefsState } from '@app/stores/prefs';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
-import { ExportOverlay, exportStore } from './ExportDialog';
+import { ExportOverlay } from './ExportDialog';
+import { exportStore } from './export-store';
 
 /** What `file.exportAudioNow` accepts (every field optional; the rest comes from the last export). */
 interface ExportArgs {

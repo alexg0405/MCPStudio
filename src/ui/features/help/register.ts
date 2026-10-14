@@ -2,8 +2,10 @@ import type { Services } from '@app/services';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
 import { setWindowHelp } from '../../workspace/window-help';
-import { showWelcome, startTour, TourOverlay, WelcomeOverlay } from './Help';
-import { LessonOverlay, startLesson } from './Lesson';
+import { TourOverlay, WelcomeOverlay } from './Help';
+import { showWelcome, startTour } from './help-state';
+import { LessonOverlay } from './Lesson';
+import { startLesson } from './lesson-state';
 import { LESSONS } from './lessons';
 import { windowHelpTexts } from './window-help';
 

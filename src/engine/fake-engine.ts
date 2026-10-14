@@ -94,6 +94,9 @@ export class FakeEngine implements EngineApi {
   private noteSeq = 0;
 
   async resume(): Promise<void> {}
+  ready(): Promise<void> {
+    return Promise.resolve();
+  }
   applyDocChange(change: DocChange): void {
     this.changes.push(change);
   }

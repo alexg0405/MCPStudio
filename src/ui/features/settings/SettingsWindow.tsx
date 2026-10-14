@@ -7,7 +7,7 @@ import { ACCENTS, findAccent, findTheme, THEMES } from '../../theme/apply';
 import { testSoundWav } from './test-sound';
 import styles from './Settings.module.css';
 
-export const QUANTIZE: readonly (readonly [label: string, ticks: number])[] = [
+const QUANTIZE: readonly (readonly [label: string, ticks: number])[] = [
   ['Off (as played)', 0],
   ['1/4 note', 960],
   ['1/8 note', 480],

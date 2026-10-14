@@ -81,6 +81,8 @@ export interface EngineApi {
   readonly state: EngineState;
   /** Must be called from a user gesture the first time (autoplay policy). */
   resume(): Promise<void>;
+  /** Resolves when the master chain and every plugin instance (instruments and effects) have loaded. */
+  ready(): Promise<void>;
   applyDocChange(change: DocChange): void;
   /** Plugin definitions with these ids changed (hot reload, install/uninstall). */
   pluginsChanged(ids: readonly string[]): void;

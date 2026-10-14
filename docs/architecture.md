@@ -251,9 +251,10 @@ first quantum; suspend rounding direction (always schedule through next boundary
 one message + `sync()` before `startRendering()`. Determinism: render twice, compare PCM hashes (plugins use seeded RNG).
 WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the file first (user activation lasts ~5 s).
 
-As built (M6, `app/export`): File > Export WAV (Mod+R) opens a dialog (range: song, current pattern or the playlist's loop
-region; format; sample rate). Its Export button is the user gesture for the save picker, so the picker comes before the
-render. `renderOffline` takes `fromTick` (loop regions), `tail: 'auto'` (instrument and effect tails, measured on a
+As built (M6, `app/export`; WAV, FLAC, MP3 and stems since M15, see
+[Audio recording, editing and export (M15)](#audio-recording-editing-and-export-m15)): File > Export audio (Mod+R) opens a
+dialog (range: song, current pattern or the playlist's loop region; format; sample rate). Its Export button is the user
+gesture for the save picker, so the picker comes before the render. `renderOffline` takes `fromTick` (loop regions), `tail: 'auto'` (instrument and effect tails, measured on a
 128-frame probe context), `onProgress` and an abort `signal` (an aborted render stays suspended and is dropped).
 `trimRender` drops the pre-roll and cuts the silence (< −90 dBFS) after the last tail. Measured in Chrome: the export
 decodes back to the float render within one 24-bit step, and renders of kit/synth projects are hash-identical. The
@@ -909,6 +910,113 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   - A port created mid-song gets the recent anchors replayed (`PortSet.onAdd`).
 - Shared DSP in `src/sdk/dsp` (exported from `@agstudio/sdk` and `/worklet`): `Adsr`, `BlepOscillator`/`polyBlep`,
   `DelayLine` (linear/cubic), `Lfo` (free or `atBeat`), next to `Biquad`, `Svf`, `OnePole` and `EnvelopeFollower`.
+
+## Audio recording, editing and export (M15)
+
+### Playing audio clips (`core/audio/playback.ts`, `envelope.ts`, `engine/clip-player.ts`)
+
+- One mapping from song ticks to seconds into the (reversed, when reverse is on) sample, shared by the engine, the
+  waveform, trims, splits, normalize and slicing. With P = 2^(pitch/1200) and B = the channel's `sourceBpm`:
+  `off` plays at P × its own speed (a resample: pitch changes speed), `resample` at P · bpm(t)/B (locked to beats,
+  pitch follows the tempo, like a turntable), `stretch` at bpm(t)/B with the pitch kept at P (time-stretched). Resample
+  and stretch need a source BPM (without one a channel plays `off`). `offsetSec` (the trim) is a position in the played
+  copy, so reversing mirrors every clip's trim (`mirroredOffset`) and it keeps playing the same audio.
+- The envelope is clip gain × equal-power fades (sin, −3 dB at the middle; overlapping fades multiply), played as
+  linear ramps between 16 breakpoints per fade (within 0.2 %). A voice that starts inside the sound ramps in from
+  silence over 2 ms; one that starts at the sound's first sample doesn't (frozen and consolidated renders keep their
+  attack). Releases fade over 4 ms; `cancelAndHoldAtTime` alone inserts no hold point when the last ramp has finished,
+  so the release would ramp from that old point and fade the whole clip: the held value is set explicitly (this was a
+  bug before M15).
+- Tempo following: playback-rate changes are scheduled at every tempo change of the clip's run (k-rate: within one
+  render quantum). Stretch plays a WSOLA copy (`core/audio/wsola.ts`, in a Worker, `engine/audio-buffers.ts`; cached
+  per source buffer and scale, scale = P / (bpm at the clip start / B)), at speed scale · bpm(t)/B, so tempo
+  automation inside a stretched clip bends its pitch slightly; until the copy is ready the plain sample plays in time
+  (pitch off), then voices switch over 30 ms later with a short crossfade. The engine plans the scales every clip needs
+  on each edit; `ChannelStrip.ready` waits for the sample's decode and those stretches, so offline renders (exports)
+  are deterministic. Playing clips restart when their channel's playback key (sample, pitch, reverse, follow, source
+  BPM) changes, and tempo-following clips when the tempo map does. `EngineApi.isStretching(channelId)` drives
+  "Stretching…".
+- WSOLA: 40 ms Hann frames, 50 % overlap, ±12 ms search for the best continuation of the previous frame, coarse on a
+  ~12 kHz mono mix then refined at the full rate, the same positions for every channel. ~0.5 s for 30 s of stereo in
+  Node.
+
+### Editing audio clips (`ui/features/playlist/audio-clip.ts`, `ui/features/audio-clips`, `app/actions/audio-clips.ts`)
+
+- The waveform is drawn through the playback mapping and scaled by the envelope; the fade curves are drawn on it.
+  Handles along the top of the body: fade-in and fade-out squares (drag; hint in ms), the gain bar (drag up/down,
+  0.2 dB per px, Shift fine; hint in dB); double-click resets. Each drag previews and commits one undo step. The
+  title lists how it plays ("Stretch 90→128 BPM", "Stretching…", "Reversed", "+3 st", "−6.0 dB", "Frozen").
+- Channel-level edits (reverse, pitch, follow tempo, source BPM) resize clips that played the whole rest of the sound
+  (`naturalLength`) and mirror trims on reverse. Normalize reads the played range of the decoded sample
+  (`EngineApi.sampleData`) and sets the clip gain for a −0.3 dBFS peak. Slice at transients: spectral flux on
+  log magnitudes, an adaptive threshold, a loudness gate set by the sensitivity, each hit moved to just before its
+  attack (`core/audio/transients.ts`), then `splitClip` (which maps through the playback mode). Source tempo detection:
+  onset autocorrelation preferring 80–160 BPM, snapped to the loop length when it is whole bars, nothing for one-shots.
+- Consolidate / Freeze (`app/actions/render-to-audio.ts`): offline renders without the master chain and the safety
+  limiter (the new clip plays through them), stored as 24-bit FLAC. A render louder than full scale is stored turned
+  down with the clip gain turning it back up: Chrome's decodeAudioData clamps even float WAV to ±1. Freeze renders the
+  channel alone into the master (its sound before its mixer track), adds an audio clip channel on the same track with
+  `frozenFrom`, and mutes the original; Unfreeze deletes it and unmutes. Measured: a frozen kick through an EQ'd track
+  matches the original to −50 dB; the difference is where the sample ends, because Chrome stops a BiquadFilterNode's
+  processing when its input goes silent while the frozen clip keeps feeding it zeros.
+
+### Recording audio (`engine/input-recorder.worklet.ts`, `engine/audio-input.ts`, `app/audio-input.ts`, `app/audio-recorder.ts`)
+
+- Capture: a worklet writes the input (mono or stereo through an explicit channel count) into a 30 s
+  SharedArrayBuffer ring on the context clock (an input stall becomes silence, so timing holds) and each block's peak
+  for the meter; the main thread drains it every 50 ms into chunks (a stall longer than the ring is filled with silence
+  and reported). Takes have no length limit but memory. Monitoring connects the stream to a mixer track's input.
+- Latency: music scheduled at τ is heard at τ + delay compensation + output latency and recorded back after the input
+  latency. The recorder maps a captured frame at context time F to `engine.tickAt(F − roundTrip)` (tickAt takes the
+  delay compensation off). The round trip is the calibrated value (8 clicks on the monitor bus recorded back,
+  `core/audio/latency.ts`, median; trusted when ≥ 60 % come back within 8 ms) or the estimate (base + output latency +
+  the master limiter's 1.3 ms + `MediaTrackSettings.latency`), plus a manual correction (prefs).
+- Takes (`core/audio/takes.ts`): every 50 ms the recorder notes an anchor (frame, tick heard, loop pass). On stop the
+  whole capture becomes one sample and an audio clip channel on the input's mixer track (volume 1, as monitored), and
+  each loop pass becomes a clip trimmed into it at the pass's first frame: punch in/out on the loop region, the
+  newest pass on top, the newest complete pass playing and the others muted; the count-in before the record start is
+  kept in the sample (drag the clip's left edge to reveal it). Arming with audio on switches to song mode, opens the
+  input and makes song mode without a loop region play past the end (`EngineApi.setSongOpenEnded`) so a take never
+  wraps. One undo step per take set.
+- Record mode records what the chip next to the record button says: recorders have a kind (`notes`, the default, or
+  `audio`) and the prefs `recordNotes` / `recordAudio` choose. Browsers ask for microphone permission on the first
+  getUserMedia, which needs a click: the commands that open the input are `gesture` commands.
+- Measured with a loopback stream in the engine's own context: after calibrating the loopback, a hit played on a beat
+  lands within 12 ms of it (the loopback's own delay moves by 3–6 ms between captures).
+
+### Export (`app/export/audio-export.ts`, `encode.ts`, `core/io/flac.ts`, `core/query/stems.ts`)
+
+- WAV (16-bit dithered, 24, 32 float), FLAC (our encoder: fixed and LPC subframes, partitioned Rice residuals,
+  stereo decorrelation, the MD5 in STREAMINFO; 16 and 24 bits; decodes bit-exactly in Chrome and with macOS
+  afconvert) and MP3 (LAME via `@breezystack/lamejs`, 128–320 kbps, 44.1/48 kHz), all encoded in a Worker
+  (`encode.worker.ts`; LAME loads only there). Chrome maps 16-bit integers to floats asymmetrically (positive
+  × 1/32767, negative / 32768): the FLAC browser test compares against exactly that.
+- Stems: one per mixer track with sound playing into it in the range, plus "Master" for channels that play straight
+  into it. A stem renders the song with only that track's channels heard, through everything downstream of it:
+  other tracks are muted with their insert mute (after the sidechain tap, so a muted kick still ducks the bass), and a
+  bus downstream of the stem mutes only its own channels. The mix is rendered first for the common length; every stem
+  gets the same tail, start (pre-roll and delay compensation trimmed) and length. With "through the master track" off
+  the master's effects are bypassed, its fader and pan neutral and the safety limiter left out, so linear stems add
+  up to the master's input exactly (measured within 1e-4). Into a folder (directory picker) or one .zip (stored).
+- Normalize: one gain so the loudest moment peaks at −0.3 dBFS (stems all by the mix's gain, so they still add up).
+  `file.exportAudioNow` exports straight away with settings from its args (for the AI; asks where to save first).
+
+### Playlist markers (`ui/features/markers`, `app/actions/markers.ts`, `core/ops/markers.ts`)
+
+The ruler has a marker lane (the ruler is 34 px: bar numbers above, markers below), with a faint line down the tracks
+per marker. Click a marker to set the song position there, drag it to move it (playlist snap, Alt free), double-click
+to rename in place, right-click for Jump here / Rename / Loop to the next marker / colour / Delete; right-click empty
+ruler for Add marker here. Alt+T adds one at the song position and asks for its name on the ruler. Markers are found
+by id, name or number (1-based in song order), so commands take any of them; the action search lists "Jump to marker:
+…" and "Loop from marker: …". They live in `playlist.markers`, so they are saved with the project.
+
+### Schema and API
+
+- Schema v3 already had the edit fields; M15 adds one optional field: `AudioClipChannel.frozenFrom` (repair unlinks
+  it when its channel is gone; `removeChannel` too).
+- EngineApi additions: `isStretching`, `sampleData`, `openAudioInput` (→ `AudioInput`: levels, setMonitor,
+  startCapture → `AudioCapture`), `playTestClicks`, `setSongOpenEnded`. `renderOffline` takes `limiter: false`;
+  `measureTail` is exported.
 
 ## Testing
 

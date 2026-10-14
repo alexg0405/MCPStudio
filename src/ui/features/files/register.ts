@@ -40,6 +40,7 @@ export function register(services: Services): void {
   });
   commands.register({
     id: 'file.open',
+    gesture: true,
     title: 'Open…',
     category: 'File',
     hint: `Open an AGstudio project (${PROJECT_FILE_EXTENSION})`,
@@ -48,6 +49,7 @@ export function register(services: Services): void {
   });
   commands.register({
     id: 'file.save',
+    gesture: true,
     title: 'Save',
     category: 'File',
     hint: 'Save the project to its file (asks where the first time)',
@@ -56,6 +58,7 @@ export function register(services: Services): void {
   });
   commands.register({
     id: 'file.saveAs',
+    gesture: true,
     title: 'Save as…',
     category: 'File',
     hint: 'Save the project to a new file',

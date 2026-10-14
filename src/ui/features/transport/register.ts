@@ -84,6 +84,7 @@ export function register(services: Services): void {
   });
   commands.register<number>({
     id: 'transport.countIn',
+    argsHint: 'bars of count-in: 0 (off), 1, 2 or 4',
     title: 'Count-in',
     category: 'Transport',
     hint: 'Bars of clicks before recording starts',
@@ -91,6 +92,7 @@ export function register(services: Services): void {
   });
   commands.register<number>({
     id: 'transport.recordQuantize',
+    argsHint: 'grid in ticks: 0 (off), 960 (1/4), 480 (1/8), 240 (1/16), 120 (1/32), 320 (1/8 triplet), 160 (1/16 triplet)',
     title: 'Record quantize',
     category: 'Transport',
     hint: 'Snap recorded notes to a grid as you play',
@@ -98,6 +100,7 @@ export function register(services: Services): void {
   });
   commands.register<string>({
     id: 'transport.recordMode',
+    argsHint: "'overdub' (add notes) or 'replace'",
     title: 'Record mode',
     category: 'Transport',
     hint: 'Overdub adds to existing notes; replace clears what the recording passes over',

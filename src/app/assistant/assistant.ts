@@ -15,6 +15,7 @@ import { openMic, type MicInput } from '@platform/mic';
 import type { Services } from '../services';
 import { applyAnswer, type AfterEdit } from '../ai/apply';
 import { pluginCatalog } from '../ai/catalog';
+import { commandCatalog } from '../ai/commands';
 import { projectContext } from '../ai/context';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
@@ -92,7 +93,7 @@ export interface AssistantState {
   mySounds: boolean;
   /** The pattern the assistant is working on (follow-ups change it). */
   applied: AppliedBeat | null;
-  /** Windows the last answer asked to show (the UI opens them and clears this). */
+  /** Windows the last answer asked to show, and file commands waiting for a click (the UI handles and clears them). */
   uiRequests: AfterEdit[];
 }
 
@@ -506,9 +507,11 @@ export class BeatAssistant {
   private turnText(prompt: string, take: Take | null): string {
     const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
     const catalog = pluginCatalog(this.s.plugins);
-    if (!this.chat.hasHistory || this.catalogSent !== catalog.key) {
-      parts.push(`<plugins>\n${catalog.text}\n</plugins>`);
-      this.catalogSent = catalog.key;
+    const commands = commandCatalog(this.s);
+    const key = `${catalog.key}:${commands.key}`;
+    if (!this.chat.hasHistory || this.catalogSent !== key) {
+      parts.push(`<plugins>\n${catalog.text}\n</plugins>`, `<commands>\n${commands.text}\n</commands>`);
+      this.catalogSent = key;
     }
     if (take && !take.sent)
       parts.push(
@@ -544,8 +547,17 @@ export class BeatAssistant {
     }
     this.lastProblems = result.warnings;
     const cursor = this.s.history.status().cursor;
-    this.say('assistant', answer.message || (result.changes.length ? 'Done.' : 'Nothing to change.'), {
-      ...(result.changes.length ? { changes: result.changes } : {}),
+    // App commands: most run now; file dialogs wait for the musician's click (the UI asks).
+    const changes = [...result.changes];
+    for (const a of result.after) {
+      if (a.kind !== 'command') continue;
+      const title = this.s.commands.get(a.id)?.title.replace(/…$/, '') ?? a.id;
+      if (a.gesture) changes.push(`${title}: waiting for your click`);
+      else if (this.s.commands.run(a.id, a.args)) changes.push(`Ran “${title}”`);
+      else result.warnings.push(`command: “${title}” isn't available right now`);
+    }
+    this.say('assistant', answer.message || (changes.length ? 'Done.' : 'Nothing to change.'), {
+      ...(changes.length ? { changes } : {}),
       ...(result.warnings.length ? { warnings: result.warnings } : {}),
       ...(result.edited ? { undo: cursor } : {}),
       ...(result.beat
@@ -555,7 +567,7 @@ export class BeatAssistant {
     this.store.setState({
       phase: 'idle',
       ...(result.beat ? { applied: result.beat } : {}),
-      uiRequests: result.after.filter((a) => a.kind === 'open'),
+      uiRequests: result.after.filter((a) => a.kind === 'open' || (a.kind === 'command' && a.gesture)),
     });
     void take;
     // Playback the answer asked for (or a new beat with autoplay on).

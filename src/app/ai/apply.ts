@@ -84,7 +84,9 @@ export type AfterEdit =
   | { kind: 'play'; fromTick?: number; mode?: 'pattern' | 'song'; record?: boolean }
   | { kind: 'stop' }
   | { kind: 'metronome'; on: boolean }
-  | { kind: 'mode'; mode: 'pattern' | 'song' };
+  | { kind: 'mode'; mode: 'pattern' | 'song' }
+  /** An app command; `gesture` ones (file dialogs) wait for the musician's click. */
+  | { kind: 'command'; id: string; args?: unknown; gesture: boolean };
 
 export interface AppliedTurn {
   /** One line per change, for the chat. */
@@ -204,7 +206,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
     | { kind: 'effect'; insertId: InsertId; slotId: SlotId }
     | { kind: 'pattern'; id: PatternId };
   const refs = new Map<string, Ref>();
-  const docActions = answer.actions.filter((a) => a.op !== 'transport' && a.op !== 'open');
+  const docActions = answer.actions.filter((a) => a.op !== 'transport' && a.op !== 'open' && a.op !== 'command');
   const words = (ctx.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
   const label = words.length > 48 ? `${words.slice(0, 47).trimEnd()}…` : words || 'edit';
 
@@ -1075,6 +1077,17 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
           ...(a.action === 'record' ? { record: true } : {}),
         });
       } else if (mode) after.push({ kind: 'mode', mode });
+    } else if (a.op === 'command') {
+      const id = str(a.id) ?? '';
+      const def = s.commands.get(id);
+      if (!def || def.ai === false) warnings.push(`command: there is no command "${id}"`);
+      else
+        after.push({
+          kind: 'command',
+          id,
+          ...(a.args !== undefined && a.args !== null ? { args: a.args } : {}),
+          gesture: !!def.gesture,
+        });
     } else if (a.op === 'open') {
       const w = a.window;
       if (w === 'mixer' || w === 'channel-rack' || w === 'piano-roll' || w === 'playlist' || w === 'plugin') {

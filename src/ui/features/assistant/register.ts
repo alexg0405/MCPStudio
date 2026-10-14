@@ -1,11 +1,33 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
 import { CommandButton } from '../../shell/Toolbar';
+import { showDialog } from '../../controls/Dialog';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { openWindow, registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { AssistantWindow } from './AssistantWindow';
 import styles from './Assistant.module.css';
+
+/**
+ * A command the AI asked for that opens a file dialog: browsers allow that only right after a
+ * click, so the musician confirms here (the click is the gesture the dialog needs).
+ */
+async function confirmCommand(s: Services, id: string, args: unknown): Promise<void> {
+  const def = s.commands.get(id);
+  if (!def) return;
+  const title = def.title.replace(/…$/, '');
+  const choice = await showDialog({
+    title: `AI studio: ${title}?`,
+    message: def.hint ?? `The AI wants to run “${title}”.`,
+    detail: 'Your browser opens file dialogs only after a click, so this one is yours.',
+    buttons: [
+      { id: 'cancel', label: 'Not now' },
+      { id: 'run', label: title, primary: true },
+    ],
+    cancelId: 'cancel',
+  });
+  if (choice === 'run') s.commands.run(id, args);
+}
 
 /**
  * The AI studio window: ask for a beat or any change (mixer, plugins, routing, arrangement…), or
@@ -31,6 +53,8 @@ export function register(services: Services): void {
     hint: 'Ask the AI for a beat or any change to the project (mixer, plugins, routing, arrangement…)',
     chords: ['Alt+6'],
     menuOrder: 45,
+    // The AI studio shouldn't close itself mid-conversation.
+    ai: false,
   });
   // Windows an answer asked to show ("open the mixer", the effect it just added…).
   services.assistant.store.subscribe((st) => {
@@ -38,6 +62,10 @@ export function register(services: Services): void {
     const requests = st.uiRequests;
     services.assistant.clearUiRequests();
     for (const r of requests) {
+      if (r.kind === 'command') {
+        void confirmCommand(services, r.id, r.args);
+        continue;
+      }
       if (r.kind !== 'open') continue;
       if (r.window === 'plugin') {
         if (r.slotId && r.insertId)

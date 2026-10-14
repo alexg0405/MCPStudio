@@ -47,6 +47,7 @@ export function register(services: Services): void {
 
   commands.register({
     id: 'file.importMidi',
+    gesture: true,
     title: 'Import MIDI…',
     category: 'File',
     hint: 'Bring a .mid file in as patterns and channels',
@@ -57,6 +58,8 @@ export function register(services: Services): void {
   });
   commands.register<'song' | 'pattern'>({
     id: 'file.exportMidi',
+    gesture: true,
+    argsHint: "'song' (default) or 'pattern' (the current pattern)",
     title: 'Export MIDI',
     category: 'File',
     hint: 'Save the song or the current pattern as a .mid file',

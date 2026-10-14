@@ -17,6 +17,15 @@ export interface CommandDef<Ctx, A = void> {
    * item or key binding supplies).
    */
   palette?: boolean;
+  /**
+   * It opens a file picker or saves a file: browsers allow that only right after a click, so when
+   * the AI studio runs it, the musician confirms with one click.
+   */
+  gesture?: boolean;
+  /** The argument it takes, in plain words (the AI studio reads it), e.g. "'song' or 'pattern'". */
+  argsHint?: string;
+  /** False keeps it away from the AI studio (it makes no sense there). */
+  ai?: boolean;
 }
 
 // The registry stores commands with heterogeneous argument types.

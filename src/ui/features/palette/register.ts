@@ -7,6 +7,7 @@ import { PaletteOverlay, togglePalette } from './Palette';
 export function register(services: Services): void {
   services.commands.register({
     id: 'help.palette',
+    ai: false,
     title: 'Search actions…',
     category: 'Help',
     hint: 'Find any action by typing what you want to do; if nothing fits, ask the AI',

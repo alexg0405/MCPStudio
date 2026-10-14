@@ -134,6 +134,64 @@ describe('BeatAssistant', () => {
     expect(st.messages.at(-1)).toMatchObject({ error: true });
   });
 
+  it('runs app commands: plain ones at once, file dialogs after the musician’s click', async () => {
+    const fetchImpl = (async (url: string) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      return new Response(
+        JSON.stringify({
+          session: 'sess-2',
+          model: 'claude-opus-5-5',
+          beat: {
+            message: 'Metronome on, and your project is ready to save.',
+            actions: [
+              { op: 'command', id: 'test.metronome' },
+              { op: 'command', id: 'test.save' },
+              { op: 'command', id: 'test.nope' },
+            ],
+          },
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const { s, a } = setup(fetchImpl);
+    let clicks = 0;
+    let saves = 0;
+    s.commands.register({ id: 'test.metronome', title: 'Metronome', hint: 'Click on every beat', run: () => void clicks++ });
+    s.commands.register({ id: 'test.save', title: 'Save…', hint: 'Save the project', gesture: true, run: () => void saves++ });
+    s.commands.register({ id: 'test.nope', title: 'Hidden', ai: false, run: () => {} });
+    await a.send('turn the metronome on and save');
+    const st = a.store.getState();
+    expect(clicks).toBe(1);
+    // The file command waits: the UI asks for a click (the gesture its file dialog needs).
+    expect(saves).toBe(0);
+    expect(st.uiRequests).toEqual([{ kind: 'command', id: 'test.save', gesture: true }]);
+    expect(st.messages.at(-1)?.changes).toEqual(['Ran “Metronome”', 'Save: waiting for your click']);
+    expect(st.messages.at(-1)?.warnings).toEqual(['command: there is no command "test.nope"']);
+  });
+
+  it('tells Claude what the app can do: the command list with the first turn', async () => {
+    const calls: Record<string, unknown>[] = [];
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(
+        JSON.stringify({ session: 'sess-3', model: 'claude-opus-5-5', beat: { message: 'Hi.', actions: [] } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const { s, a } = setup(fetchImpl);
+    s.commands.register({ id: 'file.save', title: 'Save', hint: 'Save the project to its file', gesture: true, run: () => {} });
+    await a.send('hello');
+    const text = String(calls[0]!.text);
+    expect(text).toContain('<commands>');
+    expect(text).toContain('- file.save "Save": Save the project to its file [the musician confirms with one click]');
+    expect(text).toMatch(/App: file "Untitled" \(saved\)/);
+    await a.send('again');
+    expect(String(calls[1]!.text)).not.toContain('<commands>');
+  });
+
   it('keeps the conversation and its pattern across a page reload', async () => {
     const saved = new Map<string, string>();
     const g = globalThis as { sessionStorage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> };

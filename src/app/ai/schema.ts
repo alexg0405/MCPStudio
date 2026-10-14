@@ -351,6 +351,15 @@ export const ACTION_OPS = [
     from_bar: int('1-based bar to play from (song mode).'),
     metronome: bool('Turn the metronome on or off.'),
   }),
+  op(
+    'command',
+    'Runs any app command from the <commands> list, after the edits: save, save as, open, export, undo or redo, show windows, layouts, metronome, the tour… Commands that open a file dialog ask the musician to confirm with one click.',
+    {
+      id: str('Command id from <commands>, e.g. "file.save".'),
+      args: VALUE('Only for commands that list args.'),
+    },
+    ['id'],
+  ),
   op('open', 'Shows a window, applied after the edits.', {
     window: { type: 'string', enum: ['mixer', 'channel-rack', 'piano-roll', 'playlist', 'plugin'] },
     channel: CHANNEL,

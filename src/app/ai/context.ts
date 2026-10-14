@@ -15,6 +15,7 @@ import { patternLength } from '@core/query/queries';
 import { ticksPerBar } from '@core/time/ppq';
 import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { channelSound, noteName } from '../assistant/context';
+import { aiCommands } from './commands';
 import type { Services } from '../services';
 
 const NOTE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -59,6 +60,21 @@ function automationSummary(s: Services, p: Project, ch: Extract<Channel, { kind:
       ? `, ${formatAutomationValue(res, target, pts[0]!.value)} → ${formatAutomationValue(res, target, pts[pts.length - 1]!.value)}`
       : '';
   return `automation of “${what}”: ${pts.length} point${pts.length === 1 ? '' : 's'}${span}`;
+}
+
+/** The app around the project: the file, what is switched on, what Undo would revert. */
+function appLine(s: Services): string {
+  const file = s.files.store.getState();
+  const h = s.history.status();
+  const on = aiCommands(s)
+    .filter((d) => d.checked && s.commands.isChecked(d.id))
+    .map((d) => d.title);
+  const parts = [
+    `file "${file.name}"${h.dirty ? ' (unsaved changes)' : ' (saved)'}`,
+    on.length ? `on right now: ${on.join(', ')}` : 'no toggles on',
+    h.undoLabel ? `undo would revert “${h.undoLabel}”` : 'nothing to undo',
+  ];
+  return `App: ${parts.join('; ')}.`;
 }
 
 function channelLine(s: Services, p: Project, ch: Channel, index: number): string {
@@ -116,6 +132,7 @@ export function projectContext(s: Services): string {
       current ? `"${current.name}" ${current.id}` : 'none'
     }.`,
   );
+  lines.push(appLine(s));
 
   lines.push('', 'Channels (channel rack order):');
   p.channelOrder.forEach((id, i) => {

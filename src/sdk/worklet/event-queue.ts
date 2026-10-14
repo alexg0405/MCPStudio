@@ -1,4 +1,4 @@
-import { EV_ALL_OFF, EV_ALL_OFF_HARD, EV_NOTE_OFF, EV_NOTE_ON, EV_STRIDE } from '../protocol';
+import { EV_ALL_OFF, EV_ALL_OFF_HARD, EV_NOTE_OFF, EV_NOTE_ON, EV_STRIDE, EV_TRANSPORT } from '../protocol';
 
 /**
  * Frame-sorted note event queue for the audio thread. Storage is preallocated (it only grows if a
@@ -65,6 +65,14 @@ export class EventQueue {
       let k = 0;
       while (k < this.size) {
         if ((this.frames[this.index(k)] as number) >= frame) this.removeAt(k);
+        else k++;
+      }
+    } else if (type === EV_TRANSPORT && pan === 1) {
+      // A re-planned transport: the anchors queued from this frame on are stale.
+      let k = 0;
+      while (k < this.size) {
+        const j = this.index(k);
+        if (this.types[j] === EV_TRANSPORT && (this.frames[j] as number) >= frame) this.removeAt(k);
         else k++;
       }
     }

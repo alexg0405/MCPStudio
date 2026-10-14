@@ -177,7 +177,17 @@ option index and booleans as 0/1.
 work on the main thread and in Node tests too): `Biquad` (RBJ cookbook), `Svf` (state-variable filter
 that stays stable while you sweep it every sample: low/high/band-pass, notch, peak, all-pass, bell,
 shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `EnvelopeFollower`
-(peak or RMS level with attack/release), `Rng`, `mtof`, `dbToGain`, `flush`.
+(peak or RMS level with attack/release), `Adsr` (envelope; retriggers from its current value),
+`BlepOscillator` (sine, saw, square, pulse and triangle with little aliasing; `polyBlep` for your
+own), `DelayLine` (fractional reads, linear or cubic), `Lfo` (seven shapes, free-running or locked to
+the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`.
+
+Every kernel can see the song: `this.transport.playing`, `this.transport.bpm` and
+`this.transport.beatAt(i)` (the song position in quarter-note beats at frame `i` of the block; it
+holds while stopped). The SDK updates it at the exact frame the song starts, stops, jumps, loops or
+changes tempo, and calls the optional `transportChanged()` hook then. A tempo-synced LFO is
+`lfo.atBeat(this.transport.beatAt(i), 1 / 4)` for sixteenths; a synced delay reads
+`60 / this.transport.bpm` seconds per beat. Offline exports see the same values, so they repeat exactly.
 
 Instrument kernels read the channel pitch in cents from `this.pitch` (a param block: `at(this.pitch, i)`),
 and `fine` is the note's own fine pitch.

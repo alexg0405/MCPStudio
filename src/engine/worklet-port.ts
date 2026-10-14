@@ -5,6 +5,7 @@ import {
   EV_CC,
   EV_NOTE_OFF,
   EV_NOTE_ON,
+  EV_TRANSPORT,
   type FromProcessor,
   type ToProcessor,
 } from '@agstudio/sdk/protocol';
@@ -45,6 +46,11 @@ export class WorkletPortImpl implements WorkletPort {
 
   controlChange(cc: number, value: number, time: number): void {
     this.push(EV_CC, time, 0, cc, value, 0, 0);
+  }
+
+  /** The song's transport from `time` on (see EV_TRANSPORT; engine/kernel-transport.ts sends these). */
+  transport(time: number, beat: number, playing: boolean, bpm: number, replan: boolean): void {
+    this.push(EV_TRANSPORT, time, beat, playing ? 1 : 0, bpm, replan ? 1 : 0, 0);
   }
 
   setState(state: unknown): void {

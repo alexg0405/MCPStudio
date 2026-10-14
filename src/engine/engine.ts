@@ -20,6 +20,7 @@ import type {
 import { AutomationDriver } from './automation/driver';
 import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
+import { KernelTransportFeed } from './kernel-transport';
 import { Metronome } from './metronome';
 import { MixerGraph } from './mixer-graph';
 import { ParamRegistry } from './param-lane';
@@ -65,6 +66,16 @@ class TempoInfo implements TransportInfo {
   }
 }
 
+/** The live worklet ports; a new one is told where the song is right away. */
+class PortSet extends Set<WorkletPortImpl> {
+  onAdd: ((port: WorkletPortImpl) => void) | null = null;
+  override add(port: WorkletPortImpl): this {
+    super.add(port);
+    this.onAdd?.(port);
+    return this;
+  }
+}
+
 export class Engine implements EngineApi, EngineCore {
   readonly ctx: BaseAudioContext;
   readonly plugins: PluginResolver;
@@ -96,7 +107,7 @@ export class Engine implements EngineApi, EngineCore {
   private muteKey = '';
   private lastLate = 0;
   private readonly modules = new Map<string, Promise<void>>();
-  readonly ports = new Set<WorkletPortImpl>();
+  readonly ports = new PortSet();
   private readonly initDone: Promise<void>;
   private limiter: AudioWorkletNode | null = null;
 
@@ -150,6 +161,16 @@ export class Engine implements EngineApi, EngineCore {
           () => this.mixer.latency,
         );
     if (this.metronome) this.transport.observe(this.metronome);
+    // Worklet kernels' view of the song (tempo-synced effects and instruments).
+    const kernelTransport = new KernelTransportFeed({
+      ports: this.ports,
+      tickAt: (time) => this.transport.tickAt(time),
+      baseBpm: () => this.transportInfo.bpm,
+      now: () => this.ctx.currentTime,
+    });
+    this.transport.observe(kernelTransport);
+    this.transportInfo.onTempo((bpm, time) => kernelTransport.tempoChanged(bpm, time));
+    this.ports.onAdd = (port) => kernelTransport.adopt(port);
     // Tempo automation: tell tempo-synced plugins when the tempo of the planned segments changes.
     let lastSpt = 0;
     this.transport.observe({

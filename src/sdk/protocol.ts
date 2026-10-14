@@ -17,6 +17,13 @@ export const EV_ALL_OFF_HARD = 4;
 export const EV_CC = 5;
 /** Reserved for per-note pitch events. */
 export const EV_PITCH = 6;
+/**
+ * The song's transport from `frame` on: [EV_TRANSPORT, frame, beat, playing, bpm, replan, 0].
+ * `beat` (quarter notes, in the float64 slot) is the position at `frame`; it advances at `bpm` while
+ * `playing` (1) and holds while stopped (0). A `replan` (1) anchor drops the anchors queued at or
+ * after its frame: the transport re-planned (seek, edit, stop) and they no longer hold.
+ */
+export const EV_TRANSPORT = 7;
 
 /** Name of the a-rate AudioParam (cents) that carries an instrument's channel pitch. */
 export const PITCH_PARAM = '__pitch';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EV_ALL_OFF, EV_NOTE_OFF, EV_NOTE_ON, EV_STRIDE, type FromProcessor } from '../protocol';
+import { EV_ALL_OFF, EV_NOTE_OFF, EV_NOTE_ON, EV_STRIDE, EV_TRANSPORT, type FromProcessor } from '../protocol';
 import { EventQueue } from './event-queue';
 import { EffectKernel, InstrumentKernel, type KernelHost } from './kernel';
 import { KernelRunner } from './runner';
@@ -217,5 +217,98 @@ describe('VoicePool', () => {
     pool.free(a);
     expect(pool.activeCount).toBe(1);
     expect(pool.find(3)).toBe(b);
+  });
+});
+
+/** Records the transport as the kernel sees it at the first frame of every block. */
+class BeatProbe extends InstrumentKernel {
+  seen: { playing: boolean; bpm: number; beat: number; beat64: number }[] = [];
+  changes = 0;
+  noteOn() {}
+  noteOff() {}
+  override transportChanged() {
+    this.changes++;
+  }
+  render(_out: Float32Array[], from: number) {
+    if (from === 0)
+      this.seen.push({
+        playing: this.transport.playing,
+        bpm: this.transport.bpm,
+        beat: this.transport.beatAt(0),
+        beat64: this.transport.beatAt(64),
+      });
+  }
+}
+
+class EffectProbe extends EffectKernel {
+  beats: number[] = [];
+  process(input: Float32Array[], output: Float32Array[], n: number) {
+    for (let c = 0; c < output.length; c++) output[c]!.set(input[c]!.subarray(0, n));
+    this.beats.push(this.transport.beatAt(0));
+  }
+}
+
+// [EV_TRANSPORT, frame, beat, playing, bpm, replan, 0]
+const anchor = (frame: number, beat: number, playing: boolean, bpm: number, replan = false) => [
+  EV_TRANSPORT,
+  frame,
+  beat,
+  playing ? 1 : 0,
+  bpm,
+  replan ? 1 : 0,
+  0,
+];
+
+describe('kernel transport', () => {
+  it('extrapolates the beat from the latest anchor while playing and holds it while stopped', () => {
+    const k = new BeatProbe(host);
+    const r = new KernelRunner(k, () => {});
+    // 120 BPM at 48 kHz: one beat is 24 000 frames.
+    r.onMessage({ t: 'ev', data: pack(anchor(0, 4, true, 120), anchor(24_000 * 2, 6, false, 120)) });
+    r.process([], block(), {}, 0);
+    r.process([], block(), {}, 24_000);
+    r.process([], block(), {}, 24_000 * 3);
+    expect(k.seen[0]).toEqual({ playing: true, bpm: 120, beat: 4, beat64: 4 + 64 / 24_000 });
+    expect(k.seen[1]!.beat).toBeCloseTo(5, 12);
+    // Stopped at beat 6: it holds there.
+    expect(k.seen[2]).toMatchObject({ playing: false, beat: 6, beat64: 6 });
+    expect(k.changes).toBe(2);
+  });
+
+  it('applies an anchor at its exact frame inside a block', () => {
+    const k = new BeatProbe(host);
+    const r = new KernelRunner(k, () => {});
+    r.onMessage({ t: 'ev', data: pack(anchor(100, 0, true, 60)) });
+    r.process([], block(), {}, 0);
+    // The block's first frame came before the anchor: still stopped.
+    expect(k.seen[0]).toMatchObject({ playing: false });
+    r.process([], block(), {}, 128);
+    // 60 BPM: one beat per second.
+    expect(k.seen[1]!.beat).toBeCloseTo((128 - 100) / 48_000, 12);
+  });
+
+  it('drops queued anchors a re-planned transport supersedes', () => {
+    const k = new BeatProbe(host);
+    const r = new KernelRunner(k, () => {});
+    r.onMessage({ t: 'ev', data: pack(anchor(0, 0, true, 120), anchor(48_000, 2, true, 120)) });
+    // A seek at frame 24 000 re-plans: the anchor at 48 000 (from the old plan) is stale.
+    r.onMessage({ t: 'ev', data: pack(anchor(24_000, 16, true, 120, true)) });
+    r.process([], block(), {}, 0);
+    r.process([], block(), {}, 24_000);
+    r.process([], block(), {}, 48_000);
+    expect(k.seen.map((x) => Math.round(x.beat * 1000) / 1000)).toEqual([0, 16, 17]);
+  });
+
+  it('gives effects the transport too', () => {
+    const k = new EffectProbe(host);
+    const r = new KernelRunner(k, () => {});
+    r.onMessage({ t: 'ev', data: pack(anchor(0, 8, true, 120)) });
+    const input = [[new Float32Array(128).fill(0.25), new Float32Array(128).fill(0.25)]];
+    const out = block();
+    r.process(input, out, {}, 0);
+    r.process(input, block(), {}, 24_000);
+    expect(k.beats[0]).toBe(8);
+    expect(k.beats[1]).toBeCloseTo(9, 12);
+    expect(out[0]![0]![5]).toBe(0.25);
   });
 });

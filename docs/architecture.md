@@ -896,6 +896,20 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
 - **Rule for new features**: each feature adds its ops here (and what the context needs), so the AI can
   drive it.
 
+## Wave 2 foundations
+
+- Kernel transport:
+  - Worklet kernels see the song as `this.transport` (`playing`, `bpm`, `beatAt(i)`).
+  - `engine/kernel-transport.ts`, a transport observer, sends `EV_TRANSPORT` anchors through each port's event
+    queue: at a start, seek, re-plan, stop, loop wrap or tempo change (including tempo changes while stopped).
+  - A re-plan anchor drops the anchors queued at or after its frame, the way a noteOff cancels a pending note.
+  - Anchors come only at real discontinuities, never at the scheduler's own slices, so offline renders stay
+    bit-exact at any chunk size (`test/browser/kernel-transport.test.ts`).
+  - Effect kernels get the anchors due in a block at its start; instrument kernels get them at the exact frame.
+  - A port created mid-song gets the recent anchors replayed (`PortSet.onAdd`).
+- Shared DSP in `src/sdk/dsp` (exported from `@agstudio/sdk` and `/worklet`): `Adsr`, `BlepOscillator`/`polyBlep`,
+  `DelayLine` (linear/cubic), `Lfo` (free or `atBeat`), next to `Biquad`, `Svf`, `OnePole` and `EnvelopeFollower`.
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all

@@ -9,14 +9,40 @@ import {
   EV_CC,
   EV_NOTE_OFF,
   EV_NOTE_ON,
+  EV_TRANSPORT,
   PITCH_PARAM,
   type FromProcessor,
   type ToProcessor,
 } from '../protocol';
 import { EventQueue } from './event-queue';
-import { InstrumentKernel, type EffectKernel, type ParamBlock } from './kernel';
+import { InstrumentKernel, type EffectKernel, type KernelTransport, type ParamBlock } from './kernel';
 
 const MAX_BLOCK = 4096;
+
+/** The kernel's view of the song transport: the latest anchor, extrapolated per frame. */
+class TransportState implements KernelTransport {
+  playing = false;
+  bpm = 120;
+  /** Context frame of the current block's first frame. */
+  blockStart = 0;
+  private anchorFrame = 0;
+  private anchorBeat = 0;
+  private beatsPerFrame = 0;
+
+  constructor(private readonly sampleRate: number) {}
+
+  beatAt(i: number): number {
+    return this.playing ? this.anchorBeat + (this.blockStart + i - this.anchorFrame) * this.beatsPerFrame : this.anchorBeat;
+  }
+
+  set(frame: number, beat: number, playing: boolean, bpm: number): void {
+    this.anchorFrame = frame;
+    this.anchorBeat = beat;
+    this.playing = playing;
+    if (bpm > 0 && Number.isFinite(bpm)) this.bpm = bpm;
+    this.beatsPerFrame = this.bpm / 60 / this.sampleRate;
+  }
+}
 
 export class KernelRunner {
   readonly queue = new EventQueue(1024);
@@ -31,11 +57,15 @@ export class KernelRunner {
   private readonly padMain: Float32Array[] = [];
   private readonly padSc: Float32Array[] = [];
   private readonly noPitch = new Float32Array(1);
+  private readonly transport: TransportState;
 
   constructor(
     readonly kernel: InstrumentKernel | EffectKernel,
     private readonly post: (msg: FromProcessor) => void,
-  ) {}
+  ) {
+    this.transport = new TransportState(kernel.sampleRate);
+    kernel.transport = this.transport;
+  }
 
   onMessage(msg: ToProcessor): void {
     try {
@@ -87,10 +117,15 @@ export class KernelRunner {
     for (let c = 0; c < out.length; c++) (out[c] as Float32Array).fill(0);
 
     const block = params as unknown as ParamBlock;
+    this.transport.blockStart = f0;
     if (this.kernel instanceof InstrumentKernel) {
       this.kernel.pitch = params[PITCH_PARAM] ?? this.noPitch;
       this.runInstrument(this.kernel, out, n, f0, block);
-    } else this.runEffect(this.kernel, inputs[0] ?? [], inputs[1], out, n, block);
+    } else {
+      // Effects get no notes; transport anchors due in this block apply at its start.
+      this.applyTransport(f0 + n - 1);
+      this.runEffect(this.kernel, inputs[0] ?? [], inputs[1], out, n, block);
+    }
 
     this.scrub(out);
     return this.alive;
@@ -126,10 +161,31 @@ export class KernelRunner {
         else if (ev.type === EV_ALL_OFF) k.allNotesOff(false);
         else if (ev.type === EV_ALL_OFF_HARD) k.allNotesOff(true);
         else if (ev.type === EV_CC) k.controlChange?.(ev.key, ev.vel);
+        else if (ev.type === EV_TRANSPORT) this.setTransport();
       } catch (err) {
         this.fault(err);
       }
     }
+  }
+
+  /** Applies the transport anchors queued up to `frame` (other events don't concern effects). */
+  private applyTransport(frame: number): void {
+    const ev = this.ev;
+    while (this.queue.peekFrame() <= frame && this.queue.shift(ev)) {
+      if (ev.type !== EV_TRANSPORT || this.faulted) continue;
+      try {
+        this.setTransport();
+      } catch (err) {
+        this.fault(err);
+      }
+    }
+  }
+
+  /** The event in `this.ev` is a transport anchor (see EV_TRANSPORT for the packing). */
+  private setTransport(): void {
+    const ev = this.ev;
+    this.transport.set(ev.frame, ev.id, ev.key === 1, ev.vel);
+    this.kernel.transportChanged?.();
   }
 
   private runEffect(

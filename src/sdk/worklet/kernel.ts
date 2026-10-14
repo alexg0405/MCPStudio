@@ -23,8 +23,28 @@ export interface KernelHost {
   rand(): number;
 }
 
+/**
+ * The song's transport as a kernel sees it, for tempo-synced LFOs, gates and delays. Updated by the
+ * SDK at the exact frame things change (play, stop, a jump, a loop wrap, a tempo change).
+ */
+export interface KernelTransport {
+  /** True while the song plays. */
+  readonly playing: boolean;
+  /** Tempo in BPM (the song's tempo while stopped too). */
+  readonly bpm: number;
+  /** Song position in beats (quarter notes) at frame `i` of the current block; it holds while stopped. */
+  beatAt(i: number): number;
+}
+
+const STOPPED: KernelTransport = { playing: false, bpm: 120, beatAt: () => 0 };
+
 abstract class KernelBase {
   constructor(protected readonly host: KernelHost) {}
+
+  /** The song's transport (the SDK replaces this with the live one before the kernel runs). */
+  transport: KernelTransport = STOPPED;
+  /** The transport played, stopped, jumped, wrapped or changed tempo (e.g. to restart LFO phases). */
+  transportChanged?(): void;
 
   get sampleRate(): number {
     return this.host.sampleRate;

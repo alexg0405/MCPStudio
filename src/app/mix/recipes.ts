@@ -1,0 +1,244 @@
+/**
+ * What the mix setup builds, as data: each role bus's effects (exact plugin ids, preset names and
+ * param ids of the built-ins), its fader and its sends, the reverb and delay returns by style, the
+ * master chain, and channel levels by role. `setup.ts` applies it.
+ */
+import type { Role } from '@core/arrange/roles';
+import type { Style } from '@core/beat/style';
+import type { ParamValue } from '@agstudio/sdk';
+import type { BusRole } from './layout';
+
+export const EQ_PRO = 'agstudio.eq-pro';
+export const COMPRESSOR = 'agstudio.compressor';
+export const SATURATOR = 'agstudio.saturator';
+export const DUCKER = 'agstudio.ducker';
+export const REVERB = 'agstudio.reverb';
+export const DELAY = 'agstudio.delay';
+export const LIMITER = 'agstudio.limiter';
+
+/** One effect of a bus: a plugin, a preset of it, settings on top, and where its sidechain listens. */
+export interface FxRecipe {
+  pluginId: string;
+  preset?: string;
+  params?: Record<string, ParamValue>;
+  /** The bus that keys it (the Kick bus for ducking). */
+  sidechain?: BusRole;
+  /** What it is, for the chat ("tape saturation"). */
+  label: string;
+}
+
+export interface BusRecipe {
+  fx: FxRecipe[];
+  /** Fader in dB. */
+  fader: number;
+  /** Post-fader sends to the returns, in dB. */
+  sends: Partial<Record<'reverb' | 'delay', number>>;
+  color: string;
+}
+
+/** The mixer order of the buses (each takes the next free "Insert N"). */
+export const BUS_ORDER: readonly BusRole[] = ['kick', 'drums', 'bass', 'chords', 'lead', 'fx', 'reverb', 'delay'];
+
+/** EQ Pro bands: band number → on, type, frequency (Hz), gain (dB), Q. */
+type Band = { type: string; freq: number; gain?: number; q?: number };
+export function eqBands(bands: Record<number, Band>): Record<string, ParamValue> {
+  const out: Record<string, ParamValue> = {};
+  for (const [n, b] of Object.entries(bands)) {
+    out[`b${n}On`] = true;
+    out[`b${n}Type`] = b.type;
+    out[`b${n}Freq`] = b.freq;
+    if (b.gain !== undefined) out[`b${n}Gain`] = b.gain;
+    if (b.q !== undefined) out[`b${n}Q`] = b.q;
+  }
+  return out;
+}
+
+/** The Chords and Lead buses' sweep targets: band 1 a high-pass, band 8 a low-pass at 20 kHz. */
+export const SWEEP_BANDS: Readonly<Record<'chords' | 'lead', Record<string, ParamValue>>> = {
+  chords: eqBands({ 1: { type: 'lowCut24', freq: 150 }, 8: { type: 'highCut24', freq: 20000 } }),
+  lead: eqBands({ 1: { type: 'lowCut24', freq: 200 }, 8: { type: 'highCut24', freq: 20000 } }),
+};
+
+const REVERB_FOR: Record<Style, string> = {
+  trap: 'Plate',
+  drill: 'Plate',
+  boombap: 'Room',
+  lofi: 'Hall',
+  house: 'Room',
+  edm: 'Hall',
+  reggaeton: 'Plate',
+  afro: 'Room',
+  pop: 'Plate',
+};
+
+const DELAY_FOR: Record<Style, string> = {
+  trap: 'Dotted ping-pong',
+  drill: 'Dotted ping-pong',
+  boombap: 'Eighth echo',
+  lofi: 'Eighth echo',
+  house: 'Dotted ping-pong',
+  edm: 'Dotted ping-pong',
+  reggaeton: 'Eighth echo',
+  afro: 'Eighth echo',
+  pop: 'Dotted ping-pong',
+};
+
+/** Styles whose 808/bass doesn't duck under the kick (lo-fi: a breathing bass sounds wrong there). */
+const NO_BASS_DUCK: ReadonlySet<Style> = new Set(['lofi']);
+/** Styles whose chords pump harder with the kick. */
+const PUMPING: ReadonlySet<Style> = new Set(['house', 'edm']);
+
+export function busRecipe(role: BusRole, style: Style): BusRecipe {
+  switch (role) {
+    case 'kick':
+      return {
+        fx: [
+          {
+            pluginId: EQ_PRO,
+            label: 'EQ (30 Hz low cut, less box at 350 Hz, more click at 3.5 kHz)',
+            params: eqBands({
+              1: { type: 'lowCut24', freq: 30 },
+              3: { type: 'bell', freq: 350, gain: -3, q: 1 },
+              6: { type: 'bell', freq: 3500, gain: 2, q: 1 },
+            }),
+          },
+        ],
+        fader: 0,
+        sends: {},
+        color: '#c76b5b',
+      };
+    case 'drums': {
+      const tape = style === 'boombap' || style === 'lofi';
+      return {
+        fx: [
+          { pluginId: EQ_PRO, label: 'EQ (100 Hz low cut)', params: eqBands({ 1: { type: 'lowCut12', freq: 100 } }) },
+          { pluginId: COMPRESSOR, preset: 'Gentle glue for a bus', label: 'glue compressor' },
+          tape
+            ? { pluginId: SATURATOR, preset: 'Tape warmth', params: { mix: 0.7 }, label: 'tape saturation' }
+            : { pluginId: SATURATOR, preset: 'Subtle bus saturation', label: 'subtle saturation' },
+        ],
+        fader: -2,
+        sends: {},
+        color: '#c9a24a',
+      };
+    }
+    case 'bass':
+      return {
+        fx: [
+          { pluginId: EQ_PRO, label: 'EQ (28 Hz low cut)', params: eqBands({ 1: { type: 'lowCut24', freq: 28 } }) },
+          ...(NO_BASS_DUCK.has(style)
+            ? []
+            : [{ pluginId: DUCKER, preset: 'Tight duck for bass', sidechain: 'kick', label: 'ducks under the kick' } as FxRecipe]),
+        ],
+        fader: -2,
+        sends: {},
+        color: '#9a72c2',
+      };
+    case 'chords':
+      return {
+        fx: [
+          { pluginId: EQ_PRO, label: 'EQ (150 Hz high-pass, the low-pass open)', params: SWEEP_BANDS.chords },
+          {
+            pluginId: DUCKER,
+            params: PUMPING.has(style)
+              ? { depth: 0.5, threshold: -24, attack: 1, hold: 10, release: 200, curve: 0.3 }
+              : { depth: 0.3, threshold: -24, attack: 1, hold: 10, release: 160, curve: 0 },
+            sidechain: 'kick',
+            label: PUMPING.has(style) ? 'pumps with the kick' : 'a light duck with the kick',
+          },
+        ],
+        fader: -6,
+        sends: { reverb: -12 },
+        color: '#4fa6a6',
+      };
+    case 'lead':
+      return {
+        fx: [
+          {
+            pluginId: EQ_PRO,
+            label: 'EQ (200 Hz high-pass, +1.5 dB presence at 4.5 kHz)',
+            params: { ...SWEEP_BANDS.lead, ...eqBands({ 6: { type: 'bell', freq: 4500, gain: 1.5, q: 1 } }) },
+          },
+        ],
+        fader: -3,
+        sends: { reverb: -14, delay: -18 },
+        color: '#6aa86b',
+      };
+    case 'fx':
+      return {
+        fx: [{ pluginId: EQ_PRO, label: 'EQ (30 Hz low cut)', params: eqBands({ 1: { type: 'lowCut24', freq: 30 } }) }],
+        fader: -6,
+        sends: { reverb: -10 },
+        color: '#c77fa8',
+      };
+    case 'reverb':
+      return {
+        fx: [
+          {
+            pluginId: EQ_PRO,
+            label: 'EQ (no lows below 250 Hz, darker above 9 kHz)',
+            params: eqBands({ 1: { type: 'lowCut24', freq: 250 }, 8: { type: 'highCut12', freq: 9000 } }),
+          },
+          { pluginId: REVERB, preset: REVERB_FOR[style], params: { mix: 1 }, label: `${REVERB_FOR[style].toLowerCase()} reverb` },
+        ],
+        fader: 0,
+        sends: {},
+        color: '#5f8fbf',
+      };
+    case 'delay':
+      return {
+        fx: [
+          {
+            pluginId: DELAY,
+            preset: DELAY_FOR[style],
+            params: { mix: 1, lowCut: 300, highCut: 6000 },
+            label: `${DELAY_FOR[style].toLowerCase()} delay`,
+          },
+        ],
+        fader: 0,
+        sends: {},
+        color: '#6f7fd1',
+      };
+  }
+}
+
+/** The master chain, in order: EQ, tape saturation, and the Limiter last. */
+export const MASTER_CHAIN: readonly FxRecipe[] = [
+  {
+    pluginId: EQ_PRO,
+    label: 'EQ (25 Hz low cut, +1 dB air at 12 kHz)',
+    params: eqBands({ 1: { type: 'lowCut24', freq: 25 }, 7: { type: 'highShelf', freq: 12000, gain: 1 } }),
+  },
+  { pluginId: SATURATOR, params: { mode: 'tape', drive: 2, mix: 0.5 }, label: 'tape saturation' },
+  {
+    pluginId: LIMITER,
+    preset: 'Brickwall master −1 dB',
+    params: { ceiling: -1, truePeak: true },
+    label: 'Limiter (−1 dB ceiling, true peak)',
+  },
+];
+
+/** Channel volumes by role (linear; the channel default is 0.78) for channels nobody has set. */
+export const ROLE_VOLUME: Readonly<Record<Role, number>> = {
+  kick: 0.78,
+  snare: 0.74,
+  clap: 0.72,
+  rim: 0.56,
+  hat: 0.52,
+  'open-hat': 0.48,
+  perc: 0.5,
+  tom: 0.66,
+  crash: 0.42,
+  kit: 0.7,
+  '808': 0.62,
+  bass: 0.62,
+  chords: 0.55,
+  pad: 0.5,
+  keys: 0.58,
+  lead: 0.55,
+  pluck: 0.55,
+  arp: 0.5,
+  vox: 0.7,
+  fx: 0.6,
+  other: 0.78,
+};

@@ -50,6 +50,8 @@
   --ag-grid-bar: #050506;
   --ag-grid-beat: #0b0c0e;
   --ag-grid-step: #0f1013;
+  /* Out-of-range areas on a grid (past the pattern end, rows outside the song's scale). */
+  --ag-grid-shade: rgba(0, 0, 0, 0.32);
   --ag-key-white: #e8e5de;
   --ag-key-black: #141518;
 
@@ -57,6 +59,8 @@
   --ag-note: #cfae67;
   --ag-note-border: #5c4822;
   --ag-note-selected: #f4ecda;
+  /* The lighter top edge of notes and clip title strips (drawn over their color). */
+  --ag-note-top: rgba(255, 255, 255, 0.3);
   --ag-ghost: rgba(220, 210, 190, 0.14);
   --ag-playhead: var(--ag-accent-light);
   --ag-loop: var(--ag-accent-soft);

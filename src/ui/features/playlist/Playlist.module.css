@@ -2,42 +2,52 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--ag-surface-2);
+  background: var(--ag-surface-1);
 }
 
 .toolbar {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 30px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--ag-border);
-  background: var(--ag-surface-1);
+  gap: var(--ag-space-3);
+  height: 34px;
+  padding: 0 var(--ag-space-2);
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
 }
 
 .tools {
   display: flex;
   gap: 2px;
+  padding: 2px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
 }
 
 .tool {
   height: 20px;
-  padding: 0 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: var(--ag-surface-3);
+  padding: 0 9px;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .tool:hover {
+  background: var(--ag-hover);
   color: var(--ag-text);
 }
 
 .toolOn {
   background: var(--ag-active);
+  box-shadow: inset 0 0 0 1px var(--ag-active-border);
   color: var(--ag-accent);
 }
 
@@ -46,14 +56,19 @@
   align-items: center;
   gap: 6px;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
 }
 
 .field select {
-  padding: 1px 2px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
 }
 
 .zoom {
@@ -63,13 +78,22 @@
 
 .zoom button {
   width: 22px;
-  height: 20px;
+  height: 22px;
   padding: 0;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: var(--ag-surface-3);
+  border: none;
+  border-radius: var(--ag-radius);
+  background: transparent;
   color: var(--ag-text-dim);
+  font-size: 13px;
   cursor: pointer;
+  transition:
+    background var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
+}
+
+.zoom button:hover {
+  background: var(--ag-hover);
+  color: var(--ag-text);
 }
 
 .selCount {
@@ -87,8 +111,9 @@
 }
 
 .corner {
-  background: var(--ag-surface-1);
-  border-right: 1px solid var(--ag-border);
+  background: var(--ag-surface-2);
+  border-right: 1px solid var(--ag-line-faint);
+  border-bottom: 1px solid var(--ag-line-faint);
 }
 
 .ruler,
@@ -129,18 +154,19 @@
   display: grid;
   place-items: center;
   color: var(--ag-text-dim);
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--ag-grid-shade);
 }
 
 .unused {
   padding: 4px 6px;
-  border-right: 1px solid var(--ag-border);
-  border-top: 1px solid var(--ag-border);
-  background: var(--ag-surface-1);
+  border-right: 1px solid var(--ag-line-faint);
+  border-top: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
   color: var(--ag-text-faint);
   font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--ag-label-tracking);
   overflow: hidden;
 }
 
@@ -150,18 +176,19 @@
 
 .hscroll {
   position: relative;
-  background: var(--ag-surface-inset);
-  border-top: 1px solid var(--ag-border);
+  background: var(--ag-surface-2);
+  border-top: 1px solid var(--ag-line-faint);
 }
 
 .hthumb {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 3px;
+  bottom: 3px;
   left: 0;
   min-width: 24px;
-  border-radius: 4px;
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-surface-3);
+  box-shadow: inset 0 0 0 1px var(--ag-line-faint);
   cursor: grab;
   touch-action: none;
 }
@@ -177,9 +204,23 @@
   bottom: 12px;
   width: 1px;
   background: var(--ag-playhead);
-  box-shadow: 0 0 4px var(--ag-playhead);
+  box-shadow: 0 0 6px var(--ag-accent-glow);
   pointer-events: none;
   display: none;
+  will-change: transform;
+}
+
+/* The playhead's cap in the ruler: a small brushed-gold drop. */
+.playhead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 11px;
+  height: 9px;
+  border-radius: 2px 2px 6px 6px;
+  background: var(--ag-metal);
+  box-shadow: 0 1px 3px var(--ag-accent-glow);
 }
 
 .headers {
@@ -202,10 +243,11 @@
   position: absolute;
   left: 24px;
   display: none;
-  padding: 0 4px;
-  border: 1px solid var(--ag-accent);
-  border-radius: 2px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--ag-radius-sm);
   background: var(--ag-surface-inset);
+  box-shadow: 0 0 0 1.5px var(--ag-accent);
   z-index: 3;
 }
 
@@ -216,32 +258,36 @@
   left: 0;
   z-index: 2;
   height: 20px;
-  padding: 0 9px;
-  border: 1px solid var(--ag-accent-deep);
-  border-radius: 10px;
-  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-metal);
+  box-shadow:
+    var(--ag-elev-2),
+    inset 0 1px 0 color-mix(in srgb, var(--ag-accent-light) 70%, transparent);
   color: var(--ag-on-accent);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   font-weight: 600;
-  line-height: 18px;
+  line-height: 20px;
   white-space: nowrap;
   cursor: pointer;
+  transition: filter var(--ag-dur) var(--ag-ease);
 }
 
 .askPill:hover {
-  background: linear-gradient(var(--ag-accent), var(--ag-accent-strong));
+  filter: brightness(1.08);
 }
 
 .markerRename {
   position: absolute;
   display: none;
-  padding: 0 4px;
-  border: 1px solid var(--ag-marker);
-  border-radius: 2px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-surface-inset);
+  box-shadow: 0 0 0 1.5px var(--ag-marker);
   color: var(--ag-text);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   z-index: 3;
 }

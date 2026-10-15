@@ -9,7 +9,9 @@ import { playbackMode, sourceSecondsAt, type PlaybackMode } from '@core/audio/pl
 import type { AudioClip, AudioClipChannel, Tick } from '@core/model/types';
 import type { TempoMap } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
+import { alpha, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
+import type { ClipPaint } from './clip-paint';
 import type { ClipBox } from './clip-geometry';
 
 export type AudioHandle = 'fadeIn' | 'fadeOut' | 'gain';
@@ -101,13 +103,14 @@ export function hitAudioHandle(
 export function drawAudioBody(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
+  theme: TimelineTheme,
   wave: Waveform | null,
   clip: AudioClip,
   ch: AudioClipChannel,
   levels: ClipLevels,
   tempo: TempoMap,
   box: ClipBox,
-  color: string,
+  paint: ClipPaint,
   handles: { show: boolean; hot: AudioHandle | null },
 ): void {
   const { x, w, bodyY: y, bodyH: h } = box;
@@ -118,13 +121,18 @@ export function drawAudioBody(
   const to = Math.min(Math.ceil(x + w), vp.width);
   const clipSec = tempo.tickToSeconds(clip.start);
   const dur = tempo.tickToSeconds(clip.start + clip.length) - clipSec;
-  ctx.fillStyle = color;
+  ctx.fillStyle = paint.content;
   if (!wave) ctx.fillRect(x, mid, w, 1);
-  else drawColumns(ctx, vp, wave, clip, mode, tempo, levels, x, from, to, y, h, mid, amp, clipSec, dur);
+  else if (to > from) {
+    drawWave(ctx, vp, wave, clip, mode, tempo, levels, x, from, to, mid, amp, clipSec, dur);
+    // The centre line, faint.
+    ctx.fillStyle = alpha(paint.content, 0.35);
+    ctx.fillRect(from, Math.round(mid), to - from, 1);
+  }
   // Fade curves: the gain falls to nothing at the clip's ends.
   const fi = Math.max(0, levels.fadeIn ?? 0);
   const fo = Math.max(0, levels.fadeOut ?? 0);
-  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.strokeStyle = alpha(paint.ink, 0.8);
   ctx.lineWidth = 1;
   const curve = (x0: number, x1: number, rising: boolean) => {
     if (x1 - x0 < 1) return;
@@ -146,19 +154,18 @@ export function drawAudioBody(
   for (const k of ['fadeIn', 'fadeOut', 'gain'] as const) {
     const p = pos[k];
     const hot = handles.hot === k;
-    ctx.fillStyle = hot ? '#ffffff' : 'rgba(255,255,255,0.8)';
-    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    if (k === 'gain') {
-      ctx.fillRect(p.x - 7, p.y - 2.5, 14, 5);
-      ctx.strokeRect(p.x - 7 + 0.5, p.y - 2.5 + 0.5, 13, 4);
-    } else {
-      ctx.fillRect(p.x - HANDLE / 2, p.y - HANDLE / 2, HANDLE, HANDLE);
-      ctx.strokeRect(p.x - HANDLE / 2 + 0.5, p.y - HANDLE / 2 + 0.5, HANDLE - 1, HANDLE - 1);
-    }
+    ctx.fillStyle = hot ? paint.ink : alpha(paint.ink, 0.85);
+    ctx.strokeStyle = hot ? theme.select : alpha(theme.border, 0.7);
+    ctx.beginPath();
+    if (k === 'gain') ctx.roundRect(p.x - 7, p.y - 2.5, 14, 5, 2.5);
+    else ctx.roundRect(p.x - HANDLE / 2, p.y - HANDLE / 2, HANDLE, HANDLE, 2);
+    ctx.fill();
+    ctx.stroke();
   }
 }
 
-function drawColumns(
+/** The waveform as one filled shape, mirrored around the centre line (peaks scaled by the envelope). */
+function drawWave(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
   wave: Waveform,
@@ -169,8 +176,6 @@ function drawColumns(
   x: number,
   from: number,
   to: number,
-  y: number,
-  h: number,
   mid: number,
   amp: number,
   clipSec: number,
@@ -178,6 +183,8 @@ function drawColumns(
 ): void {
   const buckets = wave.peaks.length / 2;
   const perBucket = wave.bucket / wave.sampleRate;
+  const peaks = scratch(to - from);
+  let end = from;
   for (let px = from; px < to; px++) {
     const tick0 = clip.start + (px - x) / vp.pxPerTick;
     const tick1 = tick0 + 1 / vp.pxPerTick;
@@ -187,14 +194,29 @@ function drawColumns(
     if (mode.reverse) [s0, s1] = [wave.duration - s1, wave.duration - s0];
     const b0 = Math.max(0, Math.floor(s0 / perBucket));
     const b1 = Math.min(buckets, Math.max(b0 + 1, Math.ceil(s1 / perBucket)));
-    let lo = 0;
-    let hi = 0;
-    for (let b = b0; b < b1; b++) {
-      lo = Math.min(lo, wave.peaks[b * 2] as number);
-      hi = Math.max(hi, wave.peaks[b * 2 + 1] as number);
-    }
+    let peak = 0;
+    for (let b = b0; b < b1; b++)
+      peak = Math.max(peak, -(wave.peaks[b * 2] as number), wave.peaks[b * 2 + 1] as number);
     const env = clipEnvelopeAt(levels, tempo.tickToSeconds(tick0) - clipSec, dur);
-    const top = Math.max(y, mid - hi * env * amp);
-    ctx.fillRect(px, top, 1, Math.max(1, Math.min(y + h, mid - lo * env * amp) - top));
+    peaks[px - from] = Math.max(0.5, Math.min(amp, peak * env * amp));
+    end = px + 1;
   }
+  if (end <= from) return;
+  ctx.beginPath();
+  ctx.moveTo(from, mid - (peaks[0] as number));
+  for (let px = from; px < end; px++) ctx.lineTo(px + 0.5, mid - (peaks[px - from] as number));
+  ctx.lineTo(end, mid - (peaks[end - from - 1] as number));
+  ctx.lineTo(end, mid + (peaks[end - from - 1] as number));
+  for (let px = end - 1; px >= from; px--) ctx.lineTo(px + 0.5, mid + (peaks[px - from] as number));
+  ctx.lineTo(from, mid + (peaks[0] as number));
+  ctx.closePath();
+  ctx.fill();
+}
+
+let buffer = new Float32Array(1024);
+
+/** A reused buffer for one clip's column peaks (no allocation per frame). */
+function scratch(n: number): Float32Array {
+  if (buffer.length < n) buffer = new Float32Array(Math.max(n, buffer.length * 2));
+  return buffer;
 }

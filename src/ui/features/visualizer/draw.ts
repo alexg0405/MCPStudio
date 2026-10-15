@@ -1,4 +1,4 @@
-import type { TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme } from '../../timeline/canvas';
 
 /** Frequencies the spectrum shows (log axis) and its dB range. */
 export const SPECTRUM_LO = 30;
@@ -28,6 +28,7 @@ export function drawScope(
   if (n < 2) return;
   g.strokeStyle = color;
   g.lineWidth = lineWidth;
+  g.lineJoin = 'round';
   g.beginPath();
   for (let x = 0; x < w; x++) {
     const v = samples[Math.min(n - 1, Math.floor((x / w) * n))] as number;
@@ -66,20 +67,23 @@ export function drawSpectrum(
   }
   g.lineTo(w, h);
   g.closePath();
-  g.fillStyle = color;
-  g.globalAlpha = fillAlpha;
+  // A soft glassy fill: strongest at the top of each peak, fading into the stone.
+  const fill = g.createLinearGradient(0, 0, 0, h);
+  fill.addColorStop(0, alpha(color, Math.min(1, fillAlpha * 1.6)));
+  fill.addColorStop(1, alpha(color, fillAlpha * 0.08));
+  g.fillStyle = fill;
   g.fill();
-  g.globalAlpha = 1;
   g.strokeStyle = color;
-  g.lineWidth = 1;
+  g.lineWidth = 1.25;
+  g.lineJoin = 'round';
   g.stroke();
 }
 
 /** Grid lines and labels for the spectrum: 100 Hz, 1 kHz, 10 kHz and every 12 dB. */
 export function drawSpectrumGrid(g: CanvasRenderingContext2D, w: number, h: number, theme: TimelineTheme): void {
-  g.font = `10px ${theme.font}`;
-  g.fillStyle = theme.textDim;
-  g.strokeStyle = theme.beat;
+  g.font = `500 10px ${theme.font}`;
+  g.fillStyle = theme.textFaint;
+  g.strokeStyle = theme.lineFaint;
   g.lineWidth = 1;
   for (const hz of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
     const x = Math.round(freqX(hz, w)) + 0.5;

@@ -20,7 +20,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { noteName, scaleMask } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
-import { fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
+import { alpha, roundRectPath, fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
 import {
@@ -396,8 +396,11 @@ export class PianoRollController {
       const n = this.hover.note;
       const x = vp.tickToX(n.tick);
       const y = vp.rowToY(rowForKey(n.key));
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.strokeRect(x + 0.5, y + 1.5, Math.max(2, n.length * vp.pxPerTick - 2), vp.rowHeight - 3);
+      // The note under the pointer lifts: a brighter rounded edge.
+      ctx.strokeStyle = alpha(theme.text, 0.75);
+      ctx.beginPath();
+      roundRectPath(ctx, x + 0.5, y + 1.5, Math.max(2, n.length * vp.pxPerTick - 2), vp.rowHeight - 3, 3);
+      ctx.stroke();
       if (this.s.editor.getState().pianoRoll.tool === 'slice') {
         ctx.fillStyle = theme.danger;
         ctx.fillRect(Math.round(this.sliceX), y, 1, vp.rowHeight);
@@ -408,22 +411,30 @@ export class PianoRollController {
       const x = vp.tickToX(tick);
       const w = Math.max(6, length * vp.pxPerTick - 1);
       ctx.setLineDash([3, 2]);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.strokeStyle = alpha(theme.accent, 0.85);
+      ctx.fillStyle = alpha(theme.accent, 0.12);
       let top = Infinity;
       for (const k of keys) {
         const y = vp.rowToY(rowForKey(k));
         top = Math.min(top, y);
-        ctx.strokeRect(x + 0.5, y + 1.5, w, vp.rowHeight - 3);
+        ctx.beginPath();
+        roundRectPath(ctx, x + 0.5, y + 1.5, w, vp.rowHeight - 3, 3);
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.setLineDash([]);
       if (name && Number.isFinite(top)) {
-        ctx.font = `11px ${theme.font}`;
-        ctx.textBaseline = 'bottom';
-        const tw = ctx.measureText(name).width + 8;
-        ctx.fillStyle = 'rgba(20, 24, 28, 0.85)';
-        ctx.fillRect(x, top - 16, tw, 15);
+        ctx.font = `600 11px ${theme.font}`;
+        ctx.textBaseline = 'middle';
+        const tw = ctx.measureText(name).width + 14;
+        ctx.fillStyle = theme.glass;
+        ctx.beginPath();
+        roundRectPath(ctx, x, top - 19, tw, 16, 8);
+        ctx.fill();
+        ctx.strokeStyle = theme.accentDim;
+        ctx.stroke();
         ctx.fillStyle = theme.accent;
-        ctx.fillText(name, x + 4, top - 2);
+        ctx.fillText(name, x + 7, top - 10.5);
       }
     }
   }

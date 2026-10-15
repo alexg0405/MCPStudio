@@ -1,12 +1,17 @@
+/*
+ * The channel rack: a slab of rows, one per sound. Each row is a faint stone slab with a mute LED,
+ * pan and volume knobs, the mixer insert in a little LCD, the name button (its color as a bar on the
+ * left) and the steps as small rounded tiles (off: stone, on: ivory, the playing step ringed in gold).
+ */
 .rack {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--ag-surface-2);
+  background: var(--ag-surface-1);
 }
 
 .empty {
-  padding: 16px;
+  padding: var(--ag-space-4);
   color: var(--ag-text-faint);
 }
 
@@ -14,19 +19,19 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 14px;
-  height: 30px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--ag-border);
-  background: var(--ag-surface-1);
+  gap: var(--ag-space-3);
+  height: 34px;
+  padding: 0 var(--ag-space-3);
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
 }
 
 .patternName {
   min-width: 110px;
   padding: 2px 8px;
-  border: 1px solid var(--ag-border);
   border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   font-weight: 600;
 }
 
@@ -35,14 +40,20 @@
   align-items: center;
   gap: 6px;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
 }
 
-.headerControl select {
-  padding: 1px 2px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+.headerControl select,
+.graphControls select {
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
 }
 
 .scroll {
@@ -53,98 +64,148 @@
 
 .rows {
   position: relative;
-  padding: 6px 0 8px;
+  padding: var(--ag-space-2) var(--ag-space-1) var(--ag-space-3);
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 8px;
+  gap: 5px;
+  height: 30px;
+  margin: 0 4px 2px;
+  padding: 0 6px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-sheen);
+  transition: background var(--ag-dur) var(--ag-ease);
 }
 
-.rowSelected {
-  background: var(--ag-sheen);
+.row:hover {
+  background: color-mix(in srgb, var(--ag-text) 4%, transparent);
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: color-mix(in srgb, var(--ag-select) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ag-select) 22%, transparent);
 }
 
 /* A sample dragged over a channel replaces its sound on drop. */
-.rowDrop {
+.rowDrop,
+.rowDrop:hover {
   background: var(--ag-accent-tint);
-  box-shadow: inset 0 0 0 1px var(--ag-accent);
+  box-shadow: inset 0 0 0 1px var(--ag-accent-dim);
 }
 
+/* Mute LED: a 20px hit target with an 8px dot. */
 .led {
+  position: relative;
   flex: none;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 20px;
   padding: 0;
-  border: 1px solid var(--ag-border);
+  border: none;
   border-radius: 50%;
-  background: var(--ag-led-off);
+  background: transparent;
   cursor: pointer;
 }
 
-.ledOn {
-  background: var(--ag-led);
-  box-shadow: 0 0 5px var(--ag-led-glow);
+.led::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--ag-led-off);
+  box-shadow: inset 0 1px 1px color-mix(in srgb, var(--ag-border) 60%, transparent);
+  transition: background var(--ag-dur) var(--ag-ease), box-shadow var(--ag-dur) var(--ag-ease);
 }
 
-.ledSolo {
-  outline: 2px solid var(--ag-accent);
-  outline-offset: 1px;
+.ledOn::after {
+  background: var(--ag-led);
+  box-shadow:
+    0 0 6px var(--ag-led-glow),
+    inset 0 1px 0 color-mix(in srgb, #fff 45%, transparent);
+}
+
+/* Solo: a gold ring around the dot. */
+.ledSolo::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--ag-accent);
 }
 
 .insert {
   flex: none;
   width: 26px;
   height: 20px;
-  line-height: 18px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: var(--ag-surface-inset);
-  color: var(--ag-text-dim);
+  line-height: 20px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-lcd);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-lcd-text);
   font-family: var(--ag-font-mono);
-  font-size: 11px;
+  font-size: 10px;
   text-align: center;
 }
 
 .name {
   flex: none;
-  width: 110px;
+  width: 112px;
   height: 22px;
-  padding: 0 8px;
+  padding: 0 8px 0 11px;
   overflow: hidden;
-  border: 1px solid var(--ag-border);
-  border-left: 4px solid var(--ch-color, var(--ag-accent));
-  border-radius: 2px;
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow:
+    inset 3px 0 0 var(--ch-color, var(--ag-accent)),
+    var(--ag-elev-1);
   color: var(--ag-text);
+  font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+  transition: background var(--ag-dur) var(--ag-ease);
+}
+
+.name:hover {
+  background: var(--ag-hover);
 }
 
 .nameMissing {
-  border-style: dashed;
-  border-left-color: var(--ag-danger);
+  box-shadow:
+    inset 3px 0 0 var(--ag-danger),
+    inset 0 0 0 1px var(--ag-danger-line);
   color: var(--ag-text-faint);
   text-decoration: line-through;
 }
 
 .rowSelected .name {
-  background: linear-gradient(var(--ag-raised), var(--ag-surface-3));
+  background: var(--ag-raised);
+  color: var(--ag-text);
 }
 
 .rename {
   flex: none;
-  width: 110px;
+  width: 112px;
   height: 22px;
   padding: 0 6px;
-  border: 1px solid var(--ag-accent);
-  border-radius: 2px;
+  border: none;
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow:
+    var(--ag-inset),
+    0 0 0 1.5px var(--ag-accent);
 }
 
 .steps {
@@ -154,30 +215,34 @@
   margin-left: 6px;
 }
 
+/* A step tile: stone when off (two shades for groups of four), ivory when on. */
 .step {
   position: absolute;
   top: 0;
   width: 17px;
   height: 22px;
   padding: 0;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: linear-gradient(color-mix(in srgb, var(--ag-step-off-a) 86%, #fff), var(--ag-step-off-a));
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: linear-gradient(var(--ag-highlight), transparent 55%), var(--ag-step-off-a);
+  box-shadow: var(--ag-elev-1);
   cursor: pointer;
 }
 
 .stepB {
-  background: linear-gradient(color-mix(in srgb, var(--ag-step-off-b) 86%, #fff), var(--ag-step-off-b));
+  background: linear-gradient(var(--ag-highlight), transparent 55%), var(--ag-step-off-b);
 }
 
 .step:hover {
-  filter: brightness(1.15);
+  filter: brightness(1.12);
 }
 
 .stepOn,
 .stepB.stepOn {
-  background: linear-gradient(color-mix(in srgb, var(--ag-step-on) 60%, #fff), var(--ag-step-on));
-  box-shadow: 0 0 6px color-mix(in srgb, var(--ag-step-on) 35%, transparent);
+  background: linear-gradient(color-mix(in srgb, var(--ag-step-on) 70%, #fff), var(--ag-step-on) 60%);
+  box-shadow:
+    0 0 7px color-mix(in srgb, var(--ag-step-on) 28%, transparent),
+    var(--ag-elev-1);
 }
 
 .notesBar {
@@ -188,35 +253,43 @@
   padding: 0 10px;
   height: 22px;
   min-width: 200px;
-  border: 1px dashed var(--ag-border-soft);
-  border-radius: 2px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
+/* The selection marker at the row's end. */
 .select {
   flex: none;
-  width: 8px;
-  height: 18px;
+  width: 4px;
+  height: 16px;
   margin-left: 6px;
-  border-radius: 2px;
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-surface-inset);
-  border: 1px solid var(--ag-border);
+  box-shadow: var(--ag-inset);
 }
 
 .selectOn {
-  background: var(--ag-led);
+  background: var(--ag-select);
+  box-shadow: 0 0 6px var(--ag-select-glow);
 }
 
+/* The playing step: a gold-ringed column over every row (moved by the frame loop). */
 .stepLight {
   position: absolute;
-  top: 4px;
-  bottom: 40px;
+  top: 6px;
+  bottom: 42px;
   left: 0;
-  border-radius: 2px;
+  margin-left: -1px;
+  padding: 0 1px;
+  box-sizing: content-box;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ag-step-current) 9%, transparent);
   box-shadow:
     0 0 0 1px var(--ag-step-current) inset,
-    0 0 8px var(--ag-accent-glow);
+    0 0 10px var(--ag-accent-glow);
   pointer-events: none;
   transition: opacity 60ms;
 }
@@ -233,13 +306,16 @@
 .addButton {
   display: grid;
   place-items: center;
-  width: 218px;
-  height: 22px;
+  width: 224px;
+  height: 24px;
   border: 1px dashed var(--ag-border-soft);
-  border-radius: 2px;
+  border-radius: var(--ag-radius);
   background: transparent;
   color: var(--ag-text-dim);
   cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease);
 }
 
 .addButton:hover {
@@ -249,23 +325,29 @@
 
 .miniRoll {
   display: block;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+  border-radius: var(--ag-radius-sm);
+  outline: 1px solid var(--ag-line-faint);
   cursor: pointer;
 }
 
 .headerButton {
-  height: 20px;
-  padding: 0 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .headerButton:hover:not(:disabled) {
+  background: var(--ag-hover);
   color: var(--ag-text);
 }
 
@@ -274,8 +356,10 @@
   cursor: default;
 }
 
-.headerButtonOn {
+.headerButtonOn,
+.headerButtonOn:hover:not(:disabled) {
   background: var(--ag-active);
+  box-shadow: inset 0 0 0 1px var(--ag-active-border);
   color: var(--ag-accent);
 }
 
@@ -283,52 +367,53 @@
 .graphRow {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px 6px;
+  gap: 5px;
+  margin: 0 4px 2px;
+  padding: 2px 6px 6px;
 }
 
 .graphControls {
   flex: none;
   /* led + two knobs + insert box + name, with the row's gaps */
-  width: 206px;
+  width: 216px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
 }
 
-.graphControls select {
-  padding: 1px 2px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: var(--ag-surface-inset);
-  font-size: 11px;
-}
-
 .graphValue {
   margin-left: 8px;
   color: var(--ag-accent);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .graphClose {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+  border: none;
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-text-dim);
-  line-height: 14px;
+  line-height: 20px;
   cursor: pointer;
+}
+
+.graphClose:hover {
+  background: var(--ag-hover);
+  color: var(--ag-text);
 }
 
 .graph {
   flex: none;
   display: block;
   margin-left: 6px;
-  border-radius: 2px;
+  border-radius: var(--ag-radius-sm);
+  outline: 1px solid var(--ag-line-faint);
   cursor: ns-resize;
   touch-action: none;
 }
@@ -338,15 +423,15 @@
   margin-left: 6px;
   padding: 6px 10px;
   border: 1px dashed var(--ag-border-soft);
-  border-radius: 2px;
+  border-radius: var(--ag-radius-sm);
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
 /* Automation rows: where the knobs and the mixer box sit on a sound's row, so names line up. */
 .autoSpacer {
   flex: none;
-  width: 74px;
+  width: 76px;
 }
 
 .autoBar {

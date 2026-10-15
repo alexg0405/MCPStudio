@@ -33,8 +33,8 @@ export function MiniScope() {
     let quiet = false;
     const flat = () => {
       g.clearRect(0, 0, W, H);
-      g.fillStyle = readTheme().textDim;
-      g.globalAlpha = 0.4;
+      g.fillStyle = readTheme().textFaint;
+      g.globalAlpha = 0.5;
       g.fillRect(0, Math.floor(mode === 'scope' ? H / 2 : H - 1), W, 1);
       g.globalAlpha = 1;
     };

@@ -434,3 +434,173 @@ export function thinLevel(s: Pick<SectionSpec, 'energy' | 'vary'>, home: number)
   const d = home - s.energy;
   return d >= 3 ? 2 : d >= 2 ? 1 : 0;
 }
+
+// ---------------------------------------------------------------------------------------------
+// In place (develop): the same craft on a song that already exists
+
+export interface DevelopOptions {
+  style: Style;
+  /** Phrase rules inside sections (fills, small changes). */
+  fills: boolean;
+  /** Boundary recipes (fills, gaps, FX, crashes, automation) and the ending. */
+  transitions: boolean;
+  fx: FxLevel;
+  /** The range to develop [from, to); boundaries at both ends count. */
+  from: Tick;
+  to: Tick;
+}
+
+/** What's in the song already (develop doesn't add a second riser or fill where one is). */
+export interface Existing {
+  fx: { kind: string; at: Tick }[];
+  /** Fills playing from their own clips: their spans. */
+  fills: { from: Tick; to: Tick }[];
+}
+
+/** A section of an existing song, as `infer.ts` reads it. */
+export interface DevelopSection {
+  name: string;
+  role: SectionSpan['role'];
+  from: Tick;
+  to: Tick;
+  bars: number;
+  energy: number;
+  caps: SectionCaps;
+  loopBars: number;
+}
+
+export interface DevelopPlan {
+  sections: readonly DevelopSection[];
+  boundaries: BoundaryRecipe[];
+  ending: EndingRecipe | null;
+  events: SongEvent[];
+  fx: PlannedFx[];
+  crashes: PlannedCrash[];
+  automation: PlannedAutomation[];
+  counts: ArrangementPlan['counts'];
+  skipped: { fx: number; fills: number; crashes: number };
+}
+
+/**
+ * Plans fills, small changes and transitions for existing sections. Existing FX within 1 beat of a
+ * planned one of the same kind, crashes closer than 4 bars and fills already played from their own
+ * clips are kept instead of adding more. `lanes` knows what the playlist already holds.
+ */
+export function planDevelop(
+  p: Project,
+  sections: readonly DevelopSection[],
+  opts: DevelopOptions,
+  existing: Existing,
+  lanes: LaneAllocator,
+): DevelopPlan {
+  const ts = p.transport.timeSig;
+  const bar = ticksPerBar(ts);
+  const bpb = ts.num * (4 / ts.den);
+  const ctx = { bpm: p.transport.bpm, beatsPerBar: bpb, barTicks: bar, style: opts.style, fx: opts.fx };
+  const rotation = { fill: 0 };
+  const spans: SectionSpan[] = sections.map((s, index) => ({
+    ...s,
+    index,
+    play: [],
+    without: [],
+    vary: 'auto',
+    transitionIn: 'auto',
+    fill: 'auto',
+  }));
+  const inRange = (t: Tick) => t >= opts.from && t <= opts.to;
+  const boundaries: BoundaryRecipe[] = [];
+  const endOf = new Map<number, PhraseEvent[]>();
+  if (opts.transitions)
+    spans.forEach((b, i) => {
+      if (!inRange(b.from)) return;
+      const a = i > 0 ? spans[i - 1]! : null;
+      if (!a && b.from !== 0) return;
+      const r = boundaryRecipe(classifyBoundary(a, b), b.from, a ? { ...a, caps: sections[i - 1]!.caps } : null, b, ctx, rotation);
+      boundaries.push(r);
+      if (a) endOf.set(i - 1, r.end);
+    });
+  const last = spans[spans.length - 1];
+  const song = last?.to ?? 0;
+  // The song's end gets an ending only when it ends loud (a quiet outro already is one).
+  const ending = opts.transitions && last && opts.to >= song && last.energy >= 3 ? endingRecipe(defaultEnding(opts.style), last, ctx) : null;
+  if (ending && last) endOf.set(last.index, ending.end);
+  const events: SongEvent[] = [];
+  spans.forEach((s, i) => {
+    const end = endOf.get(i) ?? [];
+    const sec = sections[i]!;
+    const res = opts.fills
+      ? phraseEvents(
+          { bars: s.bars, barTicks: bar, energy: s.energy, style: opts.style, vary: 'auto', fill: 'auto', caps: sec.caps, loopBars: sec.loopBars, index: i },
+          end,
+          rotation,
+        )
+      : { events: end, crashes: [] };
+    for (const e of res.events) {
+      const ev: SongEvent = { ...e, from: e.from + s.from, to: e.to + s.from, section: i };
+      if (ev.to <= opts.from - bar || ev.from >= opts.to + bar) continue;
+      events.push(ev);
+    }
+  });
+  // Fills already played from their own clips stay the fill there.
+  let fillsSkipped = 0;
+  const kept = events.filter((e) => {
+    if (!FILL_KINDS.has(e.kind)) return true;
+    const clash = existing.fills.some((f) => f.from < e.to && f.to > e.from);
+    if (clash) fillsSkipped++;
+    return !clash;
+  });
+  rotateFills(kept, spans, opts.style);
+  // FX: skip kinds already there within a beat.
+  let fxSkipped = 0;
+  const fx: PlannedFx[] = [];
+  for (const f of [...boundaries.flatMap((b) => b.fx), ...(ending?.fx ?? [])].sort((a, b) => a.start - b.start)) {
+    const length = Math.round(f.beats * BEAT);
+    const at = f.kind === 'riser' || f.kind === 'reverse-crash' ? f.start + length : f.start;
+    if (existing.fx.some((x) => x.kind === f.kind && Math.abs(x.at - at) <= BEAT)) {
+      fxSkipped++;
+      continue;
+    }
+    if (f.start < 0) continue;
+    fx.push({ ...f, length, lane: lanes.place(FX_LANE[f.kind], f.start, f.start + length) });
+  }
+  // Crashes: at most one per 4 bars, counting the ones already there.
+  let crashesSkipped = 0;
+  const crashTicks = Math.round((2.6 * p.transport.bpm * BEAT) / 60);
+  const there = existing.fx.filter((x) => x.kind === 'crash').map((x) => x.at);
+  const accepted: { at: Tick; velocity: number }[] = [];
+  const tryCrash = (at: Tick, velocity: number) => {
+    if (there.some((t) => Math.abs(t - at) < 4 * bar) || accepted.some((c) => Math.abs(c.at - at) < 4 * bar)) {
+      crashesSkipped++;
+      return;
+    }
+    accepted.push({ at, velocity });
+  };
+  boundaries.forEach((b) => b.crash !== null && tryCrash(b.at, b.crash));
+  if (ending?.crash) tryCrash(ending.crash.at, ending.crash.velocity);
+  const crashes = accepted.sort((a, b) => a.at - b.at).map((c) => ({ ...c, lane: lanes.place(CRASH_LANE, c.at, c.at + crashTicks) }));
+  const automation: PlannedAutomation[] = [...boundaries.flatMap((b) => b.automation), ...(ending?.automation ?? [])]
+    .filter((a) => a.start >= 0)
+    .sort((a, b) => a.start - b.start)
+    .map((a) => ({ ...a, lane: lanes.place(AUTOMATION_LANE, a.start, a.start + a.length) }));
+  return {
+    sections,
+    boundaries,
+    ending,
+    events: kept,
+    fx,
+    crashes,
+    automation,
+    counts: {
+      fills: kept.filter((e) => FILL_KINDS.has(e.kind) && e.kind !== 'snare-build').length,
+      builds: boundaries
+        .filter((b) => b.kind === 'rise')
+        .map((b) => ({
+          riser: b.fx.some((f) => f.kind === 'riser'),
+          gap: b.end.some((e) => e.kind === 'gap'),
+          impact: b.fx.some((f) => f.kind === 'impact'),
+        })),
+      breakdowns: boundaries.filter((b) => b.kind === 'fall').length,
+    },
+    skipped: { fx: fxSkipped, fills: fillsSkipped, crashes: crashesSkipped },
+  };
+}

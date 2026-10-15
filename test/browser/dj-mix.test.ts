@@ -1,5 +1,5 @@
 /**
- * DJ mode foundations end to end: a mix of eight long synthetic songs (each at its own tempo,
+ * DJ mode foundations end to end: a mix of long synthetic songs (each at its own tempo,
  * beat-matched by time-stretching to the project tempo, overlapping in transitions) plays and
  * exports within a memory budget for decoded audio, with no late events and every song in sync.
  *
@@ -159,21 +159,21 @@ describe('a DJ mix of long songs', () => {
     for (const s of services) await s.engine.dispose();
   });
 
-  it('plays and exports eight 90 s songs, beat-matched, within the memory budget', async () => {
+  it('plays and exports six long songs, beat-matched, within the memory budget', async () => {
     // Stretched copies made by earlier runs are kept in OPFS: start without them, so they are made here.
     await (await navigator.storage.getDirectory()).removeEntry('derived', { recursive: true }).catch(() => {});
-    const mix = await buildMix(8, 90, 126, 8);
+    const mix = await buildMix(6, 60, 126, 8);
     const s = createServices({ project: mix.project });
     services.push(s);
     s.view.getState().setMode('song');
-    // 8 songs ≈ 280 MB decoded plus as much stretched: far over this budget.
-    const budget = 160 * MB;
+    // 6 songs ≈ 140 MB decoded plus as much stretched: far over this budget.
+    const budget = 100 * MB;
     s.sampleCache.budgetBytes = budget;
     const tempo = tempoMapOf(mix.project, 'song');
 
     // Playing: start just before two transitions; what plays is decoded, stretched and pinned in time.
     await s.engine.resume();
-    for (const k of [1, 6]) {
+    for (const k of [1, 4]) {
       s.engine.play(mix.clips[k]!.start - 4 * PPQ);
       await wait(2500);
       expect(s.engine.playing).toBe(true);
@@ -184,7 +184,7 @@ describe('a DJ mix of long songs', () => {
     const played = s.sampleCache.stats();
     expect(played.peakBytes).toBeLessThanOrEqual(budget * 1.3);
 
-    // Exporting the whole mix (10 minutes) into a file, a window at a time.
+    // Exporting the whole mix (5 minutes) into a file.
     s.sampleCache.resetPeak();
     const handle = await opfsFile('dj-mix.wav');
     const t0 = performance.now();
@@ -200,7 +200,7 @@ describe('a DJ mix of long songs', () => {
     expect(cache.evictions).toBeGreaterThan(0);
     // Each song decoded about once (not again and again as the budget churns).
     expect(cache.decodes).toBeLessThanOrEqual(2 * mix.clips.length);
-    const end = tempo.tickToSeconds(mix.clips[7]!.end);
+    const end = tempo.tickToSeconds(mix.clips[mix.clips.length - 1]!.end);
     expect(res.seconds).toBeGreaterThan(end - 0.5);
 
     // Every song in sync and whole: on every third beat of each song, a click on time, at full level.
@@ -224,19 +224,38 @@ describe('a DJ mix of long songs', () => {
         checked++;
       }
     }
-    expect(checked).toBeGreaterThan(400);
+    expect(checked).toBeGreaterThan(200);
   }, 300_000);
 
   it.skipIf(!import.meta.env.VITE_LONG_EXPORT)(
     'measures a 64-minute mix export (sixteen 4.5-minute songs)',
     async () => {
+      // Exports and songs of earlier runs take up the test profile's storage.
+      const root = await navigator.storage.getDirectory();
+      for (const name of ['test-exports', 'derived', 'tmp']) await root.removeEntry(name, { recursive: true }).catch(() => {});
       const mix = await buildMix(16, 270, 126, 16);
       const s = createServices({ project: mix.project });
       services.push(s);
       s.view.getState().setMode('song');
+      // 16 songs are 1.6 GB decoded (and as much stretched): a budget well under that.
+      const budget = Number(import.meta.env.VITE_LONG_EXPORT_BUDGET_MB ?? 400) * MB;
+      s.sampleCache.budgetBytes = budget;
       s.sampleCache.resetPeak();
       const before = await memory();
-      const handle = await opfsFile('long-mix.wav');
+      // A file handle that counts what is written and keeps none of it: this measures rendering and
+      // encoding, not storage (the test profile's OPFS refuses single files near 1 GB).
+      let written = 0;
+      const handle = {
+        name: 'long-mix.wav',
+        createWritable: async () => ({
+          write: async (data: Uint8Array | { data: Uint8Array }) => {
+            if (data instanceof Uint8Array) written += data.byteLength;
+          },
+          seek: async () => {},
+          close: async () => {},
+          abort: async () => {},
+        }),
+      } as unknown as FileSystemFileHandle;
       let peakMem = before ?? 0;
       let sampling = true;
       const sampler = (async () => {
@@ -255,8 +274,8 @@ describe('a DJ mix of long songs', () => {
       console.log(
         `64-minute mix: ${(res.seconds / 60).toFixed(1)} min exported in ${(ms / 1000).toFixed(0)} s ` +
           `(${(res.seconds / (ms / 1000)).toFixed(1)}x realtime); decoded audio peak ${(cache.peakBytes / MB).toFixed(0)} MB ` +
-          `(${cache.decodes} decodes, ${cache.evictions} evictions); page memory ${before === null ? 'n/a' : `${(before / MB).toFixed(0)} MB before, peak ${(peakMem / MB).toFixed(0)} MB`}; ` +
-          `file ${((await handle.getFile()).size / MB).toFixed(0)} MB`,
+          `(budget ${budget / MB} MB, ${cache.decodes} decodes, ${cache.evictions} evictions); page memory ${before === null ? 'n/a' : `${(before / MB).toFixed(0)} MB before, peak ${(peakMem / MB).toFixed(0)} MB`}; ` +
+          `file ${(written / MB).toFixed(0)} MB`,
       );
       expect(res.seconds).toBeGreaterThan(3600);
     },

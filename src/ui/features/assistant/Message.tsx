@@ -36,7 +36,7 @@ function Answer({ m }: { m: AssistantMessage }) {
     <div className={`${styles.message} ${m.error ? styles.errorMessage : ''}`}>
       <div className={styles.card}>
         <div className={styles.cardText}>
-          {!m.error && <Icon name="sparkle" size={12} className={styles.spark} />}
+          {!m.error && <Icon name="studio" size={13} className={styles.spark} />}
           {m.text}
         </div>
         {m.findings && m.findings.length > 0 && (
@@ -134,7 +134,7 @@ function Warnings({ warnings }: { warnings: string[] }) {
         className={styles.warningLine}
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        data-hint={open ? 'Hide the details' : 'What the AI couldn’t do: click for the details'}
+        data-hint={open ? 'Hide the details' : 'What Studio couldn’t do: click for the details'}
       >
         <span className={styles.warningDot} aria-hidden />
         <span className={open ? styles.warningFull : styles.warningText}>

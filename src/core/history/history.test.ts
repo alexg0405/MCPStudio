@@ -110,12 +110,12 @@ describe('History', () => {
 
   it('amends the newest entry (a follow-up undoes with it), but not an older one', () => {
     const h = setup();
-    h.history.transact('AI: song', (d) => setBpm(d, 140));
+    h.history.transact('Studio: song', (d) => setBpm(d, 140));
     const entry = h.history.status().cursor;
     h.history.markSaved();
     h.tick(30_000);
     expect(h.history.transact('Level the mix', (d) => addChannel(d, channel('Bus')), { amend: entry })).toBe(true);
-    expect(h.history.status()).toMatchObject({ cursor: entry, undoLabel: 'AI: song', dirty: true });
+    expect(h.history.status()).toMatchObject({ cursor: entry, undoLabel: 'Studio: song', dirty: true });
     expect(h.history.steps().done).toHaveLength(1);
     h.history.undo();
     expect(h.doc.transport.bpm).toBe(130);
@@ -125,7 +125,7 @@ describe('History', () => {
     // Something else happened in between: the follow-up becomes its own step.
     h.history.transact('Tempo', (d) => setBpm(d, 150));
     h.history.transact('Level the mix', (d) => setBpm(d, 151), { amend: entry });
-    expect(h.history.steps().done.map((s) => s.label)).toEqual(['AI: song', 'Tempo', 'Level the mix']);
+    expect(h.history.steps().done.map((s) => s.label)).toEqual(['Studio: song', 'Tempo', 'Level the mix']);
   });
 
   it('clears redo on a new edit and changes the cursor', () => {

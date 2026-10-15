@@ -25,5 +25,5 @@ export function quickChips(focus: AiFocus | null | undefined): readonly string[]
 
 /** What a chip does, for its hint: "Ask the AI: “Hit harder” (only Verse · bars 17–32 changes)". */
 export function chipHint(chip: string, label: string | null): string {
-  return label ? `Ask the AI: “${chip}” (only ${label} changes)` : `Ask the AI: “${chip}”`;
+  return label ? `Ask Studio: “${chip}” (only ${label} changes)` : `Ask Studio: “${chip}”`;
 }

@@ -1,5 +1,5 @@
 /**
- * The AI studio's mix analysis through the real pipeline: offline renders of the mix and of every
+ * Studio's mix analysis through the real pipeline: offline renders of the mix and of every
  * mixer track, measured (loudness, peaks, tone, width) and turned into findings.
  */
 import { afterAll, describe, expect, it } from 'vitest';

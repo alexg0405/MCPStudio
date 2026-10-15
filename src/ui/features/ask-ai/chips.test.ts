@@ -25,7 +25,7 @@ describe('quick requests for a part', () => {
   });
 
   it('says what a chip asks and what changes', () => {
-    expect(chipHint('Hit harder', 'Verse · bars 17–32')).toBe('Ask the AI: “Hit harder” (only Verse · bars 17–32 changes)');
-    expect(chipHint('More groove', null)).toBe('Ask the AI: “More groove”');
+    expect(chipHint('Hit harder', 'Verse · bars 17–32')).toBe('Ask Studio: “Hit harder” (only Verse · bars 17–32 changes)');
+    expect(chipHint('More groove', null)).toBe('Ask Studio: “More groove”');
   });
 });

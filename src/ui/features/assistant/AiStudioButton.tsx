@@ -22,8 +22,8 @@ export function AiStudioButton() {
       tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run('view.assistant')}
-      data-hint={`${checked ? 'Hide the AI studio' : 'Ask the AI to make or change anything'}${keys}${busy ? ' · the AI is working' : ''}`}
-      aria-label="Studio (the AI studio)"
+      data-hint={`${checked ? 'Hide Studio' : 'Ask Studio to make or change anything'}${keys}${busy ? ' · Studio is working' : ''}`}
+      aria-label="Studio"
       aria-pressed={checked}
       data-tour="assistant"
     >

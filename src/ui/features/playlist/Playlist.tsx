@@ -82,7 +82,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         </button>
       </span>
       <span className={styles.help}>
-        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask AI pill (or a marker's mark) asks the AI about a part
+        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask Studio pill (or a marker's mark) asks Studio about a part
       </span>
     </div>
   );
@@ -192,10 +192,10 @@ export function Playlist() {
           className={styles.askPill}
           style={{ display: 'none' }}
           tabIndex={-1}
-          aria-label="Ask AI about this part"
+          aria-label="Ask Studio about this part"
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => void askAboutSelection(services, { kind: 'pill' })}
-          data-hint="Ask the AI to change this part (Alt+A): only it changes"
+          data-hint="Ask Studio to change this part (Alt+A): only it changes"
         />
       </div>
     </div>

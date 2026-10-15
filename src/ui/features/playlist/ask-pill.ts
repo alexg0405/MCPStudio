@@ -39,4 +39,4 @@ export function askPillPlace(
 }
 
 /** The pill's text. */
-export const pillText = (t: PillTarget): string => (t.compact ? '' : 'Ask AI');
+export const pillText = (t: PillTarget): string => (t.compact ? '' : 'Ask Studio');

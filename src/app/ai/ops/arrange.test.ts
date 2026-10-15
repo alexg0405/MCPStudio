@@ -156,7 +156,7 @@ describe('develop, transition and vary', () => {
     const res = run(s, [{ op: 'develop', style: 'trap' }]);
     expect(res.warnings).toEqual([]);
     expect(res.changes[0]).toMatch(/^Developed bars 1–112: /);
-    expect(s.history.steps().done.map((e) => e.label)).toEqual(['song', 'AI: ok']);
+    expect(s.history.steps().done.map((e) => e.label)).toEqual(['song', 'Studio: ok']);
     const p = project(s);
     expect(songCheck(p).filter((i) => i.kind === 'stacked')).toEqual([]);
     const bugs = checkArrangement(s, p, { style: 'trap' }).filter((f) => f.severity === 'bug').map((f) => f.code);

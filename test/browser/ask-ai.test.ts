@@ -1,7 +1,7 @@
 /**
- * "Ask AI about this part" in the real UI (headless Chrome, React shell, test services with the fake
+ * "Ask Studio about this part" in the real UI (headless Chrome, React shell, test services with the fake
  * engine, so nothing sounds and nothing reaches Claude): the playlist's Studio mark pill, a marker's Studio mark, the Ask
- * AI card (typing in it plays no notes, Esc and outside clicks), the AI studio's part chip, and no
+ * AI card (typing in it plays no notes, Esc and outside clicks), Studio's part chip, and no
  * React commits while the song plays with the card closed.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -37,14 +37,14 @@ const frames = (n: number) =>
     requestAnimationFrame(step);
   });
 
-describe('Ask AI about this part (UI)', () => {
+describe('Ask Studio about this part (UI)', () => {
   let s: ReturnType<typeof createTestServices>;
   let root: Root;
   let host: HTMLDivElement;
   let commits = 0;
   const errors: unknown[] = [];
-  const card = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Ask AI about this part"]');
-  const pill = () => host.querySelector<HTMLElement>('[aria-label="Ask AI about this part"]');
+  const card = () => document.querySelector<HTMLElement>('[role="dialog"][aria-label="Ask Studio about this part"]');
+  const pill = () => host.querySelector<HTMLElement>('[aria-label="Ask Studio about this part"]');
   const marker = (name: string) =>
     Object.values(s.doc.getState().project.playlist.markers).find((m) => m.name === name)!.id as MarkerId;
 
@@ -81,7 +81,7 @@ describe('Ask AI about this part (UI)', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows Studio mark Ask AI over the selected clips, a compact Studio mark for one clip, and over the loop region', async () => {
+  it('shows Studio mark Ask Studio over the selected clips, a compact Studio mark for one clip, and over the loop region', async () => {
     const p = s.doc.getState().project;
     const intro = (Object.values(p.playlist.clips) as PatternClip[])
       .filter((c) => c.kind === 'pattern' && p.patterns[c.patternId]?.name === 'Intro' && c.start < 4 * BAR && c.laneId === p.playlist.laneOrder[0])
@@ -90,8 +90,8 @@ describe('Ask AI about this part (UI)', () => {
     s.editor.getState().selectClips(intro.map((c) => c.id));
     await frames(2);
     expect(pill()!.style.display).not.toBe('none');
-    expect(pill()!.textContent).toBe('Ask AI');
-    expect(pill()!.getAttribute('data-hint')).toBe('Ask the AI to change the 2 selected clips (bars 1–4), Alt+A: only they change');
+    expect(pill()!.textContent).toBe('Ask Studio');
+    expect(pill()!.getAttribute('data-hint')).toBe('Ask Studio to change the 2 selected clips (bars 1–4), Alt+A: only they change');
     // Above the selection's top-right corner, inside the grid.
     const grid = host.querySelector('[data-window-type="playlist"]')!.getBoundingClientRect();
     const r = pill()!.getBoundingClientRect();
@@ -104,8 +104,8 @@ describe('Ask AI about this part (UI)', () => {
     s.editor.getState().selectClips([]);
     s.view.getState().setLoop({ start: 8 * BAR, end: 16 * BAR });
     await frames(2);
-    expect(pill()!.textContent).toBe('Ask AI');
-    expect(pill()!.getAttribute('data-hint')).toBe('Ask the AI to change Pre-verse (bars 9–16), Alt+A: only those bars change');
+    expect(pill()!.textContent).toBe('Ask Studio');
+    expect(pill()!.getAttribute('data-hint')).toBe('Ask Studio to change Pre-verse (bars 9–16), Alt+A: only those bars change');
     // Clicking it opens the card about that section.
     await userEvent.click(pill()!);
     await until(() => !!card());
@@ -169,7 +169,7 @@ describe('Ask AI about this part (UI)', () => {
     spy.mockRestore();
   });
 
-  it('asks from the card: without Claude it says so, and the AI studio shows the part as a chip', async () => {
+  it('asks from the card: without Claude it says so, and Studio shows the part as a chip', async () => {
     askAboutMarker(s, marker('Verse'));
     await until(() => !!card());
     await userEvent.keyboard('add a fill at the end{Enter}');
@@ -177,7 +177,7 @@ describe('Ask AI about this part (UI)', () => {
     expect(card()!.textContent).toContain('add a fill at the end');
     expect(card()!.textContent).toContain('About Verse · bars 17–32');
     closeAsk();
-    // The conversation keeps the part: the AI studio shows it, ▶ plays it, × lets it go.
+    // The conversation keeps the part: Studio shows it, ▶ plays it, × lets it go.
     openWindow(s, 'assistant');
     await until(() => host.textContent!.includes('About Verse · bars 17–32'));
     const chipClear = host.querySelector<HTMLElement>('[aria-label="Ask about the whole song"]')!;

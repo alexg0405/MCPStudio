@@ -25,7 +25,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
 
   const edited =
     docActions.length > 0 &&
-    s.history.transact(`AI: ${label}`, (d) => {
+    s.history.transact(`Studio: ${label}`, (d) => {
       const c = createOpContext(s, d, answer, ctx, state);
       for (const a of docActions) {
         const fn = DOC_OPS[a.op];

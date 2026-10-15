@@ -10,7 +10,7 @@ export function register(services: Services): void {
     ai: false,
     title: 'Search actions…',
     category: 'Help',
-    hint: 'Find any action by typing what you want to do; if nothing fits, ask the AI',
+    hint: 'Find any action by typing what you want to do; if nothing fits, ask Studio',
     run: () => togglePalette(),
   });
   services.keymap.add([{ chord: 'Mod+K', command: 'help.palette' }]);

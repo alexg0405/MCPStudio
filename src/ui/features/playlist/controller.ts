@@ -722,8 +722,8 @@ export class PlaylistController {
         compact: n === 1,
         hint:
           n === 1
-            ? `Ask the AI to change this clip (${span}), Alt+A: only it changes`
-            : `Ask the AI to change the ${n} selected clips (${span}), Alt+A: only they change`,
+            ? `Ask Studio to change this clip (${span}), Alt+A: only it changes`
+            : `Ask Studio to change the ${n} selected clips (${span}), Alt+A: only they change`,
       };
     }
     const loop = this.s.view.getState().loop;
@@ -736,7 +736,7 @@ export class PlaylistController {
       y0: 0,
       y1: 0,
       compact: false,
-      hint: `Ask the AI to change ${section ? `${section.name} (${span})` : span}, Alt+A: only those bars change`,
+      hint: `Ask Studio to change ${section ? `${section.name} (${span})` : span}, Alt+A: only those bars change`,
     };
   }
 
@@ -1484,7 +1484,7 @@ export class PlaylistController {
     emitHint(
       this.els.ruler,
       m && section
-        ? `Ask the AI about this section (${m.name}, ${barSpan(section.from, section.to, p.transport.timeSig)}): it loops and a box opens for your request`
+        ? `Ask Studio about this section (${m.name}, ${barSpan(section.from, section.to, p.transport.timeSig)}): it loops and a box opens for your request`
         : m
           ? `Marker ${describeMarker(this.s, m)}: click to jump there, drag to move it, double-click to rename, right-click for more`
           : (this.els.ruler.getAttribute('data-hint') ?? ''),

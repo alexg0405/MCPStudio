@@ -16,10 +16,10 @@ export function registerAskMenus(): () => void {
       return [
         {
           icon: 'studio',
-          label: many ? `Ask AI about the ${sel.length} selected clips…` : 'Ask AI about this clip…',
+          label: many ? `Ask Studio about the ${sel.length} selected clips…` : 'Ask Studio about this clip…',
           hint: many
-            ? 'Tell the AI what to change in the selected clips: only they change (patterns they share with the rest of the song are copied first)'
-            : 'Tell the AI what to change in this clip: only it changes (a pattern it shares with the rest of the song is copied first)',
+            ? 'Tell Studio what to change in the selected clips: only they change (patterns they share with the rest of the song are copied first)'
+            : 'Tell Studio what to change in this clip: only it changes (a pattern it shares with the rest of the song is copied first)',
           onSelect: () => {
             const ids = many ? [...sel] : [clip.id];
             s.editor.getState().selectClips(ids);
@@ -34,8 +34,8 @@ export function registerAskMenus(): () => void {
       return [
         {
           icon: 'studio',
-          label: `Ask AI about “${m.name}”…`,
-          hint: 'Loops this section and opens a box: tell the AI what to change in it (only this section changes, as one undo step)',
+          label: `Ask Studio about “${m.name}”…`,
+          hint: 'Loops this section and opens a box: tell Studio what to change in it (only this section changes, as one undo step)',
           onSelect: () => void askAboutMarker(s, markerId),
         },
       ];
@@ -47,8 +47,8 @@ export function registerAskMenus(): () => void {
       return [
         {
           icon: 'studio',
-          label: `Ask AI about ${span}…`,
-          hint: `Tell the AI what to change in the loop region (${span}); only those bars change`,
+          label: `Ask Studio about ${span}…`,
+          hint: `Tell Studio what to change in the loop region (${span}); only those bars change`,
           onSelect: () => void askAboutRange(s, loop.start, loop.end),
         },
       ];
@@ -59,8 +59,8 @@ export function registerAskMenus(): () => void {
       return [
         {
           icon: 'studio',
-          label: n === 1 ? 'Ask AI about this note…' : `Ask AI about these ${n} notes…`,
-          hint: 'Tell the AI what to change in the selected notes (timing, groove, melody…): only they change',
+          label: n === 1 ? 'Ask Studio about this note…' : `Ask Studio about these ${n} notes…`,
+          hint: 'Tell Studio what to change in the selected notes (timing, groove, melody…): only they change',
           onSelect: () =>
             void askAboutNotes(
               s,

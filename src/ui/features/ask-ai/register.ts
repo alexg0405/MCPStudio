@@ -25,9 +25,9 @@ export function register(services: Services): void {
 
   commands.register({
     id: 'ai.askSelection',
-    title: 'Ask AI about the selection…',
-    category: 'AI',
-    hint: 'Tell the AI what to change in the selected clips, the loop region or the selected notes: only that part changes (one undo step)',
+    title: 'Ask Studio about the selection…',
+    category: 'Studio',
+    hint: 'Tell Studio what to change in the selected clips, the loop region or the selected notes: only that part changes (one undo step)',
     ai: false,
     run: (s) => void askAboutSelection(s),
   });
@@ -40,9 +40,9 @@ export function register(services: Services): void {
   const hasMarkers = (s: Services) => Object.keys(s.doc.getState().project.playlist.markers).length > 0;
   commands.register<string | number | { marker?: string | number } | undefined>({
     id: 'ai.askSection',
-    title: 'Ask AI about a section…',
-    category: 'AI',
-    hint: 'Loop a marker’s section and tell the AI what to change in it: only that section changes',
+    title: 'Ask Studio about a section…',
+    category: 'Studio',
+    hint: 'Loop a marker’s section and tell Studio what to change in it: only that section changes',
     argsHint: 'the marker: its name, id or number (without: the section at the song position)',
     ai: false,
     enabled: hasMarkers,
@@ -71,16 +71,16 @@ export function register(services: Services): void {
 
   commands.register({
     id: 'ai.clearFocus',
-    title: 'Ask AI about the whole song again',
-    category: 'AI',
-    hint: 'Stop working on a part: the next request in the AI studio is about the whole song',
+    title: 'Ask Studio about the whole song again',
+    category: 'Studio',
+    hint: 'Stop working on a part: the next request in Studio is about the whole song',
     ai: false,
     enabled: (s) => !!s.assistant.store.getState().focus,
     run: (s) => {
       if (!s.assistant.store.getState().focus) return;
       s.assistant.setFocus(null);
       closeAsk();
-      s.session.getState().toast('The AI studio is about the whole song again.');
+      s.session.getState().toast('Studio is about the whole song again.');
     },
   });
 
@@ -92,29 +92,29 @@ export function register(services: Services): void {
       return [{ label: 'No markers yet: right-click the ruler or press Alt+T', disabled: true, run: () => {} }];
     return list.map((x) => ({
       label: `${x.name} (${barSpan(x.from, x.to, p.transport.timeSig)})`,
-      hint: `Loop “${x.name}” and tell the AI what to change in it`,
+      hint: `Loop “${x.name}” and tell Studio what to change in it`,
       run: () => void askAboutMarker(services, x.markerId),
     }));
   };
   addMenuItems('playlist', [
-    cmd('ai.askSelection', 20, 'Ask AI about the selection…'),
+    cmd('ai.askSelection', 20, 'Ask Studio about the selection…'),
     {
       kind: 'submenu',
       id: 'ask-ai-sections',
-      label: 'Ask AI about a section',
+      label: 'Ask Studio about a section',
       order: 21,
       items: () => [{ kind: 'dynamic', id: 'ask-ai-section-list', order: 0, entries: sectionEntries }],
     },
     cmd('ai.clearFocus', 22),
     sep(29),
   ]);
-  addMenuItems('edit', [sep(27), cmd('ai.askSelection', 28, 'Ask AI about the selection…')]);
+  addMenuItems('edit', [sep(27), cmd('ai.askSelection', 28, 'Ask Studio about the selection…')]);
   addActionProvider('ask-ai-sections', (s) =>
     markersSorted(s.doc.getState().project).map((m) => ({
       key: `ask-ai:${m.id}`,
-      label: `Ask AI about: ${m.name}`,
-      path: ['Playlist', 'Ask AI about a section'],
-      hint: `Loop ${describeMarker(s, m)} to the next marker and tell the AI what to change there`,
+      label: `Ask Studio about: ${m.name}`,
+      path: ['Playlist', 'Ask Studio about a section'],
+      hint: `Loop ${describeMarker(s, m)} to the next marker and tell Studio what to change there`,
       keywords: ['ai', 'section', 'part', 'change', 'fix', 'marker'],
       run: () => void askAboutMarker(s, m.id),
     })),

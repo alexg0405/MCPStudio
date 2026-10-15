@@ -16,8 +16,8 @@ async function confirmCommand(s: Services, id: string, args: unknown): Promise<v
   if (!def) return;
   const title = def.title.replace(/…$/, '');
   const choice = await showDialog({
-    title: `AI studio: ${title}?`,
-    message: def.hint ?? `The AI wants to run “${title}”.`,
+    title: `Studio: ${title}?`,
+    message: def.hint ?? `Studio wants to run “${title}”.`,
     detail: 'Your browser opens file dialogs only after a click, so this one is yours.',
     buttons: [
       { id: 'cancel', label: 'Not now' },
@@ -35,7 +35,7 @@ async function confirmCommand(s: Services, id: string, args: unknown): Promise<v
 export function register(services: Services): void {
   registerWindowType({
     type: 'assistant',
-    title: () => 'AI studio',
+    title: () => 'Studio',
     component: AssistantWindow,
     defaultRect: (ws) => ({
       x: Math.max(0, ws.w - 452),
@@ -48,8 +48,8 @@ export function register(services: Services): void {
   registerWindowToggle(services, {
     command: 'view.assistant',
     type: 'assistant',
-    title: 'AI studio',
-    hint: 'Ask the AI to make or change anything: a beat, the mixer, plugins, routing, the arrangement',
+    title: 'Studio',
+    hint: 'Ask Studio to make or change anything: a beat, the mixer, plugins, routing, the arrangement',
     chords: ['Alt+6'],
     menuOrder: 45,
     // The AI studio shouldn't close itself mid-conversation.

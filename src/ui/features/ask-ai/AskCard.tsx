@@ -122,7 +122,7 @@ function AskCard() {
       className={styles.card}
       style={{ opacity: 0 }}
       role="dialog"
-      aria-label="Ask AI about this part"
+      aria-label="Ask Studio about this part"
       onKeyDown={(e) => {
         if (e.key !== 'Escape') return;
         e.preventDefault();
@@ -132,13 +132,13 @@ function AskCard() {
     >
       <div className={styles.head}>
         <span className={styles.title}>
-          <Icon name="studio" size={14} /> Ask AI
+          <Icon name="studio" size={14} /> Ask Studio
         </span>
         <span
           className={`${styles.scope} ${focus && !gone ? '' : styles.scopeAll}`}
           data-hint={
             label
-              ? `The AI changes only ${label}; everything else in the song stays as it is`
+              ? `Studio changes only ${label}; everything else in the song stays as it is`
               : gone
                 ? 'The part you picked is no longer in the song: this asks about the whole song'
                 : 'No part picked: this asks about the whole song'
@@ -179,10 +179,10 @@ function AskCard() {
                   ? `${listening.label} (${Math.round(listening.fraction * 100)}%)…`
                   : phase === 'thinking'
                     ? 'Working on it…'
-                    : 'The AI studio is busy…'}
+                    : 'Studio is busy…'}
               </span>
               <span className={styles.spacer} />
-              <button className={styles.link} onClick={() => a.cancel()} data-hint="Stop waiting for the AI">
+              <button className={styles.link} onClick={() => a.cancel()} data-hint="Stop waiting for Studio">
                 Stop
               </button>
             </div>
@@ -195,7 +195,7 @@ function AskCard() {
         className={styles.prompt}
         rows={2}
         value={text}
-        placeholder={label ? 'What should change here? e.g. “smooth the transition in”' : 'What should the AI change?'}
+        placeholder={label ? 'What should change here? e.g. “smooth the transition in”' : 'What should Studio change?'}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
@@ -222,7 +222,7 @@ function AskCard() {
       )}
       <div className={styles.actions}>
         {busy ? (
-          <button className={styles.primary} onClick={() => a.cancel()} data-hint="Stop waiting for the AI">
+          <button className={styles.primary} onClick={() => a.cancel()} data-hint="Stop waiting for Studio">
             Stop
           </button>
         ) : (
@@ -230,7 +230,7 @@ function AskCard() {
             className={styles.primary}
             disabled={!text.trim()}
             onClick={() => ask(text)}
-            data-hint={label ? `Ask the AI; only ${label} changes (one undo step)` : 'Ask the AI (one undo step)'}
+            data-hint={label ? `Ask Studio; only ${label} changes (one undo step)` : 'Ask Studio (one undo step)'}
           >
             Ask
           </button>
@@ -247,9 +247,9 @@ function AskCard() {
         <button
           className={styles.link}
           onClick={openStudio}
-          data-hint="Carry on in the AI studio window, still about this part"
+          data-hint="Carry on in Studio window, still about this part"
         >
-          Open in AI studio
+          Open in Studio
         </button>
       </div>
     </div>

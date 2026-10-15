@@ -47,8 +47,8 @@ const PARTS: { icon: IconName; title: string; text: string; command: string }[] 
     command: 'view.mixer',
   },
   {
-    icon: 'sparkle',
-    title: 'AI studio',
+    icon: 'studio',
+    title: 'Studio',
     text: 'Ask in your own words: “make a lo-fi beat”, “add reverb to the snare”.',
     command: 'view.assistant',
   },
@@ -174,7 +174,7 @@ function Welcome() {
             Show me around
           </button>
           <button className={styles.button} onClick={ai}>
-            <Icon name="sparkle" size={14} /> Ask the AI for a beat
+            <Icon name="studio" size={14} /> Ask Studio for a beat
           </button>
           <button className={`${styles.button} ${styles.primary}`} onClick={close}>
             Start making music

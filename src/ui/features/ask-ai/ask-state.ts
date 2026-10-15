@@ -53,7 +53,7 @@ export function askAboutSelection(s: Services, anchor?: AskAnchor | null): boole
   if (!focus) {
     s.session
       .getState()
-      .toast('Select some clips in the playlist, or drag on its ruler to loop some bars; then Ask AI (Alt+A) changes just that part.');
+      .toast('Select some clips in the playlist, or drag on its ruler to loop some bars; then Ask Studio (Alt+A) changes just that part.');
     return false;
   }
   openAsk(s, focus, anchor ?? { kind: 'pill' });
@@ -96,7 +96,7 @@ export function askAboutNotes(
 ): boolean {
   const focus = focusFromNotes(s, at);
   if (!focus) {
-    s.session.getState().toast('Select some notes in the piano roll first (or draw a few), then ask the AI about them.');
+    s.session.getState().toast('Select some notes in the piano roll first (or draw a few), then ask Studio about them.');
     return false;
   }
   openAsk(s, focus, anchor ?? { kind: 'element', selector: '[data-window-type="piano-roll"]' });

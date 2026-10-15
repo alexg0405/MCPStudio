@@ -15,7 +15,7 @@ exports[`AI applier characterization > applies every op the same way 1`] = `
   "selectedChannel": "ch_2VlTJjVFBf",
   "undo": [
     "setup",
-    "AI: everything",
+    "Studio: everything",
   ],
 }
 `;

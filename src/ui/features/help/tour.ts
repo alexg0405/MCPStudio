@@ -57,8 +57,8 @@ export const TOUR: readonly TourStep[] = [
   },
   {
     anchor: '[data-tour="assistant"]',
-    title: 'AI studio',
-    body: 'Ask in your own words: “make a lo-fi beat”, “add reverb to the snare”, “turn the 808 down”. The AI can change anything in the project, and every answer can be undone.',
+    title: 'Studio',
+    body: 'Ask in your own words: “make a lo-fi beat”, “add reverb to the snare”, “turn the 808 down”. Studio can change anything in the project, and every answer can be undone.',
   },
   {
     anchor: '[data-tour="hints"]',

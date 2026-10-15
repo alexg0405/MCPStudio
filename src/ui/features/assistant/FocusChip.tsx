@@ -18,7 +18,7 @@ export function FocusChip() {
   return (
     <div
       className={styles.focusChip}
-      data-hint={`The AI changes only ${label}; the rest of the song stays exactly as it is`}
+      data-hint={`Studio changes only ${label}; the rest of the song stays exactly as it is`}
     >
       <span className={styles.focusSpark}>
         <Icon name="studio" size={13} />

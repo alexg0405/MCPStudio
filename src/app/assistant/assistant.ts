@@ -588,7 +588,7 @@ export class BeatAssistant {
       // The offline generator writes whole beats: it can't change one part of a song.
       this.say(
         'assistant',
-        'Changing one part of the song needs Claude (your subscription or an API key), and it isn’t set up. Set it up in the AI studio’s settings, or clear the part to make a beat with the offline generator.',
+        'Changing one part of the song needs Claude (your subscription or an API key), and it isn’t set up. Set it up in Studio’s settings, or clear the part to make a beat with the offline generator.',
         { offline: true },
       );
       this.store.setState({ phase: 'idle' });
@@ -675,7 +675,7 @@ export class BeatAssistant {
         focus: part,
       });
     } catch (e) {
-      console.error('[agstudio] applying the AI answer failed', e);
+      console.error('[agstudio] applying the Studio answer failed', e);
       this.say('assistant', `Something went wrong applying that: ${e instanceof Error ? e.message : e}`, {
         error: true,
       });

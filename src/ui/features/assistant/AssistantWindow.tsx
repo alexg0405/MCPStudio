@@ -286,7 +286,7 @@ function Header({ st, send }: { st: AssistantState; send(text: string): void }) 
         label: 'Check my mix',
         icon: 'studio',
         disabled: busy,
-        hint: 'The AI listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step',
+        hint: 'Studio listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step',
         onSelect: () => void a.checkMix(),
       },
       {
@@ -298,7 +298,7 @@ function Header({ st, send }: { st: AssistantState; send(text: string): void }) 
       },
       { kind: 'separator' },
       {
-        label: 'Check the AI connection again',
+        label: 'Check the Claude connection again',
         hint: 'Look again for your Claude subscription (Claude Code) and an API key',
         onSelect: () => void a.checkAi(),
       },
@@ -349,8 +349,8 @@ function Header({ st, send }: { st: AssistantState; send(text: string): void }) 
       <button
         className={styles.headerButton}
         onClick={menu}
-        data-hint="AI studio options: who answers, the model, auto-play, check my mix, ideas, new chat"
-        aria-label="AI studio options"
+        data-hint="Studio options: who answers, the model, auto-play, check my mix, ideas, new chat"
+        aria-label="Studio options"
       >
         <span className={styles.dots}>⋯</span>
       </button>
@@ -371,7 +371,7 @@ function Messages({ st, send }: { st: AssistantState; send(text: string): void }
       {st.messages.length === 0 && (
         <div className={styles.intro}>
           <span className={styles.introMark} aria-hidden>
-            <Icon name="sparkle" size={18} />
+            <Icon name="studio" size={18} />
           </span>
           <p className={styles.introLine}>
             Ask for anything: a beat, or a change to the mixer, plugins, routing, tempo or arrangement.
@@ -381,7 +381,7 @@ function Messages({ st, send }: { st: AssistantState; send(text: string): void }
               className={`${styles.idea} ${styles.ideaMain}`}
               disabled={busy}
               onClick={() => void services.assistant.checkMix()}
-              data-hint="The AI listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step"
+              data-hint="Studio listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step"
             >
               <Icon name="studio" size={13} /> Check my mix
             </button>
@@ -477,7 +477,7 @@ function Thinking() {
   return (
     <div className={styles.message}>
       <div className={`${styles.card} ${styles.thinking}`}>
-        <Icon name="sparkle" size={12} className={styles.spark} />
+        <Icon name="studio" size={13} className={styles.spark} />
         <span className={styles.shimmer}>Working on it…</span>
         {seconds > 2 && <span className={styles.seconds}>{seconds}s</span>}
       </div>

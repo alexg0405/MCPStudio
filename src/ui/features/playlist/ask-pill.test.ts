@@ -4,7 +4,7 @@ import { askPillPlace, pillText } from './ask-pill';
 const view = { w: 800, h: 400 };
 const pill = { w: 70, h: 20 };
 
-describe('the Studio mark Ask AI pill', () => {
+describe('the Studio mark Ask Studio pill', () => {
   it('sits just above the top-right corner of the selected clips', () => {
     expect(askPillPlace({ x0: 100, x1: 300, y0: 108, y1: 180, compact: false }, pill, view)).toEqual({ x: 230, y: 85 });
   });
@@ -31,6 +31,6 @@ describe('the Studio mark Ask AI pill', () => {
 
   it('is a compact Studio mark for a single clip', () => {
     expect(pillText({ x0: 0, x1: 10, y0: 0, y1: 0, compact: true })).toBe('');
-    expect(pillText({ x0: 0, x1: 10, y0: 0, y1: 0, compact: false })).toBe('Ask AI');
+    expect(pillText({ x0: 0, x1: 10, y0: 0, y1: 0, compact: false })).toBe('Ask Studio');
   });
 });

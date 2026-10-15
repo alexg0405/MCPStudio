@@ -24,7 +24,7 @@ const MAX_ROWS = 80;
 function askAi(s: Services, text: string): void {
   openWindow(s, 'assistant');
   if (s.assistant.store.getState().phase !== 'idle') {
-    s.session.getState().toast('The AI studio is still working on your last request.');
+    s.session.getState().toast('Studio is still working on your last request.');
     return;
   }
   void s.assistant.send(text);
@@ -51,9 +51,9 @@ function Palette() {
     if (!text) return found;
     const ai: ActionEntry = {
       key: 'ai',
-      label: `Ask the AI: “${text}”`,
-      path: ['AI studio'],
-      hint: 'Claude does it for you in the AI studio. Every change it makes can be undone.',
+      label: `Ask Studio: “${text}”`,
+      path: ['Studio'],
+      hint: 'Claude does it for you in Studio. Every change it makes can be undone.',
       run: () => askAi(services, text),
     };
     // Nothing matches: asking the AI is the best bet, so it comes first.

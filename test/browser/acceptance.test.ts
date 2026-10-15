@@ -1,5 +1,5 @@
 /**
- * v2 acceptance: one song using the production features together, built through the AI studio's
+ * v2 acceptance: one song using the production features together, built through Studio's
  * action language (the same ops the AI and the UI use): Drum Pads, a Wavetable lead, an FM bass, a
  * reverb send, a bass ducked by the drums (sidechain), a Limiter on the master, a filter sweep and a
  * tempo ramp, a marker, presets. Then: save → reopen is identical, the mix analysis hears every

@@ -15,6 +15,8 @@ export interface CommandResult {
   message: string;
   /** Whether the project changed (an undo step was made). */
   changed: boolean;
+  /** It couldn't be done (the message says why). */
+  error?: boolean;
   /** The span to select or play after (when it edited one). */
   touched: { from: Tick; to: Tick } | null;
 }
@@ -32,7 +34,7 @@ function run(s: Services, label: string, fn: (d: Draft<Project>, base: Project) 
     }
   });
   const r = result as RunResult | null;
-  if (error) return { message: error, changed, touched: null };
+  if (error) return { message: error, changed, touched: null, error: true };
   const first = r?.changes[0] ?? 'Nothing to change';
   const bugs = r?.warnings.length ? ` Still to look at: ${r.warnings.slice(0, 2).join('; ')}.` : '';
   return { message: `${first}.${bugs}`, changed, touched: r?.touched ?? null };
@@ -41,7 +43,8 @@ function run(s: Services, label: string, fn: (d: Draft<Project>, base: Project) 
 /** Fills, small changes and transitions over [from, to) (default: the whole song), one undo step. */
 export function developSong(s: Services, range?: { from: Tick; to: Tick } | null): CommandResult {
   const p = s.doc.getState().project;
-  if (songLength(p) === 0) return { message: 'The playlist is empty: place your patterns on it first, then develop them.', changed: false, touched: null };
+  if (songLength(p) === 0)
+    return { message: 'The playlist is empty: place your patterns on it first, then develop them.', changed: false, touched: null, error: true };
   const where = range ? barSpan(range.from, range.to, p.transport.timeSig) : 'the song';
   return run(s, `Develop ${where}`, (d, base) =>
     developInDraft(d, s, base, { ...(range ? { from: range.from, to: range.to } : {}), fills: true, transitions: true, fx: true, cleanup: true }),

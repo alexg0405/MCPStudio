@@ -56,7 +56,11 @@ const SPEC: ProjectSpec = {
   ],
   inserts: [
     { name: 'Master', slots: [{ plugin: 'Fruity Limiter' }] },
-    { name: 'Drums', routes: [0], slots: [{ plugin: 'Fruity Reeverb 2' }, { plugin: 'Fruity Wrapper', vst: 'Pro-Q 3' }] },
+    {
+      name: 'Drums',
+      routes: [0],
+      slots: [{ plugin: 'Fruity Reeverb 2' }, { plugin: 'Fruity Wrapper', vst: 'Pro-Q 3' }],
+    },
     { routes: [1] },
   ],
   params: [
@@ -88,7 +92,11 @@ describe('FLP reader', () => {
     const [kick, lead, pad] = f.channels;
     expect(kick).toMatchObject({ name: 'Kick', internalName: '', samplePath: 'C:\\Users\\me\\Samples\\Kick 01.wav' });
     expect(kick).toMatchObject({ pan: 6400, volume: 10000, insert: 1, enabled: true });
-    expect(lead).toMatchObject({ name: 'Lead', internalName: 'Fruity Wrapper', vst: { name: 'Serum', vendor: 'Vendor' } });
+    expect(lead).toMatchObject({
+      name: 'Lead',
+      internalName: 'Fruity Wrapper',
+      vst: { name: 'Serum', vendor: 'Vendor' },
+    });
     expect(lead).toMatchObject({ pan: 0, volume: 12800, pitch: -300, insert: 2, color: '#ff2233' });
     expect(pad).toMatchObject({ internalName: '3x Osc', rootNote: 48, enabled: false });
     expect(flpSamplePaths(f)).toEqual(['C:\\Users\\me\\Samples\\Kick 01.wav']);
@@ -138,7 +146,9 @@ describe('FLP reader', () => {
   it('reads pattern offsets written as float32 too', () => {
     const f = parseFlp(
       flpProject({
-        arrangements: [{ items: [{ position: 0, length: 96, track: 0, pattern: 1, startOffset: 48, floatOffsets: true }] }],
+        arrangements: [
+          { items: [{ position: 0, length: 96, track: 0, pattern: 1, startOffset: 48, floatOffsets: true }] },
+        ],
       }),
     );
     expect(f.arrangements[0]!.items[0]!.startOffset).toBe(48);
@@ -168,7 +178,10 @@ describe('FLP reader', () => {
 
   it('un-reverses track indexes by version: 499 from FL 12.9.1, 198 before', () => {
     const old = parseFlp(
-      flpProject({ version: '12.3.0.5', arrangements: [{ items: [{ position: 0, length: 96, track: 7, pattern: 1 }] }] }),
+      flpProject({
+        version: '12.3.0.5',
+        arrangements: [{ items: [{ position: 0, length: 96, track: 7, pattern: 1 }] }],
+      }),
     );
     expect(old.arrangements[0]!.items[0]!.track).toBe(7);
     const raw = playlist([{ position: 0, length: 96, track: 7, pattern: 1 }], { maxTrack: 198 });
@@ -182,7 +195,9 @@ describe('FLP reader', () => {
       flpProject({
         version: '12.3.0.5',
         legacyPlaylist: true,
-        arrangements: [{ items: [{ position: 0, length: 96, track: 0, pattern: 1 }], markers: [{ position: 0, name: 'A' }] }],
+        arrangements: [
+          { items: [{ position: 0, length: 96, track: 0, pattern: 1 }], markers: [{ position: 0, name: 'A' }] },
+        ],
       }),
     );
     expect(f.arrangements).toHaveLength(1);
@@ -195,7 +210,9 @@ describe('FLP reader', () => {
     expect(modern.title).toBe('Grüße ♫');
     const old = parseFlp(flpProject({ version: '11.1.0.1', title: 'Grüße' }));
     expect(old.title).toBe('Grüße');
-    const nine = parseFlp(flpProject({ version: '9.0.0', title: 'Old song', channels: [{ name: 'Bass', plugin: '3x Osc' }] }));
+    const nine = parseFlp(
+      flpProject({ version: '9.0.0', title: 'Old song', channels: [{ name: 'Bass', plugin: '3x Osc' }] }),
+    );
     expect(nine.title).toBe('Old song');
     expect(nine.channels[0]!.name).toBe('Bass');
   });
@@ -226,7 +243,16 @@ describe('FLP reader', () => {
       flpProject({
         channels: [
           { name: 'Bass', plugin: '3x Osc' },
-          { name: 'Bass vol', type: 5, plugin: '', automation: [{ beats: 0, value: 0 }, { beats: 4, value: 1, tension: 0.5 }, { beats: 6, value: 0.25 }] },
+          {
+            name: 'Bass vol',
+            type: 5,
+            plugin: '',
+            automation: [
+              { beats: 0, value: 0 },
+              { beats: 4, value: 1, tension: 0.5 },
+              { beats: 6, value: 0.25 },
+            ],
+          },
         ],
         links: [{ channel: 1, param: 0, destination: 0 }],
       }),
@@ -323,7 +349,10 @@ describe('Zipped loop packages', () => {
     const pkg = readFlpPackage(zip);
     expect(pkg.flpName).toBe('Night Drive.flp');
     expect(parseFlp(pkg.flp).title).toBe('Night Drive');
-    expect(pkg.audio.map((a) => a.path).sort()).toEqual(['Night Drive/Samples/Kick 01.wav', 'Night Drive/Samples/Other.WAV']);
+    expect(pkg.audio.map((a) => a.path).sort()).toEqual([
+      'Night Drive/Samples/Kick 01.wav',
+      'Night Drive/Samples/Other.WAV',
+    ]);
     expect(readZipAudio(zip)).toHaveLength(2);
   });
 
@@ -331,7 +360,9 @@ describe('Zipped loop packages', () => {
     const files = readFlpPackage(zip).audio;
     expect(matchSampleFile('C:\\Users\\me\\Samples\\KICK 01.wav', files)?.path).toBe('Night Drive/Samples/Kick 01.wav');
     expect(matchSampleFile('/Users/me/other.wav', files)?.path).toBe('Night Drive/Samples/Other.WAV');
-    expect(matchSampleFile('%FLStudioFactoryData%\\Data\\Kick 01.flac', files)?.path).toBe('Night Drive/Samples/Kick 01.wav');
+    expect(matchSampleFile('%FLStudioFactoryData%\\Data\\Kick 01.flac', files)?.path).toBe(
+      'Night Drive/Samples/Kick 01.wav',
+    );
     expect(matchSampleFile('C:\\nothing.wav', files)).toBeUndefined();
   });
 

@@ -102,7 +102,14 @@ export const FLP_NOTE_SLIDE = 1 << 3;
 export const FLP_INSERT_ENABLED = 1 << 3;
 
 /** Mixer param ids (MixerParams items). */
-export const FLP_MIXER_PARAM = { slotEnabled: 0, slotMix: 1, routeFirst: 64, routeLast: 191, volume: 192, pan: 193 } as const;
+export const FLP_MIXER_PARAM = {
+  slotEnabled: 0,
+  slotMix: 1,
+  routeFirst: 64,
+  routeLast: 191,
+  volume: 192,
+  pan: 193,
+} as const;
 
 /** Size caps: beyond them the reader stops collecting and warns. */
 export const FLP_LIMITS = {
@@ -321,7 +328,8 @@ function latin1(b: Uint8Array, off: number, len: number): string {
 
 function utf16le(b: Uint8Array, off: number, len: number): string {
   let s = '';
-  for (let i = 0; i + 1 < len; i += 2) s += String.fromCharCode((b[off + i] as number) | ((b[off + i + 1] as number) << 8));
+  for (let i = 0; i + 1 < len; i += 2)
+    s += String.fromCharCode((b[off + i] as number) | ((b[off + i + 1] as number) << 8));
   return s;
 }
 
@@ -332,7 +340,8 @@ function utf8(b: Uint8Array, off: number, len: number): string {
   while (i < end) {
     const c = b[i++] as number;
     if (c < 0x80) s += String.fromCharCode(c);
-    else if (c >= 0xc0 && c < 0xe0 && i < end) s += String.fromCharCode(((c & 0x1f) << 6) | ((b[i++] as number) & 0x3f));
+    else if (c >= 0xc0 && c < 0xe0 && i < end)
+      s += String.fromCharCode(((c & 0x1f) << 6) | ((b[i++] as number) & 0x3f));
     else if (c >= 0xe0 && c < 0xf0 && i + 1 < end) {
       s += String.fromCharCode(((c & 0x0f) << 12) | (((b[i] as number) & 0x3f) << 6) | ((b[i + 1] as number) & 0x3f));
       i += 2;
@@ -349,7 +358,15 @@ function utf8(b: Uint8Array, off: number, len: number): string {
   return s;
 }
 
-const clean = (s: string) => s.replace(/\0+$/, '').replace(/[\0-\x08\x0b\x0c\x0e-\x1f]/g, '').trim();
+/** Drops trailing NULs and control characters (keeps tabs and line breaks). */
+function clean(s: string): string {
+  let out = '';
+  for (const ch of s.replace(/\0+$/, '')) {
+    const c = ch.charCodeAt(0);
+    if (c >= 0x20 || c === 9 || c === 10 || c === 13) out += ch;
+  }
+  return out.trim();
+}
 
 /** Major.minor ≥ 11.5 stores text as UTF-16LE. */
 function isUnicodeVersion(parts: number[]): boolean {

@@ -70,7 +70,10 @@ function concat(parts: Uint8Array[]): Uint8Array {
 }
 
 /** The whole file: FLhd (format 0) + FLdt with the events. */
-export function flpFile(events: FlpEvent[], opts: { ppq?: number; channels?: number; format?: number } = {}): Uint8Array {
+export function flpFile(
+  events: FlpEvent[],
+  opts: { ppq?: number; channels?: number; format?: number } = {},
+): Uint8Array {
   const body: Uint8Array[] = [];
   for (const e of events) {
     if (e.id < 192) body.push(Uint8Array.of(e.id), e.data);
@@ -184,7 +187,10 @@ export function vstData(name: string, vendor = ''): FlpEvent {
     dv.setUint32(4, bytes.length, true);
     return concat([h, bytes]);
   };
-  return data(E.pluginData, concat([le(10, 4), rec(1, '\0\0\0\0'), rec(54, name), ...(vendor ? [rec(56, vendor)] : [])]));
+  return data(
+    E.pluginData,
+    concat([le(10, 4), rec(1, '\0\0\0\0'), rec(54, name), ...(vendor ? [rec(56, vendor)] : [])]),
+  );
 }
 
 export function trackData(index: number, opts: { color?: number; enabled?: boolean } = {}): FlpEvent {

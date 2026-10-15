@@ -138,11 +138,13 @@ export function variantSeed(sourceName: string, steps: readonly VariantStep[]): 
   return hashString(`${sourceName}|${JSON.stringify(sortSteps(steps.map(normalizeStep)))}`);
 }
 
-/** One step in words: "fill", "slide", "no 808, hats" (channels by name when `channelName` knows them). */
+/** One step in words: "fill", "slide", "no 808 or hats" (channels by name when `channelName` knows them). */
 export function stepLabel(s: VariantStep, channelName?: (id: string) => string | undefined): string {
   if (s.kind === 'without') {
     const parts = (s.parts ?? []).map((p) => (partName(p) ? p : (channelName?.(p) ?? 'a channel')));
-    return parts.length ? `no ${[...new Set(parts)].join(', ')}` : 'without';
+    const list = [...new Set(parts)];
+    // "no drums or bass" (the words read in the pattern list, after a "·" between steps).
+    return list.length ? `no ${list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} or ${list[list.length - 1]}`}` : 'without';
   }
   if (s.kind === 'thin') return (s.level ?? 1) >= 2 ? 'sparse' : 'thin';
   return KIND_LABEL[s.kind];

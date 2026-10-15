@@ -11,7 +11,7 @@ const slide: VariantStep = { kind: 'slide', from: 2 * BAR - BEAT, to: 2 * BAR, e
 describe('variant names, keys and steps', () => {
   it('names a variant after its source and its changes', () => {
     expect(variantName('Drop', [slide, fill])).toBe('Drop · fill + slide');
-    expect(variantName('Drop', [{ kind: 'without', from: 0, to: BAR, parts: ['808', 'hats'] }])).toBe('Drop · no 808, hats');
+    expect(variantName('Drop', [{ kind: 'without', from: 0, to: BAR, parts: ['808', 'hats'] }])).toBe('Drop · no 808 or hats');
     expect(variantName('Drop', [{ kind: 'without', from: 0, to: BAR, parts: ['ch_x'] }], () => 'Pluck')).toBe('Drop · no Pluck');
     expect(variantName('Verse', [{ kind: 'thin', from: 0, to: BAR, level: 2 }])).toBe('Verse · sparse');
     expect(variantName('Drop', [])).toBe('Drop');

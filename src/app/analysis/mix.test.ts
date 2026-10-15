@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { InsertId } from '@core/model/types';
+import { BAR, stackedSong } from '../../../test/helpers/focus';
 import type { Measurement } from './measure';
-import { formatMixReport, mixNotes, summarizeMixReport, type MixReport } from './mix';
+import { analysisPlan, formatMixReport, mixNotes, summarizeMixReport, type MixReport } from './mix';
 
 const m = (over: Partial<Measurement> = {}): Measurement => ({
   lufs: -14,
@@ -28,6 +29,21 @@ const report = (master: Partial<Measurement>, tracks: ReturnType<typeof track>[]
   master: m({ truePeakDb: -2, ...master }),
   tracks,
   notes: [],
+});
+
+describe('what the analysis listens to', () => {
+  it('takes just a part when asked: a span of the song, or a pattern on a loop', () => {
+    const { s, ids } = stackedSong();
+    s.view.getState().setMode('song');
+    // Bars 85–88 at 150 BPM: 6.4 s.
+    expect(analysisPlan(s, 30, { from: 84 * BAR, to: 88 * BAR })).toMatchObject({ mode: 'song', fromTick: 84 * BAR, bars: 4 });
+    // A long part is cut to the first bars that fit.
+    expect(analysisPlan(s, 30, { from: 0, to: 64 * BAR })).toMatchObject({ mode: 'song', fromTick: 0, bars: 18 });
+    // Notes: their pattern, looped to a few seconds.
+    expect(analysisPlan(s, 30, { patternId: ids.patterns.Drop! })).toMatchObject({ mode: 'pattern', patternId: ids.patterns.Drop, bars: 6 });
+    // Without a part: the whole song from bar 1 (cut to 30 s).
+    expect(analysisPlan(s, 30)).toMatchObject({ mode: 'song', fromTick: 0, bars: 18 });
+  });
 });
 
 describe('mix findings', () => {

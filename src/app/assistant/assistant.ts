@@ -13,6 +13,7 @@ import {
 } from '@core/voice';
 import type { RecordingHandle } from '@engine/api';
 import { openMic, type MicInput } from '@platform/mic';
+import type { ParamSpecs } from '@agstudio/sdk';
 import type { Services } from '../services';
 import { applyAnswer, type AfterEdit } from '../ai/apply';
 import { pluginCatalog } from '../ai/catalog';
@@ -28,7 +29,8 @@ import {
   type SmokeReport,
 } from '../ai/builder';
 import { smokeTest } from '../ai/smoke';
-import { analyzeMix, formatMixReport, summarizeMixReport } from '../analysis/mix';
+import { focusContext, isAiFocus, resolveFocus, type AiFocus, type ResolvedFocus } from '../ai/focus';
+import { analyzeMix, formatMixReport, summarizeMixReport, type AnalyzeRange } from '../analysis/mix';
 import { afterStepFor } from './after-steps';
 import { audition } from './audition';
 import { projectContext } from '../ai/context';
@@ -124,6 +126,11 @@ export interface AssistantState {
   building: { name: string; kind: 'instrument' | 'effect'; stage: BuildStage; round: number } | null;
   /** A mix analysis in progress: which part it is rendering, 0–1. */
   listening: { label: string; fraction: number } | null;
+  /**
+   * The part of the song the conversation is about ("Ask AI about this part"): the AI changes only
+   * it. Follow-ups keep it; New chat and opening another project clear it.
+   */
+  focus: AiFocus | null;
 }
 
 let messageSeq = 0;
@@ -193,8 +200,14 @@ export class BeatAssistant {
       uiRequests: [],
       building: null,
       listening: null,
+      focus: null,
     }));
     this.restoreTab();
+    // Another project opened (or a new one): the part belonged to the old one.
+    s.history.onChange(({ origin, next }) => {
+      const f = this.store.getState().focus;
+      if (origin === 'load' && f && f.projectId !== next.projectId) this.setFocus(null);
+    });
     this.store.subscribe(() => this.scheduleTabSave());
     if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.saveTab());
     this.store.subscribe((next, prev) => {
@@ -237,7 +250,7 @@ export class BeatAssistant {
   private saveTab(): void {
     clearTimeout(this.saveTimer);
     this.saveTimer = undefined;
-    const { messages, applied, take } = this.store.getState();
+    const { messages, applied, take, focus } = this.store.getState();
     try {
       globalThis.sessionStorage?.setItem(
         TAB_KEY,
@@ -245,6 +258,7 @@ export class BeatAssistant {
           messages: messages.slice(-40),
           applied,
           take: take ? { ...take, audio: null } : null,
+          focus,
           chat: this.chat.sessionId,
           catalog: this.catalogSent,
           offlinePrompt: this.offlinePrompt,
@@ -270,12 +284,14 @@ export class BeatAssistant {
       chat: string;
       catalog: string;
       offlinePrompt: string;
+      focus: unknown;
     }>;
     const messages = Array.isArray(r.messages) ? r.messages.filter((m) => typeof m?.text === 'string') : [];
     messageSeq = Math.max(messageSeq, ...messages.map((m) => (typeof m.id === 'number' ? m.id : 0)));
     const applied = r.applied && typeof r.applied.patternId === 'string' && r.applied.channels ? r.applied : null;
     const take = r.take && Array.isArray(r.take.events) ? { ...r.take, audio: null } : null;
-    this.store.setState({ messages, applied, take });
+    const focus = isAiFocus(r.focus) ? r.focus : null;
+    this.store.setState({ messages, applied, take, focus });
     if (typeof r.chat === 'string') this.chat.sessionId = r.chat;
     if (typeof r.catalog === 'string') this.catalogSent = r.catalog;
     if (typeof r.offlinePrompt === 'string') this.offlinePrompt = r.offlinePrompt;
@@ -300,6 +316,46 @@ export class BeatAssistant {
 
   private say(from: AssistantMessage['from'], text: string, extra: Partial<AssistantMessage> = {}): void {
     this.store.setState((st) => ({ messages: [...st.messages, { id: ++messageSeq, from, text, ...extra }] }));
+  }
+
+  // ---------------------------------------------------------------- the part a request is about
+
+  /** Sets (or clears) the part of the song the conversation is about; follow-ups keep it. */
+  setFocus(focus: AiFocus | null): void {
+    if (this.store.getState().focus !== focus) this.store.setState({ focus });
+  }
+
+  /**
+   * Plays a part: a span of the song loops in song mode from its start; selected notes play their
+   * pattern in pattern mode. Default: the conversation's part. False when there is nothing to play.
+   */
+  playFocus(focus: AiFocus | null = this.store.getState().focus): boolean {
+    const r = resolveFocus(this.s.doc.getState().project, focus);
+    if (!r) return false;
+    const v = this.s.view.getState();
+    if (r.notes) {
+      v.setCurrentPattern(r.notes.patternId);
+      this.s.session.getState().selectChannel(r.notes.channelId);
+      v.setMode('pattern');
+      this.s.engine.play();
+    } else {
+      v.setLoop({ start: r.from, end: r.to });
+      v.setMode('song');
+      this.s.engine.play(r.from);
+    }
+    return true;
+  }
+
+  /** Plugin names and settings, for the <focus> block's automation lines. */
+  private readonly pluginInfo = (id: string) => {
+    const def = this.s.plugins.get(id);
+    return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
+  };
+
+  /** "About Verse · bars 17–32" under the musician's message (or why the part was dropped). */
+  private aboutText(asked: AiFocus | null, focus: ResolvedFocus | null): string | undefined {
+    if (focus) return `About ${focus.label}`;
+    return asked ? 'The part you picked is no longer in the song, so this is about the whole song' : undefined;
   }
 
   // ---------------------------------------------------------------- recording
@@ -455,13 +511,22 @@ export class BeatAssistant {
 
   // ---------------------------------------------------------------- asking
 
-  /** Asks for a beat (or a change to the current one). */
-  async send(prompt: string): Promise<void> {
+  /**
+   * Asks for a beat or any change. `focus`: the part of the song the request is about (it becomes the
+   * conversation's part; null clears it); without it the conversation's part, if any, stays.
+   */
+  async send(prompt: string, opts: { focus?: AiFocus | null } = {}): Promise<void> {
     const st = this.store.getState();
     if (st.phase !== 'idle') return;
     const text = prompt.trim();
     let take = st.take;
     if (!text && !take) return;
+    if (opts.focus !== undefined) this.setFocus(opts.focus);
+    // The part as it is now; a part that no longer exists is dropped. Kept as sent for the answer.
+    const asked = this.store.getState().focus;
+    const focus = resolveFocus(this.s.doc.getState().project, asked);
+    if (asked && !focus) this.setFocus(null);
+    const snapshot = focus ? asked : null;
     // "808s that go like this" after a take left on "figure it out": listen again as an 808 line.
     if (take && take.role === 'auto') {
       const role = inferRole(text);
@@ -475,7 +540,8 @@ export class BeatAssistant {
           take.role === 'auto' ? '' : `, as ${roleLabel(take.role)}`
         })`
       : undefined;
-    this.say('you', text || 'Turn my take into a beat.', takeNote ? { detail: takeNote } : {});
+    const detail = [takeNote, this.aboutText(asked, focus)].filter(Boolean).join(' · ');
+    this.say('you', text || 'Turn my take into a beat.', detail ? { detail } : {});
     this.store.setState({ phase: 'thinking' });
     const project = this.s.doc.getState().project;
     let spec: BeatSpec | null = null;
@@ -488,7 +554,7 @@ export class BeatAssistant {
         const answer = await this.chat.ask<AiAnswer>({
           system: STUDIO_PROMPT,
           schema: ACTIONS_SCHEMA,
-          text: this.turnText(text || 'Make a beat from my performance.', take),
+          text: this.turnText(text || 'Make a beat from my performance.', take, undefined, focus),
           model: st.model,
           backend: route,
           signal: abort.signal,
@@ -498,7 +564,7 @@ export class BeatAssistant {
           },
         });
         if (take) this.store.setState({ take: { ...take, sent: true } });
-        if (await this.applyTurn(answer, take, text)) await this.listenAndAsk(text, false);
+        if (await this.applyTurn(answer, take, text, false, snapshot)) await this.listenAndAsk(text, false, snapshot);
         return;
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {
@@ -517,6 +583,16 @@ export class BeatAssistant {
       } finally {
         this.abort = null;
       }
+    }
+    if (focus) {
+      // The offline generator writes whole beats: it can't change one part of a song.
+      this.say(
+        'assistant',
+        'Changing one part of the song needs Claude (your subscription or an API key), and it isn’t set up. Set it up in the AI studio’s settings, or clear the part to make a beat with the offline generator.',
+        { offline: true },
+      );
+      this.store.setState({ phase: 'idle' });
+      return;
     }
     if (!spec) {
       offline = true;
@@ -546,9 +622,10 @@ export class BeatAssistant {
     }
   }
 
-  /** This turn's message to Claude: the request, the project, and what Claude doesn't have yet. */
-  private turnText(prompt: string, take: Take | null, analysis?: string): string {
+  /** This turn's message to Claude: the request, the project, the part it is about, and what Claude doesn't have yet. */
+  private turnText(prompt: string, take: Take | null, analysis?: string, focus?: ResolvedFocus | null): string {
     const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
+    if (focus) parts.push(`<focus>\n${focusContext(this.s.doc.getState().project, focus, this.pluginInfo)}\n</focus>`);
     if (analysis)
       parts.push(
         `<mix-analysis>\n${analysis}\n</mix-analysis>\nThis is how the mix sounds right now (rendered and measured just now). Answer the request with it; don't ask for another analysis.`,
@@ -580,12 +657,22 @@ export class BeatAssistant {
    * Applies Claude's answer as one undo step and reports it in the chat. True when the answer asked
    * to hear the mix first (and this turn wasn't already the answer to an analysis).
    */
-  private async applyTurn(answer: AiAnswer, take: Take | null, request: string, analyzed = false): Promise<boolean> {
+  private async applyTurn(
+    answer: AiAnswer,
+    take: Take | null,
+    request: string,
+    analyzed = false,
+    focus: AiFocus | null = null,
+  ): Promise<boolean> {
     let result: ReturnType<typeof applyAnswer>;
+    // The part as it is now (it may have moved while Claude was thinking).
+    const part = resolveFocus(this.s.doc.getState().project, focus);
     try {
       result = applyAnswer(this.s, answer, {
-        previousBeat: this.store.getState().applied,
+        // Selected notes: a beat makes a new pattern instead of rewriting theirs.
+        previousBeat: part?.notes ? null : this.store.getState().applied,
         ...(request ? { label: request } : {}),
+        focus: part,
       });
     } catch (e) {
       console.error('[agstudio] applying the AI answer failed', e);
@@ -621,6 +708,16 @@ export class BeatAssistant {
       uiRequests: result.after.filter((a) => a.kind === 'open' || (a.kind === 'command' && a.gesture)),
     });
     void take;
+    // The part after the edit (copies made for it, clips that moved), unless the musician changed it meanwhile.
+    if (part && result.focus && this.store.getState().focus === focus) this.setFocus(result.focus);
+    if (result.selectClips?.length) this.s.editor.getState().selectClips(result.selectClips);
+    const notes = result.focus?.kind === 'notes' ? result.focus : null;
+    if (
+      notes &&
+      this.s.view.getState().currentPatternId === notes.patternId &&
+      this.s.session.getState().selectedChannelId === notes.channelId
+    )
+      this.s.editor.getState().selectNotes(notes.noteIds);
     // Follow-up steps (leveling the mix…) finish before anything plays, in the answer's undo step.
     await this.runAfterSteps(result.after, result.edited ? cursor : null);
     // Playback the answer asked for (or, with autoplay on, what it arranged or a new beat).
@@ -643,7 +740,10 @@ export class BeatAssistant {
     }
     const played = result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
     if (!played && this.store.getState().autoplay) {
-      if (result.touched) {
+      if (part && result.edited) {
+        // The part it changed, on a loop.
+        this.playFocus(result.focus ?? focus);
+      } else if (result.touched) {
         // The song around what changed: from a bar before it.
         const bar = ticksPerBar(this.s.doc.getState().project.transport.timeSig);
         this.s.view.getState().setMode('song');
@@ -693,12 +793,22 @@ export class BeatAssistant {
    * with the analysis so it can mix with real numbers. `fromUser`: the musician asked for a mix check
    * (their message goes in the chat first). Without Claude it still shows the findings.
    */
-  async listenAndAsk(request: string, fromUser: boolean): Promise<void> {
+  async listenAndAsk(request: string, fromUser: boolean, focus?: AiFocus | null): Promise<void> {
     const st = this.store.getState();
+    if (fromUser && st.phase !== 'idle') return;
+    // The part to listen to (and to change): the one given, else the conversation's.
+    const asked = focus === undefined ? st.focus : focus;
+    const part = resolveFocus(this.s.doc.getState().project, asked);
+    const snapshot = part ? asked : null;
     if (fromUser) {
-      if (st.phase !== 'idle') return;
-      this.say('you', request);
+      const about = this.aboutText(asked, part);
+      this.say('you', request, about ? { detail: about } : {});
     }
+    const range: AnalyzeRange | undefined = part
+      ? part.notes
+        ? { patternId: part.notes.patternId }
+        : { from: part.from, to: part.to }
+      : undefined;
     const abort = new AbortController();
     this.abort = abort;
     this.store.setState({ phase: 'listening', listening: { label: 'The mix', fraction: 0 } });
@@ -707,6 +817,7 @@ export class BeatAssistant {
       const report = await this.analyze(this.s, {
         signal: abort.signal,
         onProgress: (fraction, label) => this.store.setState({ listening: { label, fraction } }),
+        ...(range ? { range } : {}),
       });
       analysis = formatMixReport(report);
       this.say('assistant', `I listened to ${report.what}.`, {
@@ -736,7 +847,7 @@ export class BeatAssistant {
       const answer = await this.chat.ask<AiAnswer>({
         system: STUDIO_PROMPT,
         schema: ACTIONS_SCHEMA,
-        text: this.turnText(request, null, analysis),
+        text: this.turnText(request, null, analysis, resolveFocus(this.s.doc.getState().project, snapshot)),
         model: this.store.getState().model,
         backend: route,
         signal: abort.signal,
@@ -745,7 +856,7 @@ export class BeatAssistant {
           return 'error' in r ? { error: r.error } : { value: r.answer };
         },
       });
-      await this.applyTurn(answer, null, request, true);
+      await this.applyTurn(answer, null, request, true, snapshot);
     } catch (e) {
       const stopped = e instanceof DOMException && e.name === 'AbortError';
       this.say('assistant', stopped ? 'Stopped.' : e instanceof Error ? e.message : String(e), {
@@ -895,7 +1006,7 @@ export class BeatAssistant {
     this.catalogSent = null;
     this.lastProblems = [];
     this.offlinePrompt = '';
-    this.store.setState({ applied: null, messages: [], take: this.store.getState().take });
+    this.store.setState({ applied: null, messages: [], take: this.store.getState().take, focus: null });
   }
 }
 

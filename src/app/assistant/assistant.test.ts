@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GridEvent } from '@core/voice';
 import { MASTER } from '@core/model/types';
 import { createTestServices } from '../testing';
+import { focusFromClips, focusFromMarker } from '../ai/focus-capture';
+import { BAR, stackedSong } from '../../../test/helpers/focus';
 import { BeatAssistant, inferRole, type Take } from './assistant';
 
 const NO = { ok: false, reason: 'not set up' };
@@ -429,5 +431,136 @@ describe('after an answer', () => {
     } finally {
       off();
     }
+  });
+});
+
+describe('asking about a part of the song', () => {
+  const answeringWith = (texts: string[], actions: unknown[]) =>
+    (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      texts.push(String((JSON.parse(String(init?.body ?? '{}')) as { text?: string }).text ?? ''));
+      return new Response(
+        JSON.stringify({ session: 'sess-part', model: 'claude-opus-5-5', beat: { message: 'Done.', actions } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+  const verseOf = (s: ReturnType<typeof stackedSong>['s']) =>
+    focusFromMarker(s, Object.values(s.doc.getState().project.playlist.markers).find((m) => m.name === 'Verse')!.id)!;
+
+  it('sends the part with the request, keeps it for follow-ups and plays it on a loop', async () => {
+    const texts: string[] = [];
+    const { s } = stackedSong();
+    const a = new BeatAssistant(s, {
+      fetch: answeringWith(texts, [
+        { op: 'write_notes', pattern: 'Perc layer', channel: 'Perc', notes: [{ step: 0, key: 39 }, { step: 6, key: 42 }] },
+      ]),
+    });
+    await a.send('busier percussion here', { focus: verseOf(s) });
+    expect(texts[0]).toContain('<focus>\nWorking on: Verse · bars 17–32');
+    expect(texts[0]!.indexOf('<focus>')).toBeGreaterThan(texts[0]!.indexOf('</project>'));
+    const st = a.store.getState();
+    expect(st.messages[0]).toMatchObject({ from: 'you', detail: 'About Verse · bars 17–32' });
+    expect(st.messages[1]?.changes?.[0]).toBe('Made a copy of “Perc layer” for bars 17–32, so the rest of the song stays the same');
+    // The part loops in song mode from its start.
+    expect(s.fakeEngine.view?.loop).toEqual({ start: 16 * BAR, end: 32 * BAR });
+    expect(s.view.getState().mode).toBe('song');
+    expect(s.fakeEngine.lastPlayFrom).toBe(16 * BAR);
+    // The copy is remembered for follow-ups, which keep the part.
+    expect(st.focus).toMatchObject({ kind: 'section', from: 16 * BAR, to: 32 * BAR });
+    expect(Object.keys((st.focus as { copies?: object }).copies ?? {})).toHaveLength(1);
+    await a.send('a little more');
+    expect(texts[1]).toContain('<focus>');
+    expect(a.store.getState().messages.at(-2)?.detail).toBe('About Verse · bars 17–32');
+    // Cleared: the next request is about the whole song.
+    a.setFocus(null);
+    await a.send('and now the whole song');
+    expect(texts[2]).not.toContain('<focus>');
+    expect(a.store.getState().messages.at(-2)?.detail).toBeUndefined();
+  });
+
+  it('needs Claude: offline, a request about a part writes nothing', async () => {
+    const { s } = stackedSong();
+    const a = new BeatAssistant(s, { fetch: offline });
+    const before = s.doc.getState().project;
+    await a.send('add a fill at the end', { focus: verseOf(s) });
+    const last = a.store.getState().messages.at(-1)!;
+    expect(last.text).toMatch(/^Changing one part of the song needs Claude/);
+    expect(last.offline).toBe(true);
+    expect(s.doc.getState().project).toBe(before);
+    expect(a.store.getState().phase).toBe('idle');
+  });
+
+  it('forgets the part on New chat, on opening another project, and when the part is gone', async () => {
+    const texts: string[] = [];
+    const { s } = stackedSong();
+    const a = new BeatAssistant(s, { fetch: answeringWith(texts, []) });
+    a.setFocus(verseOf(s));
+    a.newBeat();
+    expect(a.store.getState().focus).toBeNull();
+    a.setFocus(verseOf(s));
+    // The same project again (a reload) keeps it; another one doesn't.
+    s.history.load(s.doc.getState().project);
+    expect(a.store.getState().focus).not.toBeNull();
+    s.history.load({ ...s.doc.getState().project, projectId: 'prj_other' });
+    expect(a.store.getState().focus).toBeNull();
+    // Clips that were deleted: the request goes out about the whole song, and says so.
+    const { s: t } = stackedSong();
+    const b = new BeatAssistant(t, { fetch: answeringWith(texts, []) });
+    const p = t.doc.getState().project;
+    const tom = Object.values(p.playlist.clips).find((c) => c.kind === 'pattern' && p.patterns[c.patternId]?.name === 'Tom fill')!;
+    b.setFocus(focusFromClips(t, [tom.id]));
+    t.history.transact('rm', (d) => void delete d.playlist.clips[tom.id]);
+    await b.send('louder');
+    expect(b.store.getState().focus).toBeNull();
+    expect(b.store.getState().messages[0]?.detail).toBe(
+      'The part you picked is no longer in the song, so this is about the whole song',
+    );
+    expect(texts.at(-1)).not.toContain('<focus>');
+  });
+
+  it('keeps the part across a page reload (checked when it comes back)', () => {
+    const saved = new Map<string, string>();
+    const g = globalThis as { sessionStorage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> };
+    g.sessionStorage = {
+      getItem: (k) => saved.get(k) ?? null,
+      setItem: (k, v) => void saved.set(k, v),
+      removeItem: (k) => void saved.delete(k),
+    };
+    try {
+      const { s } = stackedSong();
+      const a = new BeatAssistant(s, { fetch: offline });
+      const verse = verseOf(s);
+      a.setFocus(verse);
+      (a as unknown as { saveTab(): void }).saveTab();
+      expect(new BeatAssistant(s, { fetch: offline }).store.getState().focus).toEqual(verse);
+      // A damaged one is ignored.
+      const raw = JSON.parse(saved.get('agstudio:assistant:tab:v1')!) as Record<string, unknown>;
+      saved.set('agstudio:assistant:tab:v1', JSON.stringify({ ...raw, focus: { kind: 'range', from: 'x' } }));
+      expect(new BeatAssistant(s, { fetch: offline }).store.getState().focus).toBeNull();
+    } finally {
+      delete g.sessionStorage;
+    }
+  });
+
+  it('listens to just the part when the answer asks for the mix first', async () => {
+    const texts: string[] = [];
+    let turn = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      texts.push(String((JSON.parse(String(init?.body ?? '{}')) as { text?: string }).text ?? ''));
+      const answer =
+        turn++ === 0 ? { message: 'Listening…', actions: [{ op: 'analyze_mix' }] } : { message: 'Done.', actions: [] };
+      return new Response(JSON.stringify({ session: 'sess-mix', model: 'm', beat: answer }), { status: 200 });
+    }) as typeof fetch;
+    const { s } = stackedSong();
+    const master = { lufs: -14, shortTermMax: -12, peakDb: -3, truePeakDb: -2, rmsDb: -15, crestDb: 12, bands: [10, 20, 25, 25, 15, 5], width: 0.2, correlation: 0.8, silent: false };
+    const analyze = vi.fn(async () => ({ what: '25 s: bars 17–32 of the song', seconds: 25, master, tracks: [], notes: [] }));
+    const a = new BeatAssistant(s, { fetch: fetchImpl, analyze });
+    await a.send('make this part hit harder', { focus: verseOf(s) });
+    expect(analyze).toHaveBeenCalledWith(s, expect.objectContaining({ range: { from: 16 * BAR, to: 32 * BAR } }));
+    expect(texts[1]).toContain('<mix-analysis>');
+    expect(texts[1]).toContain('<focus>');
   });
 });

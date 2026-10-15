@@ -263,7 +263,6 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   let project = s.doc.getState().project;
   const layout = findMixLayout(project);
   const busIds = LEVELED.map((role) => [role, layout.buses[role]] as const).filter((x): x is [LeveledBus, InsertId] => !!x[1]);
-  if (!busIds.length) return null;
   const window = busiestWindow(project, s.view.getState().currentPatternId, opts.fromTick, opts.bars);
   if (!window) return null;
   const toTick = window.fromTick + window.bars * ticksPerBar(project.transport.timeSig);
@@ -277,8 +276,12 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   // Every stem mutes the others (channels outside the buses too); only the buses are rendered.
   const all = planStems(raw, { mode: window.mode, patternId: window.patternId, fromTick: window.fromTick, toTick });
   const stems = all.filter((st) => busIds.some(([, id]) => id === st.insertId));
-  if (!stems.length) return null;
-  const steps = stems.length + 2;
+  // A mix without role buses (built by hand, imported; a track named "Kick" doesn't make one): only
+  // its loudness is set, its balance stays. Role leveling needs the buses to carry most of what plays.
+  const count = (list: readonly { channels: readonly unknown[] }[]) => list.reduce((n, st) => n + st.channels.length, 0);
+  const loudnessOnly = !stems.length || count(stems) < (2 / 3) * count(all);
+  if (loudnessOnly && !all.length) return null;
+  const steps = loudnessOnly ? 3 : stems.length + 2;
   let step = 0;
   const report = (label: string, f = 0) => opts.progress?.(label, Math.min(1, (step + f) / steps));
 
@@ -310,6 +313,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   };
 
   if (!opts.whenQuiet) s.engine.stop();
+  if (loudnessOnly) return levelLoudness(s, opts, raw, render, warnings);
   const levels: BusLevel[] = [];
   for (const stem of stems) {
     const role = busIds.find(([, id]) => id === stem.insertId)![0];
@@ -388,6 +392,85 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     warnings,
     style,
     buses,
+    master: { lufs: master.lufs, truePeakDb: master.truePeakDb, target },
+    limiterInput: input,
+  };
+}
+
+/**
+ * Leveling a mix without role buses: everything that reaches the master moves together (the routes
+ * into the master and the channels that play straight into it) so the mix sums to −16 LUFS before
+ * the master chain, then the Limiter's input sets the style's loudness. The balance between tracks
+ * stays as the musician made it. Without a Limiter only the trim happens.
+ */
+async function levelLoudness(
+  s: Services,
+  opts: AutoLevelOptions,
+  raw: Project,
+  render: (p: Project, limiter: boolean, label: string, truePeak: boolean) => Promise<{ lufs: number; silent: boolean; truePeakDb: number | null }>,
+  warnings: string[],
+): Promise<AutoLevelResult | null> {
+  const style = opts.style;
+  const before = await render(raw, false, 'The mix before the master', false);
+  if (before.silent || !Number.isFinite(before.lufs)) return null;
+  const trimDb = clamp(PRE_LIMITER_LUFS - before.lufs, -24, 6);
+  const project = s.doc.getState().project;
+  const limiter = findMixLayout(project).limiter;
+  let input: number | null = limiter ? limiterInput(style) : null;
+  if (!limiter) warnings.push('level mix: the master has no Limiter, so the mix was only trimmed (set up the mix for a Limiter)');
+  let entry = opts.entry ?? null;
+  const commit = (trim: number) => {
+    const g = gainOf(trim);
+    s.history.transact(
+      'Level the mix',
+      (d) => {
+        for (const ins of Object.values(d.mixer.inserts))
+          for (const r of ins.routes) if (r.to === MASTER) r.level = Math.min(MAX_INSERT_VOLUME, r.level * g);
+        for (const ch of Object.values(d.channels))
+          if (ch.kind !== 'automation' && ch.output === MASTER) ch.volume = Math.min(MAX_INSERT_VOLUME, ch.volume * g);
+        if (limiter && input !== null) {
+          const slot = d.mixer.inserts[MASTER]?.fx.find((f) => f.id === limiter);
+          if (slot) slot.plugin.params.input = Math.round(input * 100) / 100;
+        }
+      },
+      entry !== null ? { amend: entry } : {},
+    );
+    if (entry === null) entry = s.history.status().cursor;
+  };
+  await opts.whenQuiet?.();
+  opts.signal?.throwIfAborted();
+  commit(trimDb);
+
+  const target = LEVEL_TARGETS[style].master;
+  let master = await render(s.doc.getState().project, true, 'The mix', true);
+  if (limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1) {
+    const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
+    if (Math.abs(corrected - input) > 0.05) {
+      input = corrected;
+      await opts.whenQuiet?.();
+      opts.signal?.throwIfAborted();
+      commit(0);
+      master = await render(s.doc.getState().project, true, 'The mix', true);
+    }
+  }
+  // Still too loud with the Limiter's input at 0 dB: something before it (a clipper, a hot saturator) pushes it.
+  if (Number.isFinite(master.lufs) && master.lufs > target + 2)
+    warnings.push(
+      `level mix: the master still plays at ${master.lufs.toFixed(1)} LUFS: an effect on the master before the Limiter (a clipper or saturator with a lot of drive) is pushing it; lower its drive`,
+    );
+  opts.progress?.('Done', 1);
+  const fmt = (x: number) => `${x < 0 ? '−' : '+'}${Math.abs(x).toFixed(1)}`;
+  const changes = [`Everything into the master ${fmt(trimDb)} dB (the balance between tracks stays)`];
+  if (input !== null) changes.push(`Limiter input ${fmt(input)} dB`);
+  const tp = master.truePeakDb !== null && Number.isFinite(master.truePeakDb) ? `, true peak ${fmt(master.truePeakDb)} dBTP` : '';
+  return {
+    message: `Set the loudness for ${STYLE_LABELS[style].toLowerCase()}: the mix was ${fmt(before.lufs)} LUFS going into the master, and now plays at ${
+      Number.isFinite(master.lufs) ? `${fmt(master.lufs)} LUFS` : 'silence'
+    } (the target is ${fmt(target)}${tp}). Your balance between tracks is unchanged.`,
+    changes,
+    warnings,
+    style,
+    buses: [],
     master: { lufs: master.lufs, truePeakDb: master.truePeakDb, target },
     limiterInput: input,
   };

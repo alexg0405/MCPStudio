@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import { canChooseOutput, listOutputs, onDevicesChange, revealDevices, type AudioOutput } from '@app/audio-devices';
+import type { AudioBufferSize } from '@app/stores/prefs';
 import { formatChord } from '@core/commands/keymap';
 import { useServices } from '../../services-context';
 import { ACCENTS, findAccent, findTheme, THEMES } from '../../theme/apply';
@@ -53,6 +54,7 @@ function Switch({ checked, onChange, label }: { checked: boolean; onChange(): vo
 function SoundOutput() {
   const s = useServices();
   const chosen = useStore(s.prefs, (p) => p.outputDevice);
+  const buffer = useStore(s.prefs, (p) => p.audioBuffer);
   const [list, setList] = useState<{ outputs: AudioOutput[]; complete: boolean } | null>(null);
   const refresh = useCallback(() => void listOutputs().then(setList), []);
   useEffect(() => {
@@ -129,6 +131,21 @@ function SoundOutput() {
           </button>
         </Row>
       )}
+      <Row
+        label="Audio buffer"
+        hint="Large plays busy songs without crackles or dropouts. Small answers fastest when you play live on a keyboard, but crackles sooner. Changing it restarts the sound for a moment."
+      >
+        <select
+          className={styles.select}
+          value={buffer}
+          onChange={(e) => s.prefs.getState().set({ audioBuffer: e.target.value as AudioBufferSize })}
+          data-hint="How much audio the browser prepares ahead: large is smoothest, small answers fastest (about 21, 10 or 5 ms)"
+        >
+          <option value="large">Large: smoothest playback (recommended)</option>
+          <option value="medium">Medium</option>
+          <option value="small">Small: fastest response for playing live</option>
+        </select>
+      </Row>
       <Row label="Status" hint="Bluetooth headphones add a lot of delay; wired ones are best for recording and playing live.">
         <span className={styles.value}>{info}</span>
       </Row>

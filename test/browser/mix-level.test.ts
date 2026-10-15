@@ -5,6 +5,7 @@
  * its true peak at most −0.9 dBTP. And it is one undo step with the answer.
  */
 import { afterAll, describe, expect, it } from 'vitest';
+import { applyAnswer } from '@app/ai/apply';
 import { autoLevel, LEVEL_TARGETS, type LeveledBus } from '@app/mix/auto-level';
 import { createServices, type Services } from '@app/services';
 import type { Style } from '@core/beat/style';
@@ -55,6 +56,37 @@ describe('auto-level', () => {
     },
     120_000,
   );
+
+  it('a mix built by hand (no role buses): sets only its loudness, keeping the balance', async () => {
+    const s = createServices();
+    services.push(s);
+    buildSong(s, 'trap', { bpm: 140, low: '808', mix: false });
+    // Hot: every channel +5 dB straight into a master with a Limiter pushing +6 dB.
+    s.history.transact('hot', (d) => {
+      for (const ch of Object.values(d.channels)) if (ch.kind !== 'automation') ch.volume = Math.min(1.9, ch.volume * 1.78);
+    });
+    applyAnswer(s, {
+      message: 'limiter',
+      actions: [{ op: 'add_effect', insert: 'master', plugin: 'agstudio.limiter', params: [{ name: 'input', value: 6 }] }],
+    }, { previousBeat: null });
+    const volumes = () => {
+      const p = s.doc.getState().project;
+      return Object.values(p.channels).flatMap((c) => (c.kind === 'automation' ? [] : [c.volume]));
+    };
+    const before = volumes();
+    const res = await autoLevel(s, { style: 'trap', bars: BARS });
+    expect(res).not.toBeNull();
+    expect(res!.buses).toEqual([]);
+    const m = await measureSong(s, BARS);
+    console.log(`hand-built trap: master ${m.master.lufs.toFixed(2)} LUFS, true peak ${m.master.truePeakDb!.toFixed(2)} dBTP; ${res!.changes.join(' · ')}`);
+    expect(Math.abs(m.master.lufs - LEVEL_TARGETS.trap.master)).toBeLessThanOrEqual(1.5);
+    expect(m.master.truePeakDb!).toBeLessThanOrEqual(-0.9);
+    // Every channel moved by the same amount: the balance is the musician's.
+    const after = volumes();
+    const ratios = after.map((v, i) => v / before[i]!);
+    for (const r of ratios) expect(r).toBeCloseTo(ratios[0]!, 6);
+    expect(ratios[0]!).toBeLessThan(1);
+  }, 120_000);
 
   it('stops when asked, changing nothing', async () => {
     const s = createServices();

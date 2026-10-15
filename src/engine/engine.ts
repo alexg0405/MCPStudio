@@ -274,9 +274,12 @@ export class Engine implements EngineApi, EngineCore {
     this.mixer.pluginsChanged(set, this.project);
   }
 
-  /** A realtime engine with its own AudioContext. */
-  static realtime(opts: EngineOptions): Engine {
-    return new Engine(new AudioContext({ latencyHint: 'interactive' }), opts, false);
+  /**
+   * A realtime engine with its own AudioContext. A bigger `latencyHint` gives the audio thread more
+   * room before it runs dry (busy songs play without crackles) at the cost of a later response.
+   */
+  static realtime(opts: EngineOptions, latencyHint: AudioContextLatencyCategory | number = 'interactive'): Engine {
+    return new Engine(new AudioContext({ latencyHint }), opts, false);
   }
 
   get sampleRate(): number {

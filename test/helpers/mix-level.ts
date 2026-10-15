@@ -17,7 +17,7 @@ import { renderOffline } from '@engine/render-offline';
 const SR = 48000;
 
 /** Two bars of a full beat in `style` (drums, 808 or bass, chords, a lead), placed 4 times, then the mix setup. */
-export function buildSong(s: Services, style: Style, opts: { bpm: number; low: '808' | 'bass' }) {
+export function buildSong(s: Services, style: Style, opts: { bpm: number; low: '808' | 'bass'; mix?: boolean }) {
   const bar = (b: number, steps: number[]) => steps.map((x) => b * 16 + x);
   const kick = [...bar(0, [0, 7, 10]), ...bar(1, [0, 7, 10, 14])];
   const actions: AiAction[] = [
@@ -46,7 +46,7 @@ export function buildSong(s: Services, style: Style, opts: { bpm: number; low: '
       ],
     },
     { op: 'place_pattern', pattern: '@main', bar: 1, track: 1, times: 4 },
-    { op: 'setup_mix', style, mode: 'rebuild' },
+    ...(opts.mix === false ? [] : [{ op: 'setup_mix', style, mode: 'rebuild' } as AiAction]),
   ];
   const res = applyAnswer(s, { message: 'A song', actions }, { previousBeat: null, label: 'song' });
   s.view.getState().setMode('song');

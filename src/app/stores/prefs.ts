@@ -51,12 +51,26 @@ export interface PrefsState {
   customKeys: Record<string, string[]>;
   /** The audio output device ('' = the system default). */
   outputDevice: string;
+  /**
+   * How much audio the browser prepares ahead: 'large' plays smoothest with busy songs, 'small' answers
+   * fastest when you play live (but crackles sooner).
+   */
+  audioBuffer: AudioBufferSize;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
   scopeMode: 'scope' | 'spectrum' | 'off';
   /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
   theme: string;
   accent: string;
 }
+
+export type AudioBufferSize = 'small' | 'medium' | 'large';
+
+/** The browser's latency hint for each buffer size (about 5, 10 and 21 ms in Chrome). */
+export const AUDIO_BUFFER_HINT: Record<AudioBufferSize, AudioContextLatencyCategory> = {
+  small: 'interactive',
+  medium: 'balanced',
+  large: 'playback',
+};
 
 export interface PrefsActions {
   set(patch: Partial<PrefsState>): void;
@@ -95,6 +109,7 @@ const DEFAULTS: PrefsState = {
   recentActions: [],
   customKeys: {},
   outputDevice: '',
+  audioBuffer: 'large',
   scopeMode: 'scope',
   theme: 'marble',
   accent: 'gold',
@@ -116,6 +131,7 @@ function load(): PrefsState {
       out.theme = 'marble';
       out.accent = 'gold';
     }
+    if (!Object.hasOwn(AUDIO_BUFFER_HINT, out.audioBuffer as string)) out.audioBuffer = DEFAULTS.audioBuffer;
     return out as unknown as PrefsState;
   } catch {
     return DEFAULTS;

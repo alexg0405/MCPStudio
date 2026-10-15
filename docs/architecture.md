@@ -1750,6 +1750,13 @@ sounds, a role mix and genre loudness.
   more than 1 dB off. Progress per bus, Stop (AbortSignal). Measured (`test/browser/mix-level.test.ts`):
   trap buses exactly on target, master −10.78 LUFS, −1.05 dBTP; lo-fi buses within 0.25 dB, master
   −13.23 LUFS, −1.05 dBTP.
+- A mix without role buses (built by hand, imported, or whose buses carry under 2/3 of the playing
+  channels): `levelLoudness` renders the mix before the master chain once, trims everything into the
+  master together (routes to Master, channels straight into it) to −16 LUFS, sets the Limiter input,
+  checks and corrects once; the balance between tracks is unchanged. It warns when the master still
+  plays 2 dB over the target (a clipper or hot saturator before the Limiter).
+- "Balance the mix" (`mixer.balance`, Playlist menu; `assistant.balanceMix()`): the same step without
+  Claude, with progress and the result in the Studio; it waits while the song plays.
 - The `level_mix` after-step (registered through `levelMixStep`); `pinnedFor` (a WeakMap on the
   after-edit object) carries the answer's pinned faders, filled by the mix module's `beforeCommit`,
   which also keeps one leveling per answer.
@@ -1759,7 +1766,15 @@ sounds, a role mix and genre loudness.
 `setup_mix {style, mode, level}` (default mode: rebuild after a beat in the answer, else fill-gaps) and
 `level_mix {style, from_bar, bars}` (in a focus: that part). Prompt section "Mixing by role" (order 25):
 set up and level new songs; "mix it / louder" → level_mix; "check my mix" or a specific problem →
-analyze_mix and fix by hand; never both in one answer.
+analyze_mix and fix by hand; never both in one answer; space through shared Reverb/Delay returns rather
+than a reverb on every track (each costs the audio thread).
+
+### Audio buffer (`prefs.audioBuffer`)
+
+Settings → Sound output → Audio buffer: large (latencyHint 'playback', about 21 ms; the default),
+medium ('balanced', 10 ms) or small ('interactive', 5 ms). A change reboots the engine (new
+AudioContext; playback carries on). Busy songs on a loaded machine underrun the 5 ms buffer: measured
+as the audio clock advancing slower than wall time during playback.
 
 ### Not done / to wire at integration
 

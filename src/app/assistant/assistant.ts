@@ -1,5 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { generateLocalBeat, type PerformanceRole } from '@core/beat/local';
+import { inferStyle } from '@core/beat/style';
 import type { BeatSpec } from '@core/beat/spec';
 import { encodeWav } from '@core/io/wav';
 import { ticksPerBar } from '@core/time/ppq';
@@ -905,6 +906,17 @@ export class BeatAssistant {
       'Listen to my mix and make it sound better: balance the levels, fix what clashes or sounds harsh, muddy or thin, and get the master to a good loudness without clipping. Tell me what you changed and why.',
       true,
     );
+  }
+
+  /**
+   * "Balance the mix": levels the song without Claude (auto-level: the role buses around the kick,
+   * or for a mix built by hand just its loudness), one undo step, with progress in the Studio. It
+   * waits while the song plays.
+   */
+  async balanceMix(): Promise<void> {
+    if (this.store.getState().phase !== 'idle') return;
+    const style = inferStyle(this.s.doc.getState().project);
+    await this.runAfterSteps([{ kind: 'level_mix', style }], null);
   }
 
   // ---------------------------------------------------------------- plugin builder

@@ -51,12 +51,25 @@ export function register(services: Services): void {
     hint: 'Add an insert track to the mixer',
     run: (s) => void addMixerInsert(s),
   });
+  services.commands.register({
+    id: 'mixer.balance',
+    title: 'Balance the mix',
+    category: 'Mixer',
+    hint: 'Listen to the busiest part and set the faders and the master Limiter so the song is loud but not crushed (one undo step; it waits while the song plays)',
+    enabled: (s) => s.assistant.store.getState().phase === 'idle',
+    run: (s) => {
+      // Its progress and what it changed show in the Studio.
+      if (!s.commands.isChecked('view.assistant')) s.commands.run('view.assistant');
+      void s.assistant.balanceMix();
+    },
+  });
   // FL's Ctrl+L, from either window.
   services.keymap.add([
     { chord: 'Mod+L', command: 'mixer.routeSelectedChannel', when: { focus: ['mixer'] } },
     { chord: 'Mod+L', command: 'mixer.routeSelectedChannel', when: { focus: ['channel-rack'] } },
   ]);
   addMenuItems('add', [cmd('mixer.addInsert', 50)]);
+  addMenuItems('playlist', [cmd('mixer.balance', 51)]);
   // Routing relative to the selected insert, appended to the strip and slot menus.
   addContextMenuItems('mixer.strip', stripRoutingItems);
   addContextMenuItems('mixer.slot', slotRoutingItems);

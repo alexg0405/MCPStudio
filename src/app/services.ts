@@ -17,7 +17,7 @@ import { AutomationService } from './automation';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
-import { createPrefsStore, type PrefsState, type PrefsStore } from './stores/prefs';
+import { AUDIO_BUFFER_HINT, createPrefsStore, type PrefsState, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { ControllerRouter } from './controllers';
 import { LiveInput } from './live-input';
@@ -157,12 +157,20 @@ export function createServices(opts: ServiceOptions = {}): Services {
     },
     onPluginTap: (owner, tap, live) => taps.report(owner, tap, live),
   };
-  const makeEngine = opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o));
+  const makeEngine =
+    opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o, AUDIO_BUFFER_HINT[prefs.getState().audioBuffer]));
   const engine = new EngineHost(() => makeEngine(engineOptions));
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
   prefs.subscribe(applyOutput);
   applyOutput();
+  // A new buffer size needs a new AudioContext: reboot the engine (playback carries on from where it was).
+  let appliedBuffer = prefs.getState().audioBuffer;
+  prefs.subscribe((p) => {
+    if (p.audioBuffer === appliedBuffer) return;
+    appliedBuffer = p.audioBuffer;
+    void engine.reboot();
+  });
   const recording = new RecordController(engine, (kind) =>
     kind === 'audio' ? prefs.getState().recordAudio : prefs.getState().recordNotes,
   );

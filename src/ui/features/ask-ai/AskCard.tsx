@@ -167,11 +167,14 @@ function AskCard() {
           {busy && (
             <div className={styles.status}>
               <span className={styles.spark}>✦</span>
-              {phase === 'listening' && listening
-                ? `${listening.label} (${Math.round(listening.fraction * 100)}%)…`
-                : phase === 'thinking'
-                  ? 'Working on it…'
-                  : 'The AI studio is busy…'}
+              <span className={styles.statusText}>
+                {phase === 'listening' && listening
+                  ? `${listening.label} (${Math.round(listening.fraction * 100)}%)…`
+                  : phase === 'thinking'
+                    ? 'Working on it…'
+                    : 'The AI studio is busy…'}
+              </span>
+              <span className={styles.spacer} />
               <button className={styles.link} onClick={() => a.cancel()} data-hint="Stop waiting for the AI">
                 Stop
               </button>

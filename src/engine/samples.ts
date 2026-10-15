@@ -1,4 +1,5 @@
 import type { SampleRef, SampleSource } from '@core/model/types';
+import { generateFx } from './kit/fx';
 import { generate } from './kit/generators';
 import type { SampleBytesProvider } from './api';
 import { decodeAudio } from './decode';
@@ -26,7 +27,8 @@ export class SampleCache {
     const hit = this.buffers.get(key);
     if (hit) return hit;
     if (ref.source.kind !== 'builtin') return null;
-    const data = generate(ref.source.generator, sampleRate);
+    // Kit sounds, then the arranger's transition sounds (risers, impacts… named fx/<kind>/…).
+    const data = generate(ref.source.generator, sampleRate) ?? generateFx(ref.source.generator, sampleRate);
     if (!data || data.length === 0) return null;
     const buffer = new AudioBuffer({ length: data[0]!.length, numberOfChannels: data.length, sampleRate });
     data.forEach((ch, i) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, i));

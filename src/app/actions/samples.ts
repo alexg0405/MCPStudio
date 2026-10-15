@@ -1,5 +1,6 @@
 import { decodePcm } from '@core/io/wav';
 import { newId } from '@core/model/ids';
+import { fxSeconds, parseFxName } from '@core/model/fx';
 import { kitPiece } from '@core/model/kit';
 import type { AudioClip, AudioClipChannel, ChannelId, LaneId, PluginOwner, SampleRef, Tick } from '@core/model/types';
 import { DEFAULT_CHANNEL_VOLUME, paletteColor } from '@core/model/defaults';
@@ -16,8 +17,10 @@ import { AUDIO_EXTENSIONS, uploadFile } from '@platform/fs-access';
 
 const durations = new Map<string, number>();
 
-/** Length of a built-in kit sound in seconds (generated once at 48 kHz). */
+/** Length of a built-in kit sound in seconds (generated once at 48 kHz; FX sounds say it in their name). */
 export function kitDuration(generator: string): number {
+  const fx = parseFxName(generator);
+  if (fx) return fxSeconds(fx);
   let d = durations.get(generator);
   if (d === undefined) {
     const data = generate(generator, 48000);

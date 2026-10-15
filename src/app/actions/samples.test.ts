@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { encodeWav } from '@core/io/wav';
 import type { InstrumentChannel } from '@core/model/types';
 import { createTestServices } from '../testing';
-import { addAudioClip, addSampleChannels, importAudioFile, probeAudio, setChannelSample } from './samples';
+import { addAudioClip, addSampleChannels, importAudioFile, kitDuration, probeAudio, setChannelSample } from './samples';
 
 function wavFile(name: string, seconds: number, sampleRate = 44100): File {
   const x = new Float32Array(Math.round(seconds * sampleRate));
@@ -11,6 +11,12 @@ function wavFile(name: string, seconds: number, sampleRate = 44100): File {
 }
 
 describe('sample actions', () => {
+  it('knows how long built-in sounds last, the arranger’s FX sounds from their names', () => {
+    expect(kitDuration('fx/riser/16b@150')).toBeCloseTo(6.4, 9);
+    expect(kitDuration('fx/impact/9b@150')).toBeCloseTo(3.6, 9);
+    expect(kitDuration('kit/kick')).toBeCloseTo(0.6, 3);
+  });
+
   it('reads duration and layout of a WAV file', async () => {
     const bytes = new Uint8Array(await wavFile('a.wav', 0.25).arrayBuffer());
     expect(await probeAudio(bytes)).toEqual({ durationSec: 0.25, sampleRate: 44100, channels: 2 });

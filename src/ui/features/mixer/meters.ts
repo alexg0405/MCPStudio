@@ -6,7 +6,7 @@
 import type { Services } from '@app/services';
 import type { InsertId } from '@core/model/types';
 import { onFrame } from '../../frame-loop';
-import { onThemeChange } from '../../timeline/canvas';
+import { onThemeChange, readTheme } from '../../timeline/canvas';
 import { dbToPosition, FADER_PAD, FLOOR_DB } from './scale';
 
 /** Displayed level falls this fast once the signal drops (dB per second). */
@@ -22,6 +22,8 @@ interface Meter {
   h: number;
   dpr: number;
   gradient: CanvasGradient | null;
+  /** The same scale, faint: the unlit part of the meter. */
+  unlit: CanvasGradient | null;
   level: [number, number];
   hold: [number, number];
   holdUntil: [number, number];
@@ -35,6 +37,8 @@ interface Colors {
   hi: string;
   hold: string;
   tick: string;
+  /** The unlit scale's opacity. */
+  unlit: number;
 }
 
 export class MeterBank {
@@ -42,7 +46,7 @@ export class MeterBank {
   private readonly byCanvas = new WeakMap<Element, Meter>();
   private peaks = new Float32Array(0);
   private observer: ResizeObserver | null = null;
-  private colors: Colors = { lo: '#67d05b', mid: '#e3cf46', hi: '#e5574d', hold: '#d9dfe4', tick: '#6a747c' };
+  private colors: Colors | null = null;
   private lastTime = 0;
 
   /** Registers an insert's canvas (use as a ref callback; returns the cleanup). */
@@ -54,6 +58,7 @@ export class MeterBank {
       h: 0,
       dpr: 1,
       gradient: null,
+      unlit: null,
       level: [FLOOR_DB, FLOOR_DB],
       hold: [FLOOR_DB, FLOOR_DB],
       holdUntil: [0, 0],
@@ -133,27 +138,33 @@ export class MeterBank {
     this.buildGradient(m);
   }
 
-  /** The meter's fill (green to red up the scale) for its size and the theme's colors. */
+  /** The meter's fill (green to gold to red up the scale) for its size and the theme's colors. */
   private buildGradient(m: Meter): void {
     const { dpr, h } = m;
     m.drawn = '';
     m.gradient = null;
-    if (m.g && h > 0) {
+    m.unlit = null;
+    const c = this.colors;
+    if (m.g && h > 0 && c) {
       const pad = FADER_PAD * dpr;
-      const grad = m.g.createLinearGradient(0, h - pad, 0, pad);
-      const c = this.colors;
-      grad.addColorStop(0, c.lo);
-      grad.addColorStop(dbToPosition(-18), c.lo);
-      grad.addColorStop(dbToPosition(-6), c.mid);
-      grad.addColorStop(dbToPosition(0), c.hi);
-      grad.addColorStop(1, c.hi);
-      m.gradient = grad;
+      const make = () => {
+        const grad = (m.g as CanvasRenderingContext2D).createLinearGradient(0, h - pad, 0, pad);
+        grad.addColorStop(0, c.lo);
+        grad.addColorStop(dbToPosition(-18), c.lo);
+        grad.addColorStop(dbToPosition(-6), c.mid);
+        grad.addColorStop(dbToPosition(0), c.hi);
+        grad.addColorStop(1, c.hi);
+        return grad;
+      };
+      m.gradient = make();
+      m.unlit = make();
     }
   }
 
   private draw(m: Meter): void {
     const g = m.g;
-    if (!g || !m.gradient || m.w === 0 || m.h === 0) return;
+    const c = this.colors;
+    if (!g || !c || !m.gradient || m.w === 0 || m.h === 0) return;
     const pad = FADER_PAD * m.dpr;
     const span = m.h - 2 * pad;
     const y = (db: number) => Math.round(m.h - pad - dbToPosition(db) * span);
@@ -166,26 +177,33 @@ export class MeterBank {
     const gap = Math.max(1, Math.round(m.dpr));
     const bar = Math.floor((m.w - gap) / 2);
     g.clearRect(0, 0, m.w, m.h);
-    // 0 dB tick.
-    g.fillStyle = this.colors.tick;
-    g.fillRect(0, y(0), m.w, gap);
+    const top = Math.round(pad);
+    // The unlit scale, faint, so the meter reads as a slim colored channel even in silence.
+    g.globalAlpha = c.unlit;
+    g.fillStyle = m.unlit as CanvasGradient;
+    g.fillRect(0, top, bar, bottom - top);
+    g.fillRect(m.w - bar, top, bar, bottom - top);
+    g.globalAlpha = 1;
     g.fillStyle = m.gradient;
     if (l < bottom) g.fillRect(0, l, bar, bottom - l);
     if (r < bottom) g.fillRect(m.w - bar, r, bar, bottom - r);
-    g.fillStyle = clip ? this.colors.hi : this.colors.hold;
+    // 0 dB tick.
+    g.fillStyle = c.tick;
+    g.fillRect(0, y(0), m.w, gap);
+    g.fillStyle = clip ? c.hi : c.hold;
     if (hl < bottom) g.fillRect(0, hl, bar, gap);
     if (hr < bottom) g.fillRect(m.w - bar, hr, bar, gap);
   }
 
   private resolveColors(): void {
-    const css = getComputedStyle(document.documentElement);
-    const read = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const t = readTheme();
     this.colors = {
-      lo: read('--ag-meter-lo', this.colors.lo),
-      mid: read('--ag-meter-mid', this.colors.mid),
-      hi: read('--ag-meter-hi', this.colors.hi),
-      hold: read('--ag-text', this.colors.hold),
-      tick: read('--ag-text-faint', this.colors.tick),
+      lo: t.meterLo,
+      mid: t.meterMid,
+      hi: t.meterHi,
+      hold: t.text,
+      tick: t.textFaint,
+      unlit: 0.12,
     };
   }
 }

@@ -118,6 +118,7 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
       onDoubleClick={() => onCommit(1)}
     >
       <div className={styles.faderTrack} />
+      <div className={styles.faderFill} style={{ height: `calc((100% - ${FADER_CAP}px) * ${pos})` }} />
       <div className={styles.faderUnity} style={{ bottom: bottomFor(UNITY_POSITION) }} />
       <div className={styles.faderCap} style={{ bottom: bottomFor(pos), marginBottom: -FADER_PAD }} />
       {status && <i className={styles.faderStatus} data-kind={status.kind} aria-hidden />}

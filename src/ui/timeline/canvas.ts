@@ -52,6 +52,10 @@ export interface TimelineTheme {
   glass: string;
   /** Dark ink for text on light fills (clips, notes, flags). */
   onLight: string;
+  /** Level meters: low, mid, hot. */
+  meterLo: string;
+  meterMid: string;
+  meterHi: string;
   /** Font family for canvas text. */
   font: string;
 }
@@ -217,6 +221,9 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     sheen: v('--ag-sheen', 'rgba(255,255,255,0.025)'),
     glass: v('--ag-glass-strong', 'rgba(18,19,22,0.9)'),
     onLight: v('--ag-on-light', '#111214'),
+    meterLo: v('--ag-meter-lo', '#67d05b'),
+    meterMid: v('--ag-meter-mid', '#e3cf46'),
+    meterHi: v('--ag-meter-hi', '#e5574d'),
     font: s.getPropertyValue('--ag-font').trim() || 'system-ui, sans-serif',
   };
   return cached;

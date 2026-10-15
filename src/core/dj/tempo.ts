@@ -172,13 +172,71 @@ export function preferFaster(
   for (let i = 0; i + 1 < frames.length; i++) mids.push(peakNear(f.high, (frames[i]! + frames[i + 1]!) / 2));
   const hatHalf = mean(mids);
   const slowBpm = fastBpm / 2;
-  // Kick on every beat of F (four on the floor): S would put kicks on its offbeats.
-  if (kOff >= 0.3 * kOn && kOn > 0) return { faster: true, parity };
+  // Kick on every beat of F (four on the floor): S would put kicks on its offbeats. Only for a slow
+  // S: above ~75 BPM, low-end hits between the beats are a bass line (boom bap), not a kick.
+  if (fastBpm <= 150 && kOff >= 0.6 * kOn && kOn > 0) return { faster: true, parity };
   // The snare on the offbeats of a slow S (drum and bass two-step at 174 read as 87).
   if (slowBpm < 95 && sOff >= 1.3 * sOn && sOff > 0) return { faster: true, parity };
   // Hats on the 8ths of F: the faster tempo is the one that is felt (trap at 140, not 70).
-  if (fastBpm <= 160 && hatHalf >= 0.5 * hatOn && hatHalf > 0.5) return { faster: true, parity };
+  if (fastBpm <= 160 && hatHalf >= 0.2 * hatOn && hatHalf > 0.5) return { faster: true, parity };
   return { faster: false, parity };
+}
+
+/**
+ * The biggest section start (frame): where the level rises most (> 8 dB) over a beat, not out of
+ * silence, placed on the kick that starts it. Null when the song has no such jump.
+ */
+function biggestJump(f: OnsetFeatures, beatFrames: number): number | null {
+  const n = f.power.length;
+  let top = -Infinity;
+  for (let i = 0; i < n; i++) top = Math.max(top, 10 * Math.log10(f.power[i]! + 1e-10));
+  const floor = top - 50;
+  const sum = new Float64Array(n + 1);
+  // Frames near silence, counted: a rise out of a gap or the song's start isn't a section start.
+  const quiet = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    const d = 10 * Math.log10(f.power[i]! + 1e-10);
+    sum[i + 1] = sum[i]! + Math.max(floor, d);
+    quiet[i + 1] = quiet[i]! + (d < top - 45 ? 1 : 0);
+  }
+  const w = Math.max(2, Math.round(beatFrames));
+  let best = -1;
+  let bestRise = 8;
+  for (let i = w; i + w <= n; i++) {
+    const before = (sum[i]! - sum[i - w]!) / w;
+    const after = (sum[i + w]! - sum[i]!) / w;
+    if (quiet[i]! - quiet[i - w]! === 0 && before > top - 30 && after - before > bestRise) {
+      bestRise = after - before;
+      best = i;
+    }
+  }
+  if (best < 0) return null;
+  let at = best;
+  const r = Math.round(w / 3);
+  for (let j = Math.max(0, best - r); j < Math.min(n, best + r); j++) if (f.low[j]! + f.lowMid[j]! > f.low[at]! + f.lowMid[at]!) at = j;
+  return at;
+}
+
+/**
+ * The beats, or the points halfway between them when those are the real beats: offbeat hats and an
+ * offbeat bass (house) can pull the tracker half a beat off. The biggest section start (the drop,
+ * the drums coming in) decides first: it lands on a beat. Else where the kick, snare and bass weigh more.
+ */
+function onTheBeat(f: OnsetFeatures, frames: number[]): number[] {
+  if (frames.length < 8) return frames;
+  const mids = frames.slice(1).map((b, i) => Math.round((b + frames[i]!) / 2));
+  const beat = median(frames.slice(1).map((b, i) => b - frames[i]!));
+  const nearest = (pos: number[], t: number) => pos.reduce((m, x) => Math.min(m, Math.abs(x - t)), Infinity);
+  const jump = biggestJump(f, beat);
+  if (jump !== null) {
+    const dOn = nearest(frames, jump);
+    const dOff = nearest(mids, jump);
+    if (Math.min(dOn, dOff) < beat / 6 && Math.abs(dOn - dOff) > beat / 4) return dOff < dOn ? mids : frames;
+  }
+  const body = (i: number) => peakNear(f.low, i) + peakNear(f.lowMid, i) + peakNear(f.highMid, i);
+  const on = mean(frames.map(body));
+  const off = mean(mids.map(body));
+  return off > 1.15 * on ? mids : frames;
 }
 
 /** Sub-frame position of the onset peak within ±3 frames of a beat (the frame itself when there is none). */
@@ -234,6 +292,7 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
     frames = frames.filter((_, i) => i % 2 === d.parity);
     bpm /= 2;
   }
+  frames = onTheBeat(f, frames);
   // Keep the beats between the first and the last real onset.
   let strength = frames.map((b) => peakNear(o, b));
   const typical = median(strength);
@@ -248,21 +307,41 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
   // The flux of a hit that decays peaks a little before its attack reaches the frame centre.
   const times = frames.map((b) => refineFrame(o, b) / fr + ONSET_LAG);
 
-  // Fixed grid through the beats that have an onset.
+  // Fixed grid through the beats that have an onset. The tracker can follow offbeats for a while
+  // (an intro of offbeat hats) and then jump: fit the strongest stretch of evenly spaced beats first,
+  // then every beat that lies on that line.
   const p0 = median(times.slice(1).map((t, i) => t - times[i]!));
+  const isStrong = (k: number) => strength[k]! >= 0.35 * typical;
+  let best: [number, number] = [0, times.length];
+  let bestScore = -1;
+  for (let a0 = 0; a0 < times.length; ) {
+    let b0 = a0 + 1;
+    while (b0 < times.length && Math.abs(times[b0]! - times[b0 - 1]! - p0) < 0.25 * p0) b0++;
+    let sc = 0;
+    for (let k = a0; k < b0; k++) if (isStrong(k)) sc += strength[k]!;
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = [a0, b0];
+    }
+    a0 = b0;
+  }
+  const seg: number[] = [];
+  for (let k = best[0]; k < best[1]; k++) if (isStrong(k)) seg.push(k);
+  let [a, p] = seg.length >= 4 ? fitLine(seg.map((k) => k - best[0]), seg.map((k) => times[k]!)) : [times[0]!, p0];
   const strong: number[] = [];
-  for (let k = 0; k < times.length; k++) if (strength[k]! >= 0.35 * typical) strong.push(k);
-  const idx = strong.map((k) => Math.round((times[k]! - times[0]!) / p0));
-  let use = strong.map((_, j) => j);
-  let [a, p] = fitLine(idx, strong.map((k) => times[k]!));
+  for (let k = 0; k < times.length; k++) if (isStrong(k)) strong.push(k);
+  let idx = strong.map((k) => Math.round((times[k]! - a) / p));
+  let use = strong.map((_, j) => j).filter((j) => Math.abs(times[strong[j]!]! - (a + p * idx[j]!)) < 0.03);
+  if (use.length < 8) return null;
   for (let pass = 0; pass < 2; pass++) {
-    const keep = use.filter((j) => Math.abs(times[strong[j]!]! - (a + p * idx[j]!)) < 0.03);
-    if (keep.length < 8) break;
-    use = keep;
     [a, p] = fitLine(
       use.map((j) => idx[j]!),
       use.map((j) => times[strong[j]!]!),
     );
+    idx = strong.map((k) => Math.round((times[k]! - a) / p));
+    const keep = strong.map((_, j) => j).filter((j) => Math.abs(times[strong[j]!]! - (a + p * idx[j]!)) < 0.03);
+    if (keep.length < 8) break;
+    use = keep;
   }
   const residuals = (aa: number, pp: number) => use.map((j) => times[strong[j]!]! - (aa + pp * idx[j]!));
   let res = residuals(a, p);
@@ -270,12 +349,13 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
   let exact = 60 / p;
   // Most produced music sits on a whole BPM: take it when it fits as well.
   const whole = Math.round(exact);
-  if (Math.abs(exact - whole) < 0.05) {
+  if (Math.abs(exact - whole) < 0.1) {
     const pw = 60 / whole;
     const aw = mean(use.map((j) => times[strong[j]!]! - pw * idx[j]!));
     const rw = residuals(aw, pw);
     const sw = slip(rw);
-    if (sw <= Math.max(0.01, maxSlip)) {
+    // (a whole BPM that slips about as little as the best line does; a 127.95 song over minutes doesn't)
+    if (sw <= Math.max(0.01, 1.4 * maxSlip)) {
       a = aw;
       p = pw;
       res = rw;
@@ -293,19 +373,30 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
   const background = total / Math.max(1, a1 - a0);
   const salience = mean(strength) / Math.max(1e-9, background);
   if (salience < 1.3) return null;
-  // A pulse means most beats have a hit (a pad struck once a bar doesn't make a beat).
-  const loud = [...strength].sort((x, y) => x - y)[Math.floor(0.9 * (strength.length - 1))]!;
-  const hits = strength.filter((x) => x >= 0.4 * loud).length / strength.length;
-  if (hits < 0.3) return null;
+  // A pulse has hits on more than one beat of the bar (a pad struck once a bar doesn't make a beat).
+  const byPos = [0, 1, 2, 3].map((r) => mean(strength.filter((_, k) => k % 4 === r)));
+  const strongest = Math.max(...byPos);
+  const hits = byPos.filter((x) => x >= 0.3 * strongest).length / 4;
+  if (hits < 0.5) return null;
   const cSal = Math.max(0, Math.min(1, (salience - 1.3) / 2.5));
   const cFit = drift ? 0.35 : Math.exp(-((rms / 0.012) ** 2));
-  const beats = drift ? smoothBeats(times, strength, typical) : times;
+  // On a fixed grid the beats are the grid's, from the first to the last tracked beat.
+  let beats: number[];
+  let beatStrength = strength;
+  if (drift) beats = smoothBeats(times, strength, typical);
+  else {
+    const k0 = Math.ceil((times[0]! - a) / p - 0.5);
+    const k1 = Math.floor((times[times.length - 1]! - a) / p + 0.5);
+    beats = [];
+    for (let k = k0; k <= k1; k++) beats.push(a + k * p);
+    beatStrength = beats.map((t) => peakNear(o, (t - ONSET_LAG) * fr));
+  }
   return {
     bpm: Math.round(exact * 100) / 100,
     period: p,
     origin: a,
     beats,
-    strength,
+    strength: beatStrength,
     drift,
     confidence: Math.round(cSal * cFit * 100) / 100,
     maxSlip,

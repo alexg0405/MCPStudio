@@ -47,7 +47,6 @@ export function analyzeTrack(input: AnalysisInput, opts: AnalysisRunOptions = {}
   const track = trackBeats(f);
   opts.onProgress?.(0.9);
   check();
-  const key = estimateKey(c);
 
   let grid: BeatGrid | null = null;
   const bounds: number[] = [];
@@ -83,6 +82,10 @@ export function analyzeTrack(input: AnalysisInput, opts: AnalysisRunOptions = {}
     for (let t = 0; t < durationSec; t += 2) bounds.push(t);
     bounds.push(durationSec);
   }
+  // Songs tend to sit on their tonic where a phrase starts: the first bar of every four counts double.
+  const emphasis: [number, number][] = [];
+  if (grid) for (let i = 0; i + 1 < bounds.length; i += 4) emphasis.push([bounds[i]!, bounds[i + 1]!]);
+  const key = estimateKey(c, emphasis);
   const s = analyzeStructure(f, c, bounds, durationSec);
   opts.onProgress?.(1);
   return {

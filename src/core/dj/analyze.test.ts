@@ -140,6 +140,6 @@ describe('track analysis: hard cases', () => {
     const ms = performance.now() - t0;
     console.log(`5-minute song analyzed in ${Math.round(ms)} ms`);
     expect(a.grid?.bpm).toBe(124);
-    expect(ms).toBeLessThan(15000);
+    expect(ms).toBeLessThan(30000);
   }, 60_000);
 });

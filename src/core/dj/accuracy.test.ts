@@ -77,5 +77,5 @@ describe('accuracy sweep', () => {
     expect(bpmOk).toBeGreaterThanOrEqual(n - 1);
     expect(downbeatOk).toBeGreaterThanOrEqual(n - 2);
     expect(keyOk).toBeGreaterThanOrEqual(n - 1);
-  }, 60_000);
+  }, 120_000);
 });

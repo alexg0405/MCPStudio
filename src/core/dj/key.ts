@@ -69,17 +69,25 @@ export interface KeyScores {
   profile: Float64Array;
 }
 
-/** The song's pitch-class profile (sums to 1): frames weighted by the square root of their tonal energy. */
-export function songProfile(c: Chromagram, from = 0, to = Infinity, bassWeight = 0.6): Float64Array {
+/** Stretches of a song (seconds) that count double: phrase starts, where songs sit on their tonic. */
+export type KeyEmphasis = readonly (readonly [number, number])[];
+
+/**
+ * The song's pitch-class profile (sums to 1): frames weighted by the square root of their tonal
+ * energy; treble and bass profiles mixed, the treble counting less when it is nearly flat (hats and
+ * noise, no chords), and frames inside `emphasis` counting double.
+ */
+export function songProfile(c: Chromagram, emphasis: KeyEmphasis = [], bassWeight = 0.6): Float64Array {
   const treble = new Float64Array(12);
   const bass = new Float64Array(12);
-  const a = Math.max(0, Math.floor(from * c.frameRate));
-  const b = Math.min(c.frames, Math.ceil(to * c.frameRate));
-  for (let f = a; f < b; f++) {
+  const weight = new Float64Array(c.frames).fill(1);
+  for (const [t0, t1] of emphasis)
+    for (let f = Math.max(0, Math.round(t0 * c.frameRate)); f < Math.min(c.frames, Math.round(t1 * c.frameRate)); f++) weight[f] = 2;
+  for (let f = 0; f < c.frames; f++) {
     const e = c.energy[f]!;
     if (!(e > 0)) continue;
     // Each frame counts by sqrt(energy): loud frames lead, quiet ones still count.
-    const w = 1 / Math.sqrt(e);
+    const w = weight[f]! / Math.sqrt(e);
     for (let k = 0; k < 12; k++) {
       treble[k] = treble[k]! + w * c.treble[f * 12 + k]!;
       bass[k] = bass[k]! + w * c.bass[f * 12 + k]!;
@@ -87,8 +95,10 @@ export function songProfile(c: Chromagram, from = 0, to = Infinity, bassWeight =
   }
   const st = treble.reduce((x, y) => x + y, 0);
   const sb = bass.reduce((x, y) => x + y, 0);
+  const peak = st > 0 ? (12 * Math.max(...treble)) / st : 0;
+  const tw = sb > 0 ? Math.max(0.15, Math.min(1, (peak - 1.2) / 0.8)) : 1;
   const out = new Float64Array(12);
-  for (let k = 0; k < 12; k++) out[k] = (st > 0 ? treble[k]! / st : 0) + (sb > 0 ? (bassWeight * bass[k]!) / sb : 0);
+  for (let k = 0; k < 12; k++) out[k] = (st > 0 ? (tw * treble[k]!) / st : 0) + (sb > 0 ? (bassWeight * bass[k]!) / sb : 0);
   const s = out.reduce((x, y) => x + y, 0);
   if (s > 0) for (let k = 0; k < 12; k++) out[k] = out[k]! / s;
   return out;
@@ -101,11 +111,15 @@ export function keyScores(profile: Float64Array): number[] {
   return scores;
 }
 
-/** The key, or null when the audio has no clear pitch content (drums only, noise). */
-export function estimateKey(c: Chromagram): TrackKey | null {
+/**
+ * The key, or null when the audio has no clear pitch content (drums only, noise). Without a third
+ * (an 808 on the root, a fifth and a flat seventh), the key is called minor: what most bass-led
+ * hip-hop, trap and dance music is written in.
+ */
+export function estimateKey(c: Chromagram, emphasis: KeyEmphasis = []): TrackKey | null {
   const total = c.energy.reduce((a, b) => a + b, 0);
   if (!(total > 0)) return null;
-  const profile = songProfile(c);
+  const profile = songProfile(c, emphasis);
   const scores = keyScores(profile);
   let best = 0;
   for (let i = 1; i < 24; i++) if (scores[i]! > scores[best]!) best = i;
@@ -117,7 +131,9 @@ export function estimateKey(c: Chromagram): TrackKey | null {
   for (let k = 0; k < 12; k++) max = Math.max(max, profile[k]!);
   if (r1 < 0.4 || max < 1.4 / 12) return null;
   const root = best % 12;
-  const mode = best < 12 ? 'major' : 'minor';
+  const tonic = profile[root]!;
+  const thirds = Math.max(profile[(root + 3) % 12]!, profile[(root + 4) % 12]!);
+  const mode = best >= 12 || thirds < 0.1 * tonic ? 'minor' : 'major';
   const fit = Math.max(0, Math.min(1, (r1 - 0.45) / 0.4));
   const margin = Math.max(0, Math.min(1, (r1 - r2) / 0.1));
   return {

@@ -25,28 +25,41 @@
 
 /* ---- Toolbar ---- */
 
+/* A strip of faint marble across the top; groups are split by short hairlines, not boxes. */
 .toolbar {
   display: flex;
   align-items: stretch;
-  gap: 6px;
+  gap: 4px;
   overflow: hidden;
   padding: 0 8px 0 0;
-  background: linear-gradient(var(--ag-surface-2), var(--ag-surface-1));
-  border-bottom: 1px solid var(--ag-border);
-  box-shadow: 0 1px 0 var(--ag-highlight) inset;
+  background:
+    linear-gradient(var(--ag-sheen), transparent 70%),
+    linear-gradient(color-mix(in srgb, var(--ag-surface-1) 55%, transparent), color-mix(in srgb, var(--ag-surface-1) 55%, transparent)),
+    var(--ag-marble) 0 0 / 1600px 1000px,
+    var(--ag-surface-1);
+  border-bottom: 1px solid var(--ag-border-soft);
+  box-shadow: inset 0 1px 0 var(--ag-highlight);
   position: relative;
   z-index: 100000;
 }
 
+/* A short centered divider on the right of a group. */
+.divider {
+  background-image: linear-gradient(var(--ag-border-soft), var(--ag-border-soft));
+  background-repeat: no-repeat;
+  background-size: 1px 56%;
+  background-position: right center;
+}
+
 .brandBlock {
+  composes: divider;
   display: flex;
   flex-direction: column;
   justify-content: center;
   flex: none;
   min-width: 0;
   overflow: hidden;
-  padding: 3px 8px 3px 8px;
-  border-right: 1px solid var(--ag-border);
+  padding: 4px 8px 4px 10px;
 }
 
 .brandRow {
@@ -57,15 +70,16 @@
 }
 
 .brand {
+  font-family: var(--ag-font-display);
   font-weight: 300;
-  font-size: 15px;
-  letter-spacing: 0.02em;
+  font-size: var(--ag-font-size-title);
+  letter-spacing: 0.01em;
   color: var(--ag-accent);
   padding-right: 4px;
 }
 
 .brand b {
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ag-text);
 }
 
@@ -74,30 +88,31 @@
   width: 0;
   min-width: 100%;
   box-sizing: border-box;
-  margin-top: 3px;
+  margin-top: 4px;
   height: 18px;
-  padding: 1px 6px;
-  border-radius: 2px;
-  background: var(--ag-surface-inset);
-  border: 1px solid var(--ag-border);
+  padding: 1px 8px;
+  border-radius: var(--ag-radius);
+  background: color-mix(in srgb, var(--ag-surface-inset) 80%, transparent);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .toolbarGroup {
+  composes: divider;
   display: flex;
   flex: none;
   align-items: center;
   gap: 4px;
-  padding: 0 6px;
-  border-right: 1px solid var(--ag-border);
+  padding: 0 8px;
 }
 
 .toolbarGroup:last-child {
-  border-right: 0;
+  background-image: none;
 }
 
 /* Takes the leftover width; slots that don't fit move into its "More" dropdown (see OverflowSlots). */
@@ -106,11 +121,16 @@
   /* Room for the "More" button at least. */
   min-width: 46px;
   overflow: hidden;
-  border-right: 0;
+  background-image: none;
 }
 
-.toolbarGroupRight {
-  border-left: 1px solid var(--ag-border);
+.toolbarGroupRight,
+.toolbarGroupRight:last-child {
+  /* The divider sits on its left (the fill group before it has none). */
+  background-image: linear-gradient(var(--ag-border-soft), var(--ag-border-soft));
+  background-repeat: no-repeat;
+  background-size: 1px 56%;
+  background-position: left center;
 }
 
 .toolbarSlot {
@@ -131,11 +151,13 @@
   align-items: flex-start;
   gap: 6px;
   padding: 8px;
-  background: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  box-shadow: var(--ag-shadow);
+  background: var(--ag-glass);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-elev-2);
   z-index: 10;
+  animation: ag-float-in var(--ag-dur) var(--ag-ease);
 }
 
 .toolbarOverflowItem {
@@ -148,6 +170,7 @@
   display: none;
 }
 
+/* Toolbar buttons are ghosts: transparent until hovered; "on" is a soft gold well. */
 .toolButton {
   display: inline-flex;
   align-items: center;
@@ -156,27 +179,36 @@
   height: 28px;
   min-width: 28px;
   padding: 0 7px;
-  border: 1px solid var(--ag-border);
+  border: 1px solid transparent;
   border-radius: var(--ag-radius);
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  background: transparent;
   color: var(--ag-text-dim);
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 1px 0 var(--ag-highlight) inset;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease);
 }
 
 .toolButton:hover:not(:disabled) {
   color: var(--ag-text);
-  background: linear-gradient(var(--ag-hover), var(--ag-surface-3));
+  background: var(--ag-hover);
+}
+
+.toolButton:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .toolButton:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 
-.toolButtonOn {
+.toolButtonOn,
+.toolButtonOn:hover:not(:disabled) {
   color: var(--ag-accent);
-  background: linear-gradient(var(--ag-active), var(--ag-active-2));
+  background: var(--ag-active);
   border-color: var(--ag-active-border);
 }
 
@@ -196,14 +228,17 @@
 .menuLabel {
   padding: 1px 6px;
   border: 0;
-  border-radius: 2px;
+  border-radius: var(--ag-radius-sm);
   background: transparent;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 /* Narrow windows: the wordmark and menu spacing give way so the transport and window buttons keep fitting. */
@@ -224,45 +259,60 @@
     gap: 2px;
   }
 
+  .toolbarGroup {
+    padding: 0 5px;
+  }
+
   .menuLabel {
     padding: 1px 4px;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
   }
 }
 
 .menuLabel:hover,
 .menuLabelOpen {
-  background: var(--ag-surface-3);
+  background: var(--ag-hover);
   color: var(--ag-text);
 }
 
+.menuLabelOpen {
+  color: var(--ag-accent);
+}
+
+/* Glass panels: 10px corners, 6px item highlights inside. */
 .menuDropdown {
   position: fixed;
   min-width: 240px;
-  padding: 4px 0;
-  background: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  box-shadow: var(--ag-shadow);
+  padding: 5px;
+  background: var(--ag-glass);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-elev-2);
   z-index: 10;
+  animation: ag-float-in var(--ag-dur) var(--ag-ease);
 }
 
 .menuItem {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 4px 12px 4px 6px;
+  height: 26px;
+  padding: 0 10px 0 4px;
   border: 0;
+  border-radius: var(--ag-radius);
   background: transparent;
+  color: var(--ag-text);
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .menuItem:hover:not(:disabled),
 .menuItem:focus-visible,
 .menuItemOpen {
-  background: var(--ag-accent-dim);
-  color: var(--ag-on-accent);
+  background: var(--ag-accent-soft);
+  color: var(--ag-text);
 }
 
 .menuSubRoot {
@@ -275,55 +325,76 @@
 }
 
 .menuCheck {
-  width: 16px;
+  flex: none;
+  width: 18px;
+  text-align: center;
   color: var(--ag-accent);
 }
 
 .menuText {
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .menuChord {
   color: var(--ag-text-faint);
   padding-left: 24px;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  letter-spacing: 0.02em;
 }
 
-.menuItem:hover:not(:disabled) .menuChord {
-  color: color-mix(in srgb, var(--ag-on-accent) 75%, transparent);
+.menuArrow {
+  flex: none;
+  margin-left: 24px;
+  margin-right: -4px;
+  color: var(--ag-text-faint);
+}
+
+.menuItem:hover:not(:disabled) .menuChord,
+.menuItem:hover:not(:disabled) .menuArrow,
+.menuItemOpen .menuArrow {
+  color: var(--ag-text-dim);
 }
 
 .menuSeparator {
   height: 1px;
-  margin: 4px 0;
-  background: var(--ag-border-soft);
-  opacity: 0.6;
+  margin: 4px 8px;
+  background: var(--ag-line-faint);
 }
 
 /* ---- Toasts ---- */
 
 .toasts {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  right: 16px;
+  bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 8px;
   z-index: 200000;
 }
 
 .toast {
   max-width: 420px;
-  padding: 8px 12px;
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-3);
-  border: 1px solid var(--ag-border);
-  box-shadow: var(--ag-shadow);
+  padding: 9px 14px;
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-glass);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  box-shadow: var(--ag-elev-2);
+  color: var(--ag-text);
+  line-height: 1.45;
   cursor: pointer;
+  animation: ag-toast-in 180ms var(--ag-ease);
 }
 
+/* Errors: a red edge on the left, inside the rounded corner. */
 .toastError {
-  border-left: 3px solid var(--ag-danger);
+  box-shadow:
+    inset 3px 0 0 var(--ag-danger),
+    var(--ag-elev-2);
 }
 
 /* Hover tooltips (HoverTip): a control's data-hint, shown next to it. */
@@ -333,16 +404,18 @@
   left: 0;
   z-index: 500000;
   max-width: 340px;
-  padding: 5px 8px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: 4px;
+  padding: 5px 9px;
+  border-radius: var(--ag-radius);
   background: var(--ag-tooltip);
-  color: var(--ag-text);
-  font-size: 11.5px;
-  line-height: 1.4;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  color: var(--ag-tooltip-text);
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.45;
+  box-shadow: var(--ag-elev-2);
   pointer-events: none;
   white-space: pre-line;
+  animation: ag-fade-in 120ms var(--ag-ease);
 }
 
 .tip[hidden] {
@@ -351,11 +424,10 @@
 
 .tip kbd {
   margin-left: 8px;
-  padding: 0 4px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: 3px;
-  background: var(--ag-surface-2);
-  color: var(--ag-text-dim);
+  padding: 0 5px;
+  border-radius: var(--ag-radius-sm);
+  background: color-mix(in srgb, var(--ag-tooltip-text) 12%, transparent);
+  color: color-mix(in srgb, var(--ag-tooltip-text) 80%, transparent);
   font-family: var(--ag-font);
   font-size: 10.5px;
 }
@@ -371,9 +443,10 @@
 }
 
 .hintIdle kbd {
-  padding: 0 3px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: 2px;
+  padding: 0 4px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-line-faint);
+  color: var(--ag-text-dim);
   font-family: var(--ag-font);
   font-size: 10px;
 }
@@ -384,5 +457,25 @@
 }
 
 .menuLabel:focus-visible {
-  box-shadow: 0 0 0 1px var(--ag-select) inset;
+  box-shadow: inset 0 0 0 1.5px var(--ag-accent);
+}
+
+@keyframes ag-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes ag-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes ag-fade-in {
+  from {
+    opacity: 0;
+  }
 }

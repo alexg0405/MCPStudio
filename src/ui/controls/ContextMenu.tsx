@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createStore, useStore } from 'zustand';
 import { holdModal } from './Dialog';
+import { Icon } from './Icon';
 import { focusFirstItem, moveInPanel, submenuOf } from './menu-nav';
 import styles from './ContextMenu.module.css';
 
@@ -117,7 +118,7 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
   const openSub = (index: number, el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     const flip = r.right + 200 > window.innerWidth;
-    setSub({ index, top: r.top - 4, left: flip ? r.left : r.right, flip });
+    setSub({ index, top: r.top - 5, left: flip ? r.left : r.right, flip });
   };
   return (
     <>
@@ -183,7 +184,7 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
               >
                 <span className={styles.check} />
                 <span className={styles.text}>{item.label}</span>
-                <span className={styles.arrow}>▸</span>
+                <Icon name="chevronRight" size={12} className={styles.arrow} />
               </button>
               {isOpen && <SubPanel items={typeof item.items === 'function' ? item.items() : item.items} at={sub} />}
             </div>

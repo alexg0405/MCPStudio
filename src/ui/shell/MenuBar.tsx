@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../controls/Dialog';
+import { Icon } from '../controls/Icon';
 import { focusFirstItem, moveInPanel, panelItems, submenuOf } from '../controls/menu-nav';
 import { useServices } from '../services-context';
 import { getMenuItems, getMenus, menusVersion, subscribeMenus, type DynamicMenuEntry, type MenuItem } from './menus';
@@ -150,7 +151,7 @@ function MenuDropdown({
   const openSub = (key: string, el: HTMLElement) => {
     const r = el.getBoundingClientRect();
     const left = r.right + 220 > window.innerWidth ? Math.max(4, r.left - 220) : r.right;
-    setSub({ key, left, top: r.top - 4 });
+    setSub({ key, left, top: r.top - 5 });
   };
   const closeSub = () => setSub(null);
 
@@ -197,7 +198,7 @@ function MenuDropdown({
     >
       <span className={styles.menuCheck} />
       <span className={styles.menuText}>{label}</span>
-      <span className={styles.menuChord}>▸</span>
+      <Icon name="chevronRight" size={12} className={styles.menuArrow} />
     </button>
   );
 

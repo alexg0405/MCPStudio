@@ -102,7 +102,7 @@ const SLOT_GAP = 4;
 
 /**
  * The center slots take whatever width is left. Slots that do not fit move, from the end, into a "More"
- * dropdown instead of being clipped. Widths are measured while a slot is in the bar and remembered.
+ * dropdown instead of being clipped (never the first one). Widths are measured while a slot is in the bar and remembered.
  */
 function OverflowSlots() {
   const slots = useToolbarSlots('center');
@@ -131,9 +131,14 @@ function OverflowSlots() {
         const w = widths.current.get(s.id) ?? 0;
         return w ? sum + w + SLOT_GAP : sum;
       }, 0);
+    // The first slot (the AI studio button) never moves into "More": it is the last thing to collapse,
+    // and the group stays wide enough to show it next to the "More" button.
+    const first = list[0] ? (widths.current.get(list[0].id) ?? 0) : 0;
+    const pad = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    group.style.minWidth = first ? `${Math.ceil(first + SLOT_GAP + MORE_BUTTON_W + pad)}px` : '';
     let n = list.length;
     if (total(n) > avail + SLOT_GAP) {
-      while (n > 0 && total(n) + MORE_BUTTON_W > avail) n--;
+      while (n > 1 && total(n) + MORE_BUTTON_W > avail) n--;
     }
     setMeasured({ ids: list.map((s) => s.id).join(','), fit: n });
     if (n === list.length) setOpen(false);

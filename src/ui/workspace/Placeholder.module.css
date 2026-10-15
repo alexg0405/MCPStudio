@@ -1,22 +1,38 @@
+/* Empty states look intentional: a faint marble panel, a quiet icon and one short line. */
 .placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--ag-space-2);
   height: 100%;
-  padding: 16px;
+  padding: var(--ag-space-4);
   color: var(--ag-text-faint);
   text-align: center;
-  background: repeating-linear-gradient(-45deg, transparent 0 12px, var(--ag-sheen) 12px 24px);
+  background:
+    radial-gradient(70% 60% at 50% 40%, var(--ag-sheen), transparent 70%),
+    linear-gradient(color-mix(in srgb, var(--ag-surface-1) 70%, transparent), color-mix(in srgb, var(--ag-surface-1) 70%, transparent)),
+    var(--ag-marble) 50% 50% / 1600px 1000px,
+    var(--ag-surface-1);
+}
+
+.placeholder > svg {
+  box-sizing: content-box;
+  padding: 10px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent);
 }
 
 .title {
-  color: var(--ag-text-dim);
-  font-size: 13px;
+  color: var(--ag-text);
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size-lg);
   font-weight: 600;
 }
 
 .text {
   max-width: 360px;
+  color: var(--ag-text-dim);
+  line-height: 1.5;
 }

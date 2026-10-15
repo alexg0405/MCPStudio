@@ -73,6 +73,7 @@
   --ag-lcd-text-alt: #b9cde6;
   --ag-well: #070708;
   --ag-tooltip: rgba(14, 15, 17, 0.94);
+  --ag-tooltip-text: var(--ag-text);
   --ag-marker: #d9bd73;
   --ag-warning: #d6b04f;
   --ag-ok-bg: #2f4a33;

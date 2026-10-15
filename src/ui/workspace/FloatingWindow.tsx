@@ -124,15 +124,15 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
             onClick={toggleMax}
             data-hint={instance.maximized ? 'Restore window size' : 'Maximize window'}
           >
-            <Icon name={instance.maximized ? 'restore' : 'maximize'} size={12} />
+            <Icon name={instance.maximized ? 'restore' : 'maximize'} size={11} />
           </button>
           <button
-            className={styles.titleButton}
+            className={`${styles.titleButton} ${styles.titleClose}`}
             onPointerDown={(e) => e.preventDefault()}
             onClick={close}
             data-hint="Close window"
           >
-            <Icon name="close" size={12} />
+            <Icon name="close" size={11} />
           </button>
         </div>
       </div>

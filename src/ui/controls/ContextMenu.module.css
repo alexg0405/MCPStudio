@@ -1,30 +1,37 @@
+/* Glass panel, 10px corners; 26px rows with 6px highlights (same look as the menu bar's menus). */
 .menu {
   position: fixed;
   z-index: 300000;
   min-width: 190px;
-  padding: 4px 0;
-  background: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  box-shadow: var(--ag-shadow);
+  padding: 5px;
+  background: var(--ag-glass);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-elev-2);
+  animation: ag-float-in var(--ag-dur) var(--ag-ease);
 }
 
 .item {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 4px 12px 4px 6px;
+  height: 26px;
+  padding: 0 10px 0 4px;
   border: 0;
+  border-radius: var(--ag-radius);
   background: transparent;
+  color: var(--ag-text);
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .item:hover:not(:disabled),
 .item:focus-visible,
 .itemOpen {
-  background: var(--ag-accent-dim);
-  color: var(--ag-on-accent);
+  background: var(--ag-accent-soft);
+  color: var(--ag-text);
 }
 
 .subRoot {
@@ -32,9 +39,15 @@
 }
 
 .arrow {
-  padding-left: 18px;
+  flex: none;
+  margin-left: 18px;
+  margin-right: -4px;
   color: var(--ag-text-faint);
-  font-size: 10px;
+}
+
+.item:hover:not(:disabled) .arrow,
+.itemOpen .arrow {
+  color: var(--ag-text-dim);
 }
 
 .item:disabled {
@@ -42,63 +55,84 @@
   cursor: default;
 }
 
-.danger:hover:not(:disabled) {
-  background: var(--ag-danger);
+.danger:hover:not(:disabled),
+.danger:focus-visible {
+  background: var(--ag-danger-tint);
+  color: var(--ag-danger);
 }
 
 .check {
-  width: 16px;
+  flex: none;
+  width: 18px;
+  text-align: center;
   color: var(--ag-accent);
 }
 
 .text {
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .shortcut {
   padding-left: 18px;
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  letter-spacing: 0.02em;
 }
 
 .separator {
   height: 1px;
-  margin: 4px 0;
-  background: var(--ag-border-soft);
-  opacity: 0.6;
+  margin: 4px 8px;
+  background: var(--ag-line-faint);
 }
 
+/* Small caps section label. */
 .label {
-  padding: 3px 12px 2px 22px;
+  padding: 6px 10px 3px 22px;
   color: var(--ag-text-faint);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
 }
 
 .swatches {
   display: grid;
   grid-template-columns: repeat(5, 18px);
-  gap: 4px;
-  padding: 4px 12px 4px 22px;
+  gap: 5px;
+  padding: 4px 10px 6px 22px;
 }
 
 .swatch {
   width: 18px;
-  height: 14px;
+  height: 18px;
   padding: 0;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  box-shadow:
+    inset 0 1px 0 var(--ag-highlight),
+    inset 0 0 0 1px var(--ag-line-faint);
   cursor: pointer;
+  transition: transform var(--ag-dur) var(--ag-ease);
 }
 
-.swatchOn,
 .swatch:hover {
-  outline: 2px solid var(--ag-text);
-  outline-offset: 1px;
+  transform: scale(1.12);
+}
+
+.swatchOn {
+  outline: 1.5px solid var(--ag-text);
+  outline-offset: 2px;
 }
 
 .item:focus-visible {
   outline: none;
+}
+
+@keyframes ag-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }

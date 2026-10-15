@@ -14,28 +14,43 @@
   top: 0;
   display: flex;
   flex-direction: column;
-  background: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
+  /* A slab resting on the stone: one hairline, soft depth. */
+  background: var(--ag-surface-1);
+  border: 1px solid var(--ag-border-soft);
+  border-radius: var(--ag-radius-lg);
   box-shadow: var(--ag-shadow);
   will-change: transform;
+}
+
+.focused {
+  border-color: color-mix(in srgb, var(--ag-text) 14%, var(--ag-border-soft));
 }
 
 .titleBar {
   flex: none;
   display: flex;
   align-items: center;
+  gap: var(--ag-space-2);
   height: var(--ag-title-h);
-  padding: 0 4px 0 9px;
-  background: var(--ag-title);
-  border-bottom: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius) var(--ag-radius) 0 0;
+  padding: 0 5px 0 12px;
+  /* Very faint marble under a wash of the title color. */
+  background:
+    linear-gradient(var(--ag-sheen), transparent),
+    linear-gradient(color-mix(in srgb, var(--ag-title) 62%, transparent), color-mix(in srgb, var(--ag-title) 62%, transparent)),
+    var(--ag-marble) 0 0 / 1600px 1000px,
+    var(--ag-title);
+  border-bottom: 1px solid var(--ag-line-faint);
+  border-radius: calc(var(--ag-radius-lg) - 1px) calc(var(--ag-radius-lg) - 1px) 0 0;
   cursor: default;
   touch-action: none;
 }
 
 .focused .titleBar {
-  background: var(--ag-title-focused);
+  background:
+    linear-gradient(var(--ag-sheen), transparent),
+    linear-gradient(color-mix(in srgb, var(--ag-title-focused) 58%, transparent), color-mix(in srgb, var(--ag-title-focused) 58%, transparent)),
+    var(--ag-marble) 0 0 / 1600px 1000px,
+    var(--ag-title-focused);
 }
 
 .title {
@@ -44,9 +59,12 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   color: var(--ag-text-dim);
+  transition: color var(--ag-dur) var(--ag-ease);
 }
 
 .focused .title {
@@ -55,25 +73,48 @@
 
 .titleButtons {
   display: flex;
+  align-items: center;
   gap: 2px;
 }
 
+/* Small round ghost buttons; close tints red. */
 .titleButton {
   display: grid;
   place-items: center;
   width: 20px;
-  height: 18px;
+  height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 2px;
+  border-radius: var(--ag-radius-pill);
   background: transparent;
-  color: var(--ag-text-dim);
+  color: var(--ag-text-faint);
   cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
+}
+
+.focused .titleButton {
+  color: var(--ag-text-dim);
 }
 
 .titleButton:hover {
-  background: var(--ag-surface-3);
+  background: var(--ag-hover);
   color: var(--ag-text);
+}
+
+.titleButton:active {
+  transform: translateY(1px);
+}
+
+.titleClose:hover {
+  background: var(--ag-danger-tint);
+  color: var(--ag-danger);
+}
+
+.titleButton:focus-visible {
+  border-radius: var(--ag-radius-pill);
+  outline-offset: 0;
 }
 
 .body {
@@ -81,7 +122,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  border-radius: 0 0 var(--ag-radius) var(--ag-radius);
+  border-radius: 0 0 calc(var(--ag-radius-lg) - 1px) calc(var(--ag-radius-lg) - 1px);
 }
 
 .handle {
@@ -155,58 +196,61 @@
 }
 
 /* The "?" title-bar button and the window's how-to panel. */
-.titleButtonOn {
-  background: var(--ag-surface-3);
-  color: var(--ag-text);
+.titleButtonOn,
+.focused .titleButtonOn {
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent);
 }
 
 .helpMark {
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   font-weight: 700;
   line-height: 1;
 }
 
+/* Over the window's content (maybe a live canvas): near-opaque, no backdrop blur. */
 .helpPanel {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--ag-space-2);
+  right: var(--ag-space-2);
   z-index: 20;
-  width: min(360px, calc(100% - 12px));
-  max-height: calc(100% - 12px);
+  width: min(360px, calc(100% - 16px));
+  max-height: calc(100% - 16px);
   overflow-y: auto;
-  padding: 10px 12px 8px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: 6px;
-  background: var(--ag-surface-2);
-  box-shadow: var(--ag-shadow);
-  font-size: 11.5px;
-  line-height: 1.45;
+  padding: var(--ag-space-3) var(--ag-space-3) var(--ag-space-2);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-glass-strong);
+  box-shadow: var(--ag-elev-2);
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.5;
+  animation: ag-float-in var(--ag-dur) var(--ag-ease);
 }
 
 .helpClose {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 8px;
+  right: 8px;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--ag-radius-pill);
   background: none;
-  color: var(--ag-text-dim);
+  color: var(--ag-text-faint);
   cursor: pointer;
 }
 
 .helpClose:hover {
-  background: var(--ag-surface-3);
+  background: var(--ag-hover);
   color: var(--ag-text);
 }
 
 .helpIntro {
-  margin: 0 18px 8px 0;
+  margin: 0 22px var(--ag-space-2) 0;
   color: var(--ag-text);
+  font-size: var(--ag-font-size);
 }
 
 .helpMoves {
@@ -215,18 +259,26 @@
 }
 
 .helpMoves td {
-  padding: 3px 0;
+  padding: 4px 0;
   vertical-align: top;
-  border-top: 1px solid var(--ag-border);
+  border-top: 1px solid var(--ag-line-faint);
 }
 
 .helpMoves td:first-child {
   width: 42%;
   padding-right: 10px;
   color: var(--ag-accent);
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .helpMoves td:last-child {
   color: var(--ag-text-dim);
+}
+
+@keyframes ag-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }

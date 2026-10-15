@@ -4,17 +4,21 @@
   z-index: 400000;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: var(--ag-space-4);
   background: var(--ag-scrim);
+  animation: ag-fade-in var(--ag-dur) var(--ag-ease);
 }
 
+/* Smoked glass, big soft corners. */
 .dialog {
   width: min(440px, 100%);
-  padding: 16px 18px 14px;
-  background: var(--ag-surface-2);
-  border: 1px solid var(--ag-border);
-  border-radius: 6px;
-  box-shadow: var(--ag-shadow);
+  padding: 20px 22px 18px;
+  background: var(--ag-glass);
+  backdrop-filter: var(--ag-blur);
+  -webkit-backdrop-filter: var(--ag-blur);
+  border-radius: var(--ag-radius-xl);
+  box-shadow: var(--ag-elev-2), var(--ag-shadow);
+  animation: ag-float-in 180ms var(--ag-ease);
 }
 
 .dialog:focus {
@@ -22,69 +26,87 @@
 }
 
 .title {
-  margin: 0 0 8px;
-  font-size: 14px;
+  margin: 0 0 var(--ag-space-2);
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size-title);
   font-weight: 600;
+  letter-spacing: 0.005em;
   color: var(--ag-text);
 }
 
 .message {
   margin: 0;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--ag-text);
+  font-size: var(--ag-font-size-lg);
   /* Messages with several lines (a list of what will change) keep their line breaks. */
   white-space: pre-line;
 }
 
 .detail {
   margin: 6px 0 0;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
 .buttons {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--ag-space-2);
+  margin-top: 20px;
 }
 
+/* Dialog buttons: 32px raised stone; primary is brushed gold. */
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-width: 84px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--ag-border);
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
   border-radius: var(--ag-radius);
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-text);
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 1px 0 var(--ag-highlight) inset;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    filter var(--ag-dur) var(--ag-ease);
 }
 
-.button:hover {
-  background: linear-gradient(var(--ag-hover), var(--ag-surface-3));
+.button:hover:not(:disabled) {
+  background: var(--ag-hover);
 }
 
-.button:focus-visible {
-  outline: 2px solid var(--ag-select);
-  outline-offset: 1px;
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--ag-inset);
 }
 
-.primary {
-  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
-  border-color: var(--ag-accent-deep);
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.primary,
+.primary:hover:not(:disabled) {
+  background: var(--ag-metal);
   color: var(--ag-on-accent);
+  font-weight: 600;
 }
 
-.primary:hover {
-  background: linear-gradient(var(--ag-accent), var(--ag-accent-strong));
+.primary:hover:not(:disabled) {
+  filter: brightness(1.07);
 }
 
-.danger:not(.primary):hover {
-  color: var(--ag-on-accent);
-  background: var(--ag-danger);
+.danger:not(.primary):hover:not(:disabled) {
+  background: var(--ag-danger-tint);
+  color: var(--ag-danger-text);
 }
 
 .form {
@@ -94,16 +116,20 @@
 .fields {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--ag-space-2);
   max-height: 60vh;
-  margin-top: 10px;
+  margin-top: var(--ag-space-3);
   overflow-y: auto;
+  /* Room for the focus ring of the inputs. */
+  padding: 2px;
+  margin-left: -2px;
+  margin-right: -2px;
 }
 
 .field {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--ag-space-3);
   min-height: 30px;
 }
 
@@ -111,22 +137,42 @@
   width: 140px;
   flex: none;
   color: var(--ag-text-dim);
+  font-weight: 500;
 }
 
 .fieldValue {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-dim);
   font-variant-numeric: tabular-nums;
 }
 
+/* Inputs are inset wells. */
 .input {
   flex: 1;
   min-width: 0;
-  padding: 4px 6px;
-  border: 1px solid var(--ag-border);
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
   border-radius: var(--ag-radius);
-  background: var(--ag-surface-1);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text);
   font: inherit;
+  font-size: var(--ag-font-size-lg);
+}
+
+select.input {
+  padding-right: 4px;
+}
+
+textarea.input {
+  height: auto;
+  padding: 6px 8px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.input::placeholder {
+  color: var(--ag-text-faint);
 }
 
 .number {
@@ -138,10 +184,23 @@
 .fieldRange {
   margin-left: auto;
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
 .input:focus-visible {
-  outline: 2px solid var(--ag-select);
-  outline-offset: 0;
+  outline-offset: 1px;
+  border-radius: var(--ag-radius);
+}
+
+@keyframes ag-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ag-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
 }

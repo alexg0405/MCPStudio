@@ -4,89 +4,121 @@
   gap: 4px;
 }
 
+/* PAT / SONG: two LEDs in a small inset well. */
 .modeSwitch {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1px;
+  gap: 2px;
   height: 34px;
-  padding: 0 7px;
-  border: 1px solid var(--ag-border);
+  padding: 0 9px;
+  border: 0;
   border-radius: var(--ag-radius);
-  background: var(--ag-surface-inset);
-  color: var(--ag-text-faint);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  background: var(--ag-lcd);
+  box-shadow: var(--ag-inset);
+  color: color-mix(in srgb, var(--ag-lcd-text) 38%, var(--ag-lcd));
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
   cursor: pointer;
+  transition: color var(--ag-dur) var(--ag-ease);
+}
+
+.modeSwitch:hover {
+  color: color-mix(in srgb, var(--ag-lcd-text) 60%, var(--ag-lcd));
 }
 
 .modeSwitch span {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 
 .led {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ag-led-off);
+  background: color-mix(in srgb, var(--ag-led-off) 70%, var(--ag-lcd));
 }
 
-.modeOn {
-  color: var(--ag-text);
+.modeOn,
+.modeSwitch:hover .modeOn {
+  color: var(--ag-lcd-text);
 }
 
 .modeOn .led {
   background: var(--ag-led);
-  box-shadow: 0 0 6px var(--ag-led);
+  box-shadow: 0 0 6px var(--ag-led-glow);
 }
 
+/* Play: bright when stopped; brushed gold while playing. */
 .play:global(:not(:disabled)) {
-  color: var(--ag-led);
+  color: var(--ag-text);
+}
+
+.play:global([aria-pressed='true']),
+.play:global([aria-pressed='true']:hover:not(:disabled)) {
+  background: var(--ag-metal);
+  border-color: var(--ag-accent-deep);
+  color: var(--ag-on-accent);
+  box-shadow:
+    0 0 12px var(--ag-accent-soft),
+    var(--ag-elev-1);
 }
 
 .record:global(:not(:disabled)) {
   color: var(--ag-danger);
 }
 
-.metronome:global(:not(:disabled)) {
+.record:global([aria-pressed='true']),
+.record:global([aria-pressed='true']:hover:not(:disabled)) {
+  background: var(--ag-danger-tint);
+  border-color: var(--ag-danger-line);
+  color: var(--ag-danger);
+}
+
+.metronome:global(:not(:disabled):not([aria-pressed='true'])) {
   color: var(--ag-text-dim);
 }
 
+/* LCD displays: ivory mono on a dark well with a faint glow. */
 .lcd {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   justify-content: center;
   height: 34px;
-  min-width: 78px;
-  padding: 0 8px;
-  border: 1px solid var(--ag-border);
+  min-width: 80px;
+  padding: 0 9px;
   border-radius: var(--ag-radius);
-  background: var(--ag-lcd);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) inset;
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--ag-lcd-text) 7%, transparent), transparent 70%),
+    var(--ag-lcd);
+  box-shadow: var(--ag-inset);
 }
 
 .lcdValue {
   font-family: var(--ag-font-mono);
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--ag-font-size-title);
+  font-weight: 500;
   color: var(--ag-lcd-text);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   line-height: 1.1;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--ag-lcd-text) 35%, transparent);
 }
 
 .lcdLabel {
-  font-size: 9px;
-  color: var(--ag-text-faint);
-  letter-spacing: 0.08em;
+  font-size: 8.5px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--ag-lcd-text) 42%, var(--ag-lcd));
+  letter-spacing: var(--ag-label-tracking);
 }
 
-/* The tempo is automated (a tempo clip): blue frame; while it moves, the value turns blue too. */
+/* The tempo is automated (a tempo clip): blue edge; while it moves, the value turns blue too. */
 .lcdAutomated {
-  border-color: var(--ag-select);
+  box-shadow:
+    var(--ag-inset),
+    inset 0 0 0 1px var(--ag-select);
 }
 
 .lcdAutomated .lcdLabel {
@@ -95,30 +127,37 @@
 
 .lcd[data-live] .lcdValue {
   color: var(--ag-lcd-text-alt);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--ag-lcd-text-alt) 35%, transparent);
 }
 
 .time {
-  min-width: 100px;
+  min-width: 102px;
 }
 
 .audioStatus {
   padding: 0 8px;
   color: var(--ag-text-faint);
   font-family: var(--ag-font-mono);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   white-space: nowrap;
 }
 
 .audioOff {
-  padding: 4px 10px;
+  height: 26px;
+  padding: 0 12px;
   border: 1px solid var(--ag-accent-dim);
-  border-radius: var(--ag-radius);
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-accent-tint);
   color: var(--ag-accent);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color var(--ag-dur) var(--ag-ease);
+}
+
+.audioOff:hover {
+  background: var(--ag-accent-soft);
 }
 
 @media (max-width: 1180px) {

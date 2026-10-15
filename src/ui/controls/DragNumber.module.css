@@ -7,10 +7,14 @@
 .input {
   width: 100%;
   min-width: 0;
-  padding: 0 2px;
-  border: 1px solid var(--ag-accent);
-  border-radius: 2px;
-  background: var(--ag-surface-inset);
+  padding: 0 3px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  /* Follows the text color, so it reads on any well (the dark LCD in a light theme too). */
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  box-shadow: inset 0 0 0 1px var(--ag-accent-dim);
+  color: inherit;
+  outline: none;
   font-family: var(--ag-font-mono);
   text-align: right;
 }

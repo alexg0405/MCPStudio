@@ -35,7 +35,7 @@ import {
 } from '@core/arrange/transitions';
 import { inferStyle, type Style } from '@core/beat/style';
 import { fxBeats } from '@core/model/fx';
-import type { ClipId, LaneId, PatternId, Project, Tick, VariantKind, VariantStep } from '@core/model/types';
+import type { ChannelId, ClipId, InsertId, LaneId, PatternId, Project, Tick, VariantKind, VariantStep } from '@core/model/types';
 import { tidySong } from '@core/ops/tidy';
 import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
@@ -72,6 +72,8 @@ export interface ArrangeInput {
   fx: FxLevel;
   mix: 'auto' | 'keep';
   ending: 'auto' | EndingKind;
+  /** Mixer tracks and channels whose levels were set on purpose (the mix setup leaves them). */
+  pinned?: { inserts?: ReadonlySet<InsertId>; channels?: ReadonlySet<ChannelId> };
 }
 
 const lineOf = (p: Project, from: Tick, to: Tick) => barSpan(from, to, p.transport.timeSig);
@@ -88,7 +90,13 @@ export function arrangeInDraft(d: Draft<Project>, s: Services, base: Project, in
   const changes: string[] = [];
   let layout;
   if (input.mix === 'auto') {
-    const mix = setupMix(d, s, { style, roles: rolesOf(p), mode: 'rebuild' });
+    const mix = setupMix(d, s, {
+      style,
+      roles: rolesOf(p),
+      mode: 'rebuild',
+      ...(input.pinned?.inserts ? { pinned: input.pinned.inserts } : {}),
+      ...(input.pinned?.channels ? { pinnedChannels: input.pinned.channels } : {}),
+    });
     layout = mix.layout;
     changes.push(...mix.changes);
   }

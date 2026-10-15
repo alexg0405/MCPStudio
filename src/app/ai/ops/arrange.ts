@@ -38,6 +38,7 @@ import {
 } from '../../arrange/run';
 import * as S from '../schema/parts';
 import { SONG_CRAFT } from './arrange-prompt';
+import { beatAnswerState } from './beat';
 import { fail, type OpContext, type OpModule } from './context';
 import { bool, isObj, num, str } from './values';
 
@@ -234,7 +235,17 @@ export const arrange: OpModule = {
           d,
           c.s,
           c.base,
-          { ...(from !== undefined ? { from } : {}), replace, style: styleOf(a, c.project), sections, fx, mix, ending },
+          {
+            ...(from !== undefined ? { from } : {}),
+            replace,
+            style: styleOf(a, c.project),
+            sections,
+            fx,
+            mix,
+            ending,
+            // Levels the AI set in this answer (faders, beat tracks) stay as it set them.
+            pinned: { inserts: c.state.pinnedInserts, channels: beatAnswerState(c.state).levels },
+          },
           (f, t, what) => c.focus.span(f, t, what),
         ),
       );

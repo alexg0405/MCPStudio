@@ -108,6 +108,9 @@ When they performed something (beatbox or humming), you get it as events on the 
         const own = c.focus.writable(prior.patternId);
         previous = own !== prior.patternId ? { ...prior, patternId: own } : prior;
       }
+      // Rewriting a whole pattern isn't possible while only some of its notes are selected.
+      const target = patternId ?? previous?.patternId;
+      if (target) c.focus.wholePattern(target, null, 'beat');
       const plan = planBeat(s, project, spec, previous, {
         ...(patternId ? { patternId } : {}),
         own: answer.own,

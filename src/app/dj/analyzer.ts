@@ -1,21 +1,21 @@
 /**
- * Where DJ mode gets its track analyzer: `services.trackAnalyzer` once the analysis wires it, else
- * one set with `setTrackAnalyzer` (tests, demos). Everything in DJ mode asks through here.
+ * Where DJ mode gets its track analyzer: one set with `setTrackAnalyzer` (tests, demos), else the
+ * app's `services.trackAnalyzer`. Everything in DJ mode asks through here.
  */
 import type { TrackAnalysis } from '@core/dj/types';
 import type { SampleRef } from '@core/model/types';
 import type { Services } from '../services';
 import type { TrackAnalyzer } from './analysis-cache';
 
-let fallback: TrackAnalyzer | null = null;
+let override: TrackAnalyzer | null = null;
 
-/** Sets (or with null clears) the analyzer used when the services have none. */
+/** Sets (or with null clears) an analyzer used instead of the app's. */
 export function setTrackAnalyzer(a: TrackAnalyzer | null): void {
-  fallback = a;
+  override = a;
 }
 
 export function trackAnalyzer(s: Services): TrackAnalyzer | null {
-  return (s as Services & { trackAnalyzer?: TrackAnalyzer }).trackAnalyzer ?? fallback;
+  return override ?? (s as Partial<Pick<Services, 'trackAnalyzer'>>).trackAnalyzer ?? null;
 }
 
 /** The content hash a sample's analysis is cached under (null for generated sounds). */

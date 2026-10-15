@@ -70,3 +70,22 @@ export function keyName(key: number): string {
   const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   return `${names[((key % 12) + 12) % 12]}${Math.floor(key / 12)}`;
 }
+
+const LETTER: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 };
+
+/**
+ * The MIDI key of a typed note name in FL's numbering ("C5" = 60, "F#3", "Bb4", "c#5"), or of a plain
+ * key number ("60"); null when it is neither or outside 0..127. The inverse of `keyName`.
+ */
+export function parseKeyName(text: string): number | null {
+  const t = text.trim();
+  let key: number;
+  if (/^\d+$/.test(t)) key = Number(t);
+  else {
+    const m = /^([a-g])([#♯b♭]?)(-?\d+)$/i.exec(t);
+    if (!m) return null;
+    const acc = m[2] === '#' || m[2] === '♯' ? 1 : m[2] ? -1 : 0;
+    key = Number(m[3]) * 12 + (LETTER[(m[1] as string).toLowerCase()] as number) + acc;
+  }
+  return key >= 0 && key <= 127 ? key : null;
+}

@@ -58,8 +58,8 @@ function Tempo() {
     });
   }, [services]);
   const hint = status
-    ? `Tempo (BPM) · ${status.hint} · while playing it shows the tempo you hear`
-    : 'Tempo (BPM): drag up/down or scroll to change, double-click to type · right-click to automate it';
+    ? `Tempo in BPM: drag, scroll, or click to type · ${status.hint} · while playing it shows the tempo you hear`
+    : 'Tempo in BPM: drag, scroll, or click to type (10–522, decimals like 140.5 work) · right-click to automate it';
   return (
     <div
       ref={box}
@@ -82,6 +82,8 @@ function Tempo() {
         format={(v) => v.toFixed(3)}
         {...edit}
         hint={hint}
+        editHint="Type a tempo in BPM (10–522, e.g. 140.5) · Enter sets it, Esc cancels"
+        label="Tempo in BPM"
       />
       <span className={styles.lcdLabel}>{status?.kind === 'automated' ? 'BPM · AUTO' : 'BPM'}</span>
     </div>

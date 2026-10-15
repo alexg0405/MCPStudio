@@ -4,7 +4,7 @@ import type { ChannelId, InsertId, PluginOwner, SlotId } from '@core/model/types
 import { addSample, setChannelProp, setPluginSample } from '@core/ops/channels';
 import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
-import { keyName } from '@core/time/ppq';
+import { keyName, parseKeyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
 import {
   FrameContext,
@@ -101,8 +101,12 @@ function RootKey({ channelId }: { channelId: ChannelId }) {
         perPixel={0.2}
         step={1}
         format={(v) => keyName(Math.round(v))}
-        parse={() => null}
+        parse={parseKeyName}
+        editText={(v) => keyName(Math.round(v))}
         {...edit}
+        hint="Root note: drag, scroll, or click to type a note (C5 is middle C) or a key number"
+        editHint="Type a note like C5, F#4 or Bb3 (or a key number 0–127) · Enter sets it, Esc cancels"
+        label="Root note"
       />
     </span>
   );

@@ -22,6 +22,7 @@ import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
 import { DragNumber } from '../../controls/DragNumber';
+import { parseTypedNumber } from '../../controls/number-text';
 import { Icon } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
@@ -195,8 +196,13 @@ function InsertBox({ channelId }: { channelId: ChannelId }) {
       perPixel={0.15}
       step={1}
       format={(v) => (Math.round(v) === 0 ? '--' : String(Math.round(v)))}
+      // “--”, “0” or “master” is the master; a number is that insert.
+      parse={(t) => (/^\s*(--?|m(aster)?)\s*$/i.test(t) ? 0 : parseTypedNumber(t))}
+      editText={(v) => String(Math.round(v))}
       {...edit}
-      hint="Mixer insert this channel plays through (-- = master). Drag to change."
+      hint="Mixer insert this channel plays through (-- = master): drag, scroll, or click to type its number"
+      editHint="Type a mixer insert number (0 or -- = master) · Enter sets it, Esc cancels"
+      label="Mixer insert"
     />
   );
 }

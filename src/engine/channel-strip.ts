@@ -4,7 +4,6 @@ import type { AudioClipChannel, InstrumentChannel, Project } from '@core/model/t
 import { playbackMode } from '@core/audio/playback';
 import type { InstrumentInstance, JsonValue, NoteOff, NoteOn, ParamSignal } from '@agstudio/sdk';
 import { HostImpl } from './host';
-import { requestStretch, reversedBuffer, stretchedBuffer } from './audio-buffers';
 import { createClipPlayer, type ClipPlayer } from './clip-player';
 import type { EngineCore } from './engine-core';
 import { AutoLane } from './param-lane';
@@ -92,14 +91,8 @@ export class ChannelStrip {
   private muted = false;
   private channel: InstrumentChannel | AudioClipChannel;
   private project: Project;
-  /** Audio-clip channels: the sample being played. */
-  private clipBuffer: AudioBuffer | null = null;
-  /** Audio-clip channels: the clip player (also `instance`). */
+  /** Audio-clip channels: the clip player (also `instance`). Its buffers come from the engine's residency. */
   private clipPlayer: ClipPlayer | null = null;
-  /** Audio-clip channels: stretched copies being computed, and the plan they come from. */
-  private stretchJobs: Promise<unknown> = Promise.resolve();
-  private stretchKey = '';
-  private stretching = 0;
   /** True when the plugin is missing or failed to load (silent placeholder; data is kept). */
   faulted = false;
 
@@ -128,14 +121,26 @@ export class ChannelStrip {
     this.load(channel, project);
   }
 
-  /** Resolves once the instrument (or the audio clip's sample and its stretched copies) is ready. */
+  /**
+   * Resolves once the instrument is ready. Audio clip channels are ready at once: their samples and
+   * stretched copies are the engine's residency's (Engine.ready and offline renders wait for those).
+   */
   get ready(): Promise<void> {
-    return Promise.all([this.pending, this.stretchJobs]).then(() => undefined);
+    return this.pending;
   }
 
-  /** Audio-clip channels: a stretched copy is still being computed. */
-  get isStretching(): boolean {
-    return this.stretching > 0;
+  /** Audio-clip channels: buffers arrived (a waiting clip starts, a stretched copy swaps in). */
+  buffersChanged(): void {
+    try {
+      this.clipPlayer?.refresh();
+    } catch (err) {
+      this.fault(err);
+    }
+  }
+
+  /** Audio-clip channels: frees the buffers of finished voices. */
+  sweep(): void {
+    this.clipPlayer?.sweep();
   }
 
   update(next: InstrumentChannel | AudioClipChannel, project: Project): void {
@@ -155,10 +160,8 @@ export class ChannelStrip {
       this.load(next, project);
       return;
     }
-    if (next.kind === 'audioClip') {
-      if (prev.kind === 'audioClip' && prev.sampleId !== next.sampleId) this.loadClipBuffer(next, project);
-      return;
-    }
+    // Audio clip channels read their sample through the residency at each clip start.
+    if (next.kind === 'audioClip') return;
     if (prev.kind !== 'instrument') return;
     if (prev.plugin.pluginId !== next.plugin.pluginId) {
       this.load(next, project);
@@ -171,8 +174,7 @@ export class ChannelStrip {
   /** The project's sample table changed (a sample was added or replaced). */
   samplesChanged(project: Project): void {
     this.project = project;
-    if (this.channel.kind === 'audioClip') this.loadClipBuffer(this.channel, project);
-    else this.host?.apply(this.channel.plugin, project, this.core.ctx.currentTime);
+    if (this.channel.kind !== 'audioClip') this.host?.apply(this.channel.plugin, project, this.core.ctx.currentTime);
   }
 
   /** Re-creates the instrument (plugin code was hot-reloaded). */
@@ -211,40 +213,6 @@ export class ChannelStrip {
     } catch (err) {
       this.fault(err);
     }
-  }
-
-  /**
-   * Audio-clip channels in 'stretch' mode: the stretch scales its clips need (one per tempo they
-   * start at). Computes the missing copies; `ready` waits for them (exports render with them).
-   */
-  setStretches(scales: readonly number[]): void {
-    const ch = this.channel;
-    if (ch.kind !== 'audioClip') return;
-    const reverse = playbackMode(ch).reverse;
-    const key = `${ch.sampleId}|${reverse}|${scales.join(',')}`;
-    if (key === this.stretchKey) return;
-    this.stretchKey = key;
-    if (scales.length === 0) return;
-    const loaded = this.pending;
-    this.stretchJobs = (async () => {
-      await loaded;
-      const source = this.clipBuffer;
-      if (!source || this.stretchKey !== key) return;
-      const base = reverse ? reversedBuffer(source) : source;
-      await Promise.all(
-        scales.map(async (scale) => {
-          if (stretchedBuffer(base, scale)) return;
-          this.stretching++;
-          this.core.notify?.();
-          try {
-            await requestStretch(base, scale);
-          } finally {
-            this.stretching--;
-            this.core.notify?.();
-          }
-        }),
-      );
-    })();
   }
 
   noteOff(e: NoteOff): void {
@@ -294,33 +262,33 @@ export class ChannelStrip {
     this.input.disconnect();
   }
 
-  /** Decodes the clip's sample; `pending` (so `ready`) waits for it, which offline renders need. */
-  private loadClipBuffer(channel: AudioClipChannel, project: Project): void {
-    const ref = project.samples[channel.sampleId];
-    this.stretchKey = '';
-    if (!ref) {
-      this.clipBuffer = null;
-      this.pending = Promise.resolve();
-      return;
-    }
-    this.clipBuffer = this.core.samples.getSync(ref, this.core.ctx.sampleRate);
-    if (this.clipBuffer) {
-      this.pending = Promise.resolve();
-      return;
-    }
-    this.pending = this.core.samples.load(ref, this.core.ctx).then((b) => {
-      if (this.channel.kind === 'audioClip' && this.channel.sampleId === channel.sampleId) this.clipBuffer = b;
-    });
-  }
-
   private load(channel: InstrumentChannel | AudioClipChannel, project: Project): void {
     const gen = ++this.generation;
     this.disposePlugin();
     if (channel.kind === 'audioClip') {
-      this.loadClipBuffer(channel, project);
+      this.pending = Promise.resolve();
+      const residency = this.core.residency;
+      const ch = () => this.channel as AudioClipChannel;
+      const ref = () => this.project.samples[ch().sampleId];
       const inst = createClipPlayer(this.core.ctx, {
-        buffer: () => this.clipBuffer,
-        mode: () => playbackMode(this.channel as AudioClipChannel),
+        mode: () => playbackMode(ch()),
+        base: () => {
+          const r = ref();
+          if (!r) return null;
+          const reverse = playbackMode(ch()).reverse;
+          const buffer = residency.base(r, reverse);
+          return buffer ? { buffer, key: residency.baseKey(r, reverse) } : null;
+        },
+        duration: () => {
+          const r = ref();
+          return r ? residency.duration(r) : null;
+        },
+        stretched: (clip, scale) => residency.stretched(clip, scale),
+        request: () => {
+          const r = ref();
+          if (r) residency.request(r, playbackMode(ch()).reverse, ch().id);
+        },
+        hold: (key) => residency.hold(key),
       });
       inst.output.connect(this.input);
       this.instance = inst;

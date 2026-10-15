@@ -18,7 +18,6 @@ import {
   writeFile,
   writeFileInDirectory,
 } from '@platform/fs-access';
-import { opfsSampleProvider } from '../persistence/project-io';
 import type { PrefsState } from '../stores/prefs';
 import type { Services } from '../services';
 import {
@@ -161,7 +160,7 @@ export async function runExport(
   const musical = planSeconds(project, plan);
   const raw = settings.stems && !settings.masterChain;
   const base = raw ? withoutMasterChain(project) : project;
-  const engineOpts = { plugins: s.plugins, samples: opfsSampleProvider() };
+  const engineOpts = { plugins: s.plugins, sampleCache: s.sampleCache };
   const stems = settings.stems ? planStems(base, stemRange(base, plan)) : [];
   if (settings.stems && stems.length === 0)
     throw new ExportError('Nothing plays in this range, so there are no stems to export.');

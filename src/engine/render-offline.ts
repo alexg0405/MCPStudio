@@ -70,12 +70,17 @@ export async function renderOffline(project: Project, opts: RenderOptions): Prom
 
     const end = preRoll + musical - 1e-6;
     let synced = true;
-    engine.startOffline(opts.fromTick ?? 0, preRoll);
+    // Long songs are decoded around what is being rendered: each chunk's clips are made ready
+    // (decoded, stretched) before they are scheduled.
+    await engine.prepareTicks(from, tempo.secondsToTick(tempo.tickToSeconds(from) + 1));
+    engine.startOffline(from, preRoll);
     const step = async (frame: number) => {
       // Aborted: the context stays suspended and is dropped; `aborted` below rejects.
       if (opts.signal?.aborted) return;
       const next = frame + chunk;
-      engine.pumpOffline(Math.min(end, next / sampleRate + 0.05));
+      const horizon = Math.min(end, next / sampleRate + 0.05);
+      await engine.prepareOffline(horizon + 0.05);
+      engine.pumpOffline(horizon);
       if (!(await engine.syncWorklets())) synced = false;
       opts.onProgress?.(Math.min(1, frame / length));
       if (next < length) void ctx.suspend(next / sampleRate).then(() => step(next));

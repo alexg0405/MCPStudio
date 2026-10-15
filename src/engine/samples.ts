@@ -10,7 +10,18 @@ import type { Waveform } from './waveform';
 /** Decoded audio kept by default: about 70 minutes of stereo at 48 kHz (float32). */
 export const DEFAULT_SAMPLE_BUDGET = 1.5 * 1024 ** 3;
 
+/**
+ * Where copies that take long to make (time-stretched clips) are kept between sessions, by cache
+ * key (the app gives one backed by OPFS). Failures just mean the copy is made again.
+ */
+export interface DerivedAudioStore {
+  get(key: string): Promise<Uint8Array | null>;
+  put(key: string, bytes: Uint8Array): Promise<void>;
+}
+
 export interface SampleCacheOptions {
+  /** Keeps stretched copies on disk (so each is computed once per file, not once per session). */
+  store?: DerivedAudioStore;
   /** Bytes of decoded audio (float32 frames × channels × 4) to keep before evicting (default 1.5 GB). */
   budgetBytes?: number;
   /** Files decoded at once (default 2): each decode briefly holds the file and its float copy. */
@@ -40,6 +51,8 @@ export class SampleCache {
   private readonly queue: (() => void)[] = [];
   private readonly listeners = new Set<(key: string) => void>();
   private decodes = 0;
+  /** Disk copies of derived buffers (null: none). */
+  readonly store: DerivedAudioStore | null;
 
   constructor(
     readonly provider?: SampleBytesProvider,
@@ -47,6 +60,7 @@ export class SampleCache {
   ) {
     this.lru = new BudgetCache<AudioBuffer>(opts.budgetBytes ?? DEFAULT_SAMPLE_BUDGET, bufferBytes);
     this.maxDecodes = Math.max(1, opts.maxDecodes ?? 2);
+    this.store = opts.store ?? null;
   }
 
   /** The cache key of a sample decoded at a sample rate. */

@@ -17,7 +17,7 @@ import type { AudioClip, ChannelId, ClipId, Project, SampleRef } from '@core/mod
 import { audibleClips } from '@core/query/playlist';
 import { effectivelyMuted } from '@core/query/queries';
 import type { TempoMap } from '@core/time/ppq';
-import { bufferFrom, copyChannels, reverseBuffer, runStretch, STRETCH_WORKERS } from './audio-buffers';
+import { bufferFromPcm16, copyChannels, reverseBuffer, runStretch, STRETCH_WORKERS } from './audio-buffers';
 import { planResidency, type ClipSpan } from './residency-plan';
 import { SampleCache } from './samples';
 
@@ -138,7 +138,8 @@ export class SampleResidency {
         const r = clipSourceRange(clip, mode, tempo, Infinity);
         const from = Math.max(0, Math.floor(r.from - STRETCH_MARGIN));
         const to = Math.ceil(r.to + STRETCH_MARGIN);
-        stretchKey = `${baseKey}|st:${scale}:${from}-${to}`;
+        // 'st2': the WSOLA version (copies kept on disk by an older one are not reused).
+        stretchKey = `${baseKey}|st2:${scale}:${from}-${to}`;
         stretchFrom = from;
         item(stretchKey, { kind: 'stretch', ref, sourceKey, baseKey, scale, from, to }, ch.id);
       }
@@ -387,13 +388,22 @@ export class SampleResidency {
       this.deps.onStretching();
       job = cache
         .derive(key, async () => {
+          // Made in an earlier session: read it back (16-bit, exactly what was made then).
+          const store = cache.store;
+          const kept = store ? await store.get(key).catch(() => null) : null;
+          if (kept) {
+            const b = await bufferFromPcm16(kept);
+            if (b) return b;
+          }
           const base = await this.loadBase(it);
           if (!base) return null;
           const sr = base.sampleRate;
           const channels = await copyChannels(base, it.from * sr, Math.min(base.length, it.to * sr));
           if ((channels[0]?.length ?? 0) === 0) return null;
-          const out = await runStretch({ channels, scale: it.scale, sampleRate: sr }, priority);
-          return bufferFrom(out, sr);
+          const bytes = await runStretch({ channels, scale: it.scale, sampleRate: sr }, priority);
+          const b = await bufferFromPcm16(bytes);
+          if (b && store) void store.put(key, bytes).catch(() => {});
+          return b;
         })
         .finally(() => {
           this.stretchesRunning--;

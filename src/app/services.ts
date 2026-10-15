@@ -7,6 +7,8 @@ import type { JsonValue } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions } from '@engine/api';
 import { Engine } from '@engine/engine';
 import { SampleCache } from '@engine/samples';
+import { isOpfsAvailable } from '@platform/opfs';
+import { createOpfsDerivedStore } from '@platform/derived-store';
 import { createDefaultProject } from './default-project';
 import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
@@ -152,7 +154,10 @@ export function createServices(opts: ServiceOptions = {}): Services {
 
   // Embedded samples come from the app's sample store (OPFS, or memory when that is unavailable).
   // AIFF isn't transcoded here (that would run on the main thread): the engine's decoder parses it in a Worker.
-  const sampleCache = new SampleCache(opfsSampleProvider({ transcode: false }));
+  // Time-stretched clip copies are kept in OPFS, so each is made once per file and tempo.
+  const sampleCache = new SampleCache(opfsSampleProvider({ transcode: false }), {
+    ...(isOpfsAvailable() ? { store: createOpfsDerivedStore() } : {}),
+  });
   const applyBudget = () => {
     const mb = prefs.getState().sampleMemoryMb;
     sampleCache.budgetBytes = Math.min(16384, Math.max(256, Number.isFinite(mb) ? mb : 1536)) * 1024 * 1024;

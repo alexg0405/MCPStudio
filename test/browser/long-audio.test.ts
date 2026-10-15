@@ -7,7 +7,10 @@ import { playbackMode } from '@core/audio/playback';
 import { constantTempo } from '@core/time/ppq';
 import type { AudioClip, ClipId, LaneId, ChannelId } from '@core/model/types';
 import { createClipPlayer } from '@engine/clip-player';
-import { SampleCache } from '@engine/samples';
+import { renderOffline } from '@engine/render-offline';
+import { SampleCache, type DerivedAudioStore } from '@engine/samples';
+import { audioClipProject, harmonicTone, TestSamples } from '../helpers/audio';
+import { resolver } from '../helpers/fixtures';
 
 const SR = 48000;
 
@@ -66,5 +69,73 @@ describe('clip player with buffers that arrive late', () => {
     // Finished (clip end at 1.6 s): the pin goes on the next sweep.
     player.sweep();
     expect(cache.isPinned('s')).toBe(false);
+  });
+});
+
+/** The first index where two signals differ (−1: identical). Cheap to report, unlike a deep diff. */
+function firstDifference(a: Float32Array, b: Float32Array): number {
+  if (a.length !== b.length) return Math.min(a.length, b.length);
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return i;
+  return -1;
+}
+
+/** A DerivedAudioStore in memory that counts reads and writes. */
+function memoryStore() {
+  const files = new Map<string, Uint8Array>();
+  const counts = { gets: 0, hits: 0, puts: 0 };
+  const store: DerivedAudioStore = {
+    async get(key) {
+      counts.gets++;
+      const f = files.get(key);
+      if (f) counts.hits++;
+      return f ? f.slice() : null;
+    },
+    async put(key, bytes) {
+      counts.puts++;
+      files.set(key, bytes.slice());
+    },
+  };
+  return { store, files, counts };
+}
+
+describe('time-stretched clips', () => {
+  const BAR = 3840;
+
+  it("stretches only the part a clip plays, keeps the copy on disk and reads it back identically", async () => {
+    // A minute of tone at 100 BPM; the clip plays 2 bars from 30 s in, at 120 BPM.
+    const samples = new TestSamples();
+    const tone = harmonicTone(220, 60, SR, 0.3);
+    const ref = samples.add([tone, tone.slice()], SR);
+    const { project } = audioClipProject(ref, [{ start: 0, length: 2 * BAR, offsetSec: 30 }], {
+      bpm: 120,
+      channel: { stretch: 'stretch', sourceBpm: 100 },
+    });
+    const disk = memoryStore();
+    const render = async (cache: SampleCache) => {
+      const r = await renderOffline(project, {
+        plugins: resolver(),
+        sampleCache: cache,
+        view: { mode: 'song', patternId: null, loop: null },
+        bars: 2,
+        sampleRate: SR,
+        tail: 0.2,
+      });
+      return r.buffer.getChannelData(0).slice();
+    };
+    const first = new SampleCache(samples.provider, { store: disk.store });
+    const a = await render(first);
+    expect(disk.counts.puts).toBe(1);
+    const key = [...disk.files.keys()][0]!;
+    // 2 bars at 120 BPM = 4 s of song = 4.8 s of source (+1 s margins, whole seconds): 29…36 s,
+    // played 1.2× as fast, so the copy is 1/1.2 as long.
+    expect(key).toMatch(/\|st2:0\.83333:29-36$/);
+    const copy = first.peek(key)!;
+    expect(copy.duration).toBeCloseTo(7 / 1.2, 2);
+    // A new session (fresh cache, same disk): the copy is read back, not made again.
+    const second = new SampleCache(samples.provider, { store: disk.store });
+    const b = await render(second);
+    expect(disk.counts.hits).toBe(1);
+    expect(disk.counts.puts).toBe(1);
+    expect(firstDifference(a, b)).toBe(-1);
   });
 });

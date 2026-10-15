@@ -6,6 +6,7 @@
  * (SampleCache, counted in its memory budget).
  */
 import { timeStretch } from '@core/audio/wsola';
+import { decodePcm16Range, encodePcm16, readPcm16Info } from '@core/io/pcm16';
 import type { Waveform } from './waveform';
 
 /** Frames handled between two yields (~1.4 s at 48 kHz: well under a millisecond of copying). */
@@ -58,6 +59,23 @@ export async function bufferFrom(channels: readonly Float32Array[], sampleRate: 
     for (let i = 0; i < length; i += SLICE * 4) {
       b.copyToChannel(ch.subarray(i, Math.min(length, i + SLICE * 4)), c, i);
       if (i + SLICE * 4 < length) await yieldToMain();
+    }
+  }
+  return b;
+}
+
+/** An AudioBuffer from 16-bit PCM bytes (core/io/pcm16.ts), converted a slice at a time; null if they aren't valid. */
+export async function bufferFromPcm16(bytes: Uint8Array): Promise<AudioBuffer | null> {
+  const info = readPcm16Info(bytes);
+  if (!info || info.frames === 0) return null;
+  const b = new AudioBuffer({ length: info.frames, numberOfChannels: info.channels, sampleRate: info.sampleRate });
+  const scratch = new Float32Array(Math.min(info.frames, SLICE * 4));
+  for (let c = 0; c < info.channels; c++) {
+    for (let i = 0; i < info.frames; i += scratch.length) {
+      const n = Math.min(scratch.length, info.frames - i);
+      decodePcm16Range(bytes, info, c, i, i + n, scratch);
+      b.copyToChannel(n === scratch.length ? scratch : scratch.subarray(0, n), c, i);
+      if (i + n < info.frames) await yieldToMain();
     }
   }
   return b;
@@ -120,7 +138,7 @@ interface PoolWorker {
   busy: boolean;
 }
 
-type Done = { resolve(c: Float32Array[]): void; reject(e: unknown): void };
+type Done = { resolve(bytes: Uint8Array): void; reject(e: unknown): void };
 
 /** Workers in the pool: enough to stretch two songs of a transition at once, never all the cores. */
 export const STRETCH_WORKERS = Math.max(
@@ -140,12 +158,12 @@ function spawn(): PoolWorker | null {
       worker: new Worker(new URL('./stretch.worker.ts', import.meta.url), { type: 'module' }),
       busy: false,
     };
-    w.worker.onmessage = (e: MessageEvent<{ id: number; ok: boolean; channels?: Float32Array[]; error?: string }>) => {
+    w.worker.onmessage = (e: MessageEvent<{ id: number; ok: boolean; bytes?: Uint8Array; error?: string }>) => {
       const done = running.get(e.data.id);
       running.delete(e.data.id);
       w.busy = false;
       if (done) {
-        if (e.data.ok && e.data.channels) done.resolve(e.data.channels);
+        if (e.data.ok && e.data.bytes) done.resolve(e.data.bytes);
         else done.reject(new Error(e.data.error ?? 'time-stretch failed'));
       }
       next();
@@ -191,17 +209,18 @@ function next(): void {
     for (const item of queue.splice(0)) {
       const { channels, scale, sampleRate } = item.job;
       Promise.resolve()
-        .then(() => timeStretch(channels, scale, { sampleRate }))
+        .then(() => encodePcm16(timeStretch(channels, scale, { sampleRate }), sampleRate))
         .then(item.done.resolve, item.done.reject);
     }
   }
 }
 
 /**
- * Time-stretches channels in a pool Worker (WSOLA). Lower `priority` runs first (the engine passes
- * how soon playback reaches the clip). The channels are transferred.
+ * Time-stretches channels in a pool Worker (WSOLA) and returns the copy as 16-bit PCM bytes
+ * (core/io/pcm16.ts: what is kept on disk too). Lower `priority` runs first (the engine passes how
+ * soon playback reaches the clip). The channels are transferred.
  */
-export function runStretch(job: StretchJob, priority = 0): Promise<Float32Array[]> {
+export function runStretch(job: StretchJob, priority = 0): Promise<Uint8Array> {
   if (typeof Worker === 'undefined') workersUnavailable = true;
   return new Promise((resolve, reject) => {
     const item = { job, done: { resolve, reject }, priority };

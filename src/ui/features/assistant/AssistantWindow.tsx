@@ -194,7 +194,11 @@ const BACKENDS: { value: AssistantState['backend']; label: string; hint: string 
     label: 'Auto',
     hint: 'Your Claude subscription if it is set up, else an API key, else the offline generator',
   },
-  { value: 'subscription', label: 'Claude (my subscription)', hint: 'Through Claude Code, signed in with your Claude account' },
+  {
+    value: 'subscription',
+    label: 'Claude (my subscription)',
+    hint: 'Through Claude Code, signed in with your Claude account',
+  },
   { value: 'api', label: 'Claude (API key)', hint: 'Claude through an Anthropic API key' },
   { value: 'offline', label: 'Offline generator', hint: 'The built-in beat generator: no Claude, no network' },
 ];
@@ -323,7 +327,11 @@ function Header({ st, send }: { st: AssistantState; send(text: string): void }) 
         <Icon name="chevronDown" size={9} className={styles.modelCaret} />
       </button>
       {reason && (
-        <button className={styles.offline} onClick={() => void a.checkAi()} data-hint={`${reason} Click to check again.`}>
+        <button
+          className={styles.offline}
+          onClick={() => void a.checkAi()}
+          data-hint={`${reason} Click to check again.`}
+        >
           Not set up
         </button>
       )}
@@ -364,7 +372,9 @@ function Messages({ st, send }: { st: AssistantState; send(text: string): void }
           <span className={styles.introMark} aria-hidden>
             <Icon name="sparkle" size={18} />
           </span>
-          <p className={styles.introLine}>Ask for a beat, or any change: mixer, plugins, routing, tempo, arrangement.</p>
+          <p className={styles.introLine}>
+            Ask for anything: a beat, or a change to the mixer, plugins, routing, tempo or arrangement.
+          </p>
           <div className={styles.starters}>
             <button
               className={`${styles.idea} ${styles.ideaMain}`}
@@ -375,12 +385,20 @@ function Messages({ st, send }: { st: AssistantState; send(text: string): void }
               ✦ Check my mix
             </button>
             {STARTERS.map((idea) => (
-              <button key={idea} className={styles.idea} disabled={busy} onClick={() => send(idea)} data-hint={`Ask: "${idea}"`}>
+              <button
+                key={idea}
+                className={styles.idea}
+                disabled={busy}
+                onClick={() => send(idea)}
+                data-hint={`Ask: "${idea}"`}
+              >
                 {idea}
               </button>
             ))}
           </div>
-          <p className={styles.introFoot}>Every answer is one undo step. More ideas in ⋯; to beatbox or hum, press Perform.</p>
+          <p className={styles.introFoot}>
+            Every answer is one undo step. More ideas in ⋯; to beatbox or hum, press Perform.
+          </p>
         </div>
       )}
       {st.messages.map((m) => (

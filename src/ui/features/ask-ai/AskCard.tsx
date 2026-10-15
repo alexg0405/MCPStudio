@@ -141,7 +141,9 @@ function AskCard() {
                 : 'No part picked: this asks about the whole song'
           }
         >
-          <span className={styles.scopeText}>{label ?? (gone ? 'That part is gone: the whole song' : 'The whole song')}</span>
+          <span className={styles.scopeText}>
+            {label ?? (gone ? 'That part is gone: the whole song' : 'The whole song')}
+          </span>
           {focus && !gone && (
             <button
               className={styles.scopeClear}
@@ -201,7 +203,13 @@ function AskCard() {
       {chips.length > 0 && (
         <div className={styles.chips}>
           {chips.map((c) => (
-            <button key={c} className={styles.chip} disabled={busy} onClick={() => ask(c)} data-hint={chipHint(c, label)}>
+            <button
+              key={c}
+              className={styles.chip}
+              disabled={busy}
+              onClick={() => ask(c)}
+              data-hint={chipHint(c, label)}
+            >
               {c}
             </button>
           ))}

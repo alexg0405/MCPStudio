@@ -365,11 +365,7 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
                 {band.b === selected && band.on && (
                   <circle className={styles.handleHalo} r={13} style={{ fill: COLORS[band.b - 1] }} />
                 )}
-                <circle
-                  className={styles.handleDot}
-                  r={8}
-                  style={band.on ? { fill: COLORS[band.b - 1] } : undefined}
-                />
+                <circle className={styles.handleDot} r={8} style={band.on ? { fill: COLORS[band.b - 1] } : undefined} />
                 <text className={styles.handleNumber}>{band.b}</text>
               </g>
             );

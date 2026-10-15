@@ -249,6 +249,8 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "beat",
   "setup_mix",
   "level_mix",
+  "dj_mix",
+  "dj_transition",
   "transport",
   "audition",
   "analyze_mix",
@@ -258,6 +260,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"c6d51fe2"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"bc522a75"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"9e427265"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"cca0258a"`;

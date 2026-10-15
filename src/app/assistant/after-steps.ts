@@ -4,6 +4,7 @@
  * { amend: entry })`). Each kind of after-edit request can have one step.
  */
 import type { AfterEdit } from '../ai/apply';
+import { djMixStep } from '../dj/step';
 import { levelMixStep } from '../mix/level-step';
 import type { Services } from '../services';
 
@@ -28,6 +29,7 @@ export type AfterStep = (item: AfterEdit, c: AfterStepContext) => Promise<AfterS
 
 const STEPS = new Map<string, AfterStep>();
 if (levelMixStep) STEPS.set('level_mix', levelMixStep);
+STEPS.set('dj_mix', djMixStep);
 
 /** Adds (or replaces) the step for a kind of after-edit request; returns a function that removes it. */
 export function registerAfterStep(kind: AfterEdit['kind'], run: AfterStep): () => void {

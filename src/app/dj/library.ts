@@ -13,7 +13,7 @@ import { idbGet, idbSet, isIdbAvailable } from '@platform/idb';
 import { probeAudio } from '../actions/samples';
 import { importSampleBytes } from '../persistence/sample-import';
 import type { Services } from '../services';
-import { sampleHash, trackAnalyzer } from './analyzer';
+import { peekAnalysis, sampleHash, trackAnalyzer } from './analyzer';
 import { makeMix, type MakeMixResult, type MixSong } from './mix';
 import type { DjMixOptions } from '@core/model/types';
 
@@ -267,4 +267,19 @@ export function findSongs(names: readonly string[]): { found: LibrarySong[]; mis
     else if (!partial.length) missing.push(raw);
   }
   return { found, missing };
+}
+
+/** The music library for the Studio's context (titles, BPM and key when analyzed). */
+export function musicLibraryLines(s: Services): string[] {
+  const st = library.getState();
+  if (!st.songs.length) return [];
+  const lines = [`<music-library> (${st.songs.length} songs${st.selected.length ? `, ${st.selected.length} selected in the DJ window` : ''}):`];
+  for (const [i, x] of st.songs.slice(0, 60).entries()) {
+    const a = peekAnalysis(s, x.ref);
+    const facts = a ? `${a.grid ? `${Math.round(a.grid.bpm * 10) / 10} BPM` : 'no steady beat'}, key ${a.key?.camelot ?? '?'}` : 'not analyzed yet';
+    lines.push(`- ${i + 1}. “${x.label}”: ${facts}${st.selected.includes(x.key) ? ' (selected)' : ''}`);
+  }
+  if (st.songs.length > 60) lines.push(`… and ${st.songs.length - 60} more`);
+  lines.push('</music-library>');
+  return lines;
 }

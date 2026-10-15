@@ -19,6 +19,8 @@ import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
 import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { arrangementLines, derivedLabel } from '../arrange/summary';
+import { musicLibraryLines } from '../dj/library';
+import { djLines } from '../dj/mix';
 import { channelSound, noteName } from '../assistant/context';
 import { recentFiles } from '../persistence/recent-files';
 import { aiCommands } from './commands';
@@ -326,6 +328,10 @@ export function projectContext(s: Services): string {
   lines.push('', ...playlistLines(p));
   const arrangement = arrangementLines(p);
   if (arrangement.length) lines.push(...arrangement);
+  const djMix = djLines(p);
+  if (djMix.length) lines.push('', ...djMix);
+  const music = musicLibraryLines(s);
+  if (music.length) lines.push('', ...music);
   const check = songCheckLines(p);
   if (check.length) lines.push('', 'Song check (problems in the arrangement right now):', ...check);
 

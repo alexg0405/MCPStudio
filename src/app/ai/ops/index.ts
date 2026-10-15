@@ -9,6 +9,7 @@ import { automation } from './automation';
 import { beat } from './beat';
 import { channels } from './channels';
 import { clips } from './clips';
+import { dj } from './dj';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
 import { mix } from './mix';
@@ -31,6 +32,7 @@ export const MODULES: readonly OpModule[] = [
   arrange,
   beat,
   mix,
+  dj,
   ui,
 ];
 

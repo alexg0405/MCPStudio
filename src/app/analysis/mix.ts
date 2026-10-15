@@ -3,7 +3,6 @@ import { planStems, stemProject, withoutMasterChain } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
 import { renderOffline } from '@engine/render-offline';
 import { planExport, planSeconds, type ExportPlan } from '../export/plan';
-import { opfsSampleProvider } from '../persistence/project-io';
 import type { Services } from '../services';
 import { BANDS, Measurer, type Measurement } from './measure';
 
@@ -121,7 +120,7 @@ export async function analyzeMix(s: Services, opts: AnalyzeOptions = {}): Promis
   const toTick = plan.fromTick + plan.bars * ticksPerBar(project.transport.timeSig);
   const stems = planStems(raw, { mode: plan.mode, patternId: plan.patternId, fromTick: plan.fromTick, toTick });
   const steps = stems.length + 1;
-  const engineOpts = { plugins: s.plugins, samples: opfsSampleProvider() };
+  const engineOpts = { plugins: s.plugins, sampleCache: s.sampleCache };
 
   const render = async (p: Project, limiter: boolean, step: number, label: string) => {
     const r = await renderOffline(p, {

@@ -6,7 +6,7 @@ import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from '@core/model/types';
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
-import { playbackKey, playbackMode, stretchScale } from '@core/audio/playback';
+import { playbackKey } from '@core/audio/playback';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
 import { INACTIVE_TAP, TapImpl } from './tap';
@@ -29,7 +29,9 @@ import { MixerGraph } from './mixer-graph';
 import { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
-import { waveformOf, type Waveform } from './waveform';
+import { sha256Hex } from '@core/io/hash';
+import type { Waveform } from './waveform';
+import { SampleResidency } from './sample-residency';
 import { startRecording, type RecordOptions, type RecordingHandle } from './recorder';
 import { openAudioInput, type AudioInput } from './audio-input';
 import type { Timeline } from './sched/core';
@@ -104,6 +106,7 @@ export class Engine implements EngineApi, EngineCore {
   readonly ctx: BaseAudioContext;
   readonly plugins: PluginResolver;
   readonly samples: SampleCache;
+  readonly residency: SampleResidency;
   readonly offline: boolean;
   readonly transportInfo: TempoInfo;
   readonly params = new ParamRegistry();
@@ -126,6 +129,7 @@ export class Engine implements EngineApi, EngineCore {
   private previewSeq = PREVIEW_ID_BASE;
   private previewSource: AudioBufferSourceNode | null = null;
   private previewToken = 0;
+  private previewRelease: (() => void) | null = null;
   private readonly waveformsLoading = new Set<string>();
   private faults = 0;
   private muteKey = '';
@@ -144,6 +148,9 @@ export class Engine implements EngineApi, EngineCore {
   /** Song mode without a loop region plays past the end (recording) instead of looping. */
   private openEnded = false;
   private testClick: AudioBuffer | null = null;
+  /** Song mode position the residency plans around while stopped (where playback last started). */
+  private songPos = 0;
+  private lastSweep = 0;
 
   constructor(
     ctx: BaseAudioContext,
@@ -155,7 +162,16 @@ export class Engine implements EngineApi, EngineCore {
     this.ctx = ctx;
     this.offline = offline;
     this.plugins = opts.plugins;
-    this.samples = new SampleCache(opts.samples);
+    this.samples = opts.sampleCache ?? new SampleCache(opts.samples);
+    this.residency = new SampleResidency({
+      cache: this.samples,
+      ctx,
+      offline,
+      onReady: (ids) => {
+        for (const id of ids) this.strips.get(id)?.buffersChanged();
+      },
+      onStretching: () => this.emit(),
+    });
     this.transportInfo = new TempoInfo(130, ctx);
     this.masterOut = new GainNode(ctx);
     this.previewBus = new GainNode(ctx, { gain: 0.8 });
@@ -301,10 +317,16 @@ export class Engine implements EngineApi, EngineCore {
     if (this.ctx instanceof AudioContext && this.ctx.state !== 'running') await this.ctx.resume();
   }
 
+  /** Resolves when the master chain and every plugin instance have loaded (not the audio clips' samples). */
+  async pluginsReady(): Promise<void> {
+    await this.initDone;
+    await Promise.all([...[...this.strips.values()].map((s) => s.ready), this.mixer.ready]);
+  }
+
   /** Resolves when the master chain and every plugin instance (instruments and effects) have loaded. */
   async ready(): Promise<void> {
     await this.initDone;
-    await Promise.all([...[...this.strips.values()].map((s) => s.ready), this.mixer.ready]);
+    await Promise.all([...[...this.strips.values()].map((s) => s.ready), this.mixer.ready, this.residency.settled()]);
   }
 
   // ---- Document mirroring ----
@@ -366,34 +388,15 @@ export class Engine implements EngineApi, EngineCore {
       prev.transport !== next.transport ||
       prev.samples !== next.samples
     )
-      this.planStretches(next);
+      this.residency.setProject(next);
     // Automation first: a re-planning transport then schedules segments with the new curves.
     this.automation.update(next, this.view);
     if (schedulingChanged) this.updateModel();
   }
 
-  /** Tells each audio clip channel in 'stretch' mode which stretched copies its clips need. */
-  private planStretches(p: Project): void {
-    const tempo = tempoMapOf(p, 'song');
-    const scales = new Map<ChannelId, Set<number>>();
-    for (const clip of Object.values(p.playlist.clips)) {
-      if (clip.kind !== 'audio') continue;
-      const ch = p.channels[clip.channelId];
-      if (ch?.kind !== 'audioClip') continue;
-      const mode = playbackMode(ch);
-      if (mode.follow !== 'stretch') continue;
-      const k = stretchScale(mode, tempo, clip.start);
-      if (k === 1) continue;
-      let set = scales.get(ch.id);
-      if (!set) scales.set(ch.id, (set = new Set()));
-      set.add(k);
-    }
-    for (const [id, strip] of this.strips) strip.setStretches([...(scales.get(id) ?? [])].sort((a, b) => a - b));
-  }
-
   /** True while a time-stretched copy of the channel's sample is being computed. */
   isStretching(channelId: ChannelId): boolean {
-    return this.strips.get(channelId)?.isStretching ?? false;
+    return this.residency.isStretching(channelId);
   }
 
   notify(): void {
@@ -438,6 +441,45 @@ export class Engine implements EngineApi, EngineCore {
   private updateModel(): void {
     const m = this.model();
     if (m) this.transport.setModel(m.source, m.timeline);
+    this.updateResidency(true);
+  }
+
+  /**
+   * Tells the residency where the song is (what to keep decoded): the heard position while song
+   * mode plays, else where song playback last started. Called on every scheduler tick (cheap: it
+   * plans again only when the position moved by a second or the song changed).
+   */
+  private updateResidency(force = false): void {
+    if (this.offline) return;
+    const playingSong = this.transport.playing && this.view.mode === 'song';
+    if (playingSong) this.songPos = this.transport.positionAt(this.heardTime());
+    const loop = this.view.mode === 'song' && !this.openEnded ? this.transport.currentTimeline.loop : null;
+    this.residency.setPosition(this.songPos, loop, playingSong);
+    // Finished voices let go of their buffers (twice a second is plenty).
+    const now = this.ctx.currentTime;
+    if (force || now - this.lastSweep > 0.5) {
+      this.lastSweep = now;
+      for (const s of this.strips.values()) s.sweep();
+    }
+  }
+
+  /**
+   * Offline renders: everything the clips scheduled up to `horizon` (context time) play from is
+   * decoded (and stretched) before they are scheduled, so a render never depends on timing.
+   */
+  async prepareOffline(horizon: number): Promise<void> {
+    // Finished voices let go of their buffers (so what the render has passed can be evicted).
+    for (const s of this.strips.values()) s.sweep();
+    if (this.view.mode !== 'song') return;
+    const a = this.transport.tickAt(this.ctx.currentTime).tick;
+    const b = this.transport.tickAt(horizon).tick;
+    await this.residency.ensure(a, b);
+  }
+
+  /** Offline renders: like prepareOffline, for song ticks [fromTick, toTick] (before the transport starts). */
+  async prepareTicks(fromTick: number, toTick: number): Promise<void> {
+    if (this.view.mode !== 'song') return;
+    await this.residency.ensure(fromTick, toTick);
   }
 
   // ---- EngineCore ----
@@ -469,6 +511,10 @@ export class Engine implements EngineApi, EngineCore {
     this.updateModel();
     // Playing again while playing is a seek: what was scheduled is cancelled or released first.
     const at = this.ctx.currentTime + 0.05;
+    if (this.view.mode === 'song') {
+      this.songPos = fromTick;
+      this.residency.setPosition(fromTick, this.transport.currentTimeline.loop, true);
+    }
     if (this.transport.playing) this.transport.seek(fromTick, at);
     else {
       // Count-in (record mode): clicks first, then playback.
@@ -490,6 +536,9 @@ export class Engine implements EngineApi, EngineCore {
   stop(): void {
     this.transport.stop(0);
     this.stopClock();
+    // Stopped: the residency lets its pins go, and the voices' buffers once their release is over.
+    this.updateResidency(true);
+    if (!this.offline) setTimeout(() => this.updateResidency(true), 300);
     this.emit();
   }
 
@@ -593,6 +642,7 @@ export class Engine implements EngineApi, EngineCore {
     this.lastPumpAt = now;
     if (wasPlaying) this.measureKeepUp(now);
     this.transport.pump();
+    this.updateResidency();
     // Raise the lookahead when notes arrive late (main-thread jank).
     if (this.transport.lateEvents > this.lastLate) {
       this.lastLate = this.transport.lateEvents;
@@ -645,7 +695,7 @@ export class Engine implements EngineApi, EngineCore {
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     void this.resume();
     void this.samples.load(ref, this.ctx).then((buffer) => {
-      if (buffer) this.playPreview(buffer);
+      if (buffer) this.playPreview(buffer, SampleCache.keyOf(ref.source, this.ctx.sampleRate));
     });
   }
 
@@ -738,13 +788,16 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
-    const buffer = this.samples.getSync(ref, this.ctx.sampleRate);
-    if (buffer) return waveformOf(buffer);
-    const key = ref.source.kind === 'embedded' ? ref.source.hash : ref.source.generator;
+    const w = this.samples.waveform(ref, this.ctx.sampleRate);
+    if (w) return w;
+    const key = SampleCache.keyOf(ref.source, this.ctx.sampleRate);
     if (!this.waveformsLoading.has(key)) {
       this.waveformsLoading.add(key);
-      void this.samples.load(ref, this.ctx).then((b) => {
-        if (b) this.emit();
+      // A sample that can't be decoded stays in the set: it isn't tried again on every redraw.
+      void this.samples.loadWaveform(ref, this.ctx).then((done) => {
+        if (!done) return;
+        this.waveformsLoading.delete(key);
+        this.emit();
       });
     }
     return null;
@@ -760,14 +813,13 @@ export class Engine implements EngineApi, EngineCore {
   async previewAudio(bytes: ArrayBuffer): Promise<boolean> {
     void this.resume();
     const token = ++this.previewToken;
-    let buffer: AudioBuffer;
-    try {
-      buffer = await decodeAudio(this.ctx, bytes);
-    } catch {
-      return false;
-    }
+    // Decoded once per file content (the shared cache keeps it, within its budget): clicking the
+    // same file again in the browser plays at once.
+    const key = `p:${await sha256Hex(new Uint8Array(bytes))}:${this.ctx.sampleRate}`;
+    const buffer = await this.samples.derive(key, () => decodeAudio(this.ctx, bytes).catch(() => null));
+    if (!buffer) return false;
     // A newer preview (or a stop) was requested while this one decoded.
-    if (token === this.previewToken) this.playPreview(buffer);
+    if (token === this.previewToken) this.playPreview(buffer, key);
     return true;
   }
 
@@ -779,15 +831,23 @@ export class Engine implements EngineApi, EngineCore {
       /* already stopped */
     }
     this.previewSource = null;
+    this.previewRelease?.();
+    this.previewRelease = null;
   }
 
-  private playPreview(buffer: AudioBuffer): void {
+  /** Plays a buffer on the preview bus; its cache entry stays pinned while it sounds. */
+  private playPreview(buffer: AudioBuffer, key: string): void {
     this.stopPreview();
     const src = new AudioBufferSourceNode(this.ctx, { buffer });
+    const release = this.samples.pin(key);
     src.connect(this.previewBus);
-    src.onended = () => src.disconnect();
+    src.onended = () => {
+      src.disconnect();
+      release();
+    };
     src.start();
     this.previewSource = src;
+    this.previewRelease = release;
   }
 
   // ---- Meters ----
@@ -899,6 +959,7 @@ export class Engine implements EngineApi, EngineCore {
     this.clock = null;
     for (const s of this.strips.values()) s.dispose();
     this.strips.clear();
+    this.residency.dispose();
     this.mixer.dispose();
     for (const p of [...this.ports]) p.dispose();
     for (const input of [...this.inputs]) input.close();

@@ -368,12 +368,14 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   `project.json` and `view.json` (deflate 6), `samples/<sha256>.<ext>` (original bytes, stored uncompressed). Plugin code
   is never embedded; plugins are referenced by id + version. Reading migrates and repairs (`core/schema/migrate.ts`) and
   throws `ProjectFileError` with a user-facing message; a damaged `meta.json`/`view.json` is tolerated and reported in
-  `repairs`. Opening verifies each embedded sample against its hash before it enters the store.
+  `repairs`. Opening verifies each embedded sample against its hash before it enters the store. Save writes the zip
+  a piece at a time and Open reads it an entry at a time (see [Long audio](#long-audio-dj-mode-foundations)).
 - Runtime sample store: OPFS `blobs/<sha256>.<ext>` (`platform/opfs.ts`), layered over memory when OPFS is missing or
-  full (`app/persistence/blob-store.ts`); decode per `(hash, sampleRate)`; undo removes references, not blobs; idle GC of
+  full (`app/persistence/blob-store.ts`); decoded per `(hash, sampleRate)` into the shared sample cache (memory budget,
+  see [Long audio](#long-audio-dj-mode-foundations)); undo removes references, not blobs; idle GC of
   unreferenced blobs (count references from autosaves too). `decodeAudioData` resamples and detaches its input; Chrome
-  rejects AIFF, so the engine's bytes provider transcodes AIFF to float WAV with the PCM parser in `core/io/wav.ts`
-  (which also reads `smpl` and AIFF `INST`/`MARK` loop/root data).
+  rejects AIFF, so the engine's decoder has the PCM parser in `core/io/wav.ts` (which also reads `smpl` and AIFF
+  `INST`/`MARK` loop/root data) turn it into float WAV in a Worker (`engine/pcm.worker.ts`).
 - Save/Open (`app/project-files.ts`, `services.files`): `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for
   Cmd+S, `createWritable()` swaps atomically. Fallback: `<input type=file>` / `<a download>`. Pickers need a recent
   user gesture, so a command shows its picker before any slow work, and the unsaved-changes prompt is an in-app dialog
@@ -400,13 +402,16 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   Discard / Not now); recovering autosaves into this tab before deleting the old copy. `navigator.storage.persist()`.
 - Sample folders (`persistence/sample-folders.ts`, browser section "Sample folders"): `showDirectoryPicker({ id: 'samples',
   mode: 'read' })`, handles in IndexedDB, "Reconnect…" when permission is `prompt` (usual after a reload), recursive
-  listing capped at 5000 files. Click previews (`engine.previewAudio(bytes)`, nothing stored), double-click adds a
+  listing capped at 5000 files. Click previews (`engine.previewAudio(bytes)`, decoded once per content into the sample
+  cache, nothing stored), double-click adds a
   sampler channel. Drags carry a token for the file handle (`ui/audio-drag.ts`, type `application/x-agstudio-file`);
   files dragged from the desktop arrive as DataTransfer files. Drops: on a sampler/audio-clip channel the sound replaces
   its sample (FL), elsewhere on the rack each file becomes a sampler channel, on the playlist each file becomes an audio
   clip on consecutive tracks. Imported files are hashed into the sample store and embedded in saved projects.
-- Decoding (`engine/decode.ts`): `decodeAudioData`, falling back to the PCM parser (AIFF and unusual WAVs) at the file's
-  own rate.
+- Decoding (`engine/decode.ts`): `decodeAudioData`, falling back to the PCM parser (AIFF and unusual WAVs) in a Worker,
+  whose float WAV `decodeAudioData` then resamples (the parser's audio at the file's own rate where there is no Worker).
+  Importing reads duration and layout from the file's headers (`core/io/audio-info.ts`) and decodes only files they
+  don't describe.
 - User presets (`app/presets.ts`, `services.presets`): a list in IndexedDB (`user-presets:v1`), loaded at startup;
   writes wait for that load so an early save can't replace what's stored. Each stores every param, the state and the
   plugin's `version` (older ones go through the plugin's `migrate` when loaded). `presetChoices(def, library)` is the
@@ -1359,6 +1364,141 @@ layered fill, gaps before both drops and no duplicate FX.
 - Energy is inferred from what plays when a song has no plan (develop, the checker): a dense verse can read as 5.
 - Drum tails ring into gaps (only the bass is ended early).
 
+## Long audio (DJ mode foundations)
+
+DJ mixes are 10–30 songs of 3–6 minutes on the playlist as audio clips, beat-matched by time-stretching, exported
+up to 90 minutes. A 5-minute stereo song is ~115 MB decoded (float32 at 48 kHz) and as much again stretched, so
+the engine can't keep everything decoded, can't stretch whole files on demand and can't render an hour in one
+OfflineAudioContext (2 GB). What it does instead:
+
+### One sample cache with a memory budget (`engine/samples.ts`, `engine/budget-cache.ts`)
+
+- The app owns one `SampleCache` (`services.sampleCache`, with the OPFS bytes provider and the disk store below). The
+  realtime engine, every offline render (exports, freeze/consolidate, mix analysis, auto-level) and `measureTail` get it
+  as `EngineOptions.sampleCache`: nothing is decoded twice. An engine made without one makes its own (tests).
+- Budget: `prefs.sampleMemoryMb` (default 1536 MB) of decoded audio (frames × channels × 4). Least recently used
+  entries go when it is over; pinned ones never. Keys: `e:<hash>:<rate>` (decoded file), `b:<generator>@<v>:<rate>`
+  (built-in, regenerated when evicted), and derived copies under the sample's key: `…|rev`,
+  `…|st2:<scale>:<from>-<to>` (stretched part, seconds of the played sample), `p:<sha256>:<rate>` (browser previews).
+- Pins: what the residency plans (below); every voice pins the buffer it reads until its release has ended (the clip
+  player's holds, swept on the scheduler clock, before every offline chunk and after stop): **nothing evicts audio that
+  is playing**; plugin sample slots (`HostImpl`, samplers keep their buffers); a preview while it sounds.
+- Decodes: two at a time, `decodeAudioData` (the browser decodes off the main thread). Files it rejects (AIFF, odd
+  WAVs) are parsed in `engine/pcm.worker.ts` and come back as float WAV for `decodeAudioData`, so they are resampled
+  like the rest. Peak overviews (`engine.waveform`) are computed a slice at a time and outlive their buffer, so the
+  playlist doesn't re-decode to draw. Samples removed from the project are freed (`forgetSample`; undo decodes again).
+
+### What is in memory (`engine/sample-residency.ts`, `engine/residency-plan.ts`)
+
+- Every playlist audio clip needs its sample decoded, reversed when the channel plays backwards, and in `stretch` mode a
+  stretched copy of the part it plays. While song mode plays, the buffers of clips overlapping [playhead − 2 s,
+  playhead + 30 s] are pinned (the window wraps at the loop end); the clips after it are prefetched in playback
+  order, within 5 minutes and only while they fit beside what is already in memory (a prefetch never pushes out
+  another engine's buffers); the rest may be evicted, the farthest first (they are touched in reverse order).
+  Stopped, nothing is pinned. The plan is made again when the playhead has moved a second, the song changed or a load
+  finished (pure planning: `residency-plan.ts`, unit-tested).
+- A clip whose sample isn't decoded yet (a jump far into a long mix) waits and starts once it is, at the spot the song
+  has reached: never late, never shifted. A clip whose stretched copy isn't ready plays the plain sample in time
+  (pitch off) and switches over with a crossfade, as before.
+- Offline renders call `Engine.prepareOffline(horizon)` before scheduling each chunk (and `prepareTicks` before the
+  transport starts): the chunk's buffers are decoded and stretched, then it is scheduled, so a render never depends on
+  timing. `Engine.ready()` waits for the loads the plan started; `measureTail` only waits for plugins (`pluginsReady`).
+- Nothing long runs in one go on the main thread while music plays: decoding is the browser's or a Worker's, stretching
+  runs in Workers, and reversing, peaks, buffer copies in and out of Workers go a slice (~1.4 s of audio) at a time
+  with a MessageChannel yield in between (`engine/audio-buffers.ts`).
+
+### Time-stretching (`core/audio/wsola.ts`, `engine/audio-buffers.ts`, `engine/stretch.worker.ts`)
+
+- Only the clip's source range (`clipSourceRange`) plus a second on each side, on whole seconds (small trims reuse the
+  copy), not the whole file. A pool of up to three Workers (cores − 2) takes jobs in playback order. The channels are
+  transferred in; the copy comes back as 16-bit PCM (`core/io/pcm16.ts`: planar, with a gain so overs aren't clipped),
+  half the bytes of floats, and that is also what is kept on disk: OPFS `derived/` (`platform/derived-store.ts`, 4 GB,
+  least recently used first), so a copy is computed once per file, range and tempo and reads back identical (renders
+  don't change between sessions). A copy that is on disk doesn't need its sample decoded at all.
+- WSOLA is ~4× faster (coarse search on a 6 kHz mono mix, sliding energies, zero-padded arrays without bounds checks)
+  and keeps attacks whole: plain WSOLA reads a hit into two overlapping frames at slightly different times when slowing
+  down (a doubled click) and moves it by up to the ±12 ms search. Attacks are found where the energy of the next ~10 ms
+  jumps 9 dB over the ~20 ms before (`detectOnsets`); around each one the input plays at its own speed (frames that
+  continue each other exactly, which overlap-add back to the original samples), centred on the hit's stretched time,
+  and the stretch is made up in the gaps (strongest hits first, while each gap stays within 2× of the overall scale).
+  Measured on 5 ms clicks every 0.5 s: plain WSOLA doubles them at 1.5× (30 peaks for 20 clicks) and moves them by
+  up to 12 ms; now one per click at full level, within 0.1 ms at 1.06–1.5× (2.4 ms at 0.8×); the old pitch and level
+  tests still pass. 60 s of stereo: 0.94 s before, 0.19–0.28 s now (Node, one thread); a 5-minute song ~1 s per Worker.
+- A clip at speed 1 (a stretched copy at a constant tempo, or a plain clip) starts on a whole frame at a whole frame
+  (≤ 10 µs off): a fractional start made the browser interpolate the whole clip, dulling the highs by up to 6 dB at
+  16 kHz, drifting with the phase over a long song.
+
+### Durations from file headers (`core/io/audio-info.ts`)
+
+`readAudioInfo` reads duration, rate and channels from WAV/RF64 (`fmt `, `data` size, clamped to the file), AIFF
+(`COMM`), FLAC (STREAMINFO), MP3 (Xing/Info frame count with LAME's encoder delay and padding, VBRI, else every frame
+header counted: cheap even for an hour), ADTS AAC (frames counted), M4A/MP4 (the sound track's `mdhd`, else `mvhd`, and
+the `mp4a`/`alac` sample entry) and OGG Vorbis/Opus (identification header, last page's granule position). Pure,
+unit-tested on tiny synthetic files and in the browser against Chrome's decoder (WAV/FLAC exact, MP3 within two frames).
+`probeAudio` uses it and decodes only files it can't describe. Browser click previews are decoded once per content
+(keyed by SHA-256) into the shared cache.
+
+### Hour-long exports (`engine/render-offline.ts` `renderStream`, `app/export/*`)
+
+- `renderStream` renders up to ~512 s per window (a fresh engine and OfflineAudioContext each, ~250 MB) and hands the
+  audio over a second at a time. Each window starts early by the effects' tail plus 8 s, rounded up to the window
+  grid (a warm-up that is thrown away), so reverbs, delays and releases that cross a boundary sound as in one render;
+  windows overlap by 0.1 s and crossfade as `a + w·(b − a)`, which leaves identical samples untouched. The transport of a
+  later window starts at the tick heard at its first frame, so events land on the same frames as in one render.
+- The grid (`windowGrid`): window starts are whole multiples of a power-of-two number of seconds, so they are on the
+  128-frame render quantum and their start times are exact binary fractions; at 48/96 kHz also on the 16384-frame
+  partitions of the ConvolverNode's longest FFT stage (128/64 s). Measured on a drum loop through Reverb and Delay at
+  128 BPM (exact seconds per tick): two windows give the single render **bit for bit**, boundary included (48 kHz
+  with 128 s windows; the test uses 32 kHz, where the aligned grid is 64 s, to stay short). At 44.1 kHz (32 s grid,
+  convolver partitions not aligned) within −132 dBFS over 75 s and three windows (the shorter test song comes out
+  exact).
+- Not bit for bit: Chrome sums three or more connections into one node input in an order that depends on memory
+  addresses, so such graphs differ by a rounding step even between two plain renders (the test uses two channels).
+  Free-running modulation (an LFO's phase) restarts in each window: the seam is the crossfade. Notes held across a
+  boundary for longer than the warm-up are not heard after it. Song-mode tempo automation is followed but its event
+  times are no longer exact binary fractions.
+- The export (`runExport`) trims as the audio comes (`app/export/stream-trim.ts`: the tail after the music is held until
+  its end is known, the same cut as `trimRender`), encodes in the Worker a piece at a time (`openEncodeStream`:
+  `WavStreamEncoder`, `FlacStreamEncoder` — byte-identical to `encodeWav`/`encodeFlac` however the audio is split, the
+  WAV header and STREAMINFO written over the start at the end — and LAME incrementally) and writes to the file handle as
+  it goes (`platform/sinks.ts`); without File System Access the parts become one Blob for the download. Normalizing
+  renders the mix twice (once for the peak). Stems: each into its file in the folder, or into an OPFS temp file that is
+  then copied into a streamed, stored .zip. Progress and cancel work as before.
+
+### Big projects (`core/io/project-file.ts`, `core/io/zip-index.ts`, `app/persistence/project-io.ts`)
+
+Decision: `.agproj` keeps embedding every sample, so a project stays one portable file (references to OPFS blobs would
+break when the browser's storage is cleared or the file moves to another computer). Save streams the zip into the file
+handle (`writeProjectTo` → `writeProjectFileStream`: fflate's streaming `Zip`, JSON deflated, samples stored), reading
+each sample from the store only when it is written and passing it on in 1 MB pieces. Open reads the zip's central
+directory from the end of the File and then each sample on its own (`openProjectBlob` → `readProjectFileIndex`), verified
+against its hash and stored. A project with hundreds of MB of songs holds one song at a time either way; files written
+either way open either way. No zip64: project files stay under 4 GB.
+
+### Measured (Chrome, M-series Mac, headless)
+
+- Songs at 118–128.5 BPM stretched to 126 BPM with 8-bar overlaps, clicks on every beat (`test/browser/dj-long-mix.test.ts`):
+  six 60 s songs under a 100 MB budget (~280 MB decoded and stretched) play from two transitions with no late events
+  (decoded audio peaks at 128 MB while playing), and the 4.5-minute mix exports (16-bit WAV into an OPFS file) in 8.8 s
+  (31× realtime), decoded audio peaking at 108 MB, each song decoded once, every third beat of every song within
+  2.5 ms of the grid at full level. Eight 90 s songs under 160 MB: a 10-minute mix in 19 s, peak 193 MB.
+- Sixteen 4.5-minute songs, a 66-minute mix (`VITE_LONG_EXPORT=1`), 24-bit WAV: 154 s (26× realtime) including
+  stretching all sixteen; decoded audio peaks at 500 MB with a 400 MB budget (1.6 GB with the default 1.5 GB budget,
+  which an export is free to fill); page memory (`measureUserAgentSpecificMemory`, Workers included) peaks at 1.8 GB,
+  most of it the three stretch Workers' transient buffers (~300 MB each while a 4.5-minute song is stretched) and
+  the cache; the render window is ~250 MB; the 1.1 GB file is never in memory.
+
+### Gaps
+
+- Stretch Workers hold ~300 MB each while stretching a long song (input, output, mono mix): streaming WSOLA output
+  straight into 16-bit would halve it.
+- While stopped, the residency plans around where song playback last started, not the playlist's song-position marker
+  (the engine isn't told it): pressing play far from there decodes on demand (clips start in sync once ready).
+- Audio clip channels' channel-rack previews load their sample on demand (the first click waits for the decode).
+- The disk copies of stretched clips have their own cap (4 GB) and no UI; `DerivedStore.clear()` exists for one.
+- OPFS in a fresh headless profile refuses single files near 1 GB, so the 64-minute test writes into a counting sink;
+  stems of a 90-minute mix into a .zip go through OPFS temp files of that size.
+
 ## Wave 2 foundations
 
 - Kernel transport:
@@ -1605,17 +1745,18 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
   so the release would ramp from that old point and fade the whole clip: the held value is set explicitly (this was a
   bug before M15).
 - Tempo following: playback-rate changes are scheduled at every tempo change of the clip's run (k-rate: within one
-  render quantum). Stretch plays a WSOLA copy (`core/audio/wsola.ts`, in a Worker, `engine/audio-buffers.ts`; cached
-  per source buffer and scale, scale = P / (bpm at the clip start / B)), at speed scale · bpm(t)/B, so tempo
+  render quantum). Stretch plays a WSOLA copy of the part of the sample the clip plays (`core/audio/wsola.ts`, in a
+  pool of Workers, `engine/audio-buffers.ts`; per clip, sample and scale, scale = P / (bpm at the clip start / B),
+  kept in the sample cache and on disk: see [Long audio](#long-audio-dj-mode-foundations)), at speed scale · bpm(t)/B, so tempo
   automation inside a stretched clip bends its pitch slightly; until the copy is ready the plain sample plays in time
-  (pitch off), then voices switch over 30 ms later with a short crossfade. The engine plans the scales every clip needs
-  on each edit; `ChannelStrip.ready` waits for the sample's decode and those stretches, so offline renders (exports)
-  are deterministic. Playing clips restart when their channel's playback key (sample, pitch, reverse, follow, source
+  (pitch off), then voices switch over 30 ms later with a short crossfade. The engine plans what every clip needs on
+  each edit (`engine/sample-residency.ts`); offline renders make each chunk's samples and stretches ready before
+  scheduling it, so exports are deterministic. Playing clips restart when their channel's playback key (sample, pitch, reverse, follow, source
   BPM) changes, and tempo-following clips when the tempo map does. `EngineApi.isStretching(channelId)` drives
   "Stretching…".
 - WSOLA: 40 ms Hann frames, 50 % overlap, ±12 ms search for the best continuation of the previous frame, coarse on a
-  ~12 kHz mono mix then refined at the full rate, the same positions for every channel. ~0.5 s for 30 s of stereo in
-  Node.
+  ~6 kHz mono mix then refined at the full rate, the same positions for every channel; attacks are kept whole and on
+  their stretched time (see [Long audio](#long-audio-dj-mode-foundations)). ~0.2 s for 60 s of stereo in Node.
 
 ### Editing audio clips (`ui/features/playlist/audio-clip.ts`, `ui/features/audio-clips`, `app/actions/audio-clips.ts`)
 
@@ -1665,7 +1806,8 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
 
 - WAV (16-bit dithered, 24, 32 float), FLAC (our encoder: fixed and LPC subframes, partitioned Rice residuals,
   stereo decorrelation, the MD5 in STREAMINFO; 16 and 24 bits; decodes bit-exactly in Chrome and with macOS
-  afconvert) and MP3 (LAME via `@breezystack/lamejs`, 128–320 kbps, 44.1/48 kHz), all encoded in a Worker
+  afconvert) and MP3 (LAME via `@breezystack/lamejs`, 128–320 kbps, 44.1/48 kHz), all encoded in a Worker a piece at
+  a time as the render streams in and written to the file as it goes (see [Long audio](#long-audio-dj-mode-foundations))
   (`encode.worker.ts`; LAME loads only there). Chrome maps 16-bit integers to floats asymmetrically (positive
   × 1/32767, negative / 32768): the FLAC browser test compares against exactly that.
 - Stems: one per mixer track with sound playing into it in the range, plus "Master" for channels that play straight

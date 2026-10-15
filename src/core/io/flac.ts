@@ -10,7 +10,7 @@
  * quantized input (the browser test checks it against Chrome's own decoder).
  */
 import { Md5 } from './md5';
-import { quantizePcm } from './wav';
+import { PcmQuantizer, quantizePcm } from './wav';
 
 export type FlacBitDepth = 16 | 24;
 
@@ -38,57 +38,141 @@ export function encodeFlacPcm(
   sampleRate: number,
   opts: Pick<EncodeFlacOptions, 'bitDepth' | 'blockSize' | 'maxLpcOrder'>,
 ): Uint8Array {
-  const nch = samples.length;
-  if (nch < 1 || nch > 8) throw new RangeError('encodeFlac: FLAC holds 1 to 8 channels.');
-  const total = samples[0]!.length;
+  const total = samples[0]?.length ?? 0;
   if (samples.some((c) => c.length !== total)) throw new RangeError('encodeFlac: all channels must have the same length.');
-  if (!Number.isInteger(sampleRate) || sampleRate < 1 || sampleRate > 655350)
-    throw new RangeError(`encodeFlac: invalid sample rate ${sampleRate}.`);
-  const bps = opts.bitDepth;
-  if (bps !== 16 && bps !== 24) throw new RangeError('encodeFlac: 16 or 24 bits.');
-  const block = Math.max(16, Math.min(65535, Math.round(opts.blockSize ?? BLOCK)));
-  const maxLpc = Math.max(0, Math.min(32, Math.round(opts.maxLpcOrder ?? 8)));
+  const enc = new FlacStreamEncoder(samples.length, sampleRate, opts);
+  const parts = [enc.header(), enc.pushPcm(samples), enc.finish()];
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  out.set(enc.header(), 0);
+  return out;
+}
 
-  const w = new BitWriter(Math.max(1024, Math.ceil((total * nch * bps) / 8 / 2) + 1024));
-  // "fLaC" + STREAMINFO (patched with frame sizes and the MD5 at the end).
-  w.write(0x664c6143, 32);
-  w.write(1, 1); // last metadata block
-  w.write(0, 7); // STREAMINFO
-  w.write(34, 24);
-  const infoAt = w.bytePos;
-  for (let i = 0; i < 34; i++) w.write(0, 8);
+/**
+ * FLAC written a piece at a time (long exports): `header()` first (STREAMINFO without the length,
+ * frame sizes and MD5 yet), then the frames as audio is pushed (whole blocks; the rest waits for the
+ * next push), `finish()` for the last block, and `header()` again, now complete, to write over the
+ * first one (it has the same size). The bytes are encodeFlac's, however the audio is split.
+ */
+export class FlacStreamEncoder {
+  private readonly block: number;
+  private readonly maxLpc: number;
+  private readonly bps: FlacBitDepth;
+  private readonly quantizer: PcmQuantizer;
+  private readonly work: Workspace;
+  private readonly md5 = new Md5();
+  /** Samples waiting for a whole block. */
+  private readonly pending: Int32Array[];
+  private pendingLength = 0;
+  private frame = 0;
+  private total = 0;
+  private minFrame = Infinity;
+  private maxFrame = 0;
 
-  const md5 = new Md5();
-  const bytesPer = bps / 8;
-  let minFrame = Infinity;
-  let maxFrame = 0;
-  const work = new Workspace(block);
-  for (let start = 0, frame = 0; start < total; start += block, frame++) {
-    const bs = Math.min(block, total - start);
-    const chans = samples.map((c) => c.subarray(start, start + bs));
-    md5.update(interleavedBytes(chans, bs, bytesPer));
-    const at = w.bytePos;
-    writeFrame(w, chans, bs, bps, sampleRate, frame, block, maxLpc, work);
-    const size = w.bytePos - at;
-    minFrame = Math.min(minFrame, size);
-    maxFrame = Math.max(maxFrame, size);
+  constructor(
+    readonly numChannels: number,
+    readonly sampleRate: number,
+    opts: Pick<EncodeFlacOptions, 'bitDepth' | 'blockSize' | 'maxLpcOrder' | 'dither' | 'seed'>,
+  ) {
+    if (numChannels < 1 || numChannels > 8) throw new RangeError('encodeFlac: FLAC holds 1 to 8 channels.');
+    if (!Number.isInteger(sampleRate) || sampleRate < 1 || sampleRate > 655350)
+      throw new RangeError(`encodeFlac: invalid sample rate ${sampleRate}.`);
+    this.bps = opts.bitDepth;
+    if (this.bps !== 16 && this.bps !== 24) throw new RangeError('encodeFlac: 16 or 24 bits.');
+    this.block = Math.max(16, Math.min(65535, Math.round(opts.blockSize ?? BLOCK)));
+    this.maxLpc = Math.max(0, Math.min(32, Math.round(opts.maxLpcOrder ?? 8)));
+    this.quantizer = new PcmQuantizer(this.bps, { dither: !!opts.dither, seed: opts.seed });
+    this.work = new Workspace(this.block);
+    this.pending = Array.from({ length: numChannels }, () => new Int32Array(this.block));
   }
 
-  const out = w.finish();
-  const info = new BitWriter(34);
-  info.write(block, 16);
-  info.write(block, 16);
-  info.write(total > 0 ? minFrame : 0, 24);
-  info.write(maxFrame, 24);
-  info.write(sampleRate, 20);
-  info.write(nch - 1, 3);
-  info.write(bps - 1, 5);
-  info.write(Math.floor(total / 2 ** 32), 4);
-  info.write(total >>> 0, 32);
-  const head = info.finish();
-  out.set(head, infoAt);
-  out.set(md5.digest(), infoAt + 18);
-  return out;
+  /** "fLaC" and STREAMINFO (42 bytes): complete once `finish` has run. */
+  header(): Uint8Array {
+    const w = new BitWriter(42);
+    w.write(0x664c6143, 32);
+    w.write(1, 1); // last metadata block
+    w.write(0, 7); // STREAMINFO
+    w.write(34, 24);
+    const total = this.total;
+    w.write(this.block, 16);
+    w.write(this.block, 16);
+    w.write(total > 0 && Number.isFinite(this.minFrame) ? this.minFrame : 0, 24);
+    w.write(this.maxFrame, 24);
+    w.write(this.sampleRate, 20);
+    w.write(this.numChannels - 1, 3);
+    w.write(this.bps - 1, 5);
+    w.write(Math.floor(total / 2 ** 32), 4);
+    w.write(total >>> 0, 32);
+    const out = w.finish();
+    const full = new Uint8Array(42);
+    full.set(out, 0);
+    if (this.digest) full.set(this.digest, 26);
+    return full;
+  }
+
+  private finished = false;
+  private digest: Uint8Array | null = null;
+
+  /** Float audio: quantized (with the dither carried on), then encoded. */
+  push(channels: readonly Float32Array[]): Uint8Array {
+    return this.pushPcm(this.quantizer.quantize(channels));
+  }
+
+  /** Integer samples: the frames of every whole block they complete. */
+  pushPcm(samples: readonly Int32Array[]): Uint8Array {
+    if (this.finished) throw new Error('encodeFlac: already finished.');
+    if (samples.length !== this.numChannels) throw new RangeError('encodeFlac: wrong number of channels.');
+    const n = samples[0]?.length ?? 0;
+    const w = new BitWriter(Math.max(1024, Math.ceil((n * this.numChannels * this.bps) / 8 / 2) + 1024));
+    let i = 0;
+    while (i < n) {
+      const take = Math.min(this.block - this.pendingLength, n - i);
+      if (this.pendingLength === 0 && take === this.block) {
+        // A whole block straight from the input.
+        this.encodeBlock(w, samples.map((c) => c.subarray(i, i + take)), take);
+      } else {
+        samples.forEach((c, ch) => (this.pending[ch] as Int32Array).set(c.subarray(i, i + take), this.pendingLength));
+        this.pendingLength += take;
+        if (this.pendingLength === this.block) {
+          this.encodeBlock(w, this.pending, this.block);
+          this.pendingLength = 0;
+        }
+      }
+      i += take;
+    }
+    return w.finish();
+  }
+
+  /** The last (partial) block. Write `header()` over the first 42 bytes afterwards. */
+  finish(): Uint8Array {
+    const w = new BitWriter(Math.max(1024, Math.ceil((this.pendingLength * this.numChannels * this.bps) / 8) * 2 + 1024));
+    if (this.pendingLength > 0) {
+      this.encodeBlock(
+        w,
+        this.pending.map((c) => c.subarray(0, this.pendingLength)),
+        this.pendingLength,
+      );
+      this.pendingLength = 0;
+    }
+    this.finished = true;
+    this.digest = this.md5.digest();
+    return w.finish();
+  }
+
+  private encodeBlock(w: BitWriter, chans: Int32Array[], bs: number): void {
+    this.md5.update(interleavedBytes(chans, bs, this.bps / 8));
+    const at = w.bytePos;
+    writeFrame(w, chans, bs, this.bps, this.sampleRate, this.frame, this.block, this.maxLpc, this.work);
+    const size = w.bytePos - at;
+    this.minFrame = Math.min(this.minFrame, size);
+    this.maxFrame = Math.max(this.maxFrame, size);
+    this.frame++;
+    this.total += bs;
+  }
 }
 
 function interleavedBytes(chans: Int32Array[], n: number, bytesPer: number): Uint8Array {

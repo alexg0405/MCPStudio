@@ -354,8 +354,9 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
     const aw = mean(use.map((j) => times[strong[j]!]! - pw * idx[j]!));
     const rw = residuals(aw, pw);
     const sw = slip(rw);
-    // (a whole BPM that slips about as little as the best line does; a 127.95 song over minutes doesn't)
-    if (sw <= Math.max(0.01, 1.4 * maxSlip)) {
+    // (a whole BPM that slips about as little as the best line does; a 127.95 song over minutes doesn't.
+    // Under 20 ms the two can't be told apart in a short clip, and whole is what music is made at.)
+    if (sw <= Math.max(0.02, 1.4 * maxSlip)) {
       a = aw;
       p = pw;
       res = rw;

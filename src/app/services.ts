@@ -6,6 +6,9 @@ import { setPluginState } from '@core/ops/channels';
 import type { JsonValue } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions } from '@engine/api';
 import { Engine } from '@engine/engine';
+import { SampleCache } from '@engine/samples';
+import { isOpfsAvailable } from '@platform/opfs';
+import { createOpfsDerivedStore } from '@platform/derived-store';
 import { createDefaultProject } from './default-project';
 import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
@@ -58,6 +61,11 @@ export interface Services {
   readonly controllers: ControllerRouter;
   readonly plugins: PluginRegistry;
   readonly engine: EngineApi;
+  /**
+   * Decoded samples, shared by the realtime engine, exports and every other offline render (pass
+   * `{ plugins, sampleCache }` as engine options), with a memory budget (prefs.sampleMemoryMb).
+   */
+  readonly sampleCache: SampleCache;
   /** Live audio of running plugin instances for their editors (`host.tap()`; `view(owner)`). */
   readonly taps: TapRegistry;
   /** Record mode and the recorders features register (notes, automation, audio). */
@@ -150,10 +158,21 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const scoreLog = new ScoreLog(live);
   const taps = new TapRegistry();
 
+  // Embedded samples come from the app's sample store (OPFS, or memory when that is unavailable).
+  // AIFF isn't transcoded here (that would run on the main thread): the engine's decoder parses it in a Worker.
+  // Time-stretched clip copies are kept in OPFS, so each is made once per file and tempo.
+  const sampleCache = new SampleCache(opfsSampleProvider({ transcode: false }), {
+    ...(isOpfsAvailable() ? { store: createOpfsDerivedStore() } : {}),
+  });
+  const applyBudget = () => {
+    const mb = prefs.getState().sampleMemoryMb;
+    sampleCache.budgetBytes = Math.min(16384, Math.max(256, Number.isFinite(mb) ? mb : 1536)) * 1024 * 1024;
+  };
+  prefs.subscribe(applyBudget);
+  applyBudget();
   const engineOptions: EngineOptions = {
     plugins,
-    // Embedded samples come from the app's sample store (OPFS, or memory when that is unavailable).
-    samples: opfsSampleProvider(),
+    sampleCache,
     onPluginStateRequest: (owner: PluginOwner, state: JsonValue) =>
       history.transact('Plugin state', (d) => setPluginState(d, owner, state)),
     onPluginFault: (_owner, pluginId, error) => {
@@ -222,6 +241,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     scoreLog,
     plugins,
     engine,
+    sampleCache,
     taps,
     recording,
     audioInput,

@@ -56,6 +56,8 @@ export interface PrefsState {
    * fastest when you play live (but crackles sooner).
    */
   audioBuffer: AudioBufferSize;
+  /** Megabytes of decoded audio kept in memory (long songs beyond it are decoded around the playhead). */
+  sampleMemoryMb: number;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
   scopeMode: 'scope' | 'spectrum' | 'off';
   /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
@@ -110,6 +112,7 @@ const DEFAULTS: PrefsState = {
   customKeys: {},
   outputDevice: '',
   audioBuffer: 'large',
+  sampleMemoryMb: 1536,
   scopeMode: 'scope',
   theme: 'marble',
   accent: 'gold',

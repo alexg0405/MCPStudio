@@ -1,35 +1,30 @@
 /**
  * Audio export (File > Export audio): the song, the current pattern or the loop region as one WAV,
  * FLAC or MP3 file, or as stems (one file per mixer track, all the same length and aligned) into a
- * folder or a .zip. Renders with the same engine as playback (OfflineAudioContext), trims the
- * pre-roll and the mixer's delay compensation, and encodes in a Worker.
+ * folder or a .zip. Renders with the same engine as playback (OfflineAudioContext, window by
+ * window for long songs), trims the pre-roll and the mixer's delay compensation, encodes in a Worker
+ * and writes the file as it goes: an hour-long mix is never in memory whole.
  */
-import { zipSync } from 'fflate';
+import { Zip, ZipPassThrough } from 'fflate';
 import { normalizeGain } from '@core/audio/envelope';
 import { planStems, stemProject, withoutMasterChain, type StemPlan } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Project } from '@core/model/types';
-import { measureTail, renderOffline } from '@engine/render-offline';
-import {
-  downloadBytes,
-  isFileSystemAccessSupported,
-  pickDirectory,
-  pickSaveExportFile,
-  writeFile,
-  writeFileInDirectory,
-} from '@platform/fs-access';
-import { opfsSampleProvider } from '../persistence/project-io';
+import { measureTail, renderStream } from '@engine/render-offline';
+import { isFileSystemAccessSupported, pickDirectory, pickSaveExportFile } from '@platform/fs-access';
+import { downloadParts, memorySink, openFileSink, openTempFile, type ByteSink, type MemorySink } from '@platform/sinks';
 import type { PrefsState } from '../stores/prefs';
 import type { Services } from '../services';
 import {
   CODEC_EXTENSIONS,
   CODEC_MIME,
   MP3_SAMPLE_RATES,
-  encodeOffThread,
+  openEncodeStream,
   type AudioCodec,
   type EncodeSpec,
 } from './encode';
-import { ExportError, trimExport, type ExportProgress } from './export-wav';
+import { ExportError, type ExportProgress } from './export-wav';
+import { StreamTrimmer } from './stream-trim';
 import { planExport, planSeconds, type ExportPlan, type ExportRange } from './plan';
 
 export interface AudioExportSettings {
@@ -130,19 +125,70 @@ export interface ExportHooks {
   signal?: AbortSignal;
 }
 
-function peakOf(channels: Float32Array[]): number {
+function peakOf(channels: readonly Float32Array[]): number {
   let m = 0;
   for (const c of channels) for (let i = 0; i < c.length; i++) m = Math.max(m, Math.abs(c[i] as number));
   return m;
 }
 
-function scale(channels: Float32Array[], gain: number): void {
+function scale(channels: readonly Float32Array[], gain: number): void {
   if (gain === 1) return;
   for (const c of channels) for (let i = 0; i < c.length; i++) c[i] = (c[i] as number) * gain;
 }
 
+/** Where one exported file's bytes go as they are encoded (a download or `memory` target collects them). */
+async function sinkFor(target: ExportTarget, mime: string): Promise<{ sink: ByteSink; done(): Promise<void> }> {
+  if ((target.kind === 'file' || target.kind === 'zip') && target.handle) {
+    const sink = await openFileSink(target.handle);
+    return { sink, done: () => sink.close() };
+  }
+  const mem = memorySink();
+  return {
+    sink: mem,
+    done: async () => {
+      if (target.kind === 'memory') target.files.set(target.name, mem.bytes());
+      else downloadParts(target.name, mem.parts(), mime);
+    },
+  };
+}
+
 /**
- * Renders and writes the export. Stems: the mix is rendered first (for the common length and the
+ * Encodes pieces of audio into a sink as they come: the file's header first, the encoded pieces,
+ * then the end, and the header again with the final sizes (WAV, FLAC).
+ */
+async function encoderInto(sink: ByteSink, spec: EncodeSpec, rate: number, channels: number) {
+  const enc = await openEncodeStream(spec, rate, channels);
+  await sink.write(enc.header);
+  let chain: Promise<void> = Promise.resolve();
+  let failed: unknown = null;
+  return {
+    /** Queues a piece (transferred to the encoder); resolves when there is room for the next one. */
+    async push(piece: Float32Array[]): Promise<void> {
+      if (failed) throw failed;
+      const encoded = enc.push(piece);
+      chain = chain.then(async () => sink.write(await encoded)).catch((e: unknown) => {
+        failed ??= e;
+      });
+      // At most one piece waits to be written: memory stays at a few seconds of audio.
+      await chain;
+      if (failed) throw failed;
+    },
+    async finish(): Promise<void> {
+      await chain;
+      if (failed) throw failed;
+      const { tail, header } = await enc.finish();
+      await sink.write(tail);
+      if (header) await sink.writeAt(0, header);
+    },
+    close: () => enc.close(),
+  };
+}
+
+/**
+ * Renders and writes the export, a piece at a time: the render streams window by window
+ * (renderStream), is trimmed as it comes (StreamTrimmer), encoded in a Worker and written to the
+ * file as it goes, so an hour-long mix is never held whole. Normalizing a mix renders it twice
+ * (once to find the peak). Stems: the mix is rendered first (for the common length and the
  * normalize gain), then each stem with the same tail, cut to the same length, raised by the same
  * gain, so the stems still add up to the mix. Rejects with ExportError (or an AbortError).
  */
@@ -159,19 +205,30 @@ export async function runExport(
   const rate = effectiveRate(settings);
   const spec = encodeSpecOf(settings);
   const musical = planSeconds(project, plan);
+  const musicFrames = Math.ceil(musical * rate);
+  const extra = Math.round(0.01 * rate);
   const raw = settings.stems && !settings.masterChain;
   const base = raw ? withoutMasterChain(project) : project;
-  const engineOpts = { plugins: s.plugins, samples: opfsSampleProvider() };
+  const engineOpts = { plugins: s.plugins, sampleCache: s.sampleCache };
   const stems = settings.stems ? planStems(base, stemRange(base, plan)) : [];
   if (settings.stems && stems.length === 0)
     throw new ExportError('Nothing plays in this range, so there are no stems to export.');
-  const steps = settings.stems ? stems.length + 1 : 1;
+  const measureMix = settings.stems || settings.normalize;
+  const steps = (settings.stems ? stems.length : 1) + (measureMix ? 1 : 0);
   const signal = hooks.signal;
   const tail = await measureTail(base, engineOpts, rate);
   signal?.throwIfAborted();
 
-  const render = async (p: Project, step: number, label: string) => {
-    const result = await renderOffline(p, {
+  /** One render pass; every kept piece goes to `consume`. Returns the frames kept. */
+  const pass = async (
+    p: Project,
+    step: number,
+    label: string,
+    length: number | undefined,
+    consume: (piece: Float32Array[]) => Promise<void>,
+  ): Promise<number> => {
+    let trimmer: StreamTrimmer | null = null;
+    const r = await renderStream(p, {
       ...engineOpts,
       view: { mode: plan.mode, patternId: plan.patternId, loop: null },
       bars: plan.bars,
@@ -179,65 +236,162 @@ export async function runExport(
       sampleRate: rate,
       tail,
       limiter: !raw,
-      onProgress: (f) => hooks.onProgress?.({ stage: 'render', fraction: ((step + f) / steps) * 0.9, label }),
+      onProgress: (f) => hooks.onProgress?.({ stage: 'render', fraction: ((step + f) / steps) * 0.98, label }),
       ...(signal ? { signal } : {}),
+      onAudio: async (channels, frame, info) => {
+        // Every render of one export has the same start (pre-roll and delay compensation, see measureTail).
+        trimmer ??= new StreamTrimmer(Math.round((info.preRoll + info.latency) * rate), musicFrames, {
+          extra,
+          ...(length !== undefined ? { length } : {}),
+        });
+        for (const piece of trimmer.push(channels, frame)) await consume(piece);
+      },
     });
     signal?.throwIfAborted();
-    return result;
+    const t = trimmer as StreamTrimmer | null;
+    if (!t) return 0;
+    for (const piece of t.finish(r.frames)) await consume(piece);
+    return t.frames;
   };
 
-  const mix = await render(base, 0, settings.stems ? 'Mix (for the length)' : 'Mix');
-  const mixChannels = trimExport(mix, musical);
-  const length = mixChannels[0]?.length ?? 0;
-  const gain = settings.normalize ? normalizeGain(peakOf(mixChannels)) : 1;
-  const seconds = length / rate;
-  const projectName = s.files.store.getState().name;
+  // The mix's length and peak (stems, normalize): a pass that only measures.
+  let gain = 1;
+  let length: number | undefined;
+  if (measureMix) {
+    let peak = 0;
+    length = await pass(base, 0, settings.stems ? 'Mix (for the length)' : 'Mix (for the level)', undefined, async (piece) => {
+      peak = Math.max(peak, peakOf(piece));
+    });
+    if (settings.normalize) gain = normalizeGain(peak);
+  }
+  const first = measureMix ? 1 : 0;
 
+  /** Renders `p` and encodes it into `sink`. */
+  const write = async (p: Project, step: number, label: string, sink: ByteSink, fixed: number | undefined) => {
+    const enc = await encoderInto(sink, spec, rate, 2);
+    try {
+      const frames = await pass(p, step, label, fixed, async (piece) => {
+        // The render's arrays are ours: scaled in place, then handed to the encoder.
+        const own = piece.map((c) => (c.byteOffset === 0 && c.length === c.buffer.byteLength / 4 ? c : c.slice()));
+        scale(own, gain);
+        await enc.push(own);
+      });
+      await enc.finish();
+      return frames;
+    } catch (e) {
+      enc.close();
+      throw e;
+    }
+  };
+
+  const projectName = s.files.store.getState().name;
   if (!settings.stems) {
-    scale(mixChannels, gain);
-    hooks.onProgress?.({ stage: 'encode', fraction: 0.92 });
-    const bytes = await encodeOffThread(mixChannels, rate, spec);
-    signal?.throwIfAborted();
-    await write(target, target.name, bytes, CODEC_MIME[settings.codec]);
-    hooks.onProgress?.({ stage: 'encode', fraction: 1 });
-    return { names: [target.name], seconds };
+    const { sink, done } = await sinkFor(target, CODEC_MIME[settings.codec]);
+    try {
+      const frames = await write(base, first, 'Mix', sink, length);
+      await done();
+      hooks.onProgress?.({ stage: 'encode', fraction: 1 });
+      return { names: [target.name], seconds: frames / rate };
+    } catch (e) {
+      await sink.abort();
+      throw e;
+    }
   }
 
-  const zip: Record<string, [Uint8Array, { level: 0 }]> = {};
   const names: string[] = [];
   const oneByOne = target.kind === 'folder' || (target.kind === 'memory' && settings.stemsTo === 'folder');
-  for (const [i, stem] of stems.entries()) {
-    const r = await render(stemProject(base, stems, stem), i + 1, stem.name);
-    // Every stem has the mix's start and length (same render length and latency, see measureTail).
-    const start = Math.round((r.preRoll + r.latency) * rate);
-    const channels = Array.from({ length: r.buffer.numberOfChannels }, (_, c) =>
-      r.buffer.getChannelData(c).slice(start, start + length),
-    );
-    scale(channels, gain);
-    hooks.onProgress?.({ stage: 'encode', fraction: ((i + 1.9) / steps) * 0.9, label: stem.name });
-    const bytes = await encodeOffThread(channels, rate, spec);
-    signal?.throwIfAborted();
-    const name = exportFileName(projectName, settings.codec, stem);
-    names.push(name);
-    if (target.kind === 'folder') await writeFileInDirectory(target.dir, name, bytes);
-    else if (oneByOne && target.kind === 'memory') target.files.set(name, bytes);
-    else zip[name] = [bytes, { level: 0 }];
-  }
-  if (!oneByOne) {
-    hooks.onProgress?.({ stage: 'encode', fraction: 0.97, label: 'Zip' });
-    await write(target, target.name, zipSync(zip), 'application/zip');
+  // A .zip is streamed too: each stem is encoded to a temporary file (its header is patched at the
+  // end), then copied into the zip as a stored entry.
+  const zipOut = oneByOne ? null : await sinkFor(target, 'application/zip');
+  const zip = zipOut ? new ZipStream(zipOut.sink) : null;
+  try {
+    for (const [i, stem] of stems.entries()) {
+      const name = exportFileName(projectName, settings.codec, stem);
+      names.push(name);
+      const variant = stemProject(base, stems, stem);
+      if (target.kind === 'folder') {
+        const sink = await openFileSink(await target.dir.getFileHandle(name, { create: true }));
+        try {
+          await write(variant, first + i, stem.name, sink, length);
+          await sink.close();
+        } catch (e) {
+          await sink.abort();
+          throw e;
+        }
+      } else if (oneByOne && target.kind === 'memory') {
+        const mem = memorySink();
+        await write(variant, first + i, stem.name, mem, length);
+        target.files.set(name, mem.bytes());
+      } else {
+        const temp = await openTempFile('stem');
+        const sink = temp?.sink ?? memorySink();
+        try {
+          await write(variant, first + i, stem.name, sink, length);
+          await sink.close();
+          await zip!.addFile(name, temp ? await temp.file() : new Blob((sink as MemorySink).parts() as BlobPart[]));
+        } finally {
+          await temp?.remove();
+        }
+      }
+    }
+    if (zip && zipOut) {
+      hooks.onProgress?.({ stage: 'encode', fraction: 0.99, label: 'Zip' });
+      await zip.finish();
+      await zipOut.done();
+    }
+  } catch (e) {
+    await zipOut?.sink.abort();
+    throw e;
   }
   hooks.onProgress?.({ stage: 'encode', fraction: 1 });
-  return { names, seconds };
+  return { names, seconds: (length ?? 0) / rate };
+}
+
+/** A .zip of stored (uncompressed) entries written to a sink as it is built (fflate's streaming Zip). */
+class ZipStream {
+  private readonly zip: Zip;
+  private chain: Promise<void> = Promise.resolve();
+  private error: unknown = null;
+  private ended: Promise<void>;
+
+  constructor(sink: ByteSink) {
+    let resolveEnd!: () => void;
+    this.ended = new Promise((r) => (resolveEnd = r));
+    this.zip = new Zip((err, chunk, final) => {
+      if (err) this.error ??= err;
+      if (chunk.byteLength > 0) {
+        const copy = chunk.slice();
+        this.chain = this.chain.then(() => sink.write(copy)).catch((e: unknown) => {
+          this.error ??= e;
+        });
+      }
+      if (final) void this.chain.then(resolveEnd);
+    });
+  }
+
+  /** Copies a file in, a megabyte at a time. */
+  async addFile(name: string, file: Blob): Promise<void> {
+    const entry = new ZipPassThrough(name);
+    this.zip.add(entry);
+    const step = 1 << 20;
+    for (let o = 0; o < file.size; o += step) {
+      const bytes = new Uint8Array(await file.slice(o, Math.min(file.size, o + step)).arrayBuffer());
+      entry.push(bytes, o + step >= file.size);
+      await this.chain;
+      if (this.error) throw this.error;
+    }
+    if (file.size === 0) entry.push(new Uint8Array(0), true);
+  }
+
+  async finish(): Promise<void> {
+    this.zip.end();
+    await this.ended;
+    await this.chain;
+    if (this.error) throw this.error;
+  }
 }
 
 function stemRange(project: Project, plan: ExportPlan) {
   const toTick = plan.fromTick + plan.bars * ticksPerBar(project.transport.timeSig);
   return { mode: plan.mode, patternId: plan.patternId, fromTick: plan.fromTick, toTick };
-}
-
-async function write(target: ExportTarget, name: string, bytes: Uint8Array, mime: string): Promise<void> {
-  if (target.kind === 'memory') target.files.set(name, bytes);
-  else if ((target.kind === 'file' || target.kind === 'zip') && target.handle) await writeFile(target.handle, bytes);
-  else downloadBytes(name, bytes, mime);
 }

@@ -8,6 +8,7 @@ import type { AudioTap, JsonValue, PluginDef } from '@agstudio/sdk';
 import type { Waveform } from './waveform';
 import type { RecordOptions, Recording, RecordingHandle } from './recorder';
 import type { AudioCapture, AudioInput, CapturedAudio } from './audio-input';
+import type { SampleCache } from './samples';
 
 export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio };
 
@@ -70,7 +71,13 @@ export interface SampleBytesProvider {
 
 export interface EngineOptions {
   plugins: PluginResolver;
+  /** Bytes of embedded samples (used when no `sampleCache` is given: the engine then makes its own). */
   samples?: SampleBytesProvider;
+  /**
+   * The decoded-sample cache to use (with its own bytes provider and memory budget). The app shares
+   * one between the realtime engine, offline renders and probes so nothing is decoded twice.
+   */
+  sampleCache?: SampleCache;
   /** A plugin asked to change its state (host.updateState): the app turns it into an undoable edit. */
   onPluginStateRequest?(owner: PluginOwner, state: JsonValue): void;
   /** A plugin failed to create or threw; the app shows it. */

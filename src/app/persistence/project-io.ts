@@ -1,6 +1,13 @@
 import { exactArrayBuffer } from '@core/io/bytes';
 import { sha256Hex } from '@core/io/hash';
-import { readProjectFile, writeProjectFile, type EmbeddedSample } from '@core/io/project-file';
+import {
+  readProjectFile,
+  readProjectFileIndex,
+  writeProjectFile,
+  writeProjectFileStream,
+  type EmbeddedSample,
+  type ProjectFileIndex,
+} from '@core/io/project-file';
 import { decodePcm, encodeWav } from '@core/io/wav';
 import type { Project, SampleRef } from '@core/model/types';
 import type { SampleBytesProvider } from '@engine/api';
@@ -70,6 +77,39 @@ export async function buildProjectFile(
   return writeProjectFile({ project, view, samples, appVersion, now: opts.now });
 }
 
+/**
+ * Writes a complete .agproj a piece at a time into `write` (a file handle's stream): each embedded
+ * sample is read from the store only when it is written, so a project with hundreds of MB of songs
+ * never sits in memory whole. Same contents as buildProjectFile.
+ */
+export async function writeProjectTo(
+  write: (bytes: Uint8Array) => Promise<void>,
+  project: Project,
+  view: unknown,
+  appVersion: string,
+  opts: BuildProjectFileOptions = {},
+): Promise<void> {
+  const store = opts.store ?? defaultSampleStore();
+  const byHash = new Map<string, SampleRef[]>();
+  for (const ref of Object.values(project.samples)) {
+    const src = embedded(ref);
+    if (src) byHash.set(src.hash, [...(byHash.get(src.hash) ?? []), ref]);
+  }
+  const samples = [...byHash.entries()].map(([hash, refs]) => {
+    const src = embedded(refs[0] as SampleRef)!;
+    return {
+      hash,
+      ext: src.ext,
+      read: () => store.getBlob(hash, src.ext),
+    };
+  });
+  const { missing } = await writeProjectFileStream(
+    { project, view, appVersion, now: opts.now, samples },
+    write,
+  );
+  if (missing.length > 0) opts.onMissingSamples?.(missing.flatMap((h) => byHash.get(h) ?? []));
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 function describeSamples(refs: SampleRef[]): string {
@@ -96,6 +136,62 @@ export async function openProjectFile(bytes: Uint8Array, opts: { store?: BlobSto
     }
     await store.putBlob(hash, sample.ext, sample.bytes);
   }
+  return finishOpen(file, repairs, damaged, store);
+}
+
+/**
+ * Bytes that Chrome's decodeAudioData can read. AIFF/AIFC isn't supported there, so those are
+ * re-encoded as 32-bit float WAV (lossless for PCM up to 24 bits); everything else passes through.
+ */
+export function decodableBytes(bytes: Uint8Array): Uint8Array {
+  const kind = sniffAudioExt(bytes);
+  if (kind !== 'aiff' && kind !== 'aifc') return bytes;
+  try {
+    const pcm = decodePcm(bytes);
+    if (!pcm || pcm.channels.length === 0) return bytes;
+    return encodeWav(pcm.channels, Math.round(pcm.sampleRate), { bitDepth: 32 });
+  } catch {
+    return bytes;
+  }
+}
+
+/**
+ * Opens a project file read a range at a time (a File from a picker or a drop): the project now,
+ * then each embedded sample on its own (verified against its hash, stored), so opening a project
+ * with hundreds of MB of songs holds one song at a time. Same result as openProjectFile.
+ */
+export async function openProjectBlob(blob: Blob, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+  const read = async (offset: number, length: number) =>
+    new Uint8Array(await blob.slice(offset, Math.min(blob.size, offset + length)).arrayBuffer());
+  const file: ProjectFileIndex = await readProjectFileIndex(read, blob.size);
+  const store = opts.store ?? defaultSampleStore();
+  const repairs = [...file.repairs];
+  let damaged = 0;
+  for (const [hash, sample] of file.samples) {
+    if (await store.hasBlob(hash, sample.ext)) continue;
+    let bytes: Uint8Array;
+    try {
+      bytes = await sample.read();
+    } catch {
+      damaged++;
+      continue;
+    }
+    if ((await sha256Hex(bytes)) !== hash) {
+      damaged++;
+      continue;
+    }
+    await store.putBlob(hash, sample.ext, bytes);
+  }
+  return finishOpen(file, repairs, damaged, store);
+}
+
+/** Reports damaged and missing samples of an opened project. */
+async function finishOpen(
+  file: { project: Project; view: unknown; migratedFrom: number },
+  repairs: string[],
+  damaged: number,
+  store: BlobStore,
+): Promise<OpenedProject> {
   if (damaged > 0) {
     repairs.push(`Skipped ${plural(damaged, 'damaged sample file', 'damaged sample files')} in this project file.`);
   }
@@ -118,22 +214,6 @@ export async function openProjectFile(bytes: Uint8Array, opts: { store?: BlobSto
     );
   }
   return { project: file.project, view: file.view, repairs, migratedFrom: file.migratedFrom, missingSamples };
-}
-
-/**
- * Bytes that Chrome's decodeAudioData can read. AIFF/AIFC isn't supported there, so those are
- * re-encoded as 32-bit float WAV (lossless for PCM up to 24 bits); everything else passes through.
- */
-export function decodableBytes(bytes: Uint8Array): Uint8Array {
-  const kind = sniffAudioExt(bytes);
-  if (kind !== 'aiff' && kind !== 'aifc') return bytes;
-  try {
-    const pcm = decodePcm(bytes);
-    if (!pcm || pcm.channels.length === 0) return bytes;
-    return encodeWav(pcm.channels, Math.round(pcm.sampleRate), { bitDepth: 32 });
-  } catch {
-    return bytes;
-  }
 }
 
 /**

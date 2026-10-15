@@ -32,7 +32,6 @@ import { renderOffline } from '@engine/render-offline';
 import { produce } from 'immer';
 import { encodeOffThread } from '../export/encode';
 import { trimExport } from '../export/export-wav';
-import { opfsSampleProvider } from '../persistence/project-io';
 import { importSampleBytes } from '../persistence/sample-import';
 import type { Services } from '../services';
 
@@ -56,7 +55,7 @@ async function renderRange(s: Services, project: Project, from: Tick, to: Tick, 
   s.engine.stop();
   const result = await renderOffline(withoutMasterChain(project), {
     plugins: s.plugins,
-    samples: opfsSampleProvider(),
+    sampleCache: s.sampleCache,
     view: { mode: 'song', patternId: null, loop: null },
     bars: (to - from) / bar,
     fromTick: from,

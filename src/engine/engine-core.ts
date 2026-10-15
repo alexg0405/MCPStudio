@@ -3,6 +3,7 @@ import type { AudioTap, JsonValue, TransportInfo } from '@agstudio/sdk';
 import type { PluginResolver } from './api';
 import type { ParamRegistry } from './param-lane';
 import type { SampleCache } from './samples';
+import type { SampleResidency } from './sample-residency';
 import type { WorkletPortImpl } from './worklet-port';
 
 /** What channel strips and mixer inserts need from the engine (keeps them decoupled from it). */
@@ -10,6 +11,8 @@ export interface EngineCore {
   readonly ctx: BaseAudioContext;
   readonly plugins: PluginResolver;
   readonly samples: SampleCache;
+  /** Which decoded buffers audio clips play from are in memory (and the stretched copies). */
+  readonly residency: SampleResidency;
   readonly transportInfo: TransportInfo;
   readonly offline: boolean;
   /** Automatable params by target key (automation, controller links, knobs that follow automation). */

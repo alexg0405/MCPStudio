@@ -43,83 +43,132 @@ const MAX_RIFF_SIZE = 0xffffffff;
  * rounding, so decoding by the same scale is accurate to half a step (one step at +1.0).
  */
 export function encodeWav(channels: Float32Array[], sampleRate: number, opts: EncodeWavOptions): Uint8Array {
-  const numChannels = channels.length;
-  if (numChannels < 1 || numChannels > 0xffff) throw new RangeError('encodeWav needs between 1 and 65535 channels.');
-  const frames = (channels[0] as Float32Array).length;
+  const frames = (channels[0] as Float32Array | undefined)?.length ?? 0;
   if (channels.some((c) => c.length !== frames))
     throw new RangeError('encodeWav: all channels must have the same length.');
-  if (!Number.isInteger(sampleRate) || sampleRate <= 0 || sampleRate > 0xffffffff) {
-    throw new RangeError(`encodeWav: invalid sample rate ${sampleRate}.`);
-  }
-  const { bitDepth } = opts;
-  if (bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32) throw new RangeError(`encodeWav: unsupported bit depth.`);
-
-  const isFloat = bitDepth === 32;
-  const bytesPerSample = bitDepth / 8;
-  const blockAlign = numChannels * bytesPerSample;
-  const dataSize = frames * blockAlign;
-  const fmtSize = isFloat ? 18 : 16; // WAVEFORMATEX with cbSize = 0 for non-PCM formats
-  const headerSize = 12 + 8 + fmtSize + (isFloat ? 12 : 0) + 8;
-  const total = headerSize + dataSize + (dataSize & 1);
-  if (total - 8 > MAX_RIFF_SIZE) throw new RangeError('encodeWav: the audio is too long for a WAV file (4 GiB).');
-
-  const out = new Uint8Array(total);
-  const view = new DataView(out.buffer);
-  writeTag(out, 0, 'RIFF');
-  view.setUint32(4, total - 8, true);
-  writeTag(out, 8, 'WAVE');
-  writeTag(out, 12, 'fmt ');
-  view.setUint32(16, fmtSize, true);
-  view.setUint16(20, isFloat ? WAVE_FORMAT_IEEE_FLOAT : WAVE_FORMAT_PCM, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, (sampleRate * blockAlign) % 0x100000000, true);
-  view.setUint16(32, blockAlign, true);
-  view.setUint16(34, bitDepth, true);
-  let o = 36;
-  if (isFloat) {
-    view.setUint16(o, 0, true); // cbSize
-    o += 2;
-    writeTag(out, o, 'fact');
-    view.setUint32(o + 4, 4, true);
-    view.setUint32(o + 8, frames, true);
-    o += 12;
-  }
-  writeTag(out, o, 'data');
-  view.setUint32(o + 4, dataSize, true);
-  o += 8;
-
-  if (bitDepth === 16) {
-    const rand = opts.dither ? mulberry32(opts.seed ?? DEFAULT_DITHER_SEED) : null;
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < numChannels; c++) {
-        let s = clip((channels[c] as Float32Array)[i] as number) * 32768;
-        if (rand) s += rand() - rand(); // TPDF: triangular noise in (-1, 1) LSB
-        s = Math.round(s);
-        view.setInt16(o, s > 32767 ? 32767 : s < -32768 ? -32768 : s, true);
-        o += 2;
-      }
-    }
-  } else if (bitDepth === 24) {
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < numChannels; c++) {
-        let s = Math.round(clip((channels[c] as Float32Array)[i] as number) * 8388608);
-        if (s > 8388607) s = 8388607;
-        out[o] = s & 0xff;
-        out[o + 1] = (s >> 8) & 0xff;
-        out[o + 2] = (s >> 16) & 0xff;
-        o += 3;
-      }
-    }
-  } else {
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < numChannels; c++) {
-        view.setFloat32(o, clip((channels[c] as Float32Array)[i] as number), true);
-        o += 4;
-      }
-    }
-  }
+  const enc = new WavStreamEncoder(channels.length, sampleRate, opts);
+  const header = enc.header(frames);
+  const data = enc.push(channels);
+  const tail = enc.trailer();
+  const out = new Uint8Array(header.length + data.length + tail.length);
+  out.set(header, 0);
+  out.set(data, header.length);
+  out.set(tail, header.length + data.length);
   return out;
+}
+
+/**
+ * WAV written a piece at a time (long exports): the header (written first with a guess, then again
+ * with the real length at the start of the file once it is known), the audio as it comes, and a pad
+ * byte. The bytes are the same as encodeWav's for the same audio, however it is split.
+ */
+export class WavStreamEncoder {
+  private readonly quantizer: PcmQuantizer | null;
+  private frames = 0;
+  readonly headerSize: number;
+
+  constructor(
+    readonly numChannels: number,
+    readonly sampleRate: number,
+    readonly opts: EncodeWavOptions,
+  ) {
+    if (numChannels < 1 || numChannels > 0xffff) throw new RangeError('encodeWav needs between 1 and 65535 channels.');
+    if (!Number.isInteger(sampleRate) || sampleRate <= 0 || sampleRate > 0xffffffff) {
+      throw new RangeError(`encodeWav: invalid sample rate ${sampleRate}.`);
+    }
+    const { bitDepth } = opts;
+    if (bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32) throw new RangeError(`encodeWav: unsupported bit depth.`);
+    this.quantizer =
+      bitDepth === 32 ? null : new PcmQuantizer(bitDepth, { dither: !!opts.dither && bitDepth === 16, seed: opts.seed });
+    const isFloat = bitDepth === 32;
+    this.headerSize = 12 + 8 + (isFloat ? 18 : 16) + (isFloat ? 12 : 0) + 8;
+  }
+
+  /** Frames pushed so far. */
+  get framesWritten(): number {
+    return this.frames;
+  }
+
+  /** The header for a file of `frames` frames (the bytes before the audio). */
+  header(frames = this.frames): Uint8Array {
+    const { bitDepth } = this.opts;
+    const numChannels = this.numChannels;
+    const isFloat = bitDepth === 32;
+    const blockAlign = numChannels * (bitDepth / 8);
+    const dataSize = frames * blockAlign;
+    const fmtSize = isFloat ? 18 : 16; // WAVEFORMATEX with cbSize = 0 for non-PCM formats
+    const total = this.headerSize + dataSize + (dataSize & 1);
+    if (total - 8 > MAX_RIFF_SIZE) throw new RangeError('encodeWav: the audio is too long for a WAV file (4 GiB).');
+    const out = new Uint8Array(this.headerSize);
+    const view = new DataView(out.buffer);
+    writeTag(out, 0, 'RIFF');
+    view.setUint32(4, total - 8, true);
+    writeTag(out, 8, 'WAVE');
+    writeTag(out, 12, 'fmt ');
+    view.setUint32(16, fmtSize, true);
+    view.setUint16(20, isFloat ? WAVE_FORMAT_IEEE_FLOAT : WAVE_FORMAT_PCM, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, this.sampleRate, true);
+    view.setUint32(28, (this.sampleRate * blockAlign) % 0x100000000, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    let o = 36;
+    if (isFloat) {
+      view.setUint16(o, 0, true); // cbSize
+      o += 2;
+      writeTag(out, o, 'fact');
+      view.setUint32(o + 4, 4, true);
+      view.setUint32(o + 8, frames, true);
+      o += 12;
+    }
+    writeTag(out, o, 'data');
+    view.setUint32(o + 4, dataSize, true);
+    return out;
+  }
+
+  /** The audio bytes of the next frames. */
+  push(channels: readonly Float32Array[]): Uint8Array {
+    const numChannels = this.numChannels;
+    if (channels.length !== numChannels) throw new RangeError('encodeWav: wrong number of channels.');
+    const frames = channels[0]?.length ?? 0;
+    if (channels.some((c) => c.length !== frames)) throw new RangeError('encodeWav: all channels must have the same length.');
+    const { bitDepth } = this.opts;
+    const out = new Uint8Array(frames * numChannels * (bitDepth / 8));
+    const view = new DataView(out.buffer);
+    let o = 0;
+    if (this.quantizer) {
+      const pcm = this.quantizer.quantize(channels);
+      if (bitDepth === 16) {
+        for (let i = 0; i < frames; i++)
+          for (let c = 0; c < numChannels; c++) {
+            view.setInt16(o, (pcm[c] as Int32Array)[i] as number, true);
+            o += 2;
+          }
+      } else {
+        for (let i = 0; i < frames; i++)
+          for (let c = 0; c < numChannels; c++) {
+            const v = (pcm[c] as Int32Array)[i] as number;
+            out[o] = v & 0xff;
+            out[o + 1] = (v >> 8) & 0xff;
+            out[o + 2] = (v >> 16) & 0xff;
+            o += 3;
+          }
+      }
+    } else {
+      for (let i = 0; i < frames; i++)
+        for (let c = 0; c < numChannels; c++) {
+          view.setFloat32(o, clip((channels[c] as Float32Array)[i] as number), true);
+          o += 4;
+        }
+    }
+    this.frames += frames;
+    return out;
+  }
+
+  /** What follows the audio: a pad byte when its size is odd. */
+  trailer(): Uint8Array {
+    return new Uint8Array(((this.frames * this.numChannels * this.opts.bitDepth) / 8) & 1);
+  }
 }
 
 /**
@@ -134,29 +183,46 @@ export function quantizePcm(
 ): Int32Array[] {
   const frames = channels[0]?.length ?? 0;
   if (channels.some((c) => c.length !== frames)) throw new RangeError('quantizePcm: all channels must have the same length.');
-  const out = channels.map(() => new Int32Array(frames));
-  const n = channels.length;
-  if (bitDepth === 16) {
-    const rand = opts.dither ? mulberry32(opts.seed ?? DEFAULT_DITHER_SEED) : null;
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < n; c++) {
-        let s = clip((channels[c] as Float32Array)[i] as number) * 32768;
-        if (rand) s += rand() - rand();
-        s = Math.round(s);
-        (out[c] as Int32Array)[i] = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
-      }
-    }
-  } else {
-    for (let c = 0; c < n; c++) {
-      const src = channels[c] as Float32Array;
-      const dst = out[c] as Int32Array;
-      for (let i = 0; i < frames; i++) {
-        const s = Math.round(clip(src[i] as number) * 8388608);
-        dst[i] = s > 8388607 ? 8388607 : s;
-      }
-    }
+  return new PcmQuantizer(bitDepth, opts).quantize(channels);
+}
+
+/** quantizePcm a piece at a time: the dither noise continues across pieces, so the result is the same. */
+export class PcmQuantizer {
+  private readonly rand: (() => number) | null;
+
+  constructor(
+    readonly bitDepth: 16 | 24,
+    opts: { dither?: boolean; seed?: number | undefined } = {},
+  ) {
+    this.rand = bitDepth === 16 && opts.dither ? mulberry32(opts.seed ?? DEFAULT_DITHER_SEED) : null;
   }
-  return out;
+
+  quantize(channels: readonly Float32Array[]): Int32Array[] {
+    const frames = channels[0]?.length ?? 0;
+    const out = channels.map(() => new Int32Array(frames));
+    const n = channels.length;
+    if (this.bitDepth === 16) {
+      const rand = this.rand;
+      for (let i = 0; i < frames; i++) {
+        for (let c = 0; c < n; c++) {
+          let s = clip((channels[c] as Float32Array)[i] as number) * 32768;
+          if (rand) s += rand() - rand(); // TPDF: triangular noise in (-1, 1) LSB
+          s = Math.round(s);
+          (out[c] as Int32Array)[i] = s > 32767 ? 32767 : s < -32768 ? -32768 : s;
+        }
+      }
+    } else {
+      for (let c = 0; c < n; c++) {
+        const src = channels[c] as Float32Array;
+        const dst = out[c] as Int32Array;
+        for (let i = 0; i < frames; i++) {
+          const v = Math.round(clip(src[i] as number) * 8388608);
+          dst[i] = v > 8388607 ? 8388607 : v;
+        }
+      }
+    }
+    return out;
+  }
 }
 
 function clip(x: number): number {

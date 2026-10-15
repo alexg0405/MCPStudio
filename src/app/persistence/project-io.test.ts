@@ -13,8 +13,10 @@ import {
   buildProjectFile,
   collectEmbeddedSamples,
   decodableBytes,
+  openProjectBlob,
   openProjectFile,
   opfsSampleProvider,
+  writeProjectTo,
 } from './project-io';
 import { importSampleBytes, sniffAudioExt } from './sample-import';
 
@@ -141,6 +143,47 @@ describe('buildProjectFile', () => {
     const file = await buildProjectFile(project, null, '1', { store, onMissingSamples });
     expect(onMissingSamples).toHaveBeenCalledWith([ghost, ghost2]);
     expect(readProjectFile(file).samples.size).toBe(1);
+  });
+});
+
+describe('saving and opening big projects a piece at a time', () => {
+  it('writes the same project and samples as buildProjectFile, and opens them from a Blob', async () => {
+    const source = createMemoryBlobStore();
+    // A 12 MB "song" (incompressible) and a small loop.
+    const big = new Uint8Array(12 * 1024 * 1024).map((_, i) => (i * 2654435761) >>> 24);
+    const songRef = await importSampleBytes(big, 'song.mp3', { store: source });
+    const loopRef = await importSampleBytes(wavBytes(800), 'loop.wav', { store: source });
+    const project = withSamples(songRef, loopRef);
+    const parts: Uint8Array[] = [];
+    let reads = 0;
+    const counting: BlobStore = { ...source, getBlob: (h, e) => (reads++, source.getBlob(h, e)) };
+    await writeProjectTo(async (b) => void parts.push(b), project, { mode: 'song' }, '0.1.0', { store: counting, now: NOW });
+    expect(reads).toBe(2);
+    // No piece is a whole song: the writer passed it on in pieces.
+    expect(Math.max(...parts.map((p) => p.length))).toBeLessThanOrEqual(1024 * 1024 + 1024);
+    const blob = new Blob(parts as BlobPart[]);
+    const whole = readProjectFile(new Uint8Array(await blob.arrayBuffer()));
+    expect(whole.project).toEqual(project);
+    const store = createMemoryBlobStore();
+    const opened = await openProjectBlob(blob, { store });
+    expect(opened).toEqual({ project, view: { mode: 'song' }, repairs: [], migratedFrom: SCHEMA_VERSION, missingSamples: [] });
+    const songHash = (songRef.source as { hash: string }).hash;
+    expect(await sha256Hex((await store.getBlob(songHash))!.bytes)).toBe(songHash);
+  });
+
+  it('opens a file written in one piece the same way, and reports damaged samples', async () => {
+    const source = createMemoryBlobStore();
+    const ref = await importSampleBytes(wavBytes(800), 'loop.wav', { store: source });
+    const project = withSamples(ref);
+    const file = await buildProjectFile(project, null, '1', { store: source, now: NOW });
+    const opened = await openProjectBlob(new Blob([file as BlobPart]), { store: createMemoryBlobStore() });
+    expect(opened.project).toEqual(project);
+    const hash = (ref.source as { hash: string }).hash;
+    const entries = unzipSync(file);
+    entries[`samples/${hash}.wav`]![100]! ^= 0xff;
+    const rotten = await openProjectBlob(new Blob([zipSync(entries) as BlobPart]), { store: createMemoryBlobStore() });
+    expect(rotten.repairs[0]).toBe('Skipped 1 damaged sample file in this project file.');
+    await expect(openProjectBlob(new Blob([strToU8('nope') as BlobPart]))).rejects.toBeInstanceOf(ProjectFileError);
   });
 });
 

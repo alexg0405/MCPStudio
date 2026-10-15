@@ -19,7 +19,6 @@ import { ticksPerBar } from '@core/time/ppq';
 import { patternLength } from '@core/query/queries';
 import { renderOffline } from '@engine/render-offline';
 import { Measurer } from '../analysis/measure';
-import { opfsSampleProvider } from '../persistence/project-io';
 import type { Services } from '../services';
 import { BUS_NAMES, findMixLayout, type BusRole } from './layout';
 
@@ -292,7 +291,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     return tempo.tickToSeconds(toTick) - tempo.tickToSeconds(window.fromTick);
   })();
   const frames = Math.round(seconds * rate);
-  const engineOpts = { plugins: s.plugins, samples: opfsSampleProvider() };
+  const engineOpts = { plugins: s.plugins, sampleCache: s.sampleCache };
   const raw = withoutMasterChain(project);
   // Every stem mutes the others (channels outside the buses too); only the buses are rendered.
   const all = planStems(raw, { mode: window.mode, patternId: window.patternId, fromTick: window.fromTick, toTick });

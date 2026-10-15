@@ -28,7 +28,7 @@ import { PITCH_PARAM, type ProcessorInit } from '@agstudio/sdk/protocol';
 import { Emitter } from './emitter';
 import { ParamHandleImpl } from './param-handle';
 import type { ParamRegistry } from './param-lane';
-import type { SampleCache } from './samples';
+import { SampleCache } from './samples';
 import { NO_TAP, TapImpl } from './tap';
 import { WorkletPortImpl } from './worklet-port';
 
@@ -114,6 +114,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     this.sidechain = deps.def.kind === 'effect' && deps.def.sidechain ? new GainNode(deps.ctx) : null;
     this.stateValue = m.state;
     this.slots = { ...(deps.data.samples ?? {}) };
+    this.pinSlots();
     this.rootKeyValue = deps.rootKey ?? 60;
     const readRootKey = () => this.rootKeyValue;
     const pitch = deps.pitch ?? silentSignal(deps.ctx);
@@ -232,6 +233,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     const all = new Set([...Object.keys(this.slots), ...Object.keys(nextSlots)]);
     const prevSlots = this.slots;
     this.slots = { ...nextSlots };
+    this.pinSlots();
     for (const slot of all) {
       if (prevSlots[slot] !== nextSlots[slot]) {
         void this.loadSample(slot).then((b) => this.sampleChanges.get(slot)?.emit(b));
@@ -247,6 +249,8 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
 
   dispose(): void {
     this.abort.abort();
+    for (const release of this.slotPins) release();
+    this.slotPins = [];
     // Ports the plugin forgot to dispose.
     for (const p of [...this.myPorts]) p.dispose();
     for (const t of this.taps) {
@@ -268,6 +272,18 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       this.sampleChanges.set(slot, e);
     }
     return e;
+  }
+
+  /** Samples in the plugin's slots stay in memory while it lives (plugins keep their buffers). */
+  private slotPins: Array<() => void> = [];
+  private pinSlots(): void {
+    const old = this.slotPins;
+    this.slotPins = [];
+    for (const id of Object.values(this.slots)) {
+      const ref = id ? this.project.samples[id] : undefined;
+      if (ref) this.slotPins.push(this.deps.samples.pin(SampleCache.keyOf(ref.source, this.deps.ctx.sampleRate)));
+    }
+    for (const release of old) release();
   }
 
   private refFor(slot: string) {

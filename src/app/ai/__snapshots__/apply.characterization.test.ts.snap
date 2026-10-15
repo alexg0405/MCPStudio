@@ -12,7 +12,7 @@ exports[`AI applier characterization > applies every op the same way 1`] = `
   },
   "currentPattern": "pat_E-a-QwOud1",
   "edited": true,
-  "selectedChannel": "ch_L7bEiBV9yY",
+  "selectedChannel": "ch_2VlTJjVFBf",
   "undo": [
     "setup",
     "AI: everything",
@@ -184,7 +184,7 @@ exports[`AI applier characterization > applies every op the same way 4`] = `
 ]
 `;
 
-exports[`AI applier characterization > applies every op the same way 5`] = `"5a830559"`;
+exports[`AI applier characterization > applies every op the same way 5`] = `"b3e5cd06"`;
 
 exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 [
@@ -227,6 +227,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"1b8be6de"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"f10422b8"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"83798b22"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"324edb38"`;

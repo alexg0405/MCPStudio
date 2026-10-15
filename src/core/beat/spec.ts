@@ -4,7 +4,7 @@
  * comes in is validated and clamped, so a sloppy or hostile model output can't break the project.
  */
 import { applyAccents, chokeOpenHats, styleOfBeat } from './groove';
-import { isStyle, STYLES, type Style } from './style';
+import { GROOVE, isStyle, STYLES, type Style } from './style';
 
 /** Sounds the assistant can ask for. Kit pieces are samplers; the rest are instruments. */
 export const BEAT_SOUNDS = [
@@ -199,8 +199,12 @@ export function validateBeatSpec(raw: unknown, opts: BeatCheckOptions = {}): Bea
   if (bpm !== undefined) spec.bpm = clamp(Math.round(bpm), 50, 220);
   const swing = num(raw.swing);
   if (swing !== undefined) spec.swing = clamp(swing, 0, 1);
-  if (isStyle(raw.style)) spec.style = raw.style;
-  else if (raw.style !== undefined)
+  if (isStyle(raw.style)) {
+    spec.style = raw.style;
+    // A song without swing yet gets the style's (a beat that names its swing keeps it).
+    if (spec.swing === undefined && !(opts.project?.swing ?? 0) && GROOVE[raw.style].swing > 0)
+      spec.swing = GROOVE[raw.style].swing;
+  } else if (raw.style !== undefined)
     warnings.push(`Unknown style "${String(raw.style)}" (the styles are ${STYLES.join(', ')}).`);
   const style =
     spec.style ??

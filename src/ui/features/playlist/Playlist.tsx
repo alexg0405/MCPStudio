@@ -11,6 +11,8 @@ import { PlaylistController, type PlaylistElements } from './controller';
 import { clipMenu, laneMenu } from './menus';
 import { markerMenu, rulerMenu } from './markers';
 import { pointMenu } from '../automation/actions';
+import { registerAnchorSource } from '../ask-ai/anchors';
+import { askAboutMarker, askAboutSelection } from '../ask-ai/ask-state';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT } from './render';
 import styles from './Playlist.module.css';
@@ -80,7 +82,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         </button>
       </span>
       <span className={styles.help}>
-        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker
+        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · ✦ asks the AI about a part
       </span>
     </div>
   );
@@ -101,6 +103,7 @@ export function Playlist() {
   const hthumb = useRef<HTMLDivElement>(null);
   const rename = useRef<HTMLInputElement>(null);
   const markerRename = useRef<HTMLInputElement>(null);
+  const askPill = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const els = {
@@ -115,6 +118,7 @@ export function Playlist() {
       hthumb: hthumb.current,
       rename: rename.current,
       markerRename: markerRename.current,
+      askPill: askPill.current,
     };
     if (Object.values(els).some((el) => !el)) return;
     const c = new PlaylistController(services, els as PlaylistElements);
@@ -124,6 +128,9 @@ export function Playlist() {
     c.onPointMenu = (clip, index, at) => showContextMenu(at, pointMenu(services, clip, index));
     c.onMarkerMenu = (id, at) => showContextMenu(at, markerMenu(services, id));
     c.onRulerMenu = (tick, at) => showContextMenu(at, rulerMenu(services, tick));
+    // A flag's ✦: loop that section and open the Ask AI card on it.
+    c.onMarkerAsk = (id, at) =>
+      void askAboutMarker(services, id, { kind: 'marker', markerId: id, fallback: { x: at.clientX, y: at.clientY } });
     c.onLaneMenu = (laneId, at) =>
       showContextMenu(
         at,
@@ -131,7 +138,18 @@ export function Playlist() {
       );
     controller.current = c;
     c.mount();
+    // Where the Ask AI card sits: the pill, a marker's flag, bars on the ruler.
+    const offAnchor = registerAnchorSource('playlist', (anchor) =>
+      anchor.kind === 'pill'
+        ? c.pillBox()
+        : anchor.kind === 'marker'
+          ? c.markerBox(anchor.markerId)
+          : anchor.kind === 'span'
+            ? c.spanBox(anchor.from, anchor.to)
+            : null,
+    );
     return () => {
+      offAnchor();
       c.unmount();
       controller.current = null;
     };
@@ -167,6 +185,17 @@ export function Playlist() {
         <div ref={playhead} className={styles.playhead} />
         <input ref={rename} className={styles.rename} style={{ width: HEADER_WIDTH - 30 }} />
         <input ref={markerRename} className={styles.markerRename} aria-label="Marker name" />
+        {/* Its text, place and hint are set by the controller (dirty frames only). */}
+        <button
+          ref={askPill}
+          className={styles.askPill}
+          style={{ display: 'none' }}
+          tabIndex={-1}
+          aria-label="Ask AI about this part"
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => void askAboutSelection(services, { kind: 'pill' })}
+          data-hint="Ask the AI to change this part (Alt+A): only it changes"
+        />
       </div>
     </div>
   );

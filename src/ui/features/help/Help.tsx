@@ -3,6 +3,7 @@ import { useStore } from 'zustand';
 import { newFromTemplate, TEMPLATES } from '@app/templates';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
+import { placeBeside } from '../../controls/place';
 import { Icon, type IconName } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
@@ -189,21 +190,6 @@ export function TourOverlay() {
   return step === null ? null : <Tour index={step} />;
 }
 
-/** Where the step card goes: beside the highlighted area if there is room, else below/above, else inside it. */
-function placeCard(r: DOMRect | null, w: number, h: number, vw: number, vh: number): { x: number; y: number } {
-  const m = 14;
-  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-  if (!r) return { x: (vw - w) / 2, y: (vh - h) / 2 };
-  const options = [
-    { x: r.right + m, y: r.top, ok: r.right + m + w <= vw - 8 },
-    { x: r.left - m - w, y: r.top, ok: r.left - m - w >= 8 },
-    { x: r.left, y: r.bottom + m, ok: r.bottom + m + h <= vh - 8 },
-    { x: r.left, y: r.top - m - h, ok: r.top - m - h >= 8 },
-  ];
-  const o = options.find((c) => c.ok) ?? { x: r.right - w - 24, y: r.bottom - h - 24 };
-  return { x: clamp(o.x, 8, vw - w - 8), y: clamp(o.y, 8, vh - h - 8) };
-}
-
 function Tour({ index }: { index: number }) {
   const services = useServices();
   const chord = useChord();
@@ -244,7 +230,8 @@ function Tour({ index }: { index: number }) {
         hole.style.height = `${r.height + pad * 2}px`;
       } else hole.style.display = 'none';
       card.classList.toggle(styles.cardAlone!, !r);
-      const { x, y } = placeCard(r, card.offsetWidth, card.offsetHeight, window.innerWidth, window.innerHeight);
+      // Beside the highlighted area if there is room, else below/above, else inside it.
+      const { x, y } = placeBeside(r, card.offsetWidth, card.offsetHeight, window.innerWidth, window.innerHeight);
       card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     });
     return () => {

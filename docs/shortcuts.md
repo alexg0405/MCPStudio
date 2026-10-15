@@ -64,6 +64,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Action | Keys |
 |---|---|
 | Arpeggiate… | `⌥A` / `Alt+A` |
+| Ask AI about the selection… | `⌥⇧A` / `Alt+Shift+A` |
 | Chop… | `⌥U` / `Alt+U` |
 | Copy notes | `⌘C` / `Ctrl+C` |
 | Cut notes | `⌘X` / `Ctrl+X` |
@@ -94,6 +95,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 
 | Action | Keys |
 |---|---|
+| Ask AI about the selection… | `⌥A` / `Alt+A` |
 | Copy clips | `⌘C` / `Ctrl+C` |
 | Cut clips | `⌘X` / `Ctrl+X` |
 | Delete clips | `Del`, `⌫` |

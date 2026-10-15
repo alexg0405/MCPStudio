@@ -209,6 +209,31 @@
   z-index: 3;
 }
 
+/* "✦ Ask AI" over the selection or the loop region (placed by the controller with a transform). */
+.askPill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  height: 20px;
+  padding: 0 9px;
+  border: 1px solid var(--ag-accent-deep);
+  border-radius: 10px;
+  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  color: var(--ag-on-accent);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.askPill:hover {
+  background: linear-gradient(var(--ag-accent), var(--ag-accent-strong));
+}
+
 .markerRename {
   position: absolute;
   display: none;

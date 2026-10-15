@@ -290,15 +290,22 @@ export interface MarkerBox {
   /** Flag and label span in ruler pixels. */
   x0: number;
   x1: number;
+  /** The flag's ✦ (ask the AI about the section), on flags wide enough for it. */
+  ask?: { x0: number; x1: number };
 }
 
 export interface RulerMarkers {
   markers: readonly Marker[];
   /** The marker under the pointer or being dragged (drawn brighter). */
   hot?: MarkerId | null;
+  /** The pointer is on the hot marker's ✦. */
+  hotAsk?: boolean;
   /** A marker being dragged: drawn at this tick instead. */
   drag?: { id: MarkerId; tick: Tick } | null;
 }
+
+/** Width of the ✦ at the end of a marker's flag. */
+export const MARKER_ASK_WIDTH = 15;
 
 /** Marker positions with a drag applied, sorted. */
 function placedMarkers(m: RulerMarkers): Marker[] {
@@ -352,9 +359,22 @@ export function drawPlaylistRuler(
       ctx.fillRect(Math.round(x), 0, 1, h);
     }
   }
-  // Markers: a flag on the lane with the name, up to the next marker.
+  // Markers: a flag on the lane with the name (and a ✦ when there is room), up to the next marker.
   const boxes: MarkerBox[] = [];
   const placed = placedMarkers(markers);
+  const colorOf = (m: Marker) => (/^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : MARKER_COLOR);
+  // Each section (marker to the next one, the last to the song's end) as a faint band in the lane.
+  for (let i = 0; i < placed.length; i++) {
+    const m = placed[i] as Marker;
+    const next = placed[i + 1];
+    const x0 = Math.max(0, vp.tickToX(m.tick));
+    const x1 = Math.min(vp.width, vp.tickToX(next ? next.tick : Math.max(songEnd, m.tick + bar)));
+    if (x1 <= x0) continue;
+    ctx.globalAlpha = 0.13;
+    ctx.fillStyle = colorOf(m);
+    ctx.fillRect(x0, top + 1, x1 - x0, h - top - 3);
+    ctx.globalAlpha = 1;
+  }
   ctx.font = `600 10px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (let i = 0; i < placed.length; i++) {
@@ -363,10 +383,11 @@ export function drawPlaylistRuler(
     const next = placed[i + 1];
     const limit = next ? vp.tickToX(next.tick) - 2 : vp.width;
     const textW = ctx.measureText(m.name).width;
-    const x1 = Math.max(x + 6, Math.min(limit, x + textW + 10));
-    boxes.push({ id: m.id, tick: m.tick, x0: x - 3, x1 });
+    const ask = limit - x >= textW + 10 + MARKER_ASK_WIDTH;
+    const x1 = Math.max(x + 6, Math.min(limit, x + textW + 10 + (ask ? MARKER_ASK_WIDTH : 0)));
+    boxes.push({ id: m.id, tick: m.tick, x0: x - 3, x1, ...(ask ? { ask: { x0: x1 - MARKER_ASK_WIDTH, x1 } } : {}) });
     if (x1 < 0 || x - 3 > vp.width) continue;
-    const color = /^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : MARKER_COLOR;
+    const color = colorOf(m);
     const hot = markers.hot === m.id || markers.drag?.id === m.id;
     ctx.fillStyle = shade(color, hot ? 0.25 : -0.15);
     ctx.fillRect(x, top + 1, Math.max(2, x1 - x), h - top - 3);
@@ -374,7 +395,16 @@ export function drawPlaylistRuler(
     ctx.fillRect(x, top, 2, h - top);
     if (x1 - x > 14) {
       ctx.fillStyle = 'rgba(0,0,0,0.85)';
-      ctx.fillText(m.name, x + 5, top + (h - top) / 2, x1 - x - 7);
+      ctx.fillText(m.name, x + 5, top + (h - top) / 2, x1 - x - 7 - (ask ? MARKER_ASK_WIDTH : 0));
+    }
+    if (ask) {
+      const ax = x1 - MARKER_ASK_WIDTH;
+      if (markers.hot === m.id && markers.hotAsk) {
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.fillRect(ax, top + 2, MARKER_ASK_WIDTH - 1, h - top - 5);
+      }
+      ctx.fillStyle = markers.hot === m.id && markers.hotAsk ? '#ffffff' : 'rgba(0,0,0,0.8)';
+      ctx.fillText('✦', ax + 3, top + (h - top) / 2 + 0.5);
     }
   }
   ctx.fillStyle = theme.border;

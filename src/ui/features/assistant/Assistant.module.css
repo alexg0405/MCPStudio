@@ -448,3 +448,53 @@
 .ok {
   color: var(--ag-led);
 }
+
+/* The part of the song the conversation is about (FocusChip), above the box. */
+.focusChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 8px 0;
+  padding: 3px 4px 3px 10px;
+  border: 1px solid var(--ag-accent-dim);
+  border-radius: 12px;
+  background: var(--ag-accent-tint);
+  color: var(--ag-text);
+  font-size: 11px;
+}
+
+.focusSpark {
+  color: var(--ag-accent);
+}
+
+.focusLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focusButton {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.focusButton:hover:not(:disabled) {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.focusButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

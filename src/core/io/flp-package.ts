@@ -29,6 +29,23 @@ export function isZip(bytes: Uint8Array): boolean {
   return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 3 || bytes[2] === 5);
 }
 
+/** Whether a zip holds an FL Studio project (reads only the file names). */
+export function zipHasFlp(bytes: Uint8Array): boolean {
+  if (!isZip(bytes)) return false;
+  let found = false;
+  try {
+    unzipSync(bytes, {
+      filter: (f) => {
+        if (/\.flp$/i.test(f.name)) found = true;
+        return false;
+      },
+    });
+  } catch {
+    return false;
+  }
+  return found;
+}
+
 /** Every audio file of a zip (no project needed): for finding missing samples in any zip. */
 export function readZipAudio(bytes: Uint8Array): FlpPackageFile[] {
   return unzip(bytes, false).audio;

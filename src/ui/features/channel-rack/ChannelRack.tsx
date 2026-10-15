@@ -504,7 +504,12 @@ export function ChannelRack() {
     return ch?.kind === 'instrument' ? ch.name : null;
   });
 
-  if (!patternId || !pattern) return <div className={styles.empty}>No pattern</div>;
+  if (!patternId || !pattern)
+    return (
+      <div className={styles.empty}>
+        No pattern is open. Pick one under Project patterns in the browser, or click “+ New pattern” there.
+      </div>
+    );
   const menuBelow = (e: React.MouseEvent<HTMLElement>, items: MenuEntry[]) => {
     const r = e.currentTarget.getBoundingClientRect();
     showContextMenu({ x: r.left, y: r.bottom + 2 }, items);

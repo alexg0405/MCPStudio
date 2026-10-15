@@ -1,12 +1,11 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
-import { CommandButton } from '../../shell/Toolbar';
 import { showDialog } from '../../controls/Dialog';
 import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { openWindow, registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
+import { AiStudioButton } from './AiStudioButton';
 import { AssistantWindow } from './AssistantWindow';
-import styles from './Assistant.module.css';
 
 /**
  * A command the AI asked for that opens a file dialog: browsers allow that only right after a
@@ -50,7 +49,7 @@ export function register(services: Services): void {
     command: 'view.assistant',
     type: 'assistant',
     title: 'AI studio',
-    hint: 'Ask the AI for a beat or any change to the project (mixer, plugins, routing, arrangement…)',
+    hint: 'Ask the AI to make or change anything: a beat, the mixer, plugins, routing, the arrangement',
     chords: ['Alt+6'],
     menuOrder: 45,
     // The AI studio shouldn't close itself mid-conversation.
@@ -77,16 +76,7 @@ export function register(services: Services): void {
       openWindow(services, r.window);
     }
   });
-  addToolbarSlot({
-    id: 'assistant',
-    area: 'center',
-    order: 1,
-    component: () =>
-      createElement(CommandButton, {
-        command: 'view.assistant',
-        icon: 'sparkle',
-        className: styles.toolbarButton,
-        tour: 'assistant',
-      }),
-  });
+  // The most prominent control in the toolbar: the first center slot, right after the transport (the
+  // lowest order there never folds into "More").
+  addToolbarSlot({ id: 'assistant', area: 'center', order: -10, component: () => createElement(AiStudioButton) });
 }

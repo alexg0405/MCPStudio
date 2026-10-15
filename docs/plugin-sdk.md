@@ -495,6 +495,16 @@ the editor re-renders when it is ready). Every change is one undo step, and the 
 through `host.samples.onChange`. With `samplePickers: false` in the definition the header leaves out
 its own sample pickers (Drum Pads has sixteen slots and shows them on its pads).
 
+**Looking right in every theme.** The SDK controls style themselves from the host's theme (black
+marble with gold by default, white Carrara marble, and the others in Settings): a knob is a stone
+body with its value as an accent arc (from the middle when `bipolar`), a `Toggle` is a pill with an
+LED, a `Select` an inset well, a `Section` a panel with its title in small caps. Style your own
+elements with the same CSS custom properties (`var(--ag-accent)`, `--ag-text`, `--ag-text-dim`,
+`--ag-surface-2`, `--ag-surface-inset`, `--ag-line-faint`, `--ag-radius`…; `src/ui/theme/tokens.css`
+lists them and `docs/design.md` says what each is for) rather than fixed colours. A canvas can't read
+`var()`: call `themeColors()` from `@agstudio/sdk/ui` in your draw function (it is cheap: it reads the
+tokens again only when the theme changes) and use its `accent`, `text`, `line`, `select`, `palette`…
+
 Give your own controls a `data-hint` (with units) so the hint bar and tooltips explain them, and call
 `emitHint(element, text)` while dragging to show the live value. A drag that moves two params (an EQ
 handle: frequency and gain) is one undo step: `beginEdit` one of them, `setParam` both, `endEdit` it.

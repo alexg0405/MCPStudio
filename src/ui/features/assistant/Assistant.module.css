@@ -1,3 +1,9 @@
+/*
+ * The AI studio: a calm conversation on stone. The musician's words on the right in a soft gold
+ * bubble, the AI's answers as cards on the left, one roomy field at the bottom with the send button
+ * inside it, everything else in the ⋯ menu or behind Perform. Tokens only (docs/design.md).
+ */
+
 .assistant {
   display: flex;
   flex-direction: column;
@@ -6,378 +12,507 @@
   background: var(--ag-surface-1);
 }
 
-.header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--ag-border);
-}
-
 .spacer {
   flex: 1;
 }
 
-.model {
-  min-width: 0;
-  max-width: 190px;
+.dim {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
 }
 
-.model,
-.field select {
-  height: 22px;
-  padding: 0 4px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-inset);
-  color: var(--ag-text);
-  font-size: 11px;
-}
+/* ---- Header: the model pill, a status note, New chat and ⋯ ---- */
 
-.offline {
-  display: inline-flex;
+.header {
   flex: none;
-  white-space: nowrap;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: 10px;
-  background: var(--ag-surface-inset);
-  color: var(--ag-text-dim);
-  font-size: 11px;
-  cursor: pointer;
+  gap: var(--ag-space-2);
+  height: 40px;
+  padding: 0 var(--ag-space-2) 0 var(--ag-space-3);
+  border-bottom: 1px solid var(--ag-line-faint);
 }
 
-.dotOff {
-  width: 7px;
-  height: 7px;
+.modelPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 9px 0 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease);
+}
+
+.modelPill:hover {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-text);
+}
+
+.modelDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--ag-text-faint);
 }
 
-.small,
-.link {
-  padding: 2px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
-  color: var(--ag-text-dim);
-  font-size: 11px;
-  cursor: pointer;
+.modelDotOn {
+  background: var(--ag-accent);
+  box-shadow: 0 0 6px var(--ag-accent-glow);
 }
 
-.small:hover:not(:disabled),
-.link:hover:not(:disabled) {
-  color: var(--ag-text);
+.modelCaret {
+  color: var(--ag-text-faint);
 }
 
-.small:disabled,
-.link:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ag-text-dim);
-  font-size: 11px;
+.offline {
+  flex: none;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--ag-warning) 35%, transparent);
+  border-radius: var(--ag-radius-pill);
+  background: color-mix(in srgb, var(--ag-warning) 10%, transparent);
+  color: var(--ag-warning);
+  font-size: 10.5px;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
 }
+
+.headerButton {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: transparent;
+  color: var(--ag-text-dim);
+  cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
+}
+
+.headerButton:hover:not(:disabled) {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.headerButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.dots {
+  font-size: 16px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  transform: translateY(-3px);
+}
+
+/* ---- The conversation ---- */
 
 .messages {
   flex: 1;
   min-height: 80px;
   overflow-y: auto;
-  padding: 10px 10px 4px;
+  padding: var(--ag-space-4) var(--ag-space-3) var(--ag-space-2);
 }
 
+/* Nothing yet: one line, a few ideas. */
 .intro {
-  margin: 8px 4px;
-  color: var(--ag-text);
-  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ag-space-3);
+  max-width: 330px;
+  margin: 28px auto 0;
+  text-align: center;
 }
 
-.intro svg {
+.introMark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, var(--ag-accent-soft), transparent 70%), var(--ag-surface-2);
+  box-shadow:
+    0 0 0 1px var(--ag-accent-tint),
+    0 0 24px var(--ag-accent-tint);
   color: var(--ag-accent);
 }
 
-.intro p {
-  margin: 6px 0 0;
+.introLine {
+  margin: 0;
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-lg);
+  line-height: 1.5;
 }
 
-.dim {
+.starters {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.introFoot {
+  margin: 4px 0 0;
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.5;
 }
 
 .message {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  margin-bottom: 10px;
+  margin-bottom: var(--ag-space-3);
 }
 
 .mine {
   align-items: flex-end;
 }
 
+/* The musician: a soft gold bubble on the right. */
 .bubble {
-  max-width: 92%;
-  padding: 6px 10px;
-  border-radius: 10px;
-  background: var(--ag-surface-3);
+  max-width: 86%;
+  padding: 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--ag-accent) 26%, transparent);
+  border-radius: 14px 14px 4px 14px;
+  background: color-mix(in srgb, var(--ag-accent) 14%, var(--ag-surface-2));
   color: var(--ag-text);
+  font-size: var(--ag-font-size-lg);
   line-height: 1.45;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.mine .bubble {
-  background: var(--ag-accent-dim);
-  color: var(--ag-on-accent);
+.mineDetail {
+  margin-top: 4px;
+  padding: 0 4px;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
 }
 
-.errorMessage .bubble {
-  background: var(--ag-danger-tint);
-  border: 1px solid var(--ag-danger-line);
+/* The AI: a card on stone, on the left. */
+.card {
+  max-width: 94%;
+  padding: 9px 12px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: 4px 14px 14px 14px;
+  background:
+    linear-gradient(180deg, var(--ag-sheen), transparent 32px),
+    var(--ag-surface-2);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
 }
 
-.thinking {
-  color: var(--ag-text-dim);
+.cardText {
+  font-size: var(--ag-font-size-lg);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.errorMessage .card {
+  border-color: var(--ag-danger-line);
+  background: color-mix(in srgb, var(--ag-danger) 10%, var(--ag-surface-2));
 }
 
 .spark {
-  margin-right: 5px;
+  margin-right: 6px;
   vertical-align: -1px;
   color: var(--ag-accent);
 }
 
-.detail {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 3px;
-  padding: 0 4px;
-  color: var(--ag-text-faint);
-  font-size: 11px;
-}
-
-.badge {
-  padding: 0 4px;
-  border-radius: 2px;
-  background: var(--ag-surface-3);
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.performance {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-top: 1px solid var(--ag-border);
-  background: var(--ag-surface-2);
-}
-
-.dragOver {
-  outline: 2px dashed var(--ag-accent);
-  outline-offset: -4px;
-}
-
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.record {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--ag-danger-deep);
-  border-radius: 14px;
-  background: linear-gradient(var(--ag-danger), var(--ag-danger-strong));
-  color: var(--ag-on-accent);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.record:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.recording {
-  animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% {
-    box-shadow: 0 0 0 4px var(--ag-danger-tint);
-  }
-}
-
-.liveInfo {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 140px;
-  color: var(--ag-text);
-  font-size: 11px;
-}
-
-.meter {
-  height: 6px;
-  overflow: hidden;
-  border-radius: 3px;
-  background: var(--ag-surface-inset);
-}
-
-.meterFill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--ag-meter-lo), var(--ag-meter-mid) 75%, var(--ag-meter-hi));
-  transform: scaleX(0);
-  transform-origin: left;
-}
-
-.field {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--ag-text-dim);
-  font-size: 11px;
-}
-
-.take {
-  display: block;
-  width: 100%;
-  height: 64px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-}
-
-.compose {
-  display: flex;
-  gap: 6px;
-  padding: 8px 8px 4px;
-  border-top: 1px solid var(--ag-border);
-}
-
-.prompt {
-  flex: 1;
-  min-height: 38px;
-  max-height: 120px;
-  padding: 6px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-inset);
-  color: var(--ag-text);
-  font: inherit;
-  resize: vertical;
-}
-
-.prompt:focus {
-  outline: 1px solid var(--ag-accent-dim);
-}
-
-.sendButton {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-3);
-  color: var(--ag-text-dim);
-  cursor: pointer;
-}
-
-.sendReady:not(:disabled) {
-  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
-  color: var(--ag-on-accent);
-}
-
-.sendButton:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.ideas {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 2px 8px 8px;
-}
-
-.idea {
-  padding: 2px 8px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: 10px;
-  background: transparent;
-  color: var(--ag-text-dim);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.idea:hover:not(:disabled) {
-  border-color: var(--ag-accent-dim);
-  color: var(--ag-text);
-}
-
-.idea:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.toolbarButton {
-  color: var(--ag-accent);
-}
-
 .changes {
-  margin: 4px 0 0 16px;
-  padding: 0;
+  margin: 6px 0 0;
+  padding: 0 0 0 16px;
   color: var(--ag-text-dim);
-  font-size: 11px;
-  line-height: 1.45;
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.55;
 }
 
 .changes li::marker {
-  color: var(--ag-accent);
+  color: var(--ag-accent-dim);
 }
 
-.warnings {
-  color: var(--ag-warning);
-}
-
-/* What a mix analysis found. */
+/* What a mix analysis found: the answer itself, so in full text color. */
 .findings {
   color: var(--ag-text);
+  font-size: var(--ag-font-size);
 }
 
 .findings li::marker {
   color: var(--ag-accent);
 }
 
-.ideaMain {
+.fold {
+  margin-top: 8px;
+}
+
+.fold > .changes {
+  margin-top: 4px;
+}
+
+/* "12 changes · Show": the folded list. */
+.summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 9px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease);
+}
+
+.summary:hover {
   border-color: var(--ag-accent-dim);
   color: var(--ag-text);
 }
 
-/* A plugin the builder wrote. */
+.summaryCount {
+  font-weight: 500;
+}
+
+.summaryAction {
+  color: var(--ag-accent);
+}
+
+.summaryAction::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--ag-text-faint);
+}
+
+.chevron {
+  color: var(--ag-text-faint);
+  transition: transform var(--ag-dur) var(--ag-ease);
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.more {
+  margin-top: 2px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ag-accent);
+  font-size: var(--ag-font-size-sm);
+  cursor: pointer;
+}
+
+.more:hover {
+  text-decoration: underline;
+}
+
+/* What the AI couldn't do: one quiet amber line. */
+.warning {
+  margin-top: 8px;
+}
+
+.warningLine {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 3px 8px 3px 7px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: color-mix(in srgb, var(--ag-warning) 9%, transparent);
+  color: color-mix(in srgb, var(--ag-warning) 85%, var(--ag-text));
+  font-size: var(--ag-font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.warningLine:hover {
+  background: color-mix(in srgb, var(--ag-warning) 15%, transparent);
+}
+
+.warningDot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ag-warning);
+}
+
+.warningText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warningFull {
+  font-weight: 500;
+}
+
+.warningMore {
+  flex: none;
+  color: var(--ag-text-faint);
+}
+
+.warningList {
+  margin: 4px 0 0;
+  padding: 0 0 0 22px;
+  color: color-mix(in srgb, var(--ag-warning) 80%, var(--ag-text));
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.55;
+}
+
+/* Small print and the ghost buttons along the card's bottom. */
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--ag-line-faint);
+}
+
+.detail {
+  flex: 1;
+  min-width: 0;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.4;
+}
+
+.badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  line-height: 15px;
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.iconButton,
+.ghost {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-dim);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease);
+}
+
+.iconButton:hover:not(:disabled),
+.ghost:hover:not(:disabled) {
+  border-color: var(--ag-line-faint);
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.iconButton:disabled,
+.ghost:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Thinking, listening, building: a calm shimmer over the words. */
+.thinking {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-dim);
+}
+
+.thinking .spark {
+  margin-right: 0;
+}
+
+.shimmer {
+  background: linear-gradient(
+      100deg,
+      var(--ag-text-dim) 0%,
+      var(--ag-text-dim) 35%,
+      var(--ag-accent-light) 50%,
+      var(--ag-text-dim) 65%,
+      var(--ag-text-dim) 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.seconds {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    background: none;
+    color: var(--ag-text-dim);
+    animation: none;
+  }
+}
+
+/* ---- A plugin the builder wrote ---- */
+
 .pluginCard {
-  margin: 6px 0 2px 18px;
-  padding: 8px 10px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-lg);
   background: var(--ag-surface-1);
 }
 
@@ -388,22 +523,30 @@
   color: var(--ag-text);
 }
 
+.pluginHead b {
+  font-weight: 600;
+}
+
 .pluginHead svg {
   color: var(--ag-accent);
 }
 
 .pluginCode {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .pluginCode summary {
-  cursor: pointer;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  cursor: pointer;
+}
+
+.pluginCode summary:hover {
+  color: var(--ag-text);
 }
 
 .pluginFile {
-  margin-top: 6px;
+  margin-top: 8px;
   color: var(--ag-text-dim);
   font-family: var(--ag-font-mono);
   font-size: 10.5px;
@@ -411,11 +554,12 @@
 
 .pluginPre {
   max-height: 220px;
-  margin: 2px 0 0;
-  padding: 6px 8px;
+  margin: 3px 0 0;
+  padding: 8px 10px;
   overflow: auto;
-  border-radius: 4px;
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text);
   font-family: var(--ag-font-mono);
   font-size: 10.5px;
@@ -426,41 +570,414 @@
 .pluginActions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .primaryButton {
-  height: 24px;
-  padding: 0 12px;
-  border: 1px solid var(--ag-accent-deep);
+  height: 26px;
+  padding: 0 14px;
+  border: 0;
   border-radius: var(--ag-radius);
-  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
+  background: var(--ag-metal);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-on-accent);
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
 }
 
 .primaryButton:hover {
-  background: linear-gradient(var(--ag-accent), var(--ag-accent-strong));
+  filter: brightness(1.08);
 }
 
 .ok {
   color: var(--ag-led);
+  font-size: var(--ag-font-size-sm);
 }
 
-/* The part of the song the conversation is about (FocusChip), above the box. */
+/* ---- Perform: record, bars, what the noises are (shown only when asked for) ---- */
+
+.performance {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-2);
+  margin: 0 var(--ag-space-3) var(--ag-space-2);
+  padding: var(--ag-space-3);
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-2);
+}
+
+.dragOver {
+  outline: 1.5px dashed var(--ag-accent);
+  outline-offset: -4px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ag-space-2) var(--ag-space-3);
+}
+
+.record {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 14px 0 11px;
+  border: 1px solid var(--ag-danger-line);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-danger-tint);
+  color: color-mix(in srgb, var(--ag-danger) 78%, var(--ag-text));
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
+}
+
+.record:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ag-danger) 28%, transparent);
+}
+
+.record:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.recording {
+  background: var(--ag-danger);
+  color: var(--ag-on-accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.recording:hover:not(:disabled) {
+  background: var(--ag-danger-strong);
+}
+
+@keyframes pulse {
+  50% {
+    box-shadow: 0 0 0 5px var(--ag-danger-tint);
+  }
+}
+
+.liveInfo {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 140px;
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+}
+
+.meter {
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+}
+
+.meterFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--ag-meter-lo), var(--ag-meter-mid) 75%, var(--ag-meter-hi));
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+/* "Bars", "Noises are": a small-caps label and a compact select. */
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.option select {
+  appearance: none;
+  height: 22px;
+  padding: 0 22px 0 8px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background-color: var(--ag-surface-inset);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ag-text-dim) 50%),
+    linear-gradient(135deg, var(--ag-text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 50%,
+    calc(100% - 8px) 50%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+/* Check boxes as small switches. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.switch:hover {
+  color: var(--ag-text);
+}
+
+.switch input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 14px;
+  margin: 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  cursor: pointer;
+  transition: background-color var(--ag-dur) var(--ag-ease);
+}
+
+.switch input::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ag-text-faint);
+  transition:
+    transform var(--ag-dur) var(--ag-ease),
+    background-color var(--ag-dur) var(--ag-ease);
+}
+
+.switch input:checked {
+  background: var(--ag-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--ag-accent-dim);
+}
+
+.switch input:checked::before {
+  background: var(--ag-accent);
+  transform: translateX(10px);
+}
+
+.take {
+  display: block;
+  width: 100%;
+  height: 64px;
+  border-radius: var(--ag-radius);
+  box-shadow: var(--ag-inset);
+}
+
+/* ---- The box: a roomy rounded field, the part chip on its top edge, Perform and Send inside ---- */
+
+.compose {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-1) var(--ag-space-3) var(--ag-space-3);
+}
+
+.ideas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.idea {
+  height: 24px;
+  padding: 0 11px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease),
+    background-color var(--ag-dur) var(--ag-ease);
+}
+
+.idea:hover:not(:disabled) {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent);
+}
+
+.idea:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ideaMain {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-xl);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  transition:
+    border-color var(--ag-dur) var(--ag-ease),
+    box-shadow var(--ag-dur) var(--ag-ease);
+}
+
+.field:focus-within {
+  border-color: var(--ag-accent-dim);
+  box-shadow:
+    var(--ag-inset),
+    0 0 0 3px var(--ag-accent-tint);
+}
+
+.prompt {
+  min-height: 44px;
+  max-height: 160px;
+  padding: 10px 14px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-lg);
+  line-height: 1.45;
+  resize: none;
+  field-sizing: content;
+}
+
+.prompt::placeholder {
+  color: var(--ag-text-faint);
+}
+
+.prompt:focus,
+.prompt:focus-visible {
+  outline: none;
+}
+
+.fieldBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 6px 8px;
+}
+
+.performToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    background-color var(--ag-dur) var(--ag-ease);
+}
+
+.performToggle:hover:not(:disabled) {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.performOn,
+.performOn:hover:not(:disabled) {
+  border-color: var(--ag-active-border);
+  background: var(--ag-active);
+  color: var(--ag-accent);
+}
+
+.performToggle:disabled {
+  cursor: default;
+}
+
+.sendButton {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ag-surface-3);
+  color: var(--ag-text-faint);
+  cursor: pointer;
+  transition:
+    filter var(--ag-dur) var(--ag-ease),
+    opacity var(--ag-dur) var(--ag-ease);
+}
+
+.sendReady:not(:disabled) {
+  background: var(--ag-metal);
+  box-shadow:
+    var(--ag-elev-1),
+    0 0 12px var(--ag-accent-tint);
+  color: var(--ag-on-accent);
+}
+
+.sendReady:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+
+.sendStop {
+  background: var(--ag-surface-3);
+  box-shadow: 0 0 0 1px var(--ag-line-faint);
+  color: var(--ag-text);
+}
+
+.sendStop:hover {
+  background: var(--ag-hover);
+}
+
+.sendButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The part of the song the conversation is about (FocusChip), on the field's top edge. */
 .focusChip {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 6px 8px 0;
-  padding: 3px 4px 3px 10px;
+  align-self: flex-start;
+  max-width: calc(100% - 16px);
+  margin: 8px 8px 0;
+  padding: 2px 3px 2px 10px;
   border: 1px solid var(--ag-accent-dim);
-  border-radius: 12px;
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-accent-tint);
   color: var(--ag-text);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
 }
 
 .focusSpark {
@@ -478,23 +995,99 @@
 .focusButton {
   display: grid;
   place-items: center;
+  flex: none;
   width: 20px;
-  height: 18px;
+  height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: 50%;
   background: transparent;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
 }
 
 .focusButton:hover:not(:disabled) {
-  background: var(--ag-hover);
+  background: var(--ag-accent-soft);
   color: var(--ag-text);
 }
 
 .focusButton:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
+}
+
+/* ---- The toolbar's ✦ AI studio pill: a gold edge with a soft glow, filled gold while open ---- */
+
+.aiPill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 0 0 0 2px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--ag-accent-dim);
+  border-radius: var(--ag-radius-pill);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--ag-accent) 16%, transparent), var(--ag-accent-tint)),
+    var(--ag-surface-2);
+  box-shadow:
+    0 0 14px var(--ag-accent-tint),
+    inset 0 1px 0 color-mix(in srgb, var(--ag-accent-light) 22%, transparent);
+  color: var(--ag-accent);
+  font-size: var(--ag-font-size);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition:
+    box-shadow var(--ag-dur) var(--ag-ease),
+    filter var(--ag-dur) var(--ag-ease);
+}
+
+.aiPill:hover {
+  box-shadow:
+    0 0 18px var(--ag-accent-soft),
+    inset 0 1px 0 color-mix(in srgb, var(--ag-accent-light) 30%, transparent);
+  filter: brightness(1.08);
+}
+
+.aiPillOn {
+  border-color: var(--ag-accent-strong);
+  background: var(--ag-metal);
+  box-shadow:
+    var(--ag-elev-1),
+    0 0 16px var(--ag-accent-soft);
+  color: var(--ag-on-accent);
+}
+
+.aiPillMark {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* While the AI works: a soft light sweeping across the pill. */
+.aiPillBusy::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--ag-accent-light) 45%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  animation: shimmer 1.8s linear infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiPillBusy::after {
+    animation: none;
+    background: color-mix(in srgb, var(--ag-accent-light) 18%, transparent);
+  }
 }

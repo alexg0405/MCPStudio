@@ -69,6 +69,11 @@
   --ag-glass-strong: #262e34;
   --ag-blur: none;
   --ag-radius: 3px;
+  --ag-knob-top: #56616b;
+  --ag-knob-face: #3c464e;
+  --ag-knob-edge: #2a3238;
+  --ag-knob-pointer: #e6ebef;
+  --ag-knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 :root[data-theme='carrara'] {
@@ -138,6 +143,25 @@
   --ag-elev-2: 0 10px 30px rgba(60, 50, 30, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.05);
   --ag-shadow: 0 22px 60px rgba(60, 50, 30, 0.18), 0 2px 8px rgba(60, 50, 30, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
   --ag-inset: inset 0 1px 2px rgba(60, 50, 30, 0.14), inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --ag-line-strong: rgba(0, 0, 0, 0.13);
+  /* White stone knobs with a graphite pointer. */
+  --ag-knob-top: #ffffff;
+  --ag-knob-face: #f1eee8;
+  --ag-knob-edge: #d6d0c5;
+  --ag-knob-pointer: #2b2c30;
+  --ag-knob-shadow: 0 1px 2px rgba(60, 50, 30, 0.24), 0 3px 7px rgba(60, 50, 30, 0.12), inset 0 1px 0 #ffffff,
+    inset 0 -1px 1px rgba(60, 50, 30, 0.14);
+  --ag-knob-track: rgba(40, 36, 30, 0.13);
+  --ag-knob-track-hover: rgba(40, 36, 30, 0.22);
+  /* Deeper jewel tones, readable on white stone. */
+  --ag-palette-1: #b8574a;
+  --ag-palette-2: #b8742f;
+  --ag-palette-3: #a88a25;
+  --ag-palette-4: #5b8f48;
+  --ag-palette-5: #3f8f7f;
+  --ag-palette-6: #4a7db8;
+  --ag-palette-7: #7564b8;
+  --ag-palette-8: #a85a8d;
 }
 :root[data-theme='classic']:not([data-accent]),
 :root[data-theme='midnight']:not([data-accent]),
@@ -256,6 +280,22 @@
   --ag-meter-lo: #3fae35;
   --ag-meter-mid: #d1b21f;
   --ag-danger-text: color-mix(in srgb, var(--ag-danger) 82%, #000);
+  --ag-line-strong: rgba(0, 0, 0, 0.14);
+  --ag-knob-top: #ffffff;
+  --ag-knob-face: #eef1f3;
+  --ag-knob-edge: #c9d0d6;
+  --ag-knob-pointer: #1d2327;
+  --ag-knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 #ffffff;
+  --ag-knob-track: rgba(0, 0, 0, 0.14);
+  --ag-knob-track-hover: rgba(0, 0, 0, 0.24);
+  --ag-palette-1: #c4493e;
+  --ag-palette-2: #c9721f;
+  --ag-palette-3: #a8901a;
+  --ag-palette-4: #4c9c42;
+  --ag-palette-5: #2f9a85;
+  --ag-palette-6: #2f7fd0;
+  --ag-palette-7: #7458cc;
+  --ag-palette-8: #b44f95;
 }
 
 /* Accent colors (brushed gold is the default, in tokens.css). */

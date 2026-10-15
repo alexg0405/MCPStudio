@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { AudioTap, PluginUIProps } from '@agstudio/sdk';
-import { Select, useFrame } from '@agstudio/sdk/ui';
+import { Select, themeColors, useFrame } from '@agstudio/sdk/ui';
 import type { analyzerParams } from './params';
 import styles from './analyzer.module.css';
 
@@ -91,9 +91,9 @@ export function AnalyzerUI({ specs, values, setParam, tap }: Props) {
       el.style.width = `${(fraction * 100).toFixed(1)}%`;
       el.style.background =
         db !== undefined && db > PEAK_WARN
-          ? 'var(--ag-meter-hi, #e5574d)'
+          ? 'var(--ag-meter-hi)'
           : db !== undefined && db > -6
-            ? 'var(--ag-meter-mid, #e3cf46)'
+            ? 'var(--ag-meter-mid)'
             : '';
     }
   });
@@ -110,7 +110,7 @@ export function AnalyzerUI({ specs, values, setParam, tap }: Props) {
       <div className={styles.row}>
         <div
           className={`${styles.panel} ${styles.scope}`}
-          data-hint="Oscilloscope: the waveform of the last 40 ms (orange = left, blue = right)"
+          data-hint="Oscilloscope: the waveform of the last 40 ms (gold = left, blue = right)"
         >
           <canvas ref={scopeRef} />
           <span className={styles.caption}>Scope</span>
@@ -199,8 +199,9 @@ function drawSpectrum(
   const p = prepare(c);
   if (!p) return;
   const { ctx, w, h } = p;
+  const theme = themeColors();
   // Grid: octaves and 12 dB steps.
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.strokeStyle = theme.line;
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (const f of [50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
@@ -228,10 +229,17 @@ function drawSpectrum(
   }
   ctx.lineTo(w, h);
   ctx.closePath();
-  ctx.fillStyle = 'rgba(255, 154, 60, 0.25)';
+  // The accent as a wash that fades towards the floor, under a bright edge.
+  const wash = ctx.createLinearGradient(0, 0, 0, h);
+  wash.addColorStop(0, theme.accent);
+  wash.addColorStop(1, 'transparent');
+  ctx.fillStyle = wash;
+  ctx.globalAlpha = 0.5;
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255, 154, 60, 0.85)';
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = theme.accent;
   ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function drawScope(
@@ -243,7 +251,8 @@ function drawScope(
   const p = prepare(c);
   if (!p) return;
   const { ctx, w, h } = p;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  const theme = themeColors();
+  ctx.strokeStyle = theme.lineStrong;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(0, h / 2 + 0.5);
@@ -270,6 +279,9 @@ function drawScope(
     }
     ctx.stroke();
   };
-  trace(right, 'rgba(90, 164, 232, 0.8)');
-  trace(left, 'rgba(255, 154, 60, 0.9)');
+  ctx.globalAlpha = 0.8;
+  trace(right, theme.select);
+  ctx.globalAlpha = 0.95;
+  trace(left, theme.accent);
+  ctx.globalAlpha = 1;
 }

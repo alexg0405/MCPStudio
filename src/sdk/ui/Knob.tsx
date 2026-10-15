@@ -54,7 +54,8 @@ function arc(cx: number, cy: number, r: number, from: number, to: number): strin
 }
 
 /**
- * FL-style rotary knob: drag vertically (Shift = fine), double-click to reset, wheel to nudge.
+ * Rotary knob: a stone body with the value as an accent arc around it (from the middle when
+ * `bipolar`). Drag vertically (Shift = fine), double-click to reset, wheel to nudge.
  * Controlled: the host owns the value.
  */
 export function Knob({
@@ -82,7 +83,10 @@ export function Knob({
   const deg = START + n * SWEEP;
   const mid = START + SWEEP / 2;
   const center = size / 2;
-  const r = size / 2 - 2.5;
+  // The value ring sits around a stone body; the pointer is drawn on the body.
+  const stroke = Math.max(2, Math.round(size * 0.075 * 2) / 2);
+  const r = size / 2 - stroke / 2 - 0.5;
+  const bodyR = Math.max(4, r - stroke / 2 - 2.25);
   const valueRef = useRef(value);
   useEffect(() => {
     valueRef.current = value;
@@ -98,8 +102,8 @@ export function Knob({
         'd',
         bipolar ? arc(center, center, r, Math.min(mid, d), Math.max(mid, d)) : arc(center, center, r, START, d),
       );
-      const a = polar(center, center, r * 0.25, d);
-      const b = polar(center, center, r - 1.5, d);
+      const a = polar(center, center, bodyR * 0.3, d);
+      const b = polar(center, center, bodyR - 1.25, d);
       pointerRef.current?.setAttribute('x1', String(a.x));
       pointerRef.current?.setAttribute('y1', String(a.y));
       pointerRef.current?.setAttribute('x2', String(b.x));
@@ -116,7 +120,7 @@ export function Knob({
       shown = next;
       paint(next);
     });
-  }, [param, follow, spec, bipolar, center, r, mid]);
+  }, [param, follow, spec, bipolar, center, r, bodyR, mid]);
   // Automated (or being recorded): a small dot, and the hint says by what.
   const status = useParamStatus(param);
   const valued = `${label ?? spec.label ?? ''}${label || spec.label ? ': ' : ''}${format(value)}`;
@@ -137,6 +141,8 @@ export function Knob({
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = { startY: e.clientY, startN: n, fine: e.shiftKey, n };
+    // The held look (brighter body and arc) without a React render.
+    e.currentTarget.setAttribute('data-dragging', '');
     onBegin?.();
   };
 
@@ -161,6 +167,7 @@ export function Knob({
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
     drag.current = null;
+    e.currentTarget.removeAttribute('data-dragging');
     e.currentTarget.releasePointerCapture(e.pointerId);
     onEnd?.();
   };
@@ -203,9 +210,10 @@ export function Knob({
       }
       onWheel={onWheel}
     >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={center} cy={center} r={r} className={styles.knobBody} />
-        <path d={arc(center, center, r, START, START + SWEEP)} className={styles.knobTrack} />
+      <span className={styles.knobBody} style={{ inset: center - bodyR }} aria-hidden />
+      <svg className={styles.knobSvg} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+        <path d={arc(center, center, r, START, START + SWEEP)} className={styles.knobTrack} strokeWidth={stroke} />
+        {bipolar && <circle cx={center} cy={center - r} r={stroke * 0.42} className={styles.knobCenter} />}
         <path
           ref={arcRef}
           d={
@@ -214,14 +222,15 @@ export function Knob({
               : arc(center, center, r, START, deg)
           }
           className={styles.knobArc}
+          strokeWidth={stroke}
           style={color ? { stroke: color } : undefined}
         />
         <line
           ref={pointerRef}
-          x1={polar(center, center, r * 0.25, deg).x}
-          y1={polar(center, center, r * 0.25, deg).y}
-          x2={polar(center, center, r - 1.5, deg).x}
-          y2={polar(center, center, r - 1.5, deg).y}
+          x1={polar(center, center, bodyR * 0.3, deg).x}
+          y1={polar(center, center, bodyR * 0.3, deg).y}
+          x2={polar(center, center, bodyR - 1.25, deg).x}
+          y2={polar(center, center, bodyR - 1.25, deg).y}
           className={styles.knobPointer}
         />
       </svg>

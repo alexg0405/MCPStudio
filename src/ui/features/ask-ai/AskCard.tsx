@@ -141,7 +141,9 @@ function AskCard() {
                 : 'No part picked: this asks about the whole song'
           }
         >
-          <span className={styles.scopeText}>{label ?? (gone ? 'That part is gone: the whole song' : 'The whole song')}</span>
+          <span className={styles.scopeText}>
+            {label ?? (gone ? 'That part is gone: the whole song' : 'The whole song')}
+          </span>
           {focus && !gone && (
             <button
               className={styles.scopeClear}
@@ -167,11 +169,14 @@ function AskCard() {
           {busy && (
             <div className={styles.status}>
               <span className={styles.spark}>✦</span>
-              {phase === 'listening' && listening
-                ? `${listening.label} (${Math.round(listening.fraction * 100)}%)…`
-                : phase === 'thinking'
-                  ? 'Working on it…'
-                  : 'The AI studio is busy…'}
+              <span className={styles.statusText}>
+                {phase === 'listening' && listening
+                  ? `${listening.label} (${Math.round(listening.fraction * 100)}%)…`
+                  : phase === 'thinking'
+                    ? 'Working on it…'
+                    : 'The AI studio is busy…'}
+              </span>
+              <span className={styles.spacer} />
               <button className={styles.link} onClick={() => a.cancel()} data-hint="Stop waiting for the AI">
                 Stop
               </button>
@@ -198,7 +203,13 @@ function AskCard() {
       {chips.length > 0 && (
         <div className={styles.chips}>
           {chips.map((c) => (
-            <button key={c} className={styles.chip} disabled={busy} onClick={() => ask(c)} data-hint={chipHint(c, label)}>
+            <button
+              key={c}
+              className={styles.chip}
+              disabled={busy}
+              onClick={() => ask(c)}
+              data-hint={chipHint(c, label)}
+            >
               {c}
             </button>
           ))}

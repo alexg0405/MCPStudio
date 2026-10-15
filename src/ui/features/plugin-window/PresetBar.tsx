@@ -239,45 +239,47 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
   const hasChoices = choices.length > 0;
   return (
     <div className={styles.bar} data-tour="preset-bar">
-      <button
-        type="button"
-        tabIndex={-1}
-        className={styles.arrow}
-        disabled={!hasChoices}
-        onClick={() => step(-1)}
-        data-hint={hasChoices ? 'Previous preset' : 'No presets yet'}
-        aria-label="Previous preset"
-      >
-        ◀
-      </button>
-      <button
-        type="button"
-        tabIndex={-1}
-        className={styles.name}
-        onClick={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          menu({ clientX: r.left, clientY: r.bottom + 2 });
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          menu(e);
-        }}
-        data-hint="Presets: load one, save your own, reset or randomize"
-      >
-        <span className={styles.label}>{label}</span>
-        <span className={styles.caret}>▾</span>
-      </button>
-      <button
-        type="button"
-        tabIndex={-1}
-        className={styles.arrow}
-        disabled={!hasChoices}
-        onClick={() => step(1)}
-        data-hint={hasChoices ? 'Next preset' : 'No presets yet'}
-        aria-label="Next preset"
-      >
-        ▶
-      </button>
+      <span className={styles.pill}>
+        <button
+          type="button"
+          tabIndex={-1}
+          className={styles.arrow}
+          disabled={!hasChoices}
+          onClick={() => step(-1)}
+          data-hint={hasChoices ? 'Previous preset' : 'No presets yet'}
+          aria-label="Previous preset"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className={styles.name}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            menu({ clientX: r.left, clientY: r.bottom + 2 });
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            menu(e);
+          }}
+          data-hint="Presets: load one, save your own, reset or randomize"
+        >
+          <span className={styles.label}>{label}</span>
+          <span className={styles.caret}>▾</span>
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className={styles.arrow}
+          disabled={!hasChoices}
+          onClick={() => step(1)}
+          data-hint={hasChoices ? 'Next preset' : 'No presets yet'}
+          aria-label="Next preset"
+        >
+          ▶
+        </button>
+      </span>
       <button
         type="button"
         tabIndex={-1}

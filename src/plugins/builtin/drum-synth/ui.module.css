@@ -1,18 +1,20 @@
 .root {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
+  gap: 6px;
+  padding: 12px;
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 6px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-1);
+  gap: 12px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-lg);
+  background:
+    linear-gradient(180deg, var(--ag-sheen), transparent 40px),
+    var(--ag-surface-2);
 }
 
 .pad,
@@ -26,24 +28,32 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 6px 8px;
-  border: 1px solid var(--ag-border);
+  padding: 7px 10px;
+  border: 1px solid var(--ag-line-faint);
   border-radius: var(--ag-radius);
-  background: var(--ag-surface-3);
+  background:
+    linear-gradient(180deg, var(--ag-sheen), transparent),
+    var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition:
+    border-color var(--ag-dur) var(--ag-ease),
+    background-color var(--ag-dur) var(--ag-ease);
 }
 
 .pad:hover:not(:disabled) {
-  filter: brightness(1.15);
-  border-color: var(--ag-accent);
+  border-color: var(--ag-accent-dim);
+  background-color: var(--ag-hover);
 }
 
+/* Struck: brushed gold. */
 .pad:active:not(:disabled) {
-  background: var(--ag-accent);
-  color: var(--ag-bg);
+  background: var(--ag-metal);
+  box-shadow: 0 0 12px var(--ag-accent-glow);
+  color: var(--ag-on-accent);
 }
 
 .pad:disabled {
@@ -51,8 +61,8 @@
 }
 
 .padName {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 600;
 }
 
 .padKey {
@@ -67,9 +77,9 @@
 
 .label {
   padding-left: 8px;
-  color: var(--ag-text-dim);
+  color: var(--ag-text-faint);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }

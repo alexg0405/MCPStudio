@@ -113,6 +113,32 @@
     color-mix(in srgb, var(--ag-accent) 78%, #000) 100%
   );
 
+  /* A hairline a little stronger than --ag-line-faint (a graph's 0 dB line, bar lines on displays). */
+  --ag-line-strong: rgba(255, 255, 255, 0.1);
+
+  /*
+   * Knobs (the SDK's Knob): a stone body lit from the top, a thin pointer, the value as an accent arc
+   * on a faint track.
+   */
+  --ag-knob-top: #3b3d43;
+  --ag-knob-face: #222328;
+  --ag-knob-edge: #131416;
+  --ag-knob-pointer: #f1ede3;
+  --ag-knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 3px 7px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.35);
+  --ag-knob-track: color-mix(in srgb, var(--ag-text) 12%, transparent);
+  --ag-knob-track-hover: color-mix(in srgb, var(--ag-text) 20%, transparent);
+
+  /* Eight distinct colours that sit well on stone (EQ bands, layers): muted jewel tones. */
+  --ag-palette-1: #d98a7e;
+  --ag-palette-2: #d9a066;
+  --ag-palette-3: #d6c06f;
+  --ag-palette-4: #9cc48a;
+  --ag-palette-5: #7fc1b3;
+  --ag-palette-6: #8eb4e3;
+  --ag-palette-7: #a99be0;
+  --ag-palette-8: #d394bf;
+
   /* Meters */
   --ag-meter-lo: #8fcf86;
   --ag-meter-mid: #d9bf5f;

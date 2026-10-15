@@ -165,11 +165,31 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
   snare = sine modes 185/330 Hz (~80 ms) + noise HP 1.5 kHz (~180 ms); clap = noise BP 1.2 kHz, 3 bursts 10 ms apart,
   150 ms tail; hats = 6 detuned squares at 808-style ratios, BP 10 kHz + HP 7 kHz (closed 50 ms, open 400 ms);
   toms = kick at 90/130/180 Hz; rim, cowbell (540 + 800 Hz squares), crash.
-- Reverb IR (`plugins/builtin/reverb/ir.kernel.ts`): decorrelated L/R noise (seeded) × e^(−6.91·t/RT60), 3 bands
-  with their own decay (lows ×1.3, highs ×(1 − 0.8·damping)), 8–12 early reflections from 10 ms to 12–80 ms (size),
-  5 ms fade-in, unit energy, `disableNormalization`. Pre-delay is a DelayNode. Decay/damping/size changes: debounce
-  150 ms (immediately when offline), regenerate on the main thread (10–25 ms for a 10 s tail; a Worker can come later),
-  crossfade two ConvolverNodes over 120 ms (setting `.buffer` in place would click and cut the tail). IRs are cached.
+- Reverb (`plugins/builtin/reverb`): two engines behind the same params (Decay = RT60 of the mids, Pre-delay,
+  Damping, Size, Mix) and an `engine` enum param, `'algorithmic'` by default (projects saved before it existed get the
+  default, so they turn algorithmic; no version bump: missing params resolve to their default). Switching crossfades
+  the two over 50 ms; the one faded out stops getting input (the convolution chain is torn down, the kernel sleeps).
+  Tail for exports: preDelay + 0.1 + 1.3 · Decay. Measured in Chrome: ten 7 s reverbs made the realtime audio clock
+  run at 0.4–0.6× (convolution, on a busy machine) and 1.00× (algorithmic); ten alone render offline at 20–30×.
+  - Algorithmic (`kernel.ts`, `reverb.worklet.ts`, mix inside the kernel): pre-delay (linear interpolation, a-rate) →
+    the input's high shelf → 4 Schroeder allpasses a side → an 8-line FDN (lines 29–94 ms × (0.45 + 0.55 · size),
+    fast Walsh–Hadamard mixing, left into the even lines and right into the odd ones, negated in lines 4–7). Per line:
+    first-order allpass interpolation (linear while gliding faster than 0.01 frames/frame after a Size change), two
+    first-order shelves for three decay bands (lows ×1.2 below 250 Hz, highs ×(1 − 0.6 · damping) above 8 kHz,
+    tuned so every band's energy is within ~2 dB of the convolution IR's), an allpass in the loop (density), and a
+    gain e^(−ln 1000 · len / (RT60 · sr)). All 8 lines drift ±0.5 ms at 0.3–1.1 Hz. L/R outputs are two orthogonal
+    sign sums of the lines. The input level is set from the estimated tail energy (Σ G²/(1 − G²) over 24
+    frequencies), so a Decay change alters new tails, not the one ringing, and the IR has unit energy like the
+    convolution one. Decay/Damping/Size glide at control rate (32 frames; gains and input level ramp per frame;
+    line lengths glide ≤ 0.25 frames/frame). Processed in 32-frame chunks stage by stage (possible because the
+    shortest line is longer than a chunk). Silence in and a tail under −100 dBFS for 0.5 s clears the network and it
+    idles; the runner then sleeps. About 0.3 % of a core per instance in Node at any Decay.
+  - Convolution (`ir.kernel.ts`, built only while chosen): decorrelated L/R noise (seeded) × e^(−6.91·t/RT60), 3
+    bands with their own decay (lows ×1.3, highs ×(1 − 0.8·damping)), 8–12 early reflections from 10 ms to 12–80 ms
+    (size), 5 ms fade-in, unit energy, `disableNormalization`. Pre-delay is a DelayNode. Decay/damping/size changes:
+    debounce 150 ms (immediately when offline), regenerate on the main thread (10–25 ms for a 10 s tail), crossfade
+    two ConvolverNodes over 120 ms (setting `.buffer` in place would click and cut the tail). IRs are cached. Each
+    instance with a 3–7 s tail costs 3–4 % of a core.
 - 808 Bass (`plugins/builtin/bass808`, graph instrument, mono legato): each hit is a fresh zero-phase sine whose pitch
   starts `punch` semitones up (the oscillator's initial detune: Chrome feeds a starting oscillator automation from up to
   127 frames earlier in its first render quantum) and decays with τ = punchTime/4; amp e^(−t·4/decay), 50 ms release,
@@ -264,8 +284,9 @@ gesture for the save picker, so the picker comes before the render. `renderOffli
 128-frame probe context), `onProgress` and an abort `signal` (an aborted render stays suspended and is dropped).
 `trimRender` drops the pre-roll and cuts the silence (< −90 dBFS) after the last tail. Measured in Chrome: the export
 decodes back to the float render within one 24-bit step, and renders of kit/synth projects are hash-identical. The
-exception is **ConvolverNode** (the Reverb): two renders differ by about one float ULP (≤ 6e-8, inaudible), so a
-project with reverb can produce byte-different files. A deterministic convolution would need our own worklet.
+exception is **ConvolverNode** (the Reverb's convolution engine): two renders differ by about one float ULP (≤ 6e-8,
+inaudible), so a project with it can produce byte-different files. The default algorithmic engine is a deterministic
+worklet.
 
 ### What M2 verified in Chrome
 

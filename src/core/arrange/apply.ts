@@ -622,7 +622,7 @@ function patternContent(p: Project, pid: PatternId, env: VariantEnv) {
  * its own variant carrying the event, merged with the steps it already had. Muted clips and clips
  * on `skipLanes` and the `protect`ed ones are left alone. Returns the clips changed.
  */
-export function applyEventsInPlace(
+export function applyEditsInPlace(
   d: Draft<Project>,
   events: readonly Omit<SongEvent, 'section'>[],
   env: ApplyEnv,

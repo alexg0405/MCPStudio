@@ -8,7 +8,7 @@ import type { AudioClipChannel, Clip, InsertId, PatternClip, PatternId, Project,
 import { constantTempo } from '../time/ppq';
 import { BAR, BEAT, HINT, kitProject, notes, trapGroove } from '../../../test/helpers/arrange';
 import { projectViolations } from '../../../test/helpers/project-invariants';
-import { applyArrangement, applyEventsInPlace, collectGarbage, deriveVariant, refreshVariants, type ApplyEnv } from './apply';
+import { applyArrangement, applyEditsInPlace, collectGarbage, deriveVariant, refreshVariants, type ApplyEnv } from './apply';
 import { notesHash } from './notes';
 import { planArrangement, type ArrangeRequest } from './plan';
 import { DEFAULT_ENERGY, type SectionRole, type SectionSpec } from './sections';
@@ -206,7 +206,7 @@ describe('changing a song in place', () => {
     });
     let changed: string[] = [];
     const next = produce(start, (d) => {
-      changed = applyEventsInPlace(d, [{ kind: 'snare-fill', from: 8 * BAR - 2 * BEAT, to: 8 * BAR, energy: 4, why: 'phrase' }], s.env);
+      changed = applyEditsInPlace(d, [{ kind: 'snare-fill', from: 8 * BAR - 2 * BEAT, to: 8 * BAR, energy: 4, why: 'phrase' }], s.env);
     });
     const clips = (clipsOf(next) as PatternClip[]).sort((a, b) => a.start - b.start);
     expect(clips.map((c) => [c.start / BAR, c.length / BAR, c.patternId === Beat ? 'source' : next.patterns[c.patternId]!.name])).toEqual([
@@ -219,7 +219,7 @@ describe('changing a song in place', () => {
     expect(clips[2]!.offset % (2 * BAR)).toBe(0);
     // Doing it again changes nothing (the same variant).
     const again = produce(next, (d) => {
-      applyEventsInPlace(d, [{ kind: 'snare-fill', from: 8 * BAR - 2 * BEAT, to: 8 * BAR, energy: 4, why: 'phrase' }], s.env);
+      applyEditsInPlace(d, [{ kind: 'snare-fill', from: 8 * BAR - 2 * BEAT, to: 8 * BAR, energy: 4, why: 'phrase' }], s.env);
     });
     expect(Object.keys(again.patterns)).toEqual(Object.keys(next.patterns));
   });

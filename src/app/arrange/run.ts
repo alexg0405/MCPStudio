@@ -7,7 +7,7 @@
 import type { Draft } from 'immer';
 import {
   applyArrangement,
-  applyEventsInPlace,
+  applyEditsInPlace,
   deriveVariant,
   laneAllocatorFor,
   moveLoopCrashes,
@@ -142,8 +142,12 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
   const changes: string[] = [];
   const { env, changes: made } = applyEnvFor(d, s, base, style, { create: input.fx && input.transitions });
   if (input.cleanup) {
-    const r = tidySong(d, { automation: false, names: false, range: { from, to } });
+    // The whole song gets the whole clean-up; a part of it only loses its stacked copies.
+    const whole = from === 0 && to >= songEnd;
+    const r = tidySong(d, whole ? {} : { automation: false, names: false, range: { from, to } });
     if (r.stacked) changes.push(`Removed ${count(r.stacked, 'stacked copy', 'stacked copies')} (parts playing on top of themselves)`);
+    if (r.automation) changes.push(`Merged ${count(r.automation, 'repeated automation channel')}`);
+    if (r.named.length) changes.push(`Named ${count(r.named.length, 'track')} after what they play`);
     // A crash on the first beat of a loop crashes every few bars: it moves out of the patterns
     // that loop here and nowhere else (their variants follow), and crashes mark the sections instead.
     const looping = loopingPatterns(p);
@@ -168,7 +172,7 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
     const layered = layeredFills(p, env.variant).filter((l) => l.fill.from < to && l.fill.to > from);
     const fillClips = new Set(fillLikeClips(p, env.variant).map((f) => f.clipId));
     for (const l of layered)
-      applyEventsInPlace(d, [{ kind: 'clear-drums', from: l.fill.from, to: l.fill.to, energy: 4, why: 'end' }], env, {
+      applyEditsInPlace(d, [{ kind: 'clear-drums', from: l.fill.from, to: l.fill.to, energy: 4, why: 'end' }], env, {
         skipLanes: new Set([l.fill.laneId]),
         protect: fillClips,
       });
@@ -193,7 +197,7 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
   // Elements reaching far outside the range are left out (a part of the song stays a part).
   const near = (a: Tick, b: Tick) => a >= from - bar && b <= to + bar;
   // Fills playing from their own clips are the musician's: nothing changes them.
-  const changed = applyEventsInPlace(d, plan.events, env, { protect: new Set(fillClips.map((f) => f.clipId)) });
+  const changed = applyEditsInPlace(d, plan.events, env, { protect: new Set(fillClips.map((f) => f.clipId)) });
   const fx = placeFx(d, plan.fx.filter((f) => near(f.start, f.start + Math.min(f.length, bar))), env);
   const crashes = placeCrashes(d, plan.crashes.filter((c) => near(c.at, c.at)), env);
   const automation = placeAutomation(d, plan.automation.filter((a) => near(a.start, a.start + a.length)), env, { skipBusy: true });
@@ -368,7 +372,7 @@ export function transitionInDraft(d: Draft<Project>, s: Services, base: Project,
   const lo = Math.min(X, ...events.map((e) => e.from), ...fx.map((f) => f.start), ...automation.map((a) => a.start));
   const hi = Math.max(X, ...events.map((e) => e.to), ...automation.map((a) => a.start + a.length));
   guard?.(Math.max(0, lo), hi, 'transition');
-  const changed = applyEventsInPlace(d, events, env);
+  const changed = applyEditsInPlace(d, events, env);
   const lanes = laneAllocatorFor(p);
   const there = existingFx(p, env.variant);
   const fxClips = placeFx(
@@ -484,7 +488,7 @@ export function varyInDraft(
   }
   const span = whole ? { from, to } : { from: to - Math.min(beats * BEAT, to - from), to };
   guard?.(span.from, span.to, 'vary');
-  const changed = applyEventsInPlace(d, [{ kind: kindOf[input.kind], ...span, energy: 4, why: 'end', ...extra }], env, input.lane ? { lanes: new Set([input.lane]) } : {});
+  const changed = applyEditsInPlace(d, [{ kind: kindOf[input.kind], ...span, energy: 4, why: 'end', ...extra }], env, input.lane ? { lanes: new Set([input.lane]) } : {});
   const label = input.kind.replace(/_/g, ' ').replace('808 slide', '808 slide');
   return {
     changes: changed.length

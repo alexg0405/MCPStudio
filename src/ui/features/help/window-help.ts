@@ -36,7 +36,8 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
     playlist: {
       intro: 'Your song: patterns, audio and automation clips over time. Switch the transport to SONG to hear it.',
       moves: [
-        ['Click in a track (Draw)', 'Place the current pattern'],
+        ['Click an empty spot (Draw)', 'A menu: place a pattern, paste, ask Studio, a fill, a marker…'],
+        ['Drag on an empty spot (Draw)', 'Place the current pattern there'],
         ['Drag a clip', 'Move it (Shift+drag copies it)'],
         ['Drag a clip’s edge', 'Make it longer or shorter'],
         ['Right-click a clip', 'Delete it'],

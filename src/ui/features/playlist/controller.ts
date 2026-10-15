@@ -99,6 +99,15 @@ export interface ClientBox {
   bottom: number;
 }
 
+/** How far (px) the pointer may wander before a click on an empty cell counts as a drag. */
+const PRESS_SLOP = 4;
+
+/**
+ * Drags that never scroll the view at its edges: points stay inside their clip, and a press on an
+ * empty cell scrolls only once it becomes a drag (a `create`).
+ */
+const NO_AUTOSCROLL: ReadonlySet<string> = new Set(['pan', 'press', 'point', 'tension', 'level']);
+
 type Layer = 'grid' | 'clips' | 'overlay' | 'headers' | 'ruler';
 type Zone = 'body' | 'start' | 'end';
 type Hit = { clip: Clip; zone: Zone };
@@ -116,6 +125,8 @@ type Drag =
     }
   | { kind: 'resize'; x0: number; anchor: Clip; originals: Clip[]; side: 'start' | 'end'; dTick: number }
   | { kind: 'create'; clip: PatternClip; grab: number }
+  /** Draw tool on an empty cell: a click opens the empty-spot menu, a drag places the current pattern. */
+  | { kind: 'press'; x0: number; y0: number; lane: LaneId; tick: Tick; grab: number; moved: boolean }
   | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; base: ClipId[] }
   | { kind: 'paint'; gesture: Gesture; lane: LaneId; last: Tick; done: Set<Tick> }
   | { kind: 'erase'; gesture: Gesture; done: Set<ClipId> }
@@ -308,6 +319,8 @@ export class PlaylistController {
   onMarkerMenu?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
   /** An empty spot of the ruler was right-clicked (at a snapped song tick). */
   onRulerMenu?: (tick: Tick, at: { clientX: number; clientY: number }) => void;
+  /** An empty cell of the grid was clicked with the draw tool (at a snapped tick on a track): its menu. */
+  onEmptyMenu?: (tick: Tick, laneId: LaneId, at: { clientX: number; clientY: number }) => void;
   /** A marker flag's Studio mark was clicked: ask the AI about its section. */
   onMarkerAsk?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
 
@@ -1023,12 +1036,9 @@ export class PlaylistController {
       this.paintAt(x, p, e);
       return;
     }
-    const clip = this.currentPatternClip(p, lane, tick);
-    if (!clip) return;
+    // A click opens the empty-spot menu (on pointer up); a drag places the current pattern.
     editor.selectClips([]);
-    this.drag = { kind: 'create', clip, grab: this.vp.xToTick(x) - tick };
-    this.preview = [clip];
-    this.invalidate('clips');
+    this.drag = { kind: 'press', x0: x, y0: y, lane, tick, grab: this.vp.xToTick(x) - tick, moved: false };
   }
 
   private onPointerMove(e: PointerEvent): void {
@@ -1121,6 +1131,17 @@ export class PlaylistController {
         this.invalidate('clips');
         return;
       }
+      case 'press': {
+        if (d.moved || Math.hypot(x - d.x0, y - d.y0) < PRESS_SLOP) return;
+        d.moved = true;
+        const clip = this.currentPatternClip(p, d.lane, d.tick);
+        if (!clip) return;
+        this.drag = { kind: 'create', clip, grab: d.grab };
+        this.preview = [clip];
+        this.onPointerMove(e);
+        this.invalidate('clips');
+        return;
+      }
       case 'create': {
         const grid = this.grid(p, e);
         const start = Math.max(0, snapFloor(this.vp.xToTick(x) - d.grab + grid / 2, grid));
@@ -1191,6 +1212,8 @@ export class PlaylistController {
           })),
         ),
       );
+    } else if (d.kind === 'press') {
+      if (!d.moved && e.type === 'pointerup') this.onEmptyMenu?.(d.tick, d.lane, e);
     } else if (d.kind === 'create') {
       const clip = d.clip;
       this.s.history.transact('Add clip', (draft) => addClips(draft, [clip]));
@@ -1381,8 +1404,7 @@ export class PlaylistController {
 
   private autoScroll(x: number, y: number, p: Project): void {
     const d = this.drag;
-    // Points stay inside their clip: no scrolling while editing them.
-    if (!d || d.kind === 'pan' || d.kind === 'point' || d.kind === 'tension' || d.kind === 'level') return;
+    if (!d || NO_AUTOSCROLL.has(d.kind)) return;
     const edge = 24;
     let dx = 0;
     let dy = 0;

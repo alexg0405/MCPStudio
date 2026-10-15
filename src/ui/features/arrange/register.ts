@@ -116,10 +116,10 @@ export function register(services: Services): void {
       },
     ];
   });
-  addContextMenuItems('playlist.ruler', ({ tick }: { tick: Tick }, s): MenuEntry[] => {
+  /** A fill at the end of the bar at `tick`, a transition into the nearest bar line. */
+  const atSpot = (s: Services, tick: Tick): MenuEntry[] => {
     const b = Math.floor(tick / bar());
     const into = Math.round(tick / bar());
-    const range = developRange(s);
     return [
       {
         label: `Add a fill here (end of bar ${b + 1})`,
@@ -131,6 +131,13 @@ export function register(services: Services): void {
         hint: 'The transition the sections on either side call for',
         onSelect: () => report(s, addTransitionAt(s, into * bar())),
       },
+    ];
+  };
+  addContextMenuItems('playlist.empty', ({ tick }, s) => (hasSong(s) ? atSpot(s, tick) : []));
+  addContextMenuItems('playlist.ruler', ({ tick }: { tick: Tick }, s): MenuEntry[] => {
+    const range = developRange(s);
+    return [
+      ...atSpot(s, tick),
       {
         label: `Develop ${where(s, range)} (fills, transitions)`,
         hint: 'Fills every 8 bars, changes every 4 and transitions between sections, one undo step',

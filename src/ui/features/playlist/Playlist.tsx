@@ -9,6 +9,7 @@ import { useServices } from '../../services-context';
 import { PatternPicker } from '../patterns/PatternPicker';
 import { PlaylistController, type PlaylistElements } from './controller';
 import { clipMenu, laneMenu } from './menus';
+import { emptyMenu } from './empty-menu';
 import { markerMenu, rulerMenu } from './markers';
 import { pointMenu } from '../automation/actions';
 import { registerAnchorSource } from '../ask-ai/anchors';
@@ -22,7 +23,7 @@ const TOOLS: { tool: PlaylistTool; label: string; key: string; hint: string }[] 
     tool: 'draw',
     label: 'Draw',
     key: 'P',
-    hint: 'Draw: click to place the current pattern, drag clips to move, drag edges to resize, right-click to delete; a clip’s ▾ opens its menu',
+    hint: 'Draw: click an empty spot for a menu (place a pattern, paste, ask Studio, add a marker…), drag on one to place the current pattern; drag clips to move, drag edges to resize, right-click to delete; a clip’s ▾ opens its menu',
   },
   { tool: 'paint', label: 'Paint', key: 'B', hint: 'Paint: drag to place repeats of the current pattern' },
   { tool: 'delete', label: 'Delete', key: 'D', hint: 'Delete: click or drag over clips' },
@@ -82,7 +83,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         </button>
       </span>
       <span className={styles.help}>
-        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask Studio pill (or a marker's mark) asks Studio about a part
+        Click an empty spot for a menu · drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask Studio pill (or a marker's mark) asks Studio about a part
       </span>
     </div>
   );
@@ -128,6 +129,10 @@ export function Playlist() {
     c.onPointMenu = (clip, index, at) => showContextMenu(at, pointMenu(services, clip, index));
     c.onMarkerMenu = (id, at) => showContextMenu(at, markerMenu(services, id));
     c.onRulerMenu = (tick, at) => showContextMenu(at, rulerMenu(services, tick));
+    c.onEmptyMenu = (tick, laneId, at) => {
+      const items = emptyMenu(services, tick, laneId, () => c.renameLane(laneId));
+      if (items.length) showContextMenu(at, items);
+    };
     // A flag's Studio mark: loop that section and open the Ask AI card on it.
     c.onMarkerAsk = (id, at) =>
       void askAboutMarker(services, id, { kind: 'marker', markerId: id, fallback: { x: at.clientX, y: at.clientY } });

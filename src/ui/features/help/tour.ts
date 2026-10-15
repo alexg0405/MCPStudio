@@ -46,7 +46,7 @@ export const TOUR: readonly TourStep[] = [
   {
     anchor: '[data-window-type="playlist"]',
     title: 'Playlist: your song',
-    body: 'Arrange patterns over time. Click in a lane to place the current pattern and drag to move it. Switch the transport to SONG to hear the arrangement.',
+    body: 'Arrange patterns over time. Drag in a track to place the current pattern (a click on an empty spot opens a menu: place a pattern, paste, ask Studio…), and drag clips to move them. Switch the transport to SONG to hear the arrangement.',
     prepare: show('playlist'),
   },
   {

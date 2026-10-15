@@ -1,6 +1,6 @@
 import type { Services } from '@app/services';
 import { newId } from '@core/model/ids';
-import type { Clip } from '@core/model/types';
+import type { Clip, ClipId, LaneId, Tick } from '@core/model/types';
 import { addClips, removeClips } from '@core/ops/playlist';
 import { clipsSorted } from '@core/query/playlist';
 import { ticksPerBar } from '@core/time/ppq';
@@ -50,6 +50,27 @@ export const playlistCommands = {
     const clips = clip.map((c) => ({ ...c, id: newId.clip(), start: c.start + at }));
     s.history.transact('Paste clips', (d) => addClips(d, clips));
     s.editor.getState().selectClips(clips.map((c) => c.id));
+  },
+  /**
+   * Pastes with the clipboard's start at `tick` and its top track on `laneId` (the clicked spot);
+   * the clips keep their spacing in time and between tracks. Returns the pasted clips' ids.
+   */
+  pasteAt(s: Services, tick: Tick, laneId: LaneId): ClipId[] {
+    const clip = s.editor.getState().clipClipboard;
+    if (!clip?.length) return [];
+    const order = s.doc.getState().project.playlist.laneOrder;
+    const target = order.indexOf(laneId);
+    if (target < 0) return [];
+    const rows = clip.map((c) => order.indexOf(c.laneId));
+    const known = rows.filter((r) => r >= 0);
+    const top = known.length ? Math.min(...known) : 0;
+    const clips = clip.map((c, i) => {
+      const row = (rows[i] as number) < 0 ? target : target + (rows[i] as number) - top;
+      return { ...c, id: newId.clip(), start: c.start + tick, laneId: order[Math.min(row, order.length - 1)] as LaneId };
+    });
+    s.history.transact(clips.length > 1 ? 'Paste clips' : 'Paste clip', (d) => addClips(d, clips));
+    s.editor.getState().selectClips(clips.map((c) => c.id));
+    return clips.map((c) => c.id);
   },
   /** Copies the selection right after itself (rounded to bars). */
   duplicate(s: Services) {

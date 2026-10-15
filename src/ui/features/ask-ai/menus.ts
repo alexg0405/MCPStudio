@@ -1,8 +1,9 @@
 /**
  * "Ask AI about …" (with the Studio mark) in the right-click menus: a playlist clip (or the selection it belongs to), a
- * marker, the ruler's loop region and piano-roll notes.
+ * marker, the ruler's loop region, the bar of an empty playlist spot and piano-roll notes.
  */
 import { barSpan } from '@core/time/bars';
+import { ticksPerBar } from '@core/time/ppq';
 import { addContextMenuItems } from '../../context-menus';
 import { lastPointer } from './anchors';
 import { askAboutClips, askAboutMarker, askAboutNotes, askAboutRange } from './ask-state';
@@ -50,6 +51,27 @@ export function registerAskMenus(): () => void {
           label: `Ask Studio about ${span}…`,
           hint: `Tell Studio what to change in the loop region (${span}); only those bars change`,
           onSelect: () => void askAboutRange(s, loop.start, loop.end),
+        },
+      ];
+    }),
+    // A click on an empty spot of the playlist: the bar there.
+    addContextMenuItems('playlist.empty', ({ tick }, s) => {
+      const bar = ticksPerBar(s.doc.getState().project.transport.timeSig);
+      const from = Math.floor(tick / bar) * bar;
+      const n = from / bar + 1;
+      const at = lastPointer();
+      return [
+        {
+          icon: 'studio',
+          label: `Ask Studio about bar ${n}…`,
+          hint: `Opens a box: tell Studio what to put or change in bar ${n} (only that bar changes, as one undo step)`,
+          onSelect: () =>
+            void askAboutRange(s, from, from + bar, {
+              kind: 'span',
+              from,
+              to: from + bar,
+              ...(at ? { fallback: at } : {}),
+            }),
         },
       ];
     }),

@@ -13,6 +13,8 @@ export interface MenuScopes {
   'playlist.marker': { markerId: MarkerId };
   /** Right-click on an empty spot of the ruler (the song position there). */
   'playlist.ruler': { tick: Tick };
+  /** A click on an empty cell of the playlist grid (draw tool): the snapped tick and the track there. */
+  'playlist.empty': { tick: Tick; laneId: LaneId };
   'mixer.strip': { insertId: InsertId };
   'mixer.slot': { insertId: InsertId; slotId: SlotId };
   'rack.channel': { channelId: ChannelId };

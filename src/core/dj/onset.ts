@@ -79,6 +79,8 @@ export function onsetFeatures(
     const f = (k * sampleRate) / size;
     for (let b = 0; b < 4; b++) if (f >= EDGES[b]! && f < EDGES[b + 1]!) bandOf[k] = b;
   }
+  const binsIn = [0, 0, 0, 0];
+  for (let k = 1; k < fft.bins; k++) if (bandOf[k]! >= 0) binsIn[bandOf[k]!]!++;
   const lowTop = Math.floor((150 * size) / sampleRate);
   // Log magnitudes of the last two frames (flux compares frames two hops apart: ~12 ms).
   const prev2 = new Float64Array(fft.bins);
@@ -121,7 +123,8 @@ export function onsetFeatures(
     const x = bands[b]!;
     const mean = movingMean(x, half);
     for (let i = 0; i < frames; i++) x[i] = Math.max(0, x[i]! - mean[i]!);
-    const s = spread(x);
+    // A floor (per bin of the band) so a band with nothing happening isn't blown up to unit spread.
+    const s = Math.max(spread(x), 0.003 * binsIn[b]!);
     if (s > 1e-9) for (let i = 0; i < frames; i++) x[i] = x[i]! / s;
     const w = WEIGHTS[b]!;
     for (let i = 0; i < frames; i++) onset[i] = onset[i]! + w * x[i]!;

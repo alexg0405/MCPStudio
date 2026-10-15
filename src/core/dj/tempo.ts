@@ -35,6 +35,8 @@ export interface BeatTrack {
 
 const MIN_BPM = 60;
 const MAX_BPM = 200;
+/** Seconds from where the onset envelope peaks to the attack (measured on synthetic drums). */
+const ONSET_LAG = 0.008;
 
 /** Linear interpolation of x at a fractional index (0 outside). */
 function lerp(x: ArrayLike<number>, i: number): number {
@@ -156,7 +158,8 @@ export function preferFaster(
   fastBpm: number,
 ): { faster: boolean; parity: 0 | 1 } {
   const kick = frames.map((b) => peakNear(f.low, b));
-  const snare = frames.map((b) => peakNear(f.lowMid, b) + 0.5 * peakNear(f.highMid, b));
+  // Snare: its crack (800 Hz–4 kHz) more than its body, which shares the low mids with the bass.
+  const snare = frames.map((b) => 0.5 * peakNear(f.lowMid, b) + peakNear(f.highMid, b));
   const par = (v: number[], p: number) => mean(v.filter((_, i) => i % 2 === p));
   const parity: 0 | 1 = par(kick, 0) >= par(kick, 1) ? 0 : 1;
   const kOn = par(kick, parity);
@@ -172,7 +175,7 @@ export function preferFaster(
   // Kick on every beat of F (four on the floor): S would put kicks on its offbeats.
   if (kOff >= 0.3 * kOn && kOn > 0) return { faster: true, parity };
   // The snare on the offbeats of a slow S (drum and bass two-step at 174 read as 87).
-  if (slowBpm < 95 && sOff >= 1.5 * sOn && sOff > 0) return { faster: true, parity };
+  if (slowBpm < 95 && sOff >= 1.3 * sOn && sOff > 0) return { faster: true, parity };
   // Hats on the 8ths of F: the faster tempo is the one that is felt (trap at 140, not 70).
   if (fastBpm <= 160 && hatHalf >= 0.5 * hatOn && hatHalf > 0.5) return { faster: true, parity };
   return { faster: false, parity };
@@ -242,7 +245,8 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
   frames = frames.slice(first, last + 1);
   strength = strength.slice(first, last + 1);
   if (frames.length < 8) return null;
-  const times = frames.map((b) => refineFrame(o, b) / fr);
+  // The flux of a hit that decays peaks a little before its attack reaches the frame centre.
+  const times = frames.map((b) => refineFrame(o, b) / fr + ONSET_LAG);
 
   // Fixed grid through the beats that have an onset.
   const p0 = median(times.slice(1).map((t, i) => t - times[i]!));
@@ -289,6 +293,10 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
   const background = total / Math.max(1, a1 - a0);
   const salience = mean(strength) / Math.max(1e-9, background);
   if (salience < 1.3) return null;
+  // A pulse means most beats have a hit (a pad struck once a bar doesn't make a beat).
+  const loud = [...strength].sort((x, y) => x - y)[Math.floor(0.9 * (strength.length - 1))]!;
+  const hits = strength.filter((x) => x >= 0.4 * loud).length / strength.length;
+  if (hits < 0.3) return null;
   const cSal = Math.max(0, Math.min(1, (salience - 1.3) / 2.5));
   const cFit = drift ? 0.35 : Math.exp(-((rms / 0.012) ** 2));
   const beats = drift ? smoothBeats(times, strength, typical) : times;

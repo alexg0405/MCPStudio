@@ -53,6 +53,8 @@ export function forkPattern(
     // Split at the edges first, so each piece lies wholly inside or outside the part.
     for (const edge of [from, to]) {
       for (const c of clipsOf(d, pid)) {
+        // `also` clips move whole (an answer's own transition clip just outside the part).
+        if (part.also?.has(c.id)) continue;
         if (c.start < edge && edge < c.start + c.length) {
           const piece = newId.clip();
           splitClip(d, c.id, edge, tempo, piece);

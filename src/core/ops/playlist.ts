@@ -191,18 +191,19 @@ export function sanitizeClip<C extends Clip>(c: C): C {
 /**
  * Removes the clips over from–to (on `lanes`, or on every track). With `trim`, a clip that reaches
  * past an edge is cut there and keeps its part outside the range; without it, every clip touching
- * the range goes.
+ * the range goes. `only` limits it to some clips (the others stay as they are).
  */
 export function clearRange(
   d: Draft<Project>,
   from: Tick,
   to: Tick,
-  opts: { lanes?: ReadonlySet<LaneId>; trim?: boolean; tempo: TempoMap },
+  opts: { lanes?: ReadonlySet<LaneId>; trim?: boolean; tempo: TempoMap; only?: (clip: Clip) => boolean },
 ): { removed: number; cut: number } {
   let removed = 0;
   let cut = 0;
   for (const c of Object.values(d.playlist.clips)) {
     if (opts.lanes && !opts.lanes.has(c.laneId)) continue;
+    if (opts.only && !opts.only(c as Clip)) continue;
     const end = c.start + c.length;
     if (c.start >= to || end <= from) continue;
     if (!opts.trim || (c.start >= from && end <= to)) {

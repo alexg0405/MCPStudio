@@ -76,7 +76,12 @@ export const playlist: OpModule = {
       let laneId: LaneId | undefined = a.track !== undefined ? c.lane(a.track) : undefined;
       if (bool(a.replace)) {
         if (!laneId) fail('replace needs the track to clear');
-        clearRange(d, start, end, { lanes: new Set([laneId!]), trim: true, tempo: tempoMapOf(c.base, 'song') });
+        clearRange(d, start, end, {
+          lanes: new Set([laneId!]),
+          trim: true,
+          tempo: tempoMapOf(c.base, 'song'),
+          only: c.focus.clearable,
+        });
       }
       if (!laneId) {
         const busy = (lane: string) =>
@@ -189,20 +194,24 @@ export const playlist: OpModule = {
       const t0 = from !== undefined ? (from - 1) * bar() : (part?.from ?? -Infinity);
       const t1 = to !== undefined ? to * bar() : (part?.to ?? Infinity);
       const laneId = a.track !== undefined ? c.lane(a.track) : undefined;
-      // Inside a part of the song, clips reaching past it are trimmed (their outside stays).
-      const trim = bool(a.trim) ?? !!part;
-      if (Number.isFinite(t0) || Number.isFinite(t1)) c.focus.span(Math.max(0, t0), t1, 'clear playlist');
+      // Inside a part of the song, clips reaching past it are always trimmed (their outside stays).
+      const trim = part ? true : (bool(a.trim) ?? false);
+      // (Without a focus this passes; with selected notes the playlist stays as it is.)
+      c.focus.span(Math.max(0, t0), t1, 'clear playlist');
       if (trim && Number.isFinite(t0) && Number.isFinite(t1)) {
         const res = clearRange(d, t0, t1, {
           ...(laneId ? { lanes: new Set([laneId]) } : {}),
           trim: true,
           tempo: tempoMapOf(c.base, 'song'),
+          only: c.focus.clearable,
         });
         c.touch(t0, t1);
         return `Removed ${res.removed} playlist clip${res.removed === 1 ? '' : 's'}${res.cut ? ` (${res.cut} cut at the edges)` : ''}`;
       }
       const ids = Object.values(d.playlist.clips)
-        .filter((x) => x.start < t1 && x.start + x.length > t0 && (!laneId || x.laneId === laneId))
+        .filter(
+          (x) => x.start < t1 && x.start + x.length > t0 && (!laneId || x.laneId === laneId) && c.focus.clearable(x as Clip),
+        )
         .map((x) => x.id);
       removeClips(d, ids);
       if (Number.isFinite(t0) && Number.isFinite(t1)) c.touch(t0, t1);

@@ -578,3 +578,22 @@ export function transitionLabel(t: MixPlan['transitions'][number], from: TrackAn
   const tempo = Math.abs(t.tempoChange) > 0.0005 ? ` · ${t.tempoChange > 0 ? '+' : '−'}${Math.round(Math.abs(t.tempoChange) * 1000) / 10} %` : '';
   return `${t.bars ? `${t.bars} bars · ` : ''}${recipe}${t.riser ? ' + riser' : ''}${keys}${tempo}`;
 }
+
+/** The plan of the mix that is there (from the cached analyses), or null (no mix, or not analyzed here). */
+export function planOfCurrentMix(s: Services, p: Project): MixPlan | null {
+  const songs = currentMixSongs(p);
+  if (!p.dj || !songs?.length) return null;
+  const analyses = new Map<string, TrackAnalysis>();
+  for (const x of songs) {
+    const a = peekAnalysis(s, x.ref);
+    if (!a) return null;
+    analyses.set(x.ref.id, a);
+  }
+  return planMix(inputsOf(songs, analyses), toPlanOptions({ ...p.dj.options, order: 'keep' }, p.dj.tweaks));
+}
+
+/** True when the playlist has clips the mix didn't make (a mix would play on top of them). */
+export function hasOtherMusic(p: Project): boolean {
+  const mine = new Set<string>(p.dj?.made.channels ?? []);
+  return Object.values(p.playlist.clips).some((c) => c.kind === 'pattern' || !mine.has(c.channelId));
+}

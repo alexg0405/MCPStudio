@@ -110,7 +110,11 @@ export async function pickSaveExportFile(suggestedName: string, ext: string): Pr
 }
 
 /** Writes (creating or replacing) a file inside a folder the user picked. */
-export async function writeFileInDirectory(dir: FileSystemDirectoryHandle, name: string, bytes: Uint8Array): Promise<void> {
+export async function writeFileInDirectory(
+  dir: FileSystemDirectoryHandle,
+  name: string,
+  bytes: Uint8Array,
+): Promise<void> {
   const handle = await dir.getFileHandle(name, { create: true });
   await writeFile(handle, bytes);
 }
@@ -240,6 +244,25 @@ export function downloadBytes(name: string, bytes: Uint8Array, mime: string): vo
     // Revoking right away can cancel the download in some browsers.
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
+}
+
+/** Like uploadFile, for several files at once (empty when cancelled). */
+export function uploadFiles(accept: string): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.multiple = true;
+    input.style.display = 'none';
+    const done = (files: File[]) => {
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener('change', () => done([...(input.files ?? [])]), { once: true });
+    input.addEventListener('cancel', () => done([]), { once: true });
+    document.body.append(input);
+    input.click();
+  });
 }
 
 /**

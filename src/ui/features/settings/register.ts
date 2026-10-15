@@ -96,7 +96,7 @@ export function register(services: Services): void {
             children: THEMES.map((t) => ({
               label: t.label,
               hint: t.hint,
-              checked: (findTheme(pr.theme) ?? 'dark') === t.id,
+              checked: (findTheme(pr.theme) ?? 'marble') === t.id,
               run: () => services.commands.run('options.theme', t.id),
             })),
           },

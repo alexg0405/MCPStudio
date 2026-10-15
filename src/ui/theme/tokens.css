@@ -2,85 +2,88 @@
  * AGstudio theme tokens. Everything visual reads these, including canvas renderers (via
  * getComputedStyle). A theme is just a different set of values for these properties (themes.css
  * has the others; `data-theme` and `data-accent` on <html> pick them). Tokens below "Derived" follow
- * the accent and the surfaces by themselves.
+ * the accent and the surfaces by themselves. docs/design.md says how to use them.
+ *
+ * The default look is black marble: obsidian surfaces with faint veining, glassy floating panels,
+ * hairline edges, soft depth, and brushed gold for what is active.
  */
 :root {
   color-scheme: dark;
 
-  /* Surfaces */
-  --ag-bg: #1b2024;
-  --ag-workspace: #232a2f;
-  --ag-surface-1: #2a3238;
-  --ag-surface-2: #323b42;
-  --ag-surface-3: #3c464e;
-  --ag-surface-inset: #1e2428;
-  --ag-border: #12161a;
-  --ag-border-soft: #3f4951;
-  --ag-highlight: rgba(255, 255, 255, 0.06);
+  /* Surfaces (back to front: the page, the workspace, windows, panels, raised controls) */
+  --ag-bg: #0b0c0e;
+  --ag-workspace: #101114;
+  --ag-surface-1: #16171a;
+  --ag-surface-2: #1c1d21;
+  --ag-surface-3: #26282d;
+  --ag-surface-inset: #0e0f11;
+  --ag-border: #050506;
+  --ag-border-soft: #2a2c31;
+  --ag-highlight: rgba(255, 255, 255, 0.05);
 
-  /* Text */
-  --ag-text: #d9dfe4;
-  --ag-text-dim: #929ca5;
-  --ag-text-faint: #6a747c;
+  /* Text (warm grays, like light on stone) */
+  --ag-text: #ecebe6;
+  --ag-text-dim: #a6a39b;
+  --ag-text-faint: #6f6c66;
 
   /* Accents */
-  --ag-accent: #ff9a3c;
+  --ag-accent: #c9a45c;
   --ag-accent-dim: color-mix(in srgb, var(--ag-accent) 72%, #000);
-  --ag-led: #9fde5a;
-  --ag-led-off: #46532f;
-  --ag-danger: #e5574d;
-  --ag-select: #5aa4e8;
+  --ag-led: #9fd38f;
+  --ag-led-off: #2c3529;
+  --ag-danger: #e0675a;
+  --ag-select: #8eb4e3;
 
   /* Title bars */
-  --ag-title: #2f383f;
-  --ag-title-focused: #3d4851;
+  --ag-title: #131417;
+  --ag-title-focused: #1a1b1f;
 
   /* Channel rack steps (FL alternates groups of four) */
-  --ag-step-off-a: #4a535b;
-  --ag-step-off-b: #5d4a4c;
-  --ag-step-on: #f1e3d2;
+  --ag-step-off-a: #2a2c31;
+  --ag-step-off-b: #332b2c;
+  --ag-step-on: #efe6d3;
   --ag-step-current: var(--ag-accent);
 
   /* Timeline grids */
-  --ag-grid-bg: #262e34;
-  --ag-grid-bg-alt: #2a3339;
-  --ag-grid-bar: #12171b;
-  --ag-grid-beat: #1b2126;
-  --ag-grid-step: #222a30;
-  --ag-key-white: #d7dce0;
-  --ag-key-black: #1c2125;
+  --ag-grid-bg: #121316;
+  --ag-grid-bg-alt: #15161a;
+  --ag-grid-bar: #050506;
+  --ag-grid-beat: #0b0c0e;
+  --ag-grid-step: #0f1013;
+  --ag-key-white: #e8e5de;
+  --ag-key-black: #141518;
 
   /* Notes, clips, playhead */
-  --ag-note: #80c977;
-  --ag-note-border: #3d6b38;
-  --ag-note-selected: #ff7b6e;
-  --ag-ghost: rgba(170, 190, 205, 0.18);
-  --ag-playhead: var(--ag-accent);
+  --ag-note: #cfae67;
+  --ag-note-border: #5c4822;
+  --ag-note-selected: #f4ecda;
+  --ag-ghost: rgba(220, 210, 190, 0.14);
+  --ag-playhead: var(--ag-accent-light);
   --ag-loop: var(--ag-accent-soft);
 
   /* Controls: hover and raised tops, the "on" state of tool buttons, LCD displays, tooltips */
-  --ag-hover: #46525b;
-  --ag-hover-flat: #4a555e;
-  --ag-raised: #4b5660;
-  --ag-active: #4a4036;
-  --ag-active-2: #3a332c;
-  --ag-active-border: #1a140f;
-  --ag-lcd: #151a1d;
-  --ag-lcd-text: #e9f3d8;
-  --ag-lcd-text-alt: #a9d4ff;
-  --ag-well: #12161a;
-  --ag-tooltip: #11161a;
-  --ag-marker: #d9c25b;
-  --ag-warning: #c9a24a;
-  --ag-ok-bg: #4a6f3a;
-  --ag-ok-text: #e8f5dc;
+  --ag-hover: #26282d;
+  --ag-hover-flat: #2b2d32;
+  --ag-raised: #2c2e33;
+  --ag-active: color-mix(in srgb, var(--ag-accent) 22%, #17181b);
+  --ag-active-2: color-mix(in srgb, var(--ag-accent) 14%, #121316);
+  --ag-active-border: color-mix(in srgb, var(--ag-accent) 45%, #000);
+  --ag-lcd: #08090a;
+  --ag-lcd-text: #f1e6c8;
+  --ag-lcd-text-alt: #b9cde6;
+  --ag-well: #070708;
+  --ag-tooltip: rgba(14, 15, 17, 0.94);
+  --ag-marker: #d9bd73;
+  --ag-warning: #d6b04f;
+  --ag-ok-bg: #2f4a33;
+  --ag-ok-text: #e4f3df;
   /* Text on dark fills (accent, danger) and on light ones (LEDs, the LCD's lit segments). */
-  --ag-on-accent: #fff;
-  --ag-on-light: #1b2024;
+  --ag-on-accent: #17130b;
+  --ag-on-light: #111214;
   /* Faint sheens and separators over surfaces, and the scrim behind dialogs. */
-  --ag-sheen: rgba(255, 255, 255, 0.025);
-  --ag-line-faint: rgba(255, 255, 255, 0.04);
-  --ag-scrim: rgba(10, 13, 15, 0.55);
+  --ag-sheen: rgba(255, 255, 255, 0.03);
+  --ag-line-faint: rgba(255, 255, 255, 0.05);
+  --ag-scrim: rgba(3, 3, 4, 0.6);
 
   /* Derived */
   --ag-accent-strong: color-mix(in srgb, var(--ag-accent) 88%, #000);
@@ -88,7 +91,7 @@
   --ag-accent-tint: color-mix(in srgb, var(--ag-accent) 12%, transparent);
   --ag-accent-soft: color-mix(in srgb, var(--ag-accent) 18%, transparent);
   --ag-accent-glow: color-mix(in srgb, var(--ag-accent) 45%, transparent);
-  --ag-accent-light: color-mix(in srgb, var(--ag-accent) 45%, #fff);
+  --ag-accent-light: color-mix(in srgb, var(--ag-accent) 55%, #fff);
   --ag-select-tint: color-mix(in srgb, var(--ag-select) 16%, transparent);
   --ag-select-glow: color-mix(in srgb, var(--ag-select) 25%, transparent);
   --ag-danger-tint: color-mix(in srgb, var(--ag-danger) 18%, transparent);
@@ -98,17 +101,64 @@
   --ag-danger-text: color-mix(in srgb, var(--ag-danger) 60%, #fff);
   --ag-led-glow: color-mix(in srgb, var(--ag-led) 60%, transparent);
 
+  /*
+   * Brushed metal: the accent as a soft vertical sheen (primary buttons, the playhead's cap, active
+   * toggles). Follows the accent.
+   */
+  --ag-metal: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ag-accent) 70%, #fff) 0%,
+    var(--ag-accent) 46%,
+    color-mix(in srgb, var(--ag-accent) 78%, #000) 100%
+  );
+
   /* Meters */
-  --ag-meter-lo: #67d05b;
-  --ag-meter-mid: #e3cf46;
-  --ag-meter-hi: #e5574d;
+  --ag-meter-lo: #8fcf86;
+  --ag-meter-mid: #d9bf5f;
+  --ag-meter-hi: #e0675a;
+
+  /*
+   * Marble: faint veining for big surfaces (the page, the toolbar, window frames), never under notes
+   * or text-heavy panels: thin veins warped by noise, finer ones, soft clouds and two gold veins,
+   * generated by scripts/marble.mjs (no image files).
+   */
+  --ag-marble: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%271600%27%20height%3D%271000%27%20viewBox%3D%270%200%201600%201000%27%3E%3Cfilter%20id%3D%27c%27%20x%3D%270%27%20y%3D%270%27%20width%3D%27100%25%27%20height%3D%27100%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0014%200.0022%27%20numOctaves%3D%274%27%20seed%3D%2710%27%2F%3E%3CfeColorMatrix%20values%3D%270%200%200%200%201%200%200%200%200%201%200%200%200%200%201%200%200%200%201.3%20-0.5%27%2F%3E%3C%2Ffilter%3E%3Cfilter%20id%3D%27w%27%20x%3D%27-20%25%27%20y%3D%27-20%25%27%20width%3D%27140%25%27%20height%3D%27140%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0021%200.00336%27%20numOctaves%3D%275%27%20seed%3D%2711%27%20result%3D%27n%27%2F%3E%3CfeDisplacementMap%20in%3D%27SourceGraphic%27%20in2%3D%27n%27%20scale%3D%27230%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%2F%3E%3CfeGaussianBlur%20stdDeviation%3D%270.5%27%2F%3E%3C%2Ffilter%3E%3Cfilter%20id%3D%27w2%27%20x%3D%27-20%25%27%20y%3D%27-20%25%27%20width%3D%27140%25%27%20height%3D%27140%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.00462%200.00630%27%20numOctaves%3D%275%27%20seed%3D%2712%27%20result%3D%27n%27%2F%3E%3CfeDisplacementMap%20in%3D%27SourceGraphic%27%20in2%3D%27n%27%20scale%3D%27161%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%271600%27%20height%3D%271000%27%20filter%3D%27url(%23c)%27%20opacity%3D%270.07%27%2F%3E%3Cg%20filter%3D%27url(%23w)%27%20stroke%3D%27%23fff%27%20fill%3D%27none%27%20opacity%3D%270.2%27%3E%3Cline%20x1%3D%2777%27%20y1%3D%27-300%27%20x2%3D%27-1249%27%20y2%3D%271300%27%20stroke-width%3D%270.87%27%20stroke-opacity%3D%270.79%27%2F%3E%3Cline%20x1%3D%271253%27%20y1%3D%27-300%27%20x2%3D%27222%27%20y2%3D%271300%27%20stroke-width%3D%270.89%27%20stroke-opacity%3D%270.72%27%2F%3E%3Cline%20x1%3D%271275%27%20y1%3D%27-300%27%20x2%3D%2782%27%20y2%3D%271300%27%20stroke-width%3D%271.35%27%20stroke-opacity%3D%270.47%27%2F%3E%3Cline%20x1%3D%271353%27%20y1%3D%27-300%27%20x2%3D%27132%27%20y2%3D%271300%27%20stroke-width%3D%271.13%27%20stroke-opacity%3D%270.92%27%2F%3E%3Cline%20x1%3D%271677%27%20y1%3D%27-300%27%20x2%3D%27550%27%20y2%3D%271300%27%20stroke-width%3D%271.03%27%20stroke-opacity%3D%270.76%27%2F%3E%3Cline%20x1%3D%27401%27%20y1%3D%27-300%27%20x2%3D%27-524%27%20y2%3D%271300%27%20stroke-width%3D%271.07%27%20stroke-opacity%3D%270.64%27%2F%3E%3Cline%20x1%3D%27786%27%20y1%3D%27-300%27%20x2%3D%27-152%27%20y2%3D%271300%27%20stroke-width%3D%272.38%27%20stroke-opacity%3D%270.40%27%2F%3E%3Cline%20x1%3D%27-236%27%20y1%3D%27-300%27%20x2%3D%27-1380%27%20y2%3D%271300%27%20stroke-width%3D%271.15%27%20stroke-opacity%3D%270.47%27%2F%3E%3C%2Fg%3E%3Cg%20filter%3D%27url(%23w2)%27%20stroke%3D%27%23fff%27%20fill%3D%27none%27%20opacity%3D%270.160%27%3E%3Cline%20x1%3D%27928%27%20y1%3D%27-300%27%20x2%3D%27-842%27%20y2%3D%271300%27%20stroke-width%3D%270.63%27%20stroke-opacity%3D%270.28%27%2F%3E%3Cline%20x1%3D%27842%27%20y1%3D%27-300%27%20x2%3D%27-486%27%20y2%3D%271300%27%20stroke-width%3D%270.62%27%20stroke-opacity%3D%270.60%27%2F%3E%3Cline%20x1%3D%27985%27%20y1%3D%27-300%27%20x2%3D%27-545%27%20y2%3D%271300%27%20stroke-width%3D%270.62%27%20stroke-opacity%3D%270.53%27%2F%3E%3Cline%20x1%3D%27792%27%20y1%3D%27-300%27%20x2%3D%27-433%27%20y2%3D%271300%27%20stroke-width%3D%270.81%27%20stroke-opacity%3D%270.50%27%2F%3E%3Cline%20x1%3D%271139%27%20y1%3D%27-300%27%20x2%3D%27-348%27%20y2%3D%271300%27%20stroke-width%3D%270.68%27%20stroke-opacity%3D%270.69%27%2F%3E%3Cline%20x1%3D%271802%27%20y1%3D%27-300%27%20x2%3D%27687%27%20y2%3D%271300%27%20stroke-width%3D%270.72%27%20stroke-opacity%3D%270.25%27%2F%3E%3Cline%20x1%3D%271198%27%20y1%3D%27-300%27%20x2%3D%27-350%27%20y2%3D%271300%27%20stroke-width%3D%270.84%27%20stroke-opacity%3D%270.57%27%2F%3E%3Cline%20x1%3D%271772%27%20y1%3D%27-300%27%20x2%3D%27115%27%20y2%3D%271300%27%20stroke-width%3D%270.47%27%20stroke-opacity%3D%270.54%27%2F%3E%3Cline%20x1%3D%271897%27%20y1%3D%27-300%27%20x2%3D%27711%27%20y2%3D%271300%27%20stroke-width%3D%270.82%27%20stroke-opacity%3D%270.54%27%2F%3E%3Cline%20x1%3D%271504%27%20y1%3D%27-300%27%20x2%3D%27161%27%20y2%3D%271300%27%20stroke-width%3D%270.73%27%20stroke-opacity%3D%270.36%27%2F%3E%3Cline%20x1%3D%271316%27%20y1%3D%27-300%27%20x2%3D%27-384%27%20y2%3D%271300%27%20stroke-width%3D%270.38%27%20stroke-opacity%3D%270.49%27%2F%3E%3Cline%20x1%3D%27936%27%20y1%3D%27-300%27%20x2%3D%27-388%27%20y2%3D%271300%27%20stroke-width%3D%270.62%27%20stroke-opacity%3D%270.34%27%2F%3E%3C%2Fg%3E%3Cg%20filter%3D%27url(%23w)%27%20stroke%3D%27%23c9a45c%27%20fill%3D%27none%27%20opacity%3D%270.4%27%3E%3Cline%20x1%3D%27584%27%20y1%3D%27-300%27%20x2%3D%27-449%27%20y2%3D%271300%27%20stroke-width%3D%270.94%27%2F%3E%3Cline%20x1%3D%27284%27%20y1%3D%27-300%27%20x2%3D%27-875%27%20y2%3D%271300%27%20stroke-width%3D%271.61%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  /* The page behind everything: stone with a soft light from the top. */
+  --ag-backdrop: radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.05), transparent 60%), var(--ag-marble), var(--ag-bg);
+  /* Glass for floating panels (menus, dialogs, tooltips, cards): translucent, blurred. */
+  --ag-glass: rgba(22, 23, 26, 0.78);
+  --ag-glass-strong: rgba(18, 19, 22, 0.9);
+  --ag-blur: blur(20px) saturate(1.25);
 
   /* Type & metrics */
-  --ag-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --ag-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  --ag-font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Inter, Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
   --ag-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --ag-font-size: 12px;
-  --ag-radius: 3px;
+  --ag-font-size-sm: 11px;
+  --ag-font-size-lg: 13px;
+  --ag-font-size-title: 15px;
+  /* Small caps labels ("MIXER", section heads): wide tracking, dim. */
+  --ag-label-tracking: 0.08em;
+  --ag-radius-sm: 4px;
+  --ag-radius: 6px;
+  --ag-radius-lg: 10px;
+  --ag-radius-xl: 14px;
+  --ag-radius-pill: 999px;
+  --ag-space-1: 4px;
+  --ag-space-2: 8px;
+  --ag-space-3: 12px;
+  --ag-space-4: 16px;
   --ag-toolbar-h: 52px;
-  --ag-title-h: 24px;
-  --ag-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  --ag-title-h: 28px;
+  /* Depth: 1 = a control resting on a panel, 2 = a floating panel, 3 = a window. */
+  --ag-elev-1: 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --ag-elev-2: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --ag-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* An inset well (inputs, meters, displays). */
+  --ag-inset: inset 0 1px 3px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  --ag-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ag-dur: 140ms;
 }

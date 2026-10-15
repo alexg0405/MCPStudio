@@ -53,7 +53,7 @@ export interface PrefsState {
   outputDevice: string;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
   scopeMode: 'scope' | 'spectrum' | 'off';
-  /** The look: theme (dark, midnight, graphite, light) and accent color (orange, blue…). */
+  /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
   theme: string;
   accent: string;
 }
@@ -96,8 +96,8 @@ const DEFAULTS: PrefsState = {
   customKeys: {},
   outputDevice: '',
   scopeMode: 'scope',
-  theme: 'dark',
-  accent: 'orange',
+  theme: 'marble',
+  accent: 'gold',
 };
 
 function load(): PrefsState {
@@ -110,6 +110,11 @@ function load(): PrefsState {
     for (const [k, v] of Object.entries(DEFAULTS)) {
       const got = saved[k];
       if (got !== undefined && typeof got === typeof v && Array.isArray(got) === Array.isArray(v)) out[k] = got;
+    }
+    // The old default look (slate 'dark' with orange) was never a choice: it becomes the new default.
+    if (out.theme === 'dark' && (out.accent === 'orange' || saved.accent === undefined)) {
+      out.theme = 'marble';
+      out.accent = 'gold';
     }
     return out as unknown as PrefsState;
   } catch {

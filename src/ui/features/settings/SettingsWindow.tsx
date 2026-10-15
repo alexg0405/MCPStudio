@@ -288,7 +288,7 @@ function Recording() {
 function Interface() {
   const s = useServices();
   const tooltips = useStore(s.prefs, (p) => p.tooltips);
-  const theme = findTheme(useStore(s.prefs, (p) => p.theme)) ?? 'dark';
+  const theme = findTheme(useStore(s.prefs, (p) => p.theme)) ?? 'marble';
   const accent = findAccent(useStore(s.prefs, (p) => p.accent)) ?? 'orange';
   return (
     <Section title="Look, help and interface">

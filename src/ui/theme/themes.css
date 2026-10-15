@@ -1,7 +1,150 @@
 /*
- * The other themes and the accent colors: each overrides tokens from tokens.css. `data-theme` and
- * `data-accent` on <html> pick them (Options → Settings… → Interface).
+ * The other themes and the accent colors: each overrides tokens from tokens.css (black marble with
+ * gold is the default). `data-theme` and `data-accent` on <html> pick them (Options → Settings… →
+ * Interface). Classic, Midnight, Graphite and Light start from the original slate look.
  */
+:root[data-theme='classic'],
+:root[data-theme='midnight'],
+:root[data-theme='graphite'],
+:root[data-theme='light'] {
+  /* The original look: FL-style slate grays (the old default). */
+  --ag-bg: #1b2024;
+  --ag-workspace: #232a2f;
+  --ag-surface-1: #2a3238;
+  --ag-surface-2: #323b42;
+  --ag-surface-3: #3c464e;
+  --ag-surface-inset: #1e2428;
+  --ag-border: #12161a;
+  --ag-border-soft: #3f4951;
+  --ag-highlight: rgba(255, 255, 255, 0.06);
+  --ag-text: #d9dfe4;
+  --ag-text-dim: #929ca5;
+  --ag-text-faint: #6a747c;
+  --ag-led: #9fde5a;
+  --ag-led-off: #46532f;
+  --ag-danger: #e5574d;
+  --ag-select: #5aa4e8;
+  --ag-title: #2f383f;
+  --ag-title-focused: #3d4851;
+  --ag-step-off-a: #4a535b;
+  --ag-step-off-b: #5d4a4c;
+  --ag-step-on: #f1e3d2;
+  --ag-grid-bg: #262e34;
+  --ag-grid-bg-alt: #2a3339;
+  --ag-grid-bar: #12171b;
+  --ag-grid-beat: #1b2126;
+  --ag-grid-step: #222a30;
+  --ag-key-white: #d7dce0;
+  --ag-key-black: #1c2125;
+  --ag-note: #80c977;
+  --ag-note-border: #3d6b38;
+  --ag-note-selected: #ff7b6e;
+  --ag-ghost: rgba(170, 190, 205, 0.18);
+  --ag-hover: #46525b;
+  --ag-hover-flat: #4a555e;
+  --ag-raised: #4b5660;
+  --ag-active: #4a4036;
+  --ag-active-2: #3a332c;
+  --ag-active-border: #1a140f;
+  --ag-lcd: #151a1d;
+  --ag-lcd-text: #e9f3d8;
+  --ag-lcd-text-alt: #a9d4ff;
+  --ag-well: #12161a;
+  --ag-tooltip: #11161a;
+  --ag-marker: #d9c25b;
+  --ag-warning: #c9a24a;
+  --ag-ok-bg: #4a6f3a;
+  --ag-ok-text: #e8f5dc;
+  --ag-on-accent: #fff;
+  --ag-on-light: #1b2024;
+  --ag-sheen: rgba(255, 255, 255, 0.025);
+  --ag-line-faint: rgba(255, 255, 255, 0.04);
+  --ag-scrim: rgba(10, 13, 15, 0.55);
+  --ag-on-accent: #fff;
+  --ag-tooltip: #11161a;
+  --ag-backdrop: var(--ag-bg);
+  --ag-glass: #262e34;
+  --ag-glass-strong: #262e34;
+  --ag-blur: none;
+  --ag-radius: 3px;
+}
+
+:root[data-theme='carrara'] {
+  /* White Carrara marble: warm white stone, graphite text, gray veins, the gold deepened for contrast. */
+  color-scheme: light;
+  --ag-bg: #e9e6e0;
+  --ag-workspace: #efece6;
+  --ag-surface-1: #f7f5f1;
+  --ag-surface-2: #fbfaf7;
+  --ag-surface-3: #e7e3dc;
+  --ag-surface-inset: #ece9e3;
+  --ag-border: #bdb7ad;
+  --ag-border-soft: #d9d4cb;
+  --ag-highlight: rgba(0, 0, 0, 0.045);
+  --ag-text: #1c1d20;
+  --ag-text-dim: #5e5b55;
+  --ag-text-faint: #8e8a83;
+  --ag-led: #4f9a45;
+  --ag-led-off: #cfd6c9;
+  --ag-danger: #c94a3e;
+  --ag-select: #3f7cc0;
+  --ag-title: #ece9e3;
+  --ag-title-focused: #e3dfd7;
+  --ag-step-off-a: #d9d5cd;
+  --ag-step-off-b: #e2d4d2;
+  --ag-step-on: #2b2c30;
+  --ag-grid-bg: #faf9f6;
+  --ag-grid-bg-alt: #f2f0ea;
+  --ag-grid-bar: #a9a399;
+  --ag-grid-beat: #d4cfc5;
+  --ag-grid-step: #e8e4dc;
+  --ag-key-white: #ffffff;
+  --ag-key-black: #2c2d31;
+  --ag-note: #b08a3e;
+  --ag-note-border: #6e5420;
+  --ag-note-selected: #2b2c30;
+  --ag-ghost: rgba(60, 55, 45, 0.14);
+  --ag-hover: #ffffff;
+  --ag-hover-flat: #e2ded6;
+  --ag-raised: #ffffff;
+  --ag-active: color-mix(in srgb, var(--ag-accent) 24%, #fbfaf7);
+  --ag-active-2: color-mix(in srgb, var(--ag-accent) 32%, #f2efe9);
+  --ag-active-border: color-mix(in srgb, var(--ag-accent) 60%, #6b5a3a);
+  --ag-lcd: #24252a;
+  --ag-lcd-text: #f1e6c8;
+  --ag-lcd-text-alt: #b9cde6;
+  --ag-well: #d8d3ca;
+  --ag-tooltip: rgba(32, 33, 37, 0.94);
+  --ag-marker: #9c7a35;
+  --ag-on-accent: #fffaf0;
+  --ag-on-light: #1c1d20;
+  --ag-sheen: rgba(0, 0, 0, 0.02);
+  --ag-line-faint: rgba(0, 0, 0, 0.06);
+  --ag-scrim: rgba(40, 36, 30, 0.28);
+  --ag-meter-lo: #4c9f45;
+  --ag-meter-mid: #c9a231;
+  --ag-meter-hi: #c94a3e;
+  --ag-marble: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%271600%27%20height%3D%271000%27%20viewBox%3D%270%200%201600%201000%27%3E%3Cfilter%20id%3D%27c%27%20x%3D%270%27%20y%3D%270%27%20width%3D%27100%25%27%20height%3D%27100%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0014%200.0022%27%20numOctaves%3D%274%27%20seed%3D%276%27%2F%3E%3CfeColorMatrix%20values%3D%270%200%200%200%200.22%200%200%200%200%200.21%200%200%200%200%200.19%200%200%200%201.3%20-0.5%27%2F%3E%3C%2Ffilter%3E%3Cfilter%20id%3D%27w%27%20x%3D%27-20%25%27%20y%3D%27-20%25%27%20width%3D%27140%25%27%20height%3D%27140%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0019%200.00304%27%20numOctaves%3D%275%27%20seed%3D%277%27%20result%3D%27n%27%2F%3E%3CfeDisplacementMap%20in%3D%27SourceGraphic%27%20in2%3D%27n%27%20scale%3D%27260%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%2F%3E%3CfeGaussianBlur%20stdDeviation%3D%270.5%27%2F%3E%3C%2Ffilter%3E%3Cfilter%20id%3D%27w2%27%20x%3D%27-20%25%27%20y%3D%27-20%25%27%20width%3D%27140%25%27%20height%3D%27140%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.00418%200.00570%27%20numOctaves%3D%275%27%20seed%3D%278%27%20result%3D%27n%27%2F%3E%3CfeDisplacementMap%20in%3D%27SourceGraphic%27%20in2%3D%27n%27%20scale%3D%27182%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%271600%27%20height%3D%271000%27%20filter%3D%27url(%23c)%27%20opacity%3D%270.09%27%2F%3E%3Cg%20filter%3D%27url(%23w)%27%20stroke%3D%27%233a3833%27%20fill%3D%27none%27%20opacity%3D%270.19%27%3E%3Cline%20x1%3D%271255%27%20y1%3D%27-300%27%20x2%3D%27-31%27%20y2%3D%271300%27%20stroke-width%3D%270.99%27%20stroke-opacity%3D%270.31%27%2F%3E%3Cline%20x1%3D%271021%27%20y1%3D%27-300%27%20x2%3D%27-239%27%20y2%3D%271300%27%20stroke-width%3D%271.99%27%20stroke-opacity%3D%270.42%27%2F%3E%3Cline%20x1%3D%271472%27%20y1%3D%27-300%27%20x2%3D%27201%27%20y2%3D%271300%27%20stroke-width%3D%270.53%27%20stroke-opacity%3D%270.60%27%2F%3E%3Cline%20x1%3D%27321%27%20y1%3D%27-300%27%20x2%3D%27-1027%27%20y2%3D%271300%27%20stroke-width%3D%271.28%27%20stroke-opacity%3D%270.79%27%2F%3E%3Cline%20x1%3D%27209%27%20y1%3D%27-300%27%20x2%3D%27-701%27%20y2%3D%271300%27%20stroke-width%3D%271.10%27%20stroke-opacity%3D%270.45%27%2F%3E%3Cline%20x1%3D%27-104%27%20y1%3D%27-300%27%20x2%3D%27-1239%27%20y2%3D%271300%27%20stroke-width%3D%271.38%27%20stroke-opacity%3D%270.31%27%2F%3E%3Cline%20x1%3D%271637%27%20y1%3D%27-300%27%20x2%3D%27578%27%20y2%3D%271300%27%20stroke-width%3D%271.95%27%20stroke-opacity%3D%270.45%27%2F%3E%3Cline%20x1%3D%27527%27%20y1%3D%27-300%27%20x2%3D%27-482%27%20y2%3D%271300%27%20stroke-width%3D%272.76%27%20stroke-opacity%3D%270.91%27%2F%3E%3Cline%20x1%3D%27828%27%20y1%3D%27-300%27%20x2%3D%27-475%27%20y2%3D%271300%27%20stroke-width%3D%270.83%27%20stroke-opacity%3D%270.73%27%2F%3E%3C%2Fg%3E%3Cg%20filter%3D%27url(%23w2)%27%20stroke%3D%27%233a3833%27%20fill%3D%27none%27%20opacity%3D%270.152%27%3E%3Cline%20x1%3D%27986%27%20y1%3D%27-300%27%20x2%3D%27-334%27%20y2%3D%271300%27%20stroke-width%3D%270.74%27%20stroke-opacity%3D%270.50%27%2F%3E%3Cline%20x1%3D%27-380%27%20y1%3D%27-300%27%20x2%3D%27-2133%27%20y2%3D%271300%27%20stroke-width%3D%270.52%27%20stroke-opacity%3D%270.38%27%2F%3E%3Cline%20x1%3D%271699%27%20y1%3D%27-300%27%20x2%3D%27425%27%20y2%3D%271300%27%20stroke-width%3D%270.44%27%20stroke-opacity%3D%270.62%27%2F%3E%3Cline%20x1%3D%27269%27%20y1%3D%27-300%27%20x2%3D%27-1529%27%20y2%3D%271300%27%20stroke-width%3D%270.36%27%20stroke-opacity%3D%270.38%27%2F%3E%3Cline%20x1%3D%271420%27%20y1%3D%27-300%27%20x2%3D%27100%27%20y2%3D%271300%27%20stroke-width%3D%270.68%27%20stroke-opacity%3D%270.24%27%2F%3E%3Cline%20x1%3D%27-208%27%20y1%3D%27-300%27%20x2%3D%27-1823%27%20y2%3D%271300%27%20stroke-width%3D%270.61%27%20stroke-opacity%3D%270.33%27%2F%3E%3Cline%20x1%3D%271832%27%20y1%3D%27-300%27%20x2%3D%27697%27%20y2%3D%271300%27%20stroke-width%3D%270.72%27%20stroke-opacity%3D%270.68%27%2F%3E%3Cline%20x1%3D%27285%27%20y1%3D%27-300%27%20x2%3D%27-1189%27%20y2%3D%271300%27%20stroke-width%3D%270.78%27%20stroke-opacity%3D%270.62%27%2F%3E%3Cline%20x1%3D%27989%27%20y1%3D%27-300%27%20x2%3D%27-780%27%20y2%3D%271300%27%20stroke-width%3D%270.70%27%20stroke-opacity%3D%270.47%27%2F%3E%3Cline%20x1%3D%27-136%27%20y1%3D%27-300%27%20x2%3D%27-1442%27%20y2%3D%271300%27%20stroke-width%3D%270.61%27%20stroke-opacity%3D%270.28%27%2F%3E%3Cline%20x1%3D%27205%27%20y1%3D%27-300%27%20x2%3D%27-1432%27%20y2%3D%271300%27%20stroke-width%3D%270.42%27%20stroke-opacity%3D%270.24%27%2F%3E%3Cline%20x1%3D%27384%27%20y1%3D%27-300%27%20x2%3D%27-1280%27%20y2%3D%271300%27%20stroke-width%3D%270.67%27%20stroke-opacity%3D%270.41%27%2F%3E%3Cline%20x1%3D%27-166%27%20y1%3D%27-300%27%20x2%3D%27-1469%27%20y2%3D%271300%27%20stroke-width%3D%270.83%27%20stroke-opacity%3D%270.36%27%2F%3E%3Cline%20x1%3D%271287%27%20y1%3D%27-300%27%20x2%3D%27-334%27%20y2%3D%271300%27%20stroke-width%3D%270.40%27%20stroke-opacity%3D%270.59%27%2F%3E%3C%2Fg%3E%3Cg%20filter%3D%27url(%23w)%27%20stroke%3D%27%23a8823c%27%20fill%3D%27none%27%20opacity%3D%270.3%27%3E%3Cline%20x1%3D%27212%27%20y1%3D%27-300%27%20x2%3D%27-990%27%20y2%3D%271300%27%20stroke-width%3D%271.47%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --ag-backdrop: radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.6), transparent 60%), var(--ag-marble), var(--ag-bg);
+  --ag-glass: rgba(251, 250, 247, 0.8);
+  --ag-glass-strong: rgba(251, 250, 247, 0.92);
+  --ag-elev-1: 0 1px 2px rgba(60, 50, 30, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --ag-elev-2: 0 10px 30px rgba(60, 50, 30, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  --ag-shadow: 0 22px 60px rgba(60, 50, 30, 0.18), 0 2px 8px rgba(60, 50, 30, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --ag-inset: inset 0 1px 2px rgba(60, 50, 30, 0.14), inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+:root[data-theme='classic']:not([data-accent]),
+:root[data-theme='midnight']:not([data-accent]),
+:root[data-theme='graphite']:not([data-accent]),
+:root[data-theme='light']:not([data-accent]) {
+  /* The slate themes keep their orange unless another accent is picked. */
+  --ag-accent: #ff9a3c;
+}
+/* Gold on white stone: deeper, so text and lines on it stay readable. */
+:root[data-theme='carrara']:not([data-accent]) {
+  --ag-accent: #a8823c;
+}
+
 :root[data-theme='midnight'] {
   --ag-bg: #0f1215;
   --ag-workspace: #14181c;
@@ -108,7 +251,16 @@
   --ag-meter-mid: #d1b21f;
 }
 
-/* Accent colors (orange is the default, in tokens.css). */
+/* Accent colors (brushed gold is the default, in tokens.css). */
+:root[data-accent='orange'] {
+  --ag-accent: #ff9a3c;
+}
+:root[data-accent='champagne'] {
+  --ag-accent: #cfc4ae;
+}
+:root[data-accent='rose'] {
+  --ag-accent: #d39a88;
+}
 :root[data-accent='blue'] {
   --ag-accent: #4da3ff;
 }

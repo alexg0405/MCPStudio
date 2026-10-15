@@ -1,7 +1,9 @@
 .workspace {
   position: relative;
   overflow: hidden;
-  background: radial-gradient(ellipse at 30% 20%, var(--ag-sheen), transparent 60%), var(--ag-workspace);
+  /* The stone the windows float over (its marble shows here). */
+  background: radial-gradient(ellipse at 30% 20%, var(--ag-sheen), transparent 60%), var(--ag-marble), var(--ag-workspace);
+  background-size: auto, cover, auto;
   min-width: 0;
   min-height: 0;
 }

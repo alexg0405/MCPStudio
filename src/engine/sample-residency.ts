@@ -95,12 +95,24 @@ export class SampleResidency {
   private readonly inflight = new Map<string, Promise<unknown>>();
   private readonly failed = new Set<string>();
   private readonly durations = new Map<string, number>();
+  /**
+   * Stretched copies kept on disk (true) or to be computed (false); unknown until the job has
+   * looked. Only a copy being computed needs its sample decoded (to compute it, and to play in time
+   * meanwhile): one read back from disk doesn't, so a stretched song needs half the memory.
+   */
+  private readonly onDisk = new Map<string, boolean>();
   private stretchesRunning = 0;
   private wanted: string[] = [];
   private pos = 0;
+  /** Realtime: pins only while playing (stopped, nothing holds memory others may need, e.g. an export). */
+  private playing = true;
+  /** Estimated bytes of loads started and not finished (prefetches wait while they would overflow). */
+  private inflightBytes = 0;
   private loop: { start: number; end: number } | null = null;
   private plannedAt = Number.NaN;
   private replanQueued = false;
+  /** The window length of the last plan (offline renders ask for the chunk's). */
+  private lastAhead = AHEAD;
   private disposed = false;
 
   constructor(private readonly deps: ResidencyDeps) {}
@@ -188,13 +200,18 @@ export class SampleResidency {
     this.queueReplan();
   }
 
-  /** The playhead (or where playback will start), in ticks, and the loop it wraps around. */
-  setPosition(tick: number, loop: { start: number; end: number } | null): void {
+  /**
+   * The playhead (or where playback will start), in ticks, the loop it wraps around, and whether
+   * the song is playing (only then is the window pinned; stopped, it is just loaded first).
+   */
+  setPosition(tick: number, loop: { start: number; end: number } | null, playing = true): void {
     const tempo = this.tempo;
     if (!tempo) return;
+    const replay = playing !== this.playing;
+    this.playing = playing;
     this.pos = tempo.tickToSeconds(Math.max(0, tick));
     this.loop = loop && loop.end > loop.start ? { start: tempo.tickToSeconds(loop.start), end: tempo.tickToSeconds(loop.end) } : null;
-    if (!(Math.abs(this.pos - this.plannedAt) < REPLAN_SEC)) this.replan();
+    if (replay || !(Math.abs(this.pos - this.plannedAt) < REPLAN_SEC)) this.replan();
   }
 
   /**
@@ -208,14 +225,22 @@ export class SampleResidency {
     const b = tempo.tickToSeconds(Math.max(fromTick, toTick));
     this.pos = a;
     this.loop = null;
-    const keys = this.replan(Math.max(AHEAD, b - a + BEHIND));
-    await this.waitFor(keys);
+    this.replan(Math.max(AHEAD, b - a + BEHIND));
+    // What is pinned can change while waiting (a stretched copy that arrives lets its source go):
+    // wait for the current pins, not the first ones.
+    await this.waitFor(() => [...this.pins.keys()]);
   }
 
   /** Resolves when nothing the current plan started is still loading. */
   async settled(): Promise<void> {
     if (this.replanQueued) this.replan();
-    await this.waitFor(this.wanted);
+    for (let guard = 0; guard < 256; guard++) {
+      const running = this.wanted.map((k) => this.inflight.get(k)).filter((p): p is Promise<unknown> => !!p);
+      if (running.length === 0) return;
+      await Promise.all(running);
+      // Finished loads may let the plan start more (stretches waiting for a slot, prefetches for room).
+      if (this.replanQueued) this.replan();
+    }
   }
 
   // ---- What the clip players read ----
@@ -250,8 +275,15 @@ export class SampleResidency {
     const sourceKey = SampleCache.keyOf(ref.source, this.sr);
     const keys = reverse ? [sourceKey, `${sourceKey}|rev`] : [sourceKey];
     for (const key of keys) {
-      if (this.items.has(key)) {
-        this.items.get(key)!.channels.add(channelId);
+      const it = this.items.get(key);
+      if (it && !this.extra.has(key)) {
+        // A playlist clip's buffer: the plan pins it while it is in the window; just hurry it.
+        it.channels.add(channelId);
+        this.start(key, 0);
+        continue;
+      }
+      if (it) {
+        it.channels.add(channelId);
       } else {
         const kind: Kind = key === sourceKey ? 'source' : 'reverse';
         this.items.set(key, { key, kind, ref, sourceKey, baseKey: sourceKey, scale: 1, from: 0, to: 0, channels: new Set([channelId]) });
@@ -292,16 +324,18 @@ export class SampleResidency {
   }
 
   /** Pins the window, starts loads in priority order; returns the pinned keys. */
-  private replan(ahead = AHEAD): string[] {
+  private replan(ahead = this.deps.offline ? this.lastAhead : AHEAD): string[] {
     this.replanQueued = false;
+    this.lastAhead = ahead;
     if (this.disposed) return [];
     const cache = this.deps.cache;
     const ready = (k: string | null) => !!k && cache.has(k);
     for (const n of this.needs) {
       // A clip with its stretched copy needs nothing else; until then it plays the plain sample.
+      if (n.stretchKey && !ready(n.stretchKey) && !this.onDisk.has(n.stretchKey)) this.probe(n.stretchKey);
       const keys: string[] = [];
       if (n.stretchKey) keys.push(n.stretchKey);
-      if (!ready(n.stretchKey)) {
+      if (!ready(n.stretchKey) && (!n.stretchKey || this.onDisk.get(n.stretchKey) === false || !this.deps.cache.store)) {
         keys.push(n.baseKey);
         if (n.baseKey !== n.sourceKey && !ready(n.baseKey)) keys.push(n.sourceKey);
       }
@@ -325,8 +359,10 @@ export class SampleResidency {
       prefetchWithin: this.deps.offline ? PREFETCH_OFFLINE : PREFETCH_REALTIME,
     });
     this.plannedAt = this.pos;
-    // Pins: the window's buffers (decoded or not yet); everything else may be evicted.
-    const pinned = new Set(plan.pinned);
+    // Pins: the window's buffers (decoded or not yet) while the song plays or renders; everything
+    // else may be evicted. Stopped, the window is only loaded first.
+    const pinNow = this.deps.offline || this.playing;
+    const pinned = new Set(pinNow ? plan.pinned : always);
     for (const [k, release] of this.pins)
       if (!pinned.has(k)) {
         this.pins.delete(k);
@@ -336,9 +372,36 @@ export class SampleResidency {
     // Recency: far prefetches oldest, the window newest, so eviction takes the far ones first.
     cache.touch(...[...plan.prefetch].reverse(), ...plan.pinned);
     this.wanted = [...plan.pinned, ...plan.prefetch];
-    plan.pinned.forEach((k, i) => this.start(k, i));
-    plan.prefetch.forEach((k, i) => this.start(k, plan.pinned.length + i));
-    return plan.pinned;
+    // Pinned loads always start; the others only while they fit beside what is in memory, so a
+    // prefetch never pushes out something another engine (an export, the realtime one) holds.
+    const room = cache.budgetBytes * PLAN_SHARE;
+    this.wanted.forEach((k, i) => {
+      if (pinned.has(k)) this.start(k, i);
+      else if (cache.has(k) || this.inflight.has(k)) return;
+      else if (cache.usedBytes + this.inflightBytes + this.bytesOf(k) <= room) this.start(k, i);
+    });
+    return pinNow ? plan.pinned : always;
+  }
+
+  private readonly probing = new Set<string>();
+
+  /** Looks (cheaply) whether a stretched copy is kept on disk; plans again once known. */
+  private probe(key: string): void {
+    const store = this.deps.cache.store;
+    if (!store) {
+      this.onDisk.set(key, false);
+      return;
+    }
+    if (this.probing.has(key)) return;
+    this.probing.add(key);
+    const has = store.has ? store.has(key) : store.get(key).then((b) => !!b);
+    void has
+      .catch(() => false)
+      .then((found) => {
+        this.probing.delete(key);
+        if (!this.onDisk.has(key)) this.onDisk.set(key, found);
+        this.queueReplan();
+      });
   }
 
   private bytesOf(key: string): number {
@@ -352,9 +415,10 @@ export class SampleResidency {
     return Math.max(0, seconds) * this.sr * ch * 4;
   }
 
-  private async waitFor(keys: readonly string[]): Promise<void> {
-    for (let guard = 0; guard < 64; guard++) {
-      const missing = keys.filter((k) => !this.deps.cache.has(k) && !this.failed.has(k) && this.items.has(k));
+  private async waitFor(keysNow: () => readonly string[]): Promise<void> {
+    for (let guard = 0; guard < 256; guard++) {
+      if (this.replanQueued) this.replan(this.lastAhead);
+      const missing = keysNow().filter((k) => !this.deps.cache.has(k) && !this.failed.has(k) && this.items.has(k));
       if (missing.length === 0) return;
       for (const k of missing) this.start(k, 0);
       const running = missing.map((k) => this.inflight.get(k)).filter((p): p is Promise<unknown> => !!p);
@@ -393,6 +457,9 @@ export class SampleResidency {
           // Made in an earlier session: read it back (16-bit, exactly what was made then).
           const store = cache.store;
           const kept = store ? await store.get(key).catch(() => null) : null;
+          this.onDisk.set(key, !!kept);
+          // To be computed: the plan now wants the sample too (it plays while the copy is made).
+          if (!kept) this.queueReplan();
           if (kept) {
             const b = await bufferFromPcm16(kept);
             if (b) return b;
@@ -412,8 +479,11 @@ export class SampleResidency {
           this.deps.onStretching();
         });
     }
+    const estimate = this.bytesOf(key);
+    this.inflightBytes += estimate;
     const p = job.then(
       (b) => {
+        this.inflightBytes -= estimate;
         this.inflight.delete(key);
         if (!b) this.failed.add(key);
         else if (!this.disposed) this.deps.onReady(it.channels);
@@ -421,6 +491,7 @@ export class SampleResidency {
         this.queueReplan();
       },
       () => {
+        this.inflightBytes -= estimate;
         this.inflight.delete(key);
         this.failed.add(key);
         this.queueReplan();

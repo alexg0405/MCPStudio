@@ -98,6 +98,7 @@ function memoryStore() {
       counts.puts++;
       files.set(key, bytes.slice());
     },
+    has: async (key) => files.has(key),
   };
   return { store, files, counts };
 }

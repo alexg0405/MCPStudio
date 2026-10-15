@@ -17,6 +17,8 @@ export const DEFAULT_SAMPLE_BUDGET = 1.5 * 1024 ** 3;
 export interface DerivedAudioStore {
   get(key: string): Promise<Uint8Array | null>;
   put(key: string, bytes: Uint8Array): Promise<void>;
+  /** Whether a copy is kept, without reading it (default: a get). */
+  has?(key: string): Promise<boolean>;
 }
 
 export interface SampleCacheOptions {

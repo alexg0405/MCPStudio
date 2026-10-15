@@ -7,6 +7,7 @@
 
 export interface DerivedStore {
   get(key: string): Promise<Uint8Array | null>;
+  has(key: string): Promise<boolean>;
   put(key: string, bytes: Uint8Array): Promise<void>;
   /** Removes everything (and returns how many files went). */
   clear(): Promise<number>;
@@ -60,6 +61,15 @@ export function createOpfsDerivedStore(opts: { capBytes?: number } = {}): Derive
   };
 
   return {
+    async has(key) {
+      try {
+        await (await dir()).getFileHandle(derivedFileName(key));
+        return true;
+      } catch (e) {
+        if (isNotFound(e)) return false;
+        throw e;
+      }
+    },
     async get(key) {
       const name = derivedFileName(key);
       try {

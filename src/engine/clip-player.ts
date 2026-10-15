@@ -176,7 +176,22 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     const offset = copy ? Math.max(0, srcSec - copy.from) * scale : srcSec;
     const rateAt = (tk: number) => factor * sourceRateAt(mode, tempo, tk);
 
-    const node = new AudioBufferSourceNode(ctx, { buffer, playbackRate: rateAt(tick) });
+    // At speed 1 the buffer is started on a whole frame at a whole frame (≤ half a frame, 10 µs, off),
+    // so it is copied sample for sample: a fractional start makes the browser interpolate the whole
+    // clip, which dulls the highs (up to −6 dB at 16 kHz). A stretched copy plays at 1 within the
+    // scale's rounding (1e-5: under 2 ms over six minutes).
+    let rate = rateAt(tick);
+    let startAt = t;
+    let startOffset = offset;
+    const steady = mode.follow === 'off' || tempo.constant;
+    if (steady && Math.abs(rate - 1) < 1e-5 && buffer.sampleRate === ctx.sampleRate) {
+      const sr = ctx.sampleRate;
+      const frame = Math.max(Math.ceil(now * sr - 1e-6), Math.round(t * sr));
+      rate = 1;
+      startAt = frame / sr;
+      startOffset = Math.max(0, Math.round((offset + (startAt - t)) * sr) / sr);
+    }
+    const node = new AudioBufferSourceNode(ctx, { buffer, playbackRate: rate });
     if (mode.follow !== 'off' && !tempo.constant) {
       let n = 0;
       for (let tk = tempo.nextChange(tick); tk < clipEnd && n < MAX_RATE_EVENTS; tk = tempo.nextChange(tk), n++)
@@ -206,7 +221,7 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     for (let i = 1; i < sched.length; i++) g.linearRampToValueAtTime(sched[i]![1], sched[i]![0]);
 
     node.connect(vca);
-    node.start(t, offset);
+    node.start(startAt, startOffset);
     const soundEnd = tickAtSourceSeconds(clip, mode, tempo, duration);
     const end = timeOf(Math.min(clipEnd, soundEnd));
     voices.add(e.noteId, {

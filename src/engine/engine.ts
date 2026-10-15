@@ -448,7 +448,7 @@ export class Engine implements EngineApi, EngineCore {
     const playingSong = this.transport.playing && this.view.mode === 'song';
     if (playingSong) this.songPos = this.transport.positionAt(this.heardTime());
     const loop = this.view.mode === 'song' && !this.openEnded ? this.transport.currentTimeline.loop : null;
-    this.residency.setPosition(this.songPos, loop);
+    this.residency.setPosition(this.songPos, loop, playingSong);
     // Finished voices let go of their buffers (twice a second is plenty).
     const now = this.ctx.currentTime;
     if (force || now - this.lastSweep > 0.5) {
@@ -462,6 +462,8 @@ export class Engine implements EngineApi, EngineCore {
    * decoded (and stretched) before they are scheduled, so a render never depends on timing.
    */
   async prepareOffline(horizon: number): Promise<void> {
+    // Finished voices let go of their buffers (so what the render has passed can be evicted).
+    for (const s of this.strips.values()) s.sweep();
     if (this.view.mode !== 'song') return;
     const a = this.transport.tickAt(this.ctx.currentTime).tick;
     const b = this.transport.tickAt(horizon).tick;
@@ -505,7 +507,7 @@ export class Engine implements EngineApi, EngineCore {
     const at = this.ctx.currentTime + 0.05;
     if (this.view.mode === 'song') {
       this.songPos = fromTick;
-      this.residency.setPosition(fromTick, this.transport.currentTimeline.loop);
+      this.residency.setPosition(fromTick, this.transport.currentTimeline.loop, true);
     }
     if (this.transport.playing) this.transport.seek(fromTick, at);
     else {
@@ -528,6 +530,9 @@ export class Engine implements EngineApi, EngineCore {
   stop(): void {
     this.transport.stop(0);
     this.stopClock();
+    // Stopped: the residency lets its pins go, and the voices' buffers once their release is over.
+    this.updateResidency(true);
+    if (!this.offline) setTimeout(() => this.updateResidency(true), 300);
     this.emit();
   }
 

@@ -355,14 +355,19 @@ describe('ReverbKernel (algorithmic engine)', () => {
         for (let f = 0; f < seconds * SR; f += 128) k.process(input, output, 128, p);
       };
       run(2); // warm up the JIT
-      // The best of three: the machine's own hiccups only ever add time.
-      let best = Infinity;
-      for (let j = 0; j < 3; j++) {
-        const t0 = performance.now();
-        run(10);
-        best = Math.min(best, performance.now() - t0);
+      // 10 s of audio as five 2 s runs, each timed at its best of two: the machine's own hiccups
+      // (another test, a browser closing) only ever add time.
+      let total = 0;
+      for (let j = 0; j < 5; j++) {
+        let best = Infinity;
+        for (let t = 0; t < 2; t++) {
+          const t0 = performance.now();
+          run(2);
+          best = Math.min(best, performance.now() - t0);
+        }
+        total += best;
       }
-      const share = (best / 10_000) * 100;
+      const share = (total / 10_000) * 100;
       rows.push(`decay ${decay} s: ${share.toFixed(3)} % of a core`);
       // Measured on an M-series Mac: about 0.3 %. The limit leaves room for a busy CI machine.
       expect(share, rows.at(-1)).toBeLessThan(1);

@@ -2,18 +2,16 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { PROJECT_FILE_EXTENSION, PROJECT_FILE_MIME, ProjectFileError } from '@core/io/project-file';
 import type { Project } from '@core/model/types';
 import {
-  downloadBytes,
   ensurePermission,
   isFileSystemAccessSupported,
   pickOpenFile,
   pickSaveFile,
-  readFile,
   uploadFile,
-  writeFile,
 } from '@platform/fs-access';
+import { downloadParts, memorySink, openFileSink } from '@platform/sinks';
 import { APP_VERSION } from '@core/model/defaults';
 import { createDefaultProject } from './default-project';
-import { buildProjectFile, openProjectFile } from './persistence/project-io';
+import { buildProjectFile, openProjectBlob, writeProjectTo } from './persistence/project-io';
 import { fileHandle, forgetFile, rememberFile } from './persistence/recent-files';
 import { applyView, captureView } from './persistence/view-snapshot';
 import type { Services } from './services';
@@ -103,7 +101,7 @@ export class ProjectFiles {
         return handle ? await this.openHandle(handle) : false;
       }
       const file = await uploadFile(PROJECT_FILE_EXTENSION);
-      return file ? await this.openBytes(new Uint8Array(await file.arrayBuffer()), file.name, null, null) : false;
+      return file ? await this.openBlob(file, file.name, null, null) : false;
     } catch (e) {
       this.fail('open the project', e);
       return false;
@@ -141,7 +139,7 @@ export class ProjectFiles {
     if (!(await this.confirmReplace())) return false;
     try {
       const key = handle ? await rememberFile(handle) : null;
-      return await this.openBytes(new Uint8Array(await file.arrayBuffer()), file.name, handle, key);
+      return await this.openBlob(file, file.name, handle, key);
     } catch (e) {
       this.fail('open the project', e);
       return false;
@@ -149,20 +147,21 @@ export class ProjectFiles {
   }
 
   private async openHandle(handle: FileSystemFileHandle): Promise<boolean> {
-    const bytes = await readFile(handle);
+    const file = await handle.getFile();
     const key = await rememberFile(handle);
-    return this.openBytes(bytes, handle.name, handle, key);
+    return this.openBlob(file, handle.name, handle, key);
   }
 
-  private async openBytes(
-    bytes: Uint8Array,
+  /** Opens a project file read a piece at a time (big projects hold one embedded song at a time). */
+  private async openBlob(
+    blob: Blob,
     fileName: string,
     handle: FileSystemFileHandle | null,
     fileKey: string | null,
   ): Promise<boolean> {
     this.store.setState({ busy: 'opening' });
     try {
-      const opened = await openProjectFile(bytes);
+      const opened = await openProjectBlob(blob);
       const name = baseName(fileName);
       this.replace(opened.project, opened.view, { name, handle, fileKey });
       if (opened.migratedFrom < opened.project.schemaVersion)
@@ -245,13 +244,34 @@ export class ProjectFiles {
     return bytes;
   }
 
+  /**
+   * Writes the project file into `write` a piece at a time: embedded samples are read from the
+   * sample store one by one as they are written, so a project with hundreds of MB of songs never
+   * sits in memory whole.
+   */
+  private async writeStream(write: (bytes: Uint8Array) => Promise<void>): Promise<void> {
+    let missing = 0;
+    await writeProjectTo(write, this.s.doc.getState().project, captureView(this.s), APP_VERSION, {
+      onMissingSamples: (refs) => (missing = refs.length),
+    });
+    if (missing > 0)
+      this.toast(`${missing} sample${missing === 1 ? ' is' : 's are'} missing and weren't saved with the project.`);
+  }
+
   private async writeTo(handle: FileSystemFileHandle): Promise<boolean> {
     this.store.setState({ busy: 'saving' });
     try {
       // What gets written is the state at this point; edits made while saving stay unsaved.
       const cursor = this.s.history.checkpoint();
-      const bytes = await this.build();
-      await writeFile(handle, bytes);
+      // createWritable swaps the file in on close: a failed save leaves the old file.
+      const sink = await openFileSink(handle);
+      try {
+        await this.writeStream((b) => sink.write(b));
+        await sink.close();
+      } catch (e) {
+        await sink.abort();
+        throw e;
+      }
       this.s.history.markSaved(cursor);
       this.saved(handle.name);
       return true;
@@ -267,7 +287,9 @@ export class ProjectFiles {
     this.store.setState({ busy: 'saving' });
     try {
       const cursor = this.s.history.checkpoint();
-      downloadBytes(fileName, await this.build(), PROJECT_FILE_MIME);
+      const sink = memorySink();
+      await this.writeStream((b) => sink.write(b));
+      downloadParts(fileName, sink.parts(), PROJECT_FILE_MIME);
       this.s.history.markSaved(cursor);
       this.store.setState({ name: baseName(fileName) });
       this.saved(fileName);

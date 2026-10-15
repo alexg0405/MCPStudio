@@ -9,10 +9,11 @@
  * Plugin code is never embedded: plugins are referenced by id + version. Samples are keyed by
  * content hash, so a sample used by several channels is stored once.
  */
-import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
+import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate, ZipPassThrough, zipSync, type Zippable } from 'fflate';
 import { SCHEMA_VERSION, type Project } from '../model/types';
 import { MIGRATIONS, SchemaError, migrateProject, repairProject, type Migration } from '../schema/migrate';
 import { isSha256Hex } from './hash';
+import { readZipEntry, readZipIndex, type RangeReader, type ZipEntry } from './zip-index';
 
 /** Version of the zip layout (not the project schema, which is project.schemaVersion). */
 export const PROJECT_FILE_FORMAT = 1;
@@ -171,11 +172,166 @@ export function readProjectFile(
     throw new ProjectFileError('damaged', DAMAGED, cause);
   }
   if (oversized) throw new ProjectFileError('damaged', DAMAGED);
+  const doc = interpretEntries(entries['meta.json'], entries['project.json'], entries['view.json'], opts);
+  const samples = new Map<string, EmbeddedSample>();
+  for (const [name, data] of Object.entries(entries)) {
+    const m = SAMPLE_ENTRY.exec(name);
+    if (!m) continue;
+    const hash = (m[1] as string).toLowerCase();
+    if (!samples.has(hash)) samples.set(hash, { ext: (m[2] as string).toLowerCase(), bytes: data });
+  }
+  return { ...doc, samples };
+}
 
+/** An embedded sample in a project file that hasn't been read yet. */
+export interface LazySample {
+  ext: string;
+  /** Bytes in the file. */
+  size: number;
+  read(): Promise<Uint8Array>;
+}
+
+export type ProjectFileIndex = Omit<ProjectFileContents, 'samples'> & {
+  /** Embedded samples by hash, read one at a time (a big project never sits in memory whole). */
+  samples: Map<string, LazySample>;
+};
+
+/**
+ * Like readProjectFile, from a file read a range at a time (File.slice): the directory and the JSON
+ * entries now, each embedded sample when its `read` is called.
+ */
+export async function readProjectFileIndex(
+  read: RangeReader,
+  size: number,
+  opts: { migrations?: readonly (Migration | undefined)[] } = {},
+): Promise<ProjectFileIndex> {
+  if (!looksLikeZip(await read(0, Math.min(size, 22)))) {
+    throw new ProjectFileError(
+      'not-a-project-file',
+      `This file is not an AGstudio project (${PROJECT_FILE_EXTENSION}).`,
+    );
+  }
+  let index: ZipEntry[];
+  try {
+    index = await readZipIndex(read, size);
+  } catch (cause) {
+    throw new ProjectFileError('damaged', DAMAGED, cause);
+  }
+  const json = async (name: string) => {
+    const e = index.find((x) => x.name === name);
+    if (!e) return undefined;
+    if (e.size > MAX_JSON_BYTES) throw new ProjectFileError('damaged', DAMAGED);
+    try {
+      return await readZipEntry(read, e);
+    } catch (cause) {
+      throw new ProjectFileError('damaged', DAMAGED, cause);
+    }
+  };
+  const doc = interpretEntries(await json('meta.json'), await json('project.json'), await json('view.json'), opts);
+  const samples = new Map<string, LazySample>();
+  for (const e of index) {
+    const m = SAMPLE_ENTRY.exec(e.name);
+    if (!m) continue;
+    const hash = (m[1] as string).toLowerCase();
+    if (!samples.has(hash))
+      samples.set(hash, { ext: (m[2] as string).toLowerCase(), size: e.size, read: () => readZipEntry(read, e) });
+  }
+  return { ...doc, samples };
+}
+
+/**
+ * An embedded sample to write: its hash, extension and a way to get its bytes (null: missing),
+ * with the extension they were stored under when that is the one to use.
+ */
+export interface SampleSource {
+  hash: string;
+  ext: string;
+  read(): Promise<{ bytes: Uint8Array; ext?: string } | null>;
+}
+
+/**
+ * Writes the zip a piece at a time (big projects): the JSON entries, then each sample, read only
+ * when it is written and passed on in 1 MB pieces, so memory holds one sample at most. Readers of
+ * writeProjectFile's files read these too. Returns the hashes whose bytes were missing (left out).
+ */
+export async function writeProjectFileStream(
+  input: Omit<WriteProjectFileInput, 'samples'> & { samples: readonly SampleSource[] },
+  write: (bytes: Uint8Array) => Promise<void>,
+): Promise<{ missing: string[] }> {
+  const now = zipTime(input.now ?? new Date());
+  const meta: ProjectFileMeta = {
+    format: PROJECT_FILE_FORMAT,
+    appVersion: input.appVersion,
+    savedAt: (input.now ?? new Date()).toISOString(),
+  };
+  let chain: Promise<void> = Promise.resolve();
+  let error: unknown = null;
+  let resolveEnd!: () => void;
+  const ended = new Promise<void>((r) => (resolveEnd = r));
+  const zip = new Zip((err, chunk, final) => {
+    if (err) error ??= err;
+    if (chunk.byteLength > 0) {
+      const copy = chunk.slice();
+      chain = chain.then(() => write(copy)).catch((e: unknown) => {
+        error ??= e;
+      });
+    }
+    if (final) void chain.then(resolveEnd);
+  });
+  const flushed = async () => {
+    await chain;
+    if (error) throw error;
+  };
+  const json = (name: string, value: unknown, indent?: number) => {
+    const f = new ZipDeflate(name, { level: 6 });
+    f.mtime = now;
+    zip.add(f);
+    f.push(strToU8(JSON.stringify(value ?? null, null, indent)), true);
+  };
+  json('meta.json', meta, 2);
+  json('project.json', input.project);
+  json('view.json', input.view);
+  await flushed();
+  const missing: string[] = [];
+  const seen = new Set<string>();
+  for (const s of [...input.samples].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))) {
+    if (seen.has(s.hash)) continue;
+    seen.add(s.hash);
+    if (!isSha256Hex(s.hash)) throw new TypeError(`writeProjectFile: "${s.hash}" is not a SHA-256 hex hash.`);
+    const got = await s.read();
+    if (!got) {
+      missing.push(s.hash);
+      continue;
+    }
+    const ext = normalizeSampleExt(got.ext ?? s.ext);
+    if (!ext) throw new TypeError(`writeProjectFile: "${got.ext ?? s.ext}" is not a valid sample extension.`);
+    const bytes = got.bytes;
+    // Audio is already compressed or doesn't deflate well: stored as is.
+    const f = new ZipPassThrough(`samples/${s.hash}.${ext}`);
+    f.mtime = now;
+    zip.add(f);
+    const step = 1 << 20;
+    if (bytes.length === 0) f.push(bytes, true);
+    for (let o = 0; o < bytes.length; o += step) {
+      f.push(bytes.subarray(o, Math.min(bytes.length, o + step)), o + step >= bytes.length);
+      await flushed();
+    }
+  }
+  zip.end();
+  await ended;
+  await flushed();
+  return { missing };
+}
+
+/** meta.json, project.json and view.json into the document (shared by both readers). */
+function interpretEntries(
+  metaBytes: Uint8Array | undefined,
+  projectBytes: Uint8Array | undefined,
+  viewBytes: Uint8Array | undefined,
+  opts: { migrations?: readonly (Migration | undefined)[] },
+): Omit<ProjectFileContents, 'samples'> {
   const repairs: string[] = [];
-  const meta = readMeta(entries['meta.json'], repairs);
-
-  const projectBytes = entries['project.json'];
+  const meta = readMeta(metaBytes, repairs);
   if (!projectBytes) {
     throw new ProjectFileError('missing-project', 'This project file is incomplete: it contains no project data.');
   }
@@ -195,7 +351,6 @@ export function readProjectFile(
   repairs.push(...repaired.repairs);
 
   let view: unknown = null;
-  const viewBytes = entries['view.json'];
   if (viewBytes) {
     try {
       view = parseJson(viewBytes);
@@ -203,15 +358,7 @@ export function readProjectFile(
       repairs.push("The saved window layout couldn't be read and was reset.");
     }
   }
-
-  const samples = new Map<string, EmbeddedSample>();
-  for (const [name, data] of Object.entries(entries)) {
-    const m = SAMPLE_ENTRY.exec(name);
-    if (!m) continue;
-    const hash = (m[1] as string).toLowerCase();
-    if (!samples.has(hash)) samples.set(hash, { ext: (m[2] as string).toLowerCase(), bytes: data });
-  }
-  return { project: repaired.project, view, meta, samples, repairs, migratedFrom: migrated.migratedFrom };
+  return { project: repaired.project, view, meta, repairs, migratedFrom: migrated.migratedFrom };
 }
 
 function readMeta(bytes: Uint8Array | undefined, repairs: string[]): ProjectFileMeta {

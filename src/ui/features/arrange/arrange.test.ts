@@ -53,20 +53,23 @@ describe('arranging from the playlist (no AI)', () => {
     expect(s.commands.isEnabled('arrange.refresh')).toBe(true);
   });
 
+  // Other features (Ask AI) add their own entries to these menus; check this one's.
+  const mine = (entries: Parameters<typeof items>[0]) => items(entries).filter((e) => !e.label.startsWith('✦'));
+
   it('marker and ruler right-click entries develop a section and add fills and transitions', () => {
     const { s } = setup();
     const p = s.doc.getState().project;
     const drop = Object.values(p.playlist.markers).find((m) => m.name === 'Drop')!;
-    const marker = items(extraMenuItems('playlist.marker', { markerId: drop.id }, s));
+    const marker = mine(extraMenuItems('playlist.marker', { markerId: drop.id }, s));
     expect(marker.map((e) => e.label)).toEqual(['Develop “Drop” (fills, transitions)', 'Add a transition into “Drop”']);
     marker[0]!.onSelect();
     expect(toasts(s).at(-1)).toMatch(/^Developed bars 37–52/);
-    const ruler = items(extraMenuItems('playlist.ruler', { tick: 20 * BAR + 100 }, s));
+    const ruler = mine(extraMenuItems('playlist.ruler', { tick: 20 * BAR + 100 }, s));
     expect(ruler.map((e) => e.label)).toEqual(['Add a fill here (end of bar 21)', 'Add a transition here (into bar 21)', 'Develop the whole song (fills, transitions)']);
     ruler[0]!.onSelect();
     expect(toasts(s).at(-1)).toMatch(/fill at the end of bar 21/);
     const clip = Object.values(s.doc.getState().project.playlist.clips).find((c) => c.kind === 'pattern' && c.start === 18 * BAR)!;
-    const onClip = items(extraMenuItems('playlist.clip', { clip }, s));
+    const onClip = mine(extraMenuItems('playlist.clip', { clip }, s));
     expect(onClip.map((e) => e.label)).toEqual(['Add a fill at the end of this clip', 'Add a transition after this clip']);
   });
 });

@@ -1,5 +1,10 @@
 import { defineInstrument, dbToGain, GraphVoices, p } from '@agstudio/sdk';
 
+/** Velocity tone's cutoff at full velocity. */
+const TOP_HZ = 20000;
+/** Q in dB (Web Audio low-pass) for a peak-free Butterworth response. */
+const BUTTERWORTH_Q_DB = -3.0103;
+
 /** A copy of the buffer played backwards (cached per buffer). */
 function reversed(ac: BaseAudioContext, buffer: AudioBuffer): AudioBuffer {
   const out = new AudioBuffer({
@@ -40,6 +45,13 @@ export default defineInstrument({
     }),
     reverse: p.bool(false, { label: 'Reverse', group: 'Sample' }),
     cut: p.bool(false, { label: 'Cut itself', group: 'Sample', hint: 'A new note stops the previous one (open hats)' }),
+    // Added in v3; 0 (the default) plays exactly as before.
+    velTone: p.float(0, 1, 0, {
+      label: 'Velocity tone',
+      unit: '%',
+      group: 'Sample',
+      hint: 'Soft notes sound darker as well as quieter, like a drum hit softly (0% = only quieter). Makes rolls and ghost notes sound natural.',
+    }),
     envelope: p.bool(false, {
       label: 'Envelope',
       group: 'Envelope',
@@ -88,9 +100,21 @@ export default defineInstrument({
         const cleanup = host.channel ? [host.channel.pitch.connect(src.detune)] : [];
         const speed = rate * Math.pow(2, ((fine ?? 0) + (host.channel?.pitchAt(t) ?? 0)) / 1200);
         const vca = new GainNode(ac, { gain: 0 });
-        src.connect(vca);
-        let last: AudioNode = vca;
         const extra: AudioNode[] = [];
+        // Velocity tone: a low-pass that closes as the velocity drops, 20 kHz × 2^(−tone·(1−vel)·6)
+        // (at 50 %, a hit at velocity 0.5 is cut above ~7 kHz). Off at 0: the graph is unchanged.
+        const tone = params.velTone.valueAt(t);
+        if (tone > 0 && velocity < 1) {
+          const cutoff = TOP_HZ * Math.pow(2, -tone * (1 - Math.max(0, velocity)) * 6);
+          const lp = new BiquadFilterNode(ac, {
+            type: 'lowpass',
+            frequency: Math.min(cutoff, ac.sampleRate * 0.45),
+            Q: BUTTERWORTH_Q_DB,
+          });
+          src.connect(lp).connect(vca);
+          extra.push(lp);
+        } else src.connect(vca);
+        let last: AudioNode = vca;
         if (pan) {
           const panner = new StereoPannerNode(ac, { pan });
           vca.connect(panner);

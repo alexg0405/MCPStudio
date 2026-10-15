@@ -29,6 +29,7 @@ import { BeatAssistant } from './assistant/assistant';
 import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { TapRegistry } from './taps';
+import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -72,6 +73,8 @@ export interface Services {
   readonly assistant: BeatAssistant;
   /** Your own presets (kept in this browser) and which preset each plugin loaded last. */
   readonly presets: PresetLibrary;
+  /** DJ mode: each song's tempo, beat grid, key, energy, sections and mix points (cached by content hash). */
+  readonly trackAnalyzer: TrackAnalyzer;
   /** Replaces the audio engine with a fresh AudioContext (after AudioWorklet code changed). */
   rebootEngine(): Promise<void>;
   /** Fires after any store, registry or engine change; used to refresh command enabled/checked state. */
@@ -98,6 +101,8 @@ export interface ServiceOptions {
   playlist?: Partial<PlaylistViewState>;
   /** Where your presets live (default: IndexedDB). */
   presetStorage?: PresetStorage;
+  /** Where track analyses are kept (default: IndexedDB). */
+  analysisStorage?: AnalysisStorage;
 }
 
 export function createServices(opts: ServiceOptions = {}): Services {
@@ -187,6 +192,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     session.getState().toast(message, 'error'),
   );
   void presets.load();
+  const trackAnalyzer = createTrackAnalyzer(opts.analysisStorage ? { storage: opts.analysisStorage } : {});
   let files: ProjectFiles | null = null;
   let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
@@ -223,6 +229,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
       return (assistant ??= new BeatAssistant(services));
     },
     presets,
+    trackAnalyzer,
     rebootEngine: () => engine.reboot(),
     subscribe(fn) {
       const unsubs = [

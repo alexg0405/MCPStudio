@@ -1,0 +1,126 @@
+import { describe, expect, it } from 'vitest';
+import type { SampleRef, SampleId } from '@core/model/types';
+import { renderTestSong, PATTERNS, chord, MINOR, MAJOR } from '@core/dj/test-songs';
+import { ANALYSIS_VERSION, type TrackAnalysis } from '@core/dj/types';
+import type { Services } from '../services';
+import { analysisHash, createTrackAnalyzer, inlineRunner, memoryAnalysisStorage, type AnalysisDecoder, type AnalysisRunner } from './analysis-cache';
+import { loudness } from './analysis-run';
+
+const ref = (hash: string): SampleRef => ({
+  id: `s-${hash}` as SampleId,
+  name: `${hash}.wav`,
+  source: { kind: 'embedded', hash, ext: 'wav' },
+});
+const s = {} as Services;
+
+/** A 16-bar 122 BPM song in A minor at 44.1 kHz stereo. */
+function song() {
+  const t = renderTestSong({
+    sampleRate: 44100,
+    bpm: 122,
+    offset: 0.6,
+    pattern: PATTERNS.house,
+    chords: [chord(57, MINOR), chord(50, MINOR), chord(52, MAJOR), chord(57, MINOR)],
+    parts: [{ bars: 16, kick: true, snare: true, hats: true, bass: true, pads: true }],
+  });
+  return t;
+}
+
+function decoder() {
+  const calls: string[] = [];
+  const t = song();
+  const decode: AnalysisDecoder = (_s, r) => {
+    calls.push(analysisHash(r));
+    return Promise.resolve({ channels: [t.mono.slice(), t.mono.slice()], sampleRate: 44100 });
+  };
+  return { decode, calls, song: t };
+}
+
+describe('track analyzer', () => {
+  it('analyzes once, caches, persists and notifies', async () => {
+    const storage = memoryAnalysisStorage();
+    const { decode, calls, song: t } = decoder();
+    const an = createTrackAnalyzer({ storage, decode, run: inlineRunner });
+    let notified = 0;
+    an.subscribe(() => notified++);
+    expect(an.peek('abc')).toBeNull();
+    const progress: number[] = [];
+    const a = await an.analyze(s, ref('abc'), { onProgress: (p) => progress.push(p.fraction) });
+    expect(a.version).toBe(ANALYSIS_VERSION);
+    expect(a.hash).toBe('abc');
+    expect(a.grid?.bpm).toBe(122);
+    expect(Math.abs(a.grid!.firstDownbeat - t.downbeats[0]!)).toBeLessThan(0.02);
+    expect(a.key?.camelot).toBe('8A');
+    expect(Number.isFinite(a.lufs)).toBe(true);
+    expect(a.truePeakDb).toBeLessThan(0.5);
+    expect(progress[0]).toBe(0);
+    expect(progress[progress.length - 1]).toBe(1);
+    expect(progress.every((f, i) => i === 0 || f >= progress[i - 1]!)).toBe(true);
+    expect(notified).toBe(1);
+    expect(an.peek('abc')).toBe(a);
+    expect(storage.items.get('abc')?.grid?.bpm).toBe(122);
+    // Cached: no second decode.
+    expect(await an.analyze(s, ref('abc'))).toBe(a);
+    expect(calls).toEqual(['abc']);
+    // A new session reads it back.
+    const again = createTrackAnalyzer({ storage, decode, run: inlineRunner });
+    await again.ready;
+    expect(again.peek('abc')?.grid?.bpm).toBe(122);
+  });
+
+  it('ignores stored analyses of another version', async () => {
+    const old = { version: ANALYSIS_VERSION - 1, hash: 'old', energy: [], sections: [] } as unknown as TrackAnalysis;
+    const storage = memoryAnalysisStorage([old]);
+    const an = createTrackAnalyzer({ storage, decode: decoder().decode, run: inlineRunner });
+    await an.ready;
+    expect(an.peek('old')).toBeNull();
+  });
+
+  it('shares a job between callers and cancels it when all of them abort', async () => {
+    const { decode, calls } = decoder();
+    let runs = 0;
+    let sawAbort = false;
+    const run: AnalysisRunner = (job, p, signal) => {
+      runs++;
+      signal.addEventListener('abort', () => (sawAbort = true));
+      return inlineRunner(job, p, signal);
+    };
+    const an = createTrackAnalyzer({ storage: memoryAnalysisStorage(), decode, run });
+    const c1 = new AbortController();
+    const first = an.analyze(s, ref('x'), { signal: c1.signal });
+    const second = an.analyze(s, ref('x'));
+    c1.abort();
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+    const a = await second;
+    expect(a.hash).toBe('x');
+    expect(calls).toEqual(['x']);
+    expect(runs).toBe(1);
+    expect(sawAbort).toBe(false);
+
+    // Everyone gives up: the job stops.
+    const c2 = new AbortController();
+    const lone = an.analyze(s, ref('y'), { signal: c2.signal });
+    c2.abort();
+    await expect(lone).rejects.toMatchObject({ name: 'AbortError' });
+    expect(an.peek('y')).toBeNull();
+    // Asking again starts over and works.
+    expect((await an.analyze(s, ref('y'))).hash).toBe('y');
+  });
+
+  it('names built-in sounds by generator', () => {
+    expect(analysisHash({ source: { kind: 'builtin', generator: 'kit/kick', version: 2 } })).toBe('builtin:kit/kick@2');
+  });
+});
+
+describe('loudness for analysis', () => {
+  it('measures a −6 dBFS stereo sine at −6 LUFS and its true peak', () => {
+    const sr = 44100;
+    const n = sr * 5;
+    const x = new Float32Array(n);
+    // 1 kHz with a phase that puts no sample on the crests.
+    for (let i = 0; i < n; i++) x[i] = 0.5 * Math.sin((2 * Math.PI * 1000 * i) / sr + 0.3);
+    const m = loudness([x, x], sr);
+    expect(m.lufs).toBeCloseTo(-6.02, 0);
+    expect(Math.abs(m.truePeakDb - -6.02)).toBeLessThan(0.1);
+  });
+});

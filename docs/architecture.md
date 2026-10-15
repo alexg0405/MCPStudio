@@ -1056,6 +1056,96 @@ part changes, as one undo step.
   findings, and ask Claude again with a `<mix-analysis>` block (`formatMixReport`); that follow-up can't ask again.
   "✦ Check my mix" starts the same flow from the UI; without Claude it still shows the findings.
 
+## DJ auto-mix
+
+The musician wants to mix songs like a DJ (party mixes). It is their own files: streaming services (Spotify…) are
+DRM-locked, and the UI and the Studio say so. Auto-mix first: songs in → ordered, beat-matched, every transition
+built on the playlist → tweak → export. Live decks and MIDI controllers come later.
+
+### Contracts (`core/dj/types.ts`, `app/dj/analysis-cache.ts`)
+
+`TrackAnalysis` per content hash (beat grid, Camelot key, energy per bar, sections, `mixIn`/`mixOut`, LUFS) from
+a `TrackAnalyzer` (`peek`, `analyze`, `subscribe`). DJ code asks through `app/dj/analyzer.ts` `trackAnalyzer(s)`:
+`services.trackAnalyzer` once the analysis is wired, else one set with `setTrackAnalyzer` (tests use
+`fakeAnalyzer` with hand-made analyses from `core/dj/fake-analysis.ts`).
+
+### Planner (`core/dj/plan.ts`, `order.ts`, `wheel.ts`; pure)
+
+- **Order** (`order.ts`): cost = harmonic move (`wheel.ts`: same 0, ±1 or relative 1, unknown 2, +2 boost 3,
+  diagonal 3.5, clash 7) + tempo (0 → 3 at the 6 % limit, 8+ past it; +1 for a half/double-time match) + the
+  distance of each song's energy rank from the shape's target at its position (build, party, peak-time, chill;
+  chill also penalizes jumps). Song energy (`trackEnergy`) mixes loudness, tempo and the share of hot bars, so it
+  compares across songs. Greedy from every opener (6 for big sets), then swaps and moves; pinned songs keep their
+  index. Deterministic.
+- **Time model**: a song plays beat-locked to ticks (`resample` or `stretch` at its BPM), so its local beat u
+  (from its first downbeat) is at song beat G + u whatever the tempo does. Placing a song = choosing G; the
+  first song starts at its file start with its first downbeat on a bar line; then G(i+1) = G(i) + mixOut(i) −
+  mixIn(i+1). Mix points are rounded to the song's bars; a mix-out that comes too early moves later by 8-bar
+  phrases, a length target takes 16-bar phrases off the longest songs (the last one fades). The overlap of a
+  transition never reaches the next one, so at most two songs play.
+- **Transitions**: 16 bars (32 for chill or `smooth`, 8 for `quick`, 0 for `cut`), shortened when a song runs
+  out. Recipes: `bass-swap` (incoming on an equal-power curve with EQ Pro band 1 at 300 Hz until the phrase
+  midpoint, where the bass swaps; outgoing on the cos curve, its lows cut from the midpoint), `filter` (plus a
+  low-pass sweep out of the outgoing song: energy drops), `echo` (the outgoing song stops at the end of the
+  overlap with an echo throw: clashing keys, 8 bars), `cut` (no overlap, a one-beat echo throw; tempos too far
+  apart or no beat grid). A riser ends on the swap when the energy rises (not for chill). Every curve ends at
+  'neutral'. Tweaks per transition (bars, recipe, riser) are keyed by the incoming song.
+- **Tempo** (`mixTempo: 'follow'`): each song at its own tempo, the tempo gliding linearly from one to the next
+  over the overlap (a tempo automation clip; the map evaluates it per 1/16). Ramps are allowed when neither song
+  moves more than 6 % (`tempoMatch`, symmetric, with half/double time); otherwise a cut. Songs follow it
+  **turntable-style** by default (`resample`: beats sample-exact, pitch bends ≤ the tempo gap during the
+  transition, untouched while alone). **Key lock** (`keyLock`) time-stretches instead: the tempo then moves in
+  ≤ 1 % steps on bar lines and clips are split at each step, so every piece is stretched at one tempo (no pitch
+  bend inside a clip). A fixed mix tempo always stretches. Why turntable by default: the WSOLA stretch moved
+  transients by up to ±12 ms, so two stretched songs' kicks were up to 24 ms apart (measured), an audible flam.
+- Output: songs (deck A/B alternating, clips with `offsetSec`, gain to the median LUFS ±9 dB, tempo at start/end),
+  transitions (start, length, swap, recipe, why), automation items, risers, markers, the tempo curve and steps,
+  total ticks/seconds, warnings. fast-check: ≤ 2 songs at once, transitions on downbeats of both songs, tempo
+  within the limit, clips tiling each song, curves ending neutral, deterministic.
+
+### Writing it (`app/dj/mix.ts`)
+
+One History transaction (`makeMix`, `mixInDraft`): removes what the previous mix made (`Project.dj.made`:
+channels with their clips, markers), then finds or makes (renaming an empty "Insert N" first) **Deck A**,
+**Deck B** (EQ Pro b1 low cut 20 Hz / b8 high cut 20 kHz, then a Filter low-pass at 20 kHz, fader 0 dB, a 0-level
+send to **Echo**) and **Echo** (Delay ¼ ping-pong, fully wet), a Limiter last on the master; the tempo curve
+("Mix tempo" track, holds and glides), one audio clip channel per song on its deck (samples reused by hash),
+clips on "Deck A"/"Deck B", curves on "Deck A FX n"/"Deck B FX n" (one automation channel per control and
+shape), risers on "DJ FX", a marker per song. `Project.dj` (optional, repaired in `migrate.ts`) keeps the songs
+(title, BPM, Camelot, deck, span), options, tweaks and what it made. `replanInDraft`/`tweakTransition` plan the
+same songs again in order with a changed tweak; `planOfCurrentMix` gives the plan for the UI.
+
+### Library and UI (`app/dj/library.ts`, `ui/features/dj`)
+
+- The music library: songs stored once by hash in the sample store, title/artist from tags (`core/dj/tags.ts`:
+  ID3v2, FLAC/Ogg Vorbis comments, MP4 `ilst`; else "Artist - Title" file names), the list order, pins and the
+  selection, kept in IndexedDB. Analysis runs in the background, one song at a time. Add files, add a folder
+  (≤ 500 files, the directory picker).
+- DJ window (View → DJ mix, ⌥J; the browser's Music section): the songs table (BPM, Camelot badge colored by
+  wheel position, energy sparkline, analysis status, drag to reorder, pin, right-click), options (Order, Energy,
+  Transitions, Mix tempo, Key lock, Length), the gold Make the mix (asks for a new project when the playlist
+  already has other music), then the Transitions list (length, recipe, riser, play from 2 bars before, reset)
+  and Export mix (`dj.exportMix`: song mode, then the export dialog). Pure helpers in `dj-view.ts`.
+- Studio (`app/ai/ops/dj.ts`, prompt order 22): `dj_mix` (library titles, the selection or everything; songs
+  that need analysis are done by the `dj_mix` after-step `app/dj/step.ts`, folded into the answer's undo step)
+  and `dj_transition` (from/to by number or title). The context lists the mix (`djLines`) and the library.
+
+### Measured (`test/browser/dj-mix.test.ts`, headless Chrome, 48 kHz)
+
+Three synthetic songs (124, 127.2 and 125 BPM, different keys, first downbeats at 0, 0.21 and 0.05 s) mixed with
+known grids: across the 16-bar transition the clicks of both songs (rendered with the other deck muted) land
+within 1.5 ms of the mix's beat and of each other; the lows (< 150 Hz) of the sum stay under +3 dB of the songs
+alone and never drop more than 7 dB; the incoming song's lows are > 15 dB down until the swap.
+
+### Limits and follow-ups
+
+- Needs the real analyzer (`services.trackAnalyzer`) from the analysis work; until then songs show "Not analyzed"
+  and a mix can't be made in the app (tests use the fake one).
+- Key lock's beat accuracy is the WSOLA's (±12 ms); and each key-lock tempo step stretches the whole file until
+  the engine stretches clip ranges.
+- Beat grids with drifting `beats[]` play on the fixed grid (they will slip); 3/4 songs align on their own bars.
+- The playlist zooms to the mix after it is made; there is no live deck view yet (the next wave).
+
 ## Arrangement: songs that flow (v3)
 
 The musician asked for songs that sound finished "off the bat", with smooth transitions as the minimum. Their

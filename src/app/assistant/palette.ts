@@ -83,30 +83,35 @@ export const SYNTH: Readonly<Record<PitchedSound, Record<string, number | string
 
 const LOW = 36;
 
-// The building blocks (preset names exactly as the plugins define them).
+/*
+ * The building blocks (preset names exactly as the plugins define them). Levels (the instrument's
+ * own `level` and the channel volume) are set from offline renders (test/browser/palette.test.ts)
+ * so that each sound, alone, sits about this far under the kit's kick: 808 −3 dB, bass −4, lead −8,
+ * pluck −9, keys, pad and bell −10, strings −11. Auto-level then balances the buses per style.
+ */
 const C = {
-  classic808: { pluginId: BASS808_ID, preset: 'Classic 808', params: { drive: 0.35, glide: 0.1 }, volume: 0.62, rootKey: LOW },
-  drill808: { pluginId: BASS808_ID, preset: 'Drill slide', volume: 0.58, rootKey: LOW },
-  sub808: { pluginId: BASS808_ID, preset: 'Sub only', volume: 0.66, rootKey: LOW },
-  punchy808: { pluginId: BASS808_ID, preset: 'Short punchy', volume: 0.6, rootKey: LOW },
-  subBass: { pluginId: WAVETABLE_ID, preset: 'Deep sub bass', volume: 0.62, rootKey: LOW },
-  pluckBass: { pluginId: THREE_OSC_ID, preset: 'Pluck bass', volume: 0.6, rootKey: LOW },
-  supersaw: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', volume: 0.5 },
-  darkPad: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { cutoff: 1800 }, volume: 0.52 },
-  glassPluck: { pluginId: WAVETABLE_ID, preset: 'Glassy pluck', volume: 0.5 },
-  bellKeys: { pluginId: WAVETABLE_ID, preset: 'Bell keys', volume: 0.46 },
-  softBellKeys: { pluginId: WAVETABLE_ID, preset: 'Bell keys', params: { cutoff: 3500 }, volume: 0.5 },
-  strings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', volume: 0.5 },
-  darkStrings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', params: { cutoff: 2500 }, volume: 0.52 },
-  scream: { pluginId: WAVETABLE_ID, preset: 'Sync scream lead', volume: 0.46 },
-  ep: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', volume: 0.6 },
-  mellowEp: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { cutoff: 3000 }, volume: 0.62 },
-  bell: { pluginId: FM_ID, preset: 'Glassy FM bell', volume: 0.5 },
-  brass: { pluginId: FM_ID, preset: 'Brass stab', volume: 0.5 },
-  organ: { pluginId: FM_ID, preset: 'Drawbar organ (additive)', volume: 0.5 },
-  marimba: { pluginId: FM_ID, preset: 'Marimba', volume: 0.55 },
-  nylon: { pluginId: PLUCK_ID, preset: 'Nylon', volume: 0.58 },
-  harp: { pluginId: PLUCK_ID, preset: 'Harp', volume: 0.5 },
+  classic808: { pluginId: BASS808_ID, preset: 'Classic 808', params: { drive: 0.35, glide: 0.1 }, volume: 0.81, rootKey: LOW },
+  drill808: { pluginId: BASS808_ID, preset: 'Drill slide', volume: 0.55, rootKey: LOW },
+  sub808: { pluginId: BASS808_ID, preset: 'Sub only', volume: 0.76, rootKey: LOW },
+  punchy808: { pluginId: BASS808_ID, preset: 'Short punchy', params: { level: 3 }, volume: 0.82, rootKey: LOW },
+  subBass: { pluginId: WAVETABLE_ID, preset: 'Deep sub bass', params: { level: 0 }, volume: 0.79, rootKey: LOW },
+  pluckBass: { pluginId: THREE_OSC_ID, preset: 'Pluck bass', params: { level: 6 }, volume: 0.7, rootKey: LOW },
+  supersaw: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { level: -7 }, volume: 0.5 },
+  darkPad: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { cutoff: 1800, level: -7 }, volume: 0.54 },
+  glassPluck: { pluginId: WAVETABLE_ID, preset: 'Glassy pluck', params: { level: 6 }, volume: 0.71 },
+  bellKeys: { pluginId: WAVETABLE_ID, preset: 'Bell keys', params: { level: 5 }, volume: 0.47 },
+  softBellKeys: { pluginId: WAVETABLE_ID, preset: 'Bell keys', params: { cutoff: 3500, level: 5 }, volume: 0.52 },
+  strings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', volume: 0.44 },
+  darkStrings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', params: { cutoff: 2500 }, volume: 0.44 },
+  scream: { pluginId: WAVETABLE_ID, preset: 'Sync scream lead', volume: 0.59 },
+  ep: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { level: -6 }, volume: 0.62 },
+  mellowEp: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { cutoff: 3000, level: -6 }, volume: 0.63 },
+  bell: { pluginId: FM_ID, preset: 'Glassy FM bell', params: { level: 2 }, volume: 0.5 },
+  brass: { pluginId: FM_ID, preset: 'Brass stab', params: { level: -5 }, volume: 0.49 },
+  organ: { pluginId: FM_ID, preset: 'Drawbar organ (additive)', params: { level: -5 }, volume: 0.52 },
+  marimba: { pluginId: FM_ID, preset: 'Marimba', params: { level: 6 }, volume: 0.82 },
+  nylon: { pluginId: PLUCK_ID, preset: 'Nylon', params: { level: 0 }, volume: 0.98 },
+  harp: { pluginId: PLUCK_ID, preset: 'Harp', params: { level: 0 }, volume: 0.63 },
 } satisfies Record<string, SoundChoice>;
 
 type Palette = Record<PitchedSound, SoundChoice>;

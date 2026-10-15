@@ -1,5 +1,7 @@
 /** What applying an AI answer takes and returns. */
 import type { Style } from '@core/beat/style';
+import type { DjMixOptions } from '@core/model/types';
+import type { MixSong } from '../../dj/mix';
 import type { ChannelId, ClipId, InsertId, SlotId, Tick } from '@core/model/types';
 import type { AppliedBeat } from '../../assistant/apply';
 import type { PluginSpec } from '../builder';
@@ -27,7 +29,9 @@ export type AfterEdit =
   /** Play a short phrase on a channel (preview notes, nothing written). */
   | { kind: 'audition'; channelId: ChannelId; phrase: AuditionPhrase }
   /** Render the busiest part and set the faders and master to the style's levels (its own step, after the edit). */
-  | { kind: 'level_mix'; style: Style; fromTick?: Tick; bars?: number };
+  | { kind: 'level_mix'; style: Style; fromTick?: Tick; bars?: number }
+  /** Analyze songs that need it, then make the DJ mix (its own step, after the edit). */
+  | { kind: 'dj_mix'; songs: MixSong[]; options: DjMixOptions };
 
 export type AuditionPhrase = 'chord' | 'riff' | 'bass' | 'hits';
 

@@ -43,6 +43,12 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
   played without recording into a pattern. Tap tempo (Shift+T or Options → Tap tempo).
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files
   from Finder). Samples are embedded in saved projects.
+- **DJ auto-mix** (View → DJ mix, ⌥J, or the browser's Music section): add your own songs (MP3, AAC/M4A, WAV,
+  FLAC, OGG; streaming services like Spotify can't be mixed, their audio is locked), press **Make the mix** and
+  Studio orders them (Camelot keys, tempos, an energy shape: party, build, peak time, chill), beat-matches them
+  and builds every transition on the playlist: phrase-aligned 8/16/32-bar blends with a bass swap, filter or
+  echo outs, cuts, risers, tempo glides, a marker per song. Tweak one transition, then export the mix. The
+  Studio chat does it too ("make a 30-minute party mix", "smoother transition into song 4").
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
   and shortcuts you can change (Help → Keyboard shortcuts).

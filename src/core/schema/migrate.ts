@@ -897,6 +897,84 @@ function repairControllers(p: Obj, log: RepairLog): void {
   log.flush();
 }
 
+const DJ_OPTIONS = {
+  order: ['keep', 'auto'],
+  energy: ['build', 'party', 'chill', 'peak-time'],
+  transition: ['auto', 'smooth', 'quick', 'cut'],
+} as const;
+const DJ_DEFAULTS: Record<keyof typeof DJ_OPTIONS, string> = { order: 'auto', energy: 'party', transition: 'auto' };
+
+/**
+ * The DJ mix (`Project.dj`, optional): its songs must be samples of the project; what it made is
+ * filtered to what still exists; broken options go back to the defaults. A mix without songs goes.
+ */
+function repairDj(p: Obj, log: RepairLog): void {
+  if (!has(p, 'dj') || p.dj === undefined) return;
+  const dj = p.dj;
+  const samples = isObject(p.samples) ? p.samples : {};
+  if (!isObject(dj) || !Array.isArray(dj.songs)) {
+    delete p.dj;
+    log.add('Forgot the damaged DJ mix details (the songs stay on the playlist).');
+    return;
+  }
+  const songs = dj.songs.filter(
+    (x): x is Obj =>
+      isObject(x) &&
+      isString(x.sampleId) &&
+      has(samples, x.sampleId) &&
+      isString(x.title) &&
+      isFiniteNumber(x.start) &&
+      isFiniteNumber(x.end),
+  );
+  if (songs.length === 0) {
+    delete p.dj;
+    log.add('Forgot the DJ mix details: its songs are gone.');
+    return;
+  }
+  let fixed = songs.length !== dj.songs.length;
+  for (const song of songs) {
+    if (!(song.bpm === null || isFiniteNumber(song.bpm))) {
+      song.bpm = null;
+      fixed = true;
+    }
+    if (!(song.camelot === null || isString(song.camelot))) {
+      song.camelot = null;
+      fixed = true;
+    }
+    if (song.deck !== 'A' && song.deck !== 'B') {
+      song.deck = 'A';
+      fixed = true;
+    }
+    fixed = optionalField(song, 'pinned', isBoolean) || fixed;
+  }
+  dj.songs = songs;
+  const o = isObject(dj.options) ? dj.options : (dj.options = {});
+  for (const [key, allowed] of Object.entries(DJ_OPTIONS)) {
+    if (!(allowed as readonly unknown[]).includes(o[key])) {
+      o[key] = DJ_DEFAULTS[key as keyof typeof DJ_OPTIONS];
+      fixed = true;
+    }
+  }
+  if (!(o.mixTempo === 'follow' || (isFiniteNumber(o.mixTempo) && o.mixTempo >= 50 && o.mixTempo <= 250))) {
+    o.mixTempo = 'follow';
+    fixed = true;
+  }
+  fixed = optionalField(o, 'lengthTargetMin', (v) => isFiniteNumber(v) && v > 0) || fixed;
+  fixed = optionalField(o, 'keyLock', isBoolean) || fixed;
+  if (!isObject(dj.tweaks)) {
+    dj.tweaks = {};
+    fixed = true;
+  }
+  const made = isObject(dj.made) ? dj.made : (dj.made = {});
+  const channels = isObject(p.channels) ? p.channels : {};
+  const markers = isObject(p.playlist) && isObject(p.playlist.markers) ? p.playlist.markers : {};
+  const keep = (list: unknown, rec: Obj) =>
+    Array.isArray(list) ? list.filter((id): id is string => isString(id) && has(rec, id)) : [];
+  made.channels = keep(made.channels, channels);
+  made.markers = keep(made.markers, markers);
+  if (fixed) log.add('Fixed damaged DJ mix details.');
+}
+
 /**
  * Returns a repaired deep copy of a structurally valid project (see migrateProject) and one
  * human-readable line per kind of fix. Never mutates the input. A project that needs no repair comes
@@ -913,6 +991,7 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairPatterns(p, log);
   repairPlaylist(p, log);
   repairControllers(p, log);
+  repairDj(p, log);
   log.flush();
   return { project: p as unknown as Project, repairs: log.messages };
 }

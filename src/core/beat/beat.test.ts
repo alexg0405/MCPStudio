@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateLocalBeat, parsePrompt, type PerformedEvent } from './local';
-import { validateBeatSpec, type BeatSpec } from './spec';
+import { DRUM_SOUNDS, validateBeatSpec, type BeatNote, type BeatSpec } from './spec';
+import { GROOVE, TEMPO } from './style';
 
 const ok = (raw: unknown) => {
   const r = validateBeatSpec(raw);
@@ -116,6 +117,85 @@ describe('generateLocalBeat', () => {
 
   it('keeps the project tempo when the prompt names no style or tempo', () => {
     expect(generateLocalBeat({ prompt: 'something with 808s', bpm: 133 }).bpm).toBeUndefined();
+  });
+
+  /** Pairs of 808 notes where the second starts while the first still plays (a slide). */
+  const slides = (notes: readonly BeatNote[]) => {
+    const sorted = [...notes].sort((a, b) => a.step - b.step);
+    return sorted.slice(1).flatMap((b, i) => {
+      const a = sorted[i]!;
+      return b.step > a.step && a.step + a.len! > b.step ? [{ a, b }] : [];
+    });
+  };
+
+  it.each(['trap', 'drill'])('%s: the 808 slides after the pickup kick (half a step of overlap, a new pitch)', (style) => {
+    const spec = generateLocalBeat({ prompt: `${style} beat in F minor`, bpm: 140 });
+    const t = tracksOf(spec);
+    const found = slides(t['808']!.notes);
+    expect(found.length).toBeGreaterThanOrEqual(style === 'drill' ? 2 : 1);
+    for (const { a, b } of found) {
+      expect(b.key).not.toBe(a.key);
+      expect(a.step + a.len! - b.step).toBeCloseTo(0.5, 9);
+      expect(b.key!).toBeLessThanOrEqual(48);
+    }
+    // The last slide comes after the loop's pickup kick, into the restart.
+    const pickup = (spec.bars - 1) * 16 + 14;
+    expect(t.kick!.notes.map((n) => n.step)).toContain(pickup);
+    expect(found.at(-1)!.a.step).toBe(pickup);
+    expect(found.at(-1)!.b.step).toBeGreaterThan(pickup);
+    expect(validateBeatSpec(spec)).not.toHaveProperty('error');
+  });
+
+  it('boom bap: swung odd-1/16 hats, ghost snares and a sub bass under the kick', () => {
+    const spec = generateLocalBeat({ prompt: 'boom bap beat', bpm: 90 });
+    const t = tracksOf(spec);
+    expect(spec).toMatchObject({ style: 'boombap', swing: 0.35 });
+    expect(t.hat!.notes.some((n) => n.step % 2 === 1)).toBe(true);
+    const snares = t.snare!.notes;
+    expect(snares.some((n) => n.vel! < 0.5)).toBe(true);
+    expect(snares.filter((n) => n.step % 16 === 4 || n.step % 16 === 12).every((n) => n.vel! > 0.9)).toBe(true);
+    const kicks = t.kick!.notes.map((n) => n.step);
+    expect(t.bass!.notes.length).toBe(kicks.length);
+    for (const n of t.bass!.notes) {
+      expect(kicks).toContain(n.step);
+      expect(n.key!).toBeLessThanOrEqual(47);
+    }
+  });
+
+  it('lo-fi: four bars of 7th chords on keys (3+ notes at once), swung and soft', () => {
+    const spec = generateLocalBeat({ prompt: 'lofi chill with keys', bpm: 80 });
+    expect(spec).toMatchObject({ style: 'lofi', bars: 4, swing: 0.45 });
+    const keys = tracksOf(spec).keys!.notes;
+    const atOnce = (step: number) => keys.filter((n) => n.step <= step && step < n.step + n.len!).length;
+    for (const bar of [0, 1, 2, 3]) expect(atOnce(bar * 16 + 1)).toBeGreaterThanOrEqual(3);
+    // A 7th chord: four different pitch classes in the first bar (Am7: A C E G).
+    const first = new Set(keys.filter((n) => n.step === 0).map((n) => n.key! % 12));
+    expect([...first].sort((a, b) => a - b)).toEqual([0, 4, 7, 9]);
+    expect(tracksOf(spec).bass).toBeDefined();
+  });
+
+  it('writes every style with its own groove, as a valid beat', () => {
+    for (const [prompt, style] of [
+      ['trap', 'trap'],
+      ['drill', 'drill'],
+      ['boom bap', 'boombap'],
+      ['lofi', 'lofi'],
+      ['house', 'house'],
+      ['edm festival', 'edm'],
+      ['reggaeton', 'reggaeton'],
+      ['afrobeats', 'afro'],
+      ['pop song', 'pop'],
+    ] as const) {
+      const spec = generateLocalBeat({ prompt, bpm: 120 });
+      expect(spec.style, prompt).toBe(style);
+      expect(spec.swing, prompt).toBe(GROOVE[style].swing);
+      expect(spec.bpm ?? 120, prompt).toBe(TEMPO[style].default === 120 ? 120 : TEMPO[style].default);
+      expect(spec.tracks.some((t) => !DRUM_SOUNDS.has(t.sound)), `${prompt} has a pitched part`).toBe(true);
+      const checked = validateBeatSpec(spec);
+      expect(checked, prompt).not.toHaveProperty('error');
+      // Every hit has its velocity (accents filled in).
+      for (const t of spec.tracks) for (const n of t.notes) expect(n.vel, `${prompt} ${t.name}`).toBeDefined();
+    }
   });
 
   it('turns a beatbox performance into the drum tracks', () => {

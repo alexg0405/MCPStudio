@@ -98,6 +98,8 @@
   --ag-grid-bar: #a9a399;
   --ag-grid-beat: #d4cfc5;
   --ag-grid-step: #e8e4dc;
+  --ag-grid-shade: rgba(70, 60, 45, 0.07);
+  --ag-note-top: rgba(255, 255, 255, 0.4);
   --ag-key-white: #ffffff;
   --ag-key-black: #2c2d31;
   --ag-note: #b08a3e;
@@ -232,6 +234,7 @@
   --ag-grid-bar: #98a2ab;
   --ag-grid-beat: #c2c9cf;
   --ag-grid-step: #dfe3e7;
+  --ag-grid-shade: rgba(40, 60, 80, 0.08);
   --ag-key-white: #ffffff;
   --ag-key-black: #3a4046;
   --ag-note: #4c9c42;

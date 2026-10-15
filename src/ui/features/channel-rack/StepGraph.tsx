@@ -6,7 +6,7 @@ import type { ChannelId, PatternId } from '@core/model/types';
 import { editNotes, type NoteEdit } from '@core/ops/notes';
 import { stepView } from '@core/query/queries';
 import { useDoc, useServices } from '../../services-context';
-import { fitCanvas, readTheme } from '../../timeline/canvas';
+import { fitCanvas, readTheme, roundRectPath } from '../../timeline/canvas';
 import { useThemeVersion } from '../../theme/use-theme';
 import { STEP_W, stepAtX, stepsWidth, stepX } from './layout';
 import { formatStepValue, STEP_LANE_INFO, stepEdit, stepReset, stepValue } from './steps';
@@ -65,26 +65,36 @@ export function StepGraph({
       const view = stepView(notes, stepCount);
       for (let i = 0; i < stepCount; i++) {
         const x = stepX(i);
-        // Every other group of four is shaded, like the step buttons.
-        if (Math.floor(i / 4) % 2) {
-          ctx.fillStyle = theme.sheen;
-          ctx.fillRect(x, 0, STEP_W, GRAPH_H);
-        }
+        // Each step has a faint tile (every other group of four a little brighter), like the buttons.
+        ctx.fillStyle = Math.floor(i / 4) % 2 ? theme.sheen : theme.lineFaint;
+        ctx.beginPath();
+        roundRectPath(ctx, x, 1, STEP_W, GRAPH_H - 2, 3);
+        ctx.fill();
         const n = view.notes[i];
         if (!n) {
-          ctx.fillStyle = theme.step;
+          ctx.fillStyle = theme.textFaint;
           ctx.fillRect(x + STEP_W / 2 - 1, GRAPH_H - 4, 2, 2);
           continue;
         }
         const v = stepValue(n, lane, rootKey);
-        ctx.fillStyle = theme.note;
+        const bx = x + 3;
+        const bw = STEP_W - 6;
+        let top: number;
+        let h: number;
         if (info.bipolar) {
-          const h = Math.max(2, (Math.abs(v) * usable) / 2);
-          ctx.fillRect(x + 2, v >= 0 ? mid - h : mid, STEP_W - 4, h);
+          h = Math.max(2, (Math.abs(v) * usable) / 2);
+          top = v >= 0 ? mid - h : mid;
         } else {
-          const h = Math.max(2, v * usable);
-          ctx.fillRect(x + 2, GRAPH_H - 3 - h, STEP_W - 4, h);
+          h = Math.max(2, v * usable);
+          top = GRAPH_H - 3 - h;
         }
+        ctx.fillStyle = theme.note;
+        ctx.beginPath();
+        roundRectPath(ctx, bx, top, bw, h, 2);
+        ctx.fill();
+        // The value's end as a lighter cap.
+        ctx.fillStyle = theme.noteTop;
+        ctx.fillRect(bx, info.bipolar && v < 0 ? top + h - 1 : top, bw, 1);
       }
     };
     draw();

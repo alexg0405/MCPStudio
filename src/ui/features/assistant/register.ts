@@ -76,7 +76,7 @@ export function register(services: Services): void {
       openWindow(services, r.window);
     }
   });
-  // The most prominent control in the toolbar, right after the transport. It sits at the end of the
-  // transport group (not the first center slot) so a narrow window never folds it into "More".
-  addToolbarSlot({ id: 'assistant', area: 'transport', order: 100, component: () => createElement(AiStudioButton) });
+  // The most prominent control in the toolbar: the first center slot, right after the transport (the
+  // lowest order there never folds into "More").
+  addToolbarSlot({ id: 'assistant', area: 'center', order: -10, component: () => createElement(AiStudioButton) });
 }

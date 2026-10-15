@@ -132,6 +132,8 @@ export const notes: OpModule = {
       if (a.channel !== undefined) {
         const cid = c.channel(a.channel);
         const only = c.focus.notes(pid, cid);
+        // Selected notes (a notes focus): only those go.
+        if (only && only.size === 0) fail(`none of “${d.channels[cid]!.name}”’s notes in “${pat.name}” are selected`);
         if (only) for (const id of only) delete pat.notes[cid]?.[id];
         else delete pat.notes[cid];
         return `Cleared “${d.channels[cid]!.name}” in “${pat.name}”`;

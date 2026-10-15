@@ -985,6 +985,61 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   5. Install moves the folder to `plugins/<name>/`, backing up an older one in `plugins/_backup/`, and hot
      reload registers it. `plugins/_*` is outside `tsc -b`, eslint, vitest and git.
 
+### Asking the AI about a part
+
+Select clips, loop some bars, pick a marker's section or some notes, and tell the AI what to change there: only that
+part changes, as one undo step.
+- **Focus** (`app/ai/focus.ts`): `AiFocus` is a range, a section (marker id), clips or notes, each with its
+  `projectId`. It is captured when the musician asks (`app/ai/focus-capture.ts`: the playlist's selected clips, else
+  its loop region, which becomes a section when it matches one exactly; a marker; notes) and resolved again on every
+  turn (`resolveFocus`): a section follows its marker (a deleted marker leaves its bars as a range), deleted clips and
+  notes drop out, another project's focus is ignored. `focusLabel` gives "Verse · bars 17–32", "3 clips · bars
+  37–42", "6 notes of “Lead”". The time variants carry `copies` (original pattern → the part's copy) so follow-ups
+  edit the copy.
+- **The `<focus>` block** (`focusContext`, after `<project>`): the part and the sections around it; every track's
+  clips over the part and 2 bars either side, marked before / in the part / after, with ids; the notes of every
+  pattern playing in it and where else it plays; what plays per bar from 4 bars before to 4 after
+  (`core/query/activity.ts` `barActivity`); the automation over it. A notes focus lists the selected notes, the
+  channel's other notes and where the pattern plays.
+- **Guard** (`app/ai/ops/focus-guard.ts`, called from every op through `OpContext.focus`):
+  - Inside = clips overlapping the part (muted ones count), or a clips focus's clips, plus the answer's own clips in
+    the part ±1 bar.
+  - Copy-on-write in `writable()`: a pattern that plays inside and outside is copied once per answer as
+    "Drop (bars 37–52)" (`core/ops/fork.ts` `forkPattern`: straddling clips are split at the edges, the inside clips
+    re-pointed); `resolve()` sends later actions, and follow-ups through `copies`, to the copy; the copy becomes the
+    current pattern if the original was. A pattern that plays only outside is refused; one not in the song is
+    editable. Patterns made in the answer are its own.
+  - `span()`/`clip()`: playlist edits stay within the part ±1 bar (transitions); further is refused with the bars
+    that may change. `clear_playlist` defaults to the part and always trims; a clips focus clears only its clips
+    (`clearable`). `remove_pattern` only for a pattern that plays nowhere outside.
+  - `closeAutomation()`: automation holds its last value, so a curve that ends elsewhere steps back at its end to
+    what played there before the answer (the committed project's automation model, else the setting), unless
+    another clip of the control plays on there.
+  - Notes focus: `notes()` gives the selection as it is now (new notes count as selected), other channels of the
+    pattern only gain notes, steps tools and whole-pattern clears are refused, the playlist and other existing
+    patterns stay; `finish()` puts back any unselected note that changed. The assistant passes no previous beat, so
+    a beat makes a new pattern.
+  - `finish()` returns the focus after the edit (copies, the clips that are left plus the answer's clips in the
+    part, the notes written) and the clips to select.
+- **Assistant**: `state.focus`, `setFocus()`, `send(prompt, { focus })`, `playFocus()` (a span loops in song mode
+  from its start; notes play their pattern). The focus is snapshotted when sending and resolved again when
+  applying; the musician's message says "About …". Autoplay loops the part. It persists with the tab
+  (sessionStorage, checked on restore), New chat and opening another project clear it, and offline a request about
+  a part says it needs Claude. `listenAndAsk` renders just the part (`AnalyzeOptions.range`).
+- **UI** (`ui/features/ask-ai/`): the Ask AI card (`AskCard.tsx`, an overlay placed with `controls/place.ts`
+  `placeBeside` next to an anchor from `anchors.ts`, on the frame loop only while open; scope chip, box, quick
+  requests from `chips.ts`, replies with Undo via `assistant/Message.tsx`, Play this part, Open in AI studio). It
+  takes the keyboard without `holdModal` (a focused text box already silences shortcuts and the typing piano) and
+  closes on an outside click only when idle and empty. Entry points: the playlist's ✦ pill (`playlist/ask-pill.ts`,
+  moved by the controller on dirty frames, hidden while dragging), a ✦ on wide-enough marker flags (sections are
+  faint bands on the marker lane; the name still jumps), right-click menus (clip, marker, ruler loop, piano-roll
+  notes), Alt+A in the playlist and Alt+Shift+A in the piano roll (its Alt+A arpeggiates), the Playlist and Edit
+  menus, "Ask AI about: Verse" in the action search. The AI studio shows the part as a chip (`FocusChip.tsx`) with
+  part-specific ideas and takes text from the card (`draft-state.ts`). A clip's ▾ keeps a selection it is part of.
+- Tests: `focus.test.ts`, `ops/focus-guard.test.ts` (incl. "add a fill at the end of the Verse" on the stacked
+  song), the assistant's fake-fetch tests, `test/browser/ask-ai.test.ts` (the pill, the marker ✦, typing in the
+  card plays no notes, no React commits while playing with the card closed).
+
 ### Listening to the mix (M16b)
 
 - `app/analysis/measure.ts` (pure, Node-tested): `Measurer` takes stereo audio in pieces and gives integrated and

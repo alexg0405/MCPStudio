@@ -152,6 +152,8 @@ export const clips: OpModule = {
     tidy: (a, c) => {
       // In a part of the song, only its stacked copies (the rest of the clean-up is song-wide).
       const part = c.focus.range();
+      // (Passes without a focus; with selected notes the playlist stays as it is.)
+      if (!part) c.focus.span(0, Infinity, 'tidy');
       const report = tidySong(c.d, {
         stacked: bool(a.stacked) ?? true,
         automation: part ? false : (bool(a.automation) ?? true),

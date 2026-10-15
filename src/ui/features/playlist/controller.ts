@@ -32,6 +32,8 @@ import { playbackMode, sourceSecondsAt, tickAtSourceSeconds } from '@core/audio/
 import { markersSorted } from '@core/ops/markers';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
+import { sectionMatching, songSections } from '@core/query/sections';
+import { barSpan } from '@core/time/bars';
 import { formatBST, ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
@@ -64,6 +66,7 @@ import {
   type MarkerBox,
 } from './render';
 import { markerRename } from './markers';
+import { askPillPlace, pillText, PILL_HEIGHT, type PillTarget } from './ask-pill';
 import { hitAudioHandle, type AudioHandle } from './audio-clip';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 
@@ -80,6 +83,16 @@ export interface PlaylistElements {
   rename: HTMLInputElement;
   /** Inline rename field for markers on the ruler. */
   markerRename: HTMLInputElement;
+  /** The "✦ Ask AI" pill over the selection or the loop region (moved on dirty frames). */
+  askPill: HTMLElement;
+}
+
+/** A rect in client pixels. */
+export interface ClientBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
 }
 
 type Layer = 'grid' | 'clips' | 'overlay' | 'headers' | 'ruler';
@@ -151,7 +164,12 @@ export class PlaylistController {
   /** Marker flags as last drawn on the ruler, the one under the pointer, and one being dragged. */
   private markerBoxes: MarkerBox[] = [];
   private markerHot: MarkerId | null = null;
+  /** The pointer is on the hot marker's ✦. */
+  private markerAskHot = false;
   private markerDrag: { id: MarkerId; tick: Tick } | null = null;
+  /** The ✦ pill's text as last set, and its width for that text. */
+  private pillLabel = '';
+  private pillWidth = 0;
   /** The audio clip gain/fade handle under the pointer. */
   private audioHot: { clipId: ClipId; handle: AudioHandle } | null = null;
 
@@ -286,6 +304,8 @@ export class PlaylistController {
   onMarkerMenu?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
   /** An empty spot of the ruler was right-clicked (at a snapped song tick). */
   onRulerMenu?: (tick: Tick, at: { clientX: number; clientY: number }) => void;
+  /** A marker flag's ✦ was clicked: ask the AI about its section. */
+  onMarkerAsk?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
 
   private readonly waveform = (ref: SampleRef) => this.s.engine.waveform(ref);
 
@@ -341,7 +361,7 @@ export class PlaylistController {
       const theme = readTheme();
       const ts = p.transport.timeSig;
       const muted = mutedLanes(p.playlist);
-      const markers = { markers: markersSorted(p), hot: this.markerHot, drag: this.markerDrag };
+      const markers = { markers: markersSorted(p), hot: this.markerHot, hotAsk: this.markerAskHot, drag: this.markerDrag };
       if (this.dirty.has('grid')) {
         const g = fitCanvas(els.grid, vp.width, vp.height);
         drawLanesGrid(g, vp, theme, ts, vp.rows, songLength(p));
@@ -404,6 +424,7 @@ export class PlaylistController {
         );
       }
       this.updateScrollbar(p);
+      this.updateAskPill(p);
       this.dirty.clear();
     }
     // A take being recorded grows every frame.
@@ -647,6 +668,102 @@ export class PlaylistController {
     this.els.hthumb.style.transform = `translateX(${x}px)`;
   }
 
+  /** The part the ✦ pill belongs to (the selected clips, else the loop region), in grid pixels, with its hint. */
+  private askTarget(p: Project): (PillTarget & { hint: string }) | null {
+    const { vp } = this;
+    const ts = p.transport.timeSig;
+    let start = Infinity;
+    let end = -Infinity;
+    let r0 = Infinity;
+    let r1 = -Infinity;
+    let n = 0;
+    for (const id of this.s.editor.getState().clipSelection) {
+      const c = p.playlist.clips[id];
+      const row = c ? this.laneRow(p, c.laneId) : -1;
+      if (!c || row < 0) continue;
+      start = Math.min(start, c.start);
+      end = Math.max(end, c.start + c.length);
+      r0 = Math.min(r0, row);
+      r1 = Math.max(r1, row);
+      n++;
+    }
+    if (n > 0) {
+      const span = barSpan(start, end, ts);
+      return {
+        x0: vp.tickToX(start),
+        x1: vp.tickToX(end),
+        y0: vp.rowToY(r0),
+        y1: vp.rowToY(r1) + vp.rowHeight,
+        compact: n === 1,
+        hint:
+          n === 1
+            ? `Ask the AI to change this clip (${span}), Alt+A: only it changes`
+            : `Ask the AI to change the ${n} selected clips (${span}), Alt+A: only they change`,
+      };
+    }
+    const loop = this.s.view.getState().loop;
+    if (!loop || loop.end <= loop.start) return null;
+    const section = sectionMatching(p, loop.start, loop.end);
+    const span = barSpan(loop.start, loop.end, ts);
+    return {
+      x0: vp.tickToX(loop.start),
+      x1: vp.tickToX(loop.end),
+      y0: 0,
+      y1: 0,
+      compact: false,
+      hint: `Ask the AI to change ${section ? `${section.name} (${span})` : span}, Alt+A: only those bars change`,
+    };
+  }
+
+  /** Moves the ✦ pill (dirty frames only); hidden while dragging and when there is nothing to ask about. */
+  private updateAskPill(p: Project): void {
+    const el = this.els.askPill;
+    const t = this.drag ? null : this.askTarget(p);
+    const hide = () => {
+      if (el.style.display !== 'none') el.style.display = 'none';
+    };
+    if (!t) return hide();
+    const text = pillText(t);
+    if (el.style.display === 'none') el.style.display = '';
+    if (text !== this.pillLabel || !this.pillWidth) {
+      el.textContent = text;
+      this.pillLabel = text;
+      this.pillWidth = el.offsetWidth;
+    }
+    if (el.getAttribute('data-hint') !== t.hint) el.setAttribute('data-hint', t.hint);
+    const at = askPillPlace(t, { w: this.pillWidth || 64, h: PILL_HEIGHT }, { w: this.vp.width, h: this.vp.height });
+    if (!at) return hide();
+    el.style.transform = `translate(${HEADER_WIDTH + at.x}px, ${RULER_HEIGHT + at.y}px)`;
+  }
+
+  /** The ✦ pill on screen (null while it is hidden). */
+  pillBox(): ClientBox | null {
+    const el = this.els.askPill;
+    if (el.style.display === 'none') return null;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 ? r : null;
+  }
+
+  /** A marker's flag on screen (null when it is scrolled away or the playlist is hidden). */
+  markerBox(id: MarkerId): ClientBox | null {
+    const b = this.markerBoxes.find((x) => x.id === id);
+    const r = this.els.ruler.getBoundingClientRect();
+    if (!b || r.width === 0) return null;
+    const x0 = Math.max(0, b.x0);
+    const x1 = Math.min(this.vp.width, b.x1);
+    if (x1 <= x0) return null;
+    return { left: r.left + x0, top: r.top + MARKER_LANE_Y, right: r.left + x1, bottom: r.top + RULER_HEIGHT };
+  }
+
+  /** A span of the song on the ruler (null when it is scrolled away or the playlist is hidden). */
+  spanBox(from: Tick, to: Tick): ClientBox | null {
+    const r = this.els.ruler.getBoundingClientRect();
+    const x0 = Math.max(0, this.vp.tickToX(from));
+    const x1 = Math.min(this.vp.width, this.vp.tickToX(to));
+    if (r.width === 0 || x1 <= x0) return null;
+    return { left: r.left + x0, top: r.top, right: r.left + x1, bottom: r.bottom };
+  }
+
   private persistViewport(): void {
     this.s.editor.getState().setPlaylist({
       pxPerTick: this.vp.pxPerTick,
@@ -744,7 +861,8 @@ export class PlaylistController {
 
     if (e.button === 0 && hit && this.onMenuButton(hit.clip, x, y, p)) {
       host.releasePointerCapture(e.pointerId);
-      editor.selectClips([hit.clip.id]);
+      // A clip that is part of the selection keeps it (its menu can act on all of them).
+      if (!editor.clipSelection.includes(hit.clip.id)) editor.selectClips([hit.clip.id]);
       this.onClipMenu?.(hit.clip, e);
       return;
     }
@@ -1305,16 +1423,27 @@ export class PlaylistController {
     return y >= MARKER_LANE_Y - 2 ? markerAtX(this.markerBoxes, x) : null;
   }
 
-  private setMarkerHot(id: MarkerId | null): void {
-    if (id === this.markerHot) return;
+  /** Whether ruler x is on a flag's ✦. */
+  private onAsk(b: MarkerBox | null, x: number): boolean {
+    return !!b?.ask && x >= b.ask.x0 && x < b.ask.x1;
+  }
+
+  private setMarkerHot(id: MarkerId | null, ask = false): void {
+    if (id === this.markerHot && ask === this.markerAskHot) return;
     this.markerHot = id;
+    this.markerAskHot = ask;
     this.invalidate('ruler');
-    const m = id ? this.project().playlist.markers[id] : undefined;
+    this.els.ruler.style.cursor = ask ? 'pointer' : '';
+    const p = this.project();
+    const m = id ? p.playlist.markers[id] : undefined;
+    const section = ask && id ? songSections(p).find((x) => x.markerId === id) : undefined;
     emitHint(
       this.els.ruler,
-      m
-        ? `Marker ${describeMarker(this.s, m)}: click to jump there, drag to move it, double-click to rename, right-click for more`
-        : (this.els.ruler.getAttribute('data-hint') ?? ''),
+      m && section
+        ? `Ask the AI about this section (${m.name}, ${barSpan(section.from, section.to, p.transport.timeSig)}): it loops and a box opens for your request`
+        : m
+          ? `Marker ${describeMarker(this.s, m)}: click to jump there, drag to move it, double-click to rename, right-click for more`
+          : (this.els.ruler.getAttribute('data-hint') ?? ''),
     );
   }
 
@@ -1330,6 +1459,11 @@ export class PlaylistController {
     }
     if (e.button !== 0) return;
     e.preventDefault();
+    // The flag's ✦ acts at once (like a clip's ▾): ask the AI about the section.
+    if (hit && this.onAsk(hit, x)) {
+      this.onMarkerAsk?.(hit.id, e);
+      return;
+    }
     this.els.ruler.setPointerCapture(e.pointerId);
     if (hit) {
       this.drag = { kind: 'marker', id: hit.id, x0: x, grab: this.vp.xToTick(x) - hit.tick, tick: hit.tick, moved: false };
@@ -1343,7 +1477,8 @@ export class PlaylistController {
     const d = this.drag;
     if (!d) {
       const { x, y } = this.local(e, this.els.ruler);
-      this.setMarkerHot(this.markerHit(x, y)?.id ?? null);
+      const hit = this.markerHit(x, y);
+      this.setMarkerHot(hit?.id ?? null, this.onAsk(hit, x));
       return;
     }
     if (d.kind === 'marker') {
@@ -1397,6 +1532,8 @@ export class PlaylistController {
   private onRulerDouble(e: MouseEvent): void {
     const { x, y } = this.local(e, this.els.ruler);
     const hit = this.markerHit(x, y);
+    // A double-click on the ✦ is two clicks on it, not a rename.
+    if (hit && this.onAsk(hit, x)) return;
     if (hit) this.renameMarker(hit.id);
     else this.s.view.getState().setLoop(null);
   }

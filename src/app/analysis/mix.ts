@@ -1,4 +1,4 @@
-import { MASTER, type InsertId, type Project } from '@core/model/types';
+import { MASTER, type InsertId, type PatternId, type Project, type Tick } from '@core/model/types';
 import { planStems, stemProject, withoutMasterChain } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
 import { renderOffline } from '@engine/render-offline';
@@ -32,11 +32,16 @@ export interface MixReport {
   notes: string[];
 }
 
+/** Just one part: a span of the song (exclusive end), or one pattern on a loop. */
+export type AnalyzeRange = { from: Tick; to: Tick } | { patternId: PatternId };
+
 export interface AnalyzeOptions {
   maxSeconds?: number;
   sampleRate?: number;
   signal?: AbortSignal;
   onProgress?(fraction: number, label: string): void;
+  /** Listen to just this part ("Ask AI about this part"); default: the loop region, the song or the pattern. */
+  range?: AnalyzeRange;
 }
 
 const RATE = 48000;
@@ -57,13 +62,19 @@ const yieldToUi = (): Promise<void> => {
   });
 };
 
-/** Which part of the project to listen to. */
-export function analysisPlan(s: Services, maxSeconds: number): ExportPlan {
+/** Which part of the project to listen to: `range` when given, else the loop region, the song or the pattern. */
+export function analysisPlan(s: Services, maxSeconds: number, range?: AnalyzeRange): ExportPlan {
   const project = s.doc.getState().project;
   const view = s.view.getState();
-  let plan: ExportPlan | { error: string } =
-    view.mode === 'song' && view.loop ? planExport(project, view, 'loop') : planExport(project, view, view.mode);
-  if ('error' in plan) plan = planExport(project, view, 'pattern');
+  const bar = ticksPerBar(project.transport.timeSig);
+  let plan: ExportPlan | { error: string };
+  if (range && 'patternId' in range) plan = planExport(project, { ...view, currentPatternId: range.patternId }, 'pattern');
+  else if (range && range.to > range.from)
+    plan = { mode: 'song', patternId: view.currentPatternId, fromTick: Math.max(0, range.from), bars: (range.to - Math.max(0, range.from)) / bar };
+  else {
+    plan = view.mode === 'song' && view.loop ? planExport(project, view, 'loop') : planExport(project, view, view.mode);
+    if ('error' in plan) plan = planExport(project, view, 'pattern');
+  }
   if ('error' in plan) throw new Error(plan.error);
   const seconds = planSeconds(project, plan);
   const barSeconds = seconds / Math.max(plan.bars, 1e-9);
@@ -103,7 +114,7 @@ async function measureAsync(
 export async function analyzeMix(s: Services, opts: AnalyzeOptions = {}): Promise<MixReport> {
   const project = s.doc.getState().project;
   const rate = opts.sampleRate ?? RATE;
-  const plan = analysisPlan(s, opts.maxSeconds ?? 30);
+  const plan = analysisPlan(s, opts.maxSeconds ?? 30, opts.range);
   const seconds = planSeconds(project, plan);
   const frames = Math.round(seconds * rate);
   const raw = withoutMasterChain(project);

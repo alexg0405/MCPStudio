@@ -1,8 +1,8 @@
 .root {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .top {
@@ -16,7 +16,7 @@
   display: grid;
   grid-template-columns: repeat(4, 84px);
   grid-auto-rows: 58px;
-  gap: 5px;
+  gap: 6px;
 }
 
 .pad {
@@ -24,37 +24,47 @@
   flex-direction: column;
   justify-content: space-between;
   min-width: 0;
-  padding: 5px 6px;
-  border: 1px solid var(--ag-border);
-  border-radius: 4px;
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  padding: 6px 8px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background:
+    radial-gradient(120% 90% at 50% 0%, var(--ag-sheen), transparent 70%),
+    linear-gradient(180deg, var(--ag-surface-3), var(--ag-surface-2));
   color: var(--ag-text);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  box-shadow: inset 0 1px 0 var(--ag-highlight);
+  box-shadow: var(--ag-elev-1);
+  transition:
+    border-color var(--ag-dur) var(--ag-ease),
+    box-shadow var(--ag-dur) var(--ag-ease);
 }
 
 .pad:hover {
   border-color: var(--ag-border-soft);
 }
 
-.selected {
-  border-color: var(--ag-accent);
+/* The pad being edited: a gold edge. */
+.selected,
+.selected:hover {
+  border-color: var(--ag-accent-dim);
   box-shadow:
-    inset 0 1px 0 var(--ag-highlight),
-    0 0 0 1px var(--ag-accent);
+    var(--ag-elev-1),
+    0 0 0 1px var(--ag-accent-dim),
+    0 0 12px var(--ag-accent-tint);
 }
 
 .over {
   border-color: var(--ag-select);
   border-style: dashed;
-  background: var(--ag-surface-inset);
+  background: var(--ag-select-tint);
 }
 
+/* Struck: brushed gold. */
 .lit {
-  background: var(--ag-accent);
-  color: var(--ag-bg);
+  background: var(--ag-metal);
+  box-shadow: 0 0 14px var(--ag-accent-glow);
+  color: var(--ag-on-accent);
 }
 
 .padTop {
@@ -65,8 +75,8 @@
 }
 
 .padNumber {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: var(--ag-font-size);
+  font-weight: 600;
 }
 
 .padNote {
@@ -88,8 +98,7 @@
 }
 
 .padBuiltin {
-  color: var(--ag-text-dim);
-  font-style: italic;
+  color: var(--ag-text-faint);
 }
 
 .lit .padBuiltin {
@@ -129,22 +138,47 @@
 
 .button,
 .kitSelect {
-  padding: 2px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: 3px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
   background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-text);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
   cursor: pointer;
-}
-
-.kitSelect {
-  background: var(--ag-surface-inset);
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .button:hover {
-  border-color: var(--ag-accent);
+  background: var(--ag-hover);
+  color: var(--ag-accent);
+}
+
+.kitSelect {
+  appearance: none;
+  padding-right: 22px;
+  background-color: var(--ag-surface-inset);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ag-text-dim) 50%),
+    linear-gradient(135deg, var(--ag-text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 50%,
+    calc(100% - 8px) 50%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  box-shadow: var(--ag-inset);
+  font-weight: 400;
+}
+
+.kitSelect:hover {
+  color: var(--ag-text);
 }
 
 .controls {

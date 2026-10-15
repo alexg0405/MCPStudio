@@ -8,15 +8,15 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { formatValue, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
-import { emitHint, Knob, Select, Toggle, useFrame } from '@agstudio/sdk/ui';
+import { emitHint, Knob, Select, themeColors, Toggle, useFrame } from '@agstudio/sdk/ui';
 import { bandResponseDb, hasGain, sectionBuffer, type BandType } from './design.kernel';
 import { BAND_COUNT, bandIds, TYPE_LABELS, type eqProParams } from './params';
 import styles from './eq-pro.module.css';
 
 type Props = PluginUIProps<typeof eqProParams>;
 
-/** One colour per band (handles, tabs, the selected band's fill). */
-const COLORS = ['#e5574d', '#ff9a3c', '#e3cf46', '#9fde5a', '#4fd1b5', '#5aa4e8', '#9b7cf0', '#e06cc0'];
+/** One colour per band (handles, tabs, the selected band's fill): the theme's palette. */
+const COLORS = Array.from({ length: 8 }, (_, i) => `var(--ag-palette-${i + 1})`);
 const F_MIN = 20;
 const F_MAX = 20000;
 /** The curve's vertical range: ±24 dB (the gain range). */
@@ -114,7 +114,7 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
 
   // The summed curve and the selected band's own response.
   const scratch = useMemo(() => sectionBuffer(), []);
-  const { curve, fill } = useMemo(() => {
+  const { curve, area, fill } = useMemo(() => {
     const steps = Math.max(2, Math.round(size.w / 2));
     const active = bands.filter((b) => b.on && !(hasGain(b.type) && b.gain === 0));
     const sel = bands[selected - 1];
@@ -132,7 +132,11 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
       }
     }
     const zero = yOf(0, size.h).toFixed(1);
-    return { curve: c, fill: f ? `${f}L${size.w},${zero}L0,${zero}Z` : '' };
+    return {
+      curve: c,
+      area: `${c}L${size.w},${zero}L0,${zero}Z`,
+      fill: f ? `${f}L${size.w},${zero}L0,${zero}Z` : '',
+    };
   }, [bands, selected, size, sampleRate, output, scratch]);
 
   // The live spectrum of the output, drawn on the frame loop (no React renders).
@@ -176,11 +180,16 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
     }
     ctx.lineTo(w, h);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(90, 164, 232, 0.22)';
+    // The theme's selection colour (soft steel), quieter than the gold curve on top of it.
+    const theme = themeColors();
+    ctx.fillStyle = theme.select;
+    ctx.globalAlpha = 0.16;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(90, 164, 232, 0.55)';
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = theme.select;
     ctx.lineWidth = 1;
     ctx.stroke();
+    ctx.globalAlpha = 1;
   });
 
   // Scroll on a handle changes its Q (a native listener: React's wheel events can't stop scrolling).
@@ -320,7 +329,8 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
             </g>
           ))}
           <line className={styles.gridZero} x1={0} x2={size.w} y1={yOf(0, size.h)} y2={yOf(0, size.h)} />
-          {fill && <path className={styles.bandFill} d={fill} fill={COLORS[sel.b - 1]} />}
+          <path className={styles.curveFill} d={area} />
+          {fill && <path className={styles.bandFill} d={fill} style={{ fill: COLORS[sel.b - 1] }} />}
           <path className={styles.curve} d={curve} />
           {bands.map((band) => {
             const x = norm(clamp(band.freq, F_MIN, F_MAX)) * size.w;
@@ -352,7 +362,14 @@ export function EqProUI({ specs, values, beginEdit, setParam: setTyped, endEdit,
                   );
                 }}
               >
-                <circle className={styles.handleDot} r={8} fill={band.on ? COLORS[band.b - 1] : undefined} />
+                {band.b === selected && band.on && (
+                  <circle className={styles.handleHalo} r={13} style={{ fill: COLORS[band.b - 1] }} />
+                )}
+                <circle
+                  className={styles.handleDot}
+                  r={8}
+                  style={band.on ? { fill: COLORS[band.b - 1] } : undefined}
+                />
                 <text className={styles.handleNumber}>{band.b}</text>
               </g>
             );

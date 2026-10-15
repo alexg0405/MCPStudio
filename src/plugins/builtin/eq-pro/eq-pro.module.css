@@ -3,10 +3,10 @@
 .root {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   box-sizing: border-box;
   height: 100%;
-  padding: 8px 10px 10px;
+  padding: 12px;
   min-width: 280px;
 }
 
@@ -14,9 +14,11 @@
   position: relative;
   flex: 1;
   min-height: 150px;
-  border: 1px solid var(--ag-border, #12161a);
-  border-radius: var(--ag-radius, 3px);
-  background: var(--ag-surface-inset, #1e2428);
+  border-radius: var(--ag-radius-lg, 10px);
+  background:
+    radial-gradient(90% 70% at 50% 0%, var(--ag-sheen, rgba(255, 255, 255, 0.03)), transparent 70%),
+    var(--ag-surface-inset, #0e0f11);
+  box-shadow: var(--ag-inset, inset 0 1px 3px rgba(0, 0, 0, 0.6));
   overflow: hidden;
   touch-action: none;
   user-select: none;
@@ -29,32 +31,41 @@
 }
 
 .gridLine {
-  stroke: rgba(255, 255, 255, 0.06);
+  stroke: var(--ag-line-faint, rgba(255, 255, 255, 0.05));
   stroke-width: 1;
 }
 
 .gridZero {
-  stroke: rgba(255, 255, 255, 0.16);
+  stroke: var(--ag-line-strong, rgba(255, 255, 255, 0.1));
   stroke-width: 1;
 }
 
 .gridLabel {
-  fill: var(--ag-text-faint, #6a747c);
+  fill: var(--ag-text-faint, #6f6c66);
   font-size: 9px;
   font-family: var(--ag-font-mono, monospace);
   pointer-events: none;
 }
 
+/* The summed curve: a gold line with a soft glow, and a faint gold wash down to 0 dB. */
 .curve {
   fill: none;
-  stroke: var(--ag-accent, #ff9a3c);
+  stroke: var(--ag-accent, #c9a45c);
   stroke-width: 2;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px var(--ag-accent-glow, rgba(201, 164, 92, 0.45)));
+  pointer-events: none;
+}
+
+.curveFill {
+  fill: var(--ag-accent, #c9a45c);
+  opacity: 0.07;
   pointer-events: none;
 }
 
 .bandFill {
   stroke: none;
-  opacity: 0.18;
+  opacity: 0.16;
   pointer-events: none;
 }
 
@@ -67,22 +78,35 @@
 }
 
 .handleDot {
-  stroke: var(--ag-border, #12161a);
+  stroke: var(--ag-surface-inset, #0e0f11);
   stroke-width: 1.5;
+  transition: r var(--ag-dur, 140ms) var(--ag-ease, ease);
+}
+
+.handle:hover .handleDot {
+  r: 9px;
 }
 
 .handleOff .handleDot {
-  fill: var(--ag-surface-3, #3c464e);
+  fill: var(--ag-surface-3, #26282d);
+  stroke: var(--ag-text-faint, #6f6c66);
+  stroke-width: 1;
   stroke-dasharray: 2 2;
 }
 
+/* The band being edited: a bright ring and a halo in its colour. */
 .handleSelected .handleDot {
-  stroke: #fff;
+  stroke: var(--ag-text, #ecebe6);
   stroke-width: 2;
 }
 
+.handleHalo {
+  opacity: 0.22;
+  pointer-events: none;
+}
+
 .handleNumber {
-  fill: #12161a;
+  fill: var(--ag-on-light, #111214);
   font-size: 9px;
   font-weight: 700;
   text-anchor: middle;
@@ -94,14 +118,18 @@
   fill: var(--ag-text-dim, #929ca5);
 }
 
+/* What the selected band does, on a small glass chip. */
 .readout {
   position: absolute;
-  top: 6px;
-  right: 8px;
-  padding: 2px 6px;
-  border-radius: 2px;
-  background: rgba(0, 0, 0, 0.45);
-  color: var(--ag-text, #d9dfe4);
+  top: 8px;
+  right: 10px;
+  padding: 3px 9px;
+  border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-glass, rgba(22, 23, 26, 0.78));
+  backdrop-filter: var(--ag-blur, blur(20px));
+  -webkit-backdrop-filter: var(--ag-blur, blur(20px));
+  color: var(--ag-text, #ecebe6);
   font-family: var(--ag-font-mono, monospace);
   font-size: 10px;
   pointer-events: none;
@@ -110,28 +138,37 @@
 .picker {
   display: grid;
   grid-template-columns: repeat(4, auto);
-  gap: 3px;
+  gap: 4px;
   align-self: center;
 }
 
+/* Band picker: small pills with the band's colour. */
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  border: 1px solid var(--ag-border, #12161a);
-  border-radius: 2px;
-  background: var(--ag-surface-2, #323b42);
-  color: var(--ag-text-dim, #929ca5);
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-surface-inset, #0e0f11);
+  color: var(--ag-text-dim, #a6a39b);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm, 11px);
   font-weight: 600;
   cursor: pointer;
+  transition:
+    color var(--ag-dur, 140ms) var(--ag-ease, ease),
+    background-color var(--ag-dur, 140ms) var(--ag-ease, ease);
+}
+
+.tab:hover {
+  color: var(--ag-text, #ecebe6);
 }
 
 .tabSelected {
-  background: var(--ag-surface-3, #3c464e);
-  color: var(--ag-text, #d9dfe4);
+  background: var(--ag-surface-3, #26282d);
+  color: var(--ag-text, #ecebe6);
 }
 
 .tabOff .swatch {
@@ -139,8 +176,8 @@
 }
 
 .swatch {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 
@@ -148,32 +185,42 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px 14px;
-  padding: 6px 8px 8px;
-  border: 1px solid var(--ag-border, #12161a);
-  border-radius: var(--ag-radius, 3px);
-  background: var(--ag-surface-1, #2a3238);
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
+  border-radius: var(--ag-radius-lg, 10px);
+  background:
+    linear-gradient(180deg, var(--ag-sheen, rgba(255, 255, 255, 0.03)), transparent 40px),
+    var(--ag-surface-2, #1c1d21);
 }
 
 .control {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   min-width: 52px;
 }
 
 .label {
-  color: var(--ag-text-dim, #929ca5);
-  font-size: 10px;
+  color: var(--ag-text-dim, #a6a39b);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .value {
-  color: var(--ag-text-faint, #6a747c);
+  color: var(--ag-text-faint, #6f6c66);
   font-family: var(--ag-font-mono, monospace);
   font-size: 10px;
   white-space: nowrap;
+  transition: color var(--ag-dur, 140ms) var(--ag-ease, ease);
+}
+
+.control:hover .value {
+  color: var(--ag-accent, #c9a45c);
 }
 
 .spacer {

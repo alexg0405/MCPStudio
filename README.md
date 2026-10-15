@@ -46,6 +46,10 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
   and shortcuts you can change (Help → Keyboard shortcuts).
+- **FL Studio import** (File → Import FL Studio project…, or drop an `.flp` / zipped loop package): channels,
+  patterns and notes, the arrangement (clips, track names, markers), mixer names, levels, routing and matching
+  effects. Samples come along from a zipped loop package; VST and other plugins get a built-in stand-in that keeps
+  their notes, and a report says what didn't come across (File → Find missing samples… fills in samples later).
 - **Visualizer**: a scope in the toolbar (click it for the spectrum) and a Visualizer window (⌥V) with the
   spectrum, left/right waveforms and peaks of what you hear; live gain-reduction and pitch meters in plugin windows.
 - **Presets**: every plugin window has a preset bar (◀ name ▶): load factory presets, save your own, rename,

@@ -1320,6 +1320,65 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
 - Normalize: one gain so the loudest moment peaks at −0.3 dBFS (stems all by the mix's gain, so they still add up).
   `file.exportAudioNow` exports straight away with settings from its args (for the AI; asks where to save first).
 
+### Importing FL Studio projects
+
+`core/io/flp.ts` (reader), `core/io/flp-import.ts` (mapper + report text), `core/io/flp-package.ts` (zipped loop
+packages), `app/actions/flp-import.ts` (samples, opening), `ui/features/fl-import` (File menu, drops, report dialog).
+
+- **Format.** FL's `.flp` is undocumented. The ids and record layouts come from two open-source readers checked
+  against real files: PyFLP (github.com/demberto/PyFLP: `_events.py`, `project.py`, `channel.py`, `pattern.py`,
+  `arrangement.py`, `mixer.py`, `timemarker.py`, `plugin.py`) and Monad's FLParser (github.com/monadgroup/FLParser:
+  `ProjectParser.cs`, `Enums.cs`), plus flpkit's notes (playlist record sizes 32/60/80/88; automation x in beats).
+  Chunk `FLhd` (u32 6: i16 format, u16 channels, u16 PPQ), chunk `FLdt` (u32 length) of events: id < 64 one byte,
+  < 128 two, < 192 four (little endian), else a LEB128 length + data. Text is UTF-16LE from FL 11.5 (decided by the
+  version event 199, always ASCII), single-byte before. Unknown events are skipped; a cut-off or damaged stream
+  imports what was read (with a warning); only a missing/invalid header or no data at all is an `FlpError`. Caps on
+  bytes, channels, patterns, notes, items, inserts and points; fast-check fuzzes random and mutated files.
+- **Reading is a state machine**: "new channel" (64), "new pattern" (65, appears twice per pattern), "new
+  arrangement" (99) and the mixer events select what later events describe. The plugin events (colour 128, internal
+  name 201, name 203, data 213) belong to the current channel until one repeats for it or a mixer event appears; then
+  they describe the current mixer slot, which `SlotIndex` (98) closes. An insert ends at its Output event (147, PyFLP)
+  or, in files without those, at its next routing event (235, FLParser). Mixer volume/pan/sends come from the global
+  params event (225: 12-byte items, insert = bits 6–12, slot = bits 0–5 of the channel word).
+- **Units.** Ticks are rescaled from the header PPQ to 960. Note records (24 bytes): position, flags (slide = bit 3),
+  rack channel, length, key (60 = C5 = our 60), fine 0–240 around 120 (read as ±1 semitone; assumed), release 0–128,
+  pan 0–128 (64 centre), velocity 0–128. Channel volume 0–12800 → /12800 (default 10000 ≈ our 0.78), pan 0–12800
+  around 6400, pitch in cents. Insert volume 0–16000 with 12800 = 0 dB: that is our fader taper's position (0 dB at
+  80 %), so gain = `faderToGain(v / 16000)`. Playlist items: pattern items have index > 20480 (pattern = index −
+  20480), others are channel items (audio or automation clips); tracks are stored reversed (499 − n from FL 12.9.1,
+  198 − n before); muted = flag 0x2000; offsets are int ticks for patterns (or float32, read as ticks) and float32
+  beats for channel items; −1 = none. Time markers: position & 0x07FFFFFF, kind = value >> 27 (1 = time signature).
+- **Mapping.** A new project (`createEmptyProject`), built in one pass, then `repairProject`. Channels keep order,
+  name, colour, levels, pitch, root key, mute and target insert. Samplers get their sample; a sampler that is only on
+  the playlist and has no notes becomes an audio clip channel (FL's audio clips are samplers). Layers dissolve into
+  their children (who get the layer's notes). Automation channels keep their points (x in beats → ticks) and clips;
+  the target comes from the automation-link records (event 227) only for channel volume/pan (params 0/1, assumed),
+  otherwise it is `null` and reported. Generators get a built-in by name first (`808` → 808 Bass, a single drum name
+  → Sampler with that kit sound, drum words → Drum Pads), then by plugin (3x Osc → 3x Osc, FL Keys → 3x Osc keys,
+  FPC → Drum Pads, DrumSynth/Drumaxx → Drum Synth, Sytrus/DX10/Toxic → FM, Plucked!/Sakura → Pluck, Slicex → Slicer),
+  VSTs by their own name (from the wrapper data: records u32 id, u64 size; 54 = name), everything else Wavetable.
+  Stand-ins say so in the channel name ("Lead (stand-in for Serum)"). FL plugin settings are not read. Effects map
+  only where obvious (Fruity Limiter, Parametric EQ 2, Reeverb 2, Delay 3, Compressor, Chorus…; VST effects by
+  keywords such as "verb" or "comp"); the rest are skipped and reported. Only the open arrangement is imported.
+  FL pattern clips don't loop their content, so a pattern gets an explicit length when a clip reaches past it.
+  Mixer routing comes from the routing flags (+ send levels) unless no insert uses them, then everything goes to the
+  master; edges that would make a cycle are dropped. The insert "enabled" flag only mutes when the file uses it.
+- **Samples.** An `.flp` only names sample paths on the computer that made it. A zipped loop package (FL: File >
+  Export > Zipped loop package) carries them: matched by file name (case-insensitive, then by stem), decoded
+  (`probeAudio`) and stored like any imported audio (`importSampleBytes`). Missing ones still get a `SampleRef`
+  named after the file, with a hash of a label instead of audio, so the channel and its clips stay and play silence
+  (the same "missing sample" state as an opened project whose audio is gone); File > Find missing samples… (or
+  dropping a zip without a project) fills them from files or zips by file name, swapping the sample id everywhere
+  in one undo step. The ref persists, so this also works after save and reload.
+- **Opening.** The import opens like a file: unsaved-changes question, `files.replace(…, { dirty: true })` (empty
+  undo history, title "● <name>", no file handle, so Save asks where), song mode when the playlist has clips. A
+  dialog lists what came across and what didn't (VST stand-ins, missing samples, skipped effects, other
+  arrangements, untargeted automation, slide notes). The AI uses the same `file.importFlp` and
+  `file.findMissingSamples` commands (gesture: the musician confirms the file chooser).
+- **Still to validate against FL's own output** (the tests use a writer built from the same docs,
+  `test/helpers/flp.ts`): the insert boundary event, slot order, the fine-pitch scale, the automation target params,
+  pattern offsets as floats, and markers' high bits.
+
 ### Playlist markers (`ui/features/markers`, `app/actions/markers.ts`, `core/ops/markers.ts`)
 
 The ruler has a marker lane (the ruler is 34 px: bar numbers above, markers below), with a faint line down the tracks

@@ -237,6 +237,20 @@ export function layeredFills(p: Project, env: VariantEnv): { fill: FillClip; und
   return out;
 }
 
+/** Patterns that loop: a clip longer than the pattern, or two of its clips back to back on a track. */
+export function loopingPatterns(p: Project): Set<PatternId> {
+  const out = new Set<PatternId>();
+  const ends = new Map<string, Tick[]>();
+  const clips = audiblePatternClips(p);
+  for (const c of clips) {
+    if (c.length > lengthOfPattern(p, c.patternId)) out.add(c.patternId);
+    const key = `${c.laneId}|${c.patternId}`;
+    ends.set(key, [...(ends.get(key) ?? []), c.start + c.length]);
+  }
+  for (const c of clips) if (ends.get(`${c.laneId}|${c.patternId}`)?.includes(c.start)) out.add(c.patternId);
+  return out;
+}
+
 export type ExistingFxKind = FxKind | 'crash';
 
 const FX_WORDS: [RegExp, FxKind][] = [
@@ -292,5 +306,7 @@ export function existingFx(p: Project, env: VariantEnv): { kind: ExistingFxKind;
     const kind = fxKindFromName(p.patterns[c.patternId]!.name);
     if (kind) out.push({ kind, at: endsAtX(kind) ? c.start + c.length : c.start });
   }
-  return out.sort((a, b) => a.at - b.at);
+  // One sound found several ways (two notes of a riser, its pattern's name) counts once.
+  const sorted = out.sort((a, b) => a.at - b.at || a.kind.localeCompare(b.kind));
+  return sorted.filter((x, i) => !sorted.slice(0, i).some((y) => y.kind === x.kind && x.at - y.at < 240));
 }

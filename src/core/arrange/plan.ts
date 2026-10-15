@@ -91,10 +91,20 @@ export interface ArrangementPlan {
 export interface SongEvent extends Omit<PhraseEvent, 'why'> {
   section: number;
   why: PhraseEvent['why'];
+  /** Where it may change the song (a build kept to the bar before a part of the song); default everywhere. */
+  within?: { from: Tick; to: Tick };
 }
+
+/** The span an event changes: its own, cut to `within`. */
+export const eventSpan = (e: Pick<SongEvent, 'from' | 'to' | 'within'>): { from: Tick; to: Tick } => ({
+  from: Math.max(e.from, e.within?.from ?? -Infinity),
+  to: Math.min(e.to, e.within?.to ?? Infinity),
+});
 
 /** Kinds that add notes on one instrument: they go to one clip; the drums of the others make room. */
 const ADDS: ReadonlySet<VariantKind> = new Set(['snare-fill', 'tom-fill', 'hat-fill', 'kick-fill', 'snare-build', 'hat-roll', 'open-hat']);
+/** Kinds that add drum notes (never under a fill playing from its own clip). */
+const ADDS_DRUMS: ReadonlySet<VariantKind> = new Set([...ADDS, 'double-hats', 'stutter']);
 
 export const FX_LANE: Record<FxPlacement['kind'], string> = {
   riser: 'FX risers',
@@ -186,14 +196,16 @@ export function stepsForClips(
 ): VariantStep[][] {
   const out: VariantStep[][] = clips.map(() => []);
   for (const e of events) {
+    const span = eventSpan(e);
+    if (span.to <= span.from) continue;
     const under = clips
       .map((c, i) => ({ c, i }))
-      .filter(({ c }) => c.section === e.section && c.start < e.to && c.start + c.length > e.from);
+      .filter(({ c }) => c.section === e.section && c.start < span.to && c.start + c.length > span.from);
     if (!under.length) continue;
     const part = (i: number, kind: VariantKind) => {
       const c = clips[i]!;
-      const from = Math.max(e.from, c.start);
-      const to = Math.min(e.to, c.start + c.length);
+      const from = Math.max(span.from, c.start);
+      const to = Math.min(span.to, c.start + c.length);
       const step: VariantStep = { kind, from: from - c.start, to: to - c.start, energy: e.energy };
       if (e.level !== undefined) step.level = e.level;
       if (e.parts?.length) step.parts = [...e.parts];
@@ -535,20 +547,38 @@ export function planDevelop(
           rotation,
         )
       : { events: end, crashes: [] };
+    // Changes stay within the range, plus a bar on each side for transitions.
+    const within = { from: opts.from - bar, to: opts.to + bar };
     for (const e of res.events) {
-      const ev: SongEvent = { ...e, from: e.from + s.from, to: e.to + s.from, section: i };
-      if (ev.to <= opts.from - bar || ev.from >= opts.to + bar) continue;
+      const ev: SongEvent = { ...e, from: e.from + s.from, to: e.to + s.from, section: i, within };
+      const span = eventSpan(ev);
+      if (span.to <= span.from) continue;
       events.push(ev);
     }
   });
-  // Fills already played from their own clips stay the fill there.
+  // Fills already played from their own clips stay the fill there: nothing adds drums under them
+  // (busier hats and stutters go around them).
   let fillsSkipped = 0;
-  const kept = events.filter((e) => {
-    if (!FILL_KINDS.has(e.kind)) return true;
-    const clash = existing.fills.some((f) => f.from < e.to && f.to > e.from);
-    if (clash) fillsSkipped++;
-    return !clash;
-  });
+  const kept: SongEvent[] = [];
+  for (const e of events) {
+    const span = eventSpan(e);
+    const clashes = existing.fills.filter((f) => f.from < span.to && f.to > span.from);
+    if (!clashes.length || !ADDS_DRUMS.has(e.kind)) {
+      kept.push(e);
+      continue;
+    }
+    if (e.kind !== 'double-hats') {
+      if (FILL_KINDS.has(e.kind)) fillsSkipped++;
+      continue;
+    }
+    // Double hats around the fills.
+    let at = span.from;
+    for (const f of [...clashes].sort((a, b) => a.from - b.from)) {
+      if (f.from > at) kept.push({ ...e, from: at, to: f.from, within: { from: at, to: f.from } });
+      at = Math.max(at, f.to);
+    }
+    if (at < span.to) kept.push({ ...e, from: at, to: span.to, within: { from: at, to: span.to } });
+  }
   rotateFills(kept, spans, opts.style);
   // FX: skip kinds already there within a beat.
   let fxSkipped = 0;

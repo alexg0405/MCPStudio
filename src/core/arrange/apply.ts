@@ -42,7 +42,7 @@ import type { TempoMap } from '../time/ppq';
 import type { VariantEnv } from './fills';
 import { lengthOfPattern, notesHash, setHash, toNoteMap, toNoteSet } from './notes';
 import type { ArrangementPlan, PlannedAutomation, PlannedCrash, PlannedFx, SongEvent } from './plan';
-import { LaneAllocator, stepsForClips } from './plan';
+import { eventSpan, LaneAllocator, stepsForClips } from './plan';
 import { isDrumRole, noteRole } from './roles';
 import type { AutomationItem, AutomationPurpose, AutomationTarget } from './transitions';
 import { applySteps, mergeSteps, normalizeStep, variantKey, variantName, variantSeed } from './variants';
@@ -619,30 +619,33 @@ function patternContent(p: Project, pid: PatternId, env: VariantEnv) {
 /**
  * Applies song events to the clips under them: each clip (split so one repeat changes alone) gets
  * its own variant carrying the event, merged with the steps it already had. Muted clips and clips
- * on `skipLanes` are left alone. Returns the clips changed.
+ * on `skipLanes` and the `protect`ed ones are left alone. Returns the clips changed.
  */
 export function applyEventsInPlace(
   d: Draft<Project>,
   events: readonly Omit<SongEvent, 'section'>[],
   env: ApplyEnv,
-  opts: { lanes?: ReadonlySet<LaneId>; skipLanes?: ReadonlySet<LaneId> } = {},
+  opts: { lanes?: ReadonlySet<LaneId>; skipLanes?: ReadonlySet<LaneId>; protect?: ReadonlySet<ClipId> } = {},
 ): ClipId[] {
   const p = d as unknown as Project;
   const changed = new Set<ClipId>();
   for (const e of events) {
+    const span = eventSpan(e);
+    if (span.to <= span.from) continue;
     const under = () =>
       Object.values(p.playlist.clips).filter(
         (c): c is PatternClip =>
           c.kind === 'pattern' &&
           !c.muted &&
           !!p.patterns[c.patternId] &&
-          c.start < e.to &&
-          c.start + c.length > e.from &&
+          c.start < span.to &&
+          c.start + c.length > span.from &&
           (!opts.lanes || opts.lanes.has(c.laneId)) &&
-          !opts.skipLanes?.has(c.laneId),
+          !opts.skipLanes?.has(c.laneId) &&
+          !opts.protect?.has(c.id),
       );
     // Each clip under the event plays one repeat there.
-    for (const c of under()) isolate(d, c.id, e.from, e.to, lengthOfPattern(p, c.patternId), env.tempo);
+    for (const c of under()) isolate(d, c.id, span.from, span.to, lengthOfPattern(p, c.patternId), env.tempo);
     const pieces = under();
     if (!pieces.length) continue;
     const clips = pieces.map((c) => {

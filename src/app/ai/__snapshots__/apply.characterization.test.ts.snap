@@ -73,6 +73,11 @@ exports[`AI applier characterization > applies every op the same way 2`] = `
   "Removed 2 playlist clips",
   "Wrote the beat “Test beat” (Kick, Hat, 808)",
   "Deleted channel “Rim”",
+  "Arranged 6 bars: Intro 13–14 · Drop 15–18 · 1 build (riser, gap, impact), outro stop",
+  "Developed bars 1–8: nothing needed",
+  "Gap at bar 15: already there (nothing added)",
+  "Added a hat roll at the end of bar 16 (1 clip now plays a variant)",
+  "Made “Test beat · hat fill”",
 ]
 `;
 
@@ -108,6 +113,9 @@ exports[`AI applier characterization > applies every op the same way 3`] = `
   "marker: unknown marker action "jump"",
   "beat: the beat can't be used: The beat has no usable tracks.",
   "remove channel: there is no channel "Rim"",
+  "arrange: “Nowhere”: there is no pattern "nothing"",
+  "transition: unknown transition "sparkle"",
+  "vary: unknown variation "nope"",
   "audition: there is no channel "nobody"",
   "build plugin: it needs a name and a kind (instrument or effect)",
   "command: there is no command "file.save"",
@@ -128,6 +136,22 @@ exports[`AI applier characterization > applies every op the same way 4`] = `
   {
     "kind": "open",
     "window": "channel-rack",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
+  },
+  {
+    "kind": "mode",
+    "mode": "song",
   },
   {
     "kind": "mode",
@@ -184,7 +208,7 @@ exports[`AI applier characterization > applies every op the same way 4`] = `
 ]
 `;
 
-exports[`AI applier characterization > applies every op the same way 5`] = `"af40a583"`;
+exports[`AI applier characterization > applies every op the same way 5`] = `"ebbad0bd"`;
 
 exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 [
@@ -217,6 +241,10 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "clip",
   "track",
   "tidy",
+  "arrange",
+  "develop",
+  "transition",
+  "vary",
   "beat",
   "transport",
   "audition",
@@ -227,6 +255,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"3b36ba1f"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"69ffa5cc"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"83798b22"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"51c4e552"`;

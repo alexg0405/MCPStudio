@@ -94,7 +94,9 @@ export function arrangeInDraft(d: Draft<Project>, s: Services, base: Project, in
   }
   const { env, changes: made } = applyEnvFor(d, s, base, style, { create: input.mix === 'auto', ...(layout ? { layout } : {}) });
   const plan = planArrangement(p, { from, style, sections: input.sections, fx: input.fx, ending: input.ending }, { variant: env.variant });
-  const report = applyArrangement(d, plan, env, { replace: input.replace });
+  // A whole song (from bar 1, no bar given) replaces the whole song; otherwise its own bars.
+  const replaceTo = input.from === undefined && input.replace ? Math.max(plan.to, Math.ceil(songEnd / bar) * bar) : plan.to;
+  const report = applyArrangement(d, plan, env, { replace: input.replace, replaceTo });
   const findings = checkArrangement(s, p, { style, sections: plan.sections });
   const extra: string[] = [];
   for (const m of report.movedCrashes)

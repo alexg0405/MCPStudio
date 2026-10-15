@@ -515,13 +515,14 @@ export function applyArrangement(
   d: Draft<Project>,
   plan: ArrangementPlan,
   env: ApplyEnv,
-  opts: { replace: boolean },
+  opts: { replace: boolean; replaceTo?: Tick },
 ): ApplyReport & { clipIds: ClipId[] } {
   const p = d as unknown as Project;
   let replaced = 0;
   let old = { patterns: new Set<PatternId>(), channels: new Set<ChannelId>() };
   if (opts.replace) {
-    const inRange = Object.values(p.playlist.clips).filter((c) => c.start < plan.to && c.start + c.length > plan.from);
+    const to = Math.max(plan.to, opts.replaceTo ?? plan.to);
+    const inRange = Object.values(p.playlist.clips).filter((c) => c.start < to && c.start + c.length > plan.from);
     old = arrangerThings(p, inRange);
     // The arranger's own sounds and curves that start in the range go whole (their tails ring past its end).
     for (const c of inRange)
@@ -529,8 +530,8 @@ export function applyArrangement(
         delete d.playlist.clips[c.id];
         replaced++;
       }
-    replaced += clearRange(d, plan.from, plan.to, { trim: true, tempo: env.tempo }).removed;
-    for (const m of Object.values(p.playlist.markers)) if (m.tick >= plan.from && m.tick < plan.to) removeMarker(d, m.id);
+    replaced += clearRange(d, plan.from, to, { trim: true, tempo: env.tempo }).removed;
+    for (const m of Object.values(p.playlist.markers)) if (m.tick >= plan.from && m.tick < to) removeMarker(d, m.id);
   }
   const movedCrashes = moveLoopCrashes(d, plan);
   const clipIds: ClipId[] = [];

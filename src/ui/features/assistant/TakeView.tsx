@@ -20,14 +20,16 @@ export function TakeView({ take }: { take: Take }) {
     ctx.scale(dpr, dpr);
     const css = getComputedStyle(canvas);
     const color = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
-    ctx.fillStyle = color('--ag-surface-inset', '#1e2428');
+    ctx.fillStyle = color('--ag-surface-inset', '#0e0f11');
     ctx.fillRect(0, 0, w, h);
+    const bar = color('--ag-line-strong', 'rgba(255, 255, 255, 0.1)');
+    const beat = color('--ag-line-faint', 'rgba(255, 255, 255, 0.05)');
 
     const steps = take.bars * 16;
     const x = (step: number) => (step / steps) * w;
     for (let s = 0; s <= steps; s++) {
-      ctx.fillStyle =
-        s % 16 === 0 ? 'rgba(255,255,255,0.22)' : s % 4 === 0 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.04)';
+      if (s % 4 !== 0) continue;
+      ctx.fillStyle = s % 16 === 0 ? bar : beat;
       ctx.fillRect(Math.round(x(s)), 0, 1, h);
     }
 
@@ -47,7 +49,7 @@ export function TakeView({ take }: { take: Take }) {
         const y = h - 8 - ((p - lo) / span) * (h - 16);
         const ew = Math.max(3, x(e.step + e.lengthSteps) - ex - 1);
         ctx.globalAlpha = alpha;
-        ctx.fillStyle = color('--ag-note', '#80c977');
+        ctx.fillStyle = color('--ag-led', '#9fd38f');
         ctx.fillRect(ex, y - 3, ew, 6);
         if (e.pitchEnd !== null && Math.abs(e.pitchEnd - p) >= 1) {
           const y2 = h - 8 - ((e.pitchEnd - lo) / span) * (h - 16);
@@ -59,7 +61,7 @@ export function TakeView({ take }: { take: Take }) {
         }
         ctx.globalAlpha = 1;
         if (ew > 22) {
-          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          ctx.fillStyle = color('--ag-on-light', '#111214');
           ctx.fillText(noteName(Math.round(p)), ex + 2, y);
         }
       } else {
@@ -68,10 +70,10 @@ export function TakeView({ take }: { take: Take }) {
         ctx.globalAlpha = alpha;
         ctx.fillStyle =
           e.kind === 'kick'
-            ? color('--ag-accent', '#ff9a3c')
+            ? color('--ag-accent', '#c9a45c')
             : e.kind === 'snare'
-              ? '#e8d27a'
-              : color('--ag-select', '#5aa4e8');
+              ? color('--ag-danger', '#e0675a')
+              : color('--ag-select', '#8eb4e3');
         ctx.beginPath();
         ctx.arc(ex + 3, y, r, 0, Math.PI * 2);
         ctx.fill();
@@ -84,7 +86,7 @@ export function TakeView({ take }: { take: Take }) {
     <canvas
       ref={ref}
       className={styles.take}
-      data-hint="Your take on the grid: orange = kicks, yellow = snares, blue = hats, green = hummed notes"
+      data-hint="Your take on the grid: gold = kicks, red = snares, blue = hats, green = hummed notes"
     />
   );
 }

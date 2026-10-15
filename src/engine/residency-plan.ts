@@ -27,6 +27,8 @@ export interface ResidencyInput {
   bytesOf(key: string): number;
   /** Bytes the plan may fill with pinned and prefetched buffers. */
   budget: number;
+  /** Clips further than this (seconds of playback past the window) aren't prefetched (default: no limit). */
+  prefetchWithin?: number;
 }
 
 export interface ResidencyPlan {
@@ -77,7 +79,9 @@ export function planResidency(input: ResidencyInput): ResidencyPlan {
     .sort((a, b) => a.d - b.d || a.c.start - b.c.start);
   const prefetch: string[] = [];
   const seen = new Set(pinned);
-  for (const { c } of order) {
+  const within = input.prefetchWithin ?? Infinity;
+  for (const { c, d } of order) {
+    if (d > within) break;
     const keys = c.keys.filter((k) => !seen.has(k));
     const bytes = keys.reduce((n, k) => n + input.bytesOf(k), 0);
     if (used + bytes > input.budget) break;

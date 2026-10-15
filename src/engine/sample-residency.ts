@@ -31,6 +31,13 @@ const STRETCH_MARGIN = 1;
 const REPLAN_SEC = 1;
 /** Share of the cache budget the plan fills (the rest is headroom for previews and analysis). */
 const PLAN_SHARE = 0.85;
+/**
+ * How far past the window clips are prefetched (seconds of playback): five minutes while playing
+ * (seeks nearby are instant; work stays spread out), a minute for offline renders (each chunk is
+ * made ready before it is rendered anyway).
+ */
+const PREFETCH_REALTIME = 300;
+const PREFETCH_OFFLINE = 60;
 
 type Kind = 'source' | 'reverse' | 'stretch';
 
@@ -315,6 +322,7 @@ export class SampleResidency {
       ahead,
       bytesOf: (k) => this.bytesOf(k),
       budget: cache.budgetBytes * PLAN_SHARE,
+      prefetchWithin: this.deps.offline ? PREFETCH_OFFLINE : PREFETCH_REALTIME,
     });
     this.plannedAt = this.pos;
     // Pins: the window's buffers (decoded or not yet); everything else may be evicted.

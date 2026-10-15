@@ -311,6 +311,12 @@ export class Engine implements EngineApi, EngineCore {
     if (this.ctx instanceof AudioContext && this.ctx.state !== 'running') await this.ctx.resume();
   }
 
+  /** Resolves when the master chain and every plugin instance have loaded (not the audio clips' samples). */
+  async pluginsReady(): Promise<void> {
+    await this.initDone;
+    await Promise.all([...[...this.strips.values()].map((s) => s.ready), this.mixer.ready]);
+  }
+
   /** Resolves when the master chain and every plugin instance (instruments and effects) have loaded. */
   async ready(): Promise<void> {
     await this.initDone;

@@ -227,12 +227,6 @@ export class SampleResidency {
     return reverse ? `${sourceKey}|rev` : sourceKey;
   }
 
-  /** Seconds of the sample once it has been decoded (or what the file said at import), else null. */
-  duration(ref: SampleRef): number | null {
-    const key = SampleCache.keyOf(ref.source, this.sr);
-    return this.durations.get(key) ?? this.deps.cache.peek(key)?.duration ?? null;
-  }
-
   /** The clip's stretched copy at `scale`, or null while it isn't ready (the plain sample plays meanwhile). */
   stretched(clip: AudioClip, scale: number): (StretchedCopy & { key: string }) | null {
     const n = this.byClip.get(clip.id);

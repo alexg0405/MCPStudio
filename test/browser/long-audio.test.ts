@@ -11,6 +11,11 @@ import { renderOffline } from '@engine/render-offline';
 import { SampleCache, type DerivedAudioStore } from '@engine/samples';
 import { audioClipProject, harmonicTone, TestSamples } from '../helpers/audio';
 import { resolver } from '../helpers/fixtures';
+import { readAudioInfo } from '@core/io/audio-info';
+import { encodeFlac } from '@core/io/flac';
+import { encodeWav } from '@core/io/wav';
+import { encodeMp3 } from '@app/export/mp3';
+import { probeAudio } from '@app/actions/samples';
 
 const SR = 48000;
 
@@ -43,7 +48,6 @@ describe('clip player with buffers that arrive late', () => {
     const player = createClipPlayer(ctx, {
       mode: () => playbackMode({}),
       base: () => (ready ? { buffer: sample, key: 's' } : null),
-      duration: () => (ready ? sample.duration : null),
       stretched: () => null,
       request: () => requests++,
       hold: (key) => cache.pin(key),
@@ -137,5 +141,29 @@ describe('time-stretched clips', () => {
     expect(disk.counts.hits).toBe(1);
     expect(disk.counts.puts).toBe(1);
     expect(firstDifference(a, b)).toBe(-1);
+  });
+});
+
+describe('audio file headers', () => {
+  it('give the same duration, rate and channels as decoding the file (WAV, FLAC, MP3)', async () => {
+    const rate = 44100;
+    const tone = harmonicTone(330, 7.3, rate, 0.4);
+    const files = {
+      wav: encodeWav([tone, tone], rate, { bitDepth: 16 }),
+      flac: encodeFlac([tone, tone], rate, { bitDepth: 16 }),
+      mp3: encodeMp3([tone, tone], rate, 192),
+    };
+    const ctx = new OfflineAudioContext(1, 1, rate);
+    for (const [name, bytes] of Object.entries(files)) {
+      const info = readAudioInfo(bytes);
+      const decoded = await ctx.decodeAudioData(bytes.slice().buffer);
+      expect(info, name).not.toBeNull();
+      expect(info!.sampleRate, name).toBe(rate);
+      expect(info!.channels, name).toBe(decoded.numberOfChannels);
+      // MP3: within two frames (the encoder's delay and padding aren't in a plain CBR file).
+      expect(Math.abs(info!.durationSec - decoded.duration), name).toBeLessThan(name === 'mp3' ? 0.06 : 1e-6);
+      // probeAudio answers from the header (a decode wouldn't know the file's own rate).
+      expect(await probeAudio(bytes), name).toEqual({ durationSec: info!.durationSec, sampleRate: rate, channels: info!.channels });
+    }
   });
 });

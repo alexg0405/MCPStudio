@@ -1,3 +1,4 @@
+import { readAudioInfo } from '@core/io/audio-info';
 import { decodePcm } from '@core/io/wav';
 import { newId } from '@core/model/ids';
 import { fxSeconds, parseFxName } from '@core/model/fx';
@@ -32,26 +33,33 @@ export function kitDuration(generator: string): number {
 
 export interface AudioFacts {
   durationSec: number;
-  /** The file's own rate when the PCM parser read it (decodeAudioData doesn't report it). */
+  /** The file's own rate (from its headers; absent when only a decode could tell, which resamples). */
   sampleRate?: number;
   channels: number;
 }
 
-/** Duration and layout of an audio file, or null when it can't be decoded. */
+/**
+ * Duration and layout of an audio file, or null when it can't be read. The headers say it for WAV,
+ * AIFF, FLAC, MP3, AAC, M4A and OGG (core/io/audio-info.ts): only files they don't describe are
+ * decoded (in the browser's decoder thread), so importing a long song doesn't decode it.
+ */
 export async function probeAudio(bytes: Uint8Array): Promise<AudioFacts | null> {
-  try {
-    const pcm = decodePcm(bytes);
-    const length = pcm?.channels[0]?.length ?? 0;
-    if (pcm && length > 0)
-      return { durationSec: length / pcm.sampleRate, sampleRate: pcm.sampleRate, channels: pcm.channels.length };
-  } catch {
-    /* not WAV/AIFF: let the browser try */
-  }
+  const info = readAudioInfo(bytes);
+  if (info && info.durationSec > 0) return { durationSec: info.durationSec, sampleRate: info.sampleRate, channels: info.channels };
   try {
     const ctx = new OfflineAudioContext(1, 1, 48000);
     const buffer = await ctx.decodeAudioData(bytes.slice().buffer);
     return { durationSec: buffer.duration, channels: buffer.numberOfChannels };
   } catch {
+    // Not something the browser reads: our PCM parser may (unusual WAV/AIFF variants).
+    try {
+      const pcm = decodePcm(bytes);
+      const length = pcm?.channels[0]?.length ?? 0;
+      if (pcm && length > 0)
+        return { durationSec: length / pcm.sampleRate, sampleRate: pcm.sampleRate, channels: pcm.channels.length };
+    } catch {
+      /* unreadable */
+    }
     return null;
   }
 }

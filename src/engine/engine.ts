@@ -29,6 +29,7 @@ import { MixerGraph } from './mixer-graph';
 import { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
+import { sha256Hex } from '@core/io/hash';
 import type { Waveform } from './waveform';
 import { SampleResidency } from './sample-residency';
 import { startRecording, type RecordOptions, type RecordingHandle } from './recorder';
@@ -125,6 +126,7 @@ export class Engine implements EngineApi, EngineCore {
   private previewSeq = PREVIEW_ID_BASE;
   private previewSource: AudioBufferSourceNode | null = null;
   private previewToken = 0;
+  private previewRelease: (() => void) | null = null;
   private readonly waveformsLoading = new Set<string>();
   private faults = 0;
   private muteKey = '';
@@ -645,7 +647,7 @@ export class Engine implements EngineApi, EngineCore {
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
     void this.resume();
     void this.samples.load(ref, this.ctx).then((buffer) => {
-      if (buffer) this.playPreview(buffer);
+      if (buffer) this.playPreview(buffer, SampleCache.keyOf(ref.source, this.ctx.sampleRate));
     });
   }
 
@@ -763,14 +765,13 @@ export class Engine implements EngineApi, EngineCore {
   async previewAudio(bytes: ArrayBuffer): Promise<boolean> {
     void this.resume();
     const token = ++this.previewToken;
-    let buffer: AudioBuffer;
-    try {
-      buffer = await decodeAudio(this.ctx, bytes);
-    } catch {
-      return false;
-    }
+    // Decoded once per file content (the shared cache keeps it, within its budget): clicking the
+    // same file again in the browser plays at once.
+    const key = `p:${await sha256Hex(new Uint8Array(bytes))}:${this.ctx.sampleRate}`;
+    const buffer = await this.samples.derive(key, () => decodeAudio(this.ctx, bytes).catch(() => null));
+    if (!buffer) return false;
     // A newer preview (or a stop) was requested while this one decoded.
-    if (token === this.previewToken) this.playPreview(buffer);
+    if (token === this.previewToken) this.playPreview(buffer, key);
     return true;
   }
 
@@ -782,15 +783,23 @@ export class Engine implements EngineApi, EngineCore {
       /* already stopped */
     }
     this.previewSource = null;
+    this.previewRelease?.();
+    this.previewRelease = null;
   }
 
-  private playPreview(buffer: AudioBuffer): void {
+  /** Plays a buffer on the preview bus; its cache entry stays pinned while it sounds. */
+  private playPreview(buffer: AudioBuffer, key: string): void {
     this.stopPreview();
     const src = new AudioBufferSourceNode(this.ctx, { buffer });
+    const release = this.samples.pin(key);
     src.connect(this.previewBus);
-    src.onended = () => src.disconnect();
+    src.onended = () => {
+      src.disconnect();
+      release();
+    };
     src.start();
     this.previewSource = src;
+    this.previewRelease = release;
   }
 
   // ---- Meters ----

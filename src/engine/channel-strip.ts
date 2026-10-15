@@ -279,10 +279,6 @@ export class ChannelStrip {
           const buffer = residency.base(r, reverse);
           return buffer ? { buffer, key: residency.baseKey(r, reverse) } : null;
         },
-        duration: () => {
-          const r = ref();
-          return r ? residency.duration(r) : null;
-        },
         stretched: (clip, scale) => residency.stretched(clip, scale),
         request: () => {
           const r = ref();

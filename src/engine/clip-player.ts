@@ -62,8 +62,6 @@ export interface ClipSources {
   mode(): PlaybackMode;
   /** The sample as played (reversed when reverse is on) and its cache key; null while it isn't decoded. */
   base(): { buffer: AudioBuffer; key: string } | null;
-  /** Seconds of the sample once it is known (decoded), for clips that play a stretched copy. */
-  duration(): number | null;
   /** The clip's time-stretched copy at `scale`: its buffer, key and the second of the sample its first frame is. */
   stretched(clip: AudioClip, scale: number): { buffer: AudioBuffer; key: string; from: number } | null;
   /** Voices wait for buffers: make sure they are on their way. */
@@ -166,8 +164,9 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
       opts.request();
       return;
     }
-    const duration = base ? base.buffer.duration : opts.duration();
-    if (duration === null) return;
+    // Where the sound ends: the sample's end, or the end of what the stretched copy covers (its
+    // range is clamped to the sample; otherwise it reaches past the clip, which ends first).
+    const duration = copy ? copy.from + copy.buffer.duration / scale : base!.buffer.duration;
     const srcSec = Math.max(0, sourceSecondsAt(clip, mode, tempo, tick));
     if (srcSec >= duration) return;
     const fallback = scale !== 1 && !copy;

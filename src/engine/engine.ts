@@ -97,6 +97,9 @@ class PortSet extends Set<WorkletPortImpl> {
   }
 }
 
+/** How far past the output's last timestamp the heard time may run on the wall clock (seconds). */
+const MAX_EXTRAPOLATION = 0.1;
+
 export class Engine implements EngineApi, EngineCore {
   readonly ctx: BaseAudioContext;
   readonly plugins: PluginResolver;
@@ -542,15 +545,26 @@ export class Engine implements EngineApi, EngineCore {
     return this.audibleTime() - this.mixer.latency;
   }
 
-  /** Context time currently coming out of the speakers. */
+  /** The latest audible time handed out: what is heard never goes back. */
+  private lastAudible = 0;
+
+  /**
+   * Context time currently coming out of the speakers: the output's last timestamp, carried on by
+   * the wall clock for at most `MAX_EXTRAPOLATION` (when the audio thread falls behind, its clock
+   * stalls; running on past it and snapping back made the playhead jump back and forth), and never
+   * earlier than a time already handed out.
+   */
   private audibleTime(): number {
     const ctx = this.ctx;
     if (typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
       const ts = ctx.getOutputTimestamp();
+      let t: number;
       if (ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.performanceTime > 0) {
-        return ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
-      }
-      return ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency;
+        const ahead = Math.max(0, Math.min(MAX_EXTRAPOLATION, (performance.now() - ts.performanceTime) / 1000));
+        t = ts.contextTime + ahead;
+      } else t = ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency;
+      if (t > this.lastAudible) this.lastAudible = t;
+      return this.lastAudible;
     }
     return ctx.currentTime;
   }
@@ -558,6 +572,8 @@ export class Engine implements EngineApi, EngineCore {
   private startClock(): void {
     if (this.offline) return;
     this.lastPumpAt = 0;
+    this.keepUpFrom = null;
+    this.keepUp = undefined;
     if (!this.transport.playing || this.maxPumpGap < 0) this.maxPumpGap = 0;
     if (!this.clock) {
       this.clock = new Worker(new URL('./sched/clock.worker.ts', import.meta.url), { type: 'module' });
@@ -575,6 +591,7 @@ export class Engine implements EngineApi, EngineCore {
     const now = performance.now();
     if (wasPlaying && this.lastPumpAt > 0) this.maxPumpGap = Math.max(this.maxPumpGap, now - this.lastPumpAt);
     this.lastPumpAt = now;
+    if (wasPlaying) this.measureKeepUp(now);
     this.transport.pump();
     // Raise the lookahead when notes arrive late (main-thread jank).
     if (this.transport.lateEvents > this.lastLate) {
@@ -585,6 +602,23 @@ export class Engine implements EngineApi, EngineCore {
       this.stopClock();
       this.emit();
     }
+  }
+
+  /** The audio clock against the wall clock, per second of playback (`stats().keepUp`). */
+  private keepUpFrom: { wall: number; ctx: number } | null = null;
+  private keepUp: number | undefined;
+
+  private measureKeepUp(now: number): void {
+    const t = this.ctx.currentTime;
+    const from = this.keepUpFrom;
+    if (!from) {
+      this.keepUpFrom = { wall: now, ctx: t };
+      return;
+    }
+    const wall = (now - from.wall) / 1000;
+    if (wall < 1) return;
+    this.keepUp = Math.min(1, (t - from.ctx) / wall);
+    this.keepUpFrom = { wall: now, ctx: t };
   }
 
   // ---- Previews ----
@@ -827,6 +861,7 @@ export class Engine implements EngineApi, EngineCore {
       lateEvents: this.transport.lateEvents,
       maxPumpGapMs: Math.round(this.maxPumpGap),
       faults: this.faults,
+      ...(this.keepUp !== undefined ? { keepUp: this.keepUp } : {}),
     };
   }
 

@@ -50,6 +50,12 @@ export interface EngineStats {
   maxPumpGapMs: number;
   /** Plugin instances that failed to load or threw. */
   faults: number;
+  /**
+   * While playing: how fast the audio clock advanced against the wall clock over the last second
+   * (1 = keeping up; 0.9 = a tenth of the sound dropped out because the audio thread couldn't finish
+   * in time). Absent until a second has been measured.
+   */
+  keepUp?: number;
 }
 
 /** Where plugin definitions come from (the app's registry). */

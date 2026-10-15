@@ -1939,7 +1939,11 @@ than a reverb on every track (each costs the audio thread).
 Settings → Sound output → Audio buffer: large (latencyHint 'playback', about 21 ms; the default),
 medium ('balanced', 10 ms) or small ('interactive', 5 ms). A change reboots the engine (new
 AudioContext; playback carries on). Busy songs on a loaded machine underrun the 5 ms buffer: measured
-as the audio clock advancing slower than wall time during playback.
+as the audio clock advancing slower than wall time during playback. The engine measures it each
+second while playing (`stats().keepUp`); `app/playback-health.ts` shows plain advice once when two
+seconds in a row fall under 0.95. The playhead's heard time runs on the wall clock for at most 0.1 s
+past the output's last timestamp and never goes back (a stalled audio clock used to make it jump back
+and forth).
 
 ### Not done / to wire at integration
 

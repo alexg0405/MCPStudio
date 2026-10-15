@@ -17,6 +17,7 @@ import { AutomationService } from './automation';
 import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
+import { watchPlaybackHealth } from './playback-health';
 import { AUDIO_BUFFER_HINT, createPrefsStore, type PrefsState, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { ControllerRouter } from './controllers';
@@ -176,6 +177,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     appliedBuffer = p.audioBuffer;
     void engine.reboot();
   });
+  watchPlaybackHealth(engine, prefs, session);
   const recording = new RecordController(engine, (kind) =>
     kind === 'audio' ? prefs.getState().recordAudio : prefs.getState().recordNotes,
   );

@@ -120,7 +120,7 @@ const NAME_RULES: [RegExp, Role][] = [
 ];
 
 /** From a channel's notes across every pattern: low and one at a time = bass; 3+ at once = chords. */
-function noteRole(p: Project, id: ChannelId): Role | undefined {
+function roleFromNotes(p: Project, id: ChannelId): Role | undefined {
   const keys: number[] = [];
   let maxAtOnce = 0;
   for (const pat of Object.values(p.patterns)) {
@@ -160,7 +160,7 @@ export function channelRole(p: Project, id: ChannelId, hint?: RoleHint): Role {
   if (fromPlugin) return fromPlugin;
   const fromName = NAME_RULES.find(([re]) => re.test(ch.name))?.[1];
   if (fromName) return fromName;
-  return noteRole(p, id) ?? 'other';
+  return roleFromNotes(p, id) ?? 'other';
 }
 
 /** Every channel's role. */
@@ -168,4 +168,85 @@ export function channelRoles(p: Project, hint?: RoleHint): Map<ChannelId, Role> 
   const out = new Map<ChannelId, Role>();
   for (const id of p.channelOrder) out.set(id, channelRole(p, id, hint));
   return out;
+}
+
+/** The drum a note plays: its channel's role, or for a kit channel the General MIDI drum on its key. */
+export function noteRole(channel: Role, key: number): Role {
+  return channel === 'kit' ? gmDrumRole(key) : channel;
+}
+
+export const isDrumRole = (r: Role): boolean => ROLE_GROUP[r] === 'drums';
+export const isBassRole = (r: Role): boolean => ROLE_GROUP[r] === 'bass';
+export const isMusicRole = (r: Role): boolean => ROLE_GROUP[r] === 'music';
+export const isHatRole = (r: Role): boolean => r === 'hat' || r === 'open-hat';
+
+/**
+ * Parts of a song the musician (or the AI) names: "without the 808", "no hats". Each covers roles;
+ * a kit channel's notes count by their drum (see `noteRole`).
+ */
+export const PARTS: Record<string, readonly Role[]> = {
+  kick: ['kick'],
+  snare: ['snare', 'clap', 'rim'],
+  clap: ['clap'],
+  hats: ['hat', 'open-hat'],
+  'open-hat': ['open-hat'],
+  perc: ['perc', 'tom', 'rim'],
+  toms: ['tom'],
+  crash: ['crash'],
+  drums: ['kick', 'snare', 'clap', 'rim', 'hat', 'open-hat', 'perc', 'tom', 'crash', 'kit'],
+  '808': ['808'],
+  bass: ['808', 'bass'],
+  chords: ['chords', 'pad', 'keys'],
+  pad: ['pad'],
+  keys: ['keys'],
+  lead: ['lead', 'pluck', 'arp', 'vox'],
+  vox: ['vox'],
+  music: ['chords', 'pad', 'keys', 'lead', 'pluck', 'arp', 'vox'],
+  fx: ['fx'],
+};
+
+const PART_ALIASES: Record<string, string> = {
+  hat: 'hats',
+  'hi-hats': 'hats',
+  hihats: 'hats',
+  'hi-hat': 'hats',
+  hihat: 'hats',
+  'open hat': 'open-hat',
+  'open hats': 'open-hat',
+  kicks: 'kick',
+  snares: 'snare',
+  claps: 'clap',
+  drum: 'drums',
+  percussion: 'perc',
+  tom: 'toms',
+  crashes: 'crash',
+  cymbals: 'crash',
+  '808s': '808',
+  sub: 'bass',
+  basses: 'bass',
+  chord: 'chords',
+  pads: 'pad',
+  piano: 'keys',
+  melody: 'lead',
+  melodies: 'lead',
+  leads: 'lead',
+  vocals: 'vox',
+  vocal: 'vox',
+  instruments: 'music',
+  effects: 'fx',
+};
+
+/** A part name as people write it ("Hi-hats", "808s", "melody") → a key of PARTS, or undefined. */
+export function partName(text: string): string | undefined {
+  const t = text.trim().toLowerCase().replace(/^the\s+/, '');
+  if (PARTS[t]) return t;
+  return PART_ALIASES[t];
+}
+
+/** Whether a note of a channel with role `channel` (key `key`) belongs to the part. */
+export function inPart(part: string, channel: Role, key: number): boolean {
+  const roles = PARTS[part];
+  if (!roles) return false;
+  if (channel === 'kit') return part === 'drums' || roles.includes(gmDrumRole(key));
+  return roles.includes(channel);
 }

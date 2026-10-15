@@ -26,6 +26,14 @@ export function projectViolations(p: Project): string[] {
   checkOrder('samples', Object.keys(p.samples), p.samples);
 
   if (p.mixer.order[0] !== MASTER) out.push('mixer: master is not first');
+  for (const pat of Object.values(p.patterns)) {
+    const d = pat.derived;
+    if (!d) continue;
+    if (d.from === pat.id || !has(p.patterns, d.from)) out.push(`pattern ${pat.id}: derived from missing ${d.from}`);
+    if (!Array.isArray(d.steps) || d.steps.some((s) => !(s.to > s.from && s.from >= 0)))
+      out.push(`pattern ${pat.id}: bad variant steps`);
+    if (typeof d.seed !== 'number' || typeof d.hash !== 'string') out.push(`pattern ${pat.id}: bad derivation`);
+  }
   if (p.patternOrder.length < 1) out.push('patterns: none');
   if (typeof p.projectId !== 'string' || !p.projectId) out.push('projectId missing');
   if (!inRange(p.transport.bpm, 10, 522)) out.push(`transport: bpm ${p.transport.bpm}`);

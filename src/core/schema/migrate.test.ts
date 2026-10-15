@@ -395,6 +395,29 @@ describe('repairProject', () => {
     expect(repairs).toEqual(['Added an empty pattern because the project had none.']);
   });
 
+  it('keeps valid variants and makes broken ones ordinary patterns (v3 Pattern.derived)', () => {
+    const { p, pat } = base();
+    const variant = (id: string, derived: unknown) => {
+      p.patterns[id as PatternId] = { id: id as PatternId, name: id, color: '#fff', stepCount: 16, notes: {}, derived } as never;
+      p.patternOrder.push(id as PatternId);
+    };
+    const step = { kind: 'snare-fill', from: 1920, to: 3840, energy: 4 };
+    variant('pat_good', { from: pat, steps: [step], seed: 3, hash: 'abc-1' });
+    variant('pat_orphan', { from: 'pat_gone', steps: [step], seed: 3, hash: 'abc-1' });
+    variant('pat_badstep', { from: pat, steps: [{ kind: 'explode', from: 0, to: 1 }], seed: 3, hash: 'x' });
+    variant('pat_self', { from: 'pat_self', steps: [], seed: 1, hash: 'x' });
+    variant('pat_loopA', { from: 'pat_loopB', steps: [], seed: 1, hash: 'x' });
+    variant('pat_loopB', { from: 'pat_loopA', steps: [], seed: 1, hash: 'x' });
+    const { project, repairs } = repairProject(p);
+    expect(project.patterns['pat_good' as PatternId]!.derived).toEqual({ from: pat, steps: [step], seed: 3, hash: 'abc-1' });
+    for (const id of ['pat_orphan', 'pat_badstep', 'pat_self']) expect(project.patterns[id as PatternId]!.derived).toBeUndefined();
+    // Of the loop, the first pattern that closes it lets go; the other then varies an ordinary pattern.
+    expect([project.patterns['pat_loopA' as PatternId]!.derived, project.patterns['pat_loopB' as PatternId]!.derived].filter(Boolean)).toHaveLength(1);
+    expect(repairs).toEqual(['Made 4 variant patterns ordinary patterns (what they varied is gone or damaged).']);
+    expect(projectViolations(project)).toEqual([]);
+    expect(repairProject(project).repairs).toEqual([]);
+  });
+
   it('removes damaged records and fixes mismatched ids', () => {
     const { p, ch } = base();
     const channels = p.channels as Record<string, unknown>;

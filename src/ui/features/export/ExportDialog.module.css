@@ -1,28 +1,47 @@
 .export {
-  width: min(540px, 100%);
+  width: min(560px, 100%);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
 }
 
+/* Option groups: a faint inset card with a small caps label. */
 .group {
-  margin: 4px 0 10px;
-  padding: 6px 10px 8px;
-  border: 1px solid var(--ag-border-soft);
-  border-radius: var(--ag-radius);
+  margin: 6px 0 12px;
+  padding: 6px 12px 10px;
+  border: 0;
+  border-radius: var(--ag-radius-lg);
+  background: color-mix(in srgb, var(--ag-surface-inset) 45%, transparent);
+  box-shadow: inset 0 0 0 1px var(--ag-line-faint);
 }
 
 .group legend {
-  padding: 0 4px;
-  color: var(--ag-text-dim);
-  font-size: 11px;
+  float: left;
+  width: 100%;
+  margin: 4px 0 4px;
+  padding: 0;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.group legend + * {
+  clear: both;
 }
 
 .option {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 0;
+  min-height: 26px;
+  padding: 2px 0;
   cursor: pointer;
+}
+
+.option input {
+  margin: 0;
+  accent-color: var(--ag-accent);
 }
 
 .optionOff {
@@ -34,7 +53,7 @@
   margin-left: auto;
   color: var(--ag-text-faint);
   font-family: var(--ag-font-mono);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
 .row {
@@ -46,44 +65,52 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
 }
 
 .field select {
   min-width: 170px;
-  height: 26px;
+  height: 28px;
   padding: 0 6px;
-  border: 1px solid var(--ag-border);
+  border: 0;
   border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text);
+  font-size: var(--ag-font-size);
+  font-weight: 400;
 }
 
+/* Progress: an inset track filling with brushed gold. */
 .progress {
   position: relative;
-  height: 22px;
-  margin-top: 12px;
+  height: 24px;
+  margin-top: 14px;
   overflow: hidden;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
 }
 
 .bar {
   position: absolute;
   inset: 0 auto 0 0;
-  background: linear-gradient(var(--ag-accent), var(--ag-accent-dim));
-  opacity: 0.55;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-metal);
+  opacity: 0.7;
   transition: width 120ms linear;
 }
 
 .progress span {
   position: relative;
   display: block;
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 0 12px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  line-height: 24px;
   color: var(--ag-text);
 }
 
@@ -99,40 +126,45 @@
 .note {
   margin: 4px 0 6px;
   color: var(--ag-text-dim);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.45;
 }
 
+/* Segmented control: an inset track; the chosen segment is a raised gold key. */
 .segmented {
   display: inline-flex;
+  gap: 2px;
   margin: 2px 0;
-  border: 1px solid var(--ag-border);
+  padding: 2px;
   border-radius: var(--ag-radius);
-  overflow: hidden;
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
 }
 
 .segment {
   min-width: 64px;
-  height: 26px;
+  height: 24px;
   padding: 0 12px;
   border: none;
-  border-right: 1px solid var(--ag-border);
-  background: var(--ag-surface-inset);
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
   color: var(--ag-text-dim);
   font: inherit;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
-}
-
-.segment:last-child {
-  border-right: none;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .segment:hover {
   color: var(--ag-text);
 }
 
-.segmentOn {
-  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-dim));
+.segmentOn,
+.segmentOn:hover {
+  background: var(--ag-metal);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-on-accent);
+  font-weight: 600;
 }

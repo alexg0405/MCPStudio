@@ -5,6 +5,7 @@ import { setPatternProps } from '@core/ops/playlist';
 import { cloneCurrentPattern, deletePattern, newPattern, renamePattern } from '@app/actions/patterns';
 import { useDoc, useServices, useView } from '../../services-context';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
+import { Icon } from '../../controls/Icon';
 import styles from './PatternPicker.module.css';
 
 /** FL's pattern selector: shows the current pattern; click for the pattern list and actions. */
@@ -74,7 +75,7 @@ export function PatternPicker({ compact = false }: { compact?: boolean }) {
     <button
       tabIndex={-1}
       className={`${styles.picker} ${compact ? styles.compact : ''}`}
-      style={{ ['--pat-color' as string]: current?.color ?? '#888' }}
+      style={current ? { ['--pat-color' as string]: current.color } : undefined}
       onPointerDown={(e) => e.preventDefault()}
       onClick={open}
       onDoubleClick={() => setRenaming(true)}
@@ -82,7 +83,7 @@ export function PatternPicker({ compact = false }: { compact?: boolean }) {
     >
       <span className={styles.swatch} />
       <span className={styles.name}>{current?.name ?? 'No pattern'}</span>
-      <span className={styles.caret}>▾</span>
+      <Icon name="chevronDown" size={12} className={styles.caret} />
     </button>
   );
 }

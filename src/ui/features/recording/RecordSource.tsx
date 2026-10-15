@@ -3,6 +3,7 @@ import type { Services } from '@app/services';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { useServices } from '../../services-context';
+import { Icon } from '../../controls/Icon';
 import styles from './Recording.module.css';
 
 /** What record mode will record, in a few words: "Notes", "Audio", "Notes + audio", "Nothing". */
@@ -68,7 +69,7 @@ export function RecordSource() {
       <span className={recording ? styles.recording : ''}>{recording ? '● ' : ''}</span>
       {label}
       {monitor && status === 'on' && <span className={styles.mon}>MON</span>}
-      <span aria-hidden="true">▾</span>
+      <Icon name="chevronDown" size={10} className={styles.caret} />
     </button>
   );
 }

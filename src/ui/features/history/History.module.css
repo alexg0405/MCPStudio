@@ -3,22 +3,24 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  background: var(--ag-surface-1);
 }
 
 .help {
   flex: none;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--ag-border);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
   color: var(--ag-text-dim);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.45;
 }
 
 .list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 6px;
 }
 
 .row {
@@ -29,6 +31,7 @@
   height: 26px;
   padding: 0 10px;
   border: 0;
+  border-radius: var(--ag-radius);
   background: none;
   color: var(--ag-text);
   font: inherit;
@@ -40,21 +43,46 @@
   background: var(--ag-highlight);
 }
 
+/* A thin rail joins the dots, like a timeline. */
+.row {
+  position: relative;
+}
+
+.row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 13px;
+  width: 1px;
+  background: var(--ag-line-faint);
+}
+
+.row:first-child::before {
+  top: 50%;
+}
+
+.row:last-child::before {
+  bottom: 50%;
+}
+
 .dot {
   flex: none;
+  position: relative;
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--ag-text-faint);
 }
 
-.current {
-  background: var(--ag-select-tint);
+.current,
+.current:hover {
+  background: var(--ag-accent-tint);
 }
 
 .current .dot {
-  background: var(--ag-select);
-  box-shadow: 0 0 0 3px var(--ag-select-glow);
+  background: var(--ag-accent);
+  box-shadow: 0 0 0 3px var(--ag-accent-soft);
 }
 
 .undone {
@@ -62,7 +90,7 @@
 }
 
 .undone .dot {
-  background: none;
+  background: var(--ag-surface-1);
   border: 1px solid var(--ag-text-faint);
 }
 
@@ -78,4 +106,5 @@
   flex: none;
   color: var(--ag-text-faint);
   font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }

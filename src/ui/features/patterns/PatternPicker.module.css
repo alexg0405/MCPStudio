@@ -1,48 +1,67 @@
+/* A select-like inset well: the pattern's color, its name, a chevron. */
 .picker {
+  --pat-color: var(--ag-text-faint);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   height: 26px;
   min-width: 128px;
   max-width: 200px;
-  padding: 0 8px;
-  border: 1px solid var(--ag-border);
+  padding: 0 6px 0 8px;
+  border: 0;
   border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text);
   cursor: pointer;
+  transition: box-shadow var(--ag-dur) var(--ag-ease);
+}
+
+.picker:hover {
+  box-shadow:
+    var(--ag-inset),
+    inset 0 0 0 1px var(--ag-border-soft);
 }
 
 .compact {
-  height: 20px;
+  height: 22px;
   min-width: 110px;
 }
 
 .input {
   cursor: text;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .swatch {
   flex: none;
-  width: 8px;
+  width: 6px;
   height: 14px;
   border-radius: 2px;
-  background: var(--pat-color);
+  background: color-mix(in srgb, var(--pat-color) 85%, var(--ag-surface-1));
+  box-shadow: inset 0 1px 0 var(--ag-highlight);
+}
+
+.compact .swatch {
+  height: 12px;
 }
 
 .name {
   flex: 1;
   overflow: hidden;
-  font-weight: 600;
+  font-weight: 500;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .caret {
+  flex: none;
   color: var(--ag-text-faint);
-  font-size: 10px;
+}
+
+.picker:hover .caret {
+  color: var(--ag-text-dim);
 }
 
 @media (max-width: 1180px) {

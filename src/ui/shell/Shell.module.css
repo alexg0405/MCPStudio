@@ -439,7 +439,7 @@
 
 /* What the hint bar says when nothing is hovered. */
 .hintIdle {
-  color: var(--ag-text-faint);
+  color: var(--ag-text-dim);
 }
 
 .hintIdle kbd {

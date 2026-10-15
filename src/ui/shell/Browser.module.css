@@ -4,7 +4,7 @@
   flex-direction: column;
   min-height: 0;
   background: var(--ag-surface-1);
-  border-right: 1px solid var(--ag-border);
+  border-right: 1px solid var(--ag-border-soft);
 }
 
 .hidden {
@@ -15,42 +15,57 @@
   flex: none;
   display: flex;
   align-items: center;
-  height: 26px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--ag-border);
+  height: 30px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--ag-line-faint);
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
 }
 
 .scroll {
   flex: 1;
   overflow: auto;
-  padding: 4px 0 12px;
+  padding: 6px 0 14px;
 }
 
 .section + .section {
-  margin-top: 2px;
+  margin-top: 6px;
 }
 
+/* Small caps section label with its icon in gold. */
 .sectionHeader {
   display: flex;
   align-items: center;
-  gap: 5px;
-  width: 100%;
-  padding: 4px 8px;
+  gap: 6px;
+  width: calc(100% - 12px);
+  height: 26px;
+  margin: 0 6px;
+  padding: 0 6px;
   border: 0;
+  border-radius: var(--ag-radius);
   background: transparent;
-  color: var(--ag-text);
+  color: var(--ag-text-dim);
+  font-size: 10.5px;
   font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
   text-align: left;
   cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .sectionHeader:hover {
   background: var(--ag-highlight);
+  color: var(--ag-text);
+}
+
+.sectionHeader svg:first-child {
+  color: var(--ag-text-faint);
 }
 
 .sectionHeader svg:nth-child(2) {
@@ -70,16 +85,24 @@
   cursor: ew-resize;
   z-index: 3;
   touch-action: none;
+  transition: background-color var(--ag-dur) var(--ag-ease);
 }
 
-/* Shared list styles used by section bodies. */
+.resizer:hover {
+  background: linear-gradient(90deg, transparent 2px, var(--ag-accent-glow) 2px 4px, transparent 4px);
+}
+
+/* Shared list styles used by section bodies: 24px rows, inset highlights. */
 .item {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
-  padding: 3px 8px 3px 30px;
+  width: calc(100% - 12px);
+  height: 24px;
+  margin: 0 6px;
+  padding: 0 8px 0 24px;
   border: 0;
+  border-radius: var(--ag-radius);
   background: transparent;
   color: var(--ag-text-dim);
   text-align: left;
@@ -87,6 +110,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .item:hover {
@@ -95,41 +121,56 @@
 }
 
 .empty {
-  padding: 3px 8px 3px 30px;
-  color: var(--ag-text-faint);
-  font-style: italic;
+  margin: 2px 6px;
+  padding: 6px 8px 6px 24px;
+  border-radius: var(--ag-radius);
+  color: var(--ag-text-dim);
+  line-height: 1.4;
 }
 
+/* Tags (FX, USER, counts): small pills. */
 .badge {
+  flex: none;
   margin-left: auto;
-  padding: 0 4px;
-  border-radius: 2px;
-  background: var(--ag-surface-3);
+  padding: 0 6px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-line-faint);
+  box-shadow: inset 0 0 0 1px var(--ag-line-faint);
   color: var(--ag-text-faint);
   font-size: 9px;
+  font-weight: 600;
+  line-height: 15px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
+}
+
+.badge + .badge {
+  margin-left: 0;
 }
 
 .error {
-  padding: 3px 8px 3px 30px;
+  margin: 0 6px;
+  padding: 3px 8px 3px 24px;
   color: var(--ag-danger);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.itemOn {
+.itemOn,
+.itemOn:hover {
   color: var(--ag-text);
   background: var(--ag-accent-tint);
+  box-shadow: inset 2px 0 0 var(--ag-accent);
 }
 
 .swatch {
   flex: none;
-  width: 7px;
+  width: 6px;
   height: 12px;
   border-radius: 2px;
+  box-shadow: inset 0 1px 0 var(--ag-highlight);
 }
 
 .folderRow {

@@ -1,18 +1,25 @@
+/* The preset search: an inset well lined up with the rows' text. */
 .search {
   display: block;
   width: calc(100% - 38px);
-  height: 22px;
+  height: 24px;
   margin: 2px 8px 4px 30px;
-  padding: 0 6px;
-  border: 1px solid var(--ag-border);
+  padding: 0 8px;
+  border: 0;
   border-radius: var(--ag-radius);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text);
   font: inherit;
 }
 
+.search::placeholder {
+  color: var(--ag-text-faint);
+}
+
 .search:focus-visible {
-  outline: 1px solid var(--ag-select);
+  outline-offset: 1px;
+  border-radius: var(--ag-radius);
 }
 
 .mine {

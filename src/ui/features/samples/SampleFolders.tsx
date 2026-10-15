@@ -44,7 +44,7 @@ function buildTree(name: string, files: readonly AudioFileEntry[]): Node {
   return root;
 }
 
-const indent = (depth: number) => ({ paddingLeft: 30 + depth * 12 });
+const indent = (depth: number) => ({ paddingLeft: 24 + depth * 12 });
 
 /** The user's sample folders: click a file to preview it, drag it onto the rack or playlist. */
 export function SampleFoldersSection() {

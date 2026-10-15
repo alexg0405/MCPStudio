@@ -3,8 +3,8 @@
  * FX) plus reverb and delay returns, found again by name so a later setup, a transition (filter
  * sweeps on the chords/lead EQ) or the leveler reuses them.
  */
-import type { Role } from '@core/arrange/roles';
-import { MASTER, type InsertId, type Project, type SlotId } from '@core/model/types';
+import { channelRoles, type Role, type RoleHint } from '@core/arrange/roles';
+import { MASTER, type ChannelId, type InsertId, type Project, type SlotId } from '@core/model/types';
 
 export type BusRole = 'kick' | 'drums' | 'bass' | 'chords' | 'lead' | 'fx' | 'reverb' | 'delay';
 
@@ -63,6 +63,27 @@ export function busForRole(r: Role): BusRole | null {
 
 const EQ_PRO = 'agstudio.eq-pro';
 const LIMITER = 'agstudio.limiter';
+
+/** The role a built-in instrument implies on its own (whole kits on one channel, the 808, plucks). */
+export const pluginRole: RoleHint = (pluginId) => {
+  switch (pluginId) {
+    case 'agstudio.bass808':
+      return '808';
+    case 'agstudio.drum-pads':
+    case 'agstudio.drum-synth':
+    case 'agstudio.slicer':
+      return 'kit';
+    case 'agstudio.pluck':
+      return 'pluck';
+    default:
+      return undefined;
+  }
+};
+
+/** Every channel's role, with the built-in plugins' hints. */
+export function mixRoles(p: Project): Map<ChannelId, Role> {
+  return channelRoles(p, pluginRole);
+}
 
 /** The role buses already in the project (by their names), with their EQ slots and the master Limiter. */
 export function findMixLayout(p: Project): MixLayout {

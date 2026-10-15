@@ -5,7 +5,8 @@
 import type { ChannelId, NoteId, PatternId, Project, Tick } from '@core/model/types';
 import { effectivelyMuted, lowerBound, notesSorted, patternLength } from '@core/query/queries';
 import { audibleClips, songLength } from '@core/query/playlist';
-import { TICKS_PER_STEP, type TempoMap } from '@core/time/ppq';
+import type { TempoMap } from '@core/time/ppq';
+import { swingDelay } from '@core/time/swing';
 
 /** A pattern placed on the timeline: a playlist clip, or the virtual clip used in pattern mode. */
 export interface PlayClip {
@@ -142,13 +143,10 @@ function patternLengthOrBar(project: Project): Tick {
   return (ts.num * 4 * 960) / ts.den;
 }
 
-/** Swing delays notes on every second 1/16 step by up to half a step. */
-function swingOffset(tick: number, swing: number): number {
-  if (swing <= 0) return 0;
-  return tick % (2 * TICKS_PER_STEP) === TICKS_PER_STEP ? swing * (TICKS_PER_STEP / 2) : 0;
-}
-
-/** Collects note events whose (unswung) start is in [from, to). Appends to `out`. */
+/**
+ * Collects note events whose (unswung) start is in [from, to). Appends to `out`. Swing follows the
+ * curve in `core/time/swing.ts` on each note's position in its pattern; a note keeps its length.
+ */
 export function collectNotes(source: EventSource, from: number, to: number, out: NoteEvent[]): void {
   const { project } = source;
   const muted = effectivelyMuted(project.channels);
@@ -181,7 +179,7 @@ export function collectNotes(source: EventSource, from: number, to: number, out:
           if (n.muted) continue;
           const start = clip.start - clip.offset + rep * P + n.tick;
           if (start < clip.start) continue;
-          const swung = start + swingOffset(n.tick, swing);
+          const swung = start + swingDelay(n.tick, swing);
           out.push({
             kind: 'note',
             key: `${clip.clipId}:${n.id}:${rep}`,

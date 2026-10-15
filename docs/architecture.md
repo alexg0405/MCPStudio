@@ -1655,3 +1655,116 @@ frame loop light, workers for IR/WAV/peaks); background throttling (Worker clock
 rules, scrubbing, fault isolation); sample-rate mismatches (decode per rate, coefficients from `sampleRate`); Bluetooth
 latency (playhead compensation); StrictMode double effects; user plugins are trusted code in the same JS context (error
 boundaries, lazy import with `allSettled`, NaN guard + limiter on master).
+
+## Groove, sounds and the mix setup (v3)
+
+Every AI beat or song should sound finished in its style without hand mixing: genre groove, genre
+sounds, a role mix and genre loudness.
+
+### Groove
+
+- **Swing is a curve** (`core/time/swing.ts`, used by `engine/sched/events.ts` and so by MIDI export):
+  inside each 8th (480 ticks) with s = swing × 120 ticks, the first 1/16 plays at pos × (240 + s)/240 and
+  the second at 240 + s + (pos − 240) × (240 − s)/240, on the note's position in its pattern. Notes
+  exactly on odd 1/16s move by exactly s (as before); humanized notes and 1/32 rolls now keep the
+  swing; notes keep their length. Measured (`test/browser/groove.test.ts`, swing 0.5 at 120 BPM): odd
+  1/16s 31.25 ms late, ±2-tick humanized ones 30.99 ms, a 1/32 15.63 ms, all within 0.01 ms of the curve.
+- **Style table** (`core/beat/style.ts`, `GROOVE`, `TEMPO`): swing trap 0, drill .1, boom bap .35, lo-fi
+  .45, house .2, EDM 0, reggaeton .08, afro .25, pop .05; tempo ranges; hat accents per 1/16; kick 1.0 on
+  the bar's downbeat, ~.92 on beats, ~.82 off; backbeat and ghost velocities; jitter. `guessStyle` is
+  `inferStyle` from numbers alone; `styleOfBeat` guesses a beat's style from its own kick pattern.
+- **Accents** (`core/beat/groove.ts`): `validateBeatSpec(raw, { style, project })` remembers which
+  velocities the AI left out and fills those with the style's accents (snares/claps: hits on a beat are
+  main hits, or every whole step when none is, as in a dembow; rolls of 3+ notes closer than a 1/16
+  rise from half to full; 808 .9; seeded ±jitter). Velocities the AI gives stay exact. An explicit style
+  without swing gives a song that has no swing yet the style's swing.
+- **Open hats** on their own channel end at the next closed hat (at most 2 steps, or the length given,
+  or their own next hit); the writer turns the Sampler envelope on (release 50 ms) so the end is heard.
+- **Sampler `velTone`** (0–1, default 0 = the same node graph as before): a per-voice Butterworth
+  low-pass at 20 kHz × 2^(−velTone·(1−vel)·6), none at velocity 1. The writer sets .5 on drum channels it
+  sets up. Measured: a snare at velocity .3 goes from 65.9 % to 14.8 % of its energy above 4 kHz.
+
+### Sounds
+
+- **Genre kits** (`core/model/kit.ts` `GENRE_KITS`, `engine/kit/generators.ts`): `kit/<trap|house|lofi|
+  boombap>/<kick|snare|clap|hat|open-hat>`, rendered from the SDK drum models with the Drum Synth preset
+  values (trap: its preset with a shorter, punchier kick since the 808 carries the boom; house: the 909
+  preset; lo-fi: the dusty preset; boom bap: its own thick kit), peaks matched to the stock kit, snares
+  soft-clipped to a 13.5 dB crest factor, silent tails trimmed. `KitPiece.sound`/`.kit`; `kitPiece()`
+  finds genre pieces, `kitPieceFor(sound, kit)` falls back to the stock piece. The SDK `Kick` with
+  click 0 never goes inactive (its click envelope never decays): a small SDK bug, worked around here.
+- **Palette** (`app/assistant/palette.ts`): `soundFor(style, sound)` → choices (plugin, preset, params,
+  channel volume, root key; the palette's first, then 3xOsc backups); `KIT_FOR` (style → kit);
+  `paletteText()` for the prompt. Levels are calibrated by offline renders
+  (`test/browser/palette.test.ts`): alone, each sound sits under a kit kick at the default channel
+  volume by 808 −3 dB, bass −4, lead/keys/pad −8, pluck/bell/strings −9 (lo-fi keys −3, pad −6), all
+  measured within 1 dB. Drum channels: `drumVolume(sound, kit)` (stock-kit levels, kick −4 dB, plus a
+  per-genre-kit correction because the kits' density differs at matched peaks).
+- **Beat writer** (`app/assistant/apply.ts`): tracks reuse the conversation's or the named pattern's
+  channels, then a channel of the same name (a Drop's "Lead" plays the Verse's), then the project's kit
+  channel for that drum (the style's piece first) or its 808. A kit channel at its defaults that plays
+  in no other pattern switches to the style's kit (the unused stock sample is dropped), gets velTone .5
+  and its kit level. Sound settings (preset, params) only go to channels the assistant made (this
+  answer or conversation) or such kit channels; levels (`volume`, `volume_db`, a negative `volume` = dB,
+  `pan`) go to any channel and are recorded as `plan.levels` (the mix setup leaves them). A `preset` is
+  found on whichever instrument has it. Overlapping 808 notes glide at least 60 ms. Measured: the trap
+  808 slides 43.65 → 87.31 Hz (ratio 2.0000) with no new attack (level ratio 0.69 across the slide).
+- **`beat` action** (`app/ai/ops/beat.ts`): `pattern: "new" | name | @ref`, `ref`, `style`; every beat
+  after the first of an answer is a new pattern (it used to overwrite the first); without `pattern` the
+  first beat rewrites the conversation's beat; a named pattern is rewritten (its notes replaced, on the
+  part's copy in a focus). The Beat writing prompt section carries the style table and `paletteText()`.
+- **Offline generator** (`core/beat/local.ts`): the shared styles (EDM and pop added), the style's
+  tempo, swing and accents; trap/drill 808s slide after the pickup kick (half a step of overlap into an
+  octave, drill also a 5th into each bar line); boom bap odd-1/16 hats, ghost snares and a sub under the
+  kick; lo-fi four bars of 7th chords on keys with a bass on their roots; offbeat bass for house/EDM,
+  four-chord pads/keys for EDM and pop.
+
+### The mix setup (`app/mix/setup.ts`, `recipes.ts`, `layout.ts`)
+
+- `setupMix(d, s, { style, roles, mode, pinned, pinnedChannels })` builds buses for the roles that play
+  (Kick, Drums, 808, Chords, Lead, FX) plus Reverb and Delay returns: found by name (`BUS_NAMES`, so the
+  arranger's Chords/Lead buses are reused and their EQ Pro gets the sweep bands), else on the next empty
+  "Insert N", else new. Recipe as in the plan (exact plugin ids, preset names and params in
+  `recipes.ts`): Kick EQ; Drums EQ, "Gentle glue for a bus", subtle or tape saturation; 808 EQ and "Tight
+  duck for bass" keyed by the Kick bus (not lo-fi); Chords b1 150 Hz high-pass + b8 20 kHz low-pass (the
+  sweep targets), a light duck (a pump in house/EDM), Reverb send −12 dB; Lead b1 200 Hz, +1.5 dB at
+  4.5 kHz, b8, Reverb −14 and Delay −18 dB; FX; EQ'd Reverb (Plate/Room/Hall by style) and Delay
+  (dotted ping-pong or eighth echo) returns; master EQ Pro, tape Saturator, Limiter last (−1 dB, true
+  peak; an existing Limiter is kept and moved last). Faders 0/−2/−2/−6/−3/−6 dB.
+- `rebuild` routes every channel by role and sets every bus fader; `fill-gaps` only routes channels on
+  the master and only sets new buses' faders. Channels still at the default volume get their role's
+  level. Pinned faders stay. Running it twice changes nothing.
+- `pluginRole`/`mixRoles(p)`: role hints for the built-ins (808, kits on one channel, Pluck).
+
+### Auto-level (`app/mix/auto-level.ts`, `level-step.ts`)
+
+- `levelMoves` (pure): every bus to its style offset from the kick (`LEVEL_TARGETS`; the first bus
+  present stands in for a missing kick), moves clamped −12…+6 dB, then one trim so the buses sum to
+  −16 LUFS (power sum); when a fader would pass +5.6 dB the trim stops for all of them and the Limiter
+  makes up the loudness. `limiterInput(style, sum)` = target − sum, 0…10 dB.
+- `autoLevel`: the busiest section's first 8 bars (most channels playing; or `fromTick`/`bars`; the
+  pattern on a loop with no song; at most 20 s), one stem per role bus (`planStems`/`stemProject`, the
+  master chain bypassed; other stems' tracks muted, so the reverb returns count with their sources),
+  measured with `analysis/measure.ts`; one edit for the faders and the Limiter input, amended into the
+  answer's undo entry (or its own); one render of the mix to check, and one Limiter correction when it is
+  more than 1 dB off. Progress per bus, Stop (AbortSignal). Measured (`test/browser/mix-level.test.ts`):
+  trap buses exactly on target, master −10.78 LUFS, −1.05 dBTP; lo-fi buses within 0.25 dB, master
+  −13.23 LUFS, −1.05 dBTP.
+- The `level_mix` after-step (registered through `levelMixStep`); `pinnedFor` (a WeakMap on the
+  after-edit object) carries the answer's pinned faders, filled by the mix module's `beforeCommit`,
+  which also keeps one leveling per answer.
+
+### AI actions (`app/ai/ops/mix.ts`)
+
+`setup_mix {style, mode, level}` (default mode: rebuild after a beat in the answer, else fill-gaps) and
+`level_mix {style, from_bar, bars}` (in a focus: that part). Prompt section "Mixing by role" (order 25):
+set up and level new songs; "mix it / louder" → level_mix; "check my mix" or a specific problem →
+analyze_mix and fix by hand; never both in one answer.
+
+### Not done / to wire at integration
+
+- The arranger should pass `pinnedChannels` (the beat answer state's `levels`, `beatAnswerState(state)`
+  in `ops/beat.ts`) to `setupMix`; without it, only channels at the default volume get role levels.
+- The browser panel and `add_channel`'s kit-sound names list only the stock kit; genre kits are reached
+  through the beat writer.
+- The characterization answer doesn't run `setup_mix`/`level_mix` (they have their own tests).

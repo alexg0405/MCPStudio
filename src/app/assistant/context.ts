@@ -1,28 +1,14 @@
 import { DRUM_SOUNDS, type BeatSound } from '@core/beat/spec';
-import { KIT } from '@core/model/kit';
+import { KIT, kitPiece } from '@core/model/kit';
 import type { Channel, Note, PatternId, Project } from '@core/model/types';
 import { patternLength } from '@core/query/queries';
 import { ticksPerBar } from '@core/time/ppq';
-import { BASS808_ID } from './apply';
+import { BASS808_ID, FM_ID, PLUCK_ID, THREE_OSC_ID, WAVETABLE_ID } from './palette';
 
 /** What the assistant knows about the project: tempo, channels and the current pattern, in brief. */
 
 const NOTE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const noteName = (key: number) => `${NOTE[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
-
-const KIT_SOUND: Record<string, BeatSound> = {
-  'kit/kick': 'kick',
-  'kit/snare': 'snare',
-  'kit/clap': 'clap',
-  'kit/hat-closed': 'hat',
-  'kit/hat-open': 'open-hat',
-  'kit/tom-low': 'tom-low',
-  'kit/tom-mid': 'tom-mid',
-  'kit/tom-high': 'tom-high',
-  'kit/rim': 'rim',
-  'kit/cowbell': 'cowbell',
-  'kit/crash': 'crash',
-};
 
 /** The beat sound a channel corresponds to (null for audio clips and unknown instruments). */
 export function channelSound(p: Project, ch: Channel): BeatSound | 'synth' | 'sample' | null {
@@ -30,12 +16,13 @@ export function channelSound(p: Project, ch: Channel): BeatSound | 'synth' | 'sa
   const id = ch.plugin.pluginId;
   if (id === 'agstudio.sampler') {
     const ref = p.samples[ch.plugin.samples?.main as keyof Project['samples']];
-    if (ref?.source.kind === 'builtin') return KIT_SOUND[ref.source.generator] ?? 'sample';
+    // Stock or genre kit pieces ("kit/trap/kick").
+    if (ref?.source.kind === 'builtin') return kitPiece(ref.source.generator)?.sound ?? 'sample';
     return 'sample';
   }
   if (id === BASS808_ID) return '808';
-  if (id === 'agstudio.pluck') return 'pluck';
-  if (id === 'agstudio.3xosc') return 'synth';
+  if (id === PLUCK_ID) return 'pluck';
+  if (id === THREE_OSC_ID || id === WAVETABLE_ID || id === FM_ID) return 'synth';
   return null;
 }
 
@@ -84,4 +71,4 @@ export function describeProject(p: Project, currentPatternId: PatternId | null):
 }
 
 /** Kit piece names, for the UI. */
-export const KIT_NAMES = Object.fromEntries(KIT.map((k) => [KIT_SOUND[k.generator], k.name]));
+export const KIT_NAMES = Object.fromEntries(KIT.map((k) => [k.sound, k.name]));

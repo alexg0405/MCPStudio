@@ -1,9 +1,12 @@
 /**
- * Procedural drum kit. Pure functions (sampleRate, seed) → channel data, so nothing is downloaded and
+ * Procedural drum kits. Pure functions (sampleRate, seed) → channel data, so nothing is downloaded and
  * every render is deterministic. Never change the output of a published KIT_VERSION: bump the version
- * and keep the old generator so existing projects keep sounding the same.
+ * and keep the old generator so existing projects keep sounding the same. The stock kit is written out
+ * here; the genre kits (`kit/<style>/<piece>`) are the SDK drum models with Drum Synth settings.
  */
+import { KIT_STYLES, type KitStyle } from '@core/model/kit';
 import { Biquad } from '@agstudio/sdk/dsp/biquad';
+import { Clap, HiHat, Kick, renderDrum, Snare, type DrumModel } from '@agstudio/sdk/dsp/drums';
 import { Rng } from '@agstudio/sdk/dsp/random';
 
 export type Generator = (sampleRate: number, seed: number) => Float32Array[];
@@ -180,6 +183,118 @@ const crash: Generator = (sr, seed) => {
   return normalize(out, 0.75);
 };
 
+// ---------------------------------------------------------------- genre kits
+
+/** A genre kit as Drum Synth settings (model units: seconds, Hz, 0–1). */
+interface GenreKit {
+  kick: Pick<Kick, 'pitch' | 'sweep' | 'sweepTime' | 'decay' | 'click' | 'drive'>;
+  snare: Pick<Snare, 'tone' | 'snappy' | 'decay' | 'brightness'>;
+  clap: Pick<Clap, 'tone' | 'decay' | 'spread'>;
+  hat: Pick<HiHat, 'tone' | 'decay'>;
+  openHat: Pick<HiHat, 'tone' | 'decay'>;
+}
+
+/**
+ * The Drum Synth presets behind each genre kit. Trap: "Trap 808 kit (long boom)" except the kick,
+ * which is punchier and shorter (in a trap beat the boom is the 808's). House: "Punchy 909-style
+ * kit". Lo-fi: "Lo-fi dusty kit". Boom bap has no Drum Synth preset: a thick, punchy, slightly
+ * dusty kit between the 909 and the lo-fi ones.
+ */
+const GENRE_SETTINGS: Readonly<Record<KitStyle, GenreKit>> = {
+  trap: {
+    kick: { pitch: 50, sweep: 24, sweepTime: 0.035, decay: 0.45, click: 0.4, drive: 0.45 },
+    snare: { tone: 230, snappy: 0.55, decay: 0.16, brightness: 3000 },
+    clap: { tone: 1550, decay: 0.32, spread: 0.014 },
+    hat: { tone: 0.9, decay: 0.028 },
+    openHat: { tone: 0.8, decay: 0.6 },
+  },
+  house: {
+    kick: { pitch: 56, sweep: 30, sweepTime: 0.028, decay: 0.38, click: 0.65, drive: 0.45 },
+    snare: { tone: 215, snappy: 0.75, decay: 0.22, brightness: 3600 },
+    clap: { tone: 1450, decay: 0.22, spread: 0.009 },
+    hat: { tone: 0.85, decay: 0.04 },
+    openHat: { tone: 0.85, decay: 0.35 },
+  },
+  lofi: {
+    kick: { pitch: 52, sweep: 16, sweepTime: 0.04, decay: 0.42, click: 0, drive: 0.65 },
+    snare: { tone: 170, snappy: 0.45, decay: 0.26, brightness: 1400 },
+    clap: { tone: 900, decay: 0.3, spread: 0.011 },
+    hat: { tone: 0.18, decay: 0.06 },
+    openHat: { tone: 0.2, decay: 0.4 },
+  },
+  boombap: {
+    kick: { pitch: 54, sweep: 20, sweepTime: 0.035, decay: 0.5, click: 0.45, drive: 0.6 },
+    snare: { tone: 195, snappy: 0.62, decay: 0.24, brightness: 2200 },
+    clap: { tone: 1100, decay: 0.26, spread: 0.012 },
+    hat: { tone: 0.45, decay: 0.045 },
+    openHat: { tone: 0.5, decay: 0.38 },
+  },
+};
+
+/** Cuts what is left once a hit has died away (−80 dB under its peak); a kick without click runs on silent. */
+function trimSilence(x: Float32Array, sampleRate: number): Float32Array {
+  let peak = 0;
+  for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i] as number));
+  const floor = peak * 1e-4;
+  let end = x.length;
+  while (end > 1 && Math.abs(x[end - 1] as number) < floor) end--;
+  return x.slice(0, Math.min(x.length, end + Math.round(0.005 * sampleRate)));
+}
+
+/** Peak over RMS of a hit's first 100 ms, in dB. */
+function crestDb(x: Float32Array, sampleRate: number): number {
+  const n = Math.min(x.length, Math.round(0.1 * sampleRate));
+  let peak = 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const v = x[i] as number;
+    peak = Math.max(peak, Math.abs(v));
+    sum += v * v;
+  }
+  return sum > 0 ? 20 * Math.log10(peak / Math.sqrt(sum / n)) : 0;
+}
+
+/**
+ * Soft-clips a hit (tanh) just enough to bring its crest factor down to `maxCrestDb`. The model
+ * snares are much peakier than the stock one: at the same peak they would sound ~5 dB quieter.
+ */
+function tame(x: Float32Array, sampleRate: number, maxCrestDb: number): Float32Array {
+  if (crestDb(x, sampleRate) <= maxCrestDb) return x;
+  let peak = 0;
+  for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i] as number));
+  const shaped = (g: number) => x.map((v) => Math.tanh((g * v) / peak));
+  let lo = 0.01;
+  let hi = 8;
+  for (let k = 0; k < 24; k++) {
+    const mid = (lo + hi) / 2;
+    if (crestDb(shaped(mid), sampleRate) > maxCrestDb) lo = mid;
+    else hi = mid;
+  }
+  return shaped(hi);
+}
+
+/** One hit of a drum model, normalized to the stock kit's peak for that piece. */
+function drumHit(voice: DrumModel, peak: number, maxCrestDb = Infinity): Float32Array[] {
+  const sr = voice.sampleRate;
+  return normalize([tame(trimSilence(renderDrum(voice, 1, 3), sr), sr, maxCrestDb)], peak);
+}
+
+/** The stock snare's crest factor is ~12 dB; a genre snare may be up to this peaky. */
+const SNARE_CREST_DB = 13.5;
+
+function genreKit(kit: KitStyle): Record<string, Generator> {
+  const k = GENRE_SETTINGS[kit];
+  return {
+    [`kit/${kit}/kick`]: (sr, seed) => drumHit(Object.assign(new Kick(sr, seed), k.kick), 0.9),
+    [`kit/${kit}/snare`]: (sr, seed) => drumHit(Object.assign(new Snare(sr, seed), k.snare), 0.9, SNARE_CREST_DB),
+    [`kit/${kit}/clap`]: (sr, seed) => drumHit(Object.assign(new Clap(sr, seed), k.clap), 0.9),
+    // The Drum Synth's noise mix for closed and open hats.
+    [`kit/${kit}/hat`]: (sr, seed) => drumHit(Object.assign(new HiHat(sr, seed), k.hat, { noiseMix: 0.25 }), 0.8),
+    [`kit/${kit}/open-hat`]: (sr, seed) =>
+      drumHit(Object.assign(new HiHat(sr, seed), k.openHat, { noiseMix: 0.32 }), 0.8),
+  };
+}
+
 export const GENERATORS: Readonly<Record<string, Generator>> = {
   'kit/kick': kick,
   'kit/snare': snare,
@@ -192,6 +307,7 @@ export const GENERATORS: Readonly<Record<string, Generator>> = {
   'kit/rim': rim,
   'kit/cowbell': cowbell,
   'kit/crash': crash,
+  ...Object.assign({}, ...KIT_STYLES.map(genreKit)),
 };
 
 /** Seed derived from the generator name so each sound has stable, distinct noise. */

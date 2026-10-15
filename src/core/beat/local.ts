@@ -1,10 +1,16 @@
+import { applyAccents } from './groove';
 import type { BeatNote, BeatSpec, BeatTrack } from './spec';
 import { STEPS_PER_BAR } from './spec';
+import { GROOVE, TEMPO, type Style } from './style';
+
+export type { Style } from './style';
 
 /**
  * The assistant's offline brain: reads a description ("dark trap 808s at 140 in F minor") and the
- * user's performance (hits and hummed notes on the grid) and writes a beat with style templates.
- * No network, deterministic for the same input, and used when no AI is configured.
+ * user's performance (hits and hummed notes on the grid) and writes a beat with style templates:
+ * the style's drum grid with its accents and swing, an 808 that follows the kick and slides (trap,
+ * drill), a sub bass under the kick (boom bap), 7th-chord keys (lo-fi), offbeat bass (house, EDM)
+ * and chords (EDM, pop). No network, deterministic for the same input, used when no AI is set up.
  */
 
 /** What a performed sound became on the grid (structurally a voice-analysis GridEvent). */
@@ -19,8 +25,6 @@ export interface PerformedEvent {
 
 /** What the user's noises stand for. */
 export type PerformanceRole = 'auto' | 'drums' | '808' | 'melody';
-
-export type Style = 'trap' | 'drill' | 'boombap' | 'lofi' | 'house' | 'reggaeton' | 'afro';
 
 export interface PromptInfo {
   bpm?: number;
@@ -43,20 +47,12 @@ const STYLE_WORDS: [RegExp, Style][] = [
   [/\btrap\b|\brage\b/, 'trap'],
   [/boom\s*-?\s*bap|\b90s\b|\bhip\s*-?\s*hop\b/, 'boombap'],
   [/\blo\s*-?\s*fi\b|\bchill\b/, 'lofi'],
-  [/\bhouse\b|\btechno\b|four on the floor|\bedm\b|\bdisco\b/, 'house'],
+  [/\bedm\b|\bbig ?room\b|\bfestival\b|\bfuture bass\b|\belectro\b|\bdance\b/, 'edm'],
+  [/\bhouse\b|\btechno\b|four on the floor|\bdisco\b/, 'house'],
   [/\breggaeton\b|\bdembow\b|\blatin\b/, 'reggaeton'],
   [/\bafro\s*-?\s*beats?\b|\bamapiano\b|\bafro\b/, 'afro'],
+  [/\bpop\b|\bradio\b/, 'pop'],
 ];
-
-const DEFAULT_BPM: Record<Style, number> = {
-  trap: 140,
-  drill: 142,
-  boombap: 90,
-  lofi: 80,
-  house: 124,
-  reggaeton: 95,
-  afro: 104,
-};
 
 export function parsePrompt(prompt: string): PromptInfo {
   const text = prompt.toLowerCase();
@@ -94,7 +90,10 @@ export function parsePrompt(prompt: string): PromptInfo {
   return info;
 }
 
-/** Drum grids per style: one bar, 16 steps; X = accent, x = hit, o = ghost. */
+/**
+ * Drum grids per style: one bar, 16 steps; X = accent, x = hit (the style's accent for that spot),
+ * o = ghost. Boom bap and lo-fi hats hit odd 1/16s (the ones the swing pushes late).
+ */
 const DRUMS: Record<Style, Record<string, string>> = {
   trap: {
     kick: 'x......x..x.....',
@@ -107,9 +106,9 @@ const DRUMS: Record<Style, Record<string, string>> = {
     hat: 'x..x..x.x..x..x.',
   },
   boombap: {
-    kick: 'X.......x.x.....',
-    snare: '....X.......X...',
-    hat: 'x.x.x.x.x.x.x.x.',
+    kick: 'X......x..x.....',
+    snare: '....X....o..X..o',
+    hat: 'x.xox.x.x.xox.xx',
   },
   lofi: {
     kick: 'x.......x..x....',
@@ -121,6 +120,12 @@ const DRUMS: Record<Style, Record<string, string>> = {
     clap: '....x.......x...',
     hat: '..x...x...x...x.',
   },
+  edm: {
+    kick: 'X...X...X...X...',
+    clap: '....X.......X...',
+    hat: 'x.x.x.x.x.x.x.x.',
+    'open-hat': '..x...x...x...x.',
+  },
   reggaeton: {
     kick: 'X...X...X...X...',
     snare: '...x..x....x..x.',
@@ -131,6 +136,11 @@ const DRUMS: Record<Style, Record<string, string>> = {
     rim: '..x...x...x.x...',
     hat: 'x.xxx.x.x.xxx.x.',
   },
+  pop: {
+    kick: 'X.....x.X.......',
+    clap: '....X.......X...',
+    hat: 'x.x.x.x.x.x.x.x.',
+  },
 };
 
 const DRUM_SOUND: Record<string, BeatTrack['sound']> = {
@@ -138,21 +148,44 @@ const DRUM_SOUND: Record<string, BeatTrack['sound']> = {
   snare: 'snare',
   clap: 'clap',
   hat: 'hat',
+  'open-hat': 'open-hat',
   rim: 'rim',
 };
 
-const NAMES: Record<string, string> = { kick: 'Kick', snare: 'Snare', clap: 'Clap', hat: 'Hat', rim: 'Rim' };
+const NAMES: Record<string, string> = {
+  kick: 'Kick',
+  snare: 'Snare',
+  clap: 'Clap',
+  hat: 'Hat',
+  'open-hat': 'Open hat',
+  rim: 'Rim',
+};
 
-function fromGrid(grid: string, bars: number): BeatNote[] {
+/** Notes of a grid; plain hits have no velocity yet (the style's accents fill them in). */
+function fromGrid(grid: string, bars: number, style: Style): BeatNote[] {
   const notes: BeatNote[] = [];
   for (let bar = 0; bar < bars; bar++) {
     for (let i = 0; i < grid.length; i++) {
       const c = grid[i];
       if (c === '.' || c === undefined) continue;
-      notes.push({ step: bar * STEPS_PER_BAR + i, len: 1, vel: c === 'X' ? 1 : c === 'o' ? 0.35 : 0.8 });
+      const note: BeatNote = { step: bar * STEPS_PER_BAR + i, len: 1 };
+      if (c === 'X') note.vel = 1;
+      else if (c === 'o') note.vel = GROOVE[style].ghost * 0.8;
+      notes.push(note);
     }
   }
   return notes;
+}
+
+/** Fills in the velocities a track's notes don't have yet with the style's accents. */
+function accent(track: BeatTrack, style: Style): BeatTrack {
+  applyAccents(
+    track,
+    track.notes.map((n) => n.vel === undefined),
+    style,
+  );
+  for (const n of track.notes) n.vel ??= 0.8;
+  return track;
 }
 
 /** Trap/drill hat rolls: 1/32 (or triplet) bursts before the snare and at the end of the bar. */
@@ -184,26 +217,130 @@ function snapToScale(key: number, root: number, minor: boolean): number {
   return key;
 }
 
-/** An 808 line that follows the kick: roots, with a slide to the 5th / ♭7 at the end of each bar. */
-function eightOhEight(kick: readonly BeatNote[], bars: number, root808: number, minor: boolean): BeatNote[] {
-  const hits = kick.map((n) => n.step);
+/** The highest key an 808 slides to (C3): above it the 808 stops sounding like a bass. */
+const MAX_808 = 48;
+
+/**
+ * An 808 line that follows the kick (roots, the ♭7 or 5th on the last hit of every second bar),
+ * every hit ringing until the next one. Slides: the last note of the loop (after the pickup kick),
+ * and with `everyBar` the last note of every bar, glides into a new pitch for its last step; it is
+ * stretched half a step into the new note, so the 808 slides instead of hitting again.
+ */
+function eightOhEight(
+  kick: readonly BeatNote[],
+  bars: number,
+  root808: number,
+  minor: boolean,
+  everyBar: boolean,
+): BeatNote[] {
+  const total = bars * STEPS_PER_BAR;
+  const hits = [...new Set(kick.map((n) => n.step))].sort((a, b) => a - b);
   const notes: BeatNote[] = [];
   hits.forEach((step, i) => {
-    const next = hits[i + 1] ?? bars * STEPS_PER_BAR;
+    const next = hits[i + 1] ?? total;
     const bar = Math.floor(step / STEPS_PER_BAR);
     const lastInBar = (hits[i + 1] ?? Infinity) >= (bar + 1) * STEPS_PER_BAR;
     const key = bar % 2 === 1 && lastInBar ? root808 + (minor ? -2 : 7) : root808;
     notes.push({ step, len: Math.max(1, next - step), key, vel: 0.9 });
   });
-  // Glide: the last note of every other bar slides up an octave into the next bar.
-  for (let bar = 1; bar < bars; bar += 2) {
-    const last = [...notes].reverse().find((n) => n.step < (bar + 1) * STEPS_PER_BAR && n.step >= bar * STEPS_PER_BAR);
-    if (last && (last.len ?? 1) >= 3) {
-      const at = last.step + (last.len ?? 1) - 2;
-      notes.push({ step: at, len: 2, key: (last.key ?? root808) + 12, vel: 0.85 });
-    }
+  for (let bar = everyBar ? 0 : bars - 1; bar < bars; bar++) {
+    const last = notes.filter((n) => n.step >= bar * STEPS_PER_BAR && n.step < (bar + 1) * STEPS_PER_BAR).at(-1);
+    const len = last?.len ?? 0;
+    if (!last || len < 1.5) continue;
+    const at = last.step + Math.max(0.5, len - 1);
+    const from = last.key ?? root808;
+    // Up an octave into the loop's restart; a 5th up (or the octave below) inside the loop.
+    const interval = bar === bars - 1 ? 12 : 7;
+    const key = from + interval <= MAX_808 ? from + interval : from - 12;
+    notes.push({ step: at, len: last.step + len - at, key, vel: 0.85 });
+    last.len = at - last.step + 0.5;
   }
   return notes.sort((a, b) => a.step - b.step);
+}
+
+/** A synth bass key kept at B2 or below (its sub plays an octave under it). */
+const bassKey = (key: number) => (key > 47 ? key - 12 : key);
+
+/** A sub bass under the kick: the root on each hit, short of the next one (boom bap, afro, pop). */
+function subUnderKick(kick: readonly BeatNote[], bars: number, rootBass: number, roots?: readonly number[]): BeatNote[] {
+  const total = bars * STEPS_PER_BAR;
+  const hits = [...new Set(kick.map((n) => n.step))].sort((a, b) => a - b);
+  return hits.map((step, i) => {
+    const next = hits[i + 1] ?? total;
+    const bar = Math.floor(step / STEPS_PER_BAR);
+    const shift = roots ? (roots[bar % roots.length] ?? 0) : 0;
+    return { step, len: Math.max(0.5, Math.min(6, next - step - 0.25)), key: bassKey(rootBass + shift), vel: 0.85 };
+  });
+}
+
+type Quality = 'maj' | 'min' | 'maj7' | 'm7' | '7';
+const CHORD: Record<Quality, readonly number[]> = {
+  maj: [0, 4, 7],
+  min: [0, 3, 7],
+  maj7: [0, 4, 7, 11],
+  m7: [0, 3, 7, 10],
+  '7': [0, 4, 7, 10],
+};
+
+/** Four-bar progressions: chord roots in semitones above the key's root, and their qualities. */
+const PROGRESSIONS = {
+  // Lo-fi: i7 – iv7 – ♭VII7 – ♭IIImaj7 (minor), ii7 – V7 – Imaj7 – vi7 (major).
+  sevenths: {
+    minor: [
+      [0, 'm7'],
+      [5, 'm7'],
+      [10, '7'],
+      [3, 'maj7'],
+    ],
+    major: [
+      [2, 'm7'],
+      [7, '7'],
+      [0, 'maj7'],
+      [9, 'm7'],
+    ],
+  },
+  // EDM and pop: i – ♭VI – ♭III – ♭VII (minor), I – V – vi – IV (major).
+  anthem: {
+    minor: [
+      [0, 'min'],
+      [8, 'maj'],
+      [3, 'maj'],
+      [10, 'maj'],
+    ],
+    major: [
+      [0, 'maj'],
+      [7, 'maj'],
+      [9, 'min'],
+      [5, 'maj'],
+    ],
+  },
+} as const satisfies Record<string, Record<'minor' | 'major', readonly (readonly [number, Quality])[]>>;
+
+/** A chord of `quality` on `root` (pitch class) voiced with its root between C3 and B3. */
+function voice(root: number, quality: Quality, low = 48): number[] {
+  const base = low + ((((root - low) % 12) + 12) % 12);
+  return CHORD[quality].map((i) => base + i);
+}
+
+/**
+ * A chord per bar for `bars` bars; `hits` are [step, length, velocity] within each bar (a held
+ * chord, or a lazy re-strike for keys).
+ */
+function chords(
+  progression: readonly (readonly [number, Quality])[],
+  keyRoot: number,
+  bars: number,
+  hits: readonly (readonly [number, number, number])[],
+  low = 48,
+): BeatNote[] {
+  const notes: BeatNote[] = [];
+  for (let bar = 0; bar < bars; bar++) {
+    const [degree, quality] = progression[bar % progression.length]!;
+    const keys = voice(keyRoot + degree, quality, low);
+    for (const [step, len, vel] of hits)
+      for (const key of keys) notes.push({ step: bar * STEPS_PER_BAR + step, len, key, vel });
+  }
+  return notes;
 }
 
 /** Moves hummed pitches into a register, keeping their shape (and the key, when one was asked for). */
@@ -285,15 +422,30 @@ export interface LocalBeatInput {
   performance?: { events: readonly PerformedEvent[]; role: PerformanceRole; bars: number };
 }
 
+/** Loop length per style in bars: chords take four; trap, drill and boom bap two (a pickup, slides). */
+const LOOP_BARS: Record<Style, number> = {
+  trap: 2,
+  drill: 2,
+  boombap: 2,
+  lofi: 4,
+  house: 1,
+  edm: 4,
+  reggaeton: 1,
+  afro: 1,
+  pop: 4,
+};
+
 export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
   const info = parsePrompt(input.prompt);
   const style: Style = info.style ?? (info.wants808 ? 'trap' : 'boombap');
   const perf = input.performance && input.performance.events.length > 0 ? input.performance : undefined;
-  const bars = Math.max(1, Math.min(4, perf?.bars ?? (style === 'trap' || style === 'drill' ? 2 : 1)));
+  const bars = Math.max(1, Math.min(4, perf?.bars ?? LOOP_BARS[style]));
   const total = bars * STEPS_PER_BAR;
-  const minor = info.key?.minor ?? (style !== 'house' && style !== 'afro' && style !== 'reggaeton');
+  const minor = info.key?.minor ?? !['house', 'afro', 'reggaeton', 'pop'].includes(style);
   const root = info.key?.root ?? (style === 'trap' || style === 'drill' ? 5 : 9); // F or A
   const root808 = 24 + root; // C1-based octave
+  /** A synth bass's root (its sub oscillator plays an octave lower). */
+  const rootBass = 36 + root;
   const tracks: BeatTrack[] = [];
   const role = perf ? decideRole(perf.role, perf.events, info) : null;
 
@@ -302,8 +454,8 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
   const performed = (kind: PerformedEvent['kind']) =>
     role === 'drums' && perf ? perf.events.filter((e) => e.kind === kind) : [];
   for (const [part, grid] of Object.entries(drumGrid)) {
-    if (part === 'hat' && info.noHats) continue;
-    let notes = fromGrid(grid, bars);
+    if ((part === 'hat' || part === 'open-hat') && info.noHats) continue;
+    let notes = fromGrid(grid, bars, style);
     const own = performed(part === 'clap' || part === 'rim' ? 'snare' : (part as PerformedEvent['kind']));
     if (own.length > 0)
       notes = own.map((e) => ({
@@ -320,12 +472,8 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
     } else if (part === 'kick' && info.density > 0) {
       notes = [...notes, { step: total - 3, len: 1, vel: 0.7 }];
     }
-    tracks.push({
-      name: NAMES[part] ?? part,
-      sound: DRUM_SOUND[part] ?? 'snare',
-      notes,
-      volume: part === 'hat' ? 0.6 : 0.8,
-    });
+    // No volumes: the beat writer gives each drum its level.
+    tracks.push({ name: NAMES[part] ?? part, sound: DRUM_SOUND[part] ?? 'snare', notes });
   }
   if (role === 'drums' && perf) {
     // Beatboxed sounds the style has no part for still get a track.
@@ -345,16 +493,19 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
 
   // Movement in longer loops: a kick pickup into the turnaround (the 808 follows it).
   const kickTrack = tracks.find((t) => t.sound === 'kick');
-  if (bars >= 2 && kickTrack && role !== 'drums' && style !== 'house' && style !== 'reggaeton') {
+  if (bars >= 2 && kickTrack && role !== 'drums' && !['house', 'edm', 'reggaeton'].includes(style)) {
     const pickup = (bars - 1) * STEPS_PER_BAR + 14;
     if (!kickTrack.notes.some((n) => n.step === pickup)) {
       kickTrack.notes.push({ step: pickup, len: 1, vel: 0.7 });
       kickTrack.notes.sort((a, b) => a.step - b.step);
     }
   }
+  // The style's accents for every drum hit that has no velocity yet.
+  for (const t of tracks) accent(t, style);
 
   if (!info.drumsOnly) {
     const kick = tracks.find((t) => t.sound === 'kick')?.notes ?? [];
+    const scale = minor ? 'minor' : 'major';
     if (role === '808' && perf) {
       tracks.push({
         name: '808',
@@ -362,28 +513,50 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
         notes: tonalNotes(perf.events, root808 + 7, info.key, root808, total, true),
         params: { glide: 0.09, decay: 2.2 },
       });
-    } else if (info.wants808 || style === 'trap' || style === 'drill') {
-      tracks.push({
-        name: '808',
-        sound: '808',
-        notes: eightOhEight(kick, bars, root808, minor),
-        params: { glide: 0.1 },
-      });
-    } else if (style === 'house') {
+    } else if (info.wants808 || style === 'trap' || style === 'drill' || style === 'reggaeton') {
+      // Every bar of a drill loop slides; trap and reggaeton slide into the loop's restart.
+      tracks.push({ name: '808', sound: '808', notes: eightOhEight(kick, bars, root808, minor, style === 'drill') });
+    } else if (style === 'boombap' || style === 'afro' || style === 'pop') {
+      // A sub bass under the kick (boom bap moves to the iv in bar 2; pop follows its chords).
+      const roots =
+        style === 'pop' ? PROGRESSIONS.anthem[scale].map(([d]) => d) : style === 'boombap' ? [0, 5] : [0];
+      tracks.push({ name: 'Bass', sound: 'bass', notes: subUnderKick(kick, bars, rootBass, roots) });
+    } else if (style === 'house' || style === 'edm') {
+      // Offbeat bass (EDM: on its chords' roots).
+      const roots: readonly number[] = style === 'edm' ? PROGRESSIONS.anthem[scale].map(([d]) => d) : [0];
       const notes = Array.from({ length: bars * 4 }, (_, i) => ({
         step: i * 4 + 2,
         len: 1.5,
-        key: 36 + root,
+        key: bassKey(rootBass + (roots[Math.floor(i / 4) % roots.length] ?? 0)),
         vel: 0.8,
       }));
       tracks.push({ name: 'Bass', sound: 'bass', notes });
+    }
+    if (style === 'lofi' && role !== '808') {
+      // Four bars of 7th chords on mellow keys (held, then a lazy re-strike), and a soft bass on their roots.
+      const prog = PROGRESSIONS.sevenths[scale];
+      tracks.push({ name: 'Keys', sound: 'keys', notes: chords(prog, root, bars, [[0, 10, 0.72], [10, 6, 0.58]]) });
+      const bass: BeatNote[] = [];
+      for (let bar = 0; bar < bars; bar++) {
+        const key = bassKey(rootBass + prog[bar % prog.length]![0]);
+        bass.push({ step: bar * STEPS_PER_BAR, len: 7.5, key, vel: 0.8 });
+        bass.push({ step: bar * STEPS_PER_BAR + 10, len: 5.5, key, vel: 0.7 });
+      }
+      tracks.push({ name: 'Bass', sound: 'bass', notes: bass });
+    } else if (style === 'edm') {
+      tracks.push({ name: 'Pad', sound: 'pad', notes: chords(PROGRESSIONS.anthem[scale], root, bars, [[0, 16, 0.7]], 53) });
+    } else if (style === 'pop') {
+      tracks.push({
+        name: 'Keys',
+        sound: 'keys',
+        notes: chords(PROGRESSIONS.anthem[scale], root, bars, [[0, 7, 0.75], [8, 7, 0.65]]),
+      });
     }
     if (role === 'melody' && perf) {
       tracks.push({
         name: 'Melody',
         sound: 'pluck',
         notes: tonalNotes(perf.events, 67, info.key, 60 + root, total, false),
-        volume: 0.7,
       });
     }
   }
@@ -395,14 +568,16 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
     title,
     bars,
     tracks,
+    style,
     message:
       `Made a ${bars}-bar ${label} pattern (${parts})` +
       (role
         ? `, following your ${role === 'drums' ? 'beatbox' : 'humming'} for the ${role === 'drums' ? 'drums' : role}.`
         : '.'),
   };
-  const bpm = info.bpm ?? (info.style ? DEFAULT_BPM[style] : undefined);
+  const bpm = info.bpm ?? (info.style ? TEMPO[style].default : undefined);
   if (bpm !== undefined && bpm !== input.bpm) spec.bpm = bpm;
-  if (style === 'boombap' || style === 'lofi') spec.swing = style === 'lofi' ? 0.3 : 0.15;
+  // The style's swing (straight for a named straight style too).
+  if (info.style || GROOVE[style].swing > 0) spec.swing = GROOVE[style].swing;
   return spec;
 }

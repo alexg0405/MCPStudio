@@ -66,7 +66,8 @@ function AskCard() {
       if (t === last) return;
       last = t;
       el.style.transform = t;
-      el.style.visibility = 'visible';
+      // Shown once placed (transparent, not hidden, before that: the box can take the keyboard at once).
+      el.style.opacity = '1';
     });
   }, [anchor]);
 
@@ -118,7 +119,7 @@ function AskCard() {
     <div
       ref={card}
       className={styles.card}
-      style={{ visibility: 'hidden' }}
+      style={{ opacity: 0 }}
       role="dialog"
       aria-label="Ask AI about this part"
       onKeyDown={(e) => {

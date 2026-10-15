@@ -120,7 +120,7 @@ describe('mix setup', () => {
     expect(project(s).mixer.inserts[kickBus]!.volume).toBe(0.7);
     expect(channel(s, 'Lead').volume).toBe(0.78);
     // Channels nobody set (the default project's Clap at 0.78) get their role's level.
-    expect(channel(s, 'Clap').volume).toBeCloseTo(0.72);
+    expect(channel(s, 'Clap').volume).toBeCloseTo(0.8);
   });
 
   it('reuses the master’s Limiter (moved last) and buses the arranger made', () => {

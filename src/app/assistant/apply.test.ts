@@ -3,6 +3,7 @@ import type { BeatSpec } from '@core/beat/spec';
 import type { ChannelId, InstrumentChannel, Project, SampleId } from '@core/model/types';
 import { createTestServices } from '../testing';
 import { applyBeatSpec, planBeat, writeBeat } from './apply';
+import { drumVolume } from './palette';
 
 const beat = (over: Partial<BeatSpec> = {}): BeatSpec => ({
   title: 'Night trap',
@@ -44,11 +45,12 @@ describe('applyBeatSpec', () => {
     const bass = Object.values(pattern.notes[applied.channels['808']!] ?? {})[0];
     expect(bass).toMatchObject({ tick: 0, length: 2400, key: 29 });
 
-    // Mix settings only go to the channel the assistant made; params are clamped, unknown ones ignored.
+    // The beat's levels apply; params are clamped, unknown ones ignored.
     const ch808 = p.channels[applied.channels['808']!] as InstrumentChannel;
     expect(ch808.volume).toBe(0.9);
     expect(ch808.plugin.params.nope).toBeUndefined();
-    expect((p.channels[kick] as InstrumentChannel).volume).toBe((before.channels[kick] as InstrumentChannel).volume);
+    // The default Kick was untouched and unused: it now plays the style's kit at the kit's level.
+    expect((p.channels[kick] as InstrumentChannel).volume).toBe(drumVolume('kick', 'trap'));
 
     s.history.undo();
     expect(s.doc.getState().project).toEqual(before);
@@ -119,7 +121,7 @@ describe('the beat writer in a style', () => {
     expect(sampleOf(p, kick)).toBe('kit/trap/kick');
     expect(kick.plugin.params.velTone).toBe(0.5);
     expect(sampleOf(p, inst(p, applied.channels.hat))).toBe('kit/trap/hat');
-    expect(inst(p, applied.channels.hat).volume).toBeLessThan(0.78);
+    expect(inst(p, applied.channels.hat).volume).toBe(drumVolume('hat', 'trap'));
     // The stock samples they played are gone; nothing else used them.
     expect(Object.values(p.samples).some((x) => x.source.kind === 'builtin' && x.source.generator === 'kit/kick')).toBe(false);
     // A new open hat with a closed hat in the beat: its envelope is on, so the note end chokes it.

@@ -218,18 +218,21 @@ export const MASTER_CHAIN: readonly FxRecipe[] = [
   },
 ];
 
-/** Channel volumes by role (linear; the channel default is 0.78) for channels nobody has set. */
+/**
+ * Channel volumes by role (linear; the channel default is 0.78) for channels nobody has set. The
+ * drums match the beat writer's levels for the stock kit (`assistant/palette.ts` DRUM_VOLUME).
+ */
 export const ROLE_VOLUME: Readonly<Record<Role, number>> = {
-  kick: 0.78,
-  snare: 0.74,
-  clap: 0.72,
-  rim: 0.56,
-  hat: 0.52,
-  'open-hat': 0.48,
-  perc: 0.5,
-  tom: 0.66,
-  crash: 0.42,
-  kit: 0.7,
+  kick: 0.62,
+  snare: 0.52,
+  clap: 0.8,
+  rim: 0.45,
+  hat: 0.32,
+  'open-hat': 0.22,
+  perc: 0.4,
+  tom: 0.5,
+  crash: 0.3,
+  kit: 0.62,
   '808': 0.62,
   bass: 0.62,
   chords: 0.55,

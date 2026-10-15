@@ -22,7 +22,7 @@ import { TICKS_PER_STEP } from '@core/time/ppq';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import { presetChoices, presetValues, type PresetChoice } from '../presets';
 import type { Services } from '../services';
-import { BASS808_ID, DRUM_VOLUME, KIT_FOR, SYNTH as SYNTH_SETTINGS, soundFor } from './palette';
+import { BASS808_ID, drumVolume, KIT_FOR, SYNTH as SYNTH_SETTINGS, soundFor } from './palette';
 
 export { BASS808_ID };
 
@@ -306,7 +306,7 @@ export function planBeat(
       if (!piece) continue;
       const sample = kitSampleRef(piece.generator);
       const ch = instrumentChannelFor(sampler, track.name, index++, { main: sample.id });
-      ch.volume = DRUM_VOLUME[track.sound as KitSound];
+      ch.volume = drumVolume(track.sound as KitSound, piece.kit);
       created.add(ch.id);
       taken.add(ch.id);
       channels[key] = ch.id;
@@ -434,8 +434,12 @@ export function writeBeat(s: Services, d: Draft<Project>, spec: BeatSpec, beat: 
           ch.plugin.params.sustain = 1;
           ch.plugin.params.release = 0.05;
         }
-        // A kit channel taken over at the default level gets its drum's level.
-        if (!make && ch.volume === DEFAULT_CHANNEL_VOLUME) ch.volume = DRUM_VOLUME[track.sound as KitSound];
+        // A kit channel taken over at the default level gets its drum's level (for the kit it now plays).
+        if (!make && ch.volume === DEFAULT_CHANNEL_VOLUME) {
+          const ref = d.samples[ch.plugin.samples?.main as SampleId];
+          const piece = ref?.source.kind === 'builtin' ? kitPiece(ref.source.generator) : undefined;
+          ch.volume = drumVolume(track.sound as KitSound, piece?.kit);
+        }
       }
       for (const [k, v] of Object.entries(track.params ?? {})) {
         const x = clampParam(def?.params[k], v);

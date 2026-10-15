@@ -42,20 +42,42 @@ export const KIT_FOR: Readonly<Record<Style, KitStyle>> = {
   pop: 'trap',
 };
 
-/** Channel volumes of drum channels the writer makes, by drum (kick at the channel default). */
+/**
+ * Channel volumes of the drum channels the writer sets up, for the stock kit: in a beat the snare
+ * and clap sit about 4 dB under the kick (LUFS), closed hats 11 dB, open hats 12 dB. The kick is
+ * at −4 dB, so the rest of the beat has room around it.
+ */
 export const DRUM_VOLUME: Readonly<Record<KitSound, number>> = {
-  kick: 0.78,
-  snare: 0.74,
-  clap: 0.72,
-  hat: 0.52,
-  'open-hat': 0.48,
-  'tom-low': 0.66,
-  'tom-mid': 0.66,
-  'tom-high': 0.66,
-  rim: 0.56,
-  cowbell: 0.45,
-  crash: 0.42,
+  kick: 0.62,
+  snare: 0.52,
+  clap: 0.8,
+  hat: 0.32,
+  'open-hat': 0.22,
+  'tom-low': 0.5,
+  'tom-mid': 0.5,
+  'tom-high': 0.5,
+  rim: 0.45,
+  cowbell: 0.35,
+  crash: 0.3,
 };
+
+/**
+ * How much louder (dB) each genre kit's piece is than the stock one, played in a beat (measured:
+ * the samples' peaks match, their density doesn't). Its channel makes up for it.
+ */
+const KIT_LOUDNESS: Readonly<Record<KitStyle, Partial<Record<KitSound, number>>>> = {
+  trap: { kick: 2.2, snare: -3.5, clap: -0.6, hat: -8, 'open-hat': -3.6 },
+  house: { kick: 2.2, snare: -2.4, clap: 1.9, hat: -5.9, 'open-hat': -2.5 },
+  // Lo-fi and boom bap kicks sit 2 dB further back: their drum bus leads (0 to −2 dB under the kick).
+  lofi: { kick: 4.6, snare: -4, clap: 1.1, hat: -4.8, 'open-hat': -3.3 },
+  boombap: { kick: 5.3, snare: -3, clap: 0.9, hat: -4.6, 'open-hat': -2.9 },
+};
+
+/** The channel volume for a drum of a kit (none: the stock kit). */
+export function drumVolume(sound: KitSound, kit?: KitStyle | null): number {
+  const db = kit ? (KIT_LOUDNESS[kit][sound] ?? 0) : 0;
+  return Math.round(Math.min(1.25, DRUM_VOLUME[sound] * Math.pow(10, -db / 20)) * 1000) / 1000;
+}
 
 /** 3xOsc settings for each pitched sound, when the palette's instrument isn't installed. */
 export const SYNTH: Readonly<Record<PitchedSound, Record<string, number | string>>> = {
@@ -86,8 +108,10 @@ const LOW = 36;
 /*
  * The building blocks (preset names exactly as the plugins define them). Levels (the instrument's
  * own `level` and the channel volume) are set from offline renders (test/browser/palette.test.ts)
- * so that each sound, alone, sits about this far under the kit's kick: 808 −3 dB, bass −4, lead −8,
- * pluck −9, keys, pad and bell −10, strings −11. Auto-level then balances the buses per style.
+ * so that each sound, alone, sits about this far under a kit kick at the default channel volume:
+ * 808 −3 dB, bass −4, lead and keys and pad −8, pluck, bell and strings −9 (lo-fi's keys −3 and
+ * pad −6: they lead the mix there). The writer's drum levels put the kick 4–5 dB lower, so in a beat
+ * everything sits a little louder than that around it; auto-level then balances the buses per style.
  */
 const C = {
   classic808: { pluginId: BASS808_ID, preset: 'Classic 808', params: { drive: 0.35, glide: 0.1 }, volume: 0.81, rootKey: LOW },
@@ -96,19 +120,19 @@ const C = {
   punchy808: { pluginId: BASS808_ID, preset: 'Short punchy', params: { level: 3 }, volume: 0.82, rootKey: LOW },
   subBass: { pluginId: WAVETABLE_ID, preset: 'Deep sub bass', params: { level: 0 }, volume: 0.79, rootKey: LOW },
   pluckBass: { pluginId: THREE_OSC_ID, preset: 'Pluck bass', params: { level: 6 }, volume: 0.7, rootKey: LOW },
-  supersaw: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { level: -7 }, volume: 0.5 },
-  darkPad: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { cutoff: 1800, level: -7 }, volume: 0.54 },
+  supersaw: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { level: -5 }, volume: 0.51 },
+  darkPad: { pluginId: WAVETABLE_ID, preset: 'Warm supersaw pad', params: { cutoff: 1800, level: -3 }, volume: 0.54 },
   glassPluck: { pluginId: WAVETABLE_ID, preset: 'Glassy pluck', params: { level: 6 }, volume: 0.71 },
   bellKeys: { pluginId: WAVETABLE_ID, preset: 'Bell keys', params: { level: 5 }, volume: 0.47 },
   softBellKeys: { pluginId: WAVETABLE_ID, preset: 'Bell keys', params: { cutoff: 3500, level: 5 }, volume: 0.52 },
-  strings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', volume: 0.44 },
-  darkStrings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', params: { cutoff: 2500 }, volume: 0.44 },
+  strings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', volume: 0.55 },
+  darkStrings: { pluginId: WAVETABLE_ID, preset: 'PWM strings', params: { cutoff: 2500 }, volume: 0.55 },
   scream: { pluginId: WAVETABLE_ID, preset: 'Sync scream lead', volume: 0.59 },
-  ep: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { level: -6 }, volume: 0.62 },
-  mellowEp: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { cutoff: 3000, level: -6 }, volume: 0.63 },
-  bell: { pluginId: FM_ID, preset: 'Glassy FM bell', params: { level: 2 }, volume: 0.5 },
-  brass: { pluginId: FM_ID, preset: 'Brass stab', params: { level: -5 }, volume: 0.49 },
-  organ: { pluginId: FM_ID, preset: 'Drawbar organ (additive)', params: { level: -5 }, volume: 0.52 },
+  ep: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { level: -4 }, volume: 0.63 },
+  mellowEp: { pluginId: FM_ID, preset: 'Electric piano (DX-style tine)', params: { cutoff: 3000, level: 1 }, volume: 0.64 },
+  bell: { pluginId: FM_ID, preset: 'Glassy FM bell', params: { level: 3 }, volume: 0.5 },
+  brass: { pluginId: FM_ID, preset: 'Brass stab', params: { level: -3 }, volume: 0.48 },
+  organ: { pluginId: FM_ID, preset: 'Drawbar organ (additive)', params: { level: -3 }, volume: 0.52 },
   marimba: { pluginId: FM_ID, preset: 'Marimba', params: { level: 6 }, volume: 0.82 },
   nylon: { pluginId: PLUCK_ID, preset: 'Nylon', params: { level: 0 }, volume: 0.98 },
   harp: { pluginId: PLUCK_ID, preset: 'Harp', params: { level: 0 }, volume: 0.63 },

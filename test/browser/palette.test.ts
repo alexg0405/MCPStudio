@@ -45,17 +45,19 @@ function phrase(sound: PitchedSound): BeatNote[] {
 
 const dbOf = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
 
-/** How far under the kit's kick each sound sits on its own (see palette.ts). */
+/** How far under a kit kick at the default channel volume each sound sits on its own (see palette.ts). */
 const UNDER_KICK: Record<PitchedSound, number> = {
   '808': -3,
   bass: -4,
   lead: -8,
   pluck: -9,
-  keys: -10,
-  pad: -10,
-  bell: -10,
-  strings: -11,
+  keys: -8,
+  pad: -8,
+  bell: -9,
+  strings: -9,
 };
+/** Styles whose chords lead the mix. */
+const SHIFT: Partial<Record<Style, Partial<Record<PitchedSound, number>>>> = { lofi: { keys: 5, pad: 2 } };
 
 describe('style palette', () => {
   const services: Services[] = [];
@@ -79,11 +81,12 @@ describe('style palette', () => {
     };
     const entries = [...seen].map(([choice, { style, sound }]) => ({
       sound,
+      style,
       label: `${sound} ${choice.preset ?? choice.pluginId}${choice.params ? ` ${JSON.stringify(choice.params)}` : ''} (${style})`,
       ...alone({ title: 'x', bars: 1, style, tracks: [{ name: sound, sound, notes: phrase(sound) }] }),
     }));
     // The kick to compare with: the trap kit's, four on the floor at its channel level.
-    const kick = alone({ title: 'Kick', bars: 1, style: 'trap', tracks: [{ name: 'Kick', sound: 'kick', notes: [0, 4, 8, 12].map((step) => ({ step, vel: 1 })) }] });
+    const kick = alone({ title: 'Kick', bars: 1, style: 'trap', tracks: [{ name: 'Kick', sound: 'kick', volume: 0.78, notes: [0, 4, 8, 12].map((step) => ({ step, vel: 1 })) }] });
     const measureOne = async ({ project, patternId }: { project: Project; patternId: PatternId }) => {
       const { buffer } = await renderOffline(project, { plugins: s.plugins, view: { mode: 'pattern', patternId, loop: null }, bars: 1, sampleRate: SR, tail: 1 });
       const l = buffer.getChannelData(0).subarray(START);
@@ -96,20 +99,21 @@ describe('style palette', () => {
     };
     const ref = await measureOne(kick);
     const lines: string[] = [`kick (trap kit, 4 on the floor): ${ref.lufs.toFixed(1)} LUFS, peak ${ref.peakDb.toFixed(1)} dBFS`];
-    const results: { label: string; sound: PitchedSound; m: Awaited<ReturnType<typeof measureOne>> }[] = [];
+    const results: { label: string; sound: PitchedSound; style: Style; m: Awaited<ReturnType<typeof measureOne>> }[] = [];
     for (const p of entries) {
       const m = await measureOne(p);
-      results.push({ label: p.label, sound: p.sound, m });
+      results.push({ label: p.label, sound: p.sound, style: p.style, m });
       lines.push(`${p.label}: ${m.lufs.toFixed(1)} LUFS (${(m.lufs - ref.lufs).toFixed(1)} vs kick), peak ${m.peakDb.toFixed(1)} dBFS`);
     }
     console.log(lines.join('\n'));
-    for (const { label, sound, m } of results) {
+    for (const { label, sound, style, m } of results) {
       expect(m.finite, label).toBe(true);
       expect(m.silent, label).toBe(false);
       expect(m.peakDb, label).toBeGreaterThan(-30);
       expect(m.peakDb, label).toBeLessThan(-1);
       // Where the palette puts it next to the kick (auto-level then sets the bus balance), ± 2.5 dB.
-      expect(Math.abs(m.lufs - ref.lufs - UNDER_KICK[sound]), label).toBeLessThanOrEqual(2.5);
+      const want = UNDER_KICK[sound] + (SHIFT[style]?.[sound] ?? 0);
+      expect(Math.abs(m.lufs - ref.lufs - want), label).toBeLessThanOrEqual(2.5);
     }
     void dbOf;
   }, 120_000);

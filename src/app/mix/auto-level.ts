@@ -99,7 +99,9 @@ const powerSum = (lufs: readonly number[]) => {
 /**
  * The fader moves that put every bus at its style's level relative to the kick (the first bus
  * present stands in when there is no kick), clamped to −12…+6 dB, then one trim for all of them so
- * they sum to −16 LUFS; faders stop at +5.6 dB. Pinned buses keep their fader (and count in the sum).
+ * they sum to −16 LUFS. Faders stop at +5.6 dB: then the trim stops there for all of them (the
+ * balance comes first) and the Limiter's input makes up the rest (`limiterInput(style, sumLufs)`).
+ * Pinned buses keep their fader and count in the sum as they are.
  */
 export function levelMoves(buses: readonly BusLevel[], style: Style): LevelPlan {
   const t = LEVEL_TARGETS[style];
@@ -112,38 +114,20 @@ export function levelMoves(buses: readonly BusLevel[], style: Style): LevelPlan 
     const move = b.pinned ? 0 : clamp(target - b.lufs, MOVE_MIN_DB, MOVE_MAX_DB);
     return { b, target, move };
   });
-  // Trim the movable buses together (faders stop at the top: solve again without them).
-  let trim = 0;
-  const capped = new Set<LeveledBus>();
-  for (let pass = 0; pass < 4; pass++) {
-    const fixed = base.filter((x) => x.b.pinned || capped.has(x.b.role));
-    const free = base.filter((x) => !x.b.pinned && !capped.has(x.b.role));
-    const fixedLufs = fixed.map((x) =>
-      x.b.pinned ? x.b.lufs : x.b.lufs + (dbOf(MAX_INSERT_VOLUME) - dbOf(x.b.gain)),
-    );
-    const room = Math.pow(10, PRE_LIMITER_LUFS / 10) - fixedLufs.reduce((a, l) => a + Math.pow(10, l / 10), 0);
-    const freeSum = powerSum(free.map((x) => x.b.lufs + x.move));
-    trim = free.length && room > 0 ? clamp(10 * Math.log10(room) - freeSum, -24, 24) : free.length ? -24 : 0;
-    let more = false;
-    for (const x of free)
-      if (x.b.gain * gainOf(x.move + trim) > MAX_INSERT_VOLUME + 1e-9) {
-        capped.add(x.b.role);
-        more = true;
-      }
-    if (!more) break;
-  }
+  const free = base.filter((x) => !x.b.pinned);
+  const fixedPower = base.filter((x) => x.b.pinned).reduce((a, x) => a + Math.pow(10, x.b.lufs / 10), 0);
+  const room = Math.pow(10, PRE_LIMITER_LUFS / 10) - fixedPower;
+  const freeSum = powerSum(free.map((x) => x.b.lufs + x.move));
+  let trim = !free.length ? 0 : room > 0 ? clamp(10 * Math.log10(room) - freeSum, -24, 24) : -24;
+  for (const x of free) trim = Math.min(trim, dbOf(MAX_INSERT_VOLUME) - dbOf(x.b.gain) - x.move);
   const moves = base.map(({ b, target, move }): LevelMove => {
-    const to = b.pinned
-      ? b.gain
-      : capped.has(b.role)
-        ? MAX_INSERT_VOLUME
-        : Math.min(MAX_INSERT_VOLUME, b.gain * gainOf(move + trim));
+    const to = b.pinned ? b.gain : Math.min(MAX_INSERT_VOLUME, b.gain * gainOf(move + trim));
     return { role: b.role, from: b.gain, to, lufs: b.lufs + dbOf(to) - dbOf(b.gain), target };
   });
   return { moves, trimDb: trim, sumLufs: powerSum(moves.map((m) => m.lufs)) };
 }
 
-/** The Limiter's input gain that brings a −16 LUFS mix to the style's loudness (0…10 dB). */
+/** The Limiter's input gain that brings the buses' sum (−16 LUFS, or what they reach) to the style's loudness (0…10 dB). */
 export function limiterInput(style: Style, preLimiterLufs = PRE_LIMITER_LUFS): number {
   return clamp(LEVEL_TARGETS[style].master - preLimiterLufs, 0, LIMITER_INPUT_MAX_DB);
 }
@@ -333,7 +317,8 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   const masterFx = project.mixer.inserts[MASTER]?.fx ?? [];
   const limiter = layout.limiter ? masterFx.find((f) => f.id === layout.limiter) : undefined;
   if (!limiter) warnings.push('level mix: the master has no Limiter, so its loudness stays as it is (set up the mix first)');
-  let input = limiter ? limiterInput(style, PRE_LIMITER_LUFS) : null;
+  // From where the buses sum (−16 LUFS unless the faders ran out of room) to the style's loudness.
+  let input = limiter ? limiterInput(style, Math.min(PRE_LIMITER_LUFS, plan.sumLufs)) : null;
   // The answer's undo step (or one of its own, which the correction then joins).
   let entry = opts.entry ?? null;
   const commit = () => {

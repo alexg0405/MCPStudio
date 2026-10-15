@@ -6,6 +6,21 @@
     <meta name="color-scheme" content="dark" />
     <title>AGstudio</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- A plain dark page while the app loads (no texture until the app is up). -->
+    <style>
+      html,
+      body {
+        background: var(--boot-bg, #0b0c0e);
+      }
+    </style>
+    <script>
+      // Light themes load on a light page (no dark flash).
+      try {
+        var theme = JSON.parse(localStorage.getItem('agstudio:prefs:v1') || '{}').theme;
+        var bg = theme === 'carrara' ? '#e9e6e0' : theme === 'light' ? '#e6e9ec' : '';
+        if (bg) document.documentElement.style.setProperty('--boot-bg', bg);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -12,10 +12,8 @@ body,
 }
 
 body {
-  /* Stone behind everything (windows float over it). */
-  background: var(--ag-backdrop);
-  background-size: cover;
-  background-attachment: fixed;
+  /* A plain page: the marble shows only in the workspace behind the windows, once the app is up. */
+  background: var(--ag-bg);
   color: var(--ag-text);
   font-family: var(--ag-font);
   font-size: var(--ag-font-size);

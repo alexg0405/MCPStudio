@@ -1,4 +1,9 @@
-/* Shared controls. Colours come from the host theme tokens with fallbacks for standalone use. */
+/*
+ * The SDK's controls: knobs, switches, drop-downs and sections. Every colour is a host theme token
+ * (docs/design.md), with fallbacks (black marble) for standalone use.
+ */
+
+/* ---- Knob: a stone body, the value as an accent arc on a faint track, a thin pointer. ---- */
 
 .knob {
   position: relative;
@@ -7,9 +12,84 @@
   touch-action: none;
 }
 
+.knobBody {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 18%,
+    var(--ag-knob-top, #3b3d43) 0%,
+    var(--ag-knob-face, #222328) 60%,
+    var(--ag-knob-edge, #141518) 100%
+  );
+  box-shadow: var(
+    --ag-knob-shadow,
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 3px 7px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.35)
+  );
+  transition: filter var(--ag-dur, 140ms) var(--ag-ease, ease);
+  pointer-events: none;
+}
+
+.knobSvg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.knobTrack {
+  fill: none;
+  stroke: var(--ag-knob-track, rgba(236, 235, 230, 0.12));
+  stroke-linecap: round;
+  transition: stroke var(--ag-dur, 140ms) var(--ag-ease, ease);
+}
+
+/* Centred knobs (pan, detune): a tick where the arc starts. */
+.knobCenter {
+  fill: var(--ag-text-faint, #6f6c66);
+}
+
+.knobArc {
+  fill: none;
+  stroke: var(--ag-accent, #c9a45c);
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 1.5px var(--ag-accent-glow, rgba(201, 164, 92, 0.45)));
+}
+
+.knobPointer {
+  stroke: var(--ag-knob-pointer, #ecebe6);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.knob:hover .knobBody,
+.knob[data-dragging] .knobBody {
+  filter: brightness(1.12);
+}
+
+.knob:hover .knobTrack,
+.knob[data-dragging] .knobTrack {
+  stroke: var(--ag-knob-track-hover, rgba(236, 235, 230, 0.2));
+}
+
+.knob[data-dragging] .knobArc {
+  filter: drop-shadow(0 0 3px var(--ag-accent-glow, rgba(201, 164, 92, 0.45)));
+}
+
 .disabled {
-  opacity: 0.4;
+  opacity: 0.38;
   cursor: default;
+}
+
+.disabled .knobArc {
+  stroke: var(--ag-text-faint, #6f6c66);
+  filter: none;
+}
+
+.knob.disabled:hover .knobBody {
+  filter: none;
 }
 
 /* A control an automation clip drives (blue), whose clip is muted (ring), or being recorded (red). */
@@ -20,19 +100,24 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--ag-select, #5aa4e8);
-  box-shadow: 0 0 0 1px var(--ag-border, #12161a);
+  background: var(--ag-select, #8eb4e3);
+  box-shadow:
+    0 0 0 1.5px var(--ag-surface-2, #1c1d21),
+    0 0 6px var(--ag-select-glow, rgba(142, 180, 227, 0.25));
   pointer-events: none;
 }
 
 .statusDot[data-kind='muted'] {
-  background: var(--ag-surface-1, #2a3238);
-  border: 1.5px solid var(--ag-select, #5aa4e8);
+  background: var(--ag-surface-2, #1c1d21);
+  border: 1.5px solid var(--ag-select, #8eb4e3);
   box-sizing: border-box;
 }
 
 .statusDot[data-kind='recording'] {
-  background: var(--ag-danger, #e5574d);
+  background: var(--ag-danger, #e0675a);
+  box-shadow:
+    0 0 0 1.5px var(--ag-surface-2, #1c1d21),
+    0 0 6px var(--ag-danger-line, rgba(224, 103, 90, 0.5));
   animation: ag-rec-pulse 1s ease-in-out infinite;
 }
 
@@ -42,104 +127,143 @@
   }
 }
 
-.knobBody {
-  fill: var(--ag-surface-3, #3c464e);
-  stroke: var(--ag-border, #12161a);
-  stroke-width: 1;
-}
-
-.knobTrack {
-  fill: none;
-  stroke: rgba(0, 0, 0, 0.45);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-}
-
-.knobArc {
-  fill: none;
-  stroke: var(--ag-accent, #ff9a3c);
-  stroke-width: 2.5;
-  stroke-linecap: round;
-}
-
-.knobPointer {
-  stroke: var(--ag-text, #d9dfe4);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-}
+/* ---- Toggle: a pill with an LED; on = lit LED, accent text on the active tint. ---- */
 
 .toggle {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border: 1px solid var(--ag-border, #12161a);
-  border-radius: 3px;
-  background: var(--ag-surface-inset, #1e2428);
-  color: var(--ag-text-dim, #929ca5);
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
+  border-radius: var(--ag-radius-pill, 999px);
+  background: var(--ag-surface-inset, #0e0f11);
+  box-shadow: var(--ag-inset, inset 0 1px 3px rgba(0, 0, 0, 0.6));
+  color: var(--ag-text-dim, #a6a39b);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm, 11px);
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    color var(--ag-dur, 140ms) var(--ag-ease, ease),
+    background-color var(--ag-dur, 140ms) var(--ag-ease, ease),
+    border-color var(--ag-dur, 140ms) var(--ag-ease, ease);
+}
+
+.toggle:hover {
+  color: var(--ag-text, #ecebe6);
 }
 
 .toggle .led {
-  width: 7px;
-  height: 7px;
+  flex: none;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--ag-led-off, #46532f);
+  background: var(--ag-led-off, #2c3529);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.35);
+  transition:
+    background-color var(--ag-dur, 140ms) var(--ag-ease, ease),
+    box-shadow var(--ag-dur, 140ms) var(--ag-ease, ease);
 }
 
 .toggleOn {
-  color: var(--ag-text, #d9dfe4);
+  border-color: var(--ag-active-border, rgba(201, 164, 92, 0.45));
+  background: var(--ag-active, #2b261d);
+  box-shadow: inset 0 1px 0 var(--ag-sheen, rgba(255, 255, 255, 0.03));
+  color: var(--ag-accent, #c9a45c);
+}
+
+.toggleOn:hover {
+  color: var(--ag-accent, #c9a45c);
 }
 
 .toggleOn .led {
-  background: var(--ag-led, #9fde5a);
-  box-shadow: 0 0 5px var(--ag-led, #9fde5a);
+  background: var(--ag-led, #9fd38f);
+  box-shadow: 0 0 6px var(--ag-led-glow, rgba(159, 211, 143, 0.6));
 }
+
+/* ---- Select: an inset well with a drawn chevron (follows the theme). ---- */
 
 .select {
-  padding: 2px 4px;
-  border: 1px solid var(--ag-border, #12161a);
-  border-radius: 3px;
-  background: var(--ag-surface-inset, #1e2428);
-  color: var(--ag-text, #d9dfe4);
+  appearance: none;
+  -webkit-appearance: none;
+  height: 22px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 22px 0 8px;
+  border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
+  border-radius: var(--ag-radius, 6px);
+  background-color: var(--ag-surface-inset, #0e0f11);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ag-text-dim, #a6a39b) 50%),
+    linear-gradient(135deg, var(--ag-text-dim, #a6a39b) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 50%,
+    calc(100% - 8px) 50%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  box-shadow: var(--ag-inset, inset 0 1px 3px rgba(0, 0, 0, 0.6));
+  color: var(--ag-text, #ecebe6);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm, 11px);
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: border-color var(--ag-dur, 140ms) var(--ag-ease, ease);
 }
 
-/* Param-bound controls and sections (param-controls.tsx). */
+.select:hover {
+  border-color: var(--ag-border-soft, #2a2c31);
+}
+
+.select option {
+  background: var(--ag-surface-1, #16171a);
+  color: var(--ag-text, #ecebe6);
+}
+
+/* ---- Param-bound controls and sections (param-controls.tsx). ---- */
 
 .paramControl {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 48px;
+  gap: 3px;
+  min-width: 50px;
 }
 
+/* Labels in small caps, values in tabular figures (accent while you touch the knob). */
 .paramLabel {
-  max-width: 72px;
+  max-width: 76px;
   overflow: hidden;
-  color: var(--ag-text-dim, #929ca5);
-  font-size: 10px;
+  color: var(--ag-text-dim, #a6a39b);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-align: center;
   text-overflow: ellipsis;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .paramValue {
-  color: var(--ag-text-faint, #6f7a83);
+  color: var(--ag-text-faint, #6f6c66);
   font-family: var(--ag-font-mono, ui-monospace, monospace);
   font-size: 10px;
   white-space: nowrap;
+  transition: color var(--ag-dur, 140ms) var(--ag-ease, ease);
+}
+
+.paramControl:hover .paramValue {
+  color: var(--ag-accent, #c9a45c);
 }
 
 .paramSelect {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: 4px;
 }
 
 .paramSelect .paramLabel,
@@ -151,16 +275,20 @@
 .paramSelectInline {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* A panel on the window: a slightly lighter slab with a hairline, its title in small caps. */
 .section {
   flex: 0 1 auto;
   min-width: 120px;
-  padding: 6px 8px 8px;
-  border: 1px solid var(--ag-border, #12161a);
-  border-radius: var(--ag-radius, 4px);
-  background: var(--ag-surface-1, #2a3238);
+  padding: 8px 12px 10px;
+  border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
+  border-radius: var(--ag-radius-lg, 10px);
+  background:
+    linear-gradient(180deg, var(--ag-sheen, rgba(255, 255, 255, 0.03)), transparent 40px),
+    var(--ag-surface-2, #1c1d21);
+  box-shadow: inset 0 1px 0 var(--ag-sheen, rgba(255, 255, 255, 0.03));
 }
 
 .sectionWide {
@@ -168,17 +296,31 @@
 }
 
 .sectionTitle {
-  margin: 0 0 6px;
-  color: var(--ag-text-dim, #929ca5);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--ag-text-faint, #6f6c66);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking, 0.08em);
   text-transform: uppercase;
+}
+
+/* A small gold tick before each title. */
+.sectionTitle::before {
+  content: '';
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ag-accent, #c9a45c);
+  box-shadow: 0 0 4px var(--ag-accent-glow, rgba(201, 164, 92, 0.45));
 }
 
 .sectionBody {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 8px 10px;
+  gap: 10px 12px;
 }

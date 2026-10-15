@@ -1,15 +1,13 @@
 /**
- * Project templates: a new project that already has a beat in a style, at its tempo, laid out on
- * the playlist, ready to change. Built with the offline beat writer (no AI needed).
+ * Project templates: a new project that already has a beat in a style, at its tempo, arranged as a
+ * short song by the arranger (a 4-bar intro without drums and bass, then 8 bars with fills and a
+ * transition) on a mix set up by role. Built offline: no AI needed.
  */
 import { produce } from 'immer';
 import { generateLocalBeat } from '@core/beat/local';
-import { newId } from '@core/model/ids';
-import type { LaneId, PatternClip, PatternId, Project } from '@core/model/types';
-import { addMarker } from '@core/ops/markers';
-import { addClips } from '@core/ops/playlist';
-import { patternLength } from '@core/query/queries';
-import { ticksPerBar } from '@core/time/ppq';
+import type { SectionSpec } from '@core/arrange/sections';
+import type { PatternId, Project } from '@core/model/types';
+import { arrangeInDraft } from './arrange/run';
 import { planBeat, writeBeat } from './assistant/apply';
 import { createDefaultProject } from './default-project';
 import type { Services } from './services';
@@ -55,26 +53,36 @@ export const TEMPLATES: readonly ProjectTemplate[] = [
   },
 ];
 
-/** The template's starting project: its beat as "Pattern 1", repeated over 8 bars of the playlist. */
+/** The template's starting project: its beat, arranged as an intro and a main section. */
 export function templateProject(s: Services, t: ProjectTemplate): { project: Project; patternId: PatternId } {
   const spec = generateLocalBeat({ prompt: t.prompt, bpm: t.bpm });
   spec.bpm = t.bpm;
   spec.title = `${t.name} beat`;
   let patternId = '' as PatternId;
-  const project = produce(createDefaultProject(s.plugins), (d) => {
+  const empty = createDefaultProject(s.plugins);
+  const project = produce(empty, (d) => {
     const plan = planBeat(s, d as Project, spec, null);
     writeBeat(s, d, spec, plan);
     patternId = plan.patternId;
-    const pattern = d.patterns[patternId];
-    const lane = d.playlist.laneOrder[0] as LaneId | undefined;
-    if (!pattern || !lane) return;
-    const len = patternLength(pattern as never, d.transport.timeSig);
-    const end = 8 * ticksPerBar(d.transport.timeSig);
-    const clips: PatternClip[] = [];
-    for (let start = 0; start < end; start += len)
-      clips.push({ kind: 'pattern', id: newId.clip(), laneId: lane, start, length: len, patternId, offset: 0 });
-    addClips(d, clips);
-    addMarker(d, 0, t.name);
+    const section = (name: string, role: SectionSpec['role'], bars: number, energy: number, without: string[]): SectionSpec => ({
+      name,
+      role,
+      bars,
+      energy,
+      play: [patternId],
+      without,
+      vary: 'auto',
+      transitionIn: 'auto',
+      fill: 'auto',
+    });
+    arrangeInDraft(d, s, empty, {
+      replace: true,
+      ...(spec.style ? { style: spec.style } : {}),
+      sections: [section('Intro', 'intro', 4, 2, ['drums', 'bass']), section(t.name, 'drop', 8, 4, [])],
+      fx: 'auto',
+      mix: 'auto',
+      ending: 'auto',
+    });
   });
   return { project, patternId };
 }

@@ -9,7 +9,7 @@ import type { AiFocus } from '@app/ai/focus';
 import { focusFromClips, focusFromMarker, focusFromNotes, focusFromPlaylist, focusFromRange } from '@app/ai/focus-capture';
 import type { Services } from '@app/services';
 import type { ChannelId, ClipId, MarkerId, NoteId, PatternId } from '@core/model/types';
-import type { AskAnchor } from './anchors';
+import { revealAnchor, type AskAnchor } from './anchors';
 
 export interface AskState {
   open: boolean;
@@ -25,6 +25,7 @@ export const askStore = createStore<AskState>(() => ({ open: false, focus: null,
 /** Opens the card for a part, next to `anchor`. */
 export function openAsk(s: Services, focus: AiFocus | null, anchor: AskAnchor | null): void {
   const last = s.assistant.store.getState().messages.at(-1);
+  if (anchor) revealAnchor(anchor);
   askStore.setState({ open: true, focus, anchor, since: last?.id ?? 0 });
 }
 

@@ -764,6 +764,24 @@ export class PlaylistController {
     return { left: r.left + x0, top: r.top, right: r.left + x1, bottom: r.bottom };
   }
 
+  /** Scrolls so the span starts on screen (a little in from the left edge); true when it scrolled or already showed it. */
+  revealSpan(from: Tick, to: Tick): boolean {
+    if (this.els.ruler.getBoundingClientRect().width === 0) return false;
+    const visible = this.vp.width / this.vp.pxPerTick;
+    const start = this.vp.scrollTick;
+    if (from >= start && Math.min(to, from + visible * 0.5) <= start + visible) return true;
+    const total = this.maxTick(this.project());
+    this.vp.scrollTick = clamp(from - visible * 0.1, 0, Math.max(0, Math.max(total, to) - visible * 0.9));
+    this.viewportChanged();
+    return true;
+  }
+
+  /** Scrolls a marker's flag into view. */
+  revealMarker(id: MarkerId): boolean {
+    const m = this.project().playlist.markers[id];
+    return m ? this.revealSpan(m.tick, m.tick + 1) : false;
+  }
+
   private persistViewport(): void {
     this.s.editor.getState().setPlaylist({
       pxPerTick: this.vp.pxPerTick,

@@ -147,6 +147,7 @@ export function Playlist() {
           : anchor.kind === 'span'
             ? c.spanBox(anchor.from, anchor.to)
             : null,
+      (anchor) => (anchor.kind === 'marker' ? c.revealMarker(anchor.markerId) : anchor.kind === 'span' ? c.revealSpan(anchor.from, anchor.to) : false),
     );
     return () => {
       offAnchor();

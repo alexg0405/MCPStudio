@@ -25,13 +25,25 @@ export interface Box {
 /** Measures an anchor it knows (null when it can't: not its kind, scrolled away, window closed). */
 export type AnchorSource = (anchor: AskAnchor) => Box | null;
 
-const sources = new Map<string, AnchorSource>();
+/** Scrolls its window so the anchor is on screen (true when it knows the anchor). */
+export type AnchorReveal = (anchor: AskAnchor) => boolean;
 
-export function registerAnchorSource(id: string, source: AnchorSource): () => void {
+const sources = new Map<string, AnchorSource>();
+const reveals = new Map<string, AnchorReveal>();
+
+export function registerAnchorSource(id: string, source: AnchorSource, reveal?: AnchorReveal): () => void {
   sources.set(id, source);
+  if (reveal) reveals.set(id, reveal);
   return () => {
     if (sources.get(id) === source) sources.delete(id);
+    if (reveal && reveals.get(id) === reveal) reveals.delete(id);
   };
+}
+
+/** Brings an anchor into view (a marker or bars scrolled away in the playlist) before the card opens next to it. */
+export function revealAnchor(anchor: AskAnchor): void {
+  if (anchor.kind === 'point' || anchor.kind === 'element') return;
+  for (const reveal of reveals.values()) if (reveal(anchor)) return;
 }
 
 const pointBox = (p: { x: number; y: number }): Box => ({ left: p.x, top: p.y, right: p.x, bottom: p.y });

@@ -479,6 +479,48 @@ describe('asking about a part of the song', () => {
     expect(a.store.getState().messages.at(-2)?.detail).toBeUndefined();
   });
 
+  it('asks before changing things outside the part, then applies everything or only the part', async () => {
+    const actions = [
+      { op: 'write_notes', pattern: 'Perc layer', channel: 'Perc', notes: [{ step: 0, key: 39 }] },
+      { op: 'clear_playlist', from_bar: 81, to_bar: 84, trim: true },
+    ];
+    const clipsIn81to84 = (p: ReturnType<typeof stackedSong>['s']) =>
+      Object.values(p.doc.getState().project.playlist.clips).filter((c) => c.start < 84 * BAR && c.start + c.length > 80 * BAR).length;
+    for (const choice of ['all', 'part'] as const) {
+      const { s } = stackedSong();
+      const a = new BeatAssistant(s, { fetch: answeringWith([], actions) });
+      const before = s.doc.getState().project;
+      const steps = s.history.steps().done.length;
+      await a.send('fade it into the build', { focus: verseOf(s) });
+      // Nothing changes until the musician says so.
+      const ask = a.store.getState().messages.at(-1)!;
+      expect(ask.approval).toMatchObject({ part: 'Verse · bars 17–32', state: 'ask' });
+      expect(ask.approval!.outside[0]).toMatch(/bars 81–84 reach outside the part/);
+      expect(s.doc.getState().project).toBe(before);
+      expect(a.store.getState().phase).toBe('idle');
+      const had = clipsIn81to84(s);
+      expect(had).toBeGreaterThan(0);
+      await a.approve(ask.id, choice);
+      expect(a.store.getState().messages.find((m) => m.id === ask.id)?.approval?.state).toBe(choice);
+      const done = a.store.getState().messages.at(-1)!;
+      expect(s.history.steps().done).toHaveLength(steps + 1);
+      if (choice === 'all') {
+        expect(clipsIn81to84(s)).toBe(0);
+        expect(done.warnings ?? []).toEqual([]);
+      } else {
+        expect(clipsIn81to84(s)).toBe(had);
+        expect(done.warnings?.[0]).toMatch(/outside the part/);
+      }
+      // Both changed the part (its own copy of the percussion), and Undo takes it all back.
+      expect(done.changes?.[0]).toMatch(/Made a copy of “Perc layer” for bars 17–32/);
+      s.history.undo();
+      expect(s.doc.getState().project).toEqual(before);
+      // A second answer to the same question does nothing.
+      await a.approve(ask.id, 'all');
+      expect(s.history.steps().done).toHaveLength(steps);
+    }
+  });
+
   it('needs Claude: offline, a request about a part writes nothing', async () => {
     const { s } = stackedSong();
     const a = new BeatAssistant(s, { fetch: offline });

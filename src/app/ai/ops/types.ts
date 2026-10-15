@@ -42,6 +42,13 @@ export interface ApplyContext {
   label?: string;
   /** The part of the song the request is about: edits stay inside it. */
   focus?: ResolvedFocus | null;
+  /**
+   * Edits beyond the part: refused (the default), or allowed because the musician approved them.
+   * Either way they're listed in `outsideFocus`.
+   */
+  focusOutside?: 'refuse' | 'allow';
+  /** Work out what the answer would do without changing the project (nothing is committed). */
+  dryRun?: boolean;
 }
 
 export interface AppliedTurn {
@@ -62,4 +69,6 @@ export interface AppliedTurn {
   selectClips?: ClipId[];
   /** The focus after the edit (copies made for it, clips that moved). */
   focus?: AiFocus | null;
+  /** What reached outside the part being worked on, one line each. */
+  outsideFocus?: string[];
 }

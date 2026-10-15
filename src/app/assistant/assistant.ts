@@ -78,6 +78,17 @@ export interface AssistantMessage {
   plugin?: PluginMessage;
   /** What a mix analysis found, one line each. */
   findings?: string[];
+  /** An answer that also changes things outside the part being worked on: waiting for the musician's OK. */
+  approval?: ApprovalMessage;
+}
+
+export interface ApprovalMessage {
+  /** The part ("bars 2–3"). */
+  part: string;
+  /** What reaches outside it, one line each. */
+  outside: string[];
+  /** ask: waiting; all: applied with the outside edits; part: applied to the part only; expired: no longer possible. */
+  state: 'ask' | 'all' | 'part' | 'expired';
 }
 
 export interface PluginMessage {
@@ -315,8 +326,40 @@ export class BeatAssistant {
     return null;
   }
 
-  private say(from: AssistantMessage['from'], text: string, extra: Partial<AssistantMessage> = {}): void {
-    this.store.setState((st) => ({ messages: [...st.messages, { id: ++messageSeq, from, text, ...extra }] }));
+  private say(from: AssistantMessage['from'], text: string, extra: Partial<AssistantMessage> = {}): number {
+    const id = ++messageSeq;
+    this.store.setState((st) => ({ messages: [...st.messages, { id, from, text, ...extra }] }));
+    return id;
+  }
+
+  /** Answers waiting for the musician's OK to change things outside the part, by message id. */
+  private readonly approvals = new Map<
+    number,
+    { answer: AiAnswer; take: Take | null; request: string; analyzed: boolean; focus: AiFocus | null }
+  >();
+
+  /**
+   * The musician's choice on an answer that reaches outside the part: 'all' applies everything (the
+   * part still gets its own copies of shared patterns), 'part' only what stays inside it. One undo step.
+   */
+  async approve(messageId: number, choice: 'all' | 'part'): Promise<void> {
+    const pending = this.approvals.get(messageId);
+    const setState = (state: ApprovalMessage['state']) =>
+      this.store.setState((st) => ({
+        messages: st.messages.map((m) => (m.id === messageId && m.approval ? { ...m, approval: { ...m.approval, state } } : m)),
+      }));
+    // Another project is open now: the answer was about the old one.
+    if (!pending || (pending.focus && pending.focus.projectId !== this.s.doc.getState().project.projectId)) {
+      this.approvals.delete(messageId);
+      setState('expired');
+      return;
+    }
+    if (this.store.getState().phase !== 'idle') return;
+    this.approvals.delete(messageId);
+    setState(choice);
+    const { answer, take, request, analyzed, focus } = pending;
+    const listen = await this.applyTurn(answer, take, request, analyzed, focus, choice === 'all' ? 'allow' : 'refuse');
+    if (listen) await this.listenAndAsk(request, false, focus);
   }
 
   // ---------------------------------------------------------------- the part a request is about
@@ -664,17 +707,33 @@ export class BeatAssistant {
     request: string,
     analyzed = false,
     focus: AiFocus | null = null,
+    /** Edits beyond the part: undefined asks the musician first (when there are any). */
+    outside?: 'refuse' | 'allow',
   ): Promise<boolean> {
     let result: ReturnType<typeof applyAnswer>;
     // The part as it is now (it may have moved while Claude was thinking).
     const part = resolveFocus(this.s.doc.getState().project, focus);
+    const ctx = {
+      // Selected notes: a beat makes a new pattern instead of rewriting theirs.
+      previousBeat: part?.notes ? null : this.store.getState().applied,
+      ...(request ? { label: request } : {}),
+      focus: part,
+      ...(outside ? { focusOutside: outside } : {}),
+    };
     try {
-      result = applyAnswer(this.s, answer, {
-        // Selected notes: a beat makes a new pattern instead of rewriting theirs.
-        previousBeat: part?.notes ? null : this.store.getState().applied,
-        ...(request ? { label: request } : {}),
-        focus: part,
-      });
+      // Working on a part: an answer that also reaches outside it waits for the musician's OK.
+      if (part && !outside) {
+        const dry = applyAnswer(this.s, answer, { ...ctx, dryRun: true });
+        if (dry.outsideFocus?.length) {
+          const id = this.say('assistant', answer.message || 'Here is what I would change.', {
+            approval: { part: part.label, outside: [...new Set(dry.outsideFocus)], state: 'ask' },
+          });
+          this.approvals.set(id, { answer, take, request, analyzed, focus });
+          this.store.setState({ phase: 'idle' });
+          return false;
+        }
+      }
+      result = applyAnswer(this.s, answer, ctx);
     } catch (e) {
       console.error('[agstudio] applying the Studio answer failed', e);
       this.say('assistant', `Something went wrong applying that: ${e instanceof Error ? e.message : e}`, {

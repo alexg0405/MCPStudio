@@ -14,6 +14,12 @@ function isTextInput(target: EventTarget | null): boolean {
   return false;
 }
 
+const UNDO_COMMANDS: ReadonlySet<string> = new Set(['edit.undo', 'edit.redo']);
+
+function isEmptyField(target: EventTarget | null): boolean {
+  return (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement) && target.value === '';
+}
+
 /**
  * One capture-phase listener resolves every shortcut through the keymap. Handled keys are swallowed
  * so Space never also "clicks" whatever button was focused last.
@@ -34,7 +40,13 @@ export function installKeyboard(services: Services): () => void {
     if (!chord) return;
     const view = services.view.getState();
     const focus = view.focusedId ? (view.windows[view.focusedId]?.type ?? null) : null;
-    const binding = services.keymap.match(chord, { focus, inInput });
+    let binding = services.keymap.match(chord, { focus, inInput });
+    // In an empty text box (the Studio's, a name field) there is no typing to undo: Undo and Redo
+    // step through the song's history, the Studio's changes included.
+    if (!binding && inInput && isEmptyField(e.target)) {
+      const outside = services.keymap.match(chord, { focus, inInput: false });
+      if (outside && UNDO_COMMANDS.has(outside.command)) binding = outside;
+    }
     if (!binding) return;
     if (!services.commands.isEnabled(binding.command)) return;
     e.preventDefault();

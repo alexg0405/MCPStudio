@@ -1091,3 +1091,21 @@
     background: color-mix(in srgb, var(--ag-accent-light) 18%, transparent);
   }
 }
+
+/* An answer waiting for the musician's OK to change things outside the part. */
+.approval {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--ag-accent) 45%, transparent);
+  border-radius: var(--ag-radius-lg);
+  background: color-mix(in srgb, var(--ag-accent) 7%, var(--ag-surface-1));
+}
+
+.approvalHead {
+  color: var(--ag-text);
+  font-weight: 600;
+}
+
+.approvalList {
+  color: var(--ag-text-dim);
+}

@@ -105,9 +105,20 @@ const pluginInfo = (c: Ctx) => (id: string) => {
   return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
 };
 
+/**
+ * An edit beyond the part: noted, then refused (a warning), or let through once the musician
+ * approved edits outside it. True when it may go ahead.
+ */
+const outsideOf = (c: Ctx) => (message: string): true => {
+  c.state.outsideFocus.push(message);
+  if (c.apply.focusOutside === 'allow') return true;
+  return fail(message);
+};
+
 /** A range, a marker section or some clips: edits stay inside a span of the song. */
 function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
   const { d, base, state } = c;
+  const outside = outsideOf(c);
   const from = r.from;
   const to = r.to;
   const ts = () => d.transport.timeSig;
@@ -177,9 +188,10 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       if (ins.length === 0) {
         // Not in the song: changing it changes nothing that plays.
         if (out.length === 0) return pid;
-        return fail(
+        outside(
           `“${pat.name}” doesn't play in ${r.label} (it plays at ${where(out)}); add a pattern for the part, or make one of the part's clips unique (clip make_unique) and edit that`,
         );
+        return pid;
       }
       if (out.length === 0) return pid;
       // It plays inside and outside: the part gets its own copy, and the rest of the song keeps the original.
@@ -208,15 +220,15 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       if (!pat || !base.patterns[pid]) return;
       const { ins, out } = uses(pid);
       if (out.length)
-        fail(`“${pat.name}” also plays outside ${r.label} (at ${where(out)}), so it stays; clear its clips in the part instead (clear_playlist)`);
-      if (ins.length === 0) fail(`“${pat.name}” doesn't play in ${r.label}, so it stays`);
+        outside(`“${pat.name}” also plays outside ${r.label} (at ${where(out)}), so it stays; clear its clips in the part instead (clear_playlist)`);
+      else if (ins.length === 0) outside(`“${pat.name}” doesn't play in ${r.label}, so it stays`);
     },
 
     span(a, b) {
       const { lo, hi } = allowed();
       if (a >= lo && b <= hi) return;
       const text = spanText(c, a, b);
-      fail(
+      outside(
         `${text} ${text.startsWith('bars ') ? 'reach' : 'reaches'} outside the part you're working on (${r.label}); only ${barSpan(from, to, ts())} can change, or ${barSpan(lo, hi, ts())} for a transition`,
       );
     },
@@ -226,11 +238,12 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       if (!x) return;
       if (chosen) {
         if (inside(x)) return;
-        fail(`the clip on ${clipPlace(c, x)} isn't one of the selected clips (${r.label}); change those, or clips you add`);
+        outside(`the clip on ${clipPlace(c, x)} isn't one of the selected clips (${r.label}); change those, or clips you add`);
+        return;
       }
       const { lo, hi } = allowed();
       if (x.start >= lo && x.start + x.length <= hi) return;
-      fail(`the clip on ${clipPlace(c, x)} reaches outside the part (${r.label}), so it stays as it is`);
+      outside(`the clip on ${clipPlace(c, x)} reaches outside the part (${r.label}), so it stays as it is`);
     },
 
     clearable: (x) => !chosen || inside(x),
@@ -314,19 +327,21 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     return out;
   };
   const isNew = (pid: PatternId) => !base.patterns[pid];
+  const outside = outsideOf(c);
   const noPlaylist = () =>
-    fail(`the request is about ${about()}: the playlist stays as it is (ask about bars, clips or a section to change the arrangement)`);
+    void outside(`the request is about ${about()}: the playlist stays as it is (ask about bars, clips or a section to change the arrangement)`);
 
   return {
     active: r,
     resolve: (pid) => pid,
     writable(pid) {
       if (pid === P || isNew(pid)) return pid;
-      return fail(`the request is about ${about()}; “${d.patterns[pid]?.name ?? 'that pattern'}” stays as it is (add a pattern for new material)`);
+      outside(`the request is about ${about()}; “${d.patterns[pid]?.name ?? 'that pattern'}” stays as it is (add a pattern for new material)`);
+      return pid;
     },
     owned(pid) {
       if (isNew(pid)) return;
-      fail(`the request is about ${about()}, so the patterns stay`);
+      outside(`the request is about ${about()}, so the patterns stay`);
     },
     span: noPlaylist,
     clip: noPlaylist,
@@ -339,7 +354,7 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     },
     wholePattern(pid, _cid, what) {
       if (pid !== P && isNew(pid)) return;
-      fail(`${what} would change the whole pattern; the request is about ${about()} (write_notes with replace or note_tool change just them)`);
+      outside(`${what} would change the whole pattern; the request is about ${about()} (write_notes with replace or note_tool change just them)`);
     },
     closeAutomation: () => null,
     finish() {
@@ -379,5 +394,5 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
 export const FOCUS_PROMPT: PromptSection = {
   id: 'part',
   order: 30,
-  text: `Working on a part (the turn has a <focus>): the musician selected that part (a marker section, bars, clips or notes) and the request is about it. Change only that part; keep the rest of the song exactly as it is, and say what you changed there. The <focus> block shows the part, the 2 bars either side, the notes of its patterns and where else they play. Edit the part's patterns by id: if one also plays elsewhere, AGstudio gives the part its own copy first (the changes say so). For one spot inside the part (a fill in its last bar), make that clip unique first (clip action make_unique) and edit the ref. Playlist edits (placing, clearing, moving, automation) stay inside the part; a transition may start 1 bar before or end 1 bar after it; further is refused. For transitions, add new clips (a fill, a crash, a riser) rather than editing the neighbours' patterns. Automation keeps its last value after its clip ends: end curves where the control normally sits (AGstudio adds the return when you don't). Mixer, channel, plugin and song settings change the whole song: only when asked, and say so; for "harder" or "louder" in one part prefer velocities, layers or automation. When a part repeats the same bars many times, develop it: make later repeats unique and vary them. Selected notes: write_notes (replace) and note_tool change only the selected notes of that channel; step tools aren't available, and the playlist and other patterns stay as they are.`,
+  text: `Working on a part (the turn has a <focus>): the musician selected that part (a marker section, bars, clips or notes) and the request is about it. Change that part and keep the rest of the song as it is, and say what you changed there. When the request needs changes outside the part (the musician asks for them, or a fix can't work otherwise), make them anyway in the same answer: AGstudio shows the musician what reaches outside and asks them to approve it first, so never tell them to change their loop or selection instead. The <focus> block shows the part, the 2 bars either side, the notes of its patterns and where else they play. Edit the part's patterns by id: if one also plays elsewhere, AGstudio gives the part its own copy first (the changes say so). For one spot inside the part (a fill in its last bar), make that clip unique first (clip action make_unique) and edit the ref. Playlist edits (placing, clearing, moving, automation) stay inside the part; a transition may start 1 bar before or end 1 bar after it; further needs the musician's OK (asked for you). For transitions, add new clips (a fill, a crash, a riser) rather than editing the neighbours' patterns. Automation keeps its last value after its clip ends: end curves where the control normally sits (AGstudio adds the return when you don't). Mixer, channel, plugin and song settings change the whole song: only when asked, and say so; for "harder" or "louder" in one part prefer velocities, layers or automation. When a part repeats the same bars many times, develop it: make later repeats unique and vary them. Selected notes: write_notes (replace) and note_tool change only the selected notes of that channel; step tools aren't available, and the playlist and other patterns stay as they are.`,
 };

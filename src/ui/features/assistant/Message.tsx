@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import type { AssistantMessage } from '@app/assistant/assistant';
+import type { ApprovalMessage, AssistantMessage } from '@app/assistant/assistant';
+import type { Services } from '@app/services';
+import { showDialog } from '../../controls/Dialog';
 import { Icon } from '../../controls/Icon';
 import { useHistoryStatus, useServices } from '../../services-context';
 import styles from './Assistant.module.css';
@@ -26,11 +28,37 @@ export function Message({ m }: { m: AssistantMessage }) {
   return <Answer m={m} />;
 }
 
+/**
+ * Undo of one answer: back to the step before it. Changes made after it are undone too (they were
+ * made on top of it), so the musician sees which first; Redo brings everything back.
+ */
+async function undoAnswer(services: Services, before: number, later: readonly string[]): Promise<void> {
+  if (later.length) {
+    const shown = later.slice(-6).reverse();
+    const choice = await showDialog({
+      title: 'Undo this answer?',
+      message: `Changes made after it are undone too:\n${shown.map((l) => `• ${l}`).join('\n')}${later.length > shown.length ? `\n• and ${later.length - shown.length} more` : ''}`,
+      detail: 'Redo (Shift+Cmd+Z) brings them all back.',
+      buttons: [
+        { id: 'cancel', label: 'Cancel' },
+        { id: 'undo', label: later.length === 1 ? 'Undo both' : `Undo all ${later.length + 1}`, primary: true },
+      ],
+      cancelId: 'cancel',
+    });
+    if (choice !== 'undo') return;
+  }
+  services.history.goTo(before);
+}
+
 function Answer({ m }: { m: AssistantMessage }) {
   const services = useServices();
   const status = useHistoryStatus();
   const undoAt = m.undo ?? m.beat?.cursor;
-  const canUndo = undoAt !== undefined && status.cursor === undoAt;
+  // Still in the history as done (not undone already, not dropped by opening another project).
+  const done = undoAt !== undefined && status.canUndo ? services.history.steps().done : [];
+  const at = undoAt === undefined ? -1 : done.findIndex((d) => d.id === undoAt);
+  const canUndo = at >= 0;
+  const later = canUndo ? done.slice(at + 1) : [];
   const hasFooter = !!(m.detail || m.offline || m.beat || undoAt !== undefined);
   return (
     <div className={`${styles.message} ${m.error ? styles.errorMessage : ''}`}>
@@ -45,6 +73,7 @@ function Answer({ m }: { m: AssistantMessage }) {
         {m.changes && m.changes.length > 0 && <Changes changes={m.changes} />}
         {m.warnings && m.warnings.length > 0 && <Warnings warnings={m.warnings} />}
         {m.plugin && <PluginCard m={m} />}
+        {m.approval && <ApprovalCard id={m.id} approval={m.approval} />}
         {hasFooter && (
           <div className={styles.cardFoot}>
             <span className={styles.detail}>
@@ -69,11 +98,13 @@ function Answer({ m }: { m: AssistantMessage }) {
               <button
                 className={styles.iconButton}
                 disabled={!canUndo}
-                onClick={() => services.history.undo()}
+                onClick={() => void undoAnswer(services, done[at - 1]?.id ?? 0, later.map((d) => d.label))}
                 data-hint={
-                  canUndo
-                    ? 'Undo everything this answer did'
-                    : 'Use Undo (Cmd+Z) to step back through later changes first'
+                  !canUndo
+                    ? 'Already undone (Redo brings it back)'
+                    : later.length
+                      ? `Undo everything this answer did, and the ${later.length === 1 ? 'change' : `${later.length} changes`} made after it (Redo brings them back)`
+                      : 'Undo everything this answer did (Redo brings it back)'
                 }
                 aria-label="Undo"
               >
@@ -235,6 +266,49 @@ function PluginCard({ m }: { m: AssistantMessage }) {
         {state === 'installed' && <span className={styles.ok}>Installed ✓ It's in the browser under Plugins.</span>}
         {state === 'discarded' && <span className={styles.dim}>Discarded.</span>}
       </div>
+    </div>
+  );
+}
+
+/**
+ * An answer that also changes things outside the part being worked on: what reaches outside, and the
+ * musician's choice (everything, or the part only). Nothing changed until they pick.
+ */
+function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage }) {
+  const services = useServices();
+  const a = approval;
+  return (
+    <div className={styles.approval}>
+      <div className={styles.approvalHead}>
+        {a.state === 'ask'
+          ? `This also changes things outside ${a.part}:`
+          : a.state === 'all'
+            ? 'Applied everything, outside ' + a.part + ' too.'
+            : a.state === 'part'
+              ? `Applied only what stays in ${a.part}.`
+              : 'This can’t be applied any more (another project is open). Ask again.'}
+      </div>
+      {a.state === 'ask' && (
+        <>
+          <Fold items={a.outside} shown={2} className={styles.approvalList} noun="more" />
+          <div className={styles.pluginActions}>
+            <button
+              className={styles.primaryButton}
+              onClick={() => void services.assistant.approve(id, 'all')}
+              data-hint="Make every change in the answer, outside the part too (one undo step)"
+            >
+              Apply everything
+            </button>
+            <button
+              className={styles.ghost}
+              onClick={() => void services.assistant.approve(id, 'part')}
+              data-hint={`Make only the changes inside ${a.part}; the rest of the song stays as it is`}
+            >
+              Only {a.part}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -23,30 +23,48 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
   const label = words.length > 48 ? `${words.slice(0, 47).trimEnd()}…` : words || 'edit';
   let finished: ReturnType<ReturnType<typeof createOpContext>['focus']['finish']> | null = null;
 
-  const edited =
-    docActions.length > 0 &&
-    s.history.transact(`Studio: ${label}`, (d) => {
-      const c = createOpContext(s, d, answer, ctx, state);
-      for (const a of docActions) {
-        const fn = DOC_OPS[a.op];
-        if (!fn) continue;
-        try {
-          const note = fn(a, c);
-          if (note) state.changes.push(note);
-        } catch (e) {
-          if (e instanceof ActionError) state.warnings.push(`${a.op.replace(/_/g, ' ')}: ${e.message}`);
-          else throw e;
+  if (ctx.dryRun && docActions.length === 0) return { changes: [], warnings: [], beat: null, after: [], edited: false };
+  let edited: boolean;
+  try {
+    edited =
+      docActions.length > 0 &&
+      s.history.transact(`Studio: ${label}`, (d) => {
+        const c = createOpContext(s, d, answer, ctx, state);
+        for (const a of docActions) {
+          const fn = DOC_OPS[a.op];
+          if (!fn) continue;
+          try {
+            const note = fn(a, c);
+            if (note) state.changes.push(note);
+          } catch (e) {
+            if (e instanceof ActionError) state.warnings.push(`${a.op.replace(/_/g, ' ')}: ${e.message}`);
+            else throw e;
+          }
         }
-      }
-      for (const m of MODULES) m.beforeCommit?.(c);
-      finished = c.focus.finish();
-    });
+        for (const m of MODULES) m.beforeCommit?.(c);
+        finished = c.focus.finish();
+        // A dry run stops here: throwing out of the recipe leaves the project as it was.
+        if (ctx.dryRun) throw DRY_RUN;
+      });
+  } catch (e) {
+    if (e !== DRY_RUN) throw e;
+    return {
+      changes: state.changes,
+      warnings: state.warnings,
+      beat: null,
+      after: [],
+      edited: false,
+      outsideFocus: state.outsideFocus,
+    };
+  }
 
   uiAfter(s, answer, state);
 
   const project = s.doc.getState().project;
-  if (state.selectPattern && project.patterns[state.selectPattern]) s.view.getState().setCurrentPattern(state.selectPattern);
-  if (state.selectChannel && project.channels[state.selectChannel]) s.session.getState().selectChannel(state.selectChannel);
+  if (state.selectPattern && project.patterns[state.selectPattern])
+    s.view.getState().setCurrentPattern(state.selectPattern);
+  if (state.selectChannel && project.channels[state.selectChannel])
+    s.session.getState().selectChannel(state.selectChannel);
   const beat = state.beatPlan ? showBeat(s, state.beatPlan) : null;
   const done = finished as { focus: AppliedTurn['focus']; clips: NonNullable<AppliedTurn['selectClips']> } | null;
   return {
@@ -58,5 +76,8 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
     touched: state.touched,
     ...(done?.focus ? { focus: done.focus } : {}),
     ...(done?.clips.length ? { selectClips: done.clips } : {}),
+    ...(state.outsideFocus.length ? { outsideFocus: state.outsideFocus } : {}),
   };
 }
+
+const DRY_RUN = Symbol('dry run');

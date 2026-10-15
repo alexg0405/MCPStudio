@@ -62,6 +62,8 @@ export interface AnswerState {
   pinnedInserts: Set<InsertId>;
   /** Per-module state, keyed by module. */
   bag: Map<string, unknown>;
+  /** Edits that reach outside the part being worked on (refused, or allowed once the musician approved). */
+  outsideFocus: string[];
 }
 
 export function newAnswerState(): AnswerState {
@@ -77,6 +79,7 @@ export function newAnswerState(): AnswerState {
     touched: null,
     pinnedInserts: new Set(),
     bag: new Map(),
+    outsideFocus: [],
   };
 }
 

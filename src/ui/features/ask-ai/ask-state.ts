@@ -1,7 +1,7 @@
 /**
  * The Ask AI card ("Ask AI about this part"): which part it asks about, what it sits next to, and
- * which of the AI studio's messages are its replies. The entry points (the playlist's ✦ pill, a
- * marker's ✦, menus, Alt+A) open it through these functions.
+ * which of the AI studio's messages are its replies. The entry points (the playlist's Ask AI pill, a
+ * marker's Studio mark, menus, Alt+A) open it through these functions.
  */
 import { createStore } from 'zustand/vanilla';
 import { loopToNextMarker } from '@app/actions/markers';
@@ -53,7 +53,7 @@ export function askAboutSelection(s: Services, anchor?: AskAnchor | null): boole
   if (!focus) {
     s.session
       .getState()
-      .toast('Select some clips in the playlist, or drag on its ruler to loop some bars; then ✦ Ask AI (Alt+A) changes just that part.');
+      .toast('Select some clips in the playlist, or drag on its ruler to loop some bars; then Ask AI (Alt+A) changes just that part.');
     return false;
   }
   openAsk(s, focus, anchor ?? { kind: 'pill' });

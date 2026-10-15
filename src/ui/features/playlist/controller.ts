@@ -70,6 +70,7 @@ import {
 } from './render';
 import { markerRename } from './markers';
 import { askPillPlace, pillText, PILL_HEIGHT, type PillTarget } from './ask-pill';
+import { studioMarkSvg } from '../../controls/studio-mark';
 import { hitAudioHandle, type AudioHandle } from './audio-clip';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 
@@ -86,7 +87,7 @@ export interface PlaylistElements {
   rename: HTMLInputElement;
   /** Inline rename field for markers on the ruler. */
   markerRename: HTMLInputElement;
-  /** The "✦ Ask AI" pill over the selection or the loop region (moved on dirty frames). */
+  /** The Ask AI pill over the selection or the loop region (moved on dirty frames). */
   askPill: HTMLElement;
 }
 
@@ -167,10 +168,10 @@ export class PlaylistController {
   /** Marker flags as last drawn on the ruler, the one under the pointer, and one being dragged. */
   private markerBoxes: MarkerBox[] = [];
   private markerHot: MarkerId | null = null;
-  /** The pointer is on the hot marker's ✦. */
+  /** The pointer is on the hot marker's Studio mark. */
   private markerAskHot = false;
   private markerDrag: { id: MarkerId; tick: Tick } | null = null;
-  /** The ✦ pill's text as last set, and its width for that text. */
+  /** The Ask AI pill's text as last set, and its width for that text. */
   private pillLabel = '';
   private pillWidth = 0;
   /** The audio clip gain/fade handle under the pointer. */
@@ -307,7 +308,7 @@ export class PlaylistController {
   onMarkerMenu?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
   /** An empty spot of the ruler was right-clicked (at a snapped song tick). */
   onRulerMenu?: (tick: Tick, at: { clientX: number; clientY: number }) => void;
-  /** A marker flag's ✦ was clicked: ask the AI about its section. */
+  /** A marker flag's Studio mark was clicked: ask the AI about its section. */
   onMarkerAsk?: (id: MarkerId, at: { clientX: number; clientY: number }) => void;
 
   private readonly waveform = (ref: SampleRef) => this.s.engine.waveform(ref);
@@ -692,7 +693,7 @@ export class PlaylistController {
     this.els.hthumb.style.transform = `translateX(${x}px)`;
   }
 
-  /** The part the ✦ pill belongs to (the selected clips, else the loop region), in grid pixels, with its hint. */
+  /** The part the Ask AI pill belongs to (the selected clips, else the loop region), in grid pixels, with its hint. */
   private askTarget(p: Project): (PillTarget & { hint: string }) | null {
     const { vp } = this;
     const ts = p.transport.timeSig;
@@ -739,7 +740,7 @@ export class PlaylistController {
     };
   }
 
-  /** Moves the ✦ pill (dirty frames only); hidden while dragging and when there is nothing to ask about. */
+  /** Moves the Ask AI pill (dirty frames only); hidden while dragging and when there is nothing to ask about. */
   private updateAskPill(p: Project): void {
     const el = this.els.askPill;
     const t = this.drag ? null : this.askTarget(p);
@@ -750,7 +751,8 @@ export class PlaylistController {
     const text = pillText(t);
     if (el.style.display === 'none') el.style.display = '';
     if (text !== this.pillLabel || !this.pillWidth) {
-      el.textContent = text;
+      // The Studio mark, then the label (fixed strings: no user text goes into the markup).
+      el.innerHTML = studioMarkSvg(13) + (text ? `<span>${text}</span>` : '');
       this.pillLabel = text;
       this.pillWidth = el.offsetWidth;
     }
@@ -760,7 +762,7 @@ export class PlaylistController {
     el.style.transform = `translate(${HEADER_WIDTH + at.x}px, ${RULER_HEIGHT + at.y}px)`;
   }
 
-  /** The ✦ pill on screen (null while it is hidden). */
+  /** The Ask AI pill on screen (null while it is hidden). */
   pillBox(): ClientBox | null {
     const el = this.els.askPill;
     if (el.style.display === 'none') return null;
@@ -1465,7 +1467,7 @@ export class PlaylistController {
     return y >= MARKER_LANE_Y - 2 ? markerAtX(this.markerBoxes, x) : null;
   }
 
-  /** Whether ruler x is on a flag's ✦. */
+  /** Whether ruler x is on a flag's Studio mark. */
   private onAsk(b: MarkerBox | null, x: number): boolean {
     return !!b?.ask && x >= b.ask.x0 && x < b.ask.x1;
   }
@@ -1501,7 +1503,7 @@ export class PlaylistController {
     }
     if (e.button !== 0) return;
     e.preventDefault();
-    // The flag's ✦ acts at once (like a clip's ▾): ask the AI about the section.
+    // The flag's Studio mark acts at once (like a clip's ▾): ask the AI about the section.
     if (hit && this.onAsk(hit, x)) {
       this.onMarkerAsk?.(hit.id, e);
       return;
@@ -1574,7 +1576,7 @@ export class PlaylistController {
   private onRulerDouble(e: MouseEvent): void {
     const { x, y } = this.local(e, this.els.ruler);
     const hit = this.markerHit(x, y);
-    // A double-click on the ✦ is two clicks on it, not a rename.
+    // A double-click on the Studio mark is two clicks on it, not a rename.
     if (hit && this.onAsk(hit, x)) return;
     if (hit) this.renameMarker(hit.id);
     else this.s.view.getState().setLoop(null);

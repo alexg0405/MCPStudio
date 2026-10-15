@@ -10,6 +10,7 @@ import { Message } from '../assistant/Message';
 import { anchorBox } from './anchors';
 import { askStore, closeAsk, setAskFocus } from './ask-state';
 import { chipHint, quickChips } from './chips';
+import { Icon } from '../../controls/Icon';
 import styles from './AskCard.module.css';
 
 /** The Ask AI card, while it is open (an app overlay). */
@@ -130,7 +131,9 @@ function AskCard() {
       }}
     >
       <div className={styles.head}>
-        <span className={styles.title}>✦ Ask AI</span>
+        <span className={styles.title}>
+          <Icon name="studio" size={14} /> Ask AI
+        </span>
         <span
           className={`${styles.scope} ${focus && !gone ? '' : styles.scopeAll}`}
           data-hint={
@@ -168,7 +171,9 @@ function AskCard() {
           ))}
           {busy && (
             <div className={styles.status}>
-              <span className={styles.spark}>✦</span>
+              <span className={styles.spark}>
+                <Icon name="studio" size={13} />
+              </span>
               <span className={styles.statusText}>
                 {phase === 'listening' && listening
                   ? `${listening.label} (${Math.round(listening.fraction * 100)}%)…`

@@ -1,5 +1,5 @@
 /**
- * What the Ask AI card sits next to: the playlist's ✦ pill, a marker's flag, a span of the ruler, a
+ * What the Ask AI card sits next to: the playlist's Ask AI pill, a marker's flag, a span of the ruler, a
  * window, or a point (where a menu was opened). Windows that draw these register an anchor source
  * that measures them (in client pixels); the card follows its anchor every frame while it is open.
  */
@@ -7,7 +7,7 @@ import type { MarkerId, Tick } from '@core/model/types';
 
 export type AskAnchor =
   | { kind: 'point'; x: number; y: number }
-  /** The playlist's ✦ Ask AI pill (over the selection or the loop). */
+  /** The playlist's Ask AI pill (over the selection or the loop). */
   | { kind: 'pill'; fallback?: { x: number; y: number } }
   | { kind: 'marker'; markerId: MarkerId; fallback?: { x: number; y: number } }
   /** Bars of the song, on the playlist ruler. */

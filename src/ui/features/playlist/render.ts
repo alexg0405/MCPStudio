@@ -23,6 +23,7 @@ import { tempoMapOf } from '@core/automation/tempo';
 import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
 import { alpha, inkOn, mix, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { drawStudioMark } from '../../controls/studio-mark';
 import { clipGradient, clipPaint, type ClipPaint } from './clip-paint';
 import type { Viewport } from '../../timeline/viewport';
 import type { ClipLevels } from '@core/audio/envelope';
@@ -345,7 +346,7 @@ export interface MarkerBox {
   /** Flag and label span in ruler pixels. */
   x0: number;
   x1: number;
-  /** The flag's ✦ (ask the AI about the section), on flags wide enough for it. */
+  /** The flag's Studio mark (ask the AI about the section), on flags wide enough for it. */
   ask?: { x0: number; x1: number };
 }
 
@@ -353,13 +354,13 @@ export interface RulerMarkers {
   markers: readonly Marker[];
   /** The marker under the pointer or being dragged (drawn brighter). */
   hot?: MarkerId | null;
-  /** The pointer is on the hot marker's ✦. */
+  /** The pointer is on the hot marker's Studio mark. */
   hotAsk?: boolean;
   /** A marker being dragged: drawn at this tick instead. */
   drag?: { id: MarkerId; tick: Tick } | null;
 }
 
-/** Width of the ✦ at the end of a marker's flag. */
+/** Width of the Studio mark at the end of a marker's flag. */
 export const MARKER_ASK_WIDTH = 15;
 
 /** Marker positions with a drag applied, sorted. */
@@ -436,7 +437,7 @@ export function drawPlaylistRuler(
       ctx.fillRect(Math.round(x), 0, 1, h);
     }
   }
-  // Markers: a small pill on the lane with the name (and a ✦ when there is room).
+  // Markers: a small pill on the lane with the name (and a Studio mark when there is room).
   const boxes: MarkerBox[] = [];
   const placed = placedMarkers(markers);
   // Each section (marker to the next one, the last to the song's end) as a very faint band in the lane.
@@ -487,8 +488,8 @@ export function drawPlaylistRuler(
         ctx.fillStyle = alpha(ink, 0.16);
         ctx.fill();
       }
-      ctx.fillStyle = askHot ? ink : alpha(ink, hot ? 0.75 : 0.42);
-      ctx.fillText('✦', ax + 2.5, cy + 0.5);
+      ctx.strokeStyle = askHot ? ink : alpha(ink, hot ? 0.8 : 0.5);
+      drawStudioMark(ctx, ax + 6.5, cy, 10);
     }
   }
   ctx.fillStyle = theme.lineFaint;

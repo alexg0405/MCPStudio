@@ -867,7 +867,7 @@ export class BeatAssistant {
     this.store.setState({ phase: 'thinking', listening: null });
     const route = await this.route();
     if (!route) {
-      this.say('assistant', 'Connect Claude (✦ settings) and I can make these changes for you; the findings above are a start.', {
+      this.say('assistant', 'Connect Claude (the ⋯ menu in Studio) and I can make these changes for you; the findings above are a start.', {
         offline: true,
       });
       this.store.setState({ phase: 'idle' });

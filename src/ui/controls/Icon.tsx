@@ -1,4 +1,5 @@
 import type { SVGProps } from 'react';
+import { STUDIO_RING, STUDIO_WAVE } from './studio-mark';
 
 // Original, minimal icon set (16×16 viewBox). Stroke icons inherit currentColor.
 const PATHS = {
@@ -83,6 +84,13 @@ const PATHS = {
   chevronDown: <path d="M4 6l4 4 4-4" />,
   wave: <path d="M1.5 8c1.2-4 2.2-4 3.2 0s2 4 3.2 0 2-4 3.2 0 2 4 3.4 0" />,
   plug: <path d="M6 1.5v3M10 1.5v3M4.5 4.5h7v3a3.5 3.5 0 01-7 0zM8 11v3.5" />,
+  /** The AI studio's mark: a ring with a sound wave through it (studio-mark.ts). */
+  studio: (
+    <g strokeWidth={1.4}>
+      <path d={STUDIO_RING} opacity={0.55} />
+      <path d={STUDIO_WAVE} />
+    </g>
+  ),
   metronome: <path d="M5 14.5h6l-1.8-12h-2.4zM8 10l3.5-6" />,
   note: <path d="M6 12.5V3.5l7-1.5v9M6 12.5a2 2 0 11-4 0 2 2 0 014 0zM13 11a2 2 0 11-4 0 2 2 0 014 0z" />,
   keyboard: (

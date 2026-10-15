@@ -1017,7 +1017,7 @@
   cursor: default;
 }
 
-/* ---- The toolbar's ✦ AI studio pill: a gold edge with a soft glow, filled gold while open ---- */
+/* ---- The toolbar's Studio pill: a gold edge with a soft glow, filled gold while open ---- */
 
 .aiPill {
   display: inline-flex;

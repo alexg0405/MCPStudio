@@ -82,7 +82,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         </button>
       </span>
       <span className={styles.help}>
-        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · ✦ asks the AI about a part
+        Drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask AI pill (or a marker's mark) asks the AI about a part
       </span>
     </div>
   );
@@ -128,7 +128,7 @@ export function Playlist() {
     c.onPointMenu = (clip, index, at) => showContextMenu(at, pointMenu(services, clip, index));
     c.onMarkerMenu = (id, at) => showContextMenu(at, markerMenu(services, id));
     c.onRulerMenu = (tick, at) => showContextMenu(at, rulerMenu(services, tick));
-    // A flag's ✦: loop that section and open the Ask AI card on it.
+    // A flag's Studio mark: loop that section and open the Ask AI card on it.
     c.onMarkerAsk = (id, at) =>
       void askAboutMarker(services, id, { kind: 'marker', markerId: id, fallback: { x: at.clientX, y: at.clientY } });
     c.onLaneMenu = (laneId, at) =>

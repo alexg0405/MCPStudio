@@ -283,7 +283,8 @@ function Header({ st, send }: { st: AssistantState; send(text: string): void }) 
         onSelect: () => a.set({ autoplay: !st.autoplay }),
       },
       {
-        label: '✦ Check my mix',
+        label: 'Check my mix',
+        icon: 'studio',
         disabled: busy,
         hint: 'The AI listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step',
         onSelect: () => void a.checkMix(),
@@ -382,7 +383,7 @@ function Messages({ st, send }: { st: AssistantState; send(text: string): void }
               onClick={() => void services.assistant.checkMix()}
               data-hint="The AI listens to your mix (every mixer track: loudness, peaks, tone, width), tells you what it hears and improves it in one undoable step"
             >
-              ✦ Check my mix
+              <Icon name="studio" size={13} /> Check my mix
             </button>
             {STARTERS.map((idea) => (
               <button

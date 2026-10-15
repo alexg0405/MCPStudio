@@ -2,10 +2,11 @@ import { useStore } from 'zustand';
 import { formatChord } from '@core/commands/keymap';
 import { useCommandState } from '../../shell/command-state';
 import { useServices } from '../../services-context';
+import { Icon } from '../../controls/Icon';
 import styles from './Assistant.module.css';
 
 /**
- * The toolbar's "✦ AI studio" pill, first after the transport: a gold edge while the window is
+ * The toolbar's Studio pill (the Studio mark and "Studio"), first after the transport: a gold edge while the window is
  * closed, brushed gold while it is open, a soft shimmer while the AI works. It re-renders only when
  * the window opens or closes or the AI starts or stops working.
  */
@@ -22,14 +23,14 @@ export function AiStudioButton() {
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run('view.assistant')}
       data-hint={`${checked ? 'Hide the AI studio' : 'Ask the AI to make or change anything'}${keys}${busy ? ' · the AI is working' : ''}`}
-      aria-label="AI studio"
+      aria-label="Studio (the AI studio)"
       aria-pressed={checked}
       data-tour="assistant"
     >
       <span className={styles.aiPillMark} aria-hidden>
-        ✦
+        <Icon name="studio" size={15} />
       </span>
-      AI studio
+      Studio
     </button>
   );
 }

@@ -251,7 +251,7 @@
   z-index: 3;
 }
 
-/* "✦ Ask AI" over the selection or the loop region (placed by the controller with a transform). */
+/* "Studio mark Ask AI" over the selection or the loop region (placed by the controller with a transform). */
 .askPill {
   position: absolute;
   top: 0;
@@ -273,6 +273,14 @@
   white-space: nowrap;
   cursor: pointer;
   transition: filter var(--ag-dur) var(--ag-ease);
+  /* The Studio mark, then the label. */
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.askPill:not(:has(span)) {
+  padding: 0 6px;
 }
 
 .askPill:hover {

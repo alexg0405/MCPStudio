@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { createStore, useStore } from 'zustand';
 import { holdModal } from './Dialog';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 import { focusFirstItem, moveInPanel, submenuOf } from './menu-nav';
 import styles from './ContextMenu.module.css';
 
@@ -16,6 +16,8 @@ export type MenuEntry =
       danger?: boolean;
       /** Hint bar text on hover (say why when disabled). */
       hint?: string;
+      /** A small icon before the label (in the check column). */
+      icon?: IconName;
     }
   | { kind: 'separator' }
   | { kind: 'swatches'; colors: readonly string[]; selected?: string; onSelect(color: string): void }
@@ -204,7 +206,7 @@ function MenuItems({ items }: { items: MenuEntry[] }) {
               item.onSelect();
             }}
           >
-            <span className={styles.check}>{item.checked ? '✓' : ''}</span>
+            <span className={styles.check}>{item.checked ? '✓' : item.icon ? <Icon name={item.icon} size={13} /> : ''}</span>
             <span className={styles.text}>{item.label}</span>
             {item.shortcut && <span className={styles.shortcut}>{item.shortcut}</span>}
           </button>

@@ -282,6 +282,6 @@ export const LESSONS: readonly Lesson[] = [
         done: (s) => s.presets.forPlugin(WAVETABLE).length > memo.presets,
       },
     ],
-    next: 'It’s under Presets in the browser now: click it there to add it to any project. Ask the AI studio (✦) for anything else, or press ⌘K to find any action.',
+    next: 'It’s under Presets in the browser now: click it there to add it to any project. Ask Studio (the gold button in the toolbar) for anything else, or press ⌘K to find any action.',
   },
 ];

@@ -54,7 +54,7 @@ describe('arranging from the playlist (no AI)', () => {
   });
 
   // Other features (Ask AI) add their own entries to these menus; check this one's.
-  const mine = (entries: Parameters<typeof items>[0]) => items(entries).filter((e) => !e.label.startsWith('✦'));
+  const mine = (entries: Parameters<typeof items>[0]) => items(entries).filter((e) => !e.label.startsWith('Ask AI'));
 
   it('marker and ruler right-click entries develop a section and add fills and transitions', () => {
     const { s } = setup();

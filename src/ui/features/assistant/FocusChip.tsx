@@ -1,6 +1,7 @@
 import { useStore } from 'zustand';
 import { resolveFocus } from '@app/ai/focus';
 import { useServices } from '../../services-context';
+import { Icon } from '../../controls/Icon';
 import styles from './Assistant.module.css';
 
 /**
@@ -19,7 +20,9 @@ export function FocusChip() {
       className={styles.focusChip}
       data-hint={`The AI changes only ${label}; the rest of the song stays exactly as it is`}
     >
-      <span className={styles.focusSpark}>✦</span>
+      <span className={styles.focusSpark}>
+        <Icon name="studio" size={13} />
+      </span>
       <span className={styles.focusLabel}>About {label}</span>
       <button
         className={styles.focusButton}

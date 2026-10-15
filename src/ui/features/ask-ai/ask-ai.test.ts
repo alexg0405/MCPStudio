@@ -37,7 +37,7 @@ describe('opening the Ask AI card', () => {
     expect(askStore.getState().focus).toMatchObject({ kind: 'clips', clipIds: two });
   });
 
-  it('a marker’s ✦ loops its section and opens the card on the flag', () => {
+  it('a marker’s Studio mark loops its section and opens the card on the flag', () => {
     const { s, marker } = setup();
     const drop = marker('Drop');
     expect(askAboutMarker(s, drop)).toBe(true);
@@ -63,24 +63,24 @@ describe('opening the Ask AI card', () => {
 describe('menus, shortcuts, commands and the action search', () => {
   beforeEach(() => closeAsk());
 
-  it('adds “✦ Ask AI about …” to the clip, marker, ruler and note menus', () => {
+  it('adds “Ask AI about …” to the clip, marker, ruler and note menus', () => {
     const { s, ids, marker } = setup();
     const drops = clipsOf(project(s), ids.patterns.Drop!);
     // One clip, or the selection it belongs to.
-    expect(labels(extraMenuItems('playlist.clip', { clip: drops[0]! }, s))).toContain('✦ Ask AI about this clip…');
+    expect(labels(extraMenuItems('playlist.clip', { clip: drops[0]! }, s))).toContain('Ask AI about this clip…');
     s.editor.getState().selectClips([drops[0]!.id, drops[1]!.id]);
-    pick(extraMenuItems('playlist.clip', { clip: drops[1]! }, s), '✦ Ask AI about the 2 selected clips…').onSelect();
+    pick(extraMenuItems('playlist.clip', { clip: drops[1]! }, s), 'Ask AI about the 2 selected clips…').onSelect();
     expect(askStore.getState().focus).toMatchObject({ kind: 'clips', clipIds: [drops[0]!.id, drops[1]!.id] });
-    pick(extraMenuItems('playlist.marker', { markerId: marker('Verse') }, s), '✦ Ask AI about “Verse”…').onSelect();
+    pick(extraMenuItems('playlist.marker', { markerId: marker('Verse') }, s), 'Ask AI about “Verse”…').onSelect();
     expect(askStore.getState().focus).toMatchObject({ kind: 'section', markerId: marker('Verse') });
     // The ruler offers it for the loop region (here the Verse, looped by the marker entry).
-    pick(extraMenuItems('playlist.ruler', { tick: 0 }, s), '✦ Ask AI about bars 17–32…').onSelect();
+    pick(extraMenuItems('playlist.ruler', { tick: 0 }, s), 'Ask AI about bars 17–32…').onSelect();
     expect(askStore.getState().focus).toMatchObject({ kind: 'section', from: 16 * BAR, to: 32 * BAR });
     s.view.getState().setLoop(null);
-    expect(labels(extraMenuItems('playlist.ruler', { tick: 0 }, s)).some((l) => l.startsWith('✦'))).toBe(false);
+    expect(labels(extraMenuItems('playlist.ruler', { tick: 0 }, s)).some((l) => l.startsWith('Ask AI'))).toBe(false);
     const noteIds = Object.keys(project(s).patterns[ids.patterns.Drop!]!.notes[ids.channels.Pluck!]!).slice(0, 3) as NoteId[];
     const ctx = { channelId: ids.channels.Pluck!, patternId: ids.patterns.Drop!, noteIds, tick: 0, key: 60 };
-    pick(extraMenuItems('pianoRoll.note', ctx, s), '✦ Ask AI about these 3 notes…').onSelect();
+    pick(extraMenuItems('pianoRoll.note', ctx, s), 'Ask AI about these 3 notes…').onSelect();
     expect(askStore.getState().focus).toMatchObject({ kind: 'notes', noteIds });
   });
 
@@ -115,7 +115,7 @@ describe('menus, shortcuts, commands and the action search', () => {
     const { s, marker } = setup();
     const entries = getActionProviders().flatMap((p) => p(s));
     const verse = entries.find((e) => e.label === 'Ask AI about: Verse');
-    expect(verse?.path).toEqual(['Playlist', '✦ Ask AI about a section']);
+    expect(verse?.path).toEqual(['Playlist', 'Ask AI about a section']);
     verse!.run();
     expect(askStore.getState().focus).toMatchObject({ kind: 'section', markerId: marker('Verse') });
   });

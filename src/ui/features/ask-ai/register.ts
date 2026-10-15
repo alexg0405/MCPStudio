@@ -14,7 +14,7 @@ import { registerAskMenus } from './menus';
 /**
  * "Ask AI about this part": select clips, loop some bars, pick a marker's section or some notes, and
  * tell the AI what to change there; only that part changes, as one undo step. Entry points: the
- * playlist's ✦ pill and the ✦ on marker flags (wired in the playlist), right-click menus, Alt+A,
+ * playlist's Ask AI pill and the Studio mark on marker flags (wired in the playlist), right-click menus, Alt+A,
  * the Playlist and Edit menus and the action search ("Ask AI about: Verse").
  */
 export function register(services: Services): void {
@@ -97,23 +97,23 @@ export function register(services: Services): void {
     }));
   };
   addMenuItems('playlist', [
-    cmd('ai.askSelection', 20, '✦ Ask AI about the selection…'),
+    cmd('ai.askSelection', 20, 'Ask AI about the selection…'),
     {
       kind: 'submenu',
       id: 'ask-ai-sections',
-      label: '✦ Ask AI about a section',
+      label: 'Ask AI about a section',
       order: 21,
       items: () => [{ kind: 'dynamic', id: 'ask-ai-section-list', order: 0, entries: sectionEntries }],
     },
     cmd('ai.clearFocus', 22),
     sep(29),
   ]);
-  addMenuItems('edit', [sep(27), cmd('ai.askSelection', 28, '✦ Ask AI about the selection…')]);
+  addMenuItems('edit', [sep(27), cmd('ai.askSelection', 28, 'Ask AI about the selection…')]);
   addActionProvider('ask-ai-sections', (s) =>
     markersSorted(s.doc.getState().project).map((m) => ({
       key: `ask-ai:${m.id}`,
       label: `Ask AI about: ${m.name}`,
-      path: ['Playlist', '✦ Ask AI about a section'],
+      path: ['Playlist', 'Ask AI about a section'],
       hint: `Loop ${describeMarker(s, m)} to the next marker and tell the AI what to change there`,
       keywords: ['ai', 'section', 'part', 'change', 'fix', 'marker'],
       run: () => void askAboutMarker(s, m.id),

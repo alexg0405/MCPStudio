@@ -7,6 +7,7 @@ import { useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
 import { collectActions } from './collect';
 import { pushRecent, searchActions } from './search';
+import { Icon } from '../../controls/Icon';
 import styles from './Palette.module.css';
 
 /** Open/closed, outside React so the command and the overlay share it. */
@@ -136,7 +137,7 @@ function Palette() {
               onPointerMove={() => i !== active && setActive(i)}
               onClick={() => run(e)}
             >
-              <span className={styles.check}>{e.key === 'ai' ? '✦' : e.checked ? '✓' : ''}</span>
+              <span className={styles.check}>{e.key === 'ai' ? <Icon name="studio" size={13} /> : e.checked ? '✓' : ''}</span>
               <span className={styles.label}>{e.label}</span>
               <span className={styles.path}>{e.path.join(' › ')}</span>
               {e.chord && <kbd className={styles.chord}>{e.chord}</kbd>}

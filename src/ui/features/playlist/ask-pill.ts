@@ -1,5 +1,5 @@
 /**
- * The playlist's "✦ Ask AI" pill: at the top-right of the selected clips (a compact "✦" for a single
+ * The playlist's Ask AI pill: at the top-right of the selected clips (a compact "Studio mark" for a single
  * clip), else of the loop region. Pure placement; the controller moves the element on dirty frames.
  */
 
@@ -11,7 +11,7 @@ export interface PillTarget {
   /** From the top of its first track to the bottom of its last (0 and 0 for the loop region). */
   y0: number;
   y1: number;
-  /** A single clip: just "✦". */
+  /** A single clip: just the mark. */
   compact: boolean;
 }
 
@@ -39,4 +39,4 @@ export function askPillPlace(
 }
 
 /** The pill's text. */
-export const pillText = (t: PillTarget): string => (t.compact ? '✦' : '✦ Ask AI');
+export const pillText = (t: PillTarget): string => (t.compact ? '' : 'Ask AI');

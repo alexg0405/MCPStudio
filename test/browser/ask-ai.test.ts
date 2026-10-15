@@ -1,6 +1,6 @@
 /**
  * "Ask AI about this part" in the real UI (headless Chrome, React shell, test services with the fake
- * engine, so nothing sounds and nothing reaches Claude): the playlist's ✦ pill, a marker's ✦, the Ask
+ * engine, so nothing sounds and nothing reaches Claude): the playlist's Studio mark pill, a marker's Studio mark, the Ask
  * AI card (typing in it plays no notes, Esc and outside clicks), the AI studio's part chip, and no
  * React commits while the song plays with the card closed.
  */
@@ -81,7 +81,7 @@ describe('Ask AI about this part (UI)', () => {
     vi.restoreAllMocks();
   });
 
-  it('shows ✦ Ask AI over the selected clips, a compact ✦ for one clip, and over the loop region', async () => {
+  it('shows Studio mark Ask AI over the selected clips, a compact Studio mark for one clip, and over the loop region', async () => {
     const p = s.doc.getState().project;
     const intro = (Object.values(p.playlist.clips) as PatternClip[])
       .filter((c) => c.kind === 'pattern' && p.patterns[c.patternId]?.name === 'Intro' && c.start < 4 * BAR && c.laneId === p.playlist.laneOrder[0])
@@ -90,7 +90,7 @@ describe('Ask AI about this part (UI)', () => {
     s.editor.getState().selectClips(intro.map((c) => c.id));
     await frames(2);
     expect(pill()!.style.display).not.toBe('none');
-    expect(pill()!.textContent).toBe('✦ Ask AI');
+    expect(pill()!.textContent).toBe('Ask AI');
     expect(pill()!.getAttribute('data-hint')).toBe('Ask the AI to change the 2 selected clips (bars 1–4), Alt+A: only they change');
     // Above the selection's top-right corner, inside the grid.
     const grid = host.querySelector('[data-window-type="playlist"]')!.getBoundingClientRect();
@@ -99,11 +99,12 @@ describe('Ask AI about this part (UI)', () => {
     expect(r.right).toBeLessThanOrEqual(grid.right);
     s.editor.getState().selectClips([intro[0]!.id]);
     await frames(2);
-    expect(pill()!.textContent).toBe('✦');
+    expect(pill()!.textContent).toBe('');
+    expect(pill()!.querySelector('svg')).not.toBeNull();
     s.editor.getState().selectClips([]);
     s.view.getState().setLoop({ start: 8 * BAR, end: 16 * BAR });
     await frames(2);
-    expect(pill()!.textContent).toBe('✦ Ask AI');
+    expect(pill()!.textContent).toBe('Ask AI');
     expect(pill()!.getAttribute('data-hint')).toBe('Ask the AI to change Pre-verse (bars 9–16), Alt+A: only those bars change');
     // Clicking it opens the card about that section.
     await userEvent.click(pill()!);
@@ -115,13 +116,13 @@ describe('Ask AI about this part (UI)', () => {
     s.view.getState().setLoop(null);
   });
 
-  it('a marker’s ✦ loops its section and opens the card on the flag; the name still jumps', async () => {
+  it('a marker’s Studio mark loops its section and opens the card on the flag; the name still jumps', async () => {
     const verse = marker('Verse');
     const flag = anchorBox({ kind: 'marker', markerId: verse })!;
     expect(flag).toBeTruthy();
     const ruler = host.querySelector<HTMLCanvasElement>('canvas[data-hint^="Drag to set a loop region"]')!;
     const rr = ruler.getBoundingClientRect();
-    // On the ✦ (the flag's last 15 px).
+    // On the Studio mark (the flag's last 15 px).
     await userEvent.click(ruler, { position: { x: flag.right - rr.left - 7, y: flag.top - rr.top + 7 } });
     await until(() => !!card());
     expect(s.view.getState().loop).toEqual({ start: 16 * BAR, end: 32 * BAR });

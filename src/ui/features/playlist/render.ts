@@ -22,7 +22,8 @@ import { notesSorted, patternLength } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
 import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
-import { shade, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, inkOn, mix, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { clipGradient, clipPaint, type ClipPaint } from './clip-paint';
 import type { Viewport } from '../../timeline/viewport';
 import type { ClipLevels } from '@core/audio/envelope';
 import { audioClipTags, drawAudioBody, type AudioHandle } from './audio-clip';
@@ -34,6 +35,8 @@ export const RULER_HEIGHT = 34;
 /** The ▾ clip-menu button at a clip's top-left corner (clips narrower than the minimum have none). */
 export const CLIP_MENU_SIZE = 12;
 export const CLIP_MENU_MIN_WIDTH = 30;
+/** Corner radius of clips. */
+export const CLIP_RADIUS = 4;
 
 export function drawLanesGrid(
   ctx: CanvasRenderingContext2D,
@@ -46,32 +49,34 @@ export function drawLanesGrid(
   const { width, height } = vp;
   ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, width, height);
-  const [r0, r1] = vp.visibleRows();
-  for (let row = r0; row <= Math.min(r1, laneCount - 1); row++) {
-    const y = vp.rowToY(row);
-    if (row % 2 === 1) {
-      ctx.fillStyle = theme.bgAlt;
-      ctx.fillRect(0, y, width, vp.rowHeight);
-    }
-    ctx.fillStyle = theme.bar;
-    ctx.fillRect(0, y + vp.rowHeight - 1, width, 1);
-  }
   const bar = ticksPerBar(ts);
   const beat = ticksPerBeat(ts);
   const [t0, t1] = vp.visibleTicks();
+  // Every other bar (or group of four when zoomed out) is a shade different: calm stone, easy to count.
+  const every = bar * vp.pxPerTick >= 6 ? bar : bar * 4;
+  ctx.fillStyle = theme.bgAlt;
+  for (let t = Math.floor(t0 / every) * every; t <= t1; t += every) {
+    if ((t / every) % 2 !== 1) continue;
+    const x = vp.tickToX(t);
+    ctx.fillRect(Math.round(x), 0, Math.round(x + every * vp.pxPerTick) - Math.round(x), height);
+  }
+  // Lane separators: hairlines.
+  const [r0, r1] = vp.visibleRows();
+  ctx.fillStyle = theme.beat;
+  for (let row = r0; row <= Math.min(r1, laneCount - 1); row++)
+    ctx.fillRect(0, vp.rowToY(row) + vp.rowHeight - 1, width, 1);
   if (beat * vp.pxPerTick >= 8) {
     ctx.fillStyle = theme.beat;
     for (let t = Math.floor(t0 / beat) * beat; t <= t1; t += beat)
-      ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
+      if (t % every !== 0) ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
   }
-  const every = bar * vp.pxPerTick >= 6 ? bar : bar * 4;
   ctx.fillStyle = theme.bar;
   for (let t = Math.floor(t0 / every) * every; t <= t1; t += every)
     ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
   // Past the last lane.
   const lanesEnd = vp.rowToY(laneCount);
   if (lanesEnd < height) {
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillStyle = theme.shade;
     ctx.fillRect(0, lanesEnd, width, height - lanesEnd);
   }
   void songEnd;
@@ -122,6 +127,14 @@ export interface ClipStyle {
   stretching?(channelId: ChannelId): boolean;
 }
 
+/** The color a clip is drawn in: its own, else its pattern's or channel's. */
+export function clipColorOf(project: Project, c: Clip, theme: TimelineTheme): string {
+  if (/^#[0-9a-f]{6}$/i.test(c.color ?? '')) return c.color as string;
+  const pattern = c.kind === 'pattern' ? project.patterns[c.patternId] : undefined;
+  const channelId = clipChannelId(c);
+  return pattern?.color ?? (channelId ? project.channels[channelId]?.color : undefined) ?? theme.accent;
+}
+
 export function drawClips(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
@@ -146,18 +159,26 @@ export function drawClips(
     const pattern = c.kind === 'pattern' ? project.patterns[c.patternId] : undefined;
     const channelId = clipChannelId(c);
     const channel = channelId ? project.channels[channelId] : undefined;
-    const base = /^#[0-9a-f]{6}$/i.test(c.color ?? '')
-      ? (c.color as string)
-      : (pattern?.color ?? channel?.color ?? '#5f8fbf');
+    const base = clipColorOf(project, c, theme);
     const selected = style.selected.has(c.id);
     const dim = c.muted || mutedLanes.has(c.laneId);
+    const paint = clipPaint(base, theme);
     ctx.globalAlpha = dim ? 0.45 : 1;
-    ctx.fillStyle = shade(base, selected ? -0.05 : -0.35);
-    ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = shade(base, selected ? 0.35 : 0.05);
-    ctx.fillRect(x, y, w, Math.min(TITLE_H, h));
-    ctx.strokeStyle = selected ? '#ffffff' : 'rgba(0,0,0,0.6)';
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    // The whole clip (edge, title strip, body, inner shadow) is one fill of a cached gradient.
+    ctx.translate(x, y);
+    ctx.fillStyle = clipGradient(ctx, base, theme, h, selected);
+    ctx.beginPath();
+    roundRectPath(ctx, 0, 0, w, h, CLIP_RADIUS);
+    ctx.fill();
+    ctx.translate(-x, -y);
+    if (selected) {
+      ctx.strokeStyle = theme.select;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      roundRectPath(ctx, x + 0.75, y + 0.75, w - 1.5, h - 1.5, CLIP_RADIUS - 0.5);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
     let label = pattern?.name ?? c.name ?? style.label?.(c) ?? channel?.name ?? '?';
     if (c.kind === 'audio' && channel?.kind === 'audioClip') {
       const tags = audioClipTags(c, channel, tempoMapOf(project, 'song'), !!style.stretching?.(channel.id));
@@ -165,17 +186,17 @@ export function drawClips(
     }
     const menu = w >= CLIP_MENU_MIN_WIDTH && h >= TITLE_H;
     if (menu) {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillStyle = paint.inkSoft;
       ctx.beginPath();
-      ctx.moveTo(x + 3, y + 4.5);
-      ctx.lineTo(x + 9, y + 4.5);
-      ctx.lineTo(x + 6, y + 8.5);
+      ctx.moveTo(x + 4, y + 5);
+      ctx.lineTo(x + 9, y + 5);
+      ctx.lineTo(x + 6.5, y + 8);
       ctx.closePath();
       ctx.fill();
     }
     if (w > 18) {
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      const lx = menu ? x + CLIP_MENU_SIZE : x + 4;
+      ctx.fillStyle = paint.ink;
+      const lx = menu ? x + CLIP_MENU_SIZE + 1 : x + 4;
       ctx.fillText(label, lx, y + TITLE_H / 2 + 0.5, x + w - 4 - lx);
     }
     // Body: notes for pattern clips, a waveform hint for audio clips, the curve for automation clips.
@@ -183,25 +204,28 @@ export function drawClips(
     if (c.kind === 'automation') {
       if (channel?.kind === 'automation') {
         const d = style.automation?.(c) ?? { showPoints: selected, hot: null, note: null, noteIsWarning: false };
-        drawAutomationBody(ctx, vp, theme, c, channel, box, base, d);
+        drawAutomationBody(ctx, vp, theme, c, channel, box, paint, d);
       }
     } else if (bodyH > 3 && pattern && c.kind === 'pattern')
-      drawPatternBody(ctx, vp, pattern, ts, c, x, w, bodyY, bodyH, shade(base, 0.55));
+      drawPatternBody(ctx, vp, pattern, ts, c, x, w, bodyY, bodyH, paint);
     else if (bodyH > 3 && c.kind === 'audio') {
       const ref = channel?.kind === 'audioClip' ? project.samples[channel.sampleId] : undefined;
       const wave = ref ? (style.waveform?.(ref) ?? null) : null;
       if (channel?.kind === 'audioClip') {
         const levels = style.levels?.(c) ?? c;
         const handles = style.audioHandles?.(c) ?? { show: selected, hot: null };
-        drawAudioBody(ctx, vp, wave, c, channel, levels, tempoMapOf(project, 'song'), box, shade(base, 0.4), handles);
+        drawAudioBody(ctx, vp, theme, wave, c, channel, levels, tempoMapOf(project, 'song'), box, paint, handles);
       } else {
-        ctx.fillStyle = shade(base, 0.4);
+        ctx.fillStyle = paint.content;
         ctx.fillRect(x, bodyY + bodyH / 2, w, 1);
       }
     }
     ctx.globalAlpha = 1;
   }
 }
+
+/** Velocity steps the mini notes are drawn in (one path per step: few fills, velocity as opacity). */
+const VEL_STEPS = [0.45, 0.65, 0.82, 1] as const;
 
 function drawPatternBody(
   ctx: CanvasRenderingContext2D,
@@ -213,29 +237,50 @@ function drawPatternBody(
   w: number,
   y: number,
   h: number,
-  color: string,
+  paint: ClipPaint,
 ): void {
   const pv = patternPreview(pattern, ts);
   if (pv.notes.length === 0 || pv.length <= 0) return;
   const range = Math.max(8, pv.hi - pv.lo + 1);
-  const rowH = Math.max(1, h / range);
+  const rowH = Math.max(1, Math.min(4, h / range - (h / range > 2.5 ? 0.6 : 0)));
+  const ppt = vp.pxPerTick;
+  const round = rowH >= 2;
+  const left = Math.max(x, 0);
+  const right = Math.min(x + w, vp.width);
+  if (right <= left) return;
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x, y, w, h);
+  ctx.rect(x + 1, y, w - 2, h);
   ctx.clip();
-  ctx.fillStyle = color;
-  const ppt = vp.pxPerTick;
-  // The clip shows content from `offset`, repeating every pattern length.
-  for (let rep = Math.floor(clip.offset / pv.length); rep * pv.length < clip.offset + clip.length; rep++) {
-    const repStart = clip.start - clip.offset + rep * pv.length;
-    for (const n of pv.notes) {
-      const s = repStart + n.tick;
-      if (s + n.length < clip.start || s >= clip.start + clip.length) continue;
-      const nx = vp.tickToX(s);
-      const ny = y + h - ((n.key - pv.lo + 1 + (range - (pv.hi - pv.lo + 1)) / 2) / range) * h;
-      ctx.fillRect(nx, ny, Math.max(1, n.length * ppt - 0.5), rowH);
+  ctx.fillStyle = paint.content;
+  const base = ctx.globalAlpha;
+  for (let level = 0; level < VEL_STEPS.length; level++) {
+    const lo = level === 0 ? -1 : (VEL_STEPS[level - 1] as number);
+    const hi = VEL_STEPS[level] as number;
+    let any = false;
+    ctx.beginPath();
+    // The clip shows content from `offset`, repeating every pattern length.
+    for (let rep = Math.floor(clip.offset / pv.length); rep * pv.length < clip.offset + clip.length; rep++) {
+      const repStart = clip.start - clip.offset + rep * pv.length;
+      for (const n of pv.notes) {
+        const v = n.velocity;
+        if (level < VEL_STEPS.length - 1 ? v <= lo || v > hi : v <= lo) continue;
+        const s = repStart + n.tick;
+        if (s + n.length < clip.start || s >= clip.start + clip.length) continue;
+        const nx = vp.tickToX(s);
+        const nw = Math.max(1.5, n.length * ppt - 1);
+        if (nx > right || nx + nw < left) continue;
+        const ny = y + h - ((n.key - pv.lo + 1 + (range - (pv.hi - pv.lo + 1)) / 2) / range) * h;
+        if (round && nw >= 3) roundRectPath(ctx, nx, ny, nw, rowH, rowH / 2);
+        else ctx.rect(nx, ny, nw, rowH);
+        any = true;
+      }
     }
+    if (!any) continue;
+    ctx.globalAlpha = base * (0.4 + 0.6 * hi);
+    ctx.fill();
   }
+  ctx.globalAlpha = base;
   ctx.restore();
 }
 
@@ -247,41 +292,51 @@ export function drawLaneHeaders(
   muted: ReadonlySet<LaneId>,
   width: number,
 ): void {
-  ctx.fillStyle = theme.surface;
+  ctx.fillStyle = theme.surface2;
   ctx.fillRect(0, 0, width, vp.height);
   const [r0, r1] = vp.visibleRows();
-  ctx.font = `11px ${theme.font}`;
+  ctx.font = `500 11px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (let row = r0; row <= Math.min(r1, lanes.length - 1); row++) {
     const lane = lanes[row] as Lane;
     const y = vp.rowToY(row);
     const h = vp.rowHeight;
-    ctx.fillStyle = row % 2 ? theme.surface2 : theme.surface;
-    ctx.fillRect(0, y, width, h);
-    ctx.fillStyle = theme.bar;
+    if (row % 2) {
+      ctx.fillStyle = theme.sheen;
+      ctx.fillRect(0, y, width, h);
+    }
+    ctx.fillStyle = theme.lineFaint;
     ctx.fillRect(0, y + h - 1, width, 1);
-    // Mute LED (green = playing); solo shows an orange ring.
+    // Mute LED (lit = playing, with a soft halo); solo shows a gold ring.
     const on = !muted.has(lane.id);
+    const cy = y + h / 2;
+    if (on) {
+      ctx.beginPath();
+      ctx.arc(14, cy, 6, 0, Math.PI * 2);
+      ctx.fillStyle = alpha(theme.ledGlow, 0.35);
+      ctx.fill();
+    }
     ctx.beginPath();
-    ctx.arc(13, y + h / 2, 5, 0, Math.PI * 2);
+    ctx.arc(14, cy, 3.5, 0, Math.PI * 2);
     ctx.fillStyle = on ? theme.led : theme.ledOff;
     ctx.fill();
     if (lane.solo) {
+      ctx.beginPath();
+      ctx.arc(14, cy, 6.5, 0, Math.PI * 2);
       ctx.strokeStyle = theme.accent;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.lineWidth = 1;
     }
-    ctx.fillStyle = on ? theme.text : theme.textDim;
-    ctx.fillText(lane.name, 26, y + h / 2 + 0.5, width - 32);
+    ctx.fillStyle = on ? theme.text : theme.textFaint;
+    ctx.fillText(lane.name, 27, cy + 0.5, width - 33);
   }
-  ctx.fillStyle = theme.border;
+  ctx.fillStyle = theme.lineFaint;
   ctx.fillRect(width - 1, 0, 1, vp.height);
 }
 
 /** The ruler's marker lane: below the bar numbers. */
 export const MARKER_LANE_Y = 18;
-export const MARKER_COLOR = '#d9c25b';
 
 /** Where a marker's flag was drawn (hit testing on the ruler). */
 export interface MarkerBox {
@@ -313,6 +368,14 @@ function placedMarkers(m: RulerMarkers): Marker[] {
   return list.sort((a, b) => a.tick - b.tick);
 }
 
+/** A marker's color: its own, or the theme's gold. */
+function markerColor(m: Marker, theme: TimelineTheme): string {
+  return /^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : theme.marker;
+}
+
+/** Height of a marker's pill. */
+const FLAG_H = 13;
+
 export function drawPlaylistRuler(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
@@ -324,90 +387,111 @@ export function drawPlaylistRuler(
 ): MarkerBox[] {
   const h = RULER_HEIGHT;
   const top = MARKER_LANE_Y;
-  ctx.fillStyle = theme.surface;
+  ctx.fillStyle = theme.surface2;
   ctx.fillRect(0, 0, vp.width, h);
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  // The marker lane sits a touch deeper.
+  ctx.fillStyle = theme.sheen;
   ctx.fillRect(0, top, vp.width, h - top);
+  ctx.fillStyle = theme.lineFaint;
+  ctx.fillRect(0, top, vp.width, 1);
   if (loop) {
+    // The loop: a soft gold band with rounded ends behind the bar numbers.
     const x0 = vp.tickToX(loop.start);
     const x1 = vp.tickToX(loop.end);
+    ctx.beginPath();
+    roundRectPath(ctx, x0 + 0.5, 2.5, Math.max(1, x1 - x0 - 1), top - 5, (top - 5) / 2);
     ctx.fillStyle = theme.accentSoft;
-    ctx.fillRect(x0, 0, x1 - x0, top);
-    ctx.fillStyle = theme.accent;
-    ctx.fillRect(x0, 0, 1, h);
-    ctx.fillRect(x1 - 1, 0, 1, h);
+    ctx.fill();
+    ctx.strokeStyle = alpha(theme.accent, 0.55);
+    ctx.stroke();
   }
   const bar = ticksPerBar(ts);
+  const beat = ticksPerBeat(ts);
   const [t0, t1] = vp.visibleTicks();
   const barPx = bar * vp.pxPerTick;
   const labelEvery = barPx >= 36 ? 1 : barPx >= 18 ? 2 : barPx >= 9 ? 4 : 8;
-  ctx.font = `10px ${theme.font}`;
+  // Hairline ticks: beats short, bars longer, numbered bars longest.
+  if (beat * vp.pxPerTick >= 10) {
+    ctx.fillStyle = theme.lineFaint;
+    for (let t = Math.floor(t0 / beat) * beat; t <= t1; t += beat)
+      if (t % bar !== 0) ctx.fillRect(Math.round(vp.tickToX(t)), top - 3, 1, 3);
+  }
+  ctx.font = `500 10px ${theme.font}`;
   ctx.textBaseline = 'top';
+  const tick = alpha(theme.textFaint, 0.6);
   for (let b = Math.floor(t0 / bar); b * bar <= t1; b++) {
     const x = Math.round(vp.tickToX(b * bar));
-    ctx.fillStyle = theme.textDim;
-    ctx.fillRect(x, top - (b % labelEvery === 0 ? 8 : 4), 1, b % labelEvery === 0 ? 8 : 4);
-    if (b % labelEvery === 0) {
-      ctx.fillStyle = theme.text;
+    const labelled = b % labelEvery === 0;
+    ctx.fillStyle = labelled ? tick : theme.lineFaint;
+    ctx.fillRect(x, top - (labelled ? 7 : 4), 1, labelled ? 7 : 4);
+    if (labelled) {
+      ctx.fillStyle = theme.textFaint;
       ctx.fillText(String(b + 1), x + 3, 3);
     }
   }
   if (songEnd > 0) {
     const x = vp.tickToX(songEnd);
     if (x >= 0 && x <= vp.width) {
-      ctx.fillStyle = theme.textDim;
+      ctx.fillStyle = alpha(theme.textFaint, 0.7);
       ctx.fillRect(Math.round(x), 0, 1, h);
     }
   }
-  // Markers: a flag on the lane with the name (and a ✦ when there is room), up to the next marker.
+  // Markers: a small pill on the lane with the name (and a ✦ when there is room).
   const boxes: MarkerBox[] = [];
   const placed = placedMarkers(markers);
-  const colorOf = (m: Marker) => (/^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : MARKER_COLOR);
-  // Each section (marker to the next one, the last to the song's end) as a faint band in the lane.
+  // Each section (marker to the next one, the last to the song's end) as a very faint band in the lane.
   for (let i = 0; i < placed.length; i++) {
     const m = placed[i] as Marker;
     const next = placed[i + 1];
     const x0 = Math.max(0, vp.tickToX(m.tick));
     const x1 = Math.min(vp.width, vp.tickToX(next ? next.tick : Math.max(songEnd, m.tick + bar)));
     if (x1 <= x0) continue;
-    ctx.globalAlpha = 0.13;
-    ctx.fillStyle = colorOf(m);
-    ctx.fillRect(x0, top + 1, x1 - x0, h - top - 3);
-    ctx.globalAlpha = 1;
+    ctx.fillStyle = alpha(markerColor(m, theme), 0.07);
+    ctx.fillRect(x0, top + 1, x1 - x0, h - top - 2);
   }
   ctx.font = `600 10px ${theme.font}`;
   ctx.textBaseline = 'middle';
+  const fy = top + (h - top - FLAG_H) / 2;
+  const cy = fy + FLAG_H / 2;
   for (let i = 0; i < placed.length; i++) {
     const m = placed[i] as Marker;
     const x = Math.round(vp.tickToX(m.tick));
     const next = placed[i + 1];
     const limit = next ? vp.tickToX(next.tick) - 2 : vp.width;
     const textW = ctx.measureText(m.name).width;
-    const ask = limit - x >= textW + 10 + MARKER_ASK_WIDTH;
-    const x1 = Math.max(x + 6, Math.min(limit, x + textW + 10 + (ask ? MARKER_ASK_WIDTH : 0)));
+    const ask = limit - x >= textW + 12 + MARKER_ASK_WIDTH;
+    const x1 = Math.max(x + 8, Math.min(limit, x + textW + 12 + (ask ? MARKER_ASK_WIDTH : 0)));
     boxes.push({ id: m.id, tick: m.tick, x0: x - 3, x1, ...(ask ? { ask: { x0: x1 - MARKER_ASK_WIDTH, x1 } } : {}) });
     if (x1 < 0 || x - 3 > vp.width) continue;
-    const color = colorOf(m);
+    const color = markerColor(m, theme);
     const hot = markers.hot === m.id || markers.drag?.id === m.id;
-    ctx.fillStyle = shade(color, hot ? 0.25 : -0.15);
-    ctx.fillRect(x, top + 1, Math.max(2, x1 - x), h - top - 3);
+    const fill = hot ? mix(color, theme.text, 0.82) : color;
+    const ink = inkOn(fill, theme);
+    // The flag's pole: a hairline from the pill to the lane's bottom edge.
     ctx.fillStyle = color;
-    ctx.fillRect(x, top, 2, h - top);
+    ctx.fillRect(x, top, 1, h - top);
+    ctx.beginPath();
+    roundRectPath(ctx, x, fy, Math.max(4, x1 - x), FLAG_H, FLAG_H / 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
     if (x1 - x > 14) {
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
-      ctx.fillText(m.name, x + 5, top + (h - top) / 2, x1 - x - 7 - (ask ? MARKER_ASK_WIDTH : 0));
+      ctx.fillStyle = ink;
+      ctx.fillText(m.name, x + 6, cy + 0.5, x1 - x - 9 - (ask ? MARKER_ASK_WIDTH : 0));
     }
     if (ask) {
       const ax = x1 - MARKER_ASK_WIDTH;
-      if (markers.hot === m.id && markers.hotAsk) {
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
-        ctx.fillRect(ax, top + 2, MARKER_ASK_WIDTH - 1, h - top - 5);
+      const askHot = markers.hot === m.id && markers.hotAsk;
+      if (askHot) {
+        ctx.beginPath();
+        ctx.arc(ax + 6.5, cy, 5.5, 0, Math.PI * 2);
+        ctx.fillStyle = alpha(ink, 0.16);
+        ctx.fill();
       }
-      ctx.fillStyle = markers.hot === m.id && markers.hotAsk ? '#ffffff' : 'rgba(0,0,0,0.8)';
-      ctx.fillText('✦', ax + 3, top + (h - top) / 2 + 0.5);
+      ctx.fillStyle = askHot ? ink : alpha(ink, hot ? 0.75 : 0.42);
+      ctx.fillText('✦', ax + 2.5, cy + 0.5);
     }
   }
-  ctx.fillStyle = theme.border;
+  ctx.fillStyle = theme.lineFaint;
   ctx.fillRect(0, h - 1, vp.width, 1);
   return boxes;
 }
@@ -419,15 +503,17 @@ export function markerAtX(boxes: readonly MarkerBox[], x: number): MarkerBox | n
   return hit;
 }
 
-/** Faint lines down the lanes where markers are. */
-export function drawMarkerLines(ctx: CanvasRenderingContext2D, vp: Viewport, markers: RulerMarkers): void {
+/** Hairlines down the lanes where markers are. */
+export function drawMarkerLines(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  markers: RulerMarkers,
+  theme: TimelineTheme,
+): void {
   for (const m of placedMarkers(markers)) {
     const x = Math.round(vp.tickToX(m.tick));
     if (x < 0 || x > vp.width) continue;
-    const color = /^#[0-9a-f]{6}$/i.test(m.color ?? '') ? (m.color as string) : MARKER_COLOR;
-    ctx.globalAlpha = 0.35;
-    ctx.fillStyle = color;
+    ctx.fillStyle = alpha(markerColor(m, theme), 0.3);
     ctx.fillRect(x, 0, 1, vp.height);
-    ctx.globalAlpha = 1;
   }
 }

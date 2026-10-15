@@ -49,7 +49,8 @@ import {
   type AutoHit,
 } from './automation';
 import { clipBox, type ClipBox } from './clip-geometry';
-import { fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
+import { alpha, fitCanvas, inkOn, mix, onThemeChange, readTheme, roundRectPath } from '../../timeline/canvas';
+import { clipPaint } from './clip-paint';
 import { clamp, Viewport } from '../../timeline/viewport';
 import {
   CLIP_MENU_MIN_WIDTH,
@@ -64,6 +65,8 @@ import {
   markerAtX,
   RULER_HEIGHT,
   type MarkerBox,
+  CLIP_RADIUS,
+  clipColorOf,
 } from './render';
 import { markerRename } from './markers';
 import { askPillPlace, pillText, PILL_HEIGHT, type PillTarget } from './ask-pill';
@@ -365,7 +368,7 @@ export class PlaylistController {
       if (this.dirty.has('grid')) {
         const g = fitCanvas(els.grid, vp.width, vp.height);
         drawLanesGrid(g, vp, theme, ts, vp.rows, songLength(p));
-        drawMarkerLines(g, vp, markers);
+        drawMarkerLines(g, vp, markers, theme);
       }
       if (this.dirty.has('clips')) {
         const ctx = fitCanvas(els.clips, vp.width, vp.height);
@@ -442,17 +445,24 @@ export class PlaylistController {
     const y = vp.rowToY(live.lane) + 1;
     const h = vp.rowHeight - 2;
     if (x1 < 0 || x0 > vp.width || y > vp.height || y + h < 0) return;
-    ctx.fillStyle = 'rgba(229, 87, 77, 0.28)';
-    ctx.fillRect(x0, y, x1 - x0, h);
-    ctx.fillStyle = 'rgba(229, 87, 77, 0.85)';
+    ctx.beginPath();
+    roundRectPath(ctx, x0, y, x1 - x0, h, CLIP_RADIUS);
+    ctx.fillStyle = alpha(theme.danger, 0.24);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = alpha(theme.danger, 0.8);
     ctx.fillRect(x0, y, x1 - x0, Math.min(13, h));
+    ctx.restore();
     ctx.strokeStyle = theme.danger;
-    ctx.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, h - 1);
+    ctx.beginPath();
+    roundRectPath(ctx, x0 + 0.5, y + 0.5, x1 - x0 - 1, h - 1, CLIP_RADIUS);
+    ctx.stroke();
     const tempo = tempoMapOf(p, 'song');
     const seconds = Math.max(0, tempo.tickToSeconds(live.now) - tempo.tickToSeconds(live.start));
     ctx.font = `600 10px ${theme.font}`;
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = inkOn(theme.danger, theme);
     ctx.fillText(`● Recording… ${seconds.toFixed(1)} s`, x0 + 4, y + 7, Math.max(0, x1 - x0 - 8));
     const c = live.capture;
     const bodyY = y + 14;
@@ -460,7 +470,7 @@ export class PlaylistController {
     if (bodyH < 4 || c.buckets === 0) return;
     const mid = bodyY + bodyH / 2;
     const startSec = tempo.tickToSeconds(live.start);
-    ctx.fillStyle = 'rgba(255, 220, 215, 0.85)';
+    ctx.fillStyle = mix(theme.danger, theme.text, 0.35);
     for (let px = Math.max(0, Math.floor(x0)); px < Math.min(vp.width, x1); px++) {
       const a = live.startFrame + (tempo.tickToSeconds(vp.xToTick(px)) - startSec) * c.sampleRate;
       const b = live.startFrame + (tempo.tickToSeconds(vp.xToTick(px + 1)) - startSec) * c.sampleRate;
@@ -477,6 +487,19 @@ export class PlaylistController {
     }
   }
 
+  /** The clip under the pointer lifts a little: a brighter edge around it. */
+  private drawHoverEdge(ctx: CanvasRenderingContext2D, clip: Clip): void {
+    const p = this.project();
+    const box = this.boxOf(clip, p);
+    if (!box || this.s.editor.getState().clipSelection.includes(clip.id)) return;
+    const theme = readTheme();
+    const base = clipColorOf(p, clip, theme);
+    ctx.strokeStyle = clipPaint(base, theme).hoverEdge;
+    ctx.beginPath();
+    roundRectPath(ctx, box.x + 0.5, box.y + 0.5, box.w - 1, box.h - 1, CLIP_RADIUS - 0.5);
+    ctx.stroke();
+  }
+
   private drawOverlay(): void {
     const { vp, els } = this;
     const ctx = fitCanvas(els.overlay, vp.width, vp.height);
@@ -484,6 +507,7 @@ export class PlaylistController {
     const live = this.s.audioRecorder.live.getState().take;
     if (live) this.drawLiveTake(ctx, live);
     const d = this.drag;
+    if (!d && this.hover) this.drawHoverEdge(ctx, this.hover.clip);
     if (d?.kind === 'marquee') {
       const theme = readTheme();
       const x = Math.min(d.x0, d.x1);

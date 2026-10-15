@@ -5,7 +5,8 @@
  */
 import { curveAt, segmentValue } from '@core/automation/curve';
 import type { AutomationChannel, AutomationClip, AutoPoint, Tick } from '@core/model/types';
-import { shade, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import type { ClipPaint } from './clip-paint';
 import type { Viewport } from '../../timeline/viewport';
 import type { ClipBox } from './clip-geometry';
 
@@ -118,7 +119,7 @@ export function drawAutomationBody(
   clip: AutomationClip,
   ch: AutomationChannel,
   box: ClipBox,
-  color: string,
+  paint: ClipPaint,
   d: AutoDraw,
 ): void {
   if (box.bodyH <= 3) return;
@@ -130,34 +131,32 @@ export function drawAutomationBody(
   const from = Math.max(Math.floor(box.x), 0);
   const to = Math.min(Math.ceil(box.x + box.w), vp.width);
   if (pts.length > 0 && to > from) {
+    // One pass for the curve; the same path closed underneath is the soft fill.
     const bottom = box.bodyY + box.bodyH;
+    const ys = new Float32Array(to - from + 1);
+    for (let px = from; px <= to; px++) ys[px - from] = valueToY(curveAt(pts, tickToContent(clip, vp.xToTick(px))) ?? 0, box);
     ctx.beginPath();
     ctx.moveTo(from, bottom);
-    for (let px = from; px <= to; px++) {
-      const v = curveAt(pts, tickToContent(clip, vp.xToTick(px))) ?? 0;
-      ctx.lineTo(px, valueToY(v, box));
-    }
+    for (let px = from; px <= to; px++) ctx.lineTo(px, ys[px - from] as number);
     ctx.lineTo(to, bottom);
     ctx.closePath();
-    ctx.fillStyle = shade(color, 0.15);
-    ctx.globalAlpha *= 0.35;
+    ctx.fillStyle = paint.contentFill;
     ctx.fill();
-    ctx.globalAlpha /= 0.35;
     ctx.beginPath();
     for (let px = from; px <= to; px++) {
-      const v = curveAt(pts, tickToContent(clip, vp.xToTick(px))) ?? 0;
-      if (px === from) ctx.moveTo(px, valueToY(v, box));
-      else ctx.lineTo(px, valueToY(v, box));
+      if (px === from) ctx.moveTo(px, ys[0] as number);
+      else ctx.lineTo(px, ys[px - from] as number);
     }
-    ctx.strokeStyle = shade(color, 0.65);
+    ctx.strokeStyle = paint.content;
     ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
     ctx.stroke();
     ctx.lineWidth = 1;
   }
   if (d.showPoints && box.bodyH >= MIN_EDIT_HEIGHT) {
     // Dense curves (an LFO zoomed out) show smaller points, or only the one under the pointer.
     const spacing = spacingOf(clip, pts, box);
-    const r = spacing < 10 ? 2 : 3;
+    const r = spacing < 10 ? 1.75 : 2.5;
     const handles = spacing >= 14;
     for (let i = 0; i + 1 < pts.length; i++) {
       const hot = d.hot?.part === 'handle' && d.hot.index === i;
@@ -166,7 +165,7 @@ export function drawAutomationBody(
       if (!h || h.tick < clip.offset || h.tick > clip.offset + clip.length) continue;
       ctx.beginPath();
       ctx.arc(vp.tickToX(contentToTick(clip, h.tick)), valueToY(h.value, box), hot ? 3.5 : 2.5, 0, Math.PI * 2);
-      ctx.strokeStyle = hot ? '#ffffff' : 'rgba(255,255,255,0.7)';
+      ctx.strokeStyle = hot ? paint.ink : alpha(paint.ink, 0.6);
       ctx.stroke();
     }
     pts.forEach((p, i) => {
@@ -174,17 +173,21 @@ export function drawAutomationBody(
       const hot = d.hot?.part === 'point' && d.hot.index === i;
       if (spacing < 4 && !hot) return;
       ctx.beginPath();
-      ctx.arc(vp.tickToX(contentToTick(clip, p.tick)), valueToY(p.value, box), hot ? 4.5 : r, 0, Math.PI * 2);
-      ctx.fillStyle = hot ? '#ffffff' : shade(color, 0.75);
+      ctx.arc(vp.tickToX(contentToTick(clip, p.tick)), valueToY(p.value, box), hot ? 4 : r, 0, Math.PI * 2);
+      ctx.fillStyle = paint.ink;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-      ctx.stroke();
+      if (hot) {
+        ctx.strokeStyle = theme.select;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
     });
   }
   if (d.note && box.w > 90 && box.bodyH >= 12) {
     ctx.font = `10px ${theme.font}`;
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = d.noteIsWarning ? theme.danger : 'rgba(255,255,255,0.75)';
+    ctx.fillStyle = d.noteIsWarning ? theme.danger : paint.inkSoft;
     const tx = Math.max(box.x, 0) + 6;
     ctx.fillText(d.note, tx, box.bodyY + box.bodyH / 2, Math.max(10, Math.min(box.x + box.w, vp.width) - tx - 4));
   }
@@ -206,12 +209,12 @@ export function drawReadout(
   const h = 18;
   const left = Math.min(Math.max(2, x + 10), bounds.width - w - 2);
   const top = Math.min(Math.max(2, y - h - 6), bounds.height - h - 2);
-  ctx.fillStyle = 'rgba(16, 20, 23, 0.92)';
-  ctx.strokeStyle = theme.accent;
+  ctx.fillStyle = theme.glass;
+  ctx.strokeStyle = theme.accentDim;
   ctx.beginPath();
-  ctx.roundRect(left, top, w, h, 4);
+  ctx.roundRect(left + 0.5, top + 0.5, w, h, 6);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = theme.text;
   ctx.fillText(text, left + 5, top + h / 2 + 0.5);
 }

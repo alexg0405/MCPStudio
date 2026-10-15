@@ -27,6 +27,7 @@ export interface TimelineTheme {
   textFaint: string;
   accent: string;
   accentLight: string;
+  accentDim: string;
   accentGlow: string;
   surface: string;
   border: string;
@@ -195,6 +196,7 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     textFaint: v('--ag-text-faint', '#6a747c'),
     accent: v('--ag-accent', '#ff9a3c'),
     accentLight: v('--ag-accent-light', '#ffc58f'),
+    accentDim: v('--ag-accent-dim', '#b8702c'),
     accentGlow: v('--ag-accent-glow', 'rgba(255,154,60,0.45)'),
     surface: v('--ag-surface-1', '#2a3238'),
     border: v('--ag-border', '#12161a'),

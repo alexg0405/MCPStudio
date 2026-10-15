@@ -18,6 +18,7 @@ import { songSections } from '@core/query/sections';
 import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
 import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
+import { arrangementLines, derivedLabel } from '../arrange/summary';
 import { channelSound, noteName } from '../assistant/context';
 import { recentFiles } from '../persistence/recent-files';
 import { aiCommands } from './commands';
@@ -151,8 +152,9 @@ export function patternLines(p: Project): string[] {
       .map((c) => `${p.channels[c]?.name ?? c} (${Object.keys(pat.notes[c] ?? {}).length})`);
     const at = spans.get(pid);
     const plays = at?.length ? `plays at ${at.map((s) => barSpan(s.from, s.to, ts)).join(', ')}` : 'not in the song';
+    const variant = derivedLabel(p, pat);
     lines.push(
-      `- "${pat.name}" ${pat.id}, ${r2(bars)} bar${bars === 1 ? '' : 's'}: ${used.length ? used.join(', ') : 'empty'}; ${plays}`,
+      `- "${pat.name}" ${pat.id}, ${r2(bars)} bar${bars === 1 ? '' : 's'}${variant ? ` (${variant})` : ''}: ${used.length ? used.join(', ') : 'empty'}; ${plays}`,
     );
   }
   return lines;
@@ -322,6 +324,8 @@ export function projectContext(s: Services): string {
   }
 
   lines.push('', ...playlistLines(p));
+  const arrangement = arrangementLines(p);
+  if (arrangement.length) lines.push(...arrangement);
   const check = songCheckLines(p);
   if (check.length) lines.push('', 'Song check (problems in the arrangement right now):', ...check);
 

@@ -53,6 +53,8 @@ export function removePattern(d: Draft<Project>, id: PatternId): void {
   for (const [cid, clip] of Object.entries(d.playlist.clips)) {
     if (clip.kind === 'pattern' && clip.patternId === id) delete d.playlist.clips[cid as ClipId];
   }
+  // Its variants keep their notes and become ordinary patterns.
+  for (const pat of Object.values(d.patterns)) if (pat.derived?.from === id) delete pat.derived;
 }
 
 export function setPatternProps(d: Draft<Project>, id: PatternId, patch: { name?: string; color?: string }): void {

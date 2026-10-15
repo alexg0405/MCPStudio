@@ -24,9 +24,11 @@ import {
   AUTO_SHAPES,
   MASTER,
   SCHEMA_VERSION,
+  VARIANT_KINDS,
   type AudioStretch,
   type InsertId,
   type Project,
+  type VariantKind,
 } from '../model/types';
 
 /** A project as parsed from JSON, before it is known to match the current types. */
@@ -671,6 +673,7 @@ function repairPatterns(p: Obj, log: RepairLog): void {
     }
   }
   log.flush();
+  repairDerivations(patterns, log);
   p.patternOrder = repairOrder(p.patternOrder as unknown[], patterns, known, 'pattern list', PATTERN, log);
   if ((p.patternOrder as string[]).length === 0) {
     const pattern = makePattern('Pattern 1', paletteColor(0));
@@ -678,6 +681,55 @@ function repairPatterns(p: Obj, log: RepairLog): void {
     p.patternOrder = [pattern.id];
     log.add('Added an empty pattern because the project had none.');
   }
+}
+
+const isVariantStep = (v: unknown): boolean =>
+  isObject(v) &&
+  VARIANT_KINDS.includes(v.kind as VariantKind) &&
+  isFiniteNumber(v.from) &&
+  isFiniteNumber(v.to) &&
+  (v.from as number) >= 0 &&
+  (v.to as number) > (v.from as number) &&
+  (v.parts === undefined || (Array.isArray(v.parts) && v.parts.every(isString)));
+
+/**
+ * Variants (`Pattern.derived`) must point at another pattern that exists, without a loop, and hold
+ * well-formed steps; otherwise they become ordinary patterns (their notes stay).
+ */
+function repairDerivations(patterns: Obj, log: RepairLog): void {
+  for (const raw of Object.values(patterns)) {
+    const pat = raw as Obj;
+    if (!has(pat, 'derived') || pat.derived === undefined) continue;
+    const d = pat.derived;
+    const ok =
+      isObject(d) &&
+      isString(d.from) &&
+      d.from !== pat.id &&
+      has(patterns, d.from) &&
+      Array.isArray(d.steps) &&
+      d.steps.every(isVariantStep) &&
+      isFiniteNumber(d.seed) &&
+      isString(d.hash);
+    if (ok) continue;
+    delete pat.derived;
+    log.count('derived', (n) => `Made ${count(n, noun('variant pattern'))} ordinary patterns (what they varied is gone or damaged).`);
+  }
+  // A loop of variants (A varies B varies A) has no source: the pattern that closes it lets go.
+  for (const raw of Object.values(patterns)) {
+    const pat = raw as Obj;
+    const seen = new Set<string>([pat.id as string]);
+    let next = isObject(pat.derived) ? (pat.derived.from as string) : undefined;
+    while (next && !seen.has(next)) {
+      seen.add(next);
+      const up = patterns[next] as Obj | undefined;
+      next = up && isObject(up.derived) ? (up.derived.from as string) : undefined;
+    }
+    if (next && next === pat.id) {
+      delete pat.derived;
+      log.count('derived', (n) => `Made ${count(n, noun('variant pattern'))} ordinary patterns (what they varied is gone or damaged).`);
+    }
+  }
+  log.flush();
 }
 
 function repairPlaylist(p: Obj, log: RepairLog): void {

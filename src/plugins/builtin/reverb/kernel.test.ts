@@ -355,15 +355,20 @@ describe('ReverbKernel (algorithmic engine)', () => {
         for (let f = 0; f < seconds * SR; f += 128) k.process(input, output, 128, p);
       };
       run(2); // warm up the JIT
-      // 10 s of audio as five 2 s runs, each timed at its best of two: the machine's own hiccups
-      // (another test, a browser closing) only ever add time.
+      // 10 s of audio, timed by the CPU time this process spends (not the wall clock: the whole
+      // suite runs in parallel and a busy machine would only add time spent waiting for a core).
+      // Five 2 s runs, each at its best of two, so a hiccup (GC, another thread) can't fail it.
+      const cpuMs = () => {
+        const u = process.cpuUsage();
+        return (u.user + u.system) / 1000;
+      };
       let total = 0;
       for (let j = 0; j < 5; j++) {
         let best = Infinity;
         for (let t = 0; t < 2; t++) {
-          const t0 = performance.now();
+          const t0 = cpuMs();
           run(2);
-          best = Math.min(best, performance.now() - t0);
+          best = Math.min(best, cpuMs() - t0);
         }
         total += best;
       }

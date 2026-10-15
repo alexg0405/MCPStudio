@@ -170,7 +170,7 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
   default, so they turn algorithmic; no version bump: missing params resolve to their default). Switching crossfades
   the two over 50 ms; the one faded out stops getting input (the convolution chain is torn down, the kernel sleeps).
   Tail for exports: preDelay + 0.1 + 1.3 · Decay. Measured in Chrome: ten 7 s reverbs made the realtime audio clock
-  run at about 0.5× (convolution) and 1.00× (algorithmic); ten reverbs alone render offline about 15× real time.
+  run at 0.4–0.6× (convolution, on a busy machine) and 1.00× (algorithmic); ten alone render offline at 20–30×.
   - Algorithmic (`kernel.ts`, `reverb.worklet.ts`, mix inside the kernel): pre-delay (linear interpolation, a-rate) →
     the input's high shelf → 4 Schroeder allpasses a side → an 8-line FDN (lines 29–94 ms × (0.45 + 0.55 · size),
     fast Walsh–Hadamard mixing, left into the even lines and right into the odd ones, negated in lines 4–7). Per line:

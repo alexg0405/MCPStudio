@@ -24,6 +24,7 @@ function optionsOf(a: Record<string, unknown>, base: DjMixOptions): DjMixOptions
   };
   const target = len !== undefined ? (len > 0 ? Math.min(600, len) : undefined) : base.lengthTargetMin;
   if (target) o.lengthTargetMin = target;
+  if (typeof a.key_lock === 'boolean' ? a.key_lock : base.keyLock) o.keyLock = true;
   return o;
 }
 
@@ -87,6 +88,7 @@ export const dj: OpModule = {
         transition: { type: 'string', enum: [...STYLE], description: 'auto (default, per pair), smooth (32 bars), quick (8 bars), cut.' },
         mix_tempo: { anyOf: [{ type: 'number' }, { type: 'string', enum: ['follow'] }], description: '"follow" (default: each song at its own tempo, gliding in the transitions) or one BPM for the whole mix.' },
         length_min: S.num('Aim for about this many minutes (songs mix out earlier); 0 = every song plays through.'),
+        key_lock: S.bool('Songs keep their pitch while the tempo glides (time-stretch). Off (default): turntable style, sample-exact beats, the pitch bends a little in transitions.'),
       },
     ),
     S.op(

@@ -96,6 +96,7 @@ const toPlanOptions = (o: DjMixOptions, tweaks: Record<string, TransitionTweak>)
   transition: o.transition,
   mixTempo: o.mixTempo,
   ...(o.lengthTargetMin ? { lengthTargetMin: o.lengthTargetMin } : {}),
+  ...(o.keyLock ? { keyLock: true } : {}),
   tweaks,
 });
 
@@ -240,10 +241,10 @@ export function writeMixInDraft(
   const laneOf: Record<Deck, ReturnType<typeof laneNamed>> = { A: laneNamed(d, DECK_NAMES.A), B: laneNamed(d, DECK_NAMES.B) };
 
   // Tempo.
-  if (plan.fixedTempo !== null || plan.tempo.length === 1) d.transport.bpm = plan.fixedTempo ?? plan.tempo[0]!.bpm;
+  if (plan.fixedTempo !== null || plan.tempoCurve.length === 1) d.transport.bpm = plan.fixedTempo ?? plan.tempoCurve[0]!.bpm;
   else {
-    d.transport.bpm = plan.tempo[0]!.bpm;
-    const bpms = plan.tempo.map((t) => t.bpm);
+    d.transport.bpm = plan.tempoCurve[0]!.bpm;
+    const bpms = plan.tempoCurve.map((t) => t.bpm);
     const range = { min: Math.floor(Math.min(...bpms)) - 1, max: Math.ceil(Math.max(...bpms)) + 1 };
     const res = resolveTarget(p, { kind: 'tempo' }, specsOf, range)!;
     const ch: AutomationChannel = {
@@ -254,7 +255,8 @@ export function writeMixInDraft(
       muted: false,
       solo: false,
       target: { kind: 'tempo' },
-      points: plan.tempo.map((t) => ({ tick: t.tick, value: res.toNormalized(t.bpm), shape: 'hold' })),
+      // Holds, and straight glides through the transitions.
+      points: plan.tempoCurve.map((t) => ({ tick: t.tick, value: res.toNormalized(t.bpm), ...(t.ramp ? {} : { shape: 'hold' as const }) })),
       range,
     };
     d.channels[ch.id] = ch as Draft<AutomationChannel>;
@@ -293,7 +295,7 @@ export function writeMixInDraft(
       pan: 0,
       output: deck.insertId,
       sampleId,
-      ...(song.beatMatched ? { stretch: 'stretch' as const, sourceBpm: song.bpm } : {}),
+      ...(song.follow !== 'off' ? { stretch: song.follow, sourceBpm: song.bpm } : {}),
     };
     d.channels[ch.id] = ch as Draft<AudioClipChannel>;
     d.channelOrder.push(ch.id);
@@ -561,7 +563,7 @@ export function djLines(p: Project): string[] {
   const lines = [
     `DJ mix (${dj.songs.length} songs; order ${dj.options.order}, energy ${dj.options.energy}, transitions ${dj.options.transition}, tempo ${
       dj.options.mixTempo === 'follow' ? 'follows each song' : `${dj.options.mixTempo} BPM`
-    }):`,
+    }${dj.options.keyLock ? ', key lock' : ''}):`,
   ];
   dj.songs.forEach((x, i) => {
     const tweak = dj.tweaks[x.sampleId];

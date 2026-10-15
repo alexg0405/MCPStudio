@@ -317,6 +317,25 @@ export function DjWindow() {
           </div>
         </div>
         <div className={styles.field}>
+          <span className={styles.label}>Key lock</span>
+          <div className={styles.seg}>
+            <button
+              className={options.keyLock || options.mixTempo !== 'follow' ? styles.segOn : styles.segItem}
+              disabled={options.mixTempo !== 'follow'}
+              onClick={() => set({ keyLock: !options.keyLock })}
+              data-hint={
+                options.mixTempo !== 'follow'
+                  ? 'Key lock is always on at a fixed mix tempo'
+                  : options.keyLock
+                    ? 'Key lock on: songs keep their pitch when the tempo glides (time-stretched; beats can wobble a few ms). Click for turntable style'
+                    : 'Key lock off (turntable style): beats stay sample-exact and the pitch bends slightly with the tempo during transitions. Click to keep the pitch instead'
+              }
+            >
+              {options.keyLock || options.mixTempo !== 'follow' ? 'On' : 'Off'}
+            </button>
+          </div>
+        </div>
+        <div className={styles.field}>
           <span className={styles.label}>Length</span>
           <input
             className={styles.input}

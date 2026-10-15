@@ -82,6 +82,8 @@ export interface DjMixOptions {
   /** 'follow' (each song at its own tempo) or one BPM for the whole mix. */
   mixTempo: 'follow' | number;
   lengthTargetMin?: number;
+  /** Songs keep their pitch when the tempo moves them (time-stretch) instead of bending it like a turntable. */
+  keyLock?: boolean;
 }
 
 export interface DjTransitionTweak {

@@ -960,6 +960,7 @@ function repairDj(p: Obj, log: RepairLog): void {
     fixed = true;
   }
   fixed = optionalField(o, 'lengthTargetMin', (v) => isFiniteNumber(v) && v > 0) || fixed;
+  fixed = optionalField(o, 'keyLock', isBoolean) || fixed;
   if (!isObject(dj.tweaks)) {
     dj.tweaks = {};
     fixed = true;

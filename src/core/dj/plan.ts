@@ -11,10 +11,13 @@
  *   same downbeat as the incoming song's mix-in (its intro), and they overlap for 16 or 32 bars (8 for
  *   quick, 0 for a cut). At most two songs ever play at once.
  * - **Tempo** (`follow`, the default): each song plays at its own tempo; during a transition the tempo
- *   moves from one to the other in steps of at most 1 % on bar lines, so neither song strays further
- *   than the gap between them (at most `TEMPO_LIMIT`). The clips are split where the tempo changes,
- *   so each piece is stretched at one constant tempo (its pitch never bends). Songs further apart
- *   (after trying half and double time) are cut. With a fixed `mixTempo` every song plays at it.
+ *   glides from one to the other, so neither song strays further than the gap between them (at most
+ *   `TEMPO_LIMIT`; songs further apart, after trying half and double time, are cut). By default the
+ *   songs follow it like a turntable (`resample`: sample-exact beats, the pitch bends with the tempo
+ *   while they are off their own, as on a DJ's pitch fader); away from transitions they play
+ *   untouched. With `keyLock` they are time-stretched instead (pitch kept): then the tempo moves in
+ *   steps of at most 1 % on bar lines and the clips are split there, so each piece is stretched at
+ *   one constant tempo. With a fixed `mixTempo` every song is stretched to it (key lock always).
  * - **Recipes** per transition, as automation on the two deck tracks: the bass swap (the incoming
  *   song comes in with its lows cut; at the phrase midpoint its lows come back as the outgoing song's
  *   go), equal-power volume curves, a low-pass sweep out of the outgoing song for an energy drop
@@ -38,6 +41,8 @@ export const FILTER_OUT_HZ = 350;
 /** The largest tempo step inside a transition (as a share of the tempo). */
 const STEP_LIMIT = 0.01;
 const MAX_STEPS = 8;
+/** Tempo automation is evaluated once per 1/16 note. */
+const STEP = PPQ / 4;
 
 export type MixOrder = 'keep' | 'auto';
 export type MixTransitionStyle = 'auto' | 'smooth' | 'quick' | 'cut';
@@ -72,6 +77,8 @@ export interface MixOptions {
   transition: MixTransitionStyle;
   /** Aim for about this many minutes (songs mix out earlier, by whole phrases). */
   lengthTargetMin?: number;
+  /** Keep each song's pitch when its tempo changes (time-stretch) instead of turntable-style. */
+  keyLock?: boolean;
   tweaks?: Readonly<Record<string, TransitionTweak>>;
 }
 
@@ -96,6 +103,8 @@ export interface PlannedSong {
   factor: 0.5 | 1 | 2;
   /** False for songs without a steady beat: they play at their own speed and are cut in and out. */
   beatMatched: boolean;
+  /** How the song follows the mix tempo: like a turntable, time-stretched, or not at all (no beat). */
+  follow: 'resample' | 'stretch' | 'off';
   start: Tick;
   end: Tick;
   sourceIn: number;
@@ -171,8 +180,10 @@ export interface MixPlan {
   automation: DjAutomation[];
   risers: PlannedRiser[];
   markers: { tick: Tick; name: string; song: string }[];
-  /** Piecewise constant from tick 0. */
+  /** Piecewise constant from tick 0 (as the song's tempo map has it: glides in 1/16 steps). */
   tempo: TempoPoint[];
+  /** The tempo curve to write: points from tick 0; `ramp` glides linearly to the next point, else it holds. */
+  tempoCurve: (TempoPoint & { ramp: boolean })[];
   /** Set when the whole mix plays at one tempo. */
   fixedTempo: number | null;
   totalTicks: Tick;
@@ -238,7 +249,8 @@ interface Decision {
 function decide(a: Local, b: Local, opts: MixOptions, fixed: boolean): Decision {
   const move = harmonicMove(a.input.analysis.key, b.input.analysis.key);
   const change = fixed ? 0 : b.bpm / a.bpm - 1;
-  const rampable = a.matched && b.matched && (fixed || Math.abs(change) <= TEMPO_LIMIT + 1e-9);
+  // Neither song may move further than the limit from its own tempo.
+  const rampable = a.matched && b.matched && (fixed || Math.max(b.bpm / a.bpm, a.bpm / b.bpm) - 1 <= TEMPO_LIMIT + 1e-9);
   const why: string[] = [];
   let bars = opts.transition === 'smooth' ? 32 : opts.transition === 'quick' ? 8 : opts.transition === 'cut' ? 0 : opts.energy === 'chill' ? 32 : 16;
   let recipe: TransitionRecipe = 'bass-swap';
@@ -348,27 +360,57 @@ function layout(songs: Local[], decisions: Decision[], shrink: readonly number[]
 
 const ticks = (beats: number) => Math.round(beats * BEAT);
 
-/** Tempo points (beats → bpm) of a layout in follow mode. */
-function tempoPoints(l: Layout): { beat: number; bpm: number }[] {
-  const pts: { beat: number; bpm: number }[] = [{ beat: 0, bpm: r3(l.songs[0]!.bpm) }];
+/**
+ * The tempo of a layout in follow mode: the curve to write (holds and glides) and the steps the song's
+ * tempo map makes of it. Glides are evaluated once per 1/16 step at its start, as `tempoMapOf` does;
+ * with key lock the tempo moves in steps of at most 1 % on bar lines instead.
+ */
+function tempoPlan(l: Layout, keyLock: boolean): { curve: MixPlan['tempoCurve']; steps: TempoPoint[] } {
+  const curve: MixPlan['tempoCurve'] = [{ tick: 0, bpm: r3(l.songs[0]!.bpm), ramp: false }];
+  const steps: TempoPoint[] = [{ tick: 0, bpm: r3(l.songs[0]!.bpm) }];
   for (let i = 0; i < l.songs.length - 1; i++) {
     const a = l.songs[i]!.bpm;
     const b = l.songs[i + 1]!.bpm;
-    const x = l.G[i]! + l.uOut[i]!;
-    const over = l.overlap[i]!;
+    const x = ticks(l.G[i]! + l.uOut[i]!);
+    const over = l.overlap[i]! * BEAT;
     if (a !== b && over > 0) {
-      const bars = over / BAR;
-      const n = Math.max(1, Math.min(MAX_STEPS, bars, Math.ceil(Math.abs(b / a - 1) / STEP_LIMIT - 1e-9)));
-      for (let k = 0; k < n; k++) pts.push({ beat: x + BAR * Math.floor((k * bars) / n), bpm: r3(a + ((b - a) * (k + 0.5)) / n) });
+      if (keyLock) {
+        const bars = over / (BAR * BEAT);
+        const n = Math.max(1, Math.min(MAX_STEPS, bars, Math.ceil(Math.abs(b / a - 1) / STEP_LIMIT - 1e-9)));
+        for (let k = 0; k < n; k++) {
+          const at = x + BAR * BEAT * Math.floor((k * bars) / n);
+          const bpm = r3(a + ((b - a) * (k + 0.5)) / n);
+          steps.push({ tick: at, bpm });
+          curve.push({ tick: at, bpm, ramp: false });
+        }
+      } else {
+        curve.push({ tick: x, bpm: r3(a), ramp: true });
+        for (let t = 0; t < over; t += STEP) steps.push({ tick: x + t, bpm: r3(a + ((b - a) * t) / over) });
+      }
     }
-    pts.push({ beat: x + over, bpm: r3(b) });
+    curve.push({ tick: x + over, bpm: r3(b), ramp: false });
+    steps.push({ tick: x + over, bpm: r3(b) });
   }
-  // Sorted, one per beat, equal neighbours merged.
-  const out: { beat: number; bpm: number }[] = [];
-  for (const p of pts.sort((x, y) => x.beat - y.beat)) {
+  return { curve: mergeCurve(curve), steps: mergeSteps(steps) };
+}
+
+/** Sorted, one per tick (the later wins), equal neighbours merged. */
+function mergeSteps(pts: TempoPoint[]): TempoPoint[] {
+  const out: TempoPoint[] = [];
+  for (const p of pts.slice().sort((u, v) => u.tick - v.tick)) {
     const last = out[out.length - 1];
-    if (last && last.beat === p.beat) last.bpm = p.bpm;
+    if (last && last.tick === p.tick) last.bpm = p.bpm;
     else if (!last || last.bpm !== p.bpm) out.push({ ...p });
+  }
+  return out;
+}
+
+function mergeCurve(pts: MixPlan['tempoCurve']): MixPlan['tempoCurve'] {
+  const out: MixPlan['tempoCurve'] = [];
+  for (const p of pts.slice().sort((u, v) => u.tick - v.tick)) {
+    const last = out[out.length - 1];
+    if (last && last.tick === p.tick) Object.assign(last, p);
+    else if (!last || last.bpm !== p.bpm || last.ramp || p.ramp) out.push({ ...p });
   }
   return out;
 }
@@ -386,7 +428,7 @@ const median = (xs: number[]) => {
 export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOptions> = {}): MixPlan {
   const opts: MixOptions = { ...DEFAULT_MIX_OPTIONS, ...options };
   const warnings: string[] = [];
-  const empty: MixPlan = { songs: [], transitions: [], automation: [], risers: [], markers: [], tempo: [{ tick: 0, bpm: 120 }], fixedTempo: null, totalTicks: 0, durationSec: 0, warnings };
+  const empty: MixPlan = { songs: [], transitions: [], automation: [], risers: [], markers: [], tempo: [{ tick: 0, bpm: 120 }], tempoCurve: [{ tick: 0, bpm: 120, ramp: false }], fixedTempo: null, totalTicks: 0, durationSec: 0, warnings };
   if (tracks.length === 0) return empty;
 
   // 1. Order.
@@ -394,6 +436,7 @@ export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOp
   const ordered = idx.map((i) => tracks[i]!);
 
   // 2. The tempo each song's beats are counted at.
+  const keyLock = !!opts.keyLock;
   const fixed = typeof opts.mixTempo === 'number' && Number.isFinite(opts.mixTempo) ? Math.min(250, Math.max(50, opts.mixTempo)) : null;
   const songs: Local[] = [];
   for (const t of ordered) {
@@ -431,11 +474,11 @@ export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOp
   const shrink = new Array<number>(songs.length).fill(0);
   const build = () => {
     const l = layout(songs, decisions, shrink);
-    const tempo: TempoPoint[] = fixed !== null ? [{ tick: 0, bpm: fixed }] : tempoPoints(l).map((p) => ({ tick: ticks(p.beat), bpm: p.bpm }));
+    const t = fixed !== null ? { curve: [{ tick: 0, bpm: fixed, ramp: false }], steps: [{ tick: 0, bpm: fixed }] } : tempoPlan(l, keyLock);
     const n = songs.length;
     const end = l.G[n - 1]! + l.lastEnd;
     const total = ticks(end);
-    return { l, tempo, total, seconds: durationOf(tempo, total) };
+    return { l, tempo: t.steps, curve: t.curve, total, seconds: durationOf(t.steps, total) };
   };
   let cur = build();
   if (opts.lengthTargetMin && opts.lengthTargetMin > 0) {
@@ -467,7 +510,7 @@ export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOp
     if (cur.seconds > target + 60) warnings.push(`The mix is ${Math.round(cur.seconds / 60)} min: it can't get closer to ${opts.lengthTargetMin} min without cutting songs too short.`);
     if (cur.seconds < target - 120) warnings.push(`The songs make ${Math.round(cur.seconds / 60)} min of music; add songs for a ${opts.lengthTargetMin} min mix.`);
   }
-  const { l, tempo, total } = cur;
+  const { l, tempo, curve, total } = cur;
   const tempoMap = steppedTempo(tempo);
 
   // 5. Songs and their clips.
@@ -482,7 +525,9 @@ export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOp
     const start = Math.max(0, Math.ceil((l.G[i]! + entry) * BEAT - 1e-6));
     const end = ticks(l.G[i]! + exit);
     const src = (tick: Tick) => Math.max(0, s.f + (tick / BEAT - l.G[i]!) * s.beatSec);
-    const cuts = [start, ...changes.filter((c) => c > start && c < end && s.matched), end];
+    // Stretched pieces play at one tempo each: split where it changes (turntable-style needs no split).
+    const follow: PlannedSong['follow'] = !s.matched ? 'off' : keyLock || fixed !== null ? 'stretch' : 'resample';
+    const cuts = [start, ...(follow === 'stretch' ? changes.filter((c) => c > start && c < end) : []), end];
     const clips: PlannedClip[] = [];
     for (let k = 0; k < cuts.length - 1; k++) {
       const a = cuts[k]!;
@@ -499,6 +544,7 @@ export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOp
       nativeBpm: s.native,
       factor: s.factor,
       beatMatched: s.matched,
+      follow,
       start,
       end,
       sourceIn: src(start),
@@ -553,7 +599,7 @@ export function planMix(tracks: readonly MixTrackInput[], options: Partial<MixOp
     }
   }
   const markers = planned.map((s, i) => ({ tick: i === 0 ? Math.floor(s.start / (BAR * BEAT)) * BAR * BEAT : transitions[i - 1]!.start, name: s.title, song: s.id }));
-  return { songs: planned, transitions, automation, risers, markers, tempo, fixedTempo: fixed, totalTicks: total, durationSec: durationOf(tempo, total), warnings };
+  return { songs: planned, transitions, automation, risers, markers, tempo, tempoCurve: curve, fixedTempo: fixed, totalTicks: total, durationSec: durationOf(tempo, total), warnings };
 }
 
 /** Equal-power curve points over [from, to) of a window: sin for in, cos for out (8 pieces). */

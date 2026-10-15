@@ -57,7 +57,7 @@ describe('making a DJ mix', () => {
     const insertName = (id: string) => p.mixer.inserts[id as never]?.name;
     for (const song of p.dj!.songs) {
       const ch = Object.values(p.channels).find((c) => c.kind === 'audioClip' && c.sampleId === song.sampleId)!;
-      expect(ch.kind === 'audioClip' && ch.stretch).toBe('stretch');
+      expect(ch.kind === 'audioClip' && ch.stretch).toBe('resample');
       expect(insertName((ch as { output: string }).output)).toBe(DECK_NAMES[song.deck]);
       const clips = Object.values(p.playlist.clips).filter((c) => c.kind === 'audio' && c.channelId === ch.id);
       expect(clips.length).toBeGreaterThan(0);

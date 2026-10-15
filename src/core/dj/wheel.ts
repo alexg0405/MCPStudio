@@ -76,13 +76,14 @@ export const TEMPO_LIMIT = 0.06;
 export interface TempoMatch {
   /** The incoming song plays at `bpm × factor` beats: 1 normally, 0.5 or 2 for a half/double-time match. */
   factor: 0.5 | 1 | 2;
-  /** |b'/a − 1| for the effective tempo b' = b × factor. */
+  /** max(b′/a, a/b′) − 1 for the effective tempo b′ = b × factor: how far either song moves to meet the other. */
   deviation: number;
 }
 
 /** The best way to beat-match a song at `b` BPM to one at `a`: straight when it is close enough, else half or double time. */
 export function tempoMatch(a: number, b: number, limit = TEMPO_LIMIT): TempoMatch {
-  const dev = (f: number) => Math.abs((b * f) / a - 1);
+  // Symmetric: neither song may move further than the limit from its own tempo.
+  const dev = (f: number) => Math.max((b * f) / a, a / (b * f)) - 1;
   if (dev(1) <= limit) return { factor: 1, deviation: dev(1) };
   const best = ([1, 0.5, 2] as const).reduce((x, f) => (dev(f) < dev(x) ? f : x), 1 as 0.5 | 1 | 2);
   return { factor: best, deviation: dev(best) };

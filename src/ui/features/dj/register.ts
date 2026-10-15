@@ -24,6 +24,7 @@ export function mixOptionsFrom(raw: unknown, base: DjMixOptions): DjMixOptions {
     transition: pick(a.transition, ['auto', 'smooth', 'quick', 'cut'], base.transition),
     mixTempo: tempo,
     ...(len ? { lengthTargetMin: len } : {}),
+    ...((typeof a.keyLock === 'boolean' ? a.keyLock : base.keyLock) ? { keyLock: true } : {}),
   };
 }
 
@@ -66,7 +67,7 @@ export function register(services: Services): void {
     title: 'Make the DJ mix',
     category: 'DJ',
     hint: 'Mix the selected library songs (or all of them) on the playlist: ordered, beat-matched, with transitions',
-    argsHint: "optional { order: 'auto' | 'keep', energy: 'build' | 'party' | 'chill' | 'peak-time', transition: 'auto' | 'smooth' | 'quick' | 'cut', mixTempo: 'follow' | BPM, lengthMin: minutes }",
+    argsHint: "optional { order: 'auto' | 'keep', energy: 'build' | 'party' | 'chill' | 'peak-time', transition: 'auto' | 'smooth' | 'quick' | 'cut', mixTempo: 'follow' | BPM, lengthMin: minutes, keyLock: boolean }",
     enabled: () => library.getState().songs.length > 0 && library.getState().making === null,
     run: async (s, args) => {
       const options = mixOptionsFrom(args, s.doc.getState().project.dj?.options ?? DEFAULT_DJ_OPTIONS);

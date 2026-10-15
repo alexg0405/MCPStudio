@@ -64,16 +64,16 @@ function checkPlan(plan: MixPlan, inputs: readonly MixTrackInput[], opts: Partia
       if (b !== null && plan.songs.find((x) => x.id === tr.to)!.beatMatched) expect(onDownbeat(plan, tr.to, b, byId.get(tr.to)!)).toBe(true);
     }
   }
-  // Tempo: a song never plays further than the limit from its tempo (follow mode); constant inside each clip.
+  // Tempo: a song never plays further than the limit from its tempo (follow mode); a stretched piece
+  // plays at one tempo.
   const map = steppedTempo(plan.tempo);
+  const follow = opts.mixTempo === undefined || opts.mixTempo === 'follow';
   for (const s of plan.songs) {
-    for (const c of s.clips) {
-      const bpm = map.bpmAt(c.start);
-      expect(map.nextChange(c.start)).toBeGreaterThanOrEqual(c.start + c.length);
-      if (opts.mixTempo === undefined || opts.mixTempo === 'follow') {
-        if (s.beatMatched) expect(Math.abs(bpm / s.bpm - 1)).toBeLessThanOrEqual(TEMPO_LIMIT + 1e-9);
-      }
-    }
+    expect(s.follow).toBe(!s.beatMatched ? 'off' : opts.keyLock || !follow ? 'stretch' : 'resample');
+    if (s.follow === 'resample') expect(s.clips).toHaveLength(1);
+    for (const c of s.clips) if (s.follow === 'stretch') expect(map.nextChange(c.start)).toBeGreaterThanOrEqual(c.start + c.length);
+    if (follow && s.beatMatched)
+      for (let t = s.start; t < s.end; t = map.nextChange(t)) expect(Math.abs(map.bpmAt(t) / s.bpm - 1)).toBeLessThanOrEqual(TEMPO_LIMIT + 1e-9);
   }
   // The total is where the last song ends.
   expect(plan.totalTicks).toBe(Math.max(...plan.songs.map((s) => s.end)));
@@ -177,19 +177,38 @@ describe('planMix', () => {
     }
   });
 
-  it('ramps the tempo during transitions, splitting clips where it changes', () => {
+  it('glides the tempo through transitions, the songs following like turntables', () => {
     const plan = planMix(three, { order: 'keep' });
     const map = steppedTempo(plan.tempo);
     const [t1] = plan.transitions;
     expect(map.bpmAt(t1!.start - 1)).toBe(124);
+    expect(map.bpmAt(t1!.start)).toBe(124);
+    expect(map.bpmAt(t1!.start + t1!.length / 2)).toBe(125);
     expect(map.bpmAt(t1!.start + t1!.length)).toBe(126);
+    // One step per 1/16 inside the glide, as the tempo automation plays it.
+    expect(map.nextChange(t1!.start)).toBe(t1!.start + 240);
+    expect(plan.tempoCurve.slice(0, 3)).toEqual([
+      { tick: 0, bpm: 124, ramp: false },
+      { tick: t1!.start, bpm: 124, ramp: true },
+      { tick: t1!.start + t1!.length, bpm: 126, ramp: false },
+    ]);
+    for (const s of plan.songs) expect(s.follow).toBe('resample');
+    expect(plan.songs[0]!.clips[0]!.offsetSec).toBe(0);
+  });
+
+  it('with key lock, steps the tempo on bar lines and splits the stretched clips there', () => {
+    const plan = planMix(three, { order: 'keep', keyLock: true });
+    checkPlan(plan, three, { keyLock: true });
+    const map = steppedTempo(plan.tempo);
+    const [t1] = plan.transitions;
     const inside = map.bpmAt(t1!.start + t1!.length / 2);
     expect(inside).toBeGreaterThan(124);
     expect(inside).toBeLessThan(126);
+    for (const p of plan.tempo) expect(p.tick % 3840).toBe(0);
     // Solo parts play at the song's own tempo (no stretching needed).
-    expect(plan.songs[0]!.clips[0]!.offsetSec).toBe(0);
     expect(map.bpmAt(plan.songs[0]!.clips[0]!.start)).toBe(plan.songs[0]!.bpm);
     expect(plan.songs[1]!.clips.length).toBeGreaterThan(2);
+    expect(plan.songs.every((s) => s.follow === 'stretch')).toBe(true);
   });
 
   it('writes the bass swap: incoming lows cut until the midpoint, then the outgoing ones', () => {
@@ -300,6 +319,7 @@ describe('planMix', () => {
       energy: fc.constantFrom('build' as const, 'party' as const, 'chill' as const, 'peak-time' as const),
       transition: fc.constantFrom('auto' as const, 'smooth' as const, 'quick' as const, 'cut' as const),
       mixTempo: fc.constantFrom<'follow' | number>('follow', 'follow', 124),
+      keyLock: fc.boolean(),
       lengthTargetMin: fc.option(fc.integer({ min: 3, max: 40 }), { nil: undefined }),
     });
     fc.assert(

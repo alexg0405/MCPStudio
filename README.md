@@ -68,6 +68,22 @@ automation ("filter sweep over the last 4 bars", "speed up to 150 BPM by the dro
 playlist, or use the app itself ("save it", "export a WAV", "undo that", "open the mixer"). It can run every
 command in the app; file dialogs just ask you for one click.
 
+**Songs that flow.** Ask for a song and the AI writes a beat per section and lays them out with the arranger, which
+does the producer's craft for you: a change every 4 bars and a fill every 8 (fills replace the groove, they don't
+pile on top), a gap before each drop, risers, reverse crashes, impacts and downlifters, filter sweeps, crashes
+where sections start, and a real ending. Recipes cover trap, drill, boom bap, lo-fi, house, EDM, reggaeton,
+afrobeats and pop, each with its own swing, accents, drum kit and sounds. New songs get their **mix set up**:
+buses for kick, drums, 808, chords, lead and FX, the 808 ducking under the kick, reverb and delay sends, a master
+chain ending in a Limiter, and then **auto-leveling**: it renders the busiest part and sets every bus and the
+master to the style's balance and loudness. All of this is also in the Playlist menu without the AI ("Develop this
+part", "Add a fill here", "Add a transition here", "Clean up the song…").
+
+**Ask AI about a part.** Highlight bars (drag on the ruler) or select clips and click **✦ Ask AI**, or click the ✦ on a
+section's marker, or right-click a clip, a marker or selected notes. Type what should change ("smooth the transition
+into the drop", "more bounce", "add a fill at the end") or pick an idea. The AI changes only that part (plus a bar
+around it for transitions): patterns that also play elsewhere are copied for the part, so the rest of the song stays
+exactly as it was. One undo step, as always.
+
 It **listens before it mixes**: ask it to mix or master (or press **✦ Check my mix**) and it renders the mix and
 every mixer track, measures loudness (LUFS), peaks and true peak, tone per band, stereo width and clashes in the low
 end, tells you what it hears, then fixes it with those numbers in front of it (faders, EQ, sidechain, the master's

@@ -218,6 +218,12 @@ export interface AutoLevelOptions {
   entry?: number | null;
   signal?: AbortSignal;
   progress?(label: string, fraction: number): void;
+  /**
+   * Resolves when nothing is playing. Rendering competes with playback for the CPU (it gets choppy)
+   * and the new levels would jump in mid-song, so each render and the edit wait for it. Without it,
+   * leveling stops playback first.
+   */
+  whenQuiet?(): Promise<void>;
   sampleRate?: number;
 }
 
@@ -277,6 +283,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   const report = (label: string, f = 0) => opts.progress?.(label, Math.min(1, (step + f) / steps));
 
   const render = async (p: Project, limiter: boolean, label: string, truePeak: boolean) => {
+    await opts.whenQuiet?.();
     opts.signal?.throwIfAborted();
     const r = await renderOffline(p, {
       ...engineOpts,
@@ -302,7 +309,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     return m.result();
   };
 
-  s.engine.stop();
+  if (!opts.whenQuiet) s.engine.stop();
   const levels: BusLevel[] = [];
   for (const stem of stems) {
     const role = busIds.find(([, id]) => id === stem.insertId)![0];
@@ -338,6 +345,8 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     );
     if (entry === null) entry = s.history.status().cursor;
   };
+  await opts.whenQuiet?.();
+  opts.signal?.throwIfAborted();
   commit();
 
   // Listen to the result once, and correct the Limiter once when the master is off.
@@ -348,6 +357,8 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
     if (Math.abs(corrected - input) > 0.05) {
       input = corrected;
+      await opts.whenQuiet?.();
+      opts.signal?.throwIfAborted();
       commit();
       master = await render(s.doc.getState().project, true, 'The mix', true);
     }

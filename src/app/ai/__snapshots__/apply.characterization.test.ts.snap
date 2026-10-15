@@ -113,6 +113,7 @@ exports[`AI applier characterization > applies every op the same way 3`] = `
   "marker: unknown marker action "jump"",
   "beat: the beat can't be used: The beat has no usable tracks.",
   "remove channel: there is no channel "Rim"",
+  "arrangement check: nothing but effects plays over bars 9–12 (it sounds like the music stopped): play a beat or a layer there",
   "arrange: “Nowhere”: there is no pattern "nothing"",
   "transition: unknown transition "sparkle"",
   "vary: unknown variation "nope"",
@@ -208,7 +209,7 @@ exports[`AI applier characterization > applies every op the same way 4`] = `
 ]
 `;
 
-exports[`AI applier characterization > applies every op the same way 5`] = `"4be3767a"`;
+exports[`AI applier characterization > applies every op the same way 5`] = `"ba90a303"`;
 
 exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 [

@@ -564,3 +564,45 @@ describe('asking about a part of the song', () => {
     expect(texts[1]).toContain('<focus>');
   });
 });
+
+describe('while an answer finishes', () => {
+  it('waits while the musician plays, and leaves their playback alone', async () => {
+    const answering = (async (url: string) => {
+      if (url.endsWith('/status'))
+        return new Response(JSON.stringify({ subscription: { ok: true }, api: NO }), { status: 200 });
+      return new Response(
+        JSON.stringify({ session: 'sess-q', model: 'claude-opus-5-5', beat: { message: 'Done.', actions: [{ op: 'place_pattern', pattern: 'current', bar: 9 }] } }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+    const { registerAfterStep } = await import('./after-steps');
+    const order: string[] = [];
+    let release!: () => void;
+    const started = new Promise<void>((r) => (release = r));
+    const off = registerAfterStep('mode', async (_item, c) => {
+      release();
+      // The musician presses Play while it works: the heavy part waits for Stop.
+      await new Promise((r) => setTimeout(r, 5));
+      order.push(`before wait (playing: ${c.s.engine.playing})`);
+      await c.whenQuiet();
+      order.push(`after wait (playing: ${c.s.engine.playing})`);
+      return { message: 'Leveled.' };
+    });
+    try {
+      const { s, a } = setup(answering);
+      const sent = a.send('arrange it');
+      await started;
+      s.engine.play(123);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(a.store.getState().listening?.label).toMatch(/Waiting while you listen/);
+      s.engine.stop();
+      await sent;
+      expect(order).toEqual(['before wait (playing: true)', 'after wait (playing: false)']);
+      // It doesn't start playback itself afterwards: the musician already listened.
+      expect(s.engine.playing).toBe(false);
+      expect(s.fakeEngine.lastPlayFrom).toBe(123);
+    } finally {
+      off();
+    }
+  });
+});

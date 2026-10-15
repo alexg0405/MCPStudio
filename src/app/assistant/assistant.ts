@@ -719,7 +719,9 @@ export class BeatAssistant {
     )
       this.s.editor.getState().selectNotes(notes.noteIds);
     // Follow-up steps (leveling the mix…) finish before anything plays, in the answer's undo step.
-    await this.runAfterSteps(result.after, result.edited ? cursor : null);
+    const listened = await this.runAfterSteps(result.after, result.edited ? cursor : null);
+    // New instruments and effects load in the background: start playing once they can sound (or after a few seconds).
+    if (result.edited) await Promise.race([this.s.engine.ready().catch(() => {}), new Promise((r) => setTimeout(r, 4000))]);
     // Playback the answer asked for (or, with autoplay on, what it arranged or a new beat).
     for (const a of result.after) {
       if (a.kind === 'mode') this.s.view.getState().setMode(a.mode);
@@ -738,7 +740,8 @@ export class BeatAssistant {
       this.stopAudition?.();
       this.stopAudition = audition(this.s, listenTo.channelId, listenTo.phrase);
     }
-    const played = result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
+    // The musician pressed Play themselves while it finished: leave their playback alone.
+    const played = listened || result.after.some((a) => a.kind === 'play' || a.kind === 'stop');
     if (!played && this.store.getState().autoplay) {
       if (part && result.edited) {
         // The part it changed, on a loop.
@@ -756,10 +759,31 @@ export class BeatAssistant {
     return listen && !analyzed;
   }
 
-  /** Runs the answer's follow-up steps (see after-steps.ts) with progress; Stop cancels them. */
-  private async runAfterSteps(after: readonly AfterEdit[], entry: number | null): Promise<void> {
+  /**
+   * Runs the answer's follow-up steps (see after-steps.ts) with progress; Stop cancels them. Their
+   * heavy work waits while the musician plays the song (rendering next to playback makes it choppy).
+   * True when the musician started playback meanwhile.
+   */
+  private async runAfterSteps(after: readonly AfterEdit[], entry: number | null): Promise<boolean> {
     const items = after.filter((a) => afterStepFor(a.kind));
-    if (!items.length) return;
+    if (!items.length) return false;
+    let listened = this.s.engine.playing;
+    const offPlaying = this.s.engine.subscribe(() => {
+      if (this.s.engine.playing) listened = true;
+    });
+    let label = 'Finishing up';
+    let fraction = 0;
+    const whenQuiet = () =>
+      new Promise<void>((resolve) => {
+        if (!this.s.engine.playing) return resolve();
+        this.store.setState({ listening: { label: 'Waiting while you listen (stop playback to finish)', fraction } });
+        const off = this.s.engine.subscribe(() => {
+          if (this.s.engine.playing) return;
+          off();
+          this.store.setState({ listening: { label, fraction } });
+          resolve();
+        });
+      });
     const abort = new AbortController();
     this.abort = abort;
     this.store.setState({ phase: 'listening', listening: { label: 'Finishing up', fraction: 0 } });
@@ -769,7 +793,12 @@ export class BeatAssistant {
           s: this.s,
           entry,
           signal: abort.signal,
-          progress: (label, fraction) => this.store.setState({ listening: { label, fraction } }),
+          progress: (l, f) => {
+            label = l;
+            fraction = f;
+            if (!this.s.engine.playing) this.store.setState({ listening: { label, fraction } });
+          },
+          whenQuiet,
         });
         if (res)
           this.say('assistant', res.message, {
@@ -781,9 +810,11 @@ export class BeatAssistant {
       const stopped = e instanceof DOMException && e.name === 'AbortError';
       if (!stopped) this.say('assistant', `I couldn't finish: ${e instanceof Error ? e.message : String(e)}`, { error: true });
     } finally {
+      offPlaying();
       if (this.abort === abort) this.abort = null;
       this.store.setState({ phase: 'idle', listening: null });
     }
+    return listened;
   }
 
   // ---------------------------------------------------------------- listening to the mix

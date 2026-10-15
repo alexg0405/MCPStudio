@@ -25,6 +25,7 @@ export const levelMixStep: AfterStep | null = async (item, c) => {
     entry: c.entry,
     signal: c.signal,
     progress: c.progress,
+    whenQuiet: c.whenQuiet,
   });
   if (!res) return { message: 'There was nothing to level: the song has no role buses yet (set up the mix first).' };
   return { message: res.message, changes: res.changes, ...(res.warnings.length ? { warnings: res.warnings } : {}) };

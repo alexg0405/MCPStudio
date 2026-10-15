@@ -13,6 +13,8 @@ export interface AfterStepContext {
   entry: number | null;
   signal: AbortSignal;
   progress(label: string, fraction: number): void;
+  /** Resolves when nothing is playing (heavy work waits while the musician listens). */
+  whenQuiet(): Promise<void>;
 }
 
 export interface AfterStepResult {

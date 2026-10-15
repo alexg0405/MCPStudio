@@ -10,7 +10,8 @@
  * - no-riser / no-impact: a rise without a riser ending on it, or nothing hitting on it (notes);
  * - crash-spam: crashes less than 4 bars apart;
  * - curve-not-neutral: automation ending before the song does, off where its control sits;
- * - abrupt-end: a loud song that just stops (no fade, stop or quiet outro) (note).
+ * - abrupt-end: a loud song that just stops (no fade, stop or quiet outro) (note);
+ * - silent: two bars or more where nothing but effects plays (sounds like the music stopped).
  */
 import { ARRANGER_AUTOMATION } from '@core/arrange/apply';
 import { existingFx, fillLikeClips, inferSections, layeredFills, type InferredSection } from '@core/arrange/infer';
@@ -38,7 +39,8 @@ export type CheckCode =
   | 'no-impact'
   | 'crash-spam'
   | 'curve-not-neutral'
-  | 'abrupt-end';
+  | 'abrupt-end'
+  | 'silent';
 
 export interface Finding {
   code: CheckCode;
@@ -77,6 +79,25 @@ export function checkArrangement(s: Services, p: Project, opts: CheckOptions = {
   // Drum and bass notes, bar by bar.
   const notes = playedNotes(p);
   const roleOf = (cid: string, key: number) => noteRole(env.roles.get(cid as never) ?? 'other', key);
+
+  // Silence: bars where only effects (risers, impacts) or nothing play.
+  {
+    const heard = new Uint8Array(Math.ceil(end / bar));
+    const mark = (from: Tick, to: Tick) => {
+      for (let b = Math.floor(from / bar); b < Math.min(heard.length, Math.ceil(to / bar)); b++) heard[b] = 1;
+    };
+    for (const n of notes) if ((env.roles.get(n.channelId as never) ?? 'other') !== 'fx') mark(n.tick, n.tick + Math.max(1, n.length));
+    const silentLanes = mutedLanes(p.playlist);
+    for (const c of Object.values(p.playlist.clips))
+      if (c.kind === 'audio' && !c.muted && !silentLanes.has(c.laneId) && (env.roles.get(c.channelId) ?? 'other') !== 'fx') mark(c.start, c.start + c.length);
+    for (let b = 0; b < heard.length; b++) {
+      if (heard[b]) continue;
+      let e = b;
+      while (e + 1 < heard.length && !heard[e + 1]) e++;
+      if (e - b + 1 >= 2) add('silent', 'bug', b * bar, (e + 1) * bar, `nothing but effects plays over ${span(b * bar, (e + 1) * bar)} (it sounds like the music stopped): play a beat or a layer there`);
+      b = e;
+    }
+  }
   const groove = notes.filter((n) => {
     const r = roleOf(n.channelId, n.key);
     return isDrumRole(r) || isBassRole(env.roles.get(n.channelId) ?? 'other');

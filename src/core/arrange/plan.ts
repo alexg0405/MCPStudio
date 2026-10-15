@@ -11,7 +11,7 @@ import type { ChannelId, PatternId, Project, Tick, VariantKind, VariantStep } fr
 import { capabilities, type VariantEnv } from './fills';
 import { lengthOfPattern, type NoteSet } from './notes';
 import { FILL_ROTATION, phraseEvents, type PhraseEvent, type SectionCaps } from './phrases';
-import { isBassRole, isDrumRole, noteRole } from './roles';
+import { inPart, isBassRole, isDrumRole, noteRole } from './roles';
 import { layoutSections, type SectionSpan, type SectionSpec } from './sections';
 import {
   boundaryRecipe,
@@ -258,11 +258,29 @@ export function planArrangement(p: Project, req: ArrangeRequest, env: PlanEnv): 
   const home = new Map<PatternId, number>();
   for (const s of sections) for (const pid of s.play) home.set(pid, Math.max(home.get(pid) ?? 0, s.energy));
 
+  // Whether anything but effects still plays in a section with these parts left out.
+  const leftOut = (parts: readonly string[], cid: ChannelId, key: number) =>
+    parts.some((part) => part === cid || inPart(part, venv.roles.get(cid) ?? 'other', key));
+  const sounds = (s: SectionSpan, parts: readonly string[]) =>
+    s.play.some((pid) =>
+      Object.entries(p.patterns[pid]?.notes ?? {}).some(
+        ([cid, ns]) => venv.roles.get(cid as ChannelId) !== 'fx' && Object.values(ns).some((n) => !leftOut(parts, cid as ChannelId, n.key)),
+      ),
+    );
+  // Leaving out every part that plays would make the section silent (the music seems to stop): keep the
+  // hats and percussion then, or failing that leave nothing out.
+  const withoutOf = (s: SectionSpan): string[] => {
+    const asked = cleanWithout(s.without);
+    if (!asked.length || sounds(s, asked)) return asked;
+    const lighter = [...asked.filter((x) => !['drums', 'hats', 'perc', 'toms', 'open-hat'].includes(x)), 'kick', 'snare', 'crash'];
+    return sounds(s, lighter) ? [...new Set(lighter)] : [];
+  };
+
   // What each section's patterns hold once its whole-section changes (left-out parts, thinner drums) apply.
   const sectionWide = (s: SectionSpan, pid: PatternId): VariantStep[] => {
     const len = lengthOfPattern(p, pid);
     const steps: VariantStep[] = [];
-    const without = cleanWithout(s.without);
+    const without = withoutOf(s);
     if (without.length) steps.push({ kind: 'without', from: 0, to: len, parts: without });
     const thin = thinLevel(s, home.get(pid) ?? s.energy);
     if (thin) steps.push({ kind: 'thin', from: 0, to: len, level: thin });

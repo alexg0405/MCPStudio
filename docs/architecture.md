@@ -1581,7 +1581,11 @@ packages), `app/actions/flp-import.ts` (samples, opening), `ui/features/fl-impor
 The ruler has a marker lane (the ruler is 34 px: bar numbers above, markers below), with a faint line down the tracks
 per marker. Click a marker to set the song position there, drag it to move it (playlist snap, Alt free), double-click
 to rename in place, right-click for Jump here / Rename / Loop this section / colour / Delete (features add items through the `playlist.marker` and `playlist.ruler` menu scopes); right-click empty
-ruler for Add marker here. Alt+T adds one at the song position and asks for its name on the ruler. Markers are found
+ruler for Add marker here. A click (no drag) on an empty cell of the grid with the Draw tool opens the empty-spot menu
+(`playlist/empty-menu.ts`): Place “current pattern” here, Place a pattern… (a submenu, with New pattern), Paste here,
+Add a marker here, Name this track…, plus what features add through the `playlist.empty` scope ({ tick, laneId }):
+Ask Studio about bar N… (ask-ai) and Add a fill / a transition here (arrange). Dragging on an empty cell still places
+the current pattern (the controller's `press` drag turns into `create` after 4 px). Alt+T adds one at the song position and asks for its name on the ruler. Markers are found
 by id, name or number (1-based in song order), so commands take any of them; the action search lists "Jump to marker:
 …" and "Loop from marker: …". They live in `playlist.markers`, so they are saved with the project.
 

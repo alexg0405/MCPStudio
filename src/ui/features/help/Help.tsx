@@ -37,7 +37,7 @@ const PARTS: { icon: IconName; title: string; text: string; command: string }[] 
   {
     icon: 'playlist',
     title: 'Playlist',
-    text: 'Arrange patterns into a song: click in a lane to place one.',
+    text: 'Arrange patterns into a song: click an empty spot to pick one, or drag to place the current pattern.',
     command: 'view.playlist',
   },
   {

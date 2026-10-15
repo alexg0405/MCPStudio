@@ -11,6 +11,9 @@ import { AskCardOverlay } from './AskCard';
 import { askAboutMarker, askAboutSelection, closeAsk } from './ask-state';
 import { registerAskMenus } from './menus';
 
+/** Before the arranger (order 100), so "Ask Studio about …" leads the extra items of the menus both add to. */
+export const order = 99;
+
 /**
  * "Ask AI about this part": select clips, loop some bars, pick a marker's section or some notes, and
  * tell the AI what to change there; only that part changes, as one undo step. Entry points: the

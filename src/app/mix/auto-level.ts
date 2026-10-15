@@ -6,6 +6,7 @@
  * the whole mix checks it (and corrects the Limiter once when it is off by more than 1 dB). The
  * math is pure (`levelMoves`, `limiterInput`); `autoLevel` does the rendering.
  */
+import type { Draft } from 'immer';
 import type { Style } from '@core/beat/style';
 import { STYLE_LABELS } from '@core/beat/style';
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
@@ -130,6 +131,26 @@ export function levelMoves(buses: readonly BusLevel[], style: Style): LevelPlan 
 /** The Limiter's input gain that brings the buses' sum (−16 LUFS, or what they reach) to the style's loudness (0…10 dB). */
 export function limiterInput(style: Style, preLimiterLufs = PRE_LIMITER_LUFS): number {
   return clamp(LEVEL_TARGETS[style].master - preLimiterLufs, 0, LIMITER_INPUT_MAX_DB);
+}
+
+/** The master's hard clipper at most this much drive once tamed (dB). */
+const TAME_DRIVE_DB = 3;
+
+/**
+ * A hard clipper on the master flattens every loud hit of the whole mix, which sounds like static
+ * and breaking up: leveling turns it into gentle tape saturation. Returns what it changed.
+ */
+export function tameMasterClipper(d: Draft<Project>): string[] {
+  const out: string[] = [];
+  for (const slot of d.mixer.inserts[MASTER]?.fx ?? []) {
+    if (slot.plugin.pluginId !== 'agstudio.saturator' || !slot.enabled) continue;
+    const params = slot.plugin.params;
+    if (params.mode !== 'clip') continue;
+    params.mode = 'tape';
+    if (typeof params.drive === 'number' && params.drive > TAME_DRIVE_DB) params.drive = TAME_DRIVE_DB;
+    out.push(`Master Saturator: hard clip → tape at ${typeof params.drive === 'number' ? params.drive : TAME_DRIVE_DB} dB drive (clipping the whole mix sounds like static)`);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- the part to listen to
@@ -332,10 +353,12 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   let input = limiter ? limiterInput(style, Math.min(PRE_LIMITER_LUFS, plan.sumLufs)) : null;
   // The answer's undo step (or one of its own, which the correction then joins).
   let entry = opts.entry ?? null;
+  const tamed: string[] = [];
   const commit = () => {
     s.history.transact(
       'Level the mix',
       (d) => {
+        if (!tamed.length) tamed.push(...tameMasterClipper(d));
         for (const m of plan.moves) {
           const id = layout.buses[m.role];
           if (id && d.mixer.inserts[id] && !opts.pinned?.has(id)) d.mixer.inserts[id]!.volume = m.to;
@@ -382,6 +405,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     .filter((b) => Math.abs(b.toDb - b.fromDb) >= 0.05)
     .map((b) => `${BUS_NAMES[b.role as BusRole]} fader ${fmt(b.fromDb)} → ${fmt(b.toDb)} dB`);
   if (input !== null) changes.push(`Limiter input ${fmt(input)} dB`);
+  changes.push(...tamed);
   const tp = master.truePeakDb !== null && Number.isFinite(master.truePeakDb) ? `, true peak ${fmt(master.truePeakDb)} dBTP` : '';
   const message = `Leveled the mix for ${STYLE_LABELS[style].toLowerCase()}: each bus sits at its level around the kick, and the master plays at ${
     Number.isFinite(master.lufs) ? `${fmt(master.lufs)} LUFS` : 'silence'
@@ -419,11 +443,13 @@ async function levelLoudness(
   let input: number | null = limiter ? limiterInput(style) : null;
   if (!limiter) warnings.push('level mix: the master has no Limiter, so the mix was only trimmed (set up the mix for a Limiter)');
   let entry = opts.entry ?? null;
+  const tamed: string[] = [];
   const commit = (trim: number) => {
     const g = gainOf(trim);
     s.history.transact(
       'Level the mix',
       (d) => {
+        if (!tamed.length) tamed.push(...tameMasterClipper(d));
         for (const ins of Object.values(d.mixer.inserts))
           for (const r of ins.routes) if (r.to === MASTER) r.level = Math.min(MAX_INSERT_VOLUME, r.level * g);
         for (const ch of Object.values(d.channels))
@@ -462,6 +488,7 @@ async function levelLoudness(
   const fmt = (x: number) => `${x < 0 ? '−' : '+'}${Math.abs(x).toFixed(1)}`;
   const changes = [`Everything into the master ${fmt(trimDb)} dB (the balance between tracks stays)`];
   if (input !== null) changes.push(`Limiter input ${fmt(input)} dB`);
+  changes.push(...tamed);
   const tp = master.truePeakDb !== null && Number.isFinite(master.truePeakDb) ? `, true peak ${fmt(master.truePeakDb)} dBTP` : '';
   return {
     message: `Set the loudness for ${STYLE_LABELS[style].toLowerCase()}: the mix was ${fmt(before.lufs)} LUFS going into the master, and now plays at ${

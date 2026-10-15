@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { produce } from 'immer';
 import { createEmptyProject } from '@core/model/defaults';
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
-import type { ClipId, LaneId, PatternId } from '@core/model/types';
+import { MASTER, type ClipId, type LaneId, type PatternId, type SlotId } from '@core/model/types';
 import { addMarker } from '@core/ops/markers';
 import {
   busiestWindow,
@@ -10,6 +10,7 @@ import {
   levelMoves,
   limiterInput,
   PRE_LIMITER_LUFS,
+  tameMasterClipper,
   type BusLevel,
 } from './auto-level';
 
@@ -123,5 +124,25 @@ describe('the part auto-level listens to', () => {
     });
     expect(busiestWindow(empty, pid)).toMatchObject({ mode: 'pattern', patternId: pid, fromTick: 0, bars: 8 });
     expect(busiestWindow(empty, null)).toBeNull();
+  });
+});
+
+describe('taming a hard clipper on the master', () => {
+  it('turns it into tape at 3 dB drive at most, and leaves other saturators alone', () => {
+    const base = createEmptyProject();
+    const p = produce(base, (d) => {
+      const fx = d.mixer.inserts[MASTER]!.fx;
+      fx.push({ id: 'sat' as SlotId, plugin: { pluginId: 'agstudio.saturator', pluginVersion: 1, params: { mode: 'clip', drive: 4 } }, enabled: true, mix: 1, sidechain: null });
+      fx.push({ id: 'tape' as SlotId, plugin: { pluginId: 'agstudio.saturator', pluginVersion: 1, params: { mode: 'tape', drive: 6 } }, enabled: true, mix: 1, sidechain: null });
+    });
+    let changes: string[] = [];
+    const out = produce(p, (d) => {
+      changes = tameMasterClipper(d);
+    });
+    const [clip, tape] = out.mixer.inserts[MASTER]!.fx;
+    expect(clip!.plugin.params).toMatchObject({ mode: 'tape', drive: 3 });
+    expect(tape!.plugin.params).toMatchObject({ mode: 'tape', drive: 6 });
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatch(/hard clip → tape/);
   });
 });

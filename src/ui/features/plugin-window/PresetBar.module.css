@@ -1,31 +1,63 @@
+/* The preset bar: one sleek pill (◀ name ▾ ▶) and a small Save… button. */
 .bar {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
   min-width: 0;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  height: 24px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  transition: border-color var(--ag-dur) var(--ag-ease);
+}
+
+.pill:hover {
+  border-color: var(--ag-border-soft);
 }
 
 .arrow,
 .name,
 .save {
-  height: 22px;
-  border: 1px solid var(--ag-border);
-  background: var(--ag-surface-inset);
+  height: 100%;
+  border: 0;
+  background: transparent;
   color: var(--ag-text);
   font: inherit;
   cursor: pointer;
 }
 
 .arrow {
-  width: 20px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
   padding: 0;
-  border-radius: var(--ag-radius);
-  color: var(--ag-text-dim);
-  font-size: 9px;
+  color: var(--ag-text-faint);
+  font-size: 8px;
+  transition: color var(--ag-dur) var(--ag-ease);
+}
+
+.arrow:first-child {
+  border-radius: var(--ag-radius-pill) 0 0 var(--ag-radius-pill);
+}
+
+.arrow:last-child {
+  border-radius: 0 var(--ag-radius-pill) var(--ag-radius-pill) 0;
+}
+
+.arrow:not(:disabled):hover {
+  color: var(--ag-accent);
 }
 
 .arrow:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 
@@ -35,9 +67,17 @@
   gap: 6px;
   min-width: 120px;
   max-width: 220px;
-  padding: 0 6px 0 8px;
-  border-radius: var(--ag-radius);
+  padding: 0 8px;
+  border-left: 1px solid var(--ag-line-faint);
+  border-right: 1px solid var(--ag-line-faint);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
   text-align: left;
+  transition: color var(--ag-dur) var(--ag-ease);
+}
+
+.name:hover {
+  color: var(--ag-accent);
 }
 
 .label {
@@ -51,19 +91,25 @@
 .caret {
   flex: none;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .save {
-  margin-left: 4px;
-  padding: 0 8px;
-  border-radius: var(--ag-radius);
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    background-color var(--ag-dur) var(--ag-ease);
 }
 
-.arrow:not(:disabled):hover,
-.name:hover,
 .save:hover {
-  border-color: var(--ag-border-soft);
+  background: var(--ag-hover);
   color: var(--ag-text);
 }

@@ -1,8 +1,12 @@
+/*
+ * Plugin windows: a header strip (name, bypass, the preset pill, root key, sample) over the editor.
+ * The generated editor is a row of panels with the SDK's knobs. Tokens only (docs/design.md).
+ */
 .window {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--ag-surface-2);
+  background: var(--ag-surface-1);
 }
 
 .header {
@@ -10,48 +14,96 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  min-height: 32px;
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--ag-border);
-  background: var(--ag-surface-1);
+  gap: 6px 12px;
+  min-height: 38px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ag-line-faint);
+  background:
+    linear-gradient(180deg, var(--ag-sheen), transparent),
+    var(--ag-surface-2);
 }
 
+/* The plugin's name, with a small gold mark. */
 .pluginName {
-  font-weight: 700;
-  color: var(--ag-accent);
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ag-text);
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size-lg);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.pluginName::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--ag-metal);
+  box-shadow: 0 0 6px var(--ag-accent-glow);
+  transform: rotate(45deg);
 }
 
 .headerItem {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
 .headerLabel {
   color: var(--ag-text-faint);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
   font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
 }
 
 .headerItem select {
-  max-width: 150px;
-  padding: 1px 3px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: var(--ag-surface-inset);
+  appearance: none;
+  max-width: 160px;
+  height: 22px;
+  padding: 0 22px 0 8px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background-color: var(--ag-surface-inset);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ag-text-dim) 50%),
+    linear-gradient(135deg, var(--ag-text-dim) 50%, transparent 50%);
+  background-position:
+    calc(100% - 12px) 50%,
+    calc(100% - 8px) 50%;
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-repeat: no-repeat;
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+  text-overflow: ellipsis;
+  cursor: pointer;
 }
 
+.headerItem select:hover {
+  border-color: var(--ag-border-soft);
+}
+
+/* The root note, as a small LCD readout. */
 .rootKey {
-  min-width: 36px;
-  padding: 1px 6px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
-  background: var(--ag-surface-inset);
+  min-width: 40px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-lcd);
+  box-shadow:
+    var(--ag-inset),
+    inset 0 0 10px color-mix(in srgb, var(--ag-lcd-text) 6%, transparent);
+  color: var(--ag-lcd-text);
   font-family: var(--ag-font-mono);
+  font-size: var(--ag-font-size-sm);
+  line-height: 22px;
   text-align: center;
 }
 
@@ -61,53 +113,74 @@
   overflow: auto;
 }
 
+/* ---- The generated editor (AutoPanel) ---- */
+
 .groups {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 10px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .group {
   flex: 0 1 auto;
   min-width: 120px;
-  padding: 6px 8px 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-1);
+  padding: 8px 12px 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-lg);
+  background:
+    linear-gradient(180deg, var(--ag-sheen), transparent 40px),
+    var(--ag-surface-2);
+  box-shadow: inset 0 1px 0 var(--ag-sheen);
 }
 
 .groupTitle {
-  margin: 0 0 6px;
-  color: var(--ag-text-dim);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--ag-text-faint);
   font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
+}
+
+.groupTitle::before {
+  content: '';
+  flex: none;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ag-accent);
+  box-shadow: 0 0 4px var(--ag-accent-glow);
 }
 
 .controls {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 8px 10px;
+  gap: 10px 12px;
 }
 
 .control {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  min-width: 48px;
+  gap: 3px;
+  min-width: 50px;
 }
 
 .label {
-  max-width: 64px;
+  max-width: 72px;
   overflow: hidden;
   color: var(--ag-text-dim);
-  font-size: 10px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-align: center;
   text-overflow: ellipsis;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -116,6 +189,11 @@
   font-family: var(--ag-font-mono);
   font-size: 10px;
   white-space: nowrap;
+  transition: color var(--ag-dur) var(--ag-ease);
+}
+
+.control:hover .value {
+  color: var(--ag-accent);
 }
 
 .note,
@@ -131,68 +209,94 @@
 .error {
   color: var(--ag-danger);
   font-family: var(--ag-font-mono);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
-/* Effect slot bypass switch (fx editors only). */
+/* Effect slot bypass: a pill with an LED, like the SDK's Toggle. */
 .power {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 1px 7px;
-  border: 1px solid var(--ag-border);
-  border-radius: 2px;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-pill);
   background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
   color: var(--ag-text-faint);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    background-color var(--ag-dur) var(--ag-ease);
+}
+
+.power:hover {
+  color: var(--ag-text);
 }
 
 .powerLed {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--ag-led-off);
 }
 
 .powerOn {
-  color: var(--ag-text);
+  border-color: var(--ag-active-border);
+  background: var(--ag-active);
+  box-shadow: inset 0 1px 0 var(--ag-sheen);
+  color: var(--ag-accent);
+}
+
+.powerOn:hover {
+  color: var(--ag-accent);
 }
 
 .powerOn .powerLed {
   background: var(--ag-led);
-  box-shadow: 0 0 5px var(--ag-led);
+  box-shadow: 0 0 6px var(--ag-led-glow);
 }
+
+/* ---- Live readings (Meters), above the generated editor ---- */
 
 .meters {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--ag-border);
-  background: var(--ag-surface-inset);
+  gap: 8px 20px;
+  margin: 12px 12px 0;
+  padding: 8px 12px;
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-lcd);
+  box-shadow:
+    var(--ag-inset),
+    inset 0 0 18px color-mix(in srgb, var(--ag-lcd-text) 5%, transparent);
 }
 
 .meter {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .meterLabel {
-  color: var(--ag-text-dim);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--ag-lcd-text) 55%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
 .meterTrack {
   position: relative;
-  width: 70px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--ag-surface-3);
+  width: 80px;
+  height: 5px;
+  border-radius: var(--ag-radius-pill);
+  background: color-mix(in srgb, var(--ag-lcd-text) 10%, transparent);
   overflow: hidden;
 }
 
@@ -203,29 +307,36 @@
   right: 0;
   bottom: 0;
   width: 0;
-  background: var(--ag-accent);
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-metal);
 }
 
 .meterValue {
-  min-width: 52px;
-  color: var(--ag-text);
-  font-size: 11px;
+  min-width: 56px;
+  color: var(--ag-lcd-text);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-font-size-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .editCode {
   height: 22px;
-  padding: 0 8px;
-  border: 1px solid var(--ag-border);
-  border-radius: var(--ag-radius);
-  background: var(--ag-surface-inset);
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-pill);
+  background: transparent;
   color: var(--ag-text-dim);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
   cursor: pointer;
+  transition:
+    background-color var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
 }
 
 .editCode:hover {
+  border-color: var(--ag-line-faint);
+  background: var(--ag-hover);
   color: var(--ag-text);
-  border-color: var(--ag-border-soft);
 }

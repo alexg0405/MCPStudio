@@ -318,9 +318,15 @@ function slide(set: NoteSet, step: VariantStep, c: StepContext): boolean {
   return done;
 }
 
-/** Drums and 808/bass out over the span (held bass cut at its start): the pre-drop gap. */
+/**
+ * Drums and 808/bass out over the span: the pre-drop gap. A bass note held into it ends a 1/32
+ * early, so its release has died away when the gap starts (the lows really go quiet).
+ */
 function gap(set: NoteSet, step: VariantStep, c: StepContext): boolean {
   clear(set, c.env, step.from, step.to, (r) => isDrum(r) || isBassRole(r), true);
+  const early = Math.max(0, step.from - THIRTY_SECOND);
+  for (const [cid, list] of set)
+    if (isBassRole(roleOf(c.env, cid))) for (const n of list) if (n.tick < early && n.tick + n.length > early) n.length = early - n.tick;
   return true;
 }
 

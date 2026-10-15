@@ -70,13 +70,13 @@ export function VisualizerWindow() {
       }
       const o = fitCanvas(scope, size.ow, size.oh);
       o.clearRect(0, 0, size.ow, size.oh);
-      o.fillStyle = theme.beat;
+      o.fillStyle = theme.lineFaint;
       o.fillRect(0, Math.floor(size.oh / 2), size.ow, 1);
       if (gotWave && !quiet) {
         o.globalAlpha = 0.9;
         drawScope(o, size.ow, size.oh, left, theme.accent, 1.25);
         o.globalAlpha = 0.6;
-        drawScope(o, size.ow, size.oh, right, theme.note, 1.25);
+        drawScope(o, size.ow, size.oh, right, theme.select, 1.25);
         o.globalAlpha = 1;
       }
       if (peakL.current) peakL.current.textContent = peakText(pl);
@@ -103,7 +103,7 @@ export function VisualizerWindow() {
           Press play: this shows what you hear (the master track, previews and the metronome).
         </div>
       </div>
-      <div className={styles.scopePanel} data-hint="The waveforms: left channel in the accent color, right channel in green">
+      <div className={styles.scopePanel} data-hint="The waveforms: left channel in the accent color (gold), right channel in blue">
         <canvas ref={scopeRef} className={styles.canvas} />
       </div>
       <div className={styles.footer}>

@@ -2,10 +2,10 @@
   display: flex;
   align-items: center;
   height: 34px;
-  padding: 1px;
-  border: 1px solid var(--ag-border);
+  padding: 1px 3px;
   border-radius: var(--ag-radius);
-  background: var(--ag-surface-inset);
+  background: var(--ag-lcd);
+  box-shadow: var(--ag-inset);
   cursor: pointer;
 }
 
@@ -18,14 +18,15 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--ag-grid-bg);
+  /* A dark glass display: the stone's grid color with a faint light from the top. */
+  background: radial-gradient(120% 80% at 50% 0%, var(--ag-sheen), transparent 70%), var(--ag-grid-bg);
 }
 
 .panel {
   position: relative;
   flex: 2;
   min-height: 60px;
-  border-bottom: 1px solid var(--ag-border);
+  border-bottom: 1px solid var(--ag-line-faint);
 }
 
 .scopePanel {
@@ -46,7 +47,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 16px;
+  padding: var(--ag-space-4);
   color: var(--ag-text-dim);
   text-align: center;
   pointer-events: none;
@@ -57,19 +58,20 @@
   align-items: center;
   gap: 8px;
   flex: none;
-  height: 30px;
-  padding: 0 10px;
-  border-top: 1px solid var(--ag-border);
-  background: var(--ag-surface-1);
+  height: 34px;
+  padding: 0 var(--ag-space-3);
+  border-top: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: var(--ag-font-size-sm);
 }
 
 .footer b {
   display: inline-block;
   min-width: 56px;
-  color: var(--ag-text);
-  font-weight: 500;
+  color: var(--ag-accent);
+  font-family: var(--ag-font-mono);
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
@@ -78,16 +80,19 @@
 }
 
 .button {
-  height: 22px;
-  padding: 0 10px;
-  border: 1px solid var(--ag-border);
+  height: 24px;
+  padding: 0 12px;
+  border: none;
   border-radius: var(--ag-radius);
-  background: linear-gradient(var(--ag-surface-3), var(--ag-surface-2));
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
   color: var(--ag-text);
   font: inherit;
+  font-weight: 500;
   cursor: pointer;
+  transition: background var(--ag-dur) var(--ag-ease);
 }
 
 .button:hover {
-  background: linear-gradient(var(--ag-hover), var(--ag-surface-3));
+  background: var(--ag-hover);
 }

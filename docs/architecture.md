@@ -1040,6 +1040,77 @@ part changes, as one undo step.
   song), the assistant's fake-fetch tests, `test/browser/ask-ai.test.ts` (the pill, the marker ✦, typing in the
   card plays no notes, no React commits while playing with the card closed).
 
+## Track analysis (DJ mode)
+
+What DJ mode knows about a song (`TrackAnalysis` in `core/dj/types.ts`): BPM and beat grid with downbeats, key
+(Camelot), integrated loudness and true peak, energy per bar, sections and where to mix in and out. Computed once
+per content hash in a Worker and cached in IndexedDB; the auto-mix and the decks read it.
+
+### Pipeline (`src/core/dj`, pure, no DOM; `analyzeTrack` in `analyze.ts`)
+
+- **Onsets** (`onset.ts`): log-compressed spectral flux (46 ms frames, 5.8 ms hops at 22.05 kHz) in four bands
+  (kick < 150 Hz, snare body 150–800, crack/vocals 0.8–4 k, hats > 4 k), each whitened (local mean removed, scaled to
+  unit spread with a per-bin floor so an empty band isn't amplified noise). Also per-frame power for the energy curve.
+- **Tempo and beats** (`tempo.ts`): a 4-harmonic comb over the onset autocorrelation finds the pulse family
+  (60–200 BPM); Ellis-style dynamic programming tracks beats at the fastest member, then halves while the slower
+  tempo explains the drums as well (`preferFaster`): four-on-the-floor kick on its offbeats (only for halves below
+  ~75 BPM: above that, low hits between beats are a bass line), snare on the offbeats of a slow half (DnB 174 read as
+  87), hats on the 8ths of a tempo ≤ 160 (trap reads 140, not 70). Then the phase (`onTheBeat`): the biggest
+  section start (> 8 dB over a beat, not out of silence) lands on a beat; else where kick/snare/bass weigh more
+  (house's offbeat bass and hats can pull the tracker half a beat off). Beat times are refined between frames
+  (+8 ms onset lag), BPM is a least-squares line through the strongest evenly spaced stretch and every beat on it, to
+  0.01, snapped to a whole BPM when that slips about as little; a fixed grid that slips > 15 ms (9-beat median)
+  anywhere means drift and `grid.beats` holds the tracked beats. No grid when beats don't stand out of the onset
+  envelope or only one beat position of four has hits (a pad struck once a bar).
+- **Downbeats** (`downbeat.ts`): per beat, kick minus snare, chord change (chroma 2 beats before vs after) and level
+  change, z-scored and folded by position mod 4 (and 3: a waltz only when clearly better). `firstDownbeat` is the
+  first downbeat at or after the first beat.
+- **Key** (`chroma.ts`, `key.ts`): spectral peaks 200 Hz–2 kHz at 11 kHz (370 ms frames) and 27–200 Hz at 2.8 kHz
+  (740 ms frames, for 808s on F1), tuning by the circular mean of peak offsets, peaks at 3/5/6/7× a stronger lower
+  peak counted less (overtones), bass and treble profiles mixed (the treble counts less when flat: hats, noise), the
+  first bar of every 4-bar phrase counting double; Pearson against blended Krumhansl–Kessler/Temperley profiles for 24
+  keys; no third (root, fifth, ♭7 only) reads as minor. Null without pitch content.
+- **Energy, sections, mix points** (`structure.ts`): per bar 0.55·loudness (24 dB range under the 95th percentile)
+  + 0.25·onset density + 0.2·low-end share, squared and scaled to max 1 (per 2 s without a grid). Sections at novelty
+  peaks (energy, density, low end, chroma; 4 bars each side) on an 8-bar phrase grid (4-bar boundaries need stronger
+  novelty). Kinds: leading/trailing sections below 0.75 are intro/outro, ≥ 0.8 after a lower one is a drop, < 0.45
+  break, the section before a drop that rises inside is a build, else verse/body. `mixIn`: the first downbeat when
+  the intro is ≥ 8 bars (mix the whole intro over the previous outro), else the first full-energy phrase. `mixOut`:
+  the outro start when it is ≥ 8 bars, else a section start 8–32 bars before the outro/end, else 16 bars before it on
+  the phrase grid.
+
+### App (`src/app/dj`)
+
+- `analysis-cache.ts`: `createTrackAnalyzer()` (wired as `services.trackAnalyzer`): `analysisHash(ref)` (the embedded
+  file's hash, `builtin:<generator>@<version>` for built-in sounds), one job at a time, callers of the same hash share
+  it, a job is cancelled (Worker terminated) when every caller has aborted. Embedded files are decoded from the sample
+  store at 44.1 kHz on the main thread (`engine/decode`, not kept in the engine's cache); built-ins come from
+  `engine.sampleData`. Results go to the IndexedDB kv store as `dj-analysis:v<ANALYSIS_VERSION>:<hash>`; entries of
+  other versions are deleted on load, so bumping `ANALYSIS_VERSION` re-analyzes.
+- `analysis-run.ts` (Worker-safe): LUFS (`LoudnessMeter`) and true peak (`TruePeak`, oversampled only in blocks
+  within 6 dB of the sample peak) on the full-rate channels, downmix and decimation to ~22 kHz, then `analyzeTrack`.
+  `analysis.worker.ts` runs it and posts progress at most once per percent.
+
+### Measured
+
+- Synthetic songs (`core/dj/test-songs.ts`; Node): house, boom bap (swung), trap half-time, DnB, dembow, pop, lo-fi
+  (swung) at 3 tempos each incl. fractional BPMs, random offsets and keys (`accuracy.test.ts`): BPM ±0.05 21/21,
+  octave 21/21, first downbeat ±20 ms 21/21 (median 1.2 ms), key exact 21/21; all 24 keys on cadences; detuned
+  +35 cents; drift 120→124 BPM tracked within 20 ms; a pickup, 3/4, mix points on the right phrase.
+- AGstudio templates rendered offline in Chrome (`test/browser/dj-analysis.test.ts`): trap 140, boom bap 90, house
+  124, lo-fi 80, drill 142 all exact, downbeats within 2.3 ms, keys F minor / A major / A minor / F minor exact; boom
+  bap reads D minor (its audio is a bass on A and D only), a Camelot neighbour of A minor.
+- Speed: a 5-minute song in 0.9–2 s of analysis in Node (M-series, varies with load); about 0.2–0.5 s for a 20 s
+  template in Chrome, plus decoding.
+
+### Limits
+
+Tuned on synthetic and AGstudio-rendered music, not on commercial recordings (none may be downloaded here): live
+recordings with rubato, songs with long beatless stretches, tempo changes mid-song and swung/triplet genres need
+checking on real files. Octave choices follow DJ conventions (trap 140, DnB 174, hip-hop 85–95, reggaeton 90–100); a
+75 BPM track with 16th hats reads 150. Relative and fifth-related keys are confused when the audio has only roots
+(bass-only loops). Sections use fixed energy thresholds; one 4/4 or 3/4 meter per song.
+
 ### Listening to the mix (M16b)
 
 - `app/analysis/measure.ts` (pure, Node-tested): `Measurer` takes stereo audio in pieces and gives integrated and

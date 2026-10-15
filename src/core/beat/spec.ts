@@ -3,6 +3,8 @@
  * offline generator) write this; the app turns it into channels and a pattern. Everything that
  * comes in is validated and clamped, so a sloppy or hostile model output can't break the project.
  */
+import { applyAccents, chokeOpenHats, styleOfBeat } from './groove';
+import { isStyle, STYLES, type Style } from './style';
 
 /** Sounds the assistant can ask for. Kit pieces are samplers; the rest are instruments. */
 export const BEAT_SOUNDS = [
@@ -22,6 +24,9 @@ export const BEAT_SOUNDS = [
   'lead',
   'pad',
   'pluck',
+  'keys',
+  'bell',
+  'strings',
 ] as const;
 export type BeatSound = (typeof BEAT_SOUNDS)[number];
 
@@ -46,7 +51,7 @@ export interface BeatNote {
   len?: number;
   /** MIDI note (60 = C4). Drums ignore it. */
   key?: number;
-  /** 0..1 (default 0.8). */
+  /** 0..1. Left out: the style's accent for that spot (0.8 when the style isn't known). */
   vel?: number;
 }
 
@@ -54,11 +59,16 @@ export interface BeatTrack {
   name: string;
   sound: BeatSound;
   notes: BeatNote[];
-  /** Channel volume 0..1 (default 0.78). */
+  /**
+   * Channel volume as a linear gain, 0..1.25 (+1.9 dB). The AI may send `volume_db` instead (a
+   * negative `volume` is read as dB too). Left out: the sound's own level.
+   */
   volume?: number;
   /** −1..1. */
   pan?: number;
-  /** Instrument settings by param id (only for '808' and synth sounds; unknown ids are ignored). */
+  /** A preset of the track's instrument by name (any instrument's: the writer picks the instrument that has it). */
+  preset?: string;
+  /** Instrument settings by param id (pitched sounds; unknown ids are ignored). */
   params?: Record<string, number>;
 }
 
@@ -72,6 +82,8 @@ export interface BeatSpec {
   swing?: number;
   bars: number;
   tracks: BeatTrack[];
+  /** The style it's written in: its accents, the sounds of new tracks and the drum kit. */
+  style?: Style;
 }
 
 export const STEPS_PER_BAR = 16;
@@ -91,17 +103,35 @@ function cleanName(v: unknown, fallback: string): string {
   return s || fallback;
 }
 
+export interface BeatCheckOptions {
+  /** The style to accent with when the beat doesn't name one. */
+  style?: Style;
+  /** Without a style: guess it from the beat at this tempo and swing (the project's, unless the beat sets them). */
+  project?: { bpm: number; swing: number };
+}
+
+export type BeatCheck = { spec: BeatSpec; warnings: string[]; style: Style | null } | { error: string };
+
+/** Linear gain from dB as the beat writer takes it (−100 dB or less is silence, at most +1.9 dB). */
+const gainOf = (db: number) => (db <= -100 ? 0 : Math.min(1.25, Math.pow(10, Math.min(1.9, db) / 20)));
+
 /**
  * Checks and normalizes a beat from an untrusted source. Bad notes and tracks are dropped (with a
- * warning) rather than failing the whole beat; an unusable beat gives an error.
+ * warning) rather than failing the whole beat; an unusable beat gives an error. With a style (the
+ * beat's own, `opts.style`, or one guessed from `opts.project`), notes without a velocity get the
+ * style's accents and open hats stop at the next closed hat.
  */
-export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: string[] } | { error: string } {
+export function validateBeatSpec(raw: unknown, opts: BeatCheckOptions = {}): BeatCheck {
   if (!isObj(raw)) return { error: 'The beat is not an object.' };
   const warnings: string[] = [];
   const bars = clamp(Math.round(num(raw.bars) ?? 1), 1, MAX_BARS);
   if (num(raw.bars) !== undefined && num(raw.bars) !== bars) warnings.push(`Bars set to ${bars}.`);
   const total = bars * STEPS_PER_BAR;
   const tracks: BeatTrack[] = [];
+  /** Per track: which notes came without a velocity. */
+  const missingVel: boolean[][] = [];
+  /** Open-hat notes: whether the AI gave their length. */
+  const explicitLen = new Map<BeatNote, boolean>();
   const rawTracks = Array.isArray(raw.tracks) ? raw.tracks : [];
   const names = new Set<string>();
   for (const t of rawTracks.slice(0, MAX_TRACKS)) {
@@ -115,7 +145,7 @@ export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: stri
     for (let i = 2; names.has(name.toLowerCase()); i++) name = `${cleanName(t.name, sound)} ${i}`;
     names.add(name.toLowerCase());
     const drum = DRUM_SOUNDS.has(sound);
-    const notes: BeatNote[] = [];
+    const notes: { note: BeatNote; missing: boolean }[] = [];
     const seen = new Set<string>();
     for (const n of Array.isArray(t.notes) ? t.notes.slice(0, MAX_NOTES_PER_TRACK) : []) {
       if (!isObj(n)) continue;
@@ -124,7 +154,8 @@ export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: stri
       const step = snapStep(stepRaw);
       if (step < 0 || step >= total) continue;
       const len = clamp(snapStep(num(n.len) ?? 1) || 1 / STEP_GRID, 1 / STEP_GRID, total - step);
-      const vel = clamp(num(n.vel) ?? 0.8, 0.05, 1);
+      const velRaw = num(n.vel);
+      const vel = clamp(velRaw ?? 0.8, 0.05, 1);
       const note: BeatNote = { step, len, vel };
       if (!drum) {
         const key = num(n.key);
@@ -135,14 +166,20 @@ export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: stri
       const id = drum ? `${step}` : `${step}:${note.key}`;
       if (seen.has(id)) continue;
       seen.add(id);
-      notes.push(note);
+      notes.push({ note, missing: velRaw === undefined });
+      if (sound === 'open-hat') explicitLen.set(note, num(n.len) !== undefined);
     }
-    notes.sort((a, b) => a.step - b.step || (a.key ?? 0) - (b.key ?? 0));
-    const track: BeatTrack = { name, sound, notes };
+    notes.sort((a, b) => a.note.step - b.note.step || (a.note.key ?? 0) - (b.note.key ?? 0));
+    const track: BeatTrack = { name, sound, notes: notes.map((x) => x.note) };
+    const volumeDb = num(t.volume_db);
     const volume = num(t.volume);
-    if (volume !== undefined) track.volume = clamp(volume, 0, 1);
+    if (volumeDb !== undefined) track.volume = gainOf(volumeDb);
+    // A negative volume can only be meant as dB, and 2–100 as a percentage.
+    else if (volume !== undefined)
+      track.volume = volume < 0 ? gainOf(volume) : volume > 1.5 && volume <= 100 ? volume / 100 : clamp(volume, 0, 1);
     const pan = num(t.pan);
     if (pan !== undefined) track.pan = clamp(pan, -1, 1);
+    if (typeof t.preset === 'string' && t.preset.trim()) track.preset = t.preset.trim().slice(0, 60);
     if (isObj(t.params)) {
       const params: Record<string, number> = {};
       for (const [k, v] of Object.entries(t.params).slice(0, 24)) {
@@ -152,6 +189,7 @@ export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: stri
       if (Object.keys(params).length > 0) track.params = params;
     }
     tracks.push(track);
+    missingVel.push(notes.map((x) => x.missing));
   }
   if (rawTracks.length > MAX_TRACKS) warnings.push(`Only the first ${MAX_TRACKS} tracks were used.`);
   if (tracks.length === 0) return { error: 'The beat has no usable tracks.' };
@@ -161,7 +199,19 @@ export function validateBeatSpec(raw: unknown): { spec: BeatSpec; warnings: stri
   if (bpm !== undefined) spec.bpm = clamp(Math.round(bpm), 50, 220);
   const swing = num(raw.swing);
   if (swing !== undefined) spec.swing = clamp(swing, 0, 1);
-  return { spec, warnings };
+  if (isStyle(raw.style)) spec.style = raw.style;
+  else if (raw.style !== undefined)
+    warnings.push(`Unknown style "${String(raw.style)}" (the styles are ${STYLES.join(', ')}).`);
+  const style =
+    spec.style ??
+    opts.style ??
+    (opts.project ? styleOfBeat(tracks, bars, spec.bpm ?? opts.project.bpm, spec.swing ?? opts.project.swing) : null);
+  if (style) {
+    spec.style = style;
+    tracks.forEach((t, i) => applyAccents(t, missingVel[i] ?? [], style));
+    chokeOpenHats(tracks, explicitLen, total);
+  }
+  return { spec, warnings, style };
 }
 
 /**
@@ -179,7 +229,15 @@ export const BEAT_JSON_SCHEMA = {
       description: 'One or two plain sentences for the musician: what you made and how it follows their request.',
     },
     bpm: { type: 'number', description: 'Tempo (50–220). Omit to keep the project tempo.' },
-    swing: { type: 'number', description: '0..1 swing on even 1/16 steps (0 = straight). Omit to keep it.' },
+    swing: {
+      type: 'number',
+      description: '0..1: the second 1/16 of every 8th plays late by swing × half a step (0 = straight). Omit to keep it.',
+    },
+    style: {
+      type: 'string',
+      enum: [...STYLES],
+      description: 'The style: picks the drum kit, the sounds of new tracks and the accents of notes without a velocity.',
+    },
     bars: { type: 'integer', description: `Pattern length in 4/4 bars, 1 to ${MAX_BARS}.` },
     tracks: {
       type: 'array',
@@ -190,8 +248,17 @@ export const BEAT_JSON_SCHEMA = {
         properties: {
           name: { type: 'string', description: 'Channel name, e.g. "808", "Kick", "Hat".' },
           sound: { type: 'string', enum: [...BEAT_SOUNDS] },
-          volume: { type: 'number', description: '0..1, default 0.78.' },
+          volume_db: {
+            type: 'number',
+            description: 'Channel volume in dB (−60…+1.9). Omit it: every sound starts at a level that sits in the mix.',
+          },
+          volume: { type: 'number', description: 'Channel volume as 0..1 instead of dB (prefer volume_db).' },
           pan: { type: 'number', description: '-1 (left) .. 1 (right).' },
+          preset: {
+            type: 'string',
+            description:
+              'Optional, pitched tracks: a preset name from the catalog (e.g. "Glassy pluck", "Marimba"); the track plays on the instrument that has it. Omit it for the style’s own sound.',
+          },
           params: {
             type: 'object',
             additionalProperties: false,
@@ -224,9 +291,13 @@ export const BEAT_JSON_SCHEMA = {
                 key: {
                   type: 'integer',
                   description:
-                    'MIDI note (C1 = 24, C2 = 36, C4 = 60). Required for 808/bass/lead/pad/pluck; omit for drums.',
+                    'MIDI note (C1 = 24, C2 = 36, C4 = 60). Required for 808, bass, lead, pad, pluck, keys, bell, strings; omit for drums.',
                 },
-                vel: { type: 'number', description: 'Velocity 0..1 (default 0.8). Lower for ghost notes.' },
+                vel: {
+                  type: 'number',
+                  description:
+                    'Velocity 0..1. Omit it to get the style’s accents (strong downbeats, accented hats, soft ghost snares, rising rolls).',
+                },
               },
               required: ['step'],
             },

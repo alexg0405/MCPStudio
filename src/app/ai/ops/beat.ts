@@ -32,7 +32,11 @@ When they performed something (beatbox or humming), you get it as events on the 
   handlers: {
     beat: (a, c) => {
       const { s, d, project, state } = c;
-      const checked = validateBeatSpec({ ...a, message: c.answer.message });
+      // Without a style the beat's own tempo, swing and kick pattern decide it (accents, kit, sounds).
+      const checked = validateBeatSpec(
+        { ...a, message: c.answer.message },
+        { project: { bpm: d.transport.bpm, swing: d.transport.swing } },
+      );
       if ('error' in checked) fail(`the beat can't be used: ${checked.error}`);
       const { spec, warnings: w } = checked as Exclude<typeof checked, { error: string }>;
       state.warnings.push(...w);

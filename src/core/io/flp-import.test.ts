@@ -382,6 +382,36 @@ describe('FL Studio import', () => {
     expect(describeFlpImport(report, { fromPackage: true }).details.join('\n')).toMatch(/not in the zip/);
   });
 
+  it('turns mutated files into consistent projects (or a readable error)', () => {
+    const valid = flpProject(SONG);
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ at: fc.nat({ max: valid.length - 1 }), value: fc.integer({ min: 0, max: 255 }) }), {
+          minLength: 1,
+          maxLength: 30,
+        }),
+        (edits) => {
+          const b = valid.slice();
+          for (const e of edits) b[e.at] = e.value;
+          let flp;
+          try {
+            flp = parseFlp(b);
+          } catch (e) {
+            if (e instanceof FlpError) return;
+            throw e;
+          }
+          const { project } = flpToProject(flp, {
+            fileName: 'x.flp',
+            plugin,
+            samples: resolve(flpSamplePaths(flp), () => false),
+          });
+          expect(projectViolations(project)).toEqual([]);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
   it('turns any readable file into a consistent project (fuzzed specs)', () => {
     const note = fc.record({
       position: fc.nat({ max: 5000 }),

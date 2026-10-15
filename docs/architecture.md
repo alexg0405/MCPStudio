@@ -1001,6 +1001,148 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   findings, and ask Claude again with a `<mix-analysis>` block (`formatMixReport`); that follow-up can't ask again.
   "✦ Check my mix" starts the same flow from the UI; without Claude it still shows the findings.
 
+## Arrangement: songs that flow (v3)
+
+The musician asked for songs that sound finished "off the bat", with smooth transitions as the minimum. Their
+AI-made song (rebuilt as `buildStackedSong` in `core/fixtures/stacked-song.ts`) shows what was missing: 2-bar
+loops repeated 8 times unchanged, a tom fill on its own track on top of the full beat, no gap before the drops, a
+crash on every loop, risers and automation hand-placed on random tracks. The split of work: **the AI decides the
+structure** (sections, which beats play, the energy); **deterministic code does the craft**.
+
+### Variants, not copies (`Pattern.derived`)
+
+- A section's beat stays the editable source. Variation becomes *variant* patterns with
+  `derived: { from, steps, seed, hash }` (`core/model/types.ts`, optional in schema v3): the source, the
+  `VariantStep`s applied to its notes (pattern ticks, energy, level, parts), the seed of their jitter, and the
+  hash of the notes as written (`notesHash`, ids ignored).
+- One variant per (source, steps) (`variantKey`), named for what changed, "Drop · fill + slide"
+  (`variantName`; a repeated name gets " 2"); variants sit after their source with its color. Plain repeats play
+  the source itself.
+- Rebuilt when the source changes: the arrange module's `beforeCommit` compares each source with `c.base` and
+  rebuilds its *unmodified* variants (notes still match the hash); a variant edited by hand is left as it is.
+  "Refresh variations" (Playlist menu) does the same after hand edits to a source.
+- Repair (`migrate.ts`): a variant whose source is missing, itself, part of a loop or whose steps are malformed
+  becomes an ordinary pattern; deleting a source does the same (`removePattern`).
+
+### Core (`src/core/arrange`, pure, plain loops so drafts are fine)
+
+- `roles.ts`: what each channel plays (`channelRole`), General MIDI drums on kit channels (`noteRole`), and part
+  names people use ("hats", "808s", "melody": `partName`, `inPart`).
+- `fills.ts`, the generators. Every fill **replaces** the drum notes in its span (never layers):
+  - snare fill (1, 2 or 4 beats; 2 beats = 8ths .55/.62, 16ths .70/.76, 32nds .82→1.0); tom fill (high, mid and
+    low pairs .90/.72 ending on the loudest snare; tom channels by height, one tom ±5 st, or kit keys 48/45/41);
+    hat fill (1/32s, triplets for drill and afro, rising .45→.95, snare on its last two 16ths); kick-snare fill;
+  - snare build over a build's last 4 bars (quarters, 8ths, 16ths, 32nds, .40→1.0; spread over several clips
+    with `offset`/`total`; house and EDM keep the kick on the beat until its last quarter);
+  - hat roll (eight rising 1/32s replacing the hats of that beat), open hat on the last 8th;
+  - 808 slide: a new note half a beat before the end, an octave away within MIDI 24–48 (else a fifth or fourth
+    in the song's scale), the note before stretched to overlap it by 120 ticks so the 808 glides;
+  - gap (drums and bass out; a bass note held into it ends a 1/32 early so its release has died away), dropout
+    (everything out, held notes cut at its start), stutter, thin 1 (no ghosts, percussion or off-8th hats) and
+    2 (hits on the beat), double hats, without (parts or channels), clear-drums (room for a fill on another
+    track).
+  - Velocities scale with energy (×0.80 at 1 … ×1.0 at 5) plus a seeded ±0.03 jitter; crescendos keep rising to
+    their last, loudest hit. Each step draws from its own seeded generator, so a step that changes nothing is
+    dropped without changing the rest. Missing instruments fall back (a tom fill without toms is a snare fill).
+- `variants.ts`: `applySteps` (with the steps that were effective), keys, seeds, names, `mergeSteps` (a new
+  fill replaces an overlapping one of its family).
+- `sections.ts`: roles (intro, verse, pre, build, drop, hook, chorus, break, bridge, outro), default energies,
+  usual lengths, `roleFromName`.
+- `phrases.ts`: every 8 bars (house and EDM 16) a fill, 2 beats at energy ≥ 3, rotating by style
+  (`FILL_ROTATION`), with a crash on the next bar at energy ≥ 4; every 4 bars (house and EDM 8) a small change
+  (hat roll or 808 slide for trap, drill, EDM and pop; open hat or slide for the rest); double hats in bars 9–16 of
+  16+-bar sections at energy ≥ 4. **The guarantee**: identical clips never run for more than 4 bars (a 2-bar loop
+  is never followed by more than one identical copy); where they would, a small change goes at the 4-bar mark.
+  The section's last bars belong to the transition out of it.
+- `transitions.ts`: `classifyBoundary` (rise at Δ ≥ 2 or a build into a drop, chorus or hook; lift, same, dip,
+  fall; into a build is at most a dip; outro; the start is the intro) and `boundaryRecipe`, the table in the
+  file's header: fills, the gap (1 beat; 2 beats plus a full stop at Δ ≥ 3), risers (1, 2 or 4 bars, closest to
+  6 s, never starting before A) and reverse crashes that end exactly on X, impacts, sub drops (trap, drill, EDM,
+  house at Δ ≥ 3), downlifters, crash velocities, the high-pass sweep up across the riser, the low-pass that opens
+  after a fall, the intro's opening low-pass and reverb throws. `endingRecipe`: a master fade over the last 4
+  bars, or a stop for trap, drill, boom bap and reggaeton (the last bar plays one beat, with a crash, an impact
+  and a throw).
+- `plan.ts`: `planArrangement(p, req, env)` lays each section's beats out back to back (one lane per source),
+  thins a beat in a section 2+ energy below its loudest one, turns the phrase and transition events into each
+  clip's steps (`stepsForClips`: fills go to the clip with the most drums, the others make room; slides to clips
+  with an 808; gaps and section changes to every clip), places FX, crashes (at most one per 4 bars, transitions
+  first) and automation (one clip at a time per control) with `LaneAllocator` so nothing overlaps on a lane, and
+  notes the loop-start crashes to move. `planDevelop` plans the same craft for an existing song's sections,
+  keeping FX already within a beat, crashes within 4 bars and fills that play from their own clips (nothing adds
+  drums under them), and staying within the range ±1 bar (`SongEvent.within`).
+- `apply.ts`: `applyArrangement` (clears its range, or the whole song for a whole-song arrangement; the
+  arranger's own sounds and curves go whole), `deriveVariant`, `applyEditsInPlace` (splits a looping clip at its
+  repeats so only the one with the change becomes a variant), `refreshVariants`, `collectGarbage` (variants,
+  FX and crash channels, arranger automation nothing plays any more), `placeFx`, `placeCrashes`,
+  `placeAutomation`.
+- `infer.ts`: sections from markers (or where the set of patterns playing changes), energy from what plays
+  (kick, backbeat, hats, bass, music parts, density), fills on their own clips and the drums under them, the
+  loops, and the FX and crashes already there (`existingFx`, from FX sounds, FX channels' notes and names).
+
+### Sounds, crashes and automation
+
+- Transition sounds are built-in samples named after their length at a tempo, `fx/riser/16b@150`
+  (`core/model/fx.ts`), generated by `engine/kit/fx.ts` (seeded from the name; riser = noise band-passed from
+  300 Hz to 9 kHz plus detuned saws gliding up two octaves, swelling 30 dB; reverse crash peaking in its last
+  3%; impact peaking within 50 ms; sub drop 65 → 28 Hz; risers, swells and whooshes high-passed at 150 Hz so the
+  gap stays clean). `SampleCache.getSync` and `kitDuration` know them; older versions load the names as silence.
+  They play on audio clip channels (one per sound) with `stretch: 'resample'` at the song's `sourceBpm`, so they
+  stay on the beat if the tempo changes, on the tracks "FX risers", "FX swells", "FX hits", "FX sub", through the
+  FX bus when there is one.
+- Crashes: a crash on a loop's first 1/32 crashes every loop, so it moves out of the source (develop: only from
+  patterns that loop) and crash hits play where the transitions call for them, as audio clips of the song's own
+  crash sample on "Crashes" (clip gain = velocity).
+- Curves (`app/arrange/env.ts`): filter sweeps move EQ Pro b1 (low cut: the build's high-pass) and b8 (high cut:
+  the intro's and breakdown's low-pass) on the Chords and Lead buses. A song without them gets them with the mix
+  layout's names (an empty "Insert N" reused first), the chords or lead parts that play straight to the master,
+  and tracks that carry only them, routed through, and one EQ Pro with both bands on at neutral (20 Hz, 20 kHz);
+  the mix setup finds them by name. Throws move the Chords → Reverb send (only when that send exists), fades the
+  master. 'neutral' is where the control sits, so every curve ends there (automation holds its last value),
+  except the fade at the very end. One automation channel per purpose, control and length, reused, on
+  "Automation N" tracks.
+
+### App, AI and UI
+
+- `app/arrange/run.ts`: the draft-level operations shared by the AI and the menus (`arrangeInDraft`,
+  `developInDraft`, `transitionInDraft`, `varyInDraft`, `refreshInDraft`), each returning change lines, the span
+  it edited and the checker's findings. `check.ts`: `checkArrangement` on what song mode plays (stacked,
+  static-loop, no-fill, layered-fill, no-gap, crash-spam and the arranger's curve-not-neutral are bugs; no-riser,
+  no-impact, abrupt-end and the musician's own curves are notes). `summary.ts`: `derivedLabel` and
+  `arrangementLines` in the AI's view of the project ("variant of “Drop”: fill + slide"; sections with energy),
+  `arrangeSummary` ("Arranged 76 bars: Intro 1–8 · … · 6 fills, 3 builds (riser, gap, impact), 1 breakdown,
+  outro stop").
+- AI actions (`app/ai/ops/arrange.ts`): `arrange` (sections with name, bars 1–64, role, energy, play, without,
+  vary, transition_in, fill; fx, mix, outro; up to 24 sections and 512 bars; every reference resolved before
+  anything changes; `mix: 'auto'` runs `setupMix` in rebuild mode and asks for `level_mix`; asks for song mode;
+  checker bugs become warnings), `develop`, `transition` and `vary`. In a part of the song they default to it and
+  check every span with the focus guard. The prompt's "Song craft" section (order 20, `arrange-prompt.ts`) explains
+  sections, energy, phrasing and the arc, one beat per section (`beat` with `pattern: "new"` and a `ref`) then ONE
+  `arrange`, never hand-placed transitions, and ends with a worked trap example that a test applies.
+- UI (`ui/features/arrange`, no AI): Playlist menu "Develop this part (fills, transitions)" (the loop region, the
+  selected clips, else the song), "Add a fill here", "Add a transition here", "Refresh variations"; marker, ruler
+  and clip right-click entries. One undo step each, a toast saying what happened.
+
+### Measured (`test/browser/arrangement.test.ts`, headless Chrome, 48 kHz, ≤ 8-bar windows)
+
+A 36-bar song at 140 BPM (Intro 4, Verse 8, Build 4, Drop 8, Break 4, Outro 8) arranged by `arrange`: the lows
+of the beat before the drop are 14 dB under the same beat a bar earlier (what remains is the snare build's last
+hits ringing out), the riser stem rises 43 dB into its last beat, the reverse crash peaks 14 ms before the
+downbeat, the impact's onset lands within 0.1 ms of it, the drop measures 3 dB louder (LUFS) than the verse, and
+the FX stem renders bit-identically twice. Node: fast-check checks the planner's promises on random section
+lists (no overlaps on a lane, a fill at every phrase end, gap + riser + impact at every rise, crashes 4+ bars
+apart, curves ending neutral, the right total length); `develop` on the stacked song leaves no stacked copies, no
+layered fill, gaps before both drops and no duplicate FX.
+
+### Limits and follow-ups
+
+- The prompt's example uses the beat action's `pattern: "new"` and `ref`; until that lands (the Sound wave), its
+  test applies each beat as its own answer.
+- Reverb throws need a Chords → Reverb send (the mix setup makes one); `mix: 'keep'` skips sweeps where no Chords
+  or Lead bus exists rather than building one.
+- Crash hits play the crash sample directly (not through its sampler's envelope).
+- Energy is inferred from what plays when a song has no plan (develop, the checker): a dense verse can read as 5.
+- Drum tails ring into gaps (only the bass is ended early).
+
 ## Wave 2 foundations
 
 - Kernel transport:

@@ -18,6 +18,7 @@ import { makeInsert, makePluginInstance } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
 import { MASTER, type ChannelId, type InsertId, type Project, type SampleRef, type SlotId } from '@core/model/types';
 import { addFxSlot } from '@core/ops/mixer';
+import { findEmptyInsert } from '@core/query/mixer';
 import { wouldCycle } from '@core/query/routing';
 import { getScale } from '@agstudio/sdk/notes';
 import { defaultValues, type ParamSpecs } from '@agstudio/sdk';
@@ -67,21 +68,6 @@ const BUS_ROLES: Record<'chords' | 'lead', (r: Role) => boolean> = {
 
 const insertNumber = (p: Project, id: InsertId) => p.mixer.order.indexOf(id);
 
-/** An empty "Insert N" track nothing plays through, to reuse for a bus. */
-function emptyInsert(p: Project): InsertId | null {
-  for (const id of p.mixer.order) {
-    if (id === MASTER) continue;
-    const ins = p.mixer.inserts[id];
-    if (!ins || !/^Insert \d+$/.test(ins.name) || ins.fx.length || ins.volume !== 1 || ins.muted) continue;
-    if (ins.routes.length !== 1 || ins.routes[0]!.to !== MASTER) continue;
-    const used =
-      Object.values(p.channels).some((c) => c.kind !== 'automation' && c.output === id) ||
-      Object.values(p.mixer.inserts).some((o) => o.routes.some((r) => r.to === id) || o.fx.some((f) => f.sidechain === id));
-    if (!used) return id;
-  }
-  return null;
-}
-
 /**
  * Finds (or, with `create`, makes) the controls the arranger's curves move. Returns them and change
  * lines for what it made or rerouted.
@@ -106,7 +92,7 @@ export function sweepTargets(
     let insertId = layout.buses[bus];
     if (!insertId) {
       if (!opts.create || !eqDef) continue;
-      insertId = emptyInsert(p) ?? undefined;
+      insertId = findEmptyInsert(p, { ignorePanAndSolo: true }) ?? undefined;
       if (insertId) d.mixer.inserts[insertId]!.name = BUS_NAMES[bus];
       else {
         insertId = newId.insert();

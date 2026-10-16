@@ -15,6 +15,7 @@ import { MASTER, type ChannelId, type FxSlot, type Insert, type InsertId, type P
 import { setChannelProp } from '@core/ops/channels';
 import { addFxSlot, addInsert, moveFxSlot, setInsertProp } from '@core/ops/mixer';
 import { setRoute, setSlotSidechain } from '@core/ops/routing';
+import { findEmptyInsert } from '@core/query/mixer';
 import { defaultValues, type ParamValue } from '@agstudio/sdk';
 import { presetChoices, presetValues } from '../presets';
 import type { Services } from '../services';
@@ -39,24 +40,6 @@ export interface SetupMixResult {
 }
 
 const gainOf = (db: number) => Math.min(MAX_INSERT_VOLUME, Math.pow(10, db / 20));
-
-/** An insert nobody uses yet: "Insert N", no effects, unity, to the master only, nothing feeding it. */
-function isEmptyInsert(p: Project, id: InsertId): boolean {
-  const ins = p.mixer.inserts[id];
-  if (!ins || id === MASTER || !/^insert \d+$/i.test(ins.name.trim())) return false;
-  if (ins.fx.length || ins.volume !== 1 || ins.pan !== 0 || ins.muted || ins.solo) return false;
-  if (ins.routes.length !== 1 || ins.routes[0]!.to !== MASTER || ins.routes[0]!.level !== 1 || ins.routes[0]!.pre)
-    return false;
-  for (const cid of p.channelOrder) {
-    const ch = p.channels[cid];
-    if (ch && ch.kind !== 'automation' && ch.output === id) return false;
-  }
-  for (const other of p.mixer.order) {
-    const o = p.mixer.inserts[other];
-    if (o?.routes.some((r) => r.to === id) || o?.fx.some((f) => f.sidechain === id)) return false;
-  }
-  return true;
-}
 
 /** A plugin instance for a recipe: the preset (the musician's own of that name first), then its params. */
 function instanceFor(s: Services, fx: FxRecipe) {
@@ -105,7 +88,7 @@ export function setupMix(d: Draft<Project>, s: Services, opts: SetupMixOptions):
   for (const role of BUS_ORDER) {
     if (!wanted.has(role) || buses[role]) continue;
     const recipe = busRecipe(role, style);
-    let id = p.mixer.order.find((x) => isEmptyInsert(p, x));
+    let id = findEmptyInsert(p, { anyCaseName: true, unityPostRoute: true });
     if (id) {
       reused.push(p.mixer.inserts[id]!.name);
       setInsertProp(d, id, 'name', BUS_NAMES[role]);

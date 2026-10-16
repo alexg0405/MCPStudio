@@ -7,7 +7,6 @@ import type { Draft } from 'immer';
 import { TEMPO_RANGE } from '../automation/targets';
 import { newId } from '../model/ids';
 import {
-  MASTER,
   type AudioClipChannel,
   type AutoPoint,
   type ChannelId,
@@ -18,6 +17,7 @@ import {
   type SoundFilter,
   type Tick,
 } from '../model/types';
+import { findEmptyInsert } from '../query/mixer';
 import { BPM_MAX, BPM_MIN } from '../schema/migrate';
 import { TICKS_PER_STEP, type TempoMap } from '../time/ppq';
 import { createAutomationClip } from './automation';
@@ -132,22 +132,9 @@ export function changePartTempo(
   return { tempo: { channelId: made.channelId }, cut };
 }
 
-/**
- * An insert nobody uses that a filter may borrow: named "Insert N", no effects, unity, routed only
- * to the master, nothing playing through or into it.
- */
+/** An insert nobody uses that a filter may borrow (the filters' rules of `findEmptyInsert`). */
 export function emptyInsert(p: Project): InsertId | null {
-  for (const id of p.mixer.order) {
-    if (id === MASTER) continue;
-    const ins = p.mixer.inserts[id];
-    if (!ins || !/^Insert \d+$/.test(ins.name) || ins.fx.length || ins.volume !== 1 || ins.pan !== 0) continue;
-    if (ins.muted || ins.solo || ins.routes.length !== 1 || ins.routes[0]!.to !== MASTER) continue;
-    const used =
-      Object.values(p.channels).some((c) => c.kind !== 'automation' && c.output === id) ||
-      Object.values(p.mixer.inserts).some((o) => o.routes.some((r) => r.to === id) || o.fx.some((f) => f.sidechain === id));
-    if (!used) return id;
-  }
-  return null;
+  return findEmptyInsert(p);
 }
 
 /** The filtered channel a clip plays, if it is one. */

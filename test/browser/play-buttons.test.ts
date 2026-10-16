@@ -127,13 +127,12 @@ describe('play buttons and menus (UI)', { timeout: 30_000 }, () => {
     expect(s.view.getState().currentPatternId).toBe(chorus);
     expect(s.fakeEngine.lastPlayFrom).toBe(0);
     await until(() => playButton('piano-roll').getAttribute('aria-label') === 'Stop');
-    expect(playButton('piano-roll').getAttribute('aria-pressed')).toBe('true');
     // The channel rack's button shows the same state.
     expect(playButton('channel-rack').getAttribute('aria-label')).toBe('Stop');
     playButton('piano-roll').click();
     await until(() => !s.fakeEngine.playing);
     await until(() => playButton('piano-roll').getAttribute('aria-label') === 'Play pattern');
-    expect(playButton('channel-rack').getAttribute('aria-pressed')).toBe('false');
+    expect(playButton('channel-rack').getAttribute('aria-label')).toBe('Play pattern');
   });
 
   it('the channel rack ▶ plays the current pattern too; the buttons show ▶ again when the song plays instead', async () => {

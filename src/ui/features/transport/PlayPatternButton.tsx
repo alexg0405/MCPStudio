@@ -50,7 +50,6 @@ export function PlayPatternButton({
       tabIndex={-1}
       className={`${className} ${playing ? onClassName : ''}`}
       disabled={disabled}
-      aria-pressed={playing}
       aria-label={playing ? 'Stop' : 'Play pattern'}
       data-play-pattern
       onPointerDown={(e) => e.preventDefault()}

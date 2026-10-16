@@ -87,7 +87,7 @@ function useToolbarSlots(area: 'transport' | 'center' | 'right') {
   return getToolbarSlots(area);
 }
 
-function ToolbarSlots({ area }: { area: 'transport' | 'right' }) {
+function ToolbarSlots({ area }: { area: 'transport' }) {
   return (
     <>
       {useToolbarSlots(area).map((slot) => (
@@ -101,21 +101,27 @@ const MORE_BUTTON_W = 34;
 const SLOT_GAP = 4;
 
 /**
- * The center slots take whatever width is left. Slots that do not fit move, from the end, into a "More"
- * dropdown instead of being clipped (never the first one). Widths are measured while a slot is in the bar and remembered.
+ * Everything right of the transport (the Studio button, pattern picker, meters and the window, undo and audio
+ * buttons) takes whatever width is left. Slots that do not fit move into a "More" dropdown instead of being
+ * clipped. The Studio button never moves; then the right-hand buttons (windows, undo, audio) stay longest; the
+ * rest leave from the end. Widths are measured while a slot is in the bar and remembered.
  */
 function OverflowSlots() {
-  const slots = useToolbarSlots('center');
+  const center = useToolbarSlots('center');
+  const right = useToolbarSlots('right');
   const groupRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const widths = useRef(new Map<string, number>());
-  // How many slots fit, for the slot list it was measured with; a new list shows everything once to measure it.
-  const [measured, setMeasured] = useState({ ids: '', fit: 0 });
+  // Which slots fit, for the slot list it was measured with; a new list shows everything once to measure it.
+  const [measured, setMeasured] = useState<{ ids: string; shown: ReadonlySet<string> | null }>({
+    ids: '',
+    shown: null,
+  });
   const [open, setOpen] = useState(false);
   const [panelPos, setPanelPos] = useState<CSSProperties>({});
-  const ids = slots.map((s) => s.id).join(',');
-  const fit = measured.ids === ids ? measured.fit : Infinity;
+  const ids = [...center, ...right].map((s) => s.id).join(',');
+  const shown = measured.ids === ids ? measured.shown : null;
 
   const layout = useCallback(() => {
     const group = groupRef.current;
@@ -124,29 +130,39 @@ function OverflowSlots() {
       widths.current.set(el.dataset.slot!, el.offsetWidth);
     }
     const style = getComputedStyle(group);
-    const avail = group.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-    const list = getToolbarSlots('center');
-    const total = (n: number) =>
-      list.slice(0, n).reduce((sum, s) => {
-        const w = widths.current.get(s.id) ?? 0;
-        return w ? sum + w + SLOT_GAP : sum;
-      }, 0);
-    // The first slot (the AI studio button) never moves into "More": it is the last thing to collapse,
-    // and the group stays wide enough to show it next to the "More" button.
-    const first = list[0] ? (widths.current.get(list[0].id) ?? 0) : 0;
     const pad = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const avail = group.clientWidth - pad;
+    const c = getToolbarSlots('center');
+    const r = getToolbarSlots('right');
+    const width = (id: string) => widths.current.get(id) ?? 0;
+    // The Studio button first, then the right-hand buttons (the audio chip, which goes away at the first click,
+    // last of them), then the other center slots.
+    const priority = [...c.slice(0, 1), ...r.filter((x) => x.order > 0), ...r.filter((x) => x.order <= 0), ...c.slice(1)];
+    const total = (list: { id: string }[]) =>
+      list.reduce((sum, slot) => (width(slot.id) ? sum + width(slot.id) + SLOT_GAP : sum), 0);
+    const first = c[0] ? width(c[0].id) : 0;
+    // The group stays wide enough to show the Studio button next to the "More" button.
     group.style.minWidth = first ? `${Math.ceil(first + SLOT_GAP + MORE_BUTTON_W + pad)}px` : '';
-    let n = list.length;
-    if (total(n) > avail + SLOT_GAP) {
-      while (n > 1 && total(n) + MORE_BUTTON_W > avail) n--;
+    const keep = new Set<string>();
+    if (total(priority) <= avail + SLOT_GAP) priority.forEach((slot) => keep.add(slot.id));
+    else {
+      let used = MORE_BUTTON_W;
+      priority.forEach((slot, i) => {
+        const w = width(slot.id);
+        if (!w) return keep.add(slot.id); // an empty slot takes no room
+        if (i === 0 || used + w + SLOT_GAP <= avail) {
+          used += w + SLOT_GAP;
+          keep.add(slot.id);
+        }
+      });
     }
-    setMeasured({ ids: list.map((s) => s.id).join(','), fit: n });
-    if (n === list.length) setOpen(false);
+    setMeasured({ ids: [...c, ...r].map((x) => x.id).join(','), shown: keep });
+    if (keep.size === priority.length) setOpen(false);
   }, []);
 
   useLayoutEffect(() => {
-    if (fit === Infinity) layout();
-  }, [fit, layout]);
+    if (!shown) layout();
+  }, [shown, layout]);
   useEffect(() => {
     const group = groupRef.current;
     if (!group) return;
@@ -156,12 +172,14 @@ function OverflowSlots() {
     return () => ro.disconnect();
   }, [layout]);
 
-  const hidden = slots.slice(fit);
+  const visible = (slot: { id: string }) => !shown || shown.has(slot.id);
+  const hidden = [...center, ...right].filter((slot) => !visible(slot));
   const showPanel = open && hidden.length > 0;
+  const rightShown = right.filter(visible);
 
   const toggle = () => {
-    const r = moreRef.current!.getBoundingClientRect();
-    setPanelPos({ top: r.bottom + 4, right: Math.max(4, window.innerWidth - r.right) });
+    const rect = moreRef.current!.getBoundingClientRect();
+    setPanelPos({ top: rect.bottom + 4, right: Math.max(4, window.innerWidth - rect.right) });
     setOpen((o) => !o);
   };
 
@@ -187,7 +205,7 @@ function OverflowSlots() {
 
   return (
     <div ref={groupRef} className={`${styles.toolbarGroup} ${styles.toolbarGroupFill}`}>
-      {slots.slice(0, fit).map((slot) => (
+      {center.filter(visible).map((slot) => (
         <div key={slot.id} data-slot={slot.id} className={styles.toolbarSlot}>
           <slot.component />
         </div>
@@ -205,6 +223,15 @@ function OverflowSlots() {
         >
           <Icon name="chevronDown" />
         </button>
+      )}
+      {rightShown.length > 0 && (
+        <div className={styles.toolbarRight} data-tour="windows">
+          {rightShown.map((slot) => (
+            <div key={slot.id} data-slot={slot.id} className={styles.toolbarSlot}>
+              <slot.component />
+            </div>
+          ))}
+        </div>
       )}
       {showPanel && (
         <div ref={panelRef} className={styles.toolbarOverflow} style={panelPos}>
@@ -235,9 +262,6 @@ export function Toolbar() {
         <ToolbarSlots area="transport" />
       </div>
       <OverflowSlots />
-      <div className={`${styles.toolbarGroup} ${styles.toolbarGroupRight}`} data-tour="windows">
-        <ToolbarSlots area="right" />
-      </div>
     </header>
   );
 }

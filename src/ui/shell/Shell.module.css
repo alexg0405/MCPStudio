@@ -124,9 +124,14 @@
   background-image: none;
 }
 
-.toolbarGroupRight,
-.toolbarGroupRight:last-child {
-  /* The divider sits on its left (the fill group before it has none). */
+/* The window, undo and audio buttons: against the right edge of the fill group, a divider on their left. */
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+  margin-left: auto;
+  padding-left: 8px;
   background-image: linear-gradient(var(--ag-border-soft), var(--ag-border-soft));
   background-repeat: no-repeat;
   background-size: 1px 56%;
@@ -152,8 +157,8 @@
   gap: 6px;
   padding: 8px;
   background: var(--ag-glass);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   border-radius: var(--ag-radius-lg);
   box-shadow: var(--ag-elev-2);
   z-index: 10;
@@ -168,6 +173,24 @@
 
 .toolbarOverflowItem:empty {
   display: none;
+}
+
+/* Windows narrower than the bar's parts (about 1240px): the menus and the hint bar get a line of their own above the transport. */
+@media (max-width: 1240px) {
+  .app {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    min-height: var(--ag-toolbar-h);
+  }
+
+  .brandBlock {
+    flex: 1 0 100%;
+    background-image: none;
+    padding-bottom: 2px;
+  }
 }
 
 /* Toolbar buttons are ghosts: transparent until hovered; "on" is a soft gold well. */
@@ -285,8 +308,8 @@
   min-width: 240px;
   padding: 5px;
   background: var(--ag-glass);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   border-radius: var(--ag-radius-lg);
   box-shadow: var(--ag-elev-2);
   z-index: 10;
@@ -389,8 +412,8 @@
   padding: 9px 14px;
   border-radius: var(--ag-radius-lg);
   background: var(--ag-glass);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   box-shadow: var(--ag-elev-2);
   color: var(--ag-text);
   line-height: 1.45;
@@ -415,8 +438,8 @@
   padding: 5px 9px;
   border-radius: var(--ag-radius);
   background: var(--ag-tooltip);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   color: var(--ag-tooltip-text);
   font-size: var(--ag-font-size-sm);
   line-height: 1.45;

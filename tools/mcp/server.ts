@@ -206,6 +206,13 @@ export function mcpServer(options: McpServerOptions): Plugin {
         })();
       });
 
+      // An app that was refused may look for OAuth: say plainly that there is none (the dev server's page
+      // fallback would answer with HTML, which reads as a broken server).
+      server.middlewares.use('/.well-known', (req, res, next) => {
+        if (!/^\/oauth-/.test(req.url ?? '')) return next();
+        plain(res, 404, 'AGstudio has no OAuth: use the access token (Authorization: Bearer …).');
+      });
+
       // ---- the app's own endpoints
       server.middlewares.use('/api/mcp', (req, res, next) => {
         const path = (req.url ?? '').split('?')[0] ?? '';

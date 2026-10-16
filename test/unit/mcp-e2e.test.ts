@@ -1,4 +1,6 @@
 /// <reference types="node" />
+// The page's debug handle (window.__ag) and JSON-RPC answers are untyped on purpose here.
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { request } from 'node:http';
@@ -129,6 +131,10 @@ describe('MCP end to end (dev server + app in Chrome)', () => {
     expect((await raw('/mcp', { host: 'evil.example', authorization: `Bearer ${token}` })).status).toBe(403);
     expect((await raw('/mcp', { host: `localhost:${new URL(base).port}`, origin: 'https://evil.example', authorization: `Bearer ${token}` })).status).toBe(403);
     expect((await fetch(`${base}/mcp`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(405);
+    // An app looking for OAuth is told there is none (not handed the page's HTML).
+    const oauth = await fetch(`${base}/.well-known/oauth-protected-resource`);
+    expect(oauth.status).toBe(404);
+    expect(await oauth.text()).toMatch(/no OAuth/);
     // The app's own endpoints are for the app only: they want its header.
     expect((await fetch(`${base}/api/mcp/info`)).status).toBe(403);
     expect((await fetch(`${base}/api/mcp/info`, { headers: { 'x-agstudio': '1', origin: 'https://evil.example' } })).status).toBe(403);

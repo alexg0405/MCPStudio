@@ -35,8 +35,8 @@ for (const r of statics) {
 }
 
 if (statics.every((r) => r.code === 0)) {
-  phases.push(await run('vitest unit', ['exec', 'vitest', 'run', '--project', 'unit'], { stream: true }));
-  phases.push(await run('vitest audio', ['exec', 'vitest', 'run', '--project', 'audio'], { stream: true }));
+  phases.push(await run('vitest unit', ['exec', '--', 'vitest', 'run', '--project', 'unit'], { stream: true }));
+  phases.push(await run('vitest audio', ['exec', '--', 'vitest', 'run', '--project', 'audio'], { stream: true }));
 } else {
   console.error('\nSkipping the tests: fix the type or lint errors above first.');
 }

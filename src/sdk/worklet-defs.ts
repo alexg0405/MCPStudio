@@ -16,9 +16,11 @@ type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, '
   processor: string;
   /**
    * Seconds of release tail after the last note (export padding). Default 1. A function gets the
-   * params' current values, for a tail that follows a release knob: `(v) => Math.max(1, v.release)`.
+   * params' current values, for a tail that follows a release knob: `(v) => Math.max(1, v.release)`, and the
+   * host, for a tail that follows the loaded samples (`host.samples.durationSec('main')`) or the notes played
+   * (`host.channel?.lowestKey`): the export asks before any audio is decoded.
    */
-  tailTime?: number | ((values: ParamValues<P>) => number);
+  tailTime?: number | ((values: ParamValues<P>, host: PluginHost<P, S>) => number);
   setup?: WorkletSetup<P, S>;
   /**
    * Show the processor's output in the editor (`PluginUIProps.tap`); messages the kernel posts as
@@ -29,8 +31,11 @@ type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, '
 
 type WorkletEffectDef<P extends ParamSpecs, S> = Omit<EffectDef<P, S>, 'kind' | 'create'> & {
   processor: string;
-  /** Seconds the effect keeps sounding after its input stops. Default 0. A function gets the params' current values. */
-  tailTime?: number | ((values: ParamValues<P>) => number);
+  /**
+   * Seconds the effect keeps sounding after its input stops. Default 0. A function gets the params' current
+   * values and the host (`host.samples.durationSec('ir')` for a tail that follows a loaded sample).
+   */
+  tailTime?: number | ((values: ParamValues<P>, host: PluginHost<P, S>) => number);
   /**
    * Seconds the effect delays its audio (a look-ahead): the host compensates it. A function gets the
    * sample rate, for latencies that are a whole number of frames: `(sr) => 64 / sr`.
@@ -48,14 +53,14 @@ function currentValues<P extends ParamSpecs>(host: PluginHost<P, unknown>): Para
   return out as ParamValues<P>;
 }
 
-/** Resolves a `tailTime` option (a number, or a function of the current param values). */
-function tailOf<P extends ParamSpecs>(
-  tail: number | ((values: ParamValues<P>) => number) | undefined,
-  host: PluginHost<P, unknown>,
+/** Resolves a `tailTime` option (a number, or a function of the current param values and the host). */
+function tailOf<P extends ParamSpecs, S>(
+  tail: number | ((values: ParamValues<P>, host: PluginHost<P, S>) => number) | undefined,
+  host: PluginHost<P, S>,
   fallback: number,
 ): number {
   if (typeof tail === 'function') {
-    const t = tail(currentValues(host));
+    const t = tail(currentValues(host), host);
     return Number.isFinite(t) && t >= 0 ? t : fallback;
   }
   return tail ?? fallback;

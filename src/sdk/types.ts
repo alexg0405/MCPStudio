@@ -72,6 +72,12 @@ export interface SampleSlots {
   onChange(slot: string, cb: (buffer: AudioBuffer | null) => void): () => void;
   /** Display name of the sample in a slot. */
   name(slot: string): string | null;
+  /**
+   * Length in seconds of the sample in a slot at its own speed, known without decoding it (from the file's header,
+   * or recorded when it was imported), or null (empty, or not known yet). For things that must know how long a sample
+   * can sound before it has loaded, above all `tailTime`: the export probe reads it before any audio is decoded.
+   */
+  durationSec(slot: string): number | null;
 }
 
 export interface TransportInfo {
@@ -95,6 +101,12 @@ export interface ChannelInfo {
   readonly pitch: ParamSignal;
   /** The channel's pitch in cents at an AudioContext time (e.g. to know how long a sample plays). */
   pitchAt(time: number): number;
+  /**
+   * The lowest key of any unmuted note this channel plays in the project's patterns (null: none). A sampler plays
+   * lower keys slower, so this bounds how long its sample can sound: use it for `tailTime`. Read it when needed
+   * (it follows edits).
+   */
+  readonly lowestKey: number | null;
 }
 
 export interface WorkletOptions {

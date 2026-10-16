@@ -3,7 +3,16 @@
  * project document into a Web Audio graph and drives the lookahead transport.
  */
 import type { DocChange } from '@core/history/history';
-import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from '@core/model/types';
+import type {
+  ChannelId,
+  InsertId,
+  PluginInstance,
+  PluginOwner,
+  Project,
+  SampleId,
+  SampleRef,
+  Tick,
+} from '@core/model/types';
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
 import { automatedOwners } from '@core/automation/owners';
@@ -324,6 +333,28 @@ export class Engine implements EngineApi, EngineCore {
   async pluginsReady(): Promise<void> {
     await this.initDone;
     await Promise.all([...[...this.strips.values()].map((s) => s.ready), this.mixer.ready]);
+  }
+
+  /**
+   * Resolves once the length of every sample in a plugin's slot is known (`host.samples.durationSec`), so a plugin's
+   * `tailTime` can depend on its samples. Reads file headers (a decode only for a file they don't describe) and skips
+   * what the project already records, so it is cheap. The export's tail probe waits for it after `pluginsReady`.
+   */
+  async sampleLengthsReady(): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    const ids = new Set<SampleId>();
+    const add = (inst: PluginInstance) => {
+      for (const id of Object.values(inst.samples ?? {})) if (id) ids.add(id);
+    };
+    for (const ch of Object.values(p.channels)) if (ch.kind === 'instrument') add(ch.plugin);
+    for (const ins of Object.values(p.mixer.inserts)) for (const slot of ins.fx) add(slot.plugin);
+    await Promise.all(
+      [...ids].map((id) => {
+        const ref = p.samples[id];
+        return ref ? this.samples.learnDuration(ref, this.ctx).catch(() => null) : null;
+      }),
+    );
   }
 
   /** Resolves when the master chain and every plugin instance (instruments and effects) have loaded. */

@@ -2222,6 +2222,35 @@ by id, name or number (1-based in song order), so commands take any of them; the
   startCapture → `AudioCapture`), `playTestClicks`, `setSongOpenEnded`. `renderOffline` takes `limiter: false`;
   `measureTail` is exported.
 
+### One-shot samples and the export's tail
+
+`measureTail` renders nothing and decodes nothing: it creates the instruments on a 128-frame probe, waits for the plugins
+(`pluginsReady`) and the lengths of their sample slots (`sampleLengthsReady`), and adds up `tailTime` along the routes
+(capped at 30 s). A sample that plays to its end after key-up (Sampler with the envelope off, a Drum Pads pad, a one-shot
+Slicer slice) used to report a tail from what happened to be decoded: the Sampler's from `host.samples.get` (null on a
+cold cache, so 0.2 s), Drum Pads' a fixed 4 s and the Slicer's 2 s, so a long one-shot at the very end of the song was
+cut. Now:
+
+- `SampleSlots.durationSec(slot)` (SDK, additive) answers from `SampleCache.knownDuration`: the decoded buffer, a built-in's
+  generated length, `SampleRef.durationSec` (recorded at import from the file's header, `core/io/audio-info.ts`), or what
+  `SampleCache.learnDuration` read for projects that don't record it (the header, and a decode only for a file the
+  headers don't describe). `Engine.sampleLengthsReady()` runs that for every sample in a plugin slot before the probe is
+  read, so it costs a header read, not a decode.
+- `ChannelInfo.lowestKey` (SDK, additive; `core/query/queries.ts` `lowestNoteKey`) is the lowest unmuted note of the channel
+  in any pattern. The Sampler's tail is `duration × (1 − start) / 2^((lowest − root + tune + fine/100 + channel pitch/100 − 1) / 12)`
+  (the −1 covers a note's own fine pitch), up to the 30 s cap; with the envelope on it is the release as before.
+- Worklet instruments' `tailTime` function gets the host as a second argument (`tailTime: (values, host) => …`). Drum Pads:
+  4 s, or longer for any pad with a sample, `min(1.34 × decay, duration / 2^(tune/12))` (at the maximum decay the whole
+  sample). Slicer: gated playback the release; one-shot the sample (the demo break while the slot is empty) at its tune,
+  never under 2 s.
+- Tests (`test/browser/one-shot-tail.test.ts`): a 6 s sample on the last sixteenth of a one-bar song. Before: tail probe
+  0.5 s (Sampler, cold cache), 4 s (Drum Pads), 2 s (Slicer): the export ended 0.2–4 s into the sample. After: tails of
+  6.4 s (Sampler, at its root with the semitone margin), 12.7 s an octave down, 6 s (pad), 6 s (slice), and the export
+  holds the whole sample, fading to silence at its end.
+- Found, not changed: on a cold cache a Sampler's first note is dropped in an offline render when its embedded sample
+  is still decoding (the sampler asks for it at its first note and plays nothing until it arrives). The app avoids it
+  because the realtime engine decodes slot samples when idle and the cache is shared.
+
 ## Faust plugins (M18)
 
 - `tools/faust/compile.ts` compiles `.dsp` source with faustwasm's own WebAssembly build of the Faust compiler,

@@ -5,7 +5,7 @@ import type { ChannelId, Note, NoteId, PatternId, Project } from '../model/types
 import { addChannel, toggleSoloChannel, setChannelProp } from '../ops/channels';
 import { addNote, setStep } from '../ops/notes';
 import { PPQ, TICKS_PER_STEP, constantTempo, formatBST, keyName, ticksPerBar } from '../time/ppq';
-import { effectivelyMuted, notesOverlapping, notesStartingIn, patternLength, sortedNotes, stepView } from './queries';
+import { effectivelyMuted, lowestNoteKey, notesOverlapping, notesStartingIn, patternLength, sortedNotes, stepView } from './queries';
 
 const n = (id: string, tick: number, length = TICKS_PER_STEP, key = 60): Note => ({
   id: id as NoteId,
@@ -56,6 +56,20 @@ describe('note queries', () => {
 
   it('includes long notes that started before the range', () => {
     expect(notesOverlapping(sortedNotes(notes), 3500, 3600).map((x) => x.id)).toEqual(['a']);
+  });
+});
+
+describe('lowestNoteKey', () => {
+  it('is the lowest unmuted note of the channel in any pattern, or null', () => {
+    const { p, pid, cid } = withChannel();
+    expect(lowestNoteKey(p, cid)).toBeNull();
+    const q = produce(p, (d) => {
+      addNote(d, pid, cid, n('a', 0, 240, 64));
+      addNote(d, pid, cid, n('b', 240, 240, 52));
+      addNote(d, pid, cid, { ...n('c', 480, 240, 30), muted: true });
+    });
+    expect(lowestNoteKey(q, cid)).toBe(52);
+    expect(lowestNoteKey(q, 'other' as ChannelId)).toBeNull();
   });
 });
 

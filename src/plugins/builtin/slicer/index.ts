@@ -1,6 +1,6 @@
 import { defineWorkletInstrument } from '@agstudio/sdk';
 import processor from './slicer.worklet.ts?worker&url';
-import { demoLoop, DEMO_RATE } from './demo.kernel';
+import { demoLoop, DEMO_RATE, DEMO_SECONDS } from './demo.kernel';
 import type { DemoMessage } from './kernel';
 import { SLICER_ID, slicerParams } from './params';
 import { SlicerUI } from './ui';
@@ -20,7 +20,13 @@ export default defineWorkletInstrument({
   processor,
   sampleSlots: ['main'],
   samplePickers: false,
-  tailTime: 2,
+  // One-shot slices play to their end whatever the key does, so the tail is the sample (the demo break while the
+  // slot is empty) at its tune: more than any one slice, but a silent end is trimmed from the export. Gated: the release.
+  tailTime: (v, host) => {
+    if (v.playback === 'gated') return Math.max(2, Number(v.release) / 1000);
+    const seconds = host.samples.durationSec('main') ?? (host.samples.name('main') === null ? DEMO_SECONDS : 0);
+    return Math.max(2, Math.min(30, seconds / Math.pow(2, Number(v.tune) / 12)));
+  },
   ui: SlicerUI,
   setup(port) {
     const msg: DemoMessage = { type: 'demo', data: demoLoop(), sampleRate: DEMO_RATE };

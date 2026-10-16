@@ -1,7 +1,17 @@
 import { defineWorkletInstrument, type ParamValue } from '@agstudio/sdk';
 import processor from './drum-pads.worklet.ts?worker&url';
 import type { SoundsMessage } from './kernel';
-import { DRUM_PADS_ID, drumPadsParams, FULL_DECAY, PAD_SLOTS, padParam, SOUND_IDS, type SoundId } from './params';
+import {
+  DRUM_PADS_ID,
+  drumPadsParams,
+  FULL_DECAY,
+  PAD_SLOTS,
+  PADS,
+  padParam,
+  padSlot,
+  SOUND_IDS,
+  type SoundId,
+} from './params';
 import { builtinSound } from './sounds.kernel';
 import { DrumPadsUI } from './ui';
 
@@ -47,7 +57,21 @@ export default defineWorkletInstrument({
   processor,
   sampleSlots: PAD_SLOTS,
   samplePickers: false,
-  tailTime: 4,
+  // The built-in sounds fit in 4 s. A pad with a sample plays all of it (one-shot: the key-up changes nothing),
+  // for as long as its decay and tune allow; the length is from the file's header, as nothing is decoded yet.
+  tailTime: (v, host) => {
+    let tail = 4;
+    for (let n = 1; n <= PADS; n++) {
+      const seconds = host.samples.durationSec(padSlot(n));
+      if (seconds === null) continue;
+      const id = padParam(n);
+      const decay = Number(v[id.decay]);
+      // The decay reaches −60 dB in `decay` seconds, −80 dB (inaudible) in a third more; the maximum plays it all.
+      const heard = decay >= FULL_DECAY * 0.999 ? Infinity : decay * 1.34;
+      tail = Math.max(tail, Math.min(heard, seconds / Math.pow(2, Number(v[id.tune]) / 12)));
+    }
+    return Math.min(30, tail);
+  },
   ui: DrumPadsUI,
   setup(port, host) {
     const sampleRate = host.audioContext.sampleRate;

@@ -41,6 +41,19 @@ export class FmOperator {
   }
 
   /**
+   * `next()` for an operator whose level is 0: it only advances its phase and returns 0 (the same
+   * state `next(inc, pm, 0)` leaves behind, without the sine lookup).
+   */
+  skip(inc: number): number {
+    let ph = this.phase + inc;
+    if (ph >= 1) ph -= Math.floor(ph);
+    this.phase = ph;
+    this.prev = this.out;
+    this.out = 0;
+    return 0;
+  }
+
+  /**
    * Self-modulation: `amount` 0–1 (up to 1.5 radians per unit of output, where it is sawtooth-like;
    * much more turns it into noise), plus any other `pm`.
    */

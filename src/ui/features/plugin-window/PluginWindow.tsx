@@ -49,7 +49,7 @@ function SampleSlot({ owner, slot }: { owner: PluginOwner; slot: string }) {
   return (
     <label
       className={styles.headerItem}
-      data-hint="The sample this plugin plays (your own files arrive with the sample browser, M6)"
+      data-hint="The sample this plugin plays: pick one of the built-in sounds"
     >
       <span className={styles.headerLabel}>{slot === 'main' ? 'Sample' : slot}</span>
       <select

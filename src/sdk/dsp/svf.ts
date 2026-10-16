@@ -30,7 +30,7 @@ export class Svf {
   set(type: SvfType, freq: number, q: number, sampleRate: number, gainDb = 0): this {
     const f = Math.min(Math.max(freq, 1), sampleRate * 0.49);
     const qq = Math.max(q, 1e-3);
-    const A = Math.pow(10, gainDb / 40);
+    const A = gainDb === 0 ? 1 : Math.pow(10, gainDb / 40);
     let g = Math.tan((Math.PI * f) / sampleRate);
     let k = 1 / qq;
     let m0 = 0;
@@ -89,6 +89,18 @@ export class Svf {
     this.m0 = m0;
     this.m1 = m1;
     this.m2 = m2;
+    return this;
+  }
+
+  /** Takes over another filter's coefficients (not its state): one design for the two channels of a stereo pair. */
+  copyDesign(o: Svf): this {
+    this.a1 = o.a1;
+    this.a2 = o.a2;
+    this.a3 = o.a3;
+    this.k = o.k;
+    this.m0 = o.m0;
+    this.m1 = o.m1;
+    this.m2 = o.m2;
     return this;
   }
 

@@ -15,7 +15,7 @@ import {
   type ParamBlock,
   type Voice,
 } from '@agstudio/sdk/worklet';
-import { LFO_BEATS, LFO_SHAPES, lfoParam, MOD_SLOTS, modParam, oscParam, type wavetableParams } from './params';
+import { LFO_BEATS, LFO_SHAPES, lfoParam, MOD_SLOTS, modParam, oscParam, wavetableParams } from './params';
 
 type Params = typeof wavetableParams;
 
@@ -67,6 +67,127 @@ class Osc {
   morphStep = 0;
 }
 
+/** An oscillator's params at one control step. */
+class OscSnap {
+  level = 0;
+  coarse = 0;
+  fine = 0;
+  table = 0;
+  pan = 0;
+  position = 0;
+  /** Per-unison-voice levels (left, right), cached while level, pan, spread and unison stay put. */
+  readonly gl = new Float64Array(MAX_UNISON);
+  readonly gr = new Float64Array(MAX_UNISON);
+  gainKey = [NaN, NaN, NaN, NaN];
+}
+
+/** An LFO's params at one control step. */
+class LfoSnap {
+  shape = 0;
+  synced = false;
+  length = 0;
+  rate = 1;
+}
+
+/**
+ * The params a control step reads, taken once and shared by every voice that controls at the same
+ * frame: all of them when no param is automated (the common case), else the voices that step on the
+ * same frame. Looking a param up by name is a hash lookup and a voice does dozens of them per step.
+ */
+class Snap {
+  unison = 1;
+  detune = 0;
+  spread = 0;
+  subLevel = 0;
+  subShape = 0;
+  subOctave = 0;
+  noiseLevel = 0;
+  noiseTone = 0;
+  filterType = 0;
+  envAmount = 0;
+  keyTrack = 0;
+  cutoff = 0;
+  resonance = 0;
+  drive = 0;
+  velocity = 0;
+  readonly osc = [new OscSnap(), new OscSnap()];
+  readonly lfo = [new LfoSnap(), new LfoSnap()];
+  readonly modSource = new Int32Array(MOD_SLOTS);
+  readonly modTarget = new Int32Array(MOD_SLOTS);
+  readonly modAmount = new Float64Array(MOD_SLOTS);
+  /** 2^(detune · position / 1200) for each unison voice, cached while detune and unison stay put. */
+  readonly detuneRatio = new Float64Array(MAX_UNISON);
+  private ratioKey = [NaN, NaN];
+
+  read(k: WavetableKernel, p: ParamBlock<Params>, i: number): void {
+    const v = (id: string) => at(p[id] as Float32Array, i);
+    const unison = Math.max(1, Math.min(MAX_UNISON, Math.round(v('unison'))));
+    const detune = v('detune');
+    const spread = v('spread');
+    if (this.ratioKey[0] !== detune || this.ratioKey[1] !== unison) {
+      this.ratioKey[0] = detune;
+      this.ratioKey[1] = unison;
+      for (let u = 0; u < unison; u++) {
+        const spreadPos = unison > 1 ? (2 * u) / (unison - 1) - 1 : 0;
+        this.detuneRatio[u] = Math.pow(2, (detune * spreadPos) / 1200);
+      }
+    }
+    this.unison = unison;
+    this.detune = detune;
+    this.spread = spread;
+    this.subLevel = v('subLevel');
+    this.subShape = Math.round(v('subShape'));
+    this.subOctave = v('subOctave');
+    this.noiseLevel = v('noiseLevel');
+    this.noiseTone = v('noiseTone');
+    this.filterType = Math.round(v('filterType'));
+    this.envAmount = v('envAmount');
+    this.keyTrack = v('keyTrack');
+    this.cutoff = v('cutoff');
+    this.resonance = v('resonance');
+    this.drive = v('drive');
+    this.velocity = v('velocity');
+    const norm = 1 / Math.sqrt(unison);
+    for (let which = 0; which < 2; which++) {
+      const o = this.osc[which] as OscSnap;
+      const ids = which === 0 ? k.osc1Ids : k.osc2Ids;
+      o.level = v(ids.level);
+      o.coarse = v(ids.coarse);
+      o.fine = v(ids.fine);
+      o.table = v(ids.table);
+      o.pan = v(ids.pan);
+      o.position = v(ids.position);
+      const key = o.gainKey;
+      if (key[0] !== o.level || key[1] !== o.pan || key[2] !== spread || key[3] !== unison) {
+        key[0] = o.level;
+        key[1] = o.pan;
+        key[2] = spread;
+        key[3] = unison;
+        for (let u = 0; u < unison; u++) {
+          const spreadPos = unison > 1 ? (2 * u) / (unison - 1) - 1 : 0;
+          const pan = Math.max(-1, Math.min(1, o.pan + spread * spreadPos));
+          o.gl[u] = o.level * norm * Math.sqrt(0.5 * (1 - pan));
+          o.gr[u] = o.level * norm * Math.sqrt(0.5 * (1 + pan));
+        }
+      }
+    }
+    for (let n = 0; n < 2; n++) {
+      const l = this.lfo[n] as LfoSnap;
+      const ids = n === 0 ? k.lfo1Ids : k.lfo2Ids;
+      l.shape = Math.round(v(ids.shape));
+      l.synced = v(ids.sync) >= 0.5;
+      l.length = Math.round(v(ids.length));
+      l.rate = v(ids.rate);
+    }
+    for (let m = 0; m < MOD_SLOTS; m++) {
+      const id = k.modIds[m] as ReturnType<typeof modParam>;
+      this.modSource[m] = Math.round(v(id.source));
+      this.modTarget[m] = Math.round(v(id.target));
+      this.modAmount[m] = v(id.amount);
+    }
+  }
+}
+
 class WtVoice implements Voice {
   noteId = -1;
   key = 0;
@@ -106,6 +227,10 @@ class WtVoice implements Voice {
   readonly f2L = new Svf();
   readonly f2R = new Svf();
   drive = 0;
+  /** The filter design in force (type, cutoff and Q), or NaN when it must be set again. */
+  filterType = NaN;
+  filterCutoff = NaN;
+  filterQ = NaN;
   driveNorm = 1;
   gain = 0;
   gainStep = 0;
@@ -146,13 +271,13 @@ export class WavetableKernel extends InstrumentKernel<Params> {
   /** Free-running LFO phases shared by voices that don't restart their LFOs. */
   private readonly lfoPhase = new Float64Array(2);
   private readonly mods = new Float64Array(DESTINATIONS);
-  private readonly bufL = new Float32Array(CONTROL);
-  private readonly bufR = new Float32Array(CONTROL);
-  private readonly osc1Ids = oscParam(1);
-  private readonly osc2Ids = oscParam(2);
-  private readonly lfo1Ids = lfoParam(1);
-  private readonly lfo2Ids = lfoParam(2);
-  private readonly modIds = Array.from({ length: MOD_SLOTS }, (_, i) => modParam(i + 1));
+  private readonly bufL = new Float64Array(CONTROL);
+  private readonly bufR = new Float64Array(CONTROL);
+  readonly osc1Ids = oscParam(1);
+  readonly osc2Ids = oscParam(2);
+  readonly lfo1Ids = lfoParam(1);
+  readonly lfo2Ids = lfoParam(2);
+  readonly modIds = Array.from({ length: MOD_SLOTS }, (_, i) => modParam(i + 1));
 
   constructor(host: KernelHost) {
     super(host);
@@ -212,6 +337,16 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     const bank = this.bank;
     if (!bank) return;
     const n = to - from;
+    // Automated params (one value per frame) make the snapshot frame-specific; otherwise it is shared.
+    this.seq++;
+    let constant = true;
+    const names = this.paramNames;
+    for (let k = 0; k < names.length; k++)
+      if ((p[names[k] as string] as Float32Array).length > 1) {
+        constant = false;
+        break;
+      }
+    this.constant = constant;
     // Shared free-running LFO phases (for voices that keep running across notes).
     const r1 = at(p[this.lfo1Ids.rate] as Float32Array, from);
     const r2 = at(p[this.lfo2Ids.rate] as Float32Array, from);
@@ -264,7 +399,47 @@ export class WavetableKernel extends InstrumentKernel<Params> {
       const size = osc.size;
       const m0 = osc.morph;
       const dm = osc.morphStep;
-      for (let u = 0; u < unison; u++) {
+      let u = 0;
+      // Two unison voices per pass: half the loop overhead and half the traffic through the mix buffers.
+      for (; u + 1 < unison; u += 2) {
+        let pa = osc.phase[u] as number;
+        let pb = osc.phase[u + 1] as number;
+        const ia = osc.inc[u] as number;
+        const ib = osc.inc[u + 1] as number;
+        const gla = osc.gl[u] as number;
+        const gra = osc.gr[u] as number;
+        const glb = osc.gl[u + 1] as number;
+        const grb = osc.gr[u + 1] as number;
+        let m = m0;
+        for (let s = 0; s < seg; s++) {
+          const xa = pa * size;
+          const ja = xa | 0;
+          const fa = xa - ja;
+          const xb = pb * size;
+          const jb = xb | 0;
+          const fb = xb - jb;
+          const a0 = d[a + ja] as number;
+          const b0 = d[b + ja] as number;
+          const c0 = d[a + jb] as number;
+          const e0 = d[b + jb] as number;
+          const ya = a0 + ((d[a + ja + 1] as number) - a0) * fa;
+          const yb = b0 + ((d[b + ja + 1] as number) - b0) * fa;
+          const yc = c0 + ((d[a + jb + 1] as number) - c0) * fb;
+          const ye = e0 + ((d[b + jb + 1] as number) - e0) * fb;
+          const y1 = ya + (yb - ya) * m;
+          const y2 = yc + (ye - yc) * m;
+          L[s] = (L[s] as number) + y1 * gla + y2 * glb;
+          R[s] = (R[s] as number) + y1 * gra + y2 * grb;
+          pa += ia;
+          if (pa >= 1) pa -= 1;
+          pb += ib;
+          if (pb >= 1) pb -= 1;
+          m += dm;
+        }
+        osc.phase[u] = pa;
+        osc.phase[u + 1] = pb;
+      }
+      for (; u < unison; u++) {
         let ph = osc.phase[u] as number;
         const inc = osc.inc[u] as number;
         const gl = osc.gl[u] as number;
@@ -346,6 +521,9 @@ export class WavetableKernel extends InstrumentKernel<Params> {
   // Shared per-block settings read by the control step and the segment renderer.
   private subShape = 0;
   private filterSteep = false;
+  /** The last resonance seen and its Q (shared by voices: one pow per change, not per voice and step). */
+  private lastRes = NaN;
+  private lastQ = 0;
   /** The param block and frame the control step reads (see P). */
   private blk: ParamBlock<Params> | null = null;
   private idx = 0;
@@ -358,28 +536,25 @@ export class WavetableKernel extends InstrumentKernel<Params> {
    * Returns false once the voice has finished.
    */
   private control(v: WtVoice, p: ParamBlock<Params>, i: number, bank: WavetableBank): boolean {
-    this.blk = p;
-    this.idx = i;
-    const P = this.P;
     if (v.fresh) this.setUp(v, p, i);
     if (!v.ampEnv.active) {
       this.silence(v);
       return false;
     }
+    const S = this.snapshot(p, i);
 
     // Envelopes and LFOs.
     const amp = v.ampEnv.next();
     const env = v.modEnv.next();
-    v.lfo1Value = this.lfoValue(v.lfo1, p, i, this.lfo1Ids, v.lfo1Rate);
-    v.lfo2Value = this.lfoValue(v.lfo2, p, i, this.lfo2Ids, v.lfo2Rate);
+    v.lfo1Value = this.lfoValue(v.lfo1, S.lfo[0] as LfoSnap, i, v.lfo1Rate);
+    v.lfo2Value = this.lfoValue(v.lfo2, S.lfo[1] as LfoSnap, i, v.lfo2Rate);
 
     // Mod matrix.
     const mods = this.mods;
     mods.fill(0);
     const key = (v.key - 60) / 60;
     for (let s = 0; s < MOD_SLOTS; s++) {
-      const id = this.modIds[s] as ReturnType<typeof modParam>;
-      const src = Math.round(P(id.source));
+      const src = S.modSource[s] as number;
       if (src === 0) continue;
       const value =
         src === SRC_ENV
@@ -399,11 +574,11 @@ export class WavetableKernel extends InstrumentKernel<Params> {
                         ? 1
                         : key
                     : 0;
-      const dst = Math.round(P(id.target));
-      mods[dst] = (mods[dst] as number) + P(id.amount) * value;
+      const dst = S.modTarget[s] as number;
+      mods[dst] = (mods[dst] as number) + (S.modAmount[s] as number) * value;
     }
-    v.lfo1Rate = Math.pow(2, 4 * (mods[DST_LFO1] as number));
-    v.lfo2Rate = Math.pow(2, 4 * (mods[DST_LFO2] as number));
+    v.lfo1Rate = mods[DST_LFO1] === 0 ? 1 : Math.pow(2, 4 * (mods[DST_LFO1] as number));
+    v.lfo2Rate = mods[DST_LFO2] === 0 ? 1 : Math.pow(2, 4 * (mods[DST_LFO2] as number));
 
     // Pitch (semitones): the gliding note, the channel pitch, the note's fine pitch and modulation.
     if (v.glideStep < v.glideSteps) {
@@ -414,33 +589,27 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     const sr = this.sampleRate;
 
     // Oscillators.
-    const unison = Math.max(1, Math.min(MAX_UNISON, Math.round(P('unison'))));
+    const unison = S.unison;
     v.unison = unison;
-    const detune = P('detune');
-    const spread = P('spread');
-    const norm = 1 / Math.sqrt(unison);
     for (let which = 0; which < 2; which++) {
       const osc = which === 0 ? v.osc1 : v.osc2;
-      const ids = which === 0 ? this.osc1Ids : this.osc2Ids;
-      const level = P(ids.level);
+      const o = S.osc[which] as OscSnap;
+      const level = o.level;
       osc.on = level > 0;
       if (!osc.on) continue;
-      const base = 440 * Math.pow(2, (semis + P(ids.coarse) + P(ids.fine) / 100 - 69) / 12);
-      const table = Math.max(0, Math.min(bank.tables - 1, Math.round(P(ids.table))));
-      const oscPan = P(ids.pan);
+      const base = 440 * Math.pow(2, (semis + o.coarse + o.fine / 100 - 69) / 12);
+      const table = Math.max(0, Math.min(bank.tables - 1, Math.round(o.table)));
       let top = 0;
       for (let u = 0; u < unison; u++) {
-        const spreadPos = unison > 1 ? (2 * u) / (unison - 1) - 1 : 0;
-        const inc = (base * Math.pow(2, (detune * spreadPos) / 1200)) / sr;
+        const inc = (base * (S.detuneRatio[u] as number)) / sr;
         osc.inc[u] = inc;
         if (inc > top) top = inc;
-        const pan = Math.max(-1, Math.min(1, oscPan + spread * spreadPos));
-        osc.gl[u] = level * norm * Math.sqrt(0.5 * (1 - pan));
-        osc.gr[u] = level * norm * Math.sqrt(0.5 * (1 + pan));
+        osc.gl[u] = o.gl[u] as number;
+        osc.gr[u] = o.gr[u] as number;
       }
       // The frames to morph between at the mip level for the highest unison voice.
       const mod = (which === 0 ? mods[DST_POS1] : mods[DST_POS2]) as number;
-      const position = Math.max(0, Math.min(1, P(ids.position) + mod));
+      const position = Math.max(0, Math.min(1, o.position + mod));
       const fpos = position * (bank.frames - 1);
       const f0 = Math.min(bank.frames - 2 < 0 ? 0 : bank.frames - 2, Math.floor(fpos));
       const frac = bank.frames > 1 ? fpos - f0 : 0;
@@ -458,40 +627,51 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     }
 
     // Sub (an octave or two below the note) and noise, centred.
-    const subLevel = P('subLevel');
+    const subLevel = S.subLevel;
     v.subGain = subLevel * 0.7;
-    this.subShape = Math.round(P('subShape'));
+    this.subShape = S.subShape;
     if (subLevel > 0)
-      v.subInc = Math.min(0.45, ((440 * Math.pow(2, (semis - 69) / 12)) / sr) * (P('subOctave') >= 0.5 ? 0.25 : 0.5));
-    const noiseLevel = P('noiseLevel');
+      v.subInc = Math.min(0.45, ((440 * Math.pow(2, (semis - 69) / 12)) / sr) * (S.subOctave >= 0.5 ? 0.25 : 0.5));
+    const noiseLevel = S.noiseLevel;
     v.noiseGain = noiseLevel * 0.5;
     if (noiseLevel > 0)
-      v.noiseCoef = 1 - Math.exp((-2 * Math.PI * Math.min(0.45 * sr, 200 * Math.pow(100, P('noiseTone')))) / sr);
+      v.noiseCoef = 1 - Math.exp((-2 * Math.PI * Math.min(0.45 * sr, 200 * Math.pow(100, S.noiseTone))) / sr);
 
     // Filter: cutoff with key tracking, the envelope amount and modulation (in octaves).
-    const type = Math.round(P('filterType'));
+    const type = S.filterType;
     this.filterSteep = type === 1;
-    const octaves = 8 * (P('envAmount') * env + (mods[DST_CUTOFF] as number));
-    const tracked = (P('keyTrack') * (v.pitch - 60)) / 12;
-    const cutoff = Math.max(20, Math.min(0.45 * sr, P('cutoff') * Math.pow(2, octaves + tracked)));
-    const res = Math.max(0, Math.min(1, P('resonance') + (mods[DST_RES] as number)));
-    const q = 0.6 * Math.pow(30, res);
-    const kind = type === 2 ? 'highpass' : type === 3 ? 'bandpass' : type === 4 ? 'notch' : 'lowpass';
-    if (this.filterSteep) {
-      v.f1L.set('lowpass', cutoff, 0.6, sr);
-      v.f1R.set('lowpass', cutoff, 0.6, sr);
-      v.f2L.set('lowpass', cutoff, q, sr);
-      v.f2R.set('lowpass', cutoff, q, sr);
-    } else {
-      v.f1L.set(kind, cutoff, q, sr);
-      v.f1R.set(kind, cutoff, q, sr);
+    const octaves = 8 * (S.envAmount * env + (mods[DST_CUTOFF] as number));
+    const tracked = (S.keyTrack * (v.pitch - 60)) / 12;
+    const cutoff = Math.max(20, Math.min(0.45 * sr, S.cutoff * Math.pow(2, octaves + tracked)));
+    const res = Math.max(0, Math.min(1, S.resonance + (mods[DST_RES] as number)));
+    if (res !== this.lastRes) {
+      this.lastRes = res;
+      this.lastQ = 0.6 * Math.pow(30, res);
     }
-    const drive = P('drive');
+    const q = this.lastQ;
+    // Both channels share one filter design, which is only recomputed when it changes (a filter that
+    // nothing modulates keeps the same cutoff for the whole note).
+    if (type !== v.filterType || cutoff !== v.filterCutoff || q !== v.filterQ) {
+      v.filterType = type;
+      v.filterCutoff = cutoff;
+      v.filterQ = q;
+      if (this.filterSteep) {
+        v.f1L.set('lowpass', cutoff, 0.6, sr);
+        v.f1R.copyDesign(v.f1L);
+        v.f2L.set('lowpass', cutoff, q, sr);
+        v.f2R.copyDesign(v.f2L);
+      } else {
+        const kind = type === 2 ? 'highpass' : type === 3 ? 'bandpass' : type === 4 ? 'notch' : 'lowpass';
+        v.f1L.set(kind, cutoff, q, sr);
+        v.f1R.copyDesign(v.f1L);
+      }
+    }
+    const drive = S.drive;
     v.drive = drive > 0 ? 1 + 6 * drive : 0;
     v.driveNorm = drive > 0 ? 1 / softClip(v.drive) : 1;
 
     // Level (envelope, velocity, modulation) gliding over the step, and pan.
-    const sens = P('velocity');
+    const sens = S.velocity;
     const ampMod = Math.max(0, Math.min(2, 1 + (mods[DST_AMP] as number)));
     const target = amp * (1 - sens + sens * v.velocity) * ampMod;
     v.gainStep = (target - v.gain) / CONTROL;
@@ -501,19 +681,32 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     return true;
   }
 
+  private readonly snap = new Snap();
+  /** Which render call and frame the snapshot was taken at (see Snap). */
+  private snapSeq = -1;
+  private snapAt = -1;
+  private seq = 0;
+  /** True while no param is automated in this render call: the snapshot is then good for every frame. */
+  private constant = true;
+  private readonly paramNames = Object.keys(wavetableParams);
+
+  /** The params at frame `i` of this render call (one shared read per frame, or per call when constant). */
+  private snapshot(p: ParamBlock<Params>, i: number): Snap {
+    const frame = this.constant ? 0 : i;
+    if (this.snapSeq !== this.seq || this.snapAt !== frame) {
+      this.snap.read(this, p, i);
+      this.snapSeq = this.seq;
+      this.snapAt = frame;
+    }
+    return this.snap;
+  }
+
   /** The LFO's value: locked to the song while it plays when synced, else free-running. */
-  private lfoValue(
-    lfo: Lfo,
-    p: ParamBlock<Params>,
-    i: number,
-    ids: ReturnType<typeof lfoParam>,
-    rateFactor: number,
-  ): number {
-    lfo.shape = LFO_SHAPES[Math.round(at(p[ids.shape] as Float32Array, i))] as LfoShape;
-    const synced = at(p[ids.sync] as Float32Array, i) >= 0.5;
-    const beats = LFO_BEATS[Math.round(at(p[ids.length] as Float32Array, i))] ?? 1;
-    if (synced && this.transport.playing) return lfo.atBeat(this.transport.beatAt(i), beats / rateFactor);
-    const hz = synced ? this.transport.bpm / 60 / beats : at(p[ids.rate] as Float32Array, i);
+  private lfoValue(lfo: Lfo, l: LfoSnap, i: number, rateFactor: number): number {
+    lfo.shape = LFO_SHAPES[l.shape] as LfoShape;
+    const beats = LFO_BEATS[l.length] ?? 1;
+    if (l.synced && this.transport.playing) return lfo.atBeat(this.transport.beatAt(i), beats / rateFactor);
+    const hz = l.synced ? this.transport.bpm / 60 / beats : l.rate;
     return lfo.next(hz * rateFactor);
   }
 

@@ -112,6 +112,20 @@ describe('Svf', () => {
     f.reset();
     expect(f.process(0)).toBe(0);
   });
+
+  it('copyDesign gives a second filter the same response as calling set() on it', () => {
+    const a = new Svf().set('bell', 900, 1.3, SR, 6);
+    const viaSet = new Svf().set('bell', 900, 1.3, SR, 6);
+    const viaCopy = new Svf().copyDesign(a);
+    for (let i = 0; i < 2000; i++) {
+      const x = Math.sin(i * 0.2) + Math.sin(i * 0.031);
+      expect(viaCopy.process(x)).toBe(viaSet.process(x));
+    }
+    // A zero gain skips the dB-to-linear conversion without changing the filter.
+    const zero = new Svf().set('lowpass', 1000, 0.7, SR, 0);
+    const plain = new Svf().set('lowpass', 1000, 0.7, SR);
+    expect(zero.process(1)).toBe(plain.process(1));
+  });
 });
 
 describe('EnvelopeFollower', () => {

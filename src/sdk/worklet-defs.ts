@@ -2,7 +2,7 @@
  * Plugins whose DSP runs in an AudioWorklet kernel. The plugin file passes the processor URL; the
  * kernel lives in a `*.worklet.ts` file that calls registerKernel(sameId, params, Kernel).
  */
-import type { ParamSpecs } from './params';
+import type { ParamSpecs, ParamValues } from './params';
 import type { EffectDef, InstrumentDef, PluginHost, TapOptions, WorkletPort } from './types';
 
 /**
@@ -14,8 +14,11 @@ type WorkletSetup<P extends ParamSpecs, S> = (port: WorkletPort, host: PluginHos
 
 type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, 'kind' | 'create'> & {
   processor: string;
-  /** Seconds of release tail after the last note (export padding). Default 1. */
-  tailTime?: number;
+  /**
+   * Seconds of release tail after the last note (export padding). Default 1. A function gets the
+   * params' current values, for a tail that follows a release knob: `(v) => Math.max(1, v.release)`.
+   */
+  tailTime?: number | ((values: ParamValues<P>) => number);
   setup?: WorkletSetup<P, S>;
   /**
    * Show the processor's output in the editor (`PluginUIProps.tap`); messages the kernel posts as
@@ -26,7 +29,8 @@ type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, '
 
 type WorkletEffectDef<P extends ParamSpecs, S> = Omit<EffectDef<P, S>, 'kind' | 'create'> & {
   processor: string;
-  tailTime?: number;
+  /** Seconds the effect keeps sounding after its input stops. Default 0. A function gets the params' current values. */
+  tailTime?: number | ((values: ParamValues<P>) => number);
   /**
    * Seconds the effect delays its audio (a look-ahead): the host compensates it. A function gets the
    * sample rate, for latencies that are a whole number of frames: `(sr) => 64 / sr`.
@@ -36,6 +40,26 @@ type WorkletEffectDef<P extends ParamSpecs, S> = Omit<EffectDef<P, S>, 'kind' | 
   /** See the instrument option: the editor sees the effect's output and the kernel's readings. */
   tap?: boolean | TapOptions;
 };
+
+/** The params' current values, for `tailTime` functions. */
+function currentValues<P extends ParamSpecs>(host: PluginHost<P, unknown>): ParamValues<P> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(host.params)) out[key] = (host.params as Record<string, { value: unknown }>)[key]?.value;
+  return out as ParamValues<P>;
+}
+
+/** Resolves a `tailTime` option (a number, or a function of the current param values). */
+function tailOf<P extends ParamSpecs>(
+  tail: number | ((values: ParamValues<P>) => number) | undefined,
+  host: PluginHost<P, unknown>,
+  fallback: number,
+): number {
+  if (typeof tail === 'function') {
+    const t = tail(currentValues(host));
+    return Number.isFinite(t) && t >= 0 ? t : fallback;
+  }
+  return tail ?? fallback;
+}
 
 /** Taps the processor's output for the editor and forwards the kernel's `{ readings }` posts. */
 function tapPort(host: PluginHost<ParamSpecs, unknown>, port: WorkletPort, tap: boolean | TapOptions | undefined) {
@@ -72,7 +96,9 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
       const stopTap = tapPort(host as PluginHost<ParamSpecs, unknown>, port, def.tap);
       return {
         output: port.node,
-        tailTime: def.tailTime ?? 1,
+        get tailTime() {
+          return tailOf(def.tailTime, host, 1);
+        },
         noteOn: (e) => port.noteOn(e),
         noteOff: (e) => port.noteOff(e),
         allNotesOff: (time, hard) => port.allNotesOff(time, hard),
@@ -106,7 +132,9 @@ export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
       return {
         input: port.node,
         output: port.node,
-        tailTime: def.tailTime ?? 0,
+        get tailTime() {
+          return tailOf(def.tailTime, host, 0);
+        },
         latency: latency ?? 0,
         setState: (state) => port.setState(state),
         reset: () => port.reset(),

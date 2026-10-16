@@ -19,7 +19,8 @@
     "test:watch": "vitest --project unit",
     "check": "node scripts/check.mjs",
     "format": "prettier --write .",
-    "new:plugin": "node scripts/new-plugin.mjs"
+    "new:plugin": "node scripts/new-plugin.mjs",
+    "bench:plugins": "node scripts/bench-plugins.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

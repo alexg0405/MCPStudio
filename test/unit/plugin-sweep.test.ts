@@ -80,8 +80,8 @@ describe.each(KERNEL_ENTRIES.map((e) => [e.id, e] as const))('%s', (_id, entry) 
       'reports a tail that covers its own, in every preset',
       { timeout: 60_000 },
       () => {
-        const reported = typeof entry.def.tailTime === 'number' ? entry.def.tailTime : 0;
         for (const preset of [{ name: 'default', params: {} }, ...entry.presets]) {
+          const reported = entry.tailTime(preset.params);
           const r = runEntry(entry, [{ seconds: 2, values: preset.params }], { input: (t) => (t < 0.5 ? 1 : 0) });
           // Below -60 dB (0.001) once the reported tail (plus 0.1 s of slack for filter ring) is over.
           const after = stats(r, 0.5 + reported + 0.1);
@@ -91,9 +91,14 @@ describe.each(KERNEL_ENTRIES.map((e) => [e.id, e] as const))('%s', (_id, entry) 
     );
   } else {
     it('goes silent after its notes are released and the reported tail is over', { timeout: 120_000 }, () => {
-      const tail = typeof entry.def.tailTime === 'function' ? 4 : (entry.def.tailTime ?? 1);
       const releaseAt = 0.3;
-      for (const preset of [{ name: 'default', params: {} }, ...entry.presets]) {
+      // The slowest release the knobs allow: the reported tail has to follow it.
+      const slowest: Record<string, ParamValue> = {};
+      for (const [key, spec] of Object.entries(entry.params))
+        if (/release/i.test(key) && spec.type === 'float') slowest[key] = spec.max;
+      const longest = Object.keys(slowest).length ? [{ name: 'slowest release', params: slowest }] : [];
+      for (const preset of [{ name: 'default', params: {} }, ...entry.presets, ...longest]) {
+        const tail = entry.tailTime(preset.params);
         const r = runEntry(entry, [{ seconds: releaseAt + tail + 0.2, values: preset.params }], { releaseAt });
         expect(stats(r, 0, releaseAt).peak, `${preset.name}: makes sound`).toBeGreaterThan(0.001);
         expect(stats(r, releaseAt + tail).peak, `${preset.name}: rings past ${tail} s`).toBeLessThan(1e-3);

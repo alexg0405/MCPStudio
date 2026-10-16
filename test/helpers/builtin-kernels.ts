@@ -4,7 +4,7 @@
  * (test/unit/plugin-bench.test.ts). Plugins built from native Web Audio nodes (Sampler, 3xOsc,
  * 808 Bass, Delay, EQ, Filter, Distortion) have no kernel; test/browser/ covers them.
  */
-import type { EffectDef, InstrumentDef, ParamSpecs, ParamValue } from '@agstudio/sdk';
+import { defaultValues, type EffectDef, type InstrumentDef, type ParamSpecs, type ParamValue } from '@agstudio/sdk';
 import type { EffectKernel, InstrumentKernel } from '@agstudio/sdk/worklet';
 import { testHost } from '@agstudio/sdk/testing';
 
@@ -94,6 +94,8 @@ interface Common {
   def: AnyDef;
   presets: readonly { name: string; params: Record<string, ParamValue> }[];
   sidechain: boolean;
+  /** The tail the plugin reports (seconds) for a set of param values (defaults filled in). */
+  tailTime(values?: Record<string, ParamValue>): number;
 }
 
 export interface InstrumentEntry extends Common {
@@ -111,6 +113,14 @@ export interface EffectEntry extends Common {
 export type KernelEntry = InstrumentEntry | EffectEntry;
 
 const sdkDef = (d: unknown) => d as AnyDef;
+
+function tailOf(def: unknown, params: ParamSpecs, fallback: number) {
+  const tail = (def as { tailTime?: number | ((v: Record<string, ParamValue>) => number) }).tailTime;
+  return (values: Record<string, ParamValue> = {}): number => {
+    if (typeof tail === 'function') return tail({ ...defaultValues(params), ...values });
+    return tail ?? fallback;
+  };
+}
 
 function presetsOf(d: unknown) {
   return ((d as { presets?: { name: string; params?: Record<string, ParamValue> }[] }).presets ?? []).map((x) => ({
@@ -133,6 +143,7 @@ function effect<P extends ParamSpecs>(
     def: sdkDef(def),
     presets: presetsOf(def),
     sidechain: d.sidechain === true,
+    tailTime: tailOf(def, params, 0),
     make: (sr) => new Kernel(testHost(sr, 7)) as unknown as EffectKernel,
   };
 }
@@ -152,6 +163,7 @@ function instrument<P extends ParamSpecs>(
     def: sdkDef(def),
     presets: presetsOf(def),
     sidechain: false,
+    tailTime: tailOf(def, params, 1),
     make: (sr) => make(sr) as unknown as InstrumentKernel,
     keys,
   };

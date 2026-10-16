@@ -251,6 +251,10 @@
   --ag-text: #1d2327;
   --ag-text-dim: #55606a;
   --ag-text-faint: #66717b;
+  /* Floating panels (menus, dialogs, the search) are light too: dark glass under dark text was unreadable. */
+  --ag-glass: #f6f8fa;
+  --ag-glass-strong: #f6f8fa;
+  --ag-scrim: rgba(30, 40, 50, 0.32);
   --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 48%, #000);
   --ag-led: #45a823;
   --ag-led-off: #c3d1ba;

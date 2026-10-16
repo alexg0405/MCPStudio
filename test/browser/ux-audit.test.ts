@@ -328,7 +328,8 @@ describe('UX audit (shell)', () => {
     };
     // Minimum contrast against the page and the panel surfaces (WCAG: 4.5 for text; faint text is hints and disabled).
     const NEED: [string, number, string[]][] = [
-      ['--ag-text-dim', 4.5, ['--ag-bg', '--ag-surface-1']],
+      ['--ag-text', 7, ['--ag-bg', '--ag-surface-1', '--ag-glass', '--ag-glass-strong']],
+      ['--ag-text-dim', 4.5, ['--ag-bg', '--ag-surface-1', '--ag-glass']],
       ['--ag-text-faint', 3, ['--ag-bg', '--ag-surface-1']],
       ['--ag-accent-ink', 4.5, ['--ag-bg', '--ag-surface-1', '--ag-surface-2']],
     ];

@@ -7,12 +7,13 @@ import type { ChannelId, ClipId, InsertId, SlotId, Tick } from '@core/model/type
 import type { AppliedBeat } from '../../assistant/apply';
 import type { PluginSpec } from '../builder';
 import type { AiFocus, ResolvedFocus } from '../focus';
+import type { OpenWindow } from './windows';
 
 /** What the UI should do after the edit. */
 export type AfterEdit =
   | {
       kind: 'open';
-      window: 'mixer' | 'channel-rack' | 'piano-roll' | 'playlist' | 'plugin';
+      window: Exclude<OpenWindow, 'browser'>;
       channelId?: ChannelId;
       insertId?: InsertId;
       slotId?: SlotId;
@@ -64,6 +65,10 @@ export interface AppliedTurn {
   after: AfterEdit[];
   /** Whether the project changed (an undo step was made). */
   edited: boolean;
+  /** What the app itself did that is not an edit (settings, selection, windows), one line each: no undo step. */
+  ui?: string[];
+  /** The answers of `query` actions: what the read tools returned, for the next turn. */
+  queries?: { tool: string; args: Record<string, unknown>; result: unknown }[];
   /** Song-check notes about what this answer did (doubled parts…). */
   findings?: string[];
   /** The playlist span the answer edited (autoplay starts there). */

@@ -114,6 +114,7 @@ export function register(services: Services): void {
     title: 'Transpose',
     category: 'Piano roll',
     hint: 'Move the selected notes up or down in semitones',
+    argsHint: 'semitones, e.g. 2 or -12 (the notes selected in the piano roll: select them first)',
     enabled: hasNotes,
     run: (s, by) => pr.transpose(s, by ?? 1),
   });
@@ -122,6 +123,7 @@ export function register(services: Services): void {
     title: 'Nudge notes',
     category: 'Piano roll',
     hint: 'Move the selected notes one grid step earlier or later',
+    argsHint: '1 (later) or -1 (earlier)',
     enabled: hasSelection,
     run: (s, dir) => pr.nudge(s, dir ?? 1),
   });
@@ -156,6 +158,7 @@ export function register(services: Services): void {
     title: 'Transpose in key',
     category: 'Piano roll',
     hint: 'Move notes by scale steps of the song key',
+    argsHint: 'scale steps, e.g. 1 or -2',
     enabled: hasNotes,
     run: (s, steps) => pr.transposeInKey(s, steps ?? 1),
   });
@@ -183,6 +186,8 @@ export function register(services: Services): void {
     title: 'Run note script',
     category: 'Piano roll',
     hint: 'Run a note script on the selected notes (or all of them)',
+    // Opens a dialog; the note_tool action runs any tool with its settings.
+    ai: false,
     enabled: hasNotes,
     run: (s, id) => (id ? openNoteScript(s, id).then(() => {}) : undefined),
   });
@@ -209,6 +214,8 @@ export function register(services: Services): void {
       title,
       category: 'Piano roll',
       hint: services.plugins.script(script)?.description ?? title,
+      // These open a dialog; the note_tool action runs the same tool with its settings.
+      ai: false,
       enabled: (s) => hasNotes(s) && !!s.plugins.script(script),
       run: (s) => openNoteScript(s, script).then(() => {}),
     });

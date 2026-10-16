@@ -32,6 +32,8 @@ export function register(services: Services): void {
     title: 'Audio input…',
     category: 'Options',
     hint: 'Choose the microphone or audio interface to record from, mono or stereo, see its level, set monitoring and latency',
+    // A dialog; the settings action sets channels, track, monitoring and latency (the audio.inputDevice command picks the device).
+    ai: false,
     gesture: true,
     run: () => audioInputDialog.setState({ open: true }),
   });

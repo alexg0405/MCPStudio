@@ -10,6 +10,8 @@ import type { Services } from '../services';
 import { DOC_OPS, MODULES, UI_OP_NAMES } from './ops';
 import { ActionError, createOpContext, newAnswerState } from './ops/context';
 import type { AppliedTurn, ApplyContext } from './ops/types';
+import { queryAfter } from './ops/query';
+import { sessionAfter } from './ops/session';
 import { uiAfter } from './ops/ui';
 import type { AiAnswer } from './schema';
 
@@ -67,9 +69,13 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
     s.session.getState().selectChannel(state.selectChannel);
   const beat = state.beatPlan ? showBeat(s, state.beatPlan) : null;
   const done = finished as { focus: AppliedTurn['focus']; clips: NonNullable<AppliedTurn['selectClips']> } | null;
+  sessionAfter(s, answer, state);
+  queryAfter(s, answer, state);
   return {
     changes: state.changes,
     warnings: state.warnings,
+    ...(state.ui.length ? { ui: state.ui } : {}),
+    ...(state.queries.length ? { queries: state.queries } : {}),
     beat,
     after: state.after,
     edited: !!edited,

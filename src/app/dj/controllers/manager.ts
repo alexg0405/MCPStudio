@@ -30,7 +30,7 @@ import type { DecksApi } from '../decks-api';
 import { ABS_CONTROLS } from './abs';
 import { BrowseCursor, type BrowseSong } from './browse';
 import { DjDispatcher } from './dispatch';
-import { resolveDecks, type ResolvedDecks } from './decks-source';
+import type { ResolvedDecks } from './decks-source';
 import { LedFeedback } from './leds';
 import { idbControllerStorage, type ControllerStorage } from './storage';
 
@@ -584,7 +584,7 @@ export class DjControllers {
         target,
         shifted: shifted && target !== 'shift',
         session,
-        message: `${shifted ? 'Hold Shift if you like, then ' : ''}${kind === 'abs' ? 'move the fader or knob' : kind === 'rel' ? 'turn the jog wheel or dial a few clicks (both ways)' : 'press the button'} for ${label}…`,
+        message: `${shifted ? 'Hold Shift if you like, then ' : ''}${kind === 'abs' ? 'move the fader or knob' : kind === 'rel' ? 'turn the jog wheel or dial a few clicks (both ways)' : 'press the button'} for ${label}…`.replace(/^[a-z]/, (c) => c.toUpperCase()),
       },
     });
   }

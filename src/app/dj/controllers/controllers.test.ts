@@ -486,7 +486,7 @@ describe('mappings: saved, exported, imported, reset', () => {
 
   it('edits a binding (invert, jog speed) and clears one', async () => {
     const { c } = await setup({ devices: ['DDJ-400'] });
-    const [{ index }] = c.bindingsFor('DDJ-400', 'A.pitch');
+    const index = c.bindingsFor('DDJ-400', 'A.pitch')[0]!.index;
     c.updateBinding('DDJ-400', index!, { invert: true });
     expect(c.mappingFor('DDJ-400').bindings[index!]!.invert).toBe(true);
     c.updateBinding('DDJ-400', index!, { invert: false });

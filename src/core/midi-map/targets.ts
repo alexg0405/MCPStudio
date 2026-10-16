@@ -67,9 +67,17 @@ const DECK_FNS: readonly (FnDef & { group: string })[] = [
 function deckFnDefs(): FnDef[] {
   const out: FnDef[] = DECK_FNS.map(({ group: _g, ...d }) => d);
   for (let i = 1; i <= HOT_CUE_COUNT; i++)
-    out.push({ fn: `hotcue:${i}`, label: `Hot cue ${i}`, kind: 'button', hint: `Empty: sets hot cue ${i} here; set: jumps to it (hold Shift to clear)`, led: true });
+    out.push({ fn: `hotcue:${i}`, label: `Hot cue ${i}`, kind: 'button', hint: `Empty: sets hot cue ${i} here; set: jumps to it`, led: true });
+  for (let i = 1; i <= HOT_CUE_COUNT; i++)
+    out.push({ fn: `hotcueClear:${i}`, label: `Clear hot cue ${i}`, kind: 'button', hint: `Removes hot cue ${i}` });
   for (const b of AUTO_LOOP_BEATS)
-    out.push({ fn: `autoLoop:${b}`, label: `Loop ${b} beat${b === 1 ? '' : 's'}`, kind: 'button', hint: `Loops the next ${b} beat${b === 1 ? '' : 's'} from here` });
+    out.push({
+      fn: `autoLoop:${b}`,
+      label: `Loop ${b} beat${b === 1 ? '' : 's'}`,
+      kind: 'button',
+      hint: `Loops the next ${b} beat${b === 1 ? '' : 's'} from here`,
+      led: true,
+    });
   return out;
 }
 
@@ -136,6 +144,3 @@ export function parseTarget(id: string): { deck?: DeckLetter; fn: string; arg?: 
   const [name, arg] = t.fn.split(':');
   return { ...(t.deck ? { deck: t.deck } : {}), fn: name!, ...(arg !== undefined ? { arg: Number(arg) } : {}) };
 }
-
-/** The "other" deck's letter on the same side: used by the mapping presets (deck 1 ↔ A, deck 2 ↔ B). */
-export const deckAt = (index: number): DeckLetter => DECK_LETTERS[index] ?? 'A';

@@ -49,6 +49,8 @@ export type DeckMessage =
   | { t: 'loop'; start: number; length: number }
   | { t: 'noloop' }
   | { t: 'sync'; sync: SyncSpec | null }
+  /** Jump a following deck to the master's beat (exactly, at the next render quantum). */
+  | { t: 'align' }
   | { t: 'dispose' };
 
 /** Following another deck (all positions in frames of each song). */

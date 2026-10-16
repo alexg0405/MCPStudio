@@ -128,6 +128,10 @@ export class DeckKernel {
   private sync: SyncState | null = null;
   private syncError = 0;
   private syncLocked = false;
+  /** Jump to the master's beat at the next quantum (a start, a sync press, the master jumped). */
+  private alignPending = false;
+  /** Set when the deck starts from nothing, until its first frame is out. */
+  private fresh = false;
   private readonly snap = newSnapshot();
 
   private shared: Float64Array | null = null;
@@ -233,6 +237,8 @@ export class DeckKernel {
         this.rateOut = (this.sync && this.syncLocked ? this.tempoEff : this.tempo) * (1 + this.nudgeCur);
         this.startFresh();
       }
+      // A follower starts on the master's beat.
+      if (this.sync) this.alignPending = true;
     } else {
       if (!this.scratching) this.captureTail();
       this.playing = false;
@@ -308,6 +314,11 @@ export class DeckKernel {
     return this.loopLen > 0;
   }
 
+  /** Moves a following deck to the master's beat at the next render quantum (it does so by itself when it starts). */
+  align(): void {
+    if (this.sync) this.alignPending = true;
+  }
+
   setSync(spec: SyncSpec | null): void {
     if (!spec) {
       this.sync = null;
@@ -315,6 +326,7 @@ export class DeckKernel {
       this.syncError = 0;
       return;
     }
+    this.alignPending = false;
     this.sync = {
       spec,
       state: new Float64Array(spec.master),
@@ -394,6 +406,7 @@ export class DeckKernel {
           r += this.sR;
         }
 
+        this.fresh = false;
         this.pos += rate;
         if (this.loopLen > 0) {
           const end = this.loopStart + this.loopLen;
@@ -427,6 +440,7 @@ export class DeckKernel {
 
   /** Starts sounding at the current position from nothing (play, a seek while stopped). */
   private startFresh(): void {
+    this.fresh = true;
     this.resetStretch();
     this.rise = this.declick;
     this.stretchMode = this.keyLock && !this.scratching;
@@ -665,6 +679,7 @@ export class DeckKernel {
     if (!snap.playing || snap.tempoRate <= 0) {
       this.syncLocked = false;
       this.syncError = 0;
+      this.alignPending = false;
       return;
     }
     const sp = sy.spec;
@@ -681,6 +696,17 @@ export class DeckKernel {
     let err = phS - phM;
     err -= Math.round(err);
     this.syncError = err;
+    if (this.alignPending) {
+      this.alignPending = false;
+      // The master may be mid-jump (its position is a quantum old): align only when it is steady is not
+      // knowable here, so just land on its beat now; the phase lock does the rest.
+      if (!this.fresh) this.captureTail();
+      this.pos = clamp(this.pos - err * sp.selfBeat, 0, this.frames);
+      this.resetStretch();
+      if (this.isRunning) this.rise = this.declick;
+      this.syncError = 0;
+      return;
+    }
     const secPerBeat = sp.selfBeat / (this.sampleRate * Math.max(0.1, this.rateOut));
     const trim = clamp((-err * secPerBeat) / SYNC_TAU, -MAX_TRIM, MAX_TRIM);
     this.tempoEff *= 1 + trim;

@@ -62,6 +62,9 @@ class DeckProcessor extends AudioWorkletProcessor {
       case 'sync':
         k.setSync(m.sync);
         break;
+      case 'align':
+        k.align();
+        break;
       case 'dispose':
         this.disposed = true;
         break;

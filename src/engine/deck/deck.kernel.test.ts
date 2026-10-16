@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alignOffsetSec, beatPhase, phaseDiff, syncPlan } from '@core/dj/decks-math';
+import { beatPhase, phaseDiff, syncPlan } from '@core/dj/decks-math';
 import { autocorrelationPitch } from '../../../test/helpers/audio';
 import { DECK_STATE_SLOTS, DS } from './deck-id';
 import { DeckKernel, newSnapshot, readDeckState } from './deck.kernel';
@@ -378,23 +378,21 @@ function syncedPair(order: 'master-first' | 'follower-first', keyLock: boolean) 
   f.k.setTempo(1 + plan.pitch, keyLock);
   m.k.seek(10 * SR);
   f.k.seek(20.2 * SR);
-  // The main thread's first alignment: jump the follower to the master's beat.
-  const off = alignOffsetSec(
-    { grid: mGrid, positionSec: 10 },
-    { grid: fGrid, positionSec: 20.2, multiple: plan.multiple },
-  )!;
-  f.k.seek((20.2 + off) * SR);
   m.k.play(true);
-  f.k.play(true);
   const bl = new Float32Array(Q);
   const br = new Float32Array(Q);
+  // The master has been playing for a moment when the follower starts: it lands on the master's beat by itself.
+  m.k.process(bl, br, Q, 0);
+  f.k.play(true);
+  let cursor = Q;
   const ms = newSnapshot();
   const fs = newSnapshot();
   const errorsMs: number[] = [];
-  const run = (seconds: number, from: number) => {
+  const run = (seconds: number) => {
     const blocks = Math.round((seconds * SR) / Q);
     for (let b = 0; b < blocks; b++) {
-      const frame = from + b * Q;
+      const frame = cursor;
+      cursor += Q;
       if (order === 'master-first') {
         m.k.process(bl, br, Q, frame);
         f.k.process(bl, br, Q, frame);
@@ -410,7 +408,6 @@ function syncedPair(order: 'master-first' | 'follower-first', keyLock: boolean) 
       const err = phaseDiff(beatPhase(fp / SR, fGrid.firstDownbeat, plan.beatSec), beatPhase(mp / SR, mGrid.firstDownbeat, 60 / 124));
       errorsMs.push(err * (60 / 124) * 1000);
     }
-    return from + blocks * Q;
   };
   return { m, f, run, errorsMs };
 }
@@ -420,7 +417,7 @@ describe('deck kernel: sync', () => {
     for (const keyLock of [false, true]) {
       it(`holds beat phase within 2 ms over 5 minutes (${order}, key lock ${keyLock ? 'on' : 'off'})`, () => {
         const p = syncedPair(order, keyLock);
-        p.run(300, 0);
+        p.run(300);
         const settled = p.errorsMs.slice(Math.round((2 * SR) / Q));
         const worst = maxAbs(settled);
         expect(worst).toBeLessThan(2);
@@ -433,14 +430,14 @@ describe('deck kernel: sync', () => {
 
   it('follows the master when its tempo changes, and pulls a phase error in', () => {
     const p = syncedPair('master-first', false);
-    let frame = p.run(5, 0);
+    p.run(5);
     // The master speeds up 3 %: the follower follows.
     p.m.k.setTempo(1.03, false);
-    frame = p.run(10, frame);
+    p.run(10);
     // A stray 40 ms phase error is closed by the follower's own correction.
     p.f.k.seek(p.f.k.pos + 0.04 * SR);
     p.errorsMs.length = 0;
-    p.run(30, frame);
+    p.run(30);
     const early = Math.abs(p.errorsMs[Math.round(SR / Q) * 1]!);
     expect(early).toBeGreaterThan(5);
     const late = p.errorsMs.slice(-Math.round(SR / Q));
@@ -458,7 +455,7 @@ describe('deck kernel: sync', () => {
     const p = syncedPair('master-first', false);
     p.m.k.play(false);
     p.errorsMs.length = 0;
-    p.run(1, 0);
+    p.run(1);
     const fs = newSnapshot();
     readDeckState(p.f.state, p.f.seq, fs);
     expect(fs.syncLocked).toBe(false);

@@ -21,6 +21,7 @@ import {
   writeProjectTo,
 } from './project-io';
 import { importSampleBytes, sniffAudioExt } from './sample-import';
+import { restoredMissingNotice, type RestoredProject } from './session';
 
 const NOW = new Date('2026-10-12T09:00:00.000Z');
 const tone = (n: number, f = 0.05) => Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin(i * f));
@@ -424,5 +425,28 @@ describe('recovered projects with missing sounds', () => {
     expect(missingSoundsNotice(loaded?.missingSamples ?? [])).toBe(
       '2 sounds couldn’t be found: "Kick.wav", "Vox.wav". Use File → Find missing samples… to point to them.',
     );
+  });
+
+  it('after a reload restore: names missing sounds from a tab snapshot and from an autosave alike', async () => {
+    const have = createMemoryBlobStore();
+    const kick = await importSampleBytes(wavBytes(300), 'Kick.wav', { store: have });
+    const vox = await importSampleBytes(wavBytes(301), 'Vox.wav', { store: createMemoryBlobStore() });
+    const file = { name: 'Song', fileKey: null, dirty: true };
+    // The tab snapshot carries no list: the sample store is checked (it holds only the kick).
+    const snapshot: RestoredProject = {
+      project: withSamples(kick, vox, builtin('b1')),
+      view: null,
+      file,
+      handle: null,
+    };
+    expect(await restoredMissingNotice(snapshot, have)).toBe(
+      '1 sound couldn’t be found: "Vox.wav". Use File → Find missing samples… to point to them.',
+    );
+    // A restore from the autosave already found them; its list is used as is.
+    expect(await restoredMissingNotice({ ...snapshot, missingSamples: [kick, vox] }, have)).toBe(
+      '2 sounds couldn’t be found: "Kick.wav", "Vox.wav". Use File → Find missing samples… to point to them.',
+    );
+    expect(await restoredMissingNotice({ ...snapshot, project: withSamples(kick) }, have)).toBeNull();
+    expect(await restoredMissingNotice({ ...snapshot, missingSamples: [] }, createMemoryBlobStore())).toBeNull();
   });
 });

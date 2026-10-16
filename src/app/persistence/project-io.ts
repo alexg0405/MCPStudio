@@ -199,6 +199,26 @@ export async function openProjectBlob(blob: Blob, opts: { store?: BlobStore } = 
   return finishOpen(file, repairs, damaged, store);
 }
 
+/** Embedded samples of a project whose audio isn't in the store (they will be silent). */
+export async function findMissingSamples(
+  project: Project,
+  store: BlobStore = defaultSampleStore(),
+): Promise<SampleRef[]> {
+  const missing: SampleRef[] = [];
+  const present = new Map<string, boolean>();
+  for (const ref of Object.values(project.samples)) {
+    const src = embedded(ref);
+    if (!src) continue;
+    let ok = present.get(src.hash);
+    if (ok === undefined) {
+      ok = await store.hasBlob(src.hash, src.ext);
+      present.set(src.hash, ok);
+    }
+    if (!ok) missing.push(ref);
+  }
+  return missing;
+}
+
 /** Reports damaged and missing samples of an opened project. */
 async function finishOpen(
   file: { project: Project; view: unknown; migratedFrom: number },
@@ -209,18 +229,7 @@ async function finishOpen(
   if (damaged > 0) {
     repairs.push(`Skipped ${plural(damaged, 'damaged sample file', 'damaged sample files')} in this project file.`);
   }
-  const missingSamples: SampleRef[] = [];
-  const present = new Map<string, boolean>();
-  for (const ref of Object.values(file.project.samples)) {
-    const src = embedded(ref);
-    if (!src) continue;
-    let ok = present.get(src.hash);
-    if (ok === undefined) {
-      ok = await store.hasBlob(src.hash, src.ext);
-      present.set(src.hash, ok);
-    }
-    if (!ok) missingSamples.push(ref);
-  }
+  const missingSamples = await findMissingSamples(file.project, store);
   if (missingSamples.length > 0) {
     const n = missingSamples.length;
     repairs.push(

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createServices } from '@app/services';
 import { installAudioUnlock } from '@app/audio-unlock';
 import { resumeAfterReload } from '@app/resume-playback';
-import { installSessionPersistence, startSession } from '@app/persistence/session';
+import { installSessionPersistence, restoredMissingNotice, startSession } from '@app/persistence/session';
 import { loadRecentFiles } from '@app/persistence/recent-files';
 import { applyView } from '@app/persistence/view-snapshot';
 import { installPluginDiscovery } from '@app/plugins/discover';
@@ -92,6 +92,13 @@ createRoot(root).render(
 
 // After the first paint: fetch the code of windows and features that load on first use.
 requestAnimationFrame(() => setTimeout(startPrefetching, 0));
+
+// A reload restore with sounds whose audio is gone says so, as crash recovery does (after the first paint).
+if (restored) {
+  void restoredMissingNotice(restored)
+    .then((notice) => notice && services.session.getState().toast(notice, 'error'))
+    .catch((e: unknown) => console.warn('Could not check for missing sounds:', e));
+}
 
 if (start.recovery.length > 0) void offerRecovery(services, start.recovery, persistence);
 // First start: say what everything is (Help → Getting started brings it back). Not over crash recovery.

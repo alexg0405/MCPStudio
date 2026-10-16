@@ -1,21 +1,18 @@
 import type { Services } from '@app/services';
-import {
-  importFlpFile,
-  missingSamples,
-  pickFlpFile,
-  pickSampleFiles,
-  relinkMissingSamples,
-  type FlpImportOutcome,
-} from '@app/actions/flp-import';
+import type { FlpImportOutcome } from '@app/actions/flp-import';
 import { isZip as isZipBytes, zipHasFlp } from '@core/io/flp-package';
 import { showDialog } from '../../controls/Dialog';
 import { addMenuItems, cmd } from '../../shell/menus';
+import { whenIdle } from '../../workspace/lazy';
 
 /** FL Studio projects in (File menu, drops) and finding the samples an imported project is missing. */
 export const order = 6;
 
 const isFlp = (name: string) => /\.flp$/i.test(name);
 const isZip = (name: string) => /\.zip$/i.test(name);
+
+/** The FL import code (a parser and a mapper, ~30 kB) loads when you first import, not at startup. */
+const flpActions = () => import('@app/actions/flp-import');
 
 const toast = (s: Services, text: string, kind?: 'error') => s.session.getState().toast(text, kind);
 
@@ -50,6 +47,7 @@ async function showReport(s: Services, out: FlpImportOutcome): Promise<void> {
 export async function importFl(s: Services, file: File): Promise<void> {
   toast(s, `Importing “${file.name}”…`);
   try {
+    const { importFlpFile } = await flpActions();
     const out = await withBusy(s, () => importFlpFile(s, file));
     if (out) await showReport(s, out);
   } catch (e) {
@@ -61,6 +59,7 @@ export async function importFl(s: Services, file: File): Promise<void> {
 async function relink(s: Services, files: File[]): Promise<void> {
   if (files.length === 0) return;
   try {
+    const { relinkMissingSamples } = await flpActions();
     const res = await relinkMissingSamples(s, files);
     if (res.found.length === 0 && res.stillMissing.length === 0) {
       toast(s, 'No samples are missing in this project.');
@@ -81,6 +80,7 @@ async function relink(s: Services, files: File[]): Promise<void> {
 }
 
 async function findMissing(s: Services): Promise<void> {
+  const { missingSamples, pickSampleFiles } = await flpActions();
   const missing = await missingSamples(s);
   if (missing.length === 0) {
     toast(s, 'No samples are missing in this project.');
@@ -98,6 +98,8 @@ async function findMissing(s: Services): Promise<void> {
 
 export function register(services: Services): void {
   const { commands } = services;
+  // Fetched in idle time, so the first import (which needs the click it came from) doesn't wait for the network.
+  whenIdle(() => void flpActions());
   const idle = (s: Services) => s.files.store.getState().busy === null;
 
   commands.register({
@@ -108,6 +110,7 @@ export function register(services: Services): void {
     hint: 'Open an FL Studio project (.flp, or a zipped loop package with its samples) as a new project',
     enabled: idle,
     run: async (s) => {
+      const { pickFlpFile } = await flpActions();
       const file = await pickFlpFile();
       if (file) await importFl(s, file);
     },

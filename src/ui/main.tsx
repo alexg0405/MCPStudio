@@ -14,6 +14,7 @@ import { offerRecovery } from './features/files/recovery';
 import { installKeyboard } from './keyboard';
 import { applyDefaultLayout } from './workspace/layouts';
 import { App } from './shell/App';
+import { startPrefetching } from './workspace/lazy';
 import './theme/tokens.css';
 import './theme/themes.css';
 import './theme/base.css';
@@ -21,17 +22,27 @@ import './theme/base.css';
 /** React commit counter (dev): idle playback should not re-render anything. */
 const reactPerf = { commits: 0 };
 function onRender() {
+  if (reactPerf.commits === 0) performance.mark('ag:first-commit');
   reactPerf.commits++;
 }
 
 // Composition root: long-lived objects are created once, outside React.
+// Startup marks (DevTools > Performance > Timings): where the time before the first paint goes.
+const mark = (name: string) => performance.mark(`ag:${name}`);
+mark('script');
 const plugins = new PluginRegistry();
-await installPluginDiscovery(plugins);
-// This tab's state before a reload, and crashed sessions to offer for recovery.
-const start = await startSession();
+// Plugin modules and this tab's saved state (its project before a reload, crashed sessions to offer for
+// recovery) load side by side.
+const [, start] = await Promise.all([
+  installPluginDiscovery(plugins).then(() => mark('plugins')),
+  startSession().then((r) => (mark('session'), r)),
+]);
+mark('loaded');
 const restored = start.restored;
 const services = createServices({ plugins, ...(restored ? { project: restored.project } : {}) });
+mark('services');
 registerFeatures(services);
+mark('features');
 installKeyboard(services);
 installAudioUnlock(services.engine);
 if (restored) {
@@ -65,6 +76,7 @@ if (import.meta.env.DEV) {
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');
+mark('render');
 createRoot(root).render(
   <StrictMode>
     <Profiler id="app" onRender={onRender}>
@@ -74,6 +86,9 @@ createRoot(root).render(
     </Profiler>
   </StrictMode>,
 );
+
+// After the first paint: fetch the code of windows and features that load on first use.
+requestAnimationFrame(() => setTimeout(startPrefetching, 0));
 
 if (start.recovery.length > 0) void offerRecovery(services, start.recovery, persistence);
 // First start: say what everything is (Help → Getting started brings it back). Not over crash recovery.

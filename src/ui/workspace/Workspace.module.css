@@ -282,3 +282,11 @@
     transform: translateY(-4px);
   }
 }
+
+.loading {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
+}

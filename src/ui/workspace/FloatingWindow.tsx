@@ -1,5 +1,6 @@
 import {
   memo,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -137,7 +138,9 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
         </div>
       </div>
       <div className={styles.body}>
-        <Content windowId={instance.id} props={instance.props} />
+        <Suspense fallback={<div className={styles.loading}>Loading…</div>}>
+          <Content windowId={instance.id} props={instance.props} />
+        </Suspense>
         {help && helpOpen && <HelpPanel help={help} onClose={() => setHelpOpen(false)} />}
       </div>
       {!instance.maximized &&

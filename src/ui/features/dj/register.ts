@@ -8,7 +8,7 @@ import { addMenuItems, cmd } from '../../shell/menus';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { setWindowHelp } from '../../workspace/window-help';
-import { DjWindow } from './DjWindow';
+import { lazyWindow } from '../../workspace/lazy';
 import { MusicSection } from './MusicSection';
 import { makeMixFromUi } from './run';
 
@@ -33,7 +33,7 @@ export function register(services: Services): void {
   registerWindowType({
     type: 'dj',
     title: () => 'DJ mix',
-    component: DjWindow,
+    component: lazyWindow(() => import('./DjWindow'), (m) => m.DjWindow),
     defaultRect: (ws) => ({ x: Math.max(0, Math.round(ws.w / 2 - 470)), y: 40, w: Math.min(940, ws.w), h: Math.min(600, ws.h - 60) }),
     minSize: { w: 520, h: 300 },
   });

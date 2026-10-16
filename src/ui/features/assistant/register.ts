@@ -5,7 +5,7 @@ import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { openWindow, registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { AiStudioButton } from './AiStudioButton';
-import { AssistantWindow } from './AssistantWindow';
+import { lazyWindow } from '../../workspace/lazy';
 
 /**
  * A command the AI asked for that opens a file dialog: browsers allow that only right after a
@@ -36,7 +36,7 @@ export function register(services: Services): void {
   registerWindowType({
     type: 'assistant',
     title: () => 'Studio',
-    component: AssistantWindow,
+    component: lazyWindow(() => import('./AssistantWindow'), (m) => m.AssistantWindow),
     defaultRect: (ws) => ({
       x: Math.max(0, ws.w - 452),
       y: 24,

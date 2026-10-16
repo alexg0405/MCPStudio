@@ -186,6 +186,9 @@ describe('UX audit (shell)', () => {
         empties.push(`${type}: no DOM window found`);
         continue;
       }
+      // Windows whose code loads on first use show "Loading…" until it arrives.
+      await until(() => !(win.textContent ?? '').includes('Loading…'));
+      await frame();
       opened.push(type);
       const a = audit(win);
       problems.push(...a.unnamed.map((u) => `${type}: unnamed ${u}`));
@@ -254,6 +257,7 @@ describe('UX audit (shell)', () => {
         vague.push(`${type}: no window`);
         continue;
       }
+      await until(() => !(win.textContent ?? '').includes('Loading…'));
       const text = (win.innerText ?? '').replace(/\s+/g, ' ');
       // Canvas windows carry their instructions in the window's help and the hint bar (checked below).
       if (!NEXT_STEP.test(text)) vague.push(`${type}: "${text.slice(0, 80)}"`);

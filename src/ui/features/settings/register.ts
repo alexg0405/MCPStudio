@@ -4,7 +4,7 @@ import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { ACCENTS, applyTheme, findAccent, findTheme, THEMES } from '../../theme/apply';
 import { registerWindowType, toggleWindow } from '../../workspace/registry';
 import { setWindowHelp } from '../../workspace/window-help';
-import { SettingsWindow } from './SettingsWindow';
+import { lazyWindow } from '../../workspace/lazy';
 
 /** Settings: the sound output, MIDI, the typing keyboard, recording and help options in one window. */
 export function register(services: Services): void {
@@ -12,7 +12,7 @@ export function register(services: Services): void {
   registerWindowType({
     type: 'settings',
     title: () => 'Settings',
-    component: SettingsWindow,
+    component: lazyWindow(() => import('./SettingsWindow'), (m) => m.SettingsWindow),
     defaultRect: (ws) => ({ x: Math.max(0, ws.w / 2 - 240), y: 40, w: 480, h: Math.min(600, ws.h - 80) }),
     minSize: { w: 340, h: 220 },
   });

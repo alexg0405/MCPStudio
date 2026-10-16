@@ -4,10 +4,14 @@
  * stopwatch. The deck controller, the player worklets, the EQ and filter, the faders and the crossfader are the
  * real ones; only the analyzer is faked (it knows each song's grid).
  */
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { fakeAnalyzer, setTrackAnalyzer } from '@app/dj/analyzer';
 import { createDecks, type DecksDeps } from '@app/dj/decks';
 import type { DecksApi } from '@app/dj/decks-api';
+import { addSongFiles, library, type LibrarySong } from '@app/dj/library';
+import { createServices, type Services } from '@app/services';
 import { fakeAnalysis, type FakeSong } from '@core/dj/fake-analysis';
+import { encodeWav } from '@core/io/wav';
 import type { TrackAnalysis } from '@core/dj/types';
 import type { SampleRef } from '@core/model/types';
 import type { DeckHost } from '@engine/api';
@@ -15,6 +19,7 @@ import { SampleCache } from '@engine/samples';
 import { autocorrelationPitch, TestSamples } from '../helpers/audio';
 
 const SR = 48000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface Rig {
   ctx: OfflineAudioContext;
@@ -388,4 +393,342 @@ describe('decks: sync', () => {
       rig.decks.dispose();
     }, 240_000);
   }
+});
+
+describe('decks: cue, hot cues, loops and jumps (the controller)', () => {
+  async function loadedRig() {
+    const rig = makeRig(2);
+    const song = rig.add('Beats', clickSong(120, 0.25, 60), { bpm: 120, firstDownbeat: 0.25, bars: 28 });
+    await rig.decks.load('A', song, 'Beats', 'Test');
+    return rig;
+  }
+  const deckA = (r: Rig) => r.decks.store.getState().decks.A;
+
+  it('loading analyzes the song and parks the deck on its first beat', async () => {
+    const rig = await loadedRig();
+    const d = deckA(rig);
+    expect(d.loading).toBe(false);
+    expect(d.song).toMatchObject({ title: 'Beats', artist: 'Test' });
+    expect(d.song!.durationSec).toBeCloseTo(60, 2);
+    expect(d.baseBpm).toBe(120);
+    expect(d.bpm).toBe(120);
+    expect(d.cuePoint).toBeCloseTo(0.25, 9);
+    expect(d.positionSec).toBeCloseTo(0.25, 9);
+    expect(rig.decks.analysisOf?.('A')?.grid?.bpm).toBe(120);
+    expect(rig.decks.waveformOf?.('A')?.buckets).toBeGreaterThan(1000);
+    rig.decks.dispose();
+  });
+
+  it('cue: sets the cue point on the beat when paused, previews while held, goes back when let go', async () => {
+    const rig = await loadedRig();
+    rig.decks.seek('A', 7.4);
+    rig.decks.cueDown('A');
+    // 7.4 s is between beats at 0.25 + n × 0.5: the nearest is 7.25.
+    expect(deckA(rig).cuePoint).toBeCloseTo(7.25, 9);
+    expect(deckA(rig).playing).toBe(true);
+    rig.decks.cueUp('A');
+    expect(deckA(rig).playing).toBe(false);
+    expect(deckA(rig).positionSec).toBeCloseTo(7.25, 9);
+    // Pressing play while holding cue keeps it playing after the release (the CDJ latch).
+    rig.decks.cueDown('A');
+    rig.decks.play('A');
+    rig.decks.cueUp('A');
+    expect(deckA(rig).playing).toBe(true);
+    // Playing: cue goes back to the cue point and pauses.
+    rig.decks.cueDown('A');
+    expect(deckA(rig).playing).toBe(false);
+    expect(deckA(rig).positionSec).toBeCloseTo(7.25, 9);
+    rig.decks.cueUp('A');
+    expect(deckA(rig).playing).toBe(false);
+    rig.decks.dispose();
+  });
+
+  it('hot cues: the first press sets one on the beat, the next jumps there and plays; clear removes it', async () => {
+    const rig = await loadedRig();
+    rig.decks.seek('A', 12.6);
+    rig.decks.hotCue('A', 2);
+    expect(deckA(rig).hotCues[2]).toBeCloseTo(12.75, 9);
+    expect(deckA(rig).hotCues.filter((x) => x !== null)).toHaveLength(1);
+    rig.decks.seek('A', 30);
+    rig.decks.hotCue('A', 2);
+    expect(deckA(rig).positionSec).toBeCloseTo(12.75, 9);
+    expect(deckA(rig).playing).toBe(true);
+    rig.decks.clearHotCue('A', 2);
+    expect(deckA(rig).hotCues[2]).toBeNull();
+    rig.decks.pause('A');
+    rig.decks.dispose();
+  });
+
+  it('loops: auto loops, halve and double, in and out, exit and reloop, all on the beat grid', async () => {
+    const rig = await loadedRig();
+    const d = () => deckA(rig).loop!;
+    rig.decks.seek('A', 8.3);
+    rig.decks.autoLoop('A', 4);
+    // 4 beats = 2 s from the beat under 8.3 s (8.25).
+    expect(d()).toEqual({ startSec: 8.25, endSec: 10.25, active: true });
+    rig.decks.loopHalve('A');
+    expect(d()).toEqual({ startSec: 8.25, endSec: 9.25, active: true });
+    rig.decks.loopDouble('A');
+    rig.decks.loopDouble('A');
+    expect(d()).toEqual({ startSec: 8.25, endSec: 12.25, active: true });
+    rig.decks.exitLoop('A');
+    expect(d().active).toBe(false);
+    rig.decks.loopOut('A'); // reloop
+    expect(d()).toEqual({ startSec: 8.25, endSec: 12.25, active: true });
+    // Pressing the size that is looping lets go of it.
+    rig.decks.autoLoop('A', 16);
+    expect(d().active).toBe(true);
+    rig.decks.autoLoop('A', 16);
+    expect(d().active).toBe(false);
+    // By hand: in, then out.
+    rig.decks.seek('A', 20.1);
+    rig.decks.loopIn('A');
+    expect(d()).toEqual({ startSec: 20.125, endSec: 20.125, active: false });
+    rig.decks.seek('A', 22.3);
+    rig.decks.loopOut('A');
+    expect(d().active).toBe(true);
+    expect(d().startSec).toBe(20.125);
+    expect(d().endSec).toBeGreaterThan(22);
+    rig.decks.dispose();
+  });
+
+  it('beat jumps keep the phase and take an active loop along', async () => {
+    const rig = await loadedRig();
+    rig.decks.seek('A', 10.1);
+    rig.decks.beatJumpBy('A', 8);
+    expect(deckA(rig).positionSec).toBeCloseTo(14.1, 9);
+    rig.decks.beatJumpBy('A', -16);
+    expect(deckA(rig).positionSec).toBeCloseTo(6.1, 9);
+    rig.decks.autoLoop('A', 2);
+    const start = deckA(rig).loop!.startSec;
+    rig.decks.beatJumpBy('A', 4);
+    expect(deckA(rig).loop!.startSec).toBeCloseTo(start + 2, 9);
+    expect(deckA(rig).loop!.active).toBe(true);
+    rig.decks.beatJumpBy('A', -1000);
+    expect(deckA(rig).positionSec).toBe(0);
+    rig.decks.dispose();
+  });
+
+  it('pitch is limited to its range, the range widens for sync, and tempo shows as BPM', async () => {
+    const rig = makeRig(2);
+    const a = rig.add('Slow', clickSong(100, 0, 60), { bpm: 100, firstDownbeat: 0, bars: 24 });
+    const b = rig.add('Fast', clickSong(120, 0, 60), { bpm: 120, firstDownbeat: 0, bars: 28 });
+    await rig.decks.load('A', a, 'Slow');
+    await rig.decks.load('B', b, 'Fast');
+    rig.decks.setPitch('A', 0.5);
+    expect(rig.decks.store.getState().decks.A.pitch).toBe(0.08);
+    rig.decks.setPitchRange('A', 0.16);
+    rig.decks.setPitch('A', -0.3);
+    expect(rig.decks.store.getState().decks.A.pitch).toBe(-0.16);
+    expect(rig.decks.store.getState().decks.A.bpm).toBeCloseTo(84, 9);
+    rig.decks.setPitch('A', 0);
+    // Syncing A (100 BPM) to B (120 BPM) needs +20 %: the range grows to hold it.
+    rig.decks.sync('A', true);
+    const d = rig.decks.store.getState().decks.A;
+    expect(d.synced).toBe(true);
+    expect(d.pitch).toBeCloseTo(0.2, 9);
+    expect(d.pitchRange).toBe(0.5);
+    expect(d.bpm).toBeCloseTo(120, 9);
+    // B's own fader moves A with it; A's own fader lets go of the sync.
+    rig.decks.setPitch('B', 0.05);
+    expect(rig.decks.store.getState().decks.A.bpm).toBeCloseTo(126, 9);
+    rig.decks.setPitch('A', 0.1);
+    expect(rig.decks.store.getState().decks.A.synced).toBe(false);
+    rig.decks.dispose();
+  });
+
+  it('sync knows half and double time: a 70 BPM song follows a 140 BPM one at its own speed', async () => {
+    const rig = makeRig(2);
+    const a = rig.add('Half', clickSong(70, 0, 60), { bpm: 70, firstDownbeat: 0, bars: 14 });
+    const b = rig.add('Full', clickSong(140, 0, 60), { bpm: 140, firstDownbeat: 0, bars: 28 });
+    await rig.decks.load('A', a, 'Half');
+    await rig.decks.load('B', b, 'Full');
+    rig.decks.sync('A', true);
+    const d = rig.decks.store.getState().decks.A;
+    expect(d.synced).toBe(true);
+    expect(d.pitch).toBeCloseTo(0, 9);
+    rig.decks.dispose();
+  });
+
+  it('sync says why it cannot: no beat grid, no other deck, tempos too far apart', async () => {
+    const rig = makeRig(2);
+    const a = rig.add('Beatless', [sine(200, 10)]);
+    const b = rig.add('Normal', clickSong(120, 0, 30), { bpm: 120, firstDownbeat: 0, bars: 14 });
+    const c = rig.add('Very slow', clickSong(60, 0, 30), { bpm: 60, firstDownbeat: 0, bars: 7 });
+    await rig.decks.load('A', a, 'Beatless');
+    rig.decks.sync('A', true);
+    expect(rig.toasts.at(-1)).toMatch(/no steady beat/);
+    await rig.decks.load('B', b, 'Normal');
+    rig.decks.sync('B', true);
+    expect(rig.toasts.at(-1)).toMatch(/second song|another deck/);
+    expect(rig.decks.store.getState().decks.B.synced).toBe(false);
+    await rig.decks.load('C', c, 'Very slow');
+    // 60 BPM against 120 is the double time: it matches. Against a 100 BPM master it is a 67 % gap and 50 BPM.
+    rig.decks.sync('C', true);
+    expect(rig.decks.store.getState().decks.C.synced).toBe(true);
+    rig.decks.dispose();
+  });
+
+  it('loading while a deck plays stops it and clears the old song’s cues, loop and sync', async () => {
+    const rig = await loadedRig();
+    rig.decks.hotCue('A', 0);
+    rig.decks.autoLoop('A', 4);
+    rig.decks.play('A');
+    const other = rig.add('Other', clickSong(90, 0, 30), { bpm: 90, firstDownbeat: 0, bars: 10 });
+    await rig.decks.load('A', other, 'Other');
+    const d = deckA(rig);
+    expect(d.playing).toBe(false);
+    expect(d.loop).toBeNull();
+    expect(d.hotCues.every((x) => x === null)).toBe(true);
+    expect(d.song?.title).toBe('Other');
+    expect(d.baseBpm).toBe(90);
+    rig.decks.eject('A');
+    expect(deckA(rig).song).toBeNull();
+    rig.decks.dispose();
+  });
+
+  it('keeps mixer settings across songs and reports the crossfader and master', async () => {
+    const rig = await loadedRig();
+    rig.decks.setEq('A', 'low', -40);
+    rig.decks.setEq('A', 'high', 20);
+    expect(deckA(rig).eq).toEqual({ low: -26, mid: 0, high: 6 });
+    rig.decks.setFilter('A', 3);
+    expect(deckA(rig).filter).toBe(1);
+    rig.decks.setVolume('A', 9);
+    expect(deckA(rig).volume).toBe(1.25);
+    rig.decks.setTrim('A', -30);
+    expect(deckA(rig).trimDb).toBe(-12);
+    rig.decks.setCrossfader(2);
+    expect(rig.decks.store.getState().crossfader).toBe(1);
+    rig.decks.setCrossfaderAssign('A', 'B');
+    expect(rig.decks.store.getState().crossfaderAssign.A).toBe('B');
+    rig.decks.setCrossfaderCurve?.('sharp');
+    expect(rig.decks.store.getState().crossfaderCurve).toBe('sharp');
+    rig.decks.setDeckCount?.(4);
+    expect(rig.decks.store.getState().deckCount).toBe(4);
+    const song = rig.add('Next', clickSong(100, 0, 30), { bpm: 100, firstDownbeat: 0, bars: 12 });
+    await rig.decks.load('A', song, 'Next');
+    expect(deckA(rig).eq.low).toBe(-26);
+    rig.decks.dispose();
+  });
+});
+
+describe('decks: speed', () => {
+  it('two key-locked decks with EQ render offline far faster than real time', async () => {
+    const secs = 60;
+    const rig = makeRig(secs);
+    const a = rig.add('A', clickSong(124, 0.1, 80, 1000), { bpm: 124, firstDownbeat: 0.1, bars: 30 });
+    const b = rig.add('B', clickSong(128, 0.35, 80, 4000), { bpm: 128, firstDownbeat: 0.35, bars: 30 });
+    await rig.decks.load('A', a, 'A');
+    await rig.decks.load('B', b, 'B');
+    rig.decks.setKeyLock('A', true);
+    rig.decks.setKeyLock('B', true);
+    rig.decks.setPitch('A', 0.05);
+    rig.decks.setEq('B', 'low', -6);
+    rig.decks.setFilter('B', 0.2);
+    rig.decks.play('A');
+    rig.decks.play('B');
+    await rig.decks.settled?.();
+    const t0 = performance.now();
+    await rig.ctx.startRendering();
+    const seconds = (performance.now() - t0) / 1000;
+    // Measured on a quiet M-series Mac: 60 s in about 0.3 s (200× real time); a busy machine is several times slower.
+    expect(secs / seconds).toBeGreaterThan(8);
+    rig.decks.dispose();
+  }, 120_000);
+});
+
+describe('decks: the real engine (realtime)', () => {
+  let s: Services | null = null;
+  afterAll(async () => {
+    (await s?.decks())?.dispose();
+    await s?.engine.dispose();
+    setTrackAnalyzer(null);
+  });
+
+  /** Two library songs from synthetic WAVs (stored through the app's sample store, as imported files are). */
+  async function twoSongs(): Promise<{ a: LibrarySong; b: LibrarySong }> {
+    s = createServices();
+    await s.engine.resume();
+    const make = async (name: string, bpm: number, first: number, hz: number) => {
+      const audio = clickSong(bpm, first, 60, hz);
+      const wav = encodeWav(audio, SR, { bitDepth: 16 });
+      await addSongFiles(s!, [new File([wav as BlobPart], `${name}.wav`)]);
+      return library.getState().songs.find((x) => x.fileName === `${name}.wav`)!;
+    };
+    const a = await make('Rt song A', 124, 0.1, 1000);
+    const b = await make('Rt song B', 128, 0.35, 4000);
+    const byHash = new Map<string, TrackAnalysis>();
+    byHash.set(a.key, fakeAnalysis({ bpm: 124, firstDownbeat: 0.1, bars: 28, hash: a.key }));
+    byHash.set(b.key, fakeAnalysis({ bpm: 128, firstDownbeat: 0.35, bars: 28, hash: b.key }));
+    setTrackAnalyzer(fakeAnalyzer(byHash));
+    return { a, b };
+  }
+
+  it('two key-locked decks keep up with real time, and the master is recorded into the library at its real length', async () => {
+    const { a, b } = await twoSongs();
+    const decks = await s!.decks();
+    await decks.load('A', a.ref, a.title, a.artist);
+    await decks.load('B', b.ref, b.title, b.artist);
+    expect(decks.store.getState().decks.A.baseBpm).toBe(124);
+    expect(decks.store.getState().decks.B.song?.title).toBe('Rt song B');
+    decks.setKeyLock('A', true);
+    decks.setKeyLock('B', true);
+    decks.setPitch('A', 0.04);
+    decks.sync('B', true);
+    decks.play('A');
+    decks.play('B');
+    await sleep(500);
+    await decks.startRecording();
+    const t0 = performance.now();
+    expect(decks.store.getState().recording).not.toBeNull();
+    await sleep(3500);
+    const title = await decks.stopRecording();
+    const seconds = (performance.now() - t0) / 1000;
+    expect(title).toMatch(/^Live mix \d{4}-\d\d-\d\d \d\d:\d\d$/);
+    expect(decks.store.getState().recording).toBeNull();
+    // The recording is in the music library, as long as it was recorded (a little for the start and stop).
+    const song = library.getState().songs.find((x) => x.title === title);
+    expect(song).toBeDefined();
+    expect(song!.durationSec!).toBeGreaterThan(seconds - 0.35);
+    expect(song!.durationSec!).toBeLessThan(seconds + 0.25);
+    // The decks kept up: the audio clock ran at real speed with two key-locked songs and a recording going.
+    const keepUp = decks.keepUp?.();
+    expect(keepUp).toBeDefined();
+    expect(keepUp!).toBeGreaterThanOrEqual(0.98);
+    // Both play at A's tempo: 124 BPM at +4 %.
+    expect(decks.store.getState().decks.B.bpm).toBeCloseTo(124 * 1.04, 6);
+    // The meters move while it plays.
+    // The clicks are short: watch the meters for a beat or two.
+    const levels = new Float32Array(6);
+    let peak = 0;
+    for (let i = 0; i < 40; i++) {
+      decks.readLevels?.(levels);
+      peak = Math.max(peak, levels[0]!, levels[1]!, levels[4]!);
+      await sleep(20);
+    }
+    expect(peak).toBeGreaterThan(0.05);
+    decks.pause('A');
+    decks.pause('B');
+  }, 60_000);
+
+  it('plays through the engine’s output: the host is the engine’s, and a reboot carries the decks over', async () => {
+    const decks = await s!.decks();
+    const a = library.getState().songs.find((x) => x.fileName === 'Rt song A.wav')!;
+    expect(s!.engine.deckHost?.()).not.toBeNull();
+    decks.seek('A', 5);
+    decks.play('A');
+    await sleep(400);
+    const before = decks.positionNow('A');
+    expect(before).toBeGreaterThan(5.2);
+    await s!.rebootEngine();
+    await sleep(600);
+    expect(s!.engine.deckHost?.()?.ctx.state).toBeDefined();
+    // Still the same song, still playing, and past where it was.
+    expect(decks.store.getState().decks.A.song?.title).toBe(a.title);
+    expect(decks.store.getState().decks.A.playing).toBe(true);
+    await sleep(500);
+    expect(decks.positionNow('A')).toBeGreaterThan(before);
+    decks.pause('A');
+  }, 60_000);
 });

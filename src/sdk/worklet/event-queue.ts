@@ -35,6 +35,11 @@ export class EventQueue {
     return this.size > 0 ? (this.frames[this.head] as number) : Infinity;
   }
 
+  /** Type of the earliest event (EV_*), or 0 when empty. */
+  peekType(): number {
+    return this.size > 0 ? (this.types[this.head] as number) : 0;
+  }
+
   /** Adds packed events (see protocol.ts). */
   pushPacked(data: Float64Array): void {
     for (let i = 0; i + EV_STRIDE <= data.length; i += EV_STRIDE) {

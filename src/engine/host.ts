@@ -24,7 +24,7 @@ import {
   type WorkletOptions,
   type WorkletPort,
 } from '@agstudio/sdk';
-import { PITCH_PARAM, type ProcessorInit } from '@agstudio/sdk/protocol';
+import { liteName, PITCH_PARAM, type ProcessorInit } from '@agstudio/sdk/protocol';
 import { Emitter } from './emitter';
 import { ParamHandleImpl } from './param-handle';
 import type { ParamRegistry } from './param-lane';
@@ -57,6 +57,12 @@ export interface HostDeps {
    * the instance. Without it (and offline) taps are no-ops.
    */
   reportTap?(tap: TapImpl, live: boolean): void;
+  /**
+   * True while no automation drives this instance's params: its worklet then runs as the kernel's
+   * lite processor (no AudioParams: every param arrives as an event), which costs the audio thread
+   * much less. Absent: always the full processor.
+   */
+  lite?(): boolean;
 }
 
 /** Stable per-instance seed so kernels' random numbers repeat across renders. */
@@ -164,37 +170,60 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     return tap;
   }
 
+  /** True while this instance's worklet is the kernel's lite processor (see HostDeps.lite). */
+  lite = false;
+
   async worklet(opts: WorkletOptions = {}): Promise<WorkletPort> {
     const { def, ctx } = this.deps;
     if (!def.processor) throw new Error(`Plugin "${def.id}" has no processor module`);
     await this.deps.loadModule(def.processor);
     if (this.abort.signal.aborted) throw new Error('disposed');
-    // Params automation can drive are AudioParams; the rest (enums, switches…) travel as events.
-    const parameterData: Record<string, number> = {};
-    const messageData: Record<string, number> = {};
-    for (const [key, handle] of Object.entries(this.params))
-      (isAutomatable(handle.spec) ? parameterData : messageData)[key] = encode(handle.spec, handle.value);
-    const processorOptions: ProcessorInit = {
-      kind: def.kind,
-      state: this.stateValue,
-      seed: seedFor(this.deps.owner, def.id),
-      params: messageData,
-    };
     const numberOfInputs = opts.numberOfInputs ?? (def.kind === 'effect' ? 1 : 0);
-    const node = new AudioWorkletNode(ctx, opts.name ?? def.id, {
+    const nodeOptions = {
       numberOfInputs,
       numberOfOutputs: 1,
       outputChannelCount: opts.outputChannelCount ?? [2],
       channelCount: 2,
-      channelCountMode: 'explicit',
-      parameterData,
-      processorOptions,
-    });
-    for (const [key, handle] of Object.entries(this.params)) {
-      const param = node.parameters.get(key);
-      if (param) handle.bind(param);
+      channelCountMode: 'explicit' as const,
+    };
+    const specs = def.params as ParamSpecs;
+    const seed = seedFor(this.deps.owner, def.id);
+    let node: AudioWorkletNode | null = null;
+    let messageNames: string[] = [];
+    // Nothing automates this instance: the lite processor, where every param is an event (a kernel
+    // registered by registerKernel has one; a processor registered otherwise, or under another name,
+    // doesn't and runs as it is).
+    if (!opts.name && this.deps.lite?.()) {
+      const all: Record<string, number> = {};
+      for (const [key, handle] of Object.entries(this.params)) all[key] = encode(handle.spec, handle.value);
+      try {
+        node = new AudioWorkletNode(ctx, liteName(def.id), {
+          ...nodeOptions,
+          processorOptions: { kind: def.kind, state: this.stateValue, seed, params: all } satisfies ProcessorInit,
+        });
+        messageNames = Object.keys(this.params);
+        this.lite = true;
+      } catch {
+        node = null;
+      }
     }
-    const messageNames = messageParamNames(def.params as ParamSpecs);
+    if (!node) {
+      // Params automation can drive are AudioParams; the rest (enums, switches…) travel as events.
+      const parameterData: Record<string, number> = {};
+      const messageData: Record<string, number> = {};
+      for (const [key, handle] of Object.entries(this.params))
+        (isAutomatable(handle.spec) ? parameterData : messageData)[key] = encode(handle.spec, handle.value);
+      node = new AudioWorkletNode(ctx, opts.name ?? def.id, {
+        ...nodeOptions,
+        parameterData,
+        processorOptions: { kind: def.kind, state: this.stateValue, seed, params: messageData } satisfies ProcessorInit,
+      });
+      for (const [key, handle] of Object.entries(this.params)) {
+        const param = node.parameters.get(key);
+        if (param) handle.bind(param);
+      }
+      messageNames = messageParamNames(specs);
+    }
     const unsubs = messageNames.map((key, index) => {
       const handle = this.params[key];
       return handle

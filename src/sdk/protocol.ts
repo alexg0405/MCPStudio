@@ -32,6 +32,15 @@ export const EV_TRANSPORT = 7;
  */
 export const EV_PARAM = 8;
 
+/**
+ * Every kernel registers a second processor, `liteName(id)`, whose params all arrive as EV_PARAM
+ * events (floats glide inside the runner like setTargetAtTime would): no AudioParams but the pitch.
+ * Chrome spends about half a microsecond per AudioParam on every render block, used or not, so an
+ * instance nothing automates (the usual case) runs as the lite processor, and is replaced by the
+ * full one when automation first targets one of its params.
+ */
+export const liteName = (id: string): string => `${id}~lite`;
+
 /** Name of the a-rate AudioParam (cents) that carries an instrument's channel pitch. */
 export const PITCH_PARAM = '__pitch';
 

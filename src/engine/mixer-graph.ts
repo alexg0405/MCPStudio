@@ -295,6 +295,11 @@ export class MixerGraph {
     return removed;
   }
 
+  /** The set of automated plugin instances changed: effects that ran as lite processors may need the full one. */
+  automationChanged(project: Project): void {
+    for (const strip of this.strips.values()) strip.automationChanged(project);
+  }
+
   removeStrips(strips: readonly InsertStrip[]): void {
     for (const strip of strips) strip.dispose();
   }

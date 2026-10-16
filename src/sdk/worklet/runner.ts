@@ -77,25 +77,57 @@ export class KernelRunner {
   private readonly messageValues: Float32Array[];
   /** What the kernel gets: the AudioParams' arrays and the event params' values, one object for good. */
   private readonly block: Record<string, Float32Array> = {};
+  /**
+   * Event params that glide to their new value (setTargetAtTime's curve, like the AudioParam they
+   * stand in for): the per-sample glide coefficient (0 = the value just changes), the value the
+   * glide is heading to and where it is, and the per-sample array the kernel reads while it moves.
+   */
+  private readonly names: string[];
+  private readonly glide: Float64Array;
+  private readonly goal: Float64Array;
+  private readonly now: Float64Array;
+  private readonly ramps: (Float32Array | null)[];
+  private readonly moving: Uint8Array;
+  private anyGlide = false;
+  /** Frames of the current block the gliding arrays are filled for. */
+  private filled = 0;
+  private blockSize = 128;
 
   constructor(
     readonly kernel: InstrumentKernel | EffectKernel,
     private readonly post: (msg: FromProcessor) => void,
-    /** The AudioParam names, then the event params with their starting (encoded) values. */
+    /** The AudioParam names, then the event params with their starting (encoded) values (and glide time constants, seconds). */
     private readonly audioParamNames: readonly string[] = [],
-    messageParams: readonly (readonly [name: string, value: number])[] = [],
+    messageParams: readonly (readonly [name: string, value: number, glideSeconds?: number])[] = [],
   ) {
     this.transport = new TransportState(kernel.sampleRate);
     kernel.transport = this.transport;
-    this.messageValues = messageParams.map(([name, value]) => {
+    this.names = messageParams.map(([name]) => name);
+    const count = messageParams.length;
+    this.glide = new Float64Array(count);
+    this.goal = new Float64Array(count);
+    this.now = new Float64Array(count);
+    this.ramps = new Array<Float32Array | null>(count).fill(null);
+    this.moving = new Uint8Array(count);
+    this.messageValues = messageParams.map(([name, value, tau], i) => {
       const v = new Float32Array([value]);
       this.block[name] = v;
+      this.goal[i] = value;
+      this.now[i] = value;
+      if (tau && tau > 0) {
+        this.glide[i] = 1 - Math.exp(-1 / (tau * kernel.sampleRate));
+        this.anyGlide = true;
+      }
       return v;
     });
   }
 
   onMessage(msg: ToProcessor): void {
-    this.wake();
+    // Events and sync barriers are not sound: a sleeping kernel stays asleep. Events are looked at as
+    // they come due (a note wakes an instrument; transport anchors and param changes are applied
+    // quietly): an offline render's barrier every chunk, or a loop's wrap anchor, would otherwise
+    // keep every idle kernel awake. The rest reach the kernel's own code, which may start sound.
+    if (msg.t !== 'ev' && msg.t !== 'sync' && msg.t !== 'dispose') this.wake();
     try {
       switch (msg.t) {
         case 'ev':
@@ -156,15 +188,24 @@ export class KernelRunner {
       block = this.block as unknown as ParamBlock;
     }
     this.transport.blockStart = f0;
+    this.blockSize = n;
+    this.filled = 0;
     let quietIn = true;
     if (this.kernel instanceof InstrumentKernel) {
-      // Asleep, an instrument wakes for the next event due in this block (a note, a controller, the song).
+      // Asleep, an instrument wakes for the next note or controller due in this block; the song's
+      // transport anchors and param changes are applied without waking it.
       if (this.asleep) {
+        while (this.queue.peekFrame() < f0 + n) {
+          const type = this.queue.peekType();
+          if ((type !== EV_TRANSPORT || this.kernel.wakeOnTransport) && type !== EV_PARAM) break;
+          this.applyQuiet();
+        }
         if (this.queue.peekFrame() >= f0 + n) return this.alive;
         this.wake();
       }
       this.kernel.pitch = params[PITCH_PARAM] ?? this.noPitch;
       this.runInstrument(this.kernel, out, n, f0, block);
+      this.finishGlides(n);
     } else {
       // Effects get no notes; transport anchors due in this block apply at its start.
       this.applyTransport(f0 + n - 1);
@@ -175,7 +216,9 @@ export class KernelRunner {
         if (quietIn) return this.alive;
         this.wake();
       }
+      this.advanceGlides(n);
       this.runEffect(this.kernel, input, inputs[1], out, n, block);
+      this.finishGlides(n);
     }
 
     const peak = this.scrub(out);
@@ -189,6 +232,62 @@ export class KernelRunner {
   private wake(): void {
     this.asleep = false;
     this.quietFrames = 0;
+    // A glide that was cut short by sleeping lands at once (nothing was heard meanwhile).
+    if (this.anyGlide)
+      for (let i = 0; i < this.moving.length; i++)
+        if (this.moving[i]) {
+          this.now[i] = this.goal[i] as number;
+          this.settle(i);
+        }
+  }
+
+  /** Fills the gliding params' arrays up to frame `upTo` of the block (what kernels read below it). */
+  private advanceGlides(upTo: number): void {
+    if (!this.anyGlide || upTo <= this.filled) return;
+    const n = this.blockSize;
+    for (let i = 0; i < this.moving.length; i++) {
+      if (!this.moving[i]) continue;
+      let ramp = this.ramps[i] ?? null;
+      if (!ramp || ramp.length !== n) {
+        ramp = this.ramps[i] = new Float32Array(n);
+        this.block[this.names[i] as string] = ramp;
+        ramp.fill(this.now[i] as number);
+      }
+      const goal = this.goal[i] as number;
+      const k = this.glide[i] as number;
+      let v = this.now[i] as number;
+      // The value at the frame, then the step towards the goal (setTargetAtTime: v0 at the event, then v0 → goal).
+      for (let f = this.filled; f < upTo; f++) {
+        ramp[f] = v;
+        v += (goal - v) * k;
+      }
+      this.now[i] = v;
+    }
+    this.filled = upTo;
+  }
+
+  /** The block is done: glides that arrived go back to a plain value; the others carry on next block. */
+  private finishGlides(n: number): void {
+    if (!this.anyGlide) return;
+    this.advanceGlides(n);
+    for (let i = 0; i < this.moving.length; i++) {
+      if (!this.moving[i]) continue;
+      const goal = this.goal[i] as number;
+      const v = this.now[i] as number;
+      if (Math.abs(goal - v) <= 1e-7 * Math.max(1, Math.abs(goal))) {
+        this.now[i] = goal;
+        this.settle(i);
+      }
+    }
+  }
+
+  /** Glide `i` is over: the kernel reads its single value again. */
+  private settle(i: number): void {
+    this.moving[i] = 0;
+    const single = this.messageValues[i] as Float32Array;
+    single[0] = this.now[i] as number;
+    this.block[this.names[i] as string] = single;
+    this.ramps[i] = null;
   }
 
   private runInstrument(k: InstrumentKernel, out: Float32Array[], n: number, f0: number, params: ParamBlock): void {
@@ -198,6 +297,7 @@ export class KernelRunner {
       // Late events (frame already passed) land at the current position.
       const at = next < f0 + n ? Math.max(pos, Math.round(next - f0)) : n;
       if (at > pos && !this.faulted) {
+        this.advanceGlides(at);
         try {
           k.render(out, pos, at, params);
         } catch (err) {
@@ -235,6 +335,20 @@ export class KernelRunner {
     }
   }
 
+  /** Applies the one transport anchor or param change at the head of the queue (a sleeping instrument). */
+  private applyQuiet(): void {
+    const ev = this.ev;
+    if (!this.queue.shift(ev)) return;
+    if (ev.type === EV_PARAM) this.setParam();
+    else if (!this.faulted) {
+      try {
+        this.setTransport();
+      } catch (err) {
+        this.fault(err);
+      }
+    }
+  }
+
   /** Applies the transport anchors and param changes queued up to `frame` (effects get no notes). */
   private applyTransport(frame: number): void {
     const ev = this.ev;
@@ -254,8 +368,14 @@ export class KernelRunner {
 
   /** The event in `this.ev` sets an event param: index in `key`, encoded value in `vel`. */
   private setParam(): void {
-    const v = this.messageValues[this.ev.key];
-    if (v) v[0] = this.ev.vel;
+    const i = this.ev.key;
+    const v = this.messageValues[i];
+    if (!v) return;
+    if ((this.glide[i] as number) > 0) {
+      // Glides head for the new value from where they are, starting at the frames not yet filled.
+      this.goal[i] = this.ev.vel;
+      this.moving[i] = 1;
+    } else v[0] = this.ev.vel;
   }
 
   /** The event in `this.ev` is a transport anchor (see EV_TRANSPORT for the packing). */

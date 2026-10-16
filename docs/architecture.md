@@ -147,7 +147,7 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
 - An effect's `latency` delays the slot's dry path, so the slot mix stays phase-aligned, and the mixer compensates
   it across inserts (PDC, see M10).
 - Param changes from the UI: `setTargetAtTime(v, now, spec.smoothing ?? 8 ms)`. Enums/bools change via `onChange`.
-- Meters: per insert, after the fader (postTap), a ChannelSplitter → 2 AnalyserNodes (fftSize 2048; realtime engines only).
+- Meters: per insert, after the fader (postTap), a ChannelSplitter → 2 AnalyserNodes (fftSize 2048; realtime engines only). They join the graph on the first `readMeters` and leave 2.5 s after the last read (a closed mixer costs nothing; the first read returns 0).
   `EngineApi.readMeters(order, out)` writes [peakL, peakR] per insert through one scratch buffer (no allocation). The
   mixer's `MeterBank` (`ui/features/mixer/meters.ts`) calls it once per frame, does the ballistics (26 dB/s fall, 1.5 s
   peak hold) and repaints a canvas only when it changes. Exact clip detection only in the master limiter.
@@ -1977,6 +1977,16 @@ by id, name or number (1-based in song order), so commands take any of them; the
   can't drive travel as `EV_PARAM` events (`messageParamNames`, starting values in
   `processorOptions.params`); the runner merges them into the kernel's `params`. Drum Pads' per-pad
   settings are `automatable: false`: idle cost 2.9% → 0.2% per instance.
+- **Lite processors.** Chrome spends ~0.5–0.75 µs per AudioParam on every render block, used or not (40 params
+  on an empty `process()`: 32 µs vs 2.7 µs for none; an idle 41-param wavetable costs ~1% of a core).
+  `registerKernel` therefore registers two processors: `id` (automatable params are AudioParams) and
+  `id~lite` (no AudioParams but the pitch; every param is an EV_PARAM event, and automatable floats glide inside
+  `KernelRunner` with setTargetAtTime's curve). `HostImpl.worklet()` picks lite unless an automation channel
+  targets the instance (`core/automation/owners.ts`); when automation first targets one, `Engine.reconcile`
+  asks the strips to `automationChanged()` and the instance is rebuilt as the full processor. Measured (idle mix30,
+  audio thread CPU): 0.57 → 0.30 cores.
+- A sleeping kernel is not woken by sync barriers or transport anchors (loop wraps used to keep every idle
+  effect awake half the time; offline exports woke everything every chunk); `wakeOnTransport` opts an instrument in.
 - `KernelRunner` sleeps a silent kernel (no notes held, output and, for effects, input under −120 dBFS for
   1 s) until an event or sound arrives; deterministic, since it depends only on the audio.
 - An effect slot costs 0.5–1.2% of a core while silent (its gains, the slot mix's ConstantSource,

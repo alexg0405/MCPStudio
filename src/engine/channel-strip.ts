@@ -1,5 +1,6 @@
 import { CHANNEL_PAN_SPEC, CHANNEL_PITCH_SPEC, CHANNEL_VOLUME_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
+import { automatedOwners, ownerKey } from '@core/automation/owners';
 import type { AudioClipChannel, InstrumentChannel, Project } from '@core/model/types';
 import { playbackMode } from '@core/audio/playback';
 import type { InstrumentInstance, JsonValue, NoteOff, NoteOn, ParamSignal } from '@agstudio/sdk';
@@ -177,6 +178,16 @@ export class ChannelStrip {
     if (this.channel.kind !== 'audioClip') this.host?.apply(this.channel.plugin, project, this.core.ctx.currentTime);
   }
 
+  /**
+   * Automation now drives this channel's instrument: an instance running as the lite processor (no
+   * AudioParams, see HostDeps.lite) is replaced by a full one so automation can move its params.
+   */
+  automationChanged(project: Project): void {
+    this.project = project;
+    if (this.host?.lite && automatedOwners(project.channels).has(ownerKey({ kind: 'channel', channelId: this.channel.id })))
+      this.load(this.channel, project);
+  }
+
   /** Re-creates the instrument (plugin code was hot-reloaded). */
   reload(project: Project): void {
     this.project = project;
@@ -316,6 +327,7 @@ export class ChannelStrip {
       ports: this.core.ports,
       reportFault: (err) => this.fault(err),
       reportTap: (tap, live) => this.core.reportTap?.({ kind: 'channel', channelId: channel.id }, tap, live),
+      lite: () => !automatedOwners(this.project.channels).has(ownerKey({ kind: 'channel', channelId: channel.id })),
     });
     this.pending = (async () => {
       try {

@@ -24,6 +24,7 @@
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
 import { INSERT_PAN_SPEC, INSERT_VOLUME_SPEC, SLOT_MIX_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
+import { automatedOwners, ownerKey } from '@core/automation/owners';
 import type { FxSlot, Insert, InsertId, PluginOwner, Project, SlotId } from '@core/model/types';
 import type { EffectInstance, JsonValue } from '@agstudio/sdk';
 import type { EngineCore } from './engine-core';
@@ -314,6 +315,15 @@ export class FxSlotStrip {
     this.current?.host.apply(this.slot.plugin, project, this.core.ctx.currentTime);
   }
 
+  /**
+   * Automation now drives this effect: an instance running as the lite processor (no AudioParams,
+   * see HostDeps.lite) is replaced by a full one so automation can move its params.
+   */
+  automationChanged(project: Project): void {
+    this.project = project;
+    if (this.current?.host.lite && automatedOwners(project.channels).has(ownerKey(this.owner))) this.load();
+  }
+
   /** Re-creates the effect (its code was hot-reloaded). */
   reload(project: Project): void {
     this.project = project;
@@ -449,6 +459,7 @@ export class FxSlotStrip {
         if (gen === this.generation) this.fault(err);
       },
       reportTap: (tap, live) => this.core.reportTap?.(this.owner, tap, live),
+      lite: () => !automatedOwners(this.project.channels).has(ownerKey(this.owner)),
     });
     this.pending = (async () => {
       try {
@@ -578,6 +589,11 @@ export class InsertStrip {
 
   samplesChanged(project: Project): void {
     for (const s of this.slots.values()) s.samplesChanged(project);
+  }
+
+  /** The set of automated plugin instances changed (see FxSlotStrip.automationChanged). */
+  automationChanged(project: Project): void {
+    for (const s of this.slots.values()) s.automationChanged(project);
   }
 
   /** Rebuilds effects whose plugin definition changed (hot reload, install/uninstall). */

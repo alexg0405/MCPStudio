@@ -6,6 +6,7 @@ import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PluginOwner, Project, SampleRef, Tick } from '@core/model/types';
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
+import { automatedOwners } from '@core/automation/owners';
 import { playbackKey } from '@core/audio/playback';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
@@ -369,6 +370,11 @@ export class Engine implements EngineApi, EngineCore {
     }
     // Insert removals last; anything still routed to a removed insert falls back to the master.
     this.mixer.removeStrips(removedInserts);
+    // First automation on a plugin that ran without AudioParams: it gets them (a new instance).
+    if (prev && prev.channels !== next.channels && automatedOwners(prev.channels) !== automatedOwners(next.channels)) {
+      for (const strip of this.strips.values()) strip.automationChanged(next);
+      this.mixer.automationChanged(next);
+    }
 
     const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
     const audioKey = !prev || prev.channels !== next.channels ? audioKeyOf(next) : this.audioKey;

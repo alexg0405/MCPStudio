@@ -115,6 +115,15 @@ export function register(services: Services): void {
     },
     true,
   );
+  // In learn mode a press on a deck control must not also play it: a fader would jump, CUE would set a cue
+  // point, the platter would start a scratch. The click that follows is the one that picks the control.
+  const swallowInLearn = (e: Event) => {
+    if (!dj.store.getState().learn || !targetOf(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener('pointerdown', swallowInLearn, true);
+  document.addEventListener('pointerup', swallowInLearn, true);
   // Right-click on a deck control: link it (unless that control has a menu of its own).
   document.addEventListener('contextmenu', (e) => {
     if (e.defaultPrevented) return;

@@ -4,7 +4,7 @@ import { crossfaderGainFor, EQ_MAX_DB, EQ_MIN_DB, FADER_MAX, formatDeckTime, TRI
 import { p } from '@agstudio/sdk/params';
 import { Knob } from '@agstudio/sdk/ui';
 import { Icon } from '../../controls/Icon';
-import { PadButton, Slider } from './controls';
+import { deckTarget, MidiTarget, PadButton, Slider } from './controls';
 import styles from './DjDecks.module.css';
 import { useDeck, useDecksState } from './use-decks';
 
@@ -27,55 +27,66 @@ function ChannelStrip({ api, id, meter, on }: { api: DecksApi; id: DeckId; meter
   return (
     <div className={styles.strip} data-deck={id}>
       <span className={styles.stripLetter}>{id}</span>
-      <Knob
-        spec={TRIM}
-        value={d.trimDb}
-        label={`Deck ${id} trim`}
-        size={26}
-        bipolar
-        hint="Gain before the knobs: turn a quiet song up or a loud one down so they match"
-        onChange={(v) => api.setTrim(id, v as number)}
-        onCommit={(v) => api.setTrim(id, v as number)}
-      />
-      <Knob
-        spec={EQ_HIGH}
-        value={d.eq.high}
-        label={`Deck ${id} high`}
-        size={26}
-        hint="Treble (about 7 kHz and up): all the way down kills the hats and highs"
-        onChange={(v) => api.setEq(id, 'high', v as number)}
-        onCommit={(v) => api.setEq(id, 'high', v as number)}
-      />
-      <Knob
-        spec={EQ_MID}
-        value={d.eq.mid}
-        label={`Deck ${id} mid`}
-        size={26}
-        hint="Mids (around 1 kHz): all the way down takes out vocals and snares"
-        onChange={(v) => api.setEq(id, 'mid', v as number)}
-        onCommit={(v) => api.setEq(id, 'mid', v as number)}
-      />
-      <Knob
-        spec={EQ_LOW}
-        value={d.eq.low}
-        label={`Deck ${id} low`}
-        size={26}
-        hint="Bass (about 120 Hz and down): all the way down kills the kick and bass, the classic way to blend two songs"
-        onChange={(v) => api.setEq(id, 'low', v as number)}
-        onCommit={(v) => api.setEq(id, 'low', v as number)}
-      />
-      <Knob
-        spec={FILTER}
-        value={d.filter}
-        label={`Deck ${id} filter`}
-        size={26}
-        bipolar
-        format={(v) => filterText(v as number)}
-        hint="One-knob filter: left closes a low-pass (muffled), right opens a high-pass (thin); the middle is off"
-        onChange={(v) => api.setFilter(id, v as number)}
-        onCommit={(v) => api.setFilter(id, v as number)}
-      />
+      <MidiTarget id={deckTarget(id, 'trim')}>
+        <Knob
+          spec={TRIM}
+          value={d.trimDb}
+          label={`Deck ${id} trim`}
+          size={26}
+          bipolar
+          hint="Gain before the knobs: turn a quiet song up or a loud one down so they match"
+          onChange={(v) => api.setTrim(id, v as number)}
+          onCommit={(v) => api.setTrim(id, v as number)}
+        />
+      </MidiTarget>
+      <MidiTarget id={deckTarget(id, 'eq.high')}>
+        <Knob
+          spec={EQ_HIGH}
+          value={d.eq.high}
+          label={`Deck ${id} high`}
+          size={26}
+          hint="Treble (about 7 kHz and up): all the way down kills the hats and highs"
+          onChange={(v) => api.setEq(id, 'high', v as number)}
+          onCommit={(v) => api.setEq(id, 'high', v as number)}
+        />
+      </MidiTarget>
+      <MidiTarget id={deckTarget(id, 'eq.mid')}>
+        <Knob
+          spec={EQ_MID}
+          value={d.eq.mid}
+          label={`Deck ${id} mid`}
+          size={26}
+          hint="Mids (around 1 kHz): all the way down takes out vocals and snares"
+          onChange={(v) => api.setEq(id, 'mid', v as number)}
+          onCommit={(v) => api.setEq(id, 'mid', v as number)}
+        />
+      </MidiTarget>
+      <MidiTarget id={deckTarget(id, 'eq.low')}>
+        <Knob
+          spec={EQ_LOW}
+          value={d.eq.low}
+          label={`Deck ${id} low`}
+          size={26}
+          hint="Bass (about 120 Hz and down): all the way down kills the kick and bass, the classic way to blend two songs"
+          onChange={(v) => api.setEq(id, 'low', v as number)}
+          onCommit={(v) => api.setEq(id, 'low', v as number)}
+        />
+      </MidiTarget>
+      <MidiTarget id={deckTarget(id, 'filter')}>
+        <Knob
+          spec={FILTER}
+          value={d.filter}
+          label={`Deck ${id} filter`}
+          size={26}
+          bipolar
+          format={(v) => filterText(v as number)}
+          hint="One-knob filter: left closes a low-pass (muffled), right opens a high-pass (thin); the middle is off"
+          onChange={(v) => api.setFilter(id, v as number)}
+          onCommit={(v) => api.setFilter(id, v as number)}
+        />
+      </MidiTarget>
       <PadButton
+        target={deckTarget(id, 'pfl')}
         label={`Deck ${id} headphone cue`}
         hint="Headphone cue: hear this deck in your headphones (choose them in the bar above) before it goes out to the speakers"
         on={d.cueListen}
@@ -100,6 +111,7 @@ function ChannelStrip({ api, id, meter, on }: { api: DecksApi; id: DeckId; meter
         </div>
         <Slider
           vertical
+          target={deckTarget(id, 'volume')}
           className={styles.channelFader}
           value={d.volume}
           min={0}
@@ -158,16 +170,18 @@ export function Mixer({ api, order, meterRef }: { api: DecksApi; order: readonly
         ))}
         <div className={styles.master}>
           <span className={styles.stripLetter}>Master</span>
-          <Knob
-            spec={MASTER}
-            value={mixer.master}
-            label="Master volume"
-            size={34}
-            format={(v) => percent(v as number)}
-            hint="Overall volume of the decks (a limiter stops it from clipping)"
-            onChange={(v) => api.setMasterVolume(v as number)}
-            onCommit={(v) => api.setMasterVolume(v as number)}
-          />
+          <MidiTarget id="masterVolume">
+            <Knob
+              spec={MASTER}
+              value={mixer.master}
+              label="Master volume"
+              size={34}
+              format={(v) => percent(v as number)}
+              hint="Overall volume of the decks (a limiter stops it from clipping)"
+              onChange={(v) => api.setMasterVolume(v as number)}
+              onCommit={(v) => api.setMasterVolume(v as number)}
+            />
+          </MidiTarget>
           <div className={styles.masterMeters} aria-hidden>
             <div className={styles.meter}>
               <i ref={meterRef(4)} />
@@ -183,6 +197,7 @@ export function Mixer({ api, order, meterRef }: { api: DecksApi; order: readonly
           A
         </span>
         <Slider
+          target="crossfader"
           className={styles.crossfader}
           value={mixer.crossfader}
           min={-1}
@@ -221,6 +236,7 @@ export function Mixer({ api, order, meterRef }: { api: DecksApi; order: readonly
               : 'Record everything you hear from the decks; when you stop it is added to your music library'
           }
           on={mixer.recording}
+          target="record"
           className={styles.record}
           onClick={() => void toggleRecord()}
         >

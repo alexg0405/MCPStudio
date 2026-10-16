@@ -9,9 +9,12 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { djControllers, setDecksProvider } from '@app/dj/controllers';
+import { addSongFiles, library } from '@app/dj/library';
 import { createServices, type Services } from '@app/services';
+import { encodeWav } from '@core/io/wav';
 import { registerFeatures } from '@ui/features';
 import { ControllersWindow } from '@ui/features/dj-controllers/ControllersWindow';
+import { DecksWindow } from '@ui/features/dj-decks/DecksWindow';
 import { ServicesProvider } from '@ui/services-context';
 import { FakeDecks } from '../helpers/fake-decks';
 import { FakeMidiAccess, msg } from '../helpers/fake-midi';
@@ -136,5 +139,90 @@ describe('DJ controllers (browser)', () => {
     expect(dj.bindingsFor('DDJ-400', 'A.keylock')).toHaveLength(1);
     expect(host.querySelector('[data-dj-target="A.keylock"]')?.textContent).toContain('Ch 3 note 99');
     dj.cancelLearn();
+  });
+});
+
+describe('MIDI learn on the Decks window (real decks)', () => {
+  let s: Services;
+  let access: FakeMidiAccess;
+  let pad: ReturnType<FakeMidiAccess['plug']>;
+  let requestMidi: unknown;
+  let root: Root | null = null;
+  let host: HTMLDivElement | null = null;
+
+  beforeAll(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    // No stand-in: `services.decks()` is the real decks, with the real audio graph.
+    setDecksProvider(null);
+    access = new FakeMidiAccess();
+    pad = access.plug('Some Pad');
+    requestMidi = (navigator as { requestMIDIAccess?: unknown }).requestMIDIAccess;
+    Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: async () => access.asAccess() });
+    s = createServices();
+    registerFeatures(s);
+    await s.commands.run('dj.controllers.connect');
+    await until(() => djControllers(s).store.getState().decks === 'ready');
+    // The deck controls are disabled until a song is on the deck: put a one-second tone on deck A.
+    const x = new Float32Array(48000);
+    for (let i = 0; i < x.length; i++) x[i] = 0.3 * Math.sin((2 * Math.PI * 220 * i) / 48000);
+    const wav = encodeWav([x, x.slice()], 48000, { bitDepth: 16 });
+    const file = { name: 'Tone.wav', arrayBuffer: async () => wav.slice().buffer as ArrayBuffer };
+    expect(await addSongFiles(s, [file])).toBe(1);
+    const song = library.getState().songs.find((item) => item.fileName === 'Tone.wav');
+    expect(song).toBeDefined();
+    await (await s.decks()).load('A', song!.ref, song!.title);
+  });
+
+  afterAll(async () => {
+    root?.unmount();
+    host?.remove();
+    djControllers(s).disable();
+    setDecksProvider(null);
+    Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: requestMidi });
+    (await s.decks()).dispose();
+    await s.engine.dispose();
+    vi.restoreAllMocks();
+  });
+
+  it('a click on deck A’s play picks it; the next press of that note plays and pauses deck A', async () => {
+    const dj = djControllers(s);
+    const decks = await s.decks();
+    dj.select('Some Pad');
+    host = document.createElement('div');
+    host.style.cssText = 'position:fixed;inset:0;width:1200px;height:800px';
+    document.body.append(host);
+    root = createRoot(host);
+    root.render(createElement(ServicesProvider, { services: s, children: createElement(DecksWindow) }));
+    const play = () => host!.querySelector('[data-dj-target="A.play"]') as HTMLButtonElement | null;
+    await until(() => !!play() && !play()!.disabled);
+    await frame();
+    expect(decks.store.getState().decks.A.playing).toBe(false);
+
+    // Learn mode: the click picks deck A's play (it does not also play the deck), then the pad's note links it.
+    dj.startLearn();
+    await frame();
+    // A press on CUE in learn mode only picks it: its pointer-down must not start a cue on the deck.
+    const cueDown = vi.spyOn(decks, 'cueDown');
+    host!.querySelector('[data-dj-target="A.cue"]')!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }));
+    expect(cueDown).not.toHaveBeenCalled();
+    cueDown.mockRestore();
+    play()!.click();
+    await frame();
+    expect(dj.store.getState().learn?.target).toBe('A.play');
+    expect(decks.store.getState().decks.A.playing).toBe(false);
+    pad.input.emit(msg.noteOn(4, 40));
+    await frame();
+    // The link is made; learn mode stays on for the next control, so leave it.
+    expect(dj.store.getState().learn?.target).toBeNull();
+    dj.cancelLearn();
+    expect(dj.store.getState().learn).toBeNull();
+    // (The pad's map is kept in the browser, so the new link can come after the earlier test's link: match by content.)
+    expect(dj.bindingsFor('Some Pad', 'A.play').map((b) => b.binding)).toEqual([{ input: { type: 'note', channel: 4, note: 40 }, target: 'A.play' }]);
+
+    // The next press of that note toggles deck A on the real decks, and the next one toggles it back.
+    pad.input.emit(msg.noteOn(4, 40));
+    expect(decks.store.getState().decks.A.playing).toBe(true);
+    pad.input.emit(msg.noteOn(4, 40));
+    expect(decks.store.getState().decks.A.playing).toBe(false);
   });
 });

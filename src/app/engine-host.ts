@@ -19,6 +19,9 @@ import type { AudioTap } from '@agstudio/sdk';
  * edited AudioWorklet code takes effect: registerProcessor names can't be redefined and worklet
  * modules can't be unloaded from a context.
  */
+/** How long a reboot waits for the new engine's sounds before playing anyway (ms). */
+const READY_WAIT_MS = 5000;
+
 export class EngineHost implements EngineApi {
   private inner: EngineApi;
   private readonly listeners = new Set<() => void>();
@@ -29,6 +32,9 @@ export class EngineHost implements EngineApi {
   /** The chosen output device, replayed on a reboot ('' = default). */
   private outputDevice = '';
   private rebooting: Promise<void> | null = null;
+  private rebootAgain = false;
+  /** Stop or play was pressed during a reboot: the engine does not start by itself afterwards. */
+  private resumeCancelled = false;
   private openEnded = false;
 
   constructor(private readonly factory: () => EngineApi) {
@@ -36,32 +42,60 @@ export class EngineHost implements EngineApi {
     this.detach = this.inner.subscribe(() => this.emit());
   }
 
-  /** Replaces the engine with a fresh one (new AudioContext), keeping the project and transport. */
+  /**
+   * Replaces the engine with a fresh one (new AudioContext), keeping the project and transport. A
+   * request that arrives while a reboot runs makes one more afterwards (the factory reads the newest
+   * settings each time), so the last request always wins.
+   */
   reboot(): Promise<void> {
-    this.rebooting ??= (async () => {
-      const old = this.inner;
-      const wasPlaying = old.playing;
-      const at = old.playhead();
-      this.detach();
-      const next = this.factory();
-      if (this.lastDoc)
-        next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
-      if (this.view) next.setTransportView(this.view);
-      if (this.session) next.setSession(this.session);
-      if (this.outputDevice) void next.setOutputDevice(this.outputDevice);
-      if (this.openEnded) next.setSongOpenEnded(true);
-      this.inner = next;
-      this.detach = next.subscribe(() => this.emit());
-      await old.dispose();
-      // Don't wait: without a recent gesture resume() can stay pending until the next click,
-      // which the audio-unlock listener provides (the toolbar shows "click to enable" meanwhile).
-      void next.resume().catch(() => {});
-      if (wasPlaying) next.play(Math.max(0, Math.floor(at)));
-      this.emit();
+    if (this.rebooting) {
+      this.rebootAgain = true;
+      return this.rebooting;
+    }
+    this.rebooting = (async () => {
+      do {
+        this.rebootAgain = false;
+        await this.rebootOnce();
+      } while (this.rebootAgain);
     })().finally(() => {
       this.rebooting = null;
     });
     return this.rebooting;
+  }
+
+  private async rebootOnce(): Promise<void> {
+    const old = this.inner;
+    const wasPlaying = old.playing;
+    const at = old.playhead();
+    // Made before anything is let go of: if no engine can be made, the running one stays.
+    const next = this.factory();
+    this.detach();
+    this.resumeCancelled = false;
+    if (this.lastDoc) next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
+    if (this.view) next.setTransportView(this.view);
+    if (this.session) next.setSession(this.session);
+    if (this.outputDevice) void next.setOutputDevice(this.outputDevice);
+    if (this.openEnded) next.setSongOpenEnded(true);
+    this.inner = next;
+    this.detach = next.subscribe(() => this.emit());
+    await old.dispose();
+    // Don't wait: without a recent gesture resume() can stay pending until the next click,
+    // which the audio-unlock listener provides (the toolbar shows "click to enable" meanwhile).
+    void next.resume().catch(() => {});
+    if (wasPlaying) {
+      // Instruments that haven't loaded drop their notes: start once they are there (but never wait forever).
+      await Promise.race([next.ready().catch(() => {}), new Promise<void>((r) => setTimeout(r, READY_WAIT_MS))]);
+      // The user pressed stop (or play somewhere else) while the sounds loaded: leave it be.
+      if (this.inner === next && !this.resumeCancelled && !next.playing) {
+        // Starting again is not a take: no count-in clicks first.
+        const session = this.session;
+        const countIn = !!session && session.countInBars > 0;
+        if (session && countIn) next.setSession({ ...session, countInBars: 0 });
+        next.play(Math.max(0, Math.floor(at)));
+        if (session && countIn) next.setSession(session);
+      }
+    }
+    this.emit();
   }
 
   get sampleRate(): number {
@@ -91,12 +125,15 @@ export class EngineHost implements EngineApi {
     this.inner.setTransportView(view);
   }
   play(fromTick?: Tick): void {
+    this.resumeCancelled = true;
     this.inner.play(fromTick);
   }
   stop(): void {
+    this.resumeCancelled = true;
     this.inner.stop();
   }
   panic(): void {
+    this.resumeCancelled = true;
     this.inner.panic();
   }
   setOutputDevice(deviceId: string): Promise<boolean> {

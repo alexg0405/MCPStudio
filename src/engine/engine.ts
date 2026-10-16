@@ -151,6 +151,7 @@ export class Engine implements EngineApi, EngineCore {
   /** Song mode position the residency plans around while stopped (where playback last started). */
   private songPos = 0;
   private lastSweep = 0;
+  private disposed = false;
 
   constructor(
     ctx: BaseAudioContext,
@@ -450,7 +451,7 @@ export class Engine implements EngineApi, EngineCore {
    * plans again only when the position moved by a second or the song changed).
    */
   private updateResidency(force = false): void {
-    if (this.offline) return;
+    if (this.offline || this.disposed) return;
     const playingSong = this.transport.playing && this.view.mode === 'song';
     if (playingSong) this.songPos = this.transport.positionAt(this.heardTime());
     const loop = this.view.mode === 'song' && !this.openEnded ? this.transport.currentTimeline.loop : null;
@@ -517,6 +518,7 @@ export class Engine implements EngineApi, EngineCore {
     }
     if (this.transport.playing) this.transport.seek(fromTick, at);
     else {
+      this.maxPumpGap = 0;
       // Count-in (record mode): clicks first, then playback.
       const countIn =
         this.metronome && this.session.countInBars > 0
@@ -623,7 +625,6 @@ export class Engine implements EngineApi, EngineCore {
     this.lastPumpAt = 0;
     this.keepUpFrom = null;
     this.keepUp = undefined;
-    if (!this.transport.playing || this.maxPumpGap < 0) this.maxPumpGap = 0;
     if (!this.clock) {
       this.clock = new Worker(new URL('./sched/clock.worker.ts', import.meta.url), { type: 'module' });
       this.clock.onmessage = () => this.tick();
@@ -952,6 +953,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
     this.transport.stop();
     this.automation.dispose();
     this.metronome?.dispose();

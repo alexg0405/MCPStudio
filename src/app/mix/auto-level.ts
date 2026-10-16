@@ -3,7 +3,7 @@
  * part (each as it reaches the master, the master's chain bypassed), measure their loudness, set
  * every bus to its style's level relative to the kick, trim them together to −16 LUFS before the
  * Limiter, and set the Limiter's input so the master lands on the style's loudness. One render of
- * the whole mix checks it (and corrects the Limiter once when it is off by more than 1 dB). The
+ * the whole mix checks it (and corrects the Limiter, up to twice, while it is off by more than 1 dB). The
  * math is pure (`levelMoves`, `limiterInput`); `autoLevel` does the rendering.
  */
 import type { Draft } from 'immer';
@@ -56,6 +56,8 @@ export const MOVE_MIN_DB = -12;
 export const MOVE_MAX_DB = 6;
 /** The Limiter's input range auto-level uses. */
 export const LIMITER_INPUT_MAX_DB = 10;
+/** How many times the Limiter's input is corrected after listening to the result (each costs one render). */
+const CORRECTIONS = 2;
 
 const offsetOf = (role: LeveledBus, t: LevelTarget) => (role === 'kick' ? 0 : t[role]);
 const dbOf = (gain: number) => (gain > 0 ? 20 * Math.log10(gain) : -Infinity);
@@ -375,19 +377,19 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   opts.signal?.throwIfAborted();
   commit();
 
-  // Listen to the result once, and correct the Limiter once when the master is off.
+  // Listen to the result, and correct the Limiter (up to twice) while the master is off.
   const target = LEVEL_TARGETS[style].master;
   project = s.doc.getState().project;
   let master = await render(project, true, 'The mix', true);
-  if (limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1) {
+  // (a Limiter takes less loudness than the input it is given once it works hard: a loud style can need a second correction)
+  for (let pass = 0; pass < CORRECTIONS && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1; pass++) {
     const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
-    if (Math.abs(corrected - input) > 0.05) {
-      input = corrected;
-      await opts.whenQuiet?.();
-      opts.signal?.throwIfAborted();
-      commit();
-      master = await render(s.doc.getState().project, true, 'The mix', true);
-    }
+    if (Math.abs(corrected - input) <= 0.05) break;
+    input = corrected;
+    await opts.whenQuiet?.();
+    opts.signal?.throwIfAborted();
+    commit();
+    master = await render(s.doc.getState().project, true, 'The mix', true);
   }
   opts.progress?.('Done', 1);
 
@@ -468,15 +470,14 @@ async function levelLoudness(
 
   const target = LEVEL_TARGETS[style].master;
   let master = await render(s.doc.getState().project, true, 'The mix', true);
-  if (limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1) {
+  for (let pass = 0; pass < CORRECTIONS && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1; pass++) {
     const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
-    if (Math.abs(corrected - input) > 0.05) {
-      input = corrected;
-      await opts.whenQuiet?.();
-      opts.signal?.throwIfAborted();
-      commit(0);
-      master = await render(s.doc.getState().project, true, 'The mix', true);
-    }
+    if (Math.abs(corrected - input) <= 0.05) break;
+    input = corrected;
+    await opts.whenQuiet?.();
+    opts.signal?.throwIfAborted();
+    commit(0);
+    master = await render(s.doc.getState().project, true, 'The mix', true);
   }
   // Still too loud with the Limiter's input at 0 dB: something before it (a clipper, a hot saturator) pushes it.
   if (Number.isFinite(master.lufs) && master.lufs > target + 2)

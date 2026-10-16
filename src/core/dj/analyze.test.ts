@@ -1,27 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { cpuNow } from '../../../test/helpers/perf';
-import { analyzeTrack } from './analyze';
-import { MAJOR, MINOR, PATTERNS, chord, renderTestSong, type DrumPattern, type SongPart, type TestSongSpec } from './test-songs';
+import { PATTERNS, type DrumPattern, type TestSongSpec } from './test-songs';
 import { ANALYSIS_VERSION } from './types';
-
-const SR = 22050;
-const all: Omit<SongPart, 'bars'> = { kick: true, snare: true, hats: true, bass: true, pads: true };
-const beat: Omit<SongPart, 'bars'> = { kick: true, hats: true, level: 0.7 };
-/** Am – Dm – E – Am (A minor, one chord per bar). */
-const AM = [chord(57, MINOR), chord(50, MINOR), chord(52, MAJOR), chord(57, MINOR)];
-
-function analyze(spec: Partial<TestSongSpec> & Pick<TestSongSpec, 'bpm' | 'pattern' | 'parts'>) {
-  const song = renderTestSong({ sampleRate: SR, chords: AM, ...spec });
-  const a = analyzeTrack({ hash: 'test', mono: song.mono, sampleRate: SR, lufs: -10, truePeakDb: -1 });
-  return { song, a };
-}
-
-/** Distance (seconds) from the analysis' first downbeat to the true downbeat nearest it, and the bar index. */
-function downbeatError(downbeats: number[], t: number): { error: number; bar: number } {
-  let bar = 0;
-  for (let i = 1; i < downbeats.length; i++) if (Math.abs(downbeats[i]! - t) < Math.abs(downbeats[bar]! - t)) bar = i;
-  return { error: Math.abs(downbeats[bar]! - t), bar };
-}
+import { all, analyze, downbeatError } from './analyze-fixtures';
 
 describe('track analysis: downbeats', () => {
   const cases: [string, number, DrumPattern, Partial<TestSongSpec>][] = [
@@ -50,98 +30,4 @@ describe('track analysis: downbeats', () => {
     expect(a.grid?.beatsPerBar).toBe(3);
     expect(downbeatError(song.downbeats, a.grid!.firstDownbeat).error).toBeLessThan(0.02);
   });
-});
-
-describe('track analysis: sections and mix points', () => {
-  it('mixes a DJ-friendly house track in at its start and out at its outro', () => {
-    const { song, a } = analyze({
-      bpm: 126,
-      pattern: PATTERNS.house,
-      offset: 0.25,
-      parts: [
-        { bars: 16, ...beat },
-        { bars: 32, ...all, crash: true },
-        { bars: 8, pads: true, level: 0.6 },
-        { bars: 16, ...all, crash: true },
-        { bars: 16, ...beat },
-      ],
-    });
-    const [intro, body, brk, drop, outro] = song.partStarts as [number, number, number, number, number];
-    // 88 bars and the 1 s tail.
-    expect(a.energy.length).toBe(89);
-    expect(Math.abs(a.mixIn - intro)).toBeLessThan(0.02);
-    expect(Math.abs(a.mixOut - outro)).toBeLessThan(0.02);
-    const near = (t: number) => a.sections.find((s) => Math.abs(s.start - t) < 0.02);
-    expect(near(intro)?.kind).toBe('intro');
-    expect(near(body)?.kind).toBe('drop');
-    expect(near(brk)?.kind).toBe('break');
-    expect(near(drop)?.kind).toBe('drop');
-    expect(near(outro)?.kind).toBe('outro');
-    // Energy follows the arrangement.
-    expect(a.energy[20]!).toBeGreaterThan(a.energy[4]! + 0.15);
-    expect(a.energy[50]!).toBeLessThan(a.energy[40]! - 0.3);
-  });
-
-  it('skips a short intro and mixes out two phrases before a short outro', () => {
-    const { song, a } = analyze({
-      bpm: 100,
-      pattern: PATTERNS.pop,
-      offset: 0.5,
-      parts: [
-        { bars: 4, pads: true, level: 0.6 },
-        { bars: 32, ...all },
-        { bars: 4, pads: true, level: 0.5 },
-      ],
-    });
-    const barLen = (4 * 60) / 100;
-    const [, main, outro] = song.partStarts as [number, number, number];
-    expect(Math.abs(a.mixIn - main)).toBeLessThan(0.02);
-    // 16 bars before the outro, on the phrase grid that starts after the intro.
-    expect(Math.abs(a.mixOut - (outro - 16 * barLen))).toBeLessThan(0.02);
-  });
-});
-
-describe('track analysis: hard cases', () => {
-  it('returns the tracked beats when the tempo drifts', () => {
-    const { song, a } = analyze({ bpm: 120, endBpm: 124, pattern: PATTERNS.pop, offset: 0.3, parts: [{ bars: 48, ...all }] });
-    expect(a.grid!.beats.length).toBeGreaterThan(150);
-    expect(downbeatError(song.downbeats, a.grid!.firstDownbeat)).toEqual({ error: expect.any(Number), bar: 0 });
-    for (const b of song.beats.slice(1, -1)) {
-      const d = Math.min(...a.grid!.beats.map((x) => Math.abs(x - b)));
-      expect(d).toBeLessThan(0.02);
-    }
-    // Bars follow the tracked downbeats.
-    expect(a.energy.length).toBeGreaterThanOrEqual(48);
-  });
-
-  it('has no grid for a beatless pad, and energy every 2 s', () => {
-    const { a } = analyze({ bpm: 70, pattern: PATTERNS.pop, parts: [{ bars: 8, pads: true }] });
-    expect(a.grid).toBeNull();
-    expect(a.energy.length).toBe(Math.ceil(a.durationSec / 2));
-    expect(a.key?.mode).toBe('minor');
-  });
-
-  it('analyzes a 5-minute song in reasonable time', () => {
-    const song = renderTestSong({
-      sampleRate: SR,
-      bpm: 124,
-      pattern: PATTERNS.house,
-      chords: AM,
-      parts: [
-        { bars: 32, ...beat },
-        { bars: 64, ...all },
-        { bars: 16, pads: true },
-        { bars: 32, ...all },
-        { bars: 11, ...beat },
-      ],
-    });
-    expect(song.durationSec).toBeGreaterThan(299);
-    // CPU time: on a busy machine the wall clock counts the time spent waiting for a core.
-    const t0 = cpuNow();
-    const a = analyzeTrack({ hash: 'long', mono: song.mono, sampleRate: SR, lufs: -9, truePeakDb: -0.5 });
-    const ms = cpuNow() - t0;
-    console.log(`5-minute song analyzed in ${Math.round(ms)} ms`);
-    expect(a.grid?.bpm).toBe(124);
-    expect(ms).toBeLessThan(30000);
-  }, 60_000);
 });

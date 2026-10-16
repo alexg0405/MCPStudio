@@ -141,10 +141,11 @@ export default defineConfig(({ mode }) => ({
         test: {
           name: 'audio',
           include: ['src/**/*.browser.test.{ts,tsx}', 'test/browser/**/*.test.ts'],
-          // Offline renders compete with up to nine other files (and the unit workers) for the cores: the browser
-          // default of 15 s only ever fired on a busy machine. Tests with a longer chain of renders set their own.
-          testTimeout: 60_000,
-          hookTimeout: 60_000,
+          // Offline renders compete with up to nine other files for the cores, and tests that run concurrently
+          // inside a file (describe.concurrent) wait for each other: the browser default of 15 s only ever fired
+          // on a busy machine. A timeout is for a hang, not a speed check. Longer chains of renders set their own.
+          testTimeout: 180_000,
+          hookTimeout: 120_000,
           // Fixed entity ids: renders (whose noise is seeded from ids) repeat from run to run.
           setupFiles: ['test/browser/setup.ts'],
           browser: {

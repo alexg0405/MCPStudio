@@ -49,6 +49,11 @@ export const LEVEL_TARGETS: Readonly<Record<Style, LevelTarget>> = {
   pop: { drums: -3, bass: -3, chords: -5, lead: -2, fx: -10, master: -11 },
 };
 
+/** Another project was opened while leveling listened: its faders must not move. */
+const sameProject = (s: Services, projectId: string) => {
+  if (s.doc.getState().project.projectId !== projectId) throw new Error('Another project was opened while leveling, so nothing was changed.');
+};
+
 /** Where the buses sum before the master chain. */
 export const PRE_LIMITER_LUFS = -16;
 /** How far one leveling may move a fader. */
@@ -283,6 +288,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   const style = opts.style;
   const warnings: string[] = [];
   let project = s.doc.getState().project;
+  const projectId = project.projectId;
   const layout = findMixLayout(project);
   const busIds = LEVELED.map((role) => [role, layout.buses[role]] as const).filter((x): x is [LeveledBus, InsertId] => !!x[1]);
   const window = busiestWindow(project, s.view.getState().currentPatternId, opts.fromTick, opts.bars);
@@ -356,6 +362,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   let entry = opts.entry ?? null;
   const tamed: string[] = [];
   const commit = () => {
+    sameProject(s, projectId);
     s.history.transact(
       'Level the mix',
       (d) => {
@@ -446,6 +453,7 @@ async function levelLoudness(
   let entry = opts.entry ?? null;
   const tamed: string[] = [];
   const commit = (trim: number) => {
+    sameProject(s, raw.projectId);
     const g = gainOf(trim);
     s.history.transact(
       'Level the mix',

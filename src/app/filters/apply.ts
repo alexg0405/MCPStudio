@@ -106,6 +106,8 @@ export async function applyFilter(
   const effects = effectsOf(s, f);
 
   const now = s.doc.getState().project;
+  // Another project was opened while it rendered: the render belongs to the old one.
+  if (now.projectId !== p.projectId) throw new FilterError('Another project was opened while the filter rendered, so nothing was filtered.');
   const tempoNow = tempoMapOf(now, 'song');
   const color = paletteColor(now.channelOrder.length);
   const channelId = newId.channel();

@@ -92,7 +92,7 @@ export function sweepTargets(
     let insertId = layout.buses[bus];
     if (!insertId) {
       if (!opts.create || !eqDef) continue;
-      insertId = findEmptyInsert(p, { ignorePanAndSolo: true }) ?? undefined;
+      insertId = findEmptyInsert(p) ?? undefined;
       if (insertId) d.mixer.inserts[insertId]!.name = BUS_NAMES[bus];
       else {
         insertId = newId.insert();

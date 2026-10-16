@@ -88,7 +88,7 @@ export function setupMix(d: Draft<Project>, s: Services, opts: SetupMixOptions):
   for (const role of BUS_ORDER) {
     if (!wanted.has(role) || buses[role]) continue;
     const recipe = busRecipe(role, style);
-    let id = findEmptyInsert(p, { anyCaseName: true, unityPostRoute: true });
+    let id = findEmptyInsert(p);
     if (id) {
       reused.push(p.mixer.inserts[id]!.name);
       setInsertProp(d, id, 'name', BUS_NAMES[role]);

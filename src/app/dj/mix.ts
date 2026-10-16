@@ -115,7 +115,7 @@ export const DEFAULT_DJ_OPTIONS: DjMixOptions = {
 function insertNamed(d: Draft<Project>, name: string, changes: string[]): InsertId {
   const p = d as unknown as Project;
   for (const id of d.mixer.order) if (d.mixer.inserts[id]?.name === name && id !== MASTER) return id;
-  const empty = findEmptyInsert(p, { anyCaseName: true });
+  const empty = findEmptyInsert(p);
   if (empty) {
     d.mixer.inserts[empty]!.name = name;
     changes.push(`Mixer track ${d.mixer.order.indexOf(empty)} is now “${name}”`);

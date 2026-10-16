@@ -1,0 +1,47 @@
+.status {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 4px;
+  color: var(--ag-text);
+  line-height: 1.4;
+}
+
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--ag-text-faint);
+}
+
+.dotOn {
+  background: var(--ag-accent);
+}
+
+.token,
+.path {
+  color: var(--ag-text);
+  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-size: var(--ag-font-size-sm);
+  overflow-wrap: anywhere;
+}
+
+/* A command or JSON to copy: an inset well that wraps instead of scrolling sideways. */
+.code {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font-family: var(--ag-font-mono, ui-monospace, monospace);
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}

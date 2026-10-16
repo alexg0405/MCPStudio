@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import { createTestServices } from '../testing';
 import { McpLink, type HotChannel } from './bridge';
+import type { McpTools } from './tools';
 import { BRIDGE_EVENTS, type BridgeCall, type BridgeResult } from './types';
 
 /** The page's end of the MCP connection, with a stand-in for Vite's HMR channel and the dev server's endpoints. */
-function setup(tools?: { call: ReturnType<typeof vi.fn> }) {
+function setup(tools?: { call: Mock<McpTools['call']> }) {
   const s = createTestServices();
   const handlers = new Map<string, (data: never) => void>();
   const sent: { event: string; data: unknown }[] = [];
@@ -18,7 +19,7 @@ function setup(tools?: { call: ReturnType<typeof vi.fn> }) {
     if (String(url) === '/api/mcp/token' && init?.method === 'POST') return new Response(JSON.stringify({ token: 'agmcp_new' }));
     return new Response('no', { status: 404 });
   }) as unknown as typeof fetch;
-  const fakeTools = tools ?? { call: vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'hi' }] })) };
+  const fakeTools = tools ?? { call: vi.fn<McpTools['call']>(async () => ({ content: [{ type: 'text' as const, text: 'hi' }] })) };
   const link = new McpLink(s, { fetch: fetchImpl, tabId: 'tab-1', tools: { names: () => [], call: fakeTools.call } });
   const emit = (event: string, data: unknown) => handlers.get(event)?.(data as never);
   const results = () => sent.filter((m) => m.event === BRIDGE_EVENTS.result).map((m) => m.data as BridgeResult);
@@ -87,7 +88,7 @@ describe('the page bridge to the dev server', () => {
   });
 
   it('turns a crashing tool into an error result', async () => {
-    const t = { call: vi.fn(async () => Promise.reject(new Error('kaboom'))) };
+    const t = { call: vi.fn<McpTools['call']>(async () => Promise.reject(new Error('kaboom'))) };
     const { link, hot, emit, results, call } = setup(t);
     link.start(hot);
     emit(BRIDGE_EVENTS.call, call());

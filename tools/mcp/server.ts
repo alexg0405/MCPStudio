@@ -92,8 +92,11 @@ interface Defs {
 }
 
 export function mcpServer(options: McpServerOptions): Plugin {
-  const tokens = new TokenStore(options.tokenFile ?? join(options.root, '.agstudio', 'mcp-token'));
-  const exportsDir = options.exportsDir ?? defaultExportsDir();
+  // AGSTUDIO_MCP_TOKEN_FILE and AGSTUDIO_EXPORTS_DIR move the token and the exports (the tests use them).
+  const tokens = new TokenStore(
+    options.tokenFile ?? process.env.AGSTUDIO_MCP_TOKEN_FILE ?? join(options.root, '.agstudio', 'mcp-token'),
+  );
+  const exportsDir = options.exportsDir ?? process.env.AGSTUDIO_EXPORTS_DIR ?? defaultExportsDir();
   const status = new StatusTracker();
   const uploads = new UploadTickets();
   const limit = new RateLimit();

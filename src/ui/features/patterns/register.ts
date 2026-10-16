@@ -51,6 +51,9 @@ export function register(services: Services): void {
     sep(40),
     cmd('patterns.next', 50),
     cmd('patterns.prev', 60),
+    sep(62),
+    // The pattern being edited, on a loop (the editors' ▶ buttons do the same).
+    cmd('transport.playPattern', 63, 'Play this pattern'),
   ]);
   addToolbarSlot({ id: 'pattern-picker', area: 'center', order: 0, component: () => createElement(PatternPicker) });
 }

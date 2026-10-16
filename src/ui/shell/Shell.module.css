@@ -293,6 +293,14 @@
   animation: ag-float-in var(--ag-dur) var(--ag-ease);
 }
 
+/*
+ * A submenu is positioned inside its parent panel (the blur makes that its containing block), so it
+ * only fades in: a transform would slide it off its row.
+ */
+.menuDropdownNested {
+  animation: ag-menu-in 110ms var(--ag-ease);
+}
+
 .menuItem {
   display: flex;
   align-items: center;
@@ -464,6 +472,12 @@
   from {
     opacity: 0;
     transform: translateY(-4px);
+  }
+}
+
+@keyframes ag-menu-in {
+  from {
+    opacity: 0;
   }
 }
 

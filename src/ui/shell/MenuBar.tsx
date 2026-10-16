@@ -3,6 +3,7 @@ import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../controls/Dialog';
 import { Icon } from '../controls/Icon';
 import { focusFirstItem, moveInPanel, panelItems, submenuOf } from '../controls/menu-nav';
+import { relativeToContainer } from '../controls/place';
 import { useServices } from '../services-context';
 import { getMenuItems, getMenus, menusVersion, subscribeMenus, type DynamicMenuEntry, type MenuItem } from './menus';
 import styles from './Shell.module.css';
@@ -123,17 +124,19 @@ export function MenuBar() {
   );
 }
 
-type SubOpen = { key: string; left: number; top: number };
-
 function MenuDropdown({
   items,
   position,
+  nested = false,
   onClose,
   autoFocus = false,
   onSideways,
 }: {
   items: MenuItem[];
-  position: { left: number; top: number };
+  /** A top-level menu: where it opens, in viewport coordinates. */
+  position?: { left: number; top: number };
+  /** A submenu: it opens beside its row (the button before it). */
+  nested?: boolean;
   onClose: () => void;
   /** Focus the first item when it opens (opened from the keyboard). */
   autoFocus?: boolean;
@@ -143,16 +146,25 @@ function MenuDropdown({
   useCommandsVersion();
   const services = useServices();
   const { commands, keymap, platform } = services;
-  const [sub, setSub] = useState<SubOpen | null>(null);
+  const [sub, setSub] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [placed, setPlaced] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
     if (autoFocus && panelRef.current) panelItems(panelRef.current)[0]?.focus();
   }, [autoFocus]);
-  const openSub = (key: string, el: HTMLElement) => {
+  // A submenu is measured after render (before paint): beside its row, flipped left where it would spill
+  // off. The row and the outer panel are measured together, so the outer panel's float-in doesn't skew it.
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    const rowEl = el?.parentElement?.querySelector(':scope > [role="menuitem"]');
+    if (!nested || !el || !rowEl) return;
+    const row = rowEl.getBoundingClientRect();
     const r = el.getBoundingClientRect();
-    const left = r.right + 220 > window.innerWidth ? Math.max(4, r.left - 220) : r.right;
-    setSub({ key, left, top: r.top - 5 });
-  };
+    const left = row.right + r.width <= window.innerWidth - 4 ? row.right : Math.max(4, row.left - r.width);
+    const top = Math.max(4, Math.min(row.top - 5, window.innerHeight - r.height - 4));
+    // Fixed inside the outer panel, whose blur makes it the containing block.
+    setPlaced(relativeToContainer({ left, top }, el.parentElement?.closest('[role="menu"]') ?? null));
+  }, [nested]);
   const closeSub = () => setSub(null);
 
   // ← in a submenu goes back to its row (and closes it).
@@ -181,18 +193,18 @@ function MenuDropdown({
     <button
       role="menuitem"
       aria-haspopup="menu"
-      aria-expanded={sub?.key === key}
-      className={`${styles.menuItem} ${sub?.key === key ? styles.menuItemOpen : ''}`}
+      aria-expanded={sub === key}
+      className={`${styles.menuItem} ${sub === key ? styles.menuItemOpen : ''}`}
       disabled={disabled}
       onPointerDown={(e) => e.preventDefault()}
-      onPointerEnter={(e) => openSub(key, e.currentTarget)}
-      onClick={(e) => openSub(key, e.currentTarget)}
+      onPointerEnter={() => setSub(key)}
+      onClick={() => setSub(key)}
       onKeyDown={(e) => {
         if (e.key !== 'ArrowRight' && e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         e.stopPropagation();
         const row = e.currentTarget;
-        openSub(key, row);
+        setSub(key);
         focusFirstItem(() => submenuOf(row));
       }}
     >
@@ -207,9 +219,9 @@ function MenuDropdown({
       const key = `${prefix}:${j}`;
       if (entry.children)
         return (
-          <div key={key} className={styles.menuSubRoot} onKeyDown={(e) => backToRow(e, sub?.key === key)}>
+          <div key={key} className={styles.menuSubRoot} onKeyDown={(e) => backToRow(e, sub === key)}>
             {subButton(key, entry.label, entry.disabled)}
-            {sub?.key === key && <EntriesDropdown entries={entry.children} position={sub} onClose={onClose} />}
+            {sub === key && <EntriesDropdown entries={entry.children} onClose={onClose} />}
           </div>
         );
       return (
@@ -234,18 +246,22 @@ function MenuDropdown({
     });
 
   return (
-    <div ref={panelRef} className={styles.menuDropdown} role="menu" style={position} onKeyDown={onPanelKey}>
+    <div
+      ref={panelRef}
+      className={`${styles.menuDropdown} ${nested ? styles.menuDropdownNested : ''}`}
+      role="menu"
+      style={nested ? (placed ?? { left: 0, top: 0, visibility: 'hidden' }) : position}
+      onKeyDown={onPanelKey}
+    >
       {items.map((item, i) => {
         if (item.kind === 'separator') return <div key={`sep${i}`} className={styles.menuSeparator} />;
         if (item.kind === 'dynamic') return dynamicEntries(item.entries(), item.id);
         if (item.kind === 'submenu') {
           const key = `sub:${item.id}`;
           return (
-            <div key={key} className={styles.menuSubRoot} onKeyDown={(e) => backToRow(e, sub?.key === key)}>
+            <div key={key} className={styles.menuSubRoot} onKeyDown={(e) => backToRow(e, sub === key)}>
               {subButton(key, item.label)}
-              {sub?.key === key && (
-                <MenuDropdown items={item.items()} position={{ left: sub.left, top: sub.top }} onClose={onClose} />
-              )}
+              {sub === key && <MenuDropdown items={item.items()} nested onClose={onClose} />}
             </div>
           );
         }
@@ -281,17 +297,15 @@ function MenuDropdown({
 /** A nested menu of dynamic entries. */
 function EntriesDropdown({
   entries,
-  position,
   onClose,
 }: {
   entries: DynamicMenuEntry[];
-  position: { left: number; top: number };
   onClose: () => void;
 }) {
   return (
     <MenuDropdown
       items={[{ kind: 'dynamic', id: 'sub', order: 0, entries: () => entries }]}
-      position={{ left: position.left, top: position.top }}
+      nested
       onClose={onClose}
     />
   );

@@ -8,11 +8,13 @@ import { seededBytes, setIdSource } from '@core/model/ids';
 import { KIT_VERSION } from '@core/model/kit';
 import { SCHEMA_VERSION, type Project, type SampleRef } from '@core/model/types';
 import { StorageError, type BlobStore } from '@platform/opfs';
+import { loadAutosave } from './autosave';
 import { createMemoryBlobStore, createSampleStore } from './blob-store';
 import {
   buildProjectFile,
   collectEmbeddedSamples,
   decodableBytes,
+  missingSoundsNotice,
   openProjectBlob,
   openProjectFile,
   opfsSampleProvider,
@@ -369,5 +371,58 @@ describe('sample stores', () => {
     const primary = createMemoryBlobStore();
     const layered = createSampleStore(primary);
     await expect(layered.putBlob('nope', 'wav', Uint8Array.from([1]))).rejects.toMatchObject({ code: 'invalid' });
+  });
+});
+
+describe('recovered projects with missing sounds', () => {
+  it('names the sounds whose audio is not in the store, with their file names', async () => {
+    const have = createMemoryBlobStore();
+    const kick = await importSampleBytes(wavBytes(300), 'Kick.wav', { store: have });
+    const vox = await importSampleBytes(wavBytes(301), 'Vox.wav', { store: createMemoryBlobStore() });
+    const thin = writeProjectFile({ project: withSamples(kick, vox), view: null, samples: new Map(), appVersion: '1' });
+
+    // The fake store holds only the kick, so the vox is the one missing.
+    const partly = await openProjectFile(thin, { store: have });
+    expect(partly.missingSamples).toEqual([vox]);
+    expect(missingSoundsNotice(partly.missingSamples)).toBe(
+      '1 sound couldn’t be found: "Vox.wav". Use File → Find missing samples… to point to them.',
+    );
+
+    const empty = await openProjectFile(thin, { store: createMemoryBlobStore() });
+    expect(missingSoundsNotice(empty.missingSamples)).toBe(
+      '2 sounds couldn’t be found: "Kick.wav", "Vox.wav". Use File → Find missing samples… to point to them.',
+    );
+  });
+
+  it('says how many more when there are more than three', () => {
+    const ref = (name: string): SampleRef => ({
+      id: name as SampleRef['id'],
+      name,
+      source: { kind: 'embedded', hash: 'a'.repeat(64), ext: 'wav', originalName: `${name}.wav` },
+    });
+    expect(missingSoundsNotice(['Kick', 'Snare', 'Hat', 'Clap'].map(ref))).toBe(
+      '4 sounds couldn’t be found: "Kick.wav", "Snare.wav", "Hat.wav" and 1 more. Use File → Find missing samples… to point to them.',
+    );
+  });
+
+  it('says nothing when no sound is missing', () => {
+    expect(missingSoundsNotice([])).toBeNull();
+  });
+
+  it('reads a recovered autosave through its storage and reports what the store lacks', async () => {
+    const elsewhere = createMemoryBlobStore();
+    const kick = await importSampleBytes(wavBytes(300), 'Kick.wav', { store: elsewhere });
+    const vox = await importSampleBytes(wavBytes(301), 'Vox.wav', { store: elsewhere });
+    const data = writeProjectFile({ project: withSamples(kick, vox), view: null, samples: new Map(), appVersion: '1' });
+    const storage = {
+      readAutosave: async () => ({
+        data,
+        meta: { sessionId: 's1', projectId: 'p1', title: 'Song', savedAt: NOW.toISOString(), clean: false, slot: 'a' as const },
+      }),
+    };
+    const loaded = await loadAutosave('s1', { storage, store: createMemoryBlobStore() });
+    expect(missingSoundsNotice(loaded?.missingSamples ?? [])).toBe(
+      '2 sounds couldn’t be found: "Kick.wav", "Vox.wav". Use File → Find missing samples… to point to them.',
+    );
   });
 });

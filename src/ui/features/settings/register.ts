@@ -1,7 +1,7 @@
 import type { Services } from '@app/services';
 import { canChooseOutput, findOutput, listOutputs } from '@app/audio-devices';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
-import { ACCENTS, applyTheme, findAccent, findTheme, THEMES } from '../../theme/apply';
+import { ACCENTS, applyTheme, effectiveAccent, findAccent, findTheme, THEMES } from '../../theme/apply';
 import { registerWindowType, toggleWindow } from '../../workspace/registry';
 import { setWindowHelp } from '../../workspace/window-help';
 import { lazyWindow } from '../../workspace/lazy';
@@ -51,7 +51,10 @@ export function register(services: Services): void {
     },
   });
   // The look: theme and accent color (kept in prefs, applied to <html>).
-  const look = () => applyTheme(services.prefs.getState().theme, services.prefs.getState().accent);
+  const look = () => {
+    const p = services.prefs.getState();
+    applyTheme(p.theme, p.accent, p.accentPicked);
+  };
   services.prefs.subscribe(look);
   look();
   commands.register<string>({
@@ -77,7 +80,7 @@ export function register(services: Services): void {
     run: (s, name) => {
       const accent = findAccent(String(name ?? ''));
       if (!accent) return s.session.getState().toast(`There is no accent color called “${String(name)}”.`, 'error');
-      s.prefs.getState().set({ accent });
+      s.prefs.getState().set({ accent, accentPicked: true });
     },
   });
   services.keymap.add([{ chord: 'F10', command: 'options.settings' }]);
@@ -105,7 +108,7 @@ export function register(services: Services): void {
             run: () => {},
             children: ACCENTS.map((a) => ({
               label: a.label,
-              checked: (findAccent(pr.accent) ?? 'orange') === a.id,
+              checked: effectiveAccent(pr.theme, pr.accent, pr.accentPicked) === a.id,
               run: () => services.commands.run('options.accent', a.id),
             })),
           },

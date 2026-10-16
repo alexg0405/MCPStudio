@@ -29,10 +29,50 @@ export function isMicSupported(): boolean {
 export class MicError extends Error {
   constructor(
     message: string,
-    readonly kind: 'blocked' | 'missing' | 'busy' | 'unsupported',
+    readonly kind: 'blocked' | 'missing' | 'busy' | 'unsupported' | 'failed',
   ) {
     super(message);
     this.name = 'MicError';
+  }
+}
+
+/** The name the browser gives a failed getUserMedia call (a DOMException), or '' for anything else. */
+function errorName(e: unknown): string {
+  return typeof e === 'object' && e !== null && 'name' in e && typeof e.name === 'string' ? e.name : '';
+}
+
+/**
+ * A plain-words MicError for a failed getUserMedia call. The browser's own words are kept in
+ * parentheses only for errors nobody mapped.
+ */
+export function micError(e: unknown): MicError {
+  const name = errorName(e);
+  switch (name) {
+    case 'NotAllowedError':
+      return new MicError(
+        'Microphone access is blocked. Allow it from the icon in the address bar, then try again.',
+        'blocked',
+      );
+    case 'SecurityError':
+      return new MicError(
+        "This page isn't allowed to use the microphone. Open AGstudio from a secure address (https or localhost) and try again.",
+        'blocked',
+      );
+    case 'NotFoundError':
+      return new MicError('No microphone was found. Plug one in and try again.', 'missing');
+    case 'OverconstrainedError':
+      return new MicError(
+        "This audio input isn't available. Pick another one in Options › Audio input.",
+        'missing',
+      );
+    case 'NotReadableError':
+      return new MicError('The microphone is in use by another app. Close that app and try again.', 'busy');
+    case 'AbortError':
+      return new MicError('Starting the microphone was interrupted. Try again.', 'failed');
+    default: {
+      const raw = e instanceof Error ? e.message : String(e);
+      return new MicError(`Couldn't start the microphone (${raw || name || 'unknown error'}).`, 'failed');
+    }
   }
 }
 
@@ -58,19 +98,7 @@ export async function openMic(opts: OpenMicOptions = {}): Promise<MicInput> {
       },
     });
   } catch (e) {
-    const name = e instanceof DOMException ? e.name : '';
-    if (name === 'NotAllowedError' || name === 'SecurityError')
-      throw new MicError(
-        'Microphone access is blocked. Allow it from the icon in the address bar, then try again.',
-        'blocked',
-      );
-    if (name === 'OverconstrainedError' && opts.deviceId)
-      throw new MicError('The chosen input is not connected any more: pick another one in Options › Audio input.', 'missing');
-    if (name === 'NotFoundError' || name === 'OverconstrainedError')
-      throw new MicError('No microphone or audio input was found. Connect one and try again.', 'missing');
-    if (name === 'NotReadableError')
-      throw new MicError('The audio input is in use by another app (or the system blocked it).', 'busy');
-    throw e;
+    throw micError(e);
   }
   const track = stream.getAudioTracks()[0];
   const settings = (track?.getSettings() ?? {}) as MediaTrackSettings & { latency?: number };

@@ -1,4 +1,5 @@
 import type { Services } from '@app/services';
+import { missingSoundsNotice } from '@app/persistence/project-io';
 import { discardRecovery, loadRecovery, type AutosaveMeta, type SessionPersistence } from '@app/persistence/session';
 import { showDialog } from '../../controls/Dialog';
 
@@ -38,7 +39,7 @@ export async function offerRecovery(
     s.session.getState().toast(`The autosave of "${title}" can't be read.`, 'error');
     return;
   }
-  const { project, view, file, handle } = restored;
+  const { project, view, file, handle, missingSamples } = restored;
   s.files.replace(project, view, { name: file.name, handle, fileKey: file.fileKey }, { dirty: true });
   try {
     // This tab's own crash copy must exist before the old one goes.
@@ -48,4 +49,6 @@ export async function offerRecovery(
     console.warn('Keeping the old autosave; this session could not autosave yet:', e);
   }
   s.session.getState().toast(`Recovered "${file.name}". Save it to keep it.`);
+  const missing = missingSoundsNotice(missingSamples ?? []);
+  if (missing) s.session.getState().toast(missing, 'error');
 }

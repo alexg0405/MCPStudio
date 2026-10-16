@@ -118,6 +118,20 @@ function describeSamples(refs: SampleRef[]): string {
 }
 
 /**
+ * For a recovered project: the samples whose audio isn't in the sample store, in plain words, with
+ * their file names (Kick.wav). Null when every sound is there.
+ */
+export function missingSoundsNotice(refs: readonly SampleRef[]): string | null {
+  if (refs.length === 0) return null;
+  const names = refs.slice(0, 3).map((r) => {
+    const src = embedded(r);
+    return `"${src ? `${r.name}.${src.ext}` : r.name}"`;
+  });
+  const list = refs.length > 3 ? `${names.join(', ')} and ${refs.length - 3} more` : names.join(', ');
+  return `${plural(refs.length, 'sound couldn’t', 'sounds couldn’t')} be found: ${list}. Use File → Find missing samples… to point to them.`;
+}
+
+/**
  * Opens a project file (throws ProjectFileError with a user-facing message), verifies each embedded
  * sample against its hash and stores it before returning, so the engine can load it right away.
  */

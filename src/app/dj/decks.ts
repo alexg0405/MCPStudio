@@ -134,6 +134,9 @@ interface Rt {
   syncMaster: DeckId | null;
   syncMult: 0.5 | 1 | 2;
   touching: boolean;
+  /** The last seek (ms, and where to): until the player has handled it, its published position is the old one. */
+  seekAt: number;
+  seekTo: number;
   jogAt: number;
   scratchTimer: ReturnType<typeof setTimeout> | null;
   hash: string | null;
@@ -149,6 +152,8 @@ const emptyRt = (): Rt => ({
   syncMaster: null,
   syncMult: 1,
   touching: false,
+  seekAt: 0,
+  seekTo: 0,
   jogAt: 0,
   scratchTimer: null,
   hash: null,
@@ -291,7 +296,13 @@ export function createDecks(deps: DecksDeps): DecksApi {
     const d = get(id);
     const ch = chan(id);
     const g = graph;
+    const r = rt[id];
     if (!ch || !g || !d.song) return d.positionSec;
+    // A paused deck is where the last seek put it (a held platter moves it: that is read from the player).
+    if (!d.playing && !r.touching) return d.positionSec;
+    const t = now();
+    if (r.seekAt > 0 && t - r.seekAt < 60)
+      return Math.max(0, Math.min(d.song.durationSec, r.seekTo + (d.playing ? ((t - r.seekAt) / 1000) * (1 + d.pitch) : 0)));
     const snap = ch.snapshot();
     const rate = g.ctx.sampleRate;
     let pos = snap.pos;
@@ -514,6 +525,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
     if (!loaded(id)) return;
     const to = Math.max(0, Math.min(durationOf(id), sec));
     chan(id)?.send({ t: 'seek', pos: to * sr() });
+    rt[id].seekAt = now();
+    rt[id].seekTo = to;
     set(id, { positionSec: to, positionAt: now() });
     alignFollowersSoon(id);
   }
@@ -1022,6 +1035,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
     analysisOf: (id) => rt[id].analysis,
     setCueDevice,
     keepUp: () => keepUpValue,
+    settled: async () => void (await graph?.settled()),
   };
   return api;
 }

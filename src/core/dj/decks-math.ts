@@ -66,11 +66,15 @@ export const crossfadeAt = (from: number, to: number, t: number): number => from
 
 export const EQ_MIN_DB = -26;
 export const EQ_MAX_DB = 6;
-/** The three bands: a low shelf, a mid bell and a high shelf. */
+/**
+ * The three bands: a low shelf, a mid bell and a high shelf. The shelves' corners sit where a DJ mixer's do (the
+ * knob's dB is what the far end of the band gets): at −26 dB 60 Hz is down 22 dB and 12 kHz down 23 dB, and the
+ * mid bell takes 1 kHz down the full 26.
+ */
 export const EQ_BANDS = {
-  low: { type: 'lowshelf', hz: 100, q: 0.707 },
+  low: { type: 'lowshelf', hz: 120, q: 0.707 },
   mid: { type: 'peaking', hz: 1000, q: 0.6 },
-  high: { type: 'highshelf', hz: 10000, q: 0.707 },
+  high: { type: 'highshelf', hz: 7000, q: 0.707 },
 } as const;
 export const clampEq = (db: number): number => clamp(Number.isFinite(db) ? db : 0, EQ_MIN_DB, EQ_MAX_DB);
 

@@ -147,6 +147,8 @@ export interface DecksApi {
   analysisOf?(deck: DeckId): TrackAnalysis | null;
   /** Plays the cue (headphone) bus through this output device ('' = none); false where the browser can't. */
   setCueDevice?(deviceId: string): Promise<boolean>;
+  /** Resolves once the audio thread has handled every command sent so far (offline renders and tests). */
+  settled?(): Promise<void>;
   /** How fast the decks' audio kept up over the last second (1 = fully; absent while nothing plays). */
   keepUp?(): number | undefined;
 }

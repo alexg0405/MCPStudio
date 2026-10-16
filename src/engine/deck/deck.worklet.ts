@@ -65,6 +65,9 @@ class DeckProcessor extends AudioWorkletProcessor {
       case 'align':
         k.align();
         break;
+      case 'ping':
+        this.port.postMessage({ t: 'pong', id: m.id });
+        break;
       case 'dispose':
         this.disposed = true;
         break;

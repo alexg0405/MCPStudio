@@ -99,6 +99,7 @@ export class DeckChannel {
     });
     this.node.port.onmessage = (e: MessageEvent<DeckEvent>) => {
       if (e.data.t === 'ended') this.onEnded?.();
+      else if (e.data.t === 'pong') this.pings.get(e.data.id)?.();
     };
     this.trim = new GainNode(ctx);
     const band = (b: EqBandName) =>
@@ -126,6 +127,21 @@ export class DeckChannel {
 
   send(msg: DeckMessage): void {
     this.node.port.postMessage(msg);
+  }
+
+  private readonly pings = new Map<number, () => void>();
+  private pingSeq = 0;
+
+  /** Resolves once the player has handled every message sent so far. */
+  settled(): Promise<void> {
+    const id = ++this.pingSeq;
+    return new Promise((resolve) => {
+      this.pings.set(id, () => {
+        this.pings.delete(id);
+        resolve();
+      });
+      this.send({ t: 'ping', id });
+    });
   }
 
   private glide(p: AudioParam, v: number): void {
@@ -239,6 +255,11 @@ export class DeckGraph {
       processorOptions: { kind: 'effect', state: undefined, seed: 1 },
     });
     return new DeckGraph(host, limiter);
+  }
+
+  /** Resolves once every player has handled all messages sent so far (offline renders and tests need it). */
+  async settled(): Promise<void> {
+    await Promise.all(this.channels.map((c) => c.settled()));
   }
 
   channel(i: number): DeckChannel {

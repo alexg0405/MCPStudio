@@ -51,6 +51,8 @@ export type DeckMessage =
   | { t: 'sync'; sync: SyncSpec | null }
   /** Jump a following deck to the master's beat (exactly, at the next render quantum). */
   | { t: 'align' }
+  /** Answered with `pong` once everything sent before it has been handled (a barrier for offline renders and tests). */
+  | { t: 'ping'; id: number }
   | { t: 'dispose' };
 
 /** Following another deck (all positions in frames of each song). */
@@ -66,4 +68,4 @@ export interface SyncSpec {
 }
 
 /** What the worklet tells the main thread. */
-export type DeckEvent = { t: 'ended' };
+export type DeckEvent = { t: 'ended' } | { t: 'pong'; id: number };

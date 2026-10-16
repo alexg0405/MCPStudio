@@ -199,7 +199,7 @@
 .titleButtonOn,
 .focused .titleButtonOn {
   background: var(--ag-accent-tint);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .helpMark {
@@ -267,7 +267,7 @@
 .helpMoves td:first-child {
   width: 42%;
   padding-right: 10px;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-weight: 500;
   white-space: nowrap;
 }

@@ -156,7 +156,7 @@
 
 .button:hover {
   background: var(--ag-hover);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .kitSelect {

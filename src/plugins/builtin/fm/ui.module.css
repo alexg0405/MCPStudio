@@ -118,7 +118,7 @@
 }
 
 .opHeard .opName {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .opRole {

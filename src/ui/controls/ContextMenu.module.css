@@ -65,7 +65,7 @@
   flex: none;
   width: 18px;
   text-align: center;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .text {

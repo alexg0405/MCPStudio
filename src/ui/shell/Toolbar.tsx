@@ -156,21 +156,41 @@ function OverflowSlots() {
         }
       });
     }
-    setMeasured({ ids: [...c, ...r].map((x) => x.id).join(','), shown: keep });
+    const ids = [...c, ...r].map((x) => x.id).join(',');
+    // Same answer as before: no re-render (a slot resizing would otherwise loop through the observer below).
+    setMeasured((was) =>
+      was.ids === ids && was.shown && was.shown.size === keep.size && [...keep].every((id) => was.shown!.has(id))
+        ? was
+        : { ids, shown: keep },
+    );
     if (keep.size === priority.length) setOpen(false);
   }, []);
 
   useLayoutEffect(() => {
     if (!shown) layout();
   }, [shown, layout]);
+  const observer = useRef<ResizeObserver | null>(null);
   useEffect(() => {
     const group = groupRef.current;
     if (!group) return;
     const ro = new ResizeObserver(() => layout());
+    observer.current = ro;
     ro.observe(group);
     ro.observe(group.parentElement!);
-    return () => ro.disconnect();
+    return () => {
+      ro.disconnect();
+      observer.current = null;
+    };
   }, [layout]);
+  // A slot that changes width (the audio chip goes away, the sample-rate readout appears) changes what fits.
+  useEffect(() => {
+    const ro = observer.current;
+    const els = [...(groupRef.current?.querySelectorAll('[data-slot]') ?? [])];
+    for (const el of els) ro?.observe(el);
+    return () => {
+      for (const el of els) ro?.unobserve(el);
+    };
+  });
 
   const visible = (slot: { id: string }) => !shown || shown.has(slot.id);
   const hidden = [...center, ...right].filter((slot) => !visible(slot));

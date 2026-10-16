@@ -69,7 +69,7 @@
 .footer b {
   display: inline-block;
   min-width: 56px;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
   font-weight: 400;
   font-variant-numeric: tabular-nums;

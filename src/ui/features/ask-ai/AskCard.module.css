@@ -36,7 +36,7 @@
 
 .title {
   flex: none;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-family: var(--ag-font-display);
   font-size: var(--ag-font-size-lg);
   font-weight: 600;
@@ -131,7 +131,7 @@
 }
 
 .spark {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .statusText {
@@ -222,7 +222,7 @@
 
 .chip:hover:not(:disabled) {
   border-color: var(--ag-accent-dim);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .chip:disabled {

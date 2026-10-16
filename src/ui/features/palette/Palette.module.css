@@ -79,7 +79,7 @@
 }
 
 .rowAi .label {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-weight: 500;
 }
 
@@ -87,7 +87,7 @@
   width: 16px;
   flex: none;
   text-align: center;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .label {

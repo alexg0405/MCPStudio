@@ -74,7 +74,7 @@
   font-weight: 300;
   font-size: var(--ag-font-size-title);
   letter-spacing: 0.01em;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   padding-right: 4px;
 }
 
@@ -230,7 +230,7 @@
 
 .toolButtonOn,
 .toolButtonOn:hover:not(:disabled) {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   background: var(--ag-active);
   border-color: var(--ag-active-border);
 }
@@ -299,7 +299,7 @@
 }
 
 .menuLabelOpen {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 /* Glass panels: 10px corners, 6px item highlights inside. */
@@ -359,7 +359,7 @@
   flex: none;
   width: 18px;
   text-align: center;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .menuText {

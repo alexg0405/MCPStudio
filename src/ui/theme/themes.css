@@ -19,7 +19,7 @@
   --ag-highlight: rgba(255, 255, 255, 0.06);
   --ag-text: #d9dfe4;
   --ag-text-dim: #929ca5;
-  --ag-text-faint: #6a747c;
+  --ag-text-faint: #7a858d;
   --ag-led: #9fde5a;
   --ag-led-off: #46532f;
   --ag-danger: #e5574d;
@@ -90,7 +90,8 @@
   --ag-highlight: rgba(0, 0, 0, 0.045);
   --ag-text: #1c1d20;
   --ag-text-dim: #5e5b55;
-  --ag-text-faint: #8e8a83;
+  --ag-text-faint: #706c66;
+  --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 58%, #000);
   --ag-led: #4f9a45;
   --ag-led-off: #cfd6c9;
   --ag-danger: #c94a3e;
@@ -216,7 +217,7 @@
   --ag-border-soft: #4a4a4a;
   --ag-text: #e2e2e2;
   --ag-text-dim: #9d9d9d;
-  --ag-text-faint: #727272;
+  --ag-text-faint: #828282;
   --ag-title: #333333;
   --ag-title-focused: #424242;
   --ag-grid-bg: #2a2a2a;
@@ -249,7 +250,8 @@
   --ag-highlight: rgba(0, 0, 0, 0.05);
   --ag-text: #1d2327;
   --ag-text-dim: #55606a;
-  --ag-text-faint: #85909a;
+  --ag-text-faint: #66717b;
+  --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 48%, #000);
   --ag-led: #45a823;
   --ag-led-off: #c3d1ba;
   --ag-danger: #d6453b;

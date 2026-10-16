@@ -193,7 +193,7 @@
 }
 
 .control:hover .value {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .note,
@@ -248,11 +248,11 @@
   border-color: var(--ag-active-border);
   background: var(--ag-active);
   box-shadow: inset 0 1px 0 var(--ag-sheen);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .powerOn:hover {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .powerOn .powerLed {

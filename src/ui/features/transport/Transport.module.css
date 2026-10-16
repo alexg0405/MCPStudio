@@ -148,7 +148,7 @@
   border: 1px solid var(--ag-accent-dim);
   border-radius: var(--ag-radius-pill);
   background: var(--ag-accent-tint);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-size: var(--ag-font-size-sm);
   font-weight: 600;
   cursor: pointer;

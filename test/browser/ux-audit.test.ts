@@ -136,6 +136,10 @@ describe('UX audit (shell)', () => {
 
   it('the toolbar never clips: at every width what does not fit moves into More', async () => {
     const header = host.querySelector('header')!;
+    // With audio running the toolbar shows the sample rate and delay instead of the "click to enable" chip.
+    await s.engine.resume();
+    await until(() => s.engine.state === 'running');
+    await frame();
     const slotsLeft = new Set<string>();
     for (const [w, h] of [
       [1440, 900],
@@ -297,6 +301,56 @@ describe('UX audit (shell)', () => {
       if (!NEXT_STEP.test(text)) vague.push(`${type}: "${text.slice(0, 80)}"`);
     }
     expect(vague).toEqual([]);
+  });
+
+  it('text is readable in every theme: dim and faint text, and the accent used as text', () => {
+    const probe = document.createElement('div');
+    document.body.append(probe);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const g = canvas.getContext('2d', { willReadFrequently: true })!;
+    /** A token's color as 0-255 RGB, resolved through the browser (color-mix and var() included). */
+    const rgb = (token: string): [number, number, number] => {
+      probe.style.color = `var(${token})`;
+      g.clearRect(0, 0, 1, 1);
+      g.fillStyle = getComputedStyle(probe).color;
+      g.fillRect(0, 0, 1, 1);
+      const d = g.getImageData(0, 0, 1, 1).data;
+      return [d[0]!, d[1]!, d[2]!];
+    };
+    const lum = (c: number[]) => {
+      const f = c.map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * f[0]! + 0.7152 * f[1]! + 0.0722 * f[2]!;
+    };
+    const ratio = (a: number[], b: number[]) => {
+      const [hi, lo] = [Math.max(lum(a), lum(b)), Math.min(lum(a), lum(b))];
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    // Minimum contrast against the page and the panel surfaces (WCAG: 4.5 for text; faint text is hints and disabled).
+    const NEED: [string, number, string[]][] = [
+      ['--ag-text-dim', 4.5, ['--ag-bg', '--ag-surface-1']],
+      ['--ag-text-faint', 3, ['--ag-bg', '--ag-surface-1']],
+      ['--ag-accent-ink', 4.5, ['--ag-bg', '--ag-surface-1', '--ag-surface-2']],
+    ];
+    const root = document.documentElement;
+    const was = root.dataset.theme;
+    const low: string[] = [];
+    try {
+      for (const theme of ['marble', 'carrara', 'classic', 'midnight', 'graphite', 'light']) {
+        if (theme === 'marble') delete root.dataset.theme;
+        else root.dataset.theme = theme;
+        for (const [fg, min, bgs] of NEED)
+          for (const bg of bgs) {
+            const r = ratio(rgb(fg), rgb(bg));
+            if (r < min) low.push(`${theme}: ${fg} on ${bg} is ${r.toFixed(1)}:1 (needs ${min})`);
+          }
+      }
+    } finally {
+      if (was) root.dataset.theme = was;
+      else delete root.dataset.theme;
+      probe.remove();
+    }
+    expect(low).toEqual([]);
   });
 
   it('nothing visible says "AI"', () => {

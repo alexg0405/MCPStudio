@@ -21,6 +21,7 @@ import { App } from '@ui/shell/App';
 import { applyDefaultLayout } from '@ui/workspace/layouts';
 import { openWindow, windowTypes } from '@ui/workspace/registry';
 import { addInstrumentChannel } from '@app/actions/channels';
+import { addEffect, addMixerInsert } from '@app/actions/mixer';
 import { TOUR } from '@ui/features/help/tour';
 import { LESSONS } from '@ui/features/help/lessons';
 import { page } from 'vitest/browser';
@@ -409,6 +410,43 @@ describe('UX audit (shell)', () => {
     expect(low).toEqual([]);
   });
 
+  it('every built-in instrument and effect window: controls are named and have a hint', async () => {
+    await s.files.newProject(createEmptyProject());
+    const problems: string[] = [];
+    let opened = 0;
+    for (const entry of s.plugins.list()) {
+      const def = entry.def;
+      let props: Record<string, string> | null = null;
+      if (def.kind === 'instrument') {
+        const channelId = addInstrumentChannel(s, def.id);
+        if (channelId) props = { kind: 'channel', channelId };
+      } else {
+        const insertId = addMixerInsert(s);
+        const slotId = addEffect(s, insertId, def.id);
+        if (slotId) props = { kind: 'fx', insertId, slotId };
+      }
+      if (!props) continue;
+      const id = openWindow(s, 'plugin', props);
+      await frame();
+      const win = host.querySelector<HTMLElement>(`[data-window-id="${id}"]`);
+      if (!win) {
+        problems.push(`${def.id}: window did not open`);
+        continue;
+      }
+      await until(() => !(win.textContent ?? '').includes('Loading…'));
+      await frame();
+      opened++;
+      const a = audit(win);
+      problems.push(...a.unnamed.map((u) => `${def.name}: unnamed ${u}`));
+      problems.push(...a.iconNoHint.map((u) => `${def.name}: icon-only without hint ${u}`));
+      problems.push(...a.textOnly.map((u) => `${def.name}: no hint ${u}`));
+      s.view.getState().hideWindow(id);
+    }
+    s.history.markSaved(); // later tests start new projects without a "keep your changes?" question
+    expect(opened).toBeGreaterThan(20);
+    expect(problems).toEqual([]);
+  }, 60_000);
+
   it('every step of the tour points at something that is on screen', async () => {
     const missing: string[] = [];
     for (const step of TOUR) {
@@ -445,7 +483,7 @@ describe('UX audit (shell)', () => {
       }
     }
     expect(missing).toEqual([]);
-  });
+  }, 60_000);
 
   it('nothing visible says "AI"', () => {
     const hits: string[] = [];

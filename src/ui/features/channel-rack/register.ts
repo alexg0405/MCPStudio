@@ -33,6 +33,8 @@ export function register(services: Services): void {
     title: 'Channel…',
     category: 'Channels',
     hint: 'Add a kit sound or instrument channel',
+    // A menu; the add_channel action adds any instrument.
+    ai: false,
     run: (s) => showContextMenu({ x: window.innerWidth / 3, y: 80 }, addChannelMenu(s)),
   });
   commands.register({

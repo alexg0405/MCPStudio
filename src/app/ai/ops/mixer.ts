@@ -7,6 +7,7 @@ import {
   addFxSlot,
   addInsert,
   moveFxSlot,
+  moveInsert,
   removeFxSlot,
   removeInsert,
   replaceFxPlugin,
@@ -41,6 +42,7 @@ export const mixer: OpModule = {
         mute: S.bool('Mute it.'),
         solo: S.bool('Solo it (FL-style: its sources keep playing).'),
         color: S.str('Hex color.'),
+        position: S.int('Move it to this mixer number (1 or more; Master stays first).'),
       },
       ['insert'],
     ),
@@ -157,6 +159,14 @@ export const mixer: OpModule = {
       }
       const color = str(a.color);
       if (color) setInsertProp(d, id, 'color', color);
+      const position = num(a.position);
+      if (position !== undefined) {
+        if (id === MASTER) c.warn('the Master track stays first');
+        else {
+          moveInsert(d, id, Math.round(position));
+          out.push(`number ${d.mixer.order.indexOf(id)}`);
+        }
+      }
       return out.length ? `${insertLabel(project, id)}: ${out.join(', ')}` : null;
     },
 

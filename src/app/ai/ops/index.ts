@@ -18,6 +18,8 @@ import { mixer } from './mixer';
 import { notes } from './notes';
 import { patterns } from './patterns';
 import { playlist } from './playlist';
+import { query } from './query';
+import { session } from './session';
 import { song } from './song';
 import { ui } from './ui';
 
@@ -36,13 +38,15 @@ export const MODULES: readonly OpModule[] = [
   dj,
   filters,
   ui,
+  session,
+  query,
 ];
 
 /** Handlers of the actions that edit the project (the UI ones run after the edit). */
 export const DOC_OPS: Readonly<Record<string, OpHandler>> = Object.assign({}, ...MODULES.map((m) => m.handlers));
 
 /** Actions the UI runs after the edit (playback, windows, commands…). */
-export const UI_OP_NAMES: ReadonlySet<string> = new Set(ui.schemas.map((o) => o.properties.op.const));
+export const UI_OP_NAMES: ReadonlySet<string> = new Set([...ui.schemas, ...session.schemas, ...query.schemas].map((o) => o.properties.op.const));
 
 export const OP_SCHEMAS: readonly OpSchema[] = MODULES.flatMap((m) => m.schemas);
 

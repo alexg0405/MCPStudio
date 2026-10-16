@@ -1010,6 +1010,31 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   - `marker`;
   - `edit_audio_clip`, and audio-channel pitch, reverse and tempo-follow through `edit_channel`;
   - `build_plugin` (below).
+- **Driving the whole app** (`ops/session.ts`, `ops/windows.ts`, `ops/query.ts`, `read.ts`):
+  - `settings` (preferences, audio, export defaults, the editors' tool and grid), `select` (channel, mixer track,
+    pattern, clips, notes, the loop region), `save_preset` and `open` with `action` (close, focus, maximize,
+    restore any window or the browser panel). They change stores that are not the document: no undo step. They
+    run right after the edit (an answer can write notes and select them) and report in `AppliedTurn.ui`, which
+    is why a dry run leaves them out.
+  - Extensions of existing ops: `song` title/author, `edit_channel` sample/root_key/position, `edit_insert`
+    position, `add_pattern` from (copy) and split_by_channel, `edit_pattern` position.
+  - **Read tools** (`app/ai/read.ts`, `readTools`: name, description, JSON schema, `run(s, args)`): get_project,
+    get_transport, get_selection, get_pattern_notes, get_channel, get_mixer, get_clips, get_automation,
+    get_settings, get_windows, get_plugins. Compact JSON in the units the actions take (dB, 1-based bars, 1/16
+    steps, MIDI keys); a bad argument returns `{ error }`. The MCP server lists the same array.
+  - **Look-ups in the chat**: the `query` action (`tool`, `args_json`) runs a read tool after the edits and
+    returns the result in `AppliedTurn.queries`; the assistant asks again with a `<lookups>` block (at most 3
+    rounds, 4 tools per answer).
+- **Coverage rule** (`test/unit/ai-coverage.test.ts`): every registered command and window type must be
+  reachable by the AI, or the test fails.
+  - A command is reachable when it is in the command catalog (`ai` is not false) and, if it takes an argument
+    (its `run` declares one, or a key binding or menu item passes one), has an `argsHint`; or it is listed in
+    `COVERED_BY_OP` with the action that replaces it (commands that open a dialog or work on a UI selection); or
+    it is in `NOT_FOR_AI` with a written reason.
+  - `NOT_FOR_AI` today: `ai.askSelection`, `ai.askSection`, `ai.clearFocus` (entry points that send a request to
+    Studio), `view.assistant` (Studio's own window), `help.palette` (the action search). Windows: `assistant`
+    (`WINDOWS_NOT_FOR_AI`); the others are in `OPEN_WINDOWS`. Do not add to these lists to make the test pass.
+  - Selection commands (`pianoRoll.*`, `playlist.*`, `audioClip.*`, `channels.delete`…) work on what `select` picked.
 - **App commands**:
   - The `command` action runs any registered command by id (`app/ai/commands.ts`). The first turn, and any
     turn after the list changes, sends `<commands>` with every command's id, title, hint and `argsHint`.
@@ -1017,7 +1042,7 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
     layouts, settings… New features' commands join automatically.
   - `CommandDef.gesture` marks commands that open a file dialog. The AI studio shows a one-click
     confirmation, and that click is the user activation the browser needs.
-  - `ai: false` keeps a command away from the AI.
+  - `ai: false` keeps a command away from the AI; the coverage test then wants an action that covers it or a reason.
   - The context's App line names the file and its saved state, recent projects, what is switched on, and
     what Undo would revert.
 - **Plugin builder** (`app/ai/builder*.ts`, `tools/ai/drafts.ts`, `plugin-test.html`):

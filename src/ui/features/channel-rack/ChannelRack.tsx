@@ -110,7 +110,9 @@ function endPaint() {
   paint = null;
 }
 
-function paintEnter(channelId: ChannelId, step: number) {
+function paintEnter(channelId: ChannelId, step: number, buttons: number) {
+  // The button was let go where no pointerup reached us (outside the window): that ends the paint.
+  if (paint && buttons === 0) endPaint();
   if (paint && paint.channelId === channelId) paint.apply(step);
 }
 
@@ -166,7 +168,7 @@ function StepGrid({
             if (e.button === 2) begin(i, false);
             else if (e.button === 0) begin(i, v === 0);
           }}
-          onPointerEnter={() => paintEnter(channelId, i)}
+          onPointerEnter={(e) => paintEnter(channelId, i, e.buttons)}
           data-hint={`Step ${i + 1}. Click or drag to paint, right-click to erase`}
           aria-pressed={v > 0}
           aria-label={`Step ${i + 1}`}

@@ -142,6 +142,17 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
     expect(stepsOn(id)).toEqual([1]);
   });
 
+  it('a paint whose button was let go outside the window ends when the pointer comes back', async () => {
+    const id = channels[0]!;
+    pointer(step(id, 1), 'pointerdown');
+    over(step(id, 2));
+    over(step(id, 4), { buttons: 0 });
+    over(step(id, 6), { buttons: 0 });
+    expect(stepsOn(id)).toEqual([1, 2]);
+    await s.history.undo();
+    expect(stepsOn(id)).toEqual([]);
+  });
+
   it('a right-click erases a step and a right-drag erases a run (one step)', async () => {
     const id = channels[0]!;
     await userEvent.click(step(id, 0));

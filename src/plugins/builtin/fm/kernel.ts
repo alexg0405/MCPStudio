@@ -13,7 +13,7 @@ import {
   type ParamBlock,
   type Voice,
 } from '@agstudio/sdk/worklet';
-import { opParam, OPERATORS, type fmParams } from './params';
+import { fmParams, opParam, OPERATORS } from './params';
 
 type Params = typeof fmParams;
 
@@ -32,6 +32,35 @@ const ROUTES = FM_ALGORITHMS.map((alg) => {
   for (const c of alg.carriers) heard[c] = 1;
   return { m, heard, gain: 1 / Math.sqrt(alg.carriers.length) };
 });
+
+/**
+ * The params a control step reads, taken once per frame and shared by every voice that controls at
+ * that frame (all of them when nothing is automated): looking a param up by name is a hash lookup,
+ * and a voice does about forty of them every 16 samples.
+ */
+class Snap {
+  wheelMode = 0;
+  vibratoDepth = 0;
+  vibratoRate = 0;
+  /** Per operator: frequency multiple (ratio, fine included), level and velocity sensitivity. */
+  readonly mult = new Float64Array(4);
+  readonly level = new Float64Array(4);
+  readonly sens = new Float64Array(4);
+
+  read(ids: readonly ReturnType<typeof opParam>[], p: ParamBlock<Params>, i: number): void {
+    const v = (id: string) => at(p[id] as Float32Array, i);
+    this.wheelMode = Math.round(v('wheel'));
+    this.vibratoDepth = v('vibratoDepth');
+    this.vibratoRate = v('vibratoRate');
+    for (let o = 0; o < 4; o++) {
+      const id = ids[o] as ReturnType<typeof opParam>;
+      const ratio = Math.round(v(id.ratio));
+      this.mult[o] = (ratio === 0 ? 0.5 : ratio) * (1 + v(id.fine));
+      this.level[o] = v(id.level);
+      this.sens[o] = v(id.velocity);
+    }
+  }
+}
 
 class FmVoice implements Voice {
   noteId = -1;
@@ -56,6 +85,8 @@ class FmVoice implements Voice {
   readonly inc = new Float64Array(4);
   countdown = 0;
   vibrato = 0;
+  /** The note's frequency in Hz. */
+  hz = 440;
 
   constructor(controlRate: number) {
     this.env = [new Adsr(controlRate), new Adsr(controlRate), new Adsr(controlRate), new Adsr(controlRate)];
@@ -76,9 +107,17 @@ export class FmKernel extends InstrumentKernel<Params> {
   private readonly svfL = new Svf();
   private readonly svfR = new Svf();
   private filterKey = -1;
+  private readonly sr: number;
+  private readonly snap = new Snap();
+  private snapSeq = -1;
+  private snapAt = -1;
+  private seq = 0;
+  private constant = true;
+  private readonly paramNames = Object.keys(fmParams);
 
   constructor(host: KernelHost) {
     super(host);
+    this.sr = host.sampleRate;
     const controlRate = host.sampleRate / CONTROL;
     this.pool = new VoicePool(VOICES, () => new FmVoice(controlRate));
   }
@@ -139,6 +178,16 @@ export class FmKernel extends InstrumentKernel<Params> {
   render(out: Float32Array[], from: number, to: number, p: ParamBlock<Params>): void {
     const n = to - from;
     if (n <= 0) return;
+    // Automated params (one value per frame) make a control step's snapshot frame-specific.
+    this.seq++;
+    let constant = true;
+    const names = this.paramNames;
+    for (let k = 0; k < names.length; k++)
+      if ((p[names[k] as string] as Float32Array).length > 1) {
+        constant = false;
+        break;
+      }
+    this.constant = constant;
     const L = this.bufL;
     const R = this.bufR;
     L.fill(0, 0, n);
@@ -177,10 +226,11 @@ export class FmKernel extends InstrumentKernel<Params> {
         const a1 = (amp[1] = (amp[1] as number) + (step[1] as number));
         const a2 = (amp[2] = (amp[2] as number) + (step[2] as number));
         const a3 = (amp[3] = (amp[3] as number) + (step[3] as number));
-        const y3 = v.op3.feedback(inc[3] as number, fb, a3);
-        const y2 = v.op2.next(inc[2] as number, m23 * y3, a2);
-        const y1 = v.op1.next(inc[1] as number, m12 * y2 + m13 * y3, a1);
-        const y0 = v.op0.next(inc[0] as number, m01 * y1 + m02 * y2 + m03 * y3, a0);
+        // An operator at level 0 (modulators 3 and 4 in a fresh patch) only advances its phase.
+        const y3 = a3 !== 0 ? v.op3.feedback(inc[3] as number, fb, a3) : v.op3.skip(inc[3] as number);
+        const y2 = a2 !== 0 ? v.op2.next(inc[2] as number, m23 * y3, a2) : v.op2.skip(inc[2] as number);
+        const y1 = a1 !== 0 ? v.op1.next(inc[1] as number, m12 * y2 + m13 * y3, a1) : v.op1.skip(inc[1] as number);
+        const y0 = a0 !== 0 ? v.op0.next(inc[0] as number, m01 * y1 + m02 * y2 + m03 * y3, a0) : v.op0.skip(inc[0] as number);
         const s = c0 * y0 + c1 * y1 + c2 * y2 + c3 * y3;
         L[i] = (L[i] as number) + s * v.gl;
         R[i] = (R[i] as number) + s * v.gr;
@@ -228,6 +278,7 @@ export class FmKernel extends InstrumentKernel<Params> {
     const ids = this.ids;
     if (v.fresh) {
       v.fresh = false;
+      v.hz = mtof(v.key);
       // A voice taken from a sounding note keeps its levels and phases (no click) and its
       // envelopes start again from where they are.
       const stolen = v.amp[0] !== 0 || v.amp[1] !== 0 || v.amp[2] !== 0 || v.amp[3] !== 0;
@@ -260,24 +311,29 @@ export class FmKernel extends InstrumentKernel<Params> {
       return false;
     }
 
-    const wheelMode = Math.round(at(p.wheel as Float32Array, i));
+    const frame = this.constant ? 0 : i;
+    const S = this.snap;
+    if (this.snapSeq !== this.seq || this.snapAt !== frame) {
+      S.read(ids, p, i);
+      this.snapSeq = this.seq;
+      this.snapAt = frame;
+    }
+    const wheelMode = S.wheelMode;
     const bright = wheelMode === 0 ? 1 + this.wheel : 1;
-    const depth = at(p.vibratoDepth as Float32Array, i) + (wheelMode === 1 ? 50 * this.wheel : 0);
+    const depth = S.vibratoDepth + (wheelMode === 1 ? 50 * this.wheel : 0);
     let cents = at(this.pitch, i) + v.fine;
     if (depth > 0) {
-      v.vibrato += (at(p.vibratoRate as Float32Array, i) * CONTROL) / this.sampleRate;
+      v.vibrato += (S.vibratoRate * CONTROL) / this.sr;
       if (v.vibrato >= 1) v.vibrato -= 1;
       cents += depth * sinCycles(v.vibrato);
     }
-    const base = (mtof(v.key) * Math.pow(2, cents / 1200)) / this.sampleRate;
+    // The note's frequency is fixed (set up with the voice); a pitch bend or vibrato scales it.
+    const base = (cents === 0 ? v.hz : v.hz * Math.pow(2, cents / 1200)) / this.sr;
     for (let o = 0; o < 4; o++) {
-      const id = ids[o] as ReturnType<typeof opParam>;
-      const ratio = Math.round(at(p[id.ratio] as Float32Array, i));
-      const mult = (ratio === 0 ? 0.5 : ratio) * (1 + at(p[id.fine] as Float32Array, i));
       // Keep every operator below Nyquist (a 16× ratio on a high note would alias).
-      v.inc[o] = Math.min(0.45, base * mult);
-      const level = at(p[id.level] as Float32Array, i);
-      const sens = at(p[id.velocity] as Float32Array, i);
+      v.inc[o] = Math.min(0.45, base * (S.mult[o] as number));
+      const level = S.level[o] as number;
+      const sens = S.sens[o] as number;
       const env = (v.env[o] as Adsr).next();
       let target = level * level * env * (1 - sens + sens * v.velocity);
       if ((heard[o] as number) === 0) target *= bright;

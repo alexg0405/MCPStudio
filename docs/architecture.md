@@ -2423,7 +2423,7 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   refreshed while the window is open), the token (masked, Show, Copy, New token…), the Claude Code command, the Claude
   Desktop config (`bin/agstudio-mcp`), a JSON setup for URL clients, the exports folder. Commands (so the action search
   and Studio's `command` action find them): `options.mcp` (switch; "Let other apps control AGstudio (MCP)": the audited command wording avoids "AI"), `options.connectAi` (opens Settings),
-  `options.copyClaudeCodeSetup` (`ai: false`: the token stays out of chats). A toast tells the musician the first time
+  `options.copyClaudeCodeSetup` (clipboard and a toast only: the token never goes back to a chat or an app). A toast tells the musician the first time
   an app calls.
 - **`bin/agstudio-mcp`** (a `sh` wrapper that finds Node) runs `bin/agstudio-mcp.mjs`: stdio ↔ HTTP for apps that start
   MCP servers as programs. Claude Desktop's config file takes only such servers (remote ones go through Settings →

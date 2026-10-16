@@ -50,8 +50,7 @@ export function register(services: Services): void {
     title: 'Copy the Claude Code setup command',
     category: 'Options',
     hint: 'Copies the one-line command that connects Claude Code to AGstudio (it contains the access token)',
-    // The token stays out of chat messages and AI apps.
-    ai: false,
+    // Only toasts and the clipboard: the token itself never goes back to a chat or an app.
     run: async (s) => {
       await s.mcp.refresh();
       const token = s.mcp.store.getState().token;

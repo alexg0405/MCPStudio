@@ -614,7 +614,9 @@ export function parseFlp(bytes: Uint8Array): FlpProject {
       }
     }
     if (p + size > end) {
-      warnings.push('The file is cut off; what could be read was imported.');
+      // The header may have said so already (its length reaches past the end of the file).
+      const cutOff = 'The file is cut off; what could be read was imported.';
+      if (!warnings.includes(cutOff)) warnings.push(cutOff);
       break;
     }
     const at = p;

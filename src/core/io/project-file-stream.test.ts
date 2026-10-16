@@ -80,6 +80,26 @@ describe('project files a piece at a time', () => {
     expect(readProjectFile(bytes).samples.size).toBe(0);
   });
 
+  it('stops before writing past what a zip without zip64 can address, saying what to do', async () => {
+    // fflate writes no zip64: past 4 GB the sizes and offsets would silently wrap and the file would be damaged.
+    const a = noise(100_000, 5);
+    const b = noise(100_000, 6);
+    const write = (maxBytes: number) =>
+      writeProjectFileStream(
+        {
+          project: PROJECT,
+          view: VIEW,
+          appVersion: 'test',
+          now: NOW,
+          maxBytes,
+          samples: [a, b].map((bytes, i) => ({ hash: String(i).padStart(64, '0'), ext: 'wav', read: async () => ({ bytes }) })),
+        },
+        async () => {},
+      );
+    await expect(write(150_000)).rejects.toThrow(/too big to save as one file.*remove/i);
+    await expect(write(1_000_000)).resolves.toEqual({ missing: [] });
+  });
+
   it('reads files written in one piece, and refuses what is no project file', async () => {
     const sample = noise(5000, 3);
     const hash = await sha256Hex(sample);

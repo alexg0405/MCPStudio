@@ -7,6 +7,7 @@
  */
 import { Zip, ZipPassThrough } from 'fflate';
 import { normalizeGain } from '@core/audio/envelope';
+import { ZIP_MAX_BYTES } from '@core/io/project-file';
 import { planStems, stemProject, withoutMasterChain, type StemPlan } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Project } from '@core/model/types';
@@ -353,6 +354,8 @@ class ZipStream {
   private chain: Promise<void> = Promise.resolve();
   private error: unknown = null;
   private ended: Promise<void>;
+  /** Bytes added so far (fflate writes no zip64: a .zip stays under 4 GB). */
+  private total = 0;
 
   constructor(sink: ByteSink) {
     let resolveEnd!: () => void;
@@ -371,6 +374,10 @@ class ZipStream {
 
   /** Copies a file in, a megabyte at a time. */
   async addFile(name: string, file: Blob): Promise<void> {
+    if (this.total + file.size + 1024 * 64 > ZIP_MAX_BYTES) {
+      throw new ExportError('The stems add up to more than the 4 GB a .zip file can hold: export them to a folder instead.');
+    }
+    this.total += file.size;
     const entry = new ZipPassThrough(name);
     this.zip.add(entry);
     const step = 1 << 20;

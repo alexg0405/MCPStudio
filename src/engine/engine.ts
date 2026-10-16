@@ -577,6 +577,11 @@ export class Engine implements EngineApi, EngineCore {
     this.transport.pump(horizon);
   }
 
+  /** Offline rendering: the music ends at `time` (context seconds): notes still held are released there. */
+  endOffline(time: number): void {
+    this.transport.releaseHeld(time);
+  }
+
   playhead(): number {
     return this.transport.positionAt(this.heardTime());
   }

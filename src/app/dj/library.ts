@@ -199,33 +199,34 @@ let running: Promise<void> | null = null;
 /** Analyzes every song not analyzed yet, one at a time (one run at a time; new songs join it). */
 export function analyzeLibrary(s: Services): Promise<void> {
   if (running) return running;
-  running = (async () => {
-    try {
-      for (;;) {
-        const analyzer = trackAnalyzer(s);
-        library.setState({ analyzerMissing: !analyzer });
-        if (!analyzer) return;
-        const st = library.getState();
-        const next = st.songs.find((x) => !analyzer.peek(x.key) && st.analysis[x.key]?.state !== 'error');
-        if (!next) return;
-        const set = (status: AnalysisStatus) => library.setState((cur) => ({ analysis: { ...cur.analysis, [next.key]: status } }));
-        set({ state: 'running', fraction: 0 });
-        try {
-          await analyzer.analyze(s, next.ref, { onProgress: (p) => set({ state: 'running', fraction: p.fraction }) });
-          library.setState((cur) => {
-            const analysis = { ...cur.analysis };
-            delete analysis[next.key];
-            return { analysis };
-          });
-        } catch (e) {
-          set({ state: 'error', message: e instanceof Error ? e.message : String(e) });
-        }
+  const run: Promise<void> = (async () => {
+    for (;;) {
+      const analyzer = trackAnalyzer(s);
+      library.setState({ analyzerMissing: !analyzer });
+      if (!analyzer) return;
+      const st = library.getState();
+      const next = st.songs.find((x) => !analyzer.peek(x.key) && st.analysis[x.key]?.state !== 'error');
+      if (!next) return;
+      const set = (status: AnalysisStatus) => library.setState((cur) => ({ analysis: { ...cur.analysis, [next.key]: status } }));
+      set({ state: 'running', fraction: 0 });
+      try {
+        await analyzer.analyze(s, next.ref, { onProgress: (p) => set({ state: 'running', fraction: p.fraction }) });
+        library.setState((cur) => {
+          const analysis = { ...cur.analysis };
+          delete analysis[next.key];
+          return { analysis };
+        });
+      } catch (e) {
+        set({ state: 'error', message: e instanceof Error ? e.message : String(e) });
       }
-    } finally {
-      running = null;
     }
-  })();
-  return running;
+  })().finally(() => {
+    // Cleared here, not in the function above: a run with nothing to do (the DJ window opening with an
+    // empty library) ends before `running` is assigned, which would leave it set for good.
+    if (running === run) running = null;
+  });
+  running = run;
+  return run;
 }
 
 let making: AbortController | null = null;

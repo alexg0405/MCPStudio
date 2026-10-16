@@ -19,6 +19,8 @@ import { readZipEntry, readZipIndex, type RangeReader, type ZipEntry } from './z
 export const PROJECT_FILE_FORMAT = 1;
 export const PROJECT_FILE_EXTENSION = '.agproj';
 export const PROJECT_FILE_MIME = 'application/x-agstudio-project';
+/** A project file stays under this (fflate writes no zip64, so offsets and sizes are 32 bits). */
+export const ZIP_MAX_BYTES = 0xffff_0000;
 
 export interface ProjectFileMeta {
   format: number;
@@ -255,7 +257,11 @@ export interface SampleSource {
  * writeProjectFile's files read these too. Returns the hashes whose bytes were missing (left out).
  */
 export async function writeProjectFileStream(
-  input: Omit<WriteProjectFileInput, 'samples'> & { samples: readonly SampleSource[] },
+  input: Omit<WriteProjectFileInput, 'samples'> & {
+    samples: readonly SampleSource[];
+    /** Most bytes the file may reach (default: ZIP_MAX_BYTES; tests lower it). */
+    maxBytes?: number;
+  },
   write: (bytes: Uint8Array) => Promise<void>,
 ): Promise<{ missing: string[] }> {
   const now = zipTime(input.now ?? new Date());
@@ -267,10 +273,13 @@ export async function writeProjectFileStream(
   let chain: Promise<void> = Promise.resolve();
   let error: unknown = null;
   let resolveEnd!: () => void;
+  let produced = 0;
+  const maxBytes = input.maxBytes ?? ZIP_MAX_BYTES;
   const ended = new Promise<void>((r) => (resolveEnd = r));
   const zip = new Zip((err, chunk, final) => {
     if (err) error ??= err;
     if (chunk.byteLength > 0) {
+      produced += chunk.byteLength;
       const copy = chunk.slice();
       chain = chain.then(() => write(copy)).catch((e: unknown) => {
         error ??= e;
@@ -306,6 +315,13 @@ export async function writeProjectFileStream(
     const ext = normalizeSampleExt(got.ext ?? s.ext);
     if (!ext) throw new TypeError(`writeProjectFile: "${got.ext ?? s.ext}" is not a valid sample extension.`);
     const bytes = got.bytes;
+    // Room for this sample, its headers and the directory that ends the file.
+    if (produced + bytes.length + 1024 * (seen.size + 1) > maxBytes) {
+      const limit = maxBytes >= 2 ** 29 ? `${Math.round(maxBytes / 2 ** 30)} GB` : `${Math.max(1, Math.round(maxBytes / 2 ** 20))} MB`;
+      throw new Error(
+        `This project is too big to save as one file (the limit is ${limit}): remove some songs or samples, then save again.`,
+      );
+    }
     // Audio is already compressed or doesn't deflate well: stored as is.
     const f = new ZipPassThrough(`samples/${s.hash}.${ext}`);
     f.mtime = now;

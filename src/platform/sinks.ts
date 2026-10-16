@@ -96,21 +96,88 @@ export interface TempFile {
 
 let tempSeq = 0;
 
+const TEMP_DIR = 'tmp';
+const TEMP_LOCK_PREFIX = 'agstudio:tmp:';
+const hasLocks = () => typeof navigator !== 'undefined' && typeof navigator.locks?.request === 'function';
+/** Without Web Locks a temp file can't be told from one in use: only ones this old are swept. */
+const TEMP_MAX_AGE_MS = 24 * 3600 * 1000;
+
+/** Holds a lock named for the file until the returned function is called (the browser also releases it when the tab goes). */
+async function holdTempLock(name: string): Promise<() => void> {
+  if (!hasLocks()) return () => {};
+  let release: () => void = () => {};
+  await new Promise<void>((resolve) => {
+    void navigator.locks
+      .request(TEMP_LOCK_PREFIX + name, { mode: 'exclusive' }, () => {
+        resolve();
+        return new Promise<void>((r) => (release = r));
+      })
+      .catch(resolve);
+  });
+  return () => release();
+}
+
 export async function openTempFile(prefix: string): Promise<TempFile | null> {
   try {
     if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') return null;
     const root = await navigator.storage.getDirectory();
-    const dir = await root.getDirectoryHandle('tmp', { create: true });
+    const dir = await root.getDirectoryHandle(TEMP_DIR, { create: true });
     const name = `${prefix.replace(/[^A-Za-z0-9_-]/g, '_')}-${Date.now()}-${++tempSeq}`;
-    const handle = await dir.getFileHandle(name, { create: true });
-    const sink = await openFileSink(handle);
-    return {
-      sink,
-      file: () => handle.getFile(),
-      remove: () => dir.removeEntry(name).catch(() => {}),
-    };
+    // Taken before the file exists, so a sweep in another tab never sees it unprotected.
+    const release = await holdTempLock(name);
+    try {
+      const handle = await dir.getFileHandle(name, { create: true });
+      const sink = await openFileSink(handle);
+      return {
+        sink,
+        file: () => handle.getFile(),
+        remove: async () => {
+          await dir.removeEntry(name).catch(() => {});
+          release();
+        },
+      };
+    } catch (e) {
+      release();
+      throw e;
+    }
   } catch {
     return null;
+  }
+}
+
+/**
+ * Removes temporary files that no tab is using any more (a tab closed or crashed in the middle of a
+ * stems export leaves a file as big as one stem). Call at startup. Returns how many were removed.
+ */
+export async function sweepTempFiles(): Promise<number> {
+  try {
+    if (typeof navigator === 'undefined' || typeof navigator.storage?.getDirectory !== 'function') return 0;
+    const root = await navigator.storage.getDirectory();
+    const dir = await root.getDirectoryHandle(TEMP_DIR).catch(() => null);
+    if (!dir) return 0;
+    const names: string[] = [];
+    for await (const [name, handle] of dir.entries()) if (handle.kind === 'file') names.push(name);
+    let removed = 0;
+    for (const name of names) {
+      let free = false;
+      if (hasLocks()) {
+        // The lock is ours to take only when its owner is gone.
+        await navigator.locks.request(TEMP_LOCK_PREFIX + name, { mode: 'exclusive', ifAvailable: true }, async (lock) => {
+          if (!lock) return;
+          free = true;
+          await dir.removeEntry(name).catch(() => {
+            free = false;
+          });
+        });
+      } else {
+        const at = Number(/-(\d{10,})-\d+$/.exec(name)?.[1]);
+        if (Number.isFinite(at) && Date.now() - at > TEMP_MAX_AGE_MS) free = await dir.removeEntry(name).then(() => true, () => false);
+      }
+      if (free) removed++;
+    }
+    return removed;
+  } catch {
+    return 0;
   }
 }
 

@@ -105,6 +105,7 @@ async function renderSpan(
     await engine.ready();
     await prepared;
     if (end > 0) engine.startOffline(startTick, startAt);
+    let musicEnded = false;
     const step = async (frame: number) => {
       // Aborted: the context stays suspended and is dropped; `aborted` below rejects.
       if (opts.signal?.aborted) return;
@@ -113,6 +114,12 @@ async function renderSpan(
       if (end > 0) {
         await engine.prepareOffline(horizon + 0.05);
         engine.pumpOffline(horizon);
+        // The span's last notes are planned: whatever still sounds (or ends right here) stops now, so
+        // the tail holds only what the sound itself leaves (releases, reverb), not held notes.
+        if (!musicEnded && horizon >= end) {
+          musicEnded = true;
+          engine.endOffline(end);
+        }
       }
       if (!(await engine.syncWorklets())) synced = false;
       onProgress(Math.min(length, frame));

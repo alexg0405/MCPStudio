@@ -11,6 +11,7 @@ import {
   writeAutosave,
   type AutosaveMeta,
 } from '@platform/opfs';
+import { sweepTempFiles } from '@platform/sinks';
 import { randomId } from '@core/model/ids';
 import { UNTITLED } from '../project-files';
 import type { Services } from '../services';
@@ -161,6 +162,8 @@ export async function startSession(): Promise<SessionStart> {
     // Asks the browser not to evict samples and autosaves under storage pressure (Chrome decides
     // without a prompt).
     void requestPersistentStorage().catch(() => false);
+    // Half-written stems of an export that a closed or crashed tab left behind.
+    void sweepTempFiles();
     try {
       // The snapshot didn't fit in sessionStorage (very large projects): use this tab's own autosave.
       if (!restored && reloaded) restored = await restoreAutosave(sessionId);

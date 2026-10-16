@@ -69,7 +69,9 @@ The UI must explain itself:
 - Reach features from a menu or right-click, not only a shortcut. The action search (Mod+K) finds every menu entry;
   add others with `addActionProvider`.
 - Empty windows say what to do next.
-- Give the AI studio matching actions (`src/app/ai/`) so the chat can drive the feature too.
+- Give the AI studio matching actions (`src/app/ai/`) so the chat can drive the feature too. `test/unit/ai-coverage.test.ts`
+  fails for a command or window with no AI path: add an `argsHint` for a command that takes an argument, or an action
+  (and a `COVERED_BY_OP` entry); `NOT_FOR_AI` needs a written reason. New reads go in `src/app/ai/read.ts`.
 
 ## Debugging
 

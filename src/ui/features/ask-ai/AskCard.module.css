@@ -19,8 +19,8 @@
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--ag-accent) 7%, transparent), transparent 60px),
     var(--ag-glass);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   box-shadow:
     var(--ag-elev-2),
     inset 0 1px 0 color-mix(in srgb, var(--ag-accent) 22%, transparent);

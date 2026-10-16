@@ -27,6 +27,9 @@ consistent radii, and depth from soft shadow rather than borders.
   states. Never under notes, clips, text lists or controls.
 - One hairline per edge at most; prefer a shadow or a change of surface over a border.
 - Scrims behind dialogs: `--ag-scrim`.
+- Write `-webkit-backdrop-filter` on the line BEFORE `backdrop-filter`. The build's CSS minifier drops the standard
+  property when it comes first, and Chrome ignores the prefixed one (no blur, and submenus open in the wrong place).
+  `test/unit/css-minify.test.ts` checks every stylesheet.
 
 ## Shape and spacing
 

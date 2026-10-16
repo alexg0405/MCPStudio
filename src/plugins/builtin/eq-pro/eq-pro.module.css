@@ -127,8 +127,8 @@
   border: 1px solid var(--ag-line-faint, rgba(255, 255, 255, 0.05));
   border-radius: var(--ag-radius-pill, 999px);
   background: var(--ag-glass, rgba(22, 23, 26, 0.78));
-  backdrop-filter: var(--ag-blur, blur(20px));
   -webkit-backdrop-filter: var(--ag-blur, blur(20px));
+  backdrop-filter: var(--ag-blur, blur(20px));
   color: var(--ag-text, #ecebe6);
   font-family: var(--ag-font-mono, monospace);
   font-size: 10px;

@@ -1,5 +1,5 @@
 import { APP_VERSION } from '@core/model/defaults';
-import type { Project } from '@core/model/types';
+import type { Project, SampleRef } from '@core/model/types';
 import { migrateProject, repairProject } from '@core/schema/migrate';
 import { heldSessionLocks, holdSessionLock, isWebLocksAvailable } from '@platform/locks';
 import {
@@ -60,6 +60,8 @@ export interface RestoredProject {
   file: SessionFile;
   handle: FileSystemFileHandle | null;
   transport?: SessionTransport;
+  /** Samples whose audio isn't in the sample store (set when the project was read from an autosave). */
+  missingSamples?: SampleRef[];
 }
 
 export interface SessionStart {
@@ -190,6 +192,7 @@ async function restoreAutosave(sessionId: string): Promise<RestoredProject | nul
     view: saved.view,
     file,
     handle: file.fileKey ? await fileHandle(file.fileKey) : null,
+    missingSamples: saved.missingSamples,
   };
 }
 

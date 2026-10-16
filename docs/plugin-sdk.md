@@ -186,7 +186,7 @@ option index and booleans as 0/1.
 work on the main thread and in Node tests too): `Biquad` (RBJ cookbook), `Svf` (state-variable filter
 that stays stable while you sweep it every sample: low/high/band-pass, notch, peak, all-pass, bell,
 shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `EnvelopeFollower`
-(peak or RMS level with attack/release), `Adsr` (envelope; retriggers from its current value),
+(peak or RMS level with attack/release), `Ramp` (a value derived from a param at a control rate, moving in a straight line to each new target: cheaper than recomputing a dB-to-gain or a coefficient on every frame of automation), `Adsr` (envelope; retriggers from its current value),
 `BlepOscillator` (sine, saw, square, pulse and triangle with little aliasing; `polyBlep` for your
 own), `DelayLine` (fractional reads, linear or cubic), `Lfo` (seven shapes, free-running or locked to
 the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`. For instruments:

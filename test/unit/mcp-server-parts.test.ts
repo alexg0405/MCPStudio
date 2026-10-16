@@ -312,8 +312,12 @@ describe('MCP status', () => {
     now += 10;
     s.touch(undefined, false);
     expect(s.snapshot().callsLastMinute).toBe(2);
-    expect(s.snapshot().clients.map((c) => c.name)).toEqual(['An AI app', 'claude-code']);
-    expect(s.snapshot().clients[1]).toMatchObject({ version: '2.1', calls: 2 });
+    expect(s.snapshot().clients.map((c) => c.name)).toEqual(['claude-code']);
+    expect(s.snapshot().clients[0]).toMatchObject({ version: '2.1', calls: 2 });
+    // An app that never gave its name shows only while no named one is connected.
+    const anon = new StatusTracker(() => now);
+    anon.touch(undefined, true);
+    expect(anon.snapshot().clients.map((c) => c.name)).toEqual(['An AI app']);
     now += 61_000;
     expect(s.snapshot().callsLastMinute).toBe(0);
     now += 600_000;

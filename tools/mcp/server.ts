@@ -105,7 +105,10 @@ export function mcpServer(options: McpServerOptions): Plugin {
     name: 'ag:mcp-server',
     apply: 'serve',
     configureServer(server: ViteDevServer) {
-      const url = () => server.resolvedUrls?.local[0]?.replace(/\/$/, '') ?? 'http://localhost:5390';
+      const url = () => {
+        const addr = server.httpServer?.address();
+        return `http://localhost:${addr && typeof addr === 'object' ? addr.port : (server.config.server.port ?? 5390)}`;
+      };
       const bridge = new McpBridge({ openHint: () => `Open AGstudio in the browser first: ${url()}` });
 
       // ---- the tabs

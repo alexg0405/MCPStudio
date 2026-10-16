@@ -142,6 +142,61 @@ You can pick the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster)
 Shortcuts: press F1 in the app, or see [docs/shortcuts.md](docs/shortcuts.md). On a Mac, F-keys may need Fn;
 every window also has an Alt+number shortcut and a toolbar button.
 
+## Control AGstudio from AI apps (MCP)
+
+Any AI app that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (Claude Code, Claude Desktop,
+Cursor…) can read and change the project you have open, play it, listen to the mix and export it, with the same tools
+Studio uses. Everything it changes appears in Studio's chat as "Claude Code changed: …" with an **Undo** button, one
+undo step per call.
+
+**Claude Code**, one line in a terminal (copy it with its token from Options → Connect AI apps (MCP)…, or from
+the action search: "Copy the Claude Code setup command"):
+
+```bash
+claude mcp add --transport http agstudio http://localhost:5390/mcp --header "Authorization: Bearer <token>"
+```
+
+**Claude Desktop** starts MCP servers as programs, so it runs `bin/agstudio-mcp` (a tiny stdio-to-HTTP helper that
+needs only Node and reads the token from `.agstudio/mcp-token` itself). Add this to `claude_desktop_config.json`
+(Claude → Settings → Developer → Edit Config) and restart it; Settings shows the exact text with your path:
+
+```json
+{ "mcpServers": { "agstudio": { "command": "/path/to/AGstudio/bin/agstudio-mcp", "env": { "AGSTUDIO_URL": "http://localhost:5390" } } } }
+```
+
+Apps that take a URL and headers (Cursor, VS Code, `.mcp.json`) use `{"type":"http","url":"http://localhost:5390/mcp",
+"headers":{"Authorization":"Bearer <token>"}}`; the Settings section has a copy button for it.
+
+It works while AGstudio runs from its dev server (the `agstudio` command) and is open in a browser tab: the project
+lives in that tab, so the dev server relays each call to it. With several tabs the one you used last answers; with
+none, the AI app is told "Open AGstudio in the browser first". Sound stays locked until you click once in the tab.
+
+**Tools**: `get_guide` (the rules and music know-how Studio itself uses; read first), `get_project` (the text Studio
+sends Claude, optionally with the detail of some bars), `list_plugins`, `get_pattern`, `get_mixer`, `get_clips`,
+`apply_actions` (the Studio action list: one undo step; with a `focus` of bars only that part may change, and edits
+reaching outside it come back as a question until `approve_outside: true`), `list_commands` / `run_command` (every
+menu item; file dialogs become a button for you to click: "Claude Code wants to export…"), `play`, `stop`, `seek`,
+`set_loop`, `transport_state`, `undo`, `redo`, `history`, `analyze_mix` (loudness, balance and findings),
+`render_preview` (a short WAV as audio content) and `export_audio` (writes WAV, FLAC or MP3, or stems, into
+`~/Music/AGstudio/`, no file dialog). The project, the commands, the plugins and the guide are also MCP resources.
+
+**Safety**: the endpoint only answers connections from this computer, only for the `localhost`, `127.0.0.1` or `[::1]`
+Host and Origin (against DNS rebinding), and only with the access token (`Authorization: Bearer …` or `?token=`),
+which is made once into the git-ignored `.agstudio/mcp-token` (mode 0600) and can be replaced in Settings (apps with
+the old one are locked out). The switch "Let AI apps control AGstudio" in Settings turns every app away at once.
+
+**Try it by hand** with curl (from the AGstudio folder, with the dev server running and a tab open):
+
+```bash
+T=$(cat .agstudio/mcp-token); H=(-H "Authorization: Bearer $T" -H 'content-type: application/json' -H 'MCP-Protocol-Version: 2025-06-18')
+curl -s localhost:5390/mcp "${H[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","clientInfo":{"name":"curl"}}}'
+curl -s localhost:5390/mcp "${H[@]}" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+curl -s localhost:5390/mcp "${H[@]}" -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_project","arguments":{}}}'
+curl -s localhost:5390/mcp "${H[@]}" -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"apply_actions","arguments":{"summary":"Set the tempo","actions":[{"op":"song","bpm":96}]}}}'
+```
+
+Details (protocol subset, bridge, tools): `docs/architecture.md`, "MCP: AI apps control AGstudio".
+
 ## Write your own instrument, effect or note tool
 
 In the app: **Add → New plugin…**. Name it, pick what it is (instrument, effect or piano-roll tool) and how it's

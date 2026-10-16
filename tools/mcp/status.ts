@@ -1,5 +1,7 @@
 import type { ClientInfo, McpStatus } from '../../src/app/mcp/types.ts';
 
+const ANONYMOUS = 'An AI app';
+
 /** Who has been calling and how often, for the "Connected: Claude Code · 3 calls in the last minute" line. */
 export class StatusTracker {
   private readonly clients = new Map<string, { name: string; version?: string; lastSeen: number; calls: number }>();
@@ -12,7 +14,7 @@ export class StatusTracker {
 
   /** An app said hello or called a tool. */
   touch(client: ClientInfo | undefined, call = false): void {
-    const name = client?.name ?? 'An AI app';
+    const name = client?.name ?? ANONYMOUS;
     const t = this.now();
     const c = this.clients.get(name) ?? { name, lastSeen: t, calls: 0 };
     c.lastSeen = t;
@@ -30,8 +32,11 @@ export class StatusTracker {
     const t = this.now();
     this.calls = this.calls.filter((c) => c > t - 60_000);
     for (const [k, c] of this.clients) if (c.lastSeen < t - 600_000) this.clients.delete(k);
+    const all = [...this.clients.values()].sort((a, b) => b.lastSeen - a.lastSeen).map((c) => ({ ...c }));
+    // Calls that carry no name (a client that skipped the handshake) only show when nobody introduced itself.
+    const named = all.filter((c) => c.name !== ANONYMOUS);
     return {
-      clients: [...this.clients.values()].sort((a, b) => b.lastSeen - a.lastSeen).map((c) => ({ ...c })),
+      clients: named.length ? named : all,
       callsLastMinute: this.calls.length,
       tabs: this.tabs,
     };

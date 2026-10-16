@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { createTestServices } from '@app/testing';
 import { newId } from '@core/model/ids';
 import type { Clip, ClipId, LaneId, PatternId } from '@core/model/types';
+import { createAutomationClip } from '@core/ops/automation';
 import { addClips, removeClips } from '@core/ops/playlist';
 import { clipsSorted } from '@core/query/playlist';
 import { registerFeatures } from '@ui/features';
@@ -17,6 +18,9 @@ import { closeContextMenu } from '@ui/controls/ContextMenu';
 import { installKeyboard } from '@ui/keyboard';
 import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
+import { clipBox } from '@ui/features/playlist/clip-geometry';
+import { valueToY } from '@ui/features/playlist/automation';
+import { Viewport } from '@ui/timeline/viewport';
 import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
@@ -303,5 +307,91 @@ describe('playlist interactions (UI)', { timeout: 40_000 }, () => {
     drag({ x: 0.5 * BAR_PX, y: 2 }, { x: 6 * BAR_PX, y: 2 * LANE_H - 2 });
     expect(new Set(s.editor.getState().clipSelection)).toEqual(new Set([made[0]!.id, made[1]!.id]));
     expect(cursor()).toBe(before);
+  });
+  describe('automation clips', () => {
+    const channelOf = (clip: Clip) => {
+      const ch = s.doc.getState().project.channels[(clip as Extract<Clip, { kind: 'automation' }>).channelId];
+      return ch?.kind === 'automation' ? ch : null;
+    };
+    /** An automation clip on the first track from bar 2 for 2 bars, with a peak in the middle. */
+    const automation = () => {
+      let clip!: Clip;
+      s.history.transact('seed automation', (d) => {
+        const made = createAutomationClip(d, {
+          target: { kind: 'tempo' },
+          name: 'Tempo',
+          color: '#a0c0e0',
+          start: BAR,
+          length: 2 * BAR,
+          points: [
+            { tick: 0, value: 0.2 },
+            { tick: BAR, value: 0.9 },
+            { tick: 2 * BAR, value: 0.5 },
+          ],
+          range: { min: 60, max: 180 },
+          laneId: lanes[0] as LaneId,
+        });
+        clip = d.playlist.clips[made.clipId] as Clip;
+      });
+      return clip;
+    };
+    /** Where a content tick / value sits in the grid. */
+    const place = (tick: number, value: number) => {
+      const vp = new Viewport(10, 0.001, 2);
+      vp.pxPerTick = 0.025;
+      vp.rowHeight = LANE_H;
+      const box = clipBox(vp, 0, { start: BAR, length: 2 * BAR });
+      return { x: vp.tickToX(BAR + tick), y: valueToY(value, box) };
+    };
+
+    it('double-clicking the curve adds a point (one undo step)', async () => {
+      const clip = automation();
+      const before = cursor();
+      const at = place(BAR * 0.2, 0.5);
+      grid.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: grid.getBoundingClientRect().left + at.x, clientY: grid.getBoundingClientRect().top + at.y }));
+      expect(channelOf(clip)!.points).toHaveLength(4);
+      expect(s.history.status().undoLabel).toBe('Add automation point');
+      await s.history.undo();
+      expect(channelOf(clip)!.points).toHaveLength(3);
+      expect(cursor()).toBe(before);
+    });
+
+    it('dragging a point moves it in one undo step; Esc drops the drag', async () => {
+      const clip = automation();
+      const before = cursor();
+      const from = place(BAR, 0.9);
+      drag(from, { x: from.x - 24, y: place(0, 0.4).y });
+      expect(channelOf(clip)!.points[1]).not.toMatchObject({ tick: BAR, value: 0.9 });
+      expect(s.history.status().undoLabel).toBe('Move automation point');
+      await s.history.undo();
+      expect(channelOf(clip)!.points[1]).toMatchObject({ tick: BAR, value: 0.9 });
+      expect(cursor()).toBe(before);
+      fire('pointerdown', from);
+      fire('pointermove', { x: from.x - 24, y: place(0, 0.3).y });
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      fire('pointerup', { x: from.x - 24, y: place(0, 0.3).y });
+      expect(channelOf(clip)!.points[1]).toMatchObject({ tick: BAR, value: 0.9 });
+      expect(cursor()).toBe(before);
+    });
+
+    it('a right-click on a point opens its menu and changes nothing; on the curve it adds a point', async () => {
+      const clip = automation();
+      const before = cursor();
+      const on = place(BAR, 0.9);
+      fire('pointerdown', on, { button: 2, buttons: 2 });
+      fire('pointerup', on, { button: 2, buttons: 0 });
+      await until(() => !!document.querySelector('[role="menu"]'));
+      expect(channelOf(clip)!.points).toHaveLength(3);
+      expect(cursor()).toBe(before);
+      closeContextMenu();
+      await frames(3);
+      const mid = place(BAR * 0.2, 0.5);
+      fire('pointerdown', mid, { button: 2, buttons: 2 });
+      fire('pointerup', mid, { button: 2, buttons: 0 });
+      expect(channelOf(clip)!.points).toHaveLength(4);
+      await s.history.undo();
+      expect(channelOf(clip)!.points).toHaveLength(3);
+      expect(cursor()).toBe(before);
+    });
   });
 });

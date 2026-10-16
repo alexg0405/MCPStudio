@@ -1,7 +1,6 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
 import { exportMidi, importMidiFile, pickMidiFile, saveMidiFile, type MidiImportOptions } from '@app/actions/midi';
-import { humToNotes, isHumming, stopHumming } from '@app/actions/hum';
 import { p } from '@agstudio/sdk';
 import { showFormDialog } from '../../controls/FormDialog';
 import { addContextMenuItems } from '../../context-menus';
@@ -87,6 +86,8 @@ export function register(services: Services): void {
     hint: 'Hum or sing a melody after the count-in; it becomes notes on the selected channel',
     enabled: (s) => !!s.session.getState().selectedChannelId && !!s.view.getState().currentPatternId,
     run: async (s) => {
+      // The voice analysis code loads when this first runs (humming is only in progress once it has).
+      const { humToNotes, isHumming, stopHumming } = await import('@app/actions/hum');
       if (isHumming()) {
         stopHumming();
         return;

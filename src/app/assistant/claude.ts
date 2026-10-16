@@ -9,12 +9,7 @@ import { BEAT_JSON_SCHEMA, validateBeatSpec, type BeatSpec } from '@core/beat/sp
  * it touches the project.
  */
 
-export const AI_MODELS = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (best)' },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (faster)' },
-  { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (fastest)' },
-] as const;
-export const DEFAULT_MODEL = AI_MODELS[0].id;
+export { AI_MODELS, DEFAULT_MODEL } from './state';
 
 /** How the assistant reaches Claude. */
 export type AiBackend = 'subscription' | 'api';

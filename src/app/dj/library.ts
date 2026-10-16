@@ -14,7 +14,7 @@ import { probeAudio } from '../actions/samples';
 import { importSampleBytes } from '../persistence/sample-import';
 import type { Services } from '../services';
 import { peekAnalysis, sampleHash, trackAnalyzer } from './analyzer';
-import { makeMix, type MakeMixResult, type MixSong } from './mix';
+import type { MakeMixResult, MixSong } from './mix';
 import type { DjMixOptions } from '@core/model/types';
 
 export interface LibrarySong {
@@ -239,6 +239,8 @@ export async function makeLibraryMix(s: Services, options: DjMixOptions, songs?:
   making = new AbortController();
   library.setState({ making: { label: 'Getting the songs ready…', fraction: 0 } });
   try {
+    // The mixer (ordering, beat-matching, transitions) loads when the first mix is made.
+    const { makeMix } = await import('./mix');
     return await makeMix(s, list.map(mixSongOf), options, {
       signal: making.signal,
       ...(opts.amend !== undefined ? { amend: opts.amend } : {}),

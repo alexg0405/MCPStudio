@@ -5,13 +5,21 @@ TypeScript plugins you drop into `plugins/`, and they hot-reload while you play.
 
 ## Run it
 
-Node 22 lives in `~/.local/node/bin` on this machine (not on PATH):
+One command, from any folder:
+
+```bash
+agstudio
+```
+
+It starts the dev server on http://localhost:5390 and opens it in your browser (if it is already running, it just
+opens it); Ctrl+C stops it. Click anywhere once to enable audio. `bin/agstudio` is the script; link it onto your PATH
+once with `ln -sf "$PWD/bin/agstudio" ~/.local/bin/agstudio` (it installs the dependencies on the first run).
+
+By hand: Node 22 lives in `~/.local/node/bin` on this machine (not on PATH):
 
 ```bash
 export PATH="$HOME/.local/node/bin:$PATH"; npm run dev
 ```
-
-Then open http://localhost:5390 in Chrome (or Edge). Click anywhere once to enable audio.
 
 Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm run test:audio` (headless Chrome),
 `npm run test:perf` (speed assertions with their real limits; run it on a quiet machine),

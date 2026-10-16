@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# One command to start AGstudio: `agstudio` (linked into ~/.local/bin).
+# Starts the dev server on port 5390 (or $PORT) and opens it in the browser. If it is already
+# running, it just opens the browser. Ctrl+C stops the server.
+set -euo pipefail
+
+# The repo this script lives in (following the ~/.local/bin link).
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+repo="$(cd -P "$(dirname "$src")/.." && pwd)"
+
+# Node 22 lives in ~/.local/node (not on PATH by default).
+export PATH="$HOME/.local/node/bin:$PATH"
+port="${PORT:-5390}"
+url="http://localhost:$port"
+
+open_browser() {
+  if command -v open >/dev/null 2>&1; then open "$url"; else echo "Open $url in Chrome."; fi
+}
+
+# Already running: just show it.
+if curl -s -o /dev/null --max-time 1 "$url"; then
+  echo "AGstudio is already running at $url"
+  open_browser
+  exit 0
+fi
+
+cd "$repo"
+if [ ! -d node_modules ]; then
+  echo "First run: installing dependencies…"
+  npm ci
+fi
+
+# Open the browser once the server answers.
+(
+  for _ in $(seq 1 120); do
+    if curl -s -o /dev/null --max-time 1 "$url"; then open_browser; exit 0; fi
+    sleep 0.5
+  done
+  echo "AGstudio didn't start within a minute; see the messages above."
+) &
+
+echo "Starting AGstudio at $url (Ctrl+C to stop)…"
+PORT="$port" exec npm run dev

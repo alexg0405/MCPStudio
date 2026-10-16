@@ -10,7 +10,8 @@ Read `docs/architecture.md` before making structural changes. The plugin author 
 Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 `export PATH="$HOME/.local/node/bin:$PATH";`.
 
-- `npm run dev`: dev server (port 5390 by default, or `$PORT`).
+- `npm run dev`: dev server (port 5390 by default, or `$PORT`). `bin/agstudio` (linked as `agstudio` in ~/.local/bin)
+  starts it and opens the browser, or just opens it when it is already running.
 - `npm run check`: everything CI would run (`scripts/check.mjs`): `tsc -b` (all four tsconfigs, incremental) and `eslint .`
   (cached) side by side, then the unit project, then the audio project, one after the other so the speed tests are not
   starved. A warm run with nothing changed spends seconds on the static checks.

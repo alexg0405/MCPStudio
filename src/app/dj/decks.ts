@@ -1026,6 +1026,9 @@ export function createDecks(deps: DecksDeps): DecksApi {
       applyCrossfade();
     },
     setDeckCount,
+    setBeatJump(id, beats) {
+      set(id, { beatJump: Math.max(1, Math.min(32, Math.round(beats))) });
+    },
     crossfade,
     readLevels(out) {
       if (graph) graph.readLevels(out);

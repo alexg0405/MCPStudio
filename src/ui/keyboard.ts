@@ -32,7 +32,10 @@ export function installKeyboard(services: Services): () => void {
     // A dialog handles its own keys (Enter, Escape); nothing else should react meanwhile.
     if (isModalOpen()) return;
     const inInput = isTextInput(e.target);
-    if (piano.keyDown(e, inInput)) {
+    // The Decks window uses the letter keys for its decks: the typing piano stays quiet there.
+    const focusedId = services.view.getState().focusedId;
+    const inDecks = !!focusedId && services.view.getState().windows[focusedId]?.type === 'dj-decks';
+    if (!inDecks && piano.keyDown(e, inInput)) {
       e.stopPropagation();
       return;
     }

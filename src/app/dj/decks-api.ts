@@ -135,6 +135,8 @@ export interface DecksApi {
 
   /** The crossfader curve (smooth = equal power, sharp = cut). */
   setCrossfaderCurve?(curve: CrossfaderCurve): void;
+  /** Beats per jump of the beat-jump buttons (1…32). */
+  setBeatJump?(deck: DeckId, beats: number): void;
   /** Shows 2 or 4 decks. */
   setDeckCount?(count: 2 | 4): void;
   /** Glides the crossfader to `to` (−1…1) over `beats` beats of the tempo playing (a fade, not a jump). */

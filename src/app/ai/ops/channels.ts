@@ -184,6 +184,7 @@ export const channels: OpModule = {
     remove_channel: (a, c) => {
       const id = c.channel(a.channel);
       const name = c.d.channels[id]!.name;
+      c.focus.removing(id, name);
       removeChannel(c.d, id);
       return `Deleted channel “${name}”`;
     },

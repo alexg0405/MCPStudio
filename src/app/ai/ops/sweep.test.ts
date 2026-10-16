@@ -9,6 +9,8 @@ import type { Project } from '@core/model/types';
 import { projectViolations } from '../../../../test/helpers/project-invariants';
 import { stackedSong, project, type TestServices } from '../../../../test/helpers/focus';
 import { applyAnswer } from '../apply';
+import { focusFromRange } from '../focus-capture';
+import { resolveFocus, type AiFocus } from '../focus';
 import { ACTION_OPS, type AiAction } from '../schema';
 import { UI_OP_NAMES as UI } from './index';
 import type { AppliedTurn } from './types';
@@ -138,10 +140,18 @@ function snapshotOf(s: TestServices) {
 }
 
 /** Runs one answer and checks the contract. Returns the result, or null when nothing was applied. */
-function checkAnswer(s: TestServices, actions: AiAction[], label: string): AppliedTurn {
+/** Working on a part of the song: edits beyond it are refused, or allowed (as after the musician's OK). */
+interface Mode {
+  focus?: AiFocus;
+  outside?: 'refuse' | 'allow';
+}
+
+const BAR = 3840;
+
+function checkAnswer(s: TestServices, actions: AiAction[], label: string, mode: Mode = {}): AppliedTurn {
   const stepsAtStart = s.history.steps().done.length;
   try {
-    return checkOnce(s, actions, label);
+    return checkOnce(s, actions, label, mode);
   } catch (e) {
     // Leave the shared project as it was, so one failure doesn't hide the others.
     while (s.history.steps().done.length > stepsAtStart) s.history.undo();
@@ -149,17 +159,23 @@ function checkAnswer(s: TestServices, actions: AiAction[], label: string): Appli
   }
 }
 
-function checkOnce(s: TestServices, actions: AiAction[], label: string): AppliedTurn {
+function checkOnce(s: TestServices, actions: AiAction[], label: string, mode: Mode): AppliedTurn {
   const before = snapshotOf(s);
   const stepsBefore = s.history.steps().done.length;
+  const part = () => (mode.focus ? resolveFocus(project(s), mode.focus) : null);
+  const ctx = () => ({
+    previousBeat: null,
+    ...(mode.focus ? { focus: part(), focusOutside: mode.outside ?? ('refuse' as const) } : {}),
+  });
+  const span = part();
   // A dry run leaves everything as it was.
-  const dry = applyAnswer(s, { message: 'Sweep.', actions }, { previousBeat: null, dryRun: true });
+  const dry = applyAnswer(s, { message: 'Sweep.', actions }, { ...ctx(), dryRun: true });
   expect(dry.edited).toBe(false);
   expect(snapshotOf(s), `${label}: dry run changes nothing`).toEqual(before);
   expect(s.history.steps().done.length).toBe(stepsBefore);
   let res!: AppliedTurn;
   try {
-    res = applyAnswer(s, { message: 'Sweep.', actions }, { previousBeat: null });
+    res = applyAnswer(s, { message: 'Sweep.', actions }, ctx());
   } catch (e) {
     throw new Error(`${label} threw: ${e instanceof Error ? (e.stack ?? e.message) : e}\n${JSON.stringify(actions)}`);
   }
@@ -176,6 +192,18 @@ function checkOnce(s: TestServices, actions: AiAction[], label: string): Applied
   const after = snapshotOf(s);
   const bad = projectViolations(after);
   if (bad.length) throw new Error(`${label}: project inconsistent: ${bad.slice(0, 4).join('; ')}\n${JSON.stringify(actions)}`);
+  if (span && mode.outside !== 'allow') {
+    // Refused beyond the part: clips well away from it, and the patterns they play, are as they were.
+    const far = (c: { start: number; length: number }) => c.start + c.length <= span.from - BAR || c.start >= span.to + BAR;
+    const played = new Set<string>();
+    for (const c of Object.values(before.playlist.clips)) {
+      if (!far(c)) continue;
+      expect(after.playlist.clips[c.id], `${label}: a clip outside the part changed\n${JSON.stringify(actions)}`).toEqual(c);
+      if (c.kind === 'pattern') played.add(c.patternId);
+    }
+    for (const pid of played)
+      expect(after.patterns[pid]?.notes, `${label}: a pattern playing outside the part changed\n${JSON.stringify(actions)}`).toEqual(before.patterns[pid]!.notes);
+  }
   if (steps === 1) {
     expect(res.edited, label).toBe(true);
     s.history.undo();
@@ -225,5 +253,41 @@ describe('every Studio action, whatever its arguments', () => {
       });
       checkAnswer(s, actions, `sequence #${i}`);
     }
+  }, 120_000);
+});
+
+describe('every Studio action while working on a part of the song', () => {
+  const { s } = stackedSong();
+  const pools = poolsFor(project(s));
+  const part = focusFromRange(s, 16 * BAR, 32 * BAR)!;
+  const count = (process.env.SWEEP_N ? Number(process.env.SWEEP_N) : 6) | 0;
+
+  for (const outside of ['refuse', 'allow'] as const)
+    for (const schema of ACTION_OPS as unknown as Schema[]) {
+      const op = schema.properties!.op!.const!;
+      it(`${op} (${outside})`, () => {
+        const r = rng([...op].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 11));
+        for (const chance of [0, 1]) {
+          const args = genObject(schema, pools, rng(5), false, chance);
+          checkAnswer(s, [args as AiAction], `${op} valid(${chance})`, { focus: part, outside });
+        }
+        for (let i = 0; i < count; i++) {
+          const args = genObject(schema, pools, r, i % 2 === 1, 0.5);
+          checkAnswer(s, [args as AiAction], `${op} #${i}`, { focus: part, outside });
+        }
+      }, 60_000);
+    }
+
+  it('random sequences of actions', () => {
+    const r = rng(7);
+    const ops = ACTION_OPS as unknown as Schema[];
+    for (const outside of ['refuse', 'allow'] as const)
+      for (let i = 0; i < 12; i++) {
+        const actions = Array.from({ length: 2 + Math.floor(r() * 5) }, () => {
+          const sch = ops[Math.floor(r() * ops.length)]!;
+          return genObject(sch, pools, r, r() < 0.3, 0.5) as AiAction;
+        });
+        checkAnswer(s, actions, `sequence #${i} (${outside})`, { focus: part, outside });
+      }
   }, 120_000);
 });

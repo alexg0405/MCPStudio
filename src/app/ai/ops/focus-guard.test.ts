@@ -161,6 +161,35 @@ describe('what may change in a part', () => {
     expect(res.changes).toEqual(['Deleted pattern “ISOxo 808 slam”']);
   });
 
+  it('refuses deleting a channel whose notes play outside the part, and lists it for approval', () => {
+    const { s } = stackedSong();
+    const before = project(s);
+    const verse = section(s, 'Verse');
+    const res = ask(s, verse, [{ op: 'remove_channel', channel: '808' }]);
+    expect(res.warnings).toHaveLength(1);
+    expect(res.warnings[0]).toMatch(/^remove channel: “808” reaches outside Verse · bars 17–32 \(its notes in “.+”\), so it stays/);
+    expect(res.outsideFocus).toHaveLength(1);
+    expect(project(s)).toEqual(before);
+    // Approved: it goes, in one undo step.
+    const done = applyAnswer(
+      s,
+      { message: 'ok', actions: [{ op: 'remove_channel', channel: '808' }] },
+      { previousBeat: null, focus: resolveFocus(project(s), verse), focusOutside: 'allow' },
+    );
+    expect(done.changes).toEqual(['Deleted channel “808”']);
+    s.history.undo();
+    expect(project(s)).toEqual(before);
+    // With selected notes the channels all stay.
+    const drop = Object.values(before.patterns).find((x) => x.name === 'Drop')!;
+    const pluck = Object.values(before.channels).find((c) => c.name === 'Pluck')!.id;
+    const picked = Object.values(drop.notes[pluck]!).slice(0, 2).map((n) => n.id);
+    const notes = ask(s, { kind: 'notes', patternId: drop.id, channelId: pluck, noteIds: picked, projectId: before.projectId }, [
+      { op: 'remove_channel', channel: 'Pluck' },
+    ]);
+    expect(notes.warnings).toHaveLength(1);
+    expect(project(s)).toEqual(before);
+  });
+
   it('keeps playlist edits within the part, a bar either side for transitions', () => {
     const { s } = stackedSong();
     const res = ask(s, section(s, 'Verse'), [

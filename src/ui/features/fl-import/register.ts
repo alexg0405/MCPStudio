@@ -1,6 +1,5 @@
 import type { Services } from '@app/services';
 import type { FlpImportOutcome } from '@app/actions/flp-import';
-import { isZip as isZipBytes, zipHasFlp } from '@core/io/flp-package';
 import { showDialog } from '../../controls/Dialog';
 import { addMenuItems, cmd } from '../../shell/menus';
 import { whenIdle } from '../../workspace/lazy';
@@ -13,6 +12,8 @@ const isZip = (name: string) => /\.zip$/i.test(name);
 
 /** The FL import code (a parser and a mapper, ~30 kB) loads when you first import, not at startup. */
 const flpActions = () => import('@app/actions/flp-import');
+/** The zip check for dropped zips (is it a loop package with a project in it?): loads when a zip is dropped. */
+const flpPackage = () => import('@core/io/flp-package');
 
 const toast = (s: Services, text: string, kind?: 'error') => s.session.getState().toast(text, kind);
 
@@ -143,6 +144,7 @@ export function register(services: Services): void {
       }
       void (async () => {
         const zip = zips[0] as File;
+        const { isZip: isZipBytes, zipHasFlp } = await flpPackage();
         // Peek for a project: zipped loop packages import, zips of audio fill missing samples.
         const bytes = new Uint8Array(await zip.arrayBuffer());
         if (!isZipBytes(bytes)) {
@@ -154,7 +156,7 @@ export function register(services: Services): void {
           return;
         }
         await relink(services, zips);
-      })();
+      })().catch((e: unknown) => toast(services, e instanceof Error ? e.message : String(e), 'error'));
     },
     true,
   );

@@ -1,11 +1,21 @@
 /** Patterns: add, rename/recolor/resize, remove. */
 import { makePattern, paletteColor } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
+import type { Project } from '@core/model/types';
 import { addPattern, removePattern, setPatternProps } from '@core/ops/playlist';
 import { stepsPerBar } from '@core/time/ppq';
 import * as S from '../schema/parts';
 import { fail, type OpModule } from './context';
 import { num, r2, str } from './values';
+
+/** A pattern holds at most this many steps (the editors' limit; two bars of 16ths is 32). */
+const MAX_STEPS = 512;
+
+/** The length in bars a pattern can have, kept inside the step limit. */
+function clampBars(bars: number, timeSig: Project['transport']['timeSig']): number {
+  const per = stepsPerBar(timeSig);
+  return Math.max(1 / per, Math.min(bars, MAX_STEPS / per));
+}
 
 export const patterns: OpModule = {
   schemas: [
@@ -30,8 +40,9 @@ export const patterns: OpModule = {
       addPattern(d, makePattern(name, paletteColor(d.patternOrder.length), id));
       const bars = num(a.bars);
       if (bars !== undefined && bars > 0) {
-        d.patterns[id]!.length = Math.round(bars * c.bar());
-        d.patterns[id]!.stepCount = Math.max(1, Math.round(bars * stepsPerBar(d.transport.timeSig)));
+        const fit = clampBars(bars, d.transport.timeSig);
+        d.patterns[id]!.length = Math.round(fit * c.bar());
+        d.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(d.transport.timeSig)));
       }
       c.remember(a.ref, { kind: 'pattern', id });
       c.state.selectPattern = id;
@@ -50,9 +61,10 @@ export const patterns: OpModule = {
       if (name || color) setPatternProps(d, id, { ...(name ? { name } : {}), ...(color ? { color } : {}) });
       if (name) out.push(`renamed “${name}”`);
       if (bars !== undefined && bars > 0) {
-        d.patterns[id]!.length = Math.round(bars * c.bar());
-        d.patterns[id]!.stepCount = Math.max(1, Math.round(bars * stepsPerBar(d.transport.timeSig)));
-        out.push(`${r2(bars)} bars`);
+        const fit = clampBars(bars, d.transport.timeSig);
+        d.patterns[id]!.length = Math.round(fit * c.bar());
+        d.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(d.transport.timeSig)));
+        out.push(`${r2(fit)} bars`);
       }
       return out.length ? `Pattern “${d.patterns[id]!.name}”: ${out.join(', ')}` : null;
     },

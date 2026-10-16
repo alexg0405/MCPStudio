@@ -23,6 +23,8 @@ describe.concurrent('auto-level', () => {
   it.each([
     ['trap', 140, '808'],
     ['lofi', 80, 'bass'],
+    // A loud style: the Limiter takes less than the input it is given, so one correction left it 1.6 dB short.
+    ['house', 124, 'bass'],
   ] as const)(
     '%s: every bus at its level around the kick, the master at the style’s loudness, one undo step',
     async (style: Style, bpm, low) => {

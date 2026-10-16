@@ -4,7 +4,7 @@
  * one in place, one transition at a bar, one variation at a spot, refresh variants. Each returns
  * change lines for the chat or a toast, the span it edited and what the arrangement check found.
  */
-import type { Draft } from 'immer';
+import { current, isDraft, type Draft } from 'immer';
 import {
   applyArrangement,
   applyEditsInPlace,
@@ -47,6 +47,12 @@ import { arrangeSummary } from './summary';
 
 const BEAT = 960;
 
+/**
+ * The draft as plain data. The arranger's whole-song reads (what plays where, sections, the check)
+ * are several times faster on plain objects than through immer's proxies; take a new one after an edit.
+ */
+const plain = (d: Draft<Project>): Project => (isDraft(d) ? (current(d) as unknown as Project) : (d as unknown as Project));
+
 /** An input the arranger can't use (the message says why, for the chat or a toast). */
 export class ArrangeInputError extends Error {}
 
@@ -72,6 +78,8 @@ export interface ArrangeInput {
   fx: FxLevel;
   mix: 'auto' | 'keep';
   ending: 'auto' | EndingKind;
+  /** Source patterns the arranger must not edit (they also play where the arrangement doesn't reach). */
+  protect?: ReadonlySet<PatternId>;
   /** Mixer tracks and channels whose levels were set on purpose (the mix setup leaves them). */
   pinned?: { inserts?: ReadonlySet<InsertId>; channels?: ReadonlySet<ChannelId> };
 }
@@ -104,8 +112,8 @@ export function arrangeInDraft(d: Draft<Project>, s: Services, base: Project, in
   const plan = planArrangement(p, { from, style, sections: input.sections, fx: input.fx, ending: input.ending }, { variant: env.variant });
   // A whole song (from bar 1, no bar given) replaces the whole song; otherwise its own bars.
   const replaceTo = input.from === undefined && input.replace ? Math.max(plan.to, Math.ceil(songEnd / bar) * bar) : plan.to;
-  const report = applyArrangement(d, plan, env, { replace: input.replace, replaceTo });
-  const findings = checkArrangement(s, p, { style, sections: plan.sections });
+  const report = applyArrangement(d, plan, env, { replace: input.replace, replaceTo, ...(input.protect ? { protect: input.protect } : {}) });
+  const findings = checkArrangement(s, plain(d), { style, sections: plan.sections });
   const extra: string[] = [];
   for (const m of report.movedCrashes)
     extra.push(`Moved the crash at the start of “${p.patterns[m.patternId]?.name ?? 'a beat'}” into crash hits (it crashed on every loop)`);
@@ -113,7 +121,10 @@ export function arrangeInDraft(d: Draft<Project>, s: Services, base: Project, in
     plan,
     style,
     changes: [arrangeSummary(plan), ...made, ...changes, ...extra],
-    warnings: findings.filter((f) => f.severity === 'bug').map((f) => `arrangement check: ${f.message}`),
+    // What the arranger made; problems the song already had elsewhere aren't this answer's.
+    warnings: findings
+      .filter((f) => f.severity === 'bug' && f.to > plan.from && f.from < plan.to)
+      .map((f) => `arrangement check: ${f.message}`),
     touched: { from: plan.from, to: plan.to },
     clipIds: report.clipIds,
     findings,
@@ -158,27 +169,29 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
     if (r.named.length) changes.push(`Named ${count(r.named.length, 'track')} after what they play`);
     // A crash on the first beat of a loop crashes every few bars: it moves out of the patterns
     // that loop here and nowhere else (their variants follow), and crashes mark the sections instead.
-    const looping = loopingPatterns(p);
+    const q = plain(d);
+    const looping = loopingPatterns(q);
     const inRange = new Set<PatternId>();
     const outside = new Set<PatternId>();
-    for (const c of Object.values(p.playlist.clips)) {
+    for (const c of Object.values(q.playlist.clips)) {
       if (c.kind !== 'pattern') continue;
-      const root = rootOf(p, c.patternId).root;
+      const root = rootOf(q, c.patternId).root;
       (c.start >= from && c.start + c.length <= to ? inRange : outside).add(root);
     }
     const moves = [...inRange]
-      .filter((pid) => !outside.has(pid) && looping.has(pid) && !p.patterns[pid]?.derived && lengthOfPattern(p, pid) <= 4 * bar)
-      .flatMap((pid) => loopStartCrashes(p, pid, env.variant).map((m) => ({ patternId: pid, ...m })));
+      .filter((pid) => !outside.has(pid) && looping.has(pid) && !q.patterns[pid]?.derived && lengthOfPattern(q, pid) <= 4 * bar)
+      .flatMap((pid) => loopStartCrashes(q, pid, env.variant).map((m) => ({ patternId: pid, ...m })));
     const moved = moveLoopCrashes(d, { loopCrashes: moves });
     if (moved.length) {
       refreshVariants(d, env.variant, new Set(moved.map((m) => m.patternId)));
       changes.push(
-        `Moved the crash on the first beat of ${moved.map((m) => `“${p.patterns[m.patternId]?.name ?? '?'}”`).join(', ')} out (it crashed on every loop; crashes now mark the sections)`,
+        `Moved the crash on the first beat of ${moved.map((m) => `“${q.patterns[m.patternId]?.name ?? '?'}”`).join(', ')} out (it crashed on every loop; crashes now mark the sections)`,
       );
     }
     // Fills on their own track replace the drums under them instead of piling on.
-    const layered = layeredFills(p, env.variant).filter((l) => l.fill.from < to && l.fill.to > from);
-    const fillClips = new Set(fillLikeClips(p, env.variant).map((f) => f.clipId));
+    const r2 = plain(d);
+    const layered = layeredFills(r2, env.variant).filter((l) => l.fill.from < to && l.fill.to > from);
+    const fillClips = new Set(fillLikeClips(r2, env.variant).map((f) => f.clipId));
     for (const l of layered)
       applyEditsInPlace(d, [{ kind: 'clear-drums', from: l.fill.from, to: l.fill.to, energy: 4, why: 'end' }], env, {
         skipLanes: new Set([l.fill.laneId]),
@@ -192,15 +205,16 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
           .join(', ')}) now replace the drums under them`,
       );
   }
-  const sections = inferSections(p, env.variant);
-  const fillClips = fillLikeClips(p, env.variant);
+  const now = plain(d);
+  const sections = inferSections(now, env.variant);
+  const fillClips = fillLikeClips(now, env.variant);
   const fills = fillClips.map((f) => ({ from: f.from, to: f.to }));
   const plan = planDevelop(
-    p,
+    now,
     sections,
     { style, fills: input.fills, transitions: input.transitions, fx: input.fx ? 'auto' : 'none', from, to },
-    { fx: existingFx(p, env.variant), fills },
-    laneAllocatorFor(p),
+    { fx: existingFx(now, env.variant), fills },
+    laneAllocatorFor(now),
   );
   // Elements reaching far outside the range are left out (a part of the song stays a part).
   const near = (a: Tick, b: Tick) => a >= from - bar && b <= to + bar;
@@ -209,7 +223,7 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
   const fx = placeFx(d, plan.fx.filter((f) => near(f.start, f.start + Math.min(f.length, bar))), env);
   const crashes = placeCrashes(d, plan.crashes.filter((c) => near(c.at, c.at)), env);
   const automation = placeAutomation(d, plan.automation.filter((a) => near(a.start, a.start + a.length)), env, { skipBusy: true });
-  const findings = checkArrangement(s, p, { style });
+  const findings = checkArrangement(s, plain(d), { style });
   const builds = plan.counts.builds;
   const summary = [
     plan.counts.fills ? count(plan.counts.fills, 'fill') : '',
@@ -286,7 +300,7 @@ export function transitionInDraft(d: Draft<Project>, s: Services, base: Project,
   const bpb = p.transport.timeSig.num * (4 / p.transport.timeSig.den);
   const X = Math.max(0, Math.round(input.at / BEAT) * BEAT);
   const { env, changes: made } = applyEnvFor(d, s, base, style, { create: true });
-  const sections = inferSections(p, env.variant);
+  const sections = inferSections(plain(d), env.variant);
   const sides = sidesAt(sections, X);
   const ctx = { bpm: p.transport.bpm, beatsPerBar: bpb, barTicks: bar, style, fx: 'auto' as const };
   let events: Omit<SongEvent, 'section'>[] = [];
@@ -381,8 +395,9 @@ export function transitionInDraft(d: Draft<Project>, s: Services, base: Project,
   const hi = Math.max(X, ...events.map((e) => e.to), ...automation.map((a) => a.start + a.length));
   guard?.(Math.max(0, lo), hi, 'transition');
   const changed = applyEditsInPlace(d, events, env);
-  const lanes = laneAllocatorFor(p);
-  const there = existingFx(p, env.variant);
+  const after = plain(d);
+  const lanes = laneAllocatorFor(after);
+  const there = existingFx(after, env.variant);
   const fxClips = placeFx(
     d,
     fx

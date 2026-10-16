@@ -33,6 +33,15 @@ export function toNoteSet(notes: Pattern['notes']): NoteSet {
   return set;
 }
 
+/** Calls `each` for every note of a pattern (any order; no copies, no sorting: for counting and testing notes). */
+export function eachNote(notes: Pattern['notes'], each: (cid: ChannelId, n: Note) => void): void {
+  for (const cid of Object.keys(notes) as ChannelId[]) {
+    const byId = notes[cid];
+    if (!byId) continue;
+    for (const n of Object.values(byId) as Note[]) each(cid, n);
+  }
+}
+
 /** A NoteSet as pattern notes, with fresh note ids (channels without notes are left out). */
 export function toNoteMap(set: NoteSet): Pattern['notes'] {
   const out: Pattern['notes'] = {};
@@ -113,8 +122,13 @@ export function cutHeldAt(list: WorkNote[], at: Tick, which: (n: WorkNote) => bo
 }
 
 /** A pattern's length, safe on drafts (the memoized query would keep a stale answer). */
-export const lengthOfPattern = (p: Project, pid: PatternId): Tick =>
-  p.patterns[pid] ? patternLength({ ...p.patterns[pid]! }, p.transport.timeSig) : 0;
+export function lengthOfPattern(p: Project, pid: PatternId): Tick {
+  const pat = p.patterns[pid];
+  if (!pat) return 0;
+  // An explicit length needs no copy of the (draft) pattern.
+  if (pat.length && pat.length > 0) return pat.length;
+  return patternLength({ ...pat }, p.transport.timeSig);
+}
 
 /** A note as the playlist plays it in song mode. */
 export interface PlayedNote {

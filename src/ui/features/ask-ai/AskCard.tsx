@@ -198,7 +198,8 @@ function AskCard() {
         placeholder={label ? 'What should change here? e.g. “smooth the transition in”' : 'What should Studio change?'}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
+          // (Enter that confirms an input-method choice isn't a send)
+          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
             ask(text);
           }

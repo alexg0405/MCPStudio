@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useStore } from 'zustand';
 import type { ApprovalMessage, AssistantMessage } from '@app/assistant/assistant';
 import type { Services } from '@app/services';
 import { showDialog } from '../../controls/Dialog';
@@ -53,7 +54,9 @@ async function undoAnswer(services: Services, before: number, later: readonly st
 function Answer({ m }: { m: AssistantMessage }) {
   const services = useServices();
   const status = useHistoryStatus();
-  const undoAt = m.undo ?? m.beat?.cursor;
+  // (a negative point is one from before a page reload: its step is gone)
+  const point = m.undo ?? m.beat?.cursor;
+  const undoAt = point !== undefined && point >= 0 ? point : undefined;
   // Still in the history as done (not undone already, not dropped by opening another project).
   const done = undoAt !== undefined && status.canUndo ? services.history.steps().done : [];
   const at = undoAt === undefined ? -1 : done.findIndex((d) => d.id === undoAt);
@@ -276,6 +279,8 @@ function PluginCard({ m }: { m: AssistantMessage }) {
  */
 function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage }) {
   const services = useServices();
+  // Choosing waits while Studio is busy with something else.
+  const busy = useStore(services.assistant.store, (s) => s.phase !== 'idle');
   const a = approval;
   return (
     <div className={styles.approval}>
@@ -286,7 +291,7 @@ function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage 
             ? 'Applied everything, outside ' + a.part + ' too.'
             : a.state === 'part'
               ? `Applied only what stays in ${a.part}.`
-              : 'This can’t be applied any more (another project is open). Ask again.'}
+              : 'This can’t be applied any more (you asked something else, or another project is open). Ask again.'}
       </div>
       {a.state === 'ask' && (
         <>
@@ -294,6 +299,7 @@ function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage 
           <div className={styles.pluginActions}>
             <button
               className={styles.primaryButton}
+              disabled={busy}
               onClick={() => void services.assistant.approve(id, 'all')}
               data-hint="Make every change in the answer, outside the part too (one undo step)"
             >
@@ -301,6 +307,7 @@ function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage 
             </button>
             <button
               className={styles.ghost}
+              disabled={busy}
               onClick={() => void services.assistant.approve(id, 'part')}
               data-hint={`Make only the changes inside ${a.part}; the rest of the song stays as it is`}
             >

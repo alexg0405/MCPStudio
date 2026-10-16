@@ -40,7 +40,7 @@ import { addClips, addPattern, clearRange, splitClip } from '../ops/playlist';
 import { removeChannel } from '../ops/channels';
 import type { TempoMap } from '../time/ppq';
 import type { VariantEnv } from './fills';
-import { lengthOfPattern, notesHash, setHash, toNoteMap, toNoteSet } from './notes';
+import { eachNote, lengthOfPattern, notesHash, setHash, toNoteMap } from './notes';
 import type { ArrangementPlan, PlannedAutomation, PlannedCrash, PlannedFx, SongEvent } from './plan';
 import { eventSpan, LaneAllocator, stepsForClips } from './plan';
 import { isDrumRole, noteRole } from './roles';
@@ -506,7 +506,7 @@ export function moveLoopCrashes(d: Draft<Project>, plan: Pick<ArrangementPlan, '
 }
 
 /**
- * Writes a plan: clears its range first (`replace`), moves loop-start crashes out of the sources,
+ * Writes a plan: clears its range first (`replace`), moves loop-start crashes out of the sources (except `protect`ed ones),
  * then the clips (variants derived as needed), FX, crashes, automation and markers; finally removes
  * the arranger's things the cleared range used that nothing plays any more. Returns what it did and
  * the ids of the clips it made.
@@ -515,7 +515,7 @@ export function applyArrangement(
   d: Draft<Project>,
   plan: ArrangementPlan,
   env: ApplyEnv,
-  opts: { replace: boolean; replaceTo?: Tick },
+  opts: { replace: boolean; replaceTo?: Tick; protect?: ReadonlySet<PatternId> },
 ): ApplyReport & { clipIds: ClipId[] } {
   const p = d as unknown as Project;
   let replaced = 0;
@@ -533,7 +533,8 @@ export function applyArrangement(
     replaced += clearRange(d, plan.from, to, { trim: true, tempo: env.tempo }).removed;
     for (const m of Object.values(p.playlist.markers)) if (m.tick >= plan.from && m.tick < to) removeMarker(d, m.id);
   }
-  const movedCrashes = moveLoopCrashes(d, plan);
+  // (patterns the caller keeps as they are, e.g. ones that also play outside the part being worked on, keep their crashes)
+  const movedCrashes = moveLoopCrashes(d, { loopCrashes: plan.loopCrashes.filter((m) => !opts.protect?.has(m.patternId)) });
   const clipIds: ClipId[] = [];
   const variants = new Set<PatternId>();
   const lanes = new Map<PatternId, LaneId>();
@@ -604,16 +605,14 @@ function patternContent(p: Project, pid: PatternId, env: VariantEnv) {
   let hats = 0;
   let bass808 = 0;
   let bassAny = 0;
-  for (const [cid, list] of toNoteSet(pat?.notes ?? {})) {
+  eachNote(pat?.notes ?? {}, (cid, n) => {
     const r = env.roles.get(cid) ?? 'other';
-    for (const n of list) {
-      const nr = noteRole(r, n.key);
-      if (isDrumRole(nr)) drums++;
-      if (nr === 'hat') hats++;
-      if (r === '808') bass808++;
-      if (r === '808' || r === 'bass') bassAny++;
-    }
-  }
+    const nr = noteRole(r, n.key);
+    if (isDrumRole(nr)) drums++;
+    if (nr === 'hat') hats++;
+    if (r === '808') bass808++;
+    if (r === '808' || r === 'bass') bassAny++;
+  });
   return { drums, hats, bass808, bassAny, caps: { drums: drums > 0, hats: hats > 0, openHat: false, slide: bass808 > 0 } };
 }
 
@@ -649,9 +648,13 @@ export function applyEditsInPlace(
     for (const c of under()) isolate(d, c.id, span.from, span.to, lengthOfPattern(p, c.patternId), env.tempo);
     const pieces = under();
     if (!pieces.length) continue;
+    // (a pattern's content is counted once however many pieces play it)
+    const contents = new Map<PatternId, ReturnType<typeof patternContent>>();
     const clips = pieces.map((c) => {
       const { root } = rootOf(p, c.patternId);
-      return { start: c.start, length: c.length, content: patternContent(p, c.patternId, env.variant), section: 0, source: `${c.laneId}|${root}` };
+      let content = contents.get(c.patternId);
+      if (!content) contents.set(c.patternId, (content = patternContent(p, c.patternId, env.variant)));
+      return { start: c.start, length: c.length, content, section: 0, source: `${c.laneId}|${root}` };
     });
     const parts = stepsForClips([{ ...e, section: 0 }], clips);
     pieces.forEach((c, i) => {

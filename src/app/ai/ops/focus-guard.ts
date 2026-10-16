@@ -41,6 +41,8 @@ export interface FocusGuard {
   writable(pid: PatternId): PatternId;
   /** Before removing a pattern: refuses one that plays outside the part. */
   owned(pid: PatternId, what: string): void;
+  /** Before deleting a channel (its notes and clips go from the whole song): refused when that reaches outside the part. */
+  removing(cid: ChannelId, name: string): void;
   /** A playlist edit over from–to: refused when it reaches outside the part (±1 bar). */
   span(from: Tick, to: Tick, what: string): void;
   /** An edit of one clip: refused when the clip lies outside the part. */
@@ -67,6 +69,7 @@ export const NO_FOCUS: FocusGuard = {
   resolve: (pid) => pid,
   writable: (pid) => pid,
   owned: () => {},
+  removing: () => {},
   span: () => {},
   clip: () => {},
   clearable: () => true,
@@ -224,6 +227,16 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       else if (ins.length === 0) outside(`“${pat.name}” doesn't play in ${r.label}, so it stays`);
     },
 
+    removing(cid, name) {
+      // Its notes in patterns that play outside the part, and its audio or automation clips there.
+      const lost: string[] = [];
+      for (const pat of Object.values(d.patterns))
+        if (Object.keys(pat.notes[cid] ?? {}).length > 0 && uses(pat.id).out.length) lost.push(`its notes in “${pat.name}”`);
+      const clips = Object.values(d.playlist.clips).filter((x) => x.kind !== 'pattern' && x.channelId === cid && !inside(x));
+      if (clips.length) lost.push(`its clips at ${where(clips)}`);
+      if (lost.length) outside(`“${name}” reaches outside ${r.label} (${lost.slice(0, 3).join('; ')}), so it stays; mute it or silence it in the part instead`);
+    },
+
     span(a, b) {
       const { lo, hi } = allowed();
       if (a >= lo && b <= hi) return;
@@ -343,6 +356,8 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       if (isNew(pid)) return;
       outside(`the request is about ${about()}, so the patterns stay`);
     },
+    removing: (_cid, name) =>
+      void outside(`the request is about ${about()}, so “${name}” stays (deleting a channel removes its notes everywhere)`),
     span: noPlaylist,
     clip: noPlaylist,
     clearable: () => false,

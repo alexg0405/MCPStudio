@@ -292,7 +292,11 @@ export class BeatAssistant {
       offlinePrompt: string;
       focus: unknown;
     }>;
-    const messages = Array.isArray(r.messages) ? r.messages.filter((m) => typeof m?.text === 'string') : [];
+    // A reload starts a new history that numbers its steps from 1 again: the undo points of the old
+    // session would point at unrelated steps, so the answers keep their text but lose their Undo.
+    const messages = (Array.isArray(r.messages) ? r.messages.filter((m) => typeof m?.text === 'string') : []).map(
+      ({ undo: _undo, ...m }) => (m.beat ? { ...m, beat: { ...m.beat, cursor: -1 } } : m),
+    );
     messageSeq = Math.max(messageSeq, ...messages.map((m) => (typeof m.id === 'number' ? m.id : 0)));
     const applied = r.applied && typeof r.applied.patternId === 'string' && r.applied.channels ? r.applied : null;
     const take = r.take && Array.isArray(r.take.events) ? { ...r.take, audio: null } : null;
@@ -354,6 +358,16 @@ export class BeatAssistant {
     const { answer, take, request, analyzed, focus } = pending;
     const listen = await this.applyTurn(answer, take, request, analyzed, focus, choice === 'all' ? 'allow' : 'refuse');
     if (listen) await this.listenAndAsk(request, false, focus);
+  }
+
+  /** Answers still waiting for an OK are about the song as it was: a new request retires them. */
+  private retireApprovals(): void {
+    if (this.approvals.size === 0) return;
+    const ids = new Set(this.approvals.keys());
+    this.approvals.clear();
+    this.store.setState((st) => ({
+      messages: st.messages.map((m) => (ids.has(m.id) && m.approval ? { ...m, approval: { ...m.approval, state: 'expired' as const } } : m)),
+    }));
   }
 
   // ---------------------------------------------------------------- the part a request is about
@@ -560,6 +574,7 @@ export class BeatAssistant {
     let take = st.take;
     if (!text && !take) return;
     if (opts.focus !== undefined) this.setFocus(opts.focus);
+    this.retireApprovals();
     // The part as it is now; a part that no longer exists is dropped. Kept as sent for the answer.
     const asked = this.store.getState().focus;
     const focus = resolveFocus(this.s.doc.getState().project, asked);
@@ -584,10 +599,18 @@ export class BeatAssistant {
     const project = this.s.doc.getState().project;
     let spec: BeatSpec | null = null;
     let offline = false;
+    // Stop works from the start, also while it checks how to reach Claude.
+    const abort = new AbortController();
+    this.abort = abort;
     const route = await this.route();
+    if (abort.signal.aborted) {
+      this.abort = null;
+      this.say('assistant', 'Stopped.', {});
+      this.store.setState({ phase: 'idle' });
+      return;
+    }
+    if (!route) this.abort = null;
     if (route) {
-      const abort = new AbortController();
-      this.abort = abort;
       try {
         const answer = await this.chat.ask<AiAnswer>({
           system: STUDIO_PROMPT,
@@ -842,10 +865,14 @@ export class BeatAssistant {
     this.abort = abort;
     this.store.setState({ phase: 'listening', listening: { label: 'Finishing up', fraction: 0 } });
     try {
+      // The answer's undo step; when it changed nothing itself (a request that is only leveling or a
+      // filter), the first step that edits makes it, and the steps after it join it.
+      let own = entry;
       for (const item of items) {
+        const was = this.s.history.status().cursor;
         const res = await afterStepFor(item.kind)!(item, {
           s: this.s,
-          entry,
+          entry: own,
           signal: abort.signal,
           progress: (l, f) => {
             label = l;
@@ -854,10 +881,14 @@ export class BeatAssistant {
           },
           whenQuiet,
         });
+        const now = this.s.history.status().cursor;
+        const made = own === null && now !== was;
+        if (made) own = now;
         if (res)
           this.say('assistant', res.message, {
             ...(res.changes?.length ? { changes: res.changes } : {}),
             ...(res.warnings?.length ? { warnings: res.warnings } : {}),
+            ...(made ? { undo: now } : {}),
           });
       }
     } catch (e) {
@@ -1106,6 +1137,7 @@ export class BeatAssistant {
     this.catalogSent = null;
     this.lastProblems = [];
     this.offlinePrompt = '';
+    this.approvals.clear();
     this.store.setState({ applied: null, messages: [], take: this.store.getState().take, focus: null });
   }
 }

@@ -23,7 +23,7 @@ export function quickChips(focus: AiFocus | null | undefined): readonly string[]
   return focus.kind === 'notes' ? NOTE_CHIPS : TIME_CHIPS;
 }
 
-/** What a chip does, for its hint: "Ask the AI: “Hit harder” (only Verse · bars 17–32 changes)". */
+/** What a chip does, for its hint: "Ask Studio: “Hit harder” (only Verse · bars 17–32 changes)". */
 export function chipHint(chip: string, label: string | null): string {
   return label ? `Ask Studio: “${chip}” (only ${label} changes)` : `Ask Studio: “${chip}”`;
 }

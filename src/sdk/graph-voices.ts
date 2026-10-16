@@ -66,6 +66,7 @@ const FADE = 0.005;
 export class GraphVoices {
   private readonly voices = new Map<number, Live>();
   private readonly max: number;
+  private gcTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly ac: BaseAudioContext,
@@ -96,6 +97,7 @@ export class GraphVoices {
     if (prev) this.kill(prev, voice.start);
     this.voices.set(noteId, live);
     this.enforceMax(voice.start);
+    this.armGc();
   }
 
   /** Note-off. A release time at or before the voice's start cancels it. */
@@ -112,6 +114,7 @@ export class GraphVoices {
       v.until = Math.min(v.until, until);
       if (!v.release) this.kill(v, time);
     }
+    this.armGc();
   }
 
   /** Releases (or with `hard`, quickly fades) every voice sounding at `time` and cancels later ones. */
@@ -121,11 +124,13 @@ export class GraphVoices {
       else if (hard) this.kill(v, time);
       else this.release(v.noteId, time);
     }
+    this.armGc();
   }
 
   /** Cuts every voice except `keep` with a short fade (monophonic "cut itself" behaviour). */
   cutOthers(time: number, keep?: number): void {
     for (const v of this.voices.values()) if (v.noteId !== keep && v.start < time) this.kill(v, time);
+    this.armGc();
   }
 
   /** Disposes voices that finished before `now`. Called automatically on add(); call it from long-idle plugins too. */
@@ -135,6 +140,26 @@ export class GraphVoices {
 
   disposeAll(): void {
     for (const v of [...this.voices.values()]) this.dispose(v, true);
+    if (this.gcTimer !== null) clearTimeout(this.gcTimer);
+    this.gcTimer = null;
+  }
+
+  /**
+   * Realtime: lets go of finished voices on its own once the last one is over, not only when the
+   * next note arrives (an idle instrument would keep its last notes' nodes in the graph). Offline
+   * contexts run on their own clock, so their voices stay until the next note or disposeAll.
+   */
+  private armGc(): void {
+    if (this.gcTimer !== null || typeof AudioContext === 'undefined' || !(this.ac instanceof AudioContext)) return;
+    let next = Infinity;
+    for (const v of this.voices.values()) if (v.until < next) next = v.until;
+    if (!Number.isFinite(next)) return;
+    const wait = Math.max(100, (next + 0.1 - this.ac.currentTime) * 1000);
+    this.gcTimer = setTimeout(() => {
+      this.gcTimer = null;
+      this.gc(this.ac.currentTime);
+      this.armGc();
+    }, wait);
   }
 
   /**

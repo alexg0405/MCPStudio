@@ -6,7 +6,6 @@
  */
 import { formatAutomationValue, targetName } from '@core/automation/labels';
 import { resolveTarget } from '@core/automation/targets';
-import { DRUM_SOUNDS, type BeatSound } from '@core/beat/spec';
 import { gainToDecibels } from '@core/model/fader';
 import { kitPiece } from '@core/model/kit';
 import { MASTER, type Channel, type ChannelId, type Insert, type Pattern, type PluginInstance, type PatternId, type Project } from '@core/model/types';
@@ -21,7 +20,9 @@ import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { arrangementLines, derivedLabel } from '../arrange/summary';
 import { musicLibraryLines } from '../dj/library';
 import { djLines } from '../dj/mix';
-import { channelSound, noteName } from '../assistant/context';
+import { noteLines } from './note-lines';
+
+export { noteLines };
 import { recentFiles } from '../persistence/recent-files';
 import type { ResolvedFocus } from './focus';
 import { aiCommands } from './commands';
@@ -285,9 +286,6 @@ function insertLines(s: Services, p: Project, ins: Insert, r: Render): string[] 
   return lines;
 }
 
-const fmtStep = (steps: number) => String(Math.round(steps * 100) / 100);
-const fmtVel = (v: number) => (Math.abs(v - 0.8) < 0.005 ? '' : `@${String(r2(v)).replace(/^0(?=\.)/, '')}`);
-
 /** Each pattern: its channels with note counts, and where it plays in the song. */
 export function patternLines(
   p: Project,
@@ -320,26 +318,6 @@ export function patternLines(
     lines.push(
       `- "${pat.name}" ${pat.id}, ${r2(bars)} bar${bars === 1 ? '' : 's'}${variant ? ` (${variant})` : ''}: ${content}; ${plays}`,
     );
-  }
-  return lines;
-}
-
-/** A pattern's notes per channel, as the AI writes them. */
-export function noteLines(p: Project, pattern: Project['patterns'][keyof Project['patterns']]): string[] {
-  const lines: string[] = [];
-  for (const id of p.channelOrder) {
-    const ch = p.channels[id];
-    const notes = Object.values(pattern.notes[id] ?? {}).sort((a, b) => a.tick - b.tick || a.key - b.key);
-    if (!ch || notes.length === 0) continue;
-    const sound = channelSound(p, ch);
-    const drum = sound !== null && DRUM_SOUNDS.has(sound as BeatSound);
-    const shown = notes.slice(0, 96).map((n) => {
-      const step = fmtStep(n.tick / 240);
-      return drum
-        ? `${step}${fmtVel(n.velocity)}`
-        : `${step}:${noteName(n.key)}/${fmtStep(n.length / 240)}${fmtVel(n.velocity)}`;
-    });
-    lines.push(`  ${ch.name}: ${shown.join(' ')}${notes.length > 96 ? ` … (+${notes.length - 96} more)` : ''}`);
   }
   return lines;
 }

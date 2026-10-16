@@ -174,6 +174,73 @@ describe('UX audit (shell)', () => {
     await frame();
   });
 
+  it('the compact transport: narrow bars shrink the displays and show bar:step (a click shows the ticks); every control stays reachable', async () => {
+    const header = host.querySelector('header')!;
+    const root = document.documentElement;
+    const was = root.dataset.theme;
+    const time = () => header.querySelector<HTMLButtonElement>('[aria-label="Song position"]')!;
+    /** What the position readout shows right now (the hidden form is not counted). */
+    const timeText = () =>
+      [...time().querySelectorAll('span')]
+        .filter((el) => visible(el) && /^\d+:\d\d/.test(el.textContent ?? ''))
+        .map((el) => el.textContent);
+    const transportParts = () =>
+      [
+        header.querySelector<HTMLElement>('[data-tour="transport"] button[class*="modeSwitch"]'),
+        header.querySelector<HTMLElement>('[aria-label="Play"], [aria-label="Pause"], [aria-label^="Play"]'),
+        header.querySelector<HTMLElement>('[aria-label="Stop"]'),
+        header.querySelector<HTMLElement>('[aria-label^="Record"]'),
+        header.querySelector<HTMLElement>('[aria-label="Metronome"]'),
+        header.querySelector<HTMLElement>('[data-tour="tempo"]'),
+        time(),
+      ] as const;
+    const widthOf = new Map<string, number>();
+    try {
+      for (const theme of ['marble', 'carrara']) {
+        if (theme === 'marble') delete root.dataset.theme;
+        else root.dataset.theme = theme;
+        for (const w of [1280, 1000, 800]) {
+          await page.viewport(w, 700);
+          await frame();
+          await frame();
+          if (time().hasAttribute('data-expanded')) time().click();
+          await frame();
+          const bar = header.querySelector<HTMLElement>('[data-tour="transport"]')!;
+          widthOf.set(`${theme}@${w}`, bar.getBoundingClientRect().width);
+          // Every part of the transport is there, on screen, and its text is not cut off.
+          for (const part of transportParts()) {
+            expect(part, `${theme}@${w}: a transport control is missing`).toBeTruthy();
+            const r = part!.getBoundingClientRect();
+            expect(r.width, `${theme}@${w}: ${part!.className}`).toBeGreaterThan(0);
+            expect(r.right, `${theme}@${w}: ${part!.className} past the window`).toBeLessThanOrEqual(w);
+          }
+          for (const el of header.querySelectorAll<HTMLElement>('[data-tour="transport"] [class*="lcdValue"]'))
+            if (visible(el)) expect(el.scrollWidth, `${theme}@${w}: "${el.textContent}" is cut off`).toBeLessThanOrEqual(el.clientWidth + 1);
+          if (w >= 1280) {
+            expect(timeText(), `${theme}@${w}`).toEqual(['1:01:000']);
+          } else {
+            expect(timeText(), `${theme}@${w}`).toEqual(['1:01']);
+            time().click();
+            await frame();
+            expect(timeText(), `${theme}@${w} after a click`).toEqual(['1:01:000']);
+            expect(time().getAttribute('aria-pressed')).toBe('true');
+            time().click();
+            await frame();
+            expect(timeText()).toEqual(['1:01']);
+          }
+        }
+        // Narrower bar, narrower transport.
+        expect(widthOf.get(`${theme}@1000`)!).toBeLessThan(widthOf.get(`${theme}@1280`)! - 20);
+        expect(widthOf.get(`${theme}@800`)!).toBeLessThanOrEqual(widthOf.get(`${theme}@1000`)! + 1);
+      }
+    } finally {
+      if (was) root.dataset.theme = was;
+      else delete root.dataset.theme;
+      await page.viewport(1440, 900);
+      await frame();
+    }
+  });
+
   it('the toolbar: every control is named, icon-only ones have a hint', async () => {
     const bar = host.querySelector('header')!;
     const a = audit(bar);

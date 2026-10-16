@@ -236,4 +236,38 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
     await s.history.undo();
     expect(order()).toEqual([a, b]);
   });
+  it('switching patterns shows the open pattern’s steps on every row, and a row only changes where its steps differ', async () => {
+    const [a, b] = channels as [ChannelId, ChannelId];
+    const { makePattern } = await import('@core/model/defaults');
+    const { addPattern } = await import('@core/ops/playlist');
+    const { setStep } = await import('@core/ops/notes');
+    const other = makePattern('Other', '#8855cc');
+    s.history.transact('second pattern', (d) => {
+      addPattern(d, other);
+      setStep(d, other.id, a, 2, true, { rootKey: 60 });
+      setStep(d, other.id, a, 6, true, { rootKey: 60 });
+      setStep(d, pattern, b, 9, true, { rootKey: 60 });
+    });
+    const on = (id: ChannelId) =>
+      [...row(id).querySelectorAll<HTMLButtonElement>('button[aria-label^="Step "]')].flatMap((el, i) => (el.getAttribute('aria-pressed') === 'true' ? [i] : []));
+    await frames(2);
+    expect([on(a), on(b)]).toEqual([[], [9]]);
+    const untouched = step(channels[2] ?? a, 0);
+
+    s.view.getState().setCurrentPattern(other.id);
+    await frames(2);
+    expect([on(a), on(b)]).toEqual([[2, 6], []]);
+    expect(step(channels[2] ?? a, 0)).toBe(untouched); // the same button, not rebuilt
+
+    // Painting still works on the new pattern, and lands in it.
+    await userEvent.click(step(b, 3));
+    expect(notesSorted(project().patterns[other.id]?.notes[b]).map((n) => n.tick / 240)).toEqual([3]);
+    expect(stepsOn(b)).toEqual([9]);
+
+    s.view.getState().setCurrentPattern(pattern);
+    await frames(2);
+    expect([on(a), on(b)]).toEqual([[], [9]]);
+    await s.history.undo();
+    await s.history.undo();
+  });
 });

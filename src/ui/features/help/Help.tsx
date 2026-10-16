@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
-import { newFromTemplate, TEMPLATES } from '@app/templates';
+import { startFromTemplate, TEMPLATES } from '@app/template-list';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
 import { placeBeside } from '../../controls/place';
@@ -152,7 +152,7 @@ function Welcome() {
               data-hint={t.description}
               onClick={() => {
                 close();
-                void newFromTemplate(services, t.id);
+                void startFromTemplate(services, t.id);
               }}
             >
               {t.name}

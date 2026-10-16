@@ -70,18 +70,39 @@ export default defineInstrument({
     params.gain.bind(out.gain, dbToGain);
     const voices = new GraphVoices(ac, out, { max: 32 });
 
-    let buffer = host.samples.get('main');
+    let buffer: AudioBuffer | null = null;
     let backwards: AudioBuffer | null = null;
+    let looked = false;
+    let disposed = false;
     const setBuffer = (b: AudioBuffer | null) => {
+      looked = true;
       buffer = b;
       backwards = null;
     };
-    if (!buffer) void host.samples.load('main').then(setBuffer);
+    /**
+     * The sample, asked for the first time it is needed (a note, or idle time soon after the instrument is
+     * made). A kit sound is synthesized when it is first asked for, a few milliseconds each, so a project
+     * full of them would otherwise delay startup; an offline render asks at its first note instead.
+     */
+    const sample = () => {
+      if (!looked) {
+        looked = true;
+        buffer = host.samples.get('main');
+        if (!buffer) void host.samples.load('main').then(setBuffer);
+      }
+      return buffer;
+    };
+    const warm = () => {
+      if (!disposed) sample();
+    };
+    // Realtime: have it ready before the first note when the browser is idle. An offline render asks at its first note.
+    if (!host.offline && typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 2000 });
     const unwatch = host.samples.onChange('main', setBuffer);
     const current = (reverse: boolean) => {
-      if (!buffer) return null;
-      if (!reverse) return buffer;
-      backwards ??= reversed(ac, buffer);
+      const b = sample();
+      if (!b) return null;
+      if (!reverse) return b;
+      backwards ??= reversed(ac, b);
       return backwards;
     };
 
@@ -90,8 +111,9 @@ export default defineInstrument({
       // With the envelope, the release; without it a note plays the whole sample even after its key is up
       // (known once the sample is decoded, which the export's tail probe doesn't do).
       get tailTime() {
-        const release = Math.min(buffer ? buffer.duration : Infinity, params.release.value);
-        return Math.max(0.2, params.envelope.value ? release : Math.min(10, buffer ? buffer.duration : 0));
+        const b = sample();
+        const release = Math.min(b ? b.duration : Infinity, params.release.value);
+        return Math.max(0.2, params.envelope.value ? release : Math.min(10, b ? b.duration : 0));
       },
 
       noteOn({ time, key, velocity, noteId, pan, fine }) {
@@ -165,6 +187,7 @@ export default defineInstrument({
       },
 
       dispose() {
+        disposed = true;
         unwatch();
         voices.disposeAll();
         out.disconnect();

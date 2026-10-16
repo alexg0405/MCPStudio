@@ -29,7 +29,7 @@ import { ScoreLog } from './score-log';
 import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
-import { BeatAssistant } from './assistant/assistant';
+import { AssistantFacade } from './assistant/facade';
 import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { TapRegistry } from './taps';
@@ -78,8 +78,8 @@ export interface Services {
   readonly automation: AutomationService;
   /** The open project's file: new, open, save, save as, recent files. */
   readonly files: ProjectFiles;
-  /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). */
-  readonly assistant: BeatAssistant;
+  /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). Its code loads on first use. */
+  readonly assistant: AssistantFacade;
   /** Your own presets (kept in this browser) and which preset each plugin loaded last. */
   readonly presets: PresetLibrary;
   /** DJ mode: each song's tempo, beat grid, key, energy, sections and mix points (cached by content hash). */
@@ -225,7 +225,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let files: ProjectFiles | null = null;
   let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
-  let assistant: BeatAssistant | null = null;
+  let assistant: AssistantFacade | null = null;
   const services: Services = {
     platform,
     commands,
@@ -256,7 +256,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
       return (files ??= new ProjectFiles(services));
     },
     get assistant() {
-      return (assistant ??= new BeatAssistant(services));
+      return (assistant ??= new AssistantFacade(services));
     },
     presets,
     trackAnalyzer,

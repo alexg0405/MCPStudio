@@ -4,8 +4,12 @@ import { addEffect, addMixerInsert } from '@app/actions/mixer';
 import { buildStackedSong } from '@core/fixtures/stacked-song';
 import { newId } from '@core/model/ids';
 import type { InsertId, Note, PatternId } from '@core/model/types';
-import { addNotes, setStepCount } from '@core/ops/notes';
-import { addClips } from '@core/ops/playlist';
+import { KIT, kitPiece } from '@core/model/kit';
+import { makePattern, paletteColor } from '@core/model/defaults';
+import { addChannel, addSample } from '@core/ops/channels';
+import { addNotes, setStep, setStepCount } from '@core/ops/notes';
+import { addClips, addPattern } from '@core/ops/playlist';
+import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '@app/default-project';
 import { Rng } from '@agstudio/sdk/dsp/random';
 import { openWindow } from './workspace/registry';
 
@@ -60,6 +64,35 @@ function mix30(s: Services): void {
   openWindow(s, 'mixer');
 }
 
+/** A long rack, like the songs an earlier AI arranged: 150 channels in all and three step patterns to switch between. */
+function rack150(s: Services, total = 150): void {
+  const sampler = s.plugins.get(SAMPLER_ID);
+  if (!sampler) return;
+  const rng = new Rng(11);
+  const patternIds: PatternId[] = [s.view.getState().currentPatternId as PatternId];
+  s.history.transact('Perf fixture', (d) => {
+    for (let k = 1; k < 3; k++) {
+      const pattern = makePattern(`Pattern ${k + 1}`, paletteColor(k));
+      addPattern(d, pattern);
+      patternIds.push(pattern.id);
+    }
+    const have = d.channelOrder.length;
+    for (let i = 0; i < total - have; i++) {
+      const piece = KIT[i % KIT.length]!;
+      const sample = kitSampleRef(piece.generator);
+      addSample(d, sample);
+      const ch = instrumentChannelFor(sampler, `${kitPiece(piece.generator)?.short ?? piece.generator} ${i + 1}`, i, { main: sample.id });
+      addChannel(d, ch);
+      patternIds.forEach((pid, k) => {
+        // Each pattern plays on about a fifth of the channels (the others are empty in it), like an arranged song.
+        if ((i + 2 * k) % 5) return;
+        for (let step = 0; step < 16; step++) if (rng.next() < 0.3) setStep(d, pid, ch.id, step, true, { rootKey: ch.rootKey });
+      });
+    }
+  });
+  openWindow(s, 'channel-rack');
+}
+
 /** A 113-bar song shaped like one an earlier AI arranged, with its ending stacked three times. */
 function stackedSong(s: Services): void {
   s.history.transact('Perf fixture', (d) => void buildStackedSong(d));
@@ -70,11 +103,13 @@ function stackedSong(s: Services): void {
 /**
  * Dev-only fixtures: `?perf=notes10k` adds a channel with 10,000 notes and opens it;
  * `?perf=mix30` builds a busy song (30 channels, 20 effects) to play; `?perf=stacked-song` loads a long
- * AI-arranged song with stacked copies (for Clean up the song and asking about parts).
+ * AI-arranged song with stacked copies (for Clean up the song and asking about parts); `?perf=rack150` fills the
+ * channel rack with 150 channels and three patterns (switch patterns to time the rack's re-render).
  */
 export function applyPerfFixture(s: Services, name: string): void {
   if (name === 'mix30') return mix30(s);
   if (name === 'stacked-song') return stackedSong(s);
+  if (name === 'rack150') return rack150(s);
   if (name !== 'notes10k') return;
   const cid = addInstrumentChannel(s, 'agstudio.3xosc');
   const pid = s.view.getState().currentPatternId as PatternId | null;

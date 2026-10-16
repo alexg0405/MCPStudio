@@ -1,6 +1,5 @@
 /** "Make the mix" from the UI: asks where (the playlist has other music), makes it, shows it. */
 import { makeLibraryMix } from '@app/dj/library';
-import { hasOtherMusic } from '@app/dj/mix';
 import type { Services } from '@app/services';
 import type { DjMixOptions } from '@core/model/types';
 import { showDialog } from '../../controls/Dialog';
@@ -8,6 +7,7 @@ import { openWindow } from '../../workspace/registry';
 
 export async function makeMixFromUi(s: Services, options: DjMixOptions): Promise<void> {
   const toast = s.session.getState().toast;
+  const { hasOtherMusic } = await import('@app/dj/mix');
   if (hasOtherMusic(s.doc.getState().project)) {
     const choice = await showDialog({
       title: 'Where should the mix go?',

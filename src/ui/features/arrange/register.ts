@@ -1,6 +1,6 @@
 import type { Services } from '@app/services';
 import { songPosition } from '@app/actions/markers';
-import { addFillAt, addTransitionAt, developSong, refreshVariations, type CommandResult } from '@app/arrange/commands';
+import type { CommandResult } from '@app/arrange/commands';
 import { songSections } from '@core/query/sections';
 import { barSpan } from '@core/time/bars';
 import type { MarkerId, Tick } from '@core/model/types';
@@ -8,6 +8,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { addContextMenuItems } from '../../context-menus';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
+import { whenIdle } from '../../workspace/lazy';
 
 /** The part a "develop" means: the loop region, else the selected clips' bounds, else the whole song (null). */
 export function developRange(s: Services): { from: Tick; to: Tick } | null {
@@ -27,8 +28,17 @@ export function developRange(s: Services): { from: Tick; to: Tick } | null {
   return null;
 }
 
-/** Says what an arranger command did. */
-function report(s: Services, r: CommandResult): void {
+/**
+ * The arranger's code (it builds fills, transitions and a mix) loads the first time one of its commands
+ * runs, and is fetched at idle time after the first paint, so it is not part of startup.
+ */
+const arranger = () => import('@app/arrange/commands');
+type Arranger = Awaited<ReturnType<typeof arranger>>;
+whenIdle(() => void arranger());
+
+/** Runs an arranger command and says what it did. */
+async function arrange(s: Services, run: (m: Arranger) => CommandResult): Promise<void> {
+  const r = run(await arranger());
   s.session.getState().toast(r.message, r.error ? 'error' : 'info');
 }
 
@@ -53,7 +63,7 @@ export function register(services: Services): void {
     enabled: hasSong,
     run: (s, args) => {
       const range = args?.from !== undefined && args.to !== undefined ? { from: args.from, to: args.to } : developRange(s);
-      report(s, developSong(s, range));
+      return arrange(s, (m) => m.developSong(s, range));
     },
   });
   commands.register<{ tick?: number } | undefined>({
@@ -64,7 +74,7 @@ export function register(services: Services): void {
     argsHint: 'optional { tick }',
     ai: false,
     enabled: hasSong,
-    run: (s, args) => report(s, addFillAt(s, args?.tick ?? songPosition(s))),
+    run: (s, args) => arrange(s, (m) => m.addFillAt(s, args?.tick ?? songPosition(s))),
   });
   commands.register<{ tick?: number } | undefined>({
     id: 'arrange.addTransition',
@@ -74,7 +84,7 @@ export function register(services: Services): void {
     argsHint: 'optional { tick }',
     ai: false,
     enabled: hasSong,
-    run: (s, args) => report(s, addTransitionAt(s, args?.tick ?? songPosition(s))),
+    run: (s, args) => arrange(s, (m) => m.addTransitionAt(s, args?.tick ?? songPosition(s))),
   });
   commands.register({
     id: 'arrange.refresh',
@@ -83,7 +93,7 @@ export function register(services: Services): void {
     hint: 'Rebuild the fills and variations (patterns named “Beat · fill”) from their source patterns after you edited a source; ones you edited by hand stay as they are',
     ai: false,
     enabled: (s) => Object.values(s.doc.getState().project.patterns).some((x) => x.derived),
-    run: (s) => report(s, refreshVariations(s)),
+    run: (s) => arrange(s, (m) => m.refreshVariations(s)),
   });
   addMenuItems('playlist', [
     sep(55),
@@ -105,14 +115,14 @@ export function register(services: Services): void {
             {
               label: `Develop “${sec.name}” (fills, transitions)`,
               hint: `Fills, changes and transitions for ${barSpan(sec.from, sec.to, p.transport.timeSig)}, one undo step`,
-              onSelect: () => report(s, developSong(s, { from: sec.from, to: sec.to })),
+              onSelect: () => void arrange(s, (m) => m.developSong(s, { from: sec.from, to: sec.to })),
             },
           ]
         : []),
       {
         label: `Add a transition into “${m.name}”`,
         hint: 'The transition its energy calls for: a gap, riser and impact into a drop, a downlifter into a break, a fill and a crash',
-        onSelect: () => report(s, addTransitionAt(s, m.tick)),
+        onSelect: () => void arrange(s, (a) => a.addTransitionAt(s, m.tick)),
       },
     ];
   });
@@ -124,12 +134,12 @@ export function register(services: Services): void {
       {
         label: `Add a fill here (end of bar ${b + 1})`,
         hint: 'A 2-beat fill that replaces the drums at the end of this bar',
-        onSelect: () => report(s, addFillAt(s, tick)),
+        onSelect: () => void arrange(s, (m) => m.addFillAt(s, tick)),
       },
       {
         label: `Add a transition here (into bar ${into + 1})`,
         hint: 'The transition the sections on either side call for',
-        onSelect: () => report(s, addTransitionAt(s, into * bar())),
+        onSelect: () => void arrange(s, (m) => m.addTransitionAt(s, into * bar())),
       },
     ];
   };
@@ -141,7 +151,7 @@ export function register(services: Services): void {
       {
         label: `Develop ${where(s, range)} (fills, transitions)`,
         hint: 'Fills every 8 bars, changes every 4 and transitions between sections, one undo step',
-        onSelect: () => report(s, developSong(s, range)),
+        onSelect: () => void arrange(s, (m) => m.developSong(s, range)),
       },
     ];
   });
@@ -152,12 +162,12 @@ export function register(services: Services): void {
       {
         label: 'Add a fill at the end of this clip',
         hint: 'A 2-beat fill replacing the drums in its last beats (the clip plays a variant of its pattern)',
-        onSelect: () => report(s, addFillAt(s, end - 1)),
+        onSelect: () => void arrange(s, (m) => m.addFillAt(s, end - 1)),
       },
       {
         label: 'Add a transition after this clip',
         hint: 'The transition into the bar after it',
-        onSelect: () => report(s, addTransitionAt(s, end)),
+        onSelect: () => void arrange(s, (m) => m.addTransitionAt(s, end)),
       },
     ];
   });

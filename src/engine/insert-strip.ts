@@ -43,6 +43,54 @@ const RETIRE_MS = 80;
 const MAX_LATENCY = 1;
 /** Analyser size for meters (≈ 43 ms at 48 kHz). */
 export const METER_FRAMES = 2048;
+
+/** Where meters read their analysers' samples (one per mixer), with an integer view of the same memory. */
+export class MeterScratch {
+  readonly samples = new Float32Array(METER_FRAMES);
+  readonly bits = new Int32Array(this.samples.buffer);
+}
+
+const ABS_MASK = 0x7fffffff;
+/** The bit pattern of +Infinity: a larger magnitude is a NaN. */
+const INFINITY_BITS = 0x7f800000;
+const peakBits = new Float32Array(1);
+const peakAsInt = new Int32Array(peakBits.buffer);
+
+/**
+ * The largest |sample| of a buffer. The magnitudes of IEEE floats order like their bit patterns, so the
+ * scan compares integers (about twice as fast as comparing floats); NaNs are ignored, as in a float scan.
+ */
+export function peakOf(scratch: MeterScratch): number {
+  const bits = scratch.bits;
+  let m0 = 0;
+  let m1 = 0;
+  let m2 = 0;
+  let m3 = 0;
+  for (let i = 0; i < bits.length; i += 4) {
+    const a = (bits[i] as number) & ABS_MASK;
+    const b = (bits[i + 1] as number) & ABS_MASK;
+    const c = (bits[i + 2] as number) & ABS_MASK;
+    const d = (bits[i + 3] as number) & ABS_MASK;
+    if (a > m0) m0 = a;
+    if (b > m1) m1 = b;
+    if (c > m2) m2 = c;
+    if (d > m3) m3 = d;
+  }
+  const m = Math.max(m0, m1, m2, m3);
+  if (m <= INFINITY_BITS) {
+    peakAsInt[0] = m;
+    return peakBits[0] as number;
+  }
+  // A NaN in there (a plugin gone wrong): the largest of the rest.
+  let peak = 0;
+  const samples = scratch.samples;
+  for (let i = 0; i < samples.length; i++) {
+    const v = samples[i] as number;
+    const a = v < 0 ? -v : v;
+    if (a > peak) peak = a;
+  }
+  return peak;
+}
 /** Meters are taken out of the graph once nobody has read them for this long (ms): a closed mixer costs nothing. */
 const METER_IDLE_MS = 2500;
 
@@ -613,18 +661,14 @@ export class InsertStrip {
    * analysers only exist while someone reads them (the mixer's meters, every frame): the first read
    * connects them and reads 0, and they go away again after METER_IDLE_MS. Offline renders have none.
    */
-  readPeaks(scratch: Float32Array<ArrayBuffer>, out: Float32Array, at: number): void {
+  readPeaks(scratch: MeterScratch, out: Float32Array, at: number): void {
     if (!this.core.offline) this.touchMeters();
     for (let c = 0; c < 2; c++) {
       const meter = this.meters[c];
       let peak = 0;
       if (meter) {
-        meter.getFloatTimeDomainData(scratch);
-        for (let i = 0; i < scratch.length; i++) {
-          const v = scratch[i] as number;
-          const a = v < 0 ? -v : v;
-          if (a > peak) peak = a;
-        }
+        meter.getFloatTimeDomainData(scratch.samples);
+        peak = peakOf(scratch);
       }
       if (at + c < out.length) out[at + c] = peak;
     }

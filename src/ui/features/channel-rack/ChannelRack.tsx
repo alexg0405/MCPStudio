@@ -116,29 +116,56 @@ function paintEnter(channelId: ChannelId, step: number, buttons: number) {
   if (paint && paint.channelId === channelId) paint.apply(step);
 }
 
-function StepGrid({
-  channelId,
-  patternId,
-  stepCount,
-  rootKey,
-}: {
-  channelId: ChannelId;
-  patternId: PatternId;
-  stepCount: number;
-  rootKey: number;
-}) {
-  const services = useServices();
-  const notes = useDoc((pr) => pr.patterns[patternId]?.notes[channelId]);
-  const view = stepView(notes, stepCount);
+/** Which steps are on, as "0100…": all the step buttons show, so a row whose steps did not change skips rendering. */
+const stepBits = (() => {
+  const cache = new WeakMap<object, string>();
+  return (view: ReturnType<typeof stepView>): string => {
+    let bits = cache.get(view);
+    if (bits === undefined) {
+      bits = view.velocities.map((v) => (v > 0 ? '1' : '0')).join('');
+      cache.set(view, bits);
+    }
+    return bits;
+  };
+})();
 
-  useEffect(() => {
-    window.addEventListener('pointerup', endPaint);
-    window.addEventListener('pointercancel', endPaint);
-    return () => {
-      window.removeEventListener('pointerup', endPaint);
-      window.removeEventListener('pointercancel', endPaint);
-    };
-  }, []);
+/**
+ * The buttons of one row's steps. They carry no handlers (the grid handles pointer events for all of
+ * them) and their only prop is which steps are on, so switching patterns re-renders just the rows whose
+ * steps differ.
+ */
+const StepButtons = memo(function StepButtons({ on }: { on: string }) {
+  return (
+    <>
+      {Array.from(on, (bit, i) => (
+        <button
+          key={i}
+          tabIndex={-1}
+          className={`${styles.step} ${Math.floor(i / 4) % 2 ? styles.stepB : ''} ${bit === '1' ? styles.stepOn : ''}`}
+          style={{ left: stepX(i) }}
+          data-step={i}
+          data-hint={`Step ${i + 1}. Click or drag to paint, right-click to erase`}
+          aria-pressed={bit === '1'}
+          aria-label={`Step ${i + 1}`}
+        />
+      ))}
+    </>
+  );
+});
+
+/** The step button under a pointer event, and whether it is on. */
+function stepUnder(e: React.PointerEvent): { index: number; on: boolean } | null {
+  const button = (e.target as Element).closest<HTMLElement>('[data-step]');
+  return button ? { index: Number(button.dataset.step), on: button.getAttribute('aria-pressed') === 'true' } : null;
+}
+
+function StepGrid({ channelId, rootKey }: { channelId: ChannelId; rootKey: number }) {
+  const services = useServices();
+  const patternId = useView((s) => s.currentPatternId);
+  const stepCount = useDoc((pr) => (patternId ? pr.patterns[patternId]?.stepCount : undefined)) ?? 16;
+  const notes = useDoc((pr) => (patternId ? pr.patterns[patternId]?.notes[channelId] : undefined));
+  const view = stepView(notes, stepCount);
+  if (!patternId) return null;
 
   if (!view.isSteps) {
     return (
@@ -148,32 +175,25 @@ function StepGrid({
     );
   }
 
-  const begin = (step: number, on: boolean) => beginPaint(services, patternId, channelId, rootKey, step, on);
-
   return (
     <div
       className={styles.steps}
       data-steps
       style={{ width: stepX(stepCount - 1) + STEP_W }}
       onContextMenu={(e) => e.preventDefault()}
+      onPointerDown={(e) => {
+        const step = stepUnder(e);
+        if (!step) return;
+        e.preventDefault();
+        if (e.button === 2) beginPaint(services, patternId, channelId, rootKey, step.index, false);
+        else if (e.button === 0) beginPaint(services, patternId, channelId, rootKey, step.index, !step.on);
+      }}
+      onPointerOver={(e) => {
+        const step = stepUnder(e);
+        if (step) paintEnter(channelId, step.index, e.buttons);
+      }}
     >
-      {view.velocities.map((v, i) => (
-        <button
-          key={i}
-          tabIndex={-1}
-          className={`${styles.step} ${Math.floor(i / 4) % 2 ? styles.stepB : ''} ${v > 0 ? styles.stepOn : ''}`}
-          style={{ left: stepX(i) }}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            if (e.button === 2) begin(i, false);
-            else if (e.button === 0) begin(i, v === 0);
-          }}
-          onPointerEnter={(e) => paintEnter(channelId, i, e.buttons)}
-          data-hint={`Step ${i + 1}. Click or drag to paint, right-click to erase`}
-          aria-pressed={v > 0}
-          aria-label={`Step ${i + 1}`}
-        />
-      ))}
+      <StepButtons on={stepBits(view)} />
     </div>
   );
 }
@@ -239,17 +259,11 @@ async function dropOnRack(
   addSampleChannels(s, refs, target ? order.indexOf(target) + 1 : order.length);
 }
 
-const ChannelRow = memo(function ChannelRow({
-  id,
-  patternId,
-  stepCount,
-  dropTarget,
-}: {
-  id: ChannelId;
-  patternId: PatternId;
-  stepCount: number;
-  dropTarget: boolean;
-}) {
+/**
+ * One channel's row. It takes no pattern: the step grid inside follows the open pattern itself, so
+ * switching patterns doesn't re-render the knobs, names and routing of every channel.
+ */
+const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: ChannelId; dropTarget: boolean }) {
   const services = useServices();
   const ch = useDoc((pr) => pr.channels[id]);
   const selected = useSession((s) => s.selectedChannelId === id);
@@ -374,7 +388,7 @@ const ChannelRow = memo(function ChannelRow({
         </button>
       )}
       {ch.kind === 'instrument' ? (
-        <StepGrid channelId={id} patternId={patternId} stepCount={stepCount} rootKey={ch.rootKey} />
+        <StepGrid channelId={id} rootKey={ch.rootKey} />
       ) : (
         <div className={styles.notesBar}>audio clip</div>
       )}
@@ -522,6 +536,15 @@ export function ChannelRack() {
     const ch = selected ? pr.channels[selected] : undefined;
     return ch?.kind === 'instrument' ? ch.name : null;
   });
+  // Letting go anywhere ends a paint along a row.
+  useEffect(() => {
+    window.addEventListener('pointerup', endPaint);
+    window.addEventListener('pointercancel', endPaint);
+    return () => {
+      window.removeEventListener('pointerup', endPaint);
+      window.removeEventListener('pointercancel', endPaint);
+    };
+  }, []);
 
   if (!patternId || !pattern)
     return (
@@ -621,7 +644,7 @@ export function ChannelRack() {
         <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
           {order.map((id) => (
             <Fragment key={id}>
-              <ChannelRow id={id} patternId={patternId} stepCount={stepCount} dropTarget={dropTarget === id} />
+              <ChannelRow id={id} dropTarget={dropTarget === id} />
               {graphChannel === id && <StepGraph channelId={id} patternId={patternId} stepCount={stepCount} />}
             </Fragment>
           ))}

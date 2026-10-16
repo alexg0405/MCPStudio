@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createTestServices } from '../testing';
 import { focusFromMarker } from '../ai/focus-capture';
 import { stackedSong } from '../../../test/helpers/focus';
+import type { Services } from '../services';
 import { BeatAssistant } from './assistant';
 
 const NO = { ok: false, reason: 'not set up' };
@@ -72,7 +73,7 @@ describe('Studio chat edge cases', () => {
     const { registerAfterStep } = await import('./after-steps');
     const s = createTestServices();
     const before = s.doc.getState().project;
-    const edit = (label: string, f: (d: typeof before) => void) => (c: { s: typeof s; entry: number | null }) =>
+    const edit = (label: string, f: (d: typeof before) => void) => (c: { s: Services; entry: number | null }) =>
       c.s.history.transact(label, (d) => f(d as never), c.entry !== null ? { amend: c.entry } : {});
     const offA = registerAfterStep('mode', async (_i, c) => {
       edit('step A', (d) => void (d.transport.swing = 0.2))(c);

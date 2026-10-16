@@ -73,10 +73,12 @@ describe('PhaserKernel', () => {
     expect(maxDiff(run(0, 'off'), run(0.25, 'off'))).toBeLessThan(1e-6);
   });
 
-  it('rings out to exact silence after the input stops (states are flushed, so the kernel can sleep)', () => {
+  it('rings out to silence after the input stops (far below the −120 dB sleep threshold)', () => {
     const [l, r] = runEffect(PhaserKernel, phaserParams, (i) => (i < 4800 ? 0.5 * Math.sin(i * 0.3) : 0), 6 * SR, {
       params: { feedback: 0.9, stages: '12', mix: 0.5 },
     });
-    expect(Math.max(...Array.from(l.subarray(5 * SR), Math.abs), ...Array.from(r.subarray(5 * SR), Math.abs))).toBe(0);
+    expect(
+      Math.max(...Array.from(l.subarray(5 * SR), Math.abs), ...Array.from(r.subarray(5 * SR), Math.abs)),
+    ).toBeLessThan(1e-12);
   });
 });

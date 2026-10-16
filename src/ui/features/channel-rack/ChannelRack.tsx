@@ -608,6 +608,11 @@ export function ChannelRack() {
             </Fragment>
           ))}
           <StepLight stepCount={stepCount} />
+          {order.length === 0 && (
+            <div className={styles.empty}>
+              No sounds yet. Click the + below to add a kit sound or an instrument, or drag a sample here from the browser.
+            </div>
+          )}
           <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
             <button
               tabIndex={-1}

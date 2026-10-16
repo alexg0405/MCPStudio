@@ -39,6 +39,11 @@ export function getWindowType(type: string): AnyWindowType | undefined {
   return types.get(type);
 }
 
+/** Every registered window type (the UX audit opens each one). */
+export function windowTypes(): string[] {
+  return [...types.keys()];
+}
+
 export function windowIdFor(type: string, props: Json = null): string {
   return types.get(type)?.instanceId?.(props) ?? type;
 }

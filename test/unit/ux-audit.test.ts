@@ -130,7 +130,8 @@ describe('wording', () => {
   it('no command, hint, menu label or action says "AI" (it is "Studio")', () => {
     const texts: string[] = [];
     for (const c of s.commands.list()) texts.push(c.title, c.hint ?? '', c.category ?? '');
-    for (const a of collectActions(s)) texts.push(a.label, a.hint ?? '', ...a.path, ...(a.keywords?.filter(() => false) ?? []));
+    for (const a of collectActions(s))
+      texts.push(a.label, a.hint ?? '', ...a.path, ...(a.keywords?.filter(() => false) ?? []));
     for (const m of getMenus()) {
       texts.push(m.label);
       walk(getMenuItems(m.id));

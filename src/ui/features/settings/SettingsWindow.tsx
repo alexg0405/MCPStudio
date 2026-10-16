@@ -29,9 +29,10 @@ function Section({ title, intro, children }: { title: string; intro?: string; ch
   );
 }
 
+/** `hint` is the explanation under the row; a plain-text one also shows in the hint bar when you point at the row. */
 function Row({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
   return (
-    <div className={styles.row}>
+    <div className={styles.row} data-hint={typeof hint === 'string' ? hint : undefined}>
       <div className={styles.label}>{label}</div>
       <div className={styles.control}>
         <div className={styles.inline}>{children}</div>
@@ -306,7 +307,7 @@ function Interface() {
   const s = useServices();
   const tooltips = useStore(s.prefs, (p) => p.tooltips);
   const theme = findTheme(useStore(s.prefs, (p) => p.theme)) ?? 'marble';
-  const accent = findAccent(useStore(s.prefs, (p) => p.accent)) ?? 'orange';
+  const accent = findAccent(useStore(s.prefs, (p) => p.accent)) ?? 'gold';
   return (
     <Section title="Look, help and interface">
       <Row label="Theme" hint={THEMES.find((t) => t.id === theme)?.hint}>
@@ -342,7 +343,7 @@ function Interface() {
       <Row label="Tooltips" hint="The bar at the bottom of the screen explains whatever you point at either way.">
         <Switch checked={tooltips} onChange={() => s.commands.run('options.tooltips')} label="Explain controls in a bubble" />
       </Row>
-      <Row label="Getting started">
+      <Row label="Getting started" hint="Open the welcome screen, the guided tour or the list of keyboard shortcuts again.">
         <button className={styles.button} onClick={() => s.commands.run('help.welcome')}>
           Welcome screen
         </button>

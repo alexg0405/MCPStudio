@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useEngineStatus, useServices } from '../../services-context';
 import { onFrame } from '../../frame-loop';
 import styles from './Transport.module.css';
@@ -13,11 +13,13 @@ export function AudioStatus({ show }: { show: 'enable' | 'stats' }) {
   const { state } = useEngineStatus();
   const ref = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
+  // Filled in before the first paint and then about twice a second. A chip that appeared empty and
+  // grew a moment later changed its width, which made the toolbar move it into "More" and back.
+  useLayoutEffect(() => {
     let last = '';
     let frame = 0;
-    return onFrame(() => {
-      if (frame++ % 30 !== 0 || !ref.current) return;
+    const update = () => {
+      if (!ref.current) return;
       const st = services.engine.stats();
       const latency = Math.round((st.baseLatency + st.outputLatency) * 1000);
       const text = `${(st.sampleRate / 1000).toFixed(1)} kHz · ${latency} ms${st.lateEvents ? ` · ${st.lateEvents} late` : ''}`;
@@ -25,8 +27,12 @@ export function AudioStatus({ show }: { show: 'enable' | 'stats' }) {
         ref.current.textContent = text;
         last = text;
       }
+    };
+    update();
+    return onFrame(() => {
+      if (++frame % 30 === 0) update();
     });
-  }, [services]);
+  }, [services, state]);
 
   if (state !== 'running') {
     if (show === 'stats') return null;

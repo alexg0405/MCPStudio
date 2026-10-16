@@ -46,6 +46,7 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         [`${alt}+T`, 'Add a marker at the song position (click one to jump there, drag to move it)'],
         [`Ask Studio over a selection or loop (${alt}+A)`, 'Tell Studio what to change there; only that part changes (one undo)'],
         ['The mark on a marker flag', 'Loop that section and ask Studio about it'],
+        ['Right-click → Filter ▸', 'Nightcore, slowed + reverb, telephone, lo-fi… on that part (Remove filter undoes it)'],
         ['Double-click a pattern clip', 'Open that pattern'],
         ['Squares along an audio clip’s top', 'Drag the outer ones to fade in or out, the middle one for volume'],
         ['Clip ▾ on an audio clip', 'Reverse, pitch, follow the tempo, normalize, slice at hits…'],

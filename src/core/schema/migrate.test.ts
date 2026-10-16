@@ -96,6 +96,22 @@ describe('migrateProject', () => {
     }
   });
 
+  it('keeps a sound filter’s record and forgets a damaged one (optional field)', () => {
+    const p = fixture('v3-basic');
+    const ch = Object.values(p.channels).find((c) => c.kind === 'audioClip');
+    const clip = Object.values(p.playlist.clips).find((c) => c.kind === 'pattern');
+    if (ch?.kind !== 'audioClip' || !clip) throw new Error('fixture has no audio clip channel or pattern clip');
+    Object.assign(ch, { filter: { preset: 'nightcore', from: 0, to: 3840, originals: [clip], pieces: [], tempo: { bpm: 120 } } });
+    expect(repairProject(p).repairs).toEqual([]);
+    for (const bad of [42, { preset: 'x', from: 0, to: 1, originals: [{ id: 'c' }], pieces: [] }, { preset: 'x', from: 0, to: 1, originals: [], pieces: [], tempo: {} }]) {
+      const q = fixture('v3-basic');
+      (q.channels[ch.id] as unknown as Record<string, unknown>).filter = bad;
+      const { project, repairs } = repairProject(q);
+      expect(project.channels[ch.id]).not.toHaveProperty('filter');
+      expect(repairs.join(' ')).toMatch(/sound filter/);
+    }
+  });
+
   it('repairs v3 audio edits and markers', () => {
     const p = fixture('v3-basic');
     const audio = Object.values(p.playlist.clips).find((c) => c.kind === 'audio');

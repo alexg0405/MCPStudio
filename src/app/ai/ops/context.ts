@@ -49,6 +49,10 @@ export interface AnswerState {
   refs: Map<string, Ref>;
   changes: string[];
   warnings: string[];
+  /** What the app itself did after the edit (settings, selection, windows). */
+  ui: string[];
+  /** What the answer's look-ups (query actions) found. */
+  queries: { tool: string; args: Record<string, unknown>; result: unknown }[];
   after: AfterEdit[];
   beatPlan: BeatPlan | null;
   /** Selections are applied after the edit (the stores then point at committed things). */
@@ -71,6 +75,8 @@ export function newAnswerState(): AnswerState {
     refs: new Map(),
     changes: [],
     warnings: [],
+    ui: [],
+    queries: [],
     after: [],
     beatPlan: null,
     selectChannel: null,

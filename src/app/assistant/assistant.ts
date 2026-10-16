@@ -25,6 +25,7 @@ import { analyzeMix, formatMixReport, summarizeMixReport, type AnalyzeRange } fr
 import { afterStepFor } from './after-steps';
 import { audition } from './audition';
 import { projectContext } from '../ai/context';
+import { formatLookups } from '../ai/read';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
 import { applyBeatSpec, type AppliedBeat } from './apply';
@@ -40,6 +41,9 @@ import {
 } from './claude';
 
 // The plugin builder carries the SDK guide and every template (~65 kB): it loads when a plugin is first built.
+/** Rounds of look-ups (query actions) one request may take before Studio has to answer. */
+const MAX_LOOKUPS = 3;
+
 const builder = () => import('../ai/builder');
 const smokeTest = (folder: string): Promise<SmokeReport> => import('../ai/smoke').then((m) => m.smokeTest(folder));
 
@@ -684,9 +688,19 @@ export class BeatAssistant {
   }
 
   /** This turn's message to Claude: the request, the project, the part it is about, and what Claude doesn't have yet. */
-  private turnText(prompt: string, take: Take | null, analysis?: string, focus?: ResolvedFocus | null): string {
+  private turnText(
+    prompt: string,
+    take: Take | null,
+    analysis?: string,
+    focus?: ResolvedFocus | null,
+    lookups?: string,
+  ): string {
     const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
     if (focus) parts.push(`<focus>\n${focusContext(this.s.doc.getState().project, focus, this.pluginInfo)}\n</focus>`);
+    if (lookups)
+      parts.push(
+        `<lookups>\n${lookups}\n</lookups>\nThis is what you asked to look at (read just now). Answer the request with it; look up again only if something is still missing.`,
+      );
     if (analysis)
       parts.push(
         `<mix-analysis>\n${analysis}\n</mix-analysis>\nThis is how the mix sounds right now (rendered and measured just now). Answer the request with it; don't ask for another analysis.`,
@@ -726,6 +740,8 @@ export class BeatAssistant {
     focus: AiFocus | null = null,
     /** Edits beyond the part: undefined asks the musician first (when there are any). */
     outside?: 'refuse' | 'allow',
+    /** How many rounds of look-ups (query actions) led to this answer. */
+    lookups = 0,
   ): Promise<boolean> {
     let result: ReturnType<typeof applyAnswer>;
     // The part as it is now (it may have moved while Claude was thinking).
@@ -763,7 +779,7 @@ export class BeatAssistant {
     this.lastProblems = result.warnings;
     const cursor = this.s.history.status().cursor;
     // App commands: most run now; file dialogs wait for the musician's click (the UI asks).
-    const changes = [...result.changes];
+    const changes = [...result.changes, ...(result.ui ?? [])];
     for (const a of result.after) {
       if (a.kind !== 'command') continue;
       const title = this.s.commands.get(a.id)?.title.replace(/…$/, '') ?? a.id;
@@ -833,7 +849,58 @@ export class BeatAssistant {
         this.s.engine.play();
       }
     }
+    // It asked to look at something (query actions): ask again with what the read tools returned.
+    if (result.queries?.length) {
+      if (lookups >= MAX_LOOKUPS) {
+        this.say('assistant', 'I looked at what I could, but I still need more than I can read in one go. Ask me about one part at a time.', {});
+        return false;
+      }
+      await this.lookUpAndAsk(request, result.queries, focus, lookups + 1, analyzed);
+      return false;
+    }
     return listen && !analyzed;
+  }
+
+  /** Asks Claude again with what its look-ups found (read just now), and applies the answer. */
+  private async lookUpAndAsk(
+    request: string,
+    queries: NonNullable<ReturnType<typeof applyAnswer>['queries']>,
+    focus: AiFocus | null,
+    round: number,
+    analyzed: boolean,
+  ): Promise<void> {
+    this.store.setState({ phase: 'thinking' });
+    const route = await this.route();
+    if (!route) {
+      this.store.setState({ phase: 'idle' });
+      return;
+    }
+    const own = this.abort === null;
+    const abort = this.abort ?? new AbortController();
+    this.abort = abort;
+    try {
+      const answer = await this.chat.ask<AiAnswer>({
+        system: STUDIO_PROMPT,
+        schema: ACTIONS_SCHEMA,
+        text: this.turnText(request, null, undefined, resolveFocus(this.s.doc.getState().project, focus), formatLookups(queries)),
+        model: this.store.getState().model,
+        backend: route,
+        signal: abort.signal,
+        read: (raw) => {
+          const r = readAnswer(raw);
+          return 'error' in r ? { error: r.error } : { value: r.answer };
+        },
+      });
+      if (await this.applyTurn(answer, null, request, analyzed, focus, undefined, round)) await this.listenAndAsk(request, false, focus);
+    } catch (e) {
+      const stopped = e instanceof DOMException && e.name === 'AbortError';
+      this.say('assistant', stopped ? 'Stopped.' : e instanceof Error ? e.message : String(e), {
+        ...(stopped ? {} : { error: true }),
+      });
+      this.store.setState({ phase: 'idle' });
+    } finally {
+      if (own) this.abort = null;
+    }
   }
 
   /**

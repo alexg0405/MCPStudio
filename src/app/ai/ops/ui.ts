@@ -6,6 +6,7 @@ import type { AiAnswer } from '../schema';
 import * as S from '../schema/parts';
 import type { AnswerState, OpModule } from './context';
 import { lower, num, str } from './values';
+import { applyWindowAction, isOpenWindow, OPEN_WINDOWS, WINDOW_ACTIONS } from './windows';
 
 export const ui: OpModule = {
   schemas: [
@@ -54,11 +55,16 @@ export const ui: OpModule = {
       },
       ['id'],
     ),
-    S.op('open', 'Shows a window, applied after the edits.', {
-      window: { type: 'string', enum: ['mixer', 'channel-rack', 'piano-roll', 'playlist', 'plugin'] },
-      channel: S.CHANNEL,
-      effect: S.EFFECT,
-    }),
+    S.op(
+      'open',
+      'Shows, hides, focuses or maximizes a window (or the browser panel), applied after the edits. A plugin window needs its channel or effect.',
+      {
+        window: { type: 'string', enum: [...OPEN_WINDOWS] },
+        action: { type: 'string', enum: [...WINDOW_ACTIONS], description: 'Default open.' },
+        channel: S.CHANNEL,
+        effect: S.EFFECT,
+      },
+    ),
   ],
   handlers: {},
 };
@@ -115,27 +121,42 @@ export function uiAfter(s: Services, answer: AiAnswer, state: AnswerState): void
         });
     } else if (a.op === 'open') {
       const w = a.window;
-      if (w === 'mixer' || w === 'channel-rack' || w === 'piano-roll' || w === 'playlist' || w === 'plugin') {
-        const p = s.doc.getState().project;
-        const chRef = str(a.channel);
-        const channelId = chRef
-          ? (Object.values(p.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id ??
-            (refs.get(lower(chRef))?.kind === 'channel' ? (refs.get(lower(chRef)) as { id: ChannelId }).id : undefined))
-          : undefined;
-        const fxRef = str(a.effect);
-        const fx = fxRef ? refs.get(lower(fxRef)) : undefined;
-        let slot: { insertId: InsertId; slotId: SlotId } | undefined =
-          fx?.kind === 'effect' ? { insertId: fx.insertId, slotId: fx.slotId } : undefined;
-        if (!slot && fxRef)
-          for (const id of p.mixer.order)
-            if (p.mixer.inserts[id]?.fx.some((f) => f.id === fxRef)) slot = { insertId: id, slotId: fxRef as SlotId };
+      const action = WINDOW_ACTIONS.find((x) => x === a.action) ?? 'open';
+      if (!isOpenWindow(w)) {
+        warnings.push(`open: there is no window "${String(w)}" (windows: ${OPEN_WINDOWS.join(', ')})`);
+        continue;
+      }
+      const p = s.doc.getState().project;
+      const chRef = str(a.channel);
+      const channelId = chRef
+        ? (Object.values(p.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id ??
+          (refs.get(lower(chRef))?.kind === 'channel' ? (refs.get(lower(chRef)) as { id: ChannelId }).id : undefined))
+        : undefined;
+      const fxRef = str(a.effect);
+      const fx = fxRef ? refs.get(lower(fxRef)) : undefined;
+      let slot: { insertId: InsertId; slotId: SlotId } | undefined =
+        fx?.kind === 'effect' ? { insertId: fx.insertId, slotId: fx.slotId } : undefined;
+      if (!slot && fxRef)
+        for (const id of p.mixer.order)
+          if (p.mixer.inserts[id]?.fx.some((f) => f.id === fxRef)) slot = { insertId: id, slotId: fxRef as SlotId };
+      if (w === 'plugin' && !channelId && !slot) {
+        warnings.push('open: a plugin window needs its channel or effect');
+        continue;
+      }
+      if (w === 'browser' || action !== 'open') {
+        const done = applyWindowAction(s, action === 'open' ? 'focus' : action, w, {
+          ...(channelId ? { channelId } : {}),
+          ...(slot ? { slotId: slot.slotId } : {}),
+        });
+        if (done) state.ui.push(done);
+        else warnings.push(`open: the ${w} window isn't open`);
+      } else
         after.push({
           kind: 'open',
           window: w,
           ...(channelId ? { channelId } : {}),
           ...(slot ? { insertId: slot.insertId, slotId: slot.slotId } : {}),
         });
-      }
     }
   }
 }

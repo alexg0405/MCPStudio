@@ -9,8 +9,65 @@ import { PPQ } from '@core/time/ppq';
 import { dbToGain, encode, isAutomatable, type ParamSpecs } from '@agstudio/sdk';
 import { tempoRange } from '../../automation';
 import * as S from '../schema/parts';
-import { fail, type OpModule } from './context';
+import { fail, type OpContext, type OpModule } from './context';
 import { coerceParam, findParamId, isObj, num, r2, str } from './values';
+
+/** The control an automation target names (kind plus the ids it needs), as the model addresses it. */
+export function paramTargetOf(c: OpContext, raw: unknown): ParamTarget {
+  const { d, s } = c;
+  const t = isObj(raw) ? raw : fail('what should the automation move?');
+  const kind = str(t.kind);
+  let target: ParamTarget;
+  switch (kind) {
+    case 'channel_volume':
+    case 'channel_pan':
+    case 'channel_pitch':
+      target = {
+        kind: 'channel',
+        channelId: c.channel(t.channel),
+        param: kind === 'channel_volume' ? 'volume' : kind === 'channel_pan' ? 'pan' : 'pitch',
+      };
+      break;
+    case 'track_volume':
+    case 'track_pan':
+      target = { kind: 'insert', insertId: c.insert(t.insert), param: kind === 'track_volume' ? 'volume' : 'pan' };
+      break;
+    case 'send':
+      target = { kind: 'route', insertId: c.insert(t.insert), to: c.insert(t.to) };
+      break;
+    case 'effect_mix': {
+      const e = c.effect(t.effect);
+      target = { kind: 'slot', insertId: e.insertId, slotId: e.slotId, param: 'mix' };
+      break;
+    }
+    case 'plugin': {
+      const name = str(t.param) ?? fail('which setting should it move?');
+      let owner: PluginOwner;
+      let pluginId: string;
+      if (t.effect !== undefined) {
+        const e = c.effect(t.effect);
+        owner = { kind: 'fx', insertId: e.insertId, slotId: e.slotId };
+        pluginId = d.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin.pluginId;
+      } else {
+        const cid = c.channel(t.channel);
+        const ch = d.channels[cid]!;
+        if (ch.kind !== 'instrument') fail(`“${ch.name}” has no instrument settings`);
+        owner = { kind: 'channel', channelId: cid };
+        pluginId = (ch as { plugin: { pluginId: string } }).plugin.pluginId;
+      }
+      const def = s.plugins.get(pluginId) ?? fail(`the plugin ${pluginId} isn't installed`);
+      const paramId = findParamId(def.params as ParamSpecs, name) ?? fail(`${def.name} has no setting "${name}"`);
+      target = { kind: 'plugin', owner, paramId };
+      break;
+    }
+    case 'tempo':
+      target = { kind: 'tempo' };
+      break;
+    default:
+      return fail(`can't automate "${String(t.kind)}"`);
+  }
+  return target;
+}
 
 export const automation: OpModule = {
   schemas: [
@@ -61,57 +118,7 @@ export const automation: OpModule = {
   handlers: {
     automate: (a, c) => {
       const { d, s, project } = c;
-      const t = isObj(a.target) ? a.target : fail('what should the automation move?');
-      const kind = str(t.kind);
-      let target: ParamTarget;
-      switch (kind) {
-        case 'channel_volume':
-        case 'channel_pan':
-        case 'channel_pitch':
-          target = {
-            kind: 'channel',
-            channelId: c.channel(t.channel),
-            param: kind === 'channel_volume' ? 'volume' : kind === 'channel_pan' ? 'pan' : 'pitch',
-          };
-          break;
-        case 'track_volume':
-        case 'track_pan':
-          target = { kind: 'insert', insertId: c.insert(t.insert), param: kind === 'track_volume' ? 'volume' : 'pan' };
-          break;
-        case 'send':
-          target = { kind: 'route', insertId: c.insert(t.insert), to: c.insert(t.to) };
-          break;
-        case 'effect_mix': {
-          const e = c.effect(t.effect);
-          target = { kind: 'slot', insertId: e.insertId, slotId: e.slotId, param: 'mix' };
-          break;
-        }
-        case 'plugin': {
-          const name = str(t.param) ?? fail('which setting should it move?');
-          let owner: PluginOwner;
-          let pluginId: string;
-          if (t.effect !== undefined) {
-            const e = c.effect(t.effect);
-            owner = { kind: 'fx', insertId: e.insertId, slotId: e.slotId };
-            pluginId = d.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin.pluginId;
-          } else {
-            const cid = c.channel(t.channel);
-            const ch = d.channels[cid]!;
-            if (ch.kind !== 'instrument') fail(`“${ch.name}” has no instrument settings`);
-            owner = { kind: 'channel', channelId: cid };
-            pluginId = (ch as { plugin: { pluginId: string } }).plugin.pluginId;
-          }
-          const def = s.plugins.get(pluginId) ?? fail(`the plugin ${pluginId} isn't installed`);
-          const paramId = findParamId(def.params as ParamSpecs, name) ?? fail(`${def.name} has no setting "${name}"`);
-          target = { kind: 'plugin', owner, paramId };
-          break;
-        }
-        case 'tempo':
-          target = { kind: 'tempo' };
-          break;
-        default:
-          return fail(`can't automate "${String(t.kind)}"`);
-      }
+      const target = paramTargetOf(c, a.target);
       const specsOf = (id: string) => s.plugins.get(id)?.params as ParamSpecs | undefined;
       const lfo = isObj(a.lfo) ? a.lfo : null;
       const rawPoints = Array.isArray(a.points) ? a.points.filter(isObj) : [];

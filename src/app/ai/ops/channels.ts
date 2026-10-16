@@ -4,7 +4,7 @@ import { makePluginInstance } from '@core/model/defaults';
 import type { newId } from '@core/model/ids';
 import { MASTER, type PluginInstance } from '@core/model/types';
 import { setAudioChannelEdits } from '@core/ops/audio-edits';
-import { addChannel, addSample, removeChannel, setChannelProp } from '@core/ops/channels';
+import { addChannel, addSample, moveChannel, removeChannel, setChannelProp, setPluginSample } from '@core/ops/channels';
 import { insertLabel } from '@core/query/mixer';
 import { defaultValues } from '@agstudio/sdk';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../../default-project';
@@ -47,6 +47,9 @@ export const channels: OpModule = {
         mute: S.bool('Mute it.'),
         solo: S.bool('Solo it.'),
         pitch_cents: S.num('Channel pitch in cents (−2400…2400).'),
+        sample: S.str('A sampler: swap its built-in kit sound (kick, snare, clap, hat, open-hat, tom-low, tom-mid, tom-high, rim, cowbell, crash).'),
+        root_key: S.int('The key the channel’s steps and sample play at (MIDI; 60 = C4).'),
+        position: S.int('Move it to this 1-based place in the channel rack.'),
         insert: S.INSERT,
         color: S.str('Hex color.'),
         reverse: S.bool('Audio clip channels: play the sample backwards.'),
@@ -125,6 +128,24 @@ export const channels: OpModule = {
           ch.pitch = Math.max(-2400, Math.min(2400, pitch));
           out.push(`pitch ${ch.pitch} ct`);
         }
+        const sample = str(a.sample);
+        if (a.sample !== undefined) {
+          const slot = def?.sampleSlots?.includes('main') || def?.id === SAMPLER_ID;
+          const generator = slot ? kitSample(sample, '') : undefined;
+          if (!slot) c.warn(`“${ch.name}” doesn't play a sample`);
+          else if (!generator) c.warn(`there is no kit sound "${String(a.sample)}"`);
+          else {
+            const ref = kitSampleRef(generator);
+            addSample(d, ref);
+            setPluginSample(d, { kind: 'channel', channelId: id }, 'main', ref.id);
+            out.push(`sound ${ref.name}`);
+          }
+        }
+        const rootKey = num(a.root_key);
+        if (rootKey !== undefined) {
+          setChannelProp(d, id, 'rootKey', rootKey);
+          out.push(`root key ${ch.rootKey}`);
+        }
       } else if (a.plugin !== undefined || a.params !== undefined || a.preset !== undefined)
         c.warn(`“${ch.name}” has no instrument`);
       if (ch.kind === 'audioClip') {
@@ -178,6 +199,11 @@ export const channels: OpModule = {
       }
       const color = str(a.color);
       if (color && /^#[0-9a-f]{6}$/i.test(color)) setChannelProp(d, id, 'color', color);
+      const position = num(a.position);
+      if (position !== undefined) {
+        moveChannel(d, id, Math.round(position) - 1);
+        out.push(`place ${d.channelOrder.indexOf(id) + 1}`);
+      }
       return out.length ? `“${ch.name}”: ${out.join(', ')}` : null;
     },
 

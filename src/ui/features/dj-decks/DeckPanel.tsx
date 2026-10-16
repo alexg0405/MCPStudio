@@ -7,7 +7,7 @@ import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { Icon } from '../../controls/Icon';
 import { useServices } from '../../services-context';
 import { keyBadge } from '../dj/dj-view';
-import { PadButton, Slider } from './controls';
+import { deckTarget, PadButton, Slider } from './controls';
 import styles from './DjDecks.module.css';
 import { loadToDeck, SONG_DRAG_TYPE } from './load';
 import { DeckScope, HOT_CUE_VARS } from './scope';
@@ -145,6 +145,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
         <button
           type="button"
           tabIndex={-1}
+          data-dj-target={deckTarget(id, 'load')}
           className={styles.load}
           aria-label={`Load a song on deck ${id}`}
           data-hint={`Choose a song from your music library to put on deck ${id}`}
@@ -156,6 +157,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
         <button
           type="button"
           tabIndex={-1}
+          data-dj-target={deckTarget(id, 'eject')}
           className={styles.eject}
           disabled={!has}
           aria-label={`Eject deck ${id}`}
@@ -209,6 +211,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
       <div className={styles.transport}>
         <div
           ref={platter}
+          data-dj-target={deckTarget(id, 'jog')}
           className={styles.platter}
           role="slider"
           tabIndex={0}
@@ -230,6 +233,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
             label={`Deck ${id} cue`}
             hint="Cue: paused, sets the cue point here (on the beat) and plays from it while held; playing, goes back to the cue point"
             disabled={!has}
+            target={deckTarget(id, 'cue')}
             className={styles.cue}
             onPointerDown={() => api.cueDown(id)}
             onPointerUp={() => api.cueUp(id)}
@@ -241,6 +245,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
             hint={d.playing ? 'Pause this deck' : 'Play this deck (a synced deck starts on the beat)'}
             on={d.playing}
             disabled={!has}
+            target={deckTarget(id, 'play')}
             className={styles.play}
             onClick={() => api.togglePlay(id)}
           >
@@ -255,6 +260,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
             }
             on={d.synced}
             disabled={!has || !grid}
+            target={deckTarget(id, 'sync')}
             onClick={() => api.sync(id)}
           >
             SYNC
@@ -264,6 +270,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
             hint="Key lock: change the tempo without changing the pitch (off, the pitch follows the speed like a record)"
             on={d.keyLock}
             disabled={!has}
+            target={deckTarget(id, 'keylock')}
             onClick={() => api.setKeyLock(id, !d.keyLock)}
           >
             KEY LOCK
@@ -275,6 +282,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           </span>
           <Slider
             vertical
+            target={deckTarget(id, 'pitch')}
             className={styles.pitchSlider}
             value={d.pitch}
             min={-range}
@@ -319,6 +327,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
               }
               on={at !== null && at !== undefined}
               disabled={!has}
+              target={deckTarget(id, `hotcue:${i + 1}`)}
               className={styles.hotCue}
               style={{ '--pad': HOT_CUE_VARS[i] } as React.CSSProperties}
               onClick={() => api.hotCue(id, i)}
@@ -335,6 +344,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           label={`Deck ${id} loop in`}
           hint="Loop in: mark where a loop starts (on the beat)"
           disabled={!has}
+          target={deckTarget(id, 'loopIn')}
           onClick={() => api.loopIn(id)}
         >
           IN
@@ -344,6 +354,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           hint="Loop out: close the loop here and start repeating it; press again to leave, once more to go back into it"
           on={d.loop?.active ?? false}
           disabled={!has}
+          target={deckTarget(id, 'loopOut')}
           onClick={() => api.loopOut(id)}
         >
           OUT
@@ -352,6 +363,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           label={`Deck ${id} loop half`}
           hint="Halve the loop (half as many beats)"
           disabled={!has || !d.loop}
+          target={deckTarget(id, 'loopHalve')}
           onClick={() => api.loopHalve(id)}
         >
           ½
@@ -360,6 +372,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           label={`Deck ${id} loop double`}
           hint="Double the loop (twice as many beats)"
           disabled={!has || !d.loop}
+          target={deckTarget(id, 'loopDouble')}
           onClick={() => api.loopDouble(id)}
         >
           2×
@@ -372,6 +385,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
             hint={`Loop ${loopBeatsLabel(b)} beat${b === 1 ? '' : 's'} from the beat under the playhead; press again to leave`}
             on={!!d.loop?.active && Math.abs(beatsOfLoop - b) < 1e-6}
             disabled={!has}
+            target={deckTarget(id, `autoLoop:${b}`)}
             className={styles.autoLoop}
             onClick={() => api.autoLoop(id, b)}
           >
@@ -383,6 +397,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           label={`Deck ${id} jump back`}
           hint={`Jump ${d.beatJump} beats back (keeps the beat)`}
           disabled={!has}
+          target={deckTarget(id, 'beatJumpBack')}
           onClick={() => api.beatJumpBy(id, -d.beatJump)}
         >
           ◀
@@ -404,6 +419,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           label={`Deck ${id} jump forward`}
           hint={`Jump ${d.beatJump} beats forward (keeps the beat)`}
           disabled={!has}
+          target={deckTarget(id, 'beatJumpFwd')}
           onClick={() => api.beatJumpBy(id, d.beatJump)}
         >
           ▶

@@ -1,6 +1,29 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { emitHint } from '@agstudio/sdk/ui';
+import type { DeckId } from '@app/dj/decks-api';
+import { isTargetId } from '@core/midi-map/targets';
 import styles from './DjDecks.module.css';
+
+/**
+ * The MIDI-learn id of one of a deck's controls ("A.play", "B.hotcue:3"). Undefined when the catalog
+ * (`core/midi-map/targets.ts`) has no such target, so a control without one simply is not tagged.
+ */
+export function deckTarget(deck: DeckId, fn: string): string | undefined {
+  const id = `${deck}.${fn}`;
+  return isTargetId(id) ? id : undefined;
+}
+
+/**
+ * Tags a control that cannot take `data-dj-target` itself (the shared Knob) for MIDI learn. The wrapper
+ * has `display: contents`, so it takes no room and the layout stays the same.
+ */
+export function MidiTarget({ id, children }: { id: string | undefined; children: ReactNode }) {
+  return (
+    <div style={{ display: 'contents' }} data-dj-target={id}>
+      {children}
+    </div>
+  );
+}
 
 export interface SliderProps {
   value: number;
@@ -18,13 +41,15 @@ export interface SliderProps {
   /** Marks along the track (values), e.g. unity. */
   marks?: readonly number[];
   className?: string;
+  /** The MIDI-learn target id this slider is ("A.pitch"). */
+  target?: string;
 }
 
 /**
  * A slim slider with a machined cap: a vertical channel or pitch fader, or the horizontal crossfader. Drag it
  * (Shift for fine steps), scroll over it, or double-click to put it back. Controlled: the decks own the value.
  */
-export function Slider({ value, min, max, reset, vertical, label, hint, format, onChange, marks, className }: SliderProps) {
+export function Slider({ value, min, max, reset, vertical, label, hint, format, onChange, marks, className, target }: SliderProps) {
   const drag = useRef<{ at: number; from: number; fine: boolean; start: number; extent: number } | null>(null);
   const frac = (v: number) => (v - min) / (max - min);
   const set = (f: number) => onChange(min + Math.min(1, Math.max(0, f)) * (max - min));
@@ -89,6 +114,7 @@ export function Slider({ value, min, max, reset, vertical, label, hint, format, 
       aria-valuemax={max}
       aria-valuenow={value}
       aria-valuetext={format(value)}
+      data-dj-target={target}
       data-hint={`${label}: ${format(value)}. ${hint} Drag (Shift = fine), scroll, or double-click to reset`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -120,6 +146,7 @@ export function PadButton({
   className,
   children,
   style,
+  target,
 }: {
   on?: boolean;
   label: string;
@@ -132,6 +159,8 @@ export function PadButton({
   className?: string;
   children: ReactNode;
   style?: React.CSSProperties;
+  /** The MIDI-learn target id this pad is ("A.play"). */
+  target?: string;
 }) {
   return (
     <button
@@ -140,6 +169,7 @@ export function PadButton({
       className={`${styles.pad} ${on ? styles.padOn : ''} ${className ?? ''}`}
       aria-label={label}
       aria-pressed={on === undefined ? undefined : on}
+      data-dj-target={target}
       data-hint={hint}
       disabled={disabled}
       style={style}

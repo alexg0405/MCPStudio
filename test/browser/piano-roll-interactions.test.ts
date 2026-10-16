@@ -176,6 +176,20 @@ describe('piano roll interactions (UI)', { timeout: 40_000 }, () => {
     expect(s.editor.getState().noteSelection).toHaveLength(3);
   });
 
+  it('Shift-dragging a note duplicates it (one step); Shift-clicking without moving does nothing', async () => {
+    seed([{ tick: 960, key: 72, length: 480 }]);
+    const before = cursor();
+    click(at(960, 72), { shiftKey: true });
+    expect(notes()).toHaveLength(1);
+    expect(cursor()).toBe(before);
+    drag(at(960, 72), { x: at(960, 72).x + 96, y: at(960, 72).y }, { shiftKey: true });
+    expect(notes()).toHaveLength(2);
+    expect(s.history.status().undoLabel).toBe('Duplicate notes');
+    await s.history.undo();
+    expect(notes()).toHaveLength(1);
+    expect(cursor()).toBe(before);
+  });
+
   it('dragging a note’s end resizes it (one undo step) and remembers the length for new notes', async () => {
     seed([{ tick: 960, key: 72, length: 480 }]);
     const endX = (960 + 480) * PX;

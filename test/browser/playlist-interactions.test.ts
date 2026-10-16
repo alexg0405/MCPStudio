@@ -196,6 +196,21 @@ describe('playlist interactions (UI)', { timeout: 40_000 }, () => {
     expect(cursor()).toBe(before);
   });
 
+  it('Shift-dragging a clip duplicates it (one step); Shift-clicking without moving does nothing', async () => {
+    seed([{ bar: 2, lane: 0, bars: 1 }]);
+    const before = cursor();
+    fire('pointerdown', spot(2, 0), { shiftKey: true });
+    fire('pointerup', spot(2, 0), { shiftKey: true });
+    expect(clips()).toHaveLength(1);
+    expect(cursor()).toBe(before);
+    drag(spot(2, 0), spot(5, 1), { shiftKey: true });
+    expect(clips()).toHaveLength(2);
+    expect(s.history.status().undoLabel).toBe('Duplicate clips');
+    await s.history.undo();
+    expect(clips()).toHaveLength(1);
+    expect(cursor()).toBe(before);
+  });
+
   it('the Slice tool cuts a clip in two at the grid line (one step)', async () => {
     seed([{ bar: 2, lane: 0, bars: 4 }]);
     setTool('slice');

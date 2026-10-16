@@ -1236,7 +1236,8 @@ export class PlaylistController {
     this.els.gridHost.releasePointerCapture(e.pointerId);
     this.drag = null;
     const editor = this.s.editor.getState();
-    if (d.kind === 'move' && this.preview && (d.dTick !== 0 || d.dLane !== 0 || d.duplicate)) {
+    // A Shift-click that never moved copies nothing (a copy exactly on top of the original is no use).
+    if (d.kind === 'move' && this.preview && (d.dTick !== 0 || d.dLane !== 0)) {
       const moved = this.preview;
       if (d.duplicate) {
         const copies = moved.map((c) => ({ ...c, id: newId.clip() }));

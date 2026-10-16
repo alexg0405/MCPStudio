@@ -895,7 +895,8 @@ export class PianoRollController {
     this.stopAudition();
     const { patternId, channelId } = c;
     if (patternId && channelId) {
-      if (d.kind === 'move' && (d.dTick !== 0 || d.keys.some((k, i) => k !== d.originals[i]?.key) || d.duplicate)) {
+      // A Shift-click that never moved copies nothing (a copy exactly on top of the original is no use).
+      if (d.kind === 'move' && (d.dTick !== 0 || d.keys.some((k, i) => k !== d.originals[i]?.key))) {
         if (d.duplicate) {
           const copies = d.originals.map((n, i) => ({
             ...n,

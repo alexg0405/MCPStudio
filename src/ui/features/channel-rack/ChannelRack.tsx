@@ -471,7 +471,11 @@ function StepLight({ stepCount }: { stepCount: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let last = -1;
-    return onFrame(() => {
+    // Where the step column starts: read once (and again after a resize), since offsetLeft forces a layout.
+    let columnLeft = -1;
+    const ro = new ResizeObserver(() => (columnLeft = -1));
+    if (ref.current?.parentElement) ro.observe(ref.current.parentElement);
+    const stop = onFrame(() => {
       const el = ref.current;
       if (!el) return;
       const v = services.view.getState();
@@ -488,9 +492,15 @@ function StepLight({ stepCount }: { stepCount: number }) {
       last = visible;
       el.style.opacity = visible < 0 ? '0' : '1';
       // The step column's offset is measured from the first row so CSS stays the source of truth.
-      const steps = el.parentElement?.querySelector<HTMLElement>('[data-steps]');
-      if (visible >= 0) el.style.transform = `translateX(${(steps?.offsetLeft ?? 0) + stepX(visible)}px)`;
+      if (visible >= 0) {
+        if (columnLeft < 0) columnLeft = el.parentElement?.querySelector<HTMLElement>('[data-steps]')?.offsetLeft ?? -1;
+        el.style.transform = `translateX(${Math.max(0, columnLeft) + stepX(visible)}px)`;
+      }
     });
+    return () => {
+      stop();
+      ro.disconnect();
+    };
   }, [services, stepCount]);
   return <div ref={ref} className={styles.stepLight} style={{ width: STEP_W, opacity: 0 }} />;
 }

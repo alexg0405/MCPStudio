@@ -140,7 +140,10 @@ function OverflowSlots() {
     if (total(n) > avail + SLOT_GAP) {
       while (n > 1 && total(n) + MORE_BUTTON_W > avail) n--;
     }
-    setMeasured({ ids: list.map((s) => s.id).join(','), fit: n });
+    // Same answer: keep the old object, so a toolbar that only shifted by a pixel (the position readout
+    // changing width while playing) does not re-render.
+    const listIds = list.map((s) => s.id).join(',');
+    setMeasured((prev) => (prev.ids === listIds && prev.fit === n ? prev : { ids: listIds, fit: n }));
     if (n === list.length) setOpen(false);
   }, []);
 

@@ -20,6 +20,7 @@ import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
 import { applyDefaultLayout } from '@ui/workspace/layouts';
 import { openWindow, windowTypes } from '@ui/workspace/registry';
+import { page } from 'vitest/browser';
 import { createEmptyProject } from '@core/model/defaults';
 import { getMenus } from '@ui/shell/menus';
 import '@ui/theme/tokens.css';
@@ -110,7 +111,8 @@ describe('UX audit (shell)', () => {
   beforeAll(async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     host = document.createElement('div');
-    host.style.cssText = 'position:fixed;inset:0;width:1440px;height:900px';
+    await page.viewport(1440, 900);
+    host.style.cssText = 'position:fixed;inset:0';
     host.id = 'root';
     document.body.append(host);
     const plugins = new PluginRegistry();
@@ -130,6 +132,38 @@ describe('UX audit (shell)', () => {
     host.remove();
     await s.engine.dispose();
     vi.restoreAllMocks();
+  });
+
+  it('the toolbar never clips: at every width what does not fit moves into More', async () => {
+    const header = host.querySelector('header')!;
+    const slotsLeft = new Set<string>();
+    for (const [w, h] of [
+      [1440, 900],
+      [1280, 800],
+      [1100, 760],
+      [1000, 700],
+      [800, 600],
+    ] as const) {
+      await page.viewport(w, h);
+      await frame();
+      await frame();
+      // Nothing in the bar sticks out past the window's right edge.
+      const out = [...header.querySelectorAll<HTMLElement>('button, [data-slot]')]
+        .filter((el) => el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().right > w + 1)
+        .map((el) => `${w}px: ${describe_(el)} ends at ${Math.round(el.getBoundingClientRect().right)}`);
+      expect(out).toEqual([]);
+      expect(header.scrollWidth).toBeLessThanOrEqual(header.clientWidth + 1);
+      // The Studio button and the transport are always on screen; the window buttons are in the bar or in More.
+      expect(header.querySelector('[data-tour="assistant"]')).toBeTruthy();
+      expect(header.querySelector('[data-tour="transport"]')).toBeTruthy();
+      const more = header.querySelector('[aria-label="More toolbar controls"]');
+      const windows = header.querySelector('[data-tour="windows"]');
+      expect(!!more || !!windows).toBe(true);
+      slotsLeft.add(more ? 'more' : 'all');
+    }
+    expect(slotsLeft.has('more')).toBe(true); // the narrow widths did overflow
+    await page.viewport(1440, 900);
+    await frame();
   });
 
   it('the toolbar: every control is named, icon-only ones have a hint', async () => {

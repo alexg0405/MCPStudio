@@ -14,6 +14,7 @@ export PATH="$HOME/.local/node/bin:$PATH"; npm run dev
 Then open http://localhost:5390 in Chrome (or Edge). Click anywhere once to enable audio.
 
 Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm run test:audio` (headless Chrome),
+`npm run test:perf` (speed assertions with their real limits; run it on a quiet machine),
 `npm run build` (production build in `dist/`).
 
 ## What's in it

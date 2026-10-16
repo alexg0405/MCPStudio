@@ -11,8 +11,13 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 `export PATH="$HOME/.local/node/bin:$PATH";`.
 
 - `npm run dev`: dev server (port 5390 by default, or `$PORT`).
-- `npm run check`: everything CI would run: `tsc -b` (all four tsconfigs), `eslint .`, `vitest run` (unit + audio).
+- `npm run check`: everything CI would run (`scripts/check.mjs`): `tsc -b` (all four tsconfigs, incremental) and `eslint .`
+  (cached) side by side, then the unit project, then the audio project, one after the other so the speed tests are not
+  starved. A warm run with nothing changed spends seconds on the static checks.
 - `npm test`: unit tests only (Node). `npm run test:audio`: browser tests in headless Chrome (installed Chrome, no download).
+- `npm run test:perf`: only the tests tagged `perf` (speed assertions), with their real limits (`VITE_PERF_STRICT`); run it
+  on a quiet machine. The regular run keeps loose bounds for them. Speed assertions use `cpuNow`/`settle` from
+  `@agstudio/sdk/testing` (CPU time, best of a few attempts), never a single wall-clock sample.
 - `npm run new:plugin -- --kind instrument|effect --style graph|worklet|faust --id user.my-thing`: scaffold a user plugin
   into `plugins/` (templates in `templates/`, guide in `docs/plugin-sdk.md`).
 

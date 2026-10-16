@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 import { library, loadLibrary, pickSongFiles } from '@app/dj/library';
+import { showContextMenu } from '../../controls/ContextMenu';
 import { Icon } from '../../controls/Icon';
+import { loadToDeckMenu, SONG_DRAG_TYPE } from '../dj-decks/load';
 import { useServices } from '../../services-context';
 import styles from '../../shell/Browser.module.css';
 import { openWindow } from '../../workspace/registry';
@@ -19,7 +21,22 @@ export function MusicSection() {
         <Icon name="sparkle" size={12} /> Make a DJ mix…
       </button>
       {songs.slice(0, 50).map((x) => (
-        <button key={x.key} className={styles.item} style={{ paddingLeft: 24 }} onClick={open} data-hint={`${x.label}: in your music library (open the DJ window to mix it)`}>
+        <button
+          key={x.key}
+          className={styles.item}
+          style={{ paddingLeft: 24 }}
+          onClick={open}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(SONG_DRAG_TYPE, x.key);
+            e.dataTransfer.effectAllowed = 'copyMove';
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            showContextMenu(e, loadToDeckMenu(services, x));
+          }}
+          data-hint={`${x.label}: in your music library. Drag it onto a deck in DJ decks, or right-click to load it to a deck`}
+        >
           <Icon name="note" size={12} />
           {x.label}
         </button>

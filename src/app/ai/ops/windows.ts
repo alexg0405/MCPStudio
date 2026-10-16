@@ -19,6 +19,8 @@ export const OPEN_WINDOWS = [
   'settings',
   'shortcuts',
   'dj',
+  'dj-controllers',
+  'dj-decks',
   'browser',
 ] as const;
 export type OpenWindow = (typeof OPEN_WINDOWS)[number];

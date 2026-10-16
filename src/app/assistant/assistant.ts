@@ -26,6 +26,7 @@ import { audition } from './audition';
 import { playFocus } from './play-focus';
 import { projectContext } from '../ai/context';
 import { formatLookups } from '../ai/read';
+import { describeDeckAction, runDeckActions } from '../ai/ops/decks';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
 import { applyBeatSpec } from './apply';
@@ -638,7 +639,11 @@ export class BeatAssistant implements AssistantApi {
     focus?: ResolvedFocus | null,
     lookups?: string,
   ): string {
-    const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s, focus ?? null)}\n</project>`];
+    const parts = [`<request>
+${prompt.trim()}
+</request>`, `<project>
+${projectContext(this.s, focus ?? null)}
+</project>`];
     if (focus) parts.push(`<focus>\n${focusContext(this.s.doc.getState().project, focus, this.pluginInfo)}\n</focus>`);
     if (lookups)
       parts.push(
@@ -723,6 +728,14 @@ export class BeatAssistant implements AssistantApi {
     const cursor = this.s.history.status().cursor;
     // App commands: most run now; file dialogs wait for the musician's click (the UI asks).
     const changes = [...result.changes, ...(result.ui ?? [])];
+    // Live DJ deck actions run now (loading a song takes a moment: problems come up as messages).
+    for (const a of result.after) {
+      if (a.kind !== 'decks') continue;
+      changes.push(...a.actions.map(describeDeckAction));
+      void runDeckActions(this.s, a.actions).then((problems) => {
+        for (const p of problems) this.s.session.getState().toast(p, 'error');
+      });
+    }
     for (const a of result.after) {
       if (a.kind !== 'command') continue;
       const title = this.s.commands.get(a.id)?.title.replace(/…$/, '') ?? a.id;

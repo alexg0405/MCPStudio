@@ -40,6 +40,7 @@ import {
   TRANSITION_CHOICES,
 } from './dj-view';
 import { makeMixFromUi } from './run';
+import { loadToDeckMenu } from '../dj-decks/load';
 
 /** Re-renders when an analysis lands. */
 function useAnalysisVersion(): number {
@@ -113,6 +114,8 @@ export function DjWindow() {
     e.preventDefault();
     const keys = selected.has(x.key) ? st.selected : [x.key];
     showContextMenu(e, [
+      ...loadToDeckMenu(services, x),
+      { kind: 'separator' },
       { label: x.pinned ? 'Unpin' : 'Pin to this place', onSelect: () => void togglePin(x.key) },
       { label: 'Move to the top', onSelect: () => void moveSong(x.key, 0) },
       { label: 'Move to the end', onSelect: () => void moveSong(x.key, st.songs.length) },
@@ -214,7 +217,7 @@ export function DjWindow() {
                     onDrop={(e) => onDrop(e, i)}
                     onClick={(e) => toggle(x.key, e)}
                     onContextMenu={(e) => rowMenu(e, x)}
-                    data-hint={`${x.label}: click to select (Shift for a range), drag to reorder, right-click for more`}
+                    data-hint={`${x.label}: click to select (Shift for a range), drag to reorder (or onto a deck in the DJ decks window), right-click for more`}
                   >
                     <td>
                       <input type="checkbox" aria-label={`Select ${x.label}`} checked={selected.has(x.key)} onChange={() => {}} tabIndex={-1} />

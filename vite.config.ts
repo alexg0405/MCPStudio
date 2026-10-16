@@ -109,6 +109,8 @@ export default defineConfig(({ mode }) => ({
       'react-dom/client',
       'zustand',
       'zustand/vanilla',
+      // useShallow (the Decks window): a dependency found mid-run would re-bundle and reload the page.
+      'zustand/react/shallow',
       'immer',
       'fflate',
       // MP3 export: only the encoder Worker imports it, which the dependency scan doesn't see.

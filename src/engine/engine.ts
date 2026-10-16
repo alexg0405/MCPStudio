@@ -12,6 +12,7 @@ import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
 import { INACTIVE_TAP, TapImpl } from './tap';
 import type {
+  DeckHost,
   EngineApi,
   EngineOptions,
   EngineSession,
@@ -920,6 +921,18 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   // ---- Status ----
+
+  private host: DeckHost | null = null;
+  /** Where the DJ decks join the output (see DeckHost); null for an offline engine. */
+  deckHost(): DeckHost | null {
+    if (this.offline || typeof AudioContext === 'undefined' || !(this.ctx instanceof AudioContext)) return null;
+    return (this.host ??= {
+      ctx: this.ctx,
+      output: this.masterOut,
+      loadModule: (url) => this.loadModule(url),
+      heardTime: () => this.audibleTime(),
+    });
+  }
 
   stats(): EngineStats {
     const ctx = this.ctx;

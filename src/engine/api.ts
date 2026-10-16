@@ -89,6 +89,21 @@ export interface EngineOptions {
   onPluginTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
 }
 
+/**
+ * Where live audio (the DJ decks) joins the engine's output: the running AudioContext, a node that feeds the
+ * master safety limiter and the chosen output device, and the clock the speakers are on. A rebooted engine has a
+ * new host (a new context), so whoever holds one watches `EngineApi.subscribe` and rebuilds.
+ */
+export interface DeckHost {
+  readonly ctx: BaseAudioContext;
+  /** Connect to this: it is mixed with the song and its previews, then limited, then heard. */
+  readonly output: AudioNode;
+  /** Adds an AudioWorklet module to the context (once per URL). */
+  loadModule(url: string): Promise<void>;
+  /** The context time coming out of the speakers right now (output latency included). */
+  heardTime(): number;
+}
+
 export interface EngineApi {
   readonly sampleRate: number;
   readonly state: EngineState;
@@ -190,6 +205,11 @@ export interface EngineApi {
    */
   isStretching(channelId: ChannelId): boolean;
   stats(): EngineStats;
+  /**
+   * The live-audio host of a realtime engine (null offline and in tests): the DJ decks play through it, so the
+   * output device choice and the safety limiter apply to them too.
+   */
+  deckHost?(): DeckHost | null;
   /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;
   dispose(): Promise<void>;

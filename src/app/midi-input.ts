@@ -11,6 +11,8 @@ export class MidiInput {
   private readonly sustained = new Map<string, { key: number; origin: LiveOrigin }>();
   private sustain = false;
   private readonly listeners = new Set<() => void>();
+  /** Devices another consumer uses (DJ controllers) are not played as keyboards: it says which. */
+  ignore: ((device: string) => boolean) | null = null;
 
   constructor(private readonly live: LiveInput) {}
 
@@ -66,6 +68,7 @@ export class MidiInput {
 
   /** Parses one MIDI message (exported behaviour is tested through `handle`). */
   handle(device: string, data: Uint8Array, timeStamp?: number): void {
+    if (this.ignore?.(device)) return;
     const status = (data[0] ?? 0) & 0xf0;
     const midiChannel = (data[0] ?? 0) & 0x0f;
     const d1 = data[1] ?? 0;

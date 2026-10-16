@@ -1178,7 +1178,7 @@ checking on real files. Octave choices follow DJ conventions (trap 140, DnB 174,
 
 The musician wants to mix songs like a DJ (party mixes). It is their own files: streaming services (Spotify…) are
 DRM-locked, and the UI and the Studio say so. Auto-mix first: songs in → ordered, beat-matched, every transition
-built on the playlist → tweak → export. Live decks and MIDI controllers come later.
+built on the playlist → tweak → export. Live decks come next; MIDI controllers are in "DJ controllers" below.
 
 ### Contracts (`core/dj/types.ts`, `app/dj/analysis-cache.ts`)
 
@@ -1263,6 +1263,63 @@ alone and never drop more than 7 dB; the incoming song's lows are > 15 dB down u
   the engine stretches clip ranges.
 - Beat grids with drifting `beats[]` play on the fixed grid (they will slip); 3/4 songs align on their own bars.
 - The playlist zooms to the mix after it is made; there is no live deck view yet (the next wave).
+
+## DJ controllers
+
+MIDI DJ controllers drive the live decks (`DecksApi`, `app/dj/decks-api.ts`). Live control is performance, not an
+edit of the project: nothing here goes through History (a controller is not the knob "Link to controller…" of
+`app/controllers.ts`, which writes project parameters through History; the two do not share state).
+
+- **Pure mapping layer** (`core/midi-map`, no DOM, unit tests in `midi-map.test.ts`):
+  - `message.ts` parses channel messages (note on/off, CC, pitch bend; a velocity-0 note-on is a note-off) and builds
+    the bytes sent back for LEDs. `relative.ts` decodes the three endless-dial encodings to signed steps
+    (two's complement 1/127, sign-magnitude 1/65, centred on 64 = 65/63). `cc14.ts` pairs CC n (coarse) with CC n+32
+    (fine) per channel and yields a value on the fine byte once a pair has sent one (so the value never steps).
+    `soft-takeover.ts` is the pickup: hardware is ignored until it is within 0.03 of the software value or crosses it,
+    and it lets go again when something else (the mouse) moved the software value.
+  - `targets.ts` is the catalog of what a controller can drive: ids like `A.play`, `B.hotcue:3`, `A.eq.low`,
+    `crossfader`, `browse`, `record`, `app.playPause`, each of kind `button`, `abs` or `rel`; `led: true` marks the
+    ones with a light. `types.ts` is the mapping (inputs: note, cc, cc14, rel with its encoding, pitch bend; bindings
+    with optional `layer`, `invert`, `scale`; shift keys; LEDs) and its JSON import/export, which drops what it does not
+    understand and counts it. `interpreter.ts` turns messages into `ControlEvent`s: shift layers (a held shift key
+    selects the bindings of its layer, otherwise the normal binding; a release goes to the binding the press used),
+    CC buttons with press/release edges, 14-bit and relative handling. `learn.ts` detects a control's type from
+    its messages (a note = button, bend = fader, CC + CC+32 = 14-bit, a sweep = fader, repeated small steps with both
+    directions seen = endless dial and which encoding); the target's kind breaks ties.
+  - `presets/` holds the maps by device name (see below). Each file names its source.
+- **App layer** (`app/dj/controllers`): `manager.ts` (`DjControllers`, one per services object via `djControllers(services)`):
+  asks for MIDI with `requestMIDIAccess({ sysex: false })` (denied or unsupported are states, not errors), listens
+  with its own `midimessage` listeners (the keyboard `MidiInput` keeps working, and ignores devices that have a
+  mapping: `midi.ignore`), keeps one `MappingInterpreter` per port, applies soft takeover to faders and knobs,
+  runs learn, and saves the maps the musician made or changed per device name in IndexedDB (`storage.ts`; an untouched
+  preset is not stored, "Reset" returns to it). `abs.ts` converts hardware positions to deck values and back (EQ: kill
+  −26 dB … 0 dB at the centre … +6 dB; trim ±12 dB; filter with a dead zone at the centre; pitch ± the deck's range,
+  higher = faster; channel fader 0…1). `dispatch.ts` turns control events into `DecksApi` calls (cue on both edges,
+  jog nudge until the platter is touched then scratch, search seeks 0.25 s per step, one jog tick = 1/600 turn, a loop pad pressed
+  again leaves its loop, load loads the browse encoder's highlighted song on that deck). `browse.ts` is the highlight in
+  the music library. `leds.ts` derives on/off for every light from the deck state and `LedFeedback` sends only what
+  changed, and everything on connect or when the decks come up; lights go dark on disconnect.
+- **Decks source** (`decks-source.ts`): the controllers get the decks from `setDecksProvider(() => decksOrPromise)`
+  (the decks implementation calls it once), else `services.decks` (a `DecksApi` or a `DecksFactory`), else in
+  development a `FakeDecks` stand-in (`fake-decks.ts`; `test/helpers/fake-decks.ts` re-exports it) and the window says so.
+- **UI** (`ui/features/dj-controllers`): View → DJ controllers (`dj.controllers.open`), "Link a DJ controller (MIDI
+  learn)…" (`dj.controllers.learn`, optional `{ target, shifted }`: opens the window and waits, the Studio can run it but the
+  musician touches the control), `dj.controllers.connect`. The window lists the controls per deck with their links,
+  Learn / + Shift / Clear per row, a Shift-key row, soft takeover and LED options, ready-made map picker, Export / Import,
+  a Test tab (every incoming message and what it did, while the tab is open). In learn mode a click on any element with
+  `data-dj-target="A.play"` (the Decks window's controls) picks it; right-click on one offers "Link to controller…" when
+  it has no menu of its own.
+- **Presets** (`core/midi-map/presets`), matched on the device name with letters and digits only: Pioneer DDJ-400,
+  DDJ-FLX4 and DDJ-200, Hercules DJControl Inpulse 200 and 300, Numark Mixtrack Pro FX. Values come from the public Mixxx
+  mappings (GPL; authors in each file's header; only addresses and encodings, no code). Not shipped: Inpulse 500 (its
+  jog wheel encoding lives in Mixxx's component library, not in its map) and Platinum FX (four decks, the published map
+  could not be read in full). The pitch fader direction follows Mixxx's `rate` convention (Pioneer and Numark: a higher
+  raw value is faster; Hercules is the other way round, so its bindings have `invert`).
+- **Tests**: `midi-map.test.ts` (parsing, encodings, 14-bit, shift layers, takeover, learn detection, JSON),
+  `app/dj/controllers/controllers.test.ts` (presets, deck calls, LED messages against `FakeDecks`, learn, mappings),
+  `test/browser/dj-controllers.test.ts` (fake `MIDIAccess` in the real app, the window).
+- **Gaps**: four-deck layer switching (a two-channel controller drives A and B only), sysex start-up messages (SysEx is not
+  requested), colour LEDs and blinking, pad modes other than hot cues and beat loops, jog touch-less scratch tuning (one ticks-per-turn constant).
 
 ## Arrangement: songs that flow (v3)
 

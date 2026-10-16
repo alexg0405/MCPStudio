@@ -1,6 +1,7 @@
 /**
  * Mixer peak meters, drawn on canvases from the frame loop (never through React). Each frame reads
- * every insert's peaks with one engine call into a reused buffer; the decay (ballistics) and peak
+ * the peaks of the strips that are on screen with one engine call into a reused buffer (a strip
+ * scrolled out of view isn't read, so the engine drops its analysers); the decay (ballistics) and peak
  * hold happen here. A canvas is only repainted when what it shows changes, so silence costs nothing.
  */
 import type { Services } from '@app/services';
@@ -27,8 +28,15 @@ interface Meter {
   level: [number, number];
   hold: [number, number];
   holdUntil: [number, number];
-  /** What was painted last ("" forces a repaint). */
-  drawn: string;
+  /** On screen: only these are read and drawn. */
+  visible: boolean;
+  /** What was painted last: the five numbers of `draw`'s signature (`painted` false forces a repaint). */
+  painted: boolean;
+  dL: number;
+  dR: number;
+  dHL: number;
+  dHR: number;
+  dClip: boolean;
 }
 
 interface Colors {
@@ -46,6 +54,10 @@ export class MeterBank {
   private readonly byCanvas = new WeakMap<Element, Meter>();
   private peaks = new Float32Array(0);
   private observer: ResizeObserver | null = null;
+  private visibility: IntersectionObserver | null = null;
+  /** This frame's strips: the ids handed to the engine and the meters they belong to (reused). */
+  private readonly shownIds: InsertId[] = [];
+  private readonly shown: Meter[] = [];
   private colors: Colors | null = null;
   private lastTime = 0;
 
@@ -62,14 +74,23 @@ export class MeterBank {
       level: [FLOOR_DB, FLOOR_DB],
       hold: [FLOOR_DB, FLOOR_DB],
       holdUntil: [0, 0],
-      drawn: '',
+      // Visible until the observer says otherwise: the first frame draws before it has reported.
+      visible: true,
+      painted: false,
+      dL: 0,
+      dR: 0,
+      dHL: 0,
+      dHR: 0,
+      dClip: false,
     };
     this.meters.set(id, meter);
     this.byCanvas.set(canvas, meter);
     this.observer?.observe(canvas);
+    this.visibility?.observe(canvas);
     return () => {
       if (this.meters.get(id) === meter) this.meters.delete(id);
       this.observer?.unobserve(canvas);
+      this.visibility?.unobserve(canvas);
     };
   }
 
@@ -80,6 +101,13 @@ export class MeterBank {
       for (const entry of entries) this.resize(entry);
     });
     for (const m of this.meters.values()) this.observer.observe(m.canvas);
+    // Strips scrolled out of the mixer aren't read or drawn.
+    if (typeof IntersectionObserver !== 'undefined') {
+      this.visibility = new IntersectionObserver((entries) => {
+        for (const entry of entries) this.setVisible(entry.target, entry.isIntersecting);
+      });
+      for (const m of this.meters.values()) this.visibility.observe(m.canvas);
+    }
     const stop = onFrame((now) => this.frame(services, now));
     // A new theme or accent: new colors, and every meter's gradient and drawing again.
     const offTheme = onThemeChange(() => {
@@ -91,22 +119,57 @@ export class MeterBank {
       offTheme();
       this.observer?.disconnect();
       this.observer = null;
+      this.visibility?.disconnect();
+      this.visibility = null;
+      for (const m of this.meters.values()) m.visible = true;
       this.lastTime = 0;
     };
   }
 
+  /** A strip came into view or left it (the observer calls this). Coming back it starts from silence, like a meter just made. */
+  setVisible(target: Element, visible: boolean): void {
+    const m = this.byCanvas.get(target);
+    if (!m || m.visible === visible) return;
+    m.visible = visible;
+    if (visible) {
+      for (let c = 0; c < 2; c++) {
+        m.level[c] = FLOOR_DB;
+        m.hold[c] = FLOOR_DB;
+        m.holdUntil[c] = 0;
+      }
+      m.painted = false;
+    }
+  }
+
   private frame(services: Services, now: number): void {
     const order = services.doc.getState().project.mixer.order;
-    if (this.peaks.length < order.length * 2) this.peaks = new Float32Array(order.length * 2);
+    // Only the strips on screen are read: the engine asks every analyser for its last 2048 samples.
+    const ids = this.shownIds;
+    const shown = this.shown;
+    let n = 0;
+    for (let i = 0; i < order.length; i++) {
+      const id = order[i] as InsertId;
+      const m = this.meters.get(id);
+      if (!m || !m.visible) continue;
+      ids[n] = id;
+      shown[n] = m;
+      n++;
+    }
+    ids.length = n;
+    shown.length = n;
+    if (this.peaks.length < n * 2) this.peaks = new Float32Array(n * 2);
     // A suspended context keeps returning its last samples; show silence instead.
-    if (services.engine.state === 'running') services.engine.readMeters(order, this.peaks);
+    if (n === 0) {
+      this.lastTime = now;
+      return;
+    }
+    if (services.engine.state === 'running') services.engine.readMeters(ids, this.peaks);
     else this.peaks.fill(0);
     const dt = this.lastTime ? Math.min(0.1, (now - this.lastTime) / 1000) : 0;
     this.lastTime = now;
     const fall = FALL_DB_PER_S * dt;
-    for (let i = 0; i < order.length; i++) {
-      const m = this.meters.get(order[i] as InsertId);
-      if (!m) continue;
+    for (let i = 0; i < n; i++) {
+      const m = shown[i] as Meter;
       for (let c = 0; c < 2; c++) {
         const peak = this.peaks[i * 2 + c] as number;
         const db = peak > 0 ? Math.max(FLOOR_DB, 20 * Math.log10(peak)) : FLOOR_DB;
@@ -141,7 +204,7 @@ export class MeterBank {
   /** The meter's fill (green to gold to red up the scale) for its size and the theme's colors. */
   private buildGradient(m: Meter): void {
     const { dpr, h } = m;
-    m.drawn = '';
+    m.painted = false;
     m.gradient = null;
     m.unlit = null;
     const c = this.colors;
@@ -170,9 +233,13 @@ export class MeterBank {
     const y = (db: number) => Math.round(m.h - pad - dbToPosition(db) * span);
     const [l, r, hl, hr] = [y(m.level[0]), y(m.level[1]), y(m.hold[0]), y(m.hold[1])];
     const clip = m.hold[0] > 0 || m.hold[1] > 0;
-    const sig = `${l},${r},${hl},${hr},${clip}`;
-    if (sig === m.drawn) return;
-    m.drawn = sig;
+    if (m.painted && l === m.dL && r === m.dR && hl === m.dHL && hr === m.dHR && clip === m.dClip) return;
+    m.painted = true;
+    m.dL = l;
+    m.dR = r;
+    m.dHL = hl;
+    m.dHR = hr;
+    m.dClip = clip;
     const bottom = Math.round(m.h - pad);
     const gap = Math.max(1, Math.round(m.dpr));
     const bar = Math.floor((m.w - gap) / 2);

@@ -32,7 +32,7 @@ import { targetKey } from '@core/model/targets';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { playableEdges, type RoutingEdge } from '@core/query/routing';
 import type { EngineCore } from './engine-core';
-import { disconnectFrom, frameDelay, InsertStrip, METER_FRAMES, type InsertTaps } from './insert-strip';
+import { disconnectFrom, frameDelay, InsertStrip, MeterScratch, type InsertTaps } from './insert-strip';
 import { AutoLane } from './param-lane';
 import { DelayCompensation } from './pdc';
 
@@ -214,7 +214,7 @@ export class MixerGraph {
   private readonly strips = new Map<InsertId, InsertStrip>();
   private readonly buses = new Map<InsertId, InsertBus>();
   private readonly routes = new Map<string, RouteLink>();
-  private readonly meterScratch = new Float32Array(METER_FRAMES);
+  private readonly meterScratch = new MeterScratch();
   private edges: readonly RoutingEdge[] = [];
   private pdc: DelayCompensation | null = null;
   private batching = 0;

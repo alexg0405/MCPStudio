@@ -281,6 +281,9 @@ How the host keeps worklet plugins cheap (you don't need to do anything):
   kernel as timed events, in the same `params` object (one value, `params.x[0]`, changing at the frame
   it changed). Every AudioParam costs the browser time each block, used or not, so a plugin with dozens
   of per-voice or per-pad settings should mark the ones it reads at note-on `automatable: false`.
+  Nothing to do for this in your kernel: `registerKernel` also registers a lite processor with no AudioParams
+  that is used while no automation drives the plugin (floats glide inside the runner as an AudioParam would);
+  the full one replaces it when automation first targets one of its params. Read params with `at()` as usual.
 - A kernel sleeps: an instrument with no notes held whose output has been silent (under −120 dBFS) for
   a second, or an effect whose input and output have been, isn't called until a note or sound
   arrives. Song transport changes (play, a loop wrapping, a tempo change) and sync barriers don't wake

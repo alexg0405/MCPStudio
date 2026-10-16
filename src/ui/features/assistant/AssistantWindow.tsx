@@ -136,12 +136,16 @@ export function AssistantWindow() {
             }
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              // Enter that confirms an input-method choice (Japanese, Chinese, Korean…) isn't a send.
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
+              } else if (e.key === 'Escape' && (st.phase === 'thinking' || st.phase === 'listening')) {
+                e.preventDefault();
+                a.cancel();
               }
             }}
-            data-hint="Describe the beat or the change you want; Enter sends, Shift+Enter makes a new line"
+            data-hint="Describe the beat or the change you want; Enter sends, Shift+Enter makes a new line, Esc stops Studio while it works"
           />
           <div className={styles.fieldBar}>
             <button
@@ -165,7 +169,7 @@ export function AssistantWindow() {
               <button
                 className={`${styles.sendButton} ${styles.sendStop}`}
                 onClick={() => a.cancel()}
-                data-hint="Stop waiting"
+                data-hint="Stop waiting (Esc in the box does the same)"
                 aria-label="Stop"
               >
                 <Icon name="stop" size={12} />

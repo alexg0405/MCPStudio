@@ -5,7 +5,7 @@
  * it exactly, and the project stays consistent. A dry run never changes anything.
  */
 import { describe, expect, it } from 'vitest';
-import type { Project } from '@core/model/types';
+import type { PatternId, Project } from '@core/model/types';
 import { projectViolations } from '../../../../test/helpers/project-invariants';
 import { stackedSong, project, type TestServices } from '../../../../test/helpers/focus';
 import { applyAnswer } from '../apply';
@@ -195,7 +195,7 @@ function checkOnce(s: TestServices, actions: AiAction[], label: string, mode: Mo
   if (span && mode.outside !== 'allow') {
     // Refused beyond the part: clips well away from it, and the patterns they play, are as they were.
     const far = (c: { start: number; length: number }) => c.start + c.length <= span.from - BAR || c.start >= span.to + BAR;
-    const played = new Set<string>();
+    const played = new Set<PatternId>();
     for (const c of Object.values(before.playlist.clips)) {
       if (!far(c)) continue;
       expect(after.playlist.clips[c.id], `${label}: a clip outside the part changed\n${JSON.stringify(actions)}`).toEqual(c);

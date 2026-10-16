@@ -55,12 +55,10 @@
   --ag-warning: #c9a24a;
   --ag-ok-bg: #4a6f3a;
   --ag-ok-text: #e8f5dc;
-  --ag-on-accent: #fff;
   --ag-on-light: #1b2024;
   --ag-sheen: rgba(255, 255, 255, 0.025);
   --ag-line-faint: rgba(255, 255, 255, 0.04);
   --ag-scrim: rgba(10, 13, 15, 0.55);
-  --ag-on-accent: #fff;
   --ag-tooltip: #11161a;
   /* Tooltips stay dark in every slate theme (Light too), so their text stays light. */
   --ag-tooltip-text: #d9dfe4;
@@ -128,7 +126,6 @@
   /* Smoked-glass tooltips on white stone: light text on them. */
   --ag-tooltip-text: #f1efe9;
   --ag-marker: #9c7a35;
-  --ag-on-accent: #fffaf0;
   --ag-on-light: #1c1d20;
   --ag-sheen: rgba(0, 0, 0, 0.02);
   --ag-line-faint: rgba(0, 0, 0, 0.06);

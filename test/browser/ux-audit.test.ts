@@ -354,6 +354,58 @@ describe('UX audit (shell)', () => {
     expect(low).toEqual([]);
   });
 
+  it('text on accent fills (buttons, the active Studio button) is readable for every theme and accent', () => {
+    const probe = document.createElement('div');
+    document.body.append(probe);
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const g = canvas.getContext('2d', { willReadFrequently: true })!;
+    const rgb = (token: string) => {
+      probe.style.color = `var(${token})`;
+      g.clearRect(0, 0, 1, 1);
+      g.fillStyle = getComputedStyle(probe).color;
+      g.fillRect(0, 0, 1, 1);
+      return [...g.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+    };
+    const lum = (c: number[]) => {
+      const f = c.map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * f[0]! + 0.7152 * f[1]! + 0.0722 * f[2]!;
+    };
+    const root = document.documentElement;
+    const [t0, a0] = [root.dataset.theme, root.dataset.accent];
+    const low: string[] = [];
+    try {
+      for (const theme of ['marble', 'carrara', 'classic', 'midnight', 'graphite', 'light'])
+        for (const accent of [
+          undefined,
+          'orange',
+          'champagne',
+          'rose',
+          'blue',
+          'green',
+          'purple',
+          'pink',
+          'yellow',
+          'red',
+        ]) {
+          if (theme === 'marble') delete root.dataset.theme;
+          else root.dataset.theme = theme;
+          if (accent) root.dataset.accent = accent;
+          else delete root.dataset.accent;
+          const [a, b] = [lum(rgb('--ag-on-accent')), lum(rgb('--ag-accent'))];
+          const r = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+          if (r < 4.5) low.push(`${theme}/${accent ?? 'default'}: ${r.toFixed(1)}:1`);
+        }
+    } finally {
+      if (t0) root.dataset.theme = t0;
+      else delete root.dataset.theme;
+      if (a0) root.dataset.accent = a0;
+      else delete root.dataset.accent;
+      probe.remove();
+    }
+    expect(low).toEqual([]);
+  });
+
   it('nothing visible says "AI"', () => {
     const hits: string[] = [];
     for (const el of host.querySelectorAll('*')) {

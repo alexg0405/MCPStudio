@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { draftServer } from './tools/ai/drafts.ts';
 import { faustPlugin } from './tools/faust/vite-plugin.ts';
 import { aiServer } from './tools/ai/server.ts';
+import { mcpServer } from './tools/mcp/server.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -49,6 +50,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     // The beat assistant reaches Claude through the dev/preview server (subscription or API key).
     aiServer(() => loadEnv(mode, root, '')),
+    // AI apps (Claude Code, Claude Desktop…) control the open project over MCP: POST /mcp, relayed to the tab.
+    mcpServer({ root }),
     // Plugins the AI studio writes: drafts in plugins/_drafts, checked, installed on request.
     draftServer(root),
     // `.dsp` files: Faust plugins, compiled to WebAssembly (tools/faust).

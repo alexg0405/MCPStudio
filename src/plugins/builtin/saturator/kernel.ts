@@ -1,4 +1,4 @@
-import { at, dbToGain, EffectKernel, OnePole, Oversampler, type ParamBlock } from '@agstudio/sdk/worklet';
+import { at, dbToGain, EffectKernel, OnePole, Oversampler, Ramp, type ParamBlock } from '@agstudio/sdk/worklet';
 import type { saturatorParams } from './params';
 
 type P = typeof saturatorParams;
@@ -16,6 +16,8 @@ const COMPENSATION = -0.7;
 const TILT_HZ = 800;
 const TILT_DB = 6;
 const DC_HZ = 8;
+/** Drive, tone and output gains are recomputed every CONTROL frames and ramp between (see GateKernel). */
+const CONTROL = 32;
 
 /** tanh(x) by Lambert's continued fraction (within 1e-4 of it), exactly ±1 beyond ±4.97. */
 export function softClip(x: number): number {
@@ -49,14 +51,15 @@ export class SaturatorKernel extends EffectKernel<P> {
     new OnePole().setCutoff(DC_HZ, this.sampleRate),
     new OnePole().setCutoff(DC_HZ, this.sampleRate),
   ];
+  /** The param values last read: a gain is only re-aimed when its param has changed. */
   private driveDb = Number.NaN;
-  private driveGain = 1;
-  private comp = 1;
   private toneValue = Number.NaN;
-  private low = 1;
-  private high = 1;
   private outDb = Number.NaN;
-  private outGain = 1;
+  private readonly driveGain = new Ramp();
+  private readonly comp = new Ramp();
+  private readonly low = new Ramp();
+  private readonly high = new Ramp();
+  private readonly outGain = new Ramp();
   private factor = 0;
 
   override reset(): void {
@@ -74,45 +77,71 @@ export class SaturatorKernel extends EffectKernel<P> {
       if (this.factor !== 0) for (const o of factor === 4 ? this.os4 : this.os2) o.reset();
       this.factor = factor;
     }
-    for (let i = 0; i < n; i++) {
-      this.params(at(p.drive, i), at(p.tone, i), at(p.output, i));
-      const mix = at(p.mix, i);
-      const drive = this.driveGain;
-      const comp = this.comp;
-      for (let c = 0; c < 2; c++) {
-        const x = ((input[c] ?? input[0]) as Float32Array)[i] as number;
-        const os = (factor === 4 ? this.os4[c] : this.os2[c]) as Oversampler;
-        os.up(x);
-        const b = os.buffer;
-        for (let k = 0; k < factor; k++) {
-          const clean = b[k] as number;
-          const wet = saturate(mode, clean * drive) * comp;
-          b[k] = clean + mix * (wet - clean);
+    for (let s = 0; s < n; s += CONTROL) {
+      const end = Math.min(n, s + CONTROL);
+      this.aim(p, s, end - s);
+      let drive = this.driveGain.value;
+      let comp = this.comp.value;
+      let low = this.low.value;
+      let high = this.high.value;
+      let outGain = this.outGain.value;
+      const dDrive = this.driveGain.slope;
+      const dComp = this.comp.slope;
+      const dLow = this.low.slope;
+      const dHigh = this.high.slope;
+      const dOutGain = this.outGain.slope;
+      for (let i = s; i < end; i++) {
+        drive += dDrive;
+        comp += dComp;
+        low += dLow;
+        high += dHigh;
+        outGain += dOutGain;
+        const mix = at(p.mix, i);
+        for (let c = 0; c < 2; c++) {
+          const x = ((input[c] ?? input[0]) as Float32Array)[i] as number;
+          const os = (factor === 4 ? this.os4[c] : this.os2[c]) as Oversampler;
+          os.up(x);
+          const b = os.buffer;
+          for (let k = 0; k < factor; k++) {
+            const clean = b[k] as number;
+            const wet = saturate(mode, clean * drive) * comp;
+            b[k] = clean + mix * (wet - clean);
+          }
+          let y = os.down();
+          if (mode === TUBE) y = (this.dc[c] as OnePole).highpass(y);
+          // The tilt filter always runs, so moving Tone off 0% doesn't start it cold.
+          const lo = (this.tilt[c] as OnePole).process(y);
+          if (low !== 1 || high !== 1) y = lo * low + (y - lo) * high;
+          (output[c] as Float32Array)[i] = y * outGain;
         }
-        let y = os.down();
-        if (mode === TUBE) y = (this.dc[c] as OnePole).highpass(y);
-        // The tilt filter always runs, so moving Tone off 0% doesn't start it cold.
-        const lo = (this.tilt[c] as OnePole).process(y);
-        if (this.low !== 1 || this.high !== 1) y = lo * this.low + (y - lo) * this.high;
-        (output[c] as Float32Array)[i] = y * this.outGain;
       }
+      this.driveGain.land();
+      this.comp.land();
+      this.low.land();
+      this.high.land();
+      this.outGain.land();
     }
   }
 
-  private params(driveDb: number, tone: number, outDb: number): void {
+  /** Reads the params at frame `i` and aims each derived gain at its new target, if its param changed. */
+  private aim(p: ParamBlock<P>, i: number, frames: number): void {
+    const driveDb = at(p.drive, i);
     if (driveDb !== this.driveDb) {
       this.driveDb = driveDb;
-      this.driveGain = dbToGain(driveDb);
-      this.comp = Math.pow(this.driveGain, COMPENSATION);
+      const gain = dbToGain(driveDb);
+      this.driveGain.aim(gain, frames);
+      this.comp.aim(Math.pow(gain, COMPENSATION), frames);
     }
+    const tone = at(p.tone, i);
     if (tone !== this.toneValue) {
       this.toneValue = tone;
-      this.low = dbToGain(-TILT_DB * tone);
-      this.high = dbToGain(TILT_DB * tone);
+      this.low.aim(dbToGain(-TILT_DB * tone), frames);
+      this.high.aim(dbToGain(TILT_DB * tone), frames);
     }
+    const outDb = at(p.output, i);
     if (outDb !== this.outDb) {
       this.outDb = outDb;
-      this.outGain = dbToGain(outDb);
+      this.outGain.aim(dbToGain(outDb), frames);
     }
   }
 }

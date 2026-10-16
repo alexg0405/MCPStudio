@@ -351,6 +351,17 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   playhead sits at 15%, and a playhead off-screen (loop, seek) snaps back. It holds still during drags and while a
   context menu is open, and after a wheel/scrollbar/zoom until the playhead is back in view or playback restarts.
   The scroll is saved to the editor store only when playback stops, so following causes no React commits.
+  "Play this" (`app/actions/transport.ts`; commands `transport.playPattern`, `transport.playFrom`,
+  `transport.playRange`): the piano roll's and channel rack's ▶/■ (`transport/PlayPatternButton`), the browser's
+  pattern menu and the playlist's clip, marker, empty-spot and ruler menus set the transport view (pattern + mode,
+  or the loop region) and then play, so the toolbar's play button is never needed. The buttons subscribe to the
+  engine's play/stop events and the view's mode and current pattern, never the playhead. Pattern bodies in playlist
+  clips (`playlist/render.ts`) are built once per pattern and zoom as a path per velocity step, and blitted from a
+  small canvas when the pattern fits one, so a dense pattern used by dozens of clips costs a blit per clip. Canvases
+  redraw when the screen's pixel ratio changes (`timeline/canvas.ts`). Frame-loop code never reads layout
+  (`getBoundingClientRect`, `offsetLeft`): measure in a ResizeObserver callback and cache (a read after the
+  position readout's text changed forces a ~2.5 ms relayout). A drag whose button was released out of reach
+  (outside the window) ends on the next move with no button down (`e.buttons === 0`).
 - Context menus (`controls/ContextMenu.tsx`): one host; a first `label` entry is the header, with a × (Esc). The
   press that closes a menu outside it is swallowed whole (pointer up, click, contextmenu), so it never opens another
   menu or edits what is under it. It opens beside the pointer, flipped above/left near the edges. Submenu panels are

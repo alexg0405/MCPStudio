@@ -685,7 +685,7 @@ export class BeatAssistant {
 
   /** This turn's message to Claude: the request, the project, the part it is about, and what Claude doesn't have yet. */
   private turnText(prompt: string, take: Take | null, analysis?: string, focus?: ResolvedFocus | null): string {
-    const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
+    const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s, focus ?? null)}\n</project>`];
     if (focus) parts.push(`<focus>\n${focusContext(this.s.doc.getState().project, focus, this.pluginInfo)}\n</focus>`);
     if (analysis)
       parts.push(

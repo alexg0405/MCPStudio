@@ -86,6 +86,12 @@ export function emptyMenu(s: Services, tick: Tick, laneId: LaneId, rename: () =>
         },
       ],
     },
+    {
+      icon: 'play',
+      label: `Play from bar ${bar}`,
+      hint: `Play the song from the start of bar ${bar} (a loop region that does not include it is cleared)`,
+      onSelect: () => void s.commands.run('transport.playFrom', { bar }),
+    },
     ...(clipboard.length
       ? [
           {

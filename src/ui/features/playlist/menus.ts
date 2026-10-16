@@ -20,7 +20,24 @@ import { openWindow } from '../../workspace/registry';
 
 /** A clip's ▾ menu (FL's clip menu), with what other features add for clips. */
 export function clipMenu(s: Services, clip: Clip): MenuEntry[] {
-  return [...baseClipMenu(s, clip), ...extraMenuItems('playlist.clip', { clip }, s)];
+  const base = baseClipMenu(s, clip);
+  const play: MenuEntry[] = [
+    {
+      icon: 'play',
+      label: 'Play this clip',
+      hint: 'Loop the part of the song this clip covers and play it',
+      onSelect: () => void s.commands.run('transport.playRange', { from: clip.start, to: clip.start + clip.length }),
+    },
+    {
+      icon: 'play',
+      label: 'Play from here',
+      hint: 'Play the song from the start of this clip',
+      onSelect: () => void s.commands.run('transport.playFrom', { tick: clip.start }),
+    },
+  ];
+  // After the clip's title, before its other entries.
+  const at = base[0]?.kind === 'label' ? 1 : 0;
+  return [...base.slice(0, at), ...play, ...base.slice(at), ...extraMenuItems('playlist.clip', { clip }, s)];
 }
 
 function baseClipMenu(s: Services, clip: Clip): MenuEntry[] {

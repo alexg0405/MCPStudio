@@ -29,6 +29,7 @@ import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 import { openWindow } from '../../workspace/registry';
 import { MiniRoll } from './MiniRoll';
 import { PatternPicker } from '../patterns/PatternPicker';
+import { PlayPatternButton } from '../transport/PlayPatternButton';
 import { STEP_W, stepX } from './layout';
 import { StepGraph } from './StepGraph';
 import { stepsMenu, stepTarget, toggleGraph } from './steps';
@@ -528,6 +529,11 @@ export function ChannelRack() {
   return (
     <div className={styles.rack}>
       <div className={styles.header}>
+        <PlayPatternButton
+          patternId={patternId}
+          className={`${styles.headerButton} ${styles.playButton}`}
+          onClassName={styles.headerButtonOn}
+        />
         <PatternPicker compact />
         <label className={styles.headerControl} data-hint="Number of steps in this pattern">
           Steps

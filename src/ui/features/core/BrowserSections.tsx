@@ -5,6 +5,7 @@ import { showContextMenu } from '../../controls/ContextMenu';
 import { openWindow } from '../../workspace/registry';
 import { addInstrumentChannel, addKitChannel } from '@app/actions/channels';
 import { newPattern } from '@app/actions/patterns';
+import { isPatternPlaying } from '@app/actions/transport';
 import type { PatternId } from '@core/model/types';
 import { useDoc, useServices, useView } from '../../services-context';
 import styles from '../../shell/Browser.module.css';
@@ -131,12 +132,37 @@ export function ProjectSection() {
             key={id}
             className={`${styles.item} ${id === current ? styles.itemOn : ''}`}
             onClick={() => services.view.getState().setCurrentPattern(id as PatternId)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              const playing = isPatternPlaying(services, id as PatternId);
+              showContextMenu(e, [
+                { kind: 'label', label: pat.name },
+                playing
+                  ? {
+                      icon: 'stop',
+                      label: 'Stop',
+                      hint: 'Stop playing this pattern',
+                      onSelect: () => void services.commands.run('transport.stop'),
+                    }
+                  : {
+                      icon: 'play',
+                      label: 'Play',
+                      hint: 'Play this pattern on a loop (it becomes the pattern you are editing)',
+                      onSelect: () => void services.commands.run('transport.playPattern', { patternId: id }),
+                    },
+                {
+                  label: 'Edit',
+                  hint: 'Make this the pattern the channel rack and piano roll edit',
+                  onSelect: () => services.view.getState().setCurrentPattern(id as PatternId),
+                },
+              ]);
+            }}
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData('application/x-agstudio-pattern', id);
               e.dataTransfer.effectAllowed = 'copy';
             }}
-            data-hint={`${pat.name}: click to edit, drag onto the playlist to place it`}
+            data-hint={`${pat.name}: click to edit, right-click to play it, drag onto the playlist to place it`}
           >
             <span className={styles.swatch} style={{ background: pat.color }} />
             {pat.name}

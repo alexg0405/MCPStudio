@@ -48,6 +48,7 @@ describe('the empty-spot menu (a click on an empty playlist cell)', () => {
       `${lane.name} · bar 121`,
       `Place “${current.name}” here`,
       'Place a pattern…',
+      'Play from bar 121',
       'Ask Studio about bar 121…',
       'Add a fill here (end of bar 121)',
       'Add a transition here (into bar 121)',

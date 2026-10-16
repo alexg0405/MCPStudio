@@ -21,6 +21,7 @@ import {
   type AudioClip,
   type AudioClipChannel,
   type ChannelId,
+  type Clip,
   type ClipId,
   type InsertId,
   type LaneId,
@@ -153,8 +154,13 @@ export async function applyFilter(
         filter: record,
       };
       addChannel(d, ch);
+      const tempo = tempoMapOf(current(d) as Project, 'song');
+      // The audio takes the part's track first; the tempo clip (if any) goes on a free one after it.
+      const tempoChannel = record.tempo && 'channelId' in record.tempo ? record.tempo.channelId : null;
+      const tempoClip = Object.values(d.playlist.clips).find((c) => c.kind === 'automation' && c.channelId === tempoChannel);
+      const lifted = tempoClip ? ({ ...tempoClip } as Clip) : null;
+      if (lifted) delete d.playlist.clips[lifted.id];
       const after = current(d) as Project;
-      const tempo = tempoMapOf(after, 'song');
       const dur = ref.durationSec;
       // Reversed, the tail would come first: the clip starts where the part's (reversed) music does.
       const offsetSec = f.reverse ? Math.max(0, dur - musical) : 0;
@@ -181,6 +187,17 @@ export async function applyFilter(
         ...(gain > 1 ? { gain } : {}),
       };
       addClips(d, [clip]);
+      if (lifted) {
+        const now = current(d) as Project;
+        const i = freeLaneRun(now, lifted.start, lifted.start + lifted.length);
+        let lane = now.playlist.laneOrder[i] as LaneId | undefined;
+        if (!lane) {
+          const made = makeLane(`Track ${now.playlist.laneOrder.length + 1}`);
+          addLane(d, made);
+          lane = made.id as LaneId;
+        }
+        addClips(d, [{ ...lifted, laneId: lane }]);
+      }
     },
     opts.amend !== undefined ? { amend: opts.amend } : {},
   );

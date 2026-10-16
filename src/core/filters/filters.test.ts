@@ -7,7 +7,7 @@ import { addMarker } from '../ops/markers';
 import { changePartTempo, cutPart, emptyInsert, filtersOver, removeSoundFilter } from '../ops/filters';
 import { addInsert } from '../ops/mixer';
 import { makeInsert } from '../model/defaults';
-import { FILTERS, findFilter, lengthNote, pitchLabel, speedCents, speedOf } from './presets';
+import { FILTERS, findFilter, lengthNote, speedCents, speedOf } from './presets';
 import { clipsTarget, defaultTarget, filterPart, markerTarget, rangeTarget, songTarget, spotTarget, targetLabel } from './target';
 
 const BAR = 3840;
@@ -57,9 +57,6 @@ describe('filter presets', () => {
   it('turns speed into pitch like a record: Nightcore is about +4 semitones', () => {
     const nightcore = findFilter('nightcore')!;
     expect(speedCents(speedOf(nightcore))).toBeCloseTo(386.3, 1);
-    expect(pitchLabel(1.25)).toBe('+3.9 semitones');
-    expect(pitchLabel(0.85)).toBe('−2.8 semitones');
-    expect(pitchLabel(1)).toBeNull();
     expect(lengthNote(nightcore)).toMatch(/shorter/);
     expect(lengthNote(findFilter('telephone')!)).toMatch(/timing stays/);
   });

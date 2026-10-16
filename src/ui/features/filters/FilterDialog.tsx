@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { FILTERS, lengthNote, pitchLabel, speedOf, type FilterPreset } from '@core/filters/presets';
+import { FILTERS, lengthNote, type FilterPreset } from '@core/filters/presets';
 import { holdModal } from '../../controls/Dialog';
 import dialog from '../../controls/Dialog.module.css';
 import { useServices } from '../../services-context';
@@ -112,8 +112,7 @@ function FilterDialog({ start }: { start: string | undefined }) {
               </fieldset>
             ))}
             <p className={dialog.message}>
-              <strong>{filter.name}</strong>: {filter.description}
-              {pitchLabel(speedOf(filter)) ? ` (${pitchLabel(speedOf(filter))})` : ''}.
+              <strong>{filter.name}</strong>: {filter.description}.
             </p>
             <p className={dialog.detail}>
               {lengthNote(filter)} The part is rendered to audio; Undo or right-click › Remove filter brings the original

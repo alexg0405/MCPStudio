@@ -249,13 +249,6 @@ export function speedCents(speed: number): number {
   return 1200 * Math.log2(speed);
 }
 
-/** "+3.9 semitones" / "−2.8 semitones" (null when the pitch doesn't change). */
-export function pitchLabel(speed: number): string | null {
-  if (speed === 1) return null;
-  const st = Math.round(speedCents(speed) / 10) / 10;
-  return `${st > 0 ? '+' : '−'}${Math.abs(st)} semitones`;
-}
-
 /** What a filter does to the song's length, for hints. */
 export function lengthNote(f: FilterPreset): string {
   const v = speedOf(f);

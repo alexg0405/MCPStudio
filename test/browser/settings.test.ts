@@ -89,8 +89,10 @@ describe('settings', () => {
     expect(reloaded().accent).toBe('blue');
     await userEvent.selectOptions(select('Theme'), 'marble');
     expect(document.documentElement.dataset.theme).toBeUndefined();
+    // Gold is a choice too: picked, it shows as gold (not the slate themes' orange default).
     await userEvent.click(host.querySelector<HTMLElement>('[role="radio"][aria-label="Gold"]')!);
-    expect(document.documentElement.dataset.accent).toBeUndefined();
+    expect(document.documentElement.dataset.accent).toBe('gold');
+    expect(reloaded().accentPicked).toBe(true);
   });
 
   it('the switches turn their preference on and off, and it is remembered', async () => {

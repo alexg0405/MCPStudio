@@ -56,6 +56,8 @@ export interface PrefsState {
    * fastest when you play live (but crackles sooner).
    */
   audioBuffer: AudioBufferSize;
+  /** Remove audio nothing uses any more, a week after it was last used, while AGstudio is idle. */
+  autoCleanup: boolean;
   /** Megabytes of decoded audio kept in memory (long songs beyond it are decoded around the playhead). */
   sampleMemoryMb: number;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
@@ -67,6 +69,8 @@ export interface PrefsState {
   accent: string;
   /** AI apps (Claude Code, Claude Desktop…) may control the open project over MCP (on by default, development server only). */
   mcpEnabled: boolean;
+  /** Whether the user chose the accent. Gold is also the untouched default, so only a picked gold shows as gold on the slate themes. */
+  accentPicked: boolean;
 }
 
 export type AudioBufferSize = 'small' | 'medium' | 'large';
@@ -116,12 +120,14 @@ const DEFAULTS: PrefsState = {
   customKeys: {},
   outputDevice: '',
   audioBuffer: 'large',
+  autoCleanup: true,
   sampleMemoryMb: 1536,
   scopeMode: 'scope',
   followPlayhead: true,
   theme: 'marble',
   accent: 'gold',
   mcpEnabled: true,
+  accentPicked: false,
 };
 
 function load(): PrefsState {

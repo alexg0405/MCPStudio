@@ -160,7 +160,23 @@
   background: var(--ag-accent-soft);
 }
 
-@media (max-width: 1180px) {
+/*
+ * Compact transport. The toolbar (Shell.module.css) is a size container named "toolbar", so these follow the
+ * room the bar has, not the window. Nothing disappears: labels shrink, the displays get narrower, the
+ * position shows bar:step (a click shows the ticks) and the freed room lets more of the bar's other
+ * buttons stay out of "More".
+ */
+.timeShort {
+  display: none;
+}
+
+.time {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+@container toolbar (max-width: 1180px) {
   .time {
     min-width: 84px;
   }
@@ -170,10 +186,46 @@
   }
 }
 
-/* Narrow windows: tighter displays (the record button stays: record mode must always be visible). */
-@media (max-width: 1100px) {
+@container toolbar (max-width: 1100px) {
   .lcd {
     min-width: 66px;
     padding: 0 6px;
+  }
+}
+
+@container toolbar (max-width: 1000px) {
+  .transport {
+    gap: 2px;
+  }
+
+  .modeSwitch {
+    padding: 0 6px;
+    font-size: 8.5px;
+  }
+
+  .lcd {
+    min-width: 58px;
+    padding: 0 5px;
+  }
+
+  .lcdValue {
+    font-size: var(--ag-font-size);
+    letter-spacing: 0.02em;
+  }
+
+  .time {
+    min-width: 44px;
+  }
+
+  .time:not([data-expanded]) .timeFull {
+    display: none;
+  }
+
+  .time:not([data-expanded]) .timeShort {
+    display: inline;
+  }
+
+  .time[data-expanded] {
+    min-width: 76px;
   }
 }

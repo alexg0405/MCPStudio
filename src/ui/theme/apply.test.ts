@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACCENTS, findAccent, findTheme, THEMES } from './apply';
+import { ACCENTS, applyTheme, effectiveAccent, findAccent, findTheme, THEMES } from './apply';
 
 describe('themes', () => {
   it('finds a theme or accent by id, label or a loose name', () => {
@@ -16,6 +16,27 @@ describe('themes', () => {
     expect(findTheme('white marble')).toBe('carrara');
     expect(findTheme('FL classic')).toBe('classic');
     expect(findAccent('brass')).toBe('gold');
+  });
+
+  it('shows the theme default accent until one is picked, and Gold counts once picked', () => {
+    for (const t of ['classic', 'midnight', 'graphite', 'light', 'Light']) {
+      expect(effectiveAccent(t, 'gold', false)).toBe('orange');
+      expect(effectiveAccent(t, 'gold', true)).toBe('gold');
+    }
+    for (const t of ['marble', 'carrara', 'dark', 'white marble']) {
+      expect(effectiveAccent(t, 'gold', false)).toBe('gold');
+      expect(effectiveAccent(t, 'gold', true)).toBe('gold');
+    }
+    // Any other accent was a choice, stored as such, so it shows in every theme.
+    expect(effectiveAccent('classic', 'blue', false)).toBe('blue');
+    expect(effectiveAccent('marble', 'orange', false)).toBe('orange');
+    // Unknown or missing values fall back to the defaults.
+    expect(effectiveAccent('classic', 'teal', false)).toBe('orange');
+    expect(effectiveAccent('marble', 'teal', true)).toBe('gold');
+  });
+
+  it('applyTheme is a no-op without a document (Node)', () => {
+    expect(() => applyTheme('classic', 'gold', true)).not.toThrow();
   });
 
   it('has a block in themes.css for every theme and accent but the defaults', async () => {

@@ -1,0 +1,145 @@
+Song: 150 BPM, 4/4, swing 0%, key F minor. Mode: pattern. Current pattern: "Pattern 1" pat_SqSs-QfgQC.
+App: file "Untitled" (unsaved changes); no toggles on; undo would revert “song”.
+
+Channels (channel rack order):
+1. "Kick" ch_0gIvYRXSYx — Sampler (agstudio.sampler) sample "Kick"; vol -2.16 dB, pan 0; → Insert 17 "Kick"
+   settings: defaults
+2. "Clap" ch_XwFye5aDIR — Sampler (agstudio.sampler) sample "Clap"; vol -2.16 dB, pan 0; → Master
+   settings: defaults
+3. "Hat" ch_xIcX-d_gtq — Sampler (agstudio.sampler) sample "Closed hat"; vol -2.16 dB, pan 0; → Master
+   settings: defaults
+4. "Snare" ch_FnoPgmpcoq — Sampler (agstudio.sampler) sample "Snare"; vol -2.16 dB, pan 0; → Master
+   settings: defaults
+5. "Crash" ch_uavM5EjRry — Sampler (agstudio.sampler) sample "Crash"; vol -7.96 dB, pan 0; → Master
+   settings: defaults
+6. "808" ch_TakPecBIKB — 808 Bass (agstudio.bass808); vol -1.41 dB, pan 0; → Master
+   settings: defaults
+7. "Pluck" ch_7Y0DUT6PwT — Pluck (agstudio.pluck); vol -7.96 dB, pan 0.15; → Insert 18 "Melody"
+   settings: defaults
+8. "Dark Pad" ch_yKvQJUq1Ud — Wavetable (agstudio.wavetable); vol -9.9 dB, pan 0; → Insert 19 "Pad"
+   settings: defaults
+9. "Saw Layer" ch_PeAhhI3t_g — user.example-supersaw (missing) (user.example-supersaw); vol -13.15 dB, pan -0.1; → Insert 18 "Melody"
+   settings: plugin not installed
+10. "Choir" ch_JPVAAtgTh5 — Wavetable (agstudio.wavetable); vol -12.04 dB, pan 0; → Insert 20 "Strings & Choir"
+   settings: defaults
+11. "Strings" ch_NMjXK6ZuiL — Wavetable (agstudio.wavetable); vol -13.15 dB, pan 0; → Insert 20 "Strings & Choir"
+   settings: defaults
+12. "Organ" ch_dGAWAmTugq — user.example-faust-organ (missing) (user.example-faust-organ); vol -14.89 dB, pan 0; → Insert 20 "Strings & Choir"
+   settings: plugin not installed
+13. "Riser" ch_Xm1C3RXnIf — Wavetable (agstudio.wavetable); vol -13.98 dB, pan 0; → Insert 21 "FX"
+   settings: defaults
+14. "Reverse Crash" ch_LdkVzI3V2g — Sampler (agstudio.sampler) sample "Crash"; vol -7.96 dB, pan 0; → Insert 21 "FX"
+   settings: defaults
+15. "Sub Drop" ch_rSdo3HDHiV — 808 Bass (agstudio.bass808); vol -4.01 dB, pan 0; → Master
+   settings: defaults
+16. "Bell Arp" ch_0Xb2Szxwaj — FM (agstudio.fm); vol -15.92 dB, pan -0.2; → Insert 22 "Bells"
+   settings: defaults
+17. "Perc" ch_P169b3djCz — Drum Pads (agstudio.drum-pads); vol -9.9 dB, pan 0.15; → Insert 23 "Perc"
+   settings: defaults
+18. "Downlifter" ch_GvJeVP70wI — Wavetable (agstudio.wavetable); vol -13.98 dB, pan 0; → Insert 21 "FX"
+   settings: defaults
+19. "Cutoff · Filter (Insert 18)" ch_PHn3CAl8y_ — automation of “Cutoff · Filter (Insert 18)”: 2 points, 296 Hz → 17.4 kHz
+20. "Cutoff · Filter (Insert 18)" ch_i1Fe_VNDAX — automation of “Cutoff · Filter (Insert 18)”: 2 points, 17.4 kHz → 159 Hz
+21. "Cutoff · Dark Pad" ch_atbSwIAZZ7 — automation of “Cutoff · Dark Pad”: 2 points, 159 Hz → 10.0 kHz
+22. "Cutoff · Dark Pad" ch_ovXoc82-75 — automation of “Cutoff · Dark Pad”: 2 points, 159 Hz → 10.0 kHz
+23. "Cutoff · Dark Pad" ch_232Mf9UQJn — automation of “Cutoff · Dark Pad”: 2 points, 159 Hz → 10.0 kHz
+24. "Pitch · Riser" ch_MIQcDKqraf — automation of “Pitch · Riser”: 2 points, 0 ct → +1200 ct
+25. "Pitch · Riser" ch_o1SNi2K4zR — automation of “Pitch · Riser”: 2 points, 0 ct → +1200 ct
+26. "Pitch · Riser" ch__sDdo1nRMO — automation of “Pitch · Riser”: 2 points, 0 ct → +1200 ct
+27. "Pitch · Riser" ch_lOz6vy8hcR — automation of “Pitch · Riser”: 2 points, 0 ct → +1200 ct
+28. "Pitch · Downlifter" ch_wNydN8EYlu — automation of “Pitch · Downlifter”: 2 points, 0 ct → -1200 ct
+29. "Pitch · Downlifter" ch_N1VKdzYwjT — automation of “Pitch · Downlifter”: 2 points, 0 ct → -1200 ct
+30. "Pitch · Downlifter" ch_fH5T5dRjjy — automation of “Pitch · Downlifter”: 2 points, 0 ct → -1200 ct
+31. "Volume · Master" ch_yMgyS_E3Aw — automation of “Volume · Master”: 2 points, 0.0 dB → -∞ dB
+
+Mixer tracks (number = position; channels feed the track shown after →):
+- Master master: vol 0 dB, pan 0
+   fx 1: Saturator (agstudio.saturator) fx_Rfbc33sK1J, mix 100%; settings: defaults
+   fx 2: Limiter (agstudio.limiter) fx_HnJrIhI_nZ, mix 100%; settings: defaults
+- Insert 17 "Kick" ins_zJr9rwwcwx: vol 0 dB, pan 0; routes → Master 0 dB
+- Insert 18 "Melody" ins_Ku9igyKWBM: vol 0 dB, pan 0; routes → Master 0 dB
+   fx 1: Filter (agstudio.filter) fx_jE2lM_8aDx, mix 100%; settings: defaults
+   fx 2: Delay (agstudio.delay) fx_jB6C5wRkFp, mix 100%; settings: defaults
+   fx 3: Reverb (agstudio.reverb) fx_G3XBBR0cb_, mix 100%; settings: defaults
+- Insert 19 "Pad" ins_LBTjdaE-08: vol 0 dB, pan 0; routes → Master 0 dB
+   fx 1: EQ Pro (agstudio.eq-pro) fx_cKqJhUyjfe, mix 100%; settings: defaults
+   fx 2: Reverb (agstudio.reverb) fx_mQSWqW8MY7, mix 100%; settings: defaults
+   fx 3: Ducker (agstudio.ducker) fx_1b1vvZaBCS, mix 100%, sidechain from Insert 17; settings: defaults
+- Insert 20 "Strings & Choir" ins_cmSKlDc5zs: vol 0 dB, pan 0; routes → Master 0 dB
+   fx 1: EQ Pro (agstudio.eq-pro) fx_sfuqRxrB_0, mix 100%; settings: defaults
+   fx 2: Reverb (agstudio.reverb) fx_0Z9JbLO7qW, mix 100%; settings: defaults
+   fx 3: Ducker (agstudio.ducker) fx_W9eG7SMclT, mix 100%, sidechain from Insert 17; settings: defaults
+- Insert 21 "FX" ins_ncKO6HdXH1: vol 0 dB, pan 0; routes → Master 0 dB
+   fx 1: EQ Pro (agstudio.eq-pro) fx_jHNvd7cFQP, mix 100%; settings: defaults
+   fx 2: Reverb (agstudio.reverb) fx_jymb-QKD_u, mix 100%; settings: defaults
+- Insert 22 "Bells" ins_OS1sZntiwR: vol 0 dB, pan 0; routes → Master 0 dB
+   fx 1: Delay (agstudio.delay) fx_7egtADLTp4, mix 100%; settings: defaults
+   fx 2: Reverb (agstudio.reverb) fx_A94eEARLdd, mix 100%; settings: defaults
+- Insert 23 "Perc" ins_bpX4ZtbTA6: vol 0 dB, pan 0; routes → Master 0 dB
+   fx 1: Reverb (agstudio.reverb) fx_-OMn1bQkSX, mix 100%; settings: defaults
+- Inserts 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16: empty (default settings, routed to Master)
+
+Patterns:
+- "Pattern 1" pat_SqSs-QfgQC, 2 bars: empty; not in the song
+- "ISOxo 808 slam" pat_grrJqSpM0o, 2 bars: Kick (4), Clap (2), Hat (21), Snare (2), Crash (1), 808 (4), Pluck (11), Dark Pad (9), Saw Layer (11); plays at bars 17–32
+- "Build" pat_OSqEDPBGWv, 2 bars: Hat (16), Snare (18), Pluck (11), Dark Pad (9); plays at bars 33–36, bars 65–68
+- "Drop" pat_n4FZJm-kwG, 2 bars: Kick (7), Clap (2), Hat (21), Snare (4), Crash (1), 808 (7), Pluck (11), Dark Pad (9), Saw Layer (11); plays at bars 37–52, bars 89–100
+- "Drop 2" pat_n_KLG1Z9VR, 2 bars: Kick (7), Clap (2), Hat (21), Snare (6), Crash (1), 808 (7), Pluck (11), Dark Pad (9), Saw Layer (11); plays at bars 69–84
+- "Break" pat_1TZTLeRtV0, 2 bars: Hat (4), Pluck (11), Dark Pad (9); plays at bars 9–16, bars 53–64, bars 85–88
+- "Intro" pat_4Vx47Cidiz, 2 bars: Pluck (11), Dark Pad (9); plays at bars 1–8, bars 101–112
+- "Choir layer" pat_POF1b0jjUr, 2 bars: Choir (9); plays at bars 5–16, bars 37–52, bars 61–64, bars 69–84, bars 89–108
+- "Strings layer" pat_UVTBCB1wkZ, 2 bars: Strings (9); plays at bars 25–32, bars 45–52, bars 57–64, bars 69–84, bars 89–100
+- "Organ layer" pat_VvjPJdqQSf, 2 bars: Organ (12); plays at bars 53–64, bars 77–84, bars 93–100
+- "Riser" pat_WFnDOmtt1z, 2 bars: Riser (2), Reverse Crash (1); plays at bars 15–16, bars 35–36, bars 67–68, bars 87–88
+- "Impact" pat_N-wnH9nf2X, 2 bars: Crash (1), Sub Drop (1); plays at bars 17–18, bars 37–38, bars 69–70, bars 89–90
+- "Bell layer" pat_cEI29hafO6, 2 bars: Bell Arp (16); plays at bars 25–32, bars 41–52, bars 57–64, bars 69–84, bars 89–104
+- "Perc layer" pat_C8XWFI5aCh, 2 bars: Perc (27); plays at bars 17–32, bars 37–52, bars 69–84, bars 89–100
+- "Tom fill" pat_8HCmNOK3nE, 1 bar: Perc (8); plays at bar 16, bar 32, bar 48, bar 64, bar 80, bar 96
+- "Downlifter" pat_aq1wrZfVC7, 2 bars: Downlifter (2); plays at bars 53–54, bars 85–86, bars 101–102
+  Notes of the current pattern (steps are 1/16 notes from 0; pitched notes as step:note/length; @ = velocity 0–1 when not 0.8):
+
+Playlist (song mode plays it). Bar ranges are 1-based and inclusive ("bars 81–112" is 32 bars); the song is 112 bars long.
+Sections (markers): "Intro" bars 1–8 mk_bU_oRyr72a; "Pre-verse" bars 9–16 mk_AfDOXEDxDF; "Verse" bars 17–32 mk_1_3mbCKHIg; "Build" bars 33–36 mk_c-16-Ykqsn; "Drop" bars 37–52 mk_bRP94NBBU7; "Bridge" bars 53–64 mk__F_Db8y4O2; "Build 2" bars 65–68 mk_fFB2eh9cDj; "Drop 2" bars 69–84 mk_x57VDR0vEa; "Breather" bars 85–88 mk_QhX7h5qbEl; "Final Drop" bars 89–100 mk_L4XfinMM-x; "Outro" bars 101–112 mk_qyjBdsYqqT
+- Track 1: "Intro" ×4 bars 1–8; "Break" ×4 bars 9–16; "ISOxo 808 slam" ×8 bars 17–32; "Build" ×2 bars 33–36 clip_YcOii2eQqo, clip__O7dy04l2S; "Drop" ×8 bars 37–52; "Break" ×6 bars 53–64; "Build" ×2 bars 65–68 clip_8G0q_gpNmC, clip_L6vgTDB5a7; "Drop 2" ×6 bars 69–80; "Drop 2" ×2 bars 81–84 (STACKED: plays 2× here) clip_0Du6spDUs0, clip_VIBWgh80Dr; "Break" ×2 bars 85–88 (STACKED: plays 2× here) clip_AWLNClVYR0, clip_d8dl45yd_5; "Drop" ×6 bars 89–100 (STACKED: plays 2× here); "Intro" ×6 bars 101–112 (STACKED: plays 2× here)
+- Track 2: "Choir layer" ×2 bars 5–8 clip_8bzoQC8ryP, clip_TEYL5wXQlG; "Choir layer" ×4 bars 9–16; automation "Cutoff · Dark Pad" bars 33–36 clip_7LXP9b00Pt; "Choir layer" ×8 bars 37–52; automation "Pitch · Downlifter" bars 53–54 clip_Y-uN1KyIoQ; "Choir layer" ×2 bars 61–64 clip_v1SM_ingRY, clip__qGThc0phs; automation "Cutoff · Dark Pad" bars 65–68 clip_ZHcseVF_Mc; "Choir layer" ×8 bars 69–84; automation "Cutoff · Dark Pad" bars 85–88 clip_lNt7-jRzEo; "Choir layer" ×6 bars 89–100; "Choir layer" ×4 bars 101–108
+- Track 3: automation "Cutoff · Filter (Insert 18)" bars 1–8 clip_ESXbuoWVuC; automation "Pitch · Riser" bars 15–16 clip_4ZX6QIsu1p; "Strings layer" ×4 bars 25–32; automation "Pitch · Riser" bars 35–36 clip_syG6oGp_QA; "Strings layer" ×4 bars 45–52; "Strings layer" ×4 bars 57–64; automation "Pitch · Riser" bars 67–68 clip_zbziKrybpK; "Strings layer" ×8 bars 69–84; automation "Pitch · Downlifter" bars 85–86 clip_nc0bnbqZxu; automation "Pitch · Riser" bars 87–88 clip_m4jQTa6hyf; "Strings layer" ×6 bars 89–100; automation "Cutoff · Filter (Insert 18)" bars 101–112 clip_WgrjUpDOjo
+- Track 4: "Organ layer" ×6 bars 53–64; "Organ layer" ×4 bars 77–84; "Organ layer" ×4 bars 93–100; automation "Pitch · Downlifter" bars 101–102 clip_y8V5qrsi51; automation "Volume · Master" bars 105–112 clip_F6lNxXuL3e
+- Track 5: "Riser" bars 15–16 clip_k2de4w052D; "Riser" bars 35–36 clip_74zqmXf2-h; "Riser" bars 67–68 clip_5-twji7mDU; "Riser" bars 87–88 clip_EI-2m2OrW6
+- Track 6: "Impact" bars 17–18 clip__BgT8yfJ5x; "Impact" bars 37–38 clip_Q77bY_QKoM; "Impact" bars 69–70 clip_3iFILc102M; "Impact" bars 89–90 clip_Hs-h5ry5I7
+- Track 7: "Bell layer" ×4 bars 25–32; "Bell layer" ×6 bars 41–52; "Bell layer" ×4 bars 57–64; "Bell layer" ×8 bars 69–84; "Bell layer" ×6 bars 89–100; "Bell layer" ×2 bars 101–104 clip_jwK1KKjrwq, clip_BrgfnEtGbU
+- Track 8: "Perc layer" ×8 bars 17–32; "Perc layer" ×8 bars 37–52; "Perc layer" ×8 bars 69–84; "Perc layer" ×6 bars 89–100
+- Track 9: "Tom fill" bar 16 clip_EXR57d371i; "Tom fill" bar 32 clip_7xxnNz69mW; "Tom fill" bar 48 clip_kJ8JBpViHM; "Tom fill" bar 64 clip_syH3XOq8Lk; "Tom fill" bar 80 clip_H_A3ECwvNZ; "Tom fill" bar 96 clip_mxeEoeDOvU
+- Track 10: "Downlifter" bars 53–54 clip_p52-JHBvK6; "Downlifter" bars 85–86 clip_21qRR5jt20; "Downlifter" bars 101–102 clip_KQEH6qxjfn
+- Track 11: "Drop 2" ×2 bars 81–84 clip_lIi_vB9rDs, clip_SOpW9Gdd4q; "Break" ×2 bars 85–88 clip__ZANhLTxy_, clip_SQt3tqIkSz; "Drop" ×6 bars 89–100; "Intro" ×6 bars 101–112
+Arrangement (sections, energy 1–5 as heard): Intro 1–8 (1) · Pre-verse 9–16 (1) · Verse 17–32 (5) · Build 33–36 (2) · Drop 37–52 (5) · Bridge 53–64 (2) · Build 2 65–68 (2) · Drop 2 69–84 (5) · Breather 85–88 (2) · Final Drop 89–100 (5) · Outro 101–112 (1)
+
+Song check (problems in the arrangement right now):
+- bars 81–112 play the same clips 3 times at once (Track 1, Track 11): that part is 3× too loud. The tidy action removes the copies.
+- "ISOxo 808 slam" repeats 8 times unchanged on Track 1 (bars 17–32).
+- "Drop" repeats 8 times unchanged on Track 1 (bars 37–52).
+- "Break" repeats 6 times unchanged on Track 1 (bars 53–64).
+- "Drop 2" repeats 6 times unchanged on Track 1 (bars 69–80).
+- "Drop" repeats 6 times unchanged on Track 1 (bars 89–100).
+- "Intro" repeats 6 times unchanged on Track 1 (bars 101–112).
+- "Choir layer" repeats 6 times unchanged on Track 2 (bars 5–16).
+- "Choir layer" repeats 8 times unchanged on Track 2 (bars 37–52).
+- "Choir layer" repeats 8 times unchanged on Track 2 (bars 69–84).
+- "Choir layer" repeats 10 times unchanged on Track 2 (bars 89–108).
+- "Strings layer" repeats 8 times unchanged on Track 3 (bars 69–84).
+- "Strings layer" repeats 6 times unchanged on Track 3 (bars 89–100).
+- "Organ layer" repeats 6 times unchanged on Track 4 (bars 53–64).
+- "Bell layer" repeats 6 times unchanged on Track 7 (bars 41–52).
+- "Bell layer" repeats 8 times unchanged on Track 7 (bars 69–84).
+- "Bell layer" repeats 8 times unchanged on Track 7 (bars 89–104).
+- "Perc layer" repeats 8 times unchanged on Track 8 (bars 17–32).
+- "Perc layer" repeats 8 times unchanged on Track 8 (bars 37–52).
+- "Perc layer" repeats 8 times unchanged on Track 8 (bars 69–84).
+- "Perc layer" repeats 6 times unchanged on Track 8 (bars 89–100).
+- "Drop" repeats 6 times unchanged on Track 11 (bars 89–100).
+- "Intro" repeats 6 times unchanged on Track 11 (bars 101–112).
+- 11 tracks have no name ("Track N"): the track action names them.
+- 3 automation channels "Cutoff · Dark Pad" are the same curve: tidy merges them.
+- 4 automation channels "Pitch · Riser" are the same curve: tidy merges them.
+- 3 automation channels "Pitch · Downlifter" are the same curve: tidy merges them.
+
+Selected: channel "Kick", mixer track none.

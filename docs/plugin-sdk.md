@@ -186,7 +186,7 @@ option index and booleans as 0/1.
 work on the main thread and in Node tests too): `Biquad` (RBJ cookbook), `Svf` (state-variable filter
 that stays stable while you sweep it every sample: low/high/band-pass, notch, peak, all-pass, bell,
 shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `EnvelopeFollower`
-(peak or RMS level with attack/release), `Adsr` (envelope; retriggers from its current value),
+(peak or RMS level with attack/release), `Ramp` (a value derived from a param at a control rate, moving in a straight line to each new target: cheaper than recomputing a dB-to-gain or a coefficient on every frame of automation), `Adsr` (envelope; retriggers from its current value),
 `BlepOscillator` (sine, saw, square, pulse and triangle with little aliasing; `polyBlep` for your
 own), `DelayLine` (fractional reads, linear or cubic), `Lfo` (seven shapes, free-running or locked to
 the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`. For instruments:
@@ -723,5 +723,11 @@ older versions are upgraded when they load.
 - Speed assertions (a kernel's cost, a render's speed): `cpuNow()` is the CPU time the process has spent (the
   wall clock mostly counts waiting for a core on a busy machine) and `settle(measure, pass)` takes the best of a
   few attempts, stopping at the first that passes. Both are in `@agstudio/sdk/testing`.
+- Kernel CPU: `npm run bench:plugins` measures every built-in kernel as % of one core (`--only fm,reverb`,
+  `--reps 5`, `--seconds 4`, `--json`). `--automate` also sweeps up to 3 automatable float params across their
+  ranges with a slow sine (one cycle per 4 s, a per-frame value on every sample, as a song's automation does)
+  and prints the steady and automated % side by side with their ratio. A kernel that re-reads a param per
+  sample or recomputes coefficients when one moves shows a high ratio there; check it before shipping a plugin
+  that reads params inside its inner loop.
 - Whole plugins: browser tests render offline in headless Chrome (`test/browser/worklet.test.ts`).
   `npm run test:audio` runs them; `npm run check` runs everything.

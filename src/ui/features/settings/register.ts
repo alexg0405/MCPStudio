@@ -1,10 +1,11 @@
 import type { Services } from '@app/services';
 import { canChooseOutput, findOutput, listOutputs } from '@app/audio-devices';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
-import { ACCENTS, applyTheme, findAccent, findTheme, THEMES } from '../../theme/apply';
+import { ACCENTS, applyTheme, effectiveAccent, findAccent, findTheme, THEMES } from '../../theme/apply';
 import { registerWindowType, toggleWindow } from '../../workspace/registry';
 import { setWindowHelp } from '../../workspace/window-help';
 import { lazyWindow } from '../../workspace/lazy';
+import { cleanUpUnusedAudio } from './storage-flow';
 
 /** Settings: the sound output, MIDI, the typing keyboard, recording and help options in one window. */
 export function register(services: Services): void {
@@ -20,8 +21,23 @@ export function register(services: Services): void {
     id: 'options.settings',
     title: 'Settings…',
     category: 'Options',
-    hint: 'Sound output (speakers or headphones), MIDI keyboards, the typing piano, recording and tooltips',
+    hint: 'Sound output (speakers or headphones), MIDI keyboards, the typing piano, recording, tooltips and storage',
     run: (s) => toggleWindow(s, 'settings'),
+  });
+  commands.register({
+    id: 'storage.cleanUp',
+    title: 'Clean up unused audio…',
+    category: 'Options',
+    hint: 'Free space: see how many audio files nothing uses any more, then remove them after you confirm',
+    run: (s) => cleanUpUnusedAudio(s),
+  });
+  commands.register({
+    id: 'storage.autoCleanup',
+    title: 'Clean up unused audio by itself',
+    category: 'Options',
+    hint: 'When AGstudio is idle, remove audio nothing has used for a week (never while playing or exporting)',
+    run: (s) => s.prefs.getState().set({ autoCleanup: !s.prefs.getState().autoCleanup }),
+    checked: (s) => s.prefs.getState().autoCleanup,
   });
   commands.register<string>({
     id: 'options.outputDevice',
@@ -51,7 +67,10 @@ export function register(services: Services): void {
     },
   });
   // The look: theme and accent color (kept in prefs, applied to <html>).
-  const look = () => applyTheme(services.prefs.getState().theme, services.prefs.getState().accent);
+  const look = () => {
+    const p = services.prefs.getState();
+    applyTheme(p.theme, p.accent, p.accentPicked);
+  };
   services.prefs.subscribe(look);
   look();
   commands.register<string>({
@@ -77,12 +96,13 @@ export function register(services: Services): void {
     run: (s, name) => {
       const accent = findAccent(String(name ?? ''));
       if (!accent) return s.session.getState().toast(`There is no accent color called “${String(name)}”.`, 'error');
-      s.prefs.getState().set({ accent });
+      s.prefs.getState().set({ accent, accentPicked: true });
     },
   });
   services.keymap.add([{ chord: 'F10', command: 'options.settings' }]);
   addMenuItems('options', [
     cmd('options.settings', 0),
+    cmd('storage.cleanUp', 0.3),
     {
       kind: 'dynamic',
       id: 'look',
@@ -105,7 +125,7 @@ export function register(services: Services): void {
             run: () => {},
             children: ACCENTS.map((a) => ({
               label: a.label,
-              checked: (findAccent(pr.accent) ?? 'orange') === a.id,
+              checked: effectiveAccent(pr.theme, pr.accent, pr.accentPicked) === a.id,
               run: () => services.commands.run('options.accent', a.id),
             })),
           },
@@ -123,6 +143,7 @@ export function register(services: Services): void {
       ['Typing piano', 'Your letter keys play the selected sound'],
       ['Recording', 'Metronome, count-in and note snapping'],
       ['Theme and accent', 'Dark, Midnight, Graphite or Light, in your color'],
+      ['Storage', 'See what AGstudio keeps in this browser and clean up audio nothing uses'],
     ],
   });
 }

@@ -414,8 +414,8 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   a piece at a time and Open reads it an entry at a time (see [Long audio](#long-audio-dj-mode-foundations)).
 - Runtime sample store: OPFS `blobs/<sha256>.<ext>` (`platform/opfs.ts`), layered over memory when OPFS is missing or
   full (`app/persistence/blob-store.ts`); decoded per `(hash, sampleRate)` into the shared sample cache (memory budget,
-  see [Long audio](#long-audio-dj-mode-foundations)); undo removes references, not blobs; idle GC of
-  unreferenced blobs (count references from autosaves too). `decodeAudioData` resamples and detaches its input; Chrome
+  see [Long audio](#long-audio-dj-mode-foundations)); undo removes references, not blobs; unused blobs are removed by the
+  safe clean-up described under [Clean-up of unused audio](#clean-up-of-unused-audio). `decodeAudioData` resamples and detaches its input; Chrome
   rejects AIFF, so the engine's decoder has the PCM parser in `core/io/wav.ts` (which also reads `smpl` and AIFF
   `INST`/`MARK` loop/root data) turn it into float WAV in a Worker (`engine/pcm.worker.ts`).
 - Save/Open (`app/project-files.ts`, `services.files`): `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for
@@ -461,6 +461,57 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   bar shows "Name (edited)" after a tweak. Randomize keeps params that look like output levels. `.agpreset` files are
   JSON (`format: "agstudio-preset"`). Samples aren't part of a preset. The AI catalog lists your presets and
   `preset: "<name>"` finds yours before the factory ones.
+
+### Clean-up of unused audio
+
+Without it, storage only grows (removing a song, deleting a sample or closing a project leaves its bytes). Losing a
+user's audio is far worse than keeping extra bytes, so every rule below errs toward keeping. Code: `core/gc`
+(pure rules, unit-tested), `app/storage` (collector, tab records, guard, service), `platform` (locks, IndexedDB, OPFS
+stats), UI in Settings → Storage.
+
+- **In use** = any stored value mentions the blob's SHA-256. The finder (`core/gc/refs.ts`) doesn't know shapes: it
+  takes every 64-hex run in every string and key of plain data, so a new field that holds a hash is covered without
+  changes. Sources: every live tab's record (its project, its undo *and* redo history through
+  `History.referencedHashes()`, and audio pinned by a running export/render, `app/storage/busy.ts`); every autosave
+  slot file (`projectFileHashes`: the text of `project.json`/`view.json`, valid or not); the DJ library
+  (`dj-library`); and **every other value in the IndexedDB `kv` store** except `gc:*` and the cached track analyses
+  (`dj-analysis:*`, which are keyed by hash but are not a use). Recent files hold handles, never bytes, so they pin
+  nothing. The DJ-mix and sound-filter records live inside the project, so they are covered through it.
+- **Tabs publish** a `gc:tab:<session id>` record (hashes, heartbeat, `playing`, `busy`), 1 s after a change and every
+  30 s (`tab-refs.ts`). A record counts only while the tab's life lock `agstudio:session:<id>` is held (the same lock
+  autosave recovery uses). A held lock with no record means a tab that is still starting (or an older build): the run
+  stops. Records of tabs whose lock is gone are discarded, after marking their hashes "seen" at their last heartbeat
+  (a reload briefly releases the lock; the grace period covers that gap).
+- **Grace period**: a blob goes only if nothing refers to it *and* both its file time and its `gc:seen:<hash>` mark are
+  7 days old (`core/gc/plan.ts`). The mark is set when a blob is written, found by `hasBlob` or read by `getBlob`
+  (`app/storage/guard.ts`, installed into the sample store), when the collector sees it in use (refreshed at most every
+  12 h), and from dead tabs as above. A blob nothing says anything about starts its grace on first sight. Clock moved
+  back counts as "not old".
+- **Atomicity**: the sample store's reads and writes of the persistent store run under a shared `ag-blobs` Web Lock
+  (one refcounted request per tab, so a waiting exclusive request cannot deadlock a nested one). The collector takes
+  `ag-gc` exclusively (`ifAvailable`: one run at a time, others skip) and deletes in batches of 10-25, each inside an
+  exclusive `ag-blobs` hold that first re-reads the live tab records and the marks of its candidates and drops any that
+  came into use. A delete therefore never lands between a tab's look at a blob and its use of it.
+- **Fail safe**: any unreadable source (IndexedDB, an autosave listing), no Web Locks, no OPFS or IndexedDB, an unknown
+  tab, a busy tab (export/import running), or playing (automatic run only) means nothing is deleted. Corrupt autosave
+  files count as holding nothing (recovery cannot use them either). Collection never touches the derived cache
+  (`derived/`, stretched copies), which has its own 4 GB cap; analyses of removed songs go with their blob.
+- **When**: automatic run (Options → "Clean up unused audio by itself", `prefs.autoCleanup`, on by default): first
+  2 minutes after a tab opens, then at most once per 6 h across tabs, in an idle callback, batches of 10 with a pause,
+  stopping when playback starts. **Development builds only log what it would remove** (`dryRunOnly`;
+  `localStorage['agstudio:gc-dry-run'] = '0'` turns that off). Manual: Settings → Storage → "Clean up unused audio…"
+  (or the Options menu / action search / the Studio via `storage.cleanUp`) shows how many files and how much space,
+  asks, then removes (always real, also in dev). The table shows project audio, DJ library, stretched copies and other
+  (autosaves + unused audio); the rows add up to the total.
+- **Not covered, on purpose**: a project saved to a `.agproj` embeds its samples, so closing it and letting its audio
+  age out loses nothing (opening re-imports it). Only unsaved work needs the blob store: that is what the tab records,
+  undo history and autosaves protect.
+- Tests: `core/gc/gc.test.ts` (hash finder, history, autosave files, grace, tab rules), `app/storage/*.test.ts`
+  (collector on fakes: sources, grace, dead tabs, batch re-check, failures, usage numbers, the guard),
+  `test/browser/storage-gc.test.ts` (real OPFS/IndexedDB/Web Locks with iframe "tabs" and a fake clock: other tab's
+  audio, undo, grace, dead tabs, writer vs. collector, recovery after a collection, 1,000 blobs),
+  `test/browser/storage-settings.test.ts` (Settings → Storage numbers, dialog, switch). New code that stores a hash
+  outside a project must keep it in IndexedDB `kv` (or tell the collector); that is all it takes to stay safe.
 
 ## Voice analysis (`src/core/voice`)
 
@@ -1203,7 +1254,7 @@ checking on real files. Octave choices follow DJ conventions (trap 140, DnB 174,
 
 The musician wants to mix songs like a DJ (party mixes). It is their own files: streaming services (Spotify…) are
 DRM-locked, and the UI and the Studio say so. Auto-mix first: songs in → ordered, beat-matched, every transition
-built on the playlist → tweak → export. Live decks and MIDI controllers come later.
+built on the playlist → tweak → export. Live decks come next; MIDI controllers are in "DJ controllers" below.
 
 ### Contracts (`core/dj/types.ts`, `app/dj/analysis-cache.ts`)
 
@@ -1288,6 +1339,63 @@ alone and never drop more than 7 dB; the incoming song's lows are > 15 dB down u
   the engine stretches clip ranges.
 - Beat grids with drifting `beats[]` play on the fixed grid (they will slip); 3/4 songs align on their own bars.
 - The playlist zooms to the mix after it is made; there is no live deck view yet (the next wave).
+
+## DJ controllers
+
+MIDI DJ controllers drive the live decks (`DecksApi`, `app/dj/decks-api.ts`). Live control is performance, not an
+edit of the project: nothing here goes through History (a controller is not the knob "Link to controller…" of
+`app/controllers.ts`, which writes project parameters through History; the two do not share state).
+
+- **Pure mapping layer** (`core/midi-map`, no DOM, unit tests in `midi-map.test.ts`):
+  - `message.ts` parses channel messages (note on/off, CC, pitch bend; a velocity-0 note-on is a note-off) and builds
+    the bytes sent back for LEDs. `relative.ts` decodes the three endless-dial encodings to signed steps
+    (two's complement 1/127, sign-magnitude 1/65, centred on 64 = 65/63). `cc14.ts` pairs CC n (coarse) with CC n+32
+    (fine) per channel and yields a value on the fine byte once a pair has sent one (so the value never steps).
+    `soft-takeover.ts` is the pickup: hardware is ignored until it is within 0.03 of the software value or crosses it,
+    and it lets go again when something else (the mouse) moved the software value.
+  - `targets.ts` is the catalog of what a controller can drive: ids like `A.play`, `B.hotcue:3`, `A.eq.low`,
+    `crossfader`, `browse`, `record`, `app.playPause`, each of kind `button`, `abs` or `rel`; `led: true` marks the
+    ones with a light. `types.ts` is the mapping (inputs: note, cc, cc14, rel with its encoding, pitch bend; bindings
+    with optional `layer`, `invert`, `scale`; shift keys; LEDs) and its JSON import/export, which drops what it does not
+    understand and counts it. `interpreter.ts` turns messages into `ControlEvent`s: shift layers (a held shift key
+    selects the bindings of its layer, otherwise the normal binding; a release goes to the binding the press used),
+    CC buttons with press/release edges, 14-bit and relative handling. `learn.ts` detects a control's type from
+    its messages (a note = button, bend = fader, CC + CC+32 = 14-bit, a sweep = fader, repeated small steps with both
+    directions seen = endless dial and which encoding); the target's kind breaks ties.
+  - `presets/` holds the maps by device name (see below). Each file names its source.
+- **App layer** (`app/dj/controllers`): `manager.ts` (`DjControllers`, one per services object via `djControllers(services)`):
+  asks for MIDI with `requestMIDIAccess({ sysex: false })` (denied or unsupported are states, not errors), listens
+  with its own `midimessage` listeners (the keyboard `MidiInput` keeps working, and ignores devices that have a
+  mapping: `midi.ignore`), keeps one `MappingInterpreter` per port, applies soft takeover to faders and knobs,
+  runs learn, and saves the maps the musician made or changed per device name in IndexedDB (`storage.ts`; an untouched
+  preset is not stored, "Reset" returns to it). `abs.ts` converts hardware positions to deck values and back (EQ: kill
+  −26 dB … 0 dB at the centre … +6 dB; trim ±12 dB; filter with a dead zone at the centre; pitch ± the deck's range,
+  higher = faster; channel fader 0…1). `dispatch.ts` turns control events into `DecksApi` calls (cue on both edges,
+  jog nudge until the platter is touched then scratch, search seeks 0.25 s per step, one jog tick = 1/600 turn, a loop pad pressed
+  again leaves its loop, load loads the browse encoder's highlighted song on that deck). `browse.ts` is the highlight in
+  the music library. `leds.ts` derives on/off for every light from the deck state and `LedFeedback` sends only what
+  changed, and everything on connect or when the decks come up; lights go dark on disconnect.
+- **Decks source** (`decks-source.ts`): the controllers get the decks from `setDecksProvider(() => decksOrPromise)`
+  (the decks implementation calls it once), else `services.decks` (a `DecksApi` or a `DecksFactory`), else in
+  development a `FakeDecks` stand-in (`fake-decks.ts`; `test/helpers/fake-decks.ts` re-exports it) and the window says so.
+- **UI** (`ui/features/dj-controllers`): View → DJ controllers (`dj.controllers.open`), "Link a DJ controller (MIDI
+  learn)…" (`dj.controllers.learn`, optional `{ target, shifted }`: opens the window and waits, the Studio can run it but the
+  musician touches the control), `dj.controllers.connect`. The window lists the controls per deck with their links,
+  Learn / + Shift / Clear per row, a Shift-key row, soft takeover and LED options, ready-made map picker, Export / Import,
+  a Test tab (every incoming message and what it did, while the tab is open). In learn mode a click on any element with
+  `data-dj-target="A.play"` (the Decks window's controls) picks it; right-click on one offers "Link to controller…" when
+  it has no menu of its own.
+- **Presets** (`core/midi-map/presets`), matched on the device name with letters and digits only: Pioneer DDJ-400,
+  DDJ-FLX4 and DDJ-200, Hercules DJControl Inpulse 200 and 300, Numark Mixtrack Pro FX. Values come from the public Mixxx
+  mappings (GPL; authors in each file's header; only addresses and encodings, no code). Not shipped: Inpulse 500 (its
+  jog wheel encoding lives in Mixxx's component library, not in its map) and Platinum FX (four decks, the published map
+  could not be read in full). The pitch fader direction follows Mixxx's `rate` convention (Pioneer and Numark: a higher
+  raw value is faster; Hercules is the other way round, so its bindings have `invert`).
+- **Tests**: `midi-map.test.ts` (parsing, encodings, 14-bit, shift layers, takeover, learn detection, JSON),
+  `app/dj/controllers/controllers.test.ts` (presets, deck calls, LED messages against `FakeDecks`, learn, mappings),
+  `test/browser/dj-controllers.test.ts` (fake `MIDIAccess` in the real app, the window).
+- **Gaps**: four-deck layer switching (a two-channel controller drives A and B only), sysex start-up messages (SysEx is not
+  requested), colour LEDs and blinking, pad modes other than hot cues and beat loops, jog touch-less scratch tuning (one ticks-per-turn constant).
 
 ## Arrangement: songs that flow (v3)
 
@@ -2294,8 +2402,11 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
     `focusOutside: 'allow'` (the part still gets copy-on-write pattern copies).
   - Edits are serialized (a promise chain) and wait up to 15 s for a running Studio request (`phase` idle).
 - **Other tools.** Reads: `get_guide` (`STUDIO_PROMPT` with a preface about tools instead of JSON answers),
-  `get_project` (`projectContext`, plus `focusContext` for bars), `list_plugins` (`pluginCatalog`), `get_pattern`,
-  `get_mixer`, `get_clips` (text and data). `list_commands`/`run_command` use `aiCommands` and `commandCatalog` (a
+  `get_project` (`projectContext`, plus `focusContext` for bars), `list_plugins` (`pluginCatalog`), and every read
+  tool the Studio chat has (`ai/read.ts` `readTools`, built into the MCP tool list from the same objects:
+  `get_pattern_notes`, `get_channel`, `get_mixer`, `get_clips`, `get_automation`, `get_selection`, `get_transport`,
+  `get_settings`, `get_windows`, `get_plugins`; its `get_project` JSON overview is `get_project_summary` here, the
+  name `get_project` being the full text), returning their JSON as text and data, a bad argument as an `isError` result. `list_commands`/`run_command` use `aiCommands` and `commandCatalog` (a
   command with `ai: false` is refused; `gesture` ones don't run: `McpLink.askForClick` queues a button and
   `ui/features/mcp/register.ts` shows "Claude Code wants to export…" so the click is the user activation the picker
   needs; other commands run, their error toasts come back as the result, a project change is reported in the chat with
@@ -2311,7 +2422,7 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   switch, a live status line ("Connected: Claude Code · 3 calls in the last minute", pushed by the server on change and
   refreshed while the window is open), the token (masked, Show, Copy, New token…), the Claude Code command, the Claude
   Desktop config (`bin/agstudio-mcp`), a JSON setup for URL clients, the exports folder. Commands (so the action search
-  and Studio's `command` action find them): `options.mcp` (switch), `options.connectAi` (opens Settings),
+  and Studio's `command` action find them): `options.mcp` (switch; "Let other apps control AGstudio (MCP)": the audited command wording avoids "AI"), `options.connectAi` (opens Settings),
   `options.copyClaudeCodeSetup` (`ai: false`: the token stays out of chats). A toast tells the musician the first time
   an app calls.
 - **`bin/agstudio-mcp`** (a `sh` wrapper that finds Node) runs `bin/agstudio-mcp.mjs`: stdio ↔ HTTP for apps that start

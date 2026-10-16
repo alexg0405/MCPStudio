@@ -1,6 +1,6 @@
 import type { Services } from '@app/services';
 import { recentFiles } from '@app/persistence/recent-files';
-import { newFromTemplate, TEMPLATES } from '@app/templates';
+import { startFromTemplate, TEMPLATES } from '@app/template-list';
 import { showProjectInfo } from './project-info';
 import { PROJECT_FILE_EXTENSION } from '@core/io/project-file';
 import { showDialog } from '../../controls/Dialog';
@@ -85,7 +85,7 @@ export function register(services: Services): void {
     argsHint: TEMPLATES.map((t) => `'${t.id}'`).join(', '),
     palette: false,
     enabled: idle,
-    run: (s, id) => void newFromTemplate(s, String(id ?? 'trap')),
+    run: (s, id) => void startFromTemplate(s, String(id ?? 'trap')),
   });
   commands.register<string>({
     id: 'file.openRecent',
@@ -146,7 +146,7 @@ export function register(services: Services): void {
             label: t.name,
             hint: t.description,
             disabled: !idle(services),
-            run: () => void newFromTemplate(services, t.id),
+            run: () => void startFromTemplate(services, t.id),
           })),
         },
       ],

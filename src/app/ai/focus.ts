@@ -15,7 +15,7 @@ import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
 import type { ParamSpecs } from '@agstudio/sdk';
 import { channelSound, noteName } from '../assistant/context';
-import { noteLines } from './context';
+import { noteLines } from './note-lines';
 
 /** Patterns copied for the part by earlier answers: original → the part's own copy (follow-ups edit the copy). */
 export type FocusCopies = Record<PatternId, PatternId>;

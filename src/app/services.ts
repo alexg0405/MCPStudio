@@ -29,7 +29,7 @@ import { ScoreLog } from './score-log';
 import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
-import { BeatAssistant } from './assistant/assistant';
+import { AssistantFacade } from './assistant/facade';
 import { McpLink } from './mcp/bridge';
 import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
@@ -79,8 +79,8 @@ export interface Services {
   readonly automation: AutomationService;
   /** The open project's file: new, open, save, save as, recent files. */
   readonly files: ProjectFiles;
-  /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). */
-  readonly assistant: BeatAssistant;
+  /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). Its code loads on first use. */
+  readonly assistant: AssistantFacade;
   /** AI apps (Claude Code, Claude Desktop…) controlling the project over MCP: the tools and the dev server's channel. */
   readonly mcp: McpLink;
   /** Your own presets (kept in this browser) and which preset each plugin loaded last. */
@@ -228,7 +228,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let files: ProjectFiles | null = null;
   let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
-  let assistant: BeatAssistant | null = null;
+  let assistant: AssistantFacade | null = null;
   let mcp: McpLink | null = null;
   const services: Services = {
     platform,
@@ -260,7 +260,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
       return (files ??= new ProjectFiles(services));
     },
     get assistant() {
-      return (assistant ??= new BeatAssistant(services));
+      return (assistant ??= new AssistantFacade(services));
     },
     get mcp() {
       return (mcp ??= new McpLink(services));

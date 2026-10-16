@@ -104,3 +104,79 @@ export async function idbDel(key: IDBValidKey): Promise<void> {
 export async function idbKeys(): Promise<IDBValidKey[]> {
   return run('readonly', (s) => s.getAllKeys());
 }
+
+/**
+ * The string-keyed entries whose key passes `keep`, read in one transaction (values of the other keys
+ * are never read). Used for records that live under a key prefix.
+ */
+export async function idbEntries(keep: (key: string) => boolean): Promise<Array<[string, unknown]>> {
+  const out: Array<[string, unknown]> = [];
+  await run('readonly', (store) => {
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) return;
+      if (typeof cursor.key === 'string' && keep(cursor.key)) out.push([cursor.key, cursor.value]);
+      cursor.continue();
+    };
+    return req;
+  });
+  return out;
+}
+
+/** Values for several keys, read in one transaction (missing keys are left out). */
+export async function idbGetMany(keys: readonly string[]): Promise<Map<string, unknown>> {
+  const out = new Map<string, unknown>();
+  if (keys.length === 0) return out;
+  await run('readonly', (store) => {
+    let last: IDBRequest<unknown> | undefined;
+    for (const key of keys) {
+      const req = store.get(key);
+      req.onsuccess = () => {
+        if (req.result !== undefined) out.set(key, req.result);
+      };
+      last = req;
+    }
+    return last as IDBRequest<unknown>;
+  });
+  return out;
+}
+
+/** Writes several entries in one transaction (all or none). */
+export async function idbSetMany(entries: ReadonlyArray<readonly [IDBValidKey, unknown]>): Promise<void> {
+  if (entries.length === 0) return;
+  await run('readwrite', (store) => {
+    let last: IDBRequest<IDBValidKey> | undefined;
+    for (const [key, value] of entries) last = store.put(value, key);
+    return last as IDBRequest<IDBValidKey>;
+  });
+}
+
+/**
+ * Stores each number unless the key already holds a larger one, read and written in one transaction
+ * (so two tabs raising the same key can never lower it).
+ */
+export async function idbRaiseMany(entries: ReadonlyArray<readonly [string, number]>): Promise<void> {
+  if (entries.length === 0) return;
+  await run('readwrite', (store) => {
+    let last: IDBRequest<unknown> | undefined;
+    for (const [key, value] of entries) {
+      const got = store.get(key);
+      got.onsuccess = () => {
+        if (typeof got.result !== 'number' || got.result < value) store.put(value, key);
+      };
+      last = got;
+    }
+    return last as IDBRequest<unknown>;
+  });
+}
+
+/** Deletes several keys in one transaction. */
+export async function idbDelMany(keys: readonly IDBValidKey[]): Promise<void> {
+  if (keys.length === 0) return;
+  await run('readwrite', (store) => {
+    let last: IDBRequest<undefined> | undefined;
+    for (const key of keys) last = store.delete(key);
+    return last as IDBRequest<undefined>;
+  });
+}

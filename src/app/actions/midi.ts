@@ -28,7 +28,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import { collectNotes, songModeSource, type NoteEvent } from '@engine/sched/events';
 import { downloadBytes, pickSaveMidiFile, uploadFile } from '@platform/fs-access';
 import { defaultValues, type PluginDef } from '@agstudio/sdk';
-import { BASS808_ID, SYNTH } from '../assistant/apply';
+import { BASS808_ID, SYNTH } from '../assistant/palette';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import type { Services } from '../services';
 

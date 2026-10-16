@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import styles from './Settings.module.css';
 
-/** The building blocks of the Settings window: a titled section, a labelled row and a switch. */
 export function Section({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
   return (
     <section className={styles.section}>

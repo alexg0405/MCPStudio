@@ -32,17 +32,17 @@ export function register(services: Services): void {
   const { commands } = services;
   commands.register({
     id: 'options.mcp',
-    title: 'Let AI apps control AGstudio',
+    title: 'Let other apps control AGstudio (MCP)',
     category: 'Options',
-    hint: 'Allow AI apps on this computer (Claude Code, Claude Desktop…) to read and change the project, play it and export it. They need the access token from Settings',
+    hint: 'Allow apps on this computer that speak MCP (Claude Code, Claude Desktop…) to read and change the project, play it and export it. They need the access token from Settings',
     checked: (s) => s.prefs.getState().mcpEnabled,
     run: (s) => s.prefs.getState().set({ mcpEnabled: !s.prefs.getState().mcpEnabled }),
   });
   commands.register({
     id: 'options.connectAi',
-    title: 'Connect AI apps (MCP)…',
+    title: 'Connect Claude Code or other apps (MCP)…',
     category: 'Options',
-    hint: 'Settings for connecting Claude Code, Claude Desktop or another AI app: the access token and the lines to paste into it',
+    hint: 'Settings for connecting Claude Code, Claude Desktop or another app that speaks MCP: the access token and the lines to paste into it',
     run: (s) => void openWindow(s, 'settings'),
   });
   commands.register({
@@ -56,12 +56,12 @@ export function register(services: Services): void {
       await s.mcp.refresh();
       const token = s.mcp.store.getState().token;
       const toast = s.session.getState().toast;
-      if (!token) return toast('AI apps can only connect while AGstudio runs from its dev server (the agstudio command).', 'error');
+      if (!token) return toast('Other apps can only connect while AGstudio runs from its dev server (the agstudio command).', 'error');
       try {
         await navigator.clipboard.writeText(claudeCodeCommand(window.location.origin, token));
         toast('Copied. Paste it into a terminal to connect Claude Code.');
       } catch {
-        toast('The browser did not allow copying. Open Options → Connect AI apps and copy it there.', 'error');
+        toast('The browser did not allow copying. Open Options → Connect Claude Code or other apps and copy it there.', 'error');
       }
     },
   });

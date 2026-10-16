@@ -5,7 +5,7 @@ import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { openWindow, registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { AiStudioButton } from './AiStudioButton';
-import { lazyWindow } from '../../workspace/lazy';
+import { lazyWindow, whenIdle } from '../../workspace/lazy';
 
 /**
  * A command the AI asked for that opens a file dialog: browsers allow that only right after a
@@ -55,6 +55,8 @@ export function register(services: Services): void {
     // The AI studio shouldn't close itself mid-conversation.
     ai: false,
   });
+  // The assistant's code (a quarter of a megabyte) isn't part of startup: fetched once the first paint is done.
+  whenIdle(() => services.assistant.prefetch());
   // Windows an answer asked to show ("open the mixer", the effect it just added…).
   services.assistant.store.subscribe((st) => {
     if (st.uiRequests.length === 0) return;

@@ -4,6 +4,7 @@
  * runs the tools (`tools.ts`). Each tool has a JSON Schema input and a description written for the AI.
  */
 import { ACTIONS_SCHEMA } from '../ai/schema';
+import { readTools } from '../ai/read';
 import type { ResourceDef, ToolDef } from './types';
 
 export const SERVER_INSTRUCTIONS = `AGstudio is a music studio (a DAW like FL Studio) running in the musician's browser. These tools read and change the open project, play it, and render it, exactly like the Studio chat inside the app does.
@@ -25,7 +26,7 @@ const none = { type: 'object', additionalProperties: false, properties: {} };
 const READ = { readOnlyHint: true, openWorldHint: false } as const;
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false } as const;
 
-export const TOOL_DEFS: readonly ToolDef[] = [
+const OWN_TOOL_DEFS: readonly ToolDef[] = [
   {
     name: 'get_guide',
     title: 'How to control AGstudio',
@@ -54,45 +55,6 @@ export const TOOL_DEFS: readonly ToolDef[] = [
     description:
       'Every instrument and effect plugin with its id, every setting (type, range, unit, default) and its presets. Needed to set plugin settings in apply_actions.',
     inputSchema: none,
-    annotations: READ,
-  },
-  {
-    name: 'get_pattern',
-    title: 'Read a pattern\'s notes',
-    description:
-      'The notes of one pattern, per channel (drums as steps, pitched notes as step:note/length). Steps are 1/16 notes counted from 0. Without a pattern: the one the musician is editing. Also returns the data as JSON (ticks, keys, velocities).',
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        pattern: { type: 'string', description: 'Pattern id or exact name. Default: the current pattern.' },
-        channel: { type: 'string', description: 'Only this channel (id or exact name).' },
-      },
-    },
-    annotations: READ,
-  },
-  {
-    name: 'get_mixer',
-    title: 'Read the mixer',
-    description:
-      'Every mixer track with its volume (dB), pan, mute and solo, routes and sends, and effects (plugin, bypass, mix, settings that differ from the defaults, sidechain). Also returns the data as JSON.',
-    inputSchema: none,
-    annotations: READ,
-  },
-  {
-    name: 'get_clips',
-    title: 'Read the playlist',
-    description:
-      'The clips on the playlist, optionally just those over some bars or on one track: pattern, audio and automation clips with their ids, bar positions and lengths. Also returns the data as JSON.',
-    inputSchema: {
-      type: 'object',
-      additionalProperties: false,
-      properties: {
-        from_bar: { type: 'integer', minimum: 1, description: 'Only clips that play at or after this bar.' },
-        to_bar: { type: 'integer', minimum: 1, description: 'Only clips that start at or before this bar.' },
-        track: { type: 'integer', minimum: 1, description: 'Only this playlist track (1 = the first).' },
-      },
-    },
     annotations: READ,
   },
   {
@@ -299,6 +261,24 @@ export const TOOL_DEFS: readonly ToolDef[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
 ];
+
+/** The MCP name of a read tool: the Studio chat's `get_project` (a JSON overview) can't take the name of the full text. */
+export const mcpReadName = (name: string): string => (name === 'get_project' ? 'get_project_summary' : name);
+
+/** Every read tool the Studio chat has (`ai/read.ts`), as an MCP tool with the same arguments. */
+const READ_TOOL_DEFS: readonly ToolDef[] = readTools.map((t) => ({
+  name: mcpReadName(t.name),
+  title: `Read: ${t.name.replace(/^get_/, '').replace(/_/g, ' ')}`,
+  description:
+    t.name === 'get_project'
+      ? `${t.description} This is a compact JSON overview; get_project has the full text the Studio chat reads.`
+      : t.description,
+  inputSchema: t.schema,
+  annotations: READ,
+}));
+
+/** get_guide, get_project, list_plugins, then the read tools, then everything that changes or plays something. */
+export const TOOL_DEFS: readonly ToolDef[] = [...OWN_TOOL_DEFS.slice(0, 3), ...READ_TOOL_DEFS, ...OWN_TOOL_DEFS.slice(3)];
 
 export const RESOURCE_DEFS: readonly ResourceDef[] = [
   {

@@ -149,7 +149,7 @@ Cursor…) can read and change the project you have open, play it, listen to the
 Studio uses. Everything it changes appears in Studio's chat as "Claude Code changed: …" with an **Undo** button, one
 undo step per call.
 
-**Claude Code**, one line in a terminal (copy it with its token from Options → Connect AI apps (MCP)…, or from
+**Claude Code**, one line in a terminal (copy it with its token from Options → Connect Claude Code or other apps (MCP)…, or from
 the action search: "Copy the Claude Code setup command"):
 
 ```bash
@@ -172,7 +172,9 @@ lives in that tab, so the dev server relays each call to it. With several tabs t
 none, the AI app is told "Open AGstudio in the browser first". Sound stays locked until you click once in the tab.
 
 **Tools**: `get_guide` (the rules and music know-how Studio itself uses; read first), `get_project` (the text Studio
-sends Claude, optionally with the detail of some bars), `list_plugins`, `get_pattern`, `get_mixer`, `get_clips`,
+sends Claude, optionally with the detail of some bars), `list_plugins`, and the read tools Studio has (`get_pattern_notes`,
+`get_channel`, `get_mixer`, `get_clips`, `get_automation`, `get_selection`, `get_transport`, `get_settings`,
+`get_windows`, `get_plugins`, `get_project_summary`),
 `apply_actions` (the Studio action list: one undo step; with a `focus` of bars only that part may change, and edits
 reaching outside it come back as a question until `approve_outside: true`), `list_commands` / `run_command` (every
 menu item; file dialogs become a button for you to click: "Claude Code wants to export…"), `play`, `stop`, `seek`,
@@ -183,7 +185,7 @@ menu item; file dialogs become a button for you to click: "Claude Code wants to 
 **Safety**: the endpoint only answers connections from this computer, only for the `localhost`, `127.0.0.1` or `[::1]`
 Host and Origin (against DNS rebinding), and only with the access token (`Authorization: Bearer …` or `?token=`),
 which is made once into the git-ignored `.agstudio/mcp-token` (mode 0600) and can be replaced in Settings (apps with
-the old one are locked out). The switch "Let AI apps control AGstudio" in Settings turns every app away at once.
+the old one are locked out). The switch "Let AI apps control AGstudio" in Settings (Options → Let other apps control AGstudio) turns every app away at once.
 
 **Try it by hand** with curl (from the AGstudio folder, with the dev server running and a tab open):
 

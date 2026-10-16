@@ -1,4 +1,4 @@
-import { createStore, type StoreApi } from 'zustand/vanilla';
+import type { StoreApi } from 'zustand/vanilla';
 import { generateLocalBeat, type PerformanceRole } from '@core/beat/local';
 import { inferStyle } from '@core/beat/style';
 import type { BeatSpec } from '@core/beat/spec';
@@ -10,7 +10,6 @@ import {
   describeEvents,
   estimateBpm,
   quantizeToGrid,
-  type GridEvent,
 } from '@core/voice';
 import type { RecordingHandle } from '@engine/api';
 import { openMic, type MicInput } from '@platform/mic';
@@ -19,26 +18,39 @@ import type { Services } from '../services';
 import { applyAnswer, type AfterEdit } from '../ai/apply';
 import { pluginCatalog } from '../ai/catalog';
 import { commandCatalog } from '../ai/commands';
-import type { BuildStage, PluginDraft, PluginSpec, SmokeReport } from '../ai/builder';
-import { focusContext, isAiFocus, resolveFocus, type AiFocus, type ResolvedFocus } from '../ai/focus';
+import type { BuildStage, PluginSpec, SmokeReport } from '../ai/builder';
+import { focusContext, resolveFocus, type AiFocus, type ResolvedFocus } from '../ai/focus';
 import { analyzeMix, formatMixReport, summarizeMixReport, type AnalyzeRange } from '../analysis/mix';
 import { afterStepFor, type AfterStepResult } from './after-steps';
 import { audition } from './audition';
+import { playFocus } from './play-focus';
 import { projectContext } from '../ai/context';
 import { formatLookups } from '../ai/read';
 import { STUDIO_PROMPT } from '../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../ai/schema';
-import { applyBeatSpec, type AppliedBeat } from './apply';
+import { applyBeatSpec } from './apply';
+import type { AssistantApi } from './api';
 import { importMySounds } from './my-sounds';
 import {
   AiError,
   ClaudeChat,
-  DEFAULT_MODEL,
   fetchAiStatus,
   performanceBlock,
   type AiBackend,
   type AiStatus,
 } from './claude';
+import {
+  createAssistantCore,
+  lastMessageId,
+  type ApprovalMessage,
+  type AssistantCore,
+  type AssistantMessage,
+  type AssistantState,
+  type ExternalApplied,
+  type ExternalApply,
+  type PluginMessage,
+  type Take,
+} from './state';
 
 // The plugin builder carries the SDK guide and every template (~65 kB): it loads when a plugin is first built.
 /** Rounds of look-ups (query actions) one request may take before Studio has to answer. */
@@ -53,145 +65,23 @@ const smokeTest = (folder: string): Promise<SmokeReport> => import('../ai/smoke'
  * set up. Follow-ups change the same pattern. Lives for the whole session (created in services).
  */
 
-export type AssistantPhase = 'idle' | 'counting-in' | 'recording' | 'analyzing' | 'listening' | 'thinking';
+export {
+  AI_MODELS,
+  DEFAULT_MODEL,
+  type ApprovalMessage,
+  type AssistantMessage,
+  type AssistantPhase,
+  type AssistantState,
+  type PluginMessage,
+  type Take,
+} from './state';
 
-export interface AssistantMessage {
-  id: number;
-  from: 'you' | 'assistant';
-  text: string;
-  /** Small print under the text (what was recorded, which tracks were written). */
-  detail?: string;
-  error?: boolean;
-  /** Made without Claude (offline generator). */
-  offline?: boolean;
-  /** Undo point for this beat (history cursor right after applying it). */
-  beat?: { title: string; cursor: number };
-  /** What an AI turn changed, one line each. */
-  changes?: string[];
-  /** What it couldn't do. */
-  warnings?: string[];
-  /** Undo point of an AI turn that edited the project (history cursor right after it). */
-  undo?: number;
-  /** A plugin the builder wrote: install or discard it from the message. */
-  plugin?: PluginMessage;
-  /** What a mix analysis found, one line each. */
-  findings?: string[];
-  /** An answer that also changes things outside the part being worked on: waiting for the musician's OK. */
-  approval?: ApprovalMessage;
-}
-
-export interface ApprovalMessage {
-  /** The part ("bars 2–3"). */
-  part: string;
-  /** What reaches outside it, one line each. */
-  outside: string[];
-  /** ask: waiting; all: applied with the outside edits; part: applied to the part only; expired: no longer possible. */
-  state: 'ask' | 'all' | 'part' | 'expired';
-}
-
-/** An edit from an AI app over MCP. */
-export interface ExternalApply {
-  /** The app's name for the chat and the undo label ("Claude Code"). */
-  client: string;
-  /** What it did, in a sentence for the musician (also the undo label). */
-  summary: string;
-  /** Limit the edit to this part of the song. */
-  focus?: AiFocus | null;
-  /** With a focus: edits beyond the part are allowed. */
-  approveOutside?: boolean;
-  /** Wait for follow-up work (leveling, filters) before returning (default true). */
-  waitForFollowups?: boolean;
-  /** A file-dialog command the actions asked for: the app shows the musician a button. */
-  onGesture?(commandId: string, args: unknown): void;
-}
-
-export interface ExternalApplied {
-  /** applied; needs_approval: nothing changed, the edit reaches outside the part; busy: Studio is mid-request. */
-  status: 'applied' | 'needs_approval' | 'busy';
-  changes: string[];
-  warnings: string[];
-  edited: boolean;
-  /** The history point before the edit: `undo` with it goes back here. */
-  beforePoint: number;
-  /** The history point after it (null when nothing changed). */
-  undoPoint: number | null;
-  /** What the follow-up steps did. */
-  followups: string[];
-  findings?: string[];
-  /** needs_approval: the part and what reaches outside it. */
-  part?: string;
-  outside?: string[];
-}
-
-export interface PluginMessage {
-  draft: PluginDraft;
-  /** draft: checked and ready to install; failed: still has problems (view only). */
-  state: 'draft' | 'failed' | 'installing' | 'installed' | 'discarded';
-}
-
-/** A performance on the grid, ready to go with the next request. */
-export interface Take {
-  events: GridEvent[];
-  summary: string;
-  role: PerformanceRole;
-  bars: number;
-  bpm: number;
-  /** The recording itself, for playing it back (null after a page reload: only the events are kept). */
-  audio: { samples: Float32Array; sampleRate: number; startSec: number } | null;
-  /** Claude has it already (sent with an earlier request). */
-  sent: boolean;
-}
-
-export interface AssistantState {
-  phase: AssistantPhase;
-  messages: AssistantMessage[];
-  take: Take | null;
-  /** Live recording: count-in/progress for the UI. */
-  recording: { bars: number; startedAt: number } | null;
-  /** Which ways to reach Claude work (null until checked). */
-  status: AiStatus | null;
-  /** How to reach Claude: auto = the subscription, else an API key, else the offline generator. */
-  backend: 'auto' | AiBackend | 'offline';
-  model: string;
-  /** What the next recording is: drums, an 808 line, a melody (or let the analysis decide). */
-  role: PerformanceRole;
-  bars: number;
-  playAlong: boolean;
-  click: boolean;
-  /** Start playing a new beat as soon as it's written. */
-  autoplay: boolean;
-  /** Build the drums from the take's own beatboxed hits instead of the kit. */
-  mySounds: boolean;
-  /** The pattern the assistant is working on (follow-ups change it). */
-  applied: AppliedBeat | null;
-  /** Windows the last answer asked to show, and file commands waiting for a click (the UI handles and clears them). */
-  uiRequests: AfterEdit[];
-  /** The plugin builder at work (one plugin at a time). */
-  building: { name: string; kind: 'instrument' | 'effect'; stage: BuildStage; round: number } | null;
-  /** A mix analysis in progress: which part it is rendering, 0–1. */
-  listening: { label: string; fraction: number } | null;
-  /**
-   * The part of the song the conversation is about ("Ask AI about this part"): the AI changes only
-   * it. Follow-ups keep it; New chat and opening another project clear it.
-   */
-  focus: AiFocus | null;
-}
 
 let messageSeq = 0;
-const PREFS_KEY = 'agstudio:assistant:v1';
-const TAB_KEY = 'agstudio:assistant:tab:v1';
 
-function loadPrefs(): Partial<AssistantState> {
-  try {
-    const raw = globalThis.localStorage?.getItem(PREFS_KEY);
-    return raw ? (JSON.parse(raw) as Partial<AssistantState>) : {};
-  } catch {
-    return {};
-  }
-}
-
-export class BeatAssistant {
+export class BeatAssistant implements AssistantApi {
   readonly store: StoreApi<AssistantState>;
+  private readonly core: AssistantCore;
   private readonly chat: ClaudeChat;
   /** Catalog key Claude has in this conversation (sent again when the plugins change). */
   private catalogSent: string | null = null;
@@ -216,133 +106,35 @@ export class BeatAssistant {
       smoke?: (folder: string) => Promise<SmokeReport>;
       /** Mix analysis (tests pass a fake: Node has no OfflineAudioContext). */
       analyze?: typeof analyzeMix;
+      /** The state store when the facade already made it (see facade.ts); otherwise created here. */
+      core?: AssistantCore;
     } = {},
   ) {
     this.fetchImpl = deps.fetch ?? ((...args) => fetch(...args));
     this.smoke = deps.smoke ?? smokeTest;
     this.analyze = deps.analyze ?? analyzeMix;
     this.chat = new ClaudeChat(this.fetchImpl);
-    const saved = loadPrefs();
-    this.store = createStore<AssistantState>()(() => ({
-      phase: 'idle',
-      messages: [],
-      take: null,
-      recording: null,
-      status: null,
-      backend:
-        saved.backend === 'subscription' || saved.backend === 'api' || saved.backend === 'offline'
-          ? saved.backend
-          : 'auto',
-      model: typeof saved.model === 'string' ? saved.model : DEFAULT_MODEL,
-      role: saved.role ?? 'auto',
-      bars: saved.bars ?? 2,
-      playAlong: saved.playAlong ?? false,
-      click: saved.click ?? true,
-      autoplay: saved.autoplay ?? true,
-      mySounds: saved.mySounds ?? false,
-      applied: null,
-      uiRequests: [],
-      building: null,
-      listening: null,
-      focus: null,
+    const core = deps.core ?? createAssistantCore(s.history);
+    this.store = core.store;
+    this.core = core;
+    messageSeq = Math.max(messageSeq, lastMessageId(this.store.getState().messages));
+    if (typeof core.saved.chat === 'string') this.chat.sessionId = core.saved.chat;
+    if (typeof core.saved.catalog === 'string') this.catalogSent = core.saved.catalog;
+    if (typeof core.saved.offlinePrompt === 'string') this.offlinePrompt = core.saved.offlinePrompt;
+    core.bindExtras(() => ({
+      chat: this.chat.sessionId,
+      catalog: this.catalogSent,
+      offlinePrompt: this.offlinePrompt,
     }));
-    this.restoreTab();
-    // Another project opened (or a new one): the part belonged to the old one.
-    s.history.onChange(({ origin, next }) => {
-      const f = this.store.getState().focus;
-      if (origin === 'load' && f && f.projectId !== next.projectId) this.setFocus(null);
-    });
-    this.store.subscribe(() => this.scheduleTabSave());
-    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.saveTab());
-    this.store.subscribe((next, prev) => {
-      if (
-        next.backend === prev.backend &&
-        next.model === prev.model &&
-        next.role === prev.role &&
-        next.bars === prev.bars &&
-        next.playAlong === prev.playAlong &&
-        next.click === prev.click &&
-        next.autoplay === prev.autoplay &&
-        next.mySounds === prev.mySounds
-      )
-        return;
-      try {
-        const { backend, model, role, bars, playAlong, click, autoplay, mySounds } = next;
-        globalThis.localStorage?.setItem(
-          PREFS_KEY,
-          JSON.stringify({ backend, model, role, bars, playAlong, click, autoplay, mySounds }),
-        );
-      } catch {
-        /* per-browser convenience only */
-      }
-    });
+  }
+
+  /** Writes this tab's conversation now (it also saves itself after changes and when the page hides). */
+  saveTab(): void {
+    this.core.saveTab();
   }
 
   set(patch: Partial<AssistantState>): void {
     this.store.setState(patch);
-  }
-
-  // ---------------------------------------------------------------- reload survival
-
-  private saveTimer: ReturnType<typeof setTimeout> | undefined;
-
-  private scheduleTabSave(): void {
-    if (this.saveTimer === undefined) this.saveTimer = setTimeout(() => this.saveTab(), 500);
-  }
-
-  /** This tab's conversation, current beat and take (without the audio) for a page reload. */
-  private saveTab(): void {
-    clearTimeout(this.saveTimer);
-    this.saveTimer = undefined;
-    const { messages, applied, take, focus } = this.store.getState();
-    try {
-      globalThis.sessionStorage?.setItem(
-        TAB_KEY,
-        JSON.stringify({
-          messages: messages.slice(-40),
-          applied,
-          take: take ? { ...take, audio: null } : null,
-          focus,
-          chat: this.chat.sessionId,
-          catalog: this.catalogSent,
-          offlinePrompt: this.offlinePrompt,
-        }),
-      );
-    } catch {
-      /* storage full or unavailable: the conversation just won't survive a reload */
-    }
-  }
-
-  private restoreTab(): void {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(globalThis.sessionStorage?.getItem(TAB_KEY) ?? 'null');
-    } catch {
-      return;
-    }
-    if (typeof raw !== 'object' || raw === null) return;
-    const r = raw as Partial<{
-      messages: AssistantMessage[];
-      applied: AppliedBeat;
-      take: Take;
-      chat: string;
-      catalog: string;
-      offlinePrompt: string;
-      focus: unknown;
-    }>;
-    // A reload starts a new history that numbers its steps from 1 again: the undo points of the old
-    // session would point at unrelated steps, so the answers keep their text but lose their Undo.
-    const messages = (Array.isArray(r.messages) ? r.messages.filter((m) => typeof m?.text === 'string') : []).map(
-      ({ undo: _undo, ...m }) => (m.beat ? { ...m, beat: { ...m.beat, cursor: -1 } } : m),
-    );
-    messageSeq = Math.max(messageSeq, ...messages.map((m) => (typeof m.id === 'number' ? m.id : 0)));
-    const applied = r.applied && typeof r.applied.patternId === 'string' && r.applied.channels ? r.applied : null;
-    const take = r.take && Array.isArray(r.take.events) ? { ...r.take, audio: null } : null;
-    const focus = isAiFocus(r.focus) ? r.focus : null;
-    this.store.setState({ messages, applied, take, focus });
-    if (typeof r.chat === 'string') this.chat.sessionId = r.chat;
-    if (typeof r.catalog === 'string') this.catalogSent = r.catalog;
-    if (typeof r.offlinePrompt === 'string') this.offlinePrompt = r.offlinePrompt;
   }
 
   async checkAi(): Promise<AiStatus> {
@@ -452,7 +244,7 @@ export class BeatAssistant {
       ...(part ? { focusOutside: opts.approveOutside ? ('allow' as const) : ('refuse' as const) } : {}),
     });
     const cursor = this.s.history.status().cursor;
-    const changes = [...result.changes];
+    const changes = [...result.changes, ...(result.ui ?? [])];
     const warnings = [...result.warnings];
     // App commands: most run now; file dialogs need the musician's click (the app shows a button).
     for (const a of result.after) {
@@ -508,6 +300,8 @@ export class BeatAssistant {
       undoPoint: undoPoint !== empty.beforePoint ? undoPoint : null,
       followups,
       ...(result.findings?.length ? { findings: result.findings } : {}),
+      // Query actions: what the read tools returned (an AI app can also call them itself).
+      ...(result.queries?.length ? { lookups: formatLookups(result.queries) } : {}),
     };
   }
 
@@ -548,20 +342,7 @@ export class BeatAssistant {
    * pattern in pattern mode. Default: the conversation's part. False when there is nothing to play.
    */
   playFocus(focus: AiFocus | null = this.store.getState().focus): boolean {
-    const r = resolveFocus(this.s.doc.getState().project, focus);
-    if (!r) return false;
-    const v = this.s.view.getState();
-    if (r.notes) {
-      v.setCurrentPattern(r.notes.patternId);
-      this.s.session.getState().selectChannel(r.notes.channelId);
-      v.setMode('pattern');
-      this.s.engine.play();
-    } else {
-      v.setLoop({ start: r.from, end: r.to });
-      v.setMode('song');
-      this.s.engine.play(r.from);
-    }
-    return true;
+    return playFocus(this.s, focus);
   }
 
   /** Plugin names and settings, for the <focus> block's automation lines. */
@@ -857,7 +638,7 @@ export class BeatAssistant {
     focus?: ResolvedFocus | null,
     lookups?: string,
   ): string {
-    const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s)}\n</project>`];
+    const parts = [`<request>\n${prompt.trim()}\n</request>`, `<project>\n${projectContext(this.s, focus ?? null)}\n</project>`];
     if (focus) parts.push(`<focus>\n${focusContext(this.s.doc.getState().project, focus, this.pluginInfo)}\n</focus>`);
     if (lookups)
       parts.push(

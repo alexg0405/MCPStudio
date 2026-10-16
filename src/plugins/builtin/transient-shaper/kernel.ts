@@ -1,8 +1,10 @@
-import { at, dbToGain, EffectKernel, EnvelopeFollower, OnePole, type ParamBlock } from '@agstudio/sdk/worklet';
+import { at, dbToGain, EffectKernel, EnvelopeFollower, OnePole, Ramp, type ParamBlock } from '@agstudio/sdk/worklet';
 import type { transientParams } from './params';
 
 type P = typeof transientParams;
 
+/** The output level is recomputed every CONTROL frames and ramps between (see GateKernel). */
+const CONTROL = 32;
 /** 20 / ln(10): dB = DB_PER_NEPER · ln(ratio). */
 const DB_PER_NEPER = 8.685889638065035;
 const NEPER_PER_DB = 1 / DB_PER_NEPER;
@@ -30,8 +32,8 @@ export class TransientKernel extends EffectKernel<P> {
   private readonly tailSlow = new EnvelopeFollower(this.sampleRate, 0.1, TAIL_SLOW_MS);
   private readonly smooth = new OnePole().setTime(0.001, this.sampleRate);
   private length = -1;
-  private outDb = 0;
-  private outGain = 1;
+  private outDb = Number.NaN;
+  private readonly outGain = new Ramp();
 
   override reset(): void {
     this.fast.reset();
@@ -46,48 +48,57 @@ export class TransientKernel extends EffectKernel<P> {
     const inR = (input[1] ?? inL) as Float32Array;
     const outL = output[0] as Float32Array;
     const outR = (output[1] ?? outL) as Float32Array;
-    for (let i = 0; i < n; i++) {
-      const length = at(p.length, i);
+    for (let s = 0; s < n; s += CONTROL) {
+      const end = Math.min(n, s + CONTROL);
+      // The slow detector's time constant is set once per interval, not per frame: its coefficients are
+      // private to the follower, and a 32-frame step moves a 5–100 ms constant by well under 1 %.
+      const length = at(p.length, s);
       if (length !== this.length) {
         this.length = length;
         this.slow.setTimes(length, ATTACK_RELEASE_MS);
       }
-      const out = at(p.output, i);
+      const out = at(p.output, s);
       if (out !== this.outDb) {
         this.outDb = out;
-        this.outGain = dbToGain(out);
+        this.outGain.aim(dbToGain(out), end - s);
       }
-      const l = inL[i] as number;
-      const r = inR[i] as number;
-      const al = l < 0 ? -l : l;
-      const ar = r < 0 ? -r : r;
-      const level = al > ar ? al : ar;
-      // The detectors always run, so turning a knob doesn't start them cold.
-      const f = this.fast.process(level);
-      const s = this.slow.process(level);
-      const tf = this.tailFast.process(level);
-      const ts = this.tailSlow.process(level);
-      const attack = at(p.attack, i);
-      const sustain = at(p.sustain, i);
-      let db = 0;
-      if (attack !== 0 && s > 1e-9) db += attack * DB_PER_NEPER * Math.log(f / s);
-      if (sustain !== 0 && tf > 1e-9 && ts > FLOOR) db += sustain * DB_PER_NEPER * Math.log(ts / tf);
-      if (db > MAX_BOOST) db = MAX_BOOST;
-      else if (db < -MAX_CUT) db = -MAX_CUT;
-      const shaped = this.smooth.process(db);
-      const g = (shaped === 0 ? 1 : Math.exp(NEPER_PER_DB * shaped)) * this.outGain;
-      const mix = at(p.mix, i);
-      if (g === 1) {
-        outL[i] = l;
-        outR[i] = r;
-      } else if (mix >= 1) {
-        outL[i] = l * g;
-        outR[i] = r * g;
-      } else {
-        const w = 1 + mix * (g - 1);
-        outL[i] = l * w;
-        outR[i] = r * w;
+      let outGain = this.outGain.value;
+      const dOutGain = this.outGain.slope;
+      for (let i = s; i < end; i++) {
+        outGain += dOutGain;
+        const l = inL[i] as number;
+        const r = inR[i] as number;
+        const al = l < 0 ? -l : l;
+        const ar = r < 0 ? -r : r;
+        const level = al > ar ? al : ar;
+        // The detectors always run, so turning a knob doesn't start them cold.
+        const f = this.fast.process(level);
+        const sl = this.slow.process(level);
+        const tf = this.tailFast.process(level);
+        const ts = this.tailSlow.process(level);
+        const attack = at(p.attack, i);
+        const sustain = at(p.sustain, i);
+        let db = 0;
+        if (attack !== 0 && sl > 1e-9) db += attack * DB_PER_NEPER * Math.log(f / sl);
+        if (sustain !== 0 && tf > 1e-9 && ts > FLOOR) db += sustain * DB_PER_NEPER * Math.log(ts / tf);
+        if (db > MAX_BOOST) db = MAX_BOOST;
+        else if (db < -MAX_CUT) db = -MAX_CUT;
+        const shaped = this.smooth.process(db);
+        const g = (shaped === 0 ? 1 : Math.exp(NEPER_PER_DB * shaped)) * outGain;
+        const mix = at(p.mix, i);
+        if (g === 1) {
+          outL[i] = l;
+          outR[i] = r;
+        } else if (mix >= 1) {
+          outL[i] = l * g;
+          outR[i] = r * g;
+        } else {
+          const w = 1 + mix * (g - 1);
+          outL[i] = l * w;
+          outR[i] = r * w;
+        }
       }
+      this.outGain.land();
     }
   }
 }

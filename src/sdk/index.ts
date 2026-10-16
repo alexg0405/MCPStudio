@@ -4,6 +4,7 @@ export * from './params';
 export * from './dsp/math';
 // Pure DSP helpers that also run on the main thread (analysis, control smoothing).
 export { OnePole } from './dsp/one-pole';
+export { Ramp } from './dsp/ramp';
 export { Svf, type SvfType } from './dsp/svf';
 export { EnvelopeFollower, type EnvelopeMode } from './dsp/envelope';
 export { Adsr } from './dsp/adsr';

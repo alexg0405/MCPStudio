@@ -10,48 +10,10 @@ import type { PatternId, Project } from '@core/model/types';
 import { arrangeInDraft } from './arrange/run';
 import { planBeat, writeBeat } from './assistant/apply';
 import { createDefaultProject } from './default-project';
+import { TEMPLATES, type ProjectTemplate } from './template-list';
 import type { Services } from './services';
 
-export interface ProjectTemplate {
-  id: string;
-  name: string;
-  /** What you get, in a few words. */
-  description: string;
-  prompt: string;
-  bpm: number;
-}
-
-export const TEMPLATES: readonly ProjectTemplate[] = [
-  {
-    id: 'trap',
-    name: 'Trap',
-    description: '140 BPM half-time drums, hat rolls and a sliding 808',
-    prompt: 'dark trap with 808s and hat rolls',
-    bpm: 140,
-  },
-  {
-    id: 'boom-bap',
-    name: 'Boom bap',
-    description: '90 BPM swung drums with a dusty bass line',
-    prompt: 'boom bap with a bass line',
-    bpm: 90,
-  },
-  {
-    id: 'house',
-    name: 'House',
-    description: '124 BPM four on the floor, offbeat hats and a bass',
-    prompt: 'house with a bass line',
-    bpm: 124,
-  },
-  { id: 'lofi', name: 'Lo-fi', description: '80 BPM soft, swung drums and mellow keys', prompt: 'lofi chill with keys', bpm: 80 },
-  {
-    id: 'drill',
-    name: 'Drill',
-    description: '142 BPM syncopated kicks and sliding 808s',
-    prompt: 'uk drill with sliding 808s',
-    bpm: 142,
-  },
-];
+export { TEMPLATES, type ProjectTemplate };
 
 /** The template's starting project: its beat, arranged as an intro and a main section. */
 export function templateProject(s: Services, t: ProjectTemplate): { project: Project; patternId: PatternId } {

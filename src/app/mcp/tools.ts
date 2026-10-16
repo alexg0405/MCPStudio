@@ -89,7 +89,8 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
     const client = clientLabel(ctx.client);
     const summary = answer.message || 'edited the project';
     const focus = bars ? barsFocus(st, bars.from, bars.to) : null;
-    const out = await st.assistant.applyExternal({ ...answer, message: summary }, {
+    const assistant = await st.assistant.load();
+    const out = await assistant.applyExternal({ ...answer, message: summary }, {
       client,
       summary,
       focus,
@@ -114,6 +115,7 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
       ...(out.warnings.length ? ['Could not do:', ...out.warnings.map((w) => `- ${w}`)] : []),
       ...(out.followups.length ? ['Follow-up steps:', ...out.followups.map((f) => `- ${f}`)] : []),
       ...(out.findings?.length ? ['Song check:', ...out.findings.map((f) => `- ${f}`)] : []),
+      ...(out.lookups ? ['Looked up (the read tools have the same):', out.lookups] : []),
       ...(dropped > 0 ? [`${dropped} action${dropped === 1 ? ' was' : 's were'} skipped: unknown "op".`] : []),
       ...(answer.actions.some((a) => a.op === 'analyze_mix')
         ? ['The analyze_mix action only works in the Studio chat: call the analyze_mix tool to listen to the mix.']
@@ -177,7 +179,7 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
     await sleep(150); // async commands report problems as toasts a moment later
     const toasts = st.session.getState().toasts.filter((t) => !toastsBefore.has(t.id));
     const after = st.history.status();
-    if (after.cursor !== before) st.assistant.reportExternal(client, `ran “${title}”`, { undo: after.cursor });
+    if (after.cursor !== before) (await st.assistant.load()).reportExternal(client, `ran “${title}”`, { undo: after.cursor });
     const problem = toasts.find((t) => t.kind === 'error');
     const lines = [
       problem ? `"${title}" ran but reported a problem: ${problem.text}` : `Ran "${title}".`,
@@ -259,7 +261,7 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
 
   const stepsArg = (args: Args): number => Math.min(50, Math.max(1, int(args.steps) ?? 1));
 
-  const undo: ToolFn = (st, args, ctx) => {
+  const undo: ToolFn = async (st, args, ctx) => {
     const client = clientLabel(ctx.client);
     const point = int(args.to_point);
     const labels: string[] = [];
@@ -277,7 +279,7 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
       }
     }
     if (labels.length === 0) return fail('Nothing to undo.');
-    st.assistant.reportExternal(client, `undid: ${labels.slice().reverse().join('; ')}`);
+    (await st.assistant.load()).reportExternal(client, `undid: ${labels.slice().reverse().join('; ')}`);
     const now = st.history.status();
     return ok(`Undid ${labels.length} step${labels.length === 1 ? '' : 's'}: ${labels.slice().reverse().join('; ')}.${now.undoLabel ? ` Next undo would revert "${now.undoLabel}".` : ''}`, {
       undone: labels.length,
@@ -286,7 +288,7 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
     });
   };
 
-  const redo: ToolFn = (st, args, ctx) => {
+  const redo: ToolFn = async (st, args, ctx) => {
     const labels: string[] = [];
     for (let i = 0; i < stepsArg(args); i++) {
       const label = st.history.status().redoLabel;
@@ -294,7 +296,7 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
       if (label) labels.push(label);
     }
     if (labels.length === 0) return fail('Nothing to redo.');
-    st.assistant.reportExternal(clientLabel(ctx.client), `redid: ${labels.join('; ')}`);
+    (await st.assistant.load()).reportExternal(clientLabel(ctx.client), `redid: ${labels.join('; ')}`);
     return ok(`Redid ${labels.length} step${labels.length === 1 ? '' : 's'}: ${labels.join('; ')}.`, { redone: labels.length });
   };
 

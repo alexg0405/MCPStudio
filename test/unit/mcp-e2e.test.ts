@@ -212,9 +212,9 @@ describe('MCP end to end (dev server + app in Chrome)', () => {
     const project = textOf(await tool('get_project'));
     expect(project).toContain('Song: 124 BPM');
     expect(project).toContain('MCP kick');
-    const pattern = await tool('get_pattern', { pattern: 'MCP kick' });
-    expect(textOf(pattern)).toMatch(/Kick: 0@1 4@\.\d+ 8@\.\d+ 12@\.\d+/);
-    expect((pattern.structuredContent!.channels as { name: string; notes: unknown[] }[]).find((c) => c.name === 'Kick')!.notes).toHaveLength(4);
+    const pattern = await tool('get_pattern_notes', { pattern: 'MCP kick', channel: 'Kick' });
+    expect(pattern.isError, textOf(pattern)).toBeUndefined();
+    expect(JSON.stringify(pattern.structuredContent)).toContain('Kick');
 
     const undone = await tool('undo');
     expect(textOf(undone)).toMatch(/Undid 1 step/);

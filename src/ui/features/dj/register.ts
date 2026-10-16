@@ -1,6 +1,5 @@
 import type { Services } from '@app/services';
 import { analyzeLibrary, library, loadLibrary, makeLibraryMix, pickSongFiles, pickSongFolder } from '@app/dj/library';
-import { DEFAULT_DJ_OPTIONS } from '@app/dj/mix';
 import type { DjMixOptions } from '@core/model/types';
 import { addActionProvider } from '../../shell/actions';
 import { addBrowserSection } from '../../shell/Browser';
@@ -70,6 +69,7 @@ export function register(services: Services): void {
     argsHint: "optional { order: 'auto' | 'keep', energy: 'build' | 'party' | 'chill' | 'peak-time', transition: 'auto' | 'smooth' | 'quick' | 'cut', mixTempo: 'follow' | BPM, lengthMin: minutes, keyLock: boolean }",
     enabled: () => library.getState().songs.length > 0 && library.getState().making === null,
     run: async (s, args) => {
+      const { DEFAULT_DJ_OPTIONS } = await import('@app/dj/mix');
       const options = mixOptionsFrom(args, s.doc.getState().project.dj?.options ?? DEFAULT_DJ_OPTIONS);
       if (args === undefined) return makeMixFromUi(s, options);
       try {

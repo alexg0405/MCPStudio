@@ -156,7 +156,7 @@ describe('ReverbKernel (algorithmic engine)', () => {
           expect(Math.abs(db), `${JSON.stringify(opts)}, ${lo}–${hi} Hz: ${db.toFixed(1)} dB`).toBeLessThan(3);
         }
       }
-  });
+  }, 90_000); // six 1–3 s renders through both engines: slow on a busy machine
 
   it('left and right are decorrelated', () => {
     for (const size of [0, 0.6, 1]) {

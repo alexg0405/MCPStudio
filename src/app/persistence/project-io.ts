@@ -12,6 +12,7 @@ import { decodePcm, encodeWav } from '@core/io/wav';
 import type { Project, SampleRef } from '@core/model/types';
 import type { SampleBytesProvider } from '@engine/api';
 import type { BlobStore } from '@platform/opfs';
+import { whileBusy } from '../storage/busy';
 import { defaultSampleStore } from './blob-store';
 import { sniffAudioExt } from './sample-import';
 
@@ -118,10 +119,29 @@ function describeSamples(refs: SampleRef[]): string {
 }
 
 /**
+ * For a recovered project: the samples whose audio isn't in the sample store, in plain words, with
+ * their file names (Kick.wav). Null when every sound is there.
+ */
+export function missingSoundsNotice(refs: readonly SampleRef[]): string | null {
+  if (refs.length === 0) return null;
+  const names = refs.slice(0, 3).map((r) => {
+    const src = embedded(r);
+    return `"${src ? `${r.name}.${src.ext}` : r.name}"`;
+  });
+  const list = refs.length > 3 ? `${names.join(', ')} and ${refs.length - 3} more` : names.join(', ');
+  return `${plural(refs.length, 'sound couldn’t', 'sounds couldn’t')} be found: ${list}. Use File → Find missing samples… to point to them.`;
+}
+
+/**
  * Opens a project file (throws ProjectFileError with a user-facing message), verifies each embedded
  * sample against its hash and stores it before returning, so the engine can load it right away.
  */
-export async function openProjectFile(bytes: Uint8Array, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+export function openProjectFile(bytes: Uint8Array, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+  // Storing its samples is work in progress: no clean-up of unused audio starts meanwhile.
+  return whileBusy(() => openProjectFileOf(bytes, opts));
+}
+
+async function openProjectFileOf(bytes: Uint8Array, opts: { store?: BlobStore }): Promise<OpenedProject> {
   const file = readProjectFile(bytes);
   const store = opts.store ?? defaultSampleStore();
   const repairs = [...file.repairs];
@@ -160,7 +180,11 @@ export function decodableBytes(bytes: Uint8Array): Uint8Array {
  * then each embedded sample on its own (verified against its hash, stored), so opening a project
  * with hundreds of MB of songs holds one song at a time. Same result as openProjectFile.
  */
-export async function openProjectBlob(blob: Blob, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+export function openProjectBlob(blob: Blob, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+  return whileBusy(() => openProjectBlobOf(blob, opts));
+}
+
+async function openProjectBlobOf(blob: Blob, opts: { store?: BlobStore }): Promise<OpenedProject> {
   const read = async (offset: number, length: number) =>
     new Uint8Array(await blob.slice(offset, Math.min(blob.size, offset + length)).arrayBuffer());
   const file: ProjectFileIndex = await readProjectFileIndex(read, blob.size);

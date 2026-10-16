@@ -39,19 +39,41 @@ export function findAccent(name: string): AccentId | undefined {
     (t === 'violet' ? 'purple' : t === 'brass' ? 'gold' : t === 'silver' ? 'champagne' : t.includes('rose') ? 'rose' : undefined);
 }
 
+const SLATE_THEMES: ReadonlySet<string> = new Set(['classic', 'midnight', 'graphite', 'light']);
+
+/**
+ * The accent a theme shows when the user has not picked one: orange on the slate themes, gold on the
+ * rest. Only the accent's own default (gold) can be untouched, so `accentPicked` says whether a stored
+ * gold was chosen.
+ */
+export function themeDefaultAccent(theme: string): AccentId {
+  return SLATE_THEMES.has(findTheme(theme) ?? 'marble') ? 'orange' : 'gold';
+}
+
+/** The accent that really shows for these prefs. Gold only counts once picked; before that the theme's default. */
+export function effectiveAccent(theme: string, accent: string, accentPicked: boolean): AccentId {
+  const a = findAccent(accent) ?? 'gold';
+  if (a !== 'gold' || accentPicked) return a;
+  return themeDefaultAccent(theme);
+}
+
 let applied = '';
 
-/** Puts the theme and accent on <html> (data-theme, data-accent) and has the canvases redraw. */
-export function applyTheme(theme: string, accent: string): void {
+/**
+ * Puts the theme and accent on <html> (data-theme, data-accent) and has the canvases redraw. The
+ * theme's default accent leaves data-accent off (themes.css falls back to it); any picked accent,
+ * Gold included, sets it.
+ */
+export function applyTheme(theme: string, accent: string, accentPicked = false): void {
   const t = findTheme(theme) ?? 'marble';
-  const a = findAccent(accent) ?? 'gold';
-  const key = `${t}/${a}`;
+  const a = effectiveAccent(theme, accent, accentPicked);
+  const key = `${t}/${a}/${accentPicked}`;
   if (key === applied || typeof document === 'undefined') return;
   applied = key;
   const root = document.documentElement;
   if (t === 'marble') delete root.dataset.theme;
   else root.dataset.theme = t;
-  if (a === 'gold') delete root.dataset.accent;
+  if (!accentPicked && a === themeDefaultAccent(t)) delete root.dataset.accent;
   else root.dataset.accent = a;
   invalidateTheme();
 }

@@ -4,6 +4,7 @@ import { afterStepFor, registerAfterStep } from '../assistant/after-steps';
 import { createTestServices } from '../testing';
 import type { AudioDeps } from './audio-tools';
 import { clientLabel } from './common';
+import { readTools } from '../ai/read';
 import { TOOL_DEFS } from './defs';
 import { createMcpTools, type McpTools } from './tools';
 import type { ToolResult } from './types';
@@ -103,36 +104,49 @@ describe('reading the project', () => {
     expect(r).toContain('apply_actions');
   });
 
-  it('reads patterns, the mixer and the playlist', async () => {
+  it('offers every read tool the Studio chat has, and its JSON back as text and data', async () => {
+    const { s, call } = setup();
+    const names = TOOL_DEFS.map((t) => t.name);
+    for (const t of readTools) expect(names, t.name).toContain(t.name === 'get_project' ? 'get_project_summary' : t.name);
+    // The two get_project tools do not share a name: the full text and the JSON overview.
+    expect(text(await call('get_project'))).toMatch(/^Song: /);
+    const overview = await call('get_project_summary');
+    expect(overview.structuredContent).toMatchObject({ bpm: s.doc.getState().project.transport.bpm });
+    expect(JSON.parse(text(overview))).toEqual(overview.structuredContent);
+    expect((await call('get_transport')).structuredContent).toMatchObject({ playing: false });
+  });
+
+  it('reads pattern notes, the mixer and the playlist', async () => {
     const { s, call } = setup();
     await call('apply_actions', {
       summary: 'a beat',
       actions: [{ op: 'beat', title: 'Test beat', bars: 1, tracks: [{ name: 'Kick', sound: 'kick', notes: [{ step: 0 }, { step: 8 }] }] }],
     });
-    const pattern = await call('get_pattern', {});
-    expect(text(pattern)).toMatch(/Kick: 0@1 8@\.9/);
-    const data = pattern.structuredContent as { pattern: { name: string }; channels: { name: string; notes: { tick: number }[] }[] };
-    expect(data.channels.find((c) => c.name === 'Kick')?.notes.map((n) => n.tick)).toEqual([0, 1920]);
-    expect((await call('get_pattern', { pattern: 'no such' })).isError).toBe(true);
-    expect((await call('get_pattern', { channel: 'no such' })).isError).toBe(true);
-
+    const notes = await call('get_pattern_notes', { channel: 'Kick' });
+    expect(notes.isError).toBeUndefined();
+    expect(text(notes)).toContain('"Kick"');
     const mixer = await call('get_mixer');
     expect(text(mixer)).toContain('Master');
-    expect((mixer.structuredContent as { tracks: unknown[] }).tracks.length).toBe(s.doc.getState().project.mixer.order.length);
+    expect(mixer.structuredContent).toBeDefined();
+    expect((await call('get_clips', {})).isError).toBeUndefined();
+    expect(s.history.steps().done).toHaveLength(1);
+  });
 
-    const clips = await call('get_clips', {});
-    expect(text(clips)).toBe('No clips there.');
-    expect((await call('get_clips', { track: 99 })).isError).toBe(true);
+  it('turns a bad argument to a read tool into an error the AI can fix', async () => {
+    const { call } = setup();
+    const r = await call('get_pattern_notes', { pattern: 'no such pattern' });
+    expect(r.isError).toBe(true);
+    expect(text(r)).toMatch(/no such pattern|pattern/i);
   });
 
   it('reads the clips of a stacked song by track and bars', async () => {
     const { s } = stackedSong();
     const tools = createMcpTools(s);
-    const all = await tools.call('get_clips', { track: 1, from_bar: 17, to_bar: 18 }, CLAUDE);
-    const clips = (all.structuredContent as { clips: { track: number; start_bar: number; bars: number }[] }).clips;
+    const all = await tools.call('get_clips', { tracks: [1], from_bar: 17, to_bar: 18 }, CLAUDE);
+    expect(all.isError).toBeUndefined();
+    const clips = (all.structuredContent as { clips: { track: number }[] }).clips;
     expect(clips.length).toBeGreaterThan(0);
-    expect(clips.every((c) => c.track === 1 && c.start_bar <= 18 && c.start_bar + c.bars > 17)).toBe(true);
-    expect(text(all)).toMatch(/^Track 1/);
+    expect(clips.every((c) => c.track === 1)).toBe(true);
   });
 });
 

@@ -73,7 +73,8 @@ export class McpBridge {
       // A tab that reports focus becomes the one that answers; a new tab that is not focused queues behind.
       lastFocus: h.focused ? t : (known?.lastFocus ?? 0),
     });
-    this.emit();
+    // Only a new tab or a changed setting is news (a click in a known tab just updates who answers).
+    if (!known || known.enabled !== h.enabled || known.project !== h.project) this.emit();
   }
 
   bye(tab: string): void {

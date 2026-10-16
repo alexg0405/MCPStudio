@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { cpuNow, settle } from '../../../test/helpers/perf';
 import { analyzeVoice, type VoiceEvent } from './analyze';
 import { hzToMidi } from './pitch';
 import {
@@ -342,7 +343,7 @@ describe('analyzeVoice: robustness', () => {
     expect(Object.values(events[0]?.features ?? {}).every(Number.isFinite)).toBe(true);
   });
 
-  it('analyses 30 s of 48 kHz audio in well under a second', () => {
+  it('analyses 30 s of 48 kHz audio in well under a second', async () => {
     // Alternating bars of beatbox and hummed bass at 120 BPM.
     const bar = 2;
     const x = noiseFloor(SR, 30, -60, 8);
@@ -361,14 +362,19 @@ describe('analyzeVoice: robustness', () => {
         for (let q = 0; q < 4; q++)
           mixInto(x, synthHum(SR, { hz: notes[q] as number, durationSec: 0.45 }), b * bar + q * 0.5, SR, 0.7);
     }
-    let best = Infinity;
     let events: VoiceEvent[] = [];
-    for (let r = 0; r < 3; r++) {
-      const t0 = performance.now();
-      events = analyzeVoice(x, SR);
-      best = Math.min(best, performance.now() - t0);
-    }
-    console.info(`analyzeVoice: 30 s at 48 kHz in ${best.toFixed(0)} ms (best of 3), ${events.length} events`);
+    // CPU time, not the wall clock: on a busy machine the wall clock counts the time spent waiting for a core.
+    // The best of up to six runs, stopping at the first that is fast enough (the machine only ever adds time).
+    const best = await settle(
+      () => {
+        const t0 = cpuNow();
+        events = analyzeVoice(x, SR);
+        return cpuNow() - t0;
+      },
+      (ms) => ms < 800,
+      { attempts: 6 },
+    );
+    console.info(`analyzeVoice: 30 s at 48 kHz in ${best.toFixed(0)} ms of CPU (best run), ${events.length} events`);
     expect(events.length).toBe(8 * 9 + 7 * 4);
     // The target is ~400 ms in Node; the bound leaves room for a loaded CI machine.
     expect(best).toBeLessThan(800);

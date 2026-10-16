@@ -14,6 +14,7 @@ import { AutoLane, ParamRegistry } from '../param-lane';
 import { songModeSource } from '../sched/events';
 import { Transport } from '../sched/transport';
 import { automate, fakeContext, FakeParam, pt } from '../../../test/helpers/automation';
+import { cpuNow } from '../../../test/helpers/perf';
 import { AutomationDriver } from './driver';
 
 beforeEach(() => setIdSource(seededBytes(7)));
@@ -409,9 +410,10 @@ describe('AutomationDriver', () => {
     const times: number[] = [];
     for (let i = 0; i < 800; i++) {
       ctx.currentTime += 0.025;
-      const t0 = performance.now();
+      // CPU time, not wall clock: a busy machine would add the time spent waiting for a core to one pump.
+      const t0 = cpuNow();
       transport.pump();
-      times.push(performance.now() - t0);
+      times.push(cpuNow() - t0);
     }
     times.sort((a, b) => a - b);
     const mean = times.reduce((a, b) => a + b, 0) / times.length;

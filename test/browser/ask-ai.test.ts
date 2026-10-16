@@ -23,7 +23,8 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 
 const BAR = 3840;
-const until = async (ok: () => boolean, ms = 5000) => {
+// A passing wait ends as soon as the condition holds; the generous limit only matters on a machine so busy that React takes seconds.
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

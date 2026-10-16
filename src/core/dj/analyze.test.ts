@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { cpuNow } from '../../../test/helpers/perf';
 import { analyzeTrack } from './analyze';
 import { MAJOR, MINOR, PATTERNS, chord, renderTestSong, type DrumPattern, type SongPart, type TestSongSpec } from './test-songs';
 import { ANALYSIS_VERSION } from './types';
@@ -135,9 +136,10 @@ describe('track analysis: hard cases', () => {
       ],
     });
     expect(song.durationSec).toBeGreaterThan(299);
-    const t0 = performance.now();
+    // CPU time: on a busy machine the wall clock counts the time spent waiting for a core.
+    const t0 = cpuNow();
     const a = analyzeTrack({ hash: 'long', mono: song.mono, sampleRate: SR, lufs: -9, truePeakDb: -0.5 });
-    const ms = performance.now() - t0;
+    const ms = cpuNow() - t0;
     console.log(`5-minute song analyzed in ${Math.round(ms)} ms`);
     expect(a.grid?.bpm).toBe(124);
     expect(ms).toBeLessThan(30000);

@@ -711,5 +711,8 @@ older versions are upgraded when they load.
     { frame: 24000, run: () => k.noteOff(1, 60, 0.5) },
   ]);
   ```
+- Speed assertions (a kernel's cost, a render's speed): `cpuNow()` is the CPU time the process has spent (the
+  wall clock mostly counts waiting for a core on a busy machine) and `settle(measure, pass)` takes the best of a
+  few attempts, stopping at the first that passes. Both are in `@agstudio/sdk/testing`.
 - Whole plugins: browser tests render offline in headless Chrome (`test/browser/worklet.test.ts`).
   `npm run test:audio` runs them; `npm run check` runs everything.

@@ -58,7 +58,7 @@ export function register(services: Services): void {
     id: 'options.theme',
     title: 'Theme',
     category: 'Options',
-    hint: 'How AGstudio looks: Dark, Midnight, Graphite or Light',
+    hint: 'How AGstudio looks: Black marble, White marble, Classic, Midnight, Graphite or Light',
     argsHint: THEMES.map((t) => `'${t.id}'`).join(', '),
     palette: false,
     run: (s, name) => {

@@ -27,6 +27,8 @@
 
 /* A strip of faint marble across the top; groups are split by short hairlines, not boxes. */
 .toolbar {
+  /* A size container for the transport's compact layout (Transport.module.css). */
+  container: toolbar / inline-size;
   display: flex;
   align-items: stretch;
   gap: 4px;

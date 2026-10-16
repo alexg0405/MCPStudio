@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { setBpm } from '@core/ops/notes';
 import { formatBST } from '@core/time/ppq';
 import { useDoc, useEngineStatus, useServices, useView } from '../../services-context';
@@ -90,10 +90,16 @@ function Tempo() {
   );
 }
 
-/** Song position, updated every frame outside React. */
+/**
+ * Song position, updated every frame outside React. It holds both forms ("1:01:000" and "1:01"): a wide
+ * toolbar shows the full one; a narrow one (see the container queries in Transport.module.css) shows
+ * bar:step and gives the room back, and a click shows the ticks too until it is clicked again.
+ */
 function Position() {
   const services = useServices();
-  const ref = useRef<HTMLSpanElement>(null);
+  const full = useRef<HTMLSpanElement>(null);
+  const short = useRef<HTMLSpanElement>(null);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let last = '';
     return onFrame(() => {
@@ -101,19 +107,32 @@ function Position() {
       const v = services.view.getState();
       const tick = services.engine.playing ? services.engine.playhead() : v.mode === 'song' ? v.songStart : 0;
       const text = formatBST(tick, ts);
-      if (text !== last && ref.current) {
-        ref.current.textContent = text;
+      if (text !== last && full.current && short.current) {
+        full.current.textContent = text;
+        short.current.textContent = text.slice(0, text.lastIndexOf(':'));
         last = text;
       }
     });
   }, [services]);
   return (
-    <div className={`${styles.lcd} ${styles.time}`} data-hint="Song position (bar : step : tick)">
-      <span ref={ref} className={styles.lcdValue}>
+    <button
+      className={`${styles.lcd} ${styles.time}`}
+      tabIndex={-1}
+      onPointerDown={(e) => e.preventDefault()}
+      onClick={() => setExpanded((on) => !on)}
+      data-expanded={expanded || undefined}
+      data-hint="Song position (bar : step : tick). In a narrow window it shows bar : step; click to show the ticks too"
+      aria-label="Song position"
+      aria-pressed={expanded}
+    >
+      <span ref={full} className={`${styles.lcdValue} ${styles.timeFull}`}>
         1:01:000
       </span>
+      <span ref={short} className={`${styles.lcdValue} ${styles.timeShort}`}>
+        1:01
+      </span>
       <span className={styles.lcdLabel}>B:S:T</span>
-    </div>
+    </button>
   );
 }
 

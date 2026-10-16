@@ -115,6 +115,9 @@ export function createMcpTools(s: Services, deps: ToolDeps = {}): McpTools {
       ...(out.followups.length ? ['Follow-up steps:', ...out.followups.map((f) => `- ${f}`)] : []),
       ...(out.findings?.length ? ['Song check:', ...out.findings.map((f) => `- ${f}`)] : []),
       ...(dropped > 0 ? [`${dropped} action${dropped === 1 ? ' was' : 's were'} skipped: unknown "op".`] : []),
+      ...(answer.actions.some((a) => a.op === 'analyze_mix')
+        ? ['The analyze_mix action only works in the Studio chat: call the analyze_mix tool to listen to the mix.']
+        : []),
       ...(out.edited ? [`To go back: undo, or undo with to_point ${out.beforePoint}.`] : []),
     ];
     return ok(lines.join('\n'), {

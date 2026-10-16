@@ -6,8 +6,8 @@
  *
  * Effects run a stereo music-like loop through their default settings and every preset; instruments
  * hold an 8-note chord and retrigger it every half second. The table lists the default and the worst
- * preset. Options: `--only chorus,reverb` (ids containing any), `--reps 5`, `--seconds 4`,
- * `--json` (one JSON array instead of the table).
+ * preset. Options: `--only chorus,reverb` (ids containing any), `--preset text` (only presets whose
+ * name contains it), `--reps 5`, `--seconds 4`, `--json` (one JSON array instead of the table).
  */
 import type { ParamValue } from '@agstudio/sdk';
 import { paramBlock, testTransport } from '@agstudio/sdk/testing';
@@ -32,8 +32,12 @@ const option = (name: string, fallback: string) => {
 const SECONDS = Number(option('seconds', '4'));
 const REPS = Number(option('reps', '5'));
 const ONLY = option('only', '').split(',').filter(Boolean);
+const PRESET = option('preset', '');
 const JSON_OUT = args.includes('--json');
 const FRAMES = SR * SECONDS;
+
+/** Settles the garbage collector before a timed run (its helper threads would count as CPU time). */
+const settle = () => (globalThis as { gc?: () => void }).gc?.();
 
 /** CPU time in ms: steadier than wall time while other programs share the machine. */
 const cpuMs = () => {
@@ -53,6 +57,7 @@ function timeEffect(entry: EffectEntry, values: Record<string, ParamValue>): num
   const outR = new Float32Array(BLOCK);
   const scL = new Float32Array(BLOCK);
   const scR = new Float32Array(BLOCK);
+  settle();
   const t0 = cpuMs();
   for (let at = 0; at < FRAMES; at += BLOCK) {
     transport.blockStart = at;
@@ -75,6 +80,7 @@ function timeInstrument(entry: InstrumentEntry, values: Record<string, ParamValu
   const R = new Float32Array(BLOCK);
   const half = SR / 2;
   let id = 1;
+  settle();
   const t0 = cpuMs();
   for (let at = 0; at < FRAMES; at += BLOCK) {
     transport.blockStart = at;
@@ -109,6 +115,7 @@ for (const entry of KERNEL_ENTRIES) {
   let worst = def;
   let worstPreset = 'default';
   for (const preset of entry.presets) {
+    if (PRESET && !preset.name.includes(PRESET)) continue;
     const c = percent(run(preset.params));
     if (c > worst) {
       worst = c;

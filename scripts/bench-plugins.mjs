@@ -44,5 +44,5 @@ const bundle = await rolldown({
 await bundle.write({ file, format: 'esm', sourcemap: false });
 await bundle.close();
 
-const run = spawnSync(process.execPath, [file, ...process.argv.slice(2)], { stdio: 'inherit' });
+const run = spawnSync(process.execPath, ['--expose-gc', file, ...process.argv.slice(2)], { stdio: 'inherit' });
 process.exit(run.status ?? 1);

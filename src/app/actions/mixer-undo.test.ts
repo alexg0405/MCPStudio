@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FakeEngine } from '@engine/fake-engine';
-import { MASTER, type InsertId, type Project, type SlotId } from '@core/model/types';
+import { MASTER, type Project, type SlotId } from '@core/model/types';
 import { setFxSlotMix, setInsertProp, toggleSoloInsert } from '@core/ops/mixer';
 import { setRouteLevel } from '@core/ops/routing';
 import { createServices } from '../services';
@@ -27,7 +27,7 @@ function setup() {
   const services = createServices({ platform: 'mac', createEngine: () => new FakeEngine() });
   const project = () => services.doc.getState().project;
   const order = project().mixer.order;
-  const [i1, i2, i3] = [order[1], order[2], order[3]] as InsertId[];
+  const [i1, i2, i3] = [order[1]!, order[2]!, order[3]!];
   const kick = project().channelOrder[0]!;
   routeChannel(services, kick, i1);
   const comp = addEffect(services, i1, 'agstudio.compressor')!;

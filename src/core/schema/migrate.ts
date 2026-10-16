@@ -629,7 +629,43 @@ function repairChannels(p: Obj, log: RepairLog): void {
     delete ch.frozenFrom;
     log.count('frozen', (n) => `Unlinked ${count(n, noun('frozen channel'))} from a channel that no longer exists.`);
   }
+  // Sound filters keep what they replaced: a damaged record is forgotten (the filtered audio stays).
+  for (const raw of Object.values(channels)) {
+    const ch = raw as Obj;
+    if (ch.kind !== 'audioClip' || !has(ch, 'filter') || ch.filter === undefined) continue;
+    if (isSoundFilter(ch.filter)) continue;
+    delete ch.filter;
+    log.count('filter', (n) => `Forgot what ${count(n, noun('sound filter'))} replaced (the filtered audio stays).`);
+  }
   log.flush();
+}
+
+const isClipCopy = (v: unknown) =>
+  isObject(v) &&
+  isId(v.id) &&
+  isId(v.laneId) &&
+  isFiniteNumber(v.start) &&
+  isFiniteNumber(v.length) &&
+  v.length >= 1 &&
+  ((v.kind === 'pattern' && isId(v.patternId) && isFiniteNumber(v.offset)) ||
+    (v.kind === 'audio' && isId(v.channelId) && isFiniteNumber(v.offsetSec)) ||
+    (v.kind === 'automation' && isId(v.channelId) && isFiniteNumber(v.offset)));
+
+/** A structurally valid `AudioClipChannel.filter` (what it refers to may be gone: removing it skips that). */
+function isSoundFilter(v: unknown): boolean {
+  if (!isObject(v) || !isString(v.preset) || !isFiniteNumber(v.from) || !isFiniteNumber(v.to)) return false;
+  if (!Array.isArray(v.originals) || !v.originals.every(isClipCopy)) return false;
+  if (!Array.isArray(v.pieces) || !v.pieces.every(isId)) return false;
+  if (v.insert !== undefined) {
+    const i = v.insert;
+    if (!isObject(i) || !isId(i.id) || !isBoolean(i.made) || !isString(i.name)) return false;
+    if (!Array.isArray(i.slots) || !i.slots.every(isId)) return false;
+  }
+  if (v.tempo !== undefined) {
+    const t = v.tempo;
+    if (!isObject(t) || !(isFiniteNumber(t.bpm) || isId(t.channelId))) return false;
+  }
+  return true;
 }
 
 function repairNote(note: Obj, log: RepairLog): void {

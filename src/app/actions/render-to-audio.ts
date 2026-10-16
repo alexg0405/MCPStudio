@@ -37,7 +37,7 @@ import type { Services } from '../services';
 
 export class RenderToAudioError extends Error {}
 
-interface Rendered {
+export interface Rendered {
   ref: Awaited<ReturnType<typeof importSampleBytes>> & { durationSec: number; sampleRate: number; channels: number };
   seconds: number;
   /**
@@ -47,8 +47,18 @@ interface Rendered {
   gain: number;
 }
 
-/** Renders [from, to) of a project variant (song mode) into a stored FLAC sample. */
-async function renderRange(s: Services, project: Project, from: Tick, to: Tick, name: string): Promise<Rendered> {
+/**
+ * Renders [from, to) of a project variant (song mode) into a stored FLAC sample, with the tails
+ * that ring past `to`.
+ */
+export async function renderRange(
+  s: Services,
+  project: Project,
+  from: Tick,
+  to: Tick,
+  name: string,
+  signal?: AbortSignal,
+): Promise<Rendered> {
   const bar = ticksPerBar(project.transport.timeSig);
   const tempo = tempoMapOf(project, 'song');
   const musical = tempo.tickToSeconds(to) - tempo.tickToSeconds(from);
@@ -62,6 +72,7 @@ async function renderRange(s: Services, project: Project, from: Tick, to: Tick, 
     sampleRate: s.engine.sampleRate,
     tail: 'auto',
     limiter: false,
+    ...(signal ? { signal } : {}),
   });
   const channels = trimExport(result, musical);
   const frames = channels[0]?.length ?? 0;
@@ -82,7 +93,7 @@ async function renderRange(s: Services, project: Project, from: Tick, to: Tick, 
   };
 }
 
-function audioChannel(name: string, color: string, sampleId: AudioClipChannel['sampleId'], output = MASTER): AudioClipChannel {
+export function audioChannel(name: string, color: string, sampleId: AudioClipChannel['sampleId'], output = MASTER): AudioClipChannel {
   return {
     kind: 'audioClip',
     id: newId.channel(),

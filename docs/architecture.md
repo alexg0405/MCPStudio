@@ -2125,3 +2125,53 @@ and forth).
 - The browser panel and `add_channel`'s kit-sound names list only the stock kit; genre kits are reached
   through the beat writer.
 - The characterization answer doesn't run `setup_mix`/`level_mix` (they have their own tests).
+
+## Sound filters (`core/filters`, `core/ops/filters.ts`, `app/filters`, `ui/features/filters`)
+
+"Nightcore it", "make the chorus sound like a phone call": a named filter applied to a part of the song, as
+one undo step, with the original kept.
+
+- **Presets** (`core/filters/presets.ts`): a table of `{ id, name, group, description, speed?, reverse?, fx }`.
+  Speed filters (Nightcore 1.25, Sped up 1.15, Slowed 0.85, Slowed + reverb, Daycore 0.75, Chipmunk 1.5) resample
+  like a record: faster is higher (1.25 = +3.86 semitones). Tone filters (Lo-fi, Telephone, Radio, Underwater,
+  Vinyl, 8-bit, Dreamy, Wide, Mono, Reverse) keep the timing and are chains of built-in effects (lofi, filter,
+  eq-pro, saturator, reverb, chorus, stereo, distortion) with the params that differ from the defaults. Add a row
+  and the menus, chooser, action search and the Studio's `filter` enum pick it up.
+- **Targets** (`core/filters/target.ts`): selected clips, a range (the loop region, a marker's section, a clicked
+  bar) or the whole song. The clip menu filters the selection it belongs to; the marker menu its section; the ruler
+  the loop region, else the section or bar there; an empty spot the loop when clicked inside it, else its section or
+  bar; Playlist › Apply a filter… and the action search the selection, else the loop, else the whole song. A tone
+  filter on clips takes just those clips; anything else takes every playing clip over the span (automation clips
+  stay and keep playing).
+- **Apply** (`app/filters/apply.ts`): the part is rendered like Consolidate (`renderRange`: clips cut at the part's
+  edges, automation kept, no master chain, tails that ring past the end), then in one transaction: the clips are
+  cut at the edges (`cutPart`; pieces outside stay) and the inside removed; a new audio clip channel plays the
+  render with `pitch` = the speed in cents (stretch off, so it runs at its own speed), `reverse` for Reverse (the
+  trim skips the reversed tail), and outputs through a mixer track holding the filter's effects (an empty
+  "Insert N" is borrowed and renamed, else one is added). The effects run live, so they stay editable and reverb
+  tails ring on after the clip.
+- **Speed changes the tempo, not the positions.** Instead of rippling everything after the part (which would leave
+  the rest of the song off the bar grid by a fraction of a bar), a speed filter scales the part's tempo by the speed
+  (`changePartTempo`): the whole song without tempo automation gets a new BPM; otherwise a tempo automation clip
+  over the part plays the old tempo curve × speed (sampled per 1/16 step, the tempo map's resolution; tempo clips
+  that started inside the part are cut out and kept) and ends on the tempo the song had there, which it holds. The
+  bars stay where they are, the part plays 1/speed as long, and everything after arrives earlier (or later) by the
+  difference: no overlap, no gap, markers and automation still on their bars. Speed filters round the part to whole
+  1/16 steps and always take every track. Measured (`test/browser/filters.test.ts`, headless Chrome): Nightcore on
+  bars 5–8 of a 120 BPM song turns 1000.0 Hz into 1250.0 Hz (+3.86 semitones), the part takes 6.4 s instead of 8 s
+  and bar 9 arrives 1.600 s earlier; Telephone on noise cuts the band below 250 Hz by 28 dB and above 4 kHz by
+  31 dB relative to the 0.8–2 kHz band.
+- **Keeping the original**: the new channel's `filter` record (`SoundFilter` in `core/model/types.ts`) holds copies
+  of the replaced clips (whole, as before the cut), the pieces the cut made, the mixer track (made or borrowed, its
+  old name and the slots it added) and the tempo change (old BPM or the tempo channel). `removeSoundFilter` deletes
+  the channel and its clips, the pieces, the tempo change and the effects, and puts the copies back; clips whose
+  track, pattern or channel was deleted meanwhile are skipped. A filter made later over a filter's audio keeps that
+  audio in its own record, so the earlier one refuses to go first (`filtersOver`). `repairProject` forgets a
+  damaged record (the filtered audio stays).
+- **UI** (`ui/features/filters`): "Filter ‹part› ▸" (speed and tone groups) in the clip, marker, ruler and
+  empty-spot menus; Remove filter on a filtered clip and in the Playlist menu; Playlist › Apply a filter… (a
+  chooser with each filter's description and the part); "Filter: Nightcore" etc. in the action search. After
+  applying, the song plays from a bar before the part.
+- **Studio** (`app/ai/ops/filters.ts`): `filter { filter, from_bar?, to_bar?, section?, clips?, whole_song? }`
+  (default: the part asked about, else the whole song) runs after the answer as an after-step folded into its undo
+  step (`app/filters/step.ts`); `remove_filter { clip? | bar? }` edits in the answer.

@@ -180,6 +180,35 @@ export interface AudioClipChannel extends ChannelBase, Audible {
    * (Unfreeze deletes this one and unmutes it). Absent for ordinary audio. Added in M15 (optional).
    */
   frozenFrom?: ChannelId;
+  /**
+   * "Sound filters": this channel's audio is a part of the song rendered and played through a
+   * filter (Nightcore, Telephone…); what it replaced is kept here so "Remove filter" puts it back.
+   * Absent for ordinary audio. Added in v3 (optional).
+   */
+  filter?: SoundFilter;
+}
+
+/** A sound filter applied to a part of the song (see `AudioClipChannel.filter`, core/filters). */
+export interface SoundFilter {
+  /** The preset's id ('nightcore', 'telephone'…; see core/filters/presets.ts). */
+  preset: string;
+  /** The part it replaced, [from, to). */
+  from: Tick;
+  to: Tick;
+  /** The clips as they were before (whole, before being cut at the part's edges): put back on remove. */
+  originals: Clip[];
+  /** Pieces left outside the part when clips were cut at its edges: deleted on remove. */
+  pieces: ClipId[];
+  /**
+   * The mixer track its effects are on: made for it (deleted on remove), or an empty one it borrowed
+   * (renamed back to `name`, its `slots` removed).
+   */
+  insert?: { id: InsertId; made: boolean; name: string; slots: SlotId[] };
+  /**
+   * Speed filters change the tempo of the part: the song's tempo before (whole song) or the tempo
+   * automation channel added over the part.
+   */
+  tempo?: { bpm: number } | { channelId: ChannelId };
 }
 
 export type AudioStretch = 'off' | 'resample' | 'stretch';

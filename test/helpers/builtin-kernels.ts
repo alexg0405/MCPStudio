@@ -198,7 +198,12 @@ export const KERNEL_ENTRIES: readonly KernelEntry[] = [
     },
     Array.from({ length: 16 }, (_, i) => PAD_FIRST_KEY + i),
   ),
-  instrument(drumSynth, drumSynthParams, (sr) => new DrumSynthKernel(testHost(sr, 7)), [36, 38, 42, 46, 45, 49, 39, 56]),
+  instrument(
+    drumSynth,
+    drumSynthParams,
+    (sr) => new DrumSynthKernel(testHost(sr, 7)),
+    [36, 38, 42, 46, 45, 49, 39, 56],
+  ),
   instrument(
     slicer,
     slicerParams,

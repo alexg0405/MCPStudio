@@ -18,7 +18,8 @@
     "test:watch": "vitest --project unit",
     "check": "tsc -b && eslint . && vitest run",
     "format": "prettier --write .",
-    "new:plugin": "node scripts/new-plugin.mjs"
+    "new:plugin": "node scripts/new-plugin.mjs",
+    "bench:plugins": "node scripts/bench-plugins.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

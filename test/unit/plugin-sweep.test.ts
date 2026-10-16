@@ -22,7 +22,8 @@ function extremes(spec: ParamSpec): [ParamValue, ParamValue] {
 function bounds(entry: KernelEntry) {
   const min: Record<string, ParamValue> = {};
   const max: Record<string, ParamValue> = {};
-  for (const [key, spec] of Object.entries(entry.params)) [min[key], max[key]] = extremes(spec) as [ParamValue, ParamValue];
+  for (const [key, spec] of Object.entries(entry.params))
+    [min[key], max[key]] = extremes(spec) as [ParamValue, ParamValue];
   return { min, max };
 }
 
@@ -69,12 +70,16 @@ describe.each(KERNEL_ENTRIES.map((e) => [e.id, e] as const))('%s', (_id, entry) 
   });
 
   if (entry.kind === 'effect') {
-    it.skipIf(GENERATORS.has(entry.id))('goes silent after its input does, so it can sleep', { timeout: 60_000 }, () => {
-      // Half a second of music, then silence: by 10 s even the longest default tail is below -120 dB.
-      const r = runEntry(entry, [{ seconds: 11, values: {} }], { input: (t) => (t < 0.5 ? 1 : 0) });
-      expect(stats(r, 0, 0.5).peak).toBeGreaterThan(0);
-      expect(stats(r, 10, 11).peak).toBeLessThan(1e-6);
-    });
+    it.skipIf(GENERATORS.has(entry.id))(
+      'goes silent after its input does, so it can sleep',
+      { timeout: 60_000 },
+      () => {
+        // Half a second of music, then silence: by 10 s even the longest default tail is below -120 dB.
+        const r = runEntry(entry, [{ seconds: 11, values: {} }], { input: (t) => (t < 0.5 ? 1 : 0) });
+        expect(stats(r, 0, 0.5).peak).toBeGreaterThan(0);
+        expect(stats(r, 10, 11).peak).toBeLessThan(1e-6);
+      },
+    );
 
     it.skipIf(OWN_TAIL.has(entry.id) || GENERATORS.has(entry.id) || entry.id === 'agstudio.stutter')(
       'reports a tail that covers its own, in every preset',

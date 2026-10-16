@@ -294,6 +294,14 @@ describe('FLP reader', () => {
     expect(f.title).toBe('Night Drive');
   });
 
+  it('says a file is cut off once (the import report lists each warning)', () => {
+    const bytes = flpProject(SPEC);
+    for (const keep of [0.3, 0.6, 0.9, 0.99]) {
+      const f = parseFlp(bytes.subarray(0, Math.floor(bytes.length * keep)));
+      expect(new Set(f.warnings).size, `kept ${keep}`).toBe(f.warnings.length);
+    }
+  });
+
   it('never throws anything but FlpError on random bytes', () => {
     fc.assert(
       fc.property(fc.uint8Array({ maxLength: 2000 }), (bytes) => {

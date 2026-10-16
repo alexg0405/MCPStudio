@@ -5,9 +5,9 @@
  * `runReadTool` runs one by name and turns a bad argument into `{ error }` instead of a throw.
  */
 import type { Draft } from 'immer';
-import { decode, formatValue, type ParamSpec, type ParamSpecs, type ParamValue, type PluginDef } from '@agstudio/sdk';
-import { formatAutomationValue, targetName } from '@core/automation/labels';
-import { resolveTarget, type ResolvedTarget } from '@core/automation/targets';
+import { formatValue, type ParamSpec, type ParamSpecs, type ParamValue, type PluginDef } from '@agstudio/sdk';
+import { formatAutomationValue } from '@core/automation/labels';
+import { resolveTarget } from '@core/automation/targets';
 import { gainToDecibels } from '@core/model/fader';
 import { sameTarget } from '@core/model/targets';
 import type {
@@ -15,7 +15,6 @@ import type {
   Channel,
   Clip,
   InsertId,
-  ParamTarget,
   PatternId,
   PluginInstance,
   PluginOwner,
@@ -28,7 +27,7 @@ import { songSections } from '@core/query/sections';
 import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
 import { isAtPreset, presetChoices } from '../presets';
 import type { Services } from '../services';
-import { paramTargetOf } from './ops/automation';
+import { automationDrives, ownUnitOf, paramTargetOf } from './ops/automation';
 import { ActionError, createOpContext, newAnswerState, type OpContext } from './ops/context';
 import { RECORD_GRIDS } from './ops/session';
 import { isObj, lower, num, str } from './ops/values';
@@ -424,7 +423,7 @@ const get_channel = tool(
       };
     const ch = p.channels[c.channel(a.channel)]!;
     const brief = channelBrief(p, s, ch);
-    if (ch.kind === 'automation') return { ...brief, points: ch.points.length, drives: automationName(s, p, ch) };
+    if (ch.kind === 'automation') return { ...brief, points: ch.points.length, drives: automationDrives(s, p, ch) };
     const common = {
       ...brief,
       color: ch.color,
@@ -508,23 +507,6 @@ const get_clips = tool(
   },
 );
 
-function automationName(s: Services, p: Project, ch: AutomationChannel): string {
-  if (!ch.target) return 'nothing yet';
-  const info = (id: string) => {
-    const d = s.plugins.get(id);
-    return d ? { name: d.name, params: d.params as ParamSpecs } : undefined;
-  };
-  return targetName(p, ch.target, info) ?? 'a control that no longer exists';
-}
-
-/** A curve value in the control's own unit (dB, BPM, a plugin param's value…), as `automate` takes it. */
-function ownUnit(res: ResolvedTarget, target: ParamTarget, n: number): number | string | boolean {
-  const v = res.fromNormalized(n);
-  if (target.kind === 'route' || ((target.kind === 'channel' || target.kind === 'insert') && target.param === 'volume')) return db(v);
-  if (target.kind === 'plugin') return decode(res.spec, v);
-  return r3(v);
-}
-
 const get_automation = tool(
   'get_automation',
   'Automation: the automation channels (what each drives, its clips on the playlist), or the curve points of one: by its channel or by the control it moves. Point values are in the control’s own unit (dB, BPM, Hz…), bars from the clip start.',
@@ -552,7 +534,7 @@ const get_automation = tool(
           .filter((x) => x.kind === 'automation' && x.channelId === ch.id)
           .sort((x, y) => x.start - y.start)
           .map((x) => ({ id: x.id, track: p.playlist.laneOrder.indexOf(x.laneId) + 1, bar: bar1(p, x.start), bars: bars(p, x.length) }));
-        const head = { id: ch.id, name: ch.name, drives: automationName(s, p, ch), points: ch.points.length, clips };
+        const head = { id: ch.id, name: ch.name, drives: automationDrives(s, p, ch), points: ch.points.length, clips };
         if (!detailed || !ch.target) return head;
         const res = resolveTarget(p, ch.target, specsOf, ch.range);
         return {
@@ -560,7 +542,7 @@ const get_automation = tool(
           curve: res
             ? ch.points.map((pt) => ({
                 bar: bars(p, pt.tick),
-                value: ownUnit(res, ch.target!, pt.value),
+                value: ownUnitOf(res, ch.target!, pt.value),
                 text: formatAutomationValue(res, ch.target!, pt.value),
                 ...(pt.shape && pt.shape !== 'curve' ? { shape: pt.shape } : {}),
                 ...(pt.tension ? { tension: r2(pt.tension) } : {}),

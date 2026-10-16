@@ -54,6 +54,9 @@ export const TWO_HUNDRED_CHANNEL_SONG: SongShape = {
   seed: 5,
 };
 
+/** The same project with all 200 channels playing. */
+export const TWO_HUNDRED_CHANNEL_ALL_PLAYING_SONG: SongShape = { ...TWO_HUNDRED_CHANNEL_SONG, playing: 200 };
+
 /** A few settings per plugin, moved off their defaults (the first float/int/bool params). */
 function someSettings(s: TestServices, pluginId: string, salt: number, count: number): Record<string, ParamValue> {
   const specs = (s.plugins.get(pluginId)?.params ?? {}) as ParamSpecs;

@@ -9,7 +9,7 @@ import { resolveTarget } from '@core/automation/targets';
 import { DRUM_SOUNDS, type BeatSound } from '@core/beat/spec';
 import { gainToDecibels } from '@core/model/fader';
 import { kitPiece } from '@core/model/kit';
-import { MASTER, type Channel, type Insert, type Pattern, type PluginInstance, type PatternId, type Project } from '@core/model/types';
+import { MASTER, type Channel, type ChannelId, type Insert, type Pattern, type PluginInstance, type PatternId, type Project } from '@core/model/types';
 import { insertLabel } from '@core/query/mixer';
 import { laneRuns, patternSpans, songCheck } from '@core/query/arrangement';
 import { songLength } from '@core/query/playlist';
@@ -23,6 +23,7 @@ import { musicLibraryLines } from '../dj/library';
 import { djLines } from '../dj/mix';
 import { channelSound, noteName } from '../assistant/context';
 import { recentFiles } from '../persistence/recent-files';
+import type { ResolvedFocus } from './focus';
 import { aiCommands } from './commands';
 import type { Services } from '../services';
 
@@ -38,7 +39,7 @@ export const CONTEXT_BUDGET = 40_000;
 const SHORT_NOTE = '(details shortened: the project is very large)';
 /** Parameter values kept per plugin, and playlist runs kept per track, when shortened. */
 const SHORT_VALUES = 3;
-const SHORT_RUNS = 12;
+const SHORT_RUNS = 8;
 
 /** What a render shortens. Each step in `STEPS` adds one more part, in the order the budget cuts them. */
 interface Shortening {
@@ -50,23 +51,41 @@ interface Shortening {
   runs: boolean;
   /** Channels that play nowhere: one line. */
   silentChannels: boolean;
+  /** Patterns beyond the most relevant ones: id and name only. */
+  patternsCompact: boolean;
+  /** Channels beyond the ones the full patterns use (and the selected one): one line each. */
+  channelsCompact: boolean;
 }
-const FULL: Shortening = { otherNotes: false, settings: false, runs: false, silentChannels: false };
+const FULL: Shortening = {
+  otherNotes: false,
+  settings: false,
+  runs: false,
+  silentChannels: false,
+  patternsCompact: false,
+  channelsCompact: false,
+};
 const STEPS: Shortening[] = [
   FULL,
   { ...FULL, otherNotes: true },
   { ...FULL, otherNotes: true, settings: true },
   { ...FULL, otherNotes: true, settings: true, runs: true },
   { ...FULL, otherNotes: true, settings: true, runs: true, silentChannels: true },
+  { ...FULL, otherNotes: true, settings: true, runs: true, silentChannels: true, patternsCompact: true },
+  { ...FULL, otherNotes: true, settings: true, runs: true, silentChannels: true, patternsCompact: true, channelsCompact: true },
 ];
 
+/** Patterns kept in full, and channels kept in full, when shortened. */
+const FULL_PATTERNS = 60;
+const FULL_CHANNELS = 80;
+
 type Section = 'patterns' | 'channels' | 'mixer' | 'playlist';
-/** One render: what it shortens, and which sections it actually cut (only those say so). */
+/** One render: what it shortens, which sections it actually cut (only those say so), and the focus. */
 interface Render {
   shorten: Shortening;
   cut: Set<Section>;
+  focus: ResolvedFocus | null;
 }
-const fullRender = (): Render => ({ shorten: FULL, cut: new Set() });
+const fullRender = (focus: ResolvedFocus | null = null): Render => ({ shorten: FULL, cut: new Set(), focus });
 /** The note under a section header, when the render cut that section. */
 const cutNote = (r: Render, section: Section): string[] => (r.cut.has(section) ? [SHORT_NOTE] : []);
 
@@ -117,6 +136,65 @@ function channelsThatPlay(p: Project): Set<string> {
   }
   for (const clip of Object.values(p.playlist.clips)) if (clip.kind !== 'pattern') out.add(clip.channelId);
   return out;
+}
+
+/** What a channel is, in one word for a compact line. */
+function channelKind(s: Services, ch: Channel): string {
+  if (ch.kind === 'instrument') return pluginName(s, ch.plugin.pluginId);
+  return ch.kind === 'audioClip' ? 'audio clip' : 'automation';
+}
+
+/** The patterns that play inside the focus (the part the request is about), in song order. */
+function focusPatterns(p: Project, focus: ResolvedFocus | null): PatternId[] {
+  if (!focus) return [];
+  if (focus.notes) return [focus.notes.patternId];
+  const inside = new Set<PatternId>();
+  for (const c of Object.values(p.playlist.clips)) {
+    if (c.kind !== 'pattern') continue;
+    const inFocus = focus.clips ? focus.clips.has(c.id) : c.start < focus.to && c.start + c.length > focus.from;
+    if (inFocus) inside.add(c.patternId);
+  }
+  return p.patternOrder.filter((pid) => inside.has(pid));
+}
+
+/**
+ * The patterns kept in full when the project is shortened: the current one, then the ones playing in
+ * the focus, then the most used on the playlist, up to `FULL_PATTERNS`.
+ */
+function fullPatterns(p: Project, current: PatternId | null, focus: ResolvedFocus | null): Set<PatternId> {
+  const uses = new Map<PatternId, number>();
+  for (const c of Object.values(p.playlist.clips)) {
+    if (c.kind === 'pattern') uses.set(c.patternId, (uses.get(c.patternId) ?? 0) + 1);
+  }
+  const order = new Map(p.patternOrder.map((pid, i) => [pid, i] as const));
+  const byUse = p.patternOrder
+    .filter((pid) => (uses.get(pid) ?? 0) > 0)
+    .sort((a, b) => (uses.get(b) ?? 0) - (uses.get(a) ?? 0) || order.get(a)! - order.get(b)!);
+  const picked = new Set<PatternId>();
+  for (const pid of [...(current ? [current] : []), ...focusPatterns(p, focus), ...byUse]) {
+    if (picked.size >= FULL_PATTERNS) break;
+    if (p.patterns[pid]) picked.add(pid);
+  }
+  return picked;
+}
+
+/**
+ * The channels kept in full when shortened: the selected one, then the channels with notes in the full
+ * patterns (in rack order), up to `FULL_CHANNELS`.
+ */
+function fullChannels(p: Project, patterns: ReadonlySet<PatternId>, selected: ChannelId | null): Set<string> {
+  const used = new Set<string>();
+  for (const pid of patterns) {
+    const pat = p.patterns[pid];
+    if (pat) for (const [ch, notes] of Object.entries(pat.notes)) if (Object.keys(notes ?? {}).length) used.add(ch);
+  }
+  const picked = new Set<string>();
+  if (selected && p.channels[selected]) picked.add(selected);
+  for (const id of p.channelOrder) {
+    if (picked.size >= FULL_CHANNELS) break;
+    if (used.has(id)) picked.add(id);
+  }
+  return picked;
 }
 
 function pluginName(s: Services, pluginId: string): string {
@@ -211,7 +289,12 @@ const fmtStep = (steps: number) => String(Math.round(steps * 100) / 100);
 const fmtVel = (v: number) => (Math.abs(v - 0.8) < 0.005 ? '' : `@${String(r2(v)).replace(/^0(?=\.)/, '')}`);
 
 /** Each pattern: its channels with note counts, and where it plays in the song. */
-export function patternLines(p: Project, r: Render = fullRender(), current: PatternId | null = null): string[] {
+export function patternLines(
+  p: Project,
+  r: Render = fullRender(),
+  current: PatternId | null = null,
+  full: ReadonlySet<PatternId> | null = null,
+): string[] {
   const ts = p.transport.timeSig;
   const bar = ticksPerBar(ts);
   const spans = patternSpans(p);
@@ -219,6 +302,11 @@ export function patternLines(p: Project, r: Render = fullRender(), current: Patt
   for (const pid of p.patternOrder) {
     const pat = p.patterns[pid];
     if (!pat) continue;
+    if (full && pid !== current && !full.has(pid)) {
+      r.cut.add('patterns');
+      lines.push(`- ${pat.id} · "${pat.name}"`);
+      continue;
+    }
     const bars = patternLength(pat, ts) / bar;
     const used = p.channelOrder
       .filter((c) => Object.keys(pat.notes[c] ?? {}).length > 0)
@@ -351,10 +439,10 @@ export function songCheckLines(p: Project): string[] {
  * The project text, within `CONTEXT_BUDGET` characters where it can be. Each step in `STEPS` shortens one
  * more part; the first step that fits is the answer, so a project under the budget is rendered in full.
  */
-export function projectContext(s: Services): string {
+export function projectContext(s: Services, focus: ResolvedFocus | null = null): string {
   let text = '';
   for (const shorten of STEPS) {
-    text = renderContext(s, { shorten, cut: new Set() });
+    text = renderContext(s, { shorten, cut: new Set(), focus });
     if (text.length <= CONTEXT_BUDGET) break;
   }
   return text;
@@ -375,14 +463,20 @@ function renderContext(s: Services, r: Render): string {
   );
   lines.push(appLine(s));
 
+  const selected = session.selectedChannelId;
+  const fullPats = r.shorten.patternsCompact ? fullPatterns(p, current?.id ?? null, r.focus) : null;
+  const keep = r.shorten.channelsCompact && fullPats ? fullChannels(p, fullPats, selected) : null;
   const plays = r.shorten.silentChannels ? channelsThatPlay(p) : null;
   const channels: string[] = [];
   const silent: string[] = [];
   p.channelOrder.forEach((id, i) => {
     const ch = p.channels[id];
     if (!ch) return;
-    if (plays && !plays.has(id)) silent.push(`#${i + 1} "${ch.name}" ${id}`);
-    else channels.push(channelLine(s, p, ch, i + 1, r));
+    if (plays && !plays.has(id) && id !== selected) silent.push(`#${i + 1} "${ch.name}" ${id}`);
+    else if (keep && !keep.has(id)) {
+      r.cut.add('channels');
+      channels.push(`${i + 1} · ${id} · "${ch.name}" · ${channelKind(s, ch)}`);
+    } else channels.push(channelLine(s, p, ch, i + 1, r));
   });
   if (silent.length) {
     r.cut.add('channels');
@@ -417,7 +511,7 @@ function renderContext(s: Services, r: Render): string {
   if (quiet.length) mixer.push(`- Inserts ${quiet.join(', ')}: empty (default settings, routed to Master)`);
   lines.push('', 'Mixer tracks (number = position; channels feed the track shown after →):', ...cutNote(r, 'mixer'), ...mixer);
 
-  const patterns = patternLines(p, r, current?.id ?? null);
+  const patterns = patternLines(p, r, current?.id ?? null, fullPats);
   lines.push('', 'Patterns:', ...cutNote(r, 'patterns'), ...patterns);
   if (current) {
     lines.push(

@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { buildStackedSong } from '@core/fixtures/stacked-song';
 import { createTestServices } from '../testing';
-import { patternLines, playlistLines, projectContext, songCheckLines } from './context';
-import { THIRTY_CHANNEL_SONG, TWO_HUNDRED_CHANNEL_SONG, buildSyntheticSong, withSeededIds } from '../../../test/helpers/context-songs';
+import { CONTEXT_BUDGET, patternLines, playlistLines, projectContext, songCheckLines } from './context';
+import { resolveFocus } from './focus';
+import {
+  THIRTY_CHANNEL_SONG,
+  TWO_HUNDRED_CHANNEL_ALL_PLAYING_SONG,
+  TWO_HUNDRED_CHANNEL_SONG,
+  buildSyntheticSong,
+  withSeededIds,
+} from '../../../test/helpers/context-songs';
 
 function stackedSong() {
   const s = createTestServices();
@@ -74,13 +81,43 @@ describe('the size budget', () => {
     await expect(projectContext(s)).toMatchFileSnapshot('./__snapshots__/context-thirty-channels.txt');
   });
 
-  it('shortens a 200-channel project, and keeps every channel name and marker', () => {
+  it.each([
+    ['with 90 of 200 channels playing', TWO_HUNDRED_CHANNEL_SONG],
+    ['with all 200 channels playing', TWO_HUNDRED_CHANNEL_ALL_PLAYING_SONG],
+  ])('fits a 200-channel project %s within the budget, keeping every name, id and marker', (_, shape) => {
+    const s = createTestServices();
+    withSeededIds(shape.seed, () => buildSyntheticSong(s, shape));
+    const p = s.doc.getState().project;
+    const text = projectContext(s);
+    expect(text.length).toBeLessThanOrEqual(CONTEXT_BUDGET);
+    expect(text).toContain('(details shortened: the project is very large)');
+    for (const ch of Object.values(p.channels)) {
+      expect(text).toContain(`"${ch.name}"`);
+      expect(text).toContain(ch.id);
+    }
+    for (const pat of Object.values(p.patterns)) {
+      expect(text).toContain(`"${pat.name}"`);
+      expect(text).toContain(pat.id);
+    }
+    for (const marker of Object.values(p.playlist.markers)) expect(text).toContain(`"${marker.name}"`);
+  });
+
+  it('keeps the patterns playing in the focus in full lines', () => {
     const s = createTestServices();
     withSeededIds(TWO_HUNDRED_CHANNEL_SONG.seed, () => buildSyntheticSong(s, TWO_HUNDRED_CHANNEL_SONG));
     const p = s.doc.getState().project;
-    const text = projectContext(s);
-    expect(text).toContain('(details shortened: the project is very large)');
-    for (const ch of Object.values(p.channels)) expect(text).toContain(`"${ch.name}"`);
-    for (const marker of Object.values(p.playlist.markers)) expect(text).toContain(`"${marker.name}"`);
+    // The least used pattern on the playlist is outside the most used ones: a compact line unless the focus holds it.
+    const uses = new Map<string, number>();
+    for (const c of Object.values(p.playlist.clips)) if (c.kind === 'pattern') uses.set(c.patternId, (uses.get(c.patternId) ?? 0) + 1);
+    const placed = p.patternOrder.filter((pid) => (uses.get(pid) ?? 0) > 0);
+    const leastUsed = [...placed].sort((a, b) => uses.get(a)! - uses.get(b)!)[0]!;
+    const pat = p.patterns[leastUsed]!;
+    const clip = Object.values(p.playlist.clips).find((c) => c.kind === 'pattern' && c.patternId === leastUsed)!;
+    const compact = `- ${pat.id} · "${pat.name}"`;
+    expect(projectContext(s)).toContain(compact);
+    const focus = resolveFocus(p, { kind: 'range', from: clip.start, to: clip.start + clip.length, projectId: p.projectId });
+    const text = projectContext(s, focus);
+    expect(text).not.toContain(compact);
+    expect(text).toContain(`- "${pat.name}" ${pat.id}, 2 bars`);
   });
 });

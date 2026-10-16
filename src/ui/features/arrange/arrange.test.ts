@@ -53,8 +53,9 @@ describe('arranging from the playlist (no AI)', () => {
     expect(s.commands.isEnabled('arrange.refresh')).toBe(true);
   });
 
-  // Other features (Ask Studio) add their own entries to these menus; check this one's.
-  const mine = (entries: Parameters<typeof items>[0]) => items(entries).filter((e) => !e.label.startsWith('Ask Studio'));
+  // Other features (Ask Studio, Export as MP3) add their own entries to these menus; check this one's.
+  const mine = (entries: Parameters<typeof items>[0]) =>
+    items(entries).filter((e) => !e.label.startsWith('Ask Studio') && !/^Export .* as MP3$/.test(e.label));
 
   it('marker and ruler right-click entries develop a section and add fills and transitions', () => {
     const { s } = setup();

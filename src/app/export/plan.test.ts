@@ -23,6 +23,16 @@ describe('planExport', () => {
     });
   });
 
+  it('exports a span of the song (a section, a clip’s bars) in song mode', () => {
+    expect(planExport(base, { currentPatternId: patternId, loop: null }, { from: 4 * BAR, to: 8 * BAR })).toEqual({
+      mode: 'song',
+      patternId,
+      fromTick: 4 * BAR,
+      bars: 4,
+    });
+    expect(planExport(base, { currentPatternId: patternId, loop: null }, { from: 8 * BAR, to: 8 * BAR })).toHaveProperty('error');
+  });
+
   it('refuses an empty song and a missing loop region', () => {
     expect(planExport(base, { currentPatternId: patternId, loop: null }, 'song')).toHaveProperty('error');
     expect(planExport(base, { currentPatternId: patternId, loop: null }, 'loop')).toHaveProperty('error');

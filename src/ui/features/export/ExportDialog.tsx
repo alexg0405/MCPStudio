@@ -9,7 +9,7 @@ import {
 } from '@app/export/audio-export';
 import { MP3_SAMPLE_RATES, type AudioCodec } from '@app/export/encode';
 import { ExportError, type ExportProgress } from '@app/export/export-wav';
-import { planExport, planSeconds, type ExportRange } from '@app/export/plan';
+import { planExport, planSeconds, type NamedExportRange as ExportRange } from '@app/export/plan';
 import type { PrefsState } from '@app/stores/prefs';
 import { planStems, withoutMasterChain } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';

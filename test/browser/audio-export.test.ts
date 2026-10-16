@@ -143,6 +143,25 @@ describe('audio export', () => {
     expect(20 * Math.log10(peak)).toBeCloseTo(-0.3, 2);
   });
 
+  it('exports just a part of the song (a section, a clip’s bars) as an MP3', async () => {
+    const s = make(song());
+    const whole = new Map<string, Uint8Array>();
+    const part = new Map<string, Uint8Array>();
+    const all = await runExport(s, settings({ codec: 'mp3', sampleRate: 44100 }), { kind: 'memory', files: whole, name: 'all.mp3' });
+    const res = await runExport(s, settings({ codec: 'mp3', sampleRate: 44100, range: { from: BAR, to: 2 * BAR } }), {
+      kind: 'memory',
+      files: part,
+      name: 'bar2.mp3',
+    });
+    // Bar 2 of a 2-bar song at 120 BPM: two seconds shorter, and it still sounds.
+    expect(all.seconds - res.seconds).toBeCloseTo(2, 1);
+    const decoded = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(part.get('bar2.mp3')!.slice().buffer as ArrayBuffer);
+    expect(Math.abs(decoded.duration - res.seconds)).toBeLessThan(0.1);
+    let sum = 0;
+    for (const v of decoded.getChannelData(0)) sum += v * v;
+    expect(Math.sqrt(sum / decoded.length)).toBeGreaterThan(0.01);
+  });
+
   it('exports MP3 that decodes back to the song (duration, not silent)', async () => {
     const s = make(song());
     const files = new Map<string, Uint8Array>();

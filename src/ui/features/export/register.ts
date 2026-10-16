@@ -9,6 +9,13 @@ import {
 import type { AudioCodec } from '@app/export/encode';
 import type { ExportRange } from '@app/export/plan';
 import type { PrefsState } from '@app/stores/prefs';
+import { songSections } from '@core/query/sections';
+import { songLength } from '@core/query/playlist';
+import { barSpan } from '@core/time/bars';
+import { ticksPerBar } from '@core/time/ppq';
+import type { Tick } from '@core/model/types';
+import { addContextMenuItems } from '../../context-menus';
+import type { MenuEntry } from '../../controls/ContextMenu';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
 import { ExportOverlay } from './ExportDialog';
@@ -45,6 +52,50 @@ function settingsFromArgs(s: Services, raw: unknown): AudioExportSettings {
     stems: a.stems ?? base.stems,
     masterChain: a.masterChain ?? base.masterChain,
     stemsTo: a.zip === undefined ? base.stemsTo : a.zip ? 'zip' : 'folder',
+  };
+}
+
+/** What `file.exportMp3` accepts: nothing for the whole song, or the bars to export. */
+interface Mp3Args {
+  fromBar?: number;
+  toBar?: number;
+}
+
+/**
+ * Export as MP3: the remembered MP3 quality, the mix through the master, no stems; asks where to
+ * save, then renders with a toast for the start and the end. `from`/`to`: just that part of the song.
+ */
+async function exportMp3(s: Services, args?: Mp3Args | { from: Tick; to: Tick; label?: string }): Promise<void> {
+  const p = s.doc.getState().project;
+  const bar = ticksPerBar(p.transport.timeSig);
+  let span: { from: Tick; to: Tick } | null = null;
+  if (args && 'from' in args) span = { from: args.from, to: args.to };
+  else if (args && Number.isFinite(Number(args.fromBar)) && Number.isFinite(Number(args.toBar)))
+    span = { from: (Math.round(Number(args.fromBar)) - 1) * bar, to: Math.round(Number(args.toBar)) * bar };
+  const range: ExportRange = span ?? (songLength(p) > 0 ? 'song' : 'pattern');
+  const settings: AudioExportSettings = { ...exportSettingsFrom(s.prefs.getState(), range), codec: 'mp3', stems: false, masterChain: true };
+  const base = s.files.store.getState().name;
+  const part = span ? ` (${barSpan(span.from, span.to, p.transport.timeSig)})` : '';
+  const target = await chooseExportTarget(`${base}${part}`, settings);
+  if (!target) return;
+  const toast = s.session.getState().toast;
+  toast(`Exporting “${target.name}”…`);
+  try {
+    await runExport(s, settings, target);
+    toast(`Exported “${target.name}”`);
+  } catch (e) {
+    toast(e instanceof Error ? e.message : String(e), 'error');
+  }
+}
+
+/** "Export bars 5–8 as MP3" for a part of the song (a section, the loop, a clip's bars). */
+function partItem(s: Services, from: Tick, to: Tick, what?: string): MenuEntry {
+  const bars = barSpan(from, to, s.doc.getState().project.transport.timeSig);
+  return {
+    label: `Export ${what ?? bars} as MP3`,
+    hint: `Render ${what ? `${what} (${bars})` : bars} with every track playing there to an MP3 (asks where to save)`,
+    disabled: s.files.store.getState().busy !== null,
+    onSelect: () => void exportMp3(s, { from, to }),
   };
 }
 
@@ -112,7 +163,27 @@ export function register(services: Services): void {
       }
     },
   });
+  services.commands.register<Mp3Args>({
+    id: 'file.exportMp3',
+    title: 'Export as MP3',
+    category: 'File',
+    hint: 'One click: asks where to save, then renders the whole song (or the current pattern when the playlist is empty) to an MP3 at your last MP3 quality (320 kbps at first)',
+    argsHint: 'optional { fromBar, toBar } (1-based, both included) to export just those bars',
+    gesture: true,
+    enabled: idle,
+    run: (s, args) => exportMp3(s, args),
+  });
   services.keymap.add([{ chord: 'Mod+R', command: 'file.exportWav' }]);
-  addMenuItems('file', [sep(60), cmd('file.exportWav', 70), cmd('file.exportStems', 71)]);
+  addMenuItems('file', [sep(60), cmd('file.exportMp3', 69), cmd('file.exportWav', 70), cmd('file.exportStems', 71)]);
+  // Right-click: just this part as an MP3.
+  addContextMenuItems('playlist.marker', ({ markerId }, s) => {
+    const sec = songSections(s.doc.getState().project).find((x) => x.markerId === markerId);
+    return sec ? [partItem(s, sec.from, sec.to, `“${sec.name}”`)] : [];
+  });
+  addContextMenuItems('playlist.ruler', (_ctx, s) => {
+    const loop = s.view.getState().loop;
+    return loop && loop.end > loop.start ? [partItem(s, loop.start, loop.end, 'the loop')] : [];
+  });
+  addContextMenuItems('playlist.clip', ({ clip }, s) => [partItem(s, clip.start, clip.start + clip.length)]);
   addOverlay('export-wav', ExportOverlay);
 }

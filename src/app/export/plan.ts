@@ -4,8 +4,13 @@ import { patternLength } from '@core/query/queries';
 import { songLength } from '@core/query/playlist';
 import { ticksPerBar } from '@core/time/ppq';
 
-/** What an export renders: the whole song, the current pattern, or the playlist's loop region. */
-export type ExportRange = 'song' | 'pattern' | 'loop';
+/**
+ * What an export renders: the whole song, the current pattern, the playlist's loop region, or a
+ * span of the song (a section, a clip's bars: every track over it, in song mode).
+ */
+export type ExportRange = NamedExportRange | { from: Tick; to: Tick };
+/** The ranges the Export dialog offers. */
+export type NamedExportRange = 'song' | 'pattern' | 'loop';
 
 export interface ExportPlan {
   mode: 'song' | 'pattern';
@@ -27,6 +32,10 @@ export function planExport(
     const pattern = patternId ? project.patterns[patternId] : undefined;
     if (!pattern) return { error: 'There is no pattern to export.' };
     return { mode: 'pattern', patternId, fromTick: 0, bars: patternLength(pattern, project.transport.timeSig) / bar };
+  }
+  if (typeof range === 'object') {
+    if (!(range.to > range.from)) return { error: 'That part of the song is empty.' };
+    return { mode: 'song', patternId, fromTick: Math.max(0, range.from), bars: (range.to - Math.max(0, range.from)) / bar };
   }
   if (range === 'loop') {
     const loop = view.loop;

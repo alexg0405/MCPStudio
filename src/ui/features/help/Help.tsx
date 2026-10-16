@@ -106,7 +106,7 @@ function Welcome() {
   const undo = chord('edit.undo');
   return (
     <div className={styles.backdrop}>
-      <div ref={ref} tabIndex={-1} className={styles.welcome} role="dialog" aria-labelledby="ag-welcome-title">
+      <div ref={ref} tabIndex={-1} className={styles.welcome} role="dialog" aria-modal="true" aria-labelledby="ag-welcome-title">
         <h2 id="ag-welcome-title" className={styles.title}>
           Welcome to AG<b>studio</b>
         </h2>

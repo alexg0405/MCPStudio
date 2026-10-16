@@ -620,6 +620,7 @@ export function ChannelRack() {
               onPointerDown={(e) => e.preventDefault()}
               onClick={(e) => showContextMenu(e, addChannelMenu(services))}
               data-hint="Add a channel (kit sound or instrument)"
+              aria-label="Add a channel"
             >
               <Icon name="plus" size={14} />
             </button>

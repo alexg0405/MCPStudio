@@ -114,6 +114,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
               onPointerDown={(e) => e.preventDefault()}
               onClick={() => setHelpOpen((o) => !o)}
               data-hint="How this window works: what it is for, and its mouse and key moves"
+              aria-label="How this window works"
               aria-expanded={helpOpen}
             >
               <span className={styles.helpMark}>?</span>
@@ -124,6 +125,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
             onPointerDown={(e) => e.preventDefault()}
             onClick={toggleMax}
             data-hint={instance.maximized ? 'Restore window size' : 'Maximize window'}
+            aria-label={instance.maximized ? 'Restore window size' : 'Maximize window'}
           >
             <Icon name={instance.maximized ? 'restore' : 'maximize'} size={11} />
           </button>
@@ -132,6 +134,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
             onPointerDown={(e) => e.preventDefault()}
             onClick={close}
             data-hint="Close window"
+            aria-label="Close window"
           >
             <Icon name="close" size={11} />
           </button>

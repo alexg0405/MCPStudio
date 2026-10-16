@@ -80,7 +80,7 @@ function nameOf(el: Element): string {
       .trim();
   const text = (el.textContent ?? '').trim();
   if (text) return text;
-  return (el.getAttribute('title') ?? el.getAttribute('placeholder') ?? el.getAttribute('data-hint') ?? '').trim();
+  return (el.getAttribute('title') ?? el.getAttribute('placeholder') ?? '').trim();
 }
 
 const hasHint = (el: Element) =>

@@ -1343,7 +1343,8 @@ loaded; `services.decks.peek()` looks without starting them.
 - Kernel CPU (Node, 60 s of audio, stereo): turntable 72 ms (0.12 % of a core), key lock 512 ms (0.85 % of a core,
   117× realtime) per deck.
 - Sync (`test/browser/dj-decks.test.ts`, 124 BPM against 128 BPM songs with different downbeats, clicks of different
-  pitch, 5 minutes rendered offline, B joining A half a second in): the beat offset between the decks' clicks, measured
+  pitch, B joining A half a second in; 90 s rendered offline in the regular run, 5 minutes with `VITE_LONG_DECKS=1`, the
+  numbers below): the beat offset between the decks' clicks, measured
   on the rendered master, is within 0.055 ms at worst and drifts −0.00006 ms over the 5 minutes with key lock off; with
   key lock on 0.85 ms worst and 0.0016 ms drift (the stretch moves a click by what its search moves it). The kernel
   test holds the position-math phase within 2 ms (settled: 0.5 ms) in both modes and both node orders.

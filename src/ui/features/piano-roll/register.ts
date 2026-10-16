@@ -34,19 +34,20 @@ export function register(services: Services): void {
   const hasNotes = (s: Services) => !!noteTarget(s);
   const hasSelection = (s: Services) => (noteTarget(s)?.selected.length ?? 0) > 0;
 
-  const tools: [PianoRollTool, string, string][] = [
-    ['draw', 'P', 'Draw tool'],
-    ['paint', 'B', 'Paint tool'],
-    ['delete', 'D', 'Delete tool'],
-    ['mute', 'T', 'Mute tool'],
-    ['slice', 'C', 'Slice tool'],
-    ['select', 'E', 'Select tool'],
+  const tools: [PianoRollTool, string, string, string][] = [
+    ['draw', 'P', 'Draw tool', 'Click to add a note, drag a note to move it'],
+    ['paint', 'B', 'Paint tool', 'Drag across the grid to paint a row of notes'],
+    ['delete', 'D', 'Delete tool', 'Click or drag over notes to delete them'],
+    ['mute', 'T', 'Mute tool', 'Click or drag over notes to mute or unmute them'],
+    ['slice', 'C', 'Slice tool', 'Click a note to cut it in two'],
+    ['select', 'E', 'Select tool', 'Drag a box around notes to select them'],
   ];
-  for (const [tool, chord, title] of tools) {
+  for (const [tool, chord, title, hint] of tools) {
     commands.register({
       id: `pianoRoll.tool.${tool}`,
       title,
       category: 'Piano roll',
+      hint,
       run: (s) => s.editor.getState().setPianoRoll({ tool }),
       checked: (s) => s.editor.getState().pianoRoll.tool === tool,
     });
@@ -57,14 +58,22 @@ export function register(services: Services): void {
     id: 'pianoRoll.selectAll',
     title: 'Select all notes',
     category: 'Piano roll',
+    hint: 'Select every note of the channel',
     enabled: hasNotes,
     run: pr.selectAll,
   });
-  commands.register({ id: 'pianoRoll.deselect', title: 'Deselect', category: 'Piano roll', run: pr.deselect });
+  commands.register({
+    id: 'pianoRoll.deselect',
+    title: 'Deselect',
+    category: 'Piano roll',
+    hint: 'Clear the note selection',
+    run: pr.deselect,
+  });
   commands.register({
     id: 'pianoRoll.delete',
     title: 'Delete selected notes',
     category: 'Piano roll',
+    hint: 'Delete the selected notes',
     enabled: hasSelection,
     run: pr.deleteSelection,
   });
@@ -72,6 +81,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.copy',
     title: 'Copy notes',
     category: 'Piano roll',
+    hint: 'Copy the selected notes',
     enabled: hasSelection,
     run: pr.copy,
   });
@@ -79,6 +89,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.cut',
     title: 'Cut notes',
     category: 'Piano roll',
+    hint: 'Cut the selected notes',
     enabled: hasSelection,
     run: pr.cut,
   });
@@ -86,6 +97,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.paste',
     title: 'Paste notes',
     category: 'Piano roll',
+    hint: 'Paste the copied notes right after the selection (or at the playhead while playing)',
     enabled: (s) => hasNotes(s) && !!s.editor.getState().noteClipboard?.length,
     run: pr.paste,
   });
@@ -93,6 +105,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.duplicate',
     title: 'Duplicate notes',
     category: 'Piano roll',
+    hint: 'Copy the selected notes (or all of them) right after themselves',
     enabled: hasNotes,
     run: pr.duplicate,
   });
@@ -100,6 +113,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.transpose',
     title: 'Transpose',
     category: 'Piano roll',
+    hint: 'Move the selected notes up or down in semitones',
     enabled: hasNotes,
     run: (s, by) => pr.transpose(s, by ?? 1),
   });
@@ -107,6 +121,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.nudge',
     title: 'Nudge notes',
     category: 'Piano roll',
+    hint: 'Move the selected notes one grid step earlier or later',
     enabled: hasSelection,
     run: (s, dir) => pr.nudge(s, dir ?? 1),
   });
@@ -167,6 +182,7 @@ export function register(services: Services): void {
     id: 'pianoRoll.runScript',
     title: 'Run note script',
     category: 'Piano roll',
+    hint: 'Run a note script on the selected notes (or all of them)',
     enabled: hasNotes,
     run: (s, id) => (id ? openNoteScript(s, id).then(() => {}) : undefined),
   });

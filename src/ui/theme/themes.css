@@ -167,11 +167,12 @@
 :root[data-theme='midnight']:not([data-accent]),
 :root[data-theme='graphite']:not([data-accent]),
 :root[data-theme='light']:not([data-accent]) {
-  /* The slate themes keep their orange unless another accent is picked. */
+  /* The slate themes show orange until an accent is picked (Gold included: it then sets data-accent). */
   --ag-accent: #ff9a3c;
 }
-/* Gold on white stone: deeper, so text and lines on it stay readable. */
-:root[data-theme='carrara']:not([data-accent]) {
+/* Gold on white stone: deeper, so text and lines on it stay readable (picked or default). */
+:root[data-theme='carrara']:not([data-accent]),
+:root[data-theme='carrara'][data-accent='gold'] {
   --ag-accent: #a8823c;
 }
 

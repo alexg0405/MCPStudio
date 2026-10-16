@@ -65,6 +65,8 @@ export interface PrefsState {
   /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
   theme: string;
   accent: string;
+  /** Whether the user chose the accent. Gold is also the untouched default, so only a picked gold shows as gold on the slate themes. */
+  accentPicked: boolean;
 }
 
 export type AudioBufferSize = 'small' | 'medium' | 'large';
@@ -119,6 +121,7 @@ const DEFAULTS: PrefsState = {
   followPlayhead: true,
   theme: 'marble',
   accent: 'gold',
+  accentPicked: false,
 };
 
 function load(): PrefsState {

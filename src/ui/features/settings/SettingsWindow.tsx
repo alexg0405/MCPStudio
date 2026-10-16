@@ -4,7 +4,7 @@ import { canChooseOutput, listOutputs, onDevicesChange, revealDevices, type Audi
 import type { AudioBufferSize } from '@app/stores/prefs';
 import { formatChord } from '@core/commands/keymap';
 import { useServices } from '../../services-context';
-import { ACCENTS, findAccent, findTheme, THEMES } from '../../theme/apply';
+import { ACCENTS, effectiveAccent, findTheme, THEMES } from '../../theme/apply';
 import { testSoundWav } from './test-sound';
 import styles from './Settings.module.css';
 
@@ -307,7 +307,7 @@ function Interface() {
   const s = useServices();
   const tooltips = useStore(s.prefs, (p) => p.tooltips);
   const theme = findTheme(useStore(s.prefs, (p) => p.theme)) ?? 'marble';
-  const accent = findAccent(useStore(s.prefs, (p) => p.accent)) ?? 'gold';
+  const accent = useStore(s.prefs, (p) => effectiveAccent(p.theme, p.accent, p.accentPicked));
   return (
     <Section title="Look, help and interface">
       <Row label="Theme" hint={THEMES.find((t) => t.id === theme)?.hint}>

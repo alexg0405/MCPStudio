@@ -451,6 +451,41 @@ describe('deck kernel: sync', () => {
     expect(fs.syncLocked).toBe(true);
   }, 60_000);
 
+  it('a follower started in the same quantum as its master still lands on the beat', () => {
+    const m = deck(clicks(124, 0.1, 60));
+    const f = deck(clicks(128, 0.35, 60));
+    const plan = syncPlan(124, 128);
+    f.k.setSync({
+      master: m.buf,
+      ratio: 124 / (128 * plan.multiple),
+      selfFirst: 0.35 * SR,
+      selfBeat: plan.beatSec * SR,
+      masterFirst: 0.1 * SR,
+      masterBeat: (60 / 124) * SR,
+    });
+    f.k.setTempo(1 + plan.pitch, false);
+    m.k.seek(7 * SR);
+    f.k.seek(13.17 * SR);
+    m.k.play(true);
+    f.k.play(true);
+    const bl = new Float32Array(Q);
+    const br = new Float32Array(Q);
+    // The follower's node is rendered first: it finds the master not published yet and waits for it.
+    for (let b = 0; b < 400; b++) {
+      f.k.process(bl, br, Q, b * Q);
+      m.k.process(bl, br, Q, b * Q);
+    }
+    const ms = newSnapshot();
+    const fs = newSnapshot();
+    readDeckState(m.state, m.seq, ms);
+    readDeckState(f.state, f.seq, fs);
+    const err = phaseDiff(
+      beatPhase(fs.pos / SR, 0.35, plan.beatSec),
+      beatPhase((ms.pos + (fs.frame - ms.frame) * ms.rate) / SR, 0.1, 60 / 124),
+    );
+    expect(Math.abs(err * (60 / 124) * 1000)).toBeLessThan(1);
+  });
+
   it('does not lock to a master that is not playing', () => {
     const p = syncedPair('master-first', false);
     p.m.k.play(false);

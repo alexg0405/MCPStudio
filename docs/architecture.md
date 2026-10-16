@@ -1262,7 +1262,115 @@ alone and never drop more than 7 dB; the incoming song's lows are > 15 dB down u
 - Key lock's beat accuracy is the WSOLA's (±12 ms); and each key-lock tempo step stretches the whole file until
   the engine stretches clip ranges.
 - Beat grids with drifting `beats[]` play on the fixed grid (they will slip); 3/4 songs align on their own bars.
-- The playlist zooms to the mix after it is made; there is no live deck view yet (the next wave).
+- The playlist zooms to the mix after it is made. The live deck view is described in "DJ live decks" below.
+
+## DJ live decks
+
+Two decks (four on request) and a mixer, played live from the music library, in the Decks window (View → DJ decks,
+⌥D), from MIDI controllers (`DecksApi`, see `app/dj/decks-api.ts`) and from the Studio. Deck state is **live
+performance state**: it is never in the project or History. The decks play through the engine's own output (its
+AudioContext, the output device choice, the master safety limiter), so the song transport and the decks are two
+independent sources into one master: pressing the main play while decks play is fine (they simply add up; Panic
+ducks both for a moment), and `Space` in the Decks window still plays the song. Nothing is created at startup:
+`services.decks()` (`decks-factory.ts`) loads the deck code on first use and the audio graph on the first song
+loaded; `services.decks.peek()` looks without starting them.
+
+### Layers
+
+- `core/dj/decks-math.ts` (pure, unit-tested): crossfader curves (smooth = equal power, sharp = cut; at −1 side B is
+  exactly 0), the squared channel fader taper (1 = 0 dB, 1.25 = +3.9 dB), EQ and filter mapping, tempo sync with
+  half/double time (`octaveMultiple`: 70 BPM locks to 140 as half time, 174 to 87), beat phase and the jump that
+  aligns it, loops and beat jumps on the grid (auto loops start on the beat under the playhead), the CDJ cue rules
+  (`cuePressPlan`), jog speeds. `core/dj/deck-peaks.ts`: the waveform overview (min/max per 256 frames and how much
+  of it is bass, for the colors), filled a slice at a time.
+- `engine/deck/deck.kernel.ts` (pure DSP, Node-testable) and `deck.worklet.ts`: the player, one AudioWorklet per
+  deck. The song's planar float32 audio lives in SharedArrayBuffers copied from the decoded `AudioBuffer` a slice
+  at a time (`songDataOf`), the worklet reads it directly. The deck publishes where it is (position, speed, the
+  context frame) under a sequence lock in a shared state block (`deck-id.ts` `DS`), which the main thread
+  (waveforms, platter) and a follower deck read. Commands are messages (`DeckMessage`); `ping`/`pong` is the barrier
+  offline renders and tests wait on (`DecksApi.settled`).
+- `engine/deck/deck-graph.ts`: per deck player → trim → low shelf 120 Hz → mid bell 1 kHz → high shelf 7 kHz →
+  low-pass → high-pass (the one-knob filter, Butterworth Q) → meter, then the cue send and the channel fader →
+  crossfader side; master volume → the same limiter kernel as the engine's → the engine output (and the master
+  meter, and the recorder). `engine/deck/tap-capture.ts` records any node in stereo through the streaming input
+  recorder's worklet (a 30 s ring drained every 50 ms), so a take is limited only by memory. The cue (headphone) bus
+  plays through a second output device (`setCueOutput`: a MediaStream destination into an `<audio>` element with
+  `setSinkId`).
+- `app/dj/decks.ts`: the `DecksApi` (a zustand store plus the control logic: load, cues, loops, jog, sync, mixer,
+  recording). `EngineApi.deckHost()` (optional; `engine/api.ts`) hands out the running context, a node feeding the
+  master limiter, `loadModule` and the audible clock. When the engine reboots (a new AudioContext) the decks notice
+  through `engine.subscribe`, rebuild the graph, hand the songs over (decoding again if the rate changed) and carry
+  on from where each deck was.
+- `ui/features/dj-decks`: the window. Waveforms, overview, platter rotation and the clocks are drawn on the frame loop
+  by `DeckScope` (redraws only when the position, the deck's state, the theme or the size changed; no React commits
+  while a song plays). The panel selects only what it draws as React (`useShallow`), the 5 Hz store updates of
+  position and level don't re-render it. Keys (focus-scoped to the window, so they never clash; the typing piano is
+  off there): deck A `Q W E T` play/cue/sync/key lock, `A S D F` hot cues 1–4, `Z` loop 4, `X C` jump; deck B `U I O P`,
+  `H J K ;`, `M`, `, .`; `← →` `Home End` the crossfader. Cue is a hold: its key-up is caught by a window listener.
+- `app/ai/ops/decks.ts`: Studio actions `deck_load`, `deck_play`, `deck_sync`, `deck_set`, `deck_crossfade`,
+  `deck_loop`, `deck_record`, a prompt section (order 23) and a `<decks>` block in the context. They are UI-type
+  actions: validated into one `decks` request that runs after the answer (`runDeckActions`), never an edit of the
+  project. Tested with scripted answers and a recording fake `DecksApi`.
+
+### How it plays
+
+- **Turntable** (key lock off): the position advances by the speed each output frame, read with 4-point cubic
+  interpolation; at exactly 1× it is a sample-exact copy. +8 % is 8 % higher, like a record.
+- **Key lock**: a streaming WSOLA in the worklet (2048-sample Hann frames, 50 % overlap, each frame taken near where
+  the tempo says and moved up to ±448 samples to where it best continues the one before; a 4× decimated search then
+  ±4 samples at full rate, with a small cost for leaving the middle). The nominal position keeps counting at the tempo,
+  which is what loops and sync read. Scratching falls back to the turntable path (a stretch of a reversed signal is
+  meaningless); switching paths fades over 2 ms.
+- **Jumps never click**: a seek, start, stop, mode change or loop move renders the next 2 ms of the old sound
+  forward, fades it out and fades the new one in. Loops are the exception on purpose: the position wraps by the loop
+  length (a fractional part kept) and reads past the end continue from the loop start, so a loop is the source's own
+  samples with nothing added at the seam.
+- **Sync**: the follower reads its master's published position and tempo every render quantum, matches its tempo as
+  `ratio × masterTempo` (ratio = master BPM / (own BPM × multiple)) and closes the beat-phase error with a tempo trim of at most 2 % (time constant 1.5 s); a
+  start, a sync press or a master jump aligns it exactly at the next quantum (`align`: it waits 150 ms for a master
+  that starts with it). It runs in the audio thread, so it needs no messages and cannot drift; while the master
+  scratches the follower keeps its tempo and doesn't chase the phase. Only a fixed grid (`TrackAnalysis.grid.bpm` and
+  `firstDownbeat`) is used: songs with a drifting `grid.beats` slip.
+- **Cue and hot cues** follow the CDJ (paused: sets the cue point on the beat and previews while held; playing: back to
+  it and pause; play while holding latches). Cue points and the eight hot cues are kept per song (IndexedDB, by content
+  hash). Hot cue pads: set when empty, jump and play when set.
+- **Recording** (`startRecording`/`stopRecording`): stereo after the limiter, encoded to 16-bit dithered WAV as the
+  chunks arrive (`WavStreamEncoder`), so an hour is ~700 MB, not a float copy; on stop it is added to the music library
+  as "Live mix 2026-10-16 14:05" and analyzed like any song.
+
+### Measured (headless Chrome and Node, M-series Mac under other agents' load, 48 kHz)
+
+- Kernel CPU (Node, 60 s of audio, stereo): turntable 72 ms (0.12 % of a core), key lock 512 ms (0.85 % of a core,
+  117× realtime) per deck.
+- Sync (`test/browser/dj-decks.test.ts`, 124 BPM against 128 BPM songs with different downbeats, clicks of different
+  pitch, 5 minutes rendered offline, B joining A half a second in): the beat offset between the decks' clicks, measured
+  on the rendered master, is within 0.055 ms at worst and drifts −0.00006 ms over the 5 minutes with key lock off; with
+  key lock on 0.85 ms worst and 0.0016 ms drift (the stretch moves a click by what its search moves it). The kernel
+  test holds the position-math phase within 2 ms (settled: 0.5 ms) in both modes and both node orders.
+- Key lock at +8 %: the pitch of a 440 Hz sine stays within 0.5 % (browser: 1 %); the tempo is 8 % faster; without key
+  lock it follows the speed (+8 %). Key lock off at exactly 1×: bit-exact.
+- Loops: the render of a 4-beat loop repeats with exactly the loop's length in frames and one frame more or less is
+  clearly different; against the source it is within the EQ/filter's own few hundredths (0.05 of a 0.8 click).
+- EQ: a −26 dB kill takes 50 Hz, 1 kHz and 14 kHz down by more than 20 dB (60 Hz −22, 12 kHz −23, 1 kHz −26) and
+  leaves the other bands within 1.5 dB. Crossfader at −1: B more than 60 dB down; at the middle each side −3 dB.
+- Real engine (Engine.realtime, two key-locked decks, sync, a recording, the meters): `keepUp` 1.0 (≥ 0.98 required,
+  measured as `app/playback-health.ts` does, over one-second windows); a 3.5 s recording is 3.5 s long in the
+  library; a reboot of the engine carries the playing deck over. Offline: 60 s of two key-locked decks with EQ and
+  filter renders in 1.1 s (54× realtime) with the decks' worklets and graph.
+
+### Limits and follow-ups
+
+- A deck keeps its whole song in memory as float32 (shared with the audio thread) and takes at most 20 minutes; the
+  decoded copy stays in the shared sample cache (evictable) like any song. Decoding around the play position for
+  hour-long files needs windowed shared memory and a partial decoder; not done.
+- Key lock's stretch has no transient handling (the arrangement-side WSOLA's attack zones): drums at ±16 % soften a
+  little. Phase vocoder quality for pads would need more. Tempo changes between −50 % and +50 %, stretch limited to ½–2×.
+- Grids with a drifting `beats[]` play on the fixed grid; 3/4 songs sync by beat, not bar.
+- The cue (headphone) bus needs a second output device (Chrome `setSinkId`); without one the CUE buttons are silent.
+- Scratching follows the platter's speed (any direction); there is no vinyl brake or spin-up on stop.
+- Controllers: `jog`, `jogTouch`, `cueDown/cueUp` and the rest of `DecksApi` are all they need; `readLevels`, `waveformOf`,
+  `analysisOf`, `setBeatJump`, `setDeckCount`, `setCrossfaderCurve`, `crossfade`, `setCueDevice`, `keepUp` and `settled`
+  were added to the interface as optional members.
 
 ## Arrangement: songs that flow (v3)
 

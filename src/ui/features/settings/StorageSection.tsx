@@ -45,6 +45,11 @@ export function StorageSection() {
       current = false;
     };
   }, [svc, supported, idle, asked]);
+  // Other tabs and background work change the numbers: look again now and then while this is open.
+  useEffect(() => {
+    const timer = window.setInterval(() => document.visibilityState === 'visible' && setAsked((n) => n + 1), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const refresh = () => setAsked((n) => n + 1);
 
   if (!supported) {

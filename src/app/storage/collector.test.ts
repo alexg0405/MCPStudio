@@ -160,6 +160,24 @@ describe('collectGarbage: what counts as in use', () => {
   });
 });
 
+describe('collectGarbage: the DJ library', () => {
+  it('frees a song a week after it was removed from the library', async () => {
+    const w = world({ blobs: [old(A, 90), old(B, 90)] });
+    const song = (h: string) => ({ key: h, title: 't', label: 'l', ref: sampleRef(h) });
+    w.kv.data.set('dj-library', [song(A), song(B)]);
+    await collectGarbage(w.deps);
+    expect(w.deleted).toEqual([]);
+    // The musician removes B (removeSongs saves the shorter list).
+    w.kv.data.set('dj-library', [song(A)]);
+    w.clock.now += 2 * DAY;
+    await collectGarbage(w.deps);
+    expect(w.deleted).toEqual([]); // last seen two days ago: kept for the week
+    w.clock.now += 6 * DAY;
+    await collectGarbage(w.deps);
+    expect(w.deleted).toEqual([B]);
+  });
+});
+
 describe('collectGarbage: the grace period', () => {
   it('keeps unreferenced audio written less than 7 days ago', async () => {
     const w = world({ blobs: [old(A, 6.9), old(B, 7.1)] });

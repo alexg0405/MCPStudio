@@ -146,6 +146,26 @@ describe.skipIf(!available)(`OPFS blob store${suffix}`, () => {
     expect(await store.hasBlob('nope')).toBe(false);
   });
 
+  it('lists blobs with their size and when they were written (for clean-up of unused audio)', async () => {
+    const a = await blob(1, 2, 3);
+    const b = await blob(4, 5, 6, 7, 8);
+    expect(await store.blobStats()).toEqual([]);
+    const before = Date.now();
+    await store.putBlob(a.hash, 'wav', a.bytes);
+    await store.putBlob(b.hash, 'flac', b.bytes);
+    const stats = await store.blobStats();
+    expect(stats.map((x) => [x.hash, x.ext, x.size]).sort()).toEqual(
+      [[a.hash, 'wav', 3], [b.hash, 'flac', 5]].sort(),
+    );
+    for (const x of stats) {
+      expect(x.modifiedAt).toBeGreaterThan(before - 5000);
+      expect(x.modifiedAt).toBeLessThan(Date.now() + 5000);
+    }
+    const blobs = await root.getDirectoryHandle('blobs');
+    await writeRaw(blobs, 'notes.txt', 'hello'); // not a blob
+    expect(await store.blobStats()).toHaveLength(2);
+  });
+
   it('ignores foreign files in the blob folder', async () => {
     const blobs = await root.getDirectoryHandle('blobs', { create: true });
     await writeRaw(blobs, 'notes.txt', 'hello');
@@ -264,6 +284,18 @@ describe.skipIf(!available)(`OPFS autosave slots${suffix}`, () => {
     expect((await store.listAutosaves()).map((m) => m.sessionId)).toEqual(['s2']);
     expect(await store.readAutosave('s1')).toBeNull();
     await store.deleteAutosave('s1'); // already gone
+  });
+
+  it('lists every slot data file, valid or not, with a way to read it (for clean-up of unused audio)', async () => {
+    expect(await store.autosaveFiles()).toEqual([]);
+    await store.writeAutosave('s1', 'a', bytesOf(1, 2, 3), meta());
+    await store.writeAutosave('s1', 'b', bytesOf(4, 5), meta({ slot: 'b' }));
+    await store.writeAutosave('s2', 'a', bytesOf(9), meta({ sessionId: 's2' }));
+    const dir = await (await root.getDirectoryHandle('autosave')).getDirectoryHandle('s2');
+    await writeRaw(dir, 'a.agproj', bytesOf(7, 7, 7, 7)); // data that no meta vouches for any more
+    const files = await store.autosaveFiles();
+    expect(files.map((f) => `${f.sessionId}/${f.slot}:${f.size}`).sort()).toEqual(['s1/a:3', 's1/b:2', 's2/a:4']);
+    expect(await files.find((f) => f.sessionId === 's1' && f.slot === 'b')!.read()).toEqual(bytesOf(4, 5));
   });
 
   it('rejects unsafe session ids and unknown slots', async () => {

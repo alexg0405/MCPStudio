@@ -400,6 +400,94 @@ describe('KernelRunner sleep', () => {
   });
 });
 
+describe('KernelRunner sleep and the song transport', () => {
+  const SECOND = 48000 / 128;
+  const silent = () => [[new Float32Array(128), new Float32Array(128)]];
+  class Echo extends EffectKernel {
+    calls = 0;
+    changes = 0;
+    override transportChanged() {
+      this.changes++;
+    }
+    process(inp: Float32Array[], out: Float32Array[], n: number) {
+      this.calls++;
+      for (let c = 0; c < out.length; c++) for (let i = 0; i < n; i++) out[c]![i] = inp[c]![i]! * 0.5;
+    }
+  }
+  class Quiet extends InstrumentKernel {
+    renders = 0;
+    changes = 0;
+    override transportChanged() {
+      this.changes++;
+    }
+    noteOn() {}
+    noteOff() {}
+    render() {
+      this.renders++;
+    }
+  }
+
+  it('a sleeping effect stays asleep through sync barriers and transport anchors, and still gets them', () => {
+    const k = new Echo(host);
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(k, (m) => posted.push(m));
+    for (let b = 0; b < 3 * SECOND; b++) r.process(silent(), block(), {}, b * 128);
+    expect(r.asleep).toBe(true);
+    const calls = k.calls;
+    let f = 3 * SECOND * 128;
+    // Offline exports ask every processor to confirm each chunk, loops announce each wrap: neither is sound.
+    r.onMessage({ t: 'sync', id: 5 });
+    expect(posted).toContainEqual({ t: 'sync', id: 5 });
+    r.onMessage({ t: 'ev', data: pack([EV_TRANSPORT, f + 10, 8, 1, 90, 0, 0]) });
+    for (let b = 0; b < 4; b++, f += 128) r.process(silent(), block(), {}, f);
+    expect(r.asleep).toBe(true);
+    expect(k.calls).toBe(calls);
+    // The anchor was applied all the same.
+    expect(k.changes).toBe(1);
+    expect(k.transport.bpm).toBe(90);
+    expect(k.transport.playing).toBe(true);
+  });
+
+  it('an instrument that sounds by itself with the song wakes at a transport anchor', () => {
+    const k = new Quiet(host);
+    k.wakeOnTransport = true;
+    const r = new KernelRunner(k, () => {});
+    let f = 0;
+    for (let b = 0; b < 3 * SECOND; b++, f += 128) r.process([], block(), {}, f);
+    expect(r.asleep).toBe(true);
+    r.onMessage({ t: 'ev', data: pack([EV_TRANSPORT, f + 20, 4, 1, 100, 0, 0]) });
+    r.process([], block(), {}, f);
+    expect(r.asleep).toBe(false);
+    expect(k.transport.playing).toBe(true);
+  });
+
+  it('a sleeping instrument stays asleep through transport anchors and param events, a note still wakes it', () => {
+    const k = new Quiet(host);
+    const r = new KernelRunner(k, () => {}, [], [['mode', 0]]);
+    const run = (blocks: number, from: number) => {
+      for (let b = 0; b < blocks; b++) r.process([], block(), {}, from + b * 128);
+      return from + blocks * 128;
+    };
+    let f = run(3 * SECOND, 0);
+    expect(r.asleep).toBe(true);
+    const renders = k.renders;
+    r.onMessage({ t: 'sync', id: 1 });
+    r.onMessage({
+      t: 'ev',
+      data: pack([EV_TRANSPORT, f + 20, 4, 1, 100, 0, 0], [EV_PARAM, f + 30, 0, 0, 1, 0, 0]),
+    });
+    f = run(3, f);
+    expect(r.asleep).toBe(true);
+    expect(k.renders).toBe(renders);
+    expect(k.changes).toBe(1);
+    expect(k.transport.bpm).toBe(100);
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, f + 5, 1, 60, 1, 0, 0]) });
+    r.process([], block(), {}, f);
+    expect(r.asleep).toBe(false);
+    expect(k.renders).toBeGreaterThan(renders);
+  });
+});
+
 describe('KernelRunner event params', () => {
   it('gives the kernel event params next to AudioParams, changing at their frame', () => {
     class Reader extends InstrumentKernel {

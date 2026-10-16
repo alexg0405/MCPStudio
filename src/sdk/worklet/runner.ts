@@ -95,7 +95,11 @@ export class KernelRunner {
   }
 
   onMessage(msg: ToProcessor): void {
-    this.wake();
+    // Events and sync barriers are not sound: a sleeping kernel stays asleep. Events are looked at as
+    // they come due (a note wakes an instrument; transport anchors and param changes are applied
+    // quietly): an offline render's barrier every chunk, or a loop's wrap anchor, would otherwise
+    // keep every idle kernel awake. The rest reach the kernel's own code, which may start sound.
+    if (msg.t !== 'ev' && msg.t !== 'sync' && msg.t !== 'dispose') this.wake();
     try {
       switch (msg.t) {
         case 'ev':
@@ -158,8 +162,14 @@ export class KernelRunner {
     this.transport.blockStart = f0;
     let quietIn = true;
     if (this.kernel instanceof InstrumentKernel) {
-      // Asleep, an instrument wakes for the next event due in this block (a note, a controller, the song).
+      // Asleep, an instrument wakes for the next note or controller due in this block; the song's
+      // transport anchors and param changes are applied without waking it.
       if (this.asleep) {
+        while (this.queue.peekFrame() < f0 + n) {
+          const type = this.queue.peekType();
+          if ((type !== EV_TRANSPORT || this.kernel.wakeOnTransport) && type !== EV_PARAM) break;
+          this.applyQuiet();
+        }
         if (this.queue.peekFrame() >= f0 + n) return this.alive;
         this.wake();
       }
@@ -229,6 +239,20 @@ export class KernelRunner {
         else if (ev.type === EV_CC) k.controlChange?.(ev.key, ev.vel);
         else if (ev.type === EV_PARAM) this.setParam();
         else if (ev.type === EV_TRANSPORT) this.setTransport();
+      } catch (err) {
+        this.fault(err);
+      }
+    }
+  }
+
+  /** Applies the one transport anchor or param change at the head of the queue (a sleeping instrument). */
+  private applyQuiet(): void {
+    const ev = this.ev;
+    if (!this.queue.shift(ev)) return;
+    if (ev.type === EV_PARAM) this.setParam();
+    else if (!this.faulted) {
+      try {
+        this.setTransport();
       } catch (err) {
         this.fault(err);
       }

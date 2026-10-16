@@ -67,6 +67,13 @@ export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extend
    */
   pitch: Float32Array = new Float32Array(1);
 
+  /**
+   * Set true for an instrument that starts sounding by itself when the song starts or jumps (a
+   * sequencer, an arpeggiator), without a note. Otherwise a sleeping instrument stays asleep through
+   * transport changes and only a note or a controller wakes it.
+   */
+  wakeOnTransport = false;
+
   /** `fine` is the note's fine pitch in cents. */
   abstract noteOn(key: number, velocity: number, noteId: number, pan: number, fine: number): void;
   /** `release` is the release velocity 0–1. */

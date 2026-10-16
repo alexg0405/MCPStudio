@@ -10,6 +10,7 @@ import { runExport } from '@app/export/audio-export';
 import { decodePcm } from '@core/io/wav';
 import type { ClipId, LaneId } from '@core/model/types';
 import { addClips } from '@core/ops/playlist';
+import type { PluginDef } from '@agstudio/sdk';
 import threeOsc from '../../src/plugins/builtin/three-osc';
 import wavetable from '../../src/plugins/builtin/wavetable';
 import { instrumentProject } from '../helpers/instruments';
@@ -30,7 +31,7 @@ describe('exporting a loop region', () => {
   });
 
   /** Exports bars [from, from + bars) of a song of 2-bar pattern clips holding `notes`; the file's samples. */
-  async function exportRegion(def: typeof threeOsc, notes: { at: number; len: number; key: number }[], from: number, bars: number) {
+  async function exportRegion(def: PluginDef, notes: { at: number; len: number; key: number }[], from: number, bars: number) {
     const { project: base, patternId } = instrumentProject(def, notes, { bars: 2, bpm: 120 });
     const project = produce(base, (d) => {
       addClips(
@@ -59,10 +60,11 @@ describe('exporting a loop region', () => {
     return decodePcm(files.get('part.wav')!)!.channels[0]!;
   }
 
-  it.each([
-    ['3xOsc', threeOsc],
-    ['Wavetable', wavetable],
-  ])('%s: a note that ends exactly where the region ends does not ring on', async (_name, def) => {
+  const instruments: [string, PluginDef][] = [
+    ['3xOsc', threeOsc as unknown as PluginDef],
+    ['Wavetable', wavetable as unknown as PluginDef],
+  ];
+  it.each(instruments)('%s: a note that ends exactly where the region ends does not ring on', async (_name, def) => {
     // Notes of 2 beats at beat 4 of each 2-bar clip: they end at bar 3.5, where the region ends too.
     const ch = await exportRegion(def, [{ at: 4, len: 2, key: 49 }, { at: 0, len: 4, key: 56 }], 2, 1.5);
     const musical = 3; // seconds: 1.5 bars at 120 BPM
@@ -72,10 +74,7 @@ describe('exporting a loop region', () => {
     expect(ch.length).toBeLessThan((musical + 0.6) * SR);
   });
 
-  it.each([
-    ['3xOsc', threeOsc],
-    ['Wavetable', wavetable],
-  ])('%s: a note that goes on past the end of the region is released at it', async (_name, def) => {
+  it.each(instruments)('%s: a note that goes on past the end of the region is released at it', async (_name, def) => {
     const ch = await exportRegion(def, [{ at: 0, len: 8, key: 56 }], 2, 1);
     const musical = 2;
     expect(rmsDb(ch, Math.round(0.5 * SR), Math.round(1.5 * SR))).toBeGreaterThan(-45);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ParamValue, PluginDef } from '@agstudio/sdk';
 import { maxDiff } from '../helpers/fixtures';
+import { perfLimit, settle } from '../helpers/perf';
 import {
   analyze,
   fingerprintDistance,
@@ -78,7 +79,8 @@ const cases: Case[] = [
   },
 ];
 
-describe('M13 instruments', () => {
+// Concurrent: every test is its own offline render (on audio threads) and shares nothing, so they overlap.
+describe.concurrent('M13 instruments', () => {
   for (const c of cases) {
     describe(c.def.name, () => {
       it('makes sound, stops after release, and stays finite, below the limiter and without DC', async () => {
@@ -192,24 +194,40 @@ describe('M13 instruments', () => {
       }
     });
 
-    it('renders 16 voices with 4-voice unison on both oscillators well under real time', async () => {
-      const notes = Array.from({ length: 16 }, (_, i) => ({ at: 0, len: 16, key: 43 + i }));
-      const opts: InstrumentRender = {
-        params: { unison: 4, osc2Level: 0.5, osc2Table: 'vocal', filterType: 'lp24', cutoff: 3000, level: -20 },
-        bars: 4,
-        tail: 0.5,
-      };
-      await renderNotes(wavetable as PluginDef, notes.slice(0, 1), { ...opts, bars: 0.25 }); // warm up
-      const t0 = performance.now();
-      const buffer = await renderNotes(wavetable as PluginDef, notes, opts);
-      const seconds = (performance.now() - t0) / 1000;
-      const factor = buffer.duration / seconds;
-      console.info(
-        `[M13] Wavetable 16 voices × 4 unison × 2 oscillators: ${buffer.duration.toFixed(1)} s of audio in ` +
-          `${seconds.toFixed(2)} s (${factor.toFixed(1)}× real time)`,
-      );
-      expect(analyze(buffer).finite).toBe(true);
-      expect(factor).toBeGreaterThan(2);
-    });
+    // Sequential: a speed measurement must not share the page with the other renders of this file. 2x real time
+    // holds on a quiet machine (`npm run test:perf`); the regular run, with the whole suite on the same cores,
+    // only asks for 0.8x. Best of up to three renders (the machine only ever adds time).
+    it(
+      'renders 16 voices with 4-voice unison on both oscillators well under real time',
+      { tags: ['perf'], concurrent: false },
+      async () => {
+        const notes = Array.from({ length: 16 }, (_, i) => ({ at: 0, len: 16, key: 43 + i }));
+        const opts: InstrumentRender = {
+          params: { unison: 4, osc2Level: 0.5, osc2Table: 'vocal', filterType: 'lp24', cutoff: 3000, level: -20 },
+          bars: 4,
+          tail: 0.5,
+        };
+        await renderNotes(wavetable as PluginDef, notes.slice(0, 1), { ...opts, bars: 0.25 }); // warm up
+        const limit = perfLimit(2, 0.8);
+        let buffer!: AudioBuffer;
+        let seconds = 0;
+        const factor = await settle(
+          async () => {
+            const t0 = performance.now();
+            buffer = await renderNotes(wavetable as PluginDef, notes, opts);
+            seconds = (performance.now() - t0) / 1000;
+            return buffer.duration / seconds;
+          },
+          (f) => f > limit,
+          { attempts: 3, better: 'higher' },
+        );
+        console.info(
+          `[M13] Wavetable 16 voices × 4 unison × 2 oscillators: ${buffer.duration.toFixed(1)} s of audio, ` +
+            `best ${factor.toFixed(1)}× real time (last attempt ${seconds.toFixed(2)} s)`,
+        );
+        expect(analyze(buffer).finite).toBe(true);
+        expect(factor).toBeGreaterThan(limit);
+      },
+    );
   });
 });

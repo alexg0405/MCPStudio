@@ -20,6 +20,7 @@ import {
   rmsRange,
   SR,
 } from '../helpers/routing';
+import { perfLimit, settle } from '../helpers/perf';
 import { noise } from '../helpers/tone';
 
 const CEILING = Math.pow(10, -0.3 / 20);
@@ -48,7 +49,8 @@ async function render(project: Parameters<typeof renderOffline>[0], patternId: s
   ).buffer;
 }
 
-describe('M14 effects', () => {
+// Concurrent: every test is its own offline render (on audio threads) and shares nothing, so they overlap.
+describe.concurrent('M14 effects', () => {
   it('are all discovered, with a description, plain params and descriptive presets', () => {
     const found = import.meta.glob<{ default: PluginDef }>('/src/plugins/builtin/*/index.{ts,tsx}', { eager: true });
     const defs = Object.values(found).map((m) => m.default);
@@ -154,23 +156,31 @@ describe('M14 effects', () => {
     }
   });
 
-  it('each instance costs well under 1 % of a core at 48 kHz (Tune, Vocoder, Analyzer: comfortably under 5 %)', () => {
-    const rows: string[] = [];
-    for (const { def, Kernel, heavy } of M14_KERNELS) {
-      const presets = def.presets ?? [];
-      // The busiest preset: the defaults plus the preset with the most settings.
-      const preset = [...presets].sort(
-        (x, y) => Object.keys(y.params ?? {}).length - Object.keys(x.params ?? {}).length,
-      )[0];
-      const params = { ...defaultValues(def.params), ...(preset?.params as Record<string, ParamValue>) };
-      const cost = kernelCost(Kernel, def.params, params);
-      rows.push(`${def.id.padEnd(20)} ${cost.toFixed(3)} %`);
-      // Measured on a quiet M-series Mac: every effect 0.07–0.8 %, the heavy ones 0.4–0.75 %. The
-      // limits leave room for a busy machine.
-      expect(cost, def.id).toBeLessThan(heavy ? 5 : 1.5);
-    }
-    console.log(`Effect cost per instance at 48 kHz (share of one core):\n${rows.join('\n')}`);
-  });
+  // Sequential: a speed measurement must not share the page with the other renders of this file. Wall-clock
+  // timed (the browser has no CPU clock; this is Chrome's own JIT, which is what the worklet runs on), so the
+  // limits below hold on a quiet machine (`npm run test:perf`) and the regular run keeps a 4x looser bound.
+  it(
+    'each instance costs well under 1 % of a core at 48 kHz (Tune, Vocoder, Analyzer: comfortably under 5 %)',
+    { tags: ['perf'], concurrent: false },
+    async () => {
+      const rows: string[] = [];
+      for (const { def, Kernel, heavy } of M14_KERNELS) {
+        const presets = def.presets ?? [];
+        // The busiest preset: the defaults plus the preset with the most settings.
+        const preset = [...presets].sort(
+          (x, y) => Object.keys(y.params ?? {}).length - Object.keys(x.params ?? {}).length,
+        )[0];
+        const params = { ...defaultValues(def.params), ...(preset?.params as Record<string, ParamValue>) };
+        // Measured on a quiet M-series Mac: every effect 0.07–0.8 %, the heavy ones 0.4–0.75 %. The
+        // limits leave room for a busy machine.
+        const limit = perfLimit(heavy ? 5 : 1.5, heavy ? 20 : 6);
+        const cost = await settle(() => kernelCost(Kernel, def.params, params), (c) => c < limit, { attempts: 3 });
+        rows.push(`${def.id.padEnd(20)} ${cost.toFixed(3)} %`);
+        expect(cost, def.id).toBeLessThan(limit);
+      }
+      console.log(`Effect cost per instance at 48 kHz (share of one core):\n${rows.join('\n')}`);
+    },
+  );
 
   it('the master limiter preset ("Brickwall master −1 dB") keeps a hot mix under −1 dBFS', async () => {
     const limiter = byId('agstudio.limiter');

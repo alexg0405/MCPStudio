@@ -30,7 +30,15 @@ afterAll(async () => {
   for (const s of services) await s.engine.dispose();
 });
 
-async function renderTemplate(id: string) {
+/** Each template is rendered once per file: the analysis tests and the analyzer test share the audio. */
+const rendered = new Map<string, ReturnType<typeof renderTemplateOnce>>();
+function renderTemplate(id: string) {
+  let r = rendered.get(id);
+  if (!r) rendered.set(id, (r = renderTemplateOnce(id)));
+  return r;
+}
+
+async function renderTemplateOnce(id: string) {
   const s = createServices();
   services.push(s);
   const t = TEMPLATES.find((x) => x.id === id)!;
@@ -83,7 +91,7 @@ describe('DJ analysis of the project templates', () => {
 
 describe('track analyzer in the browser', () => {
   it('decodes WAV bytes, analyzes in a Worker, caches and reports progress', async () => {
-    const { t, channels, start } = await renderTemplate('house');
+    const { t, s, channels, start } = await renderTemplate('house');
     const wav = encodeWav(channels, RATE, { bitDepth: 16, dither: false, seed: 1 });
     const ref: SampleRef = { id: 'song' as SampleId, name: 'house.wav', source: { kind: 'embedded', hash: 'house-wav', ext: 'wav' } };
     let decodes = 0;
@@ -95,7 +103,6 @@ describe('track analyzer in the browser', () => {
         return { channels: [buffer.getChannelData(0).slice(), buffer.getChannelData(1).slice()], sampleRate: buffer.sampleRate };
       },
     });
-    const s = services[services.length - 1]!;
     const progress: number[] = [];
     const a = await an.analyze(s, ref, { onProgress: (p) => progress.push(p.fraction) });
     expect(a.grid?.bpm).toBe(t.bpm);

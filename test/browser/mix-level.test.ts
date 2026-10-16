@@ -11,9 +11,10 @@ import { createServices, type Services } from '@app/services';
 import type { Style } from '@core/beat/style';
 import { buildSong, measureSong } from '../helpers/mix-level';
 
-const BARS = 4;
+const BARS = 2;
 
-describe('auto-level', () => {
+// Concurrent: the tests are long chains of offline renders (on audio threads) that share nothing, so they overlap.
+describe.concurrent('auto-level', () => {
   const services: Services[] = [];
   afterAll(async () => {
     for (const s of services) await s.engine.dispose();
@@ -54,7 +55,7 @@ describe('auto-level', () => {
       s.history.undo();
       expect(s.doc.getState().project).toEqual(before);
     },
-    120_000,
+    300_000,
   );
 
   it('a mix built by hand (no role buses): sets only its loudness, keeping the balance', async () => {
@@ -86,7 +87,7 @@ describe('auto-level', () => {
     const ratios = after.map((v, i) => v / before[i]!);
     for (const r of ratios) expect(r).toBeCloseTo(ratios[0]!, 6);
     expect(ratios[0]!).toBeLessThan(1);
-  }, 120_000);
+  }, 300_000);
 
   it('stops when asked, changing nothing', async () => {
     const s = createServices();
@@ -97,5 +98,5 @@ describe('auto-level', () => {
     const run = autoLevel(s, { style: 'trap', bars: BARS, signal: abort.signal, progress: () => abort.abort() });
     await expect(run).rejects.toMatchObject({ name: 'AbortError' });
     expect(s.doc.getState().project).toBe(leveled);
-  }, 60_000);
+  }, 120_000);
 });

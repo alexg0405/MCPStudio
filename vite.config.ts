@@ -117,6 +117,9 @@ export default defineConfig(({ mode }) => ({
     // (plugin discovery, feature registration) keeps its old matches after folders are added or
     // removed. Discovery is central here, so correctness wins over a slightly faster cold start.
     fsModuleCache: false,
+    // `perf` marks the tests that assert on speed. The regular run keeps loose sanity bounds for them (the whole suite
+    // competes for the same cores); `npm run test:perf` runs only these, with the real limits (VITE_PERF_STRICT).
+    tags: [{ name: 'perf', description: 'Asserts on speed: real limits only under `npm run test:perf` (quiet machine).' }],
     projects: [
       {
         extends: true,
@@ -138,6 +141,10 @@ export default defineConfig(({ mode }) => ({
         test: {
           name: 'audio',
           include: ['src/**/*.browser.test.{ts,tsx}', 'test/browser/**/*.test.ts'],
+          // Offline renders compete with up to nine other files (and the unit workers) for the cores: the browser
+          // default of 15 s only ever fired on a busy machine. Tests with a longer chain of renders set their own.
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
           browser: {
             enabled: true,
             headless: true,

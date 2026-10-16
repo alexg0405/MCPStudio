@@ -118,7 +118,8 @@ function distinct(buffer: AudioBuffer): number {
   return new Set(buffer.getChannelData(0)).size;
 }
 
-describe('mixer inserts', () => {
+// Concurrent: every test is its own offline render (on audio threads) and shares nothing, so they overlap.
+describe.concurrent('mixer inserts', () => {
   it('an insert fader at -6.02 dB renders half the peak of 0 dB', async () => {
     const { project, patternId, channels } = kitProject([{ generator: 'kit/snare', steps: [0, 8] }]);
     const quiet = produce(project, (d) => setChannelProp(d, channels[0]!, 'volume', 0.5));
@@ -177,7 +178,7 @@ describe('mixer inserts', () => {
   });
 });
 
-describe('effect slots', () => {
+describe.concurrent('effect slots', () => {
   for (const def of EFFECTS) {
     it(`a disabled ${def.id} slot renders bit-exact identical to no slot`, async () => {
       const { project, patternId, channels } = loop();
@@ -225,7 +226,7 @@ describe('effect slots', () => {
   });
 });
 
-describe('built-in effects', () => {
+describe.concurrent('built-in effects', () => {
   const builtins = import.meta.glob<{ default: PluginDef }>('/src/plugins/builtin/*/index.ts', { eager: true });
   const ids = [
     'agstudio.eq',
@@ -351,7 +352,7 @@ describe('built-in effects', () => {
   });
 });
 
-describe('master safety limiter', () => {
+describe.concurrent('master safety limiter', () => {
   it('holds the -0.3 dBFS ceiling with an insert driven hot', async () => {
     const { project, patternId, channels } = loop();
     const hot = produce(

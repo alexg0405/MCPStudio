@@ -11,6 +11,7 @@ import reverb from '../../src/plugins/builtin/reverb';
 import processor from '../../src/plugins/builtin/reverb/reverb.worklet.ts?worker&url';
 import { REVERB_ID } from '../../src/plugins/builtin/reverb/params';
 import { kitProject, resolver, withInsert, type FxSpec } from '../helpers/fixtures';
+import { perfLimit, settle } from '../helpers/perf';
 import { rmsRange } from '../helpers/routing';
 
 const SR = 48000;
@@ -47,10 +48,13 @@ async function speed(project: Project, patternId: PatternId, bars: number): Prom
 const LONG = { decay: 7, size: 1, damping: 0.5, mix: 0.3 };
 
 describe('Reverb engines', () => {
-  it('ten 7 s algorithmic reverbs render offline at least 15× faster than real time', async () => {
+  it('ten 7 s algorithmic reverbs render offline at least 15× faster than real time', { tags: ['perf'] }, async () => {
     // The reverbs alone: ten processors (as the plugin creates them) on drum-like noise bursts. Each
     // context compiles the kernel afresh, so the render is long enough for the JIT warm-up not to
-    // count much; the best of two renders, as the machine's hiccups only ever add time.
+    // count much; the best of up to three renders (stopping at the first fast enough), as the machine's
+    // hiccups only ever add time. 15× holds on a quiet machine (`npm run test:perf`); the regular run
+    // shares the cores with the whole suite and only asks for 4×.
+    const limit = perfLimit(15, 4);
     const seconds = 20;
     const once = async () => {
       const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: seconds * SR, sampleRate: SR });
@@ -84,10 +88,10 @@ describe('Reverb engines', () => {
       expect(rmsRange(out, SR, 2 * SR)).toBeGreaterThan(0.01);
       return seconds / ((performance.now() - t0) / 1000);
     };
-    const factor = Math.max(await once(), await once());
+    const factor = await settle(once, (f) => f > limit, { attempts: 3, better: 'higher' });
     console.info(`[reverb] 10 × 7 s algorithmic reverbs offline: ${factor.toFixed(1)}× real time`);
-    expect(factor).toBeGreaterThan(15);
-  }, 60_000);
+    expect(factor).toBeGreaterThan(limit);
+  });
 
   it('a song with ten 7 s reverbs exports several times faster than with the convolution engine', async () => {
     const algo = reverbs(10, { ...LONG, engine: 'algorithmic' });
@@ -107,7 +111,7 @@ describe('Reverb engines', () => {
     expect(algoSpeed).toBeGreaterThan(4 * convSpeed);
   }, 120_000);
 
-  it('ten 7 s algorithmic reverbs keep the realtime audio clock at real time', async () => {
+  it('ten 7 s algorithmic reverbs keep the realtime audio clock at real time', { tags: ['perf'] }, async () => {
     const rate = async (engineName: string) => {
       const { project, patternId } = reverbs(10, { ...LONG, engine: engineName });
       const engine = Engine.realtime({ plugins });
@@ -129,13 +133,14 @@ describe('Reverb engines', () => {
         await engine.dispose();
       }
     };
-    const algo = await rate('algorithmic');
+    const limit = perfLimit(0.95, 0.7);
+    const algo = await settle(() => rate('algorithmic'), (r) => r > limit, { attempts: 3, better: 'higher' });
     const conv = await rate('convolution');
     console.info(
       `[reverb] 10 × 7 s realtime: the audio clock runs at ${algo.toFixed(2)}× (algorithmic), ` +
         `${conv.toFixed(2)}× (convolution)`,
     );
-    expect(algo).toBeGreaterThan(0.95);
+    expect(algo).toBeGreaterThan(limit);
   });
 
   it('sounds: a snare rings out, decays and stops; the tail is reported for exports', async () => {

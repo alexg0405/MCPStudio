@@ -20,6 +20,9 @@ import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
 import { applyDefaultLayout } from '@ui/workspace/layouts';
 import { openWindow, windowTypes } from '@ui/workspace/registry';
+import { addInstrumentChannel } from '@app/actions/channels';
+import { TOUR } from '@ui/features/help/tour';
+import { LESSONS } from '@ui/features/help/lessons';
 import { page } from 'vitest/browser';
 import { createEmptyProject } from '@core/model/defaults';
 import { getMenus } from '@ui/shell/menus';
@@ -404,6 +407,44 @@ describe('UX audit (shell)', () => {
       probe.remove();
     }
     expect(low).toEqual([]);
+  });
+
+  it('every step of the tour points at something that is on screen', async () => {
+    const missing: string[] = [];
+    for (const step of TOUR) {
+      step.prepare?.(s);
+      await frame();
+      const el = document.querySelector(step.anchor);
+      const r = el?.getBoundingClientRect();
+      if (!el || !r || r.width === 0 || r.height === 0) missing.push(`${step.title}: ${step.anchor}`);
+      else if (r.right < 0 || r.bottom < 0 || r.left > window.innerWidth || r.top > window.innerHeight)
+        missing.push(`${step.title}: ${step.anchor} is off screen`);
+    }
+    expect(missing).toEqual([]);
+    // The tour text names keys with {key:command}: each must be a real command.
+    for (const step of TOUR)
+      for (const m of step.body.matchAll(/\{key:([\w.]+)\}/g)) expect(s.commands.get(m[1]!), m[1]).toBeTruthy();
+  });
+
+  it('every lesson step points at something on screen once its step has started', async () => {
+    const missing: string[] = [];
+    for (const lesson of LESSONS) {
+      if (lesson.start && !(await lesson.start(s))) continue;
+      // The musician opens windows as the steps ask; here they are all open, with a Wavetable's window among them.
+      for (const type of ['channel-rack', 'piano-roll', 'playlist', 'mixer']) openWindow(s, type);
+      const wave = addInstrumentChannel(s, 'agstudio.wavetable');
+      if (wave) openWindow(s, 'plugin', { kind: 'channel', channelId: wave });
+      await frame();
+      for (const step of lesson.steps) {
+        step.prepare?.(s);
+        await frame();
+        const sel = step.anchor?.(s);
+        if (sel === undefined) continue;
+        const el = sel ? document.querySelector(sel) : null;
+        if (!el) missing.push(`${lesson.id}: "${step.text.slice(0, 40)}" -> ${String(sel)}`);
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   it('nothing visible says "AI"', () => {

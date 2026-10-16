@@ -115,6 +115,9 @@ export class PianoRollController {
   private unsubs: Array<() => void> = [];
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPlayheadX = NaN;
+  /** The scrollbar track's width and the event lane's height, measured when the layout changes. */
+  private scrollTrackW = 0;
+  private laneH = 1;
   private centeredFor: string | null = null;
   private scaleCache: { key: SongKey | null; rows: ScaleRows | null } = { key: null, rows: null };
   /** Where the chord stamp would draw, shown as an outline under the pointer. */
@@ -178,6 +181,7 @@ export class PianoRollController {
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(els.gridHost);
     ro.observe(els.velocityHost);
+    ro.observe(els.hscroll);
     this.unsubs.push(() => ro.disconnect());
 
     const host = els.gridHost;
@@ -304,6 +308,9 @@ export class PianoRollController {
     const r = this.els.gridHost.getBoundingClientRect();
     this.vp.width = Math.max(1, Math.round(r.width));
     this.vp.height = Math.max(1, Math.round(r.height));
+    // Read here, when the size changes, so the frame loop never asks the layout for them.
+    this.scrollTrackW = this.els.hscroll.getBoundingClientRect().width;
+    this.laneH = Math.max(1, Math.round(this.els.velocityHost.getBoundingClientRect().height));
     const c = this.ctx();
     this.vp.clampScroll(this.maxTick(c));
     this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'lane');
@@ -369,7 +376,7 @@ export class PianoRollController {
       drawRuler(fitCanvas(els.ruler, vp.width, RULER_HEIGHT), vp, theme, ts, RULER_HEIGHT, this.patternEnd(c));
     }
     if (this.dirty.has('lane') && pr.velocityLane) {
-      const h = Math.max(1, Math.round(els.velocityHost.getBoundingClientRect().height));
+      const h = this.laneH;
       const style = { color: theme.note, selected: this.selection() };
       drawLane(fitCanvas(els.velocity, vp.width, h), vp, theme, h, c.notes, style, this.preview, pr.lane);
     }
@@ -536,7 +543,7 @@ export class PianoRollController {
   private updateScrollbar(c: Ctx): void {
     const total = this.maxTick(c);
     const visible = this.vp.width / this.vp.pxPerTick;
-    const track = this.els.hscroll.getBoundingClientRect().width;
+    const track = this.scrollTrackW;
     const w = Math.max(24, Math.min(track, (visible / total) * track));
     const x = total > visible ? (this.vp.scrollTick / (total - visible)) * (track - w) : 0;
     this.els.hthumb.style.width = `${w}px`;

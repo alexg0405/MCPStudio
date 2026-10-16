@@ -174,6 +174,8 @@ export class PlaylistController {
   private unsubs: Array<() => void> = [];
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPlayheadX = NaN;
+  /** The horizontal scrollbar's track width, measured when the layout changes. */
+  private scrollTrackW = 0;
   private sliceX = -1;
   /** The automation clip part under the pointer (its points show, the hint bar explains it). */
   private autoHover: { clipId: ClipId; hit: AutoHit } | null = null;
@@ -247,6 +249,7 @@ export class PlaylistController {
     );
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(els.gridHost);
+    ro.observe(els.hscroll);
     this.unsubs.push(() => ro.disconnect());
 
     const on = <K extends keyof HTMLElementEventMap>(
@@ -370,6 +373,8 @@ export class PlaylistController {
     const r = this.els.gridHost.getBoundingClientRect();
     this.vp.width = Math.max(1, Math.round(r.width));
     this.vp.height = Math.max(1, Math.round(r.height));
+    // Read here, when the size changes, so the frame loop never asks the layout for it.
+    this.scrollTrackW = this.els.hscroll.getBoundingClientRect().width;
     const p = this.project();
     this.vp.rows = p.playlist.laneOrder.length;
     this.vp.clampScroll(this.maxTick(p));
@@ -747,7 +752,7 @@ export class PlaylistController {
   private updateScrollbar(p: Project): void {
     const total = this.maxTick(p);
     const visible = this.vp.width / this.vp.pxPerTick;
-    const track = this.els.hscroll.getBoundingClientRect().width;
+    const track = this.scrollTrackW;
     const w = Math.max(24, Math.min(track, (visible / total) * track));
     const x = total > visible ? (this.vp.scrollTick / (total - visible)) * (track - w) : 0;
     this.els.hthumb.style.width = `${w}px`;

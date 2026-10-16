@@ -230,6 +230,10 @@ describe('meters', () => {
     const order = [...routed.mixer.order, 'ins_unknown' as InsertId];
     const out = new Float32Array(order.length * 2).fill(-1);
     const short = new Float32Array(3);
+    // The meters only join the graph once someone reads them (the mixer's first frame): the first read is 0.
+    engine.readMeters(order, out);
+    expect(Array.from(out).every((v) => v === 0)).toBe(true);
+    out.fill(-1);
     let read: number[] = [];
     void ctx.suspend(0.06).then(() => {
       engine.readMeters(order, out);
@@ -250,4 +254,28 @@ describe('meters', () => {
     });
     expect(order[0]).toBe(MASTER);
   });
+
+  it('keeps the meter analysers out of the graph until they are read, and drops them again when nobody looks', async () => {
+    const { project } = kitProject([{ generator: 'kit/snare', steps: [0] }]);
+    const engine = Engine.realtime({ plugins: resolver() });
+    load(engine, project);
+    await engine.ready();
+    const master = engine.mixer.strip(MASTER)!;
+    // A closed mixer costs nothing.
+    expect(master.metering).toBe(false);
+    const out = new Float32Array(2);
+    engine.readMeters([MASTER], out);
+    expect(master.metering).toBe(true);
+    // Read every frame: stays; left alone for a few seconds: gone.
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      engine.readMeters([MASTER], out);
+    }
+    expect(master.metering).toBe(true);
+    await new Promise((r) => setTimeout(r, 3200));
+    expect(master.metering).toBe(false);
+    engine.readMeters([MASTER], out);
+    expect(master.metering).toBe(true);
+    await engine.dispose();
+  }, 20_000);
 });

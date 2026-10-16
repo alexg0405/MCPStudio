@@ -3,7 +3,7 @@
  * engine/mixer-graph.ts) belong to the mixer graph; a strip wires its own nodes between them:
  *
  *   routeIn → slot 1 … slot N → scTap → gate (mute/solo) → preTap → StereoPanner → fader → postTap
- *                                                                        (meters: ChannelSplitter → 2× AnalyserNode)
+ *                                                                        (meters: ChannelSplitter → 2× AnalyserNode, only while read)
  *   slot: in ─► bypass ───────────────────────────────────────────► out   (1 while not live)
  *          ├─► dryGate ─────────────────┐
  *          ├─► latency delay ─► align ──┴─► dryMix (1 − mix) ─────► out   (dryGate without latency, align with)
@@ -42,6 +42,8 @@ const RETIRE_MS = 80;
 const MAX_LATENCY = 1;
 /** Analyser size for meters (≈ 43 ms at 48 kHz). */
 export const METER_FRAMES = 2048;
+/** Meters are taken out of the graph once nobody has read them for this long (ms): a closed mixer costs nothing. */
+const METER_IDLE_MS = 2500;
 
 const clamp = (v: number, lo: number, hi: number, fallback = lo) =>
   Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
@@ -496,8 +498,11 @@ export class InsertStrip {
   private readonly gate: GainNode;
   private readonly panner: StereoPannerNode;
   private readonly fader: GainNode;
-  private readonly splitter: ChannelSplitterNode | null = null;
-  private readonly meters: readonly AnalyserNode[] = [];
+  /** Made on the first read and dropped again after METER_IDLE_MS without one (see readPeaks). */
+  private splitter: ChannelSplitterNode | null = null;
+  private meters: readonly AnalyserNode[] = [];
+  private lastMeterRead = 0;
+  private meterTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly slots = new Map<SlotId, FxSlotStrip>();
   private chain: readonly SlotId[] = [];
   private ordered: readonly FxSlotStrip[] = [];
@@ -537,13 +542,6 @@ export class InsertStrip {
     taps.preTap.connect(this.panner);
     this.panner.connect(this.fader);
     this.fader.connect(taps.postTap);
-    // Meters only matter while someone is looking: offline renders skip them.
-    if (!core.offline) {
-      this.splitter = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
-      this.meters = [0, 1].map(() => new AnalyserNode(ctx, { fftSize: METER_FRAMES, smoothingTimeConstant: 0 }));
-      taps.postTap.connect(this.splitter);
-      this.meters.forEach((m, i) => this.splitter?.connect(m, i));
-    }
     this.wire([]);
     if (project) this.syncSlots(insert.fx, project);
   }
@@ -594,8 +592,13 @@ export class InsertStrip {
     glide(this.gate.gain, muted ? 0 : 1, this.core.ctx, STRIP_TAU);
   }
 
-  /** Writes the left/right peak of the last METER_FRAMES frames into out[at], out[at + 1]. */
+  /**
+   * Writes the left/right peak of the last METER_FRAMES frames into out[at], out[at + 1]. The meter
+   * analysers only exist while someone reads them (the mixer's meters, every frame): the first read
+   * connects them and reads 0, and they go away again after METER_IDLE_MS. Offline renders have none.
+   */
   readPeaks(scratch: Float32Array<ArrayBuffer>, out: Float32Array, at: number): void {
+    if (!this.core.offline) this.touchMeters();
     for (let c = 0; c < 2; c++) {
       const meter = this.meters[c];
       let peak = 0;
@@ -611,6 +614,41 @@ export class InsertStrip {
     }
   }
 
+  /** True while the meter analysers are in the graph (diagnostics and tests). */
+  get metering(): boolean {
+    return this.splitter !== null;
+  }
+
+  private touchMeters(): void {
+    this.lastMeterRead = performance.now();
+    if (this.splitter) return;
+    const ctx = this.core.ctx;
+    const splitter = new ChannelSplitterNode(ctx, { numberOfOutputs: 2 });
+    const meters = [0, 1].map(() => new AnalyserNode(ctx, { fftSize: METER_FRAMES, smoothingTimeConstant: 0 }));
+    this.taps.postTap.connect(splitter);
+    meters.forEach((m, i) => splitter.connect(m, i));
+    this.splitter = splitter;
+    this.meters = meters;
+    this.meterTimer = setTimeout(() => this.checkMeters(), METER_IDLE_MS);
+  }
+
+  private checkMeters(): void {
+    this.meterTimer = null;
+    const idle = performance.now() - this.lastMeterRead;
+    if (idle < METER_IDLE_MS) this.meterTimer = setTimeout(() => this.checkMeters(), METER_IDLE_MS - idle);
+    else this.dropMeters();
+  }
+
+  private dropMeters(): void {
+    if (this.meterTimer !== null) clearTimeout(this.meterTimer);
+    this.meterTimer = null;
+    if (this.splitter) disconnectFrom(this.taps.postTap, this.splitter);
+    this.splitter?.disconnect();
+    for (const m of this.meters) m.disconnect();
+    this.splitter = null;
+    this.meters = [];
+  }
+
   dispose(): void {
     for (const s of this.slots.values()) s.dispose();
     this.slots.clear();
@@ -622,12 +660,10 @@ export class InsertStrip {
     this.taps.routeIn.disconnect();
     disconnectFrom(this.taps.scTap, this.gate);
     disconnectFrom(this.taps.preTap, this.panner);
-    if (this.splitter) disconnectFrom(this.taps.postTap, this.splitter);
+    this.dropMeters();
     this.gate.disconnect();
     this.panner.disconnect();
     this.fader.disconnect();
-    this.splitter?.disconnect();
-    for (const m of this.meters) m.disconnect();
   }
 
   /** Keyed by SlotId: new slots are created, removed ones disposed, moved ones only rewired. */

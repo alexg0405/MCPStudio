@@ -90,6 +90,11 @@
   font-size: var(--ag-font-size-sm);
 }
 
+.learnHint {
+  color: var(--ag-accent);
+  font-size: var(--ag-font-size-sm);
+}
+
 .stage {
   flex: 1;
   min-height: 0;
@@ -403,6 +408,12 @@
 }
 
 .pad:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* A control that is empty, shown while MIDI learn is on: still pickable, but it looks off. */
+.idle {
   opacity: 0.4;
   cursor: default;
 }

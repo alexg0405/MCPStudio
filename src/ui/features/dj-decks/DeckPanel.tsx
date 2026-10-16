@@ -7,7 +7,7 @@ import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { Icon } from '../../controls/Icon';
 import { useServices } from '../../services-context';
 import { keyBadge } from '../dj/dj-view';
-import { deckTarget, PadButton, Slider } from './controls';
+import { deckTarget, PadButton, Slider, useLearnMode } from './controls';
 import styles from './DjDecks.module.css';
 import { loadToDeck, SONG_DRAG_TYPE } from './load';
 import { DeckScope, HOT_CUE_VARS } from './scope';
@@ -42,6 +42,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
   }, [api, id]);
 
   const has = d.song !== null;
+  const learning = useLearnMode();
   const analysis = api.analysisOf?.(id) ?? null;
   const badge = keyBadge(analysis);
   const grid = analysis?.grid ?? null;
@@ -158,8 +159,9 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
           type="button"
           tabIndex={-1}
           data-dj-target={deckTarget(id, 'eject')}
-          className={styles.eject}
-          disabled={!has}
+          className={`${styles.eject} ${!has && learning ? styles.idle : ''}`}
+          disabled={!has && !learning}
+          aria-disabled={(!has && learning) || undefined}
           aria-label={`Eject deck ${id}`}
           data-hint={`Take the song off deck ${id} (stops it)`}
           onClick={() => api.eject(id)}

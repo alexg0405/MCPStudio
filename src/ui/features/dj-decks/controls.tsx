@@ -1,8 +1,20 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useStore } from 'zustand';
 import { emitHint } from '@agstudio/sdk/ui';
+import { djControllers } from '@app/dj/controllers';
 import type { DeckId } from '@app/dj/decks-api';
 import { isTargetId } from '@core/midi-map/targets';
+import { useServices } from '../../services-context';
 import styles from './DjDecks.module.css';
+
+/**
+ * Whether MIDI learn is on. Then every deck control can be picked, even one that does nothing yet (an
+ * empty deck's play): a control is only disabled for the musician when learn is off.
+ */
+export function useLearnMode(): boolean {
+  const dj = djControllers(useServices());
+  return useStore(dj.store, (s) => s.learn !== null);
+}
 
 /**
  * The MIDI-learn id of one of a deck's controls ("A.play", "B.hotcue:3"). Undefined when the catalog
@@ -162,16 +174,20 @@ export function PadButton({
   /** The MIDI-learn target id this pad is ("A.play"). */
   target?: string;
 }) {
+  const learning = useLearnMode();
+  // In learn mode an empty control stays pickable: it is inert (the learn guard swallows its presses) and dimmed.
+  const idle = disabled && learning;
   return (
     <button
       type="button"
       tabIndex={-1}
-      className={`${styles.pad} ${on ? styles.padOn : ''} ${className ?? ''}`}
+      className={`${styles.pad} ${on ? styles.padOn : ''} ${idle ? styles.idle : ''} ${className ?? ''}`}
       aria-label={label}
       aria-pressed={on === undefined ? undefined : on}
+      aria-disabled={idle || undefined}
       data-dj-target={target}
       data-hint={hint}
-      disabled={disabled}
+      disabled={disabled && !learning}
       style={style}
       onPointerDown={(e) => {
         // Keep the keyboard focus on the window, so its shortcuts keep working after a click.

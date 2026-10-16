@@ -4,6 +4,7 @@ import type { DeckId, DecksApi } from '@app/dj/decks-api';
 import { loadLibrary } from '@app/dj/library';
 import { onFrame } from '../../frame-loop';
 import { DeckPanel } from './DeckPanel';
+import { useLearnMode } from './controls';
 import styles from './DjDecks.module.css';
 import { Mixer } from './Mixer';
 import { useDecksApi, useDecksState } from './use-decks';
@@ -65,6 +66,7 @@ export function DecksWindow() {
 
 function Loaded({ api }: { api: DecksApi }) {
   const count = useDecksState(api, (s) => s.deckCount);
+  const learning = useLearnMode();
   // Meters: one frame callback reads every level and moves the bars (peak with a quick fall).
   const els = useRef<(HTMLElement | null)[]>([]);
   const held = useRef(new Float32Array(6));
@@ -114,6 +116,11 @@ function Loaded({ api }: { api: DecksApi }) {
           ))}
         </div>
         <span className={styles.spacer} />
+        {learning && (
+          <span className={styles.learnHint} role="status">
+            Click any control to link it, even on an empty deck
+          </span>
+        )}
         <Headphones api={api} />
       </div>
       <div className={styles.stage} data-count={count}>

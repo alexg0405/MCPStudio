@@ -226,3 +226,77 @@ describe('MIDI learn on the Decks window (real decks)', () => {
     expect(decks.store.getState().decks.A.playing).toBe(false);
   });
 });
+
+describe('MIDI learn on an empty deck (real decks, no song loaded)', () => {
+  let s: Services;
+  let access: FakeMidiAccess;
+  let pad: ReturnType<FakeMidiAccess['plug']>;
+  let requestMidi: unknown;
+  let root: Root | null = null;
+  let host: HTMLDivElement | null = null;
+
+  beforeAll(async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    setDecksProvider(null);
+    access = new FakeMidiAccess();
+    pad = access.plug('Some Pad');
+    requestMidi = (navigator as { requestMIDIAccess?: unknown }).requestMIDIAccess;
+    Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: async () => access.asAccess() });
+    s = createServices();
+    registerFeatures(s);
+    await s.commands.run('dj.controllers.connect');
+    await until(() => djControllers(s).store.getState().decks === 'ready');
+  });
+
+  afterAll(async () => {
+    root?.unmount();
+    host?.remove();
+    djControllers(s).disable();
+    setDecksProvider(null);
+    Object.defineProperty(navigator, 'requestMIDIAccess', { configurable: true, value: requestMidi });
+    (await s.decks()).dispose();
+    await s.engine.dispose();
+    vi.restoreAllMocks();
+  });
+
+  it('a deck with no song can still be linked in learn mode; its controls are disabled again when learn ends', async () => {
+    const dj = djControllers(s);
+    dj.select('Some Pad');
+    host = document.createElement('div');
+    host.style.cssText = 'position:fixed;inset:0;width:1200px;height:800px';
+    document.body.append(host);
+    root = createRoot(host);
+    root.render(createElement(ServicesProvider, { services: s, children: createElement(DecksWindow) }));
+    const play = () => host!.querySelector('[data-dj-target="A.play"]') as HTMLButtonElement | null;
+    await until(() => !!play());
+    await frame();
+    // Deck A is empty, so its play is disabled while learn is off.
+    expect(play()!.disabled).toBe(true);
+    expect(host.textContent).not.toContain('Click any control to link it');
+
+    // Learn mode on, no song loaded.
+    dj.startLearn();
+    await frame();
+    expect(host.textContent).toContain('Click any control to link it, even on an empty deck');
+    // Clicking the empty deck's play picks it: it is pickable now, and looks off (aria-disabled).
+    expect(play()!.disabled).toBe(false);
+    expect(play()!.getAttribute('aria-disabled')).toBe('true');
+    play()!.click();
+    await frame();
+    expect(dj.store.getState().learn?.target).toBe('A.play');
+    // A fake MIDI note links it: an A.play mapping is created.
+    pad.input.emit(msg.noteOn(5, 41));
+    await frame();
+    expect(dj.store.getState().learn?.target).toBeNull();
+    expect(dj.bindingsFor('Some Pad', 'A.play').map((b) => b.binding)).toContainEqual({
+      input: { type: 'note', channel: 5, note: 41 },
+      target: 'A.play',
+    });
+    // Leave learn mode: the empty deck's play is disabled again, and the hint goes.
+    dj.cancelLearn();
+    await frame();
+    expect(play()!.disabled).toBe(true);
+    expect(play()!.hasAttribute('aria-disabled')).toBe(false);
+    expect(host.textContent).not.toContain('Click any control to link it');
+  });
+});

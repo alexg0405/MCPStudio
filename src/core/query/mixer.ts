@@ -109,39 +109,24 @@ export function insertLabel(project: Project, id: InsertId): string {
   return i > 0 ? `Insert ${i}` : (project.mixer.inserts[id]?.name ?? 'Insert');
 }
 
-/**
- * How strictly `findEmptyInsert` reads "empty". With no rules it is the filters' check: named exactly
- * "Insert N", centred and not soloed, unity volume, no effects, not muted, its one route to the master.
- */
-export interface EmptyInsertRules {
-  /** Accepts "insert N" in any case, ignoring spaces around the name (the mix setup and the DJ mix). */
-  readonly anyCaseName?: boolean;
-  /** Skips the pan and solo checks (the arranger's bus check). */
-  readonly ignorePanAndSolo?: boolean;
-  /** The route to the master must also be at unity level and post-fader (the mix setup). */
-  readonly unityPostRoute?: boolean;
-}
-
-const EXACT_NAME = /^Insert \d+$/;
 const LOOSE_NAME = /^insert \d+$/i;
 
 /**
- * The first insert (in mixer order) nobody uses, so a bus or filter can take it over: an "Insert N"
- * with no effects, unity volume, nothing muted, routed only to the master, and with no channel
- * playing through it and no insert routed or sidechained into it. The master is never empty.
+ * The first insert (in mixer order) nobody uses, so a bus, filter or DJ mix can take it over. Truly untouched:
+ * named "Insert N" (any case, trimmed), no effects, unity volume, centred, not muted or soloed, and exactly one
+ * route, to the master, at unity level and post-fader. Also nothing plays through it and no insert routes or
+ * sidechains into it. The master is never empty.
  */
-export function findEmptyInsert(p: Project, rules: EmptyInsertRules = {}): InsertId | null {
+export function findEmptyInsert(p: Project): InsertId | null {
   for (const id of p.mixer.order) {
     if (id === MASTER) continue;
     const ins = p.mixer.inserts[id];
     if (!ins) continue;
-    const name = rules.anyCaseName ? LOOSE_NAME.test(ins.name.trim()) : EXACT_NAME.test(ins.name);
-    if (!name || ins.fx.length || ins.volume !== 1 || ins.muted) continue;
-    if (!rules.ignorePanAndSolo && (ins.pan !== 0 || ins.solo)) continue;
+    if (!LOOSE_NAME.test(ins.name.trim()) || ins.fx.length || ins.volume !== 1 || ins.muted) continue;
+    if (ins.pan !== 0 || ins.solo) continue;
     if (ins.routes.length !== 1) continue;
     const route = ins.routes[0]!;
-    if (route.to !== MASTER) continue;
-    if (rules.unityPostRoute && (route.level !== 1 || route.pre)) continue;
+    if (route.to !== MASTER || route.level !== 1 || route.pre) continue;
     if (isFedOrPlaying(p, id)) continue;
     return id;
   }

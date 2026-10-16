@@ -6,7 +6,7 @@ import { MASTER, type InsertId, type Project } from '../model/types';
 import { addChannel } from '../ops/channels';
 import { addFxSlot, moveInsert, setInsertProp } from '../ops/mixer';
 import { clearRoutes, routeOnlyTo, setRoute, setSlotSidechain } from '../ops/routing';
-import { findEmptyInsert, type EmptyInsertRules } from './mixer';
+import { findEmptyInsert } from './mixer';
 
 beforeEach(() => setIdSource(seededBytes(7)));
 
@@ -35,7 +35,6 @@ describe('findEmptyInsert', () => {
       takeAllBut(d, MASTER);
     });
     expect(findEmptyInsert(q)).toBeNull();
-    expect(findEmptyInsert(q, { anyCaseName: true })).toBeNull();
   });
 
   it('follows mixer order, not insert ids', () => {
@@ -48,16 +47,19 @@ describe('findEmptyInsert', () => {
     expect(findEmptyInsert(q)).toBe(last);
   });
 
-  describe('with the default (filter) rules, rejects an insert that', () => {
+  describe('rejects an insert that', () => {
     const cases: [string, (d: Draft<Project>, id: InsertId, p: Project) => void][] = [
       ['has an effect', (d, id) => void addFxSlot(d, id, ducker())],
       ['is off unity volume', (d, id) => setInsertProp(d, id, 'volume', 0.5)],
-      ['is panned', (d, id) => setInsertProp(d, id, 'pan', 0.3)],
+      ['is panned left', (d, id) => setInsertProp(d, id, 'pan', -0.4)],
+      ['is panned right', (d, id) => setInsertProp(d, id, 'pan', 0.3)],
       ['is muted', (d, id) => setInsertProp(d, id, 'muted', true)],
       ['is soloed', (d, id) => setInsertProp(d, id, 'solo', true)],
       ['has no route', (d, id) => clearRoutes(d, id)],
       ['has two routes', (d, id, p) => void setRoute(d, id, insertAt(p, 2), {})],
       ['routes somewhere other than the master', (d, id, p) => void routeOnlyTo(d, id, insertAt(p, 2))],
+      ['routes to the master below unity level', (d, id) => void setRoute(d, id, MASTER, { level: 0.5 })],
+      ['routes to the master pre-fader', (d, id) => void setRoute(d, id, MASTER, { pre: true })],
       ['is renamed', (d, id) => setInsertProp(d, id, 'name', 'Drums')],
       [
         'has a channel playing through it',
@@ -84,20 +86,7 @@ describe('findEmptyInsert', () => {
     }
   });
 
-  it('by default accepts a route below unity level or a pre-fader route', () => {
-    const p = fresh();
-    const first = insertAt(p, 1);
-    const level = produce(p, (d) => {
-      setRoute(d, first, MASTER, { level: 0.5 });
-    });
-    const pre = produce(p, (d) => {
-      setRoute(d, first, MASTER, { pre: true });
-    });
-    expect(findEmptyInsert(level)).toBe(first);
-    expect(findEmptyInsert(pre)).toBe(first);
-  });
-
-  describe('anyCaseName', () => {
+  describe('name', () => {
     it('accepts "insert N" in any case, with the name trimmed', () => {
       const p = fresh();
       const first = insertAt(p, 1);
@@ -108,10 +97,8 @@ describe('findEmptyInsert', () => {
       const padded = produce(p, (d) => {
         d.mixer.inserts[first]!.name = '  Insert 1 ';
       });
-      expect(findEmptyInsert(lower)).not.toBe(first);
-      expect(findEmptyInsert(lower, { anyCaseName: true })).toBe(first);
-      expect(findEmptyInsert(padded)).not.toBe(first);
-      expect(findEmptyInsert(padded, { anyCaseName: true })).toBe(first);
+      expect(findEmptyInsert(lower)).toBe(first);
+      expect(findEmptyInsert(padded)).toBe(first);
     });
 
     it('still rejects names that are not "insert N"', () => {
@@ -121,62 +108,17 @@ describe('findEmptyInsert', () => {
         const q = produce(p, (d) => {
           setInsertProp(d, first, 'name', name);
         });
-        expect(findEmptyInsert(q, { anyCaseName: true })).not.toBe(first);
+        expect(findEmptyInsert(q)).not.toBe(first);
       }
     });
   });
 
-  describe('ignorePanAndSolo', () => {
-    const rules: EmptyInsertRules = { ignorePanAndSolo: true };
-
-    it('lets a panned or soloed insert through', () => {
-      const p = fresh();
-      const first = insertAt(p, 1);
-      const panned = produce(p, (d) => {
-        setInsertProp(d, first, 'pan', -0.4);
-      });
-      const soloed = produce(p, (d) => {
-        setInsertProp(d, first, 'solo', true);
-      });
-      expect(findEmptyInsert(panned, rules)).toBe(first);
-      expect(findEmptyInsert(soloed, rules)).toBe(first);
+  it('accepts an untouched insert: one unity, post-fader route to the master', () => {
+    const p = fresh();
+    const first = insertAt(p, 1);
+    const q = produce(p, (d) => {
+      setRoute(d, first, MASTER, { level: 1, pre: false });
     });
-
-    it('still rejects a muted insert, a changed volume or an effect', () => {
-      const p = fresh();
-      const first = insertAt(p, 1);
-      const muted = produce(p, (d) => {
-        setInsertProp(d, first, 'muted', true);
-      });
-      const volume = produce(p, (d) => {
-        setInsertProp(d, first, 'volume', 0.5);
-      });
-      const fx = produce(p, (d) => {
-        addFxSlot(d, first, ducker());
-      });
-      for (const q of [muted, volume, fx]) expect(findEmptyInsert(q, rules)).not.toBe(first);
-    });
-  });
-
-  describe('unityPostRoute', () => {
-    const rules: EmptyInsertRules = { unityPostRoute: true };
-
-    it('rejects a route below unity level or a pre-fader route', () => {
-      const p = fresh();
-      const first = insertAt(p, 1);
-      const level = produce(p, (d) => {
-        setRoute(d, first, MASTER, { level: 0.5 });
-      });
-      const pre = produce(p, (d) => {
-        setRoute(d, first, MASTER, { pre: true });
-      });
-      expect(findEmptyInsert(level, rules)).not.toBe(first);
-      expect(findEmptyInsert(pre, rules)).not.toBe(first);
-    });
-
-    it('accepts a unity, post-fader route to the master', () => {
-      const p = fresh();
-      expect(findEmptyInsert(p, rules)).toBe(insertAt(p, 1));
-    });
+    expect(findEmptyInsert(q)).toBe(first);
   });
 });

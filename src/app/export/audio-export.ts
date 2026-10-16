@@ -16,6 +16,7 @@ import { isFileSystemAccessSupported, pickDirectory, pickSaveExportFile } from '
 import { downloadParts, memorySink, openFileSink, openTempFile, type ByteSink, type MemorySink } from '@platform/sinks';
 import type { PrefsState } from '../stores/prefs';
 import type { Services } from '../services';
+import { whileBusy } from '../storage/busy';
 import {
   CODEC_EXTENSIONS,
   CODEC_MIME,
@@ -193,13 +194,25 @@ async function encoderInto(sink: ByteSink, spec: EncodeSpec, rate: number, chann
  * normalize gain), then each stem with the same tail, cut to the same length, raised by the same
  * gain, so the stems still add up to the mix. Rejects with ExportError (or an AbortError).
  */
-export async function runExport(
+export function runExport(
   s: Services,
   settings: AudioExportSettings,
   target: ExportTarget,
   hooks: ExportHooks = {},
 ): Promise<ExportResult> {
-  const project = s.doc.getState().project;
+  // The project as it is now keeps all its audio until the export is done, even if a sample is deleted meanwhile.
+  return whileBusy(() => runExportOf(s, s.doc.getState().project, settings, target, hooks), {
+    project: s.doc.getState().project,
+  });
+}
+
+async function runExportOf(
+  s: Services,
+  project: Project,
+  settings: AudioExportSettings,
+  target: ExportTarget,
+  hooks: ExportHooks,
+): Promise<ExportResult> {
   const plan = planExport(project, s.view.getState(), settings.range);
   if ('error' in plan) throw new ExportError(plan.error);
   s.engine.stop();

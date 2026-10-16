@@ -53,6 +53,9 @@ Cross-layer imports always use aliases (`@core/…`, `@engine/…`, `@app/…`, 
   in `vite.config.ts`); name pure DSP files `kernel.ts` or `*.kernel.ts`.
 - `services.engine` is an `EngineHost` proxy: always go through it (never cache the inner engine) so engine
   reboots after worklet edits are transparent.
+- **Unused audio is cleaned up** (`app/storage`, see architecture.md): a blob is kept while any stored value mentions its
+  hash. Keep sample hashes in the project, an autosave or the IndexedDB `kv` store, write blobs only through the sample
+  store (`defaultSampleStore()`), and wrap long work that reads a project in `whileBusy(…, { project })`.
 - Assets must be self-hosted: the dev/preview servers send COOP/COEP headers (cross-origin isolation).
 
 ## Adding a feature

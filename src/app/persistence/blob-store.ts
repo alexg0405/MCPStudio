@@ -24,6 +24,23 @@ export interface SampleStore extends BlobStore {
   onFallback(fn: (error: unknown, hash: string) => void): () => void;
 }
 
+/**
+ * How clean-up of unused audio (app/storage) keeps writers and readers safe. The store calls it around
+ * every persistent write and lookup; with none installed (tests, no Web Locks) it does nothing.
+ */
+export interface BlobGuard {
+  /** Runs `fn` while no blob can be deleted (a shared Web Lock; deletes take it exclusively). */
+  hold<T>(fn: () => Promise<T>): Promise<T>;
+  /** Marks a blob as in use right now, which keeps it for the grace period. Must finish before `hold` ends. */
+  touch(hash: string): Promise<void>;
+}
+
+let installedGuard: BlobGuard | null = null;
+/** Sets the guard every store without its own uses (the composition root does this once). */
+export function installBlobGuard(guard: BlobGuard | null): void {
+  installedGuard = guard;
+}
+
 const byHash = (a: BlobInfo, b: BlobInfo) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0);
 const isUnavailable = (e: unknown) => e instanceof StorageError && e.code === 'unavailable';
 
@@ -57,7 +74,8 @@ export function createMemoryBlobStore(): BlobStore {
  * unavailable (e.g. OPFS blocked in a private window) is dropped for the rest of the session, on reads
  * as well as writes. Invalid input still throws.
  */
-export function createSampleStore(primary: BlobStore | null): SampleStore {
+export function createSampleStore(primary: BlobStore | null, opts: { guard?: BlobGuard } = {}): SampleStore {
+  const guardOf = () => opts.guard ?? installedGuard;
   const memory = createMemoryBlobStore();
   const listeners = new Set<(error: unknown, hash: string) => void>();
   let down = primary === null;
@@ -92,7 +110,14 @@ export function createSampleStore(primary: BlobStore | null): SampleStore {
       let error = downError;
       if (!down && primary) {
         try {
-          await primary.putBlob(hash, ext, bytes);
+          const guard = guardOf();
+          // Written (or found already there) and marked in use before a delete can look at it.
+          if (guard)
+            await guard.hold(async () => {
+              await primary.putBlob(hash, ext, bytes);
+              await guard.touch(hash);
+            });
+          else await primary.putBlob(hash, ext, bytes);
           return;
         } catch (e) {
           if (e instanceof StorageError && e.code === 'invalid') throw e;
@@ -104,10 +129,24 @@ export function createSampleStore(primary: BlobStore | null): SampleStore {
       if (primary) for (const fn of listeners) fn(error, hash);
     },
     async getBlob(hash, ext) {
-      return (await memory.getBlob(hash)) ?? read((p) => p.getBlob(hash, ext), null);
+      const inMemory = await memory.getBlob(hash);
+      if (inMemory) return inMemory;
+      const found = await read((p) => p.getBlob(hash, ext), null);
+      // Reading is using it. (The bytes are already in hand, so only the mark needs the hold.)
+      const guard = guardOf();
+      if (found && guard) await guard.hold(() => guard.touch(hash));
+      return found;
     },
     async hasBlob(hash, ext) {
-      return (await memory.hasBlob(hash)) || read((p) => p.hasBlob(hash, ext), false);
+      if (await memory.hasBlob(hash)) return true;
+      const guard = guardOf();
+      // A "yes" is only true until a delete: marking it in use under the hold makes it stay true.
+      if (!guard) return read((p) => p.hasBlob(hash, ext), false);
+      return guard.hold(async () => {
+        const has = await read((p) => p.hasBlob(hash, ext), false);
+        if (has) await guard.touch(hash);
+        return has;
+      });
     },
     async deleteBlob(hash) {
       await memory.deleteBlob(hash);

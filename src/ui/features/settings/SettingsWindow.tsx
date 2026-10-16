@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { canChooseOutput, listOutputs, onDevicesChange, revealDevices, type AudioOutput } from '@app/audio-devices';
 import type { AudioBufferSize } from '@app/stores/prefs';
@@ -6,6 +6,8 @@ import { formatChord } from '@core/commands/keymap';
 import { useServices } from '../../services-context';
 import { ACCENTS, effectiveAccent, findTheme, THEMES } from '../../theme/apply';
 import { testSoundWav } from './test-sound';
+import { Row, Section, Switch } from './parts';
+import { StorageSection } from './StorageSection';
 import styles from './Settings.module.css';
 
 const QUANTIZE: readonly (readonly [label: string, ticks: number])[] = [
@@ -18,38 +20,6 @@ const QUANTIZE: readonly (readonly [label: string, ticks: number])[] = [
   ['1/16 triplet', 160],
 ];
 const COUNT_IN = [0, 1, 2, 4];
-
-function Section({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
-  return (
-    <section className={styles.section}>
-      <h3 className={styles.heading}>{title}</h3>
-      {intro && <p className={styles.intro}>{intro}</p>}
-      {children}
-    </section>
-  );
-}
-
-/** `hint` is the explanation under the row; a plain-text one also shows in the hint bar when you point at the row. */
-function Row({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: ReactNode }) {
-  return (
-    <div className={styles.row} data-hint={typeof hint === 'string' ? hint : undefined}>
-      <div className={styles.label}>{label}</div>
-      <div className={styles.control}>
-        <div className={styles.inline}>{children}</div>
-        {hint && <div className={styles.hint}>{hint}</div>}
-      </div>
-    </div>
-  );
-}
-
-function Switch({ checked, onChange, label }: { checked: boolean; onChange(): void; label: string }) {
-  return (
-    <label className={styles.switch}>
-      <input type="checkbox" checked={checked} onChange={onChange} />
-      <span>{label}</span>
-    </label>
-  );
-}
 
 /** Where the sound plays: the output device, a test sound, and the rate and delay the browser reports. */
 function SoundOutput() {
@@ -367,6 +337,7 @@ export function SettingsWindow() {
       <ComputerKeyboard />
       <Recording />
       <Interface />
+      <StorageSection />
       <p className={styles.footer}>Settings are remembered in this browser. They aren’t saved in your projects.</p>
     </div>
   );

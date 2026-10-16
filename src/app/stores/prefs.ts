@@ -56,6 +56,8 @@ export interface PrefsState {
    * fastest when you play live (but crackles sooner).
    */
   audioBuffer: AudioBufferSize;
+  /** Remove audio nothing uses any more, a week after it was last used, while AGstudio is idle. */
+  autoCleanup: boolean;
   /** Megabytes of decoded audio kept in memory (long songs beyond it are decoded around the playhead). */
   sampleMemoryMb: number;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
@@ -116,6 +118,7 @@ const DEFAULTS: PrefsState = {
   customKeys: {},
   outputDevice: '',
   audioBuffer: 'large',
+  autoCleanup: true,
   sampleMemoryMb: 1536,
   scopeMode: 'scope',
   followPlayhead: true,

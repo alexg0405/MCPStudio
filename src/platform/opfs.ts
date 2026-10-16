@@ -11,6 +11,7 @@
  */
 import { isSha256Hex, sha256Hex } from '@core/io/hash';
 import { normalizeSampleExt } from '@core/io/project-file';
+import type { BlobStat } from '@core/gc/plan';
 import { writeFile as writeHandle } from './fs-access';
 
 export interface StoredBlob {
@@ -36,6 +37,8 @@ export interface BlobStore {
   hasBlob(hash: string, ext?: string): Promise<boolean>;
   deleteBlob(hash: string): Promise<void>;
   listBlobs(): Promise<BlobInfo[]>;
+  /** Like `listBlobs` with each file's size and last write time (clean-up of unused audio needs both). */
+  blobStats?(): Promise<BlobStat[]>;
 }
 
 export type AutosaveSlot = 'a' | 'b';
@@ -234,7 +237,19 @@ export interface OpfsStorageOptions {
   root?: () => Promise<FileSystemDirectoryHandle>;
 }
 
-export type OpfsStorage = BlobStore & AutosaveStore;
+/** One autosave slot file, for clean-up: which session and slot, how big, and a way to read it. */
+export interface AutosaveFile {
+  sessionId: string;
+  slot: AutosaveSlot;
+  size: number;
+  read(): Promise<Uint8Array>;
+}
+
+export type OpfsStorage = Required<BlobStore> &
+  AutosaveStore & {
+    /** Every autosave slot's data file, valid or not (the meta that vouches for it is not consulted). */
+    autosaveFiles(): Promise<AutosaveFile[]>;
+  };
 
 /** Creates an OPFS-backed blob and autosave store. Nothing touches the browser until a method is called. */
 export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
@@ -372,6 +387,49 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
         const dir = await getDir(await root(), BLOBS);
         if (!dir) return [];
         return (await scanBlobs(dir)).sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
+      }),
+
+    blobStats: () =>
+      guard('measure samples', async () => {
+        const dir = await getDir(await root(), BLOBS);
+        if (!dir) return [];
+        const out: BlobStat[] = [];
+        for await (const [name, handle] of dir.entries()) {
+          const m = handle.kind === 'file' ? BLOB_NAME.exec(name) : null;
+          if (!m) continue;
+          try {
+            const file = await (handle as FileSystemFileHandle).getFile();
+            out.push({ hash: m[1] as string, ext: m[2] as string, size: file.size, modifiedAt: file.lastModified });
+          } catch (e) {
+            if (!isNotFound(e)) throw e; // deleted by another tab while we looked
+          }
+        }
+        return out.sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
+      }),
+
+    autosaveFiles: () =>
+      guard('list autosaves', async () => {
+        const autosave = await getDir(await root(), AUTOSAVE);
+        if (!autosave) return [];
+        const out: AutosaveFile[] = [];
+        for await (const [name, handle] of autosave.entries()) {
+          if (handle.kind !== 'directory' || !SESSION_ID.test(name)) continue;
+          for (const slot of SLOTS) {
+            try {
+              const file = await fileOf(handle as FileSystemDirectoryHandle, `${slot}.agproj`);
+              if (!file) continue;
+              out.push({
+                sessionId: name,
+                slot,
+                size: file.size,
+                read: async () => new Uint8Array(await file.arrayBuffer()),
+              });
+            } catch (e) {
+              if (!isNotFound(e)) throw e;
+            }
+          }
+        }
+        return out;
       }),
 
     writeAutosave: (sessionId, slot, data, meta) =>

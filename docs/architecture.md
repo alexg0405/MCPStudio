@@ -414,8 +414,8 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   a piece at a time and Open reads it an entry at a time (see [Long audio](#long-audio-dj-mode-foundations)).
 - Runtime sample store: OPFS `blobs/<sha256>.<ext>` (`platform/opfs.ts`), layered over memory when OPFS is missing or
   full (`app/persistence/blob-store.ts`); decoded per `(hash, sampleRate)` into the shared sample cache (memory budget,
-  see [Long audio](#long-audio-dj-mode-foundations)); undo removes references, not blobs; idle GC of
-  unreferenced blobs (count references from autosaves too). `decodeAudioData` resamples and detaches its input; Chrome
+  see [Long audio](#long-audio-dj-mode-foundations)); undo removes references, not blobs; unused blobs are removed by the
+  safe clean-up described under [Clean-up of unused audio](#clean-up-of-unused-audio). `decodeAudioData` resamples and detaches its input; Chrome
   rejects AIFF, so the engine's decoder has the PCM parser in `core/io/wav.ts` (which also reads `smpl` and AIFF
   `INST`/`MARK` loop/root data) turn it into float WAV in a Worker (`engine/pcm.worker.ts`).
 - Save/Open (`app/project-files.ts`, `services.files`): `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for
@@ -461,6 +461,57 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   bar shows "Name (edited)" after a tweak. Randomize keeps params that look like output levels. `.agpreset` files are
   JSON (`format: "agstudio-preset"`). Samples aren't part of a preset. The AI catalog lists your presets and
   `preset: "<name>"` finds yours before the factory ones.
+
+### Clean-up of unused audio
+
+Without it, storage only grows (removing a song, deleting a sample or closing a project leaves its bytes). Losing a
+user's audio is far worse than keeping extra bytes, so every rule below errs toward keeping. Code: `core/gc`
+(pure rules, unit-tested), `app/storage` (collector, tab records, guard, service), `platform` (locks, IndexedDB, OPFS
+stats), UI in Settings → Storage.
+
+- **In use** = any stored value mentions the blob's SHA-256. The finder (`core/gc/refs.ts`) doesn't know shapes: it
+  takes every 64-hex run in every string and key of plain data, so a new field that holds a hash is covered without
+  changes. Sources: every live tab's record (its project, its undo *and* redo history through
+  `History.referencedHashes()`, and audio pinned by a running export/render, `app/storage/busy.ts`); every autosave
+  slot file (`projectFileHashes`: the text of `project.json`/`view.json`, valid or not); the DJ library
+  (`dj-library`); and **every other value in the IndexedDB `kv` store** except `gc:*` and the cached track analyses
+  (`dj-analysis:*`, which are keyed by hash but are not a use). Recent files hold handles, never bytes, so they pin
+  nothing. The DJ-mix and sound-filter records live inside the project, so they are covered through it.
+- **Tabs publish** a `gc:tab:<session id>` record (hashes, heartbeat, `playing`, `busy`), 1 s after a change and every
+  30 s (`tab-refs.ts`). A record counts only while the tab's life lock `agstudio:session:<id>` is held (the same lock
+  autosave recovery uses). A held lock with no record means a tab that is still starting (or an older build): the run
+  stops. Records of tabs whose lock is gone are discarded, after marking their hashes "seen" at their last heartbeat
+  (a reload briefly releases the lock; the grace period covers that gap).
+- **Grace period**: a blob goes only if nothing refers to it *and* both its file time and its `gc:seen:<hash>` mark are
+  7 days old (`core/gc/plan.ts`). The mark is set when a blob is written, found by `hasBlob` or read by `getBlob`
+  (`app/storage/guard.ts`, installed into the sample store), when the collector sees it in use (refreshed at most every
+  12 h), and from dead tabs as above. A blob nothing says anything about starts its grace on first sight. Clock moved
+  back counts as "not old".
+- **Atomicity**: the sample store's reads and writes of the persistent store run under a shared `ag-blobs` Web Lock
+  (one refcounted request per tab, so a waiting exclusive request cannot deadlock a nested one). The collector takes
+  `ag-gc` exclusively (`ifAvailable`: one run at a time, others skip) and deletes in batches of 10-25, each inside an
+  exclusive `ag-blobs` hold that first re-reads the live tab records and the marks of its candidates and drops any that
+  came into use. A delete therefore never lands between a tab's look at a blob and its use of it.
+- **Fail safe**: any unreadable source (IndexedDB, an autosave listing), no Web Locks, no OPFS or IndexedDB, an unknown
+  tab, a busy tab (export/import running), or playing (automatic run only) means nothing is deleted. Corrupt autosave
+  files count as holding nothing (recovery cannot use them either). Collection never touches the derived cache
+  (`derived/`, stretched copies), which has its own 4 GB cap; analyses of removed songs go with their blob.
+- **When**: automatic run (Options → "Clean up unused audio by itself", `prefs.autoCleanup`, on by default): first
+  2 minutes after a tab opens, then at most once per 6 h across tabs, in an idle callback, batches of 10 with a pause,
+  stopping when playback starts. **Development builds only log what it would remove** (`dryRunOnly`;
+  `localStorage['agstudio:gc-dry-run'] = '0'` turns that off). Manual: Settings → Storage → "Clean up unused audio…"
+  (or the Options menu / action search / the Studio via `storage.cleanUp`) shows how many files and how much space,
+  asks, then removes (always real, also in dev). The table shows project audio, DJ library, stretched copies and other
+  (autosaves + unused audio); the rows add up to the total.
+- **Not covered, on purpose**: a project saved to a `.agproj` embeds its samples, so closing it and letting its audio
+  age out loses nothing (opening re-imports it). Only unsaved work needs the blob store: that is what the tab records,
+  undo history and autosaves protect.
+- Tests: `core/gc/gc.test.ts` (hash finder, history, autosave files, grace, tab rules), `app/storage/*.test.ts`
+  (collector on fakes: sources, grace, dead tabs, batch re-check, failures, usage numbers, the guard),
+  `test/browser/storage-gc.test.ts` (real OPFS/IndexedDB/Web Locks with iframe "tabs" and a fake clock: other tab's
+  audio, undo, grace, dead tabs, writer vs. collector, recovery after a collection, 1,000 blobs),
+  `test/browser/storage-settings.test.ts` (Settings → Storage numbers, dialog, switch). New code that stores a hash
+  outside a project must keep it in IndexedDB `kv` (or tell the collector); that is all it takes to stay safe.
 
 ## Voice analysis (`src/core/voice`)
 

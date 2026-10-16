@@ -12,6 +12,7 @@ import { decodePcm, encodeWav } from '@core/io/wav';
 import type { Project, SampleRef } from '@core/model/types';
 import type { SampleBytesProvider } from '@engine/api';
 import type { BlobStore } from '@platform/opfs';
+import { whileBusy } from '../storage/busy';
 import { defaultSampleStore } from './blob-store';
 import { sniffAudioExt } from './sample-import';
 
@@ -135,7 +136,12 @@ export function missingSoundsNotice(refs: readonly SampleRef[]): string | null {
  * Opens a project file (throws ProjectFileError with a user-facing message), verifies each embedded
  * sample against its hash and stores it before returning, so the engine can load it right away.
  */
-export async function openProjectFile(bytes: Uint8Array, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+export function openProjectFile(bytes: Uint8Array, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+  // Storing its samples is work in progress: no clean-up of unused audio starts meanwhile.
+  return whileBusy(() => openProjectFileOf(bytes, opts));
+}
+
+async function openProjectFileOf(bytes: Uint8Array, opts: { store?: BlobStore }): Promise<OpenedProject> {
   const file = readProjectFile(bytes);
   const store = opts.store ?? defaultSampleStore();
   const repairs = [...file.repairs];
@@ -174,7 +180,11 @@ export function decodableBytes(bytes: Uint8Array): Uint8Array {
  * then each embedded sample on its own (verified against its hash, stored), so opening a project
  * with hundreds of MB of songs holds one song at a time. Same result as openProjectFile.
  */
-export async function openProjectBlob(blob: Blob, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+export function openProjectBlob(blob: Blob, opts: { store?: BlobStore } = {}): Promise<OpenedProject> {
+  return whileBusy(() => openProjectBlobOf(blob, opts));
+}
+
+async function openProjectBlobOf(blob: Blob, opts: { store?: BlobStore }): Promise<OpenedProject> {
   const read = async (offset: number, length: number) =>
     new Uint8Array(await blob.slice(offset, Math.min(blob.size, offset + length)).arrayBuffer());
   const file: ProjectFileIndex = await readProjectFileIndex(read, blob.size);

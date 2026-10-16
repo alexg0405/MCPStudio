@@ -11,6 +11,7 @@ import type { SampleRef } from '@core/model/types';
 import { AUDIO_EXTENSIONS, listAudioFiles, pickDirectory, uploadFiles } from '@platform/fs-access';
 import { idbGet, idbSet, isIdbAvailable } from '@platform/idb';
 import { probeAudio } from '../actions/samples';
+import { whileBusy } from '../storage/busy';
 import { importSampleBytes } from '../persistence/sample-import';
 import type { Services } from '../services';
 import { peekAnalysis, sampleHash, trackAnalyzer } from './analyzer';
@@ -111,7 +112,12 @@ export async function songFromBytes(bytes: Uint8Array, fileName: string): Promis
 }
 
 /** Adds songs (already-known files are skipped), saves, and starts analyzing. Returns how many were added. */
-export async function addSongFiles(s: Services, files: readonly Pick<File, 'name' | 'arrayBuffer'>[]): Promise<number> {
+export function addSongFiles(s: Services, files: readonly Pick<File, 'name' | 'arrayBuffer'>[]): Promise<number> {
+  // Songs are stored before the library saves them: no clean-up of unused audio starts meanwhile.
+  return whileBusy(() => addSongFilesOf(s, files));
+}
+
+async function addSongFilesOf(s: Services, files: readonly Pick<File, 'name' | 'arrayBuffer'>[]): Promise<number> {
   await loadLibrary();
   let added = 0;
   const failed: string[] = [];

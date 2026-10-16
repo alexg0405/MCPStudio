@@ -1,5 +1,6 @@
 import type { Services } from '@app/services';
 import { missingSoundsNotice } from '@app/persistence/project-io';
+import { storageService } from '@app/storage/service';
 import { discardRecovery, loadRecovery, type AutosaveMeta, type SessionPersistence } from '@app/persistence/session';
 import { showDialog } from '../../controls/Dialog';
 
@@ -44,6 +45,8 @@ export async function offerRecovery(
   try {
     // This tab's own crash copy must exist before the old one goes.
     await persistence.flush();
+    // And this tab's audio is published, so the old copy isn't the only thing that says it is in use.
+    await storageService()?.publishNow();
     await discardRecovery(meta);
   } catch (e) {
     console.warn('Keeping the old autosave; this session could not autosave yet:', e);

@@ -34,6 +34,7 @@ import { encodeOffThread } from '../export/encode';
 import { trimExport } from '../export/export-wav';
 import { importSampleBytes } from '../persistence/sample-import';
 import type { Services } from '../services';
+import { whileBusy } from '../storage/busy';
 
 export class RenderToAudioError extends Error {}
 
@@ -51,7 +52,19 @@ export interface Rendered {
  * Renders [from, to) of a project variant (song mode) into a stored FLAC sample, with the tails
  * that ring past `to`.
  */
-export async function renderRange(
+export function renderRange(
+  s: Services,
+  project: Project,
+  from: Tick,
+  to: Tick,
+  name: string,
+  signal?: AbortSignal,
+): Promise<Rendered> {
+  // The audio the render reads stays stored until it is done (clean-up of unused audio waits).
+  return whileBusy(() => renderRangeOf(s, project, from, to, name, signal), { project });
+}
+
+async function renderRangeOf(
   s: Services,
   project: Project,
   from: Tick,

@@ -49,6 +49,7 @@ import { addFxSlot } from '@core/ops/mixer';
 import { addClips } from '@core/ops/playlist';
 import { removeChannel } from '@core/ops/channels';
 import { setRoute } from '@core/ops/routing';
+import { findEmptyInsert } from '@core/query/mixer';
 import { barSpan } from '@core/time/bars';
 import { defaultValues } from '@agstudio/sdk';
 import { importAudioFile } from '../actions/samples';
@@ -110,23 +111,11 @@ export const DEFAULT_DJ_OPTIONS: DjMixOptions = {
 // ---------------------------------------------------------------------------------------------
 // Mixer
 
-function isEmptyInsert(p: Project, id: InsertId): boolean {
-  const ins = p.mixer.inserts[id];
-  if (!ins || id === MASTER || !/^insert \d+$/i.test(ins.name.trim())) return false;
-  if (ins.fx.length || ins.volume !== 1 || ins.pan !== 0 || ins.muted || ins.solo) return false;
-  if (ins.routes.length !== 1 || ins.routes[0]!.to !== MASTER) return false;
-  for (const cid of p.channelOrder) {
-    const ch = p.channels[cid];
-    if (ch && ch.kind !== 'automation' && ch.output === id) return false;
-  }
-  return !p.mixer.order.some((o) => p.mixer.inserts[o]?.routes.some((r) => r.to === id) || p.mixer.inserts[o]?.fx.some((f) => f.sidechain === id));
-}
-
 /** The insert with this name, else an empty "Insert N" renamed, else a new one. */
 function insertNamed(d: Draft<Project>, name: string, changes: string[]): InsertId {
   const p = d as unknown as Project;
   for (const id of d.mixer.order) if (d.mixer.inserts[id]?.name === name && id !== MASTER) return id;
-  const empty = d.mixer.order.find((id) => isEmptyInsert(p, id));
+  const empty = findEmptyInsert(p, { anyCaseName: true });
   if (empty) {
     d.mixer.inserts[empty]!.name = name;
     changes.push(`Mixer track ${d.mixer.order.indexOf(empty)} is now “${name}”`);

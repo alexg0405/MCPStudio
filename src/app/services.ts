@@ -34,8 +34,7 @@ import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { TapRegistry } from './taps';
 import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
-import type { DecksFactory } from './dj/decks-api';
-import { createDecksFactory } from './dj/decks-factory';
+import { createDecksFactory, type DecksAccess } from './dj/decks-factory';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -90,7 +89,7 @@ export interface Services {
    * DJ live decks: created on first use (the audio graph on the first song loaded), always the same object.
    * Deck state is live performance state: not in the project, not in History.
    */
-  readonly decks: DecksFactory;
+  readonly decks: DecksAccess;
   /** Replaces the audio engine with a fresh AudioContext (after AudioWorklet code changed). */
   rebootEngine(): Promise<void>;
   /** Fires after any store, registry or engine change; used to refresh command enabled/checked state. */

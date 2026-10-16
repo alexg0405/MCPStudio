@@ -9,6 +9,7 @@ import { automation } from './automation';
 import { beat } from './beat';
 import { channels } from './channels';
 import { clips } from './clips';
+import { decks } from './decks';
 import { dj } from './dj';
 import { filters } from './filters';
 import type { OpHandler, OpModule } from './context';
@@ -34,6 +35,7 @@ export const MODULES: readonly OpModule[] = [
   beat,
   mix,
   dj,
+  decks,
   filters,
   ui,
 ];
@@ -42,7 +44,7 @@ export const MODULES: readonly OpModule[] = [
 export const DOC_OPS: Readonly<Record<string, OpHandler>> = Object.assign({}, ...MODULES.map((m) => m.handlers));
 
 /** Actions the UI runs after the edit (playback, windows, commands…). */
-export const UI_OP_NAMES: ReadonlySet<string> = new Set(ui.schemas.map((o) => o.properties.op.const));
+export const UI_OP_NAMES: ReadonlySet<string> = new Set([...ui.schemas, ...decks.schemas].map((o) => o.properties.op.const));
 
 export const OP_SCHEMAS: readonly OpSchema[] = MODULES.flatMap((m) => m.schemas);
 

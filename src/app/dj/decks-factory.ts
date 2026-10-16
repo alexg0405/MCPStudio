@@ -49,7 +49,16 @@ export function decksDepsFor(s: Services): DecksDeps {
   };
 }
 
-export function createDecksFactory(services: () => Services): DecksFactory {
+/** The decks factory, with a way to look at the decks without starting them (null until something made them). */
+export type DecksAccess = DecksFactory & { peek(): DecksApi | null };
+
+export function createDecksFactory(services: () => Services): DecksAccess {
   let made: Promise<DecksApi> | null = null;
-  return () => (made ??= import('./decks').then(({ createDecks }) => createDecks(decksDepsFor(services()))));
+  let api: DecksApi | null = null;
+  const get = () =>
+    (made ??= import('./decks').then(({ createDecks }) => {
+      api = createDecks(decksDepsFor(services()));
+      return api;
+    }));
+  return Object.assign(get, { peek: () => api });
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // CPU benchmark of every built-in worklet kernel (see test/bench/plugin-bench.ts for what it measures).
-//   npm run bench:plugins -- [--only chorus,reverb] [--reps 5] [--seconds 4] [--json]
+//   npm run bench:plugins -- [--only chorus,reverb] [--reps 5] [--seconds 4] [--json] [--automate]
+// --automate: steady vs automated (float params swept by a slow sine), with the ratio. See test/bench/plugin-bench.ts.
 // Bundles the benchmark with rolldown (the bundler Vite uses for the worklets) and runs it in Node,
 // so kernels are measured the way production runs them rather than through a test runner's module
 // wrappers.

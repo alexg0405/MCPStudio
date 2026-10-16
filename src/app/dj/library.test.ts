@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { fakeAnalysis } from '@core/dj/fake-analysis';
 import type { TrackAnalysis } from '@core/dj/types';
+import { encodeWav } from '@core/io/wav';
+import { newId } from '@core/model/ids';
+import { relinkMissingSamples } from '../actions/flp-import';
+import { createMemoryBlobStore } from '../persistence/blob-store';
 import { createTestServices } from '../testing';
 import { fakeAnalyzer, setTrackAnalyzer } from './analyzer';
 import { analyzeLibrary, library, type LibrarySong } from './library';
+import { makeMix } from './mix';
 
 const hashOf = (n: number) => String(n).padStart(64, '0');
 const song = (n: number): LibrarySong => ({
@@ -62,5 +67,36 @@ describe('analyzing the library', () => {
     await analyzeLibrary(s);
     expect(library.getState().analyzerMissing).toBe(false);
     expect(analyzer.calls).toBe(1);
+  });
+});
+
+describe('finding the samples of a DJ mix again', () => {
+  it('keeps the mix pointing at the song when its audio is found (File > Find missing samples)', async () => {
+    const specs = [
+      { name: 'Alpha', bpm: 124 },
+      { name: 'Bravo', bpm: 126 },
+    ];
+    const byHash = new Map<string, TrackAnalysis>();
+    const list = specs.map((sp, i) => {
+      const hash = hashOf(100 + i);
+      const analysis = fakeAnalysis({ bpm: sp.bpm, hash, bars: 64 });
+      byHash.set(hash, analysis);
+      return {
+        ref: { id: newId.sample(), name: sp.name, source: { kind: 'embedded' as const, hash, ext: 'wav' }, durationSec: analysis.durationSec, channels: 2 },
+        title: sp.name,
+      };
+    });
+    setTrackAnalyzer(fakeAnalyzer(byHash));
+    const s = createTestServices();
+    await makeMix(s, list, { order: 'keep', energy: 'party', transition: 'auto', mixTempo: 'follow' });
+    expect(s.doc.getState().project.dj!.songs).toHaveLength(2);
+    const store = createMemoryBlobStore();
+    const wav = encodeWav([new Float32Array(4800).fill(0.1)], 48000, { bitDepth: 16 });
+    const res = await relinkMissingSamples(s, [{ name: 'Alpha.wav', arrayBuffer: async () => wav.slice().buffer }], { store });
+    expect(res.found).toEqual(['Alpha']);
+    const after = s.doc.getState().project;
+    for (const song of after.dj!.songs) expect(after.samples[song.sampleId], song.title).toBeDefined();
+    expect(after.dj!.songs.map((x) => x.title)).toEqual(['Alpha', 'Bravo']);
+    expect(Object.keys(after.dj!.tweaks).every((id) => after.samples[id as never])).toBe(true);
   });
 });

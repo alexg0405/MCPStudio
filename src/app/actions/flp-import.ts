@@ -227,6 +227,17 @@ export async function relinkMissingSamples(
         for (const fx of ins.fx)
           if (fx.plugin.samples)
             for (const [slot, id] of Object.entries(fx.plugin.samples)) fx.plugin.samples[slot] = swap(id) as SampleId;
+      // A DJ mix names its songs by sample id, and tweaks its transitions by the incoming song's id.
+      if (d.dj) {
+        for (const song of d.dj.songs) song.sampleId = swap(song.sampleId) as SampleId;
+        for (const [id, tweak] of Object.entries(d.dj.tweaks)) {
+          const to = swap(id as SampleId);
+          if (to && to !== id) {
+            d.dj.tweaks[to] = tweak;
+            delete d.dj.tweaks[id];
+          }
+        }
+      }
       for (const id of swaps.keys()) delete d.samples[id];
     });
   }

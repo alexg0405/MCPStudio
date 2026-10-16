@@ -1,0 +1,16 @@
+#!/bin/sh
+# AGstudio's MCP server over stdio, for apps that start MCP servers as programs (Claude Desktop).
+# Finds Node (not on PATH for apps started from the Dock), then runs agstudio-mcp.mjs next to this
+# file, which relays to AGstudio's MCP endpoint. See "Control AGstudio from AI apps (MCP)" in the README.
+src="$0"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+here="$(cd -P "$(dirname "$src")" && pwd)"
+for node in "$HOME/.local/node/bin/node" "$(command -v node 2>/dev/null)" /opt/homebrew/bin/node /usr/local/bin/node; do
+  if [ -n "$node" ] && [ -x "$node" ]; then exec "$node" "$here/agstudio-mcp.mjs" "$@"; fi
+done
+echo "agstudio-mcp: Node.js was not found. Install Node 22 (nodejs.org) or put it at ~/.local/node/bin/node." >&2
+exit 1

@@ -35,6 +35,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
   const services = useServices();
   const pl = useStore(services.editor, (s) => s.playlist);
   const set = services.editor.getState().setPlaylist;
+  const follow = useStore(services.prefs, (p) => p.followPlayhead);
   return (
     <div className={styles.toolbar}>
       <div className={styles.tools}>
@@ -82,6 +83,16 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
           +
         </button>
       </span>
+      <button
+        tabIndex={-1}
+        className={`${styles.tool} ${follow ? styles.toolOn : ''}`}
+        aria-pressed={follow}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => services.commands.run('view.followPlayhead')}
+        data-hint={`Follow playhead ${follow ? 'on' : 'off'}: while playing, the view scrolls along so the playhead stays in sight (scrolling by hand pauses it until the playhead is back on screen)`}
+      >
+        Follow
+      </button>
       <span className={styles.help}>
         Click an empty spot for a menu · drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask Studio pill (or a marker's mark) asks Studio about a part
       </span>

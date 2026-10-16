@@ -9,7 +9,7 @@
   -webkit-backdrop-filter: var(--ag-blur);
   border-radius: var(--ag-radius-lg);
   box-shadow: var(--ag-elev-2);
-  animation: ag-float-in var(--ag-dur) var(--ag-ease);
+  animation: ag-menu-in 110ms var(--ag-ease);
 }
 
 .item {
@@ -97,6 +97,49 @@
   text-transform: uppercase;
 }
 
+/* The menu's first label as its header, with a small × on the right. */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 1px 0 0 22px;
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: transparent;
+  color: var(--ag-text-dim);
+  cursor: pointer;
+  transition:
+    background var(--ag-dur) var(--ag-ease),
+    color var(--ag-dur) var(--ag-ease);
+}
+
+.close:hover {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
 .swatches {
   display: grid;
   grid-template-columns: repeat(5, 18px);
@@ -130,9 +173,12 @@
   outline: none;
 }
 
-@keyframes ag-float-in {
+/*
+ * A quick fade in. No transform: a submenu panel is positioned inside its parent panel (the blur makes
+ * that its containing block), and a moving parent would carry it off its row.
+ */
+@keyframes ag-menu-in {
   from {
     opacity: 0;
-    transform: translateY(-4px);
   }
 }

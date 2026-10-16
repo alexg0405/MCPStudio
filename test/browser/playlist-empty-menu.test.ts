@@ -1,8 +1,10 @@
 /**
  * Clicking an empty spot of the playlist (headless Chrome, the real React shell, test services with the
- * fake engine): a click opens the empty-spot menu instead of placing a clip; Esc and an outside click
- * close it; its items place a pattern and ask Studio about the bar; a drag on empty space still places
- * the current pattern and the Select tool still rubber-bands.
+ * fake engine): a click opens the empty-spot menu instead of placing a clip; its ×, Esc and an outside
+ * click close it (and the outside click does nothing else); it stays on screen at the edges and its
+ * submenu opens beside its row; its items place a pattern and ask Studio about the bar; a drag on empty
+ * space still places the current pattern and the Select tool still rubber-bands. Then Follow playhead:
+ * the view scrolls along while playing and holds still after a hand scroll.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
@@ -10,13 +12,15 @@ import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createTestServices } from '@app/testing';
 import type { LaneId, PatternId } from '@core/model/types';
-import { removeClips } from '@core/ops/playlist';
+import { newId } from '@core/model/ids';
+import { addClips, removeClips } from '@core/ops/playlist';
 import { registerFeatures } from '@ui/features';
 import { askStore, closeAsk } from '@ui/features/ask-ai/ask-state';
 import { installKeyboard } from '@ui/keyboard';
 import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
-import { closeContextMenu } from '@ui/controls/ContextMenu';
+import { closeContextMenu, showContextMenu } from '@ui/controls/ContextMenu';
+import { HEADER_WIDTH } from '@ui/features/playlist/render';
 import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
@@ -133,6 +137,110 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 30_000 }, () => {
     expect(clips()).toEqual([]);
   });
 
+  it('its header has a × that closes it', async () => {
+    await userEvent.click(grid(), { position: spot(3, 2) });
+    await until(() => !!menu());
+    const close = menu()!.querySelector<HTMLElement>('button[aria-label="Close (Esc)"]')!;
+    expect(close.getAttribute('data-hint')).toBe('Close (Esc)');
+    // Top right, on the header's row ("Track 3 · bar 3").
+    const m = menu()!.getBoundingClientRect();
+    const r = close.getBoundingClientRect();
+    expect(m.right - r.right).toBeLessThan(10);
+    expect(r.top - m.top).toBeLessThan(12);
+    expect(close.parentElement!.textContent).toContain('bar 3');
+    await userEvent.click(close);
+    await until(() => !menu());
+    expect(clips()).toEqual([]);
+  });
+
+  it('a click elsewhere on the grid only closes it: no new menu, no clip', async () => {
+    await userEvent.click(grid(), { position: spot(2, 0) });
+    await until(() => !!menu());
+    await userEvent.click(grid(), { position: spot(7, 3) });
+    await frames(3);
+    expect(menu()).toBeNull();
+    expect(clips()).toEqual([]);
+    // A right-click elsewhere (with the draw tool it deletes) also only closes it.
+    await userEvent.click(grid(), { position: spot(2, 0) });
+    await until(() => !!menu());
+    await userEvent.click(grid(), { position: spot(7, 3), button: 'right' });
+    await frames(3);
+    expect(menu()).toBeNull();
+    // The next click opens it again.
+    await userEvent.click(grid(), { position: spot(7, 3) });
+    await until(() => !!menu());
+    expect(menu()!.textContent).toContain('bar 7');
+  });
+
+  it('the keyboard moves through it: ↓ to the first item, Enter picks it', async () => {
+    await userEvent.click(grid(), { position: spot(5, 0) });
+    await until(() => !!menu());
+    await userEvent.keyboard('{ArrowDown}');
+    expect(document.activeElement?.textContent).toContain('Place “');
+    await userEvent.keyboard('{Enter}');
+    await until(() => !menu());
+    expect(clips()).toMatchObject([{ start: 4 * BAR, laneId: lanes[0] }]);
+  });
+
+  it('near the bottom-right corner it opens above and left of the pointer, inside the window', async () => {
+    const r = grid().getBoundingClientRect();
+    const at = { x: r.width - 30, y: r.height - 20 };
+    await userEvent.click(grid(), { position: at });
+    await until(() => !!menu() && menu()!.style.visibility !== 'hidden');
+    const m = menu()!.getBoundingClientRect();
+    expect(m.left).toBeGreaterThanOrEqual(0);
+    expect(m.top).toBeGreaterThanOrEqual(0);
+    expect(m.right).toBeLessThanOrEqual(window.innerWidth);
+    expect(m.bottom).toBeLessThanOrEqual(window.innerHeight);
+    // Flipped: it doesn't open under the pointer.
+    expect(m.right).toBeLessThanOrEqual(r.left + at.x + 1);
+    expect(m.bottom).toBeLessThanOrEqual(r.top + at.y + 1);
+    // Its submenu opens beside its row (flipped to the left here), on screen.
+    await userEvent.hover(item('Place a pattern…')!);
+    await until(() => document.querySelectorAll('[role="menu"]').length === 2);
+    const sub = document.querySelectorAll<HTMLElement>('[role="menu"]')[1]!;
+    await until(() => sub.style.visibility !== 'hidden');
+    const row = item('Place a pattern…')!.getBoundingClientRect();
+    const sr = sub.getBoundingClientRect();
+    expect(Math.abs(sr.top - (row.top - 5))).toBeLessThan(2);
+    expect(sr.right).toBeLessThanOrEqual(row.left + 1);
+    expect(sr.left).toBeGreaterThanOrEqual(0);
+  });
+
+  it('a submenu opens right beside its row and stays open on the way to it', async () => {
+    showContextMenu({ x: 300, y: 200 }, [
+      { kind: 'label', label: 'Header' },
+      { kind: 'submenu', label: 'More', items: [{ label: 'Inner', onSelect: () => {} }] },
+      { label: 'Below', onSelect: () => {} },
+    ]);
+    await until(() => !!menu() && menu()!.style.visibility !== 'hidden');
+    const more = item('More')!;
+    await userEvent.hover(more);
+    await until(() => document.querySelectorAll('[role="menu"]').length === 2);
+    const sub = document.querySelectorAll<HTMLElement>('[role="menu"]')[1]!;
+    await until(() => sub.style.visibility !== 'hidden');
+    const row = more.getBoundingClientRect();
+    const sr = sub.getBoundingClientRect();
+    expect(Math.abs(sr.left - row.right)).toBeLessThan(2);
+    expect(Math.abs(sr.top - (row.top - 5))).toBeLessThan(2);
+    // Crossing the row below on the way there doesn't snap it shut (pointer moves, back to back).
+    const inner = sub.querySelector<HTMLElement>('[role="menuitem"]')!;
+    const below = item('Below')!;
+    const move = (from: Element, to: Element) => {
+      from.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: to, pointerId: 1, pointerType: 'mouse' }));
+      to.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: from, pointerId: 1, pointerType: 'mouse' }));
+    };
+    move(more, below);
+    move(below, inner);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(document.querySelectorAll('[role="menu"]').length).toBe(2);
+    // Resting on another row closes it after a moment.
+    move(inner, below);
+    await until(() => document.querySelectorAll('[role="menu"]').length === 1);
+    await userEvent.keyboard('{Escape}');
+    await until(() => !menu());
+  });
+
   it('“Place … here” places the current pattern at that bar and track (one undo step)', async () => {
     const name = s.doc.getState().project.patterns[pattern]!.name;
     await userEvent.click(grid(), { position: spot(4, 1) });
@@ -185,5 +293,138 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 30_000 }, () => {
     await frames(2);
     expect(menu()).toBeNull();
     expect(s.doc.getState().project.playlist.clips[placed!.id]?.start).toBe(5 * BAR);
+  });
+
+  describe('follow playhead', () => {
+    const playheadEl = () => host.querySelector<HTMLElement>('[data-window-type="playlist"] [class*="playhead"]')!;
+    /** The playhead's x in the grid (NaN while it is off-screen). */
+    const playheadX = () => {
+      const el = playheadEl();
+      if (el.style.display === 'none') return NaN;
+      return Number(/translateX\(([-\d.]+)px\)/.exec(el.style.transform)?.[1]) - HEADER_WIDTH;
+    };
+    const width = () => grid().getBoundingClientRect().width;
+    /** Ticks across the view (pxPerTick 0.025). */
+    const visible = () => width() / 0.025;
+    /** The playhead sits about 15% in from the left. */
+    const nearLeft = () => Math.abs(playheadX() / width() - 0.15) < 0.01;
+    const play = (tick: number) => {
+      s.fakeEngine.startTick = tick;
+      s.engine.play();
+    };
+    const wheel = (deltaY: number) =>
+      grid().dispatchEvent(new WheelEvent('wheel', { deltaY, shiftKey: true, bubbles: true, cancelable: true }));
+    const scrollHome = async () => {
+      wheel(-1e7);
+      await frames(2);
+    };
+
+    beforeEach(() => {
+      closeContextMenu();
+      s.engine.stop();
+      s.view.getState().setMode('song');
+      s.prefs.getState().set({ followPlayhead: true });
+      // A long song, so the view can scroll a long way.
+      s.history.transact('long song', (d) =>
+        addClips(d, [{ kind: 'pattern', id: newId.clip(), laneId: lanes[3]!, start: 200 * BAR, length: BAR, patternId: pattern, offset: 0 }]),
+      );
+    });
+
+    afterAll(async () => {
+      s.engine.stop();
+      s.fakeEngine.startTick = 0;
+      s.view.getState().setMode('pattern');
+      await scrollHome();
+    });
+
+    it('turns the page as the playhead nears the right edge, gliding so it lands near the left', async () => {
+      await scrollHome();
+      play(0.5 * visible());
+      await frames(3);
+      expect(playheadX() / width()).toBeCloseTo(0.5, 1);
+      s.fakeEngine.startTick = 0.9 * visible();
+      await frames(3);
+      // On its way, not there in one jump.
+      const mid = playheadX() / width();
+      expect(mid).toBeLessThan(0.89);
+      expect(mid).toBeGreaterThan(0.16);
+      await until(nearLeft);
+      // Saved for the next time once playback stops (after the glide lands).
+      await new Promise((r) => setTimeout(r, 400));
+      s.engine.stop();
+      await frames(2);
+      expect(s.editor.getState().playlist.scrollTick).toBeCloseTo(0.75 * visible(), 0);
+    });
+
+    it('brings back a playhead that jumped off-screen (a loop or a seek); the toolbar toggle turns it off', async () => {
+      await scrollHome();
+      play(40 * BAR);
+      await until(nearLeft);
+      s.engine.stop();
+      await frames(2);
+      const toggle = host.querySelector<HTMLElement>('[data-window-type="playlist"] button[aria-pressed]')!;
+      expect(toggle.getAttribute('data-hint')).toMatch(/^Follow playhead on/);
+      await userEvent.click(toggle);
+      expect(s.prefs.getState().followPlayhead).toBe(false);
+      // Off: the view stays put and the playhead runs off it.
+      play(80 * BAR);
+      await frames(4);
+      expect(playheadX()).toBeNaN();
+      s.engine.stop();
+      // The command (in the View menu, and what Studio runs) has a plain hint and takes on/off.
+      expect(s.commands.get('view.followPlayhead')?.hint).toMatch(/playhead stays in view/);
+      await s.commands.run('view.followPlayhead', true);
+      expect(s.prefs.getState().followPlayhead).toBe(true);
+    });
+
+    it('a hand scroll pauses it until the playhead is back in view; playing again resumes it', async () => {
+      await scrollHome();
+      play(0.3 * visible());
+      await frames(3);
+      // Scroll on by hand, past the playhead (it goes off to the left): following waits…
+      wheel(2 * width());
+      await frames(2);
+      expect(playheadX()).toBeNaN();
+      s.fakeEngine.startTick = 0.5 * visible();
+      await frames(6);
+      expect(playheadX()).toBeNaN();
+      // …until the playhead comes into view; then it follows and turns the page again.
+      s.fakeEngine.startTick = 2.3 * visible();
+      await new Promise((r) => setTimeout(r, 1300));
+      await frames(2);
+      s.fakeEngine.startTick = 2.95 * visible();
+      await until(nearLeft);
+      // Scrolled back the other way (playhead off to the right): it stays paused while playing…
+      wheel(-1e7);
+      s.fakeEngine.startTick = 3 * visible();
+      await frames(6);
+      expect(playheadX()).toBeNaN();
+      // …and playing again picks it up at once.
+      s.engine.stop();
+      await frames(1);
+      play(3 * visible());
+      await until(nearLeft);
+    });
+
+    it('holds still while a menu is open, and catches up when it closes', async () => {
+      await scrollHome();
+      play(0.2 * visible());
+      await frames(2);
+      showContextMenu({ x: 300, y: 300 }, [{ label: 'Something', onSelect: () => {} }]);
+      await until(() => !!menu());
+      s.fakeEngine.startTick = 2.5 * visible();
+      await frames(4);
+      expect(playheadX()).toBeNaN();
+      closeContextMenu();
+      await until(nearLeft);
+    });
+
+    it('starting playback closes an open menu', async () => {
+      showContextMenu({ x: 300, y: 300 }, [{ label: 'Something', onSelect: () => {} }]);
+      await until(() => !!menu());
+      await frames(2);
+      play(0);
+      await until(() => !menu());
+    });
   });
 });

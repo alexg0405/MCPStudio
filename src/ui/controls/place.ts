@@ -37,3 +37,35 @@ export function placeBeside(
   const o = order.map((side) => at[side]).find((c) => c.ok) ?? { x: r.right - w - 24, y: r.bottom - h - 24 };
   return { x: clamp(o.x, 8, vw - w - 8), y: clamp(o.y, 8, vh - h - 8) };
 }
+
+/**
+ * Where a menu `w`×`h` opened at the pointer (`x`, `y`) goes in a `vw`×`vh` viewport: below and right
+ * of the pointer; flipped above it or to its left where it would spill off, so it doesn't open under the
+ * pointer; pushed inside the viewport (`margin` px) when it fits neither way.
+ */
+export function placeAtPointer(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  vw: number,
+  vh: number,
+  margin = 4,
+): { left: number; top: number } {
+  const axis = (p: number, size: number, view: number) => {
+    if (p + size <= view - margin) return Math.max(margin, p);
+    if (p - size >= margin) return p - size;
+    return Math.max(margin, view - size - margin);
+  };
+  return { left: axis(x, w, vw), top: axis(y, h, vh) };
+}
+
+/**
+ * A panel inside another one (a submenu) is `position: fixed`, but the outer panel's backdrop blur makes
+ * it the panel's containing block: viewport coordinates have to be made relative to the outer panel.
+ */
+export function relativeToContainer(at: { left: number; top: number }, container: Element | null): { left: number; top: number } {
+  if (!container) return at;
+  const r = container.getBoundingClientRect();
+  return { left: at.left - r.left, top: at.top - r.top };
+}

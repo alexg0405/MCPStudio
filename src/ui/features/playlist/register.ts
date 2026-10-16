@@ -1,6 +1,6 @@
 import type { Services } from '@app/services';
 import type { PlaylistTool } from '@app/stores/editor';
-import { registerMenu } from '../../shell/menus';
+import { addMenuItems, cmd, registerMenu, sep } from '../../shell/menus';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { Playlist } from './Playlist';
@@ -31,6 +31,19 @@ export function register(services: Services): void {
   });
 
   const { commands, keymap } = services;
+  // Follow playhead (FL's auto-scroll), for the playlist and the piano roll alike.
+  commands.register<boolean | undefined>({
+    id: 'view.followPlayhead',
+    title: 'Follow playhead',
+    category: 'View',
+    hint: 'While playing, the playlist and piano roll scroll along so the playhead stays in view (scrolling by hand pauses it until the playhead is back on screen)',
+    argsHint: 'true to turn it on, false to turn it off (leave out to switch it)',
+    checked: (s) => s.prefs.getState().followPlayhead,
+    run: (s, on) => s.prefs.getState().set({ followPlayhead: typeof on === 'boolean' ? on : !s.prefs.getState().followPlayhead }),
+  });
+  addMenuItems('view', [cmd('view.followPlayhead', 58)]);
+  addMenuItems('playlist', [cmd('view.followPlayhead', 1), sep(2)]);
+
   const focus = { focus: ['playlist'] as const };
   const hasSel = (s: Services) => s.editor.getState().clipSelection.length > 0;
   for (const [tool, chord] of [

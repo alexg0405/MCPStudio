@@ -871,10 +871,14 @@ export class BeatAssistant {
     this.abort = abort;
     this.store.setState({ phase: 'listening', listening: { label: 'Finishing up', fraction: 0 } });
     try {
+      // The answer's undo step; when it changed nothing itself (a request that is only leveling or a
+      // filter), the first step that edits makes it, and the steps after it join it.
+      let own = entry;
       for (const item of items) {
+        const was = this.s.history.status().cursor;
         const res = await afterStepFor(item.kind)!(item, {
           s: this.s,
-          entry,
+          entry: own,
           signal: abort.signal,
           progress: (l, f) => {
             label = l;
@@ -883,10 +887,14 @@ export class BeatAssistant {
           },
           whenQuiet,
         });
+        const now = this.s.history.status().cursor;
+        const made = own === null && now !== was;
+        if (made) own = now;
         if (res)
           this.say('assistant', res.message, {
             ...(res.changes?.length ? { changes: res.changes } : {}),
             ...(res.warnings?.length ? { warnings: res.warnings } : {}),
+            ...(made ? { undo: now } : {}),
           });
       }
     } catch (e) {

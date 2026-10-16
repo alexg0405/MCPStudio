@@ -68,6 +68,39 @@ describe('Studio chat edge cases', () => {
     expect((a as unknown as { approvals: Map<number, unknown> }).approvals.size).toBe(0);
   });
 
+  it('an answer that only levels or filters gets one Undo that takes back everything its steps did', async () => {
+    const { registerAfterStep } = await import('./after-steps');
+    const s = createTestServices();
+    const before = s.doc.getState().project;
+    const edit = (label: string, f: (d: typeof before) => void) => (c: { s: typeof s; entry: number | null }) =>
+      c.s.history.transact(label, (d) => f(d as never), c.entry !== null ? { amend: c.entry } : {});
+    const offA = registerAfterStep('mode', async (_i, c) => {
+      edit('step A', (d) => void (d.transport.swing = 0.2))(c);
+      return { message: 'Step A done.' };
+    });
+    const offB = registerAfterStep('metronome', async (_i, c) => {
+      edit('step B', (d) => void (d.transport.bpm = 99))(c);
+      return { message: 'Step B done.' };
+    });
+    try {
+      const a = new BeatAssistant(s, { fetch: answering([{ op: 'transport', mode: 'song', metronome: true }]) });
+      const steps = s.history.steps().done.length;
+      await a.send('do both');
+      // One undo step for both, offered on the first message that made it.
+      expect(s.history.steps().done).toHaveLength(steps + 1);
+      const said = a.store.getState().messages.filter((m) => m.from === 'assistant');
+      const withUndo = said.filter((m) => m.undo !== undefined);
+      expect(withUndo).toHaveLength(1);
+      expect(withUndo[0]).toBe(said.find((m) => /^Step/.test(m.text)));
+      s.history.goTo(withUndo[0]!.undo! - 1);
+      expect(s.doc.getState().project.transport.bpm).toBe(before.transport.bpm);
+      expect(s.doc.getState().project.transport.swing).toBe(before.transport.swing);
+    } finally {
+      offA();
+      offB();
+    }
+  });
+
   it('Stop works while it is still checking how to reach Claude', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

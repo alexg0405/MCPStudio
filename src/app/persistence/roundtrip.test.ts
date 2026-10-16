@@ -24,10 +24,10 @@ import { buildProjectFile, openProjectBlob, openProjectFile, writeProjectTo } fr
 
 const VIEW = { mode: 'song', windows: [{ id: 'w1', type: 'playlist', x: 10, y: 20 }], loop: null };
 
-const sameJson = (a: unknown, b: unknown) => JSON.parse(JSON.stringify(a)) as unknown as typeof b;
+const sameJson = <T>(a: T): T => JSON.parse(JSON.stringify(a)) as T;
 
 async function roundTrip(project: Project, view: unknown = VIEW) {
-  const expected = repairProject(sameJson(project, project)).project;
+  const expected = repairProject(sameJson(project)).project;
   const store = createMemoryBlobStore();
   const results: Record<string, { project: Project; view: unknown; repairs: string[] }> = {};
 
@@ -159,7 +159,7 @@ describe('save then open gives back the project', () => {
 
 /** Like roundTrip for projects that reference embedded samples the store doesn't have (reported as silent). */
 async function roundTripAllowMissing(project: Project): Promise<Project> {
-  const expected = repairProject(sameJson(project, project)).project;
+  const expected = repairProject(sameJson(project)).project;
   const store = createMemoryBlobStore();
   const bytes = await buildProjectFile(project, VIEW, 'test', { store });
   const opened = await openProjectFile(bytes, { store: createMemoryBlobStore() });

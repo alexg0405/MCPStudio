@@ -488,6 +488,100 @@ describe('KernelRunner sleep and the song transport', () => {
   });
 });
 
+describe('KernelRunner gliding event params', () => {
+  const TAU = 0.002;
+  const step = 1 - Math.exp(-1 / (TAU * 48000));
+  const at = (v: Float32Array, i: number) => (v.length > 1 ? v[i]! : v[0]!);
+
+  /** Records the value the kernel reads for `cut` at every frame, and whether it was a single value. */
+  class Probe extends InstrumentKernel {
+    seen = new Float32Array(4096);
+    singles: boolean[] = [];
+    noteOn() {}
+    noteOff() {}
+    render(out: Float32Array[], from: number, to: number, p: Record<string, Float32Array>) {
+      this.singles.push(p.cut!.length === 1);
+      for (let i = from; i < to; i++) {
+        this.seen[this.base + i] = at(p.cut!, i);
+        out[0]![i] = 0.1; // keeps it awake
+      }
+    }
+    base = 0;
+  }
+
+  it('moves like setTargetAtTime from the frame of the event, and is a plain value once it arrived', () => {
+    const k = new Probe(host);
+    const r = new KernelRunner(k, () => {}, [], [['cut', 0, TAU]]);
+    r.onMessage({ t: 'ev', data: pack([EV_PARAM, 40, 0, 0, 1, 0, 0]) });
+    r.process([], block(), {}, 0);
+    // Before the event: the old value. At it: still the old value, then v(m) = 1 − (1 − step)^m.
+    expect(k.seen[39]).toBe(0);
+    expect(k.seen[40]).toBe(0);
+    for (const m of [1, 10, 50, 87]) expect(k.seen[40 + m]).toBeCloseTo(1 - Math.pow(1 - step, m), 6);
+    expect(k.singles).toEqual([true, false]);
+    // It carries on over the next blocks and lands exactly on the target.
+    let f = 128;
+    for (let b = 0; b < 30; b++, f += 128) {
+      k.base = 0;
+      r.process([], block(), {}, f);
+    }
+    expect(k.singles.at(-1)).toBe(true);
+    expect(k.seen[0]).toBe(1);
+  });
+
+  it('a new target mid-glide heads there from where the value is, and a sleeping kernel lands at once', () => {
+    const k = new Probe(host);
+    const r = new KernelRunner(k, () => {}, [], [['cut', 0, TAU]]);
+    r.onMessage({ t: 'ev', data: pack([EV_PARAM, 0, 0, 0, 1, 0, 0], [EV_PARAM, 64, 0, 0, 0.5, 0, 0]) });
+    r.process([], block(), {}, 0);
+    const at64 = 1 - Math.pow(1 - step, 64);
+    expect(k.seen[64]).toBeCloseTo(at64, 6);
+    // From there towards 0.5.
+    expect(k.seen[64 + 30]).toBeCloseTo(0.5 + (at64 - 0.5) * Math.pow(1 - step, 30), 6);
+    // Events don't wake a sleeping instrument; the glide that was cut short is a plain value when it wakes.
+    let f = 128;
+    class Silent extends InstrumentKernel {
+      last = -1;
+      noteOn() {}
+      noteOff() {}
+      render(_o: Float32Array[], from: number, _t: number, p: Record<string, Float32Array>) {
+        this.last = at(p.cut!, from);
+      }
+    }
+    const s = new Silent(host);
+    const rs = new KernelRunner(s, () => {}, [], [['cut', 0, TAU]]);
+    for (let b = 0; b < 3 * 375; b++, f += 128) rs.process([], block(), {}, f);
+    expect(rs.asleep).toBe(true);
+    rs.onMessage({ t: 'ev', data: pack([EV_PARAM, f + 1, 0, 0, 0.8, 0, 0]) });
+    rs.process([], block(), {}, f);
+    expect(rs.asleep).toBe(true);
+    rs.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, f + 130, 1, 60, 1, 0, 0]) });
+    rs.process([], block(), {}, f + 128);
+    expect(rs.asleep).toBe(false);
+    expect(s.last).toBeCloseTo(0.8, 6);
+  });
+
+  it('effects get the gliding array for the whole block', () => {
+    const seen: number[] = [];
+    class Fx extends EffectKernel {
+      process(inp: Float32Array[], out: Float32Array[], n: number, p: Record<string, Float32Array>) {
+        for (let i = 0; i < n; i++) seen.push(at(p.amount!, i));
+        for (let c = 0; c < out.length; c++) out[c]!.set(inp[c]!);
+      }
+    }
+    const r = new KernelRunner(new Fx(host), () => {}, [], [['amount', 0.25, TAU]]);
+    const loud = () => [[new Float32Array(128).fill(0.3), new Float32Array(128).fill(0.3)]];
+    r.process(loud(), block(), {}, 0);
+    expect(seen.every((v) => v === 0.25)).toBe(true);
+    r.onMessage({ t: 'ev', data: pack([EV_PARAM, 128 + 10, 0, 0, 1, 0, 0]) });
+    seen.length = 0;
+    r.process(loud(), block(), {}, 128);
+    // Applied at the block's start (effects hear events a block at a time).
+    expect(seen[0]).toBe(0.25);
+    expect(seen[100]).toBeCloseTo(1 - 0.75 * Math.pow(1 - step, 100), 6);
+  });
+});
+
 describe('KernelRunner event params', () => {
   it('gives the kernel event params next to AudioParams, changing at their frame', () => {
     class Reader extends InstrumentKernel {

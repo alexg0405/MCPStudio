@@ -152,6 +152,25 @@ export async function idbSetMany(entries: ReadonlyArray<readonly [IDBValidKey, u
   });
 }
 
+/**
+ * Stores each number unless the key already holds a larger one, read and written in one transaction
+ * (so two tabs raising the same key can never lower it).
+ */
+export async function idbRaiseMany(entries: ReadonlyArray<readonly [string, number]>): Promise<void> {
+  if (entries.length === 0) return;
+  await run('readwrite', (store) => {
+    let last: IDBRequest<unknown> | undefined;
+    for (const [key, value] of entries) {
+      const got = store.get(key);
+      got.onsuccess = () => {
+        if (typeof got.result !== 'number' || got.result < value) store.put(value, key);
+      };
+      last = got;
+    }
+    return last as IDBRequest<unknown>;
+  });
+}
+
 /** Deletes several keys in one transaction. */
 export async function idbDelMany(keys: readonly IDBValidKey[]): Promise<void> {
   if (keys.length === 0) return;

@@ -213,7 +213,7 @@ export async function collectGarbage(d: CollectorDeps, opts: CollectOptions = {}
     const marks = new Map<string, number>();
     for (const [h, t] of folded) if (t !== seen.get(h)) marks.set(h, t);
     for (const [h, t] of plan.seen) marks.set(h, Math.max(marks.get(h) ?? 0, t));
-    await d.kv.set([...marks].map(([h, t]) => [seenKey(h), t] as const));
+    await d.kv.raise([...marks].map(([h, t]) => [seenKey(h), t] as const));
     if (refs.deadIds.length) await d.kv.del(refs.deadIds.map((id) => `${TAB_PREFIX}${id}`));
 
     let removed = 0;

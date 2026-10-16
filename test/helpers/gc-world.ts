@@ -3,7 +3,7 @@ import { History } from '@core/history/history';
 import { createEmptyProject } from '@core/model/defaults';
 import type { Project, SampleRef } from '@core/model/types';
 import { createBlobGuard } from '@app/storage/guard';
-import { idbKv, type GcKv } from '@app/storage/kv';
+import { memoryKv } from '@app/storage/kv';
 import { startTabRefs, type TabRefs } from '@app/storage/tab-refs';
 import type { CollectorDeps } from '@app/storage/collector';
 import { createSampleStore, installBlobGuard, type SampleStore } from '@app/persistence/blob-store';
@@ -23,7 +23,6 @@ export const DAY = 24 * 60 * 60 * 1000;
 
 let counter = 0;
 const roots: string[] = [];
-const scopes: Array<{ clear(): Promise<void> }> = [];
 
 export async function scratch(label: string): Promise<OpfsStorage> {
   const name = `agstudio-test-gc-${label}-${Date.now()}-${counter++}`;
@@ -33,29 +32,17 @@ export async function scratch(label: string): Promise<OpfsStorage> {
   return createOpfsStorage({ root: async () => dir });
 }
 
-/** The app's real IndexedDB, but every key under a scope of our own (other test files share the origin). */
-export function scopedKv(): GcKv & { clear(): Promise<void> } {
-  const p = `gctest-${Date.now()}-${counter++}|`;
-  const cut = (k: string) => k.slice(p.length);
-  const kv = {
-    entries: async (keep: (k: string) => boolean) =>
-      (await idbKv.entries((k) => k.startsWith(p) && keep(cut(k)))).map(([k, v]) => [cut(k), v] as [string, unknown]),
-    getMany: async (keys: readonly string[]) =>
-      new Map([...(await idbKv.getMany(keys.map((k) => p + k)))].map(([k, v]) => [cut(k), v] as [string, unknown])),
-    keys: async (keep: (k: string) => boolean) => (await idbKv.keys((k) => k.startsWith(p) && keep(cut(k)))).map(cut),
-    set: (e: ReadonlyArray<readonly [string, unknown]>) => idbKv.set(e.map(([k, v]) => [p + k, v] as const)),
-    del: (k: readonly string[]) => idbKv.del(k.map((x) => p + x)),
-    clear: async () => idbKv.del(await idbKv.keys((k) => k.startsWith(p))),
-  };
-  scopes.push(kv);
-  return kv;
-}
+/**
+ * The records' store. An in-memory one: other test files share this origin's IndexedDB (and one of them
+ * deletes the database), while OPFS and Web Locks, which these tests do exercise for real, are not shared
+ * that way. The IndexedDB implementation has its own tests (platform/idb.browser.test.ts).
+ */
+export const scopedKv = () => memoryKv();
 
 export async function cleanupGc(): Promise<void> {
   installBlobGuard(null);
   const opfs = await navigator.storage.getDirectory();
   for (const name of roots.splice(0)) await opfs.removeEntry(name, { recursive: true }).catch(() => {});
-  for (const s of scopes.splice(0)) await s.clear();
 }
 
 export const ref = (id: string, hash: string): SampleRef => ({ id: id as SampleRef['id'], name: id, source: { kind: 'embedded', hash, ext: 'wav' } });

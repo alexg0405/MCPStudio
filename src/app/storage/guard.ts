@@ -30,7 +30,7 @@ export function createBlobGuard(opts: BlobGuardOptions): BlobGuard {
       const last = recent.get(hash);
       if (last !== undefined && t - last < TOUCH_THROTTLE_MS && t >= last) return;
       try {
-        await opts.kv.set([[seenKey(hash), t]]);
+        await opts.kv.raise([[seenKey(hash), t]]);
         recent.set(hash, t);
       } catch (e) {
         console.warn('Could not mark a sample as in use:', e);

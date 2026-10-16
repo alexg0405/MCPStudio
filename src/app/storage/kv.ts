@@ -1,4 +1,4 @@
-import { idbDelMany, idbEntries, idbGetMany, idbKeys, idbSetMany, isIdbAvailable } from '@platform/idb';
+import { idbDelMany, idbEntries, idbGetMany, idbKeys, idbRaiseMany, idbSetMany, isIdbAvailable } from '@platform/idb';
 
 /**
  * The small key-value store the clean-up of unused audio keeps its records in (the app's IndexedDB `kv`
@@ -16,6 +16,8 @@ export interface GcKv {
   /** Keys that pass `keep`. */
   keys(keep: (key: string) => boolean): Promise<string[]>;
   set(entries: ReadonlyArray<readonly [string, unknown]>): Promise<void>;
+  /** Stores each number unless the key already holds a larger one (atomically: a "seen" mark never goes back in time). */
+  raise(entries: ReadonlyArray<readonly [string, number]>): Promise<void>;
   del(keys: readonly string[]): Promise<void>;
 }
 
@@ -49,6 +51,7 @@ export const idbKv: GcKv = {
     return (await idbKeys()).filter((k): k is string => typeof k === 'string' && keep(k));
   },
   set: (entries) => idbSetMany(entries),
+  raise: (entries) => idbRaiseMany(entries),
   del: (keys) => idbDelMany(keys),
 };
 
@@ -72,6 +75,12 @@ export function memoryKv(initial: Record<string, unknown> = {}): GcKv & { data: 
     },
     async set(entries) {
       for (const [k, v] of entries) data.set(k, structuredClone(v));
+    },
+    async raise(entries) {
+      for (const [k, v] of entries) {
+        const cur = data.get(k);
+        if (typeof cur !== 'number' || cur < v) data.set(k, v);
+      }
     },
     async del(keys) {
       for (const k of keys) data.delete(k);

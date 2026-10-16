@@ -414,7 +414,7 @@ describe('previewCollection and measureUsage', () => {
 describe('guard', () => {
   it('writes a "seen" mark, and not again within a few minutes', async () => {
     const kv = memoryKv();
-    const set = vi.spyOn(kv, 'set');
+    const set = vi.spyOn(kv, 'raise');
     let now = NOW;
     const g = createBlobGuard({ kv, hold: (fn) => fn(), now: () => now });
     await g.touch(A);
@@ -428,8 +428,14 @@ describe('guard', () => {
     expect(kv.data.get(seenKey(A))).toBe(now);
   });
 
+  it('never lowers a mark another tab raised in the meantime', async () => {
+    const kv = memoryKv({ [seenKey(A)]: NOW + 1000 });
+    await createBlobGuard({ kv, hold: (fn) => fn(), now: () => NOW }).touch(A);
+    expect(kv.data.get(seenKey(A))).toBe(NOW + 1000);
+  });
+
   it('never fails the caller when the mark cannot be written', async () => {
-    const kv: GcKv = { ...memoryKv(), set: async () => Promise.reject(new Error('quota')) };
+    const kv: GcKv = { ...memoryKv(), raise: async () => Promise.reject(new Error('quota')) };
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(createBlobGuard({ kv, hold: (fn) => fn() }).touch(A)).resolves.toBeUndefined();
     warn.mockRestore();

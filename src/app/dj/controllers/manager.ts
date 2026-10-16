@@ -312,11 +312,14 @@ export class DjControllers {
           if (data) this.handle(input.id, name, data);
         };
         input.addEventListener('midimessage', listener);
+        // Unlike `onmidimessage`, listening with addEventListener does not open the port by itself.
+        void Promise.resolve(input.open?.()).catch(() => {});
         this.ports.set(input.id, { input, listener });
         this.interpreters.set(input.id, new MappingInterpreter(this.mappingFor(name)));
       }
       const out = outputs.find((o) => o.name === input.name && o.state !== 'disconnected');
       if (!this.leds.has(name) && out) {
+        void Promise.resolve(out.open?.()).catch(() => {});
         const led = new LedFeedback((bytes) => {
           try {
             out.send(bytes);

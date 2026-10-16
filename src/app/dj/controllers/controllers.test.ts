@@ -339,7 +339,7 @@ describe('MIDI learn', () => {
     const { c, decks, devices, storage } = await setup({ devices: ['Mystery pad'] });
     const pad = devices['Mystery pad']!.input;
     c.learnTarget('A.play');
-    expect(c.store.getState().learn?.message).toMatch(/press the button/);
+    expect(c.store.getState().learn?.message).toMatch(/Press the button/);
     pad.emit(msg.noteOn(3, 36));
     expect(c.store.getState().learn).toBeNull();
     expect(c.mappingFor('Mystery pad').bindings).toEqual([{ input: { type: 'note', channel: 3, note: 36 }, target: 'A.play' }]);
@@ -497,6 +497,13 @@ describe('mappings: saved, exported, imported, reset', () => {
 });
 
 describe('access and devices', () => {
+  it('opens each input port (listening with addEventListener does not open it by itself)', async () => {
+    const { devices, access } = await setup({ devices: ['DDJ-400'] });
+    expect(devices['DDJ-400']!.input.opened).toBe(true);
+    const late = access.plug('Late pad');
+    expect(late.input.opened).toBe(true);
+  });
+
   it('handles a denied permission gracefully', async () => {
     const decks = new FakeDecks();
     const toasts: string[] = [];

@@ -3,14 +3,21 @@
 export class FakeMidiInput extends EventTarget {
   readonly type = 'input';
   state: 'connected' | 'disconnected' = 'connected';
+  /** Set by `open()`: with addEventListener a real port only delivers messages once it is open. */
+  opened = false;
   constructor(
     readonly id: string,
     readonly name: string,
   ) {
     super();
   }
-  /** The controller sends a message. */
+  open(): Promise<this> {
+    this.opened = true;
+    return Promise.resolve(this);
+  }
+  /** The controller sends a message (nothing is delivered while the port is closed, as in Chrome). */
   emit(bytes: number[]): void {
+    if (!this.opened) return;
     const e = new Event('midimessage');
     Object.defineProperty(e, 'data', { value: new Uint8Array(bytes) });
     this.dispatchEvent(e);

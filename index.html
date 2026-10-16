@@ -14,11 +14,15 @@
       }
     </style>
     <script>
-      // Light themes load on a light page (no dark flash).
+      // The saved theme is on the page before anything paints: no flash of the default dark stone before a
+      // light or slate theme (the stylesheet keys its colors off data-theme; the app re-applies it when it starts).
       try {
         var theme = JSON.parse(localStorage.getItem('agstudio:prefs:v1') || '{}').theme;
-        var bg = theme === 'carrara' ? '#e9e6e0' : theme === 'light' ? '#e6e9ec' : '';
-        if (bg) document.documentElement.style.setProperty('--boot-bg', bg);
+        var boot = { carrara: '#e9e6e0', light: '#e6e9ec', classic: '#1b2024', midnight: '#0f1215', graphite: '#1e1e1e' };
+        if (boot[theme]) {
+          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.style.setProperty('--boot-bg', boot[theme]);
+        }
       } catch (e) {}
     </script>
   </head>

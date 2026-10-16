@@ -67,13 +67,20 @@ export class PhaserKernel extends EffectKernel<P> {
           const k = o + s;
           const y = a * v + (this.x1[k] as number) - a * (this.y1[k] as number);
           this.x1[k] = v;
-          this.y1[k] = flush(y);
+          this.y1[k] = y;
           v = y;
         }
-        this.fb[c] = flush(v);
+        this.fb[c] = v;
         (output[c] as Float32Array)[i] = (1 - mix) * x + mix * v;
       }
     }
+    // Denormals and NaN are flushed once per block: states only fall that far over hundreds of frames.
+    for (let k = 0; k < 2 * MAX_STAGES; k++) {
+      this.x1[k] = flush(this.x1[k] as number);
+      this.y1[k] = flush(this.y1[k] as number);
+    }
+    this.fb[0] = flush(this.fb[0] as number);
+    this.fb[1] = flush(this.fb[1] as number);
   }
 
   private target(i: number, sync: number, rate: number, depth: number, low: number, high: number, width: number) {

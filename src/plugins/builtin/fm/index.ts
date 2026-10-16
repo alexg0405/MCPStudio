@@ -1,4 +1,4 @@
-import { defineWorkletInstrument, type ParamValue } from '@agstudio/sdk';
+import { defineWorkletInstrument, FM_ALGORITHMS, type ParamValue } from '@agstudio/sdk';
 import processor from './fm.worklet.ts?worker&url';
 import { FM_ID, fmParams, opParam } from './params';
 import { FmUI } from './ui';
@@ -37,7 +37,13 @@ export default defineWorkletInstrument({
     'Four-operator FM synth (8 classic algorithms, feedback, an envelope per operator) for electric pianos, bells, basses, brass and organs.',
   params: fmParams,
   processor,
-  tailTime: 4,
+  // At least 4 s; longer when a carrier's release is (it reaches −60 dB at its time, −100 dB at 1.7×).
+  tailTime: (v) => {
+    const algorithm = FM_ALGORITHMS[Number(v.algorithm) - 1] ?? FM_ALGORITHMS[0];
+    let release = 0;
+    for (const c of algorithm?.carriers ?? [0]) release = Math.max(release, Number(v[opParam(c + 1).release]));
+    return Math.max(4, 1.7 * release);
+  },
   ui: FmUI,
   presets: [
     { name: 'Init: simple two-operator tone', params: {} },

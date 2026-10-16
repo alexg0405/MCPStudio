@@ -386,7 +386,10 @@ a whole number of frames at every rate: `latency: (sampleRate) => frames(sampleR
 the same `frames(sampleRate)` (the Limiter, Lo-Fi and Tune do this).
 
 **Tails.** `tailTime` (seconds, can be a getter) is how long the effect keeps sounding after its input stops (reverb,
-delay feedback); exports add it to the render length. `reset()` clears internal buffers.
+delay feedback); exports add it to the render length. `reset()` clears internal buffers. Instruments have a `tailTime` too
+(how long a note rings after its key goes up); when a release knob can make it long, follow the knob: a getter on the
+instance, or for worklet plugins `tailTime: (values) => Math.max(1, 1.7 * values.release)` (a release reaches −60 dB at
+its time and −100 dB at 1.7×). A fixed tail shorter than the release cuts the end of exported songs.
 
 **Tempo and export.** `host.transport.bpm` and `host.transport.onTempo(cb)` (it returns an unsubscribe: call it in
 `dispose`) drive tempo-synced effects. Exports run the same code in an OfflineAudioContext (`host.offline` is true and

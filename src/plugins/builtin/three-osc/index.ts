@@ -94,7 +94,9 @@ export default defineInstrument({
 
     return {
       output: out,
-      tailTime: 1,
+      get tailTime() {
+        return Math.max(1, P.release.value);
+      },
 
       noteOn({ time, key, velocity, noteId, fine }) {
         const t = Math.max(time, ac.currentTime);

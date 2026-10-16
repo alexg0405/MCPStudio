@@ -29,7 +29,8 @@ export default defineWorkletInstrument({
     'Wavetable synth: two morphing oscillators (10 tables) with unison, sub and noise, a filter, two envelopes, two tempo-syncable LFOs and a 6-slot mod matrix, for pads, leads, basses and evolving sounds.',
   params: wavetableParams,
   processor,
-  tailTime: 4,
+  // At least 4 s; longer when the amp release is (it reaches −60 dB at its time, −100 dB at 1.7×).
+  tailTime: (v) => Math.max(4, 1.7 * Number(v.ampRelease)),
   ui: WavetableUI,
   setup(port) {
     const bank = factoryBank();

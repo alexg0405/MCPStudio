@@ -87,7 +87,12 @@ export default defineInstrument({
 
     return {
       output: out,
-      tailTime: 0.2,
+      // With the envelope, the release; without it a note plays the whole sample even after its key is up
+      // (known once the sample is decoded, which the export's tail probe doesn't do).
+      get tailTime() {
+        const release = Math.min(buffer ? buffer.duration : Infinity, params.release.value);
+        return Math.max(0.2, params.envelope.value ? release : Math.min(10, buffer ? buffer.duration : 0));
+      },
 
       noteOn({ time, key, velocity, noteId, pan, fine }) {
         const t = Math.max(time, ac.currentTime);

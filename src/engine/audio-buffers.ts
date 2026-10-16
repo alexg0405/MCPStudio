@@ -5,8 +5,8 @@
  * time-stretching (WSOLA) runs in a small pool of Workers. The caller caches the results
  * (SampleCache, counted in its memory budget).
  */
-import { timeStretch } from '@core/audio/wsola';
-import { decodePcm16Range, encodePcm16, readPcm16Info } from '@core/io/pcm16';
+import { stretchToPcm16 } from '@core/audio/stretch-pcm16';
+import { decodePcm16Range, readPcm16Info } from '@core/io/pcm16';
 import type { Waveform } from './waveform';
 
 /** Frames handled between two yields (~1.4 s at 48 kHz: well under a millisecond of copying). */
@@ -209,7 +209,7 @@ function next(): void {
     for (const item of queue.splice(0)) {
       const { channels, scale, sampleRate } = item.job;
       Promise.resolve()
-        .then(() => encodePcm16(timeStretch(channels, scale, { sampleRate }), sampleRate))
+        .then(() => stretchToPcm16(channels, scale, { sampleRate }))
         .then(item.done.resolve, item.done.reject);
     }
   }

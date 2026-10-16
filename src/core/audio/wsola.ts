@@ -38,17 +38,31 @@ export interface Onset {
  * the ~20 ms before, and is within 40 dB of the loudest moment. Cheap (energy per 128-frame hop).
  */
 export function detectOnsets(mono: Float32Array, sampleRate: number): Onset[] {
+  return detectOnsetsLazy(mono.length, (dst, from, n) => dst.set(mono.subarray(from, from + n)), sampleRate);
+}
+
+/** Fills `dst[0..n)` with the mono mix from frame `from` (zeros outside the signal). */
+export type MonoReader = (dst: Float32Array, from: number, n: number) => void;
+
+/** `detectOnsets` for a mix that isn't in memory as one array: the energies are read a hop at a time. */
+export function detectOnsetsLazy(length: number, read: MonoReader, sampleRate: number): Onset[] {
   const hop = Math.max(32, Math.round(sampleRate / 375));
-  const hops = Math.floor(mono.length / hop);
+  const hops = Math.floor(length / hop);
   if (hops < 16) return [];
+  const block = new Float32Array(Math.max(hop, 4096));
   const e = new Float64Array(hops);
-  for (let k = 0; k < hops; k++) {
-    let s = 0;
-    for (let i = k * hop, end = i + hop; i < end; i++) {
-      const v = mono[i] as number;
-      s += v * v;
+  for (let k0 = 0; k0 < hops; ) {
+    const k1 = Math.min(hops, k0 + Math.floor(block.length / hop));
+    read(block, k0 * hop, (k1 - k0) * hop);
+    for (let k = k0; k < k1; k++) {
+      let s = 0;
+      for (let i = (k - k0) * hop, end = i + hop; i < end; i++) {
+        const v = block[i] as number;
+        s += v * v;
+      }
+      e[k] = s / hop;
     }
-    e[k] = s / hop;
+    k0 = k1;
   }
   const PRE = 8;
   const POST = 4;
@@ -79,13 +93,15 @@ export function detectOnsets(mono: Float32Array, sampleRate: number): Onset[] {
   }
   if (runBest) onsets.push(runBest);
   // The start of the attack: the first sample of the jump's window that reaches 30 % of its peak.
+  const win = new Float32Array((POST + 2) * hop + hop);
   return onsets.map((o) => {
     const a = Math.max(0, o.at - hop);
-    const b = Math.min(mono.length, o.at + (POST + 1) * hop);
+    const b = Math.min(length, o.at + (POST + 1) * hop);
+    read(win, a, b - a);
     let peak = 0;
-    for (let i = a; i < b; i++) peak = Math.max(peak, Math.abs(mono[i] as number));
+    for (let i = 0; i < b - a; i++) peak = Math.max(peak, Math.abs(win[i] as number));
     let at = a;
-    while (at < b && Math.abs(mono[at] as number) < 0.3 * peak) at++;
+    while (at < b && Math.abs(win[at - a] as number) < 0.3 * peak) at++;
     return { at, strength: o.strength };
   });
 }
@@ -128,6 +144,9 @@ function placeZones(onsets: readonly Onset[], scale: number, pre: number, post: 
   return accepted;
 }
 
+/** Finished output: `chunk[c][0..n)` are the frames from `at` on (valid only during the call). */
+export type StretchSink = (at: number, chunk: readonly Float32Array[], n: number) => void;
+
 /**
  * Returns the channels `scale` times as long (scale > 1 slows down), same pitch. The output has
  * exactly round(length · scale) frames.
@@ -137,10 +156,24 @@ export function timeStretch(channels: readonly Float32Array[], scale: number, op
   if (!(scale > 0) || !Number.isFinite(scale)) throw new RangeError('timeStretch: the scale must be a positive number.');
   const outLen = Math.max(0, Math.round(inLen * scale));
   const outs = channels.map(() => new Float32Array(outLen));
-  if (inLen === 0 || outLen === 0) return outs;
+  stretchStream(channels, scale, opts, (at, chunk, n) => outs.forEach((o, c) => o.set((chunk[c] as Float32Array).subarray(0, n), at)));
+  return outs;
+}
+
+/**
+ * `timeStretch` that hands the output over as it is finished (half a frame at a time, in order, each frame of the
+ * output exactly once) instead of building it: the caller decides where it goes (16-bit PCM, `stretchToPcm16`), so a
+ * long song never exists as floats twice. The input isn't copied either: the mono mix for the similarity search is
+ * read from the channels a window at a time. Every value is the same as `timeStretch` made before.
+ */
+export function stretchStream(channels: readonly Float32Array[], scale: number, opts: StretchOptions, sink: StretchSink): void {
+  const inLen = channels[0]?.length ?? 0;
+  if (!(scale > 0) || !Number.isFinite(scale)) throw new RangeError('timeStretch: the scale must be a positive number.');
+  const outLen = Math.max(0, Math.round(inLen * scale));
+  if (inLen === 0 || outLen === 0) return;
   if (Math.abs(scale - 1) < 1e-9) {
-    channels.forEach((c, i) => (outs[i] as Float32Array).set(c.subarray(0, outLen)));
-    return outs;
+    sink(0, channels.map((c) => c.subarray(0, outLen)), outLen);
+    return;
   }
   const sr = opts.sampleRate;
   const half = Math.max(16, Math.round((((opts.frameMs ?? 40) / 1000) * sr) / 2));
@@ -152,21 +185,51 @@ export function timeStretch(channels: readonly Float32Array[], scale: number, op
   const win = new Float32Array(N);
   for (let n = 0; n < N; n++) win[n] = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / N);
 
-  // Mono mix for the similarity search (zero-padded so the search never reads out of range), and a
-  // decimated copy (~6 kHz) for the coarse pass.
+  // The mono mix for the similarity search is never held whole: `readMono` makes any window of it from the
+  // channels (zeros outside the signal), accumulated channel by channel in float like an array of it would be.
+  const nch = channels.length;
+  const c0 = channels[0] as Float32Array;
+  const c1 = channels[1] as Float32Array | undefined;
+  const readMono: MonoReader = (dst, from, n) => {
+    const lo = Math.max(0, -from);
+    const hi = Math.min(n, inLen - from);
+    if (lo > 0) dst.fill(0, 0, Math.min(n, lo));
+    if (hi < n) dst.fill(0, Math.max(0, hi), n);
+    if (nch === 1) {
+      for (let j = lo; j < hi; j++) dst[j] = c0[from + j] as number;
+    } else if (nch === 2) {
+      const c1s = c1 as Float32Array;
+      for (let j = lo; j < hi; j++) dst[j] = Math.fround(Math.fround((c0[from + j] as number) + (c1s[from + j] as number)) / 2);
+    } else {
+      for (let j = lo; j < hi; j++) {
+        let m = 0;
+        for (let c = 0; c < nch; c++) m = Math.fround(m + ((channels[c] as Float32Array)[from + j] as number));
+        dst[j] = Math.fround(m / nch);
+      }
+    }
+  };
+  // Decimated (~6 kHz) copy for the coarse pass, over the signal padded on both sides as the fine search sees it.
   const PAD = N + 2 * tol + 64;
-  const monoP = new Float32Array(inLen + 2 * PAD);
-  for (const c of channels) for (let i = 0; i < inLen; i++) monoP[PAD + i] = (monoP[PAD + i] as number) + (c[i] as number);
-  if (channels.length > 1) for (let i = 0; i < inLen; i++) monoP[PAD + i] = (monoP[PAD + i] as number) / channels.length;
   const D = Math.max(1, Math.round(sr / 6000));
   const dPAD = Math.ceil(PAD / D);
   const dLen = Math.floor((inLen + 2 * PAD) / D);
   const deci = new Float32Array(dLen);
-  for (let j = 0; j < dLen; j++) {
-    let s = 0;
-    for (let k = 0; k < D; k++) s += monoP[j * D + k] ?? 0;
-    deci[j] = s / D;
+  {
+    const J = 2048;
+    const block = new Float32Array(J * D);
+    for (let j0 = 0; j0 < dLen; j0 += J) {
+      const jn = Math.min(J, dLen - j0);
+      readMono(block, j0 * D - PAD, jn * D);
+      for (let j = 0; j < jn; j++) {
+        let sum = 0;
+        for (let k = 0; k < D; k++) sum += block[j * D + k] as number;
+        deci[j0 + j] = sum / D;
+      }
+    }
   }
+  // Windows of the mix for the fine search: the target half frame, and the candidates' span.
+  const tgtBuf = new Float32Array(Hs);
+  const candBuf = new Float32Array(Hs + 2 * tol + 4);
 
   // The time map: output frame → input frame, slope 1/scale except around kept attacks (slope 1).
   const pre = N + Hs + tol;
@@ -174,7 +237,7 @@ export function timeStretch(channels: readonly Float32Array[], scale: number, op
   const zones =
     opts.transients === false
       ? []
-      : placeZones(detectOnsets(monoP.subarray(PAD, PAD + inLen), sr), scale, pre, post, Hs, inLen, outLen);
+      : placeZones(detectOnsetsLazy(inLen, readMono, sr), scale, pre, post, Hs, inLen, outLen);
   // Anchors (output, input), increasing in both.
   const ao: number[] = [0];
   const ai: number[] = [0];
@@ -230,21 +293,22 @@ export function timeStretch(channels: readonly Float32Array[], scale: number, op
     // Fine: full rate around the coarse pick.
     const f0 = Math.max(lo, coarse - D);
     const f1 = Math.min(hi, coarse + D);
-    const tp = target + PAD;
+    readMono(tgtBuf, target, Hs);
+    readMono(candBuf, nominal + f0, f1 - f0 + Hs + 1);
     let fy = 1e-12;
-    for (let i = 0; i < Hs; i++) fy += (monoP[nominal + f0 + PAD + i] as number) ** 2;
+    for (let i = 0; i < Hs; i++) fy += (candBuf[i] as number) ** 2;
     let fine = f0;
     bestScore = -Infinity;
     for (let d = f0; d <= f1; d++) {
-      const cp = nominal + d + PAD;
+      const cp = d - f0;
       let xy = 0;
-      for (let i = 0; i < Hs; i++) xy += (monoP[tp + i] as number) * (monoP[cp + i] as number);
+      for (let i = 0; i < Hs; i++) xy += (tgtBuf[i] as number) * (candBuf[cp + i] as number);
       const score = xy / Math.sqrt(fy);
       if (score > bestScore || (score === bestScore && Math.abs(d) < Math.abs(fine))) {
         bestScore = score;
         fine = d;
       }
-      fy += (monoP[cp + Hs] as number) ** 2 - (monoP[cp] as number) ** 2;
+      fy += (candBuf[cp + Hs] as number) ** 2 - (candBuf[cp] as number) ** 2;
       if (fy < 1e-12) fy = 1e-12;
     }
     return nominal + fine;
@@ -253,6 +317,8 @@ export function timeStretch(channels: readonly Float32Array[], scale: number, op
   let prev = 0;
   let prevZone = -1;
   const frames = Math.ceil(outLen / Hs) + 1;
+  // The frames that overlap the half frame being finished: `acc[0..N)` is the output from `o` on.
+  const acc = channels.map(() => new Float32Array(N));
   for (let m = 0; m < frames; m++) {
     const o = m * Hs;
     const nominal = Math.round(mapOut(o));
@@ -274,20 +340,26 @@ export function timeStretch(channels: readonly Float32Array[], scale: number, op
     prevZone = zone;
     for (let ci = 0; ci < channels.length; ci++) {
       const x = channels[ci] as Float32Array;
-      const y = outs[ci] as Float32Array;
+      const y = acc[ci] as Float32Array;
       const nEnd = Math.min(N, outLen - o);
       // Nothing comes before the first frame: its first half goes in unwindowed.
       const n0 = m === 0 ? Hs : 0;
-      if (m === 0) for (let n = 0; n < Math.min(Hs, nEnd); n++) y[o + n] = (y[o + n] as number) + (x[start + n] ?? 0);
+      if (m === 0) for (let n = 0; n < Math.min(Hs, nEnd); n++) y[n] = (y[n] as number) + (x[start + n] ?? 0);
       if (start >= 0 && start + N <= inLen) {
-        for (let n = n0; n < nEnd; n++) y[o + n] = (y[o + n] as number) + (win[n] as number) * (x[start + n] as number);
+        for (let n = n0; n < nEnd; n++) y[n] = (y[n] as number) + (win[n] as number) * (x[start + n] as number);
       } else {
         for (let n = n0; n < nEnd; n++) {
           const i = start + n;
-          if (i >= 0 && i < inLen) y[o + n] = (y[o + n] as number) + (win[n] as number) * (x[i] as number);
+          if (i >= 0 && i < inLen) y[n] = (y[n] as number) + (win[n] as number) * (x[i] as number);
         }
       }
     }
+    // The first half of the window is finished (the next frame only adds from `o + Hs` on).
+    const done = Math.min(Hs, outLen - o);
+    if (done > 0) sink(o, acc, done);
+    for (const y of acc) {
+      y.copyWithin(0, Hs, N);
+      y.fill(0, Hs, N);
+    }
   }
-  return outs;
 }

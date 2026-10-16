@@ -20,30 +20,39 @@ export interface Pcm16Info {
   gain: number;
 }
 
+/** An empty container for `frames` × `channels` of audio: the header is written, `pcm` is the planar samples to fill. */
+export function createPcm16(channels: number, frames: number, sampleRate: number, gain: number): { bytes: Uint8Array; pcm: Int16Array } {
+  const g = Math.fround(gain);
+  const bytes = new Uint8Array(PCM16_HEADER + frames * channels * 2);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, MAGIC, true);
+  view.setUint16(4, channels, true);
+  view.setUint16(6, 0, true);
+  view.setUint32(8, Math.round(sampleRate), true);
+  view.setUint32(12, frames, true);
+  view.setFloat32(16, g, true);
+  return { bytes, pcm: new Int16Array(bytes.buffer, PCM16_HEADER, frames * channels) };
+}
+
+/** One float sample as the container holds it, with `k` = 32767 / gain. */
+export const quantizePcm16 = (v: number, k: number): number => {
+  const q = Math.round(v * k);
+  return q > 32767 ? 32767 : q < -32767 ? -32767 : q;
+};
+
 /** Quantizes channels (rounding, no dither: the same input always gives the same bytes). */
 export function encodePcm16(channels: readonly Float32Array[], sampleRate: number): Uint8Array {
   const frames = channels[0]?.length ?? 0;
   let peak = 0;
   for (const c of channels) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i] as number));
   const gain = Math.fround(peak > 1 ? peak : 1);
-  const out = new Uint8Array(PCM16_HEADER + frames * channels.length * 2);
-  const view = new DataView(out.buffer);
-  view.setUint32(0, MAGIC, true);
-  view.setUint16(4, channels.length, true);
-  view.setUint16(6, 0, true);
-  view.setUint32(8, Math.round(sampleRate), true);
-  view.setUint32(12, frames, true);
-  view.setFloat32(16, gain, true);
-  const pcm = new Int16Array(out.buffer, PCM16_HEADER, frames * channels.length);
+  const { bytes, pcm } = createPcm16(channels.length, frames, sampleRate, gain);
   const k = 32767 / gain;
   channels.forEach((c, ch) => {
     const o = ch * frames;
-    for (let i = 0; i < frames; i++) {
-      const v = Math.round((c[i] as number) * k);
-      pcm[o + i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
-    }
+    for (let i = 0; i < frames; i++) pcm[o + i] = quantizePcm16(c[i] as number, k);
   });
-  return out;
+  return bytes;
 }
 
 /** The header, or null when these aren't such bytes (or are cut short). */

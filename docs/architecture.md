@@ -1708,6 +1708,23 @@ OfflineAudioContext (2 GB). What it does instead:
   Measured on 5 ms clicks every 0.5 s: plain WSOLA doubles them at 1.5× (30 peaks for 20 clicks) and moves them by
   up to 12 ms; now one per click at full level, within 0.1 ms at 1.06–1.5× (2.4 ms at 0.8×); the old pitch and level
   tests still pass. 60 s of stereo: 0.94 s before, 0.19–0.28 s now (Node, one thread); a 5-minute song ~1 s per Worker.
+- **Streamed into 16-bit** (`core/audio/stretch-pcm16.ts`, `wsola.ts` `stretchStream`): WSOLA hands its output over
+  as it is finished (the overlap-add keeps one frame, 40 ms, per channel; each half frame is final once the next frame
+  has been added) and `stretchToPcm16` quantizes it straight into the file's own container, which is allocated once
+  at the final size. The mono mix for the similarity search is not kept either: `readMono` makes the window it needs
+  from the channels (same float accumulation, so the same values), the onset detector (`detectOnsetsLazy`) and the
+  decimated 6 kHz copy read it a block at a time. Before, a Worker held the input, the whole mono mix, the whole
+  float output and then the 16-bit copy. The sound is unchanged: the float output is bit for bit what `timeStretch`
+  made before (pinned by hashes of four signals in `stretch-pcm16.test.ts`, and checked byte for byte against the
+  old code on a 5-minute song at 0.85×, 1.07× and 1.5×). The one thing that differs is the container's gain, which has to
+  be in the header before the audio: it comes from the input's peak (WSOLA output is a weighted average of input
+  samples, so it never goes higher) instead of the output's own. Identical for anything within full scale; for a
+  master that goes over, the gain is the input's peak (a little higher), and decoded samples differ from the old
+  file by at most one step of it. Measured in Node 22 (same V8 and typed arrays as the Worker; one process each,
+  peak resident set; the 5-minute stereo 48 kHz test song at 124 BPM, 115 MB of input): peak 438 MB before,
+  **266 MB after** at 1.07×; 402 → 253 MB at 0.85×; 509 → 289 MB at 1.5×. Above the input (what the Worker adds
+  while stretching): 241 MB → 69 MB (the 62 MB result plus kilobytes of window buffers). Time per song unchanged:
+  1.31 s before, 1.32–1.37 s after at 1.07× (1.05 s at 0.85×, 1.8–1.9 s at 1.5×).
 - A clip at speed 1 (a stretched copy at a constant tempo, or a plain clip) starts on a whole frame at a whole frame
   (≤ 10 µs off): a fractional start made the browser interpolate the whole clip, dulling the highs by up to 6 dB at
   16 kHz, drifting with the phase over a long song.
@@ -1769,13 +1786,14 @@ either way open either way. No zip64: project files stay under 4 GB.
 - Sixteen 4.5-minute songs, a 66-minute mix (`VITE_LONG_EXPORT=1`), 24-bit WAV: 154 s (26× realtime) including
   stretching all sixteen; decoded audio peaks at 500 MB with a 400 MB budget (1.6 GB with the default 1.5 GB budget,
   which an export is free to fill); page memory (`measureUserAgentSpecificMemory`, Workers included) peaks at 1.8 GB,
-  most of it the three stretch Workers' transient buffers (~300 MB each while a 4.5-minute song is stretched) and
+  most of it the three stretch Workers' transient buffers (~300 MB each while a 4.5-minute song was stretched; ~160 MB since the
+  output is streamed into 16-bit, see above) and
   the cache; the render window is ~250 MB; the 1.1 GB file is never in memory.
 
 ### Gaps
 
-- Stretch Workers hold ~300 MB each while stretching a long song (input, output, mono mix): streaming WSOLA output
-  straight into 16-bit would halve it.
+- A stretch Worker still holds the whole input (float32, transferred in) while it works: ~115 MB for a 5-minute
+  stereo song. Streaming the input in as well would need the onset pass over all of it first.
 - While stopped, the residency plans around where song playback last started, not the playlist's song-position marker
   (the engine isn't told it): pressing play far from there decodes on demand (clips start in sync once ready).
 - Audio clip channels' channel-rack previews load their sample on demand (the first click waits for the decode).

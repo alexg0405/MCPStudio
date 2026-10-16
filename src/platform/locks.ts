@@ -40,6 +40,66 @@ export function holdSessionLock(sessionId: string): Promise<() => void> {
   });
 }
 
+/** One clean-up of unused audio at a time, across every tab (held exclusively by the collector). */
+export const GC_LOCK = 'ag-gc';
+/**
+ * Writers of the sample store hold this shared while they check for or write a blob; the collector holds
+ * it exclusively for each batch it deletes, so a delete never lands between a writer's look and its use.
+ */
+export const BLOBS_LOCK = 'ag-blobs';
+
+/**
+ * Runs `fn` holding `name` exclusively. With `ifAvailable`, `fn` is not run when someone else holds it
+ * (resolves `{ ran: false }`). Without Web Locks it resolves `{ ran: false }`: nothing can be coordinated.
+ */
+export async function withExclusiveLock<T>(
+  name: string,
+  fn: () => Promise<T>,
+  opts: { ifAvailable?: boolean } = {},
+): Promise<{ ran: true; value: T } | { ran: false }> {
+  if (!isWebLocksAvailable()) return { ran: false };
+  return navigator.locks.request(name, { mode: 'exclusive', ifAvailable: opts.ifAvailable === true }, async (lock) => {
+    if (!lock) return { ran: false } as const;
+    return { ran: true, value: await fn() } as const;
+  });
+}
+
+/**
+ * Holds `name` shared while `fn` runs, however many callers overlap: the first takes the lock, the last
+ * lets it go (one request, so a waiting exclusive request can't deadlock a nested one). Without Web
+ * Locks it just runs `fn`.
+ */
+export function createSharedHold(name: string): <T>(fn: () => Promise<T>) => Promise<T> {
+  let count = 0;
+  let acquired: Promise<void> | null = null;
+  let release: () => void = () => {};
+  const acquire = () =>
+    new Promise<void>((resolve, reject) => {
+      const done = new Promise<void>((r) => (release = r));
+      navigator.locks
+        .request(name, { mode: 'shared' }, () => {
+          resolve();
+          return done;
+        })
+        .catch(reject);
+    });
+  return async (fn) => {
+    if (!isWebLocksAvailable()) return fn();
+    if (count++ === 0) acquired = acquire();
+    try {
+      await acquired;
+    } catch (e) {
+      count--;
+      throw e;
+    }
+    try {
+      return await fn();
+    } finally {
+      if (--count === 0) release();
+    }
+  };
+}
+
 /** Ids of sessions whose lock is currently held (or requested) anywhere in this origin. */
 export async function heldSessionLocks(): Promise<Set<string>> {
   const snapshot = await locks().query();

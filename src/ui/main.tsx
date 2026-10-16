@@ -7,6 +7,7 @@ import { installSessionPersistence, startSession } from '@app/persistence/sessio
 import { loadRecentFiles } from '@app/persistence/recent-files';
 import { applyView } from '@app/persistence/view-snapshot';
 import { installPluginDiscovery } from '@app/plugins/discover';
+import { installStorage } from '@app/storage/service';
 import { PluginRegistry } from '@app/plugins/registry';
 import { ServicesProvider } from './services-context';
 import { registerFeatures } from './features';
@@ -52,6 +53,11 @@ if (restored) {
 }
 if (!restored || !applyView(services, restored.view, restored.project)) applyDefaultLayout(services);
 const persistence = installSessionPersistence(services, start.sessionId);
+// Which audio this tab uses, published for the clean-up of unused audio. Development builds only log what
+// the automatic clean-up would remove (localStorage 'agstudio:gc-dry-run' = '0' turns that off).
+installStorage(services, start.sessionId, {
+  dryRunOnly: import.meta.env.DEV && globalThis.localStorage?.getItem('agstudio:gc-dry-run') !== '0',
+});
 void loadRecentFiles();
 // Reloaded mid-song (the dev server does that when code changes): carry on playing.
 resumeAfterReload(services, restored?.transport);

@@ -1,4 +1,5 @@
 import { applyPatches, enablePatches, produceWithPatches, type Draft, type Patch } from 'immer';
+import { collectHashes } from '../gc/refs';
 import type { Project } from '../model/types';
 
 enablePatches();
@@ -62,6 +63,8 @@ interface Entry {
   inverse: Patch[];
   mergeKey?: string;
   time: number;
+  /** Sample hashes the patches mention (found on first use; reset when the entry changes). */
+  hashes?: readonly string[];
 }
 
 const samePath = (a: Patch['path'], b: Patch['path']) => a.length === b.length && a.every((p, i) => p === b[i]);
@@ -143,6 +146,7 @@ export class History {
       top.patches = merged.patches;
       top.inverse = merged.inverse;
       top.time = time;
+      delete top.hashes;
       // A save of the amended state is no longer the document's state.
       if (this.savedCursor === top.id) this.savedCursor = -1;
     } else if (
@@ -156,6 +160,7 @@ export class History {
       top.patches = merged.patches;
       top.inverse = merged.inverse;
       top.time = time;
+      delete top.hashes;
     } else {
       this.push({
         id: ++this.seq,
@@ -242,6 +247,18 @@ export class History {
     this.undoStack.push(entry);
     this.emit({ next, prev, patches: entry.patches, origin: 'redo' });
     return true;
+  }
+
+  /**
+   * Adds to `into` every sample hash that undoing or redoing could bring back: those in the patches of
+   * every step in history (a deleted sample comes back with Undo). Clean-up of unused audio relies on it.
+   */
+  referencedHashes(into: Set<string> = new Set()): Set<string> {
+    for (const e of [...this.undoStack, ...this.redoStack]) {
+      e.hashes ??= [...collectHashes([e.patches, e.inverse])];
+      for (const h of e.hashes) into.add(h);
+    }
+    return into;
   }
 
   /** The steps as the undo history shows them: done ones (oldest first), then undone ones (next redo first). */

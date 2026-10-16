@@ -12,6 +12,7 @@
 import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate, ZipPassThrough, zipSync, type Zippable } from 'fflate';
 import { SCHEMA_VERSION, type Project } from '../model/types';
 import { MIGRATIONS, SchemaError, migrateProject, repairProject, type Migration } from '../schema/migrate';
+import { collectHashes } from '../gc/refs';
 import { isSha256Hex } from './hash';
 import { readZipEntry, readZipIndex, type RangeReader, type ZipEntry } from './zip-index';
 
@@ -183,6 +184,28 @@ export function readProjectFile(
     if (!samples.has(hash)) samples.set(hash, { ext: (m[2] as string).toLowerCase(), bytes: data });
   }
   return { ...doc, samples };
+}
+
+/**
+ * Every sample hash a project file mentions (its project.json and view.json text, and the names of
+ * its embedded samples), without migrating or validating anything. Null when the zip can't be read.
+ * Used to decide which stored audio an autosave still needs.
+ */
+export function projectFileHashes(bytes: Uint8Array): Set<string> | null {
+  if (!looksLikeZip(bytes)) return null;
+  try {
+    const out = new Set<string>();
+    const entries = unzipSync(bytes, {
+      filter: (f) => {
+        if (SAMPLE_ENTRY.test(f.name)) collectHashes(f.name, out); // the name says it; no need to unpack the audio
+        return JSON_ENTRIES.has(f.name);
+      },
+    });
+    for (const data of Object.values(entries)) collectHashes(strFromU8(data), out);
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 /** An embedded sample in a project file that hasn't been read yet. */

@@ -88,6 +88,12 @@ interface PatternPreview {
   lo: number;
   hi: number;
   length: Tick;
+  /** A note runs past the pattern's end into the next repeat, so repeats overlap. */
+  spills: boolean;
+  /** The notes as paths per zoom (see patternPaths). */
+  paths: Map<string, { paths: Path2D[]; any: boolean[] }>;
+  /** The notes pre-drawn into a small canvas per zoom and color (see patternBitmap). */
+  bitmaps: Map<string, HTMLCanvasElement>;
 }
 
 const previewCache = new WeakMap<Pattern, PatternPreview>();
@@ -104,7 +110,8 @@ function patternPreview(pattern: Pattern, ts: TimeSignature): PatternPreview {
       lo = Math.min(lo, n.key);
       hi = Math.max(hi, n.key);
     }
-    v = { notes: all, lo, hi, length: patternLength(pattern, ts) };
+    const length = patternLength(pattern, ts);
+    v = { notes: all, lo, hi, length, spills: all.some((n) => n.tick + n.length > length), paths: new Map(), bitmaps: new Map() };
     previewCache.set(pattern, v);
   }
   return v;
@@ -227,8 +234,83 @@ export function drawClips(
 
 /** Velocity steps the mini notes are drawn in (one path per step: few fills, velocity as opacity). */
 const VEL_STEPS = [0.45, 0.65, 0.82, 1] as const;
+const velLevel = (v: number) => (v <= 0.45 ? 0 : v <= 0.65 ? 1 : v <= 0.82 ? 2 : 3);
 
-function drawPatternBody(
+/**
+ * A pattern's notes as one path per velocity step, in the pattern's own coordinates (x from its start,
+ * y from the top of the clip body). Drawn once per clip repeat by translating, so a pattern used by
+ * dozens of clips is built once per zoom instead of once per clip. A note hidden inside an earlier one
+ * of the same step (same key and pixel column, no longer) adds nothing to the fill and is left out.
+ */
+function patternPaths(pv: PatternPreview, ppt: number, h: number): { paths: Path2D[]; any: boolean[] } {
+  const key = `${ppt}|${h}`;
+  const hit = pv.paths.get(key);
+  if (hit) return hit;
+  const range = Math.max(8, pv.hi - pv.lo + 1);
+  const rowH = Math.max(1, Math.min(4, h / range - (h / range > 2.5 ? 0.6 : 0)));
+  const round = rowH >= 2;
+  const paths = VEL_STEPS.map(() => new Path2D());
+  const any = VEL_STEPS.map(() => false);
+  const widest = VEL_STEPS.map(() => new Map<number, number>());
+  const pad = (range - (pv.hi - pv.lo + 1)) / 2;
+  for (const n of pv.notes) {
+    const level = velLevel(n.velocity);
+    const x = n.tick * ppt;
+    const nw = Math.max(1.5, n.length * ppt - 1);
+    // Zoomed out, notes within a pixel column coincide; zoomed in, only exact repeats may be dropped.
+    const cell = (ppt < 0.02 ? Math.round(x) : x) * 128 + n.key;
+    const seen = widest[level] as Map<number, number>;
+    if ((seen.get(cell) ?? 0) >= nw) continue;
+    seen.set(cell, nw);
+    const ny = h - ((n.key - pv.lo + 1 + pad) / range) * h;
+    const path = paths[level] as Path2D;
+    if (round && nw >= 3) path.roundRect(x, ny, nw, rowH, Math.min(rowH / 2, nw / 2));
+    else path.rect(x, ny, nw, rowH);
+    any[level] = true;
+  }
+  if (pv.paths.size >= 6) pv.paths.delete(pv.paths.keys().next().value as string);
+  const built = { paths, any };
+  pv.paths.set(key, built);
+  return built;
+}
+
+/** Widest pattern (device pixels) worth keeping as a picture; longer ones draw their paths. */
+const MAX_BITMAP_W = 3000;
+const MAX_BITMAP_H = 1200;
+
+/**
+ * One repeat of a pattern's notes drawn once into a canvas, so a pattern used by dozens of clips costs a
+ * blit per clip instead of filling thousands of note shapes each time. Kept for the last two zoom/color
+ * combinations (the canvas is the pattern's length wide, so this is for the zoomed-out, busy views).
+ */
+function patternBitmap(
+  pv: PatternPreview,
+  built: { paths: Path2D[]; any: boolean[] },
+  ppt: number,
+  h: number,
+  dpr: number,
+  color: string,
+): HTMLCanvasElement {
+  const key = `${ppt}|${h}|${dpr}|${color}`;
+  const hit = pv.bitmaps.get(key);
+  if (hit) return hit;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(pv.length * ppt * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  const bctx = canvas.getContext('2d') as CanvasRenderingContext2D;
+  bctx.scale(dpr, dpr);
+  bctx.fillStyle = color;
+  for (let level = 0; level < VEL_STEPS.length; level++) {
+    if (!built.any[level]) continue;
+    bctx.globalAlpha = 0.4 + 0.6 * (VEL_STEPS[level] as number);
+    bctx.fill(built.paths[level] as Path2D);
+  }
+  if (pv.bitmaps.size >= 2) pv.bitmaps.delete(pv.bitmaps.keys().next().value as string);
+  pv.bitmaps.set(key, canvas);
+  return canvas;
+}
+
+export function drawPatternBody(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
   pattern: Pattern,
@@ -242,45 +324,63 @@ function drawPatternBody(
 ): void {
   const pv = patternPreview(pattern, ts);
   if (pv.notes.length === 0 || pv.length <= 0) return;
-  const range = Math.max(8, pv.hi - pv.lo + 1);
-  const rowH = Math.max(1, Math.min(4, h / range - (h / range > 2.5 ? 0.6 : 0)));
   const ppt = vp.pxPerTick;
-  const round = rowH >= 2;
   const left = Math.max(x, 0);
   const right = Math.min(x + w, vp.width);
   if (right <= left) return;
+  const { paths, any } = patternPaths(pv, ppt, h);
   ctx.save();
   ctx.beginPath();
   ctx.rect(x + 1, y, w - 2, h);
   ctx.clip();
   ctx.fillStyle = paint.content;
   const base = ctx.globalAlpha;
-  for (let level = 0; level < VEL_STEPS.length; level++) {
-    const lo = level === 0 ? -1 : (VEL_STEPS[level - 1] as number);
-    const hi = VEL_STEPS[level] as number;
-    let any = false;
-    ctx.beginPath();
-    // The clip shows content from `offset`, repeating every pattern length.
-    for (let rep = Math.floor(clip.offset / pv.length); rep * pv.length < clip.offset + clip.length; rep++) {
+  // The clip shows content from `offset`, repeating every pattern length: only the repeats on screen.
+  const from = Math.max(clip.start, vp.xToTick(left));
+  const to = Math.min(clip.start + clip.length, vp.xToTick(right));
+  // (One repeat earlier too: a note longer than the pattern spills into the next repeat.)
+  const first = Math.max(
+    Math.floor(clip.offset / pv.length),
+    Math.floor((from - clip.start + clip.offset) / pv.length) - 1,
+  );
+  // A pattern that fits in a small picture is drawn as that picture, once per repeat.
+  const dpr = ctx.getTransform().a || 1;
+  if (!pv.spills && pv.length * ppt * dpr <= MAX_BITMAP_W && h * dpr <= MAX_BITMAP_H) {
+    const bitmap = patternBitmap(pv, { paths, any }, ppt, h, dpr, paint.content);
+    for (let rep = first; ; rep++) {
       const repStart = clip.start - clip.offset + rep * pv.length;
-      for (const n of pv.notes) {
-        const v = n.velocity;
-        if (level < VEL_STEPS.length - 1 ? v <= lo || v > hi : v <= lo) continue;
-        const s = repStart + n.tick;
-        if (s + n.length < clip.start || s >= clip.start + clip.length) continue;
-        const nx = vp.tickToX(s);
-        const nw = Math.max(1.5, n.length * ppt - 1);
-        if (nx > right || nx + nw < left) continue;
-        const ny = y + h - ((n.key - pv.lo + 1 + (range - (pv.hi - pv.lo + 1)) / 2) / range) * h;
-        if (round && nw >= 3) roundRectPath(ctx, nx, ny, nw, rowH, rowH / 2);
-        else ctx.rect(nx, ny, nw, rowH);
-        any = true;
-      }
+      if (repStart >= to) break;
+      // On whole device pixels, so every repeat is as sharp as the others.
+      ctx.drawImage(bitmap, Math.round(vp.tickToX(repStart) * dpr) / dpr, y, bitmap.width / dpr, bitmap.height / dpr);
     }
-    if (!any) continue;
-    ctx.globalAlpha = base * (0.4 + 0.6 * hi);
-    ctx.fill();
+    ctx.restore();
+    return;
   }
+  // Repeats that do not overlap fill one by one; with notes spilling into the next repeat, the repeats
+  // are joined first so overlapping notes are filled once (as one path of every note would be).
+  const joined = pv.spills ? VEL_STEPS.map(() => new Path2D()) : null;
+  for (let rep = first; ; rep++) {
+    const repStart = clip.start - clip.offset + rep * pv.length;
+    if (repStart >= to) break;
+    const rx = vp.tickToX(repStart);
+    if (joined) {
+      for (let level = 0; level < VEL_STEPS.length; level++)
+        if (any[level]) (joined[level] as Path2D).addPath(paths[level] as Path2D, new DOMMatrix().translate(rx, y));
+      continue;
+    }
+    ctx.translate(rx, y);
+    for (let level = 0; level < VEL_STEPS.length; level++) {
+      if (!any[level]) continue;
+      ctx.globalAlpha = base * (0.4 + 0.6 * (VEL_STEPS[level] as number));
+      ctx.fill(paths[level] as Path2D);
+    }
+    ctx.translate(-rx, -y);
+  }
+  if (joined)
+    for (let level = 0; level < VEL_STEPS.length; level++) {
+      ctx.globalAlpha = base * (0.4 + 0.6 * (VEL_STEPS[level] as number));
+      ctx.fill(joined[level] as Path2D);
+    }
   ctx.globalAlpha = base;
   ctx.restore();
 }

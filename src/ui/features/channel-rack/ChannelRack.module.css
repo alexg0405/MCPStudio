@@ -351,6 +351,16 @@
   color: var(--ag-text);
 }
 
+/* The ▶ / ■ that plays this pattern. */
+.playButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+  flex: none;
+}
+
 .headerButton:disabled {
   opacity: 0.45;
   cursor: default;

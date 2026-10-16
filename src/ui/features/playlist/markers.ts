@@ -8,6 +8,7 @@ import {
   jumpTo,
   jumpToMarker,
   loopToNextMarker,
+  markerSection,
 } from '@app/actions/markers';
 import { PALETTE } from '@core/model/defaults';
 import type { MarkerId, Tick } from '@core/model/types';
@@ -27,6 +28,16 @@ export function markerMenu(s: Services, id: MarkerId): MenuEntry[] {
   const next = markersSorted(p).find((x) => x.tick > m.tick);
   return [
     { kind: 'label', label: `Marker: ${describeMarker(s, m)}` },
+    {
+      icon: 'play',
+      label: 'Play this section',
+      hint: 'Loop the part from this marker to the next one and play it',
+      disabled: !markerSection(s, id),
+      onSelect: () => {
+        const r = markerSection(s, id);
+        if (r) s.commands.run('transport.playRange', r);
+      },
+    },
     { label: 'Jump here', hint: 'Set the song position to this marker', onSelect: () => jumpToMarker(s, id) },
     {
       label: 'Rename…',
@@ -66,6 +77,12 @@ export function rulerMenu(s: Services, tick: Tick): MenuEntry[] {
       onSelect: () => void s.commands.run('playlist.addMarker'),
     },
     { kind: 'separator' },
+    {
+      icon: 'play',
+      label: 'Play from here',
+      hint: 'Play the song from this position (a loop region that does not include it is cleared)',
+      onSelect: () => void s.commands.run('transport.playFrom', { tick }),
+    },
     { label: 'Set the song position here', onSelect: () => jumpTo(s, tick) },
     {
       label: 'Clear the loop region',

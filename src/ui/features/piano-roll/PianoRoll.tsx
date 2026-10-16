@@ -5,6 +5,7 @@ import { NOTE_LANES, type NoteLane, type PianoRollTool } from '@app/stores/edito
 import { useDoc, useServices, useSession, useView } from '../../services-context';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { PianoRollController, KEYS_WIDTH, RULER_HEIGHT, type PianoRollElements } from './controller';
+import { PlayPatternButton } from '../transport/PlayPatternButton';
 import { LANES } from './lanes';
 import { emptyMenu, keyMenu, noteMenu, songKeyName, toolsMenu } from './menus';
 import { STAMP_OPTIONS } from './stamp';
@@ -42,6 +43,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PianoRollControll
   const noKey = 'Choose a song key first (the Key button)';
   return (
     <div className={styles.toolbar}>
+      <PlayPatternButton className={`${styles.tool} ${styles.playButton}`} onClassName={styles.toolOn} />
       <div className={styles.tools} role="toolbar">
         {TOOLS.map((t) => (
           <button

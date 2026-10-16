@@ -29,6 +29,7 @@ import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
 import { openWindow } from '../../workspace/registry';
 import { MiniRoll } from './MiniRoll';
 import { PatternPicker } from '../patterns/PatternPicker';
+import { PlayPatternButton } from '../transport/PlayPatternButton';
 import { STEP_W, stepX } from './layout';
 import { StepGraph } from './StepGraph';
 import { stepsMenu, stepTarget, toggleGraph } from './steps';
@@ -109,7 +110,9 @@ function endPaint() {
   paint = null;
 }
 
-function paintEnter(channelId: ChannelId, step: number) {
+function paintEnter(channelId: ChannelId, step: number, buttons: number) {
+  // The button was let go where no pointerup reached us (outside the window): that ends the paint.
+  if (paint && buttons === 0) endPaint();
   if (paint && paint.channelId === channelId) paint.apply(step);
 }
 
@@ -165,7 +168,7 @@ function StepGrid({
             if (e.button === 2) begin(i, false);
             else if (e.button === 0) begin(i, v === 0);
           }}
-          onPointerEnter={() => paintEnter(channelId, i)}
+          onPointerEnter={(e) => paintEnter(channelId, i, e.buttons)}
           data-hint={`Step ${i + 1}. Click or drag to paint, right-click to erase`}
           aria-pressed={v > 0}
           aria-label={`Step ${i + 1}`}
@@ -470,7 +473,11 @@ function StepLight({ stepCount }: { stepCount: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let last = -1;
-    return onFrame(() => {
+    // Where the step column starts: read once (and again after a resize), since offsetLeft forces a layout.
+    let columnLeft = -1;
+    const ro = new ResizeObserver(() => (columnLeft = -1));
+    if (ref.current?.parentElement) ro.observe(ref.current.parentElement);
+    const stop = onFrame(() => {
       const el = ref.current;
       if (!el) return;
       const v = services.view.getState();
@@ -487,9 +494,15 @@ function StepLight({ stepCount }: { stepCount: number }) {
       last = visible;
       el.style.opacity = visible < 0 ? '0' : '1';
       // The step column's offset is measured from the first row so CSS stays the source of truth.
-      const steps = el.parentElement?.querySelector<HTMLElement>('[data-steps]');
-      if (visible >= 0) el.style.transform = `translateX(${(steps?.offsetLeft ?? 0) + stepX(visible)}px)`;
+      if (visible >= 0) {
+        if (columnLeft < 0) columnLeft = el.parentElement?.querySelector<HTMLElement>('[data-steps]')?.offsetLeft ?? -1;
+        el.style.transform = `translateX(${Math.max(0, columnLeft) + stepX(visible)}px)`;
+      }
     });
+    return () => {
+      stop();
+      ro.disconnect();
+    };
   }, [services, stepCount]);
   return <div ref={ref} className={styles.stepLight} style={{ width: STEP_W, opacity: 0 }} />;
 }
@@ -528,6 +541,11 @@ export function ChannelRack() {
   return (
     <div className={styles.rack}>
       <div className={styles.header}>
+        <PlayPatternButton
+          patternId={patternId}
+          className={`${styles.headerButton} ${styles.playButton}`}
+          onClassName={styles.headerButtonOn}
+        />
         <PatternPicker compact />
         <label className={styles.headerControl} data-hint="Number of steps in this pattern">
           Steps

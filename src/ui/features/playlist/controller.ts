@@ -174,6 +174,8 @@ export class PlaylistController {
   private unsubs: Array<() => void> = [];
   private persistTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPlayheadX = NaN;
+  /** The horizontal scrollbar's track width, measured when the layout changes. */
+  private scrollTrackW = 0;
   private sliceX = -1;
   /** The automation clip part under the pointer (its points show, the hint bar explains it). */
   private autoHover: { clipId: ClipId; hit: AutoHit } | null = null;
@@ -247,6 +249,7 @@ export class PlaylistController {
     );
     const ro = new ResizeObserver(() => this.resize());
     ro.observe(els.gridHost);
+    ro.observe(els.hscroll);
     this.unsubs.push(() => ro.disconnect());
 
     const on = <K extends keyof HTMLElementEventMap>(
@@ -370,6 +373,8 @@ export class PlaylistController {
     const r = this.els.gridHost.getBoundingClientRect();
     this.vp.width = Math.max(1, Math.round(r.width));
     this.vp.height = Math.max(1, Math.round(r.height));
+    // Read here, when the size changes, so the frame loop never asks the layout for it.
+    this.scrollTrackW = this.els.hscroll.getBoundingClientRect().width;
     const p = this.project();
     this.vp.rows = p.playlist.laneOrder.length;
     this.vp.clampScroll(this.maxTick(p));
@@ -747,7 +752,7 @@ export class PlaylistController {
   private updateScrollbar(p: Project): void {
     const total = this.maxTick(p);
     const visible = this.vp.width / this.vp.pxPerTick;
-    const track = this.els.hscroll.getBoundingClientRect().width;
+    const track = this.scrollTrackW;
     const w = Math.max(24, Math.min(track, (visible / total) * track));
     const x = total > visible ? (this.vp.scrollTick / (total - visible)) * (track - w) : 0;
     this.els.hthumb.style.width = `${w}px`;
@@ -1092,6 +1097,12 @@ export class PlaylistController {
   }
 
   private onPointerMove(e: PointerEvent): void {
+    // The button was let go where no pointerup reached us (outside the window, another window took
+    // focus): this move is the drop, so the drag does not carry on without a button.
+    if (this.drag && e.buttons === 0 && this.drag.kind !== 'marker' && this.drag.kind !== 'loop') {
+      this.onPointerUp(e);
+      return;
+    }
     const p = this.project();
     const { x, y } = this.local(e);
     const d = this.drag;
@@ -1236,7 +1247,8 @@ export class PlaylistController {
     this.els.gridHost.releasePointerCapture(e.pointerId);
     this.drag = null;
     const editor = this.s.editor.getState();
-    if (d.kind === 'move' && this.preview && (d.dTick !== 0 || d.dLane !== 0 || d.duplicate)) {
+    // A Shift-click that never moved copies nothing (a copy exactly on top of the original is no use).
+    if (d.kind === 'move' && this.preview && (d.dTick !== 0 || d.dLane !== 0)) {
       const moved = this.preview;
       if (d.duplicate) {
         const copies = moved.map((c) => ({ ...c, id: newId.clip() }));
@@ -1592,6 +1604,10 @@ export class PlaylistController {
 
   private onRulerMove(e: PointerEvent): void {
     const d = this.drag;
+    if (d && e.buttons === 0 && (d.kind === 'marker' || d.kind === 'loop')) {
+      this.onRulerUp(e);
+      return;
+    }
     if (!d) {
       const { x, y } = this.local(e, this.els.ruler);
       const hit = this.markerHit(x, y);

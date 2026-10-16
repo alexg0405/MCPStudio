@@ -42,6 +42,16 @@
     color var(--ag-dur) var(--ag-ease);
 }
 
+/* The ▶ / ■ that plays the pattern being edited. */
+.playButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+  flex: none;
+}
+
 /* Inside the tool well the buttons are ghosts until hovered or on. */
 .tools .tool {
   height: 20px;

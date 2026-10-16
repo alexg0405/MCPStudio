@@ -83,16 +83,22 @@ export function adjacentMarker(s: Services, dir: 1 | -1, from: Tick = songPositi
   return [...sorted].reverse().find((m) => m.tick < from - grace) ?? null;
 }
 
-/** Loop region from a marker to the next one (or to the song's end). */
-export function loopToNextMarker(s: Services, id: MarkerId): boolean {
+/** The part from a marker to the next one (or to the song's end); null when the marker is gone. */
+export function markerSection(s: Services, id: MarkerId): { from: Tick; to: Tick } | null {
   const p = s.doc.getState().project;
   const m = p.playlist.markers[id];
-  if (!m) return false;
+  if (!m) return null;
   const next = markersSorted(p).find((x) => x.tick > m.tick);
   const end = next?.tick ?? Math.max(songLength(p), m.tick + ticksPerBar(p.transport.timeSig));
-  if (end <= m.tick) return false;
+  return end > m.tick ? { from: m.tick, to: end } : null;
+}
+
+/** Loop region from a marker to the next one (or to the song's end). */
+export function loopToNextMarker(s: Services, id: MarkerId): boolean {
+  const section = markerSection(s, id);
+  if (!section) return false;
   const v = s.view.getState();
-  v.setLoop({ start: m.tick, end });
+  v.setLoop({ start: section.from, end: section.to });
   if (v.mode !== 'song') v.setMode('song');
   return true;
 }

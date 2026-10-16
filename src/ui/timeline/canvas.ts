@@ -246,8 +246,31 @@ export function themeVersion(): number {
   return version;
 }
 
-/** Redraw when the theme or accent color changes. */
+/**
+ * The page's pixel ratio changed (the window moved to another screen, the browser zoomed): canvases
+ * sized for the old ratio are blurry until they redraw, which nothing else would trigger when the
+ * CSS size stays the same. Re-armed after each change, since the query names the ratio it watches.
+ */
+let watchingPixelRatio = false;
+function watchPixelRatio(): void {
+  if (watchingPixelRatio || typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+  watchingPixelRatio = true;
+  const arm = () => {
+    const query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    const onChange = () => {
+      query.removeEventListener('change', onChange);
+      version++;
+      for (const fn of themeListeners) fn();
+      arm();
+    };
+    query.addEventListener('change', onChange);
+  };
+  arm();
+}
+
+/** Redraw when the theme or accent color changes (or the screen's pixel ratio does). */
 export function onThemeChange(fn: () => void): () => void {
+  watchPixelRatio();
   themeListeners.add(fn);
   return () => themeListeners.delete(fn);
 }

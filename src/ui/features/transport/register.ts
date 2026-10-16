@@ -1,5 +1,7 @@
 import { createElement } from 'react';
 import type { Services } from '@app/services';
+import { barsToRange, findPattern, isPatternPlaying, playFrom, playPattern, playRange } from '@app/actions/transport';
+import { ticksPerBar } from '@core/time/ppq';
 import { setBpm, setSwing } from '@core/ops/notes';
 import { showFormDialog } from '../../controls/FormDialog';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
@@ -65,6 +67,57 @@ export function register(services: Services): void {
     category: 'Transport',
     hint: 'Stop playback and return to the start',
     run: (s) => s.engine.stop(),
+  });
+  commands.register<string | number | { patternId?: string; pattern?: string | number } | undefined>({
+    id: 'transport.playPattern',
+    title: 'Play this pattern',
+    category: 'Transport',
+    hint: 'Loop a pattern from its start (pattern mode); it becomes the current pattern. Without a pattern: the one you are editing',
+    argsHint: 'optional: { patternId } or the pattern’s name or number (without: the current pattern)',
+    checked: (s) => isPatternPlaying(s),
+    run: (s, args) => {
+      const ref = typeof args === 'object' && args ? (args.patternId ?? args.pattern) : args;
+      const id = ref === undefined ? s.view.getState().currentPatternId : findPattern(s, ref);
+      if (!id || !playPattern(s, id)) s.session.getState().toast('There is no pattern to play.', 'error');
+    },
+  });
+  commands.register<number | { tick?: number; bar?: number }>({
+    id: 'transport.playFrom',
+    title: 'Play the song from here',
+    category: 'Transport',
+    hint: 'Play the playlist (song mode) from a position; a loop region that does not include it is cleared',
+    argsHint: '{ tick } or { bar } (bar 1 = the start), or a tick number',
+    palette: false,
+    run: (s, args) => {
+      const bar = ticksPerBar(s.doc.getState().project.transport.timeSig);
+      const tick =
+        typeof args === 'number'
+          ? args
+          : args && typeof args.tick === 'number'
+            ? args.tick
+            : args && typeof args.bar === 'number'
+              ? (Math.max(1, args.bar) - 1) * bar
+              : NaN;
+      if (Number.isFinite(tick)) playFrom(s, tick);
+      else s.session.getState().toast('Say where to play from: a bar or a tick.', 'error');
+    },
+  });
+  commands.register<{ from?: number; to?: number; fromBar?: number; toBar?: number }>({
+    id: 'transport.playRange',
+    title: 'Loop and play a span',
+    category: 'Transport',
+    hint: 'Loop a span of the song and play it from its start (song mode); the span becomes the loop region',
+    argsHint: '{ from, to } in ticks, or { fromBar, toBar } (bar 1 = the start, both bars included)',
+    palette: false,
+    run: (s, args) => {
+      const r =
+        args && typeof args.fromBar === 'number' && typeof args.toBar === 'number'
+          ? barsToRange(s, args.fromBar, args.toBar)
+          : args && typeof args.from === 'number' && typeof args.to === 'number'
+            ? { from: args.from, to: args.to }
+            : null;
+      if (!r || !playRange(s, r.from, r.to)) s.session.getState().toast('Say which span to loop: from and to.', 'error');
+    },
   });
   commands.register({
     id: 'transport.record',

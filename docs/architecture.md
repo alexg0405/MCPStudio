@@ -2196,3 +2196,115 @@ one undo step, with the original kept.
 - **Studio** (`app/ai/ops/filters.ts`): `filter { filter, from_bar?, to_bar?, section?, clips?, whole_song? }`
   (default: the part asked about, else the whole song) runs after the answer as an after-step folded into its undo
   step (`app/filters/step.ts`); `remove_filter { clip? | bar? }` edits in the answer.
+
+## MCP: AI apps control AGstudio (`tools/mcp`, `src/app/mcp`)
+
+Any AI app that speaks the Model Context Protocol (Claude Code, Claude Desktop, Cursor…) can drive the open project
+with the same machinery as the Studio chat: the action schema, the applier, the command catalog, the after-steps.
+Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this is how it works.
+
+- **Where things live.** The project lives in the browser tab, so the dev server cannot edit it. The server holds
+  the MCP endpoint and relays each tool call to the tab; the tab runs the tool and answers.
+  ```
+  AI app ──POST /mcp (JSON-RPC, bearer token)──▶ dev server (tools/mcp) ──HMR websocket──▶ tab (src/app/mcp)
+         ◀───────────── result ───────────────                       ◀──────── result ────────
+  ```
+  `tools/mcp/server.ts` is a Vite plugin next to `aiServer` (dev server only: a production `vite preview` has no
+  websocket to the page, so no MCP). It adds `POST /mcp`, and the app's own endpoints under `/api/mcp/*` (`info`: the
+  token, the folder, who is connected; `token`: regenerate; `upload/<ticket>`: exports), which want the `x-agstudio`
+  header and the same origin, like `/api/ai`.
+- **Protocol** (`tools/mcp/protocol.ts`, pure: `handle({method, headers, body}) → {status, headers, body}`, unit-tested
+  with plain objects). Implemented subset of the spec (read 2026-10): one endpoint serving both eras of the
+  Streamable HTTP transport.
+  - **2026-07-28** (stateless): no `initialize`; every request carries `_meta` (`io.modelcontextprotocol/protocolVersion`,
+    `clientInfo`, required `clientCapabilities`) and the `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers
+    (a base64 `=?base64?…?=` name is decoded). A header that disagrees with the body is HTTP 400, `-32020`; missing
+    `_meta` is 400 `-32602`; an unknown version is 400 `-32022` with `data.supported`; an unknown method is 404
+    `-32601`. `server/discover` returns versions, capabilities, instructions; results carry `resultType: "complete"`.
+  - **2025-11-25, 2025-06-18, 2025-03-26**: `initialize` negotiates the version (an unknown one gets the newest it
+    speaks), returns `capabilities` (`tools`, `resources`), `serverInfo` and `instructions`, and hands out an
+    `Mcp-Session-Id` that only remembers the client's name (a request without one is still served); `notifications/*`
+    answer 202; JSON-RPC batches work. A client that sends no version header is treated as 2025-03-26, as the spec says.
+  - **Both**: `ping`, `tools/list`, `tools/call`, `resources/list|read|templates/list`. Tool arguments are checked
+    against the tool's schema first (required, types, enums, ranges, unknown options): a problem is an `isError`
+    result the AI can read and fix, never a protocol error; an unknown tool is `-32602`; a tool that throws is an
+    `isError` result. Results carry text (and `structuredContent` for data tools), `audio` for previews. Replies are
+    always plain JSON: nothing is pushed to the client, so `GET` and `DELETE` answer 405, there are no SSE streams, no
+    prompts, logging, sampling or subscriptions, and no 2024-11-05 HTTP+SSE transport.
+- **Security** (`tools/mcp/guard.ts`, checked in this order, each with its own plain message): the connection must
+  come from a loopback address (403); `Host` must be `localhost`, `127.0.0.1` or `[::1]` (403, DNS rebinding); a present
+  `Origin` must be such a local page (403, so a web page on another site can't use it); then the bearer token, from
+  `Authorization: Bearer …` or `?token=`, compared in constant time (401, `WWW-Authenticate: Bearer`, plain text). Also
+  600 requests a minute (429), 8 MB bodies, no CORS headers at all. The token (`agmcp_` + 32 random bytes, base64url) is
+  made once into `.agstudio/mcp-token` (git-ignored, mode 0600, `tools/mcp/token.ts`); Settings can replace it, which
+  locks the old one out at once. `AGSTUDIO_MCP_TOKEN_FILE` and `AGSTUDIO_EXPORTS_DIR` move the files (the tests use them).
+- **Tool definitions** (`src/app/mcp/defs.ts`, plain data) are loaded by the dev server through `ssrLoadModule`, so
+  `tools/list` is current (new ops show up with the next request) and works before any tab is open. `apply_actions`
+  takes `ACTIONS_SCHEMA.properties.actions` itself, so a new op is available over MCP the moment it is in the schema.
+  The tools themselves (`tools.ts`, `read-tools.ts`, `audio-tools.ts`) run in the page, take `Services`, and are
+  unit-tested with `createTestServices`.
+- **The bridge** (`tools/mcp/bridge.ts` on the server, `src/app/mcp/bridge.ts` `McpLink` in the page), events
+  `agstudio:mcp:*` over Vite's HMR websocket (`server.ws.on` / `import.meta.hot`):
+  tab → server `hello {tab, focused, enabled, project}` (on load, reconnect, focus, a click, a setting), `ack {id}`,
+  `result {id, ok, result|error}`, `bye`; server → tab `call {id, tab, name, args, client, ticket}` and `status`.
+  - The call names the tab that must answer; the others ignore it. That is the tab the musician used last (tabs report
+    focus; a background tab that merely reloads doesn't steal calls). No live tab: "Open AGstudio in the browser first:
+    http://localhost:PORT". MCP switched off in Settings: the call fails with that reason (the switch is
+    `prefs.mcpEnabled`, on by default).
+  - The tab acknowledges at once, so a frozen tab (no ack in 4 s) is told apart from a slow tool (waits up to 60 s,
+    15 min for `apply_actions`, renders and exports). A tab that closes mid-call fails the call within a second.
+  - Liveness is the websocket itself (`server.ws.clients`), not a heartbeat: hidden tabs throttle timers.
+- **`apply_actions`** goes through `BeatAssistant.applyExternal` (`app/assistant/assistant.ts`), which is `applyTurn`
+  for an outside caller: `applyAnswer(s, answer, { source: "Claude Code", label: summary, focus })` is **one** history
+  transaction labelled "Claude Code: <summary>" (`applyAnswer`'s optional `source`; Studio's stays "Studio: …"); the
+  chat gets "Claude Code changed: <summary>" (`detail: "over MCP"`) with the usual Undo at that history point;
+  `command` actions run (file-dialog ones become a button, below); windows open; the answer's `play`/`stop`/`mode`
+  run, but nothing else starts playback (the Studio chat's autoplay is for a person waiting). Follow-up steps
+  (`after-steps.ts`: leveling, filters) run before the call returns, folded into the same undo step; while the music
+  plays they wait up to 30 s for it to stop, then render anyway. The result carries `changes`, `warnings`,
+  `followups`, `before_point` (what `undo` with `to_point` goes back to), `undo_point`, `history_label`.
+  - **Focus and approval.** `focus: {from_bar, to_bar}` is an `AiFocus` range, so the guard (`ops/focus-guard.ts`) keeps
+    edits inside it. A dry run first (`dryRun: true`): when edits reach outside, nothing is applied and the result is the
+    question (what reaches outside, "call again with `approve_outside: true`"); with it, the same answer applies with
+    `focusOutside: 'allow'` (the part still gets copy-on-write pattern copies).
+  - Edits are serialized (a promise chain) and wait up to 15 s for a running Studio request (`phase` idle).
+- **Other tools.** Reads: `get_guide` (`STUDIO_PROMPT` with a preface about tools instead of JSON answers),
+  `get_project` (`projectContext`, plus `focusContext` for bars), `list_plugins` (`pluginCatalog`), `get_pattern`,
+  `get_mixer`, `get_clips` (text and data). `list_commands`/`run_command` use `aiCommands` and `commandCatalog` (a
+  command with `ai: false` is refused; `gesture` ones don't run: `McpLink.askForClick` queues a button and
+  `ui/features/mcp/register.ts` shows "Claude Code wants to export…" so the click is the user activation the picker
+  needs; other commands run, their error toasts come back as the result, a project change is reported in the chat with
+  Undo). Transport: `play`, `stop`, `seek`, `set_loop`, `transport_state` (it says when the browser still has sound
+  locked). `undo`, `redo`, `history`. `analyze_mix` is `analyzeMix`; `render_preview` renders with `renderOffline` at
+  32 kHz, trims like an export and returns a 16-bit WAV as `audio` content (default 15 s, at most 30 s).
+  `export_audio` runs `runExport` into a **memory** target (no picker), then uploads each file to
+  `POST /api/mcp/upload/<ticket>`: the ticket is issued by the server for that one authenticated call and revoked
+  when it ends; the server writes into `~/Music/AGstudio/` (stems into a sub-folder), cleans names, accepts only
+  .wav/.flac/.mp3/.zip, never overwrites ("Song (2).wav"). Capped at 20 minutes of audio (it is held in memory).
+  No screenshot tool: there is no cheap way to capture the page without a rendering dependency.
+- **UI.** Settings → "Connect AI apps (MCP)" (`ui/features/mcp/McpSettings.tsx`, on top of `settings/parts.tsx`): the
+  switch, a live status line ("Connected: Claude Code · 3 calls in the last minute", pushed by the server on change and
+  refreshed while the window is open), the token (masked, Show, Copy, New token…), the Claude Code command, the Claude
+  Desktop config (`bin/agstudio-mcp`), a JSON setup for URL clients, the exports folder. Commands (so the action search
+  and Studio's `command` action find them): `options.mcp` (switch), `options.connectAi` (opens Settings),
+  `options.copyClaudeCodeSetup` (`ai: false`: the token stays out of chats). A toast tells the musician the first time
+  an app calls.
+- **`bin/agstudio-mcp`** (a `sh` wrapper that finds Node) runs `bin/agstudio-mcp.mjs`: stdio ↔ HTTP for apps that start
+  MCP servers as programs. Claude Desktop's config file takes only such servers (remote ones go through Settings →
+  Connectors and must be reachable from the internet), so this is its path. One line in, one POST out, concurrent;
+  keeps the session id and negotiated version; mirrors `Mcp-Method`/`Mcp-Name` for 2026 requests; reads the token from
+  `.agstudio/mcp-token` for every request; says "AGstudio isn't running…" as a JSON-RPC error when nothing answers.
+- **Tests.** `test/unit/mcp-protocol.test.ts` (both eras, errors, validation, 405, batches),
+  `mcp-server-parts.test.ts` (guard: loopback, Host, Origin, token; token file; uploads; the bridge with fake tabs:
+  election, ack, timeouts, closed tab, switched off; status), `mcp-stdio-proxy.test.ts` (the helper against a stand-in
+  server), `src/app/mcp/*.test.ts` (tools against `createTestServices`: one undo step, chat message, focus approval,
+  commands, gestures, transport, history, follow-up steps, the page bridge, setup lines), and `mcp-e2e.test.ts`: the
+  project's own `vite.config.ts` on a free port (own cache dir), the app in headless Chrome (`playwright`, skipped
+  when Chrome is missing), JSON-RPC over HTTP: refusals, both handshakes, a beat applied as one undo step and read back,
+  undo/redo, commands, play, `analyze_mix`, a rendered WAV, an exported file, the Settings status line, a new token,
+  the switch, and the "open AGstudio" message once the tab is gone.
+- **Limits.** Dev server only; needs an open tab (and one click in it before anything is audible); the guide and
+  catalogs are large reads (the guide about 29 kB, `list_plugins` 43 kB, `list_commands` 51 kB, `tools/list` 61 kB
+  with the action schema), each under the 25 000-token result limit Claude Code applies; a client that cannot show
+  audio content gets only the text of `render_preview`; no live notifications to the client (it re-reads with
+  `get_project`).

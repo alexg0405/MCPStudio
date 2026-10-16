@@ -12,6 +12,7 @@ import { ActionError, createOpContext, newAnswerState } from './ops/context';
 import type { AppliedTurn, ApplyContext } from './ops/types';
 import { queryAfter } from './ops/query';
 import { sessionAfter } from './ops/session';
+import { decksAfter } from './ops/decks';
 import { uiAfter } from './ops/ui';
 import type { AiAnswer } from './schema';
 
@@ -61,6 +62,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
   }
 
   uiAfter(s, answer, state);
+  decksAfter(s, answer, state);
 
   const project = s.doc.getState().project;
   if (state.selectPattern && project.patterns[state.selectPattern])

@@ -1,0 +1,726 @@
+/* Decks window: two decks (four on request) either side of the mixer. Black marble, glass, brushed gold. */
+.decks {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size);
+  user-select: none;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  min-height: 34px;
+  padding: 0 var(--ag-space-3);
+  background: var(--ag-surface-2);
+  border-bottom: 1px solid var(--ag-line-faint);
+  flex-wrap: wrap;
+}
+
+.label {
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+}
+
+.segItem,
+.segOn {
+  height: 22px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-dim);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.segItem:hover {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.segOn {
+  background: var(--ag-active);
+  color: var(--ag-accent-ink);
+  box-shadow: inset 0 0 0 1px var(--ag-active-border);
+}
+
+.headphones {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+}
+
+.headphones select,
+.jumpSize,
+.assign {
+  height: 24px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+.note {
+  color: var(--ag-warning);
+  font-size: var(--ag-font-size-sm);
+}
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) auto minmax(360px, 1fr);
+  gap: var(--ag-space-3);
+  padding: var(--ag-space-3);
+  align-items: start;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-3);
+  min-width: 0;
+}
+
+/* ---- A deck ---- */
+.deck {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--ag-space-2);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-2);
+  box-shadow: var(--ag-elev-1);
+  min-width: 0;
+}
+
+.deckHead {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  min-width: 0;
+}
+
+.letter {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-metal);
+  color: var(--ag-on-accent);
+  font-weight: 700;
+  font-size: 13px;
+  flex: none;
+}
+
+.titles {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.songTitle {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist {
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 14px;
+}
+
+.lcd {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 70px;
+  justify-content: flex-end;
+  padding: 3px 8px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-lcd);
+  color: var(--ag-lcd-text);
+  box-shadow: var(--ag-inset);
+  font-family: var(--ag-font-mono);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.lcd small {
+  color: var(--ag-text-faint);
+  font-size: 9px;
+  letter-spacing: var(--ag-label-tracking);
+}
+
+.keyBadge {
+  display: inline-block;
+  min-width: 32px;
+  padding: 3px 7px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 700;
+  text-align: center;
+}
+
+.load,
+.eject {
+  height: 24px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.load {
+  padding: 0 8px;
+}
+
+.eject {
+  width: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.load:hover:not(:disabled),
+.eject:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.eject:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.scopes {
+  position: relative;
+  height: 76px;
+  border-radius: var(--ag-radius);
+  overflow: hidden;
+  box-shadow: var(--ag-inset);
+  background: var(--ag-surface-inset);
+}
+
+.zoom {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.emptyDeck {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ag-space-2);
+  padding: 0 var(--ag-space-3);
+  color: var(--ag-text-dim);
+  text-align: center;
+  line-height: 1.35;
+}
+
+.overview {
+  display: block;
+  width: 100%;
+  height: 30px;
+  border-radius: var(--ag-radius-sm);
+  box-shadow: var(--ag-inset);
+  cursor: pointer;
+}
+
+.clock {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ag-text-dim);
+}
+
+.time {
+  color: var(--ag-lcd-text);
+}
+
+.transport {
+  display: flex;
+  align-items: stretch;
+  gap: var(--ag-space-3);
+}
+
+/* The platter: a stone disc with a gold mark that turns with the song. */
+.platter {
+  position: relative;
+  flex: none;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, var(--ag-surface-3) 0 14%, transparent 15%),
+    repeating-radial-gradient(circle at 50% 50%, var(--ag-knob-face) 0 2px, var(--ag-knob-edge) 2px 3px),
+    var(--ag-knob-face);
+  box-shadow:
+    var(--ag-knob-shadow),
+    inset 0 0 0 7px color-mix(in srgb, var(--ag-accent) 14%, var(--ag-knob-edge));
+  cursor: grab;
+  touch-action: none;
+}
+
+.platter:active {
+  cursor: grabbing;
+}
+
+.platterMark {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  width: 3px;
+  height: 22px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--ag-metal);
+  box-shadow: 0 0 6px var(--ag-accent-glow);
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: minmax(34px, 1fr);
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pitch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.pitchValue {
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-font-size-sm);
+  color: var(--ag-lcd-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.pitchSlider {
+  height: 72px;
+}
+
+.rangeRow {
+  display: flex;
+  gap: 2px;
+}
+
+.range {
+  min-width: 22px;
+  height: 18px;
+  padding: 0 3px;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-3);
+  color: var(--ag-text-dim);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.rangeOn {
+  background: var(--ag-active);
+  color: var(--ag-accent-ink);
+}
+
+/* ---- Pads and buttons ---- */
+.pad {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background-color var(--ag-dur) var(--ag-ease);
+}
+
+.pad:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.pad:active:not(:disabled) {
+  box-shadow: var(--ag-inset);
+  transform: translateY(1px);
+}
+
+.pad:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.padOn {
+  background: var(--ag-active);
+  color: var(--ag-accent-ink);
+  box-shadow: inset 0 0 0 1px var(--ag-active-border);
+}
+
+.padOn:hover:not(:disabled) {
+  background: var(--ag-active);
+}
+
+.play {
+  font-size: 13px;
+}
+
+.cue {
+  letter-spacing: 0.1em;
+}
+
+.hotCues {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 5px;
+}
+
+.hotCue {
+  position: relative;
+  height: 28px;
+  box-shadow:
+    var(--ag-elev-1),
+    inset 0 -3px 0 color-mix(in srgb, var(--pad) 55%, transparent);
+}
+
+.hotCue.padOn {
+  background: color-mix(in srgb, var(--pad) 62%, var(--ag-surface-2));
+  color: var(--ag-on-light);
+  box-shadow:
+    var(--ag-elev-1),
+    inset 0 -3px 0 var(--pad);
+}
+
+.hotCue.padOn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pad) 72%, var(--ag-surface-2));
+}
+
+.loops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.autoLoop {
+  min-width: 26px;
+  padding: 0 4px;
+  font-size: 10px;
+}
+
+.sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 3px;
+  background: var(--ag-line-faint);
+}
+
+/* ---- The mixer ---- */
+.mixer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-2);
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-2);
+  box-shadow: var(--ag-elev-1);
+}
+
+.stage[data-count='2'] .mixer {
+  width: 244px;
+}
+
+.stage[data-count='4'] .mixer {
+  width: 396px;
+}
+
+.strips {
+  display: flex;
+  gap: var(--ag-space-2);
+  justify-content: center;
+}
+
+.strip,
+.master {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 64px;
+}
+
+.stripLetter {
+  color: var(--ag-text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.assign {
+  width: 62px;
+  font-size: 10px;
+  padding: 0 2px;
+}
+
+.padText {
+  font-size: 10px;
+}
+
+.faderRow {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  height: 132px;
+}
+
+.channelFader {
+  height: 132px;
+}
+
+.masterMeters {
+  display: flex;
+  gap: 4px;
+  height: 132px;
+}
+
+.meter {
+  position: relative;
+  width: 7px;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ag-well);
+  box-shadow: var(--ag-inset);
+  overflow: hidden;
+}
+
+.meter i {
+  position: absolute;
+  inset: 0;
+  transform: scaleY(0);
+  transform-origin: bottom;
+  background: linear-gradient(to top, var(--ag-meter-lo) 0%, var(--ag-meter-lo) 55%, var(--ag-meter-mid) 78%, var(--ag-meter-hi) 100%);
+  background-size: 100% 132px;
+  background-position: bottom;
+}
+
+.meter i[data-hot='1'] {
+  background: var(--ag-meter-hi);
+}
+
+.cross {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-2) 0 0;
+  border-top: 1px solid var(--ag-line-faint);
+}
+
+.crossLabel {
+  font-weight: 700;
+  color: var(--ag-text-dim);
+}
+
+.crossfader {
+  flex: 1 1 100px;
+  min-width: 100px;
+}
+
+.crossGain {
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-font-size-sm);
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+}
+
+.record {
+  min-width: 70px;
+}
+
+.record svg {
+  color: var(--ag-danger);
+}
+
+.record.padOn {
+  background: var(--ag-danger-tint);
+  color: var(--ag-danger-text);
+  box-shadow: inset 0 0 0 1px var(--ag-danger-line);
+}
+
+.recClock {
+  font-family: var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.error {
+  color: var(--ag-danger-text);
+  font-size: var(--ag-font-size-sm);
+}
+
+/* ---- Sliders (channel faders, pitch, crossfader) ---- */
+.vslider,
+.hslider {
+  position: relative;
+  flex: none;
+  touch-action: none;
+  cursor: pointer;
+}
+
+.vslider {
+  width: 26px;
+  min-height: 60px;
+}
+
+.hslider {
+  height: 26px;
+  min-width: 80px;
+}
+
+.track {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--ag-well);
+  box-shadow: var(--ag-inset);
+}
+
+.vslider .track {
+  left: 50%;
+  top: 4px;
+  bottom: 4px;
+  width: 5px;
+  margin-left: -2.5px;
+}
+
+.hslider .track {
+  top: 50%;
+  left: 4px;
+  right: 4px;
+  height: 5px;
+  margin-top: -2.5px;
+}
+
+.mark {
+  position: absolute;
+  background: var(--ag-line-strong);
+  pointer-events: none;
+}
+
+.vslider .mark {
+  left: 3px;
+  right: 3px;
+  height: 1px;
+}
+
+.hslider .mark {
+  top: 3px;
+  bottom: 3px;
+  width: 1px;
+}
+
+/* The cap: a machined slab with a highlight line across the middle. */
+.cap {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 3px;
+  background: linear-gradient(to bottom, var(--ag-knob-top), var(--ag-knob-face) 55%, var(--ag-knob-edge));
+  box-shadow: var(--ag-knob-shadow);
+}
+
+.cap::after {
+  content: '';
+  position: absolute;
+  background: var(--ag-accent);
+  opacity: 0.8;
+}
+
+.vslider .cap {
+  left: 1px;
+  right: 1px;
+  height: 14px;
+}
+
+.vslider .cap::after {
+  left: 3px;
+  right: 3px;
+  top: 6px;
+  height: 2px;
+}
+
+.hslider .cap {
+  top: 1px;
+  bottom: 1px;
+  width: 14px;
+}
+
+.hslider .cap::after {
+  top: 3px;
+  bottom: 3px;
+  left: 6px;
+  width: 2px;
+}
+
+.vslider:focus-visible,
+.hslider:focus-visible,
+.platter:focus-visible {
+  outline: 1.5px solid var(--ag-accent);
+  outline-offset: 2px;
+}

@@ -9,6 +9,11 @@
  */
 import type { StoreApi } from 'zustand/vanilla';
 import type { SampleRef } from '@core/model/types';
+import type { DeckWaveform } from '@core/dj/deck-peaks';
+import type { TrackAnalysis } from '@core/dj/types';
+import type { CrossfaderCurve } from '@core/dj/decks-math';
+
+export type { DeckWaveform };
 
 export type DeckId = 'A' | 'B' | 'C' | 'D';
 export const DECK_IDS: readonly DeckId[] = ['A', 'B', 'C', 'D'];
@@ -125,6 +130,29 @@ export interface DecksApi {
   positionNow(deck: DeckId): number;
   /** Stops everything and frees the decks' audio graph. */
   dispose(): void;
+
+  // ---- Optional additions (the Decks window and the Studio use these; a controller can ignore them) ----
+
+  /** The crossfader curve (smooth = equal power, sharp = cut). */
+  setCrossfaderCurve?(curve: CrossfaderCurve): void;
+  /** Beats per jump of the beat-jump buttons (1…32). */
+  setBeatJump?(deck: DeckId, beats: number): void;
+  /** Shows 2 or 4 decks. */
+  setDeckCount?(count: 2 | 4): void;
+  /** Glides the crossfader to `to` (−1…1) over `beats` beats of the tempo playing (a fade, not a jump). */
+  crossfade?(to: number, beats: number): void;
+  /** Peak levels of decks A–D into out[0…3] and the master (left, right) into out[4], out[5]: allocation-free, for requestAnimationFrame. */
+  readLevels?(out: Float32Array): void;
+  /** The song's peak overview (null until it is computed). */
+  waveformOf?(deck: DeckId): DeckWaveform | null;
+  /** The loaded song's analysis (beat grid, key), or null. */
+  analysisOf?(deck: DeckId): TrackAnalysis | null;
+  /** Plays the cue (headphone) bus through this output device ('' = none); false where the browser can't. */
+  setCueDevice?(deviceId: string): Promise<boolean>;
+  /** Resolves once the audio thread has handled every command sent so far (offline renders and tests). */
+  settled?(): Promise<void>;
+  /** How fast the decks' audio kept up over the last second (1 = fully; absent while nothing plays). */
+  keepUp?(): number | undefined;
 }
 
 /** Created on first use (the Decks window, a controller, the Studio), not at startup. */

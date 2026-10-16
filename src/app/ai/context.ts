@@ -19,6 +19,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { arrangementLines, derivedLabel } from '../arrange/summary';
 import { musicLibraryLines } from '../dj/library';
+import { deckLines } from './ops/decks';
 import { djLines } from '../dj/mix';
 import { noteName } from '../assistant/context';
 import { noteLines } from './note-lines';
@@ -506,6 +507,8 @@ function renderContext(s: Services, r: Render): string {
   if (djMix.length) lines.push('', ...djMix);
   const music = musicLibraryLines(s);
   if (music.length) lines.push('', ...music);
+  const live = deckLines(s);
+  if (live.length) lines.push('', ...live);
   const check = songCheckLines(p);
   if (check.length) lines.push('', 'Song check (problems in the arrangement right now):', ...check);
 

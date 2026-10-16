@@ -35,6 +35,11 @@ const NOT_FOR_AI: Readonly<Record<string, string>> = {
 
 /** Commands that open a dialog, a menu or work on a UI selection, and the action that does the same with arguments. */
 const COVERED_BY_OP: Readonly<Record<string, string>> = {
+  'decks.play': 'deck_play',
+  'decks.sync': 'deck_sync',
+  'decks.keyLock': 'deck_set',
+  'decks.loop': 'deck_loop',
+  'decks.crossfader': 'deck_crossfade',
   'arrange.develop': 'develop',
   'arrange.addFill': 'vary',
   'arrange.addTransition': 'transition',

@@ -10,6 +10,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Add marker at the song position | `⌥T` / `Alt+T` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
+| DJ decks | `⌥D` / `Alt+D` |
 | DJ mix | `⌥J` / `Alt+J` |
 | Export audio… | `⌘R` / `Ctrl+R` |
 | Keyboard shortcuts | `F1` |
@@ -53,6 +54,19 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Route channel to mixer insert | `⌘L` / `Ctrl+L` |
 | Select next channel | `↓` |
 | Select previous channel | `↑` |
+
+## When the dj-decks window is focused
+
+| Action | Keys |
+|---|---|
+| Crossfader move | `←`, `→`, `Home`, `End` |
+| Deck beat jump | `X`, `C`, `,`, `.` |
+| Deck cue | `W`, `I` |
+| Deck hot cue | `A`, `S`, `D`, `F`, `H`, `J`, `K`, `;` |
+| Deck key lock | `T`, `P` |
+| Deck loop | `Z`, `M` |
+| Deck play or pause | `Q`, `U` |
+| Deck sync | `E`, `O` |
 
 ## When the mixer window is focused
 

@@ -13,7 +13,7 @@ import {
   type ParamBlock,
   type Voice,
 } from '@agstudio/sdk/worklet';
-import { fmParams, opParam, OPERATORS } from './params';
+import { opParam, OPERATORS, type fmParams } from './params';
 
 type Params = typeof fmParams;
 
@@ -34,9 +34,19 @@ const ROUTES = FM_ALGORITHMS.map((alg) => {
 });
 
 /**
- * The params a control step reads, taken once per frame and shared by every voice that controls at
- * that frame (all of them when nothing is automated): looking a param up by name is a hash lookup,
- * and a voice does about forty of them every 16 samples.
+ * The params a control step reads (Snap.set takes them by index): the mod wheel and vibrato, then
+ * per operator its ratio, fine tuning, level and velocity sensitivity.
+ */
+const SNAP_NAMES: string[] = ['wheel', 'vibratoDepth', 'vibratoRate'];
+for (let o = 1; o <= OPERATORS; o++) {
+  const id = opParam(o);
+  SNAP_NAMES.push(id.ratio, id.fine, id.level, id.velocity);
+}
+
+/**
+ * The params a control step reads. Block-constant ones are set once per render call; automated
+ * ones are re-set at each frame a control step reads them (FmKernel.control), so an automated block
+ * costs a few sets per frame rather than the whole snapshot per voice.
  */
 class Snap {
   wheelMode = 0;
@@ -46,18 +56,32 @@ class Snap {
   readonly mult = new Float64Array(4);
   readonly level = new Float64Array(4);
   readonly sens = new Float64Array(4);
+  private readonly ratio = new Float64Array(4);
+  private readonly fine = new Float64Array(4);
 
-  read(ids: readonly ReturnType<typeof opParam>[], p: ParamBlock<Params>, i: number): void {
-    const v = (id: string) => at(p[id] as Float32Array, i);
-    this.wheelMode = Math.round(v('wheel'));
-    this.vibratoDepth = v('vibratoDepth');
-    this.vibratoRate = v('vibratoRate');
-    for (let o = 0; o < 4; o++) {
-      const id = ids[o] as ReturnType<typeof opParam>;
-      const ratio = Math.round(v(id.ratio));
-      this.mult[o] = (ratio === 0 ? 0.5 : ratio) * (1 + v(id.fine));
-      this.level[o] = v(id.level);
-      this.sens[o] = v(id.velocity);
+  /** Sets SNAP_NAMES[j] to `v` (a plain value, as the param reads it). */
+  set(j: number, v: number): void {
+    if (j === 0) this.wheelMode = Math.round(v);
+    else if (j === 1) this.vibratoDepth = v;
+    else if (j === 2) this.vibratoRate = v;
+    else {
+      const o = (j - 3) >> 2;
+      switch ((j - 3) & 3) {
+        case 0:
+          this.ratio[o] = Math.round(v);
+          break;
+        case 1:
+          this.fine[o] = v;
+          break;
+        case 2:
+          this.level[o] = v;
+          return;
+        default:
+          this.sens[o] = v;
+          return;
+      }
+      const ratio = this.ratio[o] as number;
+      this.mult[o] = (ratio === 0 ? 0.5 : ratio) * (1 + (this.fine[o] as number));
     }
   }
 }
@@ -109,11 +133,12 @@ export class FmKernel extends InstrumentKernel<Params> {
   private filterKey = -1;
   private readonly sr: number;
   private readonly snap = new Snap();
-  private snapSeq = -1;
+  /** This render call's arrays for SNAP_NAMES, and which of them are automated (per frame). */
+  private readonly snapArrays: Float32Array[] = SNAP_NAMES.map(() => new Float32Array(1));
+  private readonly autoSlots = new Int32Array(SNAP_NAMES.length);
+  private autoCount = 0;
+  /** The frame the automated params in the snapshot were last read at (-1: none yet this call). */
   private snapAt = -1;
-  private seq = 0;
-  private constant = true;
-  private readonly paramNames = Object.keys(fmParams);
 
   constructor(host: KernelHost) {
     super(host);
@@ -178,16 +203,18 @@ export class FmKernel extends InstrumentKernel<Params> {
   render(out: Float32Array[], from: number, to: number, p: ParamBlock<Params>): void {
     const n = to - from;
     if (n <= 0) return;
-    // Automated params (one value per frame) make a control step's snapshot frame-specific.
-    this.seq++;
-    let constant = true;
-    const names = this.paramNames;
-    for (let k = 0; k < names.length; k++)
-      if ((p[names[k] as string] as Float32Array).length > 1) {
-        constant = false;
-        break;
-      }
-    this.constant = constant;
+    // The params a control step reads: block-constant ones are set now, automated ones (one value per
+    // frame) at each control step.
+    const bound = this.snapArrays;
+    let auto = 0;
+    for (let j = 0; j < SNAP_NAMES.length; j++) {
+      const arr = p[SNAP_NAMES[j] as string] as Float32Array;
+      bound[j] = arr;
+      if (arr.length > 1) this.autoSlots[auto++] = j;
+      else this.snap.set(j, arr[0] as number);
+    }
+    this.autoCount = auto;
+    this.snapAt = -1;
     const L = this.bufL;
     const R = this.bufR;
     L.fill(0, 0, n);
@@ -311,12 +338,15 @@ export class FmKernel extends InstrumentKernel<Params> {
       return false;
     }
 
-    const frame = this.constant ? 0 : i;
+    // Automated params at this frame (shared by the voices that control at it).
     const S = this.snap;
-    if (this.snapSeq !== this.seq || this.snapAt !== frame) {
-      S.read(ids, p, i);
-      this.snapSeq = this.seq;
-      this.snapAt = frame;
+    if (this.snapAt !== i) {
+      const bound = this.snapArrays;
+      for (let k = 0; k < this.autoCount; k++) {
+        const j = this.autoSlots[k] as number;
+        S.set(j, at(bound[j] as Float32Array, i));
+      }
+      this.snapAt = i;
     }
     const wheelMode = S.wheelMode;
     const bright = wheelMode === 0 ? 1 + this.wheel : 1;

@@ -388,6 +388,8 @@ export function register(services: Services): void {
     title: 'Audio clip gain and fades…',
     category: 'Audio clip',
     hint: 'Type exact values for the selected clip’s gain (dB) and fades (ms)',
+    // A dialog; edit_audio_clip sets the gain and fades.
+    ai: false,
     run: async (s) => {
       const clip = firstClip(s, undefined);
       if (clip) await levelsDialog(s, clip);

@@ -38,6 +38,8 @@ export function register(services: Services): void {
     title: 'Route channel to mixer insert',
     category: 'Mixer',
     hint: 'Send the selected channel to the insert selected in the mixer',
+    // The edit_channel action routes any channel to any track.
+    ai: false,
     enabled: (s) => !!s.session.getState().selectedChannelId,
     run: (s) => {
       const { selectedChannelId, selectedInsertId } = s.session.getState();
@@ -49,6 +51,8 @@ export function register(services: Services): void {
     title: 'Mixer insert',
     category: 'Mixer',
     hint: 'Add an insert track to the mixer',
+    // The add_insert action does this with a name and levels.
+    ai: false,
     run: (s) => void addMixerInsert(s),
   });
   services.commands.register({
@@ -56,6 +60,8 @@ export function register(services: Services): void {
     title: 'Balance the mix',
     category: 'Mixer',
     hint: 'Listen to the busiest part and set the faders and the master Limiter so the song is loud but not crushed (one undo step; it waits while the song plays)',
+    // The level_mix action does this inside a Studio answer.
+    ai: false,
     enabled: (s) => s.assistant.store.getState().phase === 'idle',
     run: (s) => {
       // Its progress and what it changed show in the Studio.

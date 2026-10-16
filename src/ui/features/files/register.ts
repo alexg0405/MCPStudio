@@ -73,6 +73,8 @@ export function register(services: Services): void {
     title: 'Project info…',
     category: 'File',
     hint: 'The title and author, and what is in the project (length, channels, notes…)',
+    // A dialog; the song action sets the title and author, and the read tools say what is in the project.
+    ai: false,
     run: (s) => void showProjectInfo(s),
   });
   commands.register<string>({

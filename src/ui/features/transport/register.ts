@@ -171,6 +171,8 @@ export function register(services: Services): void {
     title: 'Song settings…',
     category: 'Song',
     hint: 'Tempo (BPM), time signature (beats per bar) and swing for the whole song',
+    // A dialog; the song action sets all of it.
+    ai: false,
     run: (s) => songSettings(s),
   });
   commands.register({

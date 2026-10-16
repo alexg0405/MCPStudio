@@ -37,6 +37,7 @@ export function register(services: Services): void {
     title: 'Open plugin editor',
     category: 'Channels',
     hint: 'Open the selected channel’s instrument',
+    argsHint: 'optional { channelId } (default: the selected channel); the open action also opens effect windows',
     enabled: (s) => !!s.session.getState().selectedChannelId,
     run: (s, args) => {
       const channelId = args?.channelId ?? s.session.getState().selectedChannelId;

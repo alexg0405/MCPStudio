@@ -56,6 +56,9 @@ void loadRecentFiles();
 // Reloaded mid-song (the dev server does that when code changes): carry on playing.
 resumeAfterReload(services, restored?.transport);
 
+// AI apps connect through the dev server (MCP): this tab answers their calls. No-op without HMR.
+services.mcp.start(import.meta.hot);
+
 if (import.meta.hot) {
   // AudioWorklet code changed (see the ag:worklet-hmr Vite plugin): restart audio with a fresh context.
   import.meta.hot.on('ag:worklet-changed', (data: { file?: string }) => {

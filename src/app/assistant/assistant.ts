@@ -22,7 +22,7 @@ import { commandCatalog } from '../ai/commands';
 import type { BuildStage, PluginDraft, PluginSpec, SmokeReport } from '../ai/builder';
 import { focusContext, isAiFocus, resolveFocus, type AiFocus, type ResolvedFocus } from '../ai/focus';
 import { analyzeMix, formatMixReport, summarizeMixReport, type AnalyzeRange } from '../analysis/mix';
-import { afterStepFor } from './after-steps';
+import { afterStepFor, type AfterStepResult } from './after-steps';
 import { audition } from './audition';
 import { projectContext } from '../ai/context';
 import { STUDIO_PROMPT } from '../ai/prompt';
@@ -83,6 +83,40 @@ export interface ApprovalMessage {
   outside: string[];
   /** ask: waiting; all: applied with the outside edits; part: applied to the part only; expired: no longer possible. */
   state: 'ask' | 'all' | 'part' | 'expired';
+}
+
+/** An edit from an AI app over MCP. */
+export interface ExternalApply {
+  /** The app's name for the chat and the undo label ("Claude Code"). */
+  client: string;
+  /** What it did, in a sentence for the musician (also the undo label). */
+  summary: string;
+  /** Limit the edit to this part of the song. */
+  focus?: AiFocus | null;
+  /** With a focus: edits beyond the part are allowed. */
+  approveOutside?: boolean;
+  /** Wait for follow-up work (leveling, filters) before returning (default true). */
+  waitForFollowups?: boolean;
+  /** A file-dialog command the actions asked for: the app shows the musician a button. */
+  onGesture?(commandId: string, args: unknown): void;
+}
+
+export interface ExternalApplied {
+  /** applied; needs_approval: nothing changed, the edit reaches outside the part; busy: Studio is mid-request. */
+  status: 'applied' | 'needs_approval' | 'busy';
+  changes: string[];
+  warnings: string[];
+  edited: boolean;
+  /** The history point before the edit: `undo` with it goes back here. */
+  beforePoint: number;
+  /** The history point after it (null when nothing changed). */
+  undoPoint: number | null;
+  /** What the follow-up steps did. */
+  followups: string[];
+  findings?: string[];
+  /** needs_approval: the part and what reaches outside it. */
+  part?: string;
+  outside?: string[];
 }
 
 export interface PluginMessage {
@@ -368,6 +402,134 @@ export class BeatAssistant {
     this.store.setState((st) => ({
       messages: st.messages.map((m) => (ids.has(m.id) && m.approval ? { ...m, approval: { ...m.approval, state: 'expired' as const } } : m)),
     }));
+  }
+
+  // ---------------------------------------------------------------- AI apps over MCP
+
+  /**
+   * Applies actions an AI app sent over MCP (src/app/mcp): the same applier as an answer from Studio,
+   * one undo step labelled with the app's name, and a message in this chat ("Claude Code changed: …")
+   * with the usual Undo. With a focus, edits outside the part wait for `approveOutside`. Playback
+   * only changes when the actions ask for it. Resolves when the follow-up steps (leveling…) are done.
+   */
+  async applyExternal(answer: AiAnswer, opts: ExternalApply): Promise<ExternalApplied> {
+    const empty: ExternalApplied = {
+      status: 'applied',
+      changes: [],
+      warnings: [],
+      edited: false,
+      beforePoint: this.s.history.status().cursor,
+      undoPoint: null,
+      followups: [],
+    };
+    if (!(await this.untilIdle(15_000)))
+      return { ...empty, status: 'busy', warnings: ['Studio is busy with another request. Try again in a moment.'] };
+    const part = resolveFocus(this.s.doc.getState().project, opts.focus ?? null);
+    const ctx = {
+      previousBeat: part?.notes ? null : this.store.getState().applied,
+      label: opts.summary,
+      source: opts.client,
+      focus: part,
+    };
+    // Working on a part: edits that also reach outside it wait for the app to say it is allowed.
+    if (part && !opts.approveOutside) {
+      const dry = applyAnswer(this.s, answer, { ...ctx, dryRun: true });
+      if (dry.outsideFocus?.length)
+        return {
+          ...empty,
+          status: 'needs_approval',
+          part: part.label,
+          outside: [...new Set(dry.outsideFocus)],
+          warnings: dry.warnings,
+        };
+    }
+    const result = applyAnswer(this.s, answer, {
+      ...ctx,
+      ...(part ? { focusOutside: opts.approveOutside ? ('allow' as const) : ('refuse' as const) } : {}),
+    });
+    const cursor = this.s.history.status().cursor;
+    const changes = [...result.changes];
+    const warnings = [...result.warnings];
+    // App commands: most run now; file dialogs need the musician's click (the app shows a button).
+    for (const a of result.after) {
+      if (a.kind !== 'command') continue;
+      const title = this.s.commands.get(a.id)?.title.replace(/…$/, '') ?? a.id;
+      if (a.gesture) {
+        opts.onGesture?.(a.id, a.args);
+        changes.push(`${title}: waiting for the musician's click`);
+      } else if (this.s.commands.run(a.id, a.args)) changes.push(`Ran “${title}”`);
+      else warnings.push(`command: “${title}” isn't available right now`);
+    }
+    const verb = result.edited ? 'changed' : changes.length ? 'did' : 'tried to change';
+    const summary = opts.summary.trim() || answer.message.trim();
+    this.say('assistant', `${opts.client} ${verb}: ${summary || 'the project'}`, {
+      detail: 'over MCP',
+      ...(changes.length ? { changes } : {}),
+      ...(warnings.length ? { warnings } : {}),
+      ...(result.edited ? { undo: cursor } : {}),
+      ...(result.beat
+        ? { beat: { title: this.s.doc.getState().project.patterns[result.beat.patternId]?.name ?? 'Beat', cursor } }
+        : {}),
+    });
+    if (result.beat) this.store.setState({ applied: result.beat });
+    const windows = result.after.filter((a) => a.kind === 'open');
+    if (windows.length) this.store.setState({ uiRequests: windows });
+    if (result.selectClips?.length) this.s.editor.getState().selectClips(result.selectClips);
+    const followups: string[] = [];
+    if (opts.waitForFollowups !== false)
+      await this.runAfterSteps(result.after, result.edited ? cursor : null, {
+        quietWaitMs: 30_000,
+        onResult: (r) =>
+          followups.push(r.message, ...(r.changes ?? []), ...(r.warnings ?? []).map((w) => `Could not: ${w}`)),
+      });
+    const undoPoint = this.s.history.status().cursor;
+    // Playback the actions asked for (nothing else starts or stops the music).
+    if (result.edited)
+      await Promise.race([this.s.engine.ready().catch(() => {}), new Promise((r) => setTimeout(r, 4000))]);
+    for (const a of result.after) {
+      if (a.kind === 'mode') this.s.view.getState().setMode(a.mode);
+      else if (a.kind === 'stop') this.s.engine.stop();
+      else if (a.kind === 'metronome') this.s.prefs.getState().set({ metronome: a.on });
+      else if (a.kind === 'play') {
+        if (a.mode) this.s.view.getState().setMode(a.mode);
+        this.s.engine.play(a.fromTick ?? 0);
+      } else if (a.kind === 'build_plugin') void this.buildPlugin(a.spec);
+    }
+    return {
+      status: 'applied',
+      changes,
+      warnings,
+      edited: result.edited || undoPoint !== empty.beforePoint,
+      beforePoint: empty.beforePoint,
+      undoPoint: undoPoint !== empty.beforePoint ? undoPoint : null,
+      followups,
+      ...(result.findings?.length ? { findings: result.findings } : {}),
+    };
+  }
+
+  /** A line in this chat about something an AI app did (a command, an undo…), with an Undo when it changed the project. */
+  reportExternal(
+    client: string,
+    text: string,
+    extra: { undo?: number; changes?: string[]; warnings?: string[] } = {},
+  ): void {
+    this.say('assistant', `${client} ${text}`, { detail: 'over MCP', ...extra });
+  }
+
+  /** Resolves true when no request is running (waits up to `ms` for one to finish). */
+  private untilIdle(ms: number): Promise<boolean> {
+    if (this.store.getState().phase === 'idle') return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const done = (ok: boolean) => {
+        off();
+        clearTimeout(timer);
+        resolve(ok);
+      };
+      const off = this.store.subscribe((st) => {
+        if (st.phase === 'idle') done(true);
+      });
+      const timer = setTimeout(() => done(false), ms);
+    });
   }
 
   // ---------------------------------------------------------------- the part a request is about
@@ -841,7 +1003,12 @@ export class BeatAssistant {
    * heavy work waits while the musician plays the song (rendering next to playback makes it choppy).
    * True when the musician started playback meanwhile.
    */
-  private async runAfterSteps(after: readonly AfterEdit[], entry: number | null): Promise<boolean> {
+  private async runAfterSteps(
+    after: readonly AfterEdit[],
+    entry: number | null,
+    /** `quietWaitMs`: give up waiting for the music to stop after this long (an AI app is waiting for the answer). */
+    opts: { quietWaitMs?: number; onResult?(res: AfterStepResult): void } = {},
+  ): Promise<boolean> {
     const items = after.filter((a) => afterStepFor(a.kind));
     if (!items.length) return false;
     let listened = this.s.engine.playing;
@@ -854,12 +1021,16 @@ export class BeatAssistant {
       new Promise<void>((resolve) => {
         if (!this.s.engine.playing) return resolve();
         this.store.setState({ listening: { label: 'Waiting while you listen (stop playback to finish)', fraction } });
-        const off = this.s.engine.subscribe(() => {
-          if (this.s.engine.playing) return;
+        const done = () => {
           off();
+          clearTimeout(giveUp);
           this.store.setState({ listening: { label, fraction } });
           resolve();
+        };
+        const off = this.s.engine.subscribe(() => {
+          if (!this.s.engine.playing) done();
         });
+        const giveUp = opts.quietWaitMs === undefined ? undefined : setTimeout(done, opts.quietWaitMs);
       });
     const abort = new AbortController();
     this.abort = abort;
@@ -884,6 +1055,7 @@ export class BeatAssistant {
         const now = this.s.history.status().cursor;
         const made = own === null && now !== was;
         if (made) own = now;
+        if (res) opts.onResult?.(res);
         if (res)
           this.say('assistant', res.message, {
             ...(res.changes?.length ? { changes: res.changes } : {}),

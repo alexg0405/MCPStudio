@@ -16,7 +16,8 @@ import type { AiAnswer } from './schema';
 export type { AfterEdit, AppliedTurn, ApplyContext, AuditionPhrase } from './ops/types';
 export { coerceParam, parseKey } from './ops/values';
 
-export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): AppliedTurn {
+/** `source` names who asked in the undo label ("Claude Code: …"); the Studio chat is the default. */
+export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext & { source?: string }): AppliedTurn {
   const state = newAnswerState();
   const docActions = answer.actions.filter((a) => !UI_OP_NAMES.has(a.op));
   const words = (ctx.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
@@ -28,7 +29,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext): A
   try {
     edited =
       docActions.length > 0 &&
-      s.history.transact(`Studio: ${label}`, (d) => {
+      s.history.transact(`${ctx.source ?? 'Studio'}: ${label}`, (d) => {
         const c = createOpContext(s, d, answer, ctx, state);
         for (const a of docActions) {
           const fn = DOC_OPS[a.op];

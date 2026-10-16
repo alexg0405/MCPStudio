@@ -65,6 +65,8 @@ export interface PrefsState {
   /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
   theme: string;
   accent: string;
+  /** AI apps (Claude Code, Claude Desktop…) may control the open project over MCP (on by default, development server only). */
+  mcpEnabled: boolean;
 }
 
 export type AudioBufferSize = 'small' | 'medium' | 'large';
@@ -119,6 +121,7 @@ const DEFAULTS: PrefsState = {
   followPlayhead: true,
   theme: 'marble',
   accent: 'gold',
+  mcpEnabled: true,
 };
 
 function load(): PrefsState {

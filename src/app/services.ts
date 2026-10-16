@@ -30,6 +30,7 @@ import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
 import { ProjectFiles } from './project-files';
 import { BeatAssistant } from './assistant/assistant';
+import { McpLink } from './mcp/bridge';
 import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { TapRegistry } from './taps';
@@ -80,6 +81,8 @@ export interface Services {
   readonly files: ProjectFiles;
   /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). */
   readonly assistant: BeatAssistant;
+  /** AI apps (Claude Code, Claude Desktop…) controlling the project over MCP: the tools and the dev server's channel. */
+  readonly mcp: McpLink;
   /** Your own presets (kept in this browser) and which preset each plugin loaded last. */
   readonly presets: PresetLibrary;
   /** DJ mode: each song's tempo, beat grid, key, energy, sections and mix points (cached by content hash). */
@@ -226,6 +229,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
   let assistant: BeatAssistant | null = null;
+  let mcp: McpLink | null = null;
   const services: Services = {
     platform,
     commands,
@@ -257,6 +261,9 @@ export function createServices(opts: ServiceOptions = {}): Services {
     },
     get assistant() {
       return (assistant ??= new BeatAssistant(services));
+    },
+    get mcp() {
+      return (mcp ??= new McpLink(services));
     },
     presets,
     trackAnalyzer,

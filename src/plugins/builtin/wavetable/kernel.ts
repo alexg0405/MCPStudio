@@ -227,6 +227,10 @@ class WtVoice implements Voice {
   readonly f2L = new Svf();
   readonly f2R = new Svf();
   drive = 0;
+  /** The filter design in force (type, cutoff and Q), or NaN when it must be set again. */
+  filterType = NaN;
+  filterCutoff = NaN;
+  filterQ = NaN;
   driveNorm = 1;
   gain = 0;
   gainStep = 0;
@@ -517,6 +521,9 @@ export class WavetableKernel extends InstrumentKernel<Params> {
   // Shared per-block settings read by the control step and the segment renderer.
   private subShape = 0;
   private filterSteep = false;
+  /** The last resonance seen and its Q (shared by voices: one pow per change, not per voice and step). */
+  private lastRes = NaN;
+  private lastQ = 0;
   /** The param block and frame the control step reads (see P). */
   private blk: ParamBlock<Params> | null = null;
   private idx = 0;
@@ -570,8 +577,8 @@ export class WavetableKernel extends InstrumentKernel<Params> {
       const dst = S.modTarget[s] as number;
       mods[dst] = (mods[dst] as number) + (S.modAmount[s] as number) * value;
     }
-    v.lfo1Rate = Math.pow(2, 4 * (mods[DST_LFO1] as number));
-    v.lfo2Rate = Math.pow(2, 4 * (mods[DST_LFO2] as number));
+    v.lfo1Rate = mods[DST_LFO1] === 0 ? 1 : Math.pow(2, 4 * (mods[DST_LFO1] as number));
+    v.lfo2Rate = mods[DST_LFO2] === 0 ? 1 : Math.pow(2, 4 * (mods[DST_LFO2] as number));
 
     // Pitch (semitones): the gliding note, the channel pitch, the note's fine pitch and modulation.
     if (v.glideStep < v.glideSteps) {
@@ -637,17 +644,27 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     const tracked = (S.keyTrack * (v.pitch - 60)) / 12;
     const cutoff = Math.max(20, Math.min(0.45 * sr, S.cutoff * Math.pow(2, octaves + tracked)));
     const res = Math.max(0, Math.min(1, S.resonance + (mods[DST_RES] as number)));
-    const q = 0.6 * Math.pow(30, res);
-    const kind = type === 2 ? 'highpass' : type === 3 ? 'bandpass' : type === 4 ? 'notch' : 'lowpass';
-    // Both channels share one filter design.
-    if (this.filterSteep) {
-      v.f1L.set('lowpass', cutoff, 0.6, sr);
-      v.f1R.copyDesign(v.f1L);
-      v.f2L.set('lowpass', cutoff, q, sr);
-      v.f2R.copyDesign(v.f2L);
-    } else {
-      v.f1L.set(kind, cutoff, q, sr);
-      v.f1R.copyDesign(v.f1L);
+    if (res !== this.lastRes) {
+      this.lastRes = res;
+      this.lastQ = 0.6 * Math.pow(30, res);
+    }
+    const q = this.lastQ;
+    // Both channels share one filter design, which is only recomputed when it changes (a filter that
+    // nothing modulates keeps the same cutoff for the whole note).
+    if (type !== v.filterType || cutoff !== v.filterCutoff || q !== v.filterQ) {
+      v.filterType = type;
+      v.filterCutoff = cutoff;
+      v.filterQ = q;
+      if (this.filterSteep) {
+        v.f1L.set('lowpass', cutoff, 0.6, sr);
+        v.f1R.copyDesign(v.f1L);
+        v.f2L.set('lowpass', cutoff, q, sr);
+        v.f2R.copyDesign(v.f2L);
+      } else {
+        const kind = type === 2 ? 'highpass' : type === 3 ? 'bandpass' : type === 4 ? 'notch' : 'lowpass';
+        v.f1L.set(kind, cutoff, q, sr);
+        v.f1R.copyDesign(v.f1L);
+      }
     }
     const drive = S.drive;
     v.drive = drive > 0 ? 1 + 6 * drive : 0;

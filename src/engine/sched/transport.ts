@@ -365,6 +365,16 @@ export class Transport {
     }
   }
 
+  /**
+   * Releases every note that has started and has no release scheduled yet, at `time`. For an offline
+   * render of a span of the song that stops where notes are still sounding, or end exactly there (a
+   * note's release is dispatched with the segment after the one that ends at its end tick, and a span
+   * has none): without it they would ring through the whole tail.
+   */
+  releaseHeld(time: number): void {
+    for (const n of this.notes.values()) if (!n.offSent) this.release(n, time);
+  }
+
   private release(n: Scheduled, time: number): void {
     n.offSent = true;
     // A release at the start time would cancel the note; nudge it just past the start.

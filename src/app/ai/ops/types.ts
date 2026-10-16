@@ -1,5 +1,6 @@
 /** What applying an AI answer takes and returns. */
 import type { Style } from '@core/beat/style';
+import type { FilterTarget } from '@core/filters/target';
 import type { DjMixOptions } from '@core/model/types';
 import type { MixSong } from '../../dj/mix';
 import type { ChannelId, ClipId, InsertId, SlotId, Tick } from '@core/model/types';
@@ -31,7 +32,9 @@ export type AfterEdit =
   /** Render the busiest part and set the faders and master to the style's levels (its own step, after the edit). */
   | { kind: 'level_mix'; style: Style; fromTick?: Tick; bars?: number }
   /** Analyze songs that need it, then make the DJ mix (its own step, after the edit). */
-  | { kind: 'dj_mix'; songs: MixSong[]; options: DjMixOptions };
+  | { kind: 'dj_mix'; songs: MixSong[]; options: DjMixOptions }
+  /** Render a part and play it through a sound filter (its own step, after the edit). */
+  | { kind: 'filter'; filter: string; target: FilterTarget };
 
 export type AuditionPhrase = 'chord' | 'riff' | 'bass' | 'hits';
 

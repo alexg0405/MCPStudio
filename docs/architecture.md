@@ -2094,6 +2094,26 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
   a time as the render streams in and written to the file as it goes (see [Long audio](#long-audio-dj-mode-foundations))
   (`encode.worker.ts`; LAME loads only there). Chrome maps 16-bit integers to floats asymmetrically (positive
   × 1/32767, negative / 32768): the FLAC browser test compares against exactly that.
+- **MP3 is gapless** (`core/io/mp3-gapless.ts`, `app/export/mp3.ts`). lamejs writes no Xing/LAME header, so a decoder
+  can't tell that the first 576 + 529 samples it makes are encoder and decoder delay: the file decoded about 25 ms late
+  and 25–35 ms long next to the WAV. Every MP3 now starts with a silent Layer III frame at the stream's bit rate,
+  sample rate and channel mode that carries `Info` (constant bit rate), the frame count (not counting itself), the
+  file's bytes, a linear table of contents, and LAME's extension: version string (`LAME3.98 `), encoder delay 576,
+  encoder padding = frames × 1152 − samples − 576 (so delay + samples + padding fills the frames), the music length,
+  the CRC-16 of the audio frames and the tag's own CRC. The streaming encoder writes it **first with zero counts**
+  (`PieceEncoder.header()`, a valid file as it stands: a cancelled or crashed export still plays) and `finalHeader()`
+  after `finish()` is the same frame, same size, with the real counts, written over the start like the WAV and FLAC
+  headers (`ByteSink.writeAt`: `FileSystemWritableFileStream` `write({position})` then `seek` back; the memory sink
+  patches its parts). All our sinks can write over earlier bytes, so there is no "compute it up front" path; a
+  sink that couldn't would have to know the frame count in advance, which depends on LAME's flush, not on the input.
+  `Mp3StreamCounter` counts frames, bytes and the CRC from the encoder's own output, however the pieces cut it.
+  Below ~64 kbps the frame is too small for the tag (the dialog offers 128–320) and no header is written.
+  Measured in Chrome (`test/browser/audio-export.test.ts`, the drum song, 192 kbps, 44.1 and 48 kHz): **Chrome's
+  `decodeAudioData` honours the LAME tag** (it is ffmpeg). The first transient is within 0.1 ms of the WAV's, the
+  cross-correlation lag is 0 frames and the decoded lengths are equal; the same stream without its Info frame is
+  23–25 ms late (onset +25–27 ms) and 26–35 ms long. `readAudioInfo` reads the header, so our own MP3s now report an
+  exact length. Other players that read the tag (ffmpeg, foobar2000, iTunes, VLC) behave the same; players that don't
+  play one silent frame (≈ 26 ms) first.
 - Stems: one per mixer track with sound playing into it in the range, plus "Master" for channels that play straight
   into it. A stem renders the song with only that track's channels heard, through everything downstream of it:
   other tracks are muted with their insert mute (after the sidechain tap, so a muted kick still ducks the bass), and a

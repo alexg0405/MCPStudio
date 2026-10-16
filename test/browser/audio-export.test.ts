@@ -8,6 +8,7 @@ import { strFromU8, unzipSync } from 'fflate';
 import { createServices, type Services } from '@app/services';
 import { runExport, type AudioExportSettings } from '@app/export/audio-export';
 import { trimExport } from '@app/export/export-wav';
+import { parseInfoFrame } from '@core/io/mp3-gapless';
 import { decodePcm } from '@core/io/wav';
 import { MASTER, type ClipId, type LaneId, type Project } from '@core/model/types';
 import { addClips } from '@core/ops/playlist';
@@ -177,5 +178,64 @@ describe('audio export', () => {
     // 192 kbps: about 24 kB per second.
     expect(files.get('song.mp3')!.length / res.seconds).toBeGreaterThan(20000);
     expect(files.get('song.mp3')!.length / res.seconds).toBeLessThan(28000);
+  });
+
+  it('exports MP3 that lines up with the WAV within 2 ms (gapless Info header)', async () => {
+    const s = make(song());
+    const mp3Files = new Map<string, Uint8Array>();
+    const wavFiles = new Map<string, Uint8Array>();
+    for (const rate of [44100, 48000]) {
+      await runExport(s, settings({ codec: 'mp3', mp3Kbps: 192, sampleRate: rate }), { kind: 'memory', files: mp3Files, name: `${rate}.mp3` });
+      await runExport(s, settings({ sampleRate: rate }), { kind: 'memory', files: wavFiles, name: `${rate}.wav` });
+    }
+    const decode = async (bytes: Uint8Array, rate: number) =>
+      (await new OfflineAudioContext(2, 1, rate).decodeAudioData(bytes.slice().buffer as ArrayBuffer)).getChannelData(0);
+    /** The first sample that reaches a fifth of the loudest sample in the first half second. */
+    const onset = (x: Float32Array, rate: number) => {
+      let peak = 0;
+      for (let i = 0; i < Math.min(x.length, rate / 2); i++) peak = Math.max(peak, Math.abs(x[i]!));
+      let i = 0;
+      while (Math.abs(x[i]!) < 0.2 * peak) i++;
+      return i;
+    };
+    /** The lag (frames, MP3 later) that best lines the MP3 up with the WAV over the first 0.3 s. */
+    const bestLag = (ref: Float32Array, x: Float32Array, rate: number) => {
+      const n = Math.floor(rate * 0.3);
+      let best = 0;
+      let bestScore = -Infinity;
+      for (let lag = -Math.floor(rate * 0.01); lag <= Math.floor(rate * 0.06); lag++) {
+        let sum = 0;
+        for (let i = Math.max(0, -lag); i < n; i++) sum += ref[i]! * x[i + lag]!;
+        if (sum > bestScore) {
+          bestScore = sum;
+          best = lag;
+        }
+      }
+      return best;
+    };
+    for (const rate of [44100, 48000]) {
+      const wav = decodeWav(wavFiles.get(`${rate}.wav`)!)[0]!;
+      const mp3Bytes = mp3Files.get(`${rate}.mp3`)!;
+      const info = parseInfoFrame(mp3Bytes)!;
+      expect(info.lame).toMatchObject({ delay: 576, tagCrcOk: true });
+      const mp3 = await decode(mp3Bytes, rate);
+      // The same stream without its Info frame is what lamejs wrote before (no gapless information).
+      const bare = await decode(mp3Bytes.subarray(info.frameBytes), rate);
+      const ms = (frames: number) => (1000 * frames) / rate;
+      const row = {
+        onsetWavMs: ms(onset(wav, rate)),
+        onsetMp3Ms: ms(onset(mp3, rate)),
+        onsetBareMs: ms(onset(bare, rate)),
+        lagMs: ms(bestLag(wav, mp3, rate)),
+        lagBareMs: ms(bestLag(wav, bare, rate)),
+        lengthDiffMs: ms(mp3.length - wav.length),
+        lengthDiffBareMs: ms(bare.length - wav.length),
+      };
+      expect(Math.abs(row.onsetMp3Ms - row.onsetWavMs)).toBeLessThan(2);
+      expect(Math.abs(row.lagMs)).toBeLessThan(2);
+      expect(Math.abs(row.lengthDiffMs)).toBeLessThan(2);
+      // Without the header the audio is late by the encoder's delay (the test would pass vacuously otherwise).
+      expect(row.lagBareMs).toBeGreaterThan(15);
+    }
   });
 });

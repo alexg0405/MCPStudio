@@ -26,7 +26,7 @@ export const CODEC_MIME: Record<AudioCodec, string> = { wav: 'audio/wav', flac: 
 
 /** An encoder fed a piece at a time on the calling thread. */
 export interface PieceEncoder {
-  /** The bytes that start the file (a header without the length yet; empty for MP3). */
+  /** The bytes that start the file (a header without the length yet: WAV, FLAC, and MP3's Info frame). */
   header(): Uint8Array;
   push(channels: readonly Float32Array[]): Uint8Array;
   /** The last bytes. */
@@ -52,7 +52,7 @@ export async function createPieceEncoder(spec: EncodeSpec, sampleRate: number, c
   }
   const { Mp3StreamEncoder } = await import('./mp3');
   const enc = new Mp3StreamEncoder(channels, sampleRate, spec.kbps);
-  return { header: () => new Uint8Array(0), push: (c) => enc.push(c), finish: () => enc.finish(), finalHeader: () => null };
+  return { header: () => enc.header(), push: (c) => enc.push(c), finish: () => enc.finish(), finalHeader: () => enc.finalHeader() };
 }
 
 /** WAV and FLAC on the calling thread (the Worker's body; MP3 needs encodeAudioAsync). */

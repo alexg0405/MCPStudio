@@ -1,16 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { tempoMapOf } from '@core/automation/tempo';
 import { newId } from '@core/model/ids';
-import type { AudioClipChannel, SampleRef } from '@core/model/types';
+import type { AudioClipChannel, Project, SampleRef } from '@core/model/types';
+import type * as RenderToAudio from '../actions/render-to-audio';
 import { BAR, project, stackedSong } from '../../../test/helpers/focus';
 
 // Rendering needs a browser: the render is faked as a silent clip as long as the part plays.
 let onRender: (() => void) | null = null;
 vi.mock('../actions/render-to-audio', async (importOriginal) => {
-  const orig = await importOriginal<typeof import('../actions/render-to-audio')>();
+  const orig = await importOriginal<typeof RenderToAudio>();
   return {
     ...orig,
-    renderRange: vi.fn(async (_s: unknown, p: import('@core/model/types').Project, from: number, to: number, name: string) => {
+    renderRange: vi.fn(async (_s: unknown, p: Project, from: number, to: number, name: string) => {
       onRender?.();
       const tempo = tempoMapOf(p, 'song');
       const seconds = tempo.tickToSeconds(to) - tempo.tickToSeconds(from);

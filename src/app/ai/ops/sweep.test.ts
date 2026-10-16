@@ -180,7 +180,7 @@ function checkOnce(s: TestServices, actions: AiAction[], label: string, mode: Mo
   try {
     res = applyAnswer(s, { message: 'Sweep.', actions }, ctx());
   } catch (e) {
-    throw new Error(`${label} threw: ${e instanceof Error ? (e.stack ?? e.message) : e}\n${JSON.stringify(actions)}`);
+    throw new Error(`${label} threw: ${e instanceof Error ? (e.stack ?? e.message) : e}\n${JSON.stringify(actions)}`, { cause: e });
   }
   // The dry run predicted the same changes and warnings (when there was something to edit).
   // (the UI actions' own warnings come after the edit, so a dry run doesn't have them)

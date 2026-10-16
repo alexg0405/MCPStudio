@@ -38,6 +38,8 @@ import { formatBST, ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
 import { onFrame } from '../../frame-loop';
+import { closeContextMenu, isContextMenuOpen } from '../../controls/ContextMenu';
+import { PlayheadFollow } from '../../timeline/follow';
 import {
   AUTO_HINTS,
   contentToTick,
@@ -187,6 +189,10 @@ export class PlaylistController {
   private pillWidth = 0;
   /** The audio clip gain/fade handle under the pointer. */
   private audioHot: { clipId: ClipId; handle: AudioHandle } | null = null;
+  /** Follow playhead: scrolls the view along while playing; its scroll is saved once playback stops. */
+  private readonly follow = new PlayheadFollow();
+  private followMoved = false;
+  private wasPlaying = false;
 
   constructor(
     private readonly s: Services,
@@ -374,6 +380,7 @@ export class PlaylistController {
     const p = this.project();
     const { vp, els } = this;
     vp.rows = p.playlist.laneOrder.length;
+    this.followPlayhead(p);
     if (this.dirty.size > 0) {
       const theme = readTheme();
       const ts = p.transport.timeSig;
@@ -681,6 +688,47 @@ export class PlaylistController {
     this.invalidate('overlay');
   }
 
+  /**
+   * Follow playhead (FL's auto-scroll): near the right edge the view glides a page on; it holds still
+   * while the user drags, selects, renames a marker or has a menu open, and after a hand scroll until
+   * the playhead is back in view. On the frame loop: no React, nothing saved until playback stops.
+   */
+  private followPlayhead(p: Project): void {
+    const { engine, view, prefs } = this.s;
+    const playing = engine.playing;
+    // Playback starting moves things under an open menu: it closes.
+    if (playing && !this.wasPlaying) closeContextMenu();
+    this.wasPlaying = playing;
+    const enabled = prefs.getState().followPlayhead;
+    if (!playing || !enabled) {
+      this.follow.step({ now: performance.now(), enabled, playing, playhead: NaN, scrollTick: 0, visible: 0, maxScroll: 0, wrapEnd: Infinity, busy: false });
+      if (!playing && this.followMoved) {
+        this.followMoved = false;
+        this.persistViewport();
+      }
+      return;
+    }
+    const v = view.getState();
+    const visible = this.vp.width / this.vp.pxPerTick;
+    // Recording a take with no loop region plays on past the song's end.
+    const openEnded = !v.loop && !!this.s.audioRecorder.live.getState().take;
+    const next = this.follow.step({
+      now: performance.now(),
+      enabled,
+      playing,
+      playhead: v.mode === 'song' ? engine.playhead() : NaN,
+      scrollTick: this.vp.scrollTick,
+      visible,
+      maxScroll: Math.max(0, this.maxTick(p) - visible),
+      wrapEnd: v.loop ? v.loop.end : openEnded ? Infinity : songLength(p),
+      busy: this.drag !== null || isContextMenuOpen() || this.els.markerRename.style.display === 'block',
+    });
+    if (next === null || next === this.vp.scrollTick) return;
+    this.vp.scrollTick = next;
+    this.followMoved = true;
+    this.invalidate('grid', 'clips', 'overlay', 'ruler');
+  }
+
   private updatePlayhead(): void {
     const { engine, view } = this.s;
     const v = view.getState();
@@ -811,6 +859,7 @@ export class PlaylistController {
     if (from >= start && Math.min(to, from + visible * 0.5) <= start + visible) return true;
     const total = this.maxTick(this.project());
     this.vp.scrollTick = clamp(from - visible * 0.1, 0, Math.max(0, Math.max(total, to) - visible * 0.9));
+    this.follow.userScrolled();
     this.viewportChanged();
     return true;
   }
@@ -839,6 +888,7 @@ export class PlaylistController {
   zoomBy(factor: number): void {
     this.vp.zoomX(factor, this.vp.width / 2);
     this.vp.clampScroll(this.maxTick(this.project()));
+    this.follow.userScrolled();
     this.viewportChanged();
   }
 
@@ -1073,6 +1123,7 @@ export class PlaylistController {
         this.vp.scrollBy(d.x - e.clientX, d.y - e.clientY, this.maxTick(p));
         d.x = e.clientX;
         d.y = e.clientY;
+        this.follow.userScrolled();
         this.viewportChanged();
         return;
       case 'move': {
@@ -1645,6 +1696,8 @@ export class PlaylistController {
     else if (e.shiftKey) this.vp.scrollBy(dy || dx, 0, this.maxTick(p));
     else this.vp.scrollBy(dx, dy, this.maxTick(p));
     this.vp.clampScroll(this.maxTick(p));
+    // Scrolling or zooming by hand: following waits until the playhead is back in view.
+    if (Math.abs(dx) >= 1 || e.shiftKey || e.ctrlKey || e.metaKey) this.follow.userScrolled();
     this.viewportChanged();
   }
 
@@ -1662,6 +1715,7 @@ export class PlaylistController {
     const move = (ev: PointerEvent) => {
       const frac = (ev.clientX - startX) / Math.max(1, track - w);
       this.vp.scrollTick = clamp(startTick + frac * (total - visible), 0, Math.max(0, total - visible));
+      this.follow.userScrolled();
       this.viewportChanged();
     };
     const up = () => {

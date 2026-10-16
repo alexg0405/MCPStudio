@@ -60,6 +60,8 @@ export interface PrefsState {
   sampleMemoryMb: number;
   /** The little display in the toolbar: the waveform or spectrum of what you hear, or hidden. */
   scopeMode: 'scope' | 'spectrum' | 'off';
+  /** While playing, the playlist and piano roll scroll to keep the playhead in view (FL's auto-scroll). */
+  followPlayhead: boolean;
   /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
   theme: string;
   accent: string;
@@ -114,6 +116,7 @@ const DEFAULTS: PrefsState = {
   audioBuffer: 'large',
   sampleMemoryMb: 1536,
   scopeMode: 'scope',
+  followPlayhead: true,
   theme: 'marble',
   accent: 'gold',
 };

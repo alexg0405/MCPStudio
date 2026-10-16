@@ -38,6 +38,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PianoRollControll
   const set = services.editor.getState().setPianoRoll;
   const keepFocus = (e: React.PointerEvent) => e.preventDefault();
   const keyName = songKeyName(songKey);
+  const follow = useStore(services.prefs, (p) => p.followPlayhead);
   const noKey = 'Choose a song key first (the Key button)';
   return (
     <div className={styles.toolbar}>
@@ -192,6 +193,16 @@ function Toolbar({ controller }: { controller: React.RefObject<PianoRollControll
           +
         </button>
       </span>
+      <button
+        tabIndex={-1}
+        className={`${styles.tool} ${follow ? styles.toolOn : ''}`}
+        aria-pressed={follow}
+        onPointerDown={keepFocus}
+        onClick={() => services.commands.run('view.followPlayhead')}
+        data-hint={`Follow playhead ${follow ? 'on' : 'off'}: while playing, the view scrolls along so the playhead stays in sight (scrolling by hand pauses it until the playhead is back on screen)`}
+      >
+        Follow
+      </button>
       <span className={styles.selCount}>{count > 0 ? `${count} selected` : ''}</span>
     </div>
   );

@@ -20,6 +20,8 @@ import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { noteName, scaleMask } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
+import { isContextMenuOpen } from '../../controls/ContextMenu';
+import { PlayheadFollow } from '../../timeline/follow';
 import { alpha, roundRectPath, fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
@@ -118,6 +120,9 @@ export class PianoRollController {
   /** Where the chord stamp would draw, shown as an outline under the pointer. */
   private stampHover: { tick: Tick; length: Tick; keys: number[]; name: string } | null = null;
   private lastHint = '';
+  /** Follow playhead: scrolls the view along while playing; its scroll is saved once playback stops. */
+  private readonly follow = new PlayheadFollow();
+  private followMoved = false;
 
   constructor(
     private readonly s: Services,
@@ -313,6 +318,7 @@ export class PianoRollController {
       this.centeredFor = key;
       this.centerOnNotes(c);
     }
+    this.followPlayhead(c);
     const theme = readTheme();
     const { els, vp } = this;
     const ts = c.project.transport.timeSig;
@@ -471,17 +477,52 @@ export class PianoRollController {
 
   private sliceX = 0;
 
-  private updatePlayhead(c: Ctx): void {
+  /** The playhead in this pattern's ticks; NaN when stopped or (song mode) no clip of it is playing. */
+  private playheadTick(c: Ctx): number {
     const { engine, view } = this.s;
-    let x = NaN;
-    if (engine.playing && c.pattern && c.patternId) {
-      if (view.getState().mode === 'pattern') x = this.vp.tickToX(engine.playhead() % this.patternEnd(c));
-      else {
-        // Song mode: follow the clip of this pattern that's playing, if any.
-        const t = patternTickAt(c.project, engine.playhead(), c.patternId);
-        if (t !== null) x = this.vp.tickToX(t);
+    if (!engine.playing || !c.pattern || !c.patternId) return NaN;
+    if (view.getState().mode === 'pattern') return engine.playhead() % this.patternEnd(c);
+    // Song mode: follow the clip of this pattern that's playing, if any.
+    return patternTickAt(c.project, engine.playhead(), c.patternId) ?? NaN;
+  }
+
+  /**
+   * Follow playhead (FL's auto-scroll), for the current pattern in pattern mode and for its clip that
+   * plays in song mode: near the right edge the view glides a page on. It holds still while the user
+   * drags, selects or has a menu open, and after a hand scroll until the playhead is back in view.
+   */
+  private followPlayhead(c: Ctx): void {
+    const playing = this.s.engine.playing;
+    const enabled = this.s.prefs.getState().followPlayhead;
+    const playhead = playing && enabled ? this.playheadTick(c) : NaN;
+    const visible = this.vp.width / this.vp.pxPerTick;
+    const next = this.follow.step({
+      now: performance.now(),
+      enabled,
+      playing,
+      playhead,
+      scrollTick: this.vp.scrollTick,
+      visible,
+      maxScroll: Number.isFinite(playhead) ? Math.max(0, this.maxTick(c) - visible) : 0,
+      // The pattern loops at its end (in song mode its clip repeats it).
+      wrapEnd: this.patternEnd(c),
+      busy: this.drag !== null || isContextMenuOpen(),
+    });
+    if (next === null) {
+      if (!playing && this.followMoved) {
+        this.followMoved = false;
+        this.persistViewport();
       }
+      return;
     }
+    this.vp.scrollTick = next;
+    this.followMoved = true;
+    this.invalidate('grid', 'notes', 'overlay', 'ruler', 'lane');
+  }
+
+  private updatePlayhead(c: Ctx): void {
+    const t = this.playheadTick(c);
+    const x = Number.isFinite(t) ? this.vp.tickToX(t) : NaN;
     if (x === this.lastPlayheadX) return;
     this.lastPlayheadX = x;
     const el = this.els.playhead;
@@ -766,6 +807,7 @@ export class PianoRollController {
         this.vp.scrollBy(d.x - e.clientX, d.y - e.clientY, this.maxTick(c));
         d.x = e.clientX;
         d.y = e.clientY;
+        this.follow.userScrolled();
         this.viewportChanged();
         return;
       }
@@ -990,6 +1032,8 @@ export class PianoRollController {
       this.vp.scrollBy(dx, dy, this.maxTick(c));
     }
     this.vp.clampScroll(this.maxTick(c));
+    // Scrolling or zooming time by hand: following waits until the playhead is back in view.
+    if (Math.abs(dx) >= 1 || e.shiftKey || e.ctrlKey || e.metaKey) this.follow.userScrolled();
     this.viewportChanged();
   }
 
@@ -1008,6 +1052,7 @@ export class PianoRollController {
     const move = (ev: PointerEvent) => {
       const frac = (ev.clientX - startX) / Math.max(1, track - w);
       this.vp.scrollTick = clamp(startTick + frac * (total - visible), 0, Math.max(0, total - visible));
+      this.follow.userScrolled();
       this.viewportChanged();
     };
     const up = () => {
@@ -1022,6 +1067,7 @@ export class PianoRollController {
   zoomBy(factor: number): void {
     this.vp.zoomX(factor, this.vp.width / 2);
     this.vp.clampScroll(this.maxTick(this.ctx()));
+    this.follow.userScrolled();
     this.viewportChanged();
   }
 

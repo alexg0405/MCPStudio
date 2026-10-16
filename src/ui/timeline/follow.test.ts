@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest';
+import { FOLLOW_EDGE, FOLLOW_LEAD, FOLLOW_QUIET_MS, PlayheadFollow, type FollowFrame } from './follow';
+
+const VISIBLE = 1000;
+const base: FollowFrame = {
+  now: 1000,
+  enabled: true,
+  playing: true,
+  playhead: 0,
+  scrollTick: 0,
+  visible: VISIBLE,
+  maxScroll: 100_000,
+  wrapEnd: Infinity,
+  busy: false,
+};
+
+/** Runs frames 16 ms apart until it leaves the view alone; the scroll it ends on. */
+function settle(f: PlayheadFollow, frame: Partial<FollowFrame>, start = base.now): { scroll: number; frames: number } {
+  let scroll = frame.scrollTick ?? 0;
+  let now = start;
+  for (let i = 0; i < 200; i++) {
+    const next = f.step({ ...base, ...frame, scrollTick: scroll, now });
+    if (next === null) return { scroll, frames: i };
+    scroll = next;
+    now += 16;
+  }
+  throw new Error('never settled');
+}
+
+describe('PlayheadFollow', () => {
+  it('leaves the view alone until the playhead nears the right edge', () => {
+    const f = new PlayheadFollow();
+    expect(f.step({ ...base, playhead: 0.5 * VISIBLE })).toBeNull();
+    expect(f.step({ ...base, playhead: (FOLLOW_EDGE - 0.01) * VISIBLE })).toBeNull();
+  });
+
+  it('glides a page on so the playhead sits near the left (a few frames, not one jump)', () => {
+    const f = new PlayheadFollow();
+    const playhead = 0.9 * VISIBLE;
+    const first = f.step({ ...base, playhead });
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(playhead - FOLLOW_LEAD * VISIBLE);
+    const { scroll, frames } = settle(f, { playhead, scrollTick: first! });
+    expect(scroll).toBeCloseTo(playhead - FOLLOW_LEAD * VISIBLE, 6);
+    expect(frames).toBeGreaterThan(3);
+    expect(frames).toBeLessThan(40);
+  });
+
+  it('brings a playhead that jumped off-screen straight back (a loop or a seek)', () => {
+    const f = new PlayheadFollow();
+    // Looped back to the start while the view shows bars further on.
+    expect(f.step({ ...base, playhead: 100, scrollTick: 5000 })).toBe(0);
+    expect(f.step({ ...base, playhead: 20_000, scrollTick: 0 })).toBe(20_000 - FOLLOW_LEAD * VISIBLE);
+  });
+
+  it('does not turn the page when the loop end already shows', () => {
+    const f = new PlayheadFollow();
+    expect(f.step({ ...base, playhead: 0.95 * VISIBLE, wrapEnd: VISIBLE })).toBeNull();
+  });
+
+  it('stays inside the scroll range', () => {
+    const f = new PlayheadFollow();
+    const { scroll } = settle(f, { playhead: 0.9 * VISIBLE, maxScroll: 300 });
+    expect(scroll).toBe(300);
+    expect(f.step({ ...base, playhead: 0.95 * VISIBLE + 300, scrollTick: 300, maxScroll: 300 })).toBeNull();
+  });
+
+  it('does nothing when off, stopped, busy, or the playhead is not in this view', () => {
+    const f = new PlayheadFollow();
+    const far = { playhead: 5000 };
+    expect(f.step({ ...base, ...far, enabled: false })).toBeNull();
+    expect(f.step({ ...base, ...far, playing: false })).toBeNull();
+    expect(f.step({ ...base, ...far, busy: true })).toBeNull();
+    expect(f.step({ ...base, playhead: NaN })).toBeNull();
+    // Let go: it catches up at once.
+    expect(f.step({ ...base, ...far })).toBe(5000 - FOLLOW_LEAD * VISIBLE);
+  });
+
+  it('after a hand scroll it waits until the playhead is back in view', () => {
+    const f = new PlayheadFollow();
+    f.step({ ...base, playhead: 100 });
+    f.userScrolled(base.now);
+    // Scrolled ahead: the playhead is off to the left.
+    const later = base.now + FOLLOW_QUIET_MS + 100;
+    expect(f.step({ ...base, now: later, playhead: 200, scrollTick: 3000 })).toBeNull();
+    expect(f.step({ ...base, now: later + 16, playhead: 2900, scrollTick: 3000 })).toBeNull();
+    // It enters the view: following resumes and turns the page at the edge.
+    expect(f.step({ ...base, now: later + 32, playhead: 3100, scrollTick: 3000 })).toBeNull();
+    expect(f.step({ ...base, now: later + 48, playhead: 3950, scrollTick: 3000 })).toBeGreaterThan(3000);
+  });
+
+  it('a hand scroll that keeps the playhead in view still holds for a moment', () => {
+    const f = new PlayheadFollow();
+    f.step({ ...base, playhead: 100 });
+    f.userScrolled(base.now);
+    expect(f.step({ ...base, now: base.now + 100, playhead: 950 })).toBeNull();
+    expect(f.step({ ...base, now: base.now + FOLLOW_QUIET_MS + 1, playhead: 950 })).not.toBeNull();
+  });
+
+  it('playing again ends the hold', () => {
+    const f = new PlayheadFollow();
+    f.step({ ...base, playhead: 100 });
+    f.userScrolled(base.now);
+    f.step({ ...base, now: base.now + 16, playing: false });
+    expect(f.step({ ...base, now: base.now + 32, playhead: 8000 })).toBe(8000 - FOLLOW_LEAD * VISIBLE);
+  });
+});

@@ -346,6 +346,16 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   (extended back by the longest item), layered canvases (grid / content / overlay), 1-px DOM playhead moved with
   `transform`, tools as small state machines, native non-passive wheel listener (React's `onWheel` is passive; trackpad
   pinch = wheel + ctrlKey → zoom at cursor), edge auto-scroll, `devicePixelContentBoxSize` for crisp canvases.
+  Follow playhead (`timeline/follow.ts`, pref `followPlayhead`, command `view.followPlayhead`): each controller's
+  `frame()` asks a `PlayheadFollow` for the scroll; at 88% of the width the view glides (240 ms ease-out) so the
+  playhead sits at 15%, and a playhead off-screen (loop, seek) snaps back. It holds still during drags and while a
+  context menu is open, and after a wheel/scrollbar/zoom until the playhead is back in view or playback restarts.
+  The scroll is saved to the editor store only when playback stops, so following causes no React commits.
+- Context menus (`controls/ContextMenu.tsx`): one host; a first `label` entry is the header, with a × (Esc). The
+  press that closes a menu outside it is swallowed whole (pointer up, click, contextmenu), so it never opens another
+  menu or edits what is under it. It opens beside the pointer, flipped above/left near the edges. Submenu panels are
+  `position: fixed` inside the blurred parent panel, which is their containing block, so their viewport coordinates
+  are made relative to it (and the panels animate opacity only); a submenu closes 180 ms after another row is entered.
 - Performance budgets: 60 fps with 10k notes (3k visible) and 2k clips; content redraw < 4 ms; single-note transact
   < 1 ms; zero React commits during idle playback.
 - Theme: CSS custom properties in `ui/theme/tokens.css` (and `themes.css`, below); canvases resolve tokens via

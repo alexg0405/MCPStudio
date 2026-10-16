@@ -17,7 +17,7 @@ import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -25,7 +25,7 @@ const until = async (ok: () => boolean, ms = 5000) => {
   }
 };
 
-describe('the menu bar’s submenus (UI)', { timeout: 30_000 }, () => {
+describe('the menu bar’s submenus (UI)', { timeout: 90_000 }, () => {
   let root: Root;
   let host: HTMLDivElement;
   const menus = () => [...document.querySelectorAll<HTMLElement>('[role="menu"]')];

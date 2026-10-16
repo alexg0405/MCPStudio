@@ -23,7 +23,7 @@ import '@ui/theme/base.css';
 
 const BAR = 3840;
 const PX_PER_TICK = 0.1;
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -37,7 +37,7 @@ const frames = (n: number) =>
     requestAnimationFrame(step);
   });
 
-describe('follow playhead in the piano roll (UI)', { timeout: 30_000 }, () => {
+describe('follow playhead in the piano roll (UI)', { timeout: 90_000 }, () => {
   let s: ReturnType<typeof createTestServices>;
   let root: Root;
   let host: HTMLDivElement;

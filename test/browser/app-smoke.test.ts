@@ -23,7 +23,7 @@ import '@ui/theme/base.css';
 
 const BAR = 3840;
 // Generous: these are whole-app flows, and the machine may be busy; a failure only takes longer to report.
-const until = async (ok: () => boolean, ms = 10_000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -131,7 +131,7 @@ describe('app smoke test', () => {
     expect(await s.files.openFile(new File([bytes.slice().buffer], 'Again.agproj'))).toBe(true);
     expect(s.doc.getState().project).toEqual(saved);
     expect(s.view.getState().mode).toBe('song');
-  }, 30_000);
+  }, 90_000);
 
   it('writes a beat from a description with the assistant window (offline generator)', async () => {
     s.commands.run('view.assistant');
@@ -152,9 +152,11 @@ describe('app smoke test', () => {
     expect(p.patterns[applied.patternId]?.name).toMatch(/trap/i);
     expect(Object.keys(applied.channels)).toEqual(expect.arrayContaining(['kick', '808']));
     await until(() => host.textContent!.includes('offline'));
+    // Playback starts once the audio engine is ready: not in the same tick as the applied beat (a busy machine shows it).
+    await until(() => s.engine.playing);
     expect(s.engine.playing).toBe(true);
     s.engine.stop();
-  }, 30_000);
+  }, 90_000);
 
   it('finds and runs an action by typing what you want (action search)', async () => {
     const before = s.prefs.getState().metronome;

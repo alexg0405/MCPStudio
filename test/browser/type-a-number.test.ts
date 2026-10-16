@@ -18,7 +18,7 @@ import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -27,7 +27,7 @@ const until = async (ok: () => boolean, ms = 5000) => {
 };
 
 // Real clicks and typing in the whole app: generous per-test time for a busy machine.
-describe('typing the tempo (UI)', { timeout: 30_000 }, () => {
+describe('typing the tempo (UI)', { timeout: 90_000 }, () => {
   let s: ReturnType<typeof createTestServices>;
   let root: Root;
   let host: HTMLDivElement;

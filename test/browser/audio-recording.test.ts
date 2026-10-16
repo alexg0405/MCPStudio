@@ -11,7 +11,7 @@ import type { AudioClip, AudioClipChannel } from '@core/model/types';
 import { Engine } from '@engine/engine';
 import { onsetFrames } from '../helpers/audio';
 
-const until = async (ok: () => boolean, ms = 10_000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

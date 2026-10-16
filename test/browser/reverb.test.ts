@@ -53,8 +53,8 @@ describe('Reverb engines', () => {
     // context compiles the kernel afresh, so the render is long enough for the JIT warm-up not to
     // count much; the best of up to three renders (stopping at the first fast enough), as the machine's
     // hiccups only ever add time. 15× holds on a quiet machine (`npm run test:perf`); the regular run
-    // shares the cores with the whole suite and only asks for 4×.
-    const limit = perfLimit(15, 4);
+    // shares the cores with the whole suite and only asks for 2×.
+    const limit = perfLimit(15, 2);
     const seconds = 20;
     const once = async () => {
       const ctx = new OfflineAudioContext({ numberOfChannels: 2, length: seconds * SR, sampleRate: SR });

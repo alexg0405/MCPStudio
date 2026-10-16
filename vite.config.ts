@@ -145,6 +145,8 @@ export default defineConfig(({ mode }) => ({
           // default of 15 s only ever fired on a busy machine. Tests with a longer chain of renders set their own.
           testTimeout: 60_000,
           hookTimeout: 60_000,
+          // Fixed entity ids: renders (whose noise is seeded from ids) repeat from run to run.
+          setupFiles: ['test/browser/setup.ts'],
           browser: {
             enabled: true,
             headless: true,

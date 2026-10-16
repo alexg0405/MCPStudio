@@ -29,7 +29,7 @@ import '@ui/theme/base.css';
 const BAR = 3840;
 // pxPerTick 0.025: a bar is 96 px; lanes are 36 px tall.
 const BAR_PX = 96;
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -44,7 +44,7 @@ const frames = (n: number) =>
   });
 
 // Real clicks in the whole app: generous per-test time for a busy machine.
-describe('the playlist’s empty-spot menu (UI)', { timeout: 30_000 }, () => {
+describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
   let s: ReturnType<typeof createTestServices>;
   let root: Root;
   let host: HTMLDivElement;

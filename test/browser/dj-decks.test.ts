@@ -344,11 +344,15 @@ function clickTimes(x: Float32Array, hz: number): number[] {
 }
 
 describe('decks: sync', () => {
-  for (const keyLock of [false, true]) {
-    // The turntable path is a plain resampler (and the kernel tests hold both modes for 5 minutes in position math):
-    // here it gets a minute, the key-locked path, which is the one that could drift, the full five.
-    it(`a synced deck holds the master's beat within 2 ms over ${keyLock ? 5 : 1} minute${keyLock ? 's' : ''} (key lock ${keyLock ? 'on' : 'off'})`, async () => {
-      const secs = keyLock ? 300 : 60;
+  // A minute and a half in the regular run; the kernel tests hold both modes for five minutes in position math, and
+  // VITE_LONG_DECKS=1 renders the full five (about 20 s of a core each) and measures them through the master.
+  const LONG = Boolean(import.meta.env.VITE_LONG_DECKS);
+  const cases = [
+    { keyLock: false, secs: LONG ? 300 : 90 },
+    { keyLock: true, secs: LONG ? 300 : 90 },
+  ];
+  for (const { keyLock, secs } of cases) {
+    it(`a synced deck holds the master's beat within 2 ms over ${secs / 60} minutes (key lock ${keyLock ? 'on' : 'off'})`, async () => {
       const rig = makeRig(secs + 6);
       // Two songs at 124 and 128 BPM with different downbeats; A's clicks are 1 kHz, B's 4 kHz.
       const a = rig.add('Song A', clickSong(124, 0.1, secs + 40, 1000), { bpm: 124, firstDownbeat: 0.1, bars: 120 });
@@ -687,12 +691,13 @@ describe('decks: the real engine (realtime)', () => {
     const t0 = ctx.currentTime;
     expect(decks.store.getState().recording).not.toBeNull();
     await sleep(3500);
-    const title = await decks.stopRecording();
     const seconds = ctx.currentTime - t0;
+    const title = await decks.stopRecording();
     expect(title).toMatch(/^Live mix \d{4}-\d\d-\d\d \d\d:\d\d$/);
     expect(decks.store.getState().recording).toBeNull();
     // The recording is in the music library, as long as the audio clock ran while it was recording (the stop adds
-    // its 50 ms tail; a busy machine can stall the clock, which the recording follows).
+    // its 50 ms tail; a busy machine can stall the clock, which the recording follows). Adding it to the library
+    // takes a moment of its own: the clock is read before that.
     const song = library.getState().songs.find((x) => x.title === title);
     expect(song).toBeDefined();
     expect(song!.durationSec!).toBeGreaterThan(seconds - 0.25);

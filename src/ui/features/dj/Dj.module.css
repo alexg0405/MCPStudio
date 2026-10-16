@@ -178,7 +178,7 @@
 
 .spark {
   display: block;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .status {
@@ -196,7 +196,7 @@
 .pinOn {
   composes: pin;
   background: var(--ag-active);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   box-shadow: 0 0 0 1px var(--ag-active-border);
 }
 
@@ -275,7 +275,7 @@
   composes: segItem;
   background: var(--ag-active);
   border-color: var(--ag-active-border);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .input {

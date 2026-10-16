@@ -75,7 +75,7 @@
 .toolOn:hover {
   background: var(--ag-active);
   box-shadow: inset 0 0 0 1px var(--ag-active-border);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .field {
@@ -293,7 +293,7 @@
 .laneValue {
   display: block;
   margin-top: 4px;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-size: var(--ag-font-size-sm);
   font-weight: 500;
   font-variant-numeric: tabular-nums;

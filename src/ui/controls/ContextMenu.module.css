@@ -5,8 +5,8 @@
   min-width: 190px;
   padding: 5px;
   background: var(--ag-glass);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   border-radius: var(--ag-radius-lg);
   box-shadow: var(--ag-elev-2);
   animation: ag-menu-in 110ms var(--ag-ease);
@@ -65,7 +65,7 @@
   flex: none;
   width: 18px;
   text-align: center;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .text {

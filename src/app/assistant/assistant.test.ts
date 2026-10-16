@@ -240,7 +240,8 @@ describe('BeatAssistant', () => {
     const s = createTestServices();
     const a = new BeatAssistant(s, { fetch: fetchImpl, smoke: async () => ({ problems: [], peakDb: -12 }) });
     await a.send('make me a tape stop plugin');
-    await vi.waitFor(() => expect(a.store.getState().building).toBeNull());
+    // The plugin builder loads on first use (a dynamic import), which a cold test run takes a moment to transform.
+    await vi.waitFor(() => expect(a.store.getState().building).toBeNull(), { timeout: 15_000 });
     const card = a.store.getState().messages.at(-1)!;
     expect(card.plugin).toMatchObject({ state: 'draft', draft: { id: 'user.tape-stop', folder: 'tape-stop' } });
     expect(card.detail).toContain('peak -12 dBFS');

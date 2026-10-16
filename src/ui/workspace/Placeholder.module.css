@@ -21,7 +21,7 @@
   padding: 10px;
   border-radius: var(--ag-radius-pill);
   background: var(--ag-accent-tint);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .title {

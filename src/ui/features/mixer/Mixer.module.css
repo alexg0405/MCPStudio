@@ -247,7 +247,7 @@
 }
 
 .stripDb {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
   font-size: 9px;
   white-space: nowrap;
@@ -273,7 +273,7 @@
 
 .addInsert:hover {
   border-color: var(--ag-accent-dim);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 /* ---- Routing (relative to the selected insert) ---- */
@@ -332,7 +332,7 @@
 }
 
 .routeLineSelected {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .sendKnob {
@@ -362,7 +362,7 @@
 }
 
 .routeArrow:hover:not(:disabled) {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .routeArrow:disabled {
@@ -411,7 +411,7 @@
 }
 
 .rackLabel {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-size: var(--ag-font-size-sm);
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
@@ -462,7 +462,7 @@
 }
 
 .slotEmpty:hover {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .slotOff .slotName {
@@ -540,7 +540,7 @@
 }
 
 .masterValue {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
   font-size: 10px;
   font-weight: 400;

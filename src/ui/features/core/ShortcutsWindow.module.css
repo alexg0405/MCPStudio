@@ -135,7 +135,7 @@
 }
 
 .changed {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-size: var(--ag-font-size-sm);
 }
 
@@ -186,7 +186,7 @@
 
 .add:hover {
   border-color: var(--ag-accent);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .empty {

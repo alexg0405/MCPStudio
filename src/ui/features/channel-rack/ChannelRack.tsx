@@ -626,6 +626,11 @@ export function ChannelRack() {
             </Fragment>
           ))}
           <StepLight stepCount={stepCount} />
+          {order.length === 0 && (
+            <div className={styles.empty}>
+              No sounds yet. Click the + below to add a kit sound or an instrument, or drag a sample here from the browser.
+            </div>
+          )}
           <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
             <button
               tabIndex={-1}
@@ -633,6 +638,7 @@ export function ChannelRack() {
               onPointerDown={(e) => e.preventDefault()}
               onClick={(e) => showContextMenu(e, addChannelMenu(services))}
               data-hint="Add a channel (kit sound or instrument)"
+              aria-label="Add a channel"
             >
               <Icon name="plus" size={14} />
             </button>

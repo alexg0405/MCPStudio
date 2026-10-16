@@ -153,7 +153,7 @@
   box-shadow:
     0 0 0 1px var(--ag-accent-tint),
     0 0 24px var(--ag-accent-tint);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .introLine {
@@ -237,7 +237,7 @@
 .spark {
   margin-right: 6px;
   vertical-align: -1px;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .changes {
@@ -259,7 +259,7 @@
 }
 
 .findings li::marker {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .fold {
@@ -298,7 +298,7 @@
 }
 
 .summaryAction {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .summaryAction::before {
@@ -321,7 +321,7 @@
   padding: 2px 0;
   border: 0;
   background: none;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-size: var(--ag-font-size-sm);
   cursor: pointer;
 }
@@ -528,7 +528,7 @@
 }
 
 .pluginHead svg {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .pluginCode {
@@ -822,7 +822,7 @@
 
 .idea:hover:not(:disabled) {
   border-color: var(--ag-accent-dim);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .idea:disabled {
@@ -833,7 +833,7 @@
 .ideaMain {
   border-color: var(--ag-accent-dim);
   background: var(--ag-accent-tint);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .field {
@@ -912,7 +912,7 @@
 .performOn:hover:not(:disabled) {
   border-color: var(--ag-active-border);
   background: var(--ag-active);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .performToggle:disabled {
@@ -981,7 +981,7 @@
 }
 
 .focusSpark {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .focusLabel {
@@ -1035,7 +1035,7 @@
   box-shadow:
     0 0 14px var(--ag-accent-tint),
     inset 0 1px 0 color-mix(in srgb, var(--ag-accent-light) 22%, transparent);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-size: var(--ag-font-size);
   font-weight: 600;
   letter-spacing: 0.01em;

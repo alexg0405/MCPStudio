@@ -180,6 +180,8 @@ describe('Ask Studio about this part (UI)', () => {
     closeAsk();
     // The conversation keeps the part: Studio shows it, ▶ plays it, × lets it go.
     openWindow(s, 'assistant');
+    // The Studio window's code loads on first use.
+    await until(() => host.textContent!.includes('Smooth the transition in'));
     await until(() => host.textContent!.includes('About Verse · bars 17–32'));
     const chipClear = host.querySelector<HTMLElement>('[aria-label="Ask about the whole song"]')!;
     expect(host.textContent).toContain('Smooth the transition in');

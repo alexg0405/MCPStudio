@@ -40,7 +40,7 @@
 }
 
 .empty:hover {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .buttons {
@@ -68,7 +68,7 @@
 
 .button:hover {
   background: var(--ag-hover);
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 /* The waveform on an inset display. */

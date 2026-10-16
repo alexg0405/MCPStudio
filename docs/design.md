@@ -27,6 +27,9 @@ consistent radii, and depth from soft shadow rather than borders.
   states. Never under notes, clips, text lists or controls.
 - One hairline per edge at most; prefer a shadow or a change of surface over a border.
 - Scrims behind dialogs: `--ag-scrim`.
+- Write `-webkit-backdrop-filter` on the line BEFORE `backdrop-filter`. The build's CSS minifier drops the standard
+  property when it comes first, and Chrome ignores the prefixed one (no blur, and submenus open in the wrong place).
+  `test/unit/css-minify.test.ts` checks every stylesheet.
 
 ## Shape and spacing
 
@@ -52,8 +55,14 @@ consistent radii, and depth from soft shadow rather than borders.
 
 - Text: `--ag-text` (primary), `--ag-text-dim` (secondary), `--ag-text-faint` (hints, disabled).
 - Accent (gold by default): active, selected, primary. As a fill: `--ag-metal` (brushed) with `--ag-on-accent`
-  text; as a state: `--ag-accent-tint` / `--ag-accent-soft` backgrounds with `--ag-accent` text or a 1px
-  `--ag-accent-dim` edge. Never a big flat block of saturated accent.
+  text (dark in every theme); as a state: `--ag-accent-tint` / `--ag-accent-soft` backgrounds with
+  `--ag-accent-ink` text (the accent as text: deepened on the light themes so it reads) or a 1px
+  `--ag-accent-dim` edge. Never `color: var(--ag-accent)` for text. Never a big flat block of saturated accent.
+- Every theme keeps text readable: `--ag-text-dim` 4.5:1, `--ag-text-faint` 3:1, `--ag-accent-ink` 4.5:1 on the page
+  and panels, `--ag-text` 7:1 on glass, `--ag-on-accent` 4.5:1 on every accent (`test/browser/ux-audit.test.ts`).
+  A new theme must define `--ag-glass` and `--ag-scrim` for its own lightness.
+- The toolbar never clips: what does not fit moves into More (Studio button first, then the window, undo and audio
+  buttons, then the rest); below 1240 px the menus and hint bar take their own line.
 - `--ag-select` (soft steel blue): selection of clips, notes and rows (distinct from "active").
 - Status: `--ag-led` (on / OK), `--ag-danger`, `--ag-warning`. Meters: `--ag-meter-lo/mid/hi`.
 - Channel and pattern colors stay the musician's; draw them a little desaturated against stone

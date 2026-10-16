@@ -39,44 +39,74 @@ export function register(services: Services): void {
     hint: 'While playing, the playlist and piano roll scroll along so the playhead stays in view (scrolling by hand pauses it until the playhead is back on screen)',
     argsHint: 'true to turn it on, false to turn it off (leave out to switch it)',
     checked: (s) => s.prefs.getState().followPlayhead,
-    run: (s, on) => s.prefs.getState().set({ followPlayhead: typeof on === 'boolean' ? on : !s.prefs.getState().followPlayhead }),
+    run: (s, on) =>
+      s.prefs.getState().set({ followPlayhead: typeof on === 'boolean' ? on : !s.prefs.getState().followPlayhead }),
   });
   addMenuItems('view', [cmd('view.followPlayhead', 58)]);
   addMenuItems('playlist', [cmd('view.followPlayhead', 1), sep(2)]);
 
   const focus = { focus: ['playlist'] as const };
   const hasSel = (s: Services) => s.editor.getState().clipSelection.length > 0;
-  for (const [tool, chord] of [
-    ['draw', 'P'],
-    ['paint', 'B'],
-    ['delete', 'D'],
-    ['slice', 'C'],
-    ['select', 'E'],
-  ] as [PlaylistTool, string][]) {
+  for (const [tool, chord, hint] of [
+    ['draw', 'P', 'Click an empty spot to pick something to place there, drag a clip to move it'],
+    ['paint', 'B', 'Drag across a track to paint copies of the current pattern'],
+    ['delete', 'D', 'Click or drag over clips to delete them'],
+    ['slice', 'C', 'Click a clip to cut it in two'],
+    ['select', 'E', 'Drag a box around clips to select them'],
+  ] as [PlaylistTool, string, string][]) {
     commands.register({
       id: `playlist.tool.${tool}`,
       title: `Playlist ${tool} tool`,
       category: 'Playlist',
+      hint,
       run: (s) => s.editor.getState().setPlaylist({ tool }),
       checked: (s) => s.editor.getState().playlist.tool === tool,
     });
     keymap.add([{ chord, command: `playlist.tool.${tool}`, when: focus }]);
   }
-  commands.register({ id: 'playlist.selectAll', title: 'Select all clips', category: 'Playlist', run: pl.selectAll });
-  commands.register({ id: 'playlist.deselect', title: 'Deselect clips', category: 'Playlist', run: pl.deselect });
+  commands.register({
+    id: 'playlist.selectAll',
+    title: 'Select all clips',
+    category: 'Playlist',
+    hint: 'Select every clip in the playlist',
+    run: pl.selectAll,
+  });
+  commands.register({
+    id: 'playlist.deselect',
+    title: 'Deselect clips',
+    category: 'Playlist',
+    hint: 'Clear the clip selection',
+    run: pl.deselect,
+  });
   commands.register({
     id: 'playlist.delete',
     title: 'Delete clips',
     category: 'Playlist',
+    hint: 'Delete the selected clips',
     enabled: hasSel,
     run: pl.deleteSelection,
   });
-  commands.register({ id: 'playlist.copy', title: 'Copy clips', category: 'Playlist', enabled: hasSel, run: pl.copy });
-  commands.register({ id: 'playlist.cut', title: 'Cut clips', category: 'Playlist', enabled: hasSel, run: pl.cut });
+  commands.register({
+    id: 'playlist.copy',
+    title: 'Copy clips',
+    category: 'Playlist',
+    hint: 'Copy the selected clips',
+    enabled: hasSel,
+    run: pl.copy,
+  });
+  commands.register({
+    id: 'playlist.cut',
+    title: 'Cut clips',
+    category: 'Playlist',
+    hint: 'Cut the selected clips',
+    enabled: hasSel,
+    run: pl.cut,
+  });
   commands.register({
     id: 'playlist.paste',
     title: 'Paste clips',
     category: 'Playlist',
+    hint: 'Paste the copied clips after the selection (or at the song position)',
     enabled: (s) => !!s.editor.getState().clipClipboard?.length,
     run: pl.paste,
   });
@@ -84,6 +114,7 @@ export function register(services: Services): void {
     id: 'playlist.duplicate',
     title: 'Duplicate clips',
     category: 'Playlist',
+    hint: 'Copy the selected clips right after themselves',
     enabled: hasSel,
     run: pl.duplicate,
   });

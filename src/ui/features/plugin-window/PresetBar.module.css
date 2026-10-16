@@ -53,7 +53,7 @@
 }
 
 .arrow:not(:disabled):hover {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .arrow:disabled {
@@ -77,7 +77,7 @@
 }
 
 .name:hover {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .label {

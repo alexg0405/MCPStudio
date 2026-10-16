@@ -24,11 +24,13 @@
   /* Text (warm grays, like light on stone) */
   --ag-text: #ecebe6;
   --ag-text-dim: #a6a39b;
-  --ag-text-faint: #6f6c66;
+  --ag-text-faint: #7b7871;
 
   /* Accents */
   --ag-accent: #c9a45c;
   --ag-accent-dim: color-mix(in srgb, var(--ag-accent) 72%, #000);
+  /* The accent as TEXT: the accent itself on dark themes, deepened on the light ones (themes.css) so it reads. */
+  --ag-accent-ink: var(--ag-accent);
   --ag-led: #9fd38f;
   --ag-led-off: #2c3529;
   --ag-danger: #e0675a;

@@ -69,7 +69,7 @@
 }
 
 .sectionHeader svg:nth-child(2) {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .sectionBody {

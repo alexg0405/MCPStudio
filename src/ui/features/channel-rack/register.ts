@@ -39,6 +39,7 @@ export function register(services: Services): void {
     id: 'channels.delete',
     title: 'Delete selected channel',
     category: 'Channels',
+    hint: 'Delete the selected channel and its notes',
     enabled: (s) => !!selected(s),
     run: (s) => {
       const id = selected(s);
@@ -55,9 +56,16 @@ export function register(services: Services): void {
     id: 'channels.selectPrev',
     title: 'Select previous channel',
     category: 'Channels',
+    hint: 'Select the channel above the selected one',
     run: step(-1),
   });
-  commands.register({ id: 'channels.selectNext', title: 'Select next channel', category: 'Channels', run: step(1) });
+  commands.register({
+    id: 'channels.selectNext',
+    title: 'Select next channel',
+    category: 'Channels',
+    hint: 'Select the channel below the selected one',
+    run: step(1),
+  });
 
   keymap.add([
     { chord: 'Alt+Delete', command: 'channels.delete', when: { focus: ['channel-rack'] } },

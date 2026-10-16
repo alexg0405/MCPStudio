@@ -42,7 +42,13 @@ function Section({ section }: { section: BrowserSection }) {
   const Body = section.component;
   return (
     <section className={styles.section}>
-      <button className={styles.sectionHeader} onPointerDown={(e) => e.preventDefault()} onClick={() => setOpen(!open)}>
+      <button
+        className={styles.sectionHeader}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        data-hint={`${open ? 'Hide' : 'Show'} ${section.title}`}
+      >
         <Icon name={open ? 'chevronDown' : 'chevronRight'} size={12} />
         <Icon name={section.icon} size={14} />
         <span>{section.title}</span>

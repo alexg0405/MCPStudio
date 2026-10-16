@@ -17,8 +17,8 @@
   width: min(660px, 100%);
   max-height: min(560px, calc(100vh - 100px));
   background: var(--ag-glass);
-  backdrop-filter: var(--ag-blur);
   -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
   border-radius: var(--ag-radius-xl);
   box-shadow: var(--ag-elev-2), var(--ag-shadow);
   overflow: hidden;
@@ -79,7 +79,7 @@
 }
 
 .rowAi .label {
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
   font-weight: 500;
 }
 
@@ -87,7 +87,7 @@
   width: 16px;
   flex: none;
   text-align: center;
-  color: var(--ag-accent);
+  color: var(--ag-accent-ink);
 }
 
 .label {

@@ -27,12 +27,14 @@ export function register(services: Services): void {
     id: 'options.octaveDown',
     title: 'Typing keyboard octave down',
     category: 'Options',
+    hint: 'Move the typing keyboard (the computer keys that play notes) one octave down',
     run: octave(-1),
   });
   commands.register({
     id: 'options.octaveUp',
     title: 'Typing keyboard octave up',
     category: 'Options',
+    hint: 'Move the typing keyboard (the computer keys that play notes) one octave up',
     run: octave(1),
   });
   commands.register({

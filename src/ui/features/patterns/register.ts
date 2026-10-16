@@ -10,17 +10,25 @@ export const order = 15;
 export function register(services: Services): void {
   const { commands, keymap } = services;
   registerMenu({ id: 'patterns', label: 'Patterns', order: 42 });
-  commands.register({ id: 'patterns.new', title: 'New pattern', category: 'Patterns', run: (s) => void newPattern(s) });
+  commands.register({
+    id: 'patterns.new',
+    title: 'New pattern',
+    category: 'Patterns',
+    hint: 'Add an empty pattern and switch to it',
+    run: (s) => void newPattern(s),
+  });
   commands.register({
     id: 'patterns.clone',
     title: 'Clone pattern',
     category: 'Patterns',
+    hint: 'Copy the current pattern, with its notes, into a new one',
     run: (s) => void cloneCurrentPattern(s),
   });
   commands.register({
     id: 'patterns.delete',
     title: 'Delete pattern',
     category: 'Patterns',
+    hint: 'Delete the current pattern and every place it is used in the playlist',
     enabled: (s) => s.doc.getState().project.patternOrder.length > 1,
     run: (s) => {
       const id = s.view.getState().currentPatternId;
@@ -31,12 +39,14 @@ export function register(services: Services): void {
     id: 'patterns.next',
     title: 'Next pattern',
     category: 'Patterns',
+    hint: 'Switch to the next pattern',
     run: (s) => stepPattern(s, 1),
   });
   commands.register({
     id: 'patterns.prev',
     title: 'Previous pattern',
     category: 'Patterns',
+    hint: 'Switch to the previous pattern',
     run: (s) => stepPattern(s, -1),
   });
   keymap.add([

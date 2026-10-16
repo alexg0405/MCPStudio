@@ -19,17 +19,7 @@ import type { Services } from '../services';
 import { applyAnswer, type AfterEdit } from '../ai/apply';
 import { pluginCatalog } from '../ai/catalog';
 import { commandCatalog } from '../ai/commands';
-import {
-  discardDraft,
-  installDraft,
-  MAX_FIX_ROUNDS,
-  PluginBuilder,
-  type BuildStage,
-  type PluginDraft,
-  type PluginSpec,
-  type SmokeReport,
-} from '../ai/builder';
-import { smokeTest } from '../ai/smoke';
+import type { BuildStage, PluginDraft, PluginSpec, SmokeReport } from '../ai/builder';
 import { focusContext, isAiFocus, resolveFocus, type AiFocus, type ResolvedFocus } from '../ai/focus';
 import { analyzeMix, formatMixReport, summarizeMixReport, type AnalyzeRange } from '../analysis/mix';
 import { afterStepFor } from './after-steps';
@@ -48,6 +38,10 @@ import {
   type AiBackend,
   type AiStatus,
 } from './claude';
+
+// The plugin builder carries the SDK guide and every template (~65 kB): it loads when a plugin is first built.
+const builder = () => import('../ai/builder');
+const smokeTest = (folder: string): Promise<SmokeReport> => import('../ai/smoke').then((m) => m.smokeTest(folder));
 
 /**
  * The beat assistant: you describe a beat (and optionally perform part of it with your voice); it
@@ -1003,9 +997,10 @@ export class BeatAssistant {
       this.store.setState({ building: { name: spec.name, kind: spec.kind, stage, round } });
     at('writing', 0);
     try {
-      const builder = new PluginBuilder({ fetch: this.fetchImpl, smoke: this.smoke });
+      const { PluginBuilder, MAX_FIX_ROUNDS } = await builder();
+      const plugin = new PluginBuilder({ fetch: this.fetchImpl, smoke: this.smoke });
       const taken = [...this.s.plugins.list().map((e) => e.def.id), ...this.s.plugins.scripts().map((e) => e.def.id)];
-      const result = await builder.build(spec, {
+      const result = await plugin.build(spec, {
         model: this.store.getState().model,
         backend: route,
         signal: abort.signal,
@@ -1046,6 +1041,7 @@ export class BeatAssistant {
     const { draft } = msg.plugin;
     this.setPluginState(messageId, 'installing');
     try {
+      const { installDraft } = await builder();
       const { replaced } = await installDraft(this.fetchImpl, draft.id);
       const loaded = await this.waitForPlugin(draft.id);
       this.setPluginState(messageId, 'installed');
@@ -1066,7 +1062,9 @@ export class BeatAssistant {
     const msg = this.store.getState().messages.find((m) => m.id === messageId);
     if (!msg?.plugin || (msg.plugin.state !== 'draft' && msg.plugin.state !== 'failed')) return;
     this.setPluginState(messageId, 'discarded');
-    await discardDraft(this.fetchImpl, msg.plugin.draft.id).catch(() => {});
+    await builder()
+      .then(({ discardDraft }) => discardDraft(this.fetchImpl, msg.plugin!.draft.id))
+      .catch(() => {});
   }
 
   private setPluginState(messageId: number, state: PluginMessage['state']): void {

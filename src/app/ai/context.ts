@@ -9,7 +9,7 @@ import { resolveTarget } from '@core/automation/targets';
 import { DRUM_SOUNDS, type BeatSound } from '@core/beat/spec';
 import { gainToDecibels } from '@core/model/fader';
 import { kitPiece } from '@core/model/kit';
-import { MASTER, type Channel, type Insert, type PluginInstance, type Project } from '@core/model/types';
+import { MASTER, type Channel, type Insert, type Pattern, type PluginInstance, type PatternId, type Project } from '@core/model/types';
 import { insertLabel } from '@core/query/mixer';
 import { laneRuns, patternSpans, songCheck } from '@core/query/arrangement';
 import { songLength } from '@core/query/playlist';
@@ -30,22 +30,93 @@ const NOTE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const db = (gain: number) => (gain <= 0 ? '-inf dB' : `${r2(gainToDecibels(gain))} dB`);
 
+/**
+ * Size budget. The text grows with the project, so a very large one is shortened, the least important
+ * parts first, until it fits. A project under the budget is never shortened (its text is unchanged).
+ */
+export const CONTEXT_BUDGET = 40_000;
+const SHORT_NOTE = '(details shortened: the project is very large)';
+/** Parameter values kept per plugin, and playlist runs kept per track, when shortened. */
+const SHORT_VALUES = 3;
+const SHORT_RUNS = 12;
+
+/** What a render shortens. Each step in `STEPS` adds one more part, in the order the budget cuts them. */
+interface Shortening {
+  /** Notes of patterns other than the current one: a count and pitch range instead of per channel. */
+  otherNotes: boolean;
+  /** Plugin settings beyond the first few: names only. */
+  settings: boolean;
+  /** Playlist runs beyond the first few per track. */
+  runs: boolean;
+  /** Channels that play nowhere: one line. */
+  silentChannels: boolean;
+}
+const FULL: Shortening = { otherNotes: false, settings: false, runs: false, silentChannels: false };
+const STEPS: Shortening[] = [
+  FULL,
+  { ...FULL, otherNotes: true },
+  { ...FULL, otherNotes: true, settings: true },
+  { ...FULL, otherNotes: true, settings: true, runs: true },
+  { ...FULL, otherNotes: true, settings: true, runs: true, silentChannels: true },
+];
+
+type Section = 'patterns' | 'channels' | 'mixer' | 'playlist';
+/** One render: what it shortens, and which sections it actually cut (only those say so). */
+interface Render {
+  shorten: Shortening;
+  cut: Set<Section>;
+}
+const fullRender = (): Render => ({ shorten: FULL, cut: new Set() });
+/** The note under a section header, when the render cut that section. */
+const cutNote = (r: Render, section: Section): string[] => (r.cut.has(section) ? [SHORT_NOTE] : []);
+
 /** Settings that differ from the plugin's defaults, as `name value` (formatted in the param's unit). */
-function paramSummary(s: Services, inst: PluginInstance): string {
+function paramSummary(s: Services, inst: PluginInstance, r: Render, section: Section): string {
   const def = s.plugins.get(inst.pluginId);
   if (!def) return 'plugin not installed';
   const specs = def.params as ParamSpecs;
-  const out: string[] = [];
+  const out: { id: string; text: string }[] = [];
   for (const [id, spec] of Object.entries(specs) as [string, ParamSpec][]) {
     const v = inst.params[id];
     if (v === undefined || v === spec.default) continue;
-    out.push(
-      `${id} ${spec.type === 'float' || spec.type === 'int' ? r2(Number(v)) : String(v)}${
-        spec.type === 'float' && spec.unit && spec.unit !== '%' ? ` ${spec.unit}` : ''
-      }`,
-    );
+    const value = `${spec.type === 'float' || spec.type === 'int' ? r2(Number(v)) : String(v)}${
+      spec.type === 'float' && spec.unit && spec.unit !== '%' ? ` ${spec.unit}` : ''
+    }`;
+    out.push({ id, text: `${id} ${value}` });
   }
-  return out.length ? out.join(', ') : 'defaults';
+  if (out.length === 0) return 'defaults';
+  if (!r.shorten.settings || out.length <= SHORT_VALUES) return out.map((x) => x.text).join(', ');
+  r.cut.add(section);
+  return out.map((x, i) => (i < SHORT_VALUES ? x.text : x.id)).join(', ');
+}
+
+/** Pitch range and count of a pattern's notes, for the patterns the song is not showing in detail. */
+function noteSummary(p: Project, pattern: Pattern): string {
+  let count = 0;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const id of p.channelOrder) {
+    for (const n of Object.values(pattern.notes[id] ?? {})) {
+      count++;
+      lo = Math.min(lo, n.key);
+      hi = Math.max(hi, n.key);
+    }
+  }
+  if (count === 0) return 'empty';
+  const range = lo === hi ? noteName(lo) : `${noteName(lo)}–${noteName(hi)}`;
+  return `${count} note${count === 1 ? '' : 's'}, ${range}`;
+}
+
+/** Channels with notes in a pattern the song plays, or with a clip on the playlist. */
+function channelsThatPlay(p: Project): Set<string> {
+  const placed = patternSpans(p);
+  const out = new Set<string>();
+  for (const pid of placed.keys()) {
+    const pat = p.patterns[pid];
+    if (pat) for (const [ch, notes] of Object.entries(pat.notes)) if (Object.keys(notes ?? {}).length) out.add(ch);
+  }
+  for (const clip of Object.values(p.playlist.clips)) if (clip.kind !== 'pattern') out.add(clip.channelId);
+  return out;
 }
 
 function pluginName(s: Services, pluginId: string): string {
@@ -89,7 +160,7 @@ function appLine(s: Services): string {
   return `App: ${parts.filter(Boolean).join('; ')}.`;
 }
 
-function channelLine(s: Services, p: Project, ch: Channel, index: number): string {
+function channelLine(s: Services, p: Project, ch: Channel, index: number, r: Render): string {
   const head = `${index}. "${ch.name}" ${ch.id}`;
   const flags = [ch.muted ? 'muted' : '', ch.solo ? 'solo' : ''].filter(Boolean).join(', ');
   if (ch.kind === 'automation') return `${head} — ${automationSummary(s, p, ch)}${flags ? ` (${flags})` : ''}`;
@@ -108,10 +179,10 @@ function channelLine(s: Services, p: Project, ch: Channel, index: number): strin
   }
   const sample = ch.plugin.samples?.main ? p.samples[ch.plugin.samples.main] : undefined;
   const kit = sample?.source.kind === 'builtin' ? kitPiece(sample.source.generator)?.name : sample?.name;
-  return `${head} — ${pluginName(s, ch.plugin.pluginId)} (${ch.plugin.pluginId})${kit ? ` sample "${kit}"` : ''}; ${mix}; ${out}\n   settings: ${paramSummary(s, ch.plugin)}`;
+  return `${head} — ${pluginName(s, ch.plugin.pluginId)} (${ch.plugin.pluginId})${kit ? ` sample "${kit}"` : ''}; ${mix}; ${out}\n   settings: ${paramSummary(s, ch.plugin, r, 'channels')}`;
 }
 
-function insertLines(s: Services, p: Project, ins: Insert): string[] {
+function insertLines(s: Services, p: Project, ins: Insert, r: Render): string[] {
   const label = insertLabel(p, ins.id);
   const flags = [ins.muted ? 'muted' : '', ins.solo ? 'solo' : ''].filter(Boolean).join(', ');
   const routes =
@@ -120,7 +191,7 @@ function insertLines(s: Services, p: Project, ins: Insert): string[] {
       : ins.routes.length === 0
         ? '; routed nowhere (silent)'
         : `; routes → ${ins.routes
-            .map((r) => `${insertLabel(p, r.to)} ${db(r.level)}${r.pre ? ' pre-fader' : ''}`)
+            .map((route) => `${insertLabel(p, route.to)} ${db(route.level)}${route.pre ? ' pre-fader' : ''}`)
             .join(', ')}`;
   const lines = [
     `- ${label}${ins.id === MASTER ? '' : ` "${ins.name}"`} ${ins.id}: vol ${db(ins.volume)}, pan ${r2(ins.pan)}${flags ? `, ${flags}` : ''}${routes}`,
@@ -130,7 +201,7 @@ function insertLines(s: Services, p: Project, ins: Insert): string[] {
     lines.push(
       `   fx ${i + 1}: ${pluginName(s, slot.plugin.pluginId)} (${slot.plugin.pluginId}) ${slot.id}${slot.enabled ? '' : ' BYPASSED'}, mix ${Math.round(
         slot.mix * 100,
-      )}%${sc}; settings: ${paramSummary(s, slot.plugin)}`,
+      )}%${sc}; settings: ${paramSummary(s, slot.plugin, r, 'mixer')}`,
     );
   });
   return lines;
@@ -140,7 +211,7 @@ const fmtStep = (steps: number) => String(Math.round(steps * 100) / 100);
 const fmtVel = (v: number) => (Math.abs(v - 0.8) < 0.005 ? '' : `@${String(r2(v)).replace(/^0(?=\.)/, '')}`);
 
 /** Each pattern: its channels with note counts, and where it plays in the song. */
-export function patternLines(p: Project): string[] {
+export function patternLines(p: Project, r: Render = fullRender(), current: PatternId | null = null): string[] {
   const ts = p.transport.timeSig;
   const bar = ticksPerBar(ts);
   const spans = patternSpans(p);
@@ -152,11 +223,14 @@ export function patternLines(p: Project): string[] {
     const used = p.channelOrder
       .filter((c) => Object.keys(pat.notes[c] ?? {}).length > 0)
       .map((c) => `${p.channels[c]?.name ?? c} (${Object.keys(pat.notes[c] ?? {}).length})`);
+    const summarise = r.shorten.otherNotes && pid !== current && used.length > 0;
+    if (summarise) r.cut.add('patterns');
+    const content = summarise ? noteSummary(p, pat) : used.length ? used.join(', ') : 'empty';
     const at = spans.get(pid);
     const plays = at?.length ? `plays at ${at.map((s) => barSpan(s.from, s.to, ts)).join(', ')}` : 'not in the song';
     const variant = derivedLabel(p, pat);
     lines.push(
-      `- "${pat.name}" ${pat.id}, ${r2(bars)} bar${bars === 1 ? '' : 's'}${variant ? ` (${variant})` : ''}: ${used.length ? used.join(', ') : 'empty'}; ${plays}`,
+      `- "${pat.name}" ${pat.id}, ${r2(bars)} bar${bars === 1 ? '' : 's'}${variant ? ` (${variant})` : ''}: ${content}; ${plays}`,
     );
   }
   return lines;
@@ -190,10 +264,11 @@ const MAX_RUNS = 120;
  * at the marker sections, which are listed first. Clip ids for short runs; longer runs are found by
  * track and bar.
  */
-export function playlistLines(p: Project): string[] {
+export function playlistLines(p: Project, r: Render = fullRender()): string[] {
   const ts = p.transport.timeSig;
   const sections = songSections(p);
   const end = songLength(p);
+  const cap = r.shorten.runs ? SHORT_RUNS : MAX_RUNS;
   const lines = [
     `Playlist (song mode plays it). Bar ranges are 1-based and inclusive ("bars 81–112" is 32 bars)${
       end ? `; the song is ${end / ticksPerBar(ts)} bars long` : ''
@@ -213,8 +288,9 @@ export function playlistLines(p: Project): string[] {
     const lane = p.playlist.lanes[laneId];
     const name = lane && !/^Track \d+$/.test(lane.name) ? ` "${lane.name}"` : '';
     const flags = [lane?.muted ? 'muted' : '', lane?.solo ? 'solo' : ''].filter(Boolean).join(', ');
-    const parts = runs.slice(0, MAX_RUNS).map((r) => {
-      const clip = p.playlist.clips[r.clipIds[0]!]!;
+    if (runs.length > cap && r.shorten.runs) r.cut.add('playlist');
+    const parts = runs.slice(0, cap).map((run) => {
+      const clip = p.playlist.clips[run.clipIds[0]!]!;
       let what: string;
       if (clip.kind === 'pattern') what = `"${p.patterns[clip.patternId]?.name ?? '?'}"`;
       else if (clip.kind === 'automation') what = `automation "${p.channels[clip.channelId]?.name ?? '?'}"`;
@@ -226,14 +302,15 @@ export function playlistLines(p: Project): string[] {
         ].filter(Boolean);
         what = `audio "${p.channels[clip.channelId]?.name ?? '?'}"${edits.length ? ` (${edits.join(', ')})` : ''}`;
       }
-      const ids = r.count <= 3 ? ` ${r.clipIds.join(', ')}` : '';
-      const extra = [r.muted ? 'muted' : '', r.stacked ? `STACKED: plays ${r.stacked + 1}× here` : ''].filter(Boolean);
-      return `${what}${r.count > 1 ? ` ×${r.count}` : ''} ${barSpan(r.from, r.to, ts)}${extra.length ? ` (${extra.join(', ')})` : ''}${ids}`;
+      const ids = run.count <= 3 ? ` ${run.clipIds.join(', ')}` : '';
+      const extra = [run.muted ? 'muted' : '', run.stacked ? `STACKED: plays ${run.stacked + 1}× here` : ''].filter(Boolean);
+      return `${what}${run.count > 1 ? ` ×${run.count}` : ''} ${barSpan(run.from, run.to, ts)}${extra.length ? ` (${extra.join(', ')})` : ''}${ids}`;
     });
     const more =
-      runs.length > MAX_RUNS ? `; … +${runs.length - MAX_RUNS} more up to ${barSpan(runs[runs.length - 1]!.from, runs[runs.length - 1]!.to, ts)}` : '';
+      runs.length > cap ? `; … +${runs.length - cap} more up to ${barSpan(runs[runs.length - 1]!.from, runs[runs.length - 1]!.to, ts)}` : '';
     lines.push(`- Track ${i + 1}${name}${flags ? ` (${flags})` : ''}: ${parts.join('; ')}${more}`);
   });
+  if (r.cut.has('playlist')) lines.splice(2, 0, SHORT_NOTE);
   return lines;
 }
 
@@ -270,7 +347,20 @@ export function songCheckLines(p: Project): string[] {
   return out;
 }
 
+/**
+ * The project text, within `CONTEXT_BUDGET` characters where it can be. Each step in `STEPS` shortens one
+ * more part; the first step that fits is the answer, so a project under the budget is rendered in full.
+ */
 export function projectContext(s: Services): string {
+  let text = '';
+  for (const shorten of STEPS) {
+    text = renderContext(s, { shorten, cut: new Set() });
+    if (text.length <= CONTEXT_BUDGET) break;
+  }
+  return text;
+}
+
+function renderContext(s: Services, r: Render): string {
   const p = s.doc.getState().project;
   const view = s.view.getState();
   const session = s.session.getState();
@@ -285,14 +375,23 @@ export function projectContext(s: Services): string {
   );
   lines.push(appLine(s));
 
-  lines.push('', 'Channels (channel rack order):');
+  const plays = r.shorten.silentChannels ? channelsThatPlay(p) : null;
+  const channels: string[] = [];
+  const silent: string[] = [];
   p.channelOrder.forEach((id, i) => {
     const ch = p.channels[id];
-    if (ch) lines.push(channelLine(s, p, ch, i + 1));
+    if (!ch) return;
+    if (plays && !plays.has(id)) silent.push(`#${i + 1} "${ch.name}" ${id}`);
+    else channels.push(channelLine(s, p, ch, i + 1, r));
   });
-  if (p.channelOrder.length === 0) lines.push('(none)');
+  if (silent.length) {
+    r.cut.add('channels');
+    channels.push(`Play nowhere (no notes in the song, no clips): ${silent.join(', ')}`);
+  }
+  if (p.channelOrder.length === 0) channels.push('(none)');
+  lines.push('', 'Channels (channel rack order):', ...cutNote(r, 'channels'), ...channels);
 
-  lines.push('', 'Mixer tracks (number = position; channels feed the track shown after →):');
+  const mixer: string[] = [];
   const quiet: number[] = [];
   p.mixer.order.forEach((id, n) => {
     const ins = p.mixer.inserts[id];
@@ -311,13 +410,15 @@ export function projectContext(s: Services): string {
       ins.routes.length === 1 &&
       ins.routes[0]!.to === MASTER &&
       /^Insert \d+$/.test(ins.name) &&
-      !Object.values(p.mixer.inserts).some((o) => o.routes.some((r) => r.to === id));
+      !Object.values(p.mixer.inserts).some((o) => o.routes.some((route) => route.to === id));
     if (plain) quiet.push(n);
-    else lines.push(...insertLines(s, p, ins));
+    else mixer.push(...insertLines(s, p, ins, r));
   });
-  if (quiet.length) lines.push(`- Inserts ${quiet.join(', ')}: empty (default settings, routed to Master)`);
+  if (quiet.length) mixer.push(`- Inserts ${quiet.join(', ')}: empty (default settings, routed to Master)`);
+  lines.push('', 'Mixer tracks (number = position; channels feed the track shown after →):', ...cutNote(r, 'mixer'), ...mixer);
 
-  lines.push('', 'Patterns:', ...patternLines(p));
+  const patterns = patternLines(p, r, current?.id ?? null);
+  lines.push('', 'Patterns:', ...cutNote(r, 'patterns'), ...patterns);
   if (current) {
     lines.push(
       `  Notes of the current pattern (steps are 1/16 notes from 0; pitched notes as step:note/length; @ = velocity 0–1 when not 0.8):`,
@@ -325,7 +426,7 @@ export function projectContext(s: Services): string {
     lines.push(...noteLines(p, current));
   }
 
-  lines.push('', ...playlistLines(p));
+  lines.push('', ...playlistLines(p, r));
   const arrangement = arrangementLines(p);
   if (arrangement.length) lines.push(...arrangement);
   const djMix = djLines(p);

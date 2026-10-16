@@ -1,0 +1,109 @@
+Song: 128 BPM, 4/4, swing 0%, key not set. Mode: pattern. Current pattern: "Loop 1" pat_D8IiOxJmBH.
+App: file "Untitled" (unsaved changes); no toggles on; undo would revert “synthetic song”.
+
+Channels (channel rack order):
+1. "Bass 1" ch_Sr0n8O1OHF — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: osc1Position 1, osc1Coarse 24, osc1Fine 100 ct
+2. "Pad 2" ch_PV9Hvjn5ES — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+3. "Lead 3" ch_0tkM32VAr0 — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: op1Decay 10 s, op1Sustain 1, op1Release 10 s, op1Velocity 1
+4. "Pluck 4" ch_kxbrky1W7T — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: tune 12, glide 0.6 s, punch 24 st, punchTime 150 ms
+5. "Bass 5" ch_TXgSl6sm5f — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: unison 8, detune 100 ct, spread 1, subLevel 1
+6. "Pad 6" ch_nzMyaRoKQf — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+7. "Lead 7" ch_amEX0xTEGz — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: op3Ratio 16, op3Fine 1, op3Level 1, op3Attack 5 s
+8. "Pluck 8" ch_C3fejdNgR5 — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: punchTime 150 ms, click 1, decay 8 s, drive 1
+9. "Bass 9" ch_qkzdHh_Bem — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: keyTrack 1, envAmount 1, ampAttack 10 s, ampDecay 10 s
+10. "Pad 10" ch_rY3Rhjcj4s — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+11. "Lead 11" ch_uuxDDsFJ4u — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: op4Decay 10 s, op4Sustain 1, op4Release 10 s, op4Velocity 1
+12. "Pluck 12" ch_iUIav8TpYi — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: tune 12, drive 1, tone 8000 Hz, level 6 dB
+13. "Bass 13" ch_kEfOh-Vpqe — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: lfo1Sync true, lfo1Rate 40 Hz, lfo1Retrigger false
+14. "Pad 14" ch_DC3SzR3eAQ — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+15. "Lead 15" ch_thVZZ3zyjx — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: op1Ratio 16, op1Fine 1, op1Level 1, op1Attack 5 s
+16. "Pluck 16" ch_JlkLewpIcC — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: tune 12, glide 0.6 s, punch 24 st, punchTime 150 ms
+17. "Bass 17" ch_XxrydjS6D4 — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: mod2Amount 1
+18. "Pad 18" ch_wxECraIpgm — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+19. "Lead 19" ch_PDkbUQZo_l — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: op2Decay 10 s, op2Sustain 1, op2Release 10 s, op2Velocity 1
+20. "Pluck 20" ch_GvM7b5FdHr — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: punchTime 150 ms, click 1, decay 8 s, drive 1
+21. "Bass 21" ch_6qLIQeBulp — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: mod6Amount 1
+22. "Pad 22" ch_PJLvIy_iLu — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+23. "Lead 23" ch_09YXQZWo6B — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: op4Ratio 16, op4Fine 1, op4Level 1, op4Attack 5 s
+24. "Pluck 24" ch_JFVoYMp97V — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: tune 12, drive 1, tone 8000 Hz, level 6 dB
+25. "Bass 25" ch_g6F6uAbqMe — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: osc2Position 0, osc2Coarse 24, osc2Fine 100 ct
+26. "Pad 26" ch_OCMz8Zmmgc — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+27. "Lead 27" ch_JAlBX-CD5l — FM (agstudio.fm); vol -2.16 dB, pan 0; → Master
+   settings: feedback 1, level 6 dB
+28. "Pluck 28" ch_o_gM9lJ1Wf — 808 Bass (agstudio.bass808); vol -2.16 dB, pan 0; → Master
+   settings: tune 12, glide 0.6 s, punch 24 st, punchTime 150 ms
+29. "Bass 29" ch_EUl6DAbzBm — Wavetable (agstudio.wavetable); vol -2.16 dB, pan 0; → Master
+   settings: noiseLevel 1, noiseTone 1, cutoff 20000 Hz
+30. "Pad 30" ch_VcIExNVYfD — Pluck (agstudio.pluck); vol -2.16 dB, pan 0; → Master
+   settings: decay 12 s, release 3 s, width 1, level 6 dB
+
+Mixer tracks (number = position; channels feed the track shown after →):
+- Master master: vol 0 dB, pan 0
+- Inserts 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16: empty (default settings, routed to Master)
+
+Patterns:
+- "Loop 1" pat_D8IiOxJmBH, 2 bars: Bass 1 (8), Pluck 4 (8), Pad 18 (8); plays at bars 1–8, bars 11–16
+- "Loop 2" pat_3s3OFXB9Ej, 2 bars: Lead 3 (8), Pluck 8 (8), Lead 11 (8); plays at bars 1–14
+- "Loop 3" pat_N6eeJNUEUc, 2 bars: Pad 10 (8), Lead 15 (8), Pad 18 (8); plays at bars 1–2, bars 5–16
+- "Loop 4" pat_rij8nIceog, 2 bars: Lead 3 (8), Bass 17 (8), Pad 22 (8); plays at bars 1–8, bars 11–16
+- "Loop 5" pat_frM_bzB2sc, 2 bars: Pad 2 (8), Lead 7 (8), Pad 10 (8); plays at bars 1–4, bars 7–14
+- "Loop 6" pat_bswKEjWNWS, 2 bars: Bass 9 (8), Pad 14 (8), Bass 17 (8); plays at bars 1–10, bars 13–16
+- "Loop 7" pat_22pWlsFL2_, 2 bars: Pad 2 (8), Pluck 16 (8), Bass 21 (8); plays at bars 1–16
+- "Loop 8" pat_1cq0xSmxbP, 2 bars: Bass 1 (8), Pad 6 (8), Bass 9 (8); plays at bars 1–4, bars 7–16
+- "Loop 9" pat_WIHwOpKL_T, 2 bars: Pluck 8 (8), Bass 13 (8), Pluck 16 (8); plays at bars 3–10, bars 13–16
+- "Loop 10" pat_Q5gqltSD6M, 2 bars: Bass 1 (8), Lead 15 (8), Pluck 20 (8); plays at bars 1–6, bars 9–16
+- "Loop 11" pat_ycvL_griI9, 2 bars: Bass 5 (8), Pluck 8 (8), Pad 22 (8); plays at bars 1–12, bars 15–16
+- "Loop 12" pat_9v2Xxtph4w, 2 bars: Lead 7 (8), Pluck 12 (8), Lead 15 (8); plays at bars 3–16
+- "Loop 13" pat_0MTmFJHI4P, 2 bars: Pad 14 (8), Lead 19 (8), Pad 22 (8); plays at bars 1–6, bars 9–16
+- "Loop 14" pat_yqZ_jiZk3_, 2 bars: Pluck 4 (8), Lead 7 (8), Bass 21 (8); plays at bars 1–2, bars 5–12, bars 15–16
+  Notes of the current pattern (steps are 1/16 notes from 0; pitched notes as step:note/length; @ = velocity 0–1 when not 0.8):
+  Bass 1: 0:C3/1 4:F3/1 8:A#3/1 12:D#4/1 16:G#4/1 20:C#3/1 24:F#3/1 28:B3/1
+  Pluck 4: 3:F#4/1 7:G3/1 11:C4/1 15:F4/1 19:A#4/1 23:D#3/1 27:G#3/1 31:C#4/1
+  Pad 18: 3:D#3/1 7:G#3/1 11:C#4/1 15:F#4/1 19:B4/1 23:E3/1 27:A3/1 31:D4/1
+
+Playlist (song mode plays it). Bar ranges are 1-based and inclusive ("bars 81–112" is 32 bars); the song is 16 bars long.
+Sections (markers): "Section 1" bars 1–2 mk_31hzNwgk20; "Section 2" bars 3–4 mk_vLeXDu91Rg; "Section 3" bars 5–6 mk_OYNk7FqltI; "Section 4" bars 7–8 mk_CEgRyvqlmk; "Section 5" bars 9–10 mk_qqZEs9FLrv; "Section 6" bars 11–16 mk_5azezfdZJY
+- Track 1: "Loop 1" bars 1–2 clip_dqzBVeS7rM; "Loop 6" bars 3–4 clip_kqwzJ_PaF3; "Loop 11" bars 5–6 clip_gHNhCpXbcW; "Loop 2" bars 7–8 clip_JBvuKsJ6OJ; "Loop 7" bars 9–10 clip_K0umxlAzSt; "Loop 12" bars 11–12 clip_ByLvUNuCFF; "Loop 3" bars 13–14 clip_R3DQe8WJ3F; "Loop 8" bars 15–16 clip_NcwffKdOEX
+- Track 2: "Loop 4" bars 1–2 clip_4nuB2rnkck; "Loop 9" bars 3–4 clip_gsCNOTgv9i; "Loop 14" bars 5–6 clip_Gw_Wwo8Otk; "Loop 5" bars 7–8 clip_Gk4FjUnu2t; "Loop 10" bars 9–10 clip_8dOZw_L2Jq; "Loop 1" bars 11–12 clip_tHVHwdPNto; "Loop 6" bars 13–14 clip_fLW0h7URtS; "Loop 11" bars 15–16 clip_mpbAi9tPox
+- Track 3: "Loop 7" bars 1–2 clip_ULzuwtdqRK; "Loop 12" bars 3–4 clip_S-JGZCt1GC; "Loop 3" bars 5–6 clip_7WHUyNG-3t; "Loop 8" bars 7–8 clip_Y7U4KwkyYC; "Loop 13" bars 9–10 clip_NhH_mK6yWP; "Loop 4" bars 11–12 clip_FfPxoKFixM; "Loop 9" bars 13–14 clip_1LrlnP8z6f; "Loop 14" bars 15–16 clip_ka-cugG-91
+- Track 4: "Loop 10" bars 1–2 clip_6m8EX8NPHD; "Loop 1" bars 3–4 clip_JKSRNU_au6; "Loop 6" bars 5–6 clip_UeEJY3WWeX; "Loop 11" bars 7–8 clip_SLul3wUUJp; "Loop 2" bars 9–10 clip_xL0twRPEbD; "Loop 7" bars 11–12 clip_2aBaWx5_lr; "Loop 12" bars 13–14 clip_iCtm9Bv70F; "Loop 3" bars 15–16 clip_xrWoH0sOUq
+- Track 5: "Loop 13" bars 1–2 clip_WapyMdwM2u; "Loop 4" bars 3–4 clip_FRYEqbqY8W; "Loop 9" bars 5–6 clip_vxGGfCT1xD; "Loop 14" bars 7–8 clip_Wa4mxr85os; "Loop 5" bars 9–10 clip_H5-YgO_Ki4; "Loop 10" bars 11–12 clip_YZgGlirgk8; "Loop 1" bars 13–14 clip_Ue-Ww6Mhq3; "Loop 6" bars 15–16 clip_s15DkspxPZ
+- Track 6: "Loop 2" bars 1–2 clip_OogSkJd645; "Loop 7" bars 3–4 clip_LYwQo1xIXU; "Loop 12" bars 5–6 clip_mf_Ikfrt1h; "Loop 3" bars 7–8 clip_rTZjQ6pj0m; "Loop 8" bars 9–10 clip_pty0faGAht; "Loop 13" bars 11–12 clip_gaaS7mQn4d; "Loop 4" bars 13–14 clip_iiKVQMDXHH; "Loop 9" bars 15–16 clip_X0Th4rrUmq
+- Track 7: "Loop 5" bars 1–2 clip_SQYsYe9VPZ; "Loop 10" bars 3–4 clip_V1hgaI4Juq; "Loop 1" bars 5–6 clip_UgBCmCV8G3; "Loop 6" bars 7–8 clip_N_wtZmQKwD; "Loop 11" bars 9–10 clip_aaZUnhsS7m; "Loop 2" bars 11–12 clip_ebdgTMS-fo; "Loop 7" bars 13–14 clip_duIe-_EB0y; "Loop 12" bars 15–16 clip_hWJedatChv
+- Track 8: "Loop 8" bars 1–2 clip_-4ippRWU8i; "Loop 13" bars 3–4 clip_0zkGuoR43-; "Loop 4" bars 5–6 clip_rqF7cG0m0L; "Loop 9" bars 7–8 clip_36qpMPFTjN; "Loop 14" bars 9–10 clip_1FV_GOz0zf; "Loop 5" bars 11–12 clip_ZpcqvtBlK7; "Loop 10" bars 13–14 clip_ZAPIpAYk5N; "Loop 1" bars 15–16 clip_yEl5HGlo14
+- Track 9: "Loop 11" bars 1–2 clip_WzwkjwNz68; "Loop 2" bars 3–4 clip_tjBLXFb2M2; "Loop 7" bars 5–6 clip_y6ZO6HQLbF; "Loop 12" bars 7–8 clip_jjDigqkvpl; "Loop 3" bars 9–10 clip_juHesGehHV; "Loop 8" bars 11–12 clip_-NJ_GsqWqN; "Loop 13" bars 13–14 clip_VAzU2Dq7En; "Loop 4" bars 15–16 clip_uQuA0FF9cu
+- Track 10: "Loop 14" bars 1–2 clip_XOhTAcqcwe; "Loop 5" bars 3–4 clip_B6Rj6K_HFC; "Loop 10" bars 5–6 clip_77dEkY4rph; "Loop 1" bars 7–8 clip_Cn8FwIkjuU; "Loop 6" bars 9–10 clip_urwgHe19UR; "Loop 11" bars 11–12 clip__WLW1HC_qv; "Loop 2" bars 13–14 clip_SgbqsDK9OG; "Loop 7" bars 15–16 clip_AHK-p9wAaM
+- Track 11: "Loop 3" bars 1–2 clip_CtHWmzJtkP; "Loop 8" bars 3–4 clip_tYsIo3ubLb; "Loop 13" bars 5–6 clip_vcB8Fszo4h; "Loop 4" bars 7–8 clip_01V9qjQbqJ; "Loop 9" bars 9–10 clip_m3n48dTl6O; "Loop 14" bars 11–12 clip_1UxmH9UgLs; "Loop 5" bars 13–14 clip_g8VjyIilL5; "Loop 10" bars 15–16 clip_mZtFiLgxWj
+- Track 12: "Loop 6" bars 1–2 clip_ddXJLLjrv2; "Loop 11" bars 3–4 clip_XCJeQEWmzg; "Loop 2" bars 5–6 clip_eTkzq9WdVr; "Loop 7" bars 7–8 clip_vGG0lmKlj1; "Loop 12" bars 9–10 clip_2NvZSvoJdG; "Loop 3" bars 11–12 clip_7Qli8YeY2j; "Loop 8" bars 13–14 clip_YGM5bHsSe5; "Loop 13" bars 15–16 clip_OiWZjbefUZ
+Arrangement (sections, energy 1–5 as heard): Section 1 1–2 (2) · Section 2 3–4 (2) · Section 3 5–6 (2) · Section 4 7–8 (2) · Section 5 9–10 (2) · Section 6 11–16 (2)
+
+Song check (problems in the arrangement right now):
+- 12 tracks have no name ("Track N"): the track action names them.
+
+Selected: channel "Bass 1", mixer track none.

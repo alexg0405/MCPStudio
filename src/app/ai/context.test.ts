@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildStackedSong } from '@core/fixtures/stacked-song';
 import { createTestServices } from '../testing';
 import { patternLines, playlistLines, projectContext, songCheckLines } from './context';
+import { THIRTY_CHANNEL_SONG, TWO_HUNDRED_CHANNEL_SONG, buildSyntheticSong, withSeededIds } from '../../../test/helpers/context-songs';
 
 function stackedSong() {
   const s = createTestServices();
@@ -51,5 +52,35 @@ describe('the project as the AI sees it', () => {
     expect(text).toContain('@ = velocity 0–1 when not 0.8');
     expect(text).toMatch(/ {2}Hat: 0@\.9 2@\.5 /);
     expect(text).toContain('Song check (problems in the arrangement right now):');
+  });
+});
+
+describe('the size budget', () => {
+  // The golden files were written by the text builder before the budget existed: a project under the
+  // budget must still come out exactly like that.
+  it('leaves the stacked song exactly as it was', async () => {
+    const s = createTestServices();
+    withSeededIds(1, () => {
+      s.history.transact('song', (d) => {
+        buildStackedSong(d);
+      });
+    });
+    await expect(projectContext(s)).toMatchFileSnapshot('./__snapshots__/context-stacked.txt');
+  });
+
+  it('leaves a 30-channel song exactly as it was', async () => {
+    const s = createTestServices();
+    withSeededIds(THIRTY_CHANNEL_SONG.seed, () => buildSyntheticSong(s, THIRTY_CHANNEL_SONG));
+    await expect(projectContext(s)).toMatchFileSnapshot('./__snapshots__/context-thirty-channels.txt');
+  });
+
+  it('shortens a 200-channel project, and keeps every channel name and marker', () => {
+    const s = createTestServices();
+    withSeededIds(TWO_HUNDRED_CHANNEL_SONG.seed, () => buildSyntheticSong(s, TWO_HUNDRED_CHANNEL_SONG));
+    const p = s.doc.getState().project;
+    const text = projectContext(s);
+    expect(text).toContain('(details shortened: the project is very large)');
+    for (const ch of Object.values(p.channels)) expect(text).toContain(`"${ch.name}"`);
+    for (const marker of Object.values(p.playlist.markers)) expect(text).toContain(`"${marker.name}"`);
   });
 });

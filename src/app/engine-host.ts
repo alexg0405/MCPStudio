@@ -2,6 +2,7 @@ import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
 import type {
   AudioInput,
+  DeckHost,
   EngineApi,
   EngineSession,
   EngineState,
@@ -237,6 +238,9 @@ export class EngineHost implements EngineApi {
   }
   stats(): EngineStats {
     return this.inner.stats();
+  }
+  deckHost(): DeckHost | null {
+    return this.inner.deckHost?.() ?? null;
   }
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);

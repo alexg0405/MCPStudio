@@ -10,6 +10,12 @@ import {
 import type { pluckParams } from './params';
 
 const MAX_DELAY = 4096;
+/** Seconds of sound a pluck's level is judged over. */
+const LEVEL_SECONDS = 1;
+/** Chebyshev terms in the level weight (see levelBurst). */
+const LEVEL_DEGREE = 16;
+/** Bursts up to this many samples have their level summed bin by bin (see levelBurst). */
+const EXACT_BELOW = 512;
 
 class PluckVoice implements Voice {
   noteId = -1;
@@ -20,6 +26,10 @@ class PluckVoice implements Voice {
   buf = new Float32Array(MAX_DELAY);
   len = 1;
   pos = 0;
+  /** The burst still needs its level set (done on the first block, when the decay params are known). */
+  shape = false;
+  /** One-pole coefficient the burst was drawn with. */
+  burstA = 1;
   /** One-pole low-pass state in the loop. */
   lp = 0;
   /** First-order all-pass (fractional delay) state. */
@@ -38,6 +48,9 @@ class PluckVoice implements Voice {
  */
 export class PluckKernel extends InstrumentKernel<typeof pluckParams> {
   private readonly pool = new VoicePool(16, () => new PluckVoice());
+  /** Scratch for levelBurst, allocated once. */
+  private readonly levelNodes = new Float64Array(LEVEL_DEGREE + 1);
+  private readonly levelCoef = new Float64Array(LEVEL_DEGREE + 1);
 
   constructor(host: KernelHost) {
     super(host);
@@ -73,6 +86,102 @@ export class PluckKernel extends InstrumentKernel<typeof pluckParams> {
     }
     mean /= n;
     for (let i = 0; i < n; i++) v.buf[i] = (v.buf[i] as number) - mean;
+    v.shape = true;
+    v.burstA = a;
+  }
+
+  /**
+   * Scales a new burst so the pluck's loudness doesn't depend on the random draw. Each harmonic of
+   * the burst has a random power (exponentially distributed), and the level is the sum over the
+   * harmonics weighted by how much of each one survives the loop over LEVEL_SECONDS. Summing the
+   * random parts swings the level by several dB from seed to seed (most at high pitches, where few
+   * harmonics are left). Scale the burst so that sum equals its expected value for this tone.
+   * Short bursts (high notes) sum the bins one by one. Longer ones use a Chebyshev fit of the
+   * weight in cos(2πk/n): the sum over the bins then needs only the burst's circular
+   * autocorrelation at a few lags (cos(d·w_k) summed over the bins is n times that lag's value).
+   * Either way it costs at most about n²/2 or n·LEVEL_DEGREE multiply-adds, once per note.
+   */
+  private levelBurst(v: PluckVoice, t60: number, damp: number): void {
+    const n = v.len;
+    const buf = v.buf;
+    const a = v.burstA;
+    const periods = LEVEL_SECONDS * v.freq;
+    // Energy per loop period of harmonic k is g² · (|averaging filter| at its frequency)², which is
+    // g² (A + B·cos w) with A and B from `damp`.
+    const g2 = Math.pow(10, -6 / (t60 * v.freq));
+    const A = (1 - damp) * (1 - damp) + damp * damp;
+    const B = 2 * damp * (1 - damp);
+    let actual = 0;
+    let expected = 0;
+    if (n <= EXACT_BELOW) {
+      for (let k = 1; k < n; k++) {
+        const w = (2 * Math.PI * k) / n;
+        const cw = Math.cos(w);
+        const sw = Math.sin(w);
+        const e = g2 * (A + B * cw);
+        const weight = (1 - Math.pow(e, periods)) / (1 - e);
+        // The k-th DFT bin of the burst, by a rotating phasor.
+        let c = 1;
+        let s = 0;
+        let re = 0;
+        let im = 0;
+        for (let i = 0; i < n; i++) {
+          const x = buf[i] as number;
+          re += x * c;
+          im -= x * s;
+          const c2 = c * cw - s * sw;
+          s = s * cw + c * sw;
+          c = c2;
+        }
+        const h2 = (a * a) / (1 - 2 * (1 - a) * cw + (1 - a) * (1 - a));
+        actual += weight * (re * re + im * im);
+        expected += weight * h2;
+      }
+      expected *= n / 3;
+    } else {
+      const M = LEVEL_DEGREE + 1;
+      const nodes = this.levelNodes;
+      const coef = this.levelCoef;
+      // Chebyshev interpolation of the weight at M nodes on [-1, 1].
+      for (let j = 0; j < M; j++) {
+        const x = Math.cos((Math.PI * (j + 0.5)) / M);
+        const e = g2 * (A + B * x);
+        nodes[j] = (1 - Math.pow(e, periods)) / (1 - e);
+      }
+      for (let d = 0; d <= LEVEL_DEGREE; d++) {
+        let sum = 0;
+        for (let j = 0; j < M; j++) sum += (nodes[j] as number) * Math.cos((Math.PI * d * (j + 0.5)) / M);
+        coef[d] = ((d === 0 ? 1 : 2) / M) * sum;
+      }
+      // The burst's circular autocorrelation at lags 0..LEVEL_DEGREE.
+      for (let d = 0; d <= LEVEL_DEGREE; d++) {
+        let r = 0;
+        for (let i = d; i < n; i++) r += (buf[i] as number) * (buf[i - d] as number);
+        for (let i = 0; i < d; i++) r += (buf[i] as number) * (buf[i - d + n] as number);
+        actual += (coef[d] as number) * r;
+      }
+      actual *= n;
+      for (let k = 1; k < n; k++) {
+        const c = Math.cos((2 * Math.PI * k) / n);
+        // The series at c, by the Chebyshev recurrence T(d+1) = 2c·T(d) − T(d−1).
+        let w = coef[0] as number;
+        let tPrev = 1;
+        let tCur = c;
+        for (let d = 1; d <= LEVEL_DEGREE; d++) {
+          w += (coef[d] as number) * tCur;
+          const tNext = 2 * c * tCur - tPrev;
+          tPrev = tCur;
+          tCur = tNext;
+        }
+        const h2 = (a * a) / (1 - 2 * (1 - a) * c + (1 - a) * (1 - a));
+        expected += w * h2;
+      }
+      expected *= n / 3;
+    }
+    if (actual > 1e-20) {
+      const gain = Math.sqrt(expected / actual);
+      for (let i = 0; i < n; i++) buf[i] = (buf[i] as number) * gain;
+    }
   }
 
   noteOff(noteId: number): void {
@@ -108,6 +217,10 @@ export class PluckKernel extends InstrumentKernel<typeof pluckParams> {
       const t60 = v.releasing ? Math.min(release, decay) : decay;
       const g = Math.pow(10, -3 / (t60 * v.freq));
       const damp = 0.5 + 0.49 * damping;
+      if (v.shape) {
+        v.shape = false;
+        this.levelBurst(v, t60, damp);
+      }
       const pan = Math.max(-1, Math.min(1, v.pan + (((v.key * 7) % 12) / 11 - 0.5) * width));
       const gl = v.amp * level * Math.sqrt(0.5 * (1 - pan));
       const gr = v.amp * level * Math.sqrt(0.5 * (1 + pan));

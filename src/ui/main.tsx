@@ -58,7 +58,10 @@ if (import.meta.hot) {
 if (import.meta.env.DEV) {
   // Debug handle for the console and for automated checks: stores, history, commands, engine.
   const { pianoRollPerf } = await import('./features/piano-roll/controller');
-  Object.assign(window, { __ag: Object.assign(services, { perf: { pianoRoll: pianoRollPerf, react: reactPerf } }) });
+  const { frameStats } = await import('./frame-loop');
+  Object.assign(window, {
+    __ag: Object.assign(services, { perf: { pianoRoll: pianoRollPerf, react: reactPerf, frames: frameStats } }),
+  });
   const perf = new URLSearchParams(location.search).get('perf');
   if (perf) (await import('./perf-fixtures')).applyPerfFixture(services, perf);
 }

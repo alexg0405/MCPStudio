@@ -12,11 +12,11 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "lint": "eslint .",
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/.eslintcache",
     "test": "vitest run --project unit",
     "test:audio": "vitest run --project audio",
     "test:watch": "vitest --project unit",
-    "check": "tsc -b && eslint . && vitest run",
+    "check": "node scripts/check.mjs",
     "format": "prettier --write .",
     "new:plugin": "node scripts/new-plugin.mjs"
   },

@@ -130,6 +130,8 @@ export class DeckKernel {
   private syncLocked = false;
   /** Jump to the master's beat at the next quantum (a start, a sync press, the master jumped). */
   private alignPending = false;
+  /** Frames a pending align waits for a master that isn't playing yet (a follower started together with it). */
+  private alignWait = 0;
   /** Set when the deck starts from nothing, until its first frame is out. */
   private fresh = false;
   private readonly snap = newSnapshot();
@@ -238,7 +240,7 @@ export class DeckKernel {
         this.startFresh();
       }
       // A follower starts on the master's beat.
-      if (this.sync) this.alignPending = true;
+      if (this.sync) this.requestAlign();
     } else {
       if (!this.scratching) this.captureTail();
       this.playing = false;
@@ -316,7 +318,12 @@ export class DeckKernel {
 
   /** Moves a following deck to the master's beat at the next render quantum (it does so by itself when it starts). */
   align(): void {
-    if (this.sync) this.alignPending = true;
+    if (this.sync) this.requestAlign();
+  }
+
+  private requestAlign(): void {
+    this.alignPending = true;
+    this.alignWait = Math.round(0.15 * this.sampleRate);
   }
 
   setSync(spec: SyncSpec | null): void {
@@ -338,7 +345,7 @@ export class DeckKernel {
 
   /** Renders `n` frames into outL/outR. `frame` is the context frame of the first one. */
   process(outL: Float32Array, outR: Float32Array, n: number, frame: number): void {
-    this.updateSync(frame);
+    this.updateSync(frame, n);
     this.publish(frame);
     if (!this.chL) {
       for (let i = 0; i < n; i++) {
@@ -670,7 +677,7 @@ export class DeckKernel {
   }
 
   /** Follows the master's tempo and beat phase for this render quantum. */
-  private updateSync(frame: number): void {
+  private updateSync(frame: number, n: number): void {
     const sy = this.sync;
     this.tempoEff = this.tempo;
     if (!sy) return;
@@ -679,7 +686,8 @@ export class DeckKernel {
     if (!snap.playing || snap.tempoRate <= 0) {
       this.syncLocked = false;
       this.syncError = 0;
-      this.alignPending = false;
+      // A follower started together with its master waits a moment for it to start.
+      if (this.alignPending && (this.alignWait -= n) <= 0) this.alignPending = false;
       return;
     }
     const sp = sy.spec;

@@ -279,3 +279,113 @@ describe('decks: loops', () => {
     rig.decks.dispose();
   });
 });
+
+/**
+ * Times (seconds) of the clicks of a tone burst at `hz` in x: a quadrature demodulator, a 1 ms average and a
+ * peak picker (threshold 30 % of the loudest, 200 ms apart). Both decks' clicks end up in one render: each is
+ * found by its own pitch.
+ */
+function clickTimes(x: Float32Array, hz: number): number[] {
+  const n = x.length;
+  const w = (2 * Math.PI * hz) / SR;
+  const c = Math.cos(w);
+  const s = Math.sin(w);
+  const win = 48;
+  const env = new Float32Array(n);
+  let pr = 1;
+  let pi = 0;
+  const ring = new Float64Array(win * 2);
+  let sumRe = 0;
+  let sumIm = 0;
+  for (let i = 0; i < n; i++) {
+    const v = x[i]!;
+    const re = v * pr;
+    const im = -v * pi;
+    const k = (i % win) * 2;
+    sumRe += re - ring[k]!;
+    sumIm += im - ring[k + 1]!;
+    ring[k] = re;
+    ring[k + 1] = im;
+    env[i] = Math.hypot(sumRe, sumIm);
+    const nr = pr * c - pi * s;
+    pi = pr * s + pi * c;
+    pr = nr;
+    if ((i & 0xffff) === 0) {
+      const m = Math.hypot(pr, pi);
+      pr /= m;
+      pi /= m;
+    }
+  }
+  let max = 0;
+  for (let i = 0; i < n; i++) if (env[i]! > max) max = env[i]!;
+  const out: number[] = [];
+  const gap = Math.round(0.2 * SR);
+  let i = 1;
+  while (i < n - 1) {
+    if (env[i]! > 0.3 * max) {
+      // The peak within the next 5 ms (the burst's rise), refined by a parabola.
+      let p = i;
+      for (let j = i; j < Math.min(n - 1, i + 240); j++) if (env[j]! > env[p]!) p = j;
+      const a = env[p - 1]!;
+      const b = env[p]!;
+      const d = env[p + 1]!;
+      const den = a - 2 * b + d;
+      out.push((p + (den !== 0 ? (0.5 * (a - d)) / den : 0)) / SR);
+      i = p + gap;
+    } else i++;
+  }
+  return out;
+}
+
+describe('decks: sync', () => {
+  for (const keyLock of [false, true]) {
+    it(`a synced deck holds the master's beat within 2 ms over 5 minutes (key lock ${keyLock ? 'on' : 'off'})`, async () => {
+      const secs = 300;
+      const rig = makeRig(secs + 6);
+      // Two songs at 124 and 128 BPM with different downbeats; A's clicks are 1 kHz, B's 4 kHz.
+      const a = rig.add('Song A', clickSong(124, 0.1, 340, 1000), { bpm: 124, firstDownbeat: 0.1, bars: 120 });
+      const b = rig.add('Song B', clickSong(128, 0.35, 340, 4000), { bpm: 128, firstDownbeat: 0.35, bars: 120 });
+      await rig.decks.load('A', a, 'Song A');
+      await rig.decks.load('B', b, 'Song B');
+      rig.decks.setCrossfader(0);
+      rig.decks.seek('A', 10);
+      rig.decks.seek('B', 20.2);
+      rig.decks.setKeyLock('B', keyLock);
+      rig.decks.play('A');
+      void rig.ctx.suspend(0.5).then(async () => {
+        // B joins half a second later: synced, it lands on A's beat by itself.
+        rig.decks.sync('B', true);
+        rig.decks.play('B');
+        await rig.decks.settled?.();
+        void rig.ctx.resume();
+      });
+      const { l } = await rig.render();
+      expect(rig.toasts).toEqual([]);
+      const st = rig.decks.store.getState().decks.B;
+      expect(st.synced).toBe(true);
+      expect(st.bpm).toBeCloseTo(124, 6);
+      expect(st.pitch).toBeCloseTo(124 / 128 - 1, 9);
+      const ta = clickTimes(l, 1000);
+      const tb = clickTimes(l, 4000);
+      // For each of B's clicks the nearest of A's.
+      const offsets: { t: number; ms: number }[] = [];
+      let j = 0;
+      for (const t of tb) {
+        if (t < 3) continue;
+        while (j + 1 < ta.length && Math.abs(ta[j + 1]! - t) < Math.abs(ta[j]! - t)) j++;
+        offsets.push({ t, ms: (t - ta[j]!) * 1000 });
+      }
+      expect(offsets.length).toBeGreaterThan(550);
+      const worst = offsets.reduce((m, o) => Math.max(m, Math.abs(o.ms)), 0);
+      // The drift: a line through the offsets.
+      const n = offsets.length;
+      const mt = offsets.reduce((s, o) => s + o.t, 0) / n;
+      const mo = offsets.reduce((s, o) => s + o.ms, 0) / n;
+      const slope = offsets.reduce((s, o) => s + (o.t - mt) * (o.ms - mo), 0) / offsets.reduce((s, o) => s + (o.t - mt) ** 2, 0);
+      // Measured: turntable 0.06 ms worst, key lock 0.85 ms (the stretch moves a click by what its search moves it).
+      expect(worst).toBeLessThan(2);
+      expect(Math.abs(slope * 300)).toBeLessThan(2);
+      rig.decks.dispose();
+    }, 240_000);
+  }
+});

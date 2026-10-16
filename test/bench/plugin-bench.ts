@@ -8,11 +8,17 @@
  * hold an 8-note chord and retrigger it every half second. The table lists the default and the worst
  * preset. Options: `--only chorus,reverb` (ids containing any), `--preset text` (only presets whose
  * name contains it), `--reps 5`, `--seconds 4`, `--json` (one JSON array instead of the table).
+ *
+ * `--automate` measures the default settings again with up to 3 automatable float params (the first
+ * ones in declaration order) swept by a slow sine across their whole range, so each param changes on
+ * every frame, the way automation in a song does. It prints the steady and automated % side by side
+ * with their ratio, sorted by ratio. Presets are not used in that mode.
  */
-import type { ParamValue } from '@agstudio/sdk';
+import type { FloatSpec, ParamSpecs, ParamValue } from '@agstudio/sdk';
+import { fromNormalized, isAutomatable } from '@agstudio/sdk';
 import { paramBlock, testTransport } from '@agstudio/sdk/testing';
 import type { EffectKernel, InstrumentKernel, ParamBlock } from '@agstudio/sdk/worklet';
-import { KERNEL_ENTRIES, type EffectEntry, type InstrumentEntry } from '../helpers/builtin-kernels';
+import { KERNEL_ENTRIES, type EffectEntry, type InstrumentEntry, type KernelEntry } from '../helpers/builtin-kernels';
 import { keyInput, musicInput } from '../helpers/kernel-run';
 
 declare const process: {
@@ -34,7 +40,12 @@ const REPS = Number(option('reps', '5'));
 const ONLY = option('only', '').split(',').filter(Boolean);
 const PRESET = option('preset', '');
 const JSON_OUT = args.includes('--json');
+const AUTOMATE = args.includes('--automate');
 const FRAMES = SR * SECONDS;
+
+/** Automated mode: at most this many float params are swept, one sine cycle every 4 s (a slow sweep). */
+const MAX_SWEPT = 3;
+const SWEEP_HZ = 0.25;
 
 /** Settles the garbage collector before a timed run (its helper threads would count as CPU time). */
 const settle = () => (globalThis as { gc?: () => void }).gc?.();
@@ -48,11 +59,12 @@ const cpuMs = () => {
 const INPUT = musicInput(FRAMES);
 const KEY = keyInput(FRAMES);
 
-function timeEffect(entry: EffectEntry, values: Record<string, ParamValue>): number {
+/** `blocks` (automated mode) gives one param block per 128-frame block; otherwise `values` is constant. */
+function timeEffect(entry: EffectEntry, values: Record<string, ParamValue>, blocks?: ParamBlock[]): number {
   const kernel: EffectKernel = entry.make(SR);
   const transport = testTransport({ playing: true, bpm: 120, sampleRate: SR });
   kernel.transport = transport;
-  const params = paramBlock(entry.params, values) as ParamBlock;
+  const constant = blocks ? undefined : (paramBlock(entry.params, values) as ParamBlock);
   const outL = new Float32Array(BLOCK);
   const outR = new Float32Array(BLOCK);
   const scL = new Float32Array(BLOCK);
@@ -61,21 +73,23 @@ function timeEffect(entry: EffectEntry, values: Record<string, ParamValue>): num
   const t0 = cpuMs();
   for (let at = 0; at < FRAMES; at += BLOCK) {
     transport.blockStart = at;
+    const params = constant ?? (blocks as ParamBlock[])[at / BLOCK];
     const i = [INPUT[0].subarray(at, at + BLOCK), INPUT[1].subarray(at, at + BLOCK)];
     if (entry.sidechain) {
       scL.set(KEY[0].subarray(at, at + BLOCK));
       scR.set(KEY[1].subarray(at, at + BLOCK));
-      kernel.process(i, [outL, outR], BLOCK, params, [scL, scR]);
-    } else kernel.process(i, [outL, outR], BLOCK, params);
+      kernel.process(i, [outL, outR], BLOCK, params as ParamBlock, [scL, scR]);
+    } else kernel.process(i, [outL, outR], BLOCK, params as ParamBlock);
   }
   return cpuMs() - t0;
 }
 
-function timeInstrument(entry: InstrumentEntry, values: Record<string, ParamValue>): number {
+/** `blocks` (automated mode) gives one param block per 128-frame block; otherwise `values` is constant. */
+function timeInstrument(entry: InstrumentEntry, values: Record<string, ParamValue>, blocks?: ParamBlock[]): number {
   const kernel: InstrumentKernel = entry.make(SR);
   const transport = testTransport({ playing: true, bpm: 120, sampleRate: SR });
   kernel.transport = transport;
-  const params = paramBlock(entry.params, values) as ParamBlock;
+  const constant = blocks ? undefined : (paramBlock(entry.params, values) as ParamBlock);
   const L = new Float32Array(BLOCK);
   const R = new Float32Array(BLOCK);
   const half = SR / 2;
@@ -93,7 +107,8 @@ function timeInstrument(entry: InstrumentEntry, values: Record<string, ParamValu
     }
     L.fill(0);
     R.fill(0);
-    kernel.render([L, R], 0, BLOCK, params);
+    const params = constant ?? (blocks as ParamBlock[])[at / BLOCK];
+    kernel.render([L, R], 0, BLOCK, params as ParamBlock);
   }
   return cpuMs() - t0;
 }
@@ -106,32 +121,123 @@ function percent(run: () => number): number {
   return (best / (SECONDS * 1000)) * 100;
 }
 
-const rows: { id: string; kind: string; default: number; worst: number; worstPreset: string }[] = [];
-for (const entry of KERNEL_ENTRIES) {
-  if (ONLY.length && !ONLY.some((o) => entry.id.includes(o))) continue;
-  const run = (v: Record<string, ParamValue>) =>
-    entry.kind === 'effect' ? () => timeEffect(entry, v) : () => timeInstrument(entry, v);
-  const def = percent(run({}));
-  let worst = def;
-  let worstPreset = 'default';
-  for (const preset of entry.presets) {
-    if (PRESET && !preset.name.includes(PRESET)) continue;
-    const c = percent(run(preset.params));
-    if (c > worst) {
-      worst = c;
-      worstPreset = preset.name;
-    }
+/** The first automatable float params, in declaration order (at most MAX_SWEPT). */
+function sweptParams(specs: ParamSpecs): { key: string; spec: FloatSpec }[] {
+  const out: { key: string; spec: FloatSpec }[] = [];
+  for (const [key, spec] of Object.entries(specs)) {
+    if (out.length >= MAX_SWEPT) break;
+    if (spec.type === 'float' && isAutomatable(spec)) out.push({ key, spec });
   }
-  rows.push({ id: entry.id.replace('agstudio.', ''), kind: entry.kind, default: def, worst, worstPreset });
+  return out;
 }
-rows.sort((a, b) => b.worst - a.worst);
-if (JSON_OUT) process.stdout.write(`${JSON.stringify(rows)}\n`);
-else {
-  const lines = rows.map(
-    (r) =>
-      `${r.id.padEnd(14)} ${r.kind.padEnd(10)} default ${r.default.toFixed(2).padStart(6)} %   worst ${r.worst
-        .toFixed(2)
-        .padStart(6)} %  (${r.worstPreset})`,
-  );
-  process.stdout.write(`CPU, % of one core at ${SR} Hz (${SECONDS} s, best of ${REPS})\n${lines.join('\n')}\n`);
+
+/**
+ * One param block per 128-frame block, built before timing starts: the constant params of `values`,
+ * and each swept param as a per-frame array of a slow sine across its range (in the normalized
+ * domain, so log and dB ranges are swept evenly to the ear). Phases are spread so the sweeps differ.
+ */
+function automatedBlocks(
+  entry: KernelEntry,
+  values: Record<string, ParamValue>,
+  swept: { key: string; spec: FloatSpec }[],
+): ParamBlock[] {
+  const blockCount = Math.ceil(FRAMES / BLOCK);
+  const base = paramBlock(entry.params, values) as unknown as Record<string, Float32Array>;
+  const curves = swept.map((s, k) => {
+    const curve = new Float32Array(blockCount * BLOCK);
+    const phase = k / MAX_SWEPT;
+    for (let i = 0; i < curve.length; i++) {
+      const n = 0.5 + 0.5 * Math.sin(2 * Math.PI * (SWEEP_HZ * (i / SR) + phase));
+      curve[i] = Number(fromNormalized(s.spec, n));
+    }
+    return curve;
+  });
+  const blocks: ParamBlock[] = [];
+  for (let b = 0; b < blockCount; b++) {
+    const p: Record<string, Float32Array> = { ...base };
+    swept.forEach((s, k) => {
+      p[s.key] = (curves[k] as Float32Array).subarray(b * BLOCK, (b + 1) * BLOCK);
+    });
+    blocks.push(p as unknown as ParamBlock);
+  }
+  return blocks;
 }
+
+function runSteady() {
+  const rows: { id: string; kind: string; default: number; worst: number; worstPreset: string }[] = [];
+  for (const entry of KERNEL_ENTRIES) {
+    if (ONLY.length && !ONLY.some((o) => entry.id.includes(o))) continue;
+    const run = (v: Record<string, ParamValue>) =>
+      entry.kind === 'effect' ? () => timeEffect(entry, v) : () => timeInstrument(entry, v);
+    const def = percent(run({}));
+    let worst = def;
+    let worstPreset = 'default';
+    for (const preset of entry.presets) {
+      if (PRESET && !preset.name.includes(PRESET)) continue;
+      const c = percent(run(preset.params));
+      if (c > worst) {
+        worst = c;
+        worstPreset = preset.name;
+      }
+    }
+    rows.push({ id: entry.id.replace('agstudio.', ''), kind: entry.kind, default: def, worst, worstPreset });
+  }
+  rows.sort((a, b) => b.worst - a.worst);
+  if (JSON_OUT) process.stdout.write(`${JSON.stringify(rows)}\n`);
+  else {
+    const lines = rows.map(
+      (r) =>
+        `${r.id.padEnd(14)} ${r.kind.padEnd(10)} default ${r.default.toFixed(2).padStart(6)} %   worst ${r.worst
+          .toFixed(2)
+          .padStart(6)} %  (${r.worstPreset})`,
+    );
+    process.stdout.write(`CPU, % of one core at ${SR} Hz (${SECONDS} s, best of ${REPS})\n${lines.join('\n')}\n`);
+  }
+}
+
+/** Default settings, steady and with sweeps; sorted by the automated/steady ratio, worst first. */
+function runAutomated() {
+  const rows: {
+    id: string;
+    kind: string;
+    steady: number;
+    automated: number | null;
+    ratio: number | null;
+    swept: string[];
+  }[] = [];
+  for (const entry of KERNEL_ENTRIES) {
+    if (ONLY.length && !ONLY.some((o) => entry.id.includes(o))) continue;
+    const values: Record<string, ParamValue> = {};
+    const steady = percent(() =>
+      entry.kind === 'effect' ? timeEffect(entry, values) : timeInstrument(entry, values),
+    );
+    const id = entry.id.replace('agstudio.', '');
+    const swept = sweptParams(entry.params);
+    if (swept.length === 0) {
+      rows.push({ id, kind: entry.kind, steady, automated: null, ratio: null, swept: [] });
+      continue;
+    }
+    const blocks = automatedBlocks(entry, values, swept);
+    const automated = percent(() =>
+      entry.kind === 'effect' ? timeEffect(entry, values, blocks) : timeInstrument(entry, values, blocks),
+    );
+    rows.push({ id, kind: entry.kind, steady, automated, ratio: automated / steady, swept: swept.map((s) => s.key) });
+  }
+  rows.sort((a, b) => (b.ratio ?? -1) - (a.ratio ?? -1));
+  if (JSON_OUT) process.stdout.write(`${JSON.stringify(rows)}\n`);
+  else {
+    const f = (n: number | null) => (n === null ? '-' : n.toFixed(2));
+    const lines = rows.map(
+      (r) =>
+        `${r.id.padEnd(14)} ${r.kind.padEnd(10)} steady ${f(r.steady).padStart(6)} %   automated ${f(r.automated).padStart(
+          6,
+        )} %   ratio ${(r.ratio === null ? '-' : r.ratio.toFixed(2)).padStart(5)}  (${r.swept.join(', ') || 'no automatable floats'})`,
+    );
+    process.stdout.write(
+      `CPU, % of one core at ${SR} Hz (${SECONDS} s, best of ${REPS}), steady vs automated (up to ${MAX_SWEPT} float params swept)\n${lines.join('\n')}\n`,
+    );
+  }
+}
+
+if (AUTOMATE) runAutomated();
+else runSteady();

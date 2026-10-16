@@ -723,5 +723,11 @@ older versions are upgraded when they load.
 - Speed assertions (a kernel's cost, a render's speed): `cpuNow()` is the CPU time the process has spent (the
   wall clock mostly counts waiting for a core on a busy machine) and `settle(measure, pass)` takes the best of a
   few attempts, stopping at the first that passes. Both are in `@agstudio/sdk/testing`.
+- Kernel CPU: `npm run bench:plugins` measures every built-in kernel as % of one core (`--only fm,reverb`,
+  `--reps 5`, `--seconds 4`, `--json`). `--automate` also sweeps up to 3 automatable float params across their
+  ranges with a slow sine (one cycle per 4 s, a per-frame value on every sample, as a song's automation does)
+  and prints the steady and automated % side by side with their ratio. A kernel that re-reads a param per
+  sample or recomputes coefficients when one moves shows a high ratio there; check it before shipping a plugin
+  that reads params inside its inner loop.
 - Whole plugins: browser tests render offline in headless Chrome (`test/browser/worklet.test.ts`).
   `npm run test:audio` runs them; `npm run check` runs everything.

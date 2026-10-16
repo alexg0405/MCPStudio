@@ -2,7 +2,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import { createOpfsDerivedStore } from '@platform/derived-store';
 import { isIdbAvailable } from '@platform/idb';
 import { heldSessionLocks, isWebLocksAvailable } from '@platform/locks';
-import { isOpfsAvailable, opfsStorage } from '@platform/opfs';
+import { isOpfsAvailable, opfsStorage, type OpfsStorage } from '@platform/opfs';
 import type { Services } from '../services';
 import { installBlobGuard } from '../persistence/blob-store';
 import { isBusy } from './busy';
@@ -74,6 +74,14 @@ export interface StorageOptions {
   dryRunOnly?: boolean;
   /** Replaces the idle timers (tests). */
   autoStartDelayMs?: number;
+  /** Where blobs and autosaves live (default: the browser's OPFS root; tests pass a scratch folder). */
+  storage?: OpfsStorage;
+  /** The stretched-copies cache (default: OPFS `derived/`). */
+  derived?: { usage(): Promise<{ files: number; bytes: number }> };
+  /** Which tabs are alive (default: the session locks). */
+  heldTabs?: () => Promise<Set<string>>;
+  /** The clock (default: Date.now; tests move it forward to age audio). */
+  now?: () => number;
 }
 
 let current: StorageService | null = null;
@@ -111,7 +119,8 @@ export function installStorage(s: Services, sessionId: string, opts: StorageOpti
   };
   if (!supported) return (current = none);
 
-  installBlobGuard(createBlobGuard({ kv }));
+  const now = opts.now ?? Date.now;
+  installBlobGuard(createBlobGuard({ kv, now }));
   const refs: TabRefs = startTabRefs({
     id: sessionId,
     kv,
@@ -122,16 +131,19 @@ export function installStorage(s: Services, sessionId: string, opts: StorageOpti
       return () => offs.forEach((off) => off());
     },
     isPlaying: () => s.engine.playing,
+    now,
   });
 
-  const derived = createOpfsDerivedStore();
+  const storage = opts.storage ?? opfsStorage();
+  const derived = opts.derived ?? createOpfsDerivedStore();
   const deps: CollectorDeps & { derived: typeof derived } = {
     kv,
-    blobs: opfsStorage(),
-    autosaves: { files: () => opfsStorage().autosaveFiles() },
+    blobs: storage,
+    autosaves: { files: () => storage.autosaveFiles() },
     supported: true,
-    heldTabs: heldSessionLocks,
+    heldTabs: opts.heldTabs ?? heldSessionLocks,
     self: { id: sessionId, record: refs.record },
+    now,
     log: (m) => console.info(m),
     derived,
   };
@@ -171,7 +183,7 @@ export function installStorage(s: Services, sessionId: string, opts: StorageOpti
     try {
       if (s.prefs.getState().autoCleanup && !s.engine.playing && !isBusy()) {
         const last = await readLastRun();
-        if (!last || Date.now() - last.at >= AUTO_INTERVAL_MS) {
+        if (!last || now() - last.at >= AUTO_INTERVAL_MS) {
           await new Promise<void>((resolve) => {
             if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 10_000 });
             else setTimeout(resolve, 0);

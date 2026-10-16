@@ -222,6 +222,38 @@ describe('piano roll interactions (UI)', { timeout: 40_000 }, () => {
     expect(notes()[0]).toMatchObject({ tick: 960, key: 72 });
   });
 
+  it('a drag whose button was let go outside the window (no pointerup) ends on the next move, not later', async () => {
+    seed([{ tick: 960, key: 72, length: 480 }]);
+    const afterSeed = cursor();
+    fire('pointerdown', at(960, 72));
+    fire('pointermove', { x: at(960, 72).x + 96, y: at(960, 72).y });
+    // Back in the window with no button down: that is the drop.
+    fire('pointermove', { x: at(960, 72).x + 96, y: at(960, 72).y }, { buttons: 0 });
+    expect(notes()[0]).toMatchObject({ tick: 1920, key: 72 });
+    expect(cursor()).not.toBe(afterSeed);
+    fire('pointermove', { x: at(960, 72).x + 300, y: at(960, 80).y }, { buttons: 0 });
+    fire('pointermove', { x: at(960, 72).x + 400, y: at(960, 82).y }, { buttons: 0 });
+    expect(notes()[0]).toMatchObject({ tick: 1920, key: 72 });
+    await s.history.undo();
+    expect(cursor()).toBe(afterSeed);
+  });
+
+  it('a paint gesture left open the same way is committed, so the next edit is a normal one', async () => {
+    setTool('paint');
+    const start = cursor();
+    fire('pointerdown', at(0, 65));
+    fire('pointermove', { x: at(0, 65).x + 72, y: at(0, 65).y });
+    fire('pointermove', { x: at(0, 65).x + 96, y: at(0, 65).y }, { buttons: 0 });
+    setTool('draw');
+    click(at(2400, 60));
+    expect(notes().some((n) => n.tick === 2400 && n.key === 60)).toBe(true);
+    await s.history.undo(); // the click
+    expect(notes().some((n) => n.tick === 2400)).toBe(false);
+    expect(notes().length).toBeGreaterThan(0); // the paint is its own step
+    await s.history.undo(); // the paint
+    expect(cursor()).toBe(start);
+  });
+
   it('painting a run of notes is one undo step', async () => {
     setTool('paint');
     const before = cursor();

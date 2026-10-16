@@ -4,7 +4,7 @@
  * before), at several zooms, offsets and repeats, and a pattern used by many clips is drawn quickly.
  */
 import { describe, expect, it } from 'vitest';
-import type { Note, Pattern, PatternClip, TimeSignature } from '@core/model/types';
+import type { ChannelId, Note, Pattern, PatternClip, TimeSignature } from '@core/model/types';
 import { newId } from '@core/model/ids';
 import { Rng } from '@agstudio/sdk/dsp/random';
 import { Viewport } from '@ui/timeline/viewport';
@@ -49,7 +49,7 @@ function drawReference(
   h: number,
   paint: ClipPaint,
 ): void {
-  const all = Object.values(pattern.notes.ch_a as Record<string, Note>).sort((a, b) => a.tick - b.tick);
+  const all = Object.values(pattern.notes['ch_a' as ChannelId] as Record<string, Note>).sort((a, b) => a.tick - b.tick);
   let lo = 127;
   let hi = 0;
   for (const n of all) {

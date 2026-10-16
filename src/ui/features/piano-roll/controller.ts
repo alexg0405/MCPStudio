@@ -783,6 +783,12 @@ export class PianoRollController {
   }
 
   private onPointerMove(e: PointerEvent): void {
+    // The button was let go where no pointerup reached us (outside the window, another window took
+    // focus): this move is the drop, so the drag does not carry on without a button.
+    if (this.drag && e.buttons === 0) {
+      this.onPointerUp(e);
+      return;
+    }
     const c = this.ctx();
     const { x, y } = this.local(e);
     const d = this.drag;
@@ -1132,6 +1138,10 @@ export class PianoRollController {
 
   private onLaneMove(e: PointerEvent): void {
     if (this.drag?.kind !== 'lane') return;
+    if (e.buttons === 0) {
+      this.onLaneUp(e);
+      return;
+    }
     this.laneAt(e, this.ctx());
   }
 

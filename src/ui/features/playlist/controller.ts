@@ -1092,6 +1092,12 @@ export class PlaylistController {
   }
 
   private onPointerMove(e: PointerEvent): void {
+    // The button was let go where no pointerup reached us (outside the window, another window took
+    // focus): this move is the drop, so the drag does not carry on without a button.
+    if (this.drag && e.buttons === 0 && this.drag.kind !== 'marker' && this.drag.kind !== 'loop') {
+      this.onPointerUp(e);
+      return;
+    }
     const p = this.project();
     const { x, y } = this.local(e);
     const d = this.drag;
@@ -1593,6 +1599,10 @@ export class PlaylistController {
 
   private onRulerMove(e: PointerEvent): void {
     const d = this.drag;
+    if (d && e.buttons === 0 && (d.kind === 'marker' || d.kind === 'loop')) {
+      this.onRulerUp(e);
+      return;
+    }
     if (!d) {
       const { x, y } = this.local(e, this.els.ruler);
       const hit = this.markerHit(x, y);

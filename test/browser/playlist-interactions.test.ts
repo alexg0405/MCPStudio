@@ -211,6 +211,19 @@ describe('playlist interactions (UI)', { timeout: 40_000 }, () => {
     expect(cursor()).toBe(before);
   });
 
+  it('a move whose button was let go outside the window (no pointerup) ends on the next move, not later', async () => {
+    seed([{ bar: 2, lane: 0, bars: 1 }]);
+    const afterSeed = cursor();
+    fire('pointerdown', spot(2, 0));
+    fire('pointermove', spot(5, 1));
+    fire('pointermove', spot(5, 1), { buttons: 0 });
+    expect(clips()[0]).toMatchObject({ start: 4 * BAR, laneId: lanes[1] });
+    fire('pointermove', spot(8, 2), { buttons: 0 });
+    expect(clips()[0]).toMatchObject({ start: 4 * BAR, laneId: lanes[1] });
+    await s.history.undo();
+    expect(cursor()).toBe(afterSeed);
+  });
+
   it('the Slice tool cuts a clip in two at the grid line (one step)', async () => {
     seed([{ bar: 2, lane: 0, bars: 4 }]);
     setTool('slice');

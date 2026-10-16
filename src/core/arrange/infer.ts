@@ -11,7 +11,7 @@ import { mutedLanes, songLength } from '../query/playlist';
 import { songSections } from '../query/sections';
 import { ticksPerBar } from '../time/ppq';
 import type { VariantEnv } from './fills';
-import { lengthOfPattern, playedNotes, silentChannels, toNoteSet } from './notes';
+import { eachNote, lengthOfPattern, playedNotes, silentChannels } from './notes';
 import type { SectionCaps } from './phrases';
 import { isBassRole, isDrumRole, isMusicRole, noteRole } from './roles';
 import { roleFromName, type SectionRole } from './sections';
@@ -84,20 +84,29 @@ export function sectionContent(p: Project, from: Tick, to: Tick, env: VariantEnv
   for (const c of audiblePatternClips(p))
     if (c.start < to && c.start + c.length > from)
       played.set(c.patternId, (played.get(c.patternId) ?? 0) + Math.min(to, c.start + c.length) - Math.max(from, c.start));
+  // What each pattern holds, worked out once however many clips play it.
+  const held = new Map<PatternId, { drums: boolean; hats: boolean; slide: boolean; bass: boolean }>();
+  const holds = (pid: PatternId) => {
+    let h = held.get(pid);
+    if (h) return h;
+    h = { drums: false, hats: false, slide: false, bass: false };
+    const found = h;
+    eachNote(p.patterns[pid]!.notes, (cid, n) => {
+      const cr = env.roles.get(cid) ?? 'other';
+      const r = noteRole(cr, n.key);
+      if (isDrumRole(r)) found.drums = true;
+      if (r === 'hat') found.hats = true;
+      if (cr === '808') found.slide = true;
+      if (isBassRole(cr)) found.bass = true;
+    });
+    held.set(pid, h);
+    return h;
+  };
   for (const c of audiblePatternClips(p)) {
     if (c.start >= to || c.start + c.length <= from) continue;
-    let drums = false;
-    let bass = false;
-    for (const [cid, list] of toNoteSet(p.patterns[c.patternId]!.notes)) {
-      const cr = env.roles.get(cid) ?? 'other';
-      for (const n of list) {
-        const r = noteRole(cr, n.key);
-        if (isDrumRole(r)) drums = true;
-        if (r === 'hat') caps.hats = true;
-        if (cr === '808') caps.slide = true;
-        if (isBassRole(cr)) bass = true;
-      }
-    }
+    const { drums, hats, slide, bass } = holds(c.patternId);
+    if (hats) caps.hats = true;
+    if (slide) caps.slide = true;
     caps.drums ||= drums;
     const len = lengthOfPattern(p, c.patternId);
     if ((drums || bass) && (played.get(c.patternId) ?? 0) >= 2 * len) {
@@ -198,20 +207,17 @@ export function fillLikeClips(p: Project, env: VariantEnv): FillClip[] {
   for (const c of audiblePatternClips(p)) {
     const pat = p.patterns[c.patternId]!;
     const len = lengthOfPattern(p, c.patternId);
-    const set = toNoteSet(pat.notes);
     let total = 0;
     let drums = 0;
     let late = 0;
     let first = Infinity;
-    for (const [cid, list] of set) {
+    eachNote(pat.notes, (cid, n) => {
       const cr = env.roles.get(cid) ?? 'other';
-      for (const n of list) {
-        total++;
-        if (isDrumRole(noteRole(cr, n.key))) drums++;
-        if (n.tick >= len / 2) late++;
-        first = Math.min(first, n.tick);
-      }
-    }
+      total++;
+      if (isDrumRole(noteRole(cr, n.key))) drums++;
+      if (n.tick >= len / 2) late++;
+      first = Math.min(first, n.tick);
+    });
     const short = len <= bar || /\b(fill|roll)\b/i.test(pat.name);
     if (total < 4 || drums !== total || !short || late < total * 0.7 || c.length > len) continue;
     const at = c.start + Math.max(0, first - c.offset);

@@ -40,7 +40,7 @@ import { addClips, addPattern, clearRange, splitClip } from '../ops/playlist';
 import { removeChannel } from '../ops/channels';
 import type { TempoMap } from '../time/ppq';
 import type { VariantEnv } from './fills';
-import { lengthOfPattern, notesHash, setHash, toNoteMap, toNoteSet } from './notes';
+import { eachNote, lengthOfPattern, notesHash, setHash, toNoteMap } from './notes';
 import type { ArrangementPlan, PlannedAutomation, PlannedCrash, PlannedFx, SongEvent } from './plan';
 import { eventSpan, LaneAllocator, stepsForClips } from './plan';
 import { isDrumRole, noteRole } from './roles';
@@ -604,16 +604,14 @@ function patternContent(p: Project, pid: PatternId, env: VariantEnv) {
   let hats = 0;
   let bass808 = 0;
   let bassAny = 0;
-  for (const [cid, list] of toNoteSet(pat?.notes ?? {})) {
+  eachNote(pat?.notes ?? {}, (cid, n) => {
     const r = env.roles.get(cid) ?? 'other';
-    for (const n of list) {
-      const nr = noteRole(r, n.key);
-      if (isDrumRole(nr)) drums++;
-      if (nr === 'hat') hats++;
-      if (r === '808') bass808++;
-      if (r === '808' || r === 'bass') bassAny++;
-    }
-  }
+    const nr = noteRole(r, n.key);
+    if (isDrumRole(nr)) drums++;
+    if (nr === 'hat') hats++;
+    if (r === '808') bass808++;
+    if (r === '808' || r === 'bass') bassAny++;
+  });
   return { drums, hats, bass808, bassAny, caps: { drums: drums > 0, hats: hats > 0, openHat: false, slide: bass808 > 0 } };
 }
 
@@ -649,9 +647,13 @@ export function applyEditsInPlace(
     for (const c of under()) isolate(d, c.id, span.from, span.to, lengthOfPattern(p, c.patternId), env.tempo);
     const pieces = under();
     if (!pieces.length) continue;
+    // (a pattern's content is counted once however many pieces play it)
+    const contents = new Map<PatternId, ReturnType<typeof patternContent>>();
     const clips = pieces.map((c) => {
       const { root } = rootOf(p, c.patternId);
-      return { start: c.start, length: c.length, content: patternContent(p, c.patternId, env.variant), section: 0, source: `${c.laneId}|${root}` };
+      let content = contents.get(c.patternId);
+      if (!content) contents.set(c.patternId, (content = patternContent(p, c.patternId, env.variant)));
+      return { start: c.start, length: c.length, content, section: 0, source: `${c.laneId}|${root}` };
     });
     const parts = stepsForClips([{ ...e, section: 0 }], clips);
     pieces.forEach((c, i) => {

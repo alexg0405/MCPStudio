@@ -88,7 +88,10 @@ function poolsFor(p: Project): Pools {
     bars: [1, 2, 4, 8, 16, 0.5],
     name: ['Verse', 'Drop 2', 'New thing', 'A'],
     from_song: ['one', 'two'],
-    section: ['Drop', 'Intro'],
+    section: [...Object.values(p.playlist.markers).map((m) => m.name), 'Nowhere'],
+    play: [[pat[1]!], [pat[3]!, pat[5]!], [pat[2]!, 'nothing'], ['current']],
+    without: [['drums'], ['808', 'hats'], [instruments[3]!.name], ['bass', 'lead']],
+    clips: [clips.slice(0, 2).map((c) => c.id), clips.slice(3, 4).map((c) => c.id)],
   };
 }
 

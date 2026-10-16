@@ -506,7 +506,7 @@ export function moveLoopCrashes(d: Draft<Project>, plan: Pick<ArrangementPlan, '
 }
 
 /**
- * Writes a plan: clears its range first (`replace`), moves loop-start crashes out of the sources,
+ * Writes a plan: clears its range first (`replace`), moves loop-start crashes out of the sources (except `protect`ed ones),
  * then the clips (variants derived as needed), FX, crashes, automation and markers; finally removes
  * the arranger's things the cleared range used that nothing plays any more. Returns what it did and
  * the ids of the clips it made.
@@ -515,7 +515,7 @@ export function applyArrangement(
   d: Draft<Project>,
   plan: ArrangementPlan,
   env: ApplyEnv,
-  opts: { replace: boolean; replaceTo?: Tick },
+  opts: { replace: boolean; replaceTo?: Tick; protect?: ReadonlySet<PatternId> },
 ): ApplyReport & { clipIds: ClipId[] } {
   const p = d as unknown as Project;
   let replaced = 0;
@@ -533,7 +533,8 @@ export function applyArrangement(
     replaced += clearRange(d, plan.from, to, { trim: true, tempo: env.tempo }).removed;
     for (const m of Object.values(p.playlist.markers)) if (m.tick >= plan.from && m.tick < to) removeMarker(d, m.id);
   }
-  const movedCrashes = moveLoopCrashes(d, plan);
+  // (patterns the caller keeps as they are, e.g. ones that also play outside the part being worked on, keep their crashes)
+  const movedCrashes = moveLoopCrashes(d, { loopCrashes: plan.loopCrashes.filter((m) => !opts.protect?.has(m.patternId)) });
   const clipIds: ClipId[] = [];
   const variants = new Set<PatternId>();
   const lanes = new Map<PatternId, LaneId>();

@@ -230,6 +230,18 @@ export const arrange: OpModule = {
       const fx = a.fx === 'light' || a.fx === 'none' ? a.fx : 'auto';
       const mix = a.mix === 'keep' ? 'keep' : 'auto';
       const ending = a.outro === 'fade' || a.outro === 'stop' ? a.outro : 'auto';
+      // Working on a part: a beat that also plays elsewhere stays as it is (taking its crash off the first beat would
+      // change the rest of the song); the part's copy of it plays without crash hits, and the arranger's own crashes mark the sections.
+      const protect = new Set<PatternId>();
+      if (focus) {
+        for (const clip of Object.values(c.base.playlist.clips)) {
+          if (clip.kind !== 'pattern' || (clip.start >= focus.from && clip.start + clip.length <= focus.to)) continue;
+          protect.add(c.base.patterns[clip.patternId]?.derived?.from ?? clip.patternId);
+        }
+        for (const x of sections)
+          if (x.play.some((pid) => protect.has(c.base.patterns[pid]?.derived?.from ?? pid)) && !x.without.includes('crash'))
+            x.without = [...x.without, 'crash'];
+      }
       const res = guarded(() =>
         arrangeInDraft(
           d,
@@ -237,6 +249,7 @@ export const arrange: OpModule = {
           c.base,
           {
             ...(from !== undefined ? { from } : {}),
+            ...(protect.size ? { protect } : {}),
             replace,
             style: styleOf(a, c.project),
             sections,

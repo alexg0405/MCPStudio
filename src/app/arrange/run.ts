@@ -78,6 +78,8 @@ export interface ArrangeInput {
   fx: FxLevel;
   mix: 'auto' | 'keep';
   ending: 'auto' | EndingKind;
+  /** Source patterns the arranger must not edit (they also play where the arrangement doesn't reach). */
+  protect?: ReadonlySet<PatternId>;
   /** Mixer tracks and channels whose levels were set on purpose (the mix setup leaves them). */
   pinned?: { inserts?: ReadonlySet<InsertId>; channels?: ReadonlySet<ChannelId> };
 }
@@ -110,7 +112,7 @@ export function arrangeInDraft(d: Draft<Project>, s: Services, base: Project, in
   const plan = planArrangement(p, { from, style, sections: input.sections, fx: input.fx, ending: input.ending }, { variant: env.variant });
   // A whole song (from bar 1, no bar given) replaces the whole song; otherwise its own bars.
   const replaceTo = input.from === undefined && input.replace ? Math.max(plan.to, Math.ceil(songEnd / bar) * bar) : plan.to;
-  const report = applyArrangement(d, plan, env, { replace: input.replace, replaceTo });
+  const report = applyArrangement(d, plan, env, { replace: input.replace, replaceTo, ...(input.protect ? { protect: input.protect } : {}) });
   const findings = checkArrangement(s, plain(d), { style, sections: plan.sections });
   const extra: string[] = [];
   for (const m of report.movedCrashes)
@@ -119,7 +121,10 @@ export function arrangeInDraft(d: Draft<Project>, s: Services, base: Project, in
     plan,
     style,
     changes: [arrangeSummary(plan), ...made, ...changes, ...extra],
-    warnings: findings.filter((f) => f.severity === 'bug').map((f) => `arrangement check: ${f.message}`),
+    // What the arranger made; problems the song already had elsewhere aren't this answer's.
+    warnings: findings
+      .filter((f) => f.severity === 'bug' && f.to > plan.from && f.from < plan.to)
+      .map((f) => `arrangement check: ${f.message}`),
     touched: { from: plan.from, to: plan.to },
     clipIds: report.clipIds,
     findings,

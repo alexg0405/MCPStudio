@@ -20,6 +20,7 @@ import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { arrangementLines, derivedLabel } from '../arrange/summary';
 import { musicLibraryLines } from '../dj/library';
 import { djLines } from '../dj/mix';
+import { noteName } from '../assistant/context';
 import { noteLines } from './note-lines';
 
 export { noteLines };

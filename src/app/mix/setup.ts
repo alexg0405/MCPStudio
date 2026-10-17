@@ -19,7 +19,7 @@ import { findEmptyInsert } from '@core/query/mixer';
 import { defaultValues, type ParamValue } from '@agstudio/sdk';
 import { presetChoices, presetValues } from '../presets';
 import type { Services } from '../services';
-import { BUS_NAMES, busForRole, findMixLayout, type BusRole, type MixLayout } from './layout';
+import { BUS_NAMES, bassBusName, busForRole, findMixLayout, type BusRole, type MixLayout } from './layout';
 import { BUS_ORDER, busRecipe, EQ_PRO, LIMITER, MASTER_CHAIN, ROLE_VOLUME, SWEEP_BANDS, type FxRecipe } from './recipes';
 
 export interface SetupMixOptions {
@@ -42,7 +42,7 @@ export interface SetupMixResult {
 const gainOf = (db: number) => Math.min(MAX_INSERT_VOLUME, Math.pow(10, db / 20));
 
 /** A plugin instance for a recipe: the preset (the musician's own of that name first), then its params. */
-function instanceFor(s: Services, fx: FxRecipe) {
+export function instanceFor(s: Services, fx: FxRecipe) {
   const def = s.plugins.get(fx.pluginId);
   if (!def) return null;
   let params: Record<string, ParamValue> = defaultValues(def.params);
@@ -88,13 +88,14 @@ export function setupMix(d: Draft<Project>, s: Services, opts: SetupMixOptions):
   for (const role of BUS_ORDER) {
     if (!wanted.has(role) || buses[role]) continue;
     const recipe = busRecipe(role, style);
+    const name = role === 'bass' ? bassBusName(opts.roles.values()) : BUS_NAMES[role];
     let id = findEmptyInsert(p);
     if (id) {
       reused.push(p.mixer.inserts[id]!.name);
-      setInsertProp(d, id, 'name', BUS_NAMES[role]);
+      setInsertProp(d, id, 'name', name);
     } else {
       id = newId.insert();
-      addInsert(d, makeInsert(id, BUS_NAMES[role]));
+      addInsert(d, makeInsert(id, name));
     }
     setInsertProp(d, id, 'color', recipe.color);
     buses[role] = id;
@@ -163,10 +164,11 @@ export function setupMix(d: Draft<Project>, s: Services, opts: SetupMixOptions):
       setChannelProp(d, cid, 'volume', ROLE_VOLUME[role]);
   }
 
-  const names = BUS_ORDER.filter((r) => fresh.has(r) && r !== 'reverb' && r !== 'delay').map((r) => BUS_NAMES[r]);
+  const nameOf = (r: BusRole) => (buses[r] ? d.mixer.inserts[buses[r]!]?.name : undefined) ?? BUS_NAMES[r];
+  const names = BUS_ORDER.filter((r) => fresh.has(r) && r !== 'reverb' && r !== 'delay').map(nameOf);
   const returns = (['reverb', 'delay'] as const).filter((r) => fresh.has(r)).map((r) => {
     const fx = busRecipe(r, style).fx.find((f) => f.pluginId !== EQ_PRO);
-    return `${BUS_NAMES[r]} (${fx?.label ?? r})`;
+    return `${nameOf(r)} (${fx?.label ?? r})`;
   });
   if (names.length || returns.length)
     changes.push(

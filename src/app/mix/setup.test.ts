@@ -154,4 +154,38 @@ describe('mix setup', () => {
         for (const k of Object.keys(fx.params ?? {})) expect(def!.params[k], `${fx.pluginId}.${k}`).toBeDefined();
       }
   });
+
+  it('names the bass bus "808" for a song with an 808 and "Bass" for any other bass, and finds either again', () => {
+    const withBass = createTestServices();
+    applyBeatSpec(withBass, {
+      title: 'Tech house',
+      bars: 1,
+      style: 'techhouse',
+      tracks: [
+        { name: 'Kick', sound: 'kick', notes: [{ step: 0 }] },
+        { name: 'Bass', sound: 'bass', notes: [{ step: 2, len: 2, key: 36 }] },
+      ],
+    });
+    const res = run(withBass, { style: 'techhouse' });
+    const bass = res.layout.buses.bass!;
+    expect(project(withBass).mixer.inserts[bass]!.name).toBe('Bass');
+    expect(res.changes.join(' ')).toMatch(/Bass bus/);
+    // Setting up again finds it (no second bass bus), and the 808 song keeps its name.
+    const again = run(withBass, { style: 'techhouse' });
+    expect(again.layout.buses.bass).toBe(bass);
+    expect(Object.values(project(withBass).mixer.inserts).filter((i) => /^(808|bass)$/i.test(i.name))).toHaveLength(1);
+    const trap = song();
+    const trapBass = run(trap).layout.buses.bass!;
+    expect(project(trap).mixer.inserts[trapBass]!.name).toBe('808');
+    // A project made before the split has its bass bus named "808": it is found, whatever the bass is.
+    const old = createTestServices();
+    applyBeatSpec(old, { title: 'DnB', bars: 1, style: 'dnb', tracks: [{ name: 'Kick', sound: 'kick', notes: [{ step: 0 }] }, { name: 'Reese', sound: 'bass', notes: [{ step: 0, len: 4, key: 36 }] }] });
+    const id = 'ins_old808' as InsertId;
+    old.history.transact('old bus', (d) => {
+      addInsert(d, makeInsert(id, '808'));
+    });
+    expect(findMixLayout(project(old)).buses.bass).toBe(id);
+    expect(run(old, { style: 'dnb' }).layout.buses.bass).toBe(id);
+    expect(project(old).mixer.inserts[id]!.name).toBe('808');
+  });
 });

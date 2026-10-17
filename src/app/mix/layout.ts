@@ -19,6 +19,15 @@ export const BUS_NAMES: Record<BusRole, string> = {
   delay: 'Delay',
 };
 
+/**
+ * Other names a bus is found by. The bass bus is "808" when the song has an 808 (trap, drill…) and "Bass" when its bass is a bass
+ * (house, tech house, trance, drum & bass, dubstep…); projects made before the split have "808" whatever the bass is.
+ */
+export const BUS_ALIASES: Partial<Record<BusRole, readonly string[]>> = { bass: ['Bass'] };
+
+/** The name a new bass bus gets: "808" when any channel plays an 808, else "Bass". */
+export const bassBusName = (roles: Iterable<Role>): string => ([...roles].includes('808') ? BUS_NAMES.bass : 'Bass');
+
 export interface MixLayout {
   buses: Partial<Record<BusRole, InsertId>>;
   /** The EQ Pro slot on a bus (its low/high cut bands are the filter-sweep targets). */
@@ -89,7 +98,8 @@ export function mixRoles(p: Project): Map<ChannelId, Role> {
 export function findMixLayout(p: Project): MixLayout {
   const layout: MixLayout = { buses: {}, eq: {} };
   for (const [role, name] of Object.entries(BUS_NAMES) as [BusRole, string][]) {
-    const id = p.mixer.order.find((x) => x !== MASTER && p.mixer.inserts[x]?.name.toLowerCase() === name.toLowerCase());
+    const names = [name, ...(BUS_ALIASES[role] ?? [])].map((n) => n.toLowerCase());
+    const id = p.mixer.order.find((x) => x !== MASTER && names.includes(p.mixer.inserts[x]?.name.toLowerCase() ?? ''));
     if (!id) continue;
     layout.buses[role] = id;
     const eq = p.mixer.inserts[id]!.fx.find((f) => f.plugin.pluginId === EQ_PRO);

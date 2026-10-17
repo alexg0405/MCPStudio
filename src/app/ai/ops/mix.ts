@@ -95,6 +95,9 @@ export const mix: OpModule = {
     const items = c.state.after.filter((x): x is Extract<AfterEdit, { kind: 'level_mix' }> => x.kind === 'level_mix');
     for (const it of items.slice(0, -1)) c.state.after.splice(c.state.after.indexOf(it), 1);
     const last = items.at(-1);
+    // A loudness asked for (match_reference) outlives the arranger's own leveling request.
+    const asked = items.find((x) => x.targetLufs !== undefined)?.targetLufs;
+    if (last && asked !== undefined) last.targetLufs = asked;
     if (last) pinnedFor.set(last, new Set(c.state.pinnedInserts));
   },
 };

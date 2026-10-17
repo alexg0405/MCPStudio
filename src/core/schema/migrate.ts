@@ -1011,6 +1011,102 @@ function repairDj(p: Obj, log: RepairLog): void {
   if (fixed) log.add('Fixed damaged DJ mix details.');
 }
 
+const REFERENCE_KINDS = ['intro', 'build', 'drop', 'break', 'verse', 'outro', 'body'];
+/** The reference's tonal bands (`core/reference/bands.ts`): this many values, in dB under the total. */
+const REFERENCE_BANDS = 8;
+const REFERENCE_FLOOR = -60;
+const MAX_REFERENCE_ENERGY = 1024;
+const MAX_REFERENCE_SECTIONS = 200;
+const clampNum = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** A list of exactly the band count of finite dB values (−60…0), or null when it can't be one. */
+function fixedBands(v: unknown): number[] | null {
+  if (!Array.isArray(v) || v.length !== REFERENCE_BANDS || !v.every(isFiniteNumber)) return null;
+  return v.map((x) => clampNum(x as number, REFERENCE_FLOOR, 0));
+}
+
+/**
+ * The reference track (`Project.reference`, optional): only derived measurements. Anything that can't be
+ * read as a measurement removes it (the song and its sample stay); values are clamped to what they can
+ * mean; the sample link is dropped when the sample is gone, but the numbers stay.
+ */
+function repairReference(p: Obj, log: RepairLog): void {
+  if (!has(p, 'reference') || p.reference === undefined) return;
+  const ref = p.reference;
+  if (
+    !isObject(ref) ||
+    !isString(ref.hash) ||
+    !isFiniteNumber(ref.durationSec) ||
+    !Array.isArray(ref.sections) ||
+    !Array.isArray(ref.energy) ||
+    !fixedBands(ref.bands)
+  ) {
+    delete p.reference;
+    log.add('Forgot the damaged reference song details (the song itself is not changed).');
+    return;
+  }
+  let fixed = false;
+  const fix = (changed: boolean) => {
+    if (changed) fixed = true;
+  };
+  fix(requireField(ref, 'title', isString, 'Reference'));
+  fix(requireField(ref, 'version', isFiniteNumber, 0));
+  const bands = fixedBands(ref.bands)!;
+  if ((ref.bands as number[]).some((x, i) => x !== bands[i])) fixed = true;
+  ref.bands = bands;
+  fix(requireField(ref, 'bpm', (v) => v === null || (isFiniteNumber(v) && v >= BPM_MIN && v <= BPM_MAX), null));
+  fix(requireField(ref, 'beatsPerBar', (v) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 16, 4));
+  fix(requireField(ref, 'lufs', isFiniteNumber, -70));
+  fix(requireField(ref, 'truePeakDb', isFiniteNumber, -70));
+  fix(requireField(ref, 'width', (v) => isFiniteNumber(v) && v >= 0, 0));
+  const key = ref.key;
+  const keyOk =
+    isObject(key) &&
+    Number.isInteger(key.root) &&
+    (key.root as number) >= 0 &&
+    (key.root as number) <= 11 &&
+    (key.mode === 'major' || key.mode === 'minor') &&
+    isString(key.camelot) &&
+    isFiniteNumber(key.confidence);
+  if (key !== null && !keyOk) {
+    ref.key = null;
+    fixed = true;
+  }
+  const energy = (ref.energy as unknown[]).filter(isFiniteNumber).slice(0, MAX_REFERENCE_ENERGY);
+  const clampedEnergy = energy.map((e) => clampNum(e, 0, 1));
+  if (clampedEnergy.length !== ref.energy.length || clampedEnergy.some((e, i) => e !== energy[i])) fixed = true;
+  ref.energy = clampedEnergy;
+  const sections = (ref.sections as unknown[]).filter(
+    (x): x is Obj =>
+      isObject(x) &&
+      REFERENCE_KINDS.includes(x.kind as string) &&
+      isFiniteNumber(x.startSec) &&
+      isFiniteNumber(x.endSec) &&
+      x.endSec > x.startSec &&
+      x.startSec >= 0,
+  );
+  if (sections.length !== ref.sections.length) fixed = true;
+  for (const s of sections) {
+    const span = (s.endSec as number) - (s.startSec as number);
+    fix(requireField(s, 'bars', (v) => Number.isInteger(v) && (v as number) >= 1, Math.max(1, Math.round(span / 2))));
+    fix(requireField(s, 'energy', (v) => isFiniteNumber(v) && v >= 0 && v <= 1, 0.5));
+    fix(requireField(s, 'width', (v) => isFiniteNumber(v) && v >= 0, 0));
+    const sb = fixedBands(s.bands);
+    if (!sb || (s.bands as number[]).some((x, i) => x !== sb[i])) fixed = true;
+    s.bands = sb ?? new Array<number>(REFERENCE_BANDS).fill(REFERENCE_FLOOR);
+  }
+  if (sections.length > MAX_REFERENCE_SECTIONS) fixed = true;
+  ref.sections = sections.slice(0, MAX_REFERENCE_SECTIONS);
+  if (has(ref, 'sampleId') && ref.sampleId !== undefined) {
+    const samples = isObject(p.samples) ? p.samples : {};
+    if (!isString(ref.sampleId) || !has(samples, ref.sampleId)) {
+      delete ref.sampleId;
+      fixed = true;
+    }
+  }
+  if (fixed) log.add('Fixed damaged reference song details.');
+}
+
 /**
  * Returns a repaired deep copy of a structurally valid project (see migrateProject) and one
  * human-readable line per kind of fix. Never mutates the input. A project that needs no repair comes
@@ -1028,6 +1124,7 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairPlaylist(p, log);
   repairControllers(p, log);
   repairDj(p, log);
+  repairReference(p, log);
   log.flush();
   return { project: p as unknown as Project, repairs: log.messages };
 }

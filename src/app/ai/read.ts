@@ -26,6 +26,7 @@ import { patternLength } from '@core/query/queries';
 import { songSections } from '@core/query/sections';
 import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
 import { isAtPreset, presetChoices } from '../presets';
+import { referenceReport } from '../reference/summary';
 import type { Services } from '../services';
 import { automationDrives, ownUnitOf, paramTargetOf } from './ops/automation';
 import { ActionError, createOpContext, newAnswerState, type OpContext } from './ops/context';
@@ -674,6 +675,13 @@ const get_plugins = tool(
   },
 );
 
+const get_reference = tool(
+  'get_reference',
+  'The reference song (a song the musician owns that their song should be shaped after): its measured tempo, key, sections with bar counts and energy, loudness, true peak, tonal balance per band and stereo width, next to the musician’s song (tempo, key, sections), what an arrangement like the reference would be at the song’s tempo, and the last tonal comparison of the mix with it. Only measurements: no notes or audio of the reference exist here.',
+  {},
+  (s) => referenceReport(project(s)),
+);
+
 /** Every read tool, in the order they are listed to the model. */
 export const readTools: readonly ReadTool[] = [
   get_project,
@@ -687,6 +695,7 @@ export const readTools: readonly ReadTool[] = [
   get_settings,
   get_windows,
   get_plugins,
+  get_reference,
 ];
 
 /** Runs a read tool by name; an unknown name or a bad argument comes back as `{ error }`. */

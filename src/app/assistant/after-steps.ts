@@ -7,6 +7,7 @@ import type { AfterEdit } from '../ai/apply';
 import { djMixStep } from '../dj/step';
 import { filterStep } from '../filters/step';
 import { levelMixStep } from '../mix/level-step';
+import { matchReferenceStep, referenceToneStep, setReferenceStep } from '../reference/step';
 import type { Services } from '../services';
 
 export interface AfterStepContext {
@@ -32,6 +33,9 @@ const STEPS = new Map<string, AfterStep>();
 if (levelMixStep) STEPS.set('level_mix', levelMixStep);
 STEPS.set('dj_mix', djMixStep);
 STEPS.set('filter', filterStep);
+STEPS.set('set_reference', setReferenceStep);
+STEPS.set('match_reference', matchReferenceStep);
+STEPS.set('reference_tone', referenceToneStep);
 
 /** Adds (or replaces) the step for a kind of after-edit request; returns a function that removes it. */
 export function registerAfterStep(kind: AfterEdit['kind'], run: AfterStep): () => void {

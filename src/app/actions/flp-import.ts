@@ -238,6 +238,8 @@ export async function relinkMissingSamples(
           }
         }
       }
+      // The reference song is a sample of the project too.
+      if (d.reference?.sampleId) d.reference.sampleId = swap(d.reference.sampleId) as SampleId;
       for (const id of swaps.keys()) delete d.samples[id];
     });
   }

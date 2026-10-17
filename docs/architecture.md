@@ -2572,6 +2572,96 @@ and forth).
   through the beat writer.
 - The characterization answer doesn't run `setup_mix`/`level_mix` (they have their own tests).
 
+## EDM style pack (big room, progressive house, future bass, dubstep, melodic dubstep, tech house, trance, drum & bass)
+
+Eight more `Style`s (`core/beat/style.ts`), built only from genre conventions (tempo, where the kick and snare sit,
+how a bass moves, how a build is shaped, how loud a master is). The offline generator writes chord tones on stock
+progressions; nothing reproduces a song. Artist names appear only in the Studio prompt, as pointers to a subgenre
+("a drop like Martin Garrix" is big room, "Flume-ish" future bass, "Skrillex-style" or "riddim" dubstep,
+"Illenium-ish" melodic dubstep, "liquid" or "neurofunk" drum & bass), and in hints that say what a style is.
+
+### The styles
+
+| Style (`id`) | Tempo (default) | Groove | Drums and kit | Sounds (palette) | Mix: kick-relative drums/bass/chords/lead, master |
+|---|---|---|---|---|---|
+| Big room (`bigroom`) | 126–128 (128) | swing 0, offbeat hat accent, kick .98 on every beat | four on the floor, clap on 2 and 4, offbeat open hats; `edm` kit | “Big room lead” (mono) over “Supersaw stack” pads, sub bass, “Bright piano (club stabs)” | −4 / −5 / −6 / −2 dB, −8.5 LUFS; pads sidechained (depth .7) |
+| Progressive house (`proghouse`) | 124–128 (126) | swing .08 | four on the floor, clap, offbeat hats; `house` kit | “Rolling bass” (16ths between the kicks), “Soft piano (felt, long decay)”, “Prog pluck”, “Warm supersaw pad” | −4 / −3 / −4 / −5, −10 LUFS; soft pump (.45), Hall |
+| Future bass (`futurebass`) | 140–160 (150) | swing .05, triplet rolls | half-time: kick on 1, snare and clap on 3; `bass` kit | “Future bass chord” (a synced 1/8 LFO dips the volume, a mod envelope bends each chord up from a semitone below), “Vocal chop”, sub | −3 / −3 / −2 / −3, −9 LUFS; Chords bus on a 1/8 tempo pump (the wobble), Hall + triplet delay |
+| Dubstep and riddim (`dubstep`) | 140–150 (140) | swing 0 | half-time and sparse: kick on 1, snare on 3, few hats; `bass` kit | sub (“Sub only”), “Growl bass” (a 1/8T triangle LFO sweeps the filter three octaves while a 1/4 LFO morphs the table), alternate “Riddim wobble” (a square LFO on every 1/8) | −3 / +1 / −9 / −5, −8.5 LUFS; Plate, Dub delay |
+| Melodic dubstep (`melodicdub`) | 140–150 (145) | swing .05, triplet rolls | half-time, kick on 1, snare and clap on 3; `bass` kit | “Supersaw stack” chords, “Soft piano”, “Vocal chop”, sub | −3 / −2 / −3 / −3, −9.5 LUFS; Hall, reverb sends +4 dB |
+| Tech house (`techhouse`) | 124–128 (126) | swing .3 (shuffled 16th hats), looser velocities | four on the floor, clap, shuffled hats, rim; `house` kit | “Tech house bass”, “Bright piano” stabs, “Vocal chop” shot | −3 / −2 / −8 / −6, −10 LUFS; Room |
+| Trance (`trance`) | 136–140 (138) | swing 0, jitter .015 | four on the floor, clap, offbeat open hats; `edm` kit | “Gated supersaw” (a synced 1/16 square LFO chops held chords), “Trance pluck” arp, “Rolling bass” on the offbeat | −4 / −4 / −3 / −3, −9 LUFS; pads sidechained (.6), Hall |
+| Drum & bass (`dnb`) | 172–176 (174) | swing .06, ghost snares | two-step: kick on 1 and the "and" of 3, snares on 2 and 4; `dnb` kit | “Reese bass” (detuned saws, a slow filter LFO), liquid adds pad and keys, neuro keeps the reese alone (alternate “Growl bass”) | −1 / 0 / −7 / −6, −9 LUFS; Plate |
+
+### Where each part lives
+
+- **Tables** (`core/beat/style.ts`): `STYLES`, labels, `GROOVE`, `TEMPO`, `PHRASE` (house-like styles fill every 16 bars and
+  change every 8; the 140 BPM half-time styles every 8 and 4, since their bars are long), `FOUR_FLOOR` and `HALF_TIME`.
+  `guessStyle` reads 168+ BPM as drum & bass.
+- **Offline generator** (`core/beat/local.ts` and `local-edm.ts`, shared chords in `theory.ts`): the drum grid, bass,
+  chords and hook of each style (a growl and a sub for dubstep, a rolling bass between the kicks for progressive,
+  offbeat bass for trance and big room, a vocal shot every other bar for tech house, a reese under the two-step for drum
+  & bass; "neuro" or "dark" keeps drum & bass to the bass). Style words: "big room", "progressive", "tech house",
+  "trance", "future bass", "dubstep", "riddim", "melodic dubstep", "drum and bass", "dnb", "liquid", "neuro".
+- **Palette** (`app/assistant/palette.ts`): `PALETTE`, `KIT_FOR`, three new genre kits (`kit/edm|bass|dnb/*`, Drum Synth
+  settings in `engine/kit/generators.ts`, levels in `KIT_LOUDNESS` measured against the stock kit), `ALTERNATES` (presets the
+  AI may name: dubstep's riddim, drum & bass's growl). Levels are calibrated like the old palette
+  (`test/browser/palette.test.ts`, every choice within 2.5 dB of its slot under the kick).
+- **Arranger** (`core/arrange`): `FILL_ROTATION` per style (snare rolls lead for big room and trance, kick and snare
+  breaks for bass music and drum & bass); `TRAITS` in `transitions.ts` (big room and trance build with a snare roll over
+  8 bars; the half-time bass styles and drum & bass leave the big silence before a drop from Δ ≥ 2; progressive house
+  and trance sweep the filter over the whole build, up to 8 bars; the riser hits −2 dB in big room; sub drops for the
+  bass styles; dubstep and future bass end on a stop); `shapes.ts` has each style's usual song (`SONG_SHAPES`: sections,
+  lengths, energy, what is left out) and `defaultEnergy(style, role)` (a groove-first intro in progressive and tech house,
+  a quiet breakdown in trance and melodic dubstep), which `arrange` uses for sections that give no energy.
+- **Mix** (`app/mix`): `LEVEL_TARGETS`, per-style `CHORD_DUCK` (sidechained pads, the 1/8 wobble), reverbs, delays and
+  extra reverb send, and a Limiter input up to 15 dB for the loudest styles (`limiterMax`: a dynamic mix gets only part of
+  the input back as loudness).
+- **Studio**: the `beat` prompt's style table (feel per style, plus the artist-phrasing map) and `paletteText()`; the
+  "Song craft" section lists the usual song of every dance style; both `style` enums come from `STYLES`.
+- **Templates and help**: eight dance templates (group `dance`, listed on the welcome page under "Dance and bass music" and
+  in File → New from template); each one is its style's beat arranged as a 4-bar intro and an 8-bar drop with the mix set up.
+- **Checker fix**: an FX tail that rings on after the music has stopped (an impact after a stop, which at 150 BPM
+  covers two bars) is the ending, not a "silent" gap.
+
+### Presets (CPU, % of one core at 48 kHz, 4 s, best of 5; `npm run bench:plugins -- --only wavetable --preset "<name>"`)
+
+| Preset | Plugin | CPU |
+|---|---|---|
+| Big room lead | Wavetable | ≤ 1.1 % (mono, 3 unison) |
+| Supersaw stack | Wavetable | 3.4 % (5 unison × 2 oscillators; "Warm supersaw pad" is 6.6 %) |
+| Future bass chord | Wavetable | 3.1 % (4 unison × 2) |
+| Growl bass | Wavetable | ≤ 1.2 % (mono, two synced LFOs) |
+| Riddim wobble | Wavetable | ≤ 1.0 % |
+| Reese bass | Wavetable | ≤ 1.0 % (legato, 3 unison) |
+| Tech house bass | Wavetable | ≤ 1.0 % |
+| Rolling bass | Wavetable | ≤ 1.0 % |
+| Trance pluck | Wavetable | 1.6 % |
+| Gated supersaw | Wavetable | 2.3 % (5 unison × 2) |
+| Prog pluck | Wavetable | 1.7 % |
+| Vocal chop | Wavetable | ≤ 1.1 % |
+| Soft piano (felt, long decay) | FM | 1.5 % |
+| Bright piano (club stabs) | FM | 1.4 % |
+
+(A "≤" means the preset costs less than the plugin's default patch, which the benchmark reports as 1.0–1.2 %; the chord
+presets are measured on the benchmark's 3–4 note chords. Unison stays at 5 or less: the 8-voice supersaw is the heavy one.)
+
+### Measured
+
+- **Palette** (`test/browser/palette.test.ts`, offline through the real engine): every new sound alone sits within 0.5 dB
+  of its slot under the kick (lead −8, pad −8, keys −8, pluck −9, bass −4); each preset's own `level` carries the
+  calibration, the channel volumes stay .55–.7.
+- **Kits**: the three kits measured against the stock pieces (kick, snare, clap, hat, open hat, in LUFS at the writer's
+  levels) set `KIT_LOUDNESS`: festival kick +2.2 dB, bass-music kick +1.5, drum & bass kick +0.7 and so on.
+- **Eight bars per style** (`test/browser/edm-pack.test.ts`: the generator's beat, mix set up, auto-level, rendered):
+  none silent, true peak −1.05 dBTP in all eight, and each within 1.5 dB of its target (measured / target LUFS): big room
+  −9.43 / −8.5, progressive −10.77 / −10, future bass −9.73 / −9, dubstep −9.20 / −8.5, melodic dubstep −10.09 / −9.5,
+  tech house −10.96 / −10, trance −10.11 / −9, drum & bass −9.83 / −9. The Limiter input settled at 7–11 dB. An
+  earlier −7 to −8 target was out of reach for these dynamic mixes even at 14 dB of input (dubstep reached −8.6).
+- **Node**: every style's usual song applied through `arrange` flows (`src/app/edm-shapes.test.ts`); the generator,
+  transition traits, mix tables, prompt and templates have unit tests (`core/beat/edm.test.ts`, `core/arrange/edm.test.ts`,
+  `app/mix/edm-mix.test.ts`, `app/ai/edm-prompt.test.ts`); the v3 acceptance test runs over all 17 `STYLES`.
+
 ## Sound filters (`core/filters`, `core/ops/filters.ts`, `app/filters`, `ui/features/filters`)
 
 "Nightcore it", "make the chorus sound like a phone call": a named filter applied to a part of the song, as

@@ -46,6 +46,25 @@ describe('project templates', () => {
     expect(keys.some((n) => keys.filter((m) => m.tick === n.tick).length >= 3)).toBe(true);
   });
 
+  it('lists the dance and bass music templates, each at its style’s tempo with its own parts', () => {
+    const s = createTestServices();
+    const dance = TEMPLATES.filter((t) => t.group === 'dance');
+    expect(dance.map((t) => t.id)).toEqual(['big-room', 'progressive-house', 'future-bass', 'dubstep', 'melodic-dubstep', 'tech-house', 'trance', 'drum-and-bass']);
+    expect(TEMPLATES.filter((t) => t.group === 'beats').map((t) => t.id)).toEqual(['trap', 'boom-bap', 'house', 'lofi', 'drill']);
+    const parts = (id: string) => {
+      const { project, patternId } = templateProject(s, TEMPLATES.find((t) => t.id === id)!);
+      const names = Object.keys(project.patterns[patternId]!.notes).map((cid) => project.channels[cid as never]!.name.toLowerCase());
+      return { names, bpm: project.transport.bpm, swing: project.transport.swing };
+    };
+    expect(parts('dubstep').names.join(' ')).toMatch(/growl/);
+    expect(parts('trance').names.join(' ')).toMatch(/arp/);
+    expect(parts('tech-house')).toMatchObject({ bpm: 126, swing: 0.3 });
+    expect(parts('drum-and-bass').names.join(' ')).toMatch(/reese/);
+    expect(parts('future-bass').names.join(' ')).toMatch(/chords/);
+    // Every dance template's description says its tempo.
+    for (const t of dance) expect(t.description.startsWith(`${t.bpm} BPM`), t.id).toBe(true);
+  });
+
   it('opens as a new untitled project with nothing to save', async () => {
     const s = createTestServices();
     expect(await newFromTemplate(s, 'house')).toBe(true);

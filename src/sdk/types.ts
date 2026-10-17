@@ -115,6 +115,32 @@ export interface ChannelInfo {
   readonly lowestKey: number | null;
 }
 
+/** A note of an instrument channel as an effect hears it through `host.notes`. */
+export interface FeedNote {
+  /** 'on' and 'off' pair by `noteId`; 'allOff' (stop, seek) releases everything. */
+  readonly kind: 'on' | 'off' | 'allOff';
+  /** AudioContext time in seconds, already shifted like the effect's own audio (delay compensation). */
+  readonly time: number;
+  readonly noteId: number;
+  /** MIDI key 0–127. */
+  readonly key: number;
+  /** 0–1 (a note off: the release velocity). */
+  readonly velocity: number;
+}
+
+/**
+ * The notes instrument channels play, for effects that follow a melody (a pitch corrector pulling a voice
+ * to a guide line, a vocoder keyed by a synth). Position 1 is the first instrument channel in the channel rack,
+ * 2 the second, and so on (audio and automation channels are not counted); the channel is looked up when
+ * a note arrives, so reordering the rack is followed.
+ */
+export interface NoteFeed {
+  /** Calls `fn` for every note the instrument channel at `position` plays (the song, previews, live keys), until the returned function is called. */
+  listen(position: number, fn: (e: FeedNote) => void): () => void;
+  /** The name of the instrument channel at a position, or null when there is none. */
+  channelName(position: number): string | null;
+}
+
 export interface WorkletOptions {
   /** Processor name registered with registerKernel(); defaults to the plugin id. */
   name?: string;
@@ -206,6 +232,11 @@ export interface PluginHost<P extends ParamSpecs = ParamSpecs, S = JsonValue | u
    * effect's own input when none is chosen. null otherwise.
    */
   readonly sidechain: AudioNode | null;
+  /**
+   * Effects that declare `notes: { param }`: the notes of the instrument channel the param names (see `NoteFeed`).
+   * Absent or null otherwise (and in hosts that don't feed notes).
+   */
+  readonly notes?: NoteFeed | null;
   /** True while rendering an export. */
   readonly offline: boolean;
   /** Aborted when the instance is disposed. */
@@ -384,6 +415,12 @@ export interface EffectDef<P extends ParamSpecs = ParamSpecs, S = unknown> exten
   kind: 'effect';
   /** The effect listens to a sidechain (a compressor keyed by the kick): `host.sidechain` carries it. */
   sidechain?: boolean;
+  /**
+   * The effect follows the notes of an instrument channel: `param` names an int param (0 = none, 1 = the first
+   * instrument channel in the rack, …) and `host.notes` delivers that channel's notes. With
+   * `defineWorkletEffect` they reach the kernel's `noteOn`, `noteOff` and `allNotesOff`.
+   */
+  notes?: { param: string };
   create(host: PluginHost<P, S>): EffectInstance<S> | Promise<EffectInstance<S>>;
 }
 

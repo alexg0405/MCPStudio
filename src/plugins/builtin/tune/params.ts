@@ -36,6 +36,9 @@ export const TUNE_SCALES = [
 type ScaleId = (typeof TUNE_SCALES)[number]['id'];
 export const SCALE_IDS = TUNE_SCALES.map((s) => s.id) as unknown as readonly [ScaleId, ...ScaleId[]];
 
+/** What the voice is pulled to. */
+export const TARGET_SOURCES = ['scale', 'notes'] as const;
+
 /** Pitch ranges the detector looks in. */
 export const RANGES = ['low', 'mid', 'high'] as const;
 export const RANGE_HZ: Readonly<Record<(typeof RANGES)[number], readonly [number, number]>> = {
@@ -94,5 +97,44 @@ export const tuneParams = {
     unit: '%',
     group: 'Output',
     hint: 'Blend of the tuned voice with the original (below 100% sounds like a doubled voice)',
+  }),
+  // ---- Added with pitch correction (B2): every default leaves the sound as it was before them ----
+  source: p.enum(TARGET_SOURCES, 'scale', {
+    label: 'Target',
+    group: 'Correction',
+    labels: { scale: 'Key and scale', notes: 'Played notes (guide melody)' },
+    hint: 'What the voice is pulled to: the notes of the key and scale, or the notes an instrument channel plays (a guide melody: play the line you want sung, hold chords for the nearest note)',
+  }),
+  notesFrom: p.int(0, 32, 0, {
+    label: 'Guide channel',
+    group: 'Correction',
+    automatable: false,
+    hint: 'With Target = Played notes: which instrument channel plays the guide melody, counting instrument channels in the channel rack (1 = the first; 0 = none). Notes heard while none is held leave the voice as it is',
+  }),
+  humanize: p.float(0, 1, 0, {
+    label: 'Keep natural drift',
+    unit: '%',
+    group: 'Feel',
+    automatable: false,
+    hint: 'How much of the singer’s slow pitch wandering inside a note is left in (100% keeps it all, 0 straightens every note onto its target). Vibrato and quick slips are still corrected',
+  }),
+  vibratoDepth: p.float(0, 100, 0, {
+    label: 'Added vibrato',
+    unit: 'ct',
+    group: 'Feel',
+    automatable: false,
+    hint: 'Adds a gentle vibrato to held notes: how far the pitch swings either way, in cents (100 ct = a semitone). It fades in about a third of a second after each note starts. 0 = none',
+  }),
+  vibratoRate: p.float(2, 9, 5.5, {
+    label: 'Vibrato rate',
+    unit: 'Hz',
+    group: 'Feel',
+    automatable: false,
+    hint: 'Speed of the added vibrato, in swings per second (5–6 Hz sounds natural)',
+  }),
+  formant: p.bool(false, {
+    label: 'Keep formants',
+    group: 'Output',
+    hint: 'Keeps the voice’s tone colour (its vowel shape) when it is moved, so big corrections sound less like a chipmunk or a giant. Costs a little more CPU',
   }),
 };

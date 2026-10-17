@@ -29,6 +29,7 @@ import { songSections } from '@core/query/sections';
 import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
 import { chainChoices, findChainChoice, type ChainChoice } from '../chains';
 import { isAtPreset, presetChoices } from '../presets';
+import { pitchReport } from '../pitch/report';
 import { referenceReport } from '../reference/summary';
 import type { Services } from '../services';
 import { automationDrives, ownUnitOf, paramTargetOf } from './ops/automation';
@@ -760,6 +761,13 @@ const get_takes = tool(
   },
 );
 
+const get_pitch = tool(
+  'get_pitch',
+  'The sung notes of a recorded audio clip, as the Pitch editor shows them: per note its number (1-based, what the pitch action takes), bar, start/end seconds, pitch (MIDI and note name), how many cents off the nearest note, whether it is in the song key, drift and vibrato measured, and what has been changed (target, shift, flattened drift, vibrato %). The first look at a clip it listens first (state "analyzing": ask again in a moment).',
+  { clip: S.str('An audio clip id (clip_…; default: the selected audio clip).') },
+  (s, a) => pitchReport(s, a),
+);
+
 /** Every read tool, in the order they are listed to the model. */
 export const readTools: readonly ReadTool[] = [
   get_project,
@@ -776,6 +784,7 @@ export const readTools: readonly ReadTool[] = [
   get_plugins,
   get_chains,
   get_reference,
+  get_pitch,
 ];
 
 /** Runs a read tool by name; an unknown name or a bad argument comes back as `{ error }`. */

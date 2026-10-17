@@ -12,7 +12,7 @@
  * (audio-buffers.ts).
  */
 import { tempoMapOf } from '@core/automation/tempo';
-import { clipSourceRange, playbackMode, stretchScale } from '@core/audio/playback';
+import { clipSampleId, clipSourceRange, playbackMode, stretchScale } from '@core/audio/playback';
 import type { AudioClip, ChannelId, ClipId, Project, SampleRef } from '@core/model/types';
 import { audibleClips } from '@core/query/playlist';
 import { effectivelyMuted } from '@core/query/queries';
@@ -141,7 +141,8 @@ export class SampleResidency {
       if (clip.kind !== 'audio') continue;
       const ch = p.channels[clip.channelId];
       if (ch?.kind !== 'audioClip' || muted.has(ch.id)) continue;
-      const ref = p.samples[ch.sampleId];
+      // A pitch-corrected clip plays its render (the same length and timeline as the channel's sample).
+      const ref = p.samples[clipSampleId(ch, clip)] ?? p.samples[ch.sampleId];
       if (!ref) continue;
       const mode = playbackMode(ch);
       const sourceKey = SampleCache.keyOf(ref.source, this.sr);

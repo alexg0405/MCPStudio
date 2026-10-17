@@ -454,6 +454,40 @@ export default defineWorkletEffect({ id: ID, name: 'Duck', version: 1, params, p
 
 The built-in Compressor (with a sidechain high-pass and "Listen to sidechain"), Ducker and Gate are complete examples.
 
+### Effects that follow notes
+
+An effect can follow the **notes of an instrument channel** (a pitch corrector pulling a voice to a guide melody, a
+vocoder keyed by a synth line, a harmonizer). Declare `notes: { param: 'guide' }` with an `int` param of that name
+(`p.int(0, 32, 0, { automatable: false })`): the user types which instrument channel it means, counting the instrument
+channels in the channel rack (1 = the first, 2 = the second; audio and automation channels are not counted; 0 = none).
+
+- Worklet effects: the kernel's optional `noteOn(key, velocity, noteId)`, `noteOff(noteId, key, release)` and
+  `allNotesOff(hard)` are called with that channel's notes (the song, previews and live keys), at the start of the
+  128-frame block the event falls in (under 3 ms), before `process()`. Changing the param releases everything held
+  (`allNotesOff(true)`) and follows the new channel; stop and seek send `allNotesOff(false)`. The guide channel is
+  looked up when a note arrives, so reordering the rack is followed.
+- Graph effects (and code that wants the raw stream): `host.notes` (`NoteFeed`) is non-null for effects with `notes`:
+  `host.notes.listen(position, fn)` returns an unsubscribe function; `fn` gets `{ kind: 'on' | 'off' | 'allOff', time,
+  noteId, key, velocity }` with `time` already shifted like the effect's own audio (delay compensation).
+- The guide channel still plays its own instrument: turn its volume down (or route it to a muted mixer track) when it
+  is only a guide. Muting the *channel* mutes its notes too.
+- Tests: `runEffect(Kernel, params, input, frames, { notes: [{ frame, key, velocity?, off?, id? }] })` feeds the same
+  events (at block starts, as the runner does).
+
+```ts
+// params: guide: p.int(0, 32, 0, { label: 'Guide channel', automatable: false })
+class Follow extends EffectKernel<typeof params> {
+  private key = -1;
+  override noteOn(key: number) { this.key = key; }
+  override noteOff() { this.key = -1; }
+  override allNotesOff() { this.key = -1; }
+  process(input: Float32Array[], output: Float32Array[], n: number) { /* use this.key */ }
+}
+export default defineWorkletEffect({ id: ID, name: 'Follow', version: 1, params, processor, notes: { param: 'guide' } });
+```
+
+The built-in **Tune** is the complete example (Target = played notes).
+
 ## Hot reload
 
 | You edit | What happens |

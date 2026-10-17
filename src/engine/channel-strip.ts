@@ -1,8 +1,8 @@
 import { CHANNEL_PAN_SPEC, CHANNEL_PITCH_SPEC, CHANNEL_VOLUME_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
 import { automatedOwners, ownerKey } from '@core/automation/owners';
-import type { AudioClipChannel, InsertId, InstrumentChannel, Project } from '@core/model/types';
-import { playbackMode } from '@core/audio/playback';
+import type { AudioClip, AudioClipChannel, InsertId, InstrumentChannel, Project } from '@core/model/types';
+import { clipSampleId, playbackMode } from '@core/audio/playback';
 import type { InstrumentInstance, JsonValue, NoteOff, NoteOn, ParamSignal } from '@agstudio/sdk';
 import { HostImpl } from './host';
 import { createClipPlayer, type ClipPlayer } from './clip-player';
@@ -312,19 +312,20 @@ export class ChannelStrip {
       this.pending = Promise.resolve();
       const residency = this.core.residency;
       const ch = () => this.channel as AudioClipChannel;
-      const ref = () => this.project.samples[ch().sampleId];
+      // A clip with a pitch correction plays the render of it; everything else the channel's own sample.
+      const ref = (clip?: AudioClip) => this.project.samples[clipSampleId(ch(), clip)] ?? this.project.samples[ch().sampleId];
       const inst = createClipPlayer(this.core.ctx, {
         mode: () => playbackMode(ch()),
-        base: () => {
-          const r = ref();
+        base: (clip) => {
+          const r = ref(clip);
           if (!r) return null;
           const reverse = playbackMode(ch()).reverse;
           const buffer = residency.base(r, reverse);
           return buffer ? { buffer, key: residency.baseKey(r, reverse) } : null;
         },
         stretched: (clip, scale) => residency.stretched(clip, scale),
-        request: () => {
-          const r = ref();
+        request: (clip) => {
+          const r = ref(clip);
           if (r) residency.request(r, playbackMode(ch()).reverse, ch().id);
         },
         hold: (key) => residency.hold(key),

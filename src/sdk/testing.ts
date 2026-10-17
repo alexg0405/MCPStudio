@@ -105,6 +105,11 @@ export interface RunOptions<P extends ParamSpecs> extends TestHostOptions {
   transport?: { bpm?: number; playing?: boolean; beat?: number } | TestTransport;
   /** Effects with a sidechain: the key signal (default: none, the kernel gets `undefined`). */
   sidechain?: TestSignal;
+  /**
+   * Effects that follow notes (`notes: { param }`): events for the kernel's `noteOn` / `noteOff`, applied at the start
+   * of the block their frame falls in, as the SDK's runner does.
+   */
+  notes?: readonly { frame: number; key: number; velocity?: number; off?: boolean; id?: number }[];
 }
 
 type EffectLike<P extends ParamSpecs> = EffectKernel<P> | (new (host: KernelHost) => EffectKernel<P>);
@@ -158,6 +163,11 @@ export function runEffect<P extends ParamSpecs>(
       params[key] = n === block ? arr : arr.subarray(0, n);
     }
     transport.blockStart = at;
+    for (const ev of opts.notes ?? []) {
+      if (ev.frame < at || ev.frame >= at + n) continue;
+      if (ev.off) k.noteOff?.(ev.id ?? ev.key, ev.key, ev.velocity ?? 0.5);
+      else k.noteOn?.(ev.key, ev.velocity ?? 0.8, ev.id ?? ev.key);
+    }
     const view = (a: Float32Array) => (n === block ? a : a.subarray(0, n));
     const o = [view(outL), view(outR)];
     k.process(

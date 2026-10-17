@@ -1545,6 +1545,12 @@ export class PlaylistController {
     const p = this.project();
     const { x, y } = this.local(e);
     const hit = this.hitTest(x, y, p);
+    // Alt + double-click an audio clip: the Pitch editor.
+    if (e.altKey && hit?.clip.kind === 'audio') {
+      this.s.editor.getState().selectClips([hit.clip.id]);
+      void this.s.commands.run('pitchEditor.openClip', { clip: hit.clip.id });
+      return;
+    }
     const handle = hit ? this.audioHandleAt(hit, x, y, p) : null;
     if (hit?.clip.kind === 'audio' && handle) {
       // Double-click a handle: back to 0 dB, or no fade.

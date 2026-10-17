@@ -17,6 +17,7 @@ import {
   masterRoutes,
   paletteColor,
 } from '../model/defaults';
+import { sanitizePitchEdit } from '../audio/pitch-edit';
 import { isSha256Hex } from '../io/hash';
 import { newId } from '../model/ids';
 import {
@@ -822,6 +823,24 @@ function repairPlaylist(p: Obj, log: RepairLog): void {
       if (has(clip, 'gain') && clip.gain !== undefined) fixed = clampField(clip, 'gain', 0, 4, 1) || fixed;
       for (const fade of ['fadeIn', 'fadeOut'])
         if (has(clip, fade) && clip[fade] !== undefined) fixed = clampField(clip, fade, 0, 3600, 0) || fixed;
+      // ---- pitch correction: the edit is cleaned; a render that is not in the samples is forgotten ----
+      if (has(clip, 'pitchEdit') && clip.pitchEdit !== undefined) {
+        const before = isObject(clip.pitchEdit) && Array.isArray(clip.pitchEdit.notes) ? clip.pitchEdit.notes.length : -1;
+        const edit = sanitizePitchEdit(clip.pitchEdit);
+        if (!edit) {
+          delete clip.pitchEdit;
+          fixed = true;
+        } else {
+          if (edit.renderedSampleId && !has(p.samples as Obj, edit.renderedSampleId)) {
+            delete edit.renderedSampleId;
+            delete edit.renderedFor;
+            fixed = true;
+          }
+          if (edit.notes.length !== before) fixed = true;
+          clip.pitchEdit = edit;
+        }
+      }
+      // ---- end of pitch correction ----
     } else fixed = clampField(clip, 'offset', 0, Number.MAX_SAFE_INTEGER, 0, true) || fixed;
     fixed = optionalField(clip, 'muted', isBoolean) || fixed;
     fixed = optionalField(clip, 'name', isString) || fixed;

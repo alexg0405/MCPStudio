@@ -339,6 +339,41 @@ describe('repairProject', () => {
     expect(repairs).toEqual(['Removed 4 playlist clips whose pattern, channel or track no longer exists.']);
   });
 
+  it('cleans an audio clip’s pitch edit and forgets a render that is not in the samples (optional field)', () => {
+    const { p, pat, lane } = base();
+    const audio = audioChannel('ch_audio00001', 'smp_x');
+    p.samples['smp_x' as never] = builtinSample('smp_x');
+    p.channels[audio.id] = audio;
+    p.channelOrder.push(audio.id);
+    const clip = (id: string, extra: object) => ({ id, laneId: lane, start: 0, length: 3840, kind: 'audio', channelId: audio.id, offsetSec: 0, ...extra });
+    const good = { notes: [{ from: 0.1, to: 0.5, pitch: 60.2, shift: -20 }], renderedSampleId: 'smp_x', renderedFor: 't25;0.1,0.5,-20,0,1' };
+    p.playlist.clips = {
+      ok: clip('ok', { pitchEdit: good }),
+      noRender: clip('noRender', { pitchEdit: { ...good, renderedSampleId: 'smp_gone' } }),
+      damaged: clip('damaged', { pitchEdit: { notes: [{ from: 2, to: 1, pitch: 60 }, 'x'] } }),
+      loose: clip('loose', { pitchEdit: { notes: [{ from: 0, to: 1, pitch: 60, shift: 5000, drift: 3 }, { from: 0.5, to: 2, pitch: 62 }] } }),
+      none: clip('none', {}),
+      pattern: { id: 'pattern', kind: 'pattern', laneId: lane, start: 0, length: 3840, patternId: pat, offset: 0 },
+    } as unknown as Project['playlist']['clips'];
+    const { project, repairs } = repairProject(p);
+    const edit = (id: string) => (project.playlist.clips[id as never] as { pitchEdit?: unknown }).pitchEdit;
+    expect(edit('ok')).toEqual(good);
+    expect(edit('noRender')).toEqual({ notes: good.notes });
+    expect(edit('damaged')).toBeUndefined();
+    expect(edit('loose')).toEqual({
+      notes: [
+        { from: 0, to: 1, pitch: 60, shift: 1200, drift: 1 },
+        { from: 1, to: 2, pitch: 62 },
+      ],
+    });
+    expect(edit('none')).toBeUndefined();
+    // (Clamped values are fixed silently; a dropped note, a forgotten render or a removed edit is reported.)
+    expect(repairs).toEqual(['Fixed 2 playlist clips with an invalid position or length.']);
+    // A valid project is not reported (no repair line, nothing changed).
+    p.playlist.clips = { ok: clip('ok', { pitchEdit: good }) } as unknown as Project['playlist']['clips'];
+    expect(repairProject(p).repairs).toEqual([]);
+  });
+
   it('routes channels with a missing insert to the master', () => {
     const { p, ch, ins } = base();
     p.channels[ch] = { ...p.channels[ch]!, output: 'ins_gone' as InsertId } as Project['channels'][ChannelId];

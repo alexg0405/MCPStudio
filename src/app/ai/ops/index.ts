@@ -18,6 +18,7 @@ import { mix } from './mix';
 import { mixer } from './mixer';
 import { notes } from './notes';
 import { patterns } from './patterns';
+import { pitch } from './pitch';
 import { playlist } from './playlist';
 import { query } from './query';
 import { recording, RECORD_OP_NAMES } from './recording';
@@ -36,6 +37,7 @@ export const MODULES: readonly OpModule[] = [
   playlist,
   clips,
   recording,
+  pitch,
   arrange,
   beat,
   mix,

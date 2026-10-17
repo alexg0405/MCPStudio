@@ -12,6 +12,7 @@ import {
   resolveValues,
   type ChannelInfo,
   type JsonValue,
+  type NoteFeed,
   type ParamSignal,
   type ParamSpec,
   type ParamSpecs,
@@ -27,6 +28,7 @@ import {
 } from '@agstudio/sdk';
 import { liteName, PITCH_PARAM, type ProcessorInit } from '@agstudio/sdk/protocol';
 import { Emitter } from './emitter';
+import type { NoteFeedHub } from './note-feed';
 import { ParamHandleImpl } from './param-handle';
 import type { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
@@ -52,6 +54,8 @@ export interface HostDeps {
   loadModule(url: string): Promise<void>;
   /** Worklet ports are tracked so export can wait for them (sync barriers). */
   ports: Set<WorkletPortImpl>;
+  /** Effects that declare `notes`: where the instrument channels' notes come from. */
+  noteFeed?: NoteFeedHub;
   reportFault(error: unknown): void;
   /**
    * The plugin tapped a node for its editor (`host.tap()`), or (live false) that tap went away with
@@ -89,6 +93,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   readonly samples: SampleSlots;
   readonly channel: ChannelInfo | null;
   readonly sidechain: GainNode | null;
+  readonly notes: NoteFeed | null;
   readonly offline: boolean;
   private readonly abort = new AbortController();
   private readonly unregister: (() => void)[] = [];
@@ -119,6 +124,14 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       if (isAutomatable(spec)) this.unregister.push(deps.registry.register(handle.lane));
     }
     this.sidechain = deps.def.kind === 'effect' && deps.def.sidechain ? new GainNode(deps.ctx) : null;
+    const feed = deps.def.kind === 'effect' && deps.def.notes ? deps.noteFeed : undefined;
+    // The effect's own delay compensation applies to the notes as it does to its audio.
+    this.notes = feed
+      ? {
+          listen: (position, fn) => feed.listen(position, (e) => fn({ ...e, time: e.time + this.shiftSec })),
+          channelName: (position) => feed.channelName(position),
+        }
+      : null;
     this.stateValue = m.state;
     this.slots = { ...(deps.data.samples ?? {}) };
     this.pinSlots();

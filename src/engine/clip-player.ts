@@ -60,12 +60,16 @@ export interface ClipPlayer extends InstrumentInstance {
 /** Where a clip player's audio comes from (the channel strip, through sample-residency.ts). */
 export interface ClipSources {
   mode(): PlaybackMode;
-  /** The sample as played (reversed when reverse is on) and its cache key; null while it isn't decoded. */
-  base(): { buffer: AudioBuffer; key: string } | null;
+  /**
+   * The sample as played (reversed when reverse is on) and its cache key; null while it isn't decoded.
+   * A clip with a pitch correction plays the render of it (`pitchEdit.renderedSampleId`) instead of
+   * the channel's own sample; without a clip it is the channel's.
+   */
+  base(clip?: AudioClip): { buffer: AudioBuffer; key: string } | null;
   /** The clip's time-stretched copy at `scale`: its buffer, key and the second of the sample its first frame is. */
   stretched(clip: AudioClip, scale: number): { buffer: AudioBuffer; key: string; from: number } | null;
   /** Voices wait for buffers: make sure they are on their way. */
-  request(): void;
+  request(clip?: AudioClip): void;
   /** Keeps a buffer in memory while a voice reads it; returns the release. */
   hold(key: string): () => void;
 }
@@ -157,11 +161,11 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     const timeOf = (tk: number) => t + tempo.tickToSeconds(tk) - secAt;
     const scale = mode.follow === 'stretch' ? stretchScale(mode, tempo, clip.start) : 1;
     const copy = scale === 1 ? null : opts.stretched(clip, scale);
-    const base = copy ? null : opts.base();
+    const base = copy ? null : opts.base(clip);
     if (!copy && !base) {
       // Not decoded yet: wait for it (it starts at the song's position then).
       live.set(e.noteId, { e: { ...e, time: t, tick }, scale, state: 'waiting', end: timeOf(clipEnd) });
-      opts.request();
+      opts.request(clip);
       return;
     }
     // Where the sound ends: the sample's end, or the end of what the stretched copy covers (its
@@ -237,7 +241,7 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     });
     hold(e.noteId, copy ? copy.key : base!.key, end + RELEASE + 0.01);
     live.set(e.noteId, { e: { ...e, time: t, tick }, scale, state: fallback ? 'fallback' : 'ok', end });
-    if (fallback) opts.request();
+    if (fallback) opts.request(clip);
   }
 
   /** Previews (and transports without clip info): the sample from `offset`, at the channel's pitch. */
@@ -285,7 +289,7 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     for (const v of [...live.values()]) {
       if (v.state === 'ok' || at >= v.end) continue;
       const copy = v.scale !== 1 ? opts.stretched(v.e.clip, v.scale) : null;
-      if (v.state === 'waiting' && !copy && !opts.base()) continue;
+      if (v.state === 'waiting' && !copy && !opts.base(v.e.clip)) continue;
       if (v.state === 'fallback' && !copy) continue;
       const { tempo } = v.e;
       const tick = tempo.secondsToTick(tempo.tickToSeconds(v.e.tick) + (at - v.e.time));

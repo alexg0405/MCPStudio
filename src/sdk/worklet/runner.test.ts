@@ -259,6 +259,67 @@ const anchor = (frame: number, beat: number, playing: boolean, bpm: number, repl
   0,
 ];
 
+/** An effect that follows notes: records what it hears and when (as the process() call it fell in). */
+class Follower extends EffectKernel {
+  log: string[] = [];
+  private calls = 0;
+  override noteOn(key: number, velocity: number, id: number) {
+    this.log.push(`on:${id}:${key}:${velocity}@${this.calls}`);
+  }
+  override noteOff(id: number, key: number, release: number) {
+    this.log.push(`off:${id}:${key}:${release}@${this.calls}`);
+  }
+  override allNotesOff(hard: boolean) {
+    this.log.push(`all:${hard}@${this.calls}`);
+  }
+  process(input: Float32Array[], output: Float32Array[], n: number) {
+    for (let c = 0; c < output.length; c++) output[c]!.set(input[c]!.subarray(0, n));
+    this.calls++;
+  }
+}
+
+describe('effects that follow notes', () => {
+  it('hear note on, off and all-off at the start of the block they fall in, in order; others ignore them', () => {
+    const k = new Follower(host);
+    const r = new KernelRunner(k, () => {});
+    const input = [new Float32Array(128).fill(0.1), new Float32Array(128).fill(0.1)];
+    r.process([input], block(), {}, 0);
+    r.onMessage({
+      t: 'ev',
+      data: pack(
+        [EV_NOTE_ON, 128 + 20, 7, 64, 0.75, 0],
+        [EV_NOTE_OFF, 256 + 3, 7, 64, 0.5, 0],
+        [EV_ALL_OFF, 512, 0, 0, 0, 0],
+      ),
+    });
+    for (let b = 1; b <= 4; b++) r.process([input], block(), {}, b * 128);
+    // Block 1 starts at frame 128 (note on), block 2 at 256 (off), block 4 at 512 (all off).
+    expect(k.log).toEqual(['on:7:64:0.75@1', 'off:7:64:0.5@2', 'all:false@4']);
+    // An effect without the methods drops the events (and keeps running).
+    const plain = new EffectProbe(host);
+    const rp = new KernelRunner(plain, () => {});
+    rp.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, 10, 1, 60, 1, 0]) });
+    expect(() => rp.process([input], block(), {}, 0)).not.toThrow();
+    expect(plain.beats.length).toBe(1);
+  });
+
+  it('a note event that throws faults the effect once and bypasses it', () => {
+    class Bad extends Follower {
+      override noteOn(): void {
+        throw new Error('nope');
+      }
+    }
+    const faults: FromProcessor[] = [];
+    const r = new KernelRunner(new Bad(host), (m) => faults.push(m));
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, 0, 1, 60, 1, 0]) });
+    const input = [new Float32Array(128).fill(0.25), new Float32Array(128).fill(0.25)];
+    const out = block();
+    r.process([input], out, {}, 0);
+    expect(faults.filter((f) => f.t === 'fault')).toHaveLength(1);
+    expect(out[0]![0]![5]).toBeCloseTo(0.25);
+  });
+});
+
 describe('kernel transport', () => {
   it('extrapolates the beat from the latest anchor while playing and holds it while stopped', () => {
     const k = new BeatProbe(host);

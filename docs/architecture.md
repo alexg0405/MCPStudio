@@ -554,6 +554,7 @@ estimateBpm(events, { min?, max? }) → number | null
 quantizeToGrid(events, { bpm, startSec, bars?, beatsPerBar?, stepsPerBeat? }, { resolution?: 0.5 | 1, swing? }) → GridEvent[]
 describeEvents(gridEvents, { stepsPerBar?, stepsPerBeat? }) → string  // + VOICE_SUMMARY_LEGEND for a prompt
 trackPitch(samples, sampleRate, { minHz?, maxHz?, hop?, window? }) // YIN; FFT/RealFFT/hannWindow helpers in fft.ts
+analyzePitch(samples, sampleRate, { start?, minHz?, maxHz? }) // cleaned pitch frames + sung notes (pitch-notes.ts): see Pitch correction
 ```
 
 - Onsets: spectral flux on log-compressed quarter-octave bands (100 frames/s, moving-median threshold), then each
@@ -575,6 +576,148 @@ trackPitch(samples, sampleRate, { minHz?, maxHz?, hop?, window? }) // YIN; FFT/R
   attacks read 3–6 ms late), hum pitch within 0.01 semitone. Known limits: a voiced "boom" kick longer than ~120 ms
   reads as tonal (`mode: 'drums'` fixes it), mic pops on "p"/"b" add low energy, lip smacks are events, and tempo can
   come out at half/double time near the ends of the BPM range.
+
+## Pitch correction (`core/audio/psola.ts`, `core/audio/pitch-edit.ts`, `core/voice/pitch-notes.ts`, `app/actions/pitch.ts`, `ui/features/pitch-editor`)
+
+Correct the pitch of a recorded vocal (or any one-voice line) note by note, like a graphical tuner: the clip's sung notes
+appear as blobs on a piano grid with the pitch line as sung; the musician drags them, snaps them to the key, flattens drift,
+tames vibrato. The corrected sound is a new sample that the clip plays; the original stays.
+
+### Analysis (`core/voice/pitch-notes.ts`)
+
+- `analyzePitch(mono, sampleRate, { start })`: `trackPitch` (YIN, ~5 ms hop, 65–1100 Hz), `cleanF0` (an octave slip moves back,
+  an isolated outlier or the tracker's wild last frames as a voice dies away go unvoiced, dropouts up to two frames are bridged,
+  runs under 20 ms are dropped), then `segmentNotes`: a run of voiced frames (unvoiced gaps under 30 ms are bridged) is cut
+  where the median-filtered pitch leaves the note's running centre by 65 cents and settles on a new level for 50 ms (the
+  boundary goes where the glide began); pieces under 40 ms join the nearer neighbour (a sliver at the end of a run far from it is
+  dropped), notes with under 30 ms of pitch are dropped. Thresholds: `PITCH_NOTE_THRESHOLDS`.
+- Per note: `pitch` (the median, MIDI, fractional), `drift` (3–97 % range of the slow line, cents: a 170 ms moving average, which
+  follows glides and wander but not vibrato, measured away from the ends where the window is short), `vibratoDepth` (cents,
+  peak to peak) and `vibratoRate` (Hz, from the zero crossings of pitch − slow line; none outside 3.5–9.5 Hz or under 25 cents).
+- Cost: 112 ms for 60 s of audio (Node, one thread). Results are cached in memory (`actions/pitch.ts`, 8 analyses, keyed by
+  sample hash + sample rate + the analysed range, which is the clip's part of the sample plus 0.25 s each side) and always run
+  in a Worker per job (`app/pitch/pitch.worker.ts`, `pitch-jobs.ts`; inline in Node tests). They are recomputed after a
+  reload (cheap), not stored.
+
+### The edit (`AudioClip.pitchEdit`, `core/audio/pitch-edit.ts`)
+
+`PitchEdit { notes, transition?, renderedSampleId?, renderedFor? }`; a note is `{ from, to, pitch, shift?, drift?, vibrato? }`
+in seconds on the sample's own timeline (so trims, splits and tempo changes keep working: a split clip carries the same edit).
+`shift` moves the whole note (cents; the target is `pitch + shift / 100`), `drift` flattens its slow wander (0–1), `vibrato`
+scales the wobble (0 removes it, 1 as sung, 2 doubles it). With c the sung pitch (cents), s its slow line and m its median:
+
+    shift at t = shift − drift · (s − m) + (vibrato − 1) · (c − s)
+
+A note with nothing changed is not touched at all; the shift curve glides over `transition` ms (default 25; 0 = hard tune) and
+never moves unvoiced frames. `snapToKey` picks the nearest allowed pitch class (ties down) by a strength 0–1;
+`splitNote`/`mergeNotes` keep the target; `applyPitchAction` is the one entry for the editor's buttons and the AI. The field is
+one commented block in `types.ts`; `migrate.ts` cleans it (`sanitizePitchEdit`: clamps, sorts, removes overlaps, and forgets a
+render whose sample is missing).
+
+### TD-PSOLA (`core/audio/psola.ts`)
+
+Pitch marks come from the phase of the fundamental (complex demodulation by the pitch track's phase, averaged over two periods;
+a mark where the phase crosses 2π, at a fraction of a sample), unvoiced stretches carry marks every 8 ms. Synthesis marks follow
+the analysis time (speed unchanged): the next lies one period ÷ ratio after the last, takes the nearest analysis mark and
+overlap-adds its grain (two periods under a Hann window, read with cubic interpolation so grains land between samples; wider
+for falls). Every sample is divided by the sum of its windows and blended to the input where none reaches; with ratio 1 the
+grains rebuild the input to 1e-9, so untouched stretches come back unchanged and an edit has no seams. Ring buffers keep memory
+flat for any length. Formants stay (each grain keeps its period's spectrum), within ±12 semitones.
+
+Measured (Node 22): pitch ratio within 0.12 cent at −1200, −700, −230, 17, 500 and 1200 cents on a synthetic voice with a 900 Hz
+formant; the formant's centre moves by 0.6–1.8 % at ±5…7 semitones (a plain resample would move it by 33–46 %); no sample step
+beyond 1.6× the voice's own and no overs. A whole chain on 60 s of a sung line (40 notes with vibrato, snapped to the key,
+re-analysed): matched notes within 1.8 cents (median 0.5). 60 s of stereo renders in 0.27 s (analysis 0.11 s).
+
+### Render and playback (`app/actions/pitch.ts`)
+
+- `startPitchRenderer` (created once in the feature's `register`) watches the document: after an edit (origin `edit`, not
+  undo/redo/load) that touches a clip with a non-neutral `pitchEdit` whose render is out of date (`editSignature` ≠ `renderedFor`)
+  it waits 450 ms and renders: the sample's channels over the edited stretch (first to last changing note ± 0.3 s) go to a Worker
+  (`renderPitchEdit`: its own YIN track of that stretch, `shiftCurve`, `psolaShift`), come back spliced into a copy of the whole
+  sample (same length and timeline, so offsets, fades, trims and tempo follow work unchanged), are scaled down if they pass
+  full scale, encoded as 24-bit FLAC off-thread, written through the sample store (`importSampleBytes`) inside
+  `whileBusy(…, { project })`, and recorded by `setPitchRender`: the new `SampleRef` goes into `Project.samples`, the clip names
+  it, the previous render's entry goes when no clip plays it. A newer edit cancels the job in flight; a result for an out-of-date
+  signature is dropped.
+- **Undo**: the commit is `transact(…, { amend: <the edit's undo entry> })`, so the edit and its render are one undo step and
+  undo restores the earlier edit with its earlier render (the old render's `SampleRef` comes back through the same patches;
+  history keeps its hash referenced). If something else became the newest entry meanwhile, the render is a step of its own.
+- **Storage**: the render's hash is in `Project.samples`, so it is kept like any sample (app/storage); the original stays
+  referenced by the channel. Nothing else is stored; the analysis is not.
+- **Engine**: `clipSampleId(channel, clip)` (`core/audio/playback.ts`) is `pitchEdit.renderedSampleId` else the channel's sample;
+  `sample-residency.ts` plans a clip's buffers from its own sample, the clip player's `base(clip)` / `request(clip)` read it
+  (`channel-strip.ts`), and a missing render falls back to the channel's sample. Offline renders and exports use the same path.
+  Reverse is refused (the edit's timeline is the forwards sample). Waveforms still draw the original.
+- Analysis range ≤ 15 minutes of sample (`PITCH_MAX_SECONDS`).
+
+### The Pitch editor window (`ui/features/pitch-editor`, window type `pitch-editor`)
+
+- Opens from the audio clip ▾ menu ("Pitch editor…"), Alt + double-click on an audio clip, the Playlist menu / action search
+  ("Pitch editor for the selected audio clip", `pitchEditor.openClip`), or View → Pitch editor (Alt+Shift+P).
+- `controller.ts` is imperative (grid, content and overlay canvases on the frame loop; React renders the toolbar only): the
+  viewport's ticks are milliseconds, its rows MIDI notes; wheel scrolls, Ctrl/Cmd+wheel zooms time, Alt+wheel the rows, middle
+  drag pans, a scroll thumb. Notes are blobs at their target pitch (an outline and a line show where a moved one was sung); the
+  thin line is the pitch as sung, the bright one the corrected pitch (`shiftCurve` over the analysis frames). Drag a blob up or
+  down (whole semitones; Alt = cents; "Drag in key" lands on the key's notes); the drag previews locally and commits one undo
+  step on release. Shift-click and a marquee select; Split tool / S cuts a note where you click, M joins it with the next;
+  Delete resets; ↑/↓ move by a semitone (Alt: a cent); right-click menu. Toolbar: Snap all (or selected) to key with a key chooser
+  (starts as the song key) and Strength 0–100 %, Drift and Vibrato sliders (selected notes, or all), Transition, play from the
+  selected note, status ("Listening…", "Rendering 40 %…", "Corrected audio ready"), Render now, More ▾ (merge, reset, remove all).
+  Sliders merge into one undo step per drag (`mergeKey`).
+- Empty states say what to do (no clip chosen, listening, reversed audio, no notes found). Every control has a `data-hint`;
+  the "?" panel lists the moves.
+- `pitchState` (`app/pitch/state.ts`) is the editor's view state (target clip, analysis, selection, key); not in the document.
+
+### AI and MCP
+
+- `pitch` action (`app/ai/ops/pitch.ts`): `snap_to_key` (key default: the song key; `strength` %), `flatten_drift`, `vibrato`
+  (`amount` %, 0 removes it), `shift` (`semitones` or `to_midi`), `transition` (`ms`), `reset`, `clear`; the clip by id or
+  track + bar; notes by 1-based number (`notes`) or bars (`from_bar`/`to_bar`). With notes known (an edit exists, or the
+  clip was analysed) it is a plain edit in the answer's undo step; otherwise the answer queues the `pitchEditor.apply`
+  command (an app command after-step, its own undo step) that listens first. The render follows by itself.
+- `get_pitch` (`app/pitch/report.ts`): per note its number, bar, start/end seconds, MIDI pitch and name, cents off, in-key flag,
+  drift and vibrato measured, and what was changed. A clip never analysed starts its analysis and answers `analyzing`.
+- Commands `pitchEditor.openClip`, `.play`, `.snapToKey`, `.apply`, `.clear`; window `pitch-editor` in `OPEN_WINDOWS`.
+
+### Tune (`plugins/builtin/tune`)
+
+New params (all defaults sound as before; the golden test pins the six old presets and the default patch): **Target** (key and
+scale, or the notes of a guide channel), **Guide channel** (which instrument channel, see `notes: { param }` in
+[plugin-sdk.md](plugin-sdk.md#effects-that-follow-notes)), **Keep natural drift** (the singer's slow line, a 100 ms one-pole
+against a 1 s average, minus the note's average, is left in by that share), **Added vibrato** depth (cents) and rate (Hz, fades
+in over 0.35 s after each note starts), **Keep formants**. Played notes: the nearest held note to the detected pitch (a chord
+gives the nearest note, with the same hysteresis), none held = the voice is left alone. Keep formants is pitch-synchronous
+overlap-add on the same delay lines (up to 8 grains of two periods, read at speed 1 at a constant delay near the 12 ms
+latency, spaced period ÷ ratio, taken from the voice's own period grid, normalised by the window sum and faded in and out
+against the splice shifter's output), so the latency is unchanged and no allocation happens in `process()`. Presets added: "Hard
+trap tune (C minor)", "Natural pop (C major)", "Robot".
+
+Measured (Node, 48 kHz, voice with a 900 Hz formant at 196 Hz moved +500…+900 cents): pitch error ≤ 2 cents either way; the
+formant (energy centroid) moves 31–64 % with the plain shifter and 1–5 % with Keep formants. CPU (% of one core, best of 7,
+this machine): default patch 0.38–0.40 (the same before and after the change), guide notes 0.44, drift + vibrato 0.46, keep
+formants 0.51, keep formants while correcting 0.57.
+
+### Tests
+
+Node: `psola.test.ts` (pitch ratio < 1 cent at nine shifts, formant peak < 5 % at ±5 semitones, no clicks, gliding shift, zero
+shift returns the input, stereo, deterministic), `pitch-notes.test.ts` (sung notes with vibrato, drift, a legato step, a pause,
+a sag; offsets; silence and noise), `pitch-edit.test.ts` (snap, split/merge, validation, signature, shift curve incl. drift and
+vibrato numbers, the whole chain landing on the key within 6 cents, determinism), `core/ops/pitch.test.ts` (undo restores the
+earlier edit and render, render replacement, shared render after a split), `app/actions/pitch.test.ts` (each editor operation is
+one undo step, slider drags merge, render amended into the edit's step, hashes kept), `app/ai/ops/pitch.test.ts`,
+`core/schema/migrate.test.ts` (repairs), `ui/features/pitch-editor/model.test.ts`, Tune kernel tests (guide notes, drift, vibrato,
+formants, a source audit that the audio-thread methods allocate nothing, heap kept after a long run) and golden test, runner and
+`NoteFeedHub` tests. Browser: `test/browser/pitch-correction.test.ts` (the engine plays the render, the original without it, falls
+back when it is missing), `tune-notes.test.ts` (a guide channel pulls a recorded voice through a real AudioWorklet), UX audit.
+
+### Limits
+
+YIN follows the strongest periodicity: a voice whose fundamental is far weaker than its second harmonic can read an octave
+high for a whole note (synthetic voices with a strong formant at 880 Hz do; ordinary vocals rarely). One voice at a time: chords
+and noisy takes give no notes. TD-PSOLA keeps formants well within about ±5 semitones and sounds rougher at ±12; a shifted
+note repeats or skips whole periods. Breaths and "s" sounds are never shifted. The analysis is not kept between sessions.
+The edit works on the clip's sample, not on its reverse or on a stretched copy (tempo follow still works on the render).
 
 ## Beat assistant (`src/core/beat`, `src/core/voice`, `src/app/assistant`, `tools/ai`)
 
@@ -2220,7 +2363,7 @@ description and five or more descriptive presets, so the AI catalog (`app/ai/cat
 | Lo-Fi (`agstudio.lofi`) | wow/flutter delay line, sample-and-hold, mid-tread bits, tone, seeded hiss and crackle | 8 ms |
 | Stutter (`agstudio.stutter`) | gate patterns, beat repeat (slice from the grid line, the played part from an 8 s history), tape stop; acts only while the song plays | 0 |
 | Vocoder (`agstudio.vocoder`, sidechain) | 16/24/32 two-stage SVF bands on modulator (the sidechain) and carrier (the input), state in flat arrays | 0 |
-| Tune (`agstudio.tune`) | YIN → nearest scale note (hysteresis) → glide → pitch-synchronous splicer (a second head a whole number of periods away, 4 ms crossfade); rests at its centre delay when nothing needs correcting | 12 ms |
+| Tune (`agstudio.tune`) | YIN → nearest scale note or guide-channel note (hysteresis) → glide (+ optional kept drift and added vibrato) → pitch-synchronous splicer (a second head a whole number of periods away, 4 ms crossfade) or, with Keep formants, pitch-synchronous grains; rests at its centre delay when nothing needs correcting (see Pitch correction) | 12 ms |
 | Analyzer (`agstudio.analyzer`) | pass-through; measures BS.1770 loudness, true peak and correlation exactly in the kernel and publishes them; listen modes | 0 |
 | De-esser (`agstudio.de-esser`), Doubler (`agstudio.doubler`) | see "Vocal chains" below: a split-band de-esser with listen and a gain-reduction meter; a pitch-drifting vocal doubler with a clean mono sum | 0 |
 | Ducker (`agstudio.ducker`) | new `mode` (`sidechain` / `tempo`) and `rate`: in tempo mode every grid line of the song is a hit, the release fits in one step | 0 |
@@ -2279,7 +2422,7 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
 - Editors: only EQ Pro and the Analyzer have custom UIs; the Limiter, Multiband and Tune publish readings (gain
   reduction, detected pitch) that no editor shows yet.
 - Tune is monophonic; polyphonic or very breathy input makes YIN unvoiced and the correction lets go. Its formant
-  moves with the pitch (no formant preservation).
+  moves with the pitch unless Keep formants is on (which falls back to the plain shifter while no pitch period is known).
 - Beat repeat holds slices up to 2 s (a 1/2 note down to 60 BPM); Stutter's history is 8 s.
 - Tap readings arrive at ~30 Hz through the worklet port; the spectrum/waveform come from AnalyserNodes, so they are
   snapshots, not every sample (the Analyzer's loudness and peak are measured in the kernel for that reason).
@@ -2358,6 +2501,8 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   pitch follows the tempo, like a turntable), `stretch` at bpm(t)/B with the pitch kept at P (time-stretched). Resample
   and stretch need a source BPM (without one a channel plays `off`). `offsetSec` (the trim) is a position in the played
   copy, so reversing mirrors every clip's trim (`mirroredOffset`) and it keeps playing the same audio.
+- A clip with a pitch correction (`AudioClip.pitchEdit.renderedSampleId`) plays that render instead of its channel's sample
+  (`clipSampleId`; same length and timeline, so everything below applies unchanged): see the Pitch correction section.
 - The envelope is clip gain × equal-power fades (sin, −3 dB at the middle; overlapping fades multiply), played as
   linear ramps between 16 breakpoints per fade (within 0.2 %). A voice that starts inside the sound ramps in from
   silence over 2 ms; one that starts at the sound's first sample doesn't (frozen and consolidated renders keep their

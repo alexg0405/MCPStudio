@@ -29,7 +29,8 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 
 - **Help everywhere**: point at anything for a tooltip and the hint bar; a **?** on every window explains it;
   **⌘K / Ctrl+K** finds any action by typing what you want (or hands the words to the AI); a welcome screen,
-  a guided tour (Help → Take the tour) and project templates (Trap, Boom bap, House, Lo-fi, Drill).
+  a guided tour (Help → Take the tour) and project templates (Trap, Boom bap, House, Lo-fi, Drill, and the dance pack: Big room, Progressive house,
+  Future bass, Dubstep, Melodic dubstep, Tech house, Trance, Drum & bass).
 - **Channel rack**: step sequencer with fill/rotate/shift/reverse/randomize tools and a per-step graph editor
   (velocity, pan, release, pitch), mini piano-roll previews, volume/pan, mute/solo, mixer routing, automation rows.
 - **Piano roll**: draw, paint, select, slice, mute and delete tools; snap (incl. triplets); song key with scale

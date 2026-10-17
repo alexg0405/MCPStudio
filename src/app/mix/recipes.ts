@@ -69,6 +69,14 @@ const REVERB_FOR: Record<Style, string> = {
   reggaeton: 'Plate',
   afro: 'Room',
   pop: 'Plate',
+  bigroom: 'Hall',
+  proghouse: 'Hall',
+  futurebass: 'Hall',
+  dubstep: 'Plate',
+  melodicdub: 'Hall',
+  techhouse: 'Room',
+  trance: 'Hall',
+  dnb: 'Plate',
 };
 
 const DELAY_FOR: Record<Style, string> = {
@@ -81,12 +89,40 @@ const DELAY_FOR: Record<Style, string> = {
   reggaeton: 'Eighth echo',
   afro: 'Eighth echo',
   pop: 'Dotted ping-pong',
+  bigroom: 'Dotted ping-pong',
+  proghouse: 'Dotted ping-pong',
+  futurebass: 'Triplet bounce',
+  dubstep: 'Dub',
+  melodicdub: 'Dotted ping-pong',
+  techhouse: 'Eighth echo',
+  trance: 'Dotted ping-pong',
+  dnb: 'Eighth echo',
 };
+
+/** More reverb for the styles that live in it (dB added to the chords' and lead's sends). */
+const REVERB_BOOST: Partial<Record<Style, number>> = { melodicdub: 4, futurebass: 2, proghouse: 2, trance: 2 };
 
 /** Styles whose 808/bass doesn't duck under the kick (lo-fi: a breathing bass sounds wrong there). */
 const NO_BASS_DUCK: ReadonlySet<Style> = new Set(['lofi']);
 /** Styles whose chords pump harder with the kick. */
 const PUMPING: ReadonlySet<Style> = new Set(['house', 'edm']);
+
+/**
+ * How the Chords bus ducks in the EDM pack: the sidechained pads of big room and trance, the 1/8 wobble of
+ * future bass (a tempo pump: the volume dips on every 8th and swells back, with or without a kick), a
+ * gentle breath for progressive and tech house and the dubstep styles.
+ */
+const CHORD_DUCK: Partial<Record<Style, { params: Record<string, ParamValue>; label: string }>> = {
+  bigroom: { params: { depth: 0.7, threshold: -26, attack: 1, hold: 10, release: 200, curve: 0.4 }, label: 'sidechained pads: they pump with the kick' },
+  trance: { params: { depth: 0.6, threshold: -26, attack: 1, hold: 10, release: 180, curve: 0.3 }, label: 'sidechained pads: they pump with the kick' },
+  proghouse: { params: { depth: 0.45, threshold: -24, attack: 1, hold: 10, release: 220, curve: 0.3 }, label: 'a soft pump with the kick' },
+  futurebass: {
+    params: { mode: 'tempo', rate: '1/8', depth: 0.7, attack: 1, hold: 5, release: 190, curve: 0.45 },
+    label: 'a 1/8 wobble: the chords dip and swell on every eighth note',
+  },
+  melodicdub: { params: { depth: 0.55, threshold: -24, attack: 1, hold: 10, release: 250, curve: 0.5 }, label: 'a slow pump with the kick' },
+  techhouse: { params: { depth: 0.5, threshold: -24, attack: 1, hold: 10, release: 150, curve: 0.2 }, label: 'a tight pump with the kick' },
+};
 
 export function busRecipe(role: BusRole, style: Style): BusRecipe {
   switch (role) {
@@ -140,15 +176,17 @@ export function busRecipe(role: BusRole, style: Style): BusRecipe {
           { pluginId: EQ_PRO, label: 'EQ (150 Hz high-pass, the low-pass open)', params: SWEEP_BANDS.chords },
           {
             pluginId: DUCKER,
-            params: PUMPING.has(style)
-              ? { depth: 0.5, threshold: -24, attack: 1, hold: 10, release: 200, curve: 0.3 }
-              : { depth: 0.3, threshold: -24, attack: 1, hold: 10, release: 160, curve: 0 },
+            params:
+              CHORD_DUCK[style]?.params ??
+              (PUMPING.has(style)
+                ? { depth: 0.5, threshold: -24, attack: 1, hold: 10, release: 200, curve: 0.3 }
+                : { depth: 0.3, threshold: -24, attack: 1, hold: 10, release: 160, curve: 0 }),
             sidechain: 'kick',
-            label: PUMPING.has(style) ? 'pumps with the kick' : 'a light duck with the kick',
+            label: CHORD_DUCK[style]?.label ?? (PUMPING.has(style) ? 'pumps with the kick' : 'a light duck with the kick'),
           },
         ],
         fader: -6,
-        sends: { reverb: -12 },
+        sends: { reverb: -12 + (REVERB_BOOST[style] ?? 0) },
         color: '#4fa6a6',
       };
     case 'lead':
@@ -161,7 +199,7 @@ export function busRecipe(role: BusRole, style: Style): BusRecipe {
           },
         ],
         fader: -3,
-        sends: { reverb: -14, delay: -18 },
+        sends: { reverb: -14 + (REVERB_BOOST[style] ?? 0), delay: -18 },
         color: '#6aa86b',
       };
     case 'fx':

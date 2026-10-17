@@ -24,6 +24,14 @@ const WORDS: Record<Style, string> = {
   reggaeton: 'reggaeton',
   afro: 'afrobeats',
   pop: 'pop',
+  bigroom: 'big room',
+  proghouse: 'progressive house',
+  futurebass: 'future bass',
+  dubstep: 'dubstep',
+  melodicdub: 'melodic dubstep',
+  techhouse: 'tech house',
+  trance: 'trance',
+  dnb: 'drum and bass',
 };
 
 function song(style: Style): AiAction[] {

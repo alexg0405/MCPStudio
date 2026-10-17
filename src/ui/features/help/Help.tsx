@@ -143,22 +143,29 @@ function Welcome() {
             </>
           )}
         </p>
-        <div className={styles.templates}>
-          <span className={styles.templatesLabel}>Or start from a ready beat:</span>
-          {TEMPLATES.map((t) => (
-            <button
-              key={t.id}
-              className={styles.chip}
-              data-hint={t.description}
-              onClick={() => {
-                close();
-                void startFromTemplate(services, t.id);
-              }}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
+        {(
+          [
+            ['beats', 'Or start from a ready beat:'],
+            ['dance', 'Dance and bass music:'],
+          ] as const
+        ).map(([group, label]) => (
+          <div key={group} className={styles.templates}>
+            <span className={styles.templatesLabel}>{label}</span>
+            {TEMPLATES.filter((t) => t.group === group).map((t) => (
+              <button
+                key={t.id}
+                className={styles.chip}
+                data-hint={t.description}
+                onClick={() => {
+                  close();
+                  void startFromTemplate(services, t.id);
+                }}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+        ))}
         <div className={styles.buttons}>
           <button
             className={styles.button}

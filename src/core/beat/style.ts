@@ -5,7 +5,26 @@
 import type { ChannelId, Project } from '../model/types';
 import { TICKS_PER_STEP } from '../time/ppq';
 
-export const STYLES = ['trap', 'drill', 'boombap', 'lofi', 'house', 'edm', 'reggaeton', 'afro', 'pop'] as const;
+export const STYLES = [
+  'trap',
+  'drill',
+  'boombap',
+  'lofi',
+  'house',
+  'edm',
+  'reggaeton',
+  'afro',
+  'pop',
+  // The EDM pack: festival and club dance music, bass music and drum & bass.
+  'bigroom',
+  'proghouse',
+  'futurebass',
+  'dubstep',
+  'melodicdub',
+  'techhouse',
+  'trance',
+  'dnb',
+] as const;
 export type Style = (typeof STYLES)[number];
 
 export const STYLE_LABELS: Record<Style, string> = {
@@ -18,6 +37,14 @@ export const STYLE_LABELS: Record<Style, string> = {
   reggaeton: 'Reggaeton',
   afro: 'Afrobeats',
   pop: 'Pop',
+  bigroom: 'Big room',
+  proghouse: 'Progressive house',
+  futurebass: 'Future bass',
+  dubstep: 'Dubstep and riddim',
+  melodicdub: 'Melodic dubstep',
+  techhouse: 'Tech house',
+  trance: 'Trance',
+  dnb: 'Drum & bass',
 };
 
 export interface Groove {
@@ -52,6 +79,20 @@ export const GROOVE: Record<Style, Groove> = {
   reggaeton: { swing: 0.08, hat: [0.85, 0.45, 0.7, 0.5], kickOn: 1, kickBeat: 0.95, kickOff: 0.85, backbeat: 0.95, ghost: 0.45, jitter: 0.03, roll: 32 },
   afro: { swing: 0.25, hat: [0.8, 0.45, 0.7, 0.55], kickOn: 1, kickBeat: 0.92, kickOff: 0.85, backbeat: 0.9, ghost: 0.4, jitter: 0.05, roll: 24 },
   pop: { swing: 0.05, hat: [0.85, 0.45, 0.7, 0.5], kickOn: 1, kickBeat: 0.92, kickOff: 0.82, backbeat: 1, ghost: 0.45, jitter: 0.03, roll: 32 },
+  // Big room: dead straight and hard; the offbeat hat is the accent, the kick never varies.
+  bigroom: { swing: 0, hat: [0.45, 0.35, 0.9, 0.35], kickOn: 1, kickBeat: 0.98, kickOff: 0.85, backbeat: 1, ghost: 0.4, jitter: 0.015, roll: 32 },
+  // Progressive house: nearly straight, a little give in the 16ths.
+  proghouse: { swing: 0.08, hat: [0.45, 0.35, 0.85, 0.4], kickOn: 1, kickBeat: 0.95, kickOff: 0.85, backbeat: 0.9, ghost: 0.35, jitter: 0.035, roll: 32 },
+  // Future bass: straight with triplet rolls; the snare is the one big hit of the bar.
+  futurebass: { swing: 0.05, hat: [0.8, 0.45, 0.65, 0.45], kickOn: 1, kickBeat: 0.92, kickOff: 0.82, backbeat: 1, ghost: 0.4, jitter: 0.03, roll: 24 },
+  // Dubstep: straight, sparse; everything is velocity-flat so the snare on 3 and the bass carry it.
+  dubstep: { swing: 0, hat: [0.7, 0.4, 0.6, 0.4], kickOn: 1, kickBeat: 0.95, kickOff: 0.85, backbeat: 1, ghost: 0.4, jitter: 0.025, roll: 32 },
+  melodicdub: { swing: 0.05, hat: [0.6, 0.35, 0.55, 0.35], kickOn: 1, kickBeat: 0.92, kickOff: 0.8, backbeat: 0.95, ghost: 0.35, jitter: 0.03, roll: 24 },
+  // Tech house: the hats are shuffled and the off-beat accent is strong; looser velocities.
+  techhouse: { swing: 0.3, hat: [0.4, 0.35, 0.9, 0.5], kickOn: 1, kickBeat: 0.95, kickOff: 0.85, backbeat: 0.9, ghost: 0.4, jitter: 0.05, roll: 32 },
+  trance: { swing: 0, hat: [0.45, 0.35, 0.9, 0.35], kickOn: 1, kickBeat: 0.97, kickOff: 0.85, backbeat: 1, ghost: 0.4, jitter: 0.015, roll: 32 },
+  // Drum & bass: tight, a hair of swing, ghost snares between the backbeats.
+  dnb: { swing: 0.06, hat: [0.8, 0.5, 0.7, 0.5], kickOn: 1, kickBeat: 0.95, kickOff: 0.85, backbeat: 1, ghost: 0.5, jitter: 0.03, roll: 32 },
 };
 
 /** Tempo range and default of each style (BPM). */
@@ -65,6 +106,14 @@ export const TEMPO: Record<Style, { min: number; max: number; default: number }>
   reggaeton: { min: 88, max: 100, default: 95 },
   afro: { min: 98, max: 112, default: 104 },
   pop: { min: 96, max: 124, default: 110 },
+  bigroom: { min: 126, max: 128, default: 128 },
+  proghouse: { min: 124, max: 128, default: 126 },
+  futurebass: { min: 140, max: 160, default: 150 },
+  dubstep: { min: 140, max: 150, default: 140 },
+  melodicdub: { min: 140, max: 150, default: 145 },
+  techhouse: { min: 124, max: 128, default: 126 },
+  trance: { min: 136, max: 140, default: 138 },
+  dnb: { min: 172, max: 176, default: 174 },
 };
 
 export interface Phrasing {
@@ -84,7 +133,22 @@ export const PHRASE: Record<Style, Phrasing> = {
   reggaeton: { small: 4, fill: 8 },
   afro: { small: 4, fill: 8 },
   pop: { small: 4, fill: 8 },
+  // Dance music phrases in 8 and 16 bars (builds of 8–32 bars, a fill every 16); the 140 BPM half-time
+  // styles have long bars, so they change every 4 and fill every 8.
+  bigroom: { small: 8, fill: 16 },
+  proghouse: { small: 8, fill: 16 },
+  futurebass: { small: 4, fill: 8 },
+  dubstep: { small: 4, fill: 8 },
+  melodicdub: { small: 4, fill: 8 },
+  techhouse: { small: 8, fill: 16 },
+  trance: { small: 8, fill: 16 },
+  dnb: { small: 8, fill: 16 },
 };
+
+/** Styles with a kick on every beat. */
+export const FOUR_FLOOR: ReadonlySet<Style> = new Set<Style>(['house', 'edm', 'bigroom', 'proghouse', 'techhouse', 'trance']);
+/** Half-time styles: the snare lands on beat 3, so a bar feels twice as long as the tempo says. */
+export const HALF_TIME: ReadonlySet<Style> = new Set<Style>(['trap', 'drill', 'futurebass', 'dubstep', 'melodicdub']);
 
 export const isStyle = (v: unknown): v is Style => typeof v === 'string' && (STYLES as readonly string[]).includes(v);
 
@@ -119,6 +183,7 @@ export function inferStyle(p: Project): Style {
 /** The guess behind `inferStyle`, from the numbers alone (a beat that isn't in a project yet uses it). */
 export function guessStyle(bpm: number, swing: number, fourOnTheFloor: boolean): Style {
   if (fourOnTheFloor) return bpm >= 126 ? 'edm' : 'house';
+  if (bpm >= 168) return 'dnb';
   if (swing >= 0.3) return bpm < 84 ? 'lofi' : 'boombap';
   if (bpm < 84) return 'lofi';
   if (bpm < 99) return swing > 0.1 ? 'boombap' : 'reggaeton';

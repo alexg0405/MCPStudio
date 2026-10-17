@@ -229,6 +229,30 @@ const GENRE_SETTINGS: Readonly<Record<KitStyle, GenreKit>> = {
     hat: { tone: 0.45, decay: 0.045 },
     openHat: { tone: 0.5, decay: 0.38 },
   },
+  // Festival (big room, trance): a tight, clicky kick with a short tail, a bright snappy snare and clap.
+  edm: {
+    kick: { pitch: 54, sweep: 34, sweepTime: 0.026, decay: 0.34, click: 0.7, drive: 0.55 },
+    snare: { tone: 220, snappy: 0.8, decay: 0.2, brightness: 4000 },
+    clap: { tone: 1500, decay: 0.24, spread: 0.008 },
+    hat: { tone: 0.9, decay: 0.035 },
+    openHat: { tone: 0.9, decay: 0.3 },
+  },
+  // Bass music (future bass, dubstep, melodic dubstep): a short sub-heavy kick and a big, dark half-time snare.
+  bass: {
+    kick: { pitch: 48, sweep: 28, sweepTime: 0.03, decay: 0.3, click: 0.5, drive: 0.55 },
+    snare: { tone: 200, snappy: 0.6, decay: 0.2, brightness: 3000 },
+    clap: { tone: 1300, decay: 0.3, spread: 0.012 },
+    hat: { tone: 0.8, decay: 0.03 },
+    openHat: { tone: 0.8, decay: 0.45 },
+  },
+  // Drum & bass: a tight kick and a high, cracking snare.
+  dnb: {
+    kick: { pitch: 58, sweep: 30, sweepTime: 0.022, decay: 0.22, click: 0.6, drive: 0.5 },
+    snare: { tone: 250, snappy: 0.8, decay: 0.16, brightness: 4200 },
+    clap: { tone: 1600, decay: 0.18, spread: 0.008 },
+    hat: { tone: 0.9, decay: 0.025 },
+    openHat: { tone: 0.9, decay: 0.25 },
+  },
 };
 
 /** Cuts what is left once a hit has died away (−80 dB under its peak); a kick without click runs on silent. */

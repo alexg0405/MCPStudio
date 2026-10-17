@@ -47,6 +47,17 @@ export const LEVEL_TARGETS: Readonly<Record<Style, LevelTarget>> = {
   reggaeton: { drums: -2, bass: -2, chords: -6, lead: -4, fx: -9, master: -10 },
   afro: { drums: -2, bass: -2, chords: -6, lead: -4, fx: -9, master: -10 },
   pop: { drums: -3, bass: -3, chords: -5, lead: -2, fx: -10, master: -11 },
+  // The EDM pack: club and festival masters are loud (−8.5 to −10 LUFS; the Limiter gets up to 15 dB of input to reach them,
+  // measured: more than −8.5 is out of reach of a dynamic mix at a −1 dBTP ceiling).
+  // Big room: the lead is the hook, the sidechained chords sit behind it. Dubstep: the bass is as loud as the kick.
+  bigroom: { drums: -4, bass: -5, chords: -6, lead: -2, fx: -7, master: -8.5 },
+  proghouse: { drums: -4, bass: -3, chords: -4, lead: -5, fx: -9, master: -10 },
+  futurebass: { drums: -3, bass: -3, chords: -2, lead: -3, fx: -8, master: -9 },
+  dubstep: { drums: -3, bass: 1, chords: -9, lead: -5, fx: -6, master: -8.5 },
+  melodicdub: { drums: -3, bass: -2, chords: -3, lead: -3, fx: -8, master: -9.5 },
+  techhouse: { drums: -3, bass: -2, chords: -8, lead: -6, fx: -9, master: -10 },
+  trance: { drums: -4, bass: -4, chords: -3, lead: -3, fx: -8, master: -9 },
+  dnb: { drums: -1, bass: 0, chords: -7, lead: -6, fx: -9, master: -9 },
 };
 
 /** Another project was opened while leveling listened: its faders must not move. */
@@ -61,6 +72,14 @@ export const MOVE_MIN_DB = -12;
 export const MOVE_MAX_DB = 6;
 /** The Limiter's input range auto-level uses. */
 export const LIMITER_INPUT_MAX_DB = 10;
+/**
+ * The loudest festival and bass styles push the Limiter harder than that: a mix with a lot of dynamics
+ * (a sparse dubstep drop) gets only part of the input back as loudness, so they may use up to 15 dB.
+ */
+const LIMITER_INPUT_MAX_LOUD_DB = 15;
+const LOUD_STYLES: ReadonlySet<Style> = new Set<Style>(['bigroom', 'futurebass', 'dubstep', 'melodicdub', 'trance', 'dnb']);
+/** The most input the Limiter gets for a style. */
+export const limiterMax = (style: Style): number => (LOUD_STYLES.has(style) ? LIMITER_INPUT_MAX_LOUD_DB : LIMITER_INPUT_MAX_DB);
 /** How many times the Limiter's input is corrected after listening to the result (each costs one render). */
 const CORRECTIONS = 2;
 
@@ -134,9 +153,9 @@ export function levelMoves(buses: readonly BusLevel[], style: Style): LevelPlan 
   return { moves, trimDb: trim, sumLufs: powerSum(moves.map((m) => m.lufs)) };
 }
 
-/** The Limiter's input gain that brings the buses' sum (−16 LUFS, or what they reach) to the style's loudness (0…10 dB). */
+/** The Limiter's input gain that brings the buses' sum (−16 LUFS, or what they reach) to the style's loudness (0…10 dB; the loud dance styles up to 15). */
 export function limiterInput(style: Style, preLimiterLufs = PRE_LIMITER_LUFS): number {
-  return clamp(LEVEL_TARGETS[style].master - preLimiterLufs, 0, LIMITER_INPUT_MAX_DB);
+  return clamp(LEVEL_TARGETS[style].master - preLimiterLufs, 0, limiterMax(style));
 }
 
 /** The master's hard clipper at most this much drive once tamed (dB). */
@@ -390,7 +409,7 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   let master = await render(project, true, 'The mix', true);
   // (a Limiter takes less loudness than the input it is given once it works hard: a loud style can need a second correction)
   for (let pass = 0; pass < CORRECTIONS && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1; pass++) {
-    const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
+    const corrected = clamp(input + (target - master.lufs), 0, limiterMax(style));
     if (Math.abs(corrected - input) <= 0.05) break;
     input = corrected;
     await opts.whenQuiet?.();
@@ -479,7 +498,7 @@ async function levelLoudness(
   const target = LEVEL_TARGETS[style].master;
   let master = await render(s.doc.getState().project, true, 'The mix', true);
   for (let pass = 0; pass < CORRECTIONS && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1; pass++) {
-    const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
+    const corrected = clamp(input + (target - master.lufs), 0, limiterMax(style));
     if (Math.abs(corrected - input) <= 0.05) break;
     input = corrected;
     await opts.whenQuiet?.();

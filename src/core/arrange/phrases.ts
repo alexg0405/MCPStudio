@@ -1,8 +1,8 @@
 /**
  * Phrase rules: what changes inside a section so a loop never just repeats.
- * - Every 8 bars (house and EDM: 16) a fill replaces the drums: 2 beats at energy ≥ 3, else 1; the
+ * - Every 8 bars (house, EDM, big room, progressive and tech house, trance and drum & bass: 16) a fill replaces the drums: 2 beats at energy ≥ 3, else 1; the
  *   fill rotates by style; at energy ≥ 4 a crash marks the next bar.
- * - Every 4 bars (house and EDM: 8) a small change: a hat roll or an 808 slide (trap, drill, EDM,
+ * - Every 4 bars (the same styles: 8) a small change: a hat roll or an 808 slide (trap, drill, EDM,
  *   pop), an open hat on the last 8th or an 808 slide (the other styles).
  * - Energy ≥ 4 sections of 16+ bars double the hats in bars 9–16.
  * - The guarantee: identical clips never run for more than 4 bars (a 2-bar loop is never followed by
@@ -64,9 +64,19 @@ export const FILL_ROTATION: Record<Style, readonly VariantKind[]> = {
   reggaeton: ['snare-fill', 'kick-fill', 'tom-fill'],
   afro: ['tom-fill', 'snare-fill', 'hat-fill'],
   pop: ['tom-fill', 'snare-fill', 'kick-fill'],
+  // The EDM pack: snare rolls lead (big room, trance), percussion and hat fills for the grooving house styles,
+  // kick and snare breaks for bass music and drum & bass.
+  bigroom: ['snare-fill', 'snare-fill', 'tom-fill'],
+  proghouse: ['hat-fill', 'tom-fill', 'snare-fill'],
+  futurebass: ['snare-fill', 'hat-fill', 'kick-fill'],
+  dubstep: ['kick-fill', 'snare-fill', 'hat-fill'],
+  melodicdub: ['snare-fill', 'hat-fill', 'tom-fill'],
+  techhouse: ['tom-fill', 'hat-fill', 'snare-fill'],
+  trance: ['snare-fill', 'snare-fill', 'tom-fill'],
+  dnb: ['snare-fill', 'kick-fill', 'hat-fill'],
 };
 
-const ROLL_STYLES: ReadonlySet<Style> = new Set(['trap', 'drill', 'edm', 'pop']);
+const ROLL_STYLES: ReadonlySet<Style> = new Set<Style>(['trap', 'drill', 'edm', 'pop', 'bigroom', 'futurebass', 'dubstep', 'dnb']);
 
 const CHOSEN: Record<Exclude<FillChoice, 'auto' | 'none'>, VariantKind> = {
   snare: 'snare-fill',

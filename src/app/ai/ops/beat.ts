@@ -40,6 +40,21 @@ const FEEL: Record<Style, string> = {
   reggaeton: 'dembow: kick on every beat, snare on the 4th and 7th 1/16 of each half bar (steps 3, 6, 11, 14)',
   afro: 'syncopated kick, rim and shaker patterns, swung 1/16 hats, marimba or guitar plucks',
   pop: 'kick on 1 and 3, snare or clap on 2 and 4, steady 8th hats, big chords and a catchy lead',
+  bigroom:
+    'festival drop: four on the floor, a punchy kick, clap on 2 and 4, offbeat open hats, a mono lead over sidechained supersaw pads and an offbeat bass; builds are snare rolls and a pitch riser (the arranger adds them)',
+  proghouse:
+    'four on the floor, clap on 2 and 4, offbeat hats, a rolling 16th bass between the kicks, piano or pluck chords and arps; long builds with filter sweeps, an emotional breakdown',
+  futurebass:
+    'half-time: kick on 1 (and a syncopated one), snare and clap together on beat 3, hats in 8ths or triplets; supersaw chords under a sidechain "wobble" with pitch bends, a sub on the roots, vocal-chop leads',
+  dubstep:
+    'half-time and sparse: kick on 1, snare on beat 3, a few hats; a sub under it and a growl or wobble bass (preset "Growl bass", or "Riddim wobble" for riddim: short, stuttering, repeated notes); silence before the drop',
+  melodicdub:
+    'half-time like dubstep but emotional: kick on 1, snare and clap on 3, big supersaw chords and pianos, a vocal-chop lead, a sub, lots of reverb',
+  techhouse:
+    'four on the floor with shuffled 16th hats (swing 0.3), a clap on 2 and 4, rim and percussion, a groovy rolling bassline, minimal chord stabs and a vocal shot now and then',
+  trance:
+    'four on the floor, clap on 2 and 4, offbeat open hats, an offbeat bass, held supersaw chords the "Gated supersaw" preset chops into 16ths (or 16th pluck arps) and long builds with snare rolls',
+  dnb: 'two-step: kick on 1 and the "and" of 3, snare on 2 and 4 with ghost snares, busy hats, a reese or sub bass following the kick; liquid adds chords and keys, neuro keeps it to a growling reese',
 };
 
 const styleTable = () =>
@@ -77,6 +92,7 @@ ${paletteText()}
 Make it sound finished and professional in that style:
 - 808s sit around C1–C2 (MIDI 24–40), land the root on the downbeat, follow or answer the kick, ring long and slide into new notes now and then. Stay in one key.
 - Hats carry the groove: vary them (rolls into snares and bar ends in trap and drill, open hats on offbeats in house).
+- Dance styles: give the drop a punchy kick and ONE clear lead or bass hook, keep the sub to one voice, leave room for the vocal or lead. Map requests to a style: "a drop like Martin Garrix" or "festival drop" is bigroom; "Flume-ish" or "future bass" is futurebass; "Skrillex-style", "growl" or "riddim" is dubstep; "Illenium-ish" or "melodic dubstep" is melodicdub; "progressive house" (the Eric Prydz and Swedish House Mafia end of it) is proghouse; "tech house" or "Fisher-style" is techhouse; "trance" or "Armin-style" is trance; "drum and bass", "liquid", "neurofunk" or "jungle" is dnb. The artist names only point at the subgenre: write original notes in it, never anyone's actual melody or chord progression.
 - Give the last bar some variation (a fill, a roll, an 808 slide). 3–8 tracks, bars 1–4 (2 is a good default).
 - When they ask to change the beat ("busier hats"), send the whole beat again with only that changed.
 When they performed something (beatbox or humming), you get it as events on the grid with the instrument they meant: follow its rhythm closely and keep their steps; keep a hummed contour (intervals, slides) but move it into the right register and key; build the rest around it. Performance summaries name notes scientifically (C4 = MIDI 60).`,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOLLOW_EDGE, FOLLOW_LEAD, FOLLOW_QUIET_MS, PlayheadFollow, type FollowFrame } from './follow';
+import { FOLLOW_ANCHOR, FOLLOW_EDGE, FOLLOW_LEAD, FOLLOW_QUIET_MS, PlayheadFollow, type FollowFrame } from './follow';
 
 const VISIBLE = 1000;
 const base: FollowFrame = {
@@ -103,5 +103,47 @@ describe('PlayheadFollow', () => {
     f.userScrolled(base.now);
     f.step({ ...base, now: base.now + 16, playing: false });
     expect(f.step({ ...base, now: base.now + 32, playhead: 8000 })).toBe(8000 - FOLLOW_LEAD * VISIBLE);
+  });
+});
+
+describe('PlayheadFollow, smooth style', () => {
+  const smooth: FollowFrame = { ...base, style: 'smooth' };
+
+  it('leaves the view alone until the playhead reaches the anchor, then moves with it every frame', () => {
+    const f = new PlayheadFollow();
+    expect(f.step({ ...smooth, playhead: 0.2 * VISIBLE })).toBeNull();
+    expect(f.step({ ...smooth, playhead: (FOLLOW_ANCHOR - 0.01) * VISIBLE })).toBeNull();
+    // Playing on: each frame the view keeps the playhead at the anchor, no page turns.
+    let scroll = 0;
+    for (let i = 1; i <= 30; i++) {
+      const playhead = FOLLOW_ANCHOR * VISIBLE + i * 10;
+      const next = f.step({ ...smooth, now: base.now + i * 16, playhead, scrollTick: scroll });
+      expect(next).toBeCloseTo(playhead - FOLLOW_ANCHOR * VISIBLE, 6);
+      scroll = next!;
+    }
+  });
+
+  it('never scrolls back while playing forward, and stops at the end of the scroll range', () => {
+    const f = new PlayheadFollow();
+    expect(f.step({ ...smooth, playhead: 600, scrollTick: 500 })).toBeNull();
+    expect(f.step({ ...smooth, playhead: 0.9 * VISIBLE + 300, scrollTick: 300, maxScroll: 300 })).toBeNull();
+  });
+
+  it('glides back to the anchor after a hand scroll left the playhead far right, instead of jumping', () => {
+    const f = new PlayheadFollow();
+    f.userScrolled(base.now);
+    const later = base.now + FOLLOW_QUIET_MS + 1;
+    const first = f.step({ ...smooth, now: later, playhead: 0.9 * VISIBLE, scrollTick: 0 })!;
+    const goal = 0.9 * VISIBLE - FOLLOW_ANCHOR * VISIBLE;
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(goal);
+    const end = settle(f, { ...smooth, playhead: 0.9 * VISIBLE }, later + 16);
+    expect(end.scroll).toBeCloseTo(goal, 6);
+  });
+
+  it('holds still when the loop end shows, and snaps back to a playhead that jumped off-screen', () => {
+    const f = new PlayheadFollow();
+    expect(f.step({ ...smooth, playhead: 0.7 * VISIBLE, wrapEnd: VISIBLE })).toBeNull();
+    expect(f.step({ ...smooth, playhead: 20_000, scrollTick: 0 })).toBe(20_000 - FOLLOW_ANCHOR * VISIBLE);
   });
 });

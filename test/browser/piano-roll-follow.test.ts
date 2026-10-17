@@ -67,7 +67,7 @@ describe('follow playhead in the piano roll (UI)', { timeout: 90_000 }, () => {
     document.body.append(host);
     s = createTestServices();
     s.assistant.set({ backend: 'offline', autoplay: false });
-    s.prefs.getState().set({ welcomeSeen: true, followPlayhead: true });
+    s.prefs.getState().set({ welcomeSeen: true, followPlayhead: true, followStyle: 'page' });
     const p = s.doc.getState().project;
     pattern = p.patternOrder[0] as PatternId;
     const channel = Object.values(p.channels).find((c) => c.kind === 'instrument')!.id as ChannelId;

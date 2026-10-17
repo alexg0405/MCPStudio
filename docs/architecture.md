@@ -347,8 +347,10 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   `transform`, tools as small state machines, native non-passive wheel listener (React's `onWheel` is passive; trackpad
   pinch = wheel + ctrlKey → zoom at cursor), edge auto-scroll, `devicePixelContentBoxSize` for crisp canvases.
   Follow playhead (`timeline/follow.ts`, pref `followPlayhead`, command `view.followPlayhead`): each controller's
-  `frame()` asks a `PlayheadFollow` for the scroll; at 88% of the width the view glides (240 ms ease-out) so the
-  playhead sits at 15%, and a playhead off-screen (loop, seek) snaps back. It holds still during drags and while a
+  `frame()` asks a `PlayheadFollow` for the scroll. Smooth style (default, pref `followStyle`, command
+  `view.followSmooth`): once the playhead reaches 40% of the width the view moves with it every frame (never back,
+  not while the loop end shows; a gap after a hand scroll closes with a 240 ms glide). Page style: at 88% the view
+  glides (240 ms ease-out) so the playhead sits at 15%. Either way a playhead off-screen (loop, seek) snaps back. It holds still during drags and while a
   context menu is open, and after a wheel/scrollbar/zoom until the playhead is back in view or playback restarts.
   The scroll is saved to the editor store only when playback stops, so following causes no React commits.
   "Play this" (`app/actions/transport.ts`; commands `transport.playPattern`, `transport.playFrom`,

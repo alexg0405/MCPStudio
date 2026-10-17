@@ -323,7 +323,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       closeContextMenu();
       s.engine.stop();
       s.view.getState().setMode('song');
-      s.prefs.getState().set({ followPlayhead: true });
+      s.prefs.getState().set({ followPlayhead: true, followStyle: 'page' });
       // A long song, so the view can scroll a long way.
       s.history.transact('long song', (d) =>
         addClips(d, [{ kind: 'pattern', id: newId.clip(), laneId: lanes[3]!, start: 200 * BAR, length: BAR, patternId: pattern, offset: 0 }]),
@@ -354,6 +354,25 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       s.engine.stop();
       await frames(2);
       expect(s.editor.getState().playlist.scrollTick).toBeCloseTo(0.75 * visible(), 0);
+    });
+
+    it('smooth style: holds the playhead near 40 % and scrolls with it every frame', async () => {
+      s.prefs.getState().set({ followStyle: 'smooth' });
+      await scrollHome();
+      play(0.3 * visible());
+      await frames(3);
+      // Before the anchor: the view stays put (the playhead shows where it is in the song).
+      expect(playheadX() / width()).toBeCloseTo(0.3, 1);
+      // Past it: the view glides to put the playhead at the anchor, then moves with it.
+      s.fakeEngine.startTick = 0.7 * visible();
+      await until(() => Math.abs(playheadX() / width() - 0.4) < 0.02);
+      for (const step of [0.72, 0.75, 0.8]) {
+        s.fakeEngine.startTick = step * visible();
+        await frames(2);
+        expect(playheadX() / width()).toBeCloseTo(0.4, 1);
+      }
+      s.engine.stop();
+      s.prefs.getState().set({ followStyle: 'page' });
     });
 
     it('brings back a playhead that jumped off-screen (a loop or a seek); the toolbar toggle turns it off', async () => {

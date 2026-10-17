@@ -513,6 +513,7 @@ export class PianoRollController {
       maxScroll: Number.isFinite(playhead) ? Math.max(0, this.maxTick(c) - visible) : 0,
       // The pattern loops at its end (in song mode its clip repeats it).
       wrapEnd: this.patternEnd(c),
+      style: this.s.prefs.getState().followStyle,
       busy: this.drag !== null || isContextMenuOpen(),
     });
     if (next === null) {

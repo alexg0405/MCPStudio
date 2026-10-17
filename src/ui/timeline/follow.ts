@@ -1,7 +1,9 @@
 /**
- * Follow the playhead (FL's auto-scroll) for timeline editors: while playing, when the playhead nears
- * the right edge the view glides one page on, so the playhead sits near the left again; a playhead
- * that jumps off-screen (a loop, a seek) is brought straight back.
+ * Follow the playhead (FL's auto-scroll) for timeline editors, in one of two styles:
+ *  - smooth (the default): once the playhead reaches `FOLLOW_ANCHOR` of the width, the view moves with it
+ *    every frame, so the song slides by under a steady playhead;
+ *  - page: when the playhead nears the right edge the view glides one page on, so it sits near the left again.
+ * A playhead that jumps off-screen (a loop, a seek) is brought straight back.
  *
  * It never fights the user: it holds still while they drag, select or have a menu open (and picks up
  * when they let go), and after they scroll or zoom by hand it waits until the playhead is back in view
@@ -16,6 +18,12 @@ export const FOLLOW_LEAD = 0.15;
 export const FOLLOW_QUIET_MS = 1200;
 /** How long the glide to the next page takes (ms). */
 export const FOLLOW_GLIDE_MS = 240;
+/** Smooth style: where the playhead stays once the view moves with it (fraction of the width). */
+export const FOLLOW_ANCHOR = 0.4;
+/** Smooth style: a gap to the anchor larger than this (fraction of the width) is closed with a glide, not a jump. */
+const CATCH_UP = 0.05;
+
+export type FollowStyle = 'smooth' | 'page';
 
 export interface FollowFrame {
   /** Frame time (performance.now() based, like requestAnimationFrame's). */
@@ -37,6 +45,8 @@ export interface FollowFrame {
   wrapEnd: number;
   /** The user is dragging, selecting or has a menu open. */
   busy: boolean;
+  /** Smooth (move with the playhead) or page (turn a page at the edge); page when left out. */
+  style?: FollowStyle;
 }
 
 export class PlayheadFollow {
@@ -72,6 +82,7 @@ export class PlayheadFollow {
       if (!inView) return null;
       this.held = false;
     }
+    if (f.style === 'smooth') return this.smooth(f, at, inView);
     const goal = Math.max(0, Math.min(f.maxScroll, f.playhead - FOLLOW_LEAD * f.visible));
     if (!inView) {
       // A loop or a seek put it off-screen: straight back, no glide across the song.
@@ -92,5 +103,35 @@ export class PlayheadFollow {
     }
     // Ease out: quick start, gentle landing.
     return g.from + (g.to - g.from) * (1 - (1 - Math.max(0, t)) ** 3);
+  }
+
+  /** Smooth style: keep the playhead at the anchor once it gets there, never scrolling back. */
+  private smooth(f: FollowFrame, at: number, inView: boolean): number | null {
+    const goal = Math.max(0, Math.min(f.maxScroll, f.playhead - FOLLOW_ANCHOR * f.visible));
+    if (!inView) {
+      this.glide = null;
+      return Math.abs(goal - f.scrollTick) > 1e-6 ? goal : null;
+    }
+    // The loop's end already shows: the playhead comes back around, the view stays.
+    if (f.wrapEnd <= f.scrollTick + f.visible) {
+      this.glide = null;
+      return null;
+    }
+    if (this.glide) {
+      // Catching up after a hand scroll: aim at where the anchor is now, so the glide lands on a moving playhead.
+      const g = this.glide;
+      const t = (f.now - g.t0) / FOLLOW_GLIDE_MS;
+      if (t >= 1) {
+        this.glide = null;
+        return goal;
+      }
+      return g.from + (goal - g.from) * (1 - (1 - Math.max(0, t)) ** 3);
+    }
+    if (goal <= f.scrollTick) return null; // not at the anchor yet (the start of the song)
+    if (at - FOLLOW_ANCHOR > CATCH_UP) {
+      this.glide = { from: f.scrollTick, to: goal, t0: f.now - 16 };
+      return this.smooth(f, at, inView);
+    }
+    return goal;
   }
 }

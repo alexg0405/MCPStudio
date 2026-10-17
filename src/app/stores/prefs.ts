@@ -64,6 +64,8 @@ export interface PrefsState {
   scopeMode: 'scope' | 'spectrum' | 'off';
   /** While playing, the playlist and piano roll scroll to keep the playhead in view (FL's auto-scroll). */
   followPlayhead: boolean;
+  /** How it follows: scroll smoothly with the song (playhead held near 40 % of the width), or turn a page at the edge. */
+  followStyle: 'smooth' | 'page';
   /** The look: theme (marble, carrara, classic, midnight, graphite, light) and accent color (gold, orange…). */
   theme: string;
   accent: string;
@@ -124,6 +126,7 @@ const DEFAULTS: PrefsState = {
   sampleMemoryMb: 1536,
   scopeMode: 'scope',
   followPlayhead: true,
+  followStyle: 'smooth',
   theme: 'marble',
   accent: 'gold',
   mcpEnabled: true,
@@ -147,6 +150,7 @@ function load(): PrefsState {
       out.accent = 'gold';
     }
     if (!Object.hasOwn(AUDIO_BUFFER_HINT, out.audioBuffer as string)) out.audioBuffer = DEFAULTS.audioBuffer;
+    if (out.followStyle !== 'smooth' && out.followStyle !== 'page') out.followStyle = DEFAULTS.followStyle;
     return out as unknown as PrefsState;
   } catch {
     return DEFAULTS;

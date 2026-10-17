@@ -42,7 +42,19 @@ export function register(services: Services): void {
     run: (s, on) =>
       s.prefs.getState().set({ followPlayhead: typeof on === 'boolean' ? on : !s.prefs.getState().followPlayhead }),
   });
-  addMenuItems('view', [cmd('view.followPlayhead', 58)]);
+  commands.register<boolean | undefined>({
+    id: 'view.followSmooth',
+    title: 'Smooth follow (scroll with the song)',
+    category: 'View',
+    hint: 'On: while following, the view scrolls along with the song and the playhead stays near the middle-left. Off: it turns a page when the playhead reaches the right edge',
+    argsHint: 'true for smooth scrolling, false for page turns (leave out to switch it)',
+    checked: (s) => s.prefs.getState().followStyle === 'smooth',
+    run: (s, on) => {
+      const smooth = typeof on === 'boolean' ? on : s.prefs.getState().followStyle !== 'smooth';
+      s.prefs.getState().set({ followStyle: smooth ? 'smooth' : 'page' });
+    },
+  });
+  addMenuItems('view', [cmd('view.followPlayhead', 58), cmd('view.followSmooth', 59)]);
   addMenuItems('playlist', [cmd('view.followPlayhead', 1), sep(2)]);
 
   const focus = { focus: ['playlist'] as const };

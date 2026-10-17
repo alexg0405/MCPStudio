@@ -726,6 +726,7 @@ export class PlaylistController {
       visible,
       maxScroll: Math.max(0, this.maxTick(p) - visible),
       wrapEnd: v.loop ? v.loop.end : openEnded ? Infinity : songLength(p),
+      style: this.s.prefs.getState().followStyle,
       busy: this.drag !== null || isContextMenuOpen() || this.els.markerRename.style.display === 'block',
     });
     if (next === null || next === this.vp.scrollTick) return;

@@ -10,6 +10,7 @@
  * Frames outside the song read as zeros.
  */
 import { Resampler } from '@core/audio/resample';
+import { yieldToMain } from '../audio-buffers';
 import {
   byteReaderOf,
   indexMp3,
@@ -73,6 +74,9 @@ export function bufferSource(buffer: AudioBuffer, release?: () => void): DeckSou
   };
 }
 
+/** Frames converted between two yields. */
+const CONVERT_SLICE = 8192;
+
 /** A file's own audio, in pieces. */
 interface NativeReader {
   frames: number;
@@ -100,9 +104,14 @@ function resampled(native: NativeReader, ctxRate: number, dispose: () => void): 
       const l = new Float32Array(to - from);
       const r = native.channels === 2 ? new Float32Array(to - from) : l;
       await native.read(from, to - from, l, r);
-      rs.convert(l, from, outL, start, n);
-      if (native.channels === 2) rs.convert(r, from, outR, start, n);
-      else outR.set(outL.subarray(0, n));
+      // A slice at a time, the page free in between (a block of 65536 frames is ~10 ms of work in one go).
+      for (let o = 0; o < n; o += CONVERT_SLICE) {
+        const m = Math.min(CONVERT_SLICE, n - o);
+        rs.convert(l, from, outL.subarray(o, o + m), start + o, m);
+        if (native.channels === 2) rs.convert(r, from, outR.subarray(o, o + m), start + o, m);
+        else outR.set(outL.subarray(o, o + m), o);
+        if (o + m < n) await yieldToMain();
+      }
     },
     readNative: (s, n, l, r) => native.read(s, n, l, r),
     dispose,

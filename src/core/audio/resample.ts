@@ -32,7 +32,8 @@ export class Resampler {
     this.step = srcRate / dstRate;
     // Cut-off as a fraction of the source's Nyquist: all of it when upsampling, the destination's when thinning.
     const fc = Math.min(1, dstRate / srcRate) * 0.985;
-    this.half = Math.ceil(HALF / Math.min(1, dstRate / srcRate));
+    // An even number of taps each side, so the sum runs in fours.
+    this.half = 2 * Math.ceil(HALF / Math.min(1, dstRate / srcRate) / 2);
     this.taps = this.half * 2;
     this.table = new Float32Array(PHASES * this.taps);
     for (let ph = 0; ph < PHASES; ph++) {
@@ -76,7 +77,18 @@ export class Resampler {
       let i0 = center - this.half + 1 - srcStart;
       let acc = 0;
       if (i0 >= 0 && i0 + taps <= len) {
-        for (let k = 0; k < taps; k++) acc += (table[row + k] as number) * (src[i0 + k] as number);
+        // Four sums at a time (the multiplies of a tap don't wait for the one before).
+        let a0 = 0;
+        let a1 = 0;
+        let a2 = 0;
+        let a3 = 0;
+        for (let k = 0; k < taps; k += 4) {
+          a0 += (table[row + k] as number) * (src[i0 + k] as number);
+          a1 += (table[row + k + 1] as number) * (src[i0 + k + 1] as number);
+          a2 += (table[row + k + 2] as number) * (src[i0 + k + 2] as number);
+          a3 += (table[row + k + 3] as number) * (src[i0 + k + 3] as number);
+        }
+        acc = a0 + a1 + (a2 + a3);
       } else {
         for (let k = 0; k < taps; k++, i0++) if (i0 >= 0 && i0 < len) acc += (table[row + k] as number) * (src[i0] as number);
       }

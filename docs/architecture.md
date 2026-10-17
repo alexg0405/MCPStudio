@@ -1363,11 +1363,16 @@ loaded; `services.decks.peek()` looks without starting them.
   (`cuePressPlan`), jog speeds. `core/dj/deck-peaks.ts`: the waveform overview (min/max per 256 frames and how much
   of it is bass, for the colors), filled a slice at a time.
 - `engine/deck/deck.kernel.ts` (pure DSP, Node-testable) and `deck.worklet.ts`: the player, one AudioWorklet per
-  deck. The song's planar float32 audio lives in SharedArrayBuffers copied from the decoded `AudioBuffer` a slice
-  at a time (`songDataOf`), the worklet reads it directly. The deck publishes where it is (position, speed, the
-  context frame) under a sequence lock in a shared state block (`deck-id.ts` `DS`), which the main thread
-  (waveforms, platter) and a follower deck read. Commands are messages (`DeckMessage`); `ping`/`pong` is the barrier
-  offline renders and tests wait on (`DecksApi.settled`).
+  deck. The song's planar float32 audio is a window of blocks in SharedArrayBuffers that the worklet reads directly
+  (see "Long songs" below). The deck publishes where it is (position, speed, the
+  context frame, whether it waits for audio) under a sequence lock in a shared state block (`deck-id.ts` `DS`), which
+  the main thread (waveforms, platter) and a follower deck read. Commands are messages (`DeckMessage`); `ping`/`pong`
+  is the barrier offline renders and tests wait on (`DecksApi.settled`, which also waits for every deck's window to
+  hold what is about to be heard).
+- `core/dj/beat-map.ts` (`BeatMap`): tracked beats as a clock (phase exact at each beat, linear between; tempo from
+  the beats around, averaged over ±2 and interpolated, so it doesn't step at every beat). `DeckGrid` carries one
+  (`deckGridOf`) when the analysis has `grid.beats` (≥ 8): loop/jump/cue snapping in `decks-math.ts` and sync in the
+  kernel read it, the waveform draws the tracked beats. Songs without tracked beats use the fixed grid, unchanged.
 - `engine/deck/deck-graph.ts`: per deck player → trim → low shelf 120 Hz → mid bell 1 kHz → high shelf 7 kHz →
   low-pass → high-pass (the one-knob filter, Butterworth Q) → meter, then the cue send and the channel fader →
   crossfader side; master volume → the same limiter kernel as the engine's → the engine output (and the master
@@ -1400,6 +1405,18 @@ loaded; `services.decks.peek()` looks without starting them.
   ±4 samples at full rate, with a small cost for leaving the middle). The nominal position keeps counting at the tempo,
   which is what loops and sync read. Scratching falls back to the turntable path (a stretch of a reversed signal is
   meaningless); switching paths fades over 2 ms.
+- **Hits stay whole** (`planTransient`; the idea of the arrangement stretch's `detectOnsets`, run lazily around the play
+  position): mean-square energy per 2.7 ms hop, cached by hop index, an attack being a hop where the next ~10 ms are
+  more than 8× the ~20 ms before. A plain frame is spliced (it moves ±448 to continue the one before), and a hit in or
+  near a splice is heard twice (two frames carry it at different times) or lands up to 10 ms early or late, and drums
+  at ±16 % soften. So when an attack is 1344–2368 output frames ahead, the next frame starts a run: it is placed so the
+  attack lands where the tempo puts it (`c − (c − pos)/rate`, a search of only ±64 frames = 1.3 ms to join the frame
+  before), and the following frames continue each other exactly (input at its own speed, which overlap-adds back to the
+  original samples) until the next splice would begin 930 frames after the attack. The stretch the run skipped is
+  made up by the frames after it (the lead decays by half a frame), the published position stays nominal. A run goes
+  on past a second attack only if that one also lands within 2 ms; of two attacks closer than a run can hold the
+  stronger one wins; no runs while a loop shorter than 4 frames is on. Cost: the same as plain key lock (a run skips
+  the similarity search).
 - **Jumps never click**: a seek, start, stop, mode change or loop move renders the next 2 ms of the old sound
   forward, fades it out and fades the new one in. Loops are the exception on purpose: the position wraps by the loop
   length (a fractional part kept) and reads past the end continue from the loop start, so a loop is the source's own
@@ -1408,8 +1425,13 @@ loaded; `services.decks.peek()` looks without starting them.
   `ratio × masterTempo` (ratio = master BPM / (own BPM × multiple)) and closes the beat-phase error with a tempo trim of at most 2 % (time constant 1.5 s); a
   start, a sync press or a master jump aligns it exactly at the next quantum (`align`: it waits 150 ms for a master
   that starts with it). It runs in the audio thread, so it needs no messages and cannot drift; while the master
-  scratches the follower keeps its tempo and doesn't chase the phase. Only a fixed grid (`TrackAnalysis.grid.bpm` and
-  `firstDownbeat`) is used: songs with a drifting `grid.beats` slip.
+  scratches the follower keeps its tempo and doesn't chase the phase. A song with tracked beats (`grid.beats`, a
+  drummer speeding up, an old record) hands its beats over in frames (`SyncSpec.selfBeats/masterBeats`): the phase is
+  the beat number of the `BeatMap` at each deck's position (× the half/double multiple) and the tempo ratio is the local
+  beat length of the follower over the master's at its position, so a drift on either side (or both) is followed
+  beat by beat; the 2 % phase trim, the align at a start or a jump and the follower's state are the same. Fixed grids on
+  both sides keep the one ratio. A master that waits for audio (below) counts as not playing, and the follower aligns
+  to it again when it is back.
 - **Cue and hot cues** follow the CDJ (paused: sets the cue point on the beat and previews while held; playing: back to
   it and pause; play while holding latches). Cue points and the eight hot cues are kept per song (IndexedDB, by content
   hash). Hot cue pads: set when empty, jump and play when set.
@@ -1417,10 +1439,72 @@ loaded; `services.decks.peek()` looks without starting them.
   chunks arrive (`WavStreamEncoder`), so an hour is ~700 MB, not a float copy; on stop it is added to the music library
   as "Live mix 2026-10-16 14:05" and analyzed like any song.
 
+### Long songs: a window of blocks (`engine/deck/deck-stream.ts`, `deck-source.ts`, `core/dj/deck-window.ts`)
+
+A deck never holds its whole song. The song is cut into blocks of 2^16 frames (1.4 s at 48 kHz); a **pool** of slots
+(planar float32, `slots × 65536` frames per channel, SharedArrayBuffers) holds a window of them and a **block table**
+(Int32, the slot of each block or −1, same memory) tells the player where each is. The window is half a minute behind
+the play position and a minute and a half ahead, plus **pinned places**: the cue point and the hot cues (their first
+2.8 s, from 0.1 s before) and an active loop (up to 45 s), so a jump to any of them needs no wait. That is ~150 slots,
+about 80 MB at 48 kHz stereo (mono shares one array; a song that fits is held whole, no bigger than it is), the same for
+a 5-minute song and a 2-hour one. `planWindow` (pure, unit-tested) orders what is wanted: the 4 s about to be heard,
+the pins (nearest first), the rest ahead, then behind; over capacity the far window goes before a pin.
+
+`DeckStream` (main thread) loads in that order, one block at a time, from a `DeckSource`, and follows the playhead:
+`moveTo(frame)` at every seek/cue/jump (the blocks around it first; a source in memory fills them synchronously, before
+the player is told, so such a jump never waits), `update(pos, rate)` from the deck ticker (5 Hz). A block's table entry is
+set after its audio is written and cleared before its slot is reused, and nothing within three blocks of where the
+player is or was told to go is ever taken, so the player never reads a block that is being overwritten.
+
+The player checks, every render quantum, that the blocks under what it is about to read are in the window: its position,
+a little behind for the stretch's search, 0.3 s ahead. If not (a jump outside the window, a decode that fell behind) it
+**stalls**: the sound fades out over 2 ms, then silence, position and tempo held, `DS.stalled` published; when twice that
+much is there it fades in from where it was. A follower treats a stalled master as not playing and aligns to its beat
+again when it is back. Measured in real time on a 12½-minute WAV in the sample store: a jump to a hot cue leaves 0.0 ms of
+silence (a crossfade as before), a jump to a part nothing had asked for leaves 6 ms.
+
+**Where the audio comes from.** Up to 12 minutes (`LONG_SONG_SEC`) the song is decoded whole through the shared sample
+cache as before (`bufferSource`: the `AudioBuffer`, pinned in the cache while the deck has it; a block is a copy). Longer
+songs whose file can be read by parts are never decoded whole (`openSegmentSource`, the file as an OPFS `File` through
+`SampleBytesProvider.getBlob`, `BlobStore.getFile`):
+
+- WAV/RF64: the `fmt `/`data` chunks give every frame's byte position; a piece is a few frames' bytes behind the file's own
+  header and `decodePcm` reads it (8/16/24/32-bit, float, extensible).
+- MP3: browsers can't decode part of a compressed file, but they can decode a file that is only part of one. Every frame
+  is self-contained but for the bit reservoir (up to 511 bytes of the frames before it), so a run of frames starting four
+  early decodes exactly from its second frame on. `indexMp3` reads every frame header once at load (a hop per frame:
+  2.2 MB of offsets and 45 ms of CPU for a 2-hour 320 kbps file, plus reading its 288 MB in 4 MB steps) and LAME's gapless numbers (a whole-file decode skips the encoder
+  delay + the decoder's 529 samples; a piece is placed with the same skip). `decodeAudioData` on 256-frame pieces
+  (6.7 s) in an OfflineAudioContext at the file's own rate, four pieces kept. Measured against decoding the whole file:
+  **bit identical** (difference 0), across the seams between pieces.
+- Resampling to the context's rate is done here, not by `decodeAudioData` (which would resample each piece on its own and
+  leave a step at every seam): `core/audio/resample.ts`, a windowed sinc evaluated per output frame at its exact position
+  from the source samples around it (64 taps, Blackman–Harris, 4096 phases), so converting in blocks gives the samples of
+  converting whole (checked bit for bit), −70 dB error up to 18 kHz, a higher source rate is filtered first. A block
+  takes ~13 ms (1 % of a core while a deck plays through the song; sliced with yields so no 10 ms stalls).
+- Anything else (AAC in M4A, Ogg, FLAC, AIFF) is decoded whole once through the cache: up to 45 minutes
+  (`MAX_WHOLE_DECODE_SEC`, 1 GB of floats), longer ones are refused with a message to use MP3 or WAV.
+
+*Why not decode in a Worker with WebCodecs.* `decodeAudioData`/`OfflineAudioContext` don't exist in Workers, but the
+browser already decodes off the main thread, and the main thread only slices bytes and resamples (13 ms per 1.4 s). WebCodecs'
+`AudioDecoder` (Worker-capable) would need a demuxer per container (frame boundaries of MP3/AAC/FLAC, M4A's sample tables,
+Ogg pages), a lot of code for no gain on the formats a long mix is actually in; the segment index above is ~120 lines per
+format and its result is checked bit for bit against the browser's own whole-file decode. Not done: segmenting FLAC (frame
+boundaries need a CRC-8 scan) and AAC.
+
+The **overview** of a streamed song is made by reading it through once in the background at its own rate (no resampling;
+22 s per read, the drawing told every few reads, so it grows as it goes: tens of seconds for two hours) and the deck is
+playable before it is done. **Analysis** decodes the whole song, so a streamed song is only analyzed if that is already
+cached (no grid → no sync; the cue point is the start).
+
 ### Measured (headless Chrome and Node, M-series Mac under other agents' load, 48 kHz)
 
 - Kernel CPU (Node, 60 s of audio, stereo): turntable 72 ms (0.12 % of a core), key lock 512 ms (0.85 % of a core,
-  117× realtime) per deck.
+  117× realtime) per deck; re-measured against the version before the window of blocks and the attack runs, both in one
+  process, best of five 10 s runs (quiet machine): turntable 0.07 → 0.10 %, key lock 0.52 → 0.55 % of a core (a
+  drum loop with attacks: 0.51 % against 0.54 % without the runs, which skip the similarity search; the test holds the
+  ratio under 1.5×). The block table lookup must not go through an imported binding (`BLOCK_BITS` read through the module
+  object made the turntable 5× slower in Node), so the kernel copies the constants.
 - Sync (`test/browser/dj-decks.test.ts`, 124 BPM against 128 BPM songs with different downbeats, clicks of different
   pitch, B joining A half a second in; 90 s rendered offline in the regular run, 5 minutes with `VITE_LONG_DECKS=1`, the
   numbers below): the beat offset between the decks' clicks, measured
@@ -1433,6 +1517,25 @@ loaded; `services.decks.peek()` looks without starting them.
   clearly different; against the source it is within the EQ/filter's own few hundredths (0.05 of a 0.8 click).
 - EQ: a −26 dB kill takes 50 Hz, 1 kHz and 14 kHz down by more than 20 dB (60 Hz −22, 12 kHz −23, 1 kHz −26) and
   leaves the other bands within 1.5 dB. Crossfader at −1: B more than 60 dB down; at the middle each side −3 dB.
+- Key lock and hits (`deck.transients.test.ts`, 5 ms clicks of 0.9 every 0.5 s, 40 s through key lock; before = plain
+  frames, after = attack runs): at 0.85× the worst click is 3.72 ms off its tempo time and within 0.49 dB, at 1.2× 3.46 ms
+  and 0.76 dB; after, 0.01 ms and 0 dB at both, one burst per click. Over a quiet noise bed (the search has something
+  to grab): before 13 of 40 clicks doubled at 0.85× (up to 10.8 ms off, 1.3 dB), 3 of 40 lost at 1.2× (down 18 dB);
+  after none doubled or lost, within 1.34 ms and 0.38 dB. A 124 BPM drum loop (kick, snare, hats, bass) at 0.9×/1.1×/1.3×:
+  each kick and snare correlates with the input's hit at −0.02/0.13/−0.22 before (not even within ±4 ms) and at 1.000
+  after, within 1.4 ms; a held tone under noise bursts has no step beyond the tone's own around the runs.
+- Drifting grids (`deck.drift.test.ts`, kernel positions; `dj-decks.test.ts`, the rendered master): a song whose drummer
+  goes 120 → 124 BPM over 3 minutes, synced to a steady 124 BPM song (the fixed grid is its average, 122): worst beat
+  offset 241 ms (half a beat: out of lock, over 5 ms from 3 s in) with the fixed grid and **0.04 ms** with tracked beats
+  over 190 s, key lock off and on; a drifting master with a steady follower 249 ms → 0.02 ms; two drifting songs, one
+  speeding up and one slowing down, with key lock 0.04 ms.
+- Streaming (`test/browser/dj-long-song.test.ts`): a 2-hour stereo song (a WAV that never exists, made as it is read)
+  loads in a window of ~80 MB and the page grows by **114 MB** (pool, 16 MB overview, tables) with a hot cue 5000 s in
+  and the playhead at 1:30:00 (the clicks heard there are on time to the master limiter's 1.3 ms delay, 0.5 s apart
+  exactly); before, a deck copied the whole decoded song into shared memory (20 minutes: 461 MB, 922 MB with the cache's
+  copy) and refused anything longer. A 12½-minute WAV in the real sample store, real engine, real time: nothing decoded
+  into the cache (0 decodes, < 1 MB used), a jump to a hot cue 0.0 ms of silence, a jump to an unloaded part 6.5 ms,
+  the largest step in the tone away from the clicks 0.0060 (the tone's own), jumps included.
 - Real engine (Engine.realtime, two key-locked decks, sync, a recording, the meters): `keepUp` 1.0 (≥ 0.98 required,
   measured as `app/playback-health.ts` does, over one-second windows); a 3.5 s recording is 3.5 s long in the
   library; a reboot of the engine carries the playing deck over. Offline: 60 s of two key-locked decks with EQ and
@@ -1440,12 +1543,22 @@ loaded; `services.decks.peek()` looks without starting them.
 
 ### Limits and follow-ups
 
-- A deck keeps its whole song in memory as float32 (shared with the audio thread) and takes at most 20 minutes; the
-  decoded copy stays in the shared sample cache (evictable) like any song. Decoding around the play position for
-  hour-long files needs windowed shared memory and a partial decoder; not done.
-- Key lock's stretch has no transient handling (the arrangement-side WSOLA's attack zones): drums at ±16 % soften a
-  little. Phase vocoder quality for pads would need more. Tempo changes between −50 % and +50 %, stretch limited to ½–2×.
-- Grids with a drifting `beats[]` play on the fixed grid; 3/4 songs sync by beat, not bar.
+- Streaming reads WAV and MP3 by parts. AAC (M4A), Ogg, FLAC and AIFF are decoded whole (up to 45 minutes, 1 GB of floats);
+  FLAC (a CRC-8 scan for frame boundaries) and AAC (ADTS frames; M4A sample tables) are the next to segment. MP3 with
+  free-format frames or Layer I/II isn't segmented. A streamed song is read from the stored file for as long as it is on
+  a deck: if clean-up of unused audio removes it meanwhile (it is no longer in the library or a project), the blocks that
+  haven't been loaded yet are silent.
+- A streamed song isn't analyzed (the analysis decodes the whole song): no grid, so no sync, snapping or bar loops, unless
+  its analysis is already cached (a streaming analysis would need the onset/tempo passes to run on pieces). The
+  overview of a 2-hour file takes tens of seconds to complete (read through once, in the background).
+- Opening a long MP3 reads through the whole file for the frame index (the disk's speed: a second or so per hour); a seek beyond the
+  window waits for the first blocks (WAV 6 ms, MP3 a decode of 6.7 s of frames ~ 30–60 ms plus the resample).
+- The attack runs keep drums whole; pads and sustained notes still go through the plain WSOLA (a phase vocoder would be
+  better for them), the runs only help where an attack is detected (energy up 8× in ~10 ms: soft or slow attacks aren't), and
+  hits closer together than a run can hold (about 150 ms) give way to the stronger one, so fast hat rolls soften as before.
+  Tempo changes between −50 % and +50 %, stretch limited to ½–2×.
+- Tracked beats are used as the analysis gives them: a wrong beat in `grid.beats` is followed. 3/4 songs sync by beat, not
+  bar. A loop that starts on a beat has the length of the beats there (the loop itself is a fixed number of frames).
 - The cue (headphone) bus needs a second output device (Chrome `setSinkId`); without one the CUE buttons are silent.
 - Scratching follows the platter's speed (any direction); there is no vinyl brake or spin-up on stop.
 - Controllers: `jog`, `jogTouch`, `cueDown/cueUp` and the rest of `DecksApi` are all they need; `readLevels`, `waveformOf`,

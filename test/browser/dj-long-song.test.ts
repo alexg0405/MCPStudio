@@ -112,6 +112,27 @@ describe('a song read by parts is the song decoded whole', () => {
     source.dispose();
   }, 120_000);
 
+  it('costs little to keep a window filled: a block of 1.4 s takes milliseconds (MP3 decode and resample; WAV and resample)', async () => {
+    const mp3 = await openSegmentSource({ reader: blobReader(new Blob([mp3Of(chirp(60)) as BlobPart])), sampleRate: SR });
+    const wav = await openSegmentSource({ reader: blobReader(virtualWav(60)), sampleRate: SR });
+    const l = new Float32Array(65536);
+    const r = new Float32Array(65536);
+    for (const [name, src] of [
+      ['MP3', mp3!],
+      ['WAV', wav!],
+    ] as const) {
+      await src.read(0, 65536, l, r);
+      const t0 = performance.now();
+      const blocks = 30;
+      for (let b = 1; b <= blocks; b++) await src.read(b * 65536, 65536, l, r);
+      const ms = (performance.now() - t0) / blocks;
+      // A block is 1.365 s of audio: this much of one core keeps a deck's window filled while it plays (and it is only spent while the window is filling).
+      console.log(`${name}: ${ms.toFixed(1)} ms per block of 65536 frames (${((ms / 1365) * 100).toFixed(2)} % of a core at real-time speed)`);
+      expect(ms).toBeLessThan(120);
+      src.dispose();
+    }
+  }, 120_000);
+
   it('refuses what it cannot read by parts (the caller decodes those whole)', async () => {
     const odd = new Uint8Array(4096);
     odd.set(new TextEncoder().encode('OggS'));

@@ -1314,7 +1314,8 @@ is analyzed as one song: the drift check turns on and `grid.beats` holds every t
 tempo, key and sections are those of one song, not per track. Files that can't be read by parts (AAC/M4A, Ogg, FLAC, AIFF)
 are still decoded whole, so up to 45 minutes; longer ones are refused with a message. The level scan estimates the level
 of a song over 10 minutes from 20 s regions, so its results differ a little from a whole-file analysis of the same file
-(they are identical up to 10 minutes). The deck's request waits behind the library's analysis queue (one song at a time).
+(they are identical up to 10 minutes). The analyzer runs one song at a time; a deck's request (priority 'now') goes ahead of every song the library has queued
+(it never interrupts the one running).
 
 ### Listening to the mix (M16b)
 

@@ -2,17 +2,63 @@ import type { PerformanceRole } from '@core/beat/local';
 import { BEAT_JSON_SCHEMA, validateBeatSpec, type BeatSpec } from '@core/beat/spec';
 
 /**
- * The beat assistant's conversation with Claude. The dev server does the talking (tools/ai): either
- * through the musician's own Claude subscription (their signed-in Claude Code) or with an API key,
- * and keeps the conversation, so "make the hats busier" changes the last beat instead of starting
- * over. Claude answers with the beat as JSON (structured output); every answer is validated before
- * it touches the project.
+ * The AI studio's conversation with its AI. The dev server does the talking (tools/ai): through the
+ * musician's own Claude subscription (their signed-in Claude Code), with an Anthropic API key, or through
+ * their ChatGPT plan (their signed-in Codex CLI), and keeps the conversation, so "make the hats busier"
+ * changes the last beat instead of starting over. The AI answers with JSON (structured output); every
+ * answer is validated before it touches the project.
  */
 
-export { AI_MODELS, DEFAULT_MODEL } from './state';
+export { AI_MODELS, CODEX_MODELS, DEFAULT_MODEL, isCodexModel } from './state';
 
-/** How the assistant reaches Claude. */
-export type AiBackend = 'subscription' | 'api';
+/** How the assistant reaches its AI: Claude through a subscription or an API key, or ChatGPT through Codex. */
+export type AiBackend = 'subscription' | 'api' | 'codex';
+
+/** Every backend, in the order Auto tries them (then the offline generator). */
+export const AI_BACKENDS: readonly AiBackend[] = ['subscription', 'codex', 'api'];
+
+/**
+ * The server-side conversation of each backend. A conversation lives in one backend (a Claude Code session,
+ * a Codex thread, the API history in the server's memory): switching backend starts a new one there, and
+ * switching back finds the old one again.
+ */
+export type AiSessions = Partial<Record<AiBackend, string>>;
+
+/** Keeps `AiSessions` for a chat class. */
+class SessionBook {
+  private ids: AiSessions = {};
+
+  get(backend: AiBackend): string | null {
+    return this.ids[backend] ?? null;
+  }
+
+  set(backend: AiBackend, id: string | null): void {
+    if (id) this.ids[backend] = id;
+    else delete this.ids[backend];
+  }
+
+  clear(): void {
+    this.ids = {};
+  }
+
+  get all(): AiSessions {
+    return { ...this.ids };
+  }
+
+  /** From saved data (anything unexpected is ignored). */
+  restore(saved: unknown): void {
+    this.ids = {};
+    if (typeof saved !== 'object' || saved === null) return;
+    for (const b of AI_BACKENDS) {
+      const id = (saved as Record<string, unknown>)[b];
+      if (typeof id === 'string' && id) this.ids[b] = id;
+    }
+  }
+
+  get any(): boolean {
+    return Object.keys(this.ids).length > 0;
+  }
+}
 
 export interface AiBackendStatus {
   ok: boolean;
@@ -22,6 +68,7 @@ export interface AiBackendStatus {
 export interface AiStatus {
   subscription: AiBackendStatus;
   api: AiBackendStatus;
+  codex: AiBackendStatus;
 }
 
 export type AiErrorKind =
@@ -130,29 +177,31 @@ async function errorFrom(res: Response): Promise<AiError> {
 }
 
 /**
- * A conversation with Claude through the AGstudio server: each turn sends a system prompt, a JSON
- * schema for the answer and the turn's text; the server keeps the history (session id). `read`
- * validates the answer; when it fails, Claude is told why once and asked again.
+ * A conversation with the AI through the AGstudio server: each turn sends a system prompt, a JSON
+ * schema for the answer and the turn's text; the server keeps the history (session id, one per backend).
+ * `read` validates the answer; when it fails, the AI is told why once and asked again.
  */
 export class ClaudeChat {
-  private session: string | null = null;
+  private readonly book = new SessionBook();
 
   constructor(private readonly fetchImpl: typeof fetch = (...args) => fetch(...args)) {}
 
   reset(): void {
-    this.session = null;
+    this.book.clear();
   }
 
-  get sessionId(): string | null {
-    return this.session;
+  /** The conversation of each backend, to carry them across a page reload. */
+  get sessions(): AiSessions {
+    return this.book.all;
   }
 
-  set sessionId(id: string | null) {
-    this.session = id;
+  set sessions(saved: AiSessions) {
+    this.book.restore(saved);
   }
 
-  get hasHistory(): boolean {
-    return this.session !== null;
+  /** Whether this backend has a conversation going (its next turn continues it). */
+  hasHistoryFor(backend: AiBackend): boolean {
+    return this.book.get(backend) !== null;
   }
 
   async ask<T>(input: {
@@ -169,18 +218,18 @@ export class ClaudeChat {
       const reply = await postTurn(this.fetchImpl, {
         backend: input.backend,
         model: input.model,
-        session: this.session,
+        session: this.book.get(input.backend),
         system: input.system,
         schema: input.schema,
         text,
         ...(input.signal ? { signal: input.signal } : {}),
       });
-      this.session = reply.session;
+      this.book.set(input.backend, reply.session);
       const checked = input.read(reply.beat);
       if ('value' in checked) return checked.value;
       text = `That answer can't be used: ${checked.error}. Send the whole answer again, fixed, in the required format.`;
     }
-    throw new AiError("Claude's answer couldn't be used. Try rephrasing.", 'bad-output');
+    throw new AiError("The AI's answer couldn't be used. Try rephrasing.", 'bad-output');
   }
 }
 
@@ -214,27 +263,27 @@ async function postTurn(
 }
 
 export class ClaudeBeatChat {
-  /** The server-side conversation (null until the first answer). */
-  private session: string | null = null;
+  /** The server-side conversation of each backend (none until the first answer). */
+  private readonly book = new SessionBook();
 
   constructor(private readonly fetchImpl: typeof fetch = (...args) => fetch(...args)) {}
 
   /** Starts a new conversation (the next request makes a new beat). */
   reset(): void {
-    this.session = null;
+    this.book.clear();
   }
 
-  /** The server-side conversation id, to carry it across a page reload. */
-  get sessionId(): string | null {
-    return this.session;
+  /** The server-side conversations, to carry them across a page reload. */
+  get sessions(): AiSessions {
+    return this.book.all;
   }
 
-  set sessionId(id: string | null) {
-    this.session = id;
+  set sessions(saved: AiSessions) {
+    this.book.restore(saved);
   }
 
   get hasHistory(): boolean {
-    return this.session !== null;
+    return this.book.any;
   }
 
   async request(input: {
@@ -246,15 +295,15 @@ export class ClaudeBeatChat {
     signal?: AbortSignal;
   }): Promise<{ spec: BeatSpec; warnings: string[] }> {
     let text = userText(input.prompt, input.project, input.performance);
-    // One retry when the beat doesn't validate: Claude sees the problem and fixes it.
+    // One retry when the beat doesn't validate: the AI sees the problem and fixes it.
     for (let attempt = 0; attempt < 2; attempt++) {
       const reply = await this.call(input.backend, input.model, text, input.signal);
-      this.session = reply.session;
+      this.book.set(input.backend, reply.session);
       const checked = validateBeatSpec(reply.beat);
       if ('spec' in checked) return checked;
       text = `That beat can't be used: ${checked.error} Send the whole beat again, fixed.`;
     }
-    throw new AiError("Claude's beat couldn't be used. Try rephrasing.", 'bad-output');
+    throw new AiError("The AI's beat couldn't be used. Try rephrasing.", 'bad-output');
   }
 
   private call(
@@ -266,7 +315,7 @@ export class ClaudeBeatChat {
     return postTurn(this.fetchImpl, {
       backend,
       model,
-      session: this.session,
+      session: this.book.get(backend),
       system: SYSTEM_PROMPT,
       schema: BEAT_JSON_SCHEMA,
       text,
@@ -277,18 +326,20 @@ export class ClaudeBeatChat {
 
 const UNREACHABLE: AiBackendStatus = { ok: false, reason: "The AGstudio server can't be reached." };
 
-/** Which ways to reach Claude work right now. Never throws. */
+/** Which ways to reach an AI work right now. Never throws. */
 export async function fetchAiStatus(fetchImpl: typeof fetch = (...args) => fetch(...args)): Promise<AiStatus> {
+  const unreachable = { subscription: UNREACHABLE, api: UNREACHABLE, codex: UNREACHABLE };
   try {
     const res = await fetchImpl('/api/ai/status');
-    if (!res.ok) return { subscription: UNREACHABLE, api: UNREACHABLE };
+    if (!res.ok) return unreachable;
     const body = (await res.json()) as Partial<AiStatus>;
     const pick = (v: unknown): AiBackendStatus =>
       typeof v === 'object' && v !== null && typeof (v as AiBackendStatus).ok === 'boolean'
         ? (v as AiBackendStatus)
         : UNREACHABLE;
-    return { subscription: pick(body.subscription), api: pick(body.api) };
+    // An older server has no `codex` entry: it simply isn't there.
+    return { subscription: pick(body.subscription), api: pick(body.api), codex: pick(body.codex) };
   } catch {
-    return { subscription: UNREACHABLE, api: UNREACHABLE };
+    return unreachable;
   }
 }

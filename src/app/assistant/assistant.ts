@@ -84,9 +84,9 @@ export class BeatAssistant implements AssistantApi {
   readonly store: StoreApi<AssistantState>;
   private readonly core: AssistantCore;
   private readonly chat: ClaudeChat;
-  /** Catalog key Claude has in this conversation (sent again when the plugins change). */
-  private catalogSent: string | null = null;
-  /** What the last turn couldn't do, told to Claude with the next request. */
+  /** Catalog key each backend's conversation has (sent again when the plugins change). */
+  private catalogSent: Partial<Record<AiBackend, string>> = {};
+  /** What the last turn couldn't do, told to the AI with the next request. */
   private lastProblems: string[] = [];
   private readonly fetchImpl: typeof fetch;
   private handle: RecordingHandle | null = null;
@@ -119,12 +119,12 @@ export class BeatAssistant implements AssistantApi {
     this.store = core.store;
     this.core = core;
     messageSeq = Math.max(messageSeq, lastMessageId(this.store.getState().messages));
-    if (typeof core.saved.chat === 'string') this.chat.sessionId = core.saved.chat;
-    if (typeof core.saved.catalog === 'string') this.catalogSent = core.saved.catalog;
+    if (core.saved.chats) this.chat.sessions = core.saved.chats;
+    if (core.saved.catalogs) this.catalogSent = { ...core.saved.catalogs };
     if (typeof core.saved.offlinePrompt === 'string') this.offlinePrompt = core.saved.offlinePrompt;
     core.bindExtras(() => ({
-      chat: this.chat.sessionId,
-      catalog: this.catalogSent,
+      chats: this.chat.sessions,
+      catalogs: this.catalogSent,
       offlinePrompt: this.offlinePrompt,
     }));
   }
@@ -144,15 +144,23 @@ export class BeatAssistant implements AssistantApi {
     return status;
   }
 
-  /** The way this request will reach Claude, or null for the offline generator. */
+  /** The way this request will reach an AI, or null for the offline generator. */
   async route(): Promise<AiBackend | null> {
     const { backend } = this.store.getState();
     if (backend === 'offline') return null;
     const status = this.store.getState().status ?? (await this.checkAi());
     if (backend !== 'auto') return backend;
+    // Auto: the Claude subscription, then ChatGPT through Codex, then a Claude API key.
     if (status.subscription.ok) return 'subscription';
+    if (status.codex.ok) return 'codex';
     if (status.api.ok) return 'api';
     return null;
+  }
+
+  /** The model id this backend is asked for (Claude's, or the typed Codex model; empty = Codex's default). */
+  private modelFor(route: AiBackend): string {
+    const st = this.store.getState();
+    return route === 'codex' ? st.codexModel : st.model;
   }
 
   private say(from: AssistantMessage['from'], text: string, extra: Partial<AssistantMessage> = {}): number {
@@ -563,8 +571,8 @@ export class BeatAssistant implements AssistantApi {
         const answer = await this.chat.ask<AiAnswer>({
           system: STUDIO_PROMPT,
           schema: ACTIONS_SCHEMA,
-          text: this.turnText(text || 'Make a beat from my performance.', take, undefined, focus),
-          model: st.model,
+          text: this.turnText(text || 'Make a beat from my performance.', route, take, undefined, focus),
+          model: this.modelFor(route),
           backend: route,
           signal: abort.signal,
           read: (raw) => {
@@ -597,7 +605,7 @@ export class BeatAssistant implements AssistantApi {
       // The offline generator writes whole beats: it can't change one part of a song.
       this.say(
         'assistant',
-        'Changing one part of the song needs Claude (your subscription or an API key), and it isn’t set up. Set it up in Studio’s settings, or clear the part to make a beat with the offline generator.',
+        'Changing one part of the song needs an AI (your Claude subscription, ChatGPT through Codex, or an API key), and none is set up. Set one up in Studio’s ⋯ menu, or clear the part to make a beat with the offline generator.',
         { offline: true },
       );
       this.store.setState({ phase: 'idle' });
@@ -631,9 +639,10 @@ export class BeatAssistant implements AssistantApi {
     }
   }
 
-  /** This turn's message to Claude: the request, the project, the part it is about, and what Claude doesn't have yet. */
+  /** This turn's message to the AI: the request, the project, the part it is about, and what this backend's conversation doesn't have yet. */
   private turnText(
     prompt: string,
+    route: AiBackend,
     take: Take | null,
     analysis?: string,
     focus?: ResolvedFocus | null,
@@ -656,9 +665,9 @@ ${projectContext(this.s, focus ?? null)}
     const catalog = pluginCatalog(this.s.plugins, this.s.presets);
     const commands = commandCatalog(this.s);
     const key = `${catalog.key}:${commands.key}`;
-    if (!this.chat.hasHistory || this.catalogSent !== key) {
+    if (!this.chat.hasHistoryFor(route) || this.catalogSent[route] !== key) {
       parts.push(`<plugins>\n${catalog.text}\n</plugins>`, `<commands>\n${commands.text}\n</commands>`);
-      this.catalogSent = key;
+      this.catalogSent[route] = key;
     }
     if (take && !take.sent)
       parts.push(
@@ -838,8 +847,8 @@ ${projectContext(this.s, focus ?? null)}
       const answer = await this.chat.ask<AiAnswer>({
         system: STUDIO_PROMPT,
         schema: ACTIONS_SCHEMA,
-        text: this.turnText(request, null, undefined, resolveFocus(this.s.doc.getState().project, focus), formatLookups(queries)),
-        model: this.store.getState().model,
+        text: this.turnText(request, route, null, undefined, resolveFocus(this.s.doc.getState().project, focus), formatLookups(queries)),
+        model: this.modelFor(route),
         backend: route,
         signal: abort.signal,
         read: (raw) => {
@@ -985,7 +994,7 @@ ${projectContext(this.s, focus ?? null)}
     this.store.setState({ phase: 'thinking', listening: null });
     const route = await this.route();
     if (!route) {
-      this.say('assistant', 'Connect Claude (the ⋯ menu in Studio) and I can make these changes for you; the findings above are a start.', {
+      this.say('assistant', 'Connect an AI (the ⋯ menu in Studio: your Claude subscription or ChatGPT) and I can make these changes for you; the findings above are a start.', {
         offline: true,
       });
       this.store.setState({ phase: 'idle' });
@@ -996,8 +1005,8 @@ ${projectContext(this.s, focus ?? null)}
       const answer = await this.chat.ask<AiAnswer>({
         system: STUDIO_PROMPT,
         schema: ACTIONS_SCHEMA,
-        text: this.turnText(request, null, analysis, resolveFocus(this.s.doc.getState().project, snapshot)),
-        model: this.store.getState().model,
+        text: this.turnText(request, route, null, analysis, resolveFocus(this.s.doc.getState().project, snapshot)),
+        model: this.modelFor(route),
         backend: route,
         signal: abort.signal,
         read: (raw) => {
@@ -1050,7 +1059,7 @@ ${projectContext(this.s, focus ?? null)}
     }
     const route = await this.route();
     if (!route) {
-      this.say('assistant', 'Writing a plugin needs Claude (your subscription or an API key); it is not set up.', {
+      this.say('assistant', 'Writing a plugin needs an AI (your Claude subscription, ChatGPT through Codex, or an API key); none is set up.', {
         error: true,
       });
       return;
@@ -1065,7 +1074,7 @@ ${projectContext(this.s, focus ?? null)}
       const plugin = new PluginBuilder({ fetch: this.fetchImpl, smoke: this.smoke });
       const taken = [...this.s.plugins.list().map((e) => e.def.id), ...this.s.plugins.scripts().map((e) => e.def.id)];
       const result = await plugin.build(spec, {
-        model: this.store.getState().model,
+        model: this.modelFor(route),
         backend: route,
         signal: abort.signal,
         progress: at,
@@ -1159,7 +1168,7 @@ ${projectContext(this.s, focus ?? null)}
     if (this.store.getState().uiRequests.length) this.store.setState({ uiRequests: [] });
   }
 
-  /** Stops waiting for Claude. */
+  /** Stops waiting for the AI. */
   cancel(): void {
     this.abort?.abort();
   }
@@ -1167,7 +1176,7 @@ ${projectContext(this.s, focus ?? null)}
   /** Forgets the conversation: the next request starts fresh (and makes a new pattern). */
   newBeat(): void {
     this.chat.reset();
-    this.catalogSent = null;
+    this.catalogSent = {};
     this.lastProblems = [];
     this.offlinePrompt = '';
     this.approvals.clear();

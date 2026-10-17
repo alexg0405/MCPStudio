@@ -522,13 +522,13 @@ describe('asking about a part of the song', () => {
     }
   });
 
-  it('needs Claude: offline, a request about a part writes nothing', async () => {
+  it('needs an AI: offline, a request about a part writes nothing', async () => {
     const { s } = stackedSong();
     const a = new BeatAssistant(s, { fetch: offline });
     const before = s.doc.getState().project;
     await a.send('add a fill at the end', { focus: verseOf(s) });
     const last = a.store.getState().messages.at(-1)!;
-    expect(last.text).toMatch(/^Changing one part of the song needs Claude/);
+    expect(last.text).toMatch(/^Changing one part of the song needs an AI/);
     expect(last.offline).toBe(true);
     expect(s.doc.getState().project).toBe(before);
     expect(a.store.getState().phase).toBe('idle');

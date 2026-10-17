@@ -588,18 +588,41 @@ trackPitch(samples, sampleRate, { minHz?, maxHz?, hop?, window? }) // YIN; FFT/R
   in the audio from the scheduled time plus output and input latency (`MediaTrackSettings.latency`). The voice
   analysis (`core/voice`) finds onsets, classifies kick/snare/hat/tonal, tracks hummed pitch (YIN), quantizes to the
   grid and writes a compact text summary for the AI.
-- **Claude** (`app/assistant/claude.ts`, server side in `tools/ai/`): the browser posts each turn to `/api/ai/beat` on
+- **The AI** (`app/assistant/claude.ts`, server side in `tools/ai/`): the browser posts each turn to `/api/ai/beat` on
   the dev/preview server, which keeps the conversation (session id) and answers with the beat as JSON under a
   structured-output schema (`BEAT_JSON_SCHEMA`: `additionalProperties: false` everywhere, ranges in descriptions,
-  enforced by `validateBeatSpec`; a beat that fails validation is sent back once for a fix). Two backends:
+  enforced by `validateBeatSpec`; a beat that fails validation is sent back once for a fix). Three backends:
   - **subscription** (`tools/ai/subscription-backend.ts`): the musician's own Claude Code CLI, signed in with their
     Claude plan, run in print mode per turn with no tools, resuming its session for follow-ups;
   - **api** (`tools/ai/api-backend.ts`): the Anthropic SDK with `ANTHROPIC_API_KEY` from `.env.local` (re-read per
     request): streaming, `output_config` effort `medium` + JSON schema, server-side refusal fallback
-    (`fallbacks: "default"`) on models that have it, an append-only history (thinking blocks kept).
-  "Auto" picks the subscription when it's set up, else the key, else the offline generator. Claude Opus 5.5 and
-  Sonnet 5.5 reject forced tool choice, which is why the answer is a structured output rather than a tool call. The
-  endpoint refuses requests without the `x-agstudio` header or from another origin.
+    (`fallbacks: "default"`) on models that have it, an append-only history (thinking blocks kept);
+  - **codex** (`tools/ai/codex-backend.ts`): the musician's ChatGPT plan through their own Codex CLI (found through
+    `AGSTUDIO_CODEX_BIN`, the PATH, the ChatGPT app's `Contents/Resources/codex` and the usual install folders).
+    Status is `codex login status` (cached 15 s; only a ChatGPT login counts, an API-key login is refused with a
+    reason; `~/.codex/auth.json` is never read). A turn is one `codex exec` (a follow-up `codex exec resume
+    <thread>`; the thread id comes from the `thread.started` event, one thread per backend) run in an empty temp
+    folder with the request on stdin, `--ignore-user-config --ignore-rules`, `sandbox_mode="read-only"`,
+    `approval_policy="never"`, no AGENTS.md, no web search, and every tool-like feature of `codex features list`
+    that is on (`TOOL_FEATURES`) disabled. The system prompt is a temp file given as `model_instructions_file`, the
+    answer schema a temp file for `--output-schema`, the answer is read from `-o` (fallback: the last agent message
+    event); the temp folder `agstudio-codex/<turn>` is deleted after every turn. `OPENAI_API_KEY`,
+    `OPENAI_BASE_URL` and `CODEX_API_KEY` are removed from the child's environment so the ChatGPT login is used.
+    The flags are in one function (`cliArgs`) with a comment each; they are the only part tied to the CLI version.
+    OpenAI's strict structured outputs want every property in `required`, so `tools/ai/strict-schema.ts` turns each
+    answer schema into the strict form (optional properties become nullable, `const` becomes a one-value `enum`) and
+    deletes every `null` property from the reply: the original schemas have no null types, so null always means "left
+    out", and the page validators and the op appliers see exactly the answer they always did.
+    `test/unit/strict-schema.test.ts` holds the schemas to OpenAI's documented limits (properties, nesting, enum
+    values and string sizes), so a new op that would push the Studio schema over fails there.
+  "Auto" picks the Claude subscription when it's set up, else ChatGPT (Codex), else the key, else the offline
+  generator; a chosen backend that isn't set up shows its reason in the window. The page keeps the model per backend
+  (`model` for Claude, `codexModel` for Codex, empty = Codex's own default, "Other model…" takes a typed id) and one
+  server-side conversation per backend (`ClaudeChat.sessions`, saved with the tab): switching backend starts a fresh
+  thread there (the plugin catalog and command list are sent again) and switching back continues the old one. Claude
+  Opus 5.5 and Sonnet 5.5 reject forced tool choice, which is why the answer is a structured output rather than a
+  tool call. The endpoint refuses requests without the `x-agstudio` header or from another origin; the model id is
+  checked per backend (`claude-…`, or Codex's `[a-z0-9][a-z0-9._:-]{0,63}` or empty).
 - **Offline** (`core/beat/local.ts`): when no key is set, a deterministic generator reads style, tempo, key and
   "busier/simpler" from the description, uses per-style drum grids, writes an 808 that follows the kick, and maps a
   performance onto drums (beatbox) or an 808/melody (hummed contour moved into register and key, connected notes
@@ -1045,7 +1068,7 @@ History like any other edit.
 
 ## AI studio: the AI controls the project (M16a)
 
-The assistant window is an AI studio: every turn, Claude answers with `{ message, actions[] }`
+The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT through Codex) answers with `{ message, actions[] }`
 (`app/ai/schema.ts`, structured output: `anyOf` per op, closed objects, plugin settings as
 `[{ name, value }]`), and `app/ai/apply.ts` applies the actions as **one History transaction**
 (one undo step per answer).
@@ -1068,8 +1091,9 @@ The assistant window is an AI studio: every turn, Claude answers with `{ message
   beat/mixing know-how.
 - **Transport**: `ClaudeChat` (`app/assistant/claude.ts`) posts each turn to `/api/ai/chat` (`/beat`
   still works) with the system prompt, schema and text; a malformed answer is sent back once for a fix.
-  The subscription backend's CLI prompt is task-neutral. Without Claude, beat requests still go to the
-  offline generator.
+  The subscription backend's CLI prompt is task-neutral. Without an AI, beat requests still go to the
+  offline generator. The Codex backend answers the same schemas in OpenAI's strict form (see "The AI" in the beat
+  assistant section above).
 - **Rule for new features**: each feature adds its ops here (and what the context needs), so the AI can
   drive it.
 - **Layout (v3)**: `apply.ts` is a short orchestrator over `app/ai/ops/`.

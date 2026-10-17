@@ -170,11 +170,11 @@ describe('Ask Studio about this part (UI)', () => {
     spy.mockRestore();
   });
 
-  it('asks from the card: without Claude it says so, and Studio shows the part as a chip', async () => {
+  it('asks from the card: without an AI it says so, and Studio shows the part as a chip', async () => {
     askAboutMarker(s, marker('Verse'));
     await until(() => !!card());
     await userEvent.keyboard('add a fill at the end{Enter}');
-    await until(() => (card()?.textContent ?? '').includes('needs Claude'));
+    await until(() => (card()?.textContent ?? '').includes('needs an AI'));
     expect(card()!.textContent).toContain('add a fill at the end');
     expect(card()!.textContent).toContain('About Verse · bars 17–32');
     closeAsk();

@@ -97,7 +97,7 @@ function Palette() {
       key: 'ai',
       label: `Ask Studio: “${text}”`,
       path: ['Studio'],
-      hint: 'Claude does it for you in Studio. Every change it makes can be undone.',
+      hint: 'The AI does it for you in Studio. Every change it makes can be undone.',
       run: () => askAi(services, text),
     };
     // Nothing matches: asking the AI is the best bet, so it comes first.

@@ -6,7 +6,7 @@ import type { AfterEdit } from '../ai/ops/types';
 import type { BuildStage, PluginDraft } from '../ai/builder';
 import { isAiFocus, type AiFocus } from '../ai/focus';
 import type { AppliedBeat } from './apply';
-import type { AiBackend, AiStatus } from './claude';
+import type { AiBackend, AiSessions, AiStatus } from './claude';
 
 /**
  * What the toolbar and the Studio window read before any Studio code has loaded: the state store (the
@@ -22,6 +22,12 @@ export const AI_MODELS = [
 ] as const;
 export const DEFAULT_MODEL = AI_MODELS[0].id;
 
+/** The models listed for ChatGPT (Codex): its own default, or a typed model id ("Other model…"). */
+export const CODEX_MODELS = [{ id: '', label: 'Codex default' }] as const;
+/** What the server accepts as a Codex model id (empty = Codex's own default). */
+export const CODEX_MODEL_ID = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
+export const isCodexModel = (id: unknown): id is string => id === '' || (typeof id === 'string' && CODEX_MODEL_ID.test(id));
+
 export type AssistantPhase = 'idle' | 'counting-in' | 'recording' | 'analyzing' | 'listening' | 'thinking';
 
 export interface AssistantMessage {
@@ -31,7 +37,7 @@ export interface AssistantMessage {
   /** Small print under the text (what was recorded, which tracks were written). */
   detail?: string;
   error?: boolean;
-  /** Made without Claude (offline generator). */
+  /** Made without an AI (offline generator). */
   offline?: boolean;
   /** Undo point for this beat (history cursor right after applying it). */
   beat?: { title: string; cursor: number };
@@ -109,7 +115,7 @@ export interface Take {
   bpm: number;
   /** The recording itself, for playing it back (null after a page reload: only the events are kept). */
   audio: { samples: Float32Array; sampleRate: number; startSec: number } | null;
-  /** Claude has it already (sent with an earlier request). */
+  /** The AI has it already (sent with an earlier request). */
   sent: boolean;
 }
 
@@ -119,11 +125,14 @@ export interface AssistantState {
   take: Take | null;
   /** Live recording: count-in/progress for the UI. */
   recording: { bars: number; startedAt: number } | null;
-  /** Which ways to reach Claude work (null until checked). */
+  /** Which ways to reach an AI work (null until checked). */
   status: AiStatus | null;
-  /** How to reach Claude: auto = the subscription, else an API key, else the offline generator. */
+  /** How to reach the AI: auto = the Claude subscription, else ChatGPT (Codex), else a Claude API key, else the offline generator. */
   backend: 'auto' | AiBackend | 'offline';
+  /** The Claude model (for the subscription and the API key). */
   model: string;
+  /** The ChatGPT (Codex) model id; empty = Codex's own default. */
+  codexModel: string;
   /** What the next recording is: drums, an 808 line, a melody (or let the analysis decide). */
   role: PerformanceRole;
   bars: number;
@@ -162,10 +171,10 @@ function loadPrefs(): Partial<AssistantState> {
 
 /** What a reload keeps besides the store: the assistant's own bookkeeping (it owns these once it has loaded). */
 export interface TabExtras {
-  /** The Claude conversation. */
-  chat?: string | null;
-  /** Catalog key Claude has in this conversation. */
-  catalog?: string | null;
+  /** The AI conversation of each backend. */
+  chats?: AiSessions;
+  /** Catalog key each backend's conversation has. */
+  catalogs?: Partial<Record<AiBackend, string>>;
   /** Everything asked so far in offline mode. */
   offlinePrompt?: string;
 }
@@ -199,10 +208,14 @@ export function createAssistantCore(history: Pick<History, 'onChange'>): Assista
     recording: null,
     status: null,
     backend:
-      saved.backend === 'subscription' || saved.backend === 'api' || saved.backend === 'offline'
+      saved.backend === 'subscription' ||
+      saved.backend === 'api' ||
+      saved.backend === 'codex' ||
+      saved.backend === 'offline'
         ? saved.backend
         : 'auto',
     model: typeof saved.model === 'string' ? saved.model : DEFAULT_MODEL,
+    codexModel: isCodexModel(saved.codexModel) ? saved.codexModel : '',
     role: saved.role ?? 'auto',
     bars: saved.bars ?? 2,
     playAlong: saved.playAlong ?? false,
@@ -231,8 +244,8 @@ export function createAssistantCore(history: Pick<History, 'onChange'>): Assista
       messages: AssistantMessage[];
       applied: AppliedBeat;
       take: Take;
-      chat: string;
-      catalog: string;
+      chats: unknown;
+      catalogs: unknown;
       offlinePrompt: string;
       focus: unknown;
     }>;
@@ -243,8 +256,18 @@ export function createAssistantCore(history: Pick<History, 'onChange'>): Assista
     const take = r.take && Array.isArray(r.take.events) ? { ...r.take, audio: null } : null;
     const focus = isAiFocus(r.focus) ? r.focus : null;
     store.setState({ messages, applied, take, focus });
-    if (typeof r.chat === 'string') extras.chat = r.chat;
-    if (typeof r.catalog === 'string') extras.catalog = r.catalog;
+    // Only what a backend name maps to as text is kept (the older single-session format is dropped).
+    const strings = (v: unknown): Partial<Record<AiBackend, string>> => {
+      const out: Partial<Record<AiBackend, string>> = {};
+      if (typeof v === 'object' && v !== null)
+        for (const b of ['subscription', 'api', 'codex'] as const) {
+          const x = (v as Record<string, unknown>)[b];
+          if (typeof x === 'string' && x) out[b] = x;
+        }
+      return out;
+    };
+    if (r.chats) extras.chats = strings(r.chats);
+    if (r.catalogs) extras.catalogs = strings(r.catalogs);
     if (typeof r.offlinePrompt === 'string') extras.offlinePrompt = r.offlinePrompt;
   }
 
@@ -284,6 +307,7 @@ export function createAssistantCore(history: Pick<History, 'onChange'>): Assista
     if (
       next.backend === prev.backend &&
       next.model === prev.model &&
+      next.codexModel === prev.codexModel &&
       next.role === prev.role &&
       next.bars === prev.bars &&
       next.playAlong === prev.playAlong &&
@@ -293,10 +317,10 @@ export function createAssistantCore(history: Pick<History, 'onChange'>): Assista
     )
       return;
     try {
-      const { backend, model, role, bars, playAlong, click, autoplay, mySounds } = next;
+      const { backend, model, codexModel, role, bars, playAlong, click, autoplay, mySounds } = next;
       globalThis.localStorage?.setItem(
         PREFS_KEY,
-        JSON.stringify({ backend, model, role, bars, playAlong, click, autoplay, mySounds }),
+        JSON.stringify({ backend, model, codexModel, role, bars, playAlong, click, autoplay, mySounds }),
       );
     } catch {
       /* per-browser convenience only */

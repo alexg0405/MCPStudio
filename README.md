@@ -134,11 +134,27 @@ the current pattern (headphones help).
    AGstudio's dev server then runs `claude -p` for each request (isolated with `--safe-mode`, no tools), so the
    page never sees your login. This is for your own use on your machine: don't share the app with others using
    your login.
-2. **An API key**: copy `.env.example` to `.env.local` and put your key after `ANTHROPIC_API_KEY=` (from
-   https://console.anthropic.com/). The dev server adds it to requests; changes apply without a restart.
-3. **The offline generator**: built in, always available, no account needed.
+2. **Your ChatGPT plan, through Codex** (no API key, nothing billed separately; it counts toward your plan's Codex
+   usage). The ChatGPT app for Mac already includes the Codex command; otherwise install it with
+   `npm i -g @openai/codex`. Sign in once with your ChatGPT account, in Terminal (use `codex` on its own if it is on
+   your PATH, otherwise the full path):
 
-You can pick the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster) in the assistant's header.
+   ```bash
+   /Applications/ChatGPT.app/Contents/Resources/codex login
+   ```
+
+   AGstudio's dev server then runs `codex exec` for each request (read-only, in an empty temporary folder, with
+   Codex's tools turned off and your Codex config ignored), so the page never sees your login. Every AI feature
+   works through it: the Studio chat, "Check my mix", the follow-up looks and the plugin builder. An API-key login
+   of Codex is not used (it would bill the API, not your plan); if `codex` lives somewhere unusual, set
+   `AGSTUDIO_CODEX_BIN=/path/to/codex` in `.env.local`. Same rule as above: for your own use on your machine.
+3. **An API key**: copy `.env.example` to `.env.local` and put your key after `ANTHROPIC_API_KEY=` (from
+   https://console.anthropic.com/). The dev server adds it to requests; changes apply without a restart.
+4. **The offline generator**: built in, always available, no account needed.
+
+"Auto" tries them in this order: your Claude subscription, your ChatGPT plan, the API key, then offline. You can pick
+the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster) or the ChatGPT model ("Codex default", or type
+the id of another one under "Other model…") in the assistant's header.
 
 Shortcuts: press F1 in the app, or see [docs/shortcuts.md](docs/shortcuts.md). On a Mac, F-keys may need Fn;
 every window also has an Alt+number shortcut and a toolbar button.

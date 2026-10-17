@@ -43,7 +43,7 @@ const SYNONYMS: Record<string, string[]> = {
   open: ['show', 'load'],
   show: ['open', 'view'],
   hide: ['show', 'view'],
-  ai: ['assistant', 'claude', 'studio'],
+  ai: ['assistant', 'claude', 'chatgpt', 'codex', 'studio'],
   help: ['getting started', 'tour', 'shortcuts'],
   shortcuts: ['keyboard'],
   record: ['arm', 'recording'],

@@ -1,10 +1,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useStore } from 'zustand';
-import { AI_MODELS } from '@app/assistant/claude';
+import { AI_MODELS, CODEX_MODELS, isCodexModel, type AiBackend } from '@app/assistant/claude';
 import type { AssistantState } from '@app/assistant/assistant';
 import { resolveFocus } from '@app/ai/focus';
 import type { PerformanceRole } from '@core/beat/local';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
+import { showFormDialog } from '../../controls/FormDialog';
 import { Icon } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
@@ -203,59 +204,92 @@ const BACKENDS: { value: AssistantState['backend']; label: string; hint: string 
   {
     value: 'auto',
     label: 'Auto',
-    hint: 'Your Claude subscription if it is set up, else an API key, else the offline generator',
+    hint: 'Your Claude subscription if it is set up, else your ChatGPT plan (Codex), else a Claude API key, else the offline generator',
   },
   {
     value: 'subscription',
     label: 'Claude (my subscription)',
     hint: 'Through Claude Code, signed in with your Claude account',
   },
+  {
+    value: 'codex',
+    label: 'ChatGPT (my plan, via Codex)',
+    hint: 'Through the Codex CLI (it comes with the ChatGPT app), signed in with your ChatGPT account',
+  },
   { value: 'api', label: 'Claude (API key)', hint: 'Claude through an Anthropic API key' },
-  { value: 'offline', label: 'Offline generator', hint: 'The built-in beat generator: no Claude, no network' },
+  { value: 'offline', label: 'Offline generator', hint: 'The built-in beat generator: no AI, no network' },
 ];
 
 /** What "Auto" resolves to right now, for the label. */
 function autoLabel(st: AssistantState): string {
   if (!st.status) return 'Auto (checking…)';
   if (st.status.subscription.ok) return 'Auto: my Claude subscription';
+  if (st.status.codex.ok) return 'Auto: my ChatGPT plan (Codex)';
   if (st.status.api.ok) return 'Auto: Claude API key';
   return 'Auto: offline generator';
 }
 
-/** Whether the answers come from Claude (else the offline generator). */
-function usesClaude(st: AssistantState): boolean {
-  return (
-    st.backend === 'subscription' ||
-    st.backend === 'api' ||
-    (st.backend === 'auto' && !!st.status && (st.status.subscription.ok || st.status.api.ok))
-  );
+/** The AI that answers right now (null: the offline generator, or still checking). */
+function activeBackend(st: AssistantState): AiBackend | null {
+  if (st.backend === 'subscription' || st.backend === 'api' || st.backend === 'codex') return st.backend;
+  if (st.backend === 'offline' || !st.status) return null;
+  if (st.status.subscription.ok) return 'subscription';
+  if (st.status.codex.ok) return 'codex';
+  if (st.status.api.ok) return 'api';
+  return null;
 }
 
-const modelLabel = (st: AssistantState): string => AI_MODELS.find((m) => m.id === st.model)?.label ?? st.model;
+const modelLabel = (st: AssistantState): string =>
+  activeBackend(st) === 'codex'
+    ? st.codexModel
+      ? `ChatGPT ${st.codexModel}`
+      : 'ChatGPT (Codex default model)'
+    : (AI_MODELS.find((m) => m.id === st.model)?.label ?? st.model);
 
-/** The model pill's text: "Opus 5.5", "Offline", "Checking…". */
+/** The model pill's text: "Opus 5.5", "ChatGPT", "Offline", "Checking…". */
 function pillLabel(st: AssistantState): string {
   if (st.backend === 'auto' && !st.status) return 'Checking…';
-  if (!usesClaude(st)) return 'Offline';
+  const backend = activeBackend(st);
+  if (!backend) return 'Offline';
+  if (backend === 'codex') return st.codexModel || 'ChatGPT';
   return modelLabel(st)
     .replace(/^Claude /, '')
     .replace(/\s*\(.*\)$/, '');
+}
+
+/** Why the chosen way to reach an AI doesn't work yet, in words for the musician (undefined when it does or is unknown). */
+function notSetUp(st: AssistantState): string | undefined {
+  const s = st.status;
+  if (st.backend === 'subscription') return s?.subscription.reason;
+  if (st.backend === 'codex') return s?.codex.reason;
+  if (st.backend === 'api') return s?.api.reason;
+  if (st.backend === 'auto' && s && !s.subscription.ok && !s.codex.ok && !s.api.ok)
+    return `To use an AI: ${s.subscription.reason ?? 'sign in to Claude Code'} Or, for ChatGPT: ${s.codex.reason ?? 'sign in to Codex'}`;
+  return undefined;
 }
 
 /** The header: who answers (a compact pill), whether it is set up, New chat and the ⋯ menu. */
 const Header = memo(function Header({ st, send }: { st: AssistantState; send(text: string): void }) {
   const services = useServices();
   const a = services.assistant;
-  const claude = usesClaude(st);
+  const backend = activeBackend(st);
   const busy = st.phase !== 'idle';
-  const reason =
-    st.backend === 'subscription'
-      ? st.status?.subscription.reason
-      : st.backend === 'api'
-        ? st.status?.api.reason
-        : st.backend === 'auto' && st.status && !st.status.subscription.ok && !st.status.api.ok
-          ? `To use Claude: ${st.status.subscription.reason ?? 'sign in to Claude Code'}`
-          : undefined;
+  const reason = notSetUp(st);
+
+  /** "Other model…": a Codex model id typed in (empty = Codex's own default). */
+  const askCodexModel = async () => {
+    const values = await showFormDialog({
+      title: 'Other ChatGPT model',
+      message: 'The Codex model id to use with your ChatGPT plan, for example gpt-5.5. Leave it empty for Codex’s own default.',
+      fields: [{ kind: 'text', key: 'id', label: 'Model id', placeholder: 'gpt-5.5' }],
+      values: { id: st.codexModel },
+    });
+    if (!values) return;
+    const id = String(values.id ?? '').trim().toLowerCase();
+    if (!isCodexModel(id))
+      return services.session.getState().toast('A model id has letters, digits and . _ : - only (up to 64 characters).', 'error');
+    a.set({ codexModel: id });
+  };
 
   const menu = (e: ReactMouseEvent<HTMLElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -265,6 +299,7 @@ const Header = memo(function Header({ st, send }: { st: AssistantState; send(tex
         label:
           (b.value === 'auto' ? autoLabel(st) : b.label) +
           (b.value === 'subscription' && st.status && !st.status.subscription.ok ? ' (not set up)' : '') +
+          (b.value === 'codex' && st.status && !st.status.codex.ok ? ' (not set up)' : '') +
           (b.value === 'api' && st.status && !st.status.api.ok ? ' (no key)' : ''),
         checked: st.backend === b.value,
         hint: b.hint,
@@ -274,7 +309,24 @@ const Header = memo(function Header({ st, send }: { st: AssistantState; send(tex
         },
       })),
     ];
-    if (claude)
+    if (backend === 'codex')
+      entries.push(
+        { kind: 'separator' },
+        { kind: 'label', label: 'Model' },
+        ...CODEX_MODELS.map<MenuEntry>((m) => ({
+          label: m.label,
+          checked: st.codexModel === m.id,
+          hint: 'Let Codex pick the model for your ChatGPT plan',
+          onSelect: () => a.set({ codexModel: m.id }),
+        })),
+        {
+          label: st.codexModel ? `Other model: ${st.codexModel}…` : 'Other model…',
+          checked: st.codexModel !== '',
+          hint: 'Type the id of a Codex model, for example gpt-5.5',
+          onSelect: () => void askCodexModel(),
+        },
+      );
+    else if (backend)
       entries.push(
         { kind: 'separator' },
         { kind: 'label', label: 'Model' },
@@ -309,8 +361,8 @@ const Header = memo(function Header({ st, send }: { st: AssistantState; send(tex
       },
       { kind: 'separator' },
       {
-        label: 'Check the Claude connection again',
-        hint: 'Look again for your Claude subscription (Claude Code) and an API key',
+        label: 'Check the AI connection again',
+        hint: 'Look again for your Claude subscription (Claude Code), your ChatGPT plan (Codex) and an API key',
         onSelect: () => void a.checkAi(),
       },
       {
@@ -329,12 +381,12 @@ const Header = memo(function Header({ st, send }: { st: AssistantState; send(tex
         className={styles.modelPill}
         onClick={menu}
         data-hint={
-          claude
+          backend
             ? `Answers come from ${modelLabel(st)}: click to change who answers or the model`
-            : 'Answers come from the built-in offline generator: click to use your Claude subscription or an API key'
+            : 'Answers come from the built-in offline generator: click to use your Claude subscription, your ChatGPT plan or an API key'
         }
       >
-        <span className={`${styles.modelDot} ${claude ? styles.modelDotOn : ''}`} aria-hidden />
+        <span className={`${styles.modelDot} ${backend ? styles.modelDotOn : ''}`} aria-hidden />
         {pillLabel(st)}
         <Icon name="chevronDown" size={9} className={styles.modelCaret} />
       </button>

@@ -18,6 +18,7 @@ import { kitSampleRef } from '@app/default-project';
 import type { Services } from '@app/services';
 import { useDoc, useServices, useSession, useView } from '../../services-context';
 import { usePluginDef } from '../../plugin-hooks';
+import { useWindowedRows } from '../../controls/windowed';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
@@ -602,16 +603,91 @@ function RackHeader({ patternId, stepCount }: { patternId: PatternId; stepCount:
   );
 }
 
-export function ChannelRack() {
+/** One channel row: 30 px and a 2 px gap (the CSS of `.row`); a long rack keeps only the rows near the viewport. */
+const ROW_PITCH = 32;
+
+/** The channel rows, the add button and the step light. */
+function RackRows({ patternId, stepCount }: { patternId: PatternId; stepCount: number }) {
   const services = useServices();
   const order = useDoc((pr) => pr.channelOrder);
+  /** Where a drag would drop: a channel, or the end of the rack ('new'). */
+  const [dropTarget, setDropTarget] = useState<ChannelId | 'new' | null>(null);
+  const graphChannel = useStore(services.editor, (s) => s.stepGraph.channelId);
+  // A long rack (150 channels in a long song) renders only the rows near the viewport, so opening the rack and
+  // switching patterns cost what a screenful costs. With the step graph open a row is taller than the rest:
+  // every row renders then.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const win = useWindowedRows(scrollRef, order.length, ROW_PITCH, { overscan: 10 });
+  const windowed = graphChannel === null;
+  const first = windowed ? win.first : 0;
+  const last = windowed ? win.last : order.length;
+  const targetOf = (e: React.DragEvent) =>
+    (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
+
+  return (
+    <div
+      ref={scrollRef}
+      className={styles.scroll}
+      onScroll={win.onScroll}
+      onDragOver={(e) => {
+        const dt = e.dataTransfer;
+        if (!dt.types.includes(SOUND) && !dragMayHaveAudio(dt)) return;
+        e.preventDefault();
+        dt.dropEffect = 'copy';
+        const target = targetOf(e) ?? 'new';
+        if (target !== dropTarget) setDropTarget(target);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+      }}
+      onDrop={(e) => {
+        setDropTarget(null);
+        const generator = e.dataTransfer.getData(SOUND);
+        // Read during the event: the DataTransfer is emptied afterwards.
+        const files = generator ? null : takeAudioFiles(e.dataTransfer);
+        if (!generator && !files) return;
+        e.preventDefault();
+        void dropOnRack(services, targetOf(e), generator, files);
+      }}
+    >
+      <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
+        {windowed && win.padTop > 0 && <div aria-hidden style={{ height: win.padTop }} />}
+        {order.slice(first, last).map((id) => (
+          <Fragment key={id}>
+            <ChannelRow id={id} dropTarget={dropTarget === id} />
+            {graphChannel === id && <StepGraph channelId={id} patternId={patternId} stepCount={stepCount} />}
+          </Fragment>
+        ))}
+        {windowed && win.padBottom > 0 && <div aria-hidden style={{ height: win.padBottom }} />}
+        <StepLight stepCount={stepCount} />
+        {order.length === 0 && (
+          <div className={styles.empty}>
+            No sounds yet. Click the + below to add a kit sound or an instrument, or drag a sample here from the
+            browser.
+          </div>
+        )}
+        <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
+          <button
+            tabIndex={-1}
+            className={styles.addButton}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={(e) => showContextMenu(e, addChannelMenu(services))}
+            data-hint="Add a channel (kit sound or instrument)"
+            aria-label="Add a channel"
+          >
+            <Icon name="plus" size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChannelRack() {
   const patternId = useView((s) => s.currentPatternId);
   // Only the step count, not the pattern: a step click makes a new pattern object, and the rack (150 rows in a long
   // song) re-rendered on every one only to find that every row is unchanged.
   const stepCountOf = useDoc((pr) => (patternId ? pr.patterns[patternId]?.stepCount : undefined));
-  /** Where a drag would drop: a channel, or the end of the rack ('new'). */
-  const [dropTarget, setDropTarget] = useState<ChannelId | 'new' | null>(null);
-  const graphChannel = useStore(services.editor, (s) => s.stepGraph.channelId);
   // Letting go anywhere ends a paint along a row.
   useEffect(() => {
     window.addEventListener('pointerup', endPaint);
@@ -628,64 +704,11 @@ export function ChannelRack() {
         No pattern is open. Pick one under Project patterns in the browser, or click “+ New pattern” there.
       </div>
     );
-  const targetOf = (e: React.DragEvent) =>
-    (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
-  const stepCount = stepCountOf;
 
   return (
     <div className={styles.rack}>
-      <RackHeader patternId={patternId} stepCount={stepCount} />
-      <div
-        className={styles.scroll}
-        onDragOver={(e) => {
-          const dt = e.dataTransfer;
-          if (!dt.types.includes(SOUND) && !dragMayHaveAudio(dt)) return;
-          e.preventDefault();
-          dt.dropEffect = 'copy';
-          const target = targetOf(e) ?? 'new';
-          if (target !== dropTarget) setDropTarget(target);
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
-        }}
-        onDrop={(e) => {
-          setDropTarget(null);
-          const generator = e.dataTransfer.getData(SOUND);
-          // Read during the event: the DataTransfer is emptied afterwards.
-          const files = generator ? null : takeAudioFiles(e.dataTransfer);
-          if (!generator && !files) return;
-          e.preventDefault();
-          void dropOnRack(services, targetOf(e), generator, files);
-        }}
-      >
-        <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
-          {order.map((id) => (
-            <Fragment key={id}>
-              <ChannelRow id={id} dropTarget={dropTarget === id} />
-              {graphChannel === id && <StepGraph channelId={id} patternId={patternId} stepCount={stepCount} />}
-            </Fragment>
-          ))}
-          <StepLight stepCount={stepCount} />
-          {order.length === 0 && (
-            <div className={styles.empty}>
-              No sounds yet. Click the + below to add a kit sound or an instrument, or drag a sample here from the
-              browser.
-            </div>
-          )}
-          <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
-            <button
-              tabIndex={-1}
-              className={styles.addButton}
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={(e) => showContextMenu(e, addChannelMenu(services))}
-              data-hint="Add a channel (kit sound or instrument)"
-              aria-label="Add a channel"
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <RackHeader patternId={patternId} stepCount={stepCountOf} />
+      <RackRows patternId={patternId} stepCount={stepCountOf} />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { useStore } from 'zustand';
 import { AI_MODELS } from '@app/assistant/claude';
 import type { AssistantState } from '@app/assistant/assistant';
@@ -72,6 +72,13 @@ export function AssistantWindow() {
     setPrompt('');
     void a.send(text);
   };
+  // The header and the conversation get one `send` for good (it reads the latest through a ref), so typing in the
+  // box re-renders the box and not the whole conversation.
+  const sendRef = useRef(send);
+  useLayoutEffect(() => {
+    sendRef.current = send;
+  });
+  const sendText = useCallback((text: string) => sendRef.current(text), []);
   const live = st.phase === 'counting-in' || st.phase === 'recording';
   // A take, a recording or its analysis keeps the strip open.
   const held = live || st.phase === 'analyzing' || !!st.take;
@@ -80,8 +87,8 @@ export function AssistantWindow() {
 
   return (
     <div className={styles.assistant}>
-      <Header st={st} send={send} />
-      <Messages st={st} send={send} />
+      <Header st={st} send={sendText} />
+      <Messages st={st} send={sendText} />
       {showPerform && <Performance st={st} />}
       <div className={styles.compose}>
         {chips.length > 0 && (
@@ -236,7 +243,7 @@ function pillLabel(st: AssistantState): string {
 }
 
 /** The header: who answers (a compact pill), whether it is set up, New chat and the ⋯ menu. */
-function Header({ st, send }: { st: AssistantState; send(text: string): void }) {
+const Header = memo(function Header({ st, send }: { st: AssistantState; send(text: string): void }) {
   const services = useServices();
   const a = services.assistant;
   const claude = usesClaude(st);
@@ -360,9 +367,9 @@ function Header({ st, send }: { st: AssistantState; send(text: string): void }) 
       </button>
     </div>
   );
-}
+});
 
-function Messages({ st, send }: { st: AssistantState; send(text: string): void }) {
+const Messages = memo(function Messages({ st, send }: { st: AssistantState; send(text: string): void }) {
   const services = useServices();
   const ref = useRef<HTMLDivElement>(null);
   const busy = st.phase !== 'idle';
@@ -414,7 +421,7 @@ function Messages({ st, send }: { st: AssistantState; send(text: string): void }
       {st.building && <Building building={st.building} />}
     </div>
   );
-}
+});
 
 /** A mix analysis at work: which track it is rendering. */
 function Listening({ listening }: { listening: NonNullable<AssistantState['listening']> }) {

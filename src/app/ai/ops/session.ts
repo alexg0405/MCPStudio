@@ -10,7 +10,7 @@ import type { ChannelId, Clip, ClipId, NoteId, PatternId, PluginOwner, Project }
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Services } from '../../services';
-import type { AudioBufferSize, PrefsState } from '../../stores/prefs';
+import type { AudioBufferChoice, PrefsState } from '../../stores/prefs';
 import { PIANO_ROLL_TOOLS, PLAYLIST_TOOLS } from '../../stores/editor';
 import type { AiAction, AiAnswer } from '../schema';
 import * as S from '../schema/parts';
@@ -27,7 +27,7 @@ export const RECORD_GRIDS: Readonly<Record<string, number>> = {
   '1/8t': 320,
   '1/16t': 160,
 };
-export const AUDIO_BUFFERS: readonly AudioBufferSize[] = ['small', 'medium', 'large'];
+export const AUDIO_BUFFERS: readonly AudioBufferChoice[] = ['auto', 'small', 'medium', 'large'];
 const SCOPES = ['scope', 'spectrum', 'off'] as const;
 const SNAPS = SNAP_OPTIONS.map((o) => o.value);
 
@@ -117,7 +117,7 @@ export const session: OpModule = {
       typing_piano: S.bool('Computer keys play notes.'),
       piano_octave: S.int('Typing keyboard octave (0–9; 5 = middle C).'),
       midi_input: S.bool('MIDI keyboards.'),
-      audio_buffer: { type: 'string', enum: [...AUDIO_BUFFERS], description: 'Large plays smoothest, small answers fastest live.' },
+      audio_buffer: { type: 'string', enum: [...AUDIO_BUFFERS], description: 'Auto (default) is the fastest that plays smoothly; large plays smoothest, small answers fastest live.' },
       sample_memory_mb: S.int('Decoded-audio memory in MB (256–16384).'),
       scope: { type: 'string', enum: [...SCOPES], description: 'Toolbar display.' },
       input_channels: { type: 'string', enum: ['mono', 'stereo'], description: 'Audio input.' },
@@ -251,9 +251,11 @@ function applySettings(s: Services, a: AiAction, c: OpContext, out: Lines): void
     text.push(`typing keyboard octave ${prefs.pianoOctave}`);
   }
   const buf = AUDIO_BUFFERS.find((x) => x === str(a.audio_buffer));
-  if (a.audio_buffer !== undefined && !buf) out.warn('audio_buffer must be small, medium or large');
+  if (a.audio_buffer !== undefined && !buf) out.warn('audio_buffer must be auto, small, medium or large');
   if (buf) {
     prefs.audioBuffer = buf;
+    if (buf === 'auto') prefs.autoBufferSize = 'small';
+    else prefs.audioBufferPicked = true;
     text.push(`audio buffer ${buf}`);
   }
   const mem = num(a.sample_memory_mb);

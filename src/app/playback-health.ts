@@ -4,7 +4,7 @@
  * (`stats().keepUp`); this turns it into plain advice. Checked once a second while playing.
  */
 import type { EngineApi } from '@engine/api';
-import type { PrefsStore } from './stores/prefs';
+import { effectiveBuffer, type PrefsStore } from './stores/prefs';
 import type { SessionStore } from './stores/session';
 
 /** Below this share of real time a second counts as struggling (5% of the sound dropped). */
@@ -31,8 +31,11 @@ export function watchPlaybackHealth(engine: EngineApi, prefs: PrefsStore, sessio
     if (keepUp === undefined) return;
     struggling = keepUp < KEEP_UP_MIN ? struggling + 1 : 0;
     if (struggling < STRUGGLING_SECONDS || told) return;
+    const p = prefs.getState();
+    // Auto moves to a bigger buffer by itself (and says so); the advice is for when that is not enough.
+    if (p.audioBuffer === 'auto' && p.autoBufferSize !== 'large') return;
     told = true;
-    session.getState().toast(playbackAdvice(keepUp, prefs.getState().audioBuffer), 'error');
+    session.getState().toast(playbackAdvice(keepUp, effectiveBuffer(p)), 'error');
   };
   const sync = () => {
     if (engine.playing && !timer) {
@@ -45,10 +48,11 @@ export function watchPlaybackHealth(engine: EngineApi, prefs: PrefsStore, sessio
   };
   const offEngine = engine.subscribe(sync);
   // A new buffer size is a new chance: say it again if it still struggles.
-  let buffer = prefs.getState().audioBuffer;
+  let buffer = effectiveBuffer(prefs.getState());
   const offPrefs = prefs.subscribe((p) => {
-    if (p.audioBuffer !== buffer) told = false;
-    buffer = p.audioBuffer;
+    const size = effectiveBuffer(p);
+    if (size !== buffer) told = false;
+    buffer = size;
   });
   sync();
   return () => {

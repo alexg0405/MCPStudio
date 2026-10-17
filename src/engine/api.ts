@@ -43,6 +43,8 @@ export interface EngineStats {
   baseLatency: number;
   outputLatency: number;
   lookahead: number;
+  /** Seconds between pressing play and the first beat (it follows the audio buffer). */
+  startLead?: number;
   lateEvents: number;
   /**
    * The longest wait between two scheduler runs since playback started (ms). Late notes only point

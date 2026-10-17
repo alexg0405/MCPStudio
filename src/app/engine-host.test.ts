@@ -106,6 +106,60 @@ describe('EngineHost', () => {
     expect(made[1]?.session.countInBars).toBe(2);
   });
 
+  it('keeps the old engine playing while the new one loads, then hands the song over', async () => {
+    let release: () => void = () => {};
+    const made: FakeEngine[] = [];
+    const disposed: FakeEngine[] = [];
+    const host = new EngineHost(() => {
+      const e = new FakeEngine();
+      if (made.length > 0) e.ready = () => new Promise<void>((r) => (release = r));
+      const dispose = e.dispose.bind(e);
+      e.dispose = () => (disposed.push(e), dispose());
+      made.push(e);
+      return e;
+    });
+    const project = createEmptyProject();
+    host.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
+    host.play();
+    const done = host.reboot();
+    await new Promise((r) => setTimeout(r, 5));
+    // Loading: the old engine still plays (no gap), and an edit made now reaches both.
+    expect(made[0]?.playing).toBe(true);
+    expect(made[1]?.playing).toBe(false);
+    const edited = createEmptyProject();
+    host.applyDocChange({ next: edited, prev: project, patches: null, origin: 'edit' });
+    expect(made[0]?.changes.at(-1)?.next).toBe(edited);
+    expect(made[1]?.changes.at(-1)?.next).toBe(edited);
+    release();
+    await done;
+    expect(made[1]?.playing).toBe(true);
+    // The old one fades out a moment later, when the new one is heard.
+    await new Promise((r) => setTimeout(r, 120));
+    expect(disposed).toEqual([made[0]]);
+    // Calls go to the new engine.
+    host.stop();
+    expect(made[1]?.playing).toBe(false);
+  });
+
+  it('does not start the new engine when playback was stopped while it loaded', async () => {
+    let release: () => void = () => {};
+    const made: FakeEngine[] = [];
+    const host = new EngineHost(() => {
+      const e = new FakeEngine();
+      if (made.length > 0) e.ready = () => new Promise<void>((r) => (release = r));
+      made.push(e);
+      return e;
+    });
+    host.play();
+    const done = host.reboot();
+    await new Promise((r) => setTimeout(r, 5));
+    host.stop();
+    release();
+    await done;
+    expect(made[1]?.playing).toBe(false);
+    expect(host.playing).toBe(false);
+  });
+
   it('keeps the running engine when a new one cannot be made', async () => {
     let fail = false;
     const made: FakeEngine[] = [];

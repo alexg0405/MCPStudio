@@ -108,12 +108,16 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
   (`clipId:noteId:iter`) not yet dispatched; send `noteOff(now + 10 ms)` for dispatched keys that vanished; update end
   ticks. Tempo/loop/mode/pattern changes re-anchor the cursor at the frontier.
 - Pause: stop pumping, `allNotesOff(now)` on every instrument, clear tables. Stop: pause + jump to start. Seek while
-  playing: pause + `start(tick, at = now + 40 ms)`.
+  playing: pause + `start(tick, at = now + startLead)`. `startLead` (`Engine.startLead()`, `stats().startLead`) is the time
+  the first notes need to reach the audio thread: `6 ms + 1.5 × baseLatency` (14 / 21 / 38 ms for the small, medium and
+  large buffer), plus up to 30 ms learned when a start still dispatched late. It was a fixed 50 ms.
 - `allNotesOff(t, hard?)`: release every voice sounding at `t`, drop everything scheduled at or after `t`.
 - Playhead: keep a ring of segments; each frame compute the audible time from `getOutputTimestamp()`
   (`contextTime + (performance.now() − performanceTime) / 1000`, includes output latency, e.g. Bluetooth) and map it
   through the ring. Never store the playhead in React state.
 - Preview/MIDI input bypass the scheduler (`time = ctx.currentTime`, flush the worklet port). Velocity-0 noteOn = noteOff.
+  `currentTime` only moves once per audio callback, so a quick tap's release could carry the press's own time and cancel
+  the note: `previewNoteOff` holds the release until `2.5 × baseLatency` (at least 10 ms) after the press.
 - Metronome and audio-clip starts are core events consumed by engine-internal players; the metronome goes to a monitor
   bus that export excludes. Clips overlapping a segment start begin mid-clip with an offset.
 
@@ -2553,16 +2557,48 @@ set up and level new songs; "mix it / louder" → level_mix; "check my mix" or a
 analyze_mix and fix by hand; never both in one answer; space through shared Reverb/Delay returns rather
 than a reverb on every track (each costs the audio thread).
 
-### Audio buffer (`prefs.audioBuffer`)
+### Audio buffer (`prefs.audioBuffer`) and Auto
 
-Settings → Sound output → Audio buffer: large (latencyHint 'playback', about 21 ms; the default),
-medium ('balanced', 10 ms) or small ('interactive', 5 ms). A change reboots the engine (new
-AudioContext; playback carries on). Busy songs on a loaded machine underrun the 5 ms buffer: measured
-as the audio clock advancing slower than wall time during playback. The engine measures it each
-second while playing (`stats().keepUp`); `app/playback-health.ts` shows plain advice once when two
-seconds in a row fall under 0.95. The playhead's heard time runs on the wall clock for at most 0.1 s
-past the output's last timestamp and never goes back (a stalled audio clock used to make it jump back
-and forth).
+Settings → Sound output → Audio buffer: **Auto** (the default), large (latencyHint 'playback', about 21 ms), medium
+('balanced', 10 ms) or small ('interactive', 5 ms). A change reboots the engine (new AudioContext; playback carries on,
+see `EngineHost.reboot` below). Busy songs on a loaded machine underrun the 5 ms buffer: measured as the audio clock
+advancing slower than wall time during playback. The engine measures it each second while playing (`stats().keepUp`);
+`app/playback-health.ts` shows plain advice once when two seconds in a row fall under 0.95 (not while Auto can still
+move up). The playhead's heard time runs on the wall clock for at most 0.1 s past the output's last timestamp and never
+goes back (a stalled audio clock used to make it jump back and forth); one clock read answers every reader for 2 ms
+(`Engine.audibleTime`), so a frame's several readers agree and the timestamp object is allocated once.
+
+Auto (`app/audio-buffer-auto.ts`, pure and unit-tested; `app/audio-buffer-watch.ts` runs it): starts at
+`prefs.autoBufferSize` (small the first time) and, once a second while playing, reads `keepUp`: two seconds in a row
+under 0.97, or one under 0.85, step one size up (`autoBufferSize` changes, the services reboot the engine and a toast
+says so); never two steps within 8 s, and the 2 s after a step are not counted. After 180 s of playing with nothing
+lost (60 s while the typing piano or a MIDI keyboard is on) one step down is tried; if it struggles within 30 s it goes
+back up and no further try is made for 30 min. The size it is at is remembered in the prefs. A size picked by hand is
+kept (`audioBufferPicked`; a stored 'large' without it was only the old default and becomes Auto).
+
+`EngineHost.reboot` is seamless while playing: the old engine keeps playing while the new one (made first, fed the same
+document, view, session and output device, and every change made meanwhile) loads its sounds; then the new engine
+starts at the tick that will be heard when its first sound arrives (`playhead()` plus the start lead and its output
+latency, in the old engine's tempo), and the old one fades out (`Engine.dispose` ramps the master down in 12 ms) as that
+sound reaches the speakers. Before, the old engine was closed first and the gap was the whole plugin load.
+
+### Latency measurements (`test/browser/latency.test.ts`, `test/helpers/latency.ts`)
+
+`npm run test:perf` (or `VITE_PERF_STRICT=1 npx vitest run --project audio test/browser/latency.test.ts`) prints
+`LAT |` lines. A probe worklet behind the limiter records the context frame of the first loud sample after arming; the
+frame is turned into speaker time with `getOutputTimestamp` (its context time is the audible position: it trails
+`currentTime` by `baseLatency + outputLatency`), so a measurement runs from a key's `event.timeStamp`, a MIDI message, the
+call of `play()` or a knob edit to the speaker. It is split into handling (event → engine call), transit (engine call →
+first sample at the master, in context time) and the rest (output buffer and device). The test instrument
+(`latency-tone.worklet.ts`) sounds from the note-on frame. Paths: typing keyboard and MIDI through the real services,
+play → note at tick 0, edit while playing (a note added `d` ms ahead of the schedule: the smallest `d` heard on time),
+knob (a plugin param, a channel volume). Three buffers, an idle song and the `?perf=mix30` fixture playing with its tracks
+muted. Findings: the engine's own part is 1.3 ms (p95 6.6) from `currentTime`; everything else is the output (24 / 32 / 40
+ms in this Mac's Chrome), which only the buffer size moves. The heavy song adds the mixer's delay compensation
+(`graphLatency()`, 10.6 ms there) to every live note and knob: all paths wait for the slowest plugin. An edit is heard on
+time when it is at least ~20 ms ahead of the schedule (10 ms `SAFETY` + message), independent of the lookahead (the same
+with 50 ms as with 120 ms), and the playhead the user sees trails the schedule by 30–60 ms, so edits ahead of what is
+seen are always in time: the lookahead is a jank margin, not an edit latency, and stays at 120 ms.
 
 ### Not done / to wire at integration
 

@@ -21,13 +21,14 @@ import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
 import { watchPlaybackHealth } from './playback-health';
-import { AUDIO_BUFFER_HINT, createPrefsStore, type PrefsState, type PrefsStore } from './stores/prefs';
+import { AUDIO_BUFFER_HINT, createPrefsStore, effectiveBuffer, type PrefsState, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { ControllerRouter } from './controllers';
 import { LiveInput } from './live-input';
 import { ScoreLog } from './score-log';
 import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
+import { watchAutoBuffer } from './audio-buffer-watch';
 import { ProjectFiles } from './project-files';
 import { AssistantFacade } from './assistant/facade';
 import { McpLink } from './mcp/bridge';
@@ -192,20 +193,23 @@ export function createServices(opts: ServiceOptions = {}): Services {
     onPluginTap: (owner, tap, live) => taps.report(owner, tap, live),
   };
   const makeEngine =
-    opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o, AUDIO_BUFFER_HINT[prefs.getState().audioBuffer]));
+    opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o, AUDIO_BUFFER_HINT[effectiveBuffer(prefs.getState())]));
   const engine = new EngineHost(() => makeEngine(engineOptions));
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
   prefs.subscribe(applyOutput);
   applyOutput();
-  // A new buffer size needs a new AudioContext: reboot the engine (playback carries on from where it was).
-  let appliedBuffer = prefs.getState().audioBuffer;
+  // A new buffer size needs a new AudioContext: reboot the engine (playback carries on from where it was). The size
+  // is the chosen one, or what Auto has settled on (it moves up when playback can't keep up).
+  let appliedBuffer = effectiveBuffer(prefs.getState());
   prefs.subscribe((p) => {
-    if (p.audioBuffer === appliedBuffer) return;
-    appliedBuffer = p.audioBuffer;
+    const size = effectiveBuffer(p);
+    if (size === appliedBuffer) return;
+    appliedBuffer = size;
     void engine.reboot();
   });
   watchPlaybackHealth(engine, prefs, session);
+  watchAutoBuffer(engine, prefs, session, () => midi.enabled);
   const recording = new RecordController(engine, (kind) =>
     kind === 'audio' ? prefs.getState().recordAudio : prefs.getState().recordNotes,
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { canChooseOutput, listOutputs, onDevicesChange, revealDevices, type AudioOutput } from '@app/audio-devices';
-import type { AudioBufferSize } from '@app/stores/prefs';
+import type { AudioBufferChoice } from '@app/stores/prefs';
 import { formatChord } from '@core/commands/keymap';
 import { useServices } from '../../services-context';
 import { ACCENTS, effectiveAccent, findTheme, THEMES } from '../../theme/apply';
@@ -27,6 +27,7 @@ function SoundOutput() {
   const s = useServices();
   const chosen = useStore(s.prefs, (p) => p.outputDevice);
   const buffer = useStore(s.prefs, (p) => p.audioBuffer);
+  const autoSize = useStore(s.prefs, (p) => p.autoBufferSize);
   const [list, setList] = useState<{ outputs: AudioOutput[]; complete: boolean } | null>(null);
   const refresh = useCallback(() => void listOutputs().then(setList), []);
   useEffect(() => {
@@ -105,15 +106,22 @@ function SoundOutput() {
       )}
       <Row
         label="Audio buffer"
-        hint="Large plays busy songs without crackles or dropouts. Small answers fastest when you play live on a keyboard, but crackles sooner. Changing it restarts the sound for a moment."
+        hint={`Auto starts small, so keys and Play answer fastest, and moves to a bigger buffer by itself if a busy song crackles (it remembers what works on this computer${buffer === 'auto' ? `; now ${autoSize}` : ''}). Large plays the busiest songs without dropouts. Changing it restarts the sound for a moment.`}
       >
         <select
           className={styles.select}
           value={buffer}
-          onChange={(e) => s.prefs.getState().set({ audioBuffer: e.target.value as AudioBufferSize })}
-          data-hint="How much audio the browser prepares ahead: large is smoothest, small answers fastest (about 21, 10 or 5 ms)"
+          onChange={(e) => {
+            const choice = e.target.value as AudioBufferChoice;
+            // A picked size is kept; choosing Auto starts again from the smallest.
+            s.prefs
+              .getState()
+              .set(choice === 'auto' ? { audioBuffer: choice, autoBufferSize: 'small' } : { audioBuffer: choice, audioBufferPicked: true });
+          }}
+          data-hint="How much audio the browser prepares ahead: Auto picks the smallest that plays without crackles; large is smoothest, small answers fastest (about 21, 10 or 5 ms)"
         >
-          <option value="large">Large: smoothest playback (recommended)</option>
+          <option value="auto">Auto: fastest that plays smoothly (recommended)</option>
+          <option value="large">Large: smoothest playback</option>
           <option value="medium">Medium</option>
           <option value="small">Small: fastest response for playing live</option>
         </select>

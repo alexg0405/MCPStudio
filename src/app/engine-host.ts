@@ -33,6 +33,8 @@ export class EngineHost implements EngineApi {
   /** The chosen output device, replayed on a reboot ('' = default). */
   private outputDevice = '';
   private rebooting: Promise<void> | null = null;
+  /** The engine being made during a reboot while the old one still plays: it hears every change meanwhile too. */
+  private pending: EngineApi | null = null;
   private rebootAgain = false;
   /** Stop or play was pressed during a reboot: the engine does not start by itself afterwards. */
   private resumeCancelled = false;
@@ -67,36 +69,72 @@ export class EngineHost implements EngineApi {
   private async rebootOnce(): Promise<void> {
     const old = this.inner;
     const wasPlaying = old.playing;
-    const at = old.playhead();
     // Made before anything is let go of: if no engine can be made, the running one stays.
     const next = this.factory();
-    this.detach();
     this.resumeCancelled = false;
+    this.prepare(next);
+    if (wasPlaying) {
+      // Seamless: the old engine keeps playing while the new one loads its sounds (the gap used to be the whole
+      // load); then the new one starts where the song will be when its first sound arrives, and the old one fades
+      // out as that happens.
+      this.pending = next;
+      void next.resume().catch(() => {});
+      await Promise.race([next.ready().catch(() => {}), new Promise<void>((r) => setTimeout(r, READY_WAIT_MS))]);
+      this.pending = null;
+      if (old.playing) {
+        this.handOver(old, next);
+        this.emit();
+        return;
+      }
+      // Stopped meanwhile: nothing to carry on; the new engine just takes over.
+      this.swap(next);
+      await old.dispose();
+      void next.resume().catch(() => {});
+      this.emit();
+      return;
+    }
+    this.swap(next);
+    await old.dispose();
+    // Don't wait: without a recent gesture resume() can stay pending until the next click,
+    // which the audio-unlock listener provides (the toolbar shows "click to enable" meanwhile).
+    void next.resume().catch(() => {});
+    this.emit();
+  }
+
+  /** Gives a new engine everything the running one knows. */
+  private prepare(next: EngineApi): void {
     if (this.lastDoc) next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
     if (this.view) next.setTransportView(this.view);
     if (this.session) next.setSession(this.session);
     if (this.outputDevice) void next.setOutputDevice(this.outputDevice);
     if (this.openEnded) next.setSongOpenEnded(true);
+  }
+
+  private swap(next: EngineApi): void {
+    this.detach();
     this.inner = next;
     this.detach = next.subscribe(() => this.emit());
-    await old.dispose();
-    // Don't wait: without a recent gesture resume() can stay pending until the next click,
-    // which the audio-unlock listener provides (the toolbar shows "click to enable" meanwhile).
-    void next.resume().catch(() => {});
-    if (wasPlaying) {
-      // Instruments that haven't loaded drop their notes: start once they are there (but never wait forever).
-      await Promise.race([next.ready().catch(() => {}), new Promise<void>((r) => setTimeout(r, READY_WAIT_MS))]);
-      // The user pressed stop (or play somewhere else) while the sounds loaded: leave it be.
-      if (this.inner === next && !this.resumeCancelled && !next.playing) {
-        // Starting again is not a take: no count-in clicks first.
-        const session = this.session;
-        const countIn = !!session && session.countInBars > 0;
-        if (session && countIn) next.setSession({ ...session, countInBars: 0 });
-        next.play(Math.max(0, Math.floor(at)));
-        if (session && countIn) next.setSession(session);
-      }
-    }
-    this.emit();
+  }
+
+  /** The new engine takes over a song that is playing: it starts at the tick that will be heard as it begins. */
+  private handOver(old: EngineApi, next: EngineApi): void {
+    const st = next.stats();
+    const oldSt = old.stats();
+    const headMs = ((st.startLead ?? 0.05) + st.baseLatency + st.outputLatency) * 1000;
+    const oldMs = (oldSt.baseLatency + oldSt.outputLatency) * 1000;
+    // How far the song moves while the new engine starts (tempo and loops are the old engine's to know).
+    const t0 = old.contextTimeAt(performance.now());
+    const ahead = old.tickAt(t0 + headMs / 1000).tick - old.tickAt(t0).tick;
+    const tick = old.playhead() + (Number.isFinite(ahead) && ahead >= 0 && ahead < 4 * 3840 ? ahead : 0);
+    this.swap(next);
+    // Starting again is not a take: no count-in clicks first.
+    const session = this.session;
+    const countIn = !!session && session.countInBars > 0;
+    if (session && countIn) next.setSession({ ...session, countInBars: 0 });
+    next.play(Math.max(0, tick));
+    if (session && countIn) next.setSession(session);
+    // The old engine fades out as the new one's first sound reaches the speakers.
+    setTimeout(() => void old.dispose(), Math.max(0, headMs - oldMs - 6));
   }
 
   get sampleRate(): number {
@@ -117,13 +155,16 @@ export class EngineHost implements EngineApi {
   applyDocChange(change: DocChange): void {
     this.lastDoc = change;
     this.inner.applyDocChange(change);
+    this.pending?.applyDocChange(change);
   }
   pluginsChanged(ids: readonly string[]): void {
     this.inner.pluginsChanged(ids);
+    this.pending?.pluginsChanged(ids);
   }
   setTransportView(view: TransportView): void {
     this.view = view;
     this.inner.setTransportView(view);
+    this.pending?.setTransportView(view);
   }
   play(fromTick?: Tick): void {
     this.resumeCancelled = true;
@@ -139,6 +180,7 @@ export class EngineHost implements EngineApi {
   }
   setOutputDevice(deviceId: string): Promise<boolean> {
     this.outputDevice = deviceId;
+    void this.pending?.setOutputDevice(deviceId);
     return this.inner.setOutputDevice(deviceId);
   }
   playhead(): number {
@@ -183,6 +225,7 @@ export class EngineHost implements EngineApi {
   setSongOpenEnded(on: boolean): void {
     this.openEnded = on;
     this.inner.setSongOpenEnded(on);
+    this.pending?.setSongOpenEnded(on);
   }
   stopPreview(): void {
     this.inner.stopPreview();
@@ -208,6 +251,7 @@ export class EngineHost implements EngineApi {
   setSession(session: EngineSession): void {
     this.session = { ...session };
     this.inner.setSession(session);
+    this.pending?.setSession(session);
   }
   graphLatency(): number {
     return this.inner.graphLatency();

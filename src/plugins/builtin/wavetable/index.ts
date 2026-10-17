@@ -425,7 +425,7 @@ export default defineWorkletInstrument({
         ampDecay: 0.4,
         ampSustain: 0.12,
         ampRelease: 0.25,
-        level: 5.4,
+        level: 2.6,
       },
     },
     {
@@ -474,7 +474,7 @@ export default defineWorkletInstrument({
         ampDecay: 0.45,
         ampSustain: 0,
         ampRelease: 0.3,
-        level: 4.8,
+        level: 2,
       },
     },
     {

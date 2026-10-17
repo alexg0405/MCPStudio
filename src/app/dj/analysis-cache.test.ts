@@ -201,6 +201,133 @@ describe('track analyzer', () => {
   });
 });
 
+/** A stand-in analysis: the queue tests are about order and sharing, not about what is measured. */
+const fakeAnalysis = (hash: string) => ({ version: ANALYSIS_VERSION, hash, energy: [], sections: [] }) as unknown as TrackAnalysis;
+
+/** Lets the analyzer take the steps it can (its steps are promises, so one macrotask runs them all). */
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+/**
+ * A runner that records the order songs start in, and holds each one until the test finishes it: the test decides when the
+ * running job ends, so what runs next is visible. No audio: the decoder is a fake too.
+ */
+function queueFixture() {
+  const started: string[] = [];
+  const finishers = new Map<string, () => void>();
+  const run: AnalysisRunner = (job, _onProgress, signal) =>
+    new Promise<TrackAnalysis>((resolve, reject) => {
+      started.push(job.hash);
+      finishers.set(job.hash, () => resolve(fakeAnalysis(job.hash)));
+      signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')));
+    });
+  const decode: AnalysisDecoder = () => Promise.resolve({ channels: [new Float32Array(1)], sampleRate: 44100 });
+  const an = createTrackAnalyzer({ storage: memoryAnalysisStorage(), decode, run, openStream: () => Promise.resolve(null) });
+  /** Finishes a song that has started, then lets the analyzer start the next one. */
+  const finish = async (hash: string) => {
+    const done = finishers.get(hash);
+    if (!done) throw new Error(`${hash} has not started`);
+    finishers.delete(hash);
+    done();
+    await settle();
+  };
+  return { an, started, finish };
+}
+
+describe('analysis queue', () => {
+  it('runs a now job second, after the running one and ahead of the queued background jobs', async () => {
+    const { an, started, finish } = queueFixture();
+    const background = ['b1', 'b2', 'b3'].map((h) => an.analyze(s, ref(h)));
+    const now = an.analyze(s, ref('n'), { priority: 'now' });
+    await settle();
+    expect(started).toEqual(['b1']);
+    await finish('b1');
+    expect(started).toEqual(['b1', 'n']);
+    await finish('n');
+    expect(started).toEqual(['b1', 'n', 'b2']);
+    await finish('b2');
+    await finish('b3');
+    expect((await now).hash).toBe('n');
+    expect((await Promise.all(background)).map((a) => a.hash)).toEqual(['b1', 'b2', 'b3']);
+  });
+
+  it('runs jobs of one priority first in first out', async () => {
+    const { an, started, finish } = queueFixture();
+    const all = [
+      an.analyze(s, ref('r')),
+      an.analyze(s, ref('a')),
+      an.analyze(s, ref('b')),
+      an.analyze(s, ref('c')),
+      an.analyze(s, ref('n1'), { priority: 'now' }),
+      an.analyze(s, ref('n2'), { priority: 'now' }),
+    ];
+    await settle();
+    for (const h of ['r', 'n1', 'n2', 'a', 'b', 'c']) await finish(h);
+    expect(started).toEqual(['r', 'n1', 'n2', 'a', 'b', 'c']);
+    expect((await Promise.all(all)).map((a) => a.hash)).toEqual(['r', 'a', 'b', 'c', 'n1', 'n2']);
+  });
+
+  it('callers asking for the same song share one job, while it runs or is queued', async () => {
+    const { an, started, finish } = queueFixture();
+    const first = an.analyze(s, ref('r'));
+    const second = an.analyze(s, ref('r'), { priority: 'now' });
+    const queued1 = an.analyze(s, ref('q'));
+    const queued2 = an.analyze(s, ref('q'));
+    await settle();
+    expect(started).toEqual(['r']);
+    await finish('r');
+    expect(await second).toBe(await first);
+    await finish('q');
+    expect(started).toEqual(['r', 'q']);
+    expect(await queued2).toBe(await queued1);
+  });
+
+  it('a now request moves a queued background job of the same song up, and it stays queued for the caller still waiting', async () => {
+    const { an, started, finish } = queueFixture();
+    const r = an.analyze(s, ref('r'));
+    const a = an.analyze(s, ref('a'));
+    const bFirst = an.analyze(s, ref('b'));
+    const c = new AbortController();
+    const bLeaves = an.analyze(s, ref('b'), { signal: c.signal });
+    const bNow = an.analyze(s, ref('b'), { priority: 'now' });
+    c.abort();
+    await expect(bLeaves).rejects.toMatchObject({ name: 'AbortError' });
+    await settle();
+    expect(started).toEqual(['r']);
+    await finish('r');
+    // The promoted song goes before 'a', which was queued before it at background priority.
+    expect(started).toEqual(['r', 'b']);
+    await finish('b');
+    expect(started).toEqual(['r', 'b', 'a']);
+    await finish('a');
+    expect((await bFirst).hash).toBe('b');
+    expect((await bNow).hash).toBe('b');
+    expect((await a).hash).toBe('a');
+    expect((await r).hash).toBe('r');
+  });
+
+  it('cancelling a queued job takes it out of the queue, and asking for it again queues it anew', async () => {
+    const { an, started, finish } = queueFixture();
+    const r = an.analyze(s, ref('r'));
+    const c = new AbortController();
+    const gone = an.analyze(s, ref('x'), { signal: c.signal });
+    const y = an.analyze(s, ref('y'));
+    c.abort();
+    await expect(gone).rejects.toMatchObject({ name: 'AbortError' });
+    await settle();
+    await finish('r');
+    expect(started).toEqual(['r', 'y']);
+    await finish('y');
+    expect(started).toEqual(['r', 'y']);
+    const again = an.analyze(s, ref('x'));
+    await settle();
+    await finish('x');
+    expect((await again).hash).toBe('x');
+    expect((await r).hash).toBe('r');
+    expect((await y).hash).toBe('y');
+    expect(started).toEqual(['r', 'y', 'x']);
+  });
+});
+
 describe('loudness for analysis', () => {
   it('measures a −6 dBFS stereo sine at −6 LUFS and its true peak', () => {
     const sr = 44100;

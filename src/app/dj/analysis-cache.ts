@@ -22,11 +22,21 @@ export interface AnalysisProgress {
   fraction: number;
 }
 
+/** 'now' (a deck is waiting for it) goes ahead of every queued 'background' job (the library's); it never interrupts the running one. */
+export type AnalysisPriority = 'now' | 'background';
+
 export interface TrackAnalyzer {
   /** The cached analysis, or null (not analyzed yet). */
   peek(hash: string): TrackAnalysis | null;
-  /** The analysis: cached, or computed now (the file is decoded and analyzed off the main thread). */
-  analyze(s: Services, ref: SampleRef, opts?: { signal?: AbortSignal; onProgress?(p: AnalysisProgress): void }): Promise<TrackAnalysis>;
+  /**
+   * The analysis: cached, or computed now (the file is decoded and analyzed off the main thread). Queued behind the running
+   * song; `priority` defaults to 'background'.
+   */
+  analyze(
+    s: Services,
+    ref: SampleRef,
+    opts?: { signal?: AbortSignal; onProgress?(p: AnalysisProgress): void; priority?: AnalysisPriority },
+  ): Promise<TrackAnalysis>;
   /** Called when any analysis is added (the library redraws). */
   subscribe(fn: () => void): () => void;
 }
@@ -111,10 +121,19 @@ export const defaultDecoder: AnalysisDecoder = async (s, ref) => {
 
 interface Job {
   hash: string;
-  promise: Promise<TrackAnalysis>;
+  /** Moves from 'background' to 'now' when a caller asks for the song urgently (never back). */
+  priority: AnalysisPriority;
+  /** queued: waiting its turn in a queue; running: being analyzed; done: settled. */
+  state: 'queued' | 'running' | 'done';
   controller: AbortController;
+  /** How many callers are still waiting for this job. */
   waiting: number;
   listeners: Set<(p: AnalysisProgress) => void>;
+  promise: Promise<TrackAnalysis>;
+  resolve(a: TrackAnalysis): void;
+  reject(e: unknown): void;
+  /** The job's work: the cache, or decode and analyze. */
+  run(): Promise<TrackAnalysis>;
 }
 
 export interface TrackAnalyzerOptions {
@@ -130,8 +149,10 @@ export interface TrackAnalyzerOptions {
 }
 
 /**
- * The analyzer: one song at a time (a queue), callers asking for the same song share its job, and a
- * job is cancelled when every caller waiting for it has aborted.
+ * The analyzer: one song at a time, from a queue. A 'now' job goes ahead of every queued 'background' job (it never
+ * interrupts the running one); within a priority, jobs run first in first out. Callers asking for the same song share its
+ * job, and a 'now' caller moves a queued background job up. A job is cancelled when every caller waiting for it has
+ * aborted: a queued one leaves the queue, a running one is stopped.
  */
 export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnalyzer & { ready: Promise<void> } {
   const storage = opts.storage ?? idbAnalysisStorage;
@@ -141,10 +162,13 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
   const runStream = opts.runStream ?? workerStreamRunner(host);
   const openStream = opts.openStream ?? ((_s: Services, ref: SampleRef) => openLongSource(ref));
   const cache = new Map<string, TrackAnalysis>();
+  /** The job of each song that is queued or running. */
   const jobs = new Map<string, Job>();
+  /** Queued jobs by priority, in arrival order. */
+  const queues: Record<AnalysisPriority, Job[]> = { now: [], background: [] };
+  let running: Job | null = null;
   const listeners = new Set<() => void>();
   const emit = () => listeners.forEach((fn) => fn());
-  let queue: Promise<unknown> = Promise.resolve();
 
   const ready = storage
     .load()
@@ -159,33 +183,10 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
     })
     .catch(() => {});
 
-  const start = (s: Services, ref: SampleRef, hash: string): Job => {
-    const controller = new AbortController();
-    const job: Job = { hash, controller, waiting: 0, listeners: new Set(), promise: Promise.resolve(null as never) };
+  /** The work of one job: the cache, or the file decoded and analyzed (by parts when it is too long to decode whole). */
+  const analyzeSong = async (job: Job, s: Services, ref: SampleRef): Promise<TrackAnalysis> => {
+    const { hash, controller } = job;
     const progress = (fraction: number) => job.listeners.forEach((fn) => fn({ hash, fraction }));
-    const work = async () => {
-      await ready;
-      const hit = cache.get(hash);
-      if (hit) return hit;
-      controller.signal.throwIfAborted();
-      progress(0);
-      // A song too long to decode whole is read and analyzed in pieces: its audio is never in memory at once.
-      const stream = await openStream(s, ref).catch(() => null);
-      if (stream) {
-        try {
-          return finished(await runStream(hash, stream, progress, controller.signal));
-        } finally {
-          stream.dispose();
-        }
-      }
-      if (ref.durationSec !== undefined && ref.durationSec > MAX_WHOLE_DECODE_SEC)
-        throw new Error(`“${ref.name}” is longer than ${MAX_WHOLE_DECODE_SEC / 60} minutes and its format can’t be analyzed in parts: use an MP3 or WAV of it.`);
-      const audio = await decode(s, ref);
-      if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded for analysis.`);
-      controller.signal.throwIfAborted();
-      progress(0.05);
-      return finished(await run({ hash, ...audio }, (f) => progress(0.05 + 0.95 * f), controller.signal));
-    };
     const finished = (analysis: TrackAnalysis): TrackAnalysis => {
       cache.set(hash, analysis);
       void storage.save(analysis).catch((e: unknown) => console.warn('[agstudio] saving a track analysis failed', e));
@@ -193,15 +194,101 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
       emit();
       return analysis;
     };
-    job.promise = queue.then(work, work);
-    queue = job.promise.catch(() => {});
-    void job.promise
-      .finally(() => {
-        if (jobs.get(hash) === job) jobs.delete(hash);
-      })
-      .catch(() => {});
-    jobs.set(hash, job);
+    await ready;
+    const hit = cache.get(hash);
+    if (hit) return hit;
+    controller.signal.throwIfAborted();
+    progress(0);
+    // A song too long to decode whole is read and analyzed in pieces: its audio is never in memory at once.
+    const stream = await openStream(s, ref).catch(() => null);
+    if (stream) {
+      try {
+        return finished(await runStream(hash, stream, progress, controller.signal));
+      } finally {
+        stream.dispose();
+      }
+    }
+    if (ref.durationSec !== undefined && ref.durationSec > MAX_WHOLE_DECODE_SEC)
+      throw new Error(`“${ref.name}” is longer than ${MAX_WHOLE_DECODE_SEC / 60} minutes and its format can’t be analyzed in parts: use an MP3 or WAV of it.`);
+    const audio = await decode(s, ref);
+    if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded for analysis.`);
+    controller.signal.throwIfAborted();
+    progress(0.05);
+    return finished(await run({ hash, ...audio }, (f) => progress(0.05 + 0.95 * f), controller.signal));
+  };
+
+  const newJob = (s: Services, ref: SampleRef, hash: string, priority: AnalysisPriority): Job => {
+    let resolve!: (a: TrackAnalysis) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<TrackAnalysis>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    // Callers handle their own failures; a cancelled job with nobody left must not report one.
+    promise.catch(() => {});
+    const job: Job = {
+      hash,
+      priority,
+      state: 'queued',
+      controller: new AbortController(),
+      waiting: 0,
+      listeners: new Set(),
+      promise,
+      resolve,
+      reject,
+      run: () => analyzeSong(job, s, ref),
+    };
     return job;
+  };
+
+  const removeQueued = (job: Job): void => {
+    const q = queues[job.priority];
+    const i = q.indexOf(job);
+    if (i >= 0) q.splice(i, 1);
+  };
+
+  const finish = (job: Job): void => {
+    job.state = 'done';
+    if (jobs.get(job.hash) === job) jobs.delete(job.hash);
+    running = null;
+    pump();
+  };
+
+  /** Starts the next job when nothing is running: a 'now' job if there is one, else the oldest background job. */
+  const pump = (): void => {
+    if (running) return;
+    const job = queues.now.shift() ?? queues.background.shift();
+    if (!job) return;
+    running = job;
+    job.state = 'running';
+    job.run().then(
+      (a) => {
+        job.resolve(a);
+        finish(job);
+      },
+      (e: unknown) => {
+        job.reject(e);
+        finish(job);
+      },
+    );
+  };
+
+  /** Moves a queued background job to the back of the 'now' queue. */
+  const promote = (job: Job): void => {
+    if (job.state !== 'queued' || job.priority === 'now') return;
+    removeQueued(job);
+    job.priority = 'now';
+    queues.now.push(job);
+  };
+
+  /** Stops a job nobody waits for any more: a queued one leaves its queue, a running one is stopped by its signal. */
+  const cancel = (job: Job): void => {
+    job.controller.abort();
+    if (job.state !== 'queued') return;
+    removeQueued(job);
+    job.state = 'done';
+    if (jobs.get(job.hash) === job) jobs.delete(job.hash);
+    job.reject(abortError());
   };
 
   return {
@@ -216,12 +303,21 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
       const hit = cache.get(hash);
       if (hit) return Promise.resolve(hit);
       if (o.signal?.aborted) return Promise.reject(abortError());
-      const running = jobs.get(hash);
-      const job = running && !running.controller.signal.aborted ? running : start(s, ref, hash);
+      const priority = o.priority ?? 'background';
+      const existing = jobs.get(hash);
+      let job: Job;
+      if (existing && !existing.controller.signal.aborted) job = existing;
+      else {
+        // A job being stopped is replaced: its work ends on its own.
+        job = newJob(s, ref, hash, priority);
+        jobs.set(hash, job);
+        queues[priority].push(job);
+      }
+      if (priority === 'now') promote(job);
       job.waiting++;
       const listener = o.onProgress;
       if (listener) job.listeners.add(listener);
-      return new Promise<TrackAnalysis>((resolve, reject) => {
+      const result = new Promise<TrackAnalysis>((resolve, reject) => {
         let settled = false;
         const leave = () => {
           if (settled) return false;
@@ -233,7 +329,7 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
         };
         const onAbort = () => {
           if (!leave()) return;
-          if (job.waiting === 0) job.controller.abort();
+          if (job.waiting === 0) cancel(job);
           reject(abortError());
         };
         o.signal?.addEventListener('abort', onAbort);
@@ -242,6 +338,8 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
           (e: unknown) => leave() && reject(e),
         );
       });
+      pump();
+      return result;
     },
   };
 }

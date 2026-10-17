@@ -43,6 +43,7 @@ export function decksDepsFor(s: Services): DecksDeps {
         ? a.analyze(s, ref, {
             ...(opts?.signal ? { signal: opts.signal } : {}),
             ...(opts?.onProgress ? { onProgress: (p) => opts.onProgress?.(p.fraction) } : {}),
+            ...(opts?.priority ? { priority: opts.priority } : {}),
           })
         : null;
     },

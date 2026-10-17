@@ -67,8 +67,14 @@ export interface DecksDeps {
   /** Resumes the audio context (browsers start it suspended until a click). */
   resume(): Promise<void>;
   cache: SampleCache;
-  /** The song's analysis: cached, or computed now. Null when it can't be analyzed. `signal` stops the work (when nothing else wants it). */
-  analysis(ref: SampleRef, opts?: { signal?: AbortSignal; onProgress?(fraction: number): void }): Promise<TrackAnalysis | null>;
+  /**
+   * The song's analysis: cached, or computed now. Null when it can't be analyzed. `signal` stops the work (when nothing else
+   * wants it); a deck passes priority 'now', so it goes ahead of the library's queued songs.
+   */
+  analysis(
+    ref: SampleRef,
+    opts?: { signal?: AbortSignal; onProgress?(fraction: number): void; priority?: 'now' | 'background' },
+  ): Promise<TrackAnalysis | null>;
   peekAnalysis(ref: SampleRef): TrackAnalysis | null;
   /** Puts a recording in the music library; resolves with its title. */
   addRecording(file: File, title: string): Promise<string | null>;
@@ -538,7 +544,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
       } else void fillOverview(id, source, null, stale);
       // A song decoded whole is analyzed now. A song read by parts has its analysis made in the background (it is read through
       // in pieces, which takes a while for a long one) unless that is done already: the deck is ready meanwhile and gets its grid after.
-      const a = deps.peekAnalysis(ref) ?? (buffer ? await deps.analysis(ref).catch(() => null) : null);
+      const a = deps.peekAnalysis(ref) ?? (buffer ? await deps.analysis(ref, { priority: 'now' }).catch(() => null) : null);
       if (stale()) return;
       r.analysis = a;
       r.grid = a?.grid ? deckGridOf(a.grid) : null;
@@ -581,6 +587,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
     deps
       .analysis(ref, {
         signal: control.signal,
+        priority: 'now',
         onProgress: (f) => {
           const pct = Math.floor(f * 100) / 100;
           if (!stale() && pct !== get(id).analyzing) set(id, { analyzing: pct });

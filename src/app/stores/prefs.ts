@@ -53,9 +53,14 @@ export interface PrefsState {
   outputDevice: string;
   /**
    * How much audio the browser prepares ahead: 'large' plays smoothest with busy songs, 'small' answers
-   * fastest when you play live (but crackles sooner).
+   * fastest when you play live (but crackles sooner). 'auto' (the default) starts small and moves up when
+   * playback can't keep up (see `autoBufferSize`, app/audio-buffer-auto.ts).
    */
-  audioBuffer: AudioBufferSize;
+  audioBuffer: AudioBufferChoice;
+  /** The size Auto settled on for this machine (it starts there next time). Not shown in the settings. */
+  autoBufferSize: AudioBufferSize;
+  /** The user chose a size in the settings (a stored 'large' from before Auto existed was only the old default). */
+  audioBufferPicked: boolean;
   /** Remove audio nothing uses any more, a week after it was last used, while AGstudio is idle. */
   autoCleanup: boolean;
   /** Megabytes of decoded audio kept in memory (long songs beyond it are decoded around the playhead). */
@@ -76,6 +81,12 @@ export interface PrefsState {
 }
 
 export type AudioBufferSize = 'small' | 'medium' | 'large';
+export type AudioBufferChoice = AudioBufferSize | 'auto';
+
+/** The size the engine runs with now: the chosen one, or what Auto has settled on. */
+export function effectiveBuffer(p: Pick<PrefsState, 'audioBuffer' | 'autoBufferSize'>): AudioBufferSize {
+  return p.audioBuffer === 'auto' ? p.autoBufferSize : p.audioBuffer;
+}
 
 /** The browser's latency hint for each buffer size (about 5, 10 and 21 ms in Chrome). */
 export const AUDIO_BUFFER_HINT: Record<AudioBufferSize, AudioContextLatencyCategory> = {
@@ -121,7 +132,9 @@ const DEFAULTS: PrefsState = {
   recentActions: [],
   customKeys: {},
   outputDevice: '',
-  audioBuffer: 'large',
+  audioBuffer: 'auto',
+  autoBufferSize: 'small',
+  audioBufferPicked: false,
   autoCleanup: true,
   sampleMemoryMb: 1536,
   scopeMode: 'scope',
@@ -149,7 +162,11 @@ function load(): PrefsState {
       out.theme = 'marble';
       out.accent = 'gold';
     }
-    if (!Object.hasOwn(AUDIO_BUFFER_HINT, out.audioBuffer as string)) out.audioBuffer = DEFAULTS.audioBuffer;
+    if (out.audioBuffer !== 'auto' && !Object.hasOwn(AUDIO_BUFFER_HINT, out.audioBuffer as string))
+      out.audioBuffer = DEFAULTS.audioBuffer;
+    if (!Object.hasOwn(AUDIO_BUFFER_HINT, out.autoBufferSize as string)) out.autoBufferSize = DEFAULTS.autoBufferSize;
+    // Settings saved before Auto existed hold 'large' whether or not it was a choice: only a picked size stays.
+    if (out.audioBuffer === 'large' && saved.audioBufferPicked !== true) out.audioBuffer = 'auto';
     if (out.followStyle !== 'smooth' && out.followStyle !== 'page') out.followStyle = DEFAULTS.followStyle;
     return out as unknown as PrefsState;
   } catch {

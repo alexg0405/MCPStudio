@@ -151,9 +151,10 @@ describe('settings', () => {
     };
     try {
       const before = s.engine.playhead();
-      await userEvent.selectOptions(select('Audio buffer'), 'small');
-      expect(s.prefs.getState().audioBuffer).toBe('small');
-      expect(reloaded().audioBuffer).toBe('small');
+      // (The default, Auto, starts at the small size already, so a change to small would not need a new engine.)
+      await userEvent.selectOptions(select('Audio buffer'), 'medium');
+      expect(s.prefs.getState().audioBuffer).toBe('medium');
+      expect(reloaded().audioBuffer).toBe('medium');
       await until(() => made === 1);
       // Playing carries on from about where it was (the pattern loops, so allow a wrap).
       await until(() => s.engine.playing);
@@ -172,12 +173,28 @@ describe('settings', () => {
     }
   }, 30_000);
 
+  it('Auto is the default; a stored large from before Auto only counts when it was picked', () => {
+    localStorage.removeItem(KEY);
+    expect(createPrefsStore().getState().audioBuffer).toBe('auto');
+    expect(createPrefsStore().getState().autoBufferSize).toBe('small');
+    localStorage.setItem(KEY, JSON.stringify({ audioBuffer: 'large' }));
+    expect(createPrefsStore().getState().audioBuffer).toBe('auto');
+    localStorage.setItem(KEY, JSON.stringify({ audioBuffer: 'large', audioBufferPicked: true }));
+    expect(createPrefsStore().getState().audioBuffer).toBe('large');
+    localStorage.setItem(KEY, JSON.stringify({ audioBuffer: 'medium' }));
+    expect(createPrefsStore().getState().audioBuffer).toBe('medium');
+    localStorage.setItem(KEY, JSON.stringify({ audioBuffer: 'auto', autoBufferSize: 'medium' }));
+    expect(createPrefsStore().getState().autoBufferSize).toBe('medium');
+    localStorage.setItem(KEY, JSON.stringify({ audioBuffer: 'auto', autoBufferSize: 'huge' }));
+    expect(createPrefsStore().getState().autoBufferSize).toBe('small');
+  });
+
   it('a stale or hand-edited value falls back to the default instead of breaking the app', () => {
     localStorage.setItem(KEY, JSON.stringify({ theme: 12, countInBars: 'x', audioBuffer: 'huge', metronome: 'yes' }));
     const p = createPrefsStore().getState();
     expect(p.theme).toBe('marble');
     expect(p.countInBars).toBe(1);
-    expect(p.audioBuffer).toBe('large');
+    expect(p.audioBuffer).toBe('auto');
     expect(p.metronome).toBe(false);
     localStorage.setItem(KEY, '{not json');
     expect(createPrefsStore().getState().theme).toBe('marble');

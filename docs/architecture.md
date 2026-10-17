@@ -2736,3 +2736,99 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   with the action schema), each under the 25 000-token result limit Claude Code applies; a client that cannot show
   audio content gets only the text of `render_preview`; no live notifications to the client (it re-reads with
   `get_project`).
+
+## Reference track matching (`core/reference`, `app/reference`, `ui/features/reference`)
+
+The musician drops in a song they own. AGstudio measures it and the buttons and Studio use the numbers to shape
+the musician's own song. **Only derived measurements are kept** (tempo, key, beat grid, section boundaries and
+energy, loudness, true peak, a coarse spectral balance, stereo width). Nothing of the song is copied, sampled,
+transcribed or played: no note, chord or audio of it is read or written by any match, and the file is never placed
+in the song.
+
+### What a project keeps (`Project.reference`, optional, `ReferenceTrack` in `core/model/types.ts`)
+
+- Title, content hash, duration, tempo (null without a steady beat), beats per bar, key with Camelot code and
+  confidence, LUFS, true peak, the energy per bar (at most 1024 values), the sections (kind, seconds, bars of the
+  reference's own grid, energy 0–1, tonal balance, width) and the whole song's tonal balance and width.
+- `sampleId`: the file as a sample of the project (`Project.samples`), for the title and for analyzing it again. It
+  is stored through the sample store like any import, so the clean-up of unused audio keeps it while the project
+  mentions its hash; a saved project file bundles it with the other samples. No channel or clip plays it. Replacing
+  or clearing the reference drops the sample when nothing else uses it (`app/reference/doc.ts`).
+- `repairReference` (`core/schema/migrate.ts`): a reference that cannot be read as measurements is forgotten (the song
+  stays), values are clamped, bad sections dropped, a gone sample leaves the numbers in place. Idempotent.
+
+### Measuring (`app/reference/analyze.ts`, `spectrum.ts`)
+
+- The `TrackAnalysis` comes from the existing `trackAnalyzer(s).analyze` (public API; `TrackAnalysis` is unchanged). The
+  tonal measurement is this module's own: the file is decoded again (44.1 kHz) and `measureTone` runs the mid signal
+  through cascaded Linkwitz–Riley splits at `TONE_CROSSOVERS` (60, 150, 400, 1k, 2.5k, 5k, 10k Hz: eight bands, sub,
+  bass, low mids, mids, upper mids, presence, highs, air) over the whole song and over each analyzed section, plus
+  side/mid width (capped at 10). Stored as each band's share of the energy in dB under the total, so songs compare at
+  any loudness. A 3-minute song takes about 2 s in all (analysis in its Worker, the tone pass on the main thread with
+  yields). The bands overlap a little at their edges (a tone in the middle of an octave band puts 40 % of its power in it).
+- The measurement is cached by hash in memory and IndexedDB (`reference-measure:v…`); `buildReference` (`core/reference/track.ts`)
+  is the pure assembly.
+- The musician's own song is measured the same way by `song-tone.ts`: the busiest part (`busiestWindow`, as leveling
+  does) rendered through the master chain with the Limiter, measured with `Measurer` (LUFS, true peak) and `measureTone`.
+
+### Comparing and matching
+
+- **Tone** (`core/reference/bands.ts`): the reference's *main tone* is its sections at energy ≥ 0.6 weighted by length
+  (an intro or a break is not what the mix is trying to sound like). `compareTone` takes the median of the eight
+  differences out first (shares add up to a constant, so one heavy band makes the others look light) and lists the bands
+  more than 3 dB off, the biggest first, with a plain sentence ("The low end (60–150 Hz) is 4 dB lighter than the
+  reference: bring it up about 4 dB with …"). Bands empty in both are ignored.
+- **Tempo and key** (`app/reference/match.ts`, `core/reference/key.ts`): the tempo is set (a reference without a steady
+  beat leaves it, with a warning). The key move is the shortest (−6…+5 semitones) to the reference's key, going to its
+  relative key when one is major and the other minor (C major and A minor share their notes). The song's key is the song
+  key setting, else the best Krumhansl–Temperley fit of its pitched notes. Pitched and bass channels' notes move (drums
+  and unknown roles stay); variants stay unmodified; the song key setting follows. A key the analysis is unsure of
+  (< 0.3) is not matched.
+- **Arrangement** (`core/reference/plan.ts`, `material.ts`): the reference's sections become `arrange` sections. Bars are
+  the section's seconds at the project's tempo (equal to the reference's bars when the tempos match; at another tempo the
+  same time becomes the bars that fit), rounded and snapped to phrases of 4 within a bar; parts under 2 bars join the
+  neighbour, parts over 64 bars split, more than 24 sections or 512 bars are reduced (the plan says how). Energy
+  0–1 → 1–5 keeping each part's usual range; names by part ("Drop 2"). *Which patterns play* comes from the project: the
+  existing sections (`inferSections`) are the palette, each reference part takes the group of patterns closest in energy
+  (same kind of part on a tie); with no song yet, the patterns are layered from the sparsest to all of them. `arrangeInDraft`
+  then does the craft (fills, transitions, FX) with `mix: 'keep'`, replacing the song's arrangement. The last section's
+  stop effects ring a little past its last bar.
+- **Loudness**: `autoLevel` and the `level_mix` after-edit take an optional `targetLufs` (the reference's, within −30…−4).
+  With one, the Limiter's input may go to +20 dB (else 10) and is corrected up to 5 times by a secant estimate (a Limiter
+  returns less than it is given); it warns when the Limiter is pushed past +10 dB or cannot reach the target. Headless
+  Chrome, a house song at 124 BPM with the role mix: the Limiter saturates at −9.3 LUFS against a −8.4 reference.
+- Every edit is **one undo step** (`history.transact`); the Studio's edits fold into the answer's step.
+
+### UI (`ui/features/reference`) and Studio
+
+- The **Reference** window (View menu, Alt+Shift+R, action search "Use a song as my reference"): drop a file or choose one
+  (or one from the music library, which is also a drop target for library rows). Header with title, Change, Clear; a table
+  of tempo, key, loudness, true peak and width next to the song's; the reference's parts and the song's sections as two bar
+  strips on one scale (width = bars, height = energy); the eight bands as bars with the mix's difference once it was
+  listened to; the findings; and four actions: **Match tempo and key**, **Arrange like the reference**, **Match loudness**,
+  **Show the tonal difference** (changes nothing). Every control has a `data-hint`; the empty window says what to do and what
+  is (not) done with the song. Commands `reference.*` are in the Playlist menu and the action search.
+- **Studio**: `set_reference` (`song` from the music library, `sample` of the project, `choose_file` for a one-click file
+  chooser, `clear`) and `match_reference { tempo, key, arrangement, loudness, tone }` (none named: all; `tone` listens to the mix
+  and reports bands > 3 dB off, changing nothing), `get_reference` (measurements next to the song's, the arrangement the plan
+  would make at its tempo, the last tone check), a `<reference>` block in the context, a prompt section ("make it sound like my
+  reference" → `match_reference`; never copy melodies, chords, drum patterns or audio). A reference that still has to be analyzed
+  is set by an after-step (`set_reference`, then `match_reference` waits behind it in the same answer) folded into the answer's
+  undo step; with a cached measurement it is a plain edit. The four match commands are `ai: false`, covered by `match_reference`
+  in `test/unit/ai-coverage.test.ts`.
+
+### Tests
+
+Node: `core/reference/*.test.ts` (tone comparison, section plan, material, key move and transposing, build and repair),
+`app/reference/spectrum.test.ts`, `actions.test.ts`, `app/ai/ops/reference.test.ts` (one undo step each, undo restores the project
+exactly), `ui/features/reference/reference-view.test.ts`. Browser: `test/browser/reference.test.ts` writes a synthetic 16-bar
+intro, 32-bar drop, 16-bar break and 32-bar drop at 128 BPM scaled to about −8 LUFS as a WAV, analyzes it for real (128 BPM, A
+minor, the four parts, tonal balance per part), sets it on a house song at 124 BPM and checks tempo 128, markers at bars 1, 17, 49
+and 65, and the master within 1.5 dB of −8 LUFS, through both the window's functions and a Studio answer.
+
+### Limits
+
+Tuned on synthetic songs; real recordings with long tails or fades make the last section a bar or two longer. The key move is
+exact only when the song's key is known (setting or clear notes). Audio-clip channels are not transposed. Loudness is bounded by the
+mix's peaks: a mix with high peaks cannot be made as loud as a mastered song by the Limiter alone. The tonal bands are coarse
+(eight) and measured over the mid signal.

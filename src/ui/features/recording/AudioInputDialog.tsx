@@ -193,6 +193,52 @@ function AudioInputDialog() {
         </p>
 
         <fieldset className={styles.group}>
+          <legend>Punch and takes</legend>
+          <p className={styles.note}>
+            Set a punch range on the ruler (right-click it, or Alt-drag) and Record the punch range plays in from a few bars
+            before it and keeps only that part. Loop passes become takes you can comp in the playlist.
+          </p>
+          <div className={styles.row}>
+            <label className={styles.field} data-hint="Bars played before the punch-in so you can find the beat (0 starts right at it)">
+              Pre-roll
+              <span className={styles.inline}>
+                <input
+                  type="number"
+                  className={styles.number}
+                  min={0}
+                  max={4}
+                  step={1}
+                  value={prefs.preRollBars}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (Number.isFinite(v) && v >= 0 && v <= 4) set({ preRollBars: v });
+                  }}
+                />
+                bars
+              </span>
+            </label>
+            <label className={styles.field} data-hint="How long two takes fade across each other where a new comp changes take (0–500 ms; each comp can change it afterwards)">
+              Comp crossfade
+              <span className={styles.inline}>
+                <input
+                  type="number"
+                  className={styles.number}
+                  min={0}
+                  max={500}
+                  step={1}
+                  value={prefs.compCrossfadeMs}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v) && v >= 0 && v <= 500) set({ compCrossfadeMs: v });
+                  }}
+                />
+                ms
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset className={styles.group}>
           <legend>Latency</legend>
           <p className={styles.note}>
             Recordings are moved back by the time sound takes to go out and come back in, so they land on the beat. Now:{' '}

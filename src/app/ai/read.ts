@@ -21,7 +21,9 @@ import type {
   Project,
 } from '@core/model/types';
 import { MASTER } from '@core/model/types';
+import { compSegmentsOf } from '@core/ops/comp';
 import { songLength } from '@core/query/playlist';
+import { takeGroups } from '@core/query/takes';
 import { patternLength } from '@core/query/queries';
 import { songSections } from '@core/query/sections';
 import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
@@ -682,6 +684,51 @@ const get_reference = tool(
   (s) => referenceReport(project(s)),
 );
 
+const get_takes = tool(
+  'get_takes',
+  'Audio recordings that have takes (loop passes): for each take group its comp track and take tracks (1-based playlist tracks), the takes (1-based, in recording order, with their clip ids, bar and length), what the comp plays where (take number per range of bars) and its crossfade; also the punch range and recording settings. The comp action takes these numbers.',
+  { group: S.str('Only this take group (its id).') },
+  (s, a) => {
+    const p = project(s);
+    const want = str(a.group);
+    const open = s.editor.getState().openTakes;
+    const trackOf = (id: string) => p.playlist.laneOrder.indexOf(id as never) + 1;
+    const groups = takeGroups(p)
+      .filter((g) => !want || g.id === want)
+      .map((g) => {
+        const nth = (index: number) => g.takes.findIndex((t) => t.index === index) + 1;
+        return {
+          group: g.id,
+          name: g.compLane ? p.playlist.lanes[g.compLane]!.name.replace(/ · comp$/, '') : g.id,
+          comp_track: g.compLane ? trackOf(g.compLane) : null,
+          take_tracks: g.takeLanes.map(trackOf),
+          takes_open: open.includes(g.id),
+          crossfade_ms: g.crossfadeMs,
+          takes: g.takes.map((t) => ({
+            take: nth(t.index),
+            clips: t.clips.map((c) => ({ id: c.id, track: trackOf(c.laneId), bar: bar1(p, c.start), bars: bars(p, c.length) })),
+          })),
+          comp: compSegmentsOf(g).map((x) => ({ take: nth(x.take), bar: bar1(p, x.from), bars: bars(p, x.to - x.from) })),
+        };
+      });
+    const v = s.view.getState();
+    const pr = s.prefs.getState();
+    return {
+      groups,
+      punch: v.punch ? { from_bar: bar1(p, v.punch.start), to_bar: r2(v.punch.end / barT(p)) } : null,
+      loop: v.loop ? { from_bar: bar1(p, v.loop.start), to_bar: r2(v.loop.end / barT(p)) } : null,
+      recording: {
+        record_mode_armed: s.recording.armed,
+        records_audio: pr.recordAudio,
+        count_in_bars: pr.countInBars,
+        pre_roll_bars: pr.preRollBars,
+        input_channels: pr.audioInputChannels,
+        latency_ms: r2(s.audioInput.latency() * 1000),
+      },
+    };
+  },
+);
+
 /** Every read tool, in the order they are listed to the model. */
 export const readTools: readonly ReadTool[] = [
   get_project,
@@ -691,6 +738,7 @@ export const readTools: readonly ReadTool[] = [
   get_channel,
   get_mixer,
   get_clips,
+  get_takes,
   get_automation,
   get_settings,
   get_windows,

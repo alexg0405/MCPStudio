@@ -385,6 +385,9 @@ export function drawPatternBody(
   ctx.restore();
 }
 
+/** Width of the fold toggle at the right end of a comp track's header. */
+export const FOLD_ZONE = 22;
+
 export function drawLaneHeaders(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
@@ -392,6 +395,8 @@ export function drawLaneHeaders(
   lanes: readonly Lane[],
   muted: ReadonlySet<LaneId>,
   width: number,
+  /** Take groups whose stack of take lanes is open. */
+  openTakes: ReadonlySet<string> = new Set(),
 ): void {
   ctx.fillStyle = theme.surface2;
   ctx.fillRect(0, 0, width, vp.height);
@@ -429,8 +434,33 @@ export function drawLaneHeaders(
       ctx.stroke();
       ctx.lineWidth = 1;
     }
+    const takes = lane.takes;
+    if (takes?.role === 'take') {
+      // A take lane hangs under its comp lane: an accent rule on the left, the name indented.
+      ctx.fillStyle = alpha(theme.accent, 0.5);
+      ctx.fillRect(width - 4, y + 3, 2, h - 7);
+    }
     ctx.fillStyle = on ? theme.text : theme.textFaint;
-    ctx.fillText(lane.name, 27, cy + 0.5, width - 33);
+    if (takes?.role === 'comp') {
+      // The fold toggle: ▸ folded, ▾ open (click it to show or hide the takes).
+      const open = openTakes.has(takes.group);
+      const tx = width - FOLD_ZONE / 2 - 1;
+      ctx.beginPath();
+      if (open) {
+        ctx.moveTo(tx - 4, cy - 2.5);
+        ctx.lineTo(tx + 4, cy - 2.5);
+        ctx.lineTo(tx, cy + 3.5);
+      } else {
+        ctx.moveTo(tx - 2.5, cy - 4);
+        ctx.lineTo(tx + 3.5, cy);
+        ctx.lineTo(tx - 2.5, cy + 4);
+      }
+      ctx.closePath();
+      ctx.fillStyle = theme.accent;
+      ctx.fill();
+      ctx.fillStyle = on ? theme.text : theme.textFaint;
+      ctx.fillText(lane.name, 27, cy + 0.5, width - 33 - FOLD_ZONE + 6);
+    } else ctx.fillText(lane.name, takes ? 33 : 27, cy + 0.5, width - (takes ? 41 : 33));
   }
   ctx.fillStyle = theme.lineFaint;
   ctx.fillRect(width - 1, 0, 1, vp.height);
@@ -485,6 +515,7 @@ export function drawPlaylistRuler(
   loop: { start: Tick; end: Tick } | null,
   songEnd: Tick,
   markers: RulerMarkers = { markers: [] },
+  punch: { start: Tick; end: Tick } | null = null,
 ): MarkerBox[] {
   const h = RULER_HEIGHT;
   const top = MARKER_LANE_Y;
@@ -505,6 +536,20 @@ export function drawPlaylistRuler(
     ctx.fill();
     ctx.strokeStyle = alpha(theme.accent, 0.55);
     ctx.stroke();
+  }
+  if (punch) {
+    // The punch range: a red band along the bottom of the bar-number row, with In and Out ends.
+    const x0 = vp.tickToPx(punch.start);
+    const x1 = vp.tickToPx(punch.end);
+    ctx.fillStyle = alpha(theme.danger, 0.22);
+    ctx.fillRect(x0, top - 6, Math.max(1, x1 - x0), 6);
+    ctx.fillStyle = theme.danger;
+    ctx.fillRect(x0, 0, 2, top);
+    ctx.fillRect(x1 - 2, 0, 2, top);
+    ctx.font = `700 8px ${theme.font}`;
+    ctx.textBaseline = 'top';
+    ctx.fillText('IN', x0 + 4, 12);
+    if (x1 - x0 > 40) ctx.fillText('OUT', x1 - 24, 12);
   }
   const bar = ticksPerBar(ts);
   const beat = ticksPerBeat(ts);
@@ -617,5 +662,39 @@ export function drawMarkerLines(
     if (x < 0 || x > vp.width) continue;
     ctx.fillStyle = alpha(markerColor(m, theme), 0.3);
     ctx.fillRect(x, 0, 1, vp.height);
+  }
+}
+
+/**
+ * Where each take is used by its comp: a lighter band over the used part of the take's clip (on take lanes
+ * that are on screen), with an accent edge on top, so it is plain what the comp plays from where.
+ */
+export function drawTakeUse(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  theme: TimelineTheme,
+  groups: ReadonlyArray<{ clips: readonly AudioClip[]; segments: ReadonlyArray<{ take: number; from: Tick; to: Tick }> }>,
+  laneIndex: ReadonlyMap<LaneId, number>,
+): void {
+  for (const g of groups) {
+    for (const c of g.clips) {
+      const row = laneIndex.get(c.laneId);
+      if (row === undefined || !c.take) continue;
+      const box = clipBox(vp, row, c);
+      if (box.y + box.h < 0 || box.y > vp.height) continue;
+      for (const seg of g.segments) {
+        if (seg.take !== c.take.index) continue;
+        const a = Math.max(seg.from, c.start);
+        const b = Math.min(seg.to, c.start + c.length);
+        if (b <= a) continue;
+        const x0 = vp.tickToPx(a);
+        const x1 = vp.tickToPx(b);
+        if (x1 < 0 || x0 > vp.width) continue;
+        ctx.fillStyle = alpha(theme.accent, 0.3);
+        ctx.fillRect(x0, box.bodyY - 1, Math.max(1, x1 - x0), box.bodyH + 2);
+        ctx.fillStyle = theme.accent;
+        ctx.fillRect(x0, box.y, Math.max(1, x1 - x0), 2);
+      }
+    }
   }
 }

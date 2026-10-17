@@ -11,6 +11,7 @@ import { DOC_OPS, MODULES, UI_OP_NAMES } from './ops';
 import { ActionError, createOpContext, newAnswerState } from './ops/context';
 import type { AppliedTurn, ApplyContext } from './ops/types';
 import { queryAfter } from './ops/query';
+import { recordingAfter } from './ops/recording';
 import { sessionAfter } from './ops/session';
 import { decksAfter } from './ops/decks';
 import { uiAfter } from './ops/ui';
@@ -63,6 +64,7 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext & {
   }
 
   uiAfter(s, answer, state);
+  recordingAfter(s, answer, state);
   decksAfter(s, answer, state);
 
   const project = s.doc.getState().project;

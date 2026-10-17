@@ -157,6 +157,24 @@ export class AudioInputService {
     return Math.max(0, base + p.recordLatencyOffsetMs / 1000);
   }
 
+  /** The device and channel count chosen in Options › Audio input…, for features that open the microphone themselves. */
+  micOptions(): { deviceId?: string; channels: number } {
+    const p = this.deps.prefs.getState();
+    return { ...(p.audioInputDevice ? { deviceId: p.audioInputDevice } : {}), channels: p.audioInputChannels === 'stereo' ? 2 : 1 };
+  }
+
+  /**
+   * The latency to compensate a performance recorded over the beat (hum to notes, the Studio's performance
+   * recorder): the calibrated round trip when there is one, else the browser's estimate for that microphone, plus
+   * the manual correction. Spread into the record options.
+   */
+  performanceLatency(micLatency: number): { inputLatency: number; roundTrip?: number } {
+    const p = this.deps.prefs.getState();
+    const offset = p.recordLatencyOffsetMs / 1000;
+    if (p.recordLatencyMs >= 0) return { inputLatency: micLatency, roundTrip: Math.max(0, p.recordLatencyMs / 1000 + offset) };
+    return { inputLatency: Math.max(0, micLatency + offset) };
+  }
+
   /** Where the latency comes from, for the dialog: "measured 38.2 ms" / "estimated 21 ms". */
   describeLatency(): string {
     const p = this.deps.prefs.getState();

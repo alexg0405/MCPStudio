@@ -247,13 +247,13 @@ export function planComp(segments: readonly CompSegment[], spans: readonly CompS
     const plan: CompClipPlan = { take: u.take, ref: u.span.ref, start, length: stop - start, offsetSec: Math.max(0, u.span.offsetAt(start)) };
     if (u.span.gain !== undefined && u.span.gain !== 1) plan.gain = u.span.gain;
     // Fade-in: the crossfade, a short fade where the comp starts inside a take (or after a gap), or what the take had.
-    let fadeIn = 0;
+    let fadeIn: number;
     if (left > 0) fadeIn = sec(u.from + left) - sec(u.from - left);
     else if (left === 0) fadeIn = edgeFade(u.to - u.from, u.from);
     else if (left === SEAM) fadeIn = u.from === u.span.start ? (u.span.fadeIn ?? 0) : 0;
     else if (u.from > u.span.start) fadeIn = edgeFade(u.to - u.from, u.from);
     else fadeIn = u.span.fadeIn ?? 0;
-    let fadeOut = 0;
+    let fadeOut: number;
     if (right > 0) fadeOut = sec(u.to + right) - sec(u.to - right);
     else if (right === 0) fadeOut = edgeFade(u.to - u.from, u.from);
     else if (right === SEAM) fadeOut = u.to === end(u.span) ? (u.span.fadeOut ?? 0) : 0;

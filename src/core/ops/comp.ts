@@ -15,7 +15,7 @@ import {
   MAX_CROSSFADE_MS,
 } from '../audio/comp';
 import { newId, randomId } from '../model/ids';
-import { makeLane } from '../model/defaults';
+import { makeLane, paletteColor } from '../model/defaults';
 import type { AudioClip, ChannelId, ClipId, LaneId, Project, Tick } from '../model/types';
 import { buildTakeGroups, compSpans, type TakeGroup } from '../query/takes';
 import type { TempoMap } from '../time/ppq';
@@ -82,7 +82,11 @@ export function compSwipe(
   const g = groupIn(d, groupId);
   if (!g?.compLane) return [];
   const spans = compSpans(d as unknown as Project, g, tempo);
-  return setComp(d, groupId, swipeSegments(compSegmentsOf(g), spans, take, from, to), tempo);
+  const before = compSegmentsOf(g);
+  const next = swipeSegments(before, spans, take, from, to);
+  // The take has no audio there: nothing changes.
+  if (JSON.stringify(next) === JSON.stringify(before)) return [];
+  return setComp(d, groupId, next, tempo);
 }
 
 /** "Use this take": the whole take plays, in place of the whole comp. */
@@ -90,7 +94,9 @@ export function compUseTake(d: Draft<Project>, groupId: string, take: number, te
   const g = groupIn(d, groupId);
   if (!g?.compLane) return [];
   const spans = compSpans(d as unknown as Project, g, tempo);
-  return setComp(d, groupId, wholeTake(spans, take), tempo);
+  const next = wholeTake(spans, take);
+  if (next.length === 0) return [];
+  return setComp(d, groupId, next, tempo);
 }
 
 /**
@@ -216,6 +222,8 @@ export function addTakeGroup(
       channelId: o.channelId,
       offsetSec: t.offsetSec,
       name: t.name ?? `${o.name} · take ${i + 1}`,
+      // A colour per take, so the comp shows which take plays where.
+      color: paletteColor(i),
       muted: true,
       take: { group: o.group, index: i },
     } as Draft<AudioClip>;

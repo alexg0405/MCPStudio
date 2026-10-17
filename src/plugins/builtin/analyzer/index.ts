@@ -1,6 +1,6 @@
 import { defineWorkletEffect } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './analyzer.worklet.ts?worker&url';
-import { AnalyzerUI } from './AnalyzerUI';
 import { ANALYZER_ID, analyzerParams } from './params';
 
 /**
@@ -16,7 +16,7 @@ export default defineWorkletEffect({
     'Shows what a sound looks like (spectrum, waveform) and how loud it is (LUFS, true peak, stereo correlation) without changing it.',
   params: analyzerParams,
   processor,
-  ui: AnalyzerUI,
+  ui: lazyUi(() => import('./AnalyzerUI').then((m) => m.AnalyzerUI)),
   tap: { fftSize: 4096, smoothing: 0.7 },
   presets: [
     { name: 'Analyze (no change)', params: { listen: 'stereo' } },

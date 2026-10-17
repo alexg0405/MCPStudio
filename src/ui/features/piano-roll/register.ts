@@ -3,7 +3,7 @@ import type { PianoRollTool } from '@app/stores/editor';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { addMenuItems, cmd, sep, submenu } from '../../shell/menus';
-import { PianoRoll } from './PianoRoll';
+import { lazyWindow } from '../../workspace/lazy';
 import { noteTarget, pianoRollCommands as pr } from './commands';
 import { quickScript, SCRIPT } from './menus';
 import { openNoteScript, scriptMenuBarEntries } from './tools';
@@ -16,7 +16,8 @@ export function register(services: Services): void {
       const ch = id ? s.doc.getState().project.channels[id] : undefined;
       return ch ? `Piano roll - ${ch.name}` : 'Piano roll';
     },
-    component: PianoRoll,
+    // Loads on first use (and at idle time after the first paint): the controller and drawing code are most of the roll.
+    component: lazyWindow(() => import('./PianoRoll'), (m) => m.PianoRoll),
     defaultRect: (ws) => ({ x: 60, y: 46, w: Math.max(520, ws.w - 120), h: Math.max(320, ws.h - 92) }),
     minSize: { w: 420, h: 240 },
   });

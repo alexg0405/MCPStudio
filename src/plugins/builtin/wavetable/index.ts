@@ -1,8 +1,8 @@
 import { defineWorkletInstrument, type ParamValue } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './wavetable.worklet.ts?worker&url';
 import { WAVETABLE_ID, wavetableParams } from './params';
 import { factoryBank } from './tables';
-import { WavetableUI } from './ui';
 
 /** Mod matrix slots as `[source, destination, amount]` (slots left out are off). */
 function routes(...slots: [string, string, number][]): Record<string, ParamValue> {
@@ -31,7 +31,7 @@ export default defineWorkletInstrument({
   processor,
   // At least 4 s; longer when the amp release is (it reaches −60 dB at its time, −100 dB at 1.7×).
   tailTime: (v) => Math.max(4, 1.7 * Number(v.ampRelease)),
-  ui: WavetableUI,
+  ui: lazyUi(() => import('./ui').then((m) => m.WavetableUI)),
   setup(port) {
     const bank = factoryBank();
     port.send({ type: 'bank', data: bank.data, tables: bank.tables, frames: bank.frames });

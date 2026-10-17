@@ -121,7 +121,7 @@ describe('the page bridge to the dev server', () => {
     const l2 = new McpLink(t, { tabId: 't2' });
     // A command that needs the musician's click is queued for a button.
     t.commands.register({ id: 'test.save', title: 'Save as…', hint: 'x', argsHint: 'none', gesture: true, run: () => {} });
-    await l2.tools.call('run_command', { id: 'test.save' }, { client: { name: 'claude-code' } });
+    await (await l2.loadTools()).call('run_command', { id: 'test.save' }, { client: { name: 'claude-code' } });
     const [g] = l2.store.getState().gestures;
     expect(g).toMatchObject({ client: 'Claude Code', commandId: 'test.save' });
     expect(l2.resolveGesture(g!.id)).toMatchObject({ commandId: 'test.save' });

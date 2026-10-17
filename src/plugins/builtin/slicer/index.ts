@@ -1,9 +1,9 @@
 import { defineWorkletInstrument } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './slicer.worklet.ts?worker&url';
 import { demoLoop, DEMO_RATE, DEMO_SECONDS } from './demo.kernel';
 import type { DemoMessage } from './kernel';
 import { SLICER_ID, slicerParams } from './params';
-import { SlicerUI } from './ui';
 
 /**
  * Slicer (Slicex-style): chops its sample, or a built-in demo break while the slot is empty, into
@@ -27,7 +27,7 @@ export default defineWorkletInstrument({
     const seconds = host.samples.durationSec('main') ?? (host.samples.name('main') === null ? DEMO_SECONDS : 0);
     return Math.max(2, Math.min(30, seconds / Math.pow(2, Number(v.tune) / 12)));
   },
-  ui: SlicerUI,
+  ui: lazyUi(() => import('./ui').then((m) => m.SlicerUI)),
   setup(port) {
     const msg: DemoMessage = { type: 'demo', data: demoLoop(), sampleRate: DEMO_RATE };
     port.send(msg);

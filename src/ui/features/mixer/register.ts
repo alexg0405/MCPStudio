@@ -7,7 +7,7 @@ import { addToolbarSlot } from '../../shell/toolbar-slots';
 import { addContextMenuItems } from '../../context-menus';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
-import { Mixer } from './Mixer';
+import { lazyWindow } from '../../workspace/lazy';
 import { MasterVolume } from './MasterVolume';
 import { slotRoutingItems, stripRoutingItems } from './routing';
 
@@ -15,7 +15,7 @@ export function register(services: Services): void {
   registerWindowType({
     type: 'mixer',
     title: () => 'Mixer',
-    component: Mixer,
+    component: lazyWindow(() => import('./Mixer'), (m) => m.Mixer),
     defaultRect: (ws) => ({
       x: 36,
       y: Math.round(ws.h * 0.4),

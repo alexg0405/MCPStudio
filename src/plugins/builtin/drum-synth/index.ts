@@ -1,7 +1,7 @@
 import { defineWorkletInstrument } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './drum-synth.worklet.ts?worker&url';
 import { DRUM_SYNTH_ID, drumSynthParams } from './params';
-import { DrumSynthUI } from './ui';
 
 /**
  * Drum Synth: seven synthesized drums (808/909-style models from the SDK) on the General MIDI drum
@@ -17,7 +17,7 @@ export default defineWorkletInstrument({
   params: drumSynthParams,
   processor,
   tailTime: 3,
-  ui: DrumSynthUI,
+  ui: lazyUi(() => import('./ui').then((m) => m.DrumSynthUI)),
   presets: [
     { name: 'Classic 808 kit', params: {} },
     {

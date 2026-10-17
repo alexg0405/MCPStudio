@@ -2,6 +2,7 @@
 export { Knob, type KnobProps } from './Knob';
 export { Toggle, Select } from './controls';
 export { ParamKnob, ParamToggle, ParamSelect, Section, formatPan } from './param-controls';
+export { lazyUi } from './lazy';
 export { emitHint, HINT_EVENT } from './hint';
 export { FrameContext, useFrame, type FrameScheduler } from './frame';
 export { themeColors, type ThemeColors } from './theme';

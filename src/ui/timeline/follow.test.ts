@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOLLOW_ANCHOR, FOLLOW_EDGE, FOLLOW_LEAD, FOLLOW_QUIET_MS, PlayheadFollow, type FollowFrame } from './follow';
+import { FOLLOW_ANCHOR, FOLLOW_EDGE, FOLLOW_LEAD, FOLLOW_QUIET_MS, FOLLOW_RESUME_MS, PlayheadFollow, type FollowFrame } from './follow';
 
 const VISIBLE = 1000;
 const base: FollowFrame = {
@@ -145,5 +145,35 @@ describe('PlayheadFollow, smooth style', () => {
     const f = new PlayheadFollow();
     expect(f.step({ ...smooth, playhead: 0.7 * VISIBLE, wrapEnd: VISIBLE })).toBeNull();
     expect(f.step({ ...smooth, playhead: 20_000, scrollTick: 0 })).toBe(20_000 - FOLLOW_ANCHOR * VISIBLE);
+  });
+});
+
+describe('PlayheadFollow, zooming and hand scrolls', () => {
+  const smooth: FollowFrame = { ...base, style: 'smooth' };
+
+  it('zooming does not stop following: the view glides back to the playhead, even when the zoom left it off-screen', () => {
+    const f = new PlayheadFollow();
+    f.step({ ...smooth, playhead: 5000, scrollTick: 5000 - FOLLOW_ANCHOR * VISIBLE });
+    // Zoomed in around the middle: the playhead is now left of the view.
+    f.zoomed();
+    const goal = 5000 - FOLLOW_ANCHOR * VISIBLE;
+    const first = f.step({ ...smooth, now: base.now + 16, playhead: 5000, scrollTick: 5800 })!;
+    expect(first).toBeLessThan(5800);
+    expect(first).toBeGreaterThan(goal);
+    const end = settle(f, { ...smooth, playhead: 5000, scrollTick: first }, base.now + 32);
+    expect(end.scroll).toBeCloseTo(goal, 6);
+  });
+
+  it('a hand scroll that leaves the playhead off-screen holds, then follows again by itself', () => {
+    const f = new PlayheadFollow();
+    f.step({ ...smooth, now: base.now - 16, playhead: 100 }); // already playing
+    f.userScrolled(base.now);
+    const off = { ...smooth, playhead: 20_000, scrollTick: 0 };
+    expect(f.step({ ...off, now: base.now + FOLLOW_QUIET_MS + 10 })).toBeNull();
+    expect(f.step({ ...off, now: base.now + FOLLOW_RESUME_MS - 10 })).toBeNull();
+    // Past the hold: on its way back, gliding rather than jumping.
+    const back = f.step({ ...off, now: base.now + FOLLOW_RESUME_MS + 10 })!;
+    expect(back).toBeGreaterThan(0);
+    expect(back).toBeLessThan(20_000 - FOLLOW_ANCHOR * VISIBLE);
   });
 });

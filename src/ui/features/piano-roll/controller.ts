@@ -1047,8 +1047,9 @@ export class PianoRollController {
       this.vp.scrollBy(dx, dy, this.maxTick(c));
     }
     this.vp.clampScroll(this.maxTick(c));
-    // Scrolling or zooming time by hand: following waits until the playhead is back in view.
-    if (Math.abs(dx) >= 1 || e.shiftKey || e.ctrlKey || e.metaKey) this.follow.userScrolled();
+    // Zooming keeps following (it glides back to the playhead); scrolling by hand waits a moment (follow.ts).
+    if (e.ctrlKey || e.metaKey) this.follow.zoomed();
+    else if (Math.abs(dx) >= 1 || e.shiftKey) this.follow.userScrolled();
     this.viewportChanged();
   }
 
@@ -1082,7 +1083,7 @@ export class PianoRollController {
   zoomBy(factor: number): void {
     this.vp.zoomX(factor, this.vp.width / 2);
     this.vp.clampScroll(this.maxTick(this.ctx()));
-    this.follow.userScrolled();
+    this.follow.zoomed();
     this.viewportChanged();
   }
 

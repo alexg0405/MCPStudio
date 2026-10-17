@@ -351,7 +351,8 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   `view.followSmooth`): once the playhead reaches 40% of the width the view moves with it every frame (never back,
   not while the loop end shows; a gap after a hand scroll closes with a 240 ms glide). Page style: at 88% the view
   glides (240 ms ease-out) so the playhead sits at 15%. Either way a playhead off-screen (loop, seek) snaps back. It holds still during drags and while a
-  context menu is open, and after a wheel/scrollbar/zoom until the playhead is back in view or playback restarts.
+  context menu is open, and after a hand scroll (wheel, scrollbar, middle-drag) until the playhead is back in view,
+  playback restarts, or 3 s pass (then it glides back). Zooming never pauses it: the view glides back to the playhead.
   The scroll is saved to the editor store only when playback stops, so following causes no React commits.
   "Play this" (`app/actions/transport.ts`; commands `transport.playPattern`, `transport.playFrom`,
   `transport.playRange`): the piano roll's and channel rack's ▶/■ (`transport/PlayPatternButton`), the browser's

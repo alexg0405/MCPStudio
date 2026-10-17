@@ -16,6 +16,8 @@ export const FOLLOW_EDGE = 0.88;
 export const FOLLOW_LEAD = 0.15;
 /** How long a hand scroll keeps following away even when the playhead is still in view (ms). */
 export const FOLLOW_QUIET_MS = 1200;
+/** After a hand scroll, following picks up again this long after the last one, even with the playhead off-screen (ms). */
+export const FOLLOW_RESUME_MS = 3000;
 /** How long the glide to the next page takes (ms). */
 export const FOLLOW_GLIDE_MS = 240;
 /** Smooth style: where the playhead stays once the view moves with it (fraction of the width). */
@@ -54,6 +56,9 @@ export class PlayheadFollow {
   /** Scrolled by hand: wait until the playhead shows again (or playback restarts). */
   private held = false;
   private quietUntil = 0;
+  /** A hand scroll's hold ends by itself at this time; the view then glides back to the playhead. */
+  private holdUntil = 0;
+  private glideNext = false;
   /** Gliding to the next page: from where, to where, since when. */
   private glide: { from: number; to: number; t0: number } | null = null;
 
@@ -61,7 +66,19 @@ export class PlayheadFollow {
   userScrolled(now = performance.now()): void {
     this.held = true;
     this.quietUntil = now + FOLLOW_QUIET_MS;
+    this.holdUntil = now + FOLLOW_RESUME_MS;
     this.glide = null;
+  }
+
+  /**
+   * The user zoomed (wheel with Ctrl/Cmd, pinch, the zoom buttons): following goes on, and the view glides
+   * back to the playhead if the zoom moved it away.
+   */
+  zoomed(): void {
+    this.held = false;
+    this.quietUntil = 0;
+    this.glide = null;
+    this.glideNext = true;
   }
 
   /** The scrollTick to show this frame, or null to leave the view where it is. */
@@ -79,10 +96,13 @@ export class PlayheadFollow {
     const at = (f.playhead - f.scrollTick) / f.visible;
     const inView = at >= 0 && at <= 1;
     if (this.held) {
-      if (!inView) return null;
+      if (!inView && f.now < this.holdUntil) return null;
+      // Back in view, or the hold timed out: follow again (from off-screen, with a glide rather than a jump).
       this.held = false;
+      if (!inView) this.glideNext = true;
     }
     if (f.style === 'smooth') return this.smooth(f, at, inView);
+    this.glideNext = false; // page style: an off-screen playhead snaps back below
     const goal = Math.max(0, Math.min(f.maxScroll, f.playhead - FOLLOW_LEAD * f.visible));
     if (!inView) {
       // A loop or a seek put it off-screen: straight back, no glide across the song.
@@ -108,15 +128,18 @@ export class PlayheadFollow {
   /** Smooth style: keep the playhead at the anchor once it gets there, never scrolling back. */
   private smooth(f: FollowFrame, at: number, inView: boolean): number | null {
     const goal = Math.max(0, Math.min(f.maxScroll, f.playhead - FOLLOW_ANCHOR * f.visible));
-    if (!inView) {
-      this.glide = null;
+    if (this.glideNext) {
+      // After a zoom or a hand scroll's hold: glide to the playhead, wherever it is.
+      this.glideNext = false;
+      if (Math.abs(goal - f.scrollTick) <= 1e-6 || (inView && goal <= f.scrollTick)) return null;
+      this.glide = { from: f.scrollTick, to: goal, t0: f.now - 16 };
+    }
+    if (!inView && !this.glide) {
+      // A loop or a seek: straight there.
       return Math.abs(goal - f.scrollTick) > 1e-6 ? goal : null;
     }
     // The loop's end already shows: the playhead comes back around, the view stays.
-    if (f.wrapEnd <= f.scrollTick + f.visible) {
-      this.glide = null;
-      return null;
-    }
+    if (inView && !this.glide && f.wrapEnd <= f.scrollTick + f.visible) return null;
     if (this.glide) {
       // Catching up after a hand scroll: aim at where the anchor is now, so the glide lands on a moving playhead.
       const g = this.glide;

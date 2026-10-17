@@ -894,7 +894,7 @@ export class PlaylistController {
   zoomBy(factor: number): void {
     this.vp.zoomX(factor, this.vp.width / 2);
     this.vp.clampScroll(this.maxTick(this.project()));
-    this.follow.userScrolled();
+    this.follow.zoomed();
     this.viewportChanged();
   }
 
@@ -1713,8 +1713,9 @@ export class PlaylistController {
     else if (e.shiftKey) this.vp.scrollBy(dy || dx, 0, this.maxTick(p));
     else this.vp.scrollBy(dx, dy, this.maxTick(p));
     this.vp.clampScroll(this.maxTick(p));
-    // Scrolling or zooming by hand: following waits until the playhead is back in view.
-    if (Math.abs(dx) >= 1 || e.shiftKey || e.ctrlKey || e.metaKey) this.follow.userScrolled();
+    // Zooming keeps following (it glides back to the playhead); scrolling by hand waits a moment (follow.ts).
+    if (e.ctrlKey || e.metaKey) this.follow.zoomed();
+    else if (Math.abs(dx) >= 1 || e.shiftKey) this.follow.userScrolled();
     this.viewportChanged();
   }
 

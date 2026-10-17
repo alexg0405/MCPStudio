@@ -11,7 +11,7 @@ import type { AudioClip, ChannelId, Clip, Tick } from '@core/model/types';
 import { followsTempo, playbackKey, playbackMode } from '@core/audio/playback';
 import type { TempoMap } from '@core/time/ppq';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
-import { plan, segmentEndTime, tickAtTime, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
+import { plan, segmentEndTime, tickAtTime, tickNumberAt, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
 import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
 
 /** An audio clip starting to play: its note-on plus where it starts in the song and the tempo it plays at. */
@@ -295,8 +295,9 @@ export class Transport {
   /** Tick heard at audio-clock `time` (the UI passes the output-latency-corrected time). */
   positionAt(time: number): number {
     if (!this.playingFlag) return this.stoppedTick;
-    const hit = tickAtTime(this.segs, time);
-    if (hit) return hit.tick;
+    // A number, not the {tick, iter} object tickAtTime makes: this is read several times in every frame.
+    const tick = tickNumberAt(this.segs, time);
+    if (tick !== null) return tick;
     return this.segs[0]?.tick0 ?? this.cursor?.tick ?? this.stoppedTick;
   }
 

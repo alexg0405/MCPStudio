@@ -21,7 +21,7 @@ import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { noteName, scaleMask } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
 import { isContextMenuOpen } from '../../controls/ContextMenu';
-import { PlayheadFollow } from '../../timeline/follow';
+import { type FollowFrame, PlayheadFollow } from '../../timeline/follow';
 import { alpha, roundRectPath, fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
@@ -118,13 +118,26 @@ export class PianoRollController {
   /** The scrollbar track's width and the event lane's height, measured when the layout changes. */
   private scrollTrackW = 0;
   private laneH = 1;
-  private centeredFor: string | null = null;
+  /** The channel and pattern the view was last centered (or restored) for. */
+  private centeredFor: { channelId: Ctx['channelId']; patternId: Ctx['patternId'] } | null = null;
   private scaleCache: { key: SongKey | null; rows: ScaleRows | null } = { key: null, rows: null };
   /** Where the chord stamp would draw, shown as an outline under the pointer. */
   private stampHover: { tick: Tick; length: Tick; keys: number[]; name: string } | null = null;
   private lastHint = '';
   /** Follow playhead: scrolls the view along while playing; its scroll is saved once playback stops. */
   private readonly follow = new PlayheadFollow();
+  /** The follow inputs of the frame, filled in place each frame (no object per frame). */
+  private readonly followFrame: FollowFrame = {
+    now: 0,
+    enabled: false,
+    playing: false,
+    playhead: NaN,
+    scrollTick: 0,
+    visible: 0,
+    maxScroll: 0,
+    wrapEnd: 0,
+    busy: false,
+  };
   private followMoved = false;
 
   constructor(
@@ -139,7 +152,7 @@ export class PianoRollController {
     // Keep a restored scroll position; center on the notes only when it's unknown or the channel changes.
     if (pr.scrollRow !== null) {
       const c = this.ctx();
-      this.centeredFor = `${c.channelId}:${c.patternId}`;
+      this.centeredFor = { channelId: c.channelId, patternId: c.patternId };
     }
   }
 
@@ -280,7 +293,11 @@ export class PianoRollController {
   private maxTick(c: Ctx): Tick {
     const bar = ticksPerBar(c.project.transport.timeSig);
     let end = this.patternEnd(c);
-    for (const n of c.notes) end = Math.max(end, n.tick + n.length);
+    // Indexed: this runs every frame while the view follows, and a for-of iterator per note was garbage.
+    for (let i = 0; i < c.notes.length; i++) {
+      const n = c.notes[i] as Note;
+      end = Math.max(end, n.tick + n.length);
+    }
     return end + bar * 8;
   }
 
@@ -319,10 +336,10 @@ export class PianoRollController {
   private frame(): void {
     const t0 = this.dirty.size > 0 ? performance.now() : 0;
     const c = this.ctx();
-    // Center the view on the channel's notes the first time we show it.
-    const key = `${c.channelId}:${c.patternId}`;
-    if (this.centeredFor !== key && this.vp.height > 1) {
-      this.centeredFor = key;
+    // Center the view on the channel's notes the first time we show it (compared field by field: no key string per frame).
+    const centered = this.centeredFor;
+    if ((!centered || centered.channelId !== c.channelId || centered.patternId !== c.patternId) && this.vp.height > 1) {
+      this.centeredFor = { channelId: c.channelId, patternId: c.patternId };
       this.centerOnNotes(c);
     }
     this.followPlayhead(c);
@@ -339,7 +356,9 @@ export class PianoRollController {
       const ctx = fitCanvas(els.notes, vp.width, vp.height);
       ctx.clearRect(0, 0, vp.width, vp.height);
       if (pr.ghosts && c.pattern) {
-        for (const [cid, notes] of Object.entries(c.pattern.notes)) {
+        // for-in, not Object.entries: no array of pairs per frame.
+        for (const cid in c.pattern.notes) {
+          const notes = c.pattern.notes[cid as ChannelId];
           if (cid !== c.channelId && notes) drawGhosts(ctx, vp, theme, notesSorted(notes));
         }
       }
@@ -507,19 +526,20 @@ export class PianoRollController {
     const enabled = this.s.prefs.getState().followPlayhead;
     const playhead = playing && enabled ? this.playheadTick(c) : NaN;
     const visible = this.vp.width / this.vp.pxPerTick;
-    const next = this.follow.step({
-      now: performance.now(),
-      enabled,
-      playing,
-      playhead,
-      scrollTick: this.vp.scrollTick,
-      visible,
-      maxScroll: Number.isFinite(playhead) ? Math.max(0, this.maxTick(c) - visible) : 0,
-      // The pattern loops at its end (in song mode its clip repeats it).
-      wrapEnd: this.patternEnd(c),
-      style: this.s.prefs.getState().followStyle,
-      busy: this.drag !== null || isContextMenuOpen(),
-    });
+    // The frame's inputs go into the one object this controller keeps (see followFrame).
+    const f = this.followFrame;
+    f.now = performance.now();
+    f.enabled = enabled;
+    f.playing = playing;
+    f.playhead = playhead;
+    f.scrollTick = this.vp.scrollTick;
+    f.visible = visible;
+    f.maxScroll = Number.isFinite(playhead) ? Math.max(0, this.maxTick(c) - visible) : 0;
+    // The pattern loops at its end (in song mode its clip repeats it).
+    f.wrapEnd = this.patternEnd(c);
+    f.style = this.s.prefs.getState().followStyle;
+    f.busy = this.drag !== null || isContextMenuOpen();
+    const next = this.follow.step(f);
     if (next === null) {
       if (!playing && this.followMoved) {
         this.followMoved = false;

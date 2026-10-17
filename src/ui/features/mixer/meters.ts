@@ -49,6 +49,11 @@ interface Colors {
   unlit: number;
 }
 
+/** The device-pixel row of a level (dB) on a meter of `m`'s height, with the given pad and span. */
+function meterY(m: Meter, db: number, pad: number, span: number): number {
+  return Math.round(m.h - pad - dbToPosition(db) * span);
+}
+
 export class MeterBank {
   private readonly meters = new Map<InsertId, Meter>();
   private readonly byCanvas = new WeakMap<Element, Meter>();
@@ -230,8 +235,11 @@ export class MeterBank {
     if (!g || !c || !m.gradient || m.w === 0 || m.h === 0) return;
     const pad = FADER_PAD * m.dpr;
     const span = m.h - 2 * pad;
-    const y = (db: number) => Math.round(m.h - pad - dbToPosition(db) * span);
-    const [l, r, hl, hr] = [y(m.level[0]), y(m.level[1]), y(m.hold[0]), y(m.hold[1])];
+    // Separate consts, not a destructured array literal, and no closure: both were garbage on every frame.
+    const l = meterY(m, m.level[0], pad, span);
+    const r = meterY(m, m.level[1], pad, span);
+    const hl = meterY(m, m.hold[0], pad, span);
+    const hr = meterY(m, m.hold[1], pad, span);
     const clip = m.hold[0] > 0 || m.hold[1] > 0;
     if (m.painted && l === m.dL && r === m.dR && hl === m.dHL && hr === m.dHR && clip === m.dClip) return;
     m.painted = true;
@@ -256,7 +264,7 @@ export class MeterBank {
     if (r < bottom) g.fillRect(m.w - bar, r, bar, bottom - r);
     // 0 dB tick.
     g.fillStyle = c.tick;
-    g.fillRect(0, y(0), m.w, gap);
+    g.fillRect(0, meterY(m, 0, pad, span), m.w, gap);
     g.fillStyle = clip ? c.hi : c.hold;
     if (hl < bottom) g.fillRect(0, hl, bar, gap);
     if (hr < bottom) g.fillRect(m.w - bar, hr, bar, gap);

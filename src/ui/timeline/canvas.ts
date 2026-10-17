@@ -129,12 +129,26 @@ function memo(key: string, make: () => string): string {
   return v;
 }
 
-/** `color` with its alpha multiplied by `a` (cached, so it is cheap per frame). */
+/**
+ * `color` with its alpha multiplied by `a` (cached, so it is cheap per frame). Two maps instead of a key
+ * string built per call: this runs in every frame's drawing, and a string per call was garbage every frame.
+ */
+const alphaByColor = new Map<string, Map<number, string>>();
+
 export function alpha(color: string, a: number): string {
-  return memo(`a|${color}|${a}`, () => {
+  let byAlpha = alphaByColor.get(color);
+  if (!byAlpha) {
+    if (alphaByColor.size > 500) alphaByColor.clear();
+    alphaByColor.set(color, (byAlpha = new Map()));
+  }
+  let v = byAlpha.get(a);
+  if (v === undefined) {
+    if (byAlpha.size > 200) byAlpha.clear();
     const c = rgbaOf(color);
-    return css([c[0], c[1], c[2], c[3] * a]);
-  });
+    v = css([c[0], c[1], c[2], c[3] * a]);
+    byAlpha.set(a, v);
+  }
+  return v;
 }
 
 /** Like CSS `color-mix(in srgb, a t, b)`: `t` of `a`, the rest `b` (cached). */

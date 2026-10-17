@@ -39,7 +39,7 @@ import { gridTicks, snapFloor, snapRound } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
 import { onFrame } from '../../frame-loop';
 import { closeContextMenu, isContextMenuOpen } from '../../controls/ContextMenu';
-import { PlayheadFollow } from '../../timeline/follow';
+import { type FollowFrame, PlayheadFollow } from '../../timeline/follow';
 import {
   AUTO_HINTS,
   contentToTick,
@@ -99,6 +99,40 @@ export interface ClientBox {
   top: number;
   right: number;
   bottom: number;
+}
+
+/**
+ * The sorted markers and the muted lanes of a playlist state, kept per state (the records are immutable, so
+ * the same record gives the same answer): a frame that redraws the ruler and lanes would otherwise sort and
+ * build them again every time.
+ */
+const sortedMarkersCache = new WeakMap<object, ReturnType<typeof markersSorted>>();
+const mutedCache = new WeakMap<object, ReturnType<typeof mutedLanes>>();
+function sortedMarkersOf(p: Project): ReturnType<typeof markersSorted> {
+  let v = sortedMarkersCache.get(p.playlist.markers);
+  if (!v) {
+    v = markersSorted(p);
+    sortedMarkersCache.set(p.playlist.markers, v);
+  }
+  return v;
+}
+const laneIndexCache = new WeakMap<object, Map<LaneId, number>>();
+/** Each lane's row, by lane id (kept per lane order: the order array is replaced when lanes move). */
+function laneIndexOf(p: Project): Map<LaneId, number> {
+  let v = laneIndexCache.get(p.playlist.laneOrder);
+  if (!v) {
+    v = new Map(p.playlist.laneOrder.map((id, i): [LaneId, number] => [id, i]));
+    laneIndexCache.set(p.playlist.laneOrder, v);
+  }
+  return v;
+}
+function mutedOf(p: Project): ReturnType<typeof mutedLanes> {
+  let v = mutedCache.get(p.playlist);
+  if (!v) {
+    v = mutedLanes(p.playlist);
+    mutedCache.set(p.playlist, v);
+  }
+  return v;
 }
 
 /** How far (px) the pointer may wander before a click on an empty cell counts as a drag. */
@@ -193,8 +227,22 @@ export class PlaylistController {
   private audioHot: { clipId: ClipId; handle: AudioHandle } | null = null;
   /** Follow playhead: scrolls the view along while playing; its scroll is saved once playback stops. */
   private readonly follow = new PlayheadFollow();
+  /** The follow inputs of the frame, filled in place each frame (no object per frame). */
+  private readonly followFrame: FollowFrame = {
+    now: 0,
+    enabled: false,
+    playing: false,
+    playhead: NaN,
+    scrollTick: 0,
+    visible: 0,
+    maxScroll: 0,
+    wrapEnd: Infinity,
+    busy: false,
+  };
   private followMoved = false;
   private wasPlaying = false;
+  /** The device-pixel snap last written to the grid and the playhead's data attribute (NaN: none yet). */
+  private lastSnapPx = NaN;
 
   constructor(
     private readonly s: Services,
@@ -388,13 +436,17 @@ export class PlaylistController {
     this.followPlayhead(p);
     // Drawing and the playhead snap to whole device pixels (viewport.ts); the grid and playhead carry the same offset.
     const dpr = window.devicePixelRatio || 1;
-    const snapPx = String(vp.snapForFrame(dpr));
-    if (els.grid.dataset.snapPx !== snapPx) els.grid.dataset.snapPx = snapPx;
+    const snapPx = vp.snapForFrame(dpr);
+    if (snapPx !== this.lastSnapPx) {
+      this.lastSnapPx = snapPx;
+      els.grid.dataset.snapPx = String(snapPx);
+      els.playhead.dataset.snapPx = String(snapPx);
+    }
     if (this.dirty.size > 0) {
       const theme = readTheme();
       const ts = p.transport.timeSig;
-      const muted = mutedLanes(p.playlist);
-      const markers = { markers: markersSorted(p), hot: this.markerHot, hotAsk: this.markerAskHot, drag: this.markerDrag };
+      const muted = mutedOf(p);
+      const markers = { markers: sortedMarkersOf(p), hot: this.markerHot, hotAsk: this.markerAskHot, drag: this.markerDrag };
       if (this.dirty.has('grid')) {
         const g = fitCanvas(els.grid, vp.width, vp.height);
         drawLanesGrid(g, vp, theme, ts, vp.rows, songLength(p));
@@ -403,7 +455,7 @@ export class PlaylistController {
       if (this.dirty.has('clips')) {
         const ctx = fitCanvas(els.clips, vp.width, vp.height);
         ctx.clearRect(0, 0, vp.width, vp.height);
-        const laneIndex = new Map(p.playlist.laneOrder.map((id, i) => [id, i]));
+        const laneIndex = laneIndexOf(p);
         const selected = new Set(this.s.editor.getState().clipSelection);
         const d = this.drag;
         const hideOriginals = this.preview && (d?.kind === 'resize' || (d?.kind === 'move' && !d.duplicate));
@@ -462,7 +514,7 @@ export class PlaylistController {
     }
     // A take being recorded grows every frame.
     if (this.s.audioRecorder.live.getState().take) this.invalidate('overlay');
-    this.updatePlayhead(snapPx);
+    this.updatePlayhead();
   }
 
   /** The take being recorded: a red clip from where it started to now, with its waveform so far. */
@@ -711,8 +763,19 @@ export class PlaylistController {
     if (playing && !this.wasPlaying) closeContextMenu();
     this.wasPlaying = playing;
     const enabled = prefs.getState().followPlayhead;
+    // The frame's inputs go into the one object this controller keeps (see followFrame): nothing is allocated here.
+    const f = this.followFrame;
     if (!playing || !enabled) {
-      this.follow.step({ now: performance.now(), enabled, playing, playhead: NaN, scrollTick: 0, visible: 0, maxScroll: 0, wrapEnd: Infinity, busy: false });
+      f.now = performance.now();
+      f.enabled = enabled;
+      f.playing = playing;
+      f.playhead = NaN;
+      f.scrollTick = 0;
+      f.visible = 0;
+      f.maxScroll = 0;
+      f.wrapEnd = Infinity;
+      f.busy = false;
+      this.follow.step(f);
       if (!playing && this.followMoved) {
         this.followMoved = false;
         this.persistViewport();
@@ -723,34 +786,32 @@ export class PlaylistController {
     const visible = this.vp.width / this.vp.pxPerTick;
     // Recording a take with no loop region plays on past the song's end.
     const openEnded = !v.loop && !!this.s.audioRecorder.live.getState().take;
-    const next = this.follow.step({
-      now: performance.now(),
-      enabled,
-      playing,
-      playhead: v.mode === 'song' ? engine.playhead() : NaN,
-      scrollTick: this.vp.scrollTick,
-      visible,
-      maxScroll: Math.max(0, this.maxTick(p) - visible),
-      wrapEnd: v.loop ? v.loop.end : openEnded ? Infinity : songLength(p),
-      style: this.s.prefs.getState().followStyle,
-      busy: this.drag !== null || isContextMenuOpen() || this.els.markerRename.style.display === 'block',
-    });
+    f.now = performance.now();
+    f.enabled = enabled;
+    f.playing = playing;
+    f.playhead = v.mode === 'song' ? engine.playhead() : NaN;
+    f.scrollTick = this.vp.scrollTick;
+    f.visible = visible;
+    f.maxScroll = Math.max(0, this.maxTick(p) - visible);
+    f.wrapEnd = v.loop ? v.loop.end : openEnded ? Infinity : songLength(p);
+    f.style = this.s.prefs.getState().followStyle;
+    f.busy = this.drag !== null || isContextMenuOpen() || this.els.markerRename.style.display === 'block';
+    const next = this.follow.step(f);
     if (next === null || next === this.vp.scrollTick) return;
     this.vp.scrollTick = next;
     this.followMoved = true;
     this.invalidate('grid', 'clips', 'overlay', 'ruler');
   }
 
-  private updatePlayhead(snapPx: string): void {
+  private updatePlayhead(): void {
     const { engine, view } = this.s;
     const v = view.getState();
     let x = NaN;
     if (v.mode === 'song') x = this.vp.tickToX(engine.playing ? engine.playhead() : v.songStart);
     // The line sits on a whole device pixel, like the grid it is drawn over.
     const at = Number.isFinite(x) ? this.vp.snap(x) : NaN;
-    const el = this.els.playhead;
-    if (el.dataset.snapPx !== snapPx) el.dataset.snapPx = snapPx;
     if (at === this.lastPlayheadX) return;
+    const el = this.els.playhead;
     this.lastPlayheadX = at;
     if (!Number.isFinite(at) || at < 0 || at > this.vp.width) el.style.display = 'none';
     else {

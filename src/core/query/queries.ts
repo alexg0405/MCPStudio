@@ -78,15 +78,20 @@ export function notesOverlapping(notes: readonly Note[], from: Tick, to: Tick): 
   return out;
 }
 
-const lengthCache = new WeakMap<Pattern, Map<string, Tick>>();
+/** Per pattern, the length found for each time signature it was asked under (a list: usually one entry). */
+const lengthCache = new WeakMap<Pattern, { num: number; den: number; len: Tick }[]>();
 
 /** Pattern length: explicit, or content (step grid and notes) rounded up to whole bars, at least one bar. */
 export function patternLength(pattern: Pattern, ts: TimeSignature): Tick {
   if (pattern.length && pattern.length > 0) return pattern.length;
-  const key = `${ts.num}/${ts.den}`;
-  let byTs = lengthCache.get(pattern);
-  const cached = byTs?.get(key);
-  if (cached !== undefined) return cached;
+  // Looked up without building a key string: the piano roll asks for this every frame while it plays.
+  let entries = lengthCache.get(pattern);
+  if (entries) {
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i] as { num: number; den: number; len: Tick };
+      if (e.num === ts.num && e.den === ts.den) return e.len;
+    }
+  }
   let end = pattern.stepCount * TICKS_PER_STEP;
   for (const cid in pattern.notes) {
     const notes = pattern.notes[cid as ChannelId];
@@ -97,11 +102,11 @@ export function patternLength(pattern: Pattern, ts: TimeSignature): Tick {
     }
   }
   const len = ceilToBars(end, ts);
-  if (!byTs) {
-    byTs = new Map();
-    lengthCache.set(pattern, byTs);
+  if (!entries) {
+    entries = [];
+    lengthCache.set(pattern, entries);
   }
-  byTs.set(key, len);
+  entries.push({ num: ts.num, den: ts.den, len });
   return len;
 }
 

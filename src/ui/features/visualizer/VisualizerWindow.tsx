@@ -35,6 +35,8 @@ export function VisualizerWindow() {
     let frame = 0;
     // null: draw the next frame even if it is silent (first frame, or the canvas was resized).
     let silent: boolean | null = null;
+    /** The peak last written to each readout (NaN: none yet). */
+    const shownPeak = [Number.NaN, Number.NaN];
     const measure = () => {
       size.sw = spec.clientWidth;
       size.sh = spec.clientHeight;
@@ -79,8 +81,15 @@ export function VisualizerWindow() {
         drawScope(o, size.ow, size.oh, right, theme.select, 1.25);
         o.globalAlpha = 1;
       }
-      if (peakL.current) peakL.current.textContent = peakText(pl);
-      if (peakR.current) peakR.current.textContent = peakText(pr);
+      // The readouts are only rewritten when their peak changes (a steady level builds no text).
+      if (peakL.current && pl !== shownPeak[0]) {
+        shownPeak[0] = pl;
+        peakL.current.textContent = peakText(pl);
+      }
+      if (peakR.current && pr !== shownPeak[1]) {
+        shownPeak[1] = pr;
+        peakR.current.textContent = peakText(pr);
+      }
     });
     return () => {
       stop();

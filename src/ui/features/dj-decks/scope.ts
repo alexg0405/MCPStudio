@@ -26,7 +26,13 @@ export interface ScopeParts {
 export const HOT_CUE_VARS = Array.from({ length: 8 }, (_, i) => `var(--ag-palette-${i + 1})`);
 
 export class DeckScope {
-  private lastKey = '';
+  /** What the picture was last drawn for (see frame). */
+  private lastPosMs = NaN;
+  private lastZoomW = NaN;
+  private lastZoomH = NaN;
+  private lastOverviewW = NaN;
+  private lastTheme = NaN;
+  private lastDpr = NaN;
   private lastTime = '';
   private lastRemaining = '';
   private lastRotation = NaN;
@@ -46,12 +52,31 @@ export class DeckScope {
     const pos = d.song ? this.api.positionNow(this.id) : 0;
     const zoomBox = this.parts.zoom.getBoundingClientRect();
     const ovBox = this.parts.overview.getBoundingClientRect();
-    const key = `${pos.toFixed(3)}|${zoomBox.width | 0}x${zoomBox.height | 0}|${ovBox.width | 0}|${themeVersion()}|${window.devicePixelRatio}`;
+    // What the picture depends on, compared field by field (a key string built every frame was garbage).
+    // The position in milliseconds (the precision it was keyed by as a string before: `toFixed(3)`).
+    const posMs = Math.round(pos * 1000);
+    const zoomW = zoomBox.width | 0;
+    const zoomH = zoomBox.height | 0;
+    const overviewW = ovBox.width | 0;
+    const themeV = themeVersion();
+    const dpr = window.devicePixelRatio;
     this.text(d, pos);
     this.rotate(d, pos);
     // The deck's own state is a new object whenever anything in it changes.
-    if (key === this.lastKey && this.lastState === d && this.lastWave === this.api.waveformOf?.(this.id)) return;
-    this.lastKey = key;
+    const same =
+      posMs === this.lastPosMs &&
+      zoomW === this.lastZoomW &&
+      zoomH === this.lastZoomH &&
+      overviewW === this.lastOverviewW &&
+      themeV === this.lastTheme &&
+      dpr === this.lastDpr;
+    if (same && this.lastState === d && this.lastWave === this.api.waveformOf?.(this.id)) return;
+    this.lastPosMs = posMs;
+    this.lastZoomW = zoomW;
+    this.lastZoomH = zoomH;
+    this.lastOverviewW = overviewW;
+    this.lastTheme = themeV;
+    this.lastDpr = dpr;
     this.lastState = d;
     this.lastWave = this.api.waveformOf?.(this.id) ?? null;
     const theme = readTheme();

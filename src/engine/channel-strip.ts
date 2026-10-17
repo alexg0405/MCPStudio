@@ -1,7 +1,7 @@
 import { CHANNEL_PAN_SPEC, CHANNEL_PITCH_SPEC, CHANNEL_VOLUME_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
 import { automatedOwners, ownerKey } from '@core/automation/owners';
-import type { AudioClipChannel, InstrumentChannel, Project } from '@core/model/types';
+import type { AudioClipChannel, InsertId, InstrumentChannel, Project } from '@core/model/types';
 import { playbackMode } from '@core/audio/playback';
 import type { InstrumentInstance, JsonValue, NoteOff, NoteOn, ParamSignal } from '@agstudio/sdk';
 import { HostImpl } from './host';
@@ -90,6 +90,10 @@ export class ChannelStrip {
   private generation = 0;
   private pending: Promise<void> = Promise.resolve();
   private muted = false;
+  /** Seconds the song's events for this channel are scheduled later (delay compensation, see setShift). */
+  private shiftSec = 0;
+  /** The plugin's host from the moment it is made (`host` only once the plugin exists). */
+  private liveHost: HostImpl | null = null;
   private channel: InstrumentChannel | AudioClipChannel;
   private project: Project;
   /** Audio-clip channels: the clip player (also `instance`). Its buffers come from the engine's residency. */
@@ -119,7 +123,34 @@ export class ChannelStrip {
       if (lane) this.unregister.push(core.params.register(lane));
     this.input.connect(this.vol).connect(this.panner).connect(this.out);
     this.out.connect(core.insertInput(channel.output));
+    this.setShift(core.channelShift(channel.output));
     this.load(channel, project);
+  }
+
+  /** The insert this channel plays through. */
+  get outputId(): InsertId {
+    return this.channel.output;
+  }
+
+  /**
+   * Seconds the song's events for this channel (notes, clip starts) are scheduled later than the song says: the
+   * mixer's delay compensation is done here, in time, not with a delay line on the audio (a live note, which is not
+   * scheduled by the song, then hears none of it). The channel's automation lanes and its plugin's transport
+   * anchors move by the same amount, so they stay with the notes.
+   */
+  get shift(): number {
+    return this.shiftSec;
+  }
+
+  /** Returns whether the shift changed. */
+  setShift(seconds: number): boolean {
+    if (seconds === this.shiftSec) return false;
+    this.shiftSec = seconds;
+    this.volLane.shift = seconds;
+    this.panLane.shift = seconds;
+    if (this.pitch) this.pitch.lane.shift = seconds;
+    this.liveHost?.setShift(seconds);
+    return true;
   }
 
   /**
@@ -156,6 +187,7 @@ export class ChannelStrip {
     if (prev.output !== next.output) {
       this.out.disconnect();
       this.out.connect(this.core.insertInput(next.output));
+      this.setShift(this.core.channelShift(next.output));
     }
     if (prev.kind !== next.kind) {
       this.load(next, project);
@@ -329,6 +361,8 @@ export class ChannelStrip {
       reportTap: (tap, live) => this.core.reportTap?.({ kind: 'channel', channelId: channel.id }, tap, live),
       lite: () => !automatedOwners(this.project.channels).has(ownerKey({ kind: 'channel', channelId: channel.id })),
     });
+    host.setShift(this.shiftSec);
+    this.liveHost = host;
     this.pending = (async () => {
       try {
         const inst = await def.create(host);
@@ -360,6 +394,7 @@ export class ChannelStrip {
     this.instance = null;
     this.clipPlayer = null;
     this.host = null;
+    this.liveHost = null;
     if (inst) {
       try {
         inst.allNotesOff(this.core.ctx.currentTime, true);

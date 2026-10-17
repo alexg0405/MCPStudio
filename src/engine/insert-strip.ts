@@ -257,6 +257,8 @@ export class FxSlotStrip {
   private keyFrames = 0;
   private reportedFrames = 0;
   private reportedListens = false;
+  /** Seconds after the song's clock the audio reaching this slot is (see setShift). */
+  private shiftIn = 0;
   /** True when the plugin is missing or failed (the slot passes audio through; data is kept). */
   faulted = false;
 
@@ -330,6 +332,17 @@ export class FxSlotStrip {
   /** The track tap keying this slot's sidechain input (null: its own input). */
   get keySource(): AudioNode | null {
     return this.trackKey;
+  }
+
+  /**
+   * The mixer's delay compensation holds the audio back: what reaches this slot is `inSeconds` behind the time the
+   * song schedules it (and what leaves it `outSeconds`: its own latency later). The effect's params and transport
+   * anchors follow `inSeconds`, the slot's mix `outSeconds` (the dry and wet paths meet at its output).
+   */
+  setShift(inSeconds: number, outSeconds: number): void {
+    this.shiftIn = inSeconds;
+    this.mixLane.shift = outSeconds;
+    for (const inst of this.instances()) inst.host.setShift(inSeconds);
   }
 
   update(next: FxSlot, project: Project): void {
@@ -509,6 +522,7 @@ export class FxSlotStrip {
       reportTap: (tap, live) => this.core.reportTap?.(this.owner, tap, live),
       lite: () => !automatedOwners(this.project.channels).has(ownerKey(this.owner)),
     });
+    host.setShift(this.shiftIn);
     this.pending = (async () => {
       try {
         const inst = await def.create(host);
@@ -623,6 +637,22 @@ export class InsertStrip {
   /** The effect slots in chain order. */
   get slotStrips(): readonly FxSlotStrip[] {
     return this.ordered;
+  }
+
+  /**
+   * The audio entering this insert is `arrivalFrames` behind the time the song schedules it (delay compensation: see
+   * pdc.ts). Each slot's params follow what reaches it, and the fader and pan follow what leaves the last slot.
+   */
+  setAlignment(arrivalFrames: number): void {
+    const sr = this.core.ctx.sampleRate;
+    let at = arrivalFrames;
+    for (const slot of this.ordered) {
+      const latency = slot.latencyFrames;
+      slot.setShift(at / sr, (at + latency) / sr);
+      at += latency;
+    }
+    this.volLane.shift = at / sr;
+    this.panLane.shift = at / sr;
   }
 
   update(next: Insert, project: Project): void {

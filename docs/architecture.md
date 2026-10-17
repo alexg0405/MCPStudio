@@ -795,7 +795,7 @@ Every insert id has persistent nodes (an `InsertBus`) that outlive its strip, so
 sidechains never reconnect when a strip is rebuilt, deleted or restored by undo:
 
 ```
-channels ──► chIn ─[pad: arrival]─► routeIn ─► slot 1 … slot N ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
+channels ──► chIn ───────────────► routeIn ─► slot 1 … slot N ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
 other inserts' routes ─[pad]──────► routeIn            sidechain out ◄─┘  mute/solo  pre sends ◄─┘   post sends, meters ◄─┘
                                                                                      (master: postTap → masterOut → limiter)
 route  : tap (pre or post) ─► level (AutoLane, `route:from:to`) ─[pad]─► target routeIn
@@ -837,23 +837,48 @@ In whole frames: an effect's `latency` (seconds) is rounded to `Math.round(laten
 - Only live slots count (enabled, loaded, not faulted; an effect's latency is only known once its async `create()`
   resolves). Slots report changes (load, enable, bypass, replace, fault) and every routing edit recomputes; edits are
   batched per reconcile.
-- For an insert X: `before(X, k)` is the latency ahead of slot k and `fx(X)` that of all its slots.
-  `arrival(X) = max(0, out(S) for every route S → X, out(S) − before(X, k) for every sidechain S → X keying a live slot k)`
-  and `out(X) = arrival(X) + fx(X)` (the latency at X's taps), solved in topological order (Kahn).
-- Every shorter edge is padded up to that: channels into X by `arrival(X)` (on `chIn → routeIn`), a route S → X by
-  `arrival(X) − out(S)`, a sidechain S → X (slot k) by `arrival(X) + before(X, k) − out(S)`. So a sidechain key arrives
-  at its effect at the same time as the audio it controls, and a track keyed by a latent track waits for it.
-- Paddings are DelayNodes of exactly `n / sampleRate`, created only where the padding is above 0, so paths without
-  latency stay plain connections and bit-exact. Each padded link (`PadLink`) has its own gain: when its delay or
-  target changes while a realtime context plays, the old path fades out over 10 ms as the new one fades in (a brief
-  comb, instead of a click); offline and before the context starts it switches exactly.
-- `graphLatency()` is `out(master)`: the longest path to the master's output, in seconds. The playhead, the step
-  lights, `readAutomation` and `tempoNow` read the transport at `audibleTime() − graphLatency()`, so they follow what is
-  heard. The engine notifies subscribers when it changes (the mixer shows "Delay comp. N ms").
+- **Compensation is done in time, as far upstream as the routing allows, not with a delay line on every join.** For an
+  insert X: `before(X, k)` is the latency ahead of slot k and `fx(X)` that of all its slots. A forward pass gives the
+  mixer's latency (`graphLatency()` = the longest path to the master's output); a backward pass ("as late as possible"
+  scheduling, `engine/pdc.ts`) gives each insert its `arrival(X)`: how long after the time the song schedules it the
+  audio entering X is: `arrival(S) = min(arrival(Y) − fx(S) over its routes S → Y, arrival(X) + before(X, k) − fx(S)
+  over the sidechains it keys)`, the master staying where the forward pass put it, and `out(X) = arrival(X) + fx(X)`
+  (the latency at X's taps). A track that feeds nothing heard (no route out, no key taken from it) constrains nobody.
+- **Channels are not padded. They are scheduled later.** The song's events for a channel (notes, audio clip starts, its
+  volume/pan/pitch and plugin automation, its plugin's transport anchors) go to it `arrival(its insert)` later
+  (`ChannelStrip.shift`; `Engine`'s transport sink adds it to each event, `MixerGraph.shiftSeconds`). Live input and
+  previews (`previewNoteOn`, MIDI, the typing piano) go to the strips directly, so they hear none of the compensation:
+  on the heavy-song fixture a key sounds as soon as on an idle song (see Latency measurements). Recorded notes still
+  land where the player heard the song (`tickAt` takes `graphLatency()` off the heard time, which is unchanged: a song
+  note is still heard `graphLatency()` after its time), and playback is sample-identical to the delay-line version
+  (`test/browser/routing.test.ts`, `pdc-shift.test.ts`: renders shifted by the latency match bit for bit; automation to
+  1e-5).
+- What is left of the old delay lines: a route S → X still gets a DelayNode of exactly `arrival(X) − out(S)` frames and a
+  sidechain S → X (slot k) `arrival(X) + before(X, k) − out(S)`: zero along the route that limits X and along any chain
+  of tracks with one route each, non-zero where one track feeds two paths that differ (a send to a latent bus and a dry
+  send). Each padded link (`PadLink`) has its own gain: when its delay or target changes while a realtime context
+  plays, the old path fades out over 10 ms as the new one fades in; offline and before the context starts it switches
+  exactly. Channel inputs (`chIn`) are plain connections, so a live audio input monitored through a track
+  (`openAudioInput`) is not delayed either.
+- **A change of the compensation while playing** (an effect finishes loading, is bypassed, a route changes): every
+  channel's shift is recomputed (`Engine.alignChannels`), automation lanes and plugin anchors are moved
+  (`AutomatableParam.shift`: the automation driver reaches a lane through `ShiftedParam`, which adds the shift to every
+  time it writes and takes it off what it reads; `AutomationDriver.retime()` plans moved lanes again) and the transport
+  re-plans from 10 ms ahead, so notes not yet started get their new place and each lands once (a note's release
+  carries the shift its start was dispatched with: `Engine.noteShifts`). Notes already sounding keep going. Changes
+  made inside `reconcile()` apply at its end, once the strips are up to date. A note in the last 10 ms before the
+  re-plan keeps the old shift (a flam of that size for one note).
+- Insert-side automation (fader and pan: `out(X)`; a slot's params: what reaches it; its mix: what leaves it; a send's
+  level: `out` of the sending insert) is moved the same way, which also closes the old gap where such controls landed
+  early by the latency.
+- `graphLatency()` is `out(master)`. The playhead, the step lights, `readAutomation` and `tempoNow` read the transport at
+  `audibleTime() − graphLatency()`, so they follow what is heard. The engine notifies subscribers when it changes (the
+  mixer shows "Delay comp. N ms").
 - `tailSeconds()` follows the routing depth (effect tails add up along the deepest route path to the master) plus the
   latency. `renderOffline` keeps its defaults and reports `latency` in its result; WAV export doesn't trim it yet.
-- Not compensated: automation of a control that sits after latent effects (an insert fader, a send level) lands early by
-  that latency; the automation driver could offset by `MixerGraph.compensation.out(insert)` per target. The master
+- Limits: a plugin's `host.transport.tempoAt(t)` looks the time up in the transport's planned segments, so within the
+  shift of a tempo change it can answer for the neighbouring segment; a note of a channel whose shift is more than the
+  lookahead (very latent chains) is dispatched with the lookahead plus its shift of lead, which is fine. The master
   limiter's 1.3 ms isn't part of `graphLatency()`.
 
 ### Solo

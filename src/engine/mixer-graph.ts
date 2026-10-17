@@ -5,7 +5,7 @@
  * Every insert id has persistent nodes (an InsertBus) that outlive its strip, so channels, routes
  * and sidechains never have to reconnect when an insert is rebuilt, deleted or restored:
  *
- *   channels ─► chIn ─[pad: arrival]─► routeIn ─► slots ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
+ *   channels ─► chIn ─► routeIn ─► slots ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
  *   routes from other inserts ─[pad]─► routeIn          (sidechain out)  (mute/solo) (pre sends)        (post sends, meters)
  *
  * - While an insert doesn't exist (not created yet, deleted, unknown id) its chIn feeds the master,
@@ -19,10 +19,13 @@
  * - Edges are `playableEdges()`: routes plus sidechains, loops and dangling edges dropped in a fixed
  *   order. Edits disconnect what went away before anything new is connected, so audio never loops,
  *   not even for one render quantum.
- * - Delay compensation (engine/pdc.ts): an insert's audio arrives as late as its latest input and
- *   every shorter edge is padded with a DelayNode of whole frames (none where the padding is 0, so
- *   unaffected paths stay bit-exact). Live slots only; it is recomputed whenever a slot's latency
- *   becomes known or changes (load, enable, bypass, replace, fault) and on every routing edit.
+ * - Delay compensation (engine/pdc.ts): the waiting is done as far upstream as the routing allows. Channels
+ *   are not padded: the engine schedules the song's events for a channel `shiftSeconds(insert)` later
+ *   (so live notes, which the song does not schedule, are not delayed), and each insert's own automation
+ *   moves with it. What is left is a DelayNode of whole frames on a route or a sidechain where one source
+ *   feeds paths that differ (none where the padding is 0, so unaffected paths stay bit-exact). Live slots
+ *   only; it is recomputed whenever a slot's latency becomes known or changes (load, enable, bypass,
+ *   replace, fault) and on every routing edit, and `onAlign` tells the engine.
  */
 import { makeInsert } from '@core/model/defaults';
 import { MASTER, type InsertId, type Mixer, type Project, type Route } from '@core/model/types';
@@ -140,7 +143,7 @@ class InsertBus implements InsertTaps {
   readonly scTap: GainNode;
   readonly preTap: GainNode;
   readonly postTap: GainNode;
-  /** chIn → routeIn (padded by the arrival latency), or chIn → the master while the insert is gone. */
+  /** chIn → routeIn, or chIn → the master while the insert is gone (never padded: see DelayCompensation). */
   readonly chLink: PadLink;
 
   constructor(ctx: BaseAudioContext, offline: boolean) {
@@ -186,6 +189,11 @@ class RouteLink {
     this.pad = new PadLink(ctx, this.gain, core.offline);
   }
 
+  /** The send level follows what leaves the insert: `seconds` behind the song's clock (see DelayCompensation.out). */
+  setShift(seconds: number): void {
+    this.lane.shift = seconds;
+  }
+
   update(route: Route): void {
     const prev = this.route;
     if (prev === route) return;
@@ -225,6 +233,8 @@ export class MixerGraph {
     masterOut: AudioNode,
     /** Called when the mixer's total latency changes (the playhead and the UI follow it). */
     private readonly onLatency: () => void = () => {},
+    /** Called after every recomputation of the compensation: channels wait `shiftSeconds(insert)` (see there). */
+    private readonly onAlign: () => void = () => {},
   ) {
     const bus = this.bus(MASTER);
     bus.postTap.connect(masterOut);
@@ -242,6 +252,17 @@ export class MixerGraph {
   /** Seconds of latency the mixer adds. */
   get latency(): number {
     return this.latencyFrames / this.core.ctx.sampleRate;
+  }
+
+  /**
+   * How long a channel routed to insert `id` is scheduled later than the song says (seconds): the delay compensation
+   * is done in the channel's event times, not on the audio, so live notes (which the song doesn't schedule) hear none
+   * of it. An insert that doesn't exist plays through the master.
+   */
+  shiftSeconds(id: InsertId): number {
+    const pdc = this.pdc;
+    if (!pdc) return 0;
+    return pdc.arrival(this.strips.has(id) ? id : MASTER) / this.core.ctx.sampleRate;
   }
 
   /** Compensation currently applied (tests and diagnostics). */
@@ -433,16 +454,23 @@ export class MixerGraph {
     const changed = this.pdc !== null && this.pdc.total !== pdc.total;
     this.pdc = pdc;
     const masterIn = this.bus(MASTER).chIn;
+    // Channels are not padded: the engine schedules them later by the insert's arrival (`shiftSeconds`).
     for (const [id, bus] of this.buses) {
-      if (this.strips.has(id)) bus.chLink.set(bus.routeIn, pdc.arrival(id));
+      if (this.strips.has(id)) bus.chLink.set(bus.routeIn, 0);
       else if (id !== MASTER) bus.chLink.set(masterIn, 0);
     }
-    for (const link of this.routes.values()) link.pad.set(this.bus(link.to).routeIn, pdc.routePad(link.from, link.to));
+    const sr = this.core.ctx.sampleRate;
+    for (const link of this.routes.values()) {
+      link.pad.set(this.bus(link.to).routeIn, pdc.routePad(link.from, link.to));
+      link.setShift(pdc.out(link.from) / sr);
+    }
+    for (const [id, strip] of this.strips) strip.setAlignment(pdc.arrival(id));
     for (const e of this.edges) {
       if (e.kind !== 'sidechain' || !e.slotId) continue;
       const slot = this.strips.get(e.to)?.slotStrips.find((s) => s.id === e.slotId);
       slot?.setKey(this.bus(e.from).scTap, pdc.keyPad(e.from, e.to, e.slotId));
     }
     if (changed) this.onLatency();
+    this.onAlign();
   }
 }

@@ -186,6 +186,24 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   /** True while this instance's worklet is the kernel's lite processor (see HostDeps.lite). */
   lite = false;
 
+  /** Seconds this instance sits behind the song's clock (see `AutomatableParam.shift`). */
+  private shiftSec = 0;
+
+  get shift(): number {
+    return this.shiftSec;
+  }
+
+  /**
+   * The mixer's delay compensation holds this instance's sound back by `seconds` after the time the song schedules it:
+   * its automation lanes and its transport anchors follow, so they stay with the notes and the audio.
+   */
+  setShift(seconds: number): void {
+    if (seconds === this.shiftSec) return;
+    this.shiftSec = seconds;
+    for (const h of Object.values(this.params)) h.lane.shift = seconds;
+    for (const p of this.myPorts) p.shift = seconds;
+  }
+
   async worklet(opts: WorkletOptions = {}): Promise<WorkletPort> {
     const { def, ctx } = this.deps;
     if (!def.processor) throw new Error(`Plugin "${def.id}" has no processor module`);
@@ -256,6 +274,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
         for (const off of unsubs) off();
       },
     );
+    port.shift = this.shiftSec;
     this.deps.ports.add(port);
     this.myPorts.add(port);
     return port;

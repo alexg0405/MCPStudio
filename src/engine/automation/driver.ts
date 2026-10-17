@@ -25,6 +25,9 @@
  * - Stopped: automated params hold their last value (an edit to one lets go of it); playing again
  *   ramps from there to the value at the start tick.
  * - `readValue(key, time)` answers knobs that follow automation (NaN when not driven).
+ * - Everything is planned in the song's time. A control that sits behind the song's clock (the mixer holds the
+ *   audio back for plugin delay compensation: `AutomatableParam.shift`) is handled through a `ShiftedParam`, which
+ *   moves each time by that shift; `retime()` plans such lanes again after a shift changed.
  */
 import { automationModelOf, type TargetAutomation } from '@core/automation/model';
 import { resolveTarget, type ResolvedTarget, type SpecsResolver } from '@core/automation/targets';
@@ -36,6 +39,7 @@ import type { AutomatableParam, ParamRegistry } from '../param-lane';
 import type { Segment, Timeline } from '../sched/core';
 import type { TransportObserver } from '../sched/transport';
 import { CurvePlanner, JUMP, rampError } from './curve-plan';
+import { ShiftedParam } from './shifted';
 
 export interface DriverDeps {
   readonly ctx: BaseAudioContext;
@@ -97,6 +101,7 @@ export class AutomationDriver implements TransportObserver {
   private readonly plans = new Map<string, Plan>();
   private readonly states = new Map<AutomatableParam, LaneState>();
   private readonly buf = new Float64Array(512);
+  private readonly views = new WeakMap<AutomatableParam, ShiftedParam>();
   private readonly unsubscribe: () => void;
   private playing = false;
   private run: Run | null = null;
@@ -146,7 +151,7 @@ export class AutomationDriver implements TransportObserver {
         plan.planner = planner;
         for (const lane of plan.lanes) this.stateOf(lane, plan).pending = JUMP;
       } else {
-        const fresh: Plan = { key, automation, resolved, planner, lanes: [...this.deps.params.get(key)] };
+        const fresh: Plan = { key, automation, resolved, planner, lanes: this.deps.params.get(key).map((l) => this.view(l)) };
         this.plans.set(key, fresh);
         for (const lane of fresh.lanes) this.stateOf(lane, fresh).pending = JUMP;
       }
@@ -235,7 +240,7 @@ export class AutomationDriver implements TransportObserver {
     if (on) {
       if (this.touched.has(key)) return;
       this.touched.add(key);
-      this.letGo(this.deps.params.get(key), RELEASE);
+      this.letGo(this.deps.params.get(key).map((l) => this.view(l)), RELEASE);
       return;
     }
     if (!this.touched.delete(key)) return;
@@ -246,7 +251,26 @@ export class AutomationDriver implements TransportObserver {
   /** The automated value of `key` at `time` (spec units), or NaN when automation doesn't drive it. */
   readValue(key: string, time: number): number {
     const p = this.deps.params.newest(key);
-    return p && p.driven ? p.valueAt(time) : Number.NaN;
+    return p && p.driven ? this.view(p).valueAt(time) : Number.NaN;
+  }
+
+  /**
+   * Some lanes' `shift` changed (the mixer's delay compensation did): plans them again from the next segment, so
+   * their breakpoints land where the control is heard now.
+   */
+  retime(): void {
+    for (const [lane, ls] of this.states) {
+      if (!(lane instanceof ShiftedParam) || !lane.retimed()) continue;
+      if (lane.driven || this.plans.has(lane.key)) ls.pending = JUMP;
+    }
+  }
+
+  /** The lane as the driver plans it: in the song's time (see ShiftedParam). */
+  private view(lane: AutomatableParam): AutomatableParam {
+    if (lane instanceof ShiftedParam) return lane;
+    let v = this.views.get(lane);
+    if (!v) this.views.set(lane, (v = new ShiftedParam(lane)));
+    return v;
   }
 
   /** Keys of the targets automation currently plans (tests, diagnostics). */
@@ -321,7 +345,8 @@ export class AutomationDriver implements TransportObserver {
     }
   }
 
-  private paramChanged(p: AutomatableParam, added: boolean): void {
+  private paramChanged(raw: AutomatableParam, added: boolean): void {
+    const p = this.view(raw);
     const plan = this.plans.get(p.key);
     if (added) {
       if (!plan) return;

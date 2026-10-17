@@ -113,6 +113,12 @@ class PortSet extends Set<WorkletPortImpl> {
 
 /** How far past the output's last timestamp the heard time may run on the wall clock (seconds). */
 const MAX_EXTRAPOLATION = 0.1;
+/** Seconds a replaced engine takes to fade out. */
+const DISPOSE_FADE = 0.012;
+/** How long (ms) one reading of the output clock answers every reader (a frame is 16 ms). */
+const AUDIBLE_CACHE_MS = 2;
+/** The most the start lead learns to add after late starts (seconds). */
+const MAX_START_PAD = 0.03;
 
 export class Engine implements EngineApi, EngineCore {
   readonly ctx: BaseAudioContext;
@@ -550,7 +556,8 @@ export class Engine implements EngineApi, EngineCore {
     void this.resume();
     this.updateModel();
     // Playing again while playing is a seek: what was scheduled is cancelled or released first.
-    const at = this.ctx.currentTime + 0.05;
+    const lateBefore = this.transport.lateEvents;
+    const at = this.ctx.currentTime + this.startLead();
     if (this.view.mode === 'song') {
       this.songPos = fromTick;
       this.residency.setPosition(fromTick, this.transport.currentTimeline.loop, true);
@@ -570,9 +577,27 @@ export class Engine implements EngineApi, EngineCore {
           : 0;
       this.transport.start(fromTick, at + countIn);
     }
+    // The first notes went out late (a busy main thread): leave more room next time.
+    if (this.transport.lateEvents > lateBefore) this.startPad = Math.min(MAX_START_PAD, this.startPad + 0.01);
     this.startClock();
     this.emit();
   }
+
+  /**
+   * Seconds between pressing play (or seeking) and the first beat. The first notes reach the audio thread by message,
+   * which handles them within about one audio callback (`baseLatency`) plus a render quantum; anything earlier is
+   * wasted waiting. Measured with the output probe in test/browser/latency.test.ts: 14 / 21 / 38 ms for the small,
+   * medium and large buffer, where the fixed 50 ms it replaced added a third to a half of the response. `startPad`
+   * grows by 10 ms (to 30) every time notes still went out late, and stays.
+   */
+  private startLead(): number {
+    const ctx = this.ctx;
+    const base = typeof AudioContext !== 'undefined' && ctx instanceof AudioContext ? ctx.baseLatency : 0.01;
+    return Math.min(0.05, Math.max(0.012, 0.006 + 1.5 * base + this.startPad));
+  }
+
+  /** Extra start lead learned from late starts (seconds). */
+  private startPad = 0;
 
   stop(): void {
     this.transport.stop(0);
@@ -652,16 +677,25 @@ export class Engine implements EngineApi, EngineCore {
   private audibleTime(): number {
     const ctx = this.ctx;
     if (typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
+      // Everything that reads it within a frame (playhead, step lights, automation, tempo readouts: several per
+      // frame) gets one answer: a clock read allocates a timestamp object, and readers must agree on the time.
+      const nowMs = performance.now();
+      if (nowMs - this.audibleAt < AUDIBLE_CACHE_MS && nowMs >= this.audibleAt) return this.audibleValue;
       const ts = ctx.getOutputTimestamp();
       let t: number;
       if (ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.performanceTime > 0) {
         const ahead = Math.max(0, Math.min(MAX_EXTRAPOLATION, (performance.now() - ts.performanceTime) / 1000));
         t = ts.contextTime + ahead;
       } else t = ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency;
-      return this.audible.step(t, performance.now());
+      this.audibleAt = nowMs;
+      return (this.audibleValue = this.audible.step(t, nowMs));
     }
     return ctx.currentTime;
   }
+
+  /** The last answer of audibleTime() and the `performance.now()` it was read at. */
+  private audibleAt = Number.NEGATIVE_INFINITY;
+  private audibleValue = 0;
 
   private startClock(): void {
     if (this.offline) return;
@@ -720,12 +754,30 @@ export class Engine implements EngineApi, EngineCore {
   previewNoteOn(channelId: ChannelId, key: number, velocity = 0.8): number {
     void this.resume();
     const noteId = ++this.previewSeq;
-    this.strips.get(channelId)?.noteOn({ time: this.ctx.currentTime, noteId, key, velocity });
+    const time = this.ctx.currentTime;
+    this.previewOn.set(noteId, time);
+    this.strips.get(channelId)?.noteOn({ time, noteId, key, velocity });
     return noteId;
   }
 
   previewNoteOff(channelId: ChannelId, noteId: number): void {
-    this.strips.get(channelId)?.noteOff({ time: this.ctx.currentTime, noteId, key: 0 });
+    // A quick tap: `currentTime` only moves once per audio callback (21 ms with the large buffer), so the release
+    // could carry the very time of the press and cancel the note (a release at or before its start). Hold it back
+    // until the sound has started: a callback and a bit after the press.
+    const on = this.previewOn.get(noteId);
+    this.previewOn.delete(noteId);
+    const now = this.ctx.currentTime;
+    const time = on === undefined ? now : Math.max(now, on + this.previewHold());
+    this.strips.get(channelId)?.noteOff({ time, noteId, key: 0 });
+  }
+
+  /** Press time of each live note until its release. */
+  private readonly previewOn = new Map<number, number>();
+
+  private previewHold(): number {
+    const ctx = this.ctx;
+    const base = typeof AudioContext !== 'undefined' && ctx instanceof AudioContext ? ctx.baseLatency : 0.01;
+    return Math.max(0.01, 2.5 * base);
   }
 
   previewControl(channelId: ChannelId, cc: number, value: number): void {
@@ -974,6 +1026,7 @@ export class Engine implements EngineApi, EngineCore {
       baseLatency: realtime ? ctx.baseLatency : 0,
       outputLatency: realtime ? ctx.outputLatency || 0 : 0,
       lookahead: this.transport.lookahead,
+      startLead: this.startLead(),
       lateEvents: this.transport.lateEvents,
       maxPumpGapMs: Math.round(this.maxPumpGap),
       faults: this.faults,
@@ -1008,6 +1061,15 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   async dispose(): Promise<void> {
+    // A running engine that is replaced (a new buffer size, a rebooted output) fades out first instead of clicking.
+    if (!this.offline && typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state === 'running') {
+      const g = this.masterOut.gain;
+      const now = this.ctx.currentTime;
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+      g.linearRampToValueAtTime(0, now + DISPOSE_FADE);
+      if (typeof document === 'undefined' || !document.hidden) await new Promise((r) => setTimeout(r, DISPOSE_FADE * 1000 + 3));
+    }
     this.disposed = true;
     this.transport.stop();
     this.automation.dispose();

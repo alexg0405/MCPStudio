@@ -2,6 +2,7 @@
  * The audio engine: owns the AudioContext (or an OfflineAudioContext for export), mirrors the
  * project document into a Web Audio graph and drives the lookahead transport.
  */
+import { AudibleClock } from './audible-clock';
 import type { DocChange } from '@core/history/history';
 import type {
   ChannelId,
@@ -639,14 +640,14 @@ export class Engine implements EngineApi, EngineCore {
     return this.audibleTime() - this.mixer.latency;
   }
 
-  /** The latest audible time handed out: what is heard never goes back. */
-  private lastAudible = 0;
+  /** The heard time, smoothed so the playhead moves evenly (and never back): see audible-clock.ts. */
+  private readonly audible = new AudibleClock();
 
   /**
    * Context time currently coming out of the speakers: the output's last timestamp, carried on by
    * the wall clock for at most `MAX_EXTRAPOLATION` (when the audio thread falls behind, its clock
-   * stalls; running on past it and snapping back made the playhead jump back and forth), and never
-   * earlier than a time already handed out.
+   * stalls; running on past it and snapping back made the playhead jump back and forth), then smoothed
+   * and kept from going back (`AudibleClock`).
    */
   private audibleTime(): number {
     const ctx = this.ctx;
@@ -657,8 +658,7 @@ export class Engine implements EngineApi, EngineCore {
         const ahead = Math.max(0, Math.min(MAX_EXTRAPOLATION, (performance.now() - ts.performanceTime) / 1000));
         t = ts.contextTime + ahead;
       } else t = ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency;
-      if (t > this.lastAudible) this.lastAudible = t;
-      return this.lastAudible;
+      return this.audible.step(t, performance.now());
     }
     return ctx.currentTime;
   }

@@ -226,6 +226,8 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "route",
   "unroute",
   "route_only",
+  "add_chain",
+  "save_chain",
   "sidechain",
   "add_pattern",
   "edit_pattern",
@@ -276,6 +278,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"4838b4f9"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"c5528b89"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"6acf9638"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"75ff2679"`;

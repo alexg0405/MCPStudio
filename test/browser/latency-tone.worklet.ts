@@ -16,7 +16,7 @@ class LatencyTone extends InstrumentKernel<typeof TONE> {
   noteOff(): void {
     this.held = Math.max(0, this.held - 1);
   }
-  allNotesOff(): void {
+  override allNotesOff(): void {
     this.held = 0;
   }
   render(out: Float32Array[], from: number, to: number, params: ParamBlock<typeof TONE>): void {

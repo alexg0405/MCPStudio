@@ -66,4 +66,32 @@ describe('watchAutoBuffer', () => {
     idle.stop();
     vi.useRealTimers();
   });
+
+  it('waits for playback to stop before trying a smaller buffer, so the music never drops out', () => {
+    const { engine, prefs, session, stop, tick } = setup({ autoBufferSize: 'medium' });
+    engine.set(true);
+    engine.keepUp = 1;
+    tick(200);
+    // Clean long enough to try a smaller size, but the song is still playing: nothing moves yet.
+    expect(prefs.getState().autoBufferSize).toBe('medium');
+    engine.set(false);
+    expect(prefs.getState().autoBufferSize).toBe('small');
+    expect(session.getState().toasts.at(-1)?.text).toMatch(/small audio buffer for a quicker response/);
+    stop();
+    vi.useRealTimers();
+  });
+
+  it('drops a waiting step down when playback starts struggling', () => {
+    const { engine, prefs, stop, tick } = setup({ autoBufferSize: 'medium' });
+    engine.set(true);
+    engine.keepUp = 1;
+    tick(200);
+    engine.keepUp = 0.8;
+    tick(15);
+    expect(prefs.getState().autoBufferSize).toBe('large');
+    engine.set(false);
+    expect(prefs.getState().autoBufferSize).toBe('large');
+    stop();
+    vi.useRealTimers();
+  });
 });

@@ -2572,8 +2572,9 @@ Auto (`app/audio-buffer-auto.ts`, pure and unit-tested; `app/audio-buffer-watch.
 `prefs.autoBufferSize` (small the first time) and, once a second while playing, reads `keepUp`: two seconds in a row
 under 0.97, or one under 0.85, step one size up (`autoBufferSize` changes, the services reboot the engine and a toast
 says so); never two steps within 8 s, and the 2 s after a step are not counted. After 180 s of playing with nothing
-lost (60 s while the typing piano or a MIDI keyboard is on) one step down is tried; if it struggles within 30 s it goes
-back up and no further try is made for 30 min. The size it is at is remembered in the prefs. A size picked by hand is
+lost (60 s while the typing piano or a MIDI keyboard is on) one step down is decided, but it takes effect only when
+playback stops (a reboot costs a short dropout, so a song that plays fine is never interrupted for it; struggling before
+then cancels it); if it struggles within 30 s of playing at the smaller size it goes back up and no further try is made for 30 min. The size it is at is remembered in the prefs. A size picked by hand is
 kept (`audioBufferPicked`; a stored 'large' without it was only the old default and becomes Auto).
 
 `EngineHost.reboot` is seamless while playing: the old engine keeps playing while the new one (made first, fed the same

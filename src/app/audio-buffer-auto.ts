@@ -58,6 +58,15 @@ export class AutoBuffer {
     this.settle = SETTLE_SECONDS;
   }
 
+  /**
+   * A step down decided while playing took effect only now (it waits for playback to stop, so the music
+   * never drops out for it): its trial starts here.
+   */
+  startTrial(): void {
+    this.trial = 0;
+    this.clean = 0;
+  }
+
   /** Playback stopped or started again: the second that was being counted is gone. */
   restart(): void {
     this.struggling = 0;

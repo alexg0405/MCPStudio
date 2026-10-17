@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { sing } from '../../../test/helpers/voice';
 import { audioClipProject, TestSamples } from '../../../test/helpers/audio';
 import { editSignature } from '@core/audio/pitch-edit';
+import { collectHashes } from '@core/gc/refs';
 import type { AudioClip, ClipId, Project } from '@core/model/types';
 import { pitchState } from '../pitch/state';
 import { createTestServices } from '../testing';
@@ -132,6 +133,10 @@ describe('pitch editing actions', () => {
     expect(edit.renderedFor).toBe(editSignature(edit));
     const sample = p.samples[edit.renderedSampleId!]!;
     expect(sample.source.kind).toBe('embedded');
+    // Stored audio is kept while a stored value names its hash: the project does, so the clean-up leaves it.
+    expect(collectHashes(p).has(sample.source.kind === 'embedded' ? sample.source.hash : '')).toBe(true);
+    // Undo's patches name it too (history keeps what undo could bring back).
+    expect(s.history.referencedHashes().has(sample.source.kind === 'embedded' ? sample.source.hash : '')).toBe(true);
     expect(sample.durationSec).toBeCloseTo(x.length / SR, 6);
     // The render came out as the same undo step as the edit.
     expect(s.history.steps().done.length).toBe(steps0 + 1);

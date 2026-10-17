@@ -337,6 +337,7 @@ export function PitchEditor() {
         ref={area}
         className={styles.area}
         tabIndex={0}
+        data-hint="The Pitch editor: click a note, then use the arrow keys to move it (Alt: by cents), S splits it, M joins it with the next, Delete puts it back as sung"
         style={{ gridTemplateColumns: `${KEYS_WIDTH}px 1fr`, gridTemplateRows: `${RULER_HEIGHT}px 1fr 12px` }}
       >
         <div className={styles.corner} />

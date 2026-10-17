@@ -19,6 +19,33 @@ export function softClip(x: number): number {
   return (x * (27 + x2)) / (27 + 9 * x2);
 }
 
+const LN2 = Math.LN2;
+/** 2^0 … 2^7, for `pow2`. */
+const POW2_INT = [1, 2, 4, 8, 16, 32, 64, 128] as const;
+
+/**
+ * 2^u for a pitch sweep (u = semitones / 12, falling towards 0). Inside 0 ≤ u < 8 it is 2^⌊u⌋ times
+ * e^(x) for the fraction x = (u − ⌊u⌋)·ln 2, by a degree-9 Taylor series (relative error below 1e-8): a few
+ * multiplies per sample, where Math.pow is a call. Outside that range it is Math.pow.
+ */
+export function pow2(u: number): number {
+  if (!(u >= 0 && u < 8)) return Math.pow(2, u);
+  const n = Math.floor(u);
+  const x = (u - n) * LN2;
+  const p =
+    1 +
+    x *
+      (1 +
+        x *
+          (1 / 2 +
+            x *
+              (1 / 6 +
+                x *
+                  (1 / 24 +
+                    x * (1 / 120 + x * (1 / 720 + x * (1 / 5040 + x * (1 / 40320 + x * (1 / 362880)))))))));
+  return (POW2_INT[n] as number) * p;
+}
+
 /** Below this the voice is done (−80 dB). */
 const SILENT = 1e-4;
 const CHOKE_SECONDS = 0.005;
@@ -121,7 +148,7 @@ export class Kick extends DrumVoice {
 
   protected tick(): number {
     const sr = this.sampleRate;
-    const f = this.pitch * Math.pow(2, (this.sweep / 12) * this.sweepEnv);
+    const f = this.pitch * pow2((this.sweep / 12) * this.sweepEnv);
     this.sweepEnv *= this.sweepCoef;
     this.phase += f / sr;
     if (this.phase >= 1) this.phase -= 1;
@@ -345,7 +372,7 @@ export class Tom extends DrumVoice {
 
   protected tick(): number {
     const sr = this.sampleRate;
-    const f = this.pitch * Math.pow(2, (this.sweep / 12) * this.bend);
+    const f = this.pitch * pow2((this.sweep / 12) * this.bend);
     this.bend *= this.bendCoef;
     this.phase += f / sr;
     if (this.phase >= 1) this.phase -= 1;

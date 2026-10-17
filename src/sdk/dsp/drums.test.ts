@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Clap, HiHat, Kick, Perc, renderDrum, Snare, softClip, Tom, type DrumModel } from './drums';
+import { Clap, HiHat, Kick, Perc, pow2, renderDrum, Snare, softClip, Tom, type DrumModel } from './drums';
 
 const SR = 48000;
 
@@ -109,5 +109,12 @@ describe('drum models', () => {
       expect(softClip(-x)).toBeCloseTo(-softClip(x), 12);
       expect(Math.abs(softClip(x) - Math.tanh(x))).toBeLessThan(0.025);
     }
+  });
+
+  it('pow2 is 2^u to within 1e-8 (relative) across a sweep, and exact outside it', () => {
+    for (let u = 0; u < 8; u += 0.001) expect(Math.abs(pow2(u) / Math.pow(2, u) - 1)).toBeLessThan(1e-8);
+    expect(pow2(0)).toBe(1);
+    expect(pow2(-1.5)).toBe(Math.pow(2, -1.5));
+    expect(pow2(9.25)).toBe(Math.pow(2, 9.25));
   });
 });

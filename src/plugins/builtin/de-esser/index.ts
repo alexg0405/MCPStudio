@@ -36,11 +36,11 @@ export default defineWorkletEffect({
     },
     {
       name: 'Harsh S’s',
-      params: { frequency: 6000, q: 2.5, threshold: -36, ratio: 8, range: 16, attack: 0.3, release: 40, mode: 'split' },
+      params: { frequency: 6500, q: 1.1, threshold: -36, ratio: 8, range: 15, attack: 0.3, release: 40, mode: 'split' },
     },
     {
       name: 'Podcast voice (wideband)',
-      params: { frequency: 5500, q: 1.5, threshold: -32, ratio: 4, range: 8, attack: 1, release: 80, mode: 'wide' },
+      params: { frequency: 5500, q: 1.5, threshold: -28, ratio: 3, range: 6, attack: 1, release: 80, mode: 'wide' },
     },
   ],
 });

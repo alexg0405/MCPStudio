@@ -80,7 +80,7 @@ export const FACTORY_CHAINS: readonly ChainPreset[] = [
       },
       {
         pluginId: COMPRESSOR,
-        params: { threshold: -22, ratio: 4, knee: 4, attack: 3, release: 70, makeup: 2 },
+        params: { threshold: -22, ratio: 4, knee: 4, attack: 3, release: 70, makeup: 3.2 },
         label: 'compressor (4:1, fast, up in your face)',
       },
       { pluginId: DE_ESSER, preset: 'Bright vocal', label: 'de-esser (bright vocal)' },
@@ -106,7 +106,7 @@ export const FACTORY_CHAINS: readonly ChainPreset[] = [
       },
       {
         pluginId: COMPRESSOR,
-        params: { threshold: -24, ratio: 2.5, knee: 8, attack: 12, release: 200, makeup: 2 },
+        params: { threshold: -24, ratio: 2.5, knee: 8, attack: 12, release: 200, makeup: 3.5 },
         label: 'compressor (2.5:1, slow and gentle)',
       },
       { pluginId: DE_ESSER, preset: 'Bright vocal', label: 'de-esser (bright vocal)' },
@@ -132,11 +132,11 @@ export const FACTORY_CHAINS: readonly ChainPreset[] = [
       {
         pluginId: COMPRESSOR,
         preset: 'Smooth vocals',
-        params: { threshold: -24, ratio: 4, makeup: 3 },
+        params: { threshold: -24, ratio: 4, makeup: 6.8 },
         label: 'compressor (4:1, squashed and close)',
       },
       { pluginId: SATURATOR, preset: 'Tape warmth', params: { mix: 0.8 }, label: 'tape saturation' },
-      { pluginId: LOFI, preset: 'Cassette wobble', params: { mix: 0.55 }, label: 'cassette wobble and hiss, blended in' },
+      { pluginId: LOFI, preset: 'Cassette wobble', params: { mix: 0.5 }, label: 'cassette wobble and hiss, blended in' },
       reverb('Room', -12, 0.15),
       delay('Eighth echo', -20, 0.1),
     ],
@@ -158,7 +158,7 @@ export const FACTORY_CHAINS: readonly ChainPreset[] = [
       },
       {
         pluginId: COMPRESSOR,
-        params: { threshold: -24, ratio: 4, knee: 4, attack: 2, release: 90, makeup: 2 },
+        params: { threshold: -24, ratio: 4, knee: 4, attack: 2, release: 90, makeup: 5.3 },
         label: 'compressor (4:1, fast)',
       },
       { pluginId: DE_ESSER, preset: 'Bright vocal', label: 'de-esser (bright vocal)' },
@@ -190,7 +190,7 @@ export const FACTORY_CHAINS: readonly ChainPreset[] = [
       },
       {
         pluginId: COMPRESSOR,
-        params: { threshold: -22, ratio: 3, knee: 6, attack: 8, release: 120, makeup: 2 },
+        params: { threshold: -22, ratio: 3, knee: 6, attack: 8, release: 120, makeup: 5.4 },
         label: 'compressor (3:1, even speech)',
       },
       { pluginId: DE_ESSER, preset: 'Podcast voice (wideband)', label: 'de-esser (wideband)' },

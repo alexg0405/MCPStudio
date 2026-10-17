@@ -93,9 +93,12 @@ export function cleanF0(f0: Float32Array, conf: Float32Array): { f0: Float32Arra
     after.length = 0;
     for (let j = i - 1; j >= Math.max(0, i - 4) && before.length < 3; j--) if (!Number.isNaN(c[j] as number)) before.push(c[j] as number);
     for (let j = i + 1; j <= Math.min(n - 1, i + 4) && after.length < 3; j++) if (!Number.isNaN(c[j] as number)) after.push(c[j] as number);
-    if (before.length < 2 || after.length < 2) continue;
-    const l = median(before);
-    const r = median(after);
+    // At the very start or end of a run only one side exists: the tracker's last wild frames as a
+    // voice dies away are compared with the three before them.
+    const oneSided = (before.length >= 3 && after.length < 2) || (after.length >= 3 && before.length < 2);
+    if (!oneSided && (before.length < 2 || after.length < 2)) continue;
+    const l = before.length >= 2 ? median(before) : median(after);
+    const r = after.length >= 2 ? median(after) : l;
     if (Math.abs(l - r) > 250) continue;
     const m = 0.5 * (l + r);
     const d = (c[i] as number) - m;

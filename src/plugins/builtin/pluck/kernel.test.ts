@@ -24,6 +24,22 @@ function render(key: number, seconds: number) {
   return { L, kernel: k };
 }
 
+/** Loudness (dB RMS over one second) of a note with this seed. */
+function levelDb(key: number, overrides: Partial<Record<keyof typeof pluckParams, number>>, seed: number): number {
+  const rng = new Rng(seed);
+  const k = new PluckKernel({ sampleRate: SR, state: undefined, post: () => {}, rand: () => rng.next() });
+  const p = params(overrides);
+  // A silent block first, so the kernel has the preset's tone before the note starts.
+  k.render([new Float32Array(128), new Float32Array(128)], 0, 128, p);
+  k.noteOn(key, 1, 1, 0);
+  const L = new Float32Array(SR);
+  const R = new Float32Array(SR);
+  for (let i = 0; i < SR; i += 128) k.render([L, R], i, i + 128, p);
+  let s = 0;
+  for (let i = 0; i < SR; i++) s += (L[i] as number) ** 2 + (R[i] as number) ** 2;
+  return 10 * Math.log10(s / (2 * SR));
+}
+
 /** Fundamental via autocorrelation peak (with parabolic interpolation). */
 function pitch(x: Float32Array, start: number, len: number): number {
   let best = 0;
@@ -58,6 +74,21 @@ describe('PluckKernel', () => {
     const { L } = render(93, 0.3); // A7 = 1760 Hz
     const f = pitch(L, 2400, 2400);
     expect(Math.abs(f - 1760) / 1760).toBeLessThan(0.01);
+  });
+
+  it('is equally loud whatever the seed (spread under 0.5 dB over 20 seeds)', () => {
+    const presets: Partial<Record<keyof typeof pluckParams, number>>[] = [
+      {},
+      { tone: 0.75, damping: 0.2, decay: 5 },
+      { tone: 0.3, damping: 0.85, decay: 0.4 },
+    ];
+    for (const key of [48, 72]) {
+      for (const preset of presets) {
+        const levels: number[] = [];
+        for (let seed = 1; seed <= 20; seed++) levels.push(levelDb(key, preset, seed * 2654435761));
+        expect(Math.max(...levels) - Math.min(...levels)).toBeLessThan(0.5);
+      }
+    }
   });
 
   it('decays, stays finite and frees the voice after release', () => {

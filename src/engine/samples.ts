@@ -1,4 +1,5 @@
 import type { SampleRef, SampleSource } from '@core/model/types';
+import { readAudioInfo } from '@core/io/audio-info';
 import { generateFx } from './kit/fx';
 import { generate } from './kit/generators';
 import type { SampleBytesProvider } from './api';
@@ -55,6 +56,8 @@ export class SampleCache {
   private decodes = 0;
   /** Disk copies of derived buffers (null: none). */
   readonly store: DerivedAudioStore | null;
+  /** Lengths read from file headers (or a decode) for samples whose project data doesn't say, by content hash. */
+  private readonly learned = new Map<string, number>();
 
   constructor(
     readonly provider?: SampleBytesProvider,
@@ -105,6 +108,35 @@ export class SampleCache {
     data.forEach((ch, i) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, i));
     this.lru.set(key, buffer);
     return buffer;
+  }
+
+  /**
+   * The sample's length in seconds without decoding it, or null when it isn't known (yet): a decoded buffer's, a
+   * built-in's (generated, a few milliseconds), what the project recorded at import, or what `learnDuration` read.
+   */
+  knownDuration(ref: Pick<SampleRef, 'source' | 'durationSec'>, sampleRate: number): number | null {
+    const hit = this.lru.peek(SampleCache.keyOf(ref.source, sampleRate));
+    if (hit) return hit.duration;
+    if (ref.source.kind === 'builtin') return this.getSync(ref, sampleRate)?.duration ?? null;
+    if (ref.durationSec !== undefined && Number.isFinite(ref.durationSec) && ref.durationSec > 0)
+      return ref.durationSec;
+    return this.learned.get(ref.source.hash) ?? null;
+  }
+
+  /**
+   * Makes `knownDuration` answer for a sample whose length the project doesn't record (older projects): reads
+   * it from the file's header, and decodes only a file the headers don't describe. Null when it can't be read.
+   */
+  async learnDuration(ref: Pick<SampleRef, 'source' | 'durationSec'>, ctx: BaseAudioContext): Promise<number | null> {
+    const known = this.knownDuration(ref, ctx.sampleRate);
+    if (known !== null || ref.source.kind === 'builtin') return known;
+    const bytes = await this.provider?.getBytes(ref as SampleRef);
+    if (!bytes) return null;
+    const info = readAudioInfo(new Uint8Array(bytes));
+    let seconds: number | null = info && info.durationSec > 0 ? info.durationSec : null;
+    if (seconds === null) seconds = (await this.load(ref, ctx))?.duration ?? null;
+    if (seconds !== null) this.learned.set(ref.source.hash, seconds);
+    return seconds;
   }
 
   /** Decodes the sample at the context's rate (once; concurrent calls share the decode). */

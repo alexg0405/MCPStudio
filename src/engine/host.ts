@@ -3,6 +3,7 @@
  * info. One HostImpl per plugin instance.
  */
 import { targetKey } from '@core/model/targets';
+import { lowestNoteKey } from '@core/query/queries';
 import type { PluginInstance, PluginOwner, Project, SampleId } from '@core/model/types';
 import {
   encode,
@@ -123,6 +124,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     this.pinSlots();
     this.rootKeyValue = deps.rootKey ?? 60;
     const readRootKey = () => this.rootKeyValue;
+    const project = () => this.project;
     const pitch = deps.pitch ?? silentSignal(deps.ctx);
     this.channel =
       deps.rootKey === null
@@ -134,6 +136,9 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
             onRootKeyChange: (cb) => this.rootKeyChanges.on(cb),
             pitch,
             pitchAt: (time: number) => deps.pitch?.pitchAt(time) ?? 0,
+            get lowestKey() {
+              return deps.owner.kind === 'channel' ? lowestNoteKey(project(), deps.owner.channelId) : null;
+            },
           };
     this.samples = {
       get: (slot) => this.sampleFor(slot),
@@ -142,6 +147,10 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       name: (slot) => {
         const id = this.slots[slot];
         return id ? (this.project.samples[id]?.name ?? null) : null;
+      },
+      durationSec: (slot) => {
+        const ref = this.refFor(slot);
+        return ref ? this.deps.samples.knownDuration(ref, this.deps.ctx.sampleRate) : null;
       },
     };
   }

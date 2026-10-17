@@ -128,8 +128,9 @@ controllers, value 0–1).
 | `audioContext` | realtime **or offline** (export): never create your own context |
 | `params` | the handles above |
 | `state` / `updateState(next)` | small JSON state for non-param data; `updateState` becomes an undoable edit and comes back through `setState()` |
-| `samples` | named sample slots: `get(slot)`, `load(slot)`, `onChange(slot, cb)`, `name(slot)`. Declare `sampleSlots: ['main']` and the editor shows a sample picker |
+| `samples` | named sample slots: `get(slot)`, `load(slot)`, `onChange(slot, cb)`, `name(slot)`, `durationSec(slot)` (the sample's length in seconds without decoding it, or null: for `tailTime`). Declare `sampleSlots: ['main']` and the editor shows a sample picker |
 | `channel.rootKey` | the channel's root note (steps play at it; samplers play original pitch there) |
+| `channel.lowestKey` | the lowest key of any unmuted note the channel plays in the project's patterns (null: none): bounds how long a sampler's sample can sound, for `tailTime` |
 | `channel.pitch` | the channel's pitch in cents (pitch knob, automation, MIDI pitch bend) as a signal: `channel.pitch.connect(voice.detune)` for every voice. `channel.pitchAt(time)` gives its value |
 | `transport.tempoAt(time)`, `transport.onTempo((bpm, time) => …)` | for tempo-synced effects (the tempo can change during the song); `transport.bpm` is the tempo now |
 | `sidechain` | effects declared with `sidechain: true`: the mixer track chosen as the slot's sidechain source, or the effect's own input when none is chosen (see [Sidechain effects](#sidechain-effects)). Worklet effects receive it as the fifth argument of `process()` |
@@ -396,6 +397,14 @@ delay feedback); exports add it to the render length. `reset()` clears internal 
 (how long a note rings after its key goes up); when a release knob can make it long, follow the knob: a getter on the
 instance, or for worklet plugins `tailTime: (values) => Math.max(1, 1.7 * values.release)` (a release reaches −60 dB at
 its time and −100 dB at 1.7×). A fixed tail shorter than the release cuts the end of exported songs.
+
+An instrument that plays a sample to its end whatever the key does (a one-shot) needs a tail as long as the sample:
+the export measures the tail on a probe that has decoded nothing, so read the length from `host.samples.durationSec(slot)`
+(from the file's header, or what the project recorded at import; null while unknown) and, for a sampler that pitches by
+key, divide by the playback rate of the lowest note (`host.channel?.lowestKey`). Worklet plugins get the host as the
+second argument of `tailTime`: `tailTime: (values, host) => Math.max(1, host.samples.durationSec('main') ?? 0)`. The
+Sampler (envelope off), Drum Pads and the Slicer do this; a tail that is too long costs nothing, as the export cuts
+the silence after the last sound.
 
 **Tempo and export.** `host.transport.bpm` and `host.transport.onTempo(cb)` (it returns an unsubscribe: call it in
 `dispose`) drive tempo-synced effects. Exports run the same code in an OfflineAudioContext (`host.offline` is true and

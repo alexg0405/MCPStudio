@@ -1708,6 +1708,23 @@ OfflineAudioContext (2 GB). What it does instead:
   Measured on 5 ms clicks every 0.5 s: plain WSOLA doubles them at 1.5× (30 peaks for 20 clicks) and moves them by
   up to 12 ms; now one per click at full level, within 0.1 ms at 1.06–1.5× (2.4 ms at 0.8×); the old pitch and level
   tests still pass. 60 s of stereo: 0.94 s before, 0.19–0.28 s now (Node, one thread); a 5-minute song ~1 s per Worker.
+- **Streamed into 16-bit** (`core/audio/stretch-pcm16.ts`, `wsola.ts` `stretchStream`): WSOLA hands its output over
+  as it is finished (the overlap-add keeps one frame, 40 ms, per channel; each half frame is final once the next frame
+  has been added) and `stretchToPcm16` quantizes it straight into the file's own container, which is allocated once
+  at the final size. The mono mix for the similarity search is not kept either: `readMono` makes the window it needs
+  from the channels (same float accumulation, so the same values), the onset detector (`detectOnsetsLazy`) and the
+  decimated 6 kHz copy read it a block at a time. Before, a Worker held the input, the whole mono mix, the whole
+  float output and then the 16-bit copy. The sound is unchanged: the float output is bit for bit what `timeStretch`
+  made before (pinned by hashes of four signals in `stretch-pcm16.test.ts`, and checked byte for byte against the
+  old code on a 5-minute song at 0.85×, 1.07× and 1.5×). The one thing that differs is the container's gain, which has to
+  be in the header before the audio: it comes from the input's peak (WSOLA output is a weighted average of input
+  samples, so it never goes higher) instead of the output's own. Identical for anything within full scale; for a
+  master that goes over, the gain is the input's peak (a little higher), and decoded samples differ from the old
+  file by at most one step of it. Measured in Node 22 (same V8 and typed arrays as the Worker; one process each,
+  peak resident set; the 5-minute stereo 48 kHz test song at 124 BPM, 115 MB of input): peak 438 MB before,
+  **266 MB after** at 1.07×; 402 → 253 MB at 0.85×; 509 → 289 MB at 1.5×. Above the input (what the Worker adds
+  while stretching): 241 MB → 69 MB (the 62 MB result plus kilobytes of window buffers). Time per song unchanged:
+  1.31 s before, 1.32–1.37 s after at 1.07× (1.05 s at 0.85×, 1.8–1.9 s at 1.5×).
 - A clip at speed 1 (a stretched copy at a constant tempo, or a plain clip) starts on a whole frame at a whole frame
   (≤ 10 µs off): a fractional start made the browser interpolate the whole clip, dulling the highs by up to 6 dB at
   16 kHz, drifting with the phase over a long song.
@@ -1769,13 +1786,14 @@ either way open either way. No zip64: project files stay under 4 GB.
 - Sixteen 4.5-minute songs, a 66-minute mix (`VITE_LONG_EXPORT=1`), 24-bit WAV: 154 s (26× realtime) including
   stretching all sixteen; decoded audio peaks at 500 MB with a 400 MB budget (1.6 GB with the default 1.5 GB budget,
   which an export is free to fill); page memory (`measureUserAgentSpecificMemory`, Workers included) peaks at 1.8 GB,
-  most of it the three stretch Workers' transient buffers (~300 MB each while a 4.5-minute song is stretched) and
+  most of it the three stretch Workers' transient buffers (~300 MB each while a 4.5-minute song was stretched; ~160 MB since the
+  output is streamed into 16-bit, see above) and
   the cache; the render window is ~250 MB; the 1.1 GB file is never in memory.
 
 ### Gaps
 
-- Stretch Workers hold ~300 MB each while stretching a long song (input, output, mono mix): streaming WSOLA output
-  straight into 16-bit would halve it.
+- A stretch Worker still holds the whole input (float32, transferred in) while it works: ~115 MB for a 5-minute
+  stereo song. Streaming the input in as well would need the onset pass over all of it first.
 - While stopped, the residency plans around where song playback last started, not the playlist's song-position marker
   (the engine isn't told it): pressing play far from there decodes on demand (clips start in sync once ready).
 - Audio clip channels' channel-rack previews load their sample on demand (the first click waits for the decode).
@@ -2094,6 +2112,26 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
   a time as the render streams in and written to the file as it goes (see [Long audio](#long-audio-dj-mode-foundations))
   (`encode.worker.ts`; LAME loads only there). Chrome maps 16-bit integers to floats asymmetrically (positive
   × 1/32767, negative / 32768): the FLAC browser test compares against exactly that.
+- **MP3 is gapless** (`core/io/mp3-gapless.ts`, `app/export/mp3.ts`). lamejs writes no Xing/LAME header, so a decoder
+  can't tell that the first 576 + 529 samples it makes are encoder and decoder delay: the file decoded about 25 ms late
+  and 25–35 ms long next to the WAV. Every MP3 now starts with a silent Layer III frame at the stream's bit rate,
+  sample rate and channel mode that carries `Info` (constant bit rate), the frame count (not counting itself), the
+  file's bytes, a linear table of contents, and LAME's extension: version string (`LAME3.98 `), encoder delay 576,
+  encoder padding = frames × 1152 − samples − 576 (so delay + samples + padding fills the frames), the music length,
+  the CRC-16 of the audio frames and the tag's own CRC. The streaming encoder writes it **first with zero counts**
+  (`PieceEncoder.header()`, a valid file as it stands: a cancelled or crashed export still plays) and `finalHeader()`
+  after `finish()` is the same frame, same size, with the real counts, written over the start like the WAV and FLAC
+  headers (`ByteSink.writeAt`: `FileSystemWritableFileStream` `write({position})` then `seek` back; the memory sink
+  patches its parts). All our sinks can write over earlier bytes, so there is no "compute it up front" path; a
+  sink that couldn't would have to know the frame count in advance, which depends on LAME's flush, not on the input.
+  `Mp3StreamCounter` counts frames, bytes and the CRC from the encoder's own output, however the pieces cut it.
+  Below ~64 kbps the frame is too small for the tag (the dialog offers 128–320) and no header is written.
+  Measured in Chrome (`test/browser/audio-export.test.ts`, the drum song, 192 kbps, 44.1 and 48 kHz): **Chrome's
+  `decodeAudioData` honours the LAME tag** (it is ffmpeg). The first transient is within 0.1 ms of the WAV's, the
+  cross-correlation lag is 0 frames and the decoded lengths are equal; the same stream without its Info frame is
+  23–25 ms late (onset +25–27 ms) and 26–35 ms long. `readAudioInfo` reads the header, so our own MP3s now report an
+  exact length. Other players that read the tag (ffmpeg, foobar2000, iTunes, VLC) behave the same; players that don't
+  play one silent frame (≈ 26 ms) first.
 - Stems: one per mixer track with sound playing into it in the range, plus "Master" for channels that play straight
   into it. A stem renders the song with only that track's channels heard, through everything downstream of it:
   other tracks are muted with their insert mute (after the sidechain tap, so a muted kick still ducks the bass), and a
@@ -2183,6 +2221,35 @@ by id, name or number (1-based in song order), so commands take any of them; the
 - EngineApi additions: `isStretching`, `sampleData`, `openAudioInput` (→ `AudioInput`: levels, setMonitor,
   startCapture → `AudioCapture`), `playTestClicks`, `setSongOpenEnded`. `renderOffline` takes `limiter: false`;
   `measureTail` is exported.
+
+### One-shot samples and the export's tail
+
+`measureTail` renders nothing and decodes nothing: it creates the instruments on a 128-frame probe, waits for the plugins
+(`pluginsReady`) and the lengths of their sample slots (`sampleLengthsReady`), and adds up `tailTime` along the routes
+(capped at 30 s). A sample that plays to its end after key-up (Sampler with the envelope off, a Drum Pads pad, a one-shot
+Slicer slice) used to report a tail from what happened to be decoded: the Sampler's from `host.samples.get` (null on a
+cold cache, so 0.2 s), Drum Pads' a fixed 4 s and the Slicer's 2 s, so a long one-shot at the very end of the song was
+cut. Now:
+
+- `SampleSlots.durationSec(slot)` (SDK, additive) answers from `SampleCache.knownDuration`: the decoded buffer, a built-in's
+  generated length, `SampleRef.durationSec` (recorded at import from the file's header, `core/io/audio-info.ts`), or what
+  `SampleCache.learnDuration` read for projects that don't record it (the header, and a decode only for a file the
+  headers don't describe). `Engine.sampleLengthsReady()` runs that for every sample in a plugin slot before the probe is
+  read, so it costs a header read, not a decode.
+- `ChannelInfo.lowestKey` (SDK, additive; `core/query/queries.ts` `lowestNoteKey`) is the lowest unmuted note of the channel
+  in any pattern. The Sampler's tail is `duration × (1 − start) / 2^((lowest − root + tune + fine/100 + channel pitch/100 − 1) / 12)`
+  (the −1 covers a note's own fine pitch), up to the 30 s cap; with the envelope on it is the release as before.
+- Worklet instruments' `tailTime` function gets the host as a second argument (`tailTime: (values, host) => …`). Drum Pads:
+  4 s, or longer for any pad with a sample, `min(1.34 × decay, duration / 2^(tune/12))` (at the maximum decay the whole
+  sample). Slicer: gated playback the release; one-shot the sample (the demo break while the slot is empty) at its tune,
+  never under 2 s.
+- Tests (`test/browser/one-shot-tail.test.ts`): a 6 s sample on the last sixteenth of a one-bar song. Before: tail probe
+  0.5 s (Sampler, cold cache), 4 s (Drum Pads), 2 s (Slicer): the export ended 0.2–4 s into the sample. After: tails of
+  6.4 s (Sampler, at its root with the semitone margin), 12.7 s an octave down, 6 s (pad), 6 s (slice), and the export
+  holds the whole sample, fading to silence at its end.
+- Found, not changed: on a cold cache a Sampler's first note is dropped in an offline render when its embedded sample
+  is still decoding (the sampler asks for it at its first note and plays nothing until it arrives). The app avoids it
+  because the realtime engine decodes slot samples when idle and the cache is shared.
 
 ## Faust plugins (M18)
 

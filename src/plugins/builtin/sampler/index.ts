@@ -108,12 +108,26 @@ export default defineInstrument({
 
     return {
       output: out,
-      // With the envelope, the release; without it a note plays the whole sample even after its key is up
-      // (known once the sample is decoded, which the export's tail probe doesn't do).
+      // With the envelope, the release. Without it a note plays the whole sample even after its key is up, so the
+      // tail is the rest of the sample at the slowest pitch it is played at: its length comes from the file's
+      // header (`durationSec`), because the export's tail probe decodes nothing.
       get tailTime() {
-        const b = sample();
-        const release = Math.min(b ? b.duration : Infinity, params.release.value);
-        return Math.max(0.2, params.envelope.value ? release : Math.min(10, b ? b.duration : 0));
+        if (params.envelope.value) {
+          const b = sample();
+          return Math.max(0.2, Math.min(b ? b.duration : Infinity, params.release.value));
+        }
+        const seconds = host.samples.durationSec('main') ?? sample()?.duration ?? 0;
+        const root = host.channel?.rootKey ?? 60;
+        // Lowest note, tune, fine, the channel's pitch, and a semitone for a note's own fine pitch.
+        const semitones =
+          (host.channel?.lowestKey ?? root) -
+          root +
+          params.tune.value +
+          params.fine.value / 100 +
+          (host.channel?.pitchAt(ac.currentTime) ?? 0) / 100 -
+          1;
+        const rest = (seconds * (1 - params.start.value)) / Math.pow(2, semitones / 12);
+        return Math.max(0.2, Math.min(30, rest));
       },
 
       noteOn({ time, key, velocity, noteId, pan, fine }) {

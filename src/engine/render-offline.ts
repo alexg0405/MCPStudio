@@ -272,8 +272,10 @@ export async function measureTail(project: Project, opts: EngineOptions, sampleR
   const probe = new Engine(new OfflineAudioContext({ numberOfChannels: 2, length: 128, sampleRate }), opts, true);
   try {
     probe.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
-    // Only the plugins: the probe plays nothing, so it doesn't decode the song's audio.
+    // Only the plugins: the probe plays nothing, so it doesn't decode the song's audio. Samples in plugin slots are
+    // only measured (their lengths from the headers), so one-shot samplers can report how long a note really sounds.
     await probe.pluginsReady();
+    await probe.sampleLengthsReady();
     return probe.tailSeconds();
   } finally {
     await probe.dispose();

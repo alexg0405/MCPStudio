@@ -168,6 +168,20 @@ export function instrumentChannels(project: Project): InstrumentChannel[] {
   return out;
 }
 
+/**
+ * The lowest key of any unmuted note a channel plays in any pattern, or null when it has none. Instruments use it
+ * to bound how long a sample can sound (a sampler plays lower keys slower), e.g. for the export's tail.
+ */
+export function lowestNoteKey(project: Project, channelId: ChannelId): number | null {
+  let lowest: number | null = null;
+  for (const pattern of Object.values(project.patterns)) {
+    const notes = pattern.notes[channelId];
+    if (!notes) continue;
+    for (const n of Object.values(notes)) if (!n.muted && (lowest === null || n.key < lowest)) lowest = n.key;
+  }
+  return lowest;
+}
+
 export function barCount(ticks: Tick, ts: TimeSignature): number {
   return Math.ceil(ticks / ticksPerBar(ts));
 }

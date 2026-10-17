@@ -161,8 +161,8 @@ describe('audio file headers', () => {
       expect(info, name).not.toBeNull();
       expect(info!.sampleRate, name).toBe(rate);
       expect(info!.channels, name).toBe(decoded.numberOfChannels);
-      // MP3: within two frames (the encoder's delay and padding aren't in a plain CBR file).
-      expect(Math.abs(info!.durationSec - decoded.duration), name).toBeLessThan(name === 'mp3' ? 0.06 : 1e-6);
+      // Our MP3 has LAME's gapless header, so its length is exact too.
+      expect(Math.abs(info!.durationSec - decoded.duration), name).toBeLessThan(1e-6);
       // probeAudio answers from the header (a decode wouldn't know the file's own rate).
       expect(await probeAudio(bytes), name).toEqual({ durationSec: info!.durationSec, sampleRate: rate, channels: info!.channels });
     }

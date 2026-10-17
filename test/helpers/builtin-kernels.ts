@@ -115,9 +115,14 @@ export type KernelEntry = InstrumentEntry | EffectEntry;
 const sdkDef = (d: unknown) => d as AnyDef;
 
 function tailOf(def: unknown, params: ParamSpecs, fallback: number) {
-  const tail = (def as { tailTime?: number | ((v: Record<string, ParamValue>) => number) }).tailTime;
+  const tail = (def as { tailTime?: number | ((v: Record<string, ParamValue>, host: unknown) => number) }).tailTime;
+  // A host with no samples loaded and no notes: what the export's tail probe sees of an empty instrument.
+  const host = {
+    samples: { durationSec: () => null, name: () => null, get: () => null },
+    channel: null,
+  };
   return (values: Record<string, ParamValue> = {}): number => {
-    if (typeof tail === 'function') return tail({ ...defaultValues(params), ...values });
+    if (typeof tail === 'function') return tail({ ...defaultValues(params), ...values }, host);
     return tail ?? fallback;
   };
 }

@@ -1,5 +1,4 @@
-import { timeStretch } from '@core/audio/wsola';
-import { encodePcm16 } from '@core/io/pcm16';
+import { stretchToPcm16 } from '@core/audio/stretch-pcm16';
 
 // Time-stretches audio off the main thread (WSOLA), one of a small pool (audio-buffers.ts). The
 // channels are transferred in; the copy comes back as 16-bit PCM bytes (core/io/pcm16.ts, half the
@@ -19,7 +18,7 @@ const scope = self as unknown as {
 scope.onmessage = (e) => {
   const { id, channels, scale, sampleRate } = e.data;
   try {
-    const bytes = encodePcm16(timeStretch(channels, scale, { sampleRate }), sampleRate);
+    const bytes = stretchToPcm16(channels, scale, { sampleRate });
     scope.postMessage({ id, ok: true, bytes }, [bytes.buffer as ArrayBuffer]);
   } catch (err) {
     scope.postMessage({ id, ok: false, error: err instanceof Error ? err.message : String(err) });

@@ -33,9 +33,11 @@ export class ToneSum {
 }
 
 export class SpectrumMeter {
-  private readonly splits = TONE_CROSSOVERS.map((f) => new LinkwitzRiley().set(f, this.sampleRate));
+  private readonly splits: LinkwitzRiley[];
 
-  constructor(private readonly sampleRate: number) {}
+  constructor(sampleRate: number) {
+    this.splits = TONE_CROSSOVERS.map((f) => new LinkwitzRiley().set(f, sampleRate));
+  }
 
   /** Adds the samples [from, to) to `into`. Mono audio: pass the same array twice. */
   push(left: Float32Array, right: Float32Array, from: number, to: number, into: ToneSum): void {
@@ -83,6 +85,9 @@ export interface ToneOptions {
   onProgress?(fraction: number): void;
 }
 
+/** Side over mid, kept finite (a signal that is all side counts as 10). */
+const capWidth = (w: number) => (Number.isNaN(w) ? 0 : Math.min(10, w));
+
 /** Audio between yields: about 3 s at 44.1 kHz. */
 const CHUNK = 131072;
 
@@ -128,10 +133,10 @@ export async function measureTone(
   const whole = total.result();
   return {
     bands: whole.bands,
-    width: Number.isFinite(whole.width) ? whole.width : 0,
+    width: capWidth(whole.width),
     sections: parts.map((p) => {
       const r = p.result();
-      return { bands: r.bands, width: Number.isFinite(r.width) ? r.width : 0 };
+      return { bands: r.bands, width: capWidth(r.width) };
     }),
   };
 }

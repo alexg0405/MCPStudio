@@ -42,6 +42,19 @@ export async function loadReference(hash: string): Promise<ReferenceTrack | null
   return null;
 }
 
+/** Where the audio comes from instead of the sample store (tests and demos), or null. */
+let decoderOverride: AnalysisDecoder | null = null;
+export function setReferenceDecoder(d: AnalysisDecoder | null): void {
+  decoderOverride = d;
+}
+
+/** Keeps a measurement as if the file had been analyzed (tests and demos). */
+export function rememberReference(track: ReferenceTrack): void {
+  const kept: ReferenceTrack = { ...track, title: '' };
+  delete kept.sampleId;
+  memory.set(kept.hash, kept);
+}
+
 function remember(track: ReferenceTrack): void {
   memory.set(track.hash, track);
   if (isIdbAvailable()) void idbSet(keyOf(track.hash), track).catch(() => {});
@@ -79,7 +92,7 @@ export async function analyzeReference(s: Services, ref: SampleRef, title: strin
   });
   opts.signal?.throwIfAborted();
   report('Measuring the tonal balance', 0.55);
-  const audio = await (opts.decode ?? defaultDecoder)(s, ref);
+  const audio = await (opts.decode ?? decoderOverride ?? defaultDecoder)(s, ref);
   if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded to measure its tonal balance.`);
   const left = audio.channels[0]!;
   const right = audio.channels[1] ?? left;

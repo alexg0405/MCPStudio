@@ -354,6 +354,21 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   context menu is open, and after a hand scroll (wheel, scrollbar, middle-drag) until the playhead is back in view,
   playback restarts, or 3 s pass (then it glides back). Zooming never pauses it: the view glides back to the playhead.
   The scroll is saved to the editor store only when playback stops, so following causes no React commits.
+  **Scrolling does not redraw** (`timeline/panned.ts`): the playlist's grid, clips and ruler and the piano roll's
+  grid, notes (and ghosts), ruler and event lane are `PannedLayer`s. Each is drawn once into a picture wider than the
+  view (30 % behind and 90 % ahead while the view scrolls sideways; exactly the view's size otherwise, so edits cost
+  what they always did) and a scroll frame only moves it: a CSS `translate3d` of the canvas (the layers over the
+  grid) or one `drawImage` (the rulers, which stay view-sized because they take events and are measured). A layer is
+  drawn again when it is dirty (an edit, a hover, a theme change), when zoom, size, vertical scroll or pixel ratio
+  changed, or when the view leaves the drawn part; a zoom draws view-sized, not wide. The view's scroll is snapped to
+  whole device pixels (`Viewport.snapForFrame`) and every x is drawn through `tickToPx`, so the picture drawn from
+  any origin is the same picture moved by whole device pixels: a slid layer equals a direct redraw
+  (`panned.browser.test.ts`, at dpr 1, 1.25 and 2). Hit-testing reads the viewport, never the canvases; things
+  recorded while drawing (the ruler's marker flags) are in picture coordinates and `PannedLayer.offset()` moves them
+  into the view. The controllers' scroll code therefore does not call `invalidate()` for these layers (only the
+  overlay, when something is drawn at the pointer). Measured (`scripts/perf-follow.mjs`, 12 s of smooth follow with
+  both windows open): JS per frame 0.36 -> 0.12 ms (stacked-song), 0.90 -> 0.18 ms (notes10k), allocation per second
+  down by 60 % (what remains is the audio scheduler).
   "Play this" (`app/actions/transport.ts`; commands `transport.playPattern`, `transport.playFrom`,
   `transport.playRange`): the piano roll's and channel rack's ▶/■ (`transport/PlayPatternButton`), the browser's
   pattern menu and the playlist's clip, marker, empty-spot and ruler menus set the transport view (pattern + mode,
@@ -2416,6 +2431,40 @@ cut. Now:
   1 s) until an event or sound arrives; deterministic, since it depends only on the audio.
 - An effect slot costs 0.5–1.2% of a core while silent (its gains, the slot mix's ConstantSource,
   editor taps); a 4-bar offline render of one muted instrument runs at ~34× realtime.
+
+### Interface responsiveness and startup
+
+Measured with `scripts/perf-ui.mjs` (real input through CDP in headless Chrome against the dev server's `?perf=`
+fixtures; per input event the time to the next paint, or for one-shot actions the time until the result is
+painted), `scripts/perf-follow.mjs` (per-frame JS and allocation while a song plays with smooth follow),
+`scripts/perf-startup.mjs` (cold and warm loads of a production build; `--url a,b` alternates builds so a busy
+machine hits both alike) and `scripts/bundle-report.mjs` (what is in each chunk, by folder, from source maps). The
+machine is shared, so compare runs by their control row ("pointermove over an inert area") and repeat them.
+
+- **Hot paths are cheap in JS**: a 50-note drag with 10k notes, a clip drag, a fader drag and an undo of 1,000 notes
+  each cost a few milliseconds of script; what shows as latency is mostly the frame (vsync) floor. The wins were
+  therefore in React work around the canvases and in what is rendered at all:
+  - the rack follows the pattern's step count, not the pattern object (a step click made a new one and re-rendered
+    150 rows), keeps its header apart from the rows (selecting a channel re-rendered every row), and renders only
+    the rows near the viewport above 60 channels (`ui/controls/windowed.ts`, also the DJ library table);
+  - `useGestureEdit` returns handlers made once and `Knob` is memoized, so a drag re-renders the control's text and
+    not its knobs; the mixer's effect rack follows the slot list, not the insert's volume;
+  - the project-pattern list items read their own name, the action search renders a window of its 80 rows, the
+    Studio conversation is not re-rendered per keystroke;
+  - the reload snapshot (`sessionStorage`) is written at an idle moment, not in a frame.
+- **Lazy windows do not wait 300 ms**: `React.lazy` suspends on its first render even with the chunk in memory, and
+  React holds the content back for up to 300 ms after showing the fallback. `lazyWindow` and the SDK's `lazyUi`
+  keep the loaded component and give `use()` a promise marked fulfilled, so a prefetched window renders in its
+  first frame (Studio, first open: 325 -> 36 ms).
+- **Startup** (production build, `scripts/perf-startup.mjs`): the eager bundle no longer holds the MCP tools (they
+  load on an AI app's first call), the piano roll and mixer windows, or the custom editors of seven built-in
+  plugins (`lazyUi`). JS decoded before the first render 1777 -> ~1380 kB (-22 %), on the wire 627 -> 502 kB.
+  What is left before the first paint is mostly React, the engine, the playlist and the rack. The biggest single
+  item of main-thread CPU at startup is creating the `AudioContext` (`Engine.realtime`; tens of ms, more on a loaded
+  machine), which belongs to the audio code. Not tried: a single initial chunk with Rolldown's `codeSplitting`
+  groups (the page rendered nothing: a circular import between that chunk and the lazy ones).
+- Known and left: the crash autosave deflates the project on the main thread (25-40 ms for a 1 MB project, once
+  3 s after a burst of edits; a worker would remove it).
 
 ## Testing
 

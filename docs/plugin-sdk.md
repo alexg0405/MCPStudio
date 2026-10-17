@@ -475,6 +475,8 @@ function MyUI({ specs, values, beginEdit, setParam, endEdit }: PluginUIProps<typ
 export default defineInstrument({ ..., ui: MyUI });
 ```
 
+A big editor can load on first open: `ui: lazyUi(() => import('./MyUI').then((m) => m.MyUI))` (`@agstudio/sdk/ui`).
+
 `beginEdit` → `setParam`… → `endEdit` makes one undo step. Give SDK controls the param id
 (`<Knob param="cutoff" …/>`) and right-clicking them opens the host's param menu (create an
 automation clip, link a MIDI controller, reset); `openParamMenu(param, event)` does the same for your

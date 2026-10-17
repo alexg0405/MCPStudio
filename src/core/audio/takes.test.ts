@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { constantTempo } from '../time/ppq';
-import { audibleTake, planTakes, type CaptureAnchor } from './takes';
+import { audibleTake, planTakes, trimToTakes, type CaptureAnchor } from './takes';
 
 const SR = 48000;
 const TPS = 1920; // ticks per second at 120 BPM
@@ -67,5 +67,51 @@ describe('recorded takes', () => {
     const takes = planTakes({ ...sim, sampleRate: SR, tempo, loop, startTick: 0 });
     expect(takes.map((t) => [t.pass, t.start, t.complete])).toEqual([[0, 3840, true]]);
     expect(audibleTake([])).toBe(-1);
+  });
+  it('a punch range cuts the take to it, whether or not there is a loop', () => {
+    // Playback from the start (after a 1 s count-in at c0 = 0), recording over bars 2–3 only.
+    const sim = simulate({ startTick: 0, t0: 1, c0: 0, rt: 0.03, seconds: 8 });
+    const punch = { start: 3840, end: 11520 };
+    const [take, ...rest] = planTakes({ ...sim, sampleRate: SR, tempo, loop: null, startTick: 0, punch });
+    expect(rest).toEqual([]);
+    expect([take!.start, take!.length]).toEqual([3840, 7680]);
+    // Tick 3840 is heard 2 s after playback began (t0 = 1 s: context time 3 s) and reaches the recorder 30 ms later.
+    expect(take!.offsetSec).toBeCloseTo(3 + 0.03, 6);
+    // Played from inside the range: the take starts where playback did.
+    const sim2 = simulate({ startTick: 5760, t0: 1, c0: 0.5, rt: 0.03, seconds: 6 });
+    const [inside] = planTakes({ ...sim2, sampleRate: SR, tempo, loop: null, startTick: 5760, punch });
+    expect([inside!.start, inside!.length]).toEqual([5760, 11520 - 5760]);
+    // A punch range that playback never reached (stopped first) leaves nothing.
+    const sim3 = simulate({ startTick: 0, t0: 1, c0: 0, rt: 0.03, seconds: 1.5 });
+    expect(planTakes({ ...sim3, sampleRate: SR, tempo, loop: null, startTick: 0, punch })).toEqual([]);
+  });
+
+  it('with a loop and a punch range, each pass is cut to the punch and complete means it covers the overlap', () => {
+    const loop = { start: 0, end: 7680 };
+    const punch = { start: 1920, end: 5760 };
+    const sim = simulate({ startTick: 0, t0: 1, c0: 1, rt: 0.02, seconds: 8.2, loop });
+    const takes = planTakes({ ...sim, sampleRate: SR, tempo, loop, startTick: 0, punch });
+    expect(takes.map((t) => [t.pass, t.start, t.length, t.complete])).toEqual([
+      [0, 1920, 3840, true],
+      [1, 1920, 3840, true],
+    ]);
+  });
+
+  it('trims a punch recording to the takes with a handle each side', () => {
+    const takes = planTakes({
+      ...simulate({ startTick: 0, t0: 1, c0: 0, rt: 0, seconds: 8 }),
+      sampleRate: SR,
+      tempo,
+      loop: null,
+      startTick: 0,
+      punch: { start: 7680, end: 11520 },
+    });
+    const kept = trimToTakes(takes, tempo, SR, 8 * SR, 0.5);
+    // The punch is 4–6 s heard, 5–7 s captured: keep 4.5–7.5 s.
+    expect(kept.from / SR).toBeCloseTo(4.5, 6);
+    expect(kept.to / SR).toBeCloseTo(7.5, 6);
+    // The take's trim is 0.5 s into what is kept: the same audio, found at the same place.
+    expect(kept.takes[0]!.offsetSec).toBeCloseTo(0.5, 6);
+    expect(trimToTakes([], tempo, SR, 100)).toEqual({ from: 0, to: 100, takes: [] });
   });
 });

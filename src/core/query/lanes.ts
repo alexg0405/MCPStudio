@@ -5,6 +5,8 @@ import type { Project, Tick } from '../model/types';
 export function laneFree(project: Project, i: number, start: Tick, end: Tick): boolean {
   const id = project.playlist.laneOrder[i];
   if (!id) return true;
+  // The comp and take lanes of a recording hold only that recording.
+  if (project.playlist.lanes[id]?.takes) return false;
   for (const c of Object.values(project.playlist.clips))
     if (c.laneId === id && c.start < end && c.start + c.length > start) return false;
   return true;

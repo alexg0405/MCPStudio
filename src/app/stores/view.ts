@@ -30,6 +30,8 @@ export interface ViewState {
   currentPatternId: PatternId | null;
   /** Song-mode loop region (the playlist's time selection); null loops the whole song. */
   loop: { start: Tick; end: Tick } | null;
+  /** Punch range for audio recording: only this part of the take is kept (separate from the loop). */
+  punch: { start: Tick; end: Tick } | null;
   /** Song position marker: song-mode playback starts (and stop returns) here. */
   songStart: Tick;
   windows: Record<string, WindowInstance>;
@@ -53,6 +55,7 @@ export interface ViewActions {
   setMode(mode: TransportMode): void;
   setCurrentPattern(id: PatternId | null): void;
   setLoop(loop: { start: Tick; end: Tick } | null): void;
+  setPunch(punch: { start: Tick; end: Tick } | null): void;
   setSongStart(tick: Tick): void;
 }
 
@@ -62,6 +65,7 @@ export const defaultViewState = (): ViewState => ({
   mode: 'pattern',
   currentPatternId: null,
   loop: null,
+  punch: null,
   songStart: 0,
   windows: {},
   focusedId: null,
@@ -176,6 +180,12 @@ export function createViewStore(initial: Partial<ViewState> = {}): ViewStore {
         const cur = get().loop;
         if (cur?.start === loop?.start && cur?.end === loop?.end) return;
         set({ loop: loop && loop.end > loop.start ? loop : null });
+      },
+
+      setPunch(punch) {
+        const cur = get().punch;
+        if (cur?.start === punch?.start && cur?.end === punch?.end) return;
+        set({ punch: punch && punch.end > punch.start ? { start: Math.max(0, Math.round(punch.start)), end: Math.round(punch.end) } : null });
       },
     };
   });

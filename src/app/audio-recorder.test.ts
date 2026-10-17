@@ -72,7 +72,7 @@ describe('audio recording', () => {
     expect(audio().clips).toHaveLength(0);
   });
 
-  it('keeps each loop pass as a take on its own track, the newest on top and the only one playing', async () => {
+  it('keeps each loop pass as a take in a group: the comp track on top plays the newest full pass, the take tracks are muted', async () => {
     const { s, engine, feed, audio } = setup();
     s.view.getState().setMode('song');
     s.view.getState().setLoop({ start: 0, end: 3840 });
@@ -92,19 +92,59 @@ describe('audio recording', () => {
     const { clips } = audio();
     const lanes = s.doc.getState().project.playlist.laneOrder;
     const row = (c: AudioClip) => lanes.indexOf(c.laneId);
-    expect(clips).toHaveLength(4);
-    const byTake = [...clips].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+    const takes = clips.filter((c) => c.take && !c.take.comp);
+    const comp = clips.filter((c) => c.take?.comp);
+    expect(takes).toHaveLength(4);
+    const byTake = [...takes].sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
     expect(byTake.map((c) => c.name)).toEqual([
       'Recording 1 · take 1',
       'Recording 1 · take 2',
       'Recording 1 · take 3',
       'Recording 1 · take 4',
     ]);
-    // Newest on top.
-    expect(byTake.map(row)).toEqual([3, 2, 1, 0]);
-    // Take 3 is the newest full pass: it plays; the partial 4th and the older ones are muted.
-    expect(byTake.map((c) => !!c.muted)).toEqual([true, true, false, true]);
+    expect(new Set(clips.map((c) => c.take?.group)).size).toBe(1);
+    expect(byTake.map((c) => c.take?.index)).toEqual([0, 1, 2, 3]);
+    // The comp track on top, the newest take right under it.
+    expect(comp.map(row)).toEqual([0]);
+    expect(byTake.map(row)).toEqual([4, 3, 2, 1]);
+    // Take 3 is the newest full pass: the comp plays it. Every take clip is muted (the comp is what plays).
+    expect(comp[0]).toMatchObject({ start: 0, length: 3840, take: { index: 2, comp: true } });
+    expect(comp[0]!.offsetSec).toBeCloseTo(byTake[2]!.offsetSec, 6);
+    expect(byTake.every((c) => c.muted)).toBe(true);
     expect(s.history.status().undoLabel).toBe('Record 4 takes');
+    // The stack opens so the takes are in view.
+    expect(s.editor.getState().openTakes).toHaveLength(1);
+    s.history.undo();
+    expect(audio().clips).toHaveLength(0);
+    expect(s.doc.getState().project.playlist.laneOrder.every((id) => !s.doc.getState().project.playlist.lanes[id]!.takes)).toBe(true);
+  });
+
+  it('a punch range keeps only that part: the take ends at the punch-out while the song plays on', async () => {
+    const { s, engine, feed, audio } = setup();
+    s.view.getState().setMode('song');
+    s.view.getState().setPunch({ start: 3840, end: 7680 });
+    s.recording.setArmed(true);
+    await vi.waitFor(() => expect(s.audioInput.isOpen).toBe(true));
+    // Capture and playback start together at 0.5 s from tick 0.
+    engine.clockTime = 0.5;
+    engine.startTime = 0.5;
+    engine.startTick = 0;
+    engine.play();
+    feed(6);
+    // The take was saved at the punch-out, before Stop.
+    await s.audioRecorder.saved;
+    expect(audio().clips).toHaveLength(1);
+    engine.stop();
+    await s.audioRecorder.saved;
+    const { clips, channel } = audio();
+    expect(clips).toHaveLength(1);
+    expect(clips[0]).toMatchObject({ start: 3840, length: 3840 });
+    // Bar 2 is 2 s into playback, plus the 20 ms round trip, 1 s of handle kept before it.
+    expect(clips[0]!.offsetSec).toBeCloseTo(1, 1);
+    const ref = s.doc.getState().project.samples[channel!.sampleId];
+    // The 2 s of music, a second before it and what had arrived after it, not everything captured.
+    expect(ref?.durationSec).toBeGreaterThan(3.5);
+    expect(ref?.durationSec).toBeLessThan(4.3);
   });
 
   it('says why nothing was recorded when the input can’t open', async () => {

@@ -3,7 +3,7 @@
  * of the capture and the song tick the performer heard when they played it (the capture's clock
  * minus the round-trip latency, through the transport, so tempo changes and loop wraps count). From
  * those, each loop pass becomes a take: a clip at the pass's start, trimmed into the one recording
- * at the frame where that pass began. Pure, unit-tested in Node.
+ * at the frame where that pass began (cut to the punch range, when there is one). Pure, unit-tested in Node.
  *
  * Latency: music scheduled at context time τ leaves the speakers at τ + delay compensation + output
  * latency; a performer playing along is recorded at that plus the input latency. So a frame captured
@@ -39,8 +39,10 @@ export interface TakeInput {
   /** Frames captured. */
   frames: number;
   tempo: TempoMap;
-  /** The loop region passes wrap at (punch in/out), or null. */
+  /** The loop region passes wrap at, or null. */
   loop: { start: Tick; end: Tick } | null;
+  /** Punch in and out: only this part of every pass is kept (a pass is cut to it). */
+  punch?: { start: Tick; end: Tick } | null;
   /** Where playback started. */
   startTick: Tick;
   /** The tick heard when recording stopped (default: where the last captured frame is). */
@@ -69,6 +71,9 @@ export function planTakes(input: TakeInput): TakePlan[] {
   if (anchors.length === 0 || input.frames <= 0) return [];
   const minTicks = input.minTicks ?? 120;
   const L = loop && loop.end > loop.start ? loop : null;
+  const P = input.punch && input.punch.end > input.punch.start ? input.punch : null;
+  /** What a complete pass covers: the loop region, cut to the punch range. */
+  const region = L ? { start: Math.max(L.start, P?.start ?? 0), end: Math.min(L.end, P?.end ?? Infinity) } : null;
   const byPass = new Map<number, CaptureAnchor[]>();
   for (const a of anchors) {
     const list = byPass.get(a.iter);
@@ -95,6 +100,10 @@ export function planTakes(input: TakeInput): TakePlan[] {
       end = Math.min(lastFrame, input.endTick ?? Infinity);
       if (L) end = Math.min(end, L.end);
     }
+    if (P) {
+      start = Math.max(start, P.start);
+      end = Math.min(end, P.end);
+    }
     let frame = frameAtTick(list, tempo, sr, start);
     if (frame < 0) {
       // The capture began after the pass did (no count-in, slow start): the take starts with it.
@@ -109,7 +118,7 @@ export function planTakes(input: TakeInput): TakePlan[] {
       start: s,
       length,
       offsetSec: Math.max(0, frame / sr + (tempo.tickToSeconds(s) - tempo.tickToSeconds(start))),
-      complete: !!L && s <= L.start && s + length >= L.end,
+      complete: !!region && region.end > region.start && s <= region.start && s + length >= region.end,
     });
   }
   return out;
@@ -119,4 +128,29 @@ export function planTakes(input: TakeInput): TakePlan[] {
 export function audibleTake(takes: readonly TakePlan[]): number {
   for (let i = takes.length - 1; i >= 0; i--) if ((takes[i] as TakePlan).complete) return i;
   return takes.length - 1;
+}
+
+/**
+ * A punch recording keeps only what the takes play, with a handle either side (to reveal a little more
+ * by dragging a clip's edge, and for crossfades): the frames to keep and the takes with their trims moved
+ * to match. Frames are capped to the capture.
+ */
+export function trimToTakes(
+  takes: readonly TakePlan[],
+  tempo: TempoMap,
+  sampleRate: number,
+  frames: number,
+  handleSec = 1,
+): { from: number; to: number; takes: TakePlan[] } {
+  if (takes.length === 0) return { from: 0, to: frames, takes: [] };
+  let lo = Infinity;
+  let hi = 0;
+  for (const t of takes) {
+    const dur = tempo.tickToSeconds(t.start + t.length) - tempo.tickToSeconds(t.start);
+    lo = Math.min(lo, t.offsetSec);
+    hi = Math.max(hi, t.offsetSec + dur);
+  }
+  const from = Math.max(0, Math.floor((lo - handleSec) * sampleRate));
+  const to = Math.min(frames, Math.ceil((hi + handleSec) * sampleRate));
+  return { from, to, takes: takes.map((t) => ({ ...t, offsetSec: Math.max(0, t.offsetSec - from / sampleRate) })) };
 }

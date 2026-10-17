@@ -24,6 +24,8 @@ export interface ViewSnapshot {
   mode: TransportMode;
   currentPatternId: string | null;
   loop: { start: number; end: number } | null;
+  /** The audio punch range (absent in older files). */
+  punch?: { start: number; end: number } | null;
   songStart: number;
   windows: Record<string, WindowInstance>;
   browser: ViewState['browser'];
@@ -40,6 +42,7 @@ export function captureView(s: Services): ViewSnapshot {
     mode: v.mode,
     currentPatternId: v.currentPatternId,
     loop: v.loop,
+    punch: v.punch,
     songStart: v.songStart,
     windows: v.windows,
     browser: v.browser,
@@ -131,6 +134,7 @@ export function applyView(s: Services, raw: unknown, project: Project): boolean 
       ? (v.currentPatternId as ViewSnapshot['currentPatternId'])
       : (project.patternOrder[0] ?? null);
   const loop = isObj(v.loop) && num(v.loop.start) && num(v.loop.end) && v.loop.end > v.loop.start ? v.loop : null;
+  const punch = isObj(v.punch) && num(v.punch.start) && num(v.punch.end) && v.punch.end > v.punch.start ? v.punch : null;
   const browser = isObj(v.browser)
     ? {
         visible: v.browser.visible !== false,
@@ -141,6 +145,7 @@ export function applyView(s: Services, raw: unknown, project: Project): boolean 
     mode: v.mode === 'song' ? 'song' : 'pattern',
     currentPatternId: pattern as ViewState['currentPatternId'],
     loop: loop ? { start: Math.round(loop.start as number), end: Math.round(loop.end as number) } : null,
+    punch: punch ? { start: Math.max(0, Math.round(punch.start as number)), end: Math.round(punch.end as number) } : null,
     songStart: num(v.songStart) ? Math.max(0, Math.round(v.songStart)) : 0,
     windows: wins,
     focusedId: null,

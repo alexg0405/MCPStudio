@@ -29,7 +29,7 @@ export const PLUCK_ID = 'agstudio.pluck';
 export const WAVETABLE_ID = 'agstudio.wavetable';
 export const FM_ID = 'agstudio.fm';
 
-/** The drum kit each style plays (genre kits exist for trap, house, lo-fi and boom bap). */
+/** The drum kit each style plays (genre kits: trap, house, lo-fi, boom bap, festival, bass music, drum & bass). */
 export const KIT_FOR: Readonly<Record<Style, KitStyle>> = {
   trap: 'trap',
   drill: 'trap',
@@ -40,6 +40,14 @@ export const KIT_FOR: Readonly<Record<Style, KitStyle>> = {
   reggaeton: 'trap',
   afro: 'house',
   pop: 'trap',
+  bigroom: 'edm',
+  proghouse: 'house',
+  futurebass: 'bass',
+  dubstep: 'bass',
+  melodicdub: 'bass',
+  techhouse: 'house',
+  trance: 'edm',
+  dnb: 'dnb',
 };
 
 /**
@@ -71,6 +79,10 @@ const KIT_LOUDNESS: Readonly<Record<KitStyle, Partial<Record<KitSound, number>>>
   // Lo-fi and boom bap kicks sit 2 dB further back: their drum bus leads (0 to −2 dB under the kick).
   lofi: { kick: 4.6, snare: -4, clap: 1.1, hat: -4.8, 'open-hat': -3.3 },
   boombap: { kick: 5.3, snare: -3, clap: 0.9, hat: -4.6, 'open-hat': -2.9 },
+  // The EDM pack's kits, measured the same way (one bar of each piece through the writer's channel, LUFS vs the stock piece).
+  edm: { kick: 2.2, snare: -2.7, clap: 0.3, hat: -5.5, 'open-hat': -3.1 },
+  bass: { kick: 1.5, snare: -3.7, clap: 0.2, hat: -7.9, 'open-hat': -2.9 },
+  dnb: { kick: 0.7, snare: -2.2, clap: -0.3, hat: -5.3, 'open-hat': -5.1 },
 };
 
 /** The channel volume for a drum of a kit (none: the stock kit). */
@@ -136,6 +148,21 @@ const C = {
   marimba: { pluginId: FM_ID, preset: 'Marimba', params: { level: 6 }, volume: 0.82 },
   nylon: { pluginId: PLUCK_ID, preset: 'Nylon', params: { level: 0 }, volume: 0.98 },
   harp: { pluginId: PLUCK_ID, preset: 'Harp', params: { level: 0 }, volume: 0.63 },
+  // The EDM pack (presets in plugins/builtin/wavetable and fm; levels from the palette test).
+  bigRoomLead: { pluginId: WAVETABLE_ID, preset: 'Big room lead', volume: 0.55 },
+  supersawStack: { pluginId: WAVETABLE_ID, preset: 'Supersaw stack', volume: 0.55 },
+  futureChord: { pluginId: WAVETABLE_ID, preset: 'Future bass chord', volume: 0.55 },
+  growl: { pluginId: WAVETABLE_ID, preset: 'Growl bass', volume: 0.7, rootKey: LOW },
+  riddim: { pluginId: WAVETABLE_ID, preset: 'Riddim wobble', volume: 0.7, rootKey: LOW },
+  reese: { pluginId: WAVETABLE_ID, preset: 'Reese bass', volume: 0.7, rootKey: LOW },
+  techBass: { pluginId: WAVETABLE_ID, preset: 'Tech house bass', volume: 0.7, rootKey: LOW },
+  rollingBass: { pluginId: WAVETABLE_ID, preset: 'Rolling bass', volume: 0.7, rootKey: LOW },
+  trancePluck: { pluginId: WAVETABLE_ID, preset: 'Trance pluck', volume: 0.6 },
+  gatedSaw: { pluginId: WAVETABLE_ID, preset: 'Gated supersaw', volume: 0.55 },
+  progPluck: { pluginId: WAVETABLE_ID, preset: 'Prog pluck', volume: 0.6 },
+  vocalChop: { pluginId: WAVETABLE_ID, preset: 'Vocal chop', volume: 0.6 },
+  softPiano: { pluginId: FM_ID, preset: 'Soft piano (felt, long decay)', volume: 0.6 },
+  brightPiano: { pluginId: FM_ID, preset: 'Bright piano (club stabs)', volume: 0.6 },
 } satisfies Record<string, SoundChoice>;
 
 type Palette = Record<PitchedSound, SoundChoice>;
@@ -232,6 +259,95 @@ export const PALETTE: Readonly<Record<Style, Palette>> = {
     bell: C.bell,
     strings: C.strings,
   },
+  bigroom: {
+    '808': C.punchy808,
+    bass: C.subBass,
+    lead: C.bigRoomLead,
+    pad: C.supersawStack,
+    pluck: C.glassPluck,
+    keys: C.brightPiano,
+    bell: C.bell,
+    strings: C.strings,
+  },
+  proghouse: {
+    '808': C.punchy808,
+    bass: C.rollingBass,
+    lead: C.progPluck,
+    pad: C.supersaw,
+    pluck: C.progPluck,
+    keys: C.softPiano,
+    bell: C.bell,
+    strings: C.strings,
+  },
+  futurebass: {
+    '808': C.sub808,
+    bass: C.subBass,
+    lead: C.vocalChop,
+    pad: C.futureChord,
+    pluck: C.glassPluck,
+    keys: C.softPiano,
+    bell: C.bell,
+    strings: C.strings,
+  },
+  dubstep: {
+    '808': C.sub808,
+    bass: C.growl,
+    lead: C.scream,
+    pad: C.darkPad,
+    pluck: C.glassPluck,
+    keys: C.ep,
+    bell: C.bell,
+    strings: C.darkStrings,
+  },
+  melodicdub: {
+    '808': C.sub808,
+    bass: C.subBass,
+    lead: C.vocalChop,
+    pad: C.supersawStack,
+    pluck: C.glassPluck,
+    keys: C.softPiano,
+    bell: C.bell,
+    strings: C.strings,
+  },
+  techhouse: {
+    '808': C.punchy808,
+    bass: C.techBass,
+    lead: C.vocalChop,
+    pad: C.darkPad,
+    pluck: C.glassPluck,
+    keys: C.brightPiano,
+    bell: C.bell,
+    strings: C.darkStrings,
+  },
+  trance: {
+    '808': C.punchy808,
+    bass: C.rollingBass,
+    lead: C.bigRoomLead,
+    pad: C.gatedSaw,
+    pluck: C.trancePluck,
+    keys: C.softPiano,
+    bell: C.bell,
+    strings: C.strings,
+  },
+  dnb: {
+    '808': C.sub808,
+    bass: C.reese,
+    lead: C.vocalChop,
+    pad: C.darkPad,
+    pluck: C.progPluck,
+    keys: C.softPiano,
+    bell: C.bell,
+    strings: C.strings,
+  },
+};
+
+/**
+ * Other sounds a style is known for, offered to the AI by preset name (a track's `preset` plays on
+ * them): dubstep's riddim wobble, drum & bass's neuro growl. Calibrated like the palette.
+ */
+export const ALTERNATES: Readonly<Partial<Record<Style, Partial<Record<PitchedSound, SoundChoice>>>>> = {
+  dubstep: { bass: C.riddim },
+  dnb: { bass: C.growl },
 };
 
 /** A pitched sound on 3xOsc: what plays when the palette's plugin isn't installed. */
@@ -263,7 +379,15 @@ const PLUGIN_NAMES: Record<string, string> = {
   [PLUCK_ID]: 'Pluck',
 };
 
-const KIT_NAMES: Record<KitStyle, string> = { trap: 'trap kit', house: '909-style house kit', lofi: 'dusty lo-fi kit', boombap: 'boom bap kit' };
+const KIT_NAMES: Record<KitStyle, string> = {
+  trap: 'trap kit',
+  house: '909-style house kit',
+  lofi: 'dusty lo-fi kit',
+  boombap: 'boom bap kit',
+  edm: 'festival kit (tight clicky kick, bright snare)',
+  bass: 'bass-music kit (short sub kick, big dark snare)',
+  dnb: 'drum & bass kit (tight kick, cracking snare)',
+};
 
 /** The palette in a few lines for the AI's prompt: per style, its kit and what each new track plays. */
 export function paletteText(): string {
@@ -271,6 +395,7 @@ export function paletteText(): string {
   return STYLES.map((style) => {
     const p = PALETTE[style];
     const parts = PITCHED_SOUNDS.map((sound) => `${sound} ${name(p[sound])}`);
-    return `- ${STYLE_LABELS[style]} (${style}): ${KIT_NAMES[KIT_FOR[style]]}; ${parts.join(', ')}.`;
+    const alt = Object.entries(ALTERNATES[style] ?? {}).map(([sound, c]) => `${sound} ${name(c)}`);
+    return `- ${STYLE_LABELS[style]} (${style}): ${KIT_NAMES[KIT_FOR[style]]}; ${parts.join(', ')}${alt.length ? `; also (set preset): ${alt.join(', ')}` : ''}.`;
   }).join('\n');
 }

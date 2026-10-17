@@ -6,7 +6,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { produce } from 'immer';
 import { planBeat, writeBeat } from '@app/assistant/apply';
-import { PALETTE, PITCHED_SOUNDS, type PitchedSound, type SoundChoice } from '@app/assistant/palette';
+import { ALTERNATES, PALETTE, PITCHED_SOUNDS, type PitchedSound, type SoundChoice } from '@app/assistant/palette';
 import { createServices, type Services } from '@app/services';
 import type { BeatNote, BeatSpec } from '@core/beat/spec';
 import { STYLES, type Style } from '@core/beat/style';
@@ -70,7 +70,12 @@ describe('style palette', () => {
     services.push(s);
     // One pattern per distinct sound (the same choice is shared by several styles).
     const seen = new Map<SoundChoice, { style: Style; sound: PitchedSound }>();
-    for (const style of STYLES) for (const sound of PITCHED_SOUNDS) if (!seen.has(PALETTE[style][sound])) seen.set(PALETTE[style][sound], { style, sound });
+    for (const style of STYLES) {
+      for (const sound of PITCHED_SOUNDS) if (!seen.has(PALETTE[style][sound])) seen.set(PALETTE[style][sound], { style, sound });
+      // The alternates a style offers by preset name (dubstep's riddim, drum & bass's neuro growl) sit at the same level.
+      for (const [sound, choice] of Object.entries(ALTERNATES[style] ?? {}))
+        if (!seen.has(choice)) seen.set(choice, { style, sound: sound as PitchedSound });
+    }
     /** The beat writer's channel for one track, alone in a fresh project (nothing to reuse). */
     const alone = (spec: BeatSpec) => {
       const empty = produce(createEmptyProject(), (d) => {
@@ -83,7 +88,13 @@ describe('style palette', () => {
       sound,
       style,
       label: `${sound} ${choice.preset ?? choice.pluginId}${choice.params ? ` ${JSON.stringify(choice.params)}` : ''} (${style})`,
-      ...alone({ title: 'x', bars: 1, style, tracks: [{ name: sound, sound, notes: phrase(sound) }] }),
+      ...alone({
+        title: 'x',
+        bars: 1,
+        style,
+        // An alternate plays on its preset by name, as the AI asks for it.
+        tracks: [{ name: sound, sound, notes: phrase(sound), ...(PALETTE[style][sound] !== choice && choice.preset ? { preset: choice.preset } : {}) }],
+      }),
     }));
     // The kick to compare with: the trap kit's, four on the floor at its channel level.
     const kick = alone({ title: 'Kick', bars: 1, style: 'trap', tracks: [{ name: 'Kick', sound: 'kick', volume: 0.78, notes: [0, 4, 8, 12].map((step) => ({ step, vel: 1 })) }] });

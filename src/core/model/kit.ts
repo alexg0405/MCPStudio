@@ -15,7 +15,7 @@ export type KitSound =
   | 'crash';
 
 /** Genre kits (the stock kit is the default one). */
-export const KIT_STYLES = ['trap', 'house', 'lofi', 'boombap'] as const;
+export const KIT_STYLES = ['trap', 'house', 'lofi', 'boombap', 'edm', 'bass', 'dnb'] as const;
 export type KitStyle = (typeof KIT_STYLES)[number];
 
 export interface KitPiece {
@@ -45,7 +45,15 @@ export const KIT: readonly KitPiece[] = [
   { generator: 'kit/crash', name: 'Crash', short: 'Crash', sound: 'crash' },
 ];
 
-const KIT_LABELS: Record<KitStyle, string> = { trap: 'Trap', house: 'House', lofi: 'Lo-fi', boombap: 'Boom bap' };
+const KIT_LABELS: Record<KitStyle, string> = {
+  trap: 'Trap',
+  house: 'House',
+  lofi: 'Lo-fi',
+  boombap: 'Boom bap',
+  edm: 'Festival',
+  bass: 'Bass music',
+  dnb: 'Drum & bass',
+};
 
 /** The pieces every genre kit has; the others come from the stock kit. */
 export const GENRE_SOUNDS = ['kick', 'snare', 'clap', 'hat', 'open-hat'] as const satisfies readonly KitSound[];
@@ -59,6 +67,9 @@ export const GENRE_KITS: Readonly<Record<KitStyle, readonly KitPiece[]>> = {
   house: genreKit('house'),
   lofi: genreKit('lofi'),
   boombap: genreKit('boombap'),
+  edm: genreKit('edm'),
+  bass: genreKit('bass'),
+  dnb: genreKit('dnb'),
 };
 
 function genreKit(kit: KitStyle): KitPiece[] {

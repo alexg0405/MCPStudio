@@ -72,6 +72,30 @@ export default defineWorkletInstrument({
       ),
     },
     {
+      name: 'Soft piano (felt, long decay)',
+      params: patch(
+        {
+          1: { ratio: 1, level: 0.78, attack: 0.002, decay: 2.8, sustain: 0.12, release: 0.6, velocity: 0.7 },
+          2: { ratio: 1, fine: 0.002, level: 0.28, attack: 0.001, decay: 0.45, sustain: 0, release: 0.3, velocity: 0.8 },
+          3: { ratio: 2, level: 0.35, attack: 0.002, decay: 1.6, sustain: 0.05, release: 0.5, velocity: 0.6 },
+          4: { ratio: 3, level: 0.18, attack: 0.001, decay: 0.2, sustain: 0, release: 0.2, velocity: 0.8 },
+        },
+        { algorithm: '5', feedback: 0.04, cutoff: 4500, level: 1 },
+      ),
+    },
+    {
+      name: 'Bright piano (club stabs)',
+      params: patch(
+        {
+          1: { ratio: 1, level: 0.75, attack: 0.001, decay: 1.4, sustain: 0.1, release: 0.3, velocity: 0.7 },
+          2: { ratio: 1, fine: 0.003, level: 0.4, attack: 0.001, decay: 0.3, sustain: 0, release: 0.2, velocity: 0.9 },
+          3: { ratio: 2, level: 0.45, attack: 0.001, decay: 0.9, sustain: 0.05, release: 0.3, velocity: 0.7 },
+          4: { ratio: 4, level: 0.3, attack: 0.001, decay: 0.12, sustain: 0, release: 0.15, velocity: 0.9 },
+        },
+        { algorithm: '5', feedback: 0.08, level: 4 },
+      ),
+    },
+    {
       name: 'Slap bass',
       params: patch(
         {

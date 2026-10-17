@@ -1,7 +1,9 @@
 import { applyAccents } from './groove';
+import { EDM_DRUMS, EDM_LOOP, edmTracks, isEdmStyle, type EdmStyle } from './local-edm';
 import type { BeatNote, BeatSpec, BeatTrack } from './spec';
 import { STEPS_PER_BAR } from './spec';
-import { GROOVE, TEMPO, type Style } from './style';
+import { GROOVE, STYLE_LABELS, TEMPO, type Style } from './style';
+import { bassKey, chords, type Quality } from './theory';
 
 export type { Style } from './style';
 
@@ -47,7 +49,15 @@ const STYLE_WORDS: [RegExp, Style][] = [
   [/\btrap\b|\brage\b/, 'trap'],
   [/boom\s*-?\s*bap|\b90s\b|\bhip\s*-?\s*hop\b/, 'boombap'],
   [/\blo\s*-?\s*fi\b|\bchill\b/, 'lofi'],
-  [/\bedm\b|\bbig ?room\b|\bfestival\b|\bfuture bass\b|\belectro\b|\bdance\b/, 'edm'],
+  [/\bmelodic\s*-?\s*dub(step)?\b/, 'melodicdub'],
+  [/\bdubstep\b|\briddim\b|\bbrostep\b|\bgrowl\b/, 'dubstep'],
+  [/\bfuture\s*-?\s*bass\b/, 'futurebass'],
+  [/\bbig\s*-?\s*room\b/, 'bigroom'],
+  [/\bprogressive\b|\bprog\s*-?\s*house\b/, 'proghouse'],
+  [/\btech\s*-?\s*house\b/, 'techhouse'],
+  [/\btrance\b/, 'trance'],
+  [/\bdrum\s*(?:&|and|n|'n')\s*bass\b|\bdnb\b|\bd\s*&\s*b\b|\bjungle\b|\bliquid\b|\bneuro(funk)?\b|\breese\b/, 'dnb'],
+  [/\bedm\b|\bfestival\b|\belectro\b|\bdance\b/, 'edm'],
   [/\bhouse\b|\btechno\b|four on the floor|\bdisco\b/, 'house'],
   [/\breggaeton\b|\bdembow\b|\blatin\b/, 'reggaeton'],
   [/\bafro\s*-?\s*beats?\b|\bamapiano\b|\bafro\b/, 'afro'],
@@ -94,7 +104,7 @@ export function parsePrompt(prompt: string): PromptInfo {
  * Drum grids per style: one bar, 16 steps; X = accent, x = hit (the style's accent for that spot),
  * o = ghost. Boom bap and lo-fi hats hit odd 1/16s (the ones the swing pushes late).
  */
-const DRUMS: Record<Style, Record<string, string>> = {
+const DRUMS: Record<Exclude<Style, EdmStyle>, Record<string, string>> = {
   trap: {
     kick: 'x......x..x.....',
     clap: '........X.......',
@@ -258,9 +268,6 @@ function eightOhEight(
   return notes.sort((a, b) => a.step - b.step);
 }
 
-/** A synth bass key kept at B2 or below (its sub plays an octave under it). */
-const bassKey = (key: number) => (key > 47 ? key - 12 : key);
-
 /** A sub bass under the kick: the root on each hit, short of the next one (boom bap, afro, pop). */
 function subUnderKick(kick: readonly BeatNote[], bars: number, rootBass: number, roots?: readonly number[]): BeatNote[] {
   const total = bars * STEPS_PER_BAR;
@@ -272,15 +279,6 @@ function subUnderKick(kick: readonly BeatNote[], bars: number, rootBass: number,
     return { step, len: Math.max(0.5, Math.min(6, next - step - 0.25)), key: bassKey(rootBass + shift), vel: 0.85 };
   });
 }
-
-type Quality = 'maj' | 'min' | 'maj7' | 'm7' | '7';
-const CHORD: Record<Quality, readonly number[]> = {
-  maj: [0, 4, 7],
-  min: [0, 3, 7],
-  maj7: [0, 4, 7, 11],
-  m7: [0, 3, 7, 10],
-  '7': [0, 4, 7, 10],
-};
 
 /** Four-bar progressions: chord roots in semitones above the key's root, and their qualities. */
 const PROGRESSIONS = {
@@ -315,33 +313,6 @@ const PROGRESSIONS = {
     ],
   },
 } as const satisfies Record<string, Record<'minor' | 'major', readonly (readonly [number, Quality])[]>>;
-
-/** A chord of `quality` on `root` (pitch class) voiced with its root between C3 and B3. */
-function voice(root: number, quality: Quality, low = 48): number[] {
-  const base = low + ((((root - low) % 12) + 12) % 12);
-  return CHORD[quality].map((i) => base + i);
-}
-
-/**
- * A chord per bar for `bars` bars; `hits` are [step, length, velocity] within each bar (a held
- * chord, or a lazy re-strike for keys).
- */
-function chords(
-  progression: readonly (readonly [number, Quality])[],
-  keyRoot: number,
-  bars: number,
-  hits: readonly (readonly [number, number, number])[],
-  low = 48,
-): BeatNote[] {
-  const notes: BeatNote[] = [];
-  for (let bar = 0; bar < bars; bar++) {
-    const [degree, quality] = progression[bar % progression.length]!;
-    const keys = voice(keyRoot + degree, quality, low);
-    for (const [step, len, vel] of hits)
-      for (const key of keys) notes.push({ step: bar * STEPS_PER_BAR + step, len, key, vel });
-  }
-  return notes;
-}
 
 /** Moves hummed pitches into a register, keeping their shape (and the key, when one was asked for). */
 function placePitches(
@@ -423,7 +394,7 @@ export interface LocalBeatInput {
 }
 
 /** Loop length per style in bars: chords take four; trap, drill and boom bap two (a pickup, slides). */
-const LOOP_BARS: Record<Style, number> = {
+const LOOP_BARS: Record<Exclude<Style, EdmStyle>, number> = {
   trap: 2,
   drill: 2,
   boombap: 2,
@@ -439,10 +410,13 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
   const info = parsePrompt(input.prompt);
   const style: Style = info.style ?? (info.wants808 ? 'trap' : 'boombap');
   const perf = input.performance && input.performance.events.length > 0 ? input.performance : undefined;
-  const bars = Math.max(1, Math.min(4, perf?.bars ?? LOOP_BARS[style]));
+  const bars = Math.max(1, Math.min(4, perf?.bars ?? (isEdmStyle(style) ? EDM_LOOP[style] : LOOP_BARS[style])));
   const total = bars * STEPS_PER_BAR;
-  const minor = info.key?.minor ?? !['house', 'afro', 'reggaeton', 'pop'].includes(style);
-  const root = info.key?.root ?? (style === 'trap' || style === 'drill' ? 5 : 9); // F or A
+  const minor = info.key?.minor ?? !['house', 'afro', 'reggaeton', 'pop', 'futurebass'].includes(style);
+  // F for trap, drill and the half-time bass styles (low, heavy sub), A for the rest (futurebass: E♭ major).
+  const root =
+    info.key?.root ??
+    (style === 'trap' || style === 'drill' || style === 'dubstep' || style === 'melodicdub' ? 5 : style === 'futurebass' ? 3 : 9);
   const root808 = 24 + root; // C1-based octave
   /** A synth bass's root (its sub oscillator plays an octave lower). */
   const rootBass = 36 + root;
@@ -450,7 +424,7 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
   const role = perf ? decideRole(perf.role, perf.events, info) : null;
 
   // Drums: the style's grid, replaced part by part by what the user beatboxed.
-  const drumGrid = DRUMS[style];
+  const drumGrid = isEdmStyle(style) ? EDM_DRUMS[style] : DRUMS[style];
   const performed = (kind: PerformedEvent['kind']) =>
     role === 'drums' && perf ? perf.events.filter((e) => e.kind === kind) : [];
   for (const [part, grid] of Object.entries(drumGrid)) {
@@ -493,7 +467,7 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
 
   // Movement in longer loops: a kick pickup into the turnaround (the 808 follows it).
   const kickTrack = tracks.find((t) => t.sound === 'kick');
-  if (bars >= 2 && kickTrack && role !== 'drums' && !['house', 'edm', 'reggaeton'].includes(style)) {
+  if (bars >= 2 && kickTrack && role !== 'drums' && !['house', 'edm', 'reggaeton'].includes(style) && !isEdmStyle(style)) {
     const pickup = (bars - 1) * STEPS_PER_BAR + 14;
     if (!kickTrack.notes.some((n) => n.step === pickup)) {
       kickTrack.notes.push({ step: pickup, len: 1, vel: 0.7 });
@@ -513,6 +487,9 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
         notes: tonalNotes(perf.events, root808 + 7, info.key, root808, total, true),
         params: { glide: 0.09, decay: 2.2 },
       });
+    } else if (isEdmStyle(style)) {
+      // The EDM pack's own parts: bass, chords and hooks per style (local-edm.ts).
+      tracks.push(...edmTracks(style, { bars, root, minor, kick, neuro: /\bneuro(funk)?\b|\breese\b|\bdark\b/.test(input.prompt.toLowerCase()) }));
     } else if (info.wants808 || style === 'trap' || style === 'drill' || style === 'reggaeton') {
       // Every bar of a drill loop slides; trap and reggaeton slide into the loop's restart.
       tracks.push({ name: '808', sound: '808', notes: eightOhEight(kick, bars, root808, minor, style === 'drill') });
@@ -561,7 +538,9 @@ export function generateLocalBeat(input: LocalBeatInput): BeatSpec {
     }
   }
 
-  const label = (info.style ? style : role === '808' ? '808' : style).replace('boombap', 'boom bap');
+  const label = isEdmStyle(style)
+    ? STYLE_LABELS[style].toLowerCase()
+    : (info.style ? style : role === '808' ? '808' : style).replace('boombap', 'boom bap');
   const title = `${label[0]?.toUpperCase()}${label.slice(1)} beat`;
   const parts = tracks.map((t) => t.name.toLowerCase()).join(', ');
   const spec: BeatSpec = {

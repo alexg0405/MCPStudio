@@ -80,13 +80,15 @@ export function sweepTargets(
   const p = d as unknown as Project;
   const layout = opts.layout ?? findMixLayout(p);
   const roles = rolesOf(p);
+  // Voices play through the Vocals bus when the mix has one (its EQ isn't swept); else through the Lead bus.
+  const inBus = (bus: 'chords' | 'lead', r: Role) => BUS_ROLES[bus](r) && !(bus === 'lead' && r === 'vox' && layout.buses.vocals);
   const changes: string[] = [];
   const targets: SweepTargets = {};
   const eqDef = s.plugins.get(EQ_PRO);
   for (const bus of ['chords', 'lead'] as const) {
     const parts = p.channelOrder.filter((cid) => {
       const ch = p.channels[cid];
-      return ch && ch.kind !== 'automation' && BUS_ROLES[bus](roles.get(cid) ?? 'other');
+      return ch && ch.kind !== 'automation' && inBus(bus, roles.get(cid) ?? 'other');
     });
     if (!parts.length) continue;
     let insertId = layout.buses[bus];
@@ -116,7 +118,7 @@ export function sweepTargets(
           const c = p.channels[x];
           return c && c.kind !== 'automation' && c.output === via.id;
         });
-        if (!carries.every((x) => BUS_ROLES[bus](roles.get(x) ?? 'other'))) continue;
+        if (!carries.every((x) => inBus(bus, roles.get(x) ?? 'other'))) continue;
         const toMaster = via.routes.findIndex((r) => r.to === MASTER);
         if (toMaster < 0 || via.routes.some((r) => r.to === insertId) || wouldCycle(d.mixer.inserts, via.id, insertId)) continue;
         via.routes[toMaster]!.to = insertId;

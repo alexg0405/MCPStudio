@@ -144,6 +144,47 @@ describe('mix setup', () => {
     expect(findMixLayout(project(s)).buses.chords).toBe(chords);
   });
 
+  it('routes voices to a Vocals bus with its own fader, the vocal chain and sends, and leaves the Lead bus to the lead', () => {
+    const s = song();
+    applyBeatSpec(s, { title: 'Vox', bars: 1, style: 'trap', tracks: [{ name: 'Vocal Chop', sound: 'lead', notes: [{ step: 0, key: 72 }] }] });
+    const res = run(s);
+    const p = project(s);
+    const { buses } = res.layout;
+    expect(buses.vocals).toBeDefined();
+    expect(p.mixer.inserts[buses.vocals!]!.name).toBe('Vocals');
+    expect(channel(s, 'Vocal Chop').output).toBe(buses.vocals);
+    expect(channel(s, 'Lead').output).toBe(buses.lead);
+    // The bus carries the pop vocal chain's EQ, compressor and de-esser.
+    expect(p.mixer.inserts[buses.vocals!]!.fx.map((f) => f.plugin.pluginId)).toEqual(['agstudio.eq-pro', 'agstudio.compressor', 'agstudio.de-esser']);
+    expect(db(p.mixer.inserts[buses.vocals!]!.volume)).toBe(-2);
+    const send = (to: InsertId | undefined) => db(p.mixer.inserts[buses.vocals!]!.routes.find((r) => r.to === to)!.level);
+    expect(send(buses.reverb)).toBe(-14);
+    expect(send(buses.delay)).toBe(-20);
+    // Running it again changes nothing.
+    const once = project(s);
+    run(s);
+    expect(project(s)).toBe(once);
+    expect(findMixLayout(project(s)).buses.vocals).toBe(buses.vocals);
+  });
+
+  it('a song with only a voice still gets its Reverb and Delay returns; old projects with the voice on the Lead bus keep working', () => {
+    const s = createTestServices();
+    applyBeatSpec(s, { title: 'Voice', bars: 1, style: 'pop', tracks: [{ name: 'Vocals', sound: 'lead', notes: [{ step: 0, key: 72 }] }] });
+    const res = run(s, { style: 'pop' });
+    expect(res.layout.buses.vocals && res.layout.buses.reverb && res.layout.buses.delay).toBeTruthy();
+    expect(res.layout.buses.lead).toBeUndefined();
+    // A project made before the Vocals bus: the voice is on the Lead bus, found by name, and fill-gaps leaves it there.
+    const old = song();
+    const before = run(old);
+    old.history.transact('the lead is a voice', (d) => {
+      d.channels[channel(old, 'Lead').id as ChannelId]!.name = 'Vocal';
+    });
+    const again = run(old, { mode: 'fill-gaps' });
+    expect(channel(old, 'Vocal').output).toBe(before.layout.buses.lead);
+    expect(again.layout.buses.lead).toBe(before.layout.buses.lead);
+    expect(again.layout.buses.vocals).toBeDefined();
+  });
+
   it('uses only presets and params the plugins have', () => {
     const s = createTestServices();
     for (const style of STYLES)

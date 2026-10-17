@@ -42,7 +42,7 @@ export interface SetupMixResult {
 const gainOf = (db: number) => Math.min(MAX_INSERT_VOLUME, Math.pow(10, db / 20));
 
 /** A plugin instance for a recipe: the preset (the musician's own of that name first), then its params. */
-function instanceFor(s: Services, fx: FxRecipe) {
+export function instanceFor(s: Services, fx: FxRecipe) {
   const def = s.plugins.get(fx.pluginId);
   if (!def) return null;
   let params: Record<string, ParamValue> = defaultValues(def.params);
@@ -76,8 +76,8 @@ export function setupMix(d: Draft<Project>, s: Services, opts: SetupMixOptions):
     const bus = busForRole(role);
     if (bus) wanted.add(bus);
   }
-  if (wanted.has('chords') || wanted.has('lead') || wanted.has('fx')) wanted.add('reverb');
-  if (wanted.has('lead')) wanted.add('delay');
+  if (wanted.has('chords') || wanted.has('lead') || wanted.has('vocals') || wanted.has('fx')) wanted.add('reverb');
+  if (wanted.has('lead') || wanted.has('vocals')) wanted.add('delay');
   if (!wanted.size) return { layout: findMixLayout(p), changes };
 
   // The buses: by name if they exist, else the next empty "Insert N", else a new track.

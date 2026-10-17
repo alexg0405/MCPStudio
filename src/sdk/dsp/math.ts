@@ -28,6 +28,31 @@ export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
+/** 2^−8 … 2^7, for `pow2`. */
+const POW2_INT = [1 / 256, 1 / 128, 1 / 64, 1 / 32, 1 / 16, 1 / 8, 1 / 4, 1 / 2, 1, 2, 4, 8, 16, 32, 64, 128] as const;
+const LN2 = Math.LN2;
+
+/**
+ * 2^u, for pitch and frequency ratios (u = semitones / 12, or cents / 1200). Inside −8 ≤ u < 8 it is
+ * 2^⌊u⌋ times e^x for the fraction x = (u − ⌊u⌋)·ln 2, by a degree-9 Taylor series (relative error
+ * below 4e-9): a few multiplies, where Math.pow is a call. Outside that range it is Math.pow.
+ */
+export function pow2(u: number): number {
+  if (!(u >= -8 && u < 8)) return Math.pow(2, u);
+  const n = Math.floor(u);
+  const x = (u - n) * LN2;
+  const p =
+    1 +
+    x *
+      (1 +
+        x *
+          (1 / 2 +
+            x *
+              (1 / 6 +
+                x * (1 / 24 + x * (1 / 120 + x * (1 / 720 + x * (1 / 5040 + x * (1 / 40320 + x * (1 / 362880)))))))));
+  return (POW2_INT[n + 8] as number) * p;
+}
+
 /** Flushes denormals and NaN to zero: use on feedback-path state. */
 export function flush(x: number): number {
   return Math.abs(x) > 1e-20 ? x : 0;

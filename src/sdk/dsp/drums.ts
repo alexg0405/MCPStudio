@@ -2,6 +2,7 @@
 // thread. Each model: set its public fields, `trigger(velocity)`, then call `next()` once per sample
 // until `active` turns false. `choke()` fades a voice out in a few milliseconds (hi-hat groups).
 
+import { pow2 } from './math';
 import { polyBlep } from './polyblep';
 import { Svf } from './svf';
 import { Noise } from './noise';
@@ -17,33 +18,6 @@ export function softClip(x: number): number {
   if (x < -3) return -1;
   const x2 = x * x;
   return (x * (27 + x2)) / (27 + 9 * x2);
-}
-
-const LN2 = Math.LN2;
-/** 2^0 … 2^7, for `pow2`. */
-const POW2_INT = [1, 2, 4, 8, 16, 32, 64, 128] as const;
-
-/**
- * 2^u for a pitch sweep (u = semitones / 12, falling towards 0). Inside 0 ≤ u < 8 it is 2^⌊u⌋ times
- * e^(x) for the fraction x = (u − ⌊u⌋)·ln 2, by a degree-9 Taylor series (relative error below 1e-8): a few
- * multiplies per sample, where Math.pow is a call. Outside that range it is Math.pow.
- */
-export function pow2(u: number): number {
-  if (!(u >= 0 && u < 8)) return Math.pow(2, u);
-  const n = Math.floor(u);
-  const x = (u - n) * LN2;
-  const p =
-    1 +
-    x *
-      (1 +
-        x *
-          (1 / 2 +
-            x *
-              (1 / 6 +
-                x *
-                  (1 / 24 +
-                    x * (1 / 120 + x * (1 / 720 + x * (1 / 5040 + x * (1 / 40320 + x * (1 / 362880)))))))));
-  return (POW2_INT[n] as number) * p;
 }
 
 /** Below this the voice is done (−80 dB). */

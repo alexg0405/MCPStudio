@@ -190,7 +190,8 @@ shelves), `OnePole` (6 dB/oct filter or smoother, by cutoff or time constant), `
 (peak or RMS level with attack/release), `Ramp` (a value derived from a param at a control rate, moving in a straight line to each new target: cheaper than recomputing a dB-to-gain or a coefficient on every frame of automation), `Adsr` (envelope; retriggers from its current value),
 `BlepOscillator` (sine, saw, square, pulse and triangle with little aliasing; `polyBlep` for your
 own), `DelayLine` (fractional reads, linear or cubic), `Lfo` (seven shapes, free-running or locked to
-the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `flush`. For instruments:
+the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `pow2` (2^u for a pitch ratio, a few times cheaper than
+`Math.pow` on the audio thread inside −8 ≤ u < 8), `flush`. For instruments:
 
 - `WavetableBank` / `WavetableOscillator`: morphing wavetables, every frame stored at nine mip levels
   (harmonics 1–256 down to a sine) and band-limited exactly, so nothing aliases: pick the level with

@@ -38,7 +38,7 @@ export class Yin {
   private readonly maxLag: number;
   private readonly window: number;
   private readonly ring: Float32Array;
-  private readonly frame: Float32Array;
+  private readonly frame: Float64Array;
   private readonly diff: Float32Array;
   /** The raw difference function (interpolated for sub-sample accuracy). */
   private readonly raw: Float32Array;
@@ -49,6 +49,9 @@ export class Yin {
   private pos = 0;
   private phase = 0;
   private filled = 0;
+  /** The difference function is valid up to this lag, and `sum` is its running total, in the current detect(). */
+  private done = 0;
+  private sum = 0;
 
   constructor(
     readonly sampleRate: number,
@@ -64,7 +67,7 @@ export class Yin {
     this.window = Math.max(this.maxLag, Math.ceil(this.analysisRate * 0.01));
     const size = this.window + this.maxLag + 2;
     this.ring = new Float32Array(size);
-    this.frame = new Float32Array(size);
+    this.frame = new Float64Array(size);
     this.diff = new Float32Array(this.maxLag + 2);
     this.raw = new Float32Array(this.maxLag + 2);
     this.threshold = opts.threshold ?? 0.15;
@@ -100,33 +103,33 @@ export class Yin {
     let energy = 0;
     for (let j = 0; j < w; j++) energy += (x[j] as number) * (x[j] as number);
     if (Math.sqrt(energy / w) < SILENCE_RMS) return this.unvoiced(0);
-    // Difference function and its cumulative mean normalization (d'(0) = 1).
+    // Difference function and its cumulative mean normalization (d'(0) = 1), lag by lag and only as far
+    // as the search below reads: the first dip under the threshold usually comes well before the
+    // longest lag.
     const d = this.diff;
     const raw = this.raw;
     const maxLag = this.maxLag;
     d[0] = 1;
     raw[0] = 0;
-    let sum = 0;
-    for (let tau = 1; tau <= maxLag + 1; tau++) {
-      let acc = 0;
-      for (let j = 0; j < w; j++) {
-        const delta = (x[j] as number) - (x[j + tau] as number);
-        acc += delta * delta;
-      }
-      sum += acc;
-      raw[tau] = acc;
-      d[tau] = sum > 0 ? (acc * tau) / sum : 1;
-    }
+    this.done = 0;
+    this.sum = 0;
     // The first dip under the threshold (then down to its bottom), else the deepest one.
     let best = -1;
     for (let tau = this.minLag; tau <= maxLag; tau++) {
+      this.lagsTo(x, w, tau);
       if ((d[tau] as number) < this.threshold) {
-        while (tau + 1 <= maxLag && (d[tau + 1] as number) < (d[tau] as number)) tau++;
+        for (;;) {
+          if (tau + 1 > maxLag) break;
+          this.lagsTo(x, w, tau + 1);
+          if (!((d[tau + 1] as number) < (d[tau] as number))) break;
+          tau++;
+        }
         best = tau;
         break;
       }
     }
     if (best < 0) {
+      this.lagsTo(x, w, maxLag);
       let min = Infinity;
       for (let tau = this.minLag; tau <= maxLag; tau++) {
         if ((d[tau] as number) < min) {
@@ -137,6 +140,7 @@ export class Yin {
       if (min > this.maxAperiodicity) return this.unvoiced(1 - min);
     }
     // Parabolic interpolation of the raw difference around the dip (less biased than d').
+    this.lagsTo(x, w, best + 1);
     const a = raw[best - 1] as number;
     const b = raw[best] as number;
     const c = raw[best + 1] as number;
@@ -145,6 +149,39 @@ export class Yin {
     this.frequency = this.analysisRate / (best + shift);
     this.confidence = Math.max(0, Math.min(1, 1 - (d[best] as number)));
     return this.frequency;
+  }
+
+  /** Extends the difference function (and the raw one) of the window `x` (length `w`) to lag `to`. */
+  private lagsTo(x: Float64Array, w: number, to: number): void {
+    const d = this.diff;
+    const raw = this.raw;
+    for (let tau = this.done + 1; tau <= to; tau++) {
+      // Four partial sums: one running sum would wait on each add in turn.
+      let a0 = 0;
+      let a1 = 0;
+      let a2 = 0;
+      let a3 = 0;
+      let j = 0;
+      for (; j + 3 < w; j += 4) {
+        const d0 = (x[j] as number) - (x[j + tau] as number);
+        const d1 = (x[j + 1] as number) - (x[j + 1 + tau] as number);
+        const d2 = (x[j + 2] as number) - (x[j + 2 + tau] as number);
+        const d3 = (x[j + 3] as number) - (x[j + 3 + tau] as number);
+        a0 += d0 * d0;
+        a1 += d1 * d1;
+        a2 += d2 * d2;
+        a3 += d3 * d3;
+      }
+      for (; j < w; j++) {
+        const delta = (x[j] as number) - (x[j + tau] as number);
+        a0 += delta * delta;
+      }
+      const acc = a0 + a1 + (a2 + a3);
+      this.sum += acc;
+      raw[tau] = acc;
+      d[tau] = this.sum > 0 ? (acc * tau) / this.sum : 1;
+    }
+    if (to > this.done) this.done = to;
   }
 
   reset(): void {

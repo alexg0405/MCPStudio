@@ -1,4 +1,13 @@
-import { at, DelayLine, EffectKernel, Readings, Yin, type KernelHost, type ParamBlock } from '@agstudio/sdk/worklet';
+import {
+  at,
+  DelayLine,
+  EffectKernel,
+  pow2,
+  Readings,
+  Yin,
+  type KernelHost,
+  type ParamBlock,
+} from '@agstudio/sdk/worklet';
 import { RANGE_HZ, RANGES, TUNE_SCALES, tuneLatencyFrames, type tuneParams } from './params';
 
 type P = typeof tuneParams;
@@ -71,6 +80,9 @@ export class TuneKernel extends EffectKernel<P> {
   private target = -1;
   /** The correction being applied, cents (glides towards `goal`). */
   private cents = 0;
+  /** `drift` is the read-speed change for `driftCents` (the cents it was computed from). */
+  private driftCents = Number.NaN;
+  private drift = 0;
   private goal = 0;
   private speed = -1;
   private glide = 1;
@@ -137,8 +149,13 @@ export class TuneKernel extends EffectKernel<P> {
         this.glide = speed > 0 ? 1 - Math.exp(-1000 / (speed * this.sampleRate)) : 1;
       }
       this.cents += (this.goal - this.cents) * this.glide;
-      // A delay that grows by (1 − ratio) per frame plays `ratio` times as fast.
-      const drift = 1 - Math.pow(2, this.cents / 1200);
+      // A delay that grows by (1 − ratio) per frame plays `ratio` times as fast. The ratio only changes
+      // while the correction glides (or retargets), so it is kept between those.
+      if (this.cents !== this.driftCents) {
+        this.driftCents = this.cents;
+        this.drift = 1 - pow2(this.cents / 1200);
+      }
+      const drift = this.drift;
       if (this.fade < 0 && Math.abs(this.cents) < REST_CENTS) {
         // Nothing to correct: drift back to the centre (where the output is the delayed input).
         const off = this.head - centre;

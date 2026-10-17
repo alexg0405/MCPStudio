@@ -8,7 +8,6 @@
 import { notesHash } from '@core/arrange/notes';
 import { partName } from '@core/arrange/roles';
 import {
-  DEFAULT_ENERGY,
   FILL_CHOICES,
   isSectionRole,
   roleFromName,
@@ -21,6 +20,7 @@ import {
   type VaryMode,
 } from '@core/arrange/sections';
 import { refreshVariants } from '@core/arrange/apply';
+import { defaultEnergy } from '@core/arrange/shapes';
 import { inferStyle, isStyle, STYLES, type Style } from '@core/beat/style';
 import type { PatternId, Project } from '@core/model/types';
 import { variantEnvFor } from '../../arrange/env';
@@ -57,7 +57,7 @@ const SECTION = {
       enum: [...SECTION_ROLES],
       description: 'What part of the song it is (default: from its name).',
     },
-    energy: S.int('1 (sparse) … 5 (everything playing). Default by role: intro 1, verse 3, build 3, drop 5, break 2, outro 1.'),
+    energy: S.int('1 (sparse) … 5 (everything playing). Default by role and style: intro 1, verse 3, build 3, drop 5, break 2, outro 1 (the dance styles bend them: a quiet breakdown, a groove-first intro).'),
     play: {
       type: 'array',
       description: 'The patterns that play in it: usually one beat (by @ref, name or id), plus a melody pattern if it has its own.',
@@ -141,7 +141,7 @@ export const arrange: OpModule = {
         outro: {
           type: 'string',
           enum: ['auto', 'fade', 'stop'],
-          description: 'How it ends: auto (a stop for trap, drill, boom bap and reggaeton, else a fade), fade, or stop.',
+          description: 'How it ends: auto (a stop for trap, drill, boom bap, reggaeton, dubstep and future bass, else a fade), fade, or stop.',
         },
       },
       ['sections'],
@@ -198,6 +198,7 @@ export const arrange: OpModule = {
       const raw = Array.isArray(a.sections) ? a.sections.filter(isObj) : [];
       if (!raw.length) fail('it needs its sections');
       if (raw.length > MAX_SECTIONS) fail(`an arrangement holds up to ${MAX_SECTIONS} sections`);
+      const style = styleOf(a, c.project);
       // Every reference first: nothing changes when one is wrong.
       const sections: SectionSpec[] = raw.map((x, i) => {
         const name = (str(x.name) ?? `Section ${i + 1}`).slice(0, 40);
@@ -213,7 +214,7 @@ export const arrange: OpModule = {
           }
         }) as PatternId[];
         const without = (Array.isArray(x.without) ? x.without : []).map((w) => part(w, c, `“${name}”`));
-        const energy = Math.max(1, Math.min(5, Math.round(num(x.energy) ?? DEFAULT_ENERGY[role])));
+        const energy = Math.max(1, Math.min(5, Math.round(num(x.energy) ?? defaultEnergy(style, role))));
         const vary = (VARY_MODES as readonly string[]).includes(String(x.vary)) ? (x.vary as VaryMode) : 'auto';
         const transitionIn = (TRANSITION_CHOICES as readonly string[]).includes(String(x.transition_in))
           ? (x.transition_in as TransitionChoice)
@@ -251,7 +252,7 @@ export const arrange: OpModule = {
             ...(from !== undefined ? { from } : {}),
             ...(protect.size ? { protect } : {}),
             replace,
-            style: styleOf(a, c.project),
+            style,
             sections,
             fx,
             mix,

@@ -4,6 +4,9 @@
  * arrange). `arrange.test.ts` applies the example and checks it comes out clean.
  */
 
+import { shapeText } from '@core/arrange/shapes';
+import { STYLE_LABELS, STYLES } from '@core/beat/style';
+
 /** The worked example's answer (a test parses and applies it). */
 export const SONG_EXAMPLE = {
   message: 'Here is a dark trap song in F minor: an intro on keys and a bell, two verses, a build into the drop, a break and a bigger second drop, ending on a stop.',
@@ -127,6 +130,13 @@ export const SONG_EXAMPLE = {
 
 const compact = (v: unknown) => JSON.stringify(v);
 
+/** The dance styles' usual songs, one line each (from core/arrange/shapes.ts). */
+const danceShapes = () =>
+  STYLES.flatMap((st) => {
+    const line = shapeText(st);
+    return line ? [`  - ${STYLE_LABELS[st]} (${st}): ${line}.`] : [];
+  }).join('\n');
+
 export const SONG_CRAFT = `Song craft (making and arranging songs). You decide the structure: the sections, which beats play in each, and the energy. The arranger does the craft: variations every 4 and 8 bars, fills that replace the drums, gaps before drops, risers, reverse crashes, impacts, crashes, filter sweeps, markers and the ending.
 - Sections and their usual size and energy (1–5): intro 4–8 bars at 1–2, verse 8–16 at 3, build (pre-chorus) 4–8 rising, drop/hook/chorus 8–16 at 4–5, break 4–8 at 2, outro 4–8 at 1–2. Lengths in 4s and 8s (music phrases in 4 and 8 bars).
 - Shape an energy arc: a sparse intro, verses, a build, the peak, a break, a bigger peak, an outro. The bar before a drop is the emptiest moment of the song (the arranger leaves a gap there).
@@ -134,6 +144,8 @@ export const SONG_CRAFT = `Song craft (making and arranging songs). You decide t
 - For a new song: one beat per kind of section with the beat action, pattern "new" and a ref ("@verse"), each a complete 2- or 4-bar loop at that section's energy; then ONE arrange action with every section in order, each playing beats by ref. Don't place the beats with place_pattern yourself, and never hand-place risers, impacts, crashes, sweeps, fades or automation for transitions: arrange (and develop, transition) add them, timed to the downbeat, on their own tracks.
 - Arranging again (same from_bar) replaces your earlier arrangement and cleans up after itself.
 - A song that already exists: develop adds the fills, variations and transitions in place (its cleanup removes stacked copies and makes fills on their own track replace the drums under them). transition adds one transition into a bar (auto, a kind, or one element). vary changes one spot: a fill, hat_roll, 808_slide, dropout or stutter at the end of a bar, thin, double_hats or without over bars, a crash at a bar, or a variant of a pattern to place yourself.
+- Dance and bass music (bigroom, proghouse, futurebass, dubstep, melodicdub, techhouse, trance, dnb): set the style on every beat AND on arrange (it picks the kit, sounds, fills, transitions and loudness) and shape the song the way the style does. The 16-bar drop is the payoff: the build before it is a snare roll and riser (big room, trance) or a filter sweep (progressive), then a gap, then the kick and the hook together. Give the drop beat a bigger layer than the build (the lead or growl enters on the drop), and make the breakdown strip the drums. Requests map to styles: "a drop like Martin Garrix" is bigroom, "Flume-ish" is futurebass, "Skrillex-style" or "riddim" is dubstep, "Illenium-ish" is melodicdub, "trance" is trance, "liquid" or "neurofunk" is dnb. Artist names only point at the subgenre: write original notes, never a real song's melody or chord progression. Usual songs:
+${danceShapes()}
 - Variants (patterns named like "Drop · fill + slide") follow their source pattern: to change the music, edit the source; its variants are rebuilt.
 Example: "make me a dark trap song":
 ${compact(SONG_EXAMPLE)}`;

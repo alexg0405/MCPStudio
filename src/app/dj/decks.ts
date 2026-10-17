@@ -505,7 +505,18 @@ export function createDecks(deps: DecksDeps): DecksApi {
       r.stream = stream;
       // The first seconds are in the window before the song is announced (a source in memory needs no wait at all).
       stream.moveTo(0);
-      await stream.whenResident(0, Math.round(2 * stream.sampleRate)).catch(() => {});
+      // A file that can't be read (removed from the store, damaged) would wait forever: give it a while, then say so.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const unreadable = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Couldn’t read “${title}”: its file can’t be read.`)), 20_000);
+      });
+      try {
+        await Promise.race([stream.whenResident(0, Math.round(2 * stream.sampleRate)), unreadable]);
+      } catch (e) {
+        if (!stale()) throw e;
+      } finally {
+        clearTimeout(timer);
+      }
       if (stale()) return;
       audioReady = true;
       set(id, { song: { ...info, durationSec: source.nativeFrames / source.nativeRate } });
@@ -542,6 +553,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
         deps.toast(e instanceof Error ? e.message : String(e), 'error');
       } else {
         chan(id)?.send({ t: 'eject' });
+        r.stream?.dispose();
+        r.stream = null;
         set(id, blank(id));
         throw e;
       }

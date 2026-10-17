@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { beatPhase, phaseDiff, syncPlan } from '@core/dj/decks-math';
 import { BLOCK_FRAMES, DECK_STATE_SLOTS } from './deck-id';
 import { DeckKernel, newSnapshot, readDeckState } from './deck.kernel';
 
@@ -209,5 +210,69 @@ describe('deck kernel: a song in a window of blocks', () => {
       stalled = k.isStalled;
     }
     expect(stalled).toBe(true);
+  });
+});
+
+describe('deck kernel: sync with a master that waits for audio', () => {
+  /** A click (3 ms burst) on every beat from `first`. */
+  const clicks = (bpm: number, first: number, seconds: number) => {
+    const x = new Float32Array(Math.round(seconds * SR));
+    const beat = (60 / bpm) * SR;
+    for (let b = 0; first * SR + b * beat < x.length; b++) {
+      const at = Math.round(first * SR + b * beat);
+      for (let k = 0; k < 150 && at + k < x.length; k++) x[at + k] = 0.9 * Math.exp(-k / 30) * (k % 2 ? -1 : 1);
+    }
+    return x;
+  };
+
+  it('the follower lands on the master’s beat again when the master has its audio back', () => {
+    const master = windowed(clicks(124, 0.1, 40), { resident: (b) => b !== 25 });
+    const follower = new DeckKernel(SR);
+    const fSong = clicks(128, 0.35, 40);
+    const fb = new SharedArrayBuffer(DECK_STATE_SLOTS * 8);
+    follower.attachState(new Float64Array(fb), new Int32Array(fb, 0, 1));
+    follower.setSong([fSong], fSong.length);
+    const plan = syncPlan(124, 128);
+    follower.setSync({
+      master: master.state.buffer as SharedArrayBuffer,
+      ratio: 124 / (128 * plan.multiple),
+      selfFirst: 0.35 * SR,
+      selfBeat: plan.beatSec * SR,
+      masterFirst: 0.1 * SR,
+      masterBeat: (60 / 124) * SR,
+    });
+    follower.setTempo(1 + plan.pitch, false);
+    master.k.seek(10 * SR);
+    follower.seek(12.3 * SR);
+    master.k.play(true);
+    const bl = new Float32Array(Q);
+    const br = new Float32Array(Q);
+    master.k.process(bl, br, Q, 0);
+    follower.play(true);
+    let frame = Q;
+    const step = () => {
+      master.k.process(bl, br, Q, frame);
+      follower.process(bl, br, Q, frame);
+      frame += Q;
+    };
+    // The master reaches block 25 (frame 1.64 M ≈ 34 s: it is at 10 s, so play 24 s) and waits.
+    while (!master.k.isStalled && frame < 40 * SR) step();
+    expect(master.k.isStalled).toBe(true);
+    const mAt = master.k.pos;
+    // The follower keeps playing on its own for half a second, then the master's audio arrives.
+    for (let i = 0; i < Math.round(0.5 * SR / Q); i++) step();
+    expect(master.k.pos).toBe(mAt);
+    master.load(25);
+    for (let i = 0; i < Math.round(3 * SR / Q); i++) step();
+    expect(master.k.isStalled).toBe(false);
+    // Both on the same beat again: the follower was moved to the master's beat, not left half a second out.
+    const ms = newSnapshot();
+    const fs = newSnapshot();
+    readDeckState(master.state, master.seq, ms);
+    readDeckState(new Float64Array(fb), new Int32Array(fb, 0, 1), fs);
+    const mp = ms.pos + (frame - Q - ms.frame) * ms.rate;
+    const fp = fs.pos + (frame - Q - fs.frame) * fs.rate;
+    const err = phaseDiff(beatPhase(fp / SR, 0.35, plan.beatSec), beatPhase(mp / SR, 0.1, 60 / 124));
+    expect(Math.abs(err * (60 / 124) * 1000)).toBeLessThan(2);
   });
 });

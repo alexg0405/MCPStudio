@@ -47,6 +47,7 @@ describe.concurrent('EDM style pack', () => {
       expect(m.master.truePeakDb!).toBeLessThanOrEqual(-0.9);
       expect(Math.abs(m.master.lufs - t.master)).toBeLessThanOrEqual(1.5);
     },
-    300_000,
+    // The 8 styles render side by side (about 210 s together on a quiet machine); in the full audio run they share the CPU.
+    900_000,
   );
 });

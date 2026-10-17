@@ -20,11 +20,12 @@ import './theme/tokens.css';
 import './theme/themes.css';
 import './theme/base.css';
 
-/** React commit counter (dev): idle playback should not re-render anything. */
-const reactPerf = { commits: 0 };
-function onRender() {
+/** React commit counter (dev): idle playback should not re-render anything. `ms` adds up the render time of the commits. */
+const reactPerf = { commits: 0, ms: 0 };
+function onRender(_id: string, _phase: string, actualDuration: number) {
   if (reactPerf.commits === 0) performance.mark('ag:first-commit');
   reactPerf.commits++;
+  reactPerf.ms += actualDuration;
 }
 
 // Composition root: long-lived objects are created once, outside React.

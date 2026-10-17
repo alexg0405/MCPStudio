@@ -259,6 +259,11 @@ export class PlaylistController {
   private readonly rulerLayer: PannedLayer;
   /** The scroll the scrollbar thumb and the Ask AI pill were last placed for. */
   private lastBarScroll = NaN;
+  /** The overlay canvas is blank (so an idle redraw, as on every zoom or scroll frame, can be skipped). */
+  private overlayBlank = false;
+  /** The lane scroll and height the header canvas shows (it does not change with the horizontal view). */
+  private headersRow = NaN;
+  private headersRowHeight = NaN;
 
   constructor(
     private readonly s: Services,
@@ -471,6 +476,8 @@ export class PlaylistController {
     if (dirty.size > 0) {
       if (dirty.has('overlay')) this.drawOverlay();
       if (dirty.has('headers')) {
+        this.headersRow = vp.scrollRow;
+        this.headersRowHeight = vp.rowHeight;
         drawLaneHeaders(fitCanvas(els.headers, HEADER_WIDTH, vp.height), vp, readTheme(), this.lanes(p), mutedOf(p), HEADER_WIDTH);
       }
       dirty.clear();
@@ -625,9 +632,18 @@ export class PlaylistController {
 
   private drawOverlay(): void {
     const { vp, els } = this;
+    const live = this.s.audioRecorder.live.getState().take;
+    const d0 = this.drag;
+    const marks =
+      !!live ||
+      (!d0 && !!this.hover) ||
+      d0?.kind === 'marquee' ||
+      ((d0?.kind === 'point' || d0?.kind === 'tension') && !!d0.readout);
+    // Nothing to show before and after (every zoom and scroll frame asks): a clear would still re-raster the canvas.
+    if (!marks && this.overlayBlank) return;
+    this.overlayBlank = !marks;
     const ctx = fitCanvas(els.overlay, vp.width, vp.height);
     ctx.clearRect(0, 0, vp.width, vp.height);
-    const live = this.s.audioRecorder.live.getState().take;
     if (live) this.drawLiveTake(ctx, live);
     const d = this.drag;
     if (!d && this.hover) this.drawHoverEdge(ctx, this.hover.clip);
@@ -998,8 +1014,10 @@ export class PlaylistController {
   }
 
   private viewportChanged(): void {
-    // Grid, clips and ruler notice a scroll or zoom themselves (PannedLayer).
-    this.invalidate('overlay', 'headers');
+    // Grid, clips and ruler notice a scroll or zoom themselves (PannedLayer). The lane headers only show the lanes,
+    // so a horizontal scroll or zoom leaves them as they are.
+    this.invalidate('overlay');
+    if (this.vp.scrollRow !== this.headersRow || this.vp.rowHeight !== this.headersRowHeight) this.invalidate('headers');
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => this.persistViewport(), 300);
   }

@@ -4,7 +4,7 @@
  * (trusted, CDP-injected) input and measures input-to-next-paint.
  *
  *   node scripts/perf-ui.mjs [--url http://localhost:5422] [--reps 9] [--only piano] [--fixture notes10k]
- *                            [--json out.json] [--label before]
+ *                            [--json out.json] [--label before] [--cold-pointer]
  *
  * Two kinds of numbers per scenario:
  *  - "paint": for every trusted input event (pointermove, keydown, wheel, ...) the time from event.timeStamp to the
@@ -13,6 +13,16 @@
  *    the last React commit it caused (plus any imperative redraw the scenario's `until` predicate waits for).
  * Each scenario also reports the worst Long Animation Frame (blocking duration) and Event Timing entries >= 16 ms
  * seen while it ran. Medians and p95 over all samples of all repetitions; the machine is shared, so use many reps.
+ *
+ * Reading a row:
+ *  - "from dispatch": the same, counted from the moment the page's own listener ran, not from event.timeStamp. For
+ *    drags the two differ by the vsync wait; for the wheel by about 18 ms more (the browser holds a wheel event until
+ *    the page has answered the one before: the "playlist scroll (wheel, no zoom)" row, where the picture only slides,
+ *    shows that floor), so compare wheel rows by this column.
+ *  - "first of reps": the first sample of each repetition. The pointer is moved a little before every scenario (see
+ *    --cold-pointer): the first pointer events of a page cost 20-30 ms in the browser itself (first drag 70 ms, first
+ *    context menu 75 ms without it, 15-20 ms with it), and a person has always moved the mouse before the first click.
+ *  - the pointermove "control" row is the floor of the machine at that moment.
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs';
@@ -22,6 +32,7 @@ const arg = (name, def) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 ? argv[i + 1] : def;
 };
+const COLD_POINTER = argv.includes('--cold-pointer');
 const BASE = arg('url', 'http://localhost:5422');
 const REPS = Number(arg('reps', '9'));
 const ONLY = arg('only', '');
@@ -53,7 +64,7 @@ function instrument() {
   mc.port1.onmessage = () => {
     const t = performance.now();
     const batch = L.batches.shift() || [];
-    for (const [ts, type] of batch) L.samples.push({ type, ms: t - ts });
+    for (const [ts, type, disp] of batch) L.samples.push({ type, ms: t - ts, app: t - disp });
   };
   const types = ['pointerdown', 'pointermove', 'pointerup', 'keydown', 'click', 'wheel', 'contextmenu', 'dblclick'];
   for (const type of types) {
@@ -70,7 +81,7 @@ function instrument() {
           return;
         }
         if (!L.rec || !L.paintTypes.includes(type)) return;
-        L.pend.push([e.timeStamp, type]);
+        L.pend.push([e.timeStamp, type, performance.now()]);
         if (!L.sched) {
           L.sched = true;
           requestAnimationFrame(() => {
@@ -170,6 +181,12 @@ async function newPage(browser, fixture) {
   await page.goto(`${BASE}/?perf=${fixture}`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__ag && document.querySelector('[data-window-type]'), null, { timeout: 90000 });
   await sleep(2500); // idle prefetch of window chunks
+  if (!COLD_POINTER) {
+    // A person has moved the mouse before the first drag or click. The first pointer events of a page cost 20-30 ms
+    // on their own (the browser's input path and hover handling start up), which is not the app's: send some first.
+    for (let i = 0; i < 12; i++) await page.mouse.move(700 + i * 9, 420 + (i % 4) * 5);
+    await sleep(200);
+  }
   page.errors = errors;
   return page;
 }
@@ -216,7 +233,7 @@ async function paint(page, fn, types = ['pointermove', 'keydown', 'wheel']) {
   return page.evaluate(() => {
     const L = window.__lat;
     L.rec = false;
-    return { samples: L.samples.map((s) => s.ms), loaf: [...L.loaf], timing: [...L.timing] };
+    return { samples: L.samples.map((s) => s.ms), app: L.samples.map((s) => s.app), loaf: [...L.loaf], timing: [...L.timing] };
   });
 }
 
@@ -511,6 +528,25 @@ scenario({
   },
 });
 
+scenario({
+  id: 'playlist scroll (wheel, no zoom)',
+  fixtures: ['stacked'],
+  async setup(page) {
+    await only(page, 'playlist');
+  },
+  async rep(page, i) {
+    const g = await clipPoint(page);
+    await page.mouse.move(g.left + 500, g.top + 120);
+    // The same wheel pipeline as the zoom row, but the picture only slides: what is left over is the wheel's own latency.
+    return paint(page, async () => {
+      for (let k = 0; k < 8; k++) {
+        await page.mouse.wheel(i % 2 ? -100 : 100, 0);
+        await sleep(30);
+      }
+    }, ['wheel']);
+  },
+});
+
 // -- mixer
 scenario({
   id: 'mixer drag a fader',
@@ -765,14 +801,18 @@ try {
     let missed = 0;
     let err = '';
     const extras = [];
+    const apps = [];
+    const repFirsts = []; // the first sample of each repetition: how much of the cost is only the first time
     let first = NaN;
     try {
       await sc.setup(page);
       for (let i = 0; i < REPS; i++) {
         const r = await sc.rep(page, i);
         if (i === 0 && r.samples.length) first = r.samples[0];
+        if (r.samples.length) repFirsts.push(r.samples[0]);
         if (i === 0 && r.settleLike) continue;
         all.push(...r.samples);
+        if (r.app) apps.push(...r.app);
         loafs.push(...r.loaf);
         timings.push(...r.timing);
         if (r.missed) missed++;
@@ -789,6 +829,8 @@ try {
       median: pct(all, 50),
       p95: pct(all, 95),
       max: all.length ? Math.max(...all) : NaN,
+      appMedian: pct(apps, 50),
+      repFirsts,
       loafMax: loafs.length ? Math.max(...loafs.map((l) => l.block)) : 0,
       loafCount: loafs.length,
       slowEvents: timings.length,
@@ -799,7 +841,7 @@ try {
     };
     rows.push(row);
     const f1 = (x) => (Number.isFinite(x) ? x.toFixed(1).padStart(7) : '    n/a');
-    console.log(`${(sc.id + ' [' + f + ']').padEnd(52)} n=${String(row.n).padStart(4)} first ${f1(row.first)} med ${f1(row.median)} p95 ${f1(row.p95)} max ${f1(row.max)} | LoAF ${row.loafCount}x max-block ${row.loafMax.toFixed(0)}ms | slow-ev ${row.slowEvents}${missed ? ' MISSED ' + missed : ''}${err ? ' ERR ' + err : ''}${row.extras ? ' ' + JSON.stringify(row.extras) : ''}`);
+    console.log(`${(sc.id + ' [' + f + ']').padEnd(52)} n=${String(row.n).padStart(4)} first ${f1(row.first)} med ${f1(row.median)} p95 ${f1(row.p95)} max ${f1(row.max)}${Number.isFinite(row.appMedian) ? ' | from dispatch med ' + f1(row.appMedian).trim() : ''} | first of reps ${repFirsts.slice(0, 4).map((x) => x.toFixed(0)).join(',')} | LoAF ${row.loafCount}x max-block ${row.loafMax.toFixed(0)}ms | slow-ev ${row.slowEvents}${missed ? ' MISSED ' + missed : ''}${err ? ' ERR ' + err : ''}${row.extras ? ' ' + JSON.stringify(row.extras) : ''}`);
     await page.context().close();
   }
 } finally {

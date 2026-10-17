@@ -100,8 +100,18 @@ function zipTime(now: Date): Date {
   return new Date(Number.isFinite(t) ? Math.min(hi, Math.max(lo, t)) : lo);
 }
 
-/** Builds the zip. Deterministic for the same input and `now`. */
-export function writeProjectFile(input: WriteProjectFileInput): Uint8Array {
+/**
+ * The entries of the zip and the timestamp they carry: everything `writeProjectFile` puts in the file before the
+ * compression, which is the part that must happen where the document is (it reads the project). Zipping them is
+ * `zipSync(files, { mtime })`, on this thread or, for an autosave, in a Worker (app/persistence/zip-async.ts), with
+ * the same bytes either way.
+ */
+export interface ProjectFileParts {
+  files: Zippable;
+  mtime: Date;
+}
+
+export function projectFileParts(input: WriteProjectFileInput): ProjectFileParts {
   const now = input.now ?? new Date();
   const meta: ProjectFileMeta = {
     format: PROJECT_FILE_FORMAT,
@@ -122,7 +132,17 @@ export function writeProjectFile(input: WriteProjectFileInput): Uint8Array {
     // Audio is already compressed or doesn't deflate well: store it as is.
     files[`samples/${hash}.${ext}`] = [sample.bytes, { level: 0 }];
   }
-  return zipSync(files, { mtime: zipTime(now) });
+  return { files, mtime: zipTime(now) };
+}
+
+/** Zips the parts (the compression of `writeProjectFile`, on its own so a Worker can run it). */
+export function zipProjectFileParts(parts: ProjectFileParts): Uint8Array {
+  return zipSync(parts.files, { mtime: parts.mtime });
+}
+
+/** Builds the zip. Deterministic for the same input and `now`. */
+export function writeProjectFile(input: WriteProjectFileInput): Uint8Array {
+  return zipProjectFileParts(projectFileParts(input));
 }
 
 function looksLikeZip(bytes: Uint8Array): boolean {

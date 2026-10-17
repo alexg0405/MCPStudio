@@ -1,6 +1,7 @@
 import { APP_VERSION } from '@core/model/defaults';
 import type { Project, SampleRef } from '@core/model/types';
 import { migrateProject, repairProject } from '@core/schema/migrate';
+import type { BlobStore } from '@platform/opfs';
 import { heldSessionLocks, holdSessionLock, isWebLocksAvailable } from '@platform/locks';
 import {
   deleteAutosave,
@@ -16,6 +17,7 @@ import { randomId } from '@core/model/ids';
 import { UNTITLED } from '../project-files';
 import type { Services } from '../services';
 import { loadAutosave, pruneAutosaves, selectRecoveryCandidates, startAutosave, type Autosave } from './autosave';
+import { findMissingSamples, missingSoundsNotice } from './project-io';
 import { fileHandle } from './recent-files';
 import { captureView } from './view-snapshot';
 
@@ -194,6 +196,15 @@ async function restoreAutosave(sessionId: string): Promise<RestoredProject | nul
     handle: file.fileKey ? await fileHandle(file.fileKey) : null,
     missingSamples: saved.missingSamples,
   };
+}
+
+/**
+ * After a reload restore: which sounds couldn't be found, in plain words (null when all are there).
+ * A restore from the autosave already knows; one from the tab snapshot checks the sample store.
+ */
+export async function restoredMissingNotice(restored: RestoredProject, store?: BlobStore): Promise<string | null> {
+  const missing = restored.missingSamples ?? (await findMissingSamples(restored.project, store));
+  return missingSoundsNotice(missing);
 }
 
 /** Loads another session's autosave (a recovery candidate). */

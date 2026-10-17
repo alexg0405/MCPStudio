@@ -61,9 +61,9 @@ describe('comp action', () => {
     res = run(s, [{ op: 'comp', action: 'next', from_bar: 6, to_bar: 7 }]);
     expect(res.changes).toEqual(['Comp “Recording 1”: take 2 plays bars 6–7']);
     expect(segs(s)).toEqual([[2, 5, 6], [1, 6, 8], [2, 8, 9]]);
-    res = run(s, [{ op: 'comp', action: 'previous', from_bar: 6, to_bar: 7 }]);
+    run(s, [{ op: 'comp', action: 'previous', from_bar: 6, to_bar: 7 }]);
     expect(segs(s)[1]).toEqual([0, 6, 8]);
-    res = run(s, [{ op: 'comp', action: 'promote', take: 2 }]);
+    run(s, [{ op: 'comp', action: 'promote', take: 2 }]);
     expect(segs(s)).toEqual([[1, 5, 9]]);
     expect(depth()).toBe(start + 4);
     // Undo puts the comp back one step at a time.

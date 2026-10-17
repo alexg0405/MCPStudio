@@ -64,7 +64,7 @@ export function compTarget(s: Services, args?: { clip?: unknown; group?: unknown
   return all.length === 1 ? { group: all[0] as TakeGroup, take: null, span: null } : null;
 }
 
-/** The range a next/previous-take command works on: the clip's span, a bar range from args, or the group's extent. */
+/** The range a next/previous-take command works on: a bar range from args, else the clip's span, the loop region, or the group's extent. */
 export function compRange(s: Services, t: CompTarget, args?: { from_bar?: unknown; to_bar?: unknown }): { from: Tick; to: Tick } {
   const p = s.doc.getState().project;
   const bar = ticksPerBar(p.transport.timeSig);
@@ -72,7 +72,11 @@ export function compRange(s: Services, t: CompTarget, args?: { from_bar?: unknow
   const b = typeof args?.to_bar === 'number' ? args.to_bar : a;
   if (a !== undefined && b !== undefined)
     return { from: Math.max(0, Math.round((Math.min(a, b) - 1) * bar)), to: Math.round(Math.max(a, b) * bar) };
-  return t.span ?? { from: t.group.start, to: t.group.end };
+  if (t.span) return t.span;
+  // No clip given: the loop region if it touches the takes (a range picked on the ruler), else all of them.
+  const loop = s.view.getState().loop;
+  if (loop && loop.start < t.group.end && loop.end > t.group.start) return { from: loop.start, to: loop.end };
+  return { from: t.group.start, to: t.group.end };
 }
 
 const takeName = (g: TakeGroup, index: number) => `take ${g.takes.findIndex((x) => x.index === index) + 1}`;

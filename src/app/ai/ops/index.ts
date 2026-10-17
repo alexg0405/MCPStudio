@@ -20,6 +20,7 @@ import { notes } from './notes';
 import { patterns } from './patterns';
 import { playlist } from './playlist';
 import { query } from './query';
+import { reference } from './reference';
 import { session } from './session';
 import { song } from './song';
 import { ui } from './ui';
@@ -36,6 +37,7 @@ export const MODULES: readonly OpModule[] = [
   arrange,
   beat,
   mix,
+  reference,
   dj,
   decks,
   filters,

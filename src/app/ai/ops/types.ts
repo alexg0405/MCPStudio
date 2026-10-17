@@ -4,7 +4,7 @@ import type { FilterTarget } from '@core/filters/target';
 import type { DjMixOptions } from '@core/model/types';
 import type { MixSong } from '../../dj/mix';
 import type { DeckAction } from './decks';
-import type { ChannelId, ClipId, InsertId, SlotId, Tick } from '@core/model/types';
+import type { ChannelId, ClipId, InsertId, SampleRef, SlotId, Tick } from '@core/model/types';
 import type { AppliedBeat } from '../../assistant/apply';
 import type { PluginSpec } from '../builder';
 import type { AiFocus, ResolvedFocus } from '../focus';
@@ -32,13 +32,28 @@ export type AfterEdit =
   /** Play a short phrase on a channel (preview notes, nothing written). */
   | { kind: 'audition'; channelId: ChannelId; phrase: AuditionPhrase }
   /** Render the busiest part and set the faders and master to the style's levels (its own step, after the edit). */
-  | { kind: 'level_mix'; style: Style; fromTick?: Tick; bars?: number }
+  | { kind: 'level_mix'; style: Style; fromTick?: Tick; bars?: number; targetLufs?: number }
   /** Analyze songs that need it, then make the DJ mix (its own step, after the edit). */
   | { kind: 'dj_mix'; songs: MixSong[]; options: DjMixOptions }
   /** Live DJ deck actions (load, play, sync, crossfade…): they run after the answer; the decks are not part of the project. */
   | { kind: 'decks'; actions: DeckAction[] }
   /** Render a part and play it through a sound filter (its own step, after the edit). */
-  | { kind: 'filter'; filter: string; target: FilterTarget };
+  | { kind: 'filter'; filter: string; target: FilterTarget }
+  /** Analyze a reference song, then set it (its own step, after the edit). */
+  | { kind: 'set_reference'; ref: SampleRef; title: string }
+  /** Match the reference once it is set (the answer set it too, and it was still being analyzed). */
+  | { kind: 'match_reference'; options: ReferenceMatchOptions }
+  /** Listen to the mix and compare its tonal balance with the reference's (its own step, after the edit). */
+  | { kind: 'reference_tone' };
+
+/** What `match_reference` was asked to match. */
+export interface ReferenceMatchOptions {
+  tempo: boolean;
+  key: boolean;
+  arrangement: boolean;
+  loudness: boolean;
+  tone: boolean;
+}
 
 export type AuditionPhrase = 'chord' | 'riff' | 'bass' | 'hits';
 

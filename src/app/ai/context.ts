@@ -21,6 +21,7 @@ import { arrangementLines, derivedLabel } from '../arrange/summary';
 import { musicLibraryLines } from '../dj/library';
 import { deckLines } from './ops/decks';
 import { djLines } from '../dj/mix';
+import { referenceLines } from '../reference/summary';
 import { noteName } from '../assistant/context';
 import { noteLines } from './note-lines';
 
@@ -505,6 +506,8 @@ function renderContext(s: Services, r: Render): string {
   if (arrangement.length) lines.push(...arrangement);
   const djMix = djLines(p);
   if (djMix.length) lines.push('', ...djMix);
+  const refLines = referenceLines(p);
+  if (refLines.length) lines.push('', ...refLines);
   const music = musicLibraryLines(s);
   if (music.length) lines.push('', ...music);
   const live = deckLines(s);

@@ -384,7 +384,8 @@ blend belongs inside the effect (an equal-power reverb mix, parallel distortion)
 **Latency.** If your effect delays the signal (a look-ahead, oversampling filters), set `latency` in seconds (it is
 rounded to whole frames): the host delays the slot's dry path by the same amount so the slot mix stays in phase, and
 the mixer compensates it across tracks (delay compensation: every other path, sends and sidechains included, is held
-back by the same amount, and the playhead follows). The value is read once, when `create()` resolves; it only counts
+back by the same amount, and the playhead follows; the song's notes and automation are scheduled that much later, so
+notes you play live are not delayed by it). The value is read once, when `create()` resolves; it only counts
 while the slot is on. Measured in Chrome: DynamicsCompressorNode delays by `floor(0.006 · sampleRate)` frames and adds
 its own makeup gain; WaveShaperNode oversampling adds 128 (`'2x'`) or 192 (`'4x'`) frames; every trip around a feedback
 loop through a DelayNode takes one render quantum (128 frames) longer than its `delayTime`; a DelayNode set to

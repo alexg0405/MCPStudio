@@ -115,7 +115,8 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
 - Playhead: keep a ring of segments; each frame compute the audible time from `getOutputTimestamp()`
   (`contextTime + (performance.now() − performanceTime) / 1000`, includes output latency, e.g. Bluetooth) and map it
   through the ring. Never store the playhead in React state.
-- Preview/MIDI input bypass the scheduler (`time = ctx.currentTime`, flush the worklet port). Velocity-0 noteOn = noteOff.
+- Preview/MIDI input bypass the scheduler (`time = ctx.currentTime`, flush the worklet port) and the mixer's delay
+  compensation (which is done in the song's event times, see PDC). Velocity-0 noteOn = noteOff.
   `currentTime` only moves once per audio callback, so a quick tap's release could carry the press's own time and cancel
   the note: `previewNoteOff` holds the release until `2.5 × baseLatency` (at least 10 ms) after the press.
 - Metronome and audio-clip starts are core events consumed by engine-internal players; the metronome goes to a monitor
@@ -2550,8 +2551,23 @@ machine is shared, so compare runs by their control row ("pointermove over an in
   load on an AI app's first call), the piano roll and mixer windows, or the custom editors of seven built-in
   plugins (`lazyUi`). JS decoded before the first render 1777 -> ~1380 kB (-22 %), on the wire 627 -> 502 kB.
   What is left before the first paint is mostly React, the engine, the playlist and the rack. The biggest single
-  item of main-thread CPU at startup is creating the `AudioContext` (`Engine.realtime`; tens of ms, more on a loaded
-  machine), which belongs to the audio code. Not tried: a single initial chunk with Rolldown's `codeSplitting`
+  item of main-thread CPU at startup is creating the `AudioContext` (`Engine.realtime`; 1-2 ms when Chrome's audio
+  service is already running, ~170-250 ms for the first context of a browser process, which blocks the main thread).
+  **The engine is therefore made after the first paint** (`EngineHost` with `deferred`, which `ui/main.tsx` asks for through
+  `createServices({ deferEngine: true })`): the host starts with an inert `IdleEngine` (state 'suspended', nothing
+  playing, meters 0, the last sample rate from localStorage for the toolbar) and makes the real engine after two animation
+  frames and an idle callback (a timer covers hidden tabs), or on the spot when anything needs sound (play, a live note,
+  record, previews, `ready()`, `tickAt`, decks, `sampleRate`). The project, view, session, output device, open-ended flag and
+  the sample overviews asked for meanwhile are handed over. `resume()` before the engine exists waits for it and resumes it
+  (a first click does not pay for creating the context inside its handler; a context made after the page was interacted with
+  starts running by itself). A just-made engine is *warming* until its instruments have loaded (at most 1.5 s): live notes
+  are held and played when they are in (a tap that ended meanwhile sounds for its length, a held key carries on; held notes
+  older than 0.6 s are dropped) and play waits and shows as playing; stop and panic cancel both. Tests and tools that do
+  not pass `deferEngine` get the engine at once. Measured (`scripts/perf-startup.mjs --fresh`, a new Chrome per run, 15 runs
+  alternating builds, machine at load 10-19): cold ready (toolbar in the DOM) median 904 -> 545 ms, p95 2329 -> 881 ms, FCP
+  1056 -> 695 ms; in one shared browser (audio service already up) ready 445 -> 406 ms. Time to interactive does not move:
+  the same work runs right after the paint (marks `ag:engine-start`, `ag:engine`). Tried and dropped: `sinkId: { type: 'none' }`
+  to skip the device (no effect in this Chrome: the creation still took 250+ ms). Not tried: a single initial chunk with Rolldown's `codeSplitting`
   groups (the page rendered nothing: a circular import between that chunk and the lazy ones).
 - Known and left: the crash autosave deflates the project on the main thread (25-40 ms for a 1 MB project, once
   3 s after a burst of edits; a worker would remove it).
@@ -2730,8 +2746,12 @@ first sample at the master, in context time) and the rest (output buffer and dev
 play → note at tick 0, edit while playing (a note added `d` ms ahead of the schedule: the smallest `d` heard on time),
 knob (a plugin param, a channel volume). Three buffers, an idle song and the `?perf=mix30` fixture playing with its tracks
 muted. Findings: the engine's own part is 1.3 ms (p95 6.6) from `currentTime`; everything else is the output (24 / 32 / 40
-ms in this Mac's Chrome), which only the buffer size moves. The heavy song adds the mixer's delay compensation
-(`graphLatency()`, 10.6 ms there) to every live note and knob: all paths wait for the slowest plugin. An edit is heard on
+ms in this Mac's Chrome), which only the buffer size moves. Before the compensation moved into time (see PDC) the
+heavy song added the mixer's `graphLatency()` (10.6 ms there) to every live note and knob: all paths waited for the
+slowest plugin. Now live input is not held back: small buffer, heavy song, key 39.7 -> 28.5 ms median (idle song 28.4),
+MIDI 39.1 -> 28.3, plugin knob 39.7 -> 27.9, channel volume 37.8 -> 26.3; medium buffer key 51.8 -> 41.7 (idle 42.0), large
+buffer key 69.6 -> 58.3 (idle 58.1). Playing from stop on that song is unchanged (51.3 -> 51.5 ms): the first note has to
+come out `graphLatency()` after its time to line up with the slowest track, and the edit-while-playing lead is still 20 ms. An edit is heard on
 time when it is at least ~20 ms ahead of the schedule (10 ms `SAFETY` + message), independent of the lookahead (the same
 with 50 ms as with 120 ms), and the playhead the user sees trails the schedule by 30–60 ms, so edits ahead of what is
 seen are always in time: the lookahead is a jank margin, not an edit latency, and stays at 120 ms.

@@ -64,6 +64,18 @@ const STYLE_WORDS: [RegExp, Style][] = [
   [/\bpop\b|\bradio\b/, 'pop'],
 ];
 
+/**
+ * What the offline generator reads after one more request in the same conversation: the earlier requests, then this
+ * one. A style named now replaces the earlier style (the first style word in the text wins, so "now make it drum and
+ * bass" after "trance" would still have been trance); everything else ("no hats", "in D minor") carries on.
+ */
+export function mergeOfflinePrompt(previous: string, next: string): string {
+  let kept = previous;
+  if (parsePrompt(next).style)
+    for (const [re] of STYLE_WORDS) kept = kept.replace(new RegExp(re.source, 'gi'), ' ');
+  return `${kept} ${next}`.replace(/\s+/g, ' ').trim();
+}
+
 export function parsePrompt(prompt: string): PromptInfo {
   const text = prompt.toLowerCase();
   const info: PromptInfo = {
@@ -73,7 +85,8 @@ export function parsePrompt(prompt: string): PromptInfo {
     noHats: /\bno (hi-?)?hats?\b|\bwithout (hi-?)?hats?\b/.test(text),
     drumsOnly: /\b(only|just) drums\b|\bdrums only\b/.test(text),
   };
-  const bpm = text.match(/(\d{2,3})\s*(?:bpm|beats per minute)/) ?? text.match(/\bat (\d{2,3})\b/);
+  // The last tempo named wins: a request later in the conversation ("make it 120 bpm") overrides an earlier one.
+  const bpm = [...text.matchAll(/(\d{2,3})\s*(?:bpm|beats per minute)/g)].at(-1) ?? [...text.matchAll(/\bat (\d{2,3})\b/g)].at(-1);
   if (bpm) {
     const v = Number(bpm[1]);
     if (v >= 50 && v <= 220) info.bpm = v;
@@ -85,7 +98,7 @@ export function parsePrompt(prompt: string): PromptInfo {
     }
   }
   const key = text.match(/\b(?:in\s+)?([a-g])\s*(#|♯|b|♭|sharp|flat)?\s*(m(?:in(?:or)?)?|maj(?:or)?)?\b(?=\s|$|[,.!])/);
-  const keyIn = text.match(/\bin\s+([a-g])\s*(#|♯|b|♭|sharp|flat)?\s*(m(?:in(?:or)?)?|maj(?:or)?)?\b/);
+  const keyIn = [...text.matchAll(/\bin\s+([a-g])\s*(#|♯|b|♭|sharp|flat)?\s*(m(?:in(?:or)?)?|maj(?:or)?)?\b/g)].at(-1) ?? null;
   const k = keyIn ?? (key && (key[2] || key[3]) ? key : null);
   if (k) {
     let root = NOTE_NAMES[k[1] as string] as number;

@@ -81,7 +81,7 @@ export function register(services: Services): void {
     id: 'file.newFromTemplate',
     title: 'New from template',
     category: 'File',
-    hint: 'Start a new project with a ready beat in a style (trap, boom bap, house, lo-fi, drill)',
+    hint: `Start a new project with a ready beat in a style (${TEMPLATES.map((t) => t.name.toLowerCase()).join(', ')})`,
     argsHint: TEMPLATES.map((t) => `'${t.id}'`).join(', '),
     palette: false,
     enabled: idle,

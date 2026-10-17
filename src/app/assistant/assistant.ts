@@ -1,5 +1,5 @@
 import type { StoreApi } from 'zustand/vanilla';
-import { generateLocalBeat, type PerformanceRole } from '@core/beat/local';
+import { generateLocalBeat, mergeOfflinePrompt, type PerformanceRole } from '@core/beat/local';
 import { inferStyle } from '@core/beat/style';
 import type { BeatSpec } from '@core/beat/spec';
 import { encodeWav } from '@core/io/wav';
@@ -605,7 +605,7 @@ export class BeatAssistant implements AssistantApi {
     }
     if (!spec) {
       offline = true;
-      this.offlinePrompt = `${this.offlinePrompt} ${text}`.trim();
+      this.offlinePrompt = mergeOfflinePrompt(this.offlinePrompt, text);
       spec = generateLocalBeat({
         prompt: this.offlinePrompt,
         bpm: project.transport.bpm,

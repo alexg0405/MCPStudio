@@ -224,5 +224,12 @@ export function detectTempo(
       if (Math.abs(bpm * m - estimate) / estimate < 0.04 && bpm * m >= 60 && bpm * m <= 200)
         return Math.round(bpm * m * 100) / 100;
   }
+  // A syncopated pattern (a bass on dotted eighths, a three-over-two hat) repeats every 1.5 beats: the pulse found is 2/3
+  // of the tempo. A loop that is whole bars at 1.5 × the estimate is read that way (checked after the plain fits, so a
+  // loop that fits at the estimate itself keeps it).
+  for (const bars of [1, 2, 4, 8, 16, 32]) {
+    const bpm = (60 * bars * perBar) / duration;
+    if (Math.abs(bpm - estimate * 1.5) / (estimate * 1.5) < 0.012 && bpm >= 60 && bpm <= 200) return Math.round(bpm * 100) / 100;
+  }
   return Math.round(estimate * 10) / 10;
 }

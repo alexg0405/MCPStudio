@@ -356,6 +356,7 @@ describe('UX audit (shell)', () => {
       'history',
       'assistant',
       'dj',
+      'reference',
       'visualizer',
       'settings',
     ]) {

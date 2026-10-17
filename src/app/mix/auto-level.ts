@@ -61,6 +61,8 @@ export const MOVE_MIN_DB = -12;
 export const MOVE_MAX_DB = 6;
 /** The Limiter's input range auto-level uses. */
 export const LIMITER_INPUT_MAX_DB = 10;
+/** The Limiter's input range when the musician asked for a loudness (a reference song's): loud songs need more. */
+export const LIMITER_INPUT_MAX_DB_TARGET = 20;
 /** How many times the Limiter's input is corrected after listening to the result (each costs one render). */
 const CORRECTIONS = 2;
 
@@ -136,7 +138,7 @@ export function levelMoves(buses: readonly BusLevel[], style: Style): LevelPlan 
 
 /** The Limiter's input gain that brings the buses' sum (−16 LUFS, or what they reach) to the style's loudness (0…10 dB). */
 export function limiterInput(style: Style, preLimiterLufs = PRE_LIMITER_LUFS, targetLufs?: number): number {
-  return clamp((targetLufs ?? LEVEL_TARGETS[style].master) - preLimiterLufs, 0, LIMITER_INPUT_MAX_DB);
+  return clamp((targetLufs ?? LEVEL_TARGETS[style].master) - preLimiterLufs, 0, targetLufs === undefined ? LIMITER_INPUT_MAX_DB : LIMITER_INPUT_MAX_DB_TARGET);
 }
 
 /** The master's hard clipper at most this much drive once tamed (dB). */
@@ -157,6 +159,18 @@ export function tameMasterClipper(d: Draft<Project>): string[] {
     out.push(`Master Saturator: hard clip → tape at ${typeof params.drive === 'number' ? params.drive : TAME_DRIVE_DB} dB drive (clipping the whole mix sounds like static)`);
   }
   return out;
+}
+
+/**
+ * The next Limiter input for an asked-for loudness: a Limiter gives back less than it is given once it works hard,
+ * so the step is the error divided by the slope the last two readings showed (a cautious guess before there are two).
+ */
+function nextInput(tried: readonly { input: number; lufs: number }[], target: number): number {
+  const last = tried[tried.length - 1]!;
+  let slope = target > last.lufs ? 0.6 : 1;
+  const prev = tried[tried.length - 2];
+  if (prev && Math.abs(last.input - prev.input) > 0.05) slope = clamp((last.lufs - prev.lufs) / (last.input - prev.input), 0.15, 1.2);
+  return clamp(last.input + (target - last.lufs) / slope, 0, LIMITER_INPUT_MAX_DB_TARGET);
 }
 
 // ---------------------------------------------------------------- the part to listen to
@@ -391,8 +405,10 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
   project = s.doc.getState().project;
   let master = await render(project, true, 'The mix', true);
   // (a Limiter takes less loudness than the input it is given once it works hard: a loud style can need a second correction)
-  for (let pass = 0; pass < CORRECTIONS && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1; pass++) {
-    const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
+  const tried: { input: number; lufs: number }[] = [];
+  for (let pass = 0; pass < (opts.targetLufs === undefined ? CORRECTIONS : CORRECTIONS + 3) && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > (opts.targetLufs === undefined ? 1 : 0.6); pass++) {
+    tried.push({ input, lufs: master.lufs });
+    const corrected = opts.targetLufs === undefined ? clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB) : nextInput(tried, target);
     if (Math.abs(corrected - input) <= 0.05) break;
     input = corrected;
     await opts.whenQuiet?.();
@@ -400,6 +416,10 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     commit();
     master = await render(s.doc.getState().project, true, 'The mix', true);
   }
+  if (opts.targetLufs !== undefined && Number.isFinite(master.lufs) && master.lufs < target - 1)
+    warnings.push(
+      `level mix: the master reaches ${master.lufs.toFixed(1)} LUFS, ${(target - master.lufs).toFixed(1)} dB under the reference’s ${target.toFixed(1)}: the Limiter has no more to give on this mix (its peaks are too high for that loudness); shortening the drums’ tails or a little saturation on the drum bus gets closer`,
+    );
   opts.progress?.('Done', 1);
 
   const buses: BusReading[] = plan.moves.map((m) => ({
@@ -415,6 +435,8 @@ export async function autoLevel(s: Services, opts: AutoLevelOptions): Promise<Au
     .filter((b) => Math.abs(b.toDb - b.fromDb) >= 0.05)
     .map((b) => `${BUS_NAMES[b.role as BusRole]} fader ${fmt(b.fromDb)} → ${fmt(b.toDb)} dB`);
   if (input !== null) changes.push(`Limiter input ${fmt(input)} dB`);
+  if (input !== null && input > LIMITER_INPUT_MAX_DB)
+    warnings.push(`level mix: the Limiter is pushed ${input.toFixed(1)} dB to reach that loudness; the mix may sound squashed, and a lower target keeps more punch`);
   changes.push(...tamed);
   const tp = master.truePeakDb !== null && Number.isFinite(master.truePeakDb) ? `, true peak ${fmt(master.truePeakDb)} dBTP` : '';
   const forWhom = opts.targetLufs !== undefined ? 'the reference’s loudness' : STYLE_LABELS[style].toLowerCase();
@@ -481,8 +503,10 @@ async function levelLoudness(
 
   const target = opts.targetLufs ?? LEVEL_TARGETS[style].master;
   let master = await render(s.doc.getState().project, true, 'The mix', true);
-  for (let pass = 0; pass < CORRECTIONS && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > 1; pass++) {
-    const corrected = clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB);
+  const tried: { input: number; lufs: number }[] = [];
+  for (let pass = 0; pass < (opts.targetLufs === undefined ? CORRECTIONS : CORRECTIONS + 3) && limiter && input !== null && Number.isFinite(master.lufs) && Math.abs(master.lufs - target) > (opts.targetLufs === undefined ? 1 : 0.6); pass++) {
+    tried.push({ input, lufs: master.lufs });
+    const corrected = opts.targetLufs === undefined ? clamp(input + (target - master.lufs), 0, LIMITER_INPUT_MAX_DB) : nextInput(tried, target);
     if (Math.abs(corrected - input) <= 0.05) break;
     input = corrected;
     await opts.whenQuiet?.();
@@ -495,10 +519,16 @@ async function levelLoudness(
     warnings.push(
       `level mix: the master still plays at ${master.lufs.toFixed(1)} LUFS: an effect on the master before the Limiter (a clipper or saturator with a lot of drive) is pushing it; lower its drive`,
     );
+  if (opts.targetLufs !== undefined && Number.isFinite(master.lufs) && master.lufs < target - 1)
+    warnings.push(
+      `level mix: the master reaches ${master.lufs.toFixed(1)} LUFS, ${(target - master.lufs).toFixed(1)} dB under the reference’s ${target.toFixed(1)}: the Limiter has no more to give on this mix (its peaks are too high for that loudness); shortening the drums’ tails or a little saturation on the drum bus gets closer`,
+    );
   opts.progress?.('Done', 1);
   const fmt = (x: number) => `${x < 0 ? '−' : '+'}${Math.abs(x).toFixed(1)}`;
   const changes = [`Everything into the master ${fmt(trimDb)} dB (the balance between tracks stays)`];
   if (input !== null) changes.push(`Limiter input ${fmt(input)} dB`);
+  if (input !== null && input > LIMITER_INPUT_MAX_DB)
+    warnings.push(`level mix: the Limiter is pushed ${input.toFixed(1)} dB to reach that loudness; the mix may sound squashed, and a lower target keeps more punch`);
   changes.push(...tamed);
   const tp = master.truePeakDb !== null && Number.isFinite(master.truePeakDb) ? `, true peak ${fmt(master.truePeakDb)} dBTP` : '';
   return {

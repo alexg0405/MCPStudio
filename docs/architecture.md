@@ -2327,8 +2327,8 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   `applyChain` is one `history.transact('Chain: <name>')`, names the plugins' presets in their preset bars where a step is
   the preset itself, and toasts what it did. The UI asks once, with a plain choice ("Replace them" / "Add after them"), only
   when the insert already has effects (`putChainOn`).
-- Factory chains (`FACTORY_CHAINS`): Clean pop vocal, Rap vocal, Airy ballad, Lo-fi vocal, Trap auto-tune vocal (Tune in
-  A minor, instant: set its key to the song's), Podcast voice (gate, EQ, compressor, wideband de-esser, limiter), built from
+- Factory chains (`FACTORY_CHAINS`): Clean pop vocal, Rap vocal, Airy ballad, Lo-fi vocal, Trap auto-tune vocal (Tune
+  instant, in the song's key when it has one (set, or found from the notes), else A minor), Podcast voice (gate, EQ, compressor, wideband de-esser, limiter), built from
   EQ Pro, Tune, Compressor, De-esser, Saturator, Doubler, Lo-Fi, Gate, Limiter and Reverb/Delay sends.
 - Your chains: `chainFromInsert` (every effect with all settings, state, mix and bypass; sidechains are not kept),
   "Save this track's chain…" in the mixer strip's right-click menu (Effect chains ▸) and as `mixer.saveInsertChain`.

@@ -5,8 +5,11 @@ import { MASTER, type InsertId, type PluginInstance, type Project, type SlotId }
 import { addFxSlot, MAX_FX_SLOTS, removeFxSlot, setFxSlotEnabled, setFxSlotMix } from '@core/ops/mixer';
 import { setRoute } from '@core/ops/routing';
 import { insertLabel } from '@core/query/mixer';
+import { channelRoles } from '@core/arrange/roles';
+import { projectKey } from '@core/reference/key';
 import { chainFromInsert, chainChoices, type ChainChoice, type ChainPreset, type ChainStep, type UserChain } from '../chains';
 import { findMixLayout } from '../mix/layout';
+import { TUNE } from '../mix/vocal-chains';
 import { instanceFor } from '../mix/setup';
 import { presetValues } from '../presets';
 import type { Services } from '../services';
@@ -24,6 +27,8 @@ export interface ChainApplied {
   /** Effects removed first (replace). */
   removed: number;
 }
+
+const TUNE_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 const gainOf = (db: number) => Math.min(MAX_INSERT_VOLUME, Math.pow(10, db / 20));
 
@@ -58,6 +63,11 @@ export function applyChainToDraft(d: Draft<Project>, s: Services, insertId: Inse
       out.removed++;
     }
   }
+  // A factory chain's Tune follows the song's key (set, or found from the notes); a saved chain keeps its own.
+  const project = s.doc.getState().project;
+  const songKey = chain.steps.some((x) => x.pluginId === TUNE && x.version === undefined)
+    ? projectKey(project, channelRoles(project))
+    : null;
   for (const step of chain.steps) {
     const target = step.send ? layout.buses[step.send.to] : undefined;
     if (step.send && target) {
@@ -74,6 +84,11 @@ export function applyChainToDraft(d: Draft<Project>, s: Services, insertId: Inse
       out.skipped.push(`${step.label}: ${s.plugins.get(step.pluginId) ? 'not an effect' : 'plugin not installed'}`);
       continue;
     }
+    const retuned = !!songKey && step.pluginId === TUNE && step.version === undefined;
+    if (retuned) {
+      inst.params.key = TUNE_KEYS[songKey.root] ?? 'C';
+      inst.params.scale = songKey.mode;
+    }
     const slotId = addFxSlot(d, insertId, inst);
     if (!slotId) {
       out.skipped.push(`${step.label}: no free effect slot (an insert holds ${MAX_FX_SLOTS})`);
@@ -82,7 +97,7 @@ export function applyChainToDraft(d: Draft<Project>, s: Services, insertId: Inse
     if (step.mix !== undefined) setFxSlotMix(d, insertId, slotId, step.mix);
     if (step.enabled === false) setFxSlotEnabled(d, insertId, slotId, false);
     // Named in the plugin's preset bar when its settings are the preset's own.
-    out.slots.push({ slotId, ...(step.preset && !step.params ? { preset: step.preset } : {}) });
+    out.slots.push({ slotId, ...(step.preset && !step.params && !retuned ? { preset: step.preset } : {}) });
   }
   return out;
 }

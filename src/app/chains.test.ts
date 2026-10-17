@@ -89,6 +89,22 @@ describe('factory vocal chains', () => {
 });
 
 describe('applying a chain', () => {
+  it('a factory chain’s Tune follows the song’s key; without one it keeps the preset', () => {
+    const TRAP = FACTORY_CHAINS.find((c) => c.name === 'Trap auto-tune vocal')!;
+    const tuneOf = (s: S, id: InsertId) => insert(s, id).fx.find((f) => f.plugin.pluginId === 'agstudio.tune')!.plugin.params;
+    const keyed = vocalSong(false);
+    keyed.s.history.transact('key', (d) => {
+      d.transport.key = { root: 5, scale: 'minor' };
+    });
+    const res = applyChain(keyed.s, keyed.vocal, TRAP, 'replace')!;
+    expect(tuneOf(keyed.s, keyed.vocal)).toMatchObject({ key: 'F', scale: 'minor' });
+    // Retuned, so the slot isn't named after the A-minor preset.
+    expect(res.slots.some((x) => x.preset?.includes('A minor'))).toBe(false);
+    const plain = vocalSong(false);
+    applyChain(plain.s, plain.vocal, TRAP, 'replace');
+    expect(tuneOf(plain.s, plain.vocal)).toMatchObject({ key: 'A', scale: 'minor' });
+  });
+
   it('puts the whole chain on an empty insert as one undo step, and undo takes it off', () => {
     const { s, vocal } = vocalSong(false);
     const before = project(s);

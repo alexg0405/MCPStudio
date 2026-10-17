@@ -143,9 +143,9 @@ export const FACTORY_CHAINS: readonly ChainPreset[] = [
   },
   {
     name: 'Trap auto-tune vocal',
-    description: 'The hard-tuned trap sound: robotic pitch correction (set its key to the song’s), bright and compressed, a wide double and ping-pong echoes.',
+    description: 'The hard-tuned trap sound: robotic pitch correction in the song’s key (A minor when the song has none yet), bright and compressed, a wide double and ping-pong echoes.',
     steps: [
-      { pluginId: TUNE, preset: 'Hard tune robot (A minor)', label: 'auto-tune (A minor, instant: set the key to your song’s)' },
+      { pluginId: TUNE, preset: 'Hard tune robot (A minor)', label: 'auto-tune (instant, in the song’s key)' },
       {
         pluginId: EQ_PRO,
         params: eqBands({

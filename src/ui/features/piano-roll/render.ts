@@ -37,18 +37,20 @@ export function drawGrid(
   const [r0, r1] = vp.visibleRows();
   for (let row = r0; row <= r1; row++) {
     const key = keyForRow(row);
-    const y = vp.rowToY(row);
+    // Rows on whole device pixels: each band and hairline is drawn between two snapped edges.
+    const y = vp.snap(vp.rowToY(row));
+    const bottom = vp.snap(vp.rowToY(row) + vp.rowHeight);
     if (scale) {
       const pc = key % 12;
       ctx.fillStyle = !scale.mask[pc] ? theme.shade : pc === scale.root ? alpha(theme.accent, 0.1) : theme.sheen;
-      ctx.fillRect(0, y, width, vp.rowHeight);
+      ctx.fillRect(0, y, width, bottom - y);
     } else if (isBlackKey(key)) {
       ctx.fillStyle = theme.bgAlt;
-      ctx.fillRect(0, y, width, vp.rowHeight);
+      ctx.fillRect(0, y, width, bottom - y);
     }
     // Row hairlines; the octave boundary (between B and C) a little stronger.
     ctx.fillStyle = key % 12 === 0 ? theme.beat : theme.lineFaint;
-    ctx.fillRect(0, y + vp.rowHeight - 1, width, 1);
+    ctx.fillRect(0, bottom - 1, width, 1);
   }
 
   const bar = ticksPerBar(ts);
@@ -61,13 +63,12 @@ export function drawGrid(
   for (const [every, color] of lines) {
     ctx.fillStyle = color;
     for (let t = Math.floor(t0 / every) * every; t <= t1; t += every) {
-      const x = Math.round(vp.tickToX(t));
-      ctx.fillRect(x, 0, 1, height);
+      ctx.fillRect(vp.tickToPx(t), 0, 1, height);
     }
   }
 
   // Shade everything after the pattern's end.
-  const endX = vp.tickToX(patternEnd);
+  const endX = vp.tickToPx(patternEnd);
   if (endX < width) {
     ctx.fillStyle = theme.shade;
     ctx.fillRect(Math.max(0, endX), 0, width - Math.max(0, endX), height);
@@ -121,8 +122,8 @@ export function drawNotes(
     if (n.tick + n.length < t0 || opts.skip?.has(n.id)) continue;
     const row = rowForKey(n.key);
     if (row < r0 - 1 || row > r1 + 1) continue;
-    const x = vp.tickToX(n.tick);
-    const w = Math.max(2, n.length * vp.pxPerTick - 1);
+    const x = vp.tickToPx(n.tick);
+    const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
     const y = vp.rowToY(row) + 1;
     const state = n.muted ? 2 : style.selected.has(n.id) ? 1 : 0;
     const g = (groups[state] as NoteGroup[])[velStep(n.velocity)] as NoteGroup;
@@ -159,8 +160,8 @@ export function drawNotes(
     ctx.font = `500 ${Math.min(10, h - 4)}px ${theme.font}`;
     ctx.textBaseline = 'middle';
     for (const n of labels) {
-      const x = vp.tickToX(n.tick);
-      const w = Math.max(2, n.length * vp.pxPerTick - 1);
+      const x = vp.tickToPx(n.tick);
+      const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
       const y = vp.rowToY(rowForKey(n.key));
       const fill = style.selected.has(n.id) ? theme.noteSelected : style.color;
       ctx.fillStyle = alpha(inkOn(fill, theme), 0.72);
@@ -186,9 +187,10 @@ export function drawGhosts(
     if (n.tick + n.length < t0) continue;
     const y = vp.rowToY(rowForKey(n.key));
     if (y < -h || y > vp.height) continue;
-    const w = Math.max(2, n.length * vp.pxPerTick - 1);
-    if (gh >= 5 && w >= 4) path.roundRect(vp.tickToX(n.tick), y + 2, w, gh, 2);
-    else path.rect(vp.tickToX(n.tick), y + 2, w, gh);
+    const x = vp.tickToPx(n.tick);
+    const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
+    if (gh >= 5 && w >= 4) path.roundRect(x, y + 2, w, gh, 2);
+    else path.rect(x, y + 2, w, gh);
   }
   ctx.fillStyle = theme.ghost;
   ctx.fill(path);
@@ -307,12 +309,12 @@ export function drawRuler(
     ctx.fillStyle = theme.lineFaint;
     for (let t = Math.floor(t0 / beat) * beat; t <= t1; t += beat) {
       if (t % bar === 0) continue;
-      ctx.fillRect(Math.round(vp.tickToX(t)), height - 4, 1, 4);
+      ctx.fillRect(vp.tickToPx(t), height - 4, 1, 4);
     }
   }
   const tick = alpha(theme.textFaint, 0.6);
   for (let b = Math.floor(t0 / bar); b * bar <= t1; b++) {
-    const x = Math.round(vp.tickToX(b * bar));
+    const x = vp.tickToPx(b * bar);
     ctx.fillStyle = tick;
     ctx.fillRect(x, height - 7, 1, 7);
     if (b % labelEvery === 0) {
@@ -320,7 +322,7 @@ export function drawRuler(
       ctx.fillText(String(b + 1), x + 3, 4);
     }
   }
-  const endX = vp.tickToX(patternEnd);
+  const endX = vp.tickToPx(patternEnd);
   if (endX >= 0 && endX <= vp.width) {
     ctx.fillStyle = theme.accent;
     ctx.beginPath();
@@ -357,7 +359,7 @@ export function drawLane(
   const mid = 3 + usable / 2;
   if (bipolar) {
     ctx.fillStyle = theme.step;
-    ctx.fillRect(0, Math.round(mid), vp.width, 1);
+    ctx.fillRect(0, vp.snap(mid), vp.width, 1);
     // Which way is which: right/left for pan, up/down for fine pitch.
     ctx.fillStyle = theme.textFaint;
     ctx.font = `500 9px ${theme.font}`;
@@ -373,7 +375,7 @@ export function drawLane(
     const n = preview?.get(raw.id) ?? raw;
     if (n.tick > t1) break;
     if (n.tick < t0 - 1) continue;
-    const x = Math.round(vp.tickToX(n.tick));
+    const x = vp.tickToPx(n.tick);
     // A lollipop: a slim stem and a round head at the value.
     const color = style.selected.has(n.id) ? theme.noteSelected : style.color;
     const v = laneValue(n, lane);

@@ -16,9 +16,9 @@ export interface ClipBox {
 }
 
 export function clipBox(vp: Viewport, row: number, c: Pick<Clip, 'start' | 'length'>): ClipBox {
-  const y = vp.rowToY(row) + 1;
-  const h = vp.rowHeight - 2;
-  const x = vp.tickToX(c.start);
-  const w = Math.max(3, c.length * vp.pxPerTick - 1);
+  const y = vp.snap(vp.rowToY(row) + 1);
+  const h = vp.snap(vp.rowToY(row) + vp.rowHeight - 1) - y;
+  const x = vp.tickToPx(c.start);
+  const w = Math.max(3, vp.tickToPx(c.start + c.length) - x - 1);
   return { x, y, w, h, bodyY: y + TITLE_H + 1, bodyH: h - TITLE_H - 3 };
 }

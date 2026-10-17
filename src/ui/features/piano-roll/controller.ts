@@ -23,7 +23,7 @@ import { onFrame } from '../../frame-loop';
 import { isContextMenuOpen } from '../../controls/ContextMenu';
 import { PlayheadFollow } from '../../timeline/follow';
 import { alpha, roundRectPath, fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
-import { clamp, snapToDevicePixel, Viewport } from '../../timeline/viewport';
+import { clamp, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
 import {
   drawGhosts,
@@ -401,15 +401,17 @@ export class PianoRollController {
     const theme = readTheme();
     const d = this.drag;
     if (d?.kind === 'marquee') {
-      const x = Math.min(d.x0, d.x1);
-      const y = Math.min(d.y0, d.y1);
+      const x = vp.snap(Math.min(d.x0, d.x1));
+      const y = vp.snap(Math.min(d.y0, d.y1));
+      const x1 = vp.snap(Math.max(d.x0, d.x1));
+      const y1 = vp.snap(Math.max(d.y0, d.y1));
       ctx.fillStyle = theme.selectTint;
       ctx.strokeStyle = theme.select;
-      ctx.fillRect(x, y, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-      ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+      ctx.fillRect(x, y, x1 - x, y1 - y);
+      ctx.strokeRect(x + 0.5, y + 0.5, x1 - x, y1 - y);
     } else if (this.hover && !d) {
       const n = this.hover.note;
-      const x = vp.tickToX(n.tick);
+      const x = vp.tickToPx(n.tick);
       const y = vp.rowToY(rowForKey(n.key));
       // The note under the pointer lifts: a brighter rounded edge.
       ctx.strokeStyle = alpha(theme.text, 0.75);
@@ -418,13 +420,13 @@ export class PianoRollController {
       ctx.stroke();
       if (this.s.editor.getState().pianoRoll.tool === 'slice') {
         ctx.fillStyle = theme.danger;
-        ctx.fillRect(Math.round(this.sliceX), y, 1, vp.rowHeight);
+        ctx.fillRect(vp.snap(this.sliceX), y, 1, vp.rowHeight);
       }
     } else if (this.stampHover && !d) {
       // The chord the draw tool would stamp here: dashed outlines and its name.
       const { tick, length, keys, name } = this.stampHover;
-      const x = vp.tickToX(tick);
-      const w = Math.max(6, length * vp.pxPerTick - 1);
+      const x = vp.tickToPx(tick);
+      const w = Math.max(6, vp.tickToPx(tick + length) - x - 1);
       ctx.setLineDash([3, 2]);
       ctx.strokeStyle = alpha(theme.accent, 0.85);
       ctx.fillStyle = alpha(theme.accent, 0.12);
@@ -534,7 +536,7 @@ export class PianoRollController {
     const t = this.playheadTick(c);
     const x = Number.isFinite(t) ? this.vp.tickToX(t) : NaN;
     // The line sits on a whole device pixel, like the grid it is drawn over.
-    const at = Number.isFinite(x) ? snapToDevicePixel(x, window.devicePixelRatio || 1) : NaN;
+    const at = Number.isFinite(x) ? this.vp.snap(x) : NaN;
     if (at === this.lastPlayheadX) return;
     this.lastPlayheadX = at;
     const el = this.els.playhead;

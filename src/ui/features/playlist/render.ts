@@ -58,24 +58,24 @@ export function drawLanesGrid(
   ctx.fillStyle = theme.bgAlt;
   for (let t = Math.floor(t0 / every) * every; t <= t1; t += every) {
     if ((t / every) % 2 !== 1) continue;
-    const x = vp.tickToX(t);
-    ctx.fillRect(Math.round(x), 0, Math.round(x + every * vp.pxPerTick) - Math.round(x), height);
+    const x = vp.tickToPx(t);
+    ctx.fillRect(x, 0, vp.tickToPx(t + every) - x, height);
   }
   // Lane separators: hairlines.
   const [r0, r1] = vp.visibleRows();
   ctx.fillStyle = theme.beat;
   for (let row = r0; row <= Math.min(r1, laneCount - 1); row++)
-    ctx.fillRect(0, vp.rowToY(row) + vp.rowHeight - 1, width, 1);
+    ctx.fillRect(0, vp.snap(vp.rowToY(row) + vp.rowHeight - 1), width, 1);
   if (beat * vp.pxPerTick >= 8) {
     ctx.fillStyle = theme.beat;
     for (let t = Math.floor(t0 / beat) * beat; t <= t1; t += beat)
-      if (t % every !== 0) ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
+      if (t % every !== 0) ctx.fillRect(vp.tickToPx(t), 0, 1, height);
   }
   ctx.fillStyle = theme.bar;
   for (let t = Math.floor(t0 / every) * every; t <= t1; t += every)
-    ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
+    ctx.fillRect(vp.tickToPx(t), 0, 1, height);
   // Past the last lane.
-  const lanesEnd = vp.rowToY(laneCount);
+  const lanesEnd = vp.snap(vp.rowToY(laneCount));
   if (lanesEnd < height) {
     ctx.fillStyle = theme.shade;
     ctx.fillRect(0, lanesEnd, width, height - lanesEnd);
@@ -351,7 +351,7 @@ export function drawPatternBody(
       const repStart = clip.start - clip.offset + rep * pv.length;
       if (repStart >= to) break;
       // On whole device pixels, so every repeat is as sharp as the others.
-      ctx.drawImage(bitmap, Math.round(vp.tickToX(repStart) * dpr) / dpr, y, bitmap.width / dpr, bitmap.height / dpr);
+      ctx.drawImage(bitmap, vp.tickToPx(repStart), y, bitmap.width / dpr, bitmap.height / dpr);
     }
     ctx.restore();
     return;
@@ -362,7 +362,7 @@ export function drawPatternBody(
   for (let rep = first; ; rep++) {
     const repStart = clip.start - clip.offset + rep * pv.length;
     if (repStart >= to) break;
-    const rx = vp.tickToX(repStart);
+    const rx = vp.tickToPx(repStart);
     if (joined) {
       for (let level = 0; level < VEL_STEPS.length; level++)
         if (any[level]) (joined[level] as Path2D).addPath(paths[level] as Path2D, new DOMMatrix().translate(rx, y));
@@ -497,8 +497,8 @@ export function drawPlaylistRuler(
   ctx.fillRect(0, top, vp.width, 1);
   if (loop) {
     // The loop: a soft gold band with rounded ends behind the bar numbers.
-    const x0 = vp.tickToX(loop.start);
-    const x1 = vp.tickToX(loop.end);
+    const x0 = vp.tickToPx(loop.start);
+    const x1 = vp.tickToPx(loop.end);
     ctx.beginPath();
     roundRectPath(ctx, x0 + 0.5, 2.5, Math.max(1, x1 - x0 - 1), top - 5, (top - 5) / 2);
     ctx.fillStyle = theme.accentSoft;
@@ -515,13 +515,13 @@ export function drawPlaylistRuler(
   if (beat * vp.pxPerTick >= 10) {
     ctx.fillStyle = theme.lineFaint;
     for (let t = Math.floor(t0 / beat) * beat; t <= t1; t += beat)
-      if (t % bar !== 0) ctx.fillRect(Math.round(vp.tickToX(t)), top - 3, 1, 3);
+      if (t % bar !== 0) ctx.fillRect(vp.tickToPx(t), top - 3, 1, 3);
   }
   ctx.font = `500 10px ${theme.font}`;
   ctx.textBaseline = 'top';
   const tick = alpha(theme.textFaint, 0.6);
   for (let b = Math.floor(t0 / bar); b * bar <= t1; b++) {
-    const x = Math.round(vp.tickToX(b * bar));
+    const x = vp.tickToPx(b * bar);
     const labelled = b % labelEvery === 0;
     ctx.fillStyle = labelled ? tick : theme.lineFaint;
     ctx.fillRect(x, top - (labelled ? 7 : 4), 1, labelled ? 7 : 4);
@@ -531,10 +531,10 @@ export function drawPlaylistRuler(
     }
   }
   if (songEnd > 0) {
-    const x = vp.tickToX(songEnd);
+    const x = vp.tickToPx(songEnd);
     if (x >= 0 && x <= vp.width) {
       ctx.fillStyle = alpha(theme.textFaint, 0.7);
-      ctx.fillRect(Math.round(x), 0, 1, h);
+      ctx.fillRect(x, 0, 1, h);
     }
   }
   // Markers: a small pill on the lane with the name (and a Studio mark when there is room).
@@ -544,8 +544,8 @@ export function drawPlaylistRuler(
   for (let i = 0; i < placed.length; i++) {
     const m = placed[i] as Marker;
     const next = placed[i + 1];
-    const x0 = Math.max(0, vp.tickToX(m.tick));
-    const x1 = Math.min(vp.width, vp.tickToX(next ? next.tick : Math.max(songEnd, m.tick + bar)));
+    const x0 = Math.max(0, vp.tickToPx(m.tick));
+    const x1 = Math.min(vp.width, vp.tickToPx(next ? next.tick : Math.max(songEnd, m.tick + bar)));
     if (x1 <= x0) continue;
     ctx.fillStyle = alpha(markerColor(m, theme), 0.07);
     ctx.fillRect(x0, top + 1, x1 - x0, h - top - 2);
@@ -556,9 +556,9 @@ export function drawPlaylistRuler(
   const cy = fy + FLAG_H / 2;
   for (let i = 0; i < placed.length; i++) {
     const m = placed[i] as Marker;
-    const x = Math.round(vp.tickToX(m.tick));
+    const x = vp.tickToPx(m.tick);
     const next = placed[i + 1];
-    const limit = next ? vp.tickToX(next.tick) - 2 : vp.width;
+    const limit = next ? vp.tickToPx(next.tick) - 2 : vp.width;
     const textW = ctx.measureText(m.name).width;
     const ask = limit - x >= textW + 12 + MARKER_ASK_WIDTH;
     const x1 = Math.max(x + 8, Math.min(limit, x + textW + 12 + (ask ? MARKER_ASK_WIDTH : 0)));
@@ -612,7 +612,7 @@ export function drawMarkerLines(
   theme: TimelineTheme,
 ): void {
   for (const m of placedMarkers(markers)) {
-    const x = Math.round(vp.tickToX(m.tick));
+    const x = vp.tickToPx(m.tick);
     if (x < 0 || x > vp.width) continue;
     ctx.fillStyle = alpha(markerColor(m, theme), 0.3);
     ctx.fillRect(x, 0, 1, vp.height);

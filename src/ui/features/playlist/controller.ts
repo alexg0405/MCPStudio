@@ -53,7 +53,7 @@ import {
 import { clipBox, type ClipBox } from './clip-geometry';
 import { alpha, fitCanvas, inkOn, mix, onThemeChange, readTheme, roundRectPath } from '../../timeline/canvas';
 import { clipPaint } from './clip-paint';
-import { clamp, snapToDevicePixel, Viewport } from '../../timeline/viewport';
+import { clamp, Viewport } from '../../timeline/viewport';
 import {
   CLIP_MENU_MIN_WIDTH,
   CLIP_MENU_SIZE,
@@ -462,7 +462,7 @@ export class PlaylistController {
     }
     // A take being recorded grows every frame.
     if (this.s.audioRecorder.live.getState().take) this.invalidate('overlay');
-    this.updatePlayhead(dpr, snapPx);
+    this.updatePlayhead(snapPx);
   }
 
   /** The take being recorded: a red clip from where it started to now, with its waveform so far. */
@@ -470,8 +470,8 @@ export class PlaylistController {
     const { vp } = this;
     const p = this.project();
     const theme = readTheme();
-    const x0 = vp.tickToX(live.start);
-    const x1 = Math.max(x0 + 2, vp.tickToX(Math.max(live.start, live.now)));
+    const x0 = vp.tickToPx(live.start);
+    const x1 = Math.max(x0 + 2, vp.tickToPx(Math.max(live.start, live.now)));
     const y = vp.rowToY(live.lane) + 1;
     const h = vp.rowHeight - 2;
     if (x1 < 0 || x0 > vp.width || y > vp.height || y + h < 0) return;
@@ -540,16 +540,18 @@ export class PlaylistController {
     if (!d && this.hover) this.drawHoverEdge(ctx, this.hover.clip);
     if (d?.kind === 'marquee') {
       const theme = readTheme();
-      const x = Math.min(d.x0, d.x1);
-      const y = Math.min(d.y0, d.y1);
+      const x = vp.snap(Math.min(d.x0, d.x1));
+      const y = vp.snap(Math.min(d.y0, d.y1));
+      const x1 = vp.snap(Math.max(d.x0, d.x1));
+      const y1 = vp.snap(Math.max(d.y0, d.y1));
       ctx.fillStyle = theme.selectTint;
       ctx.strokeStyle = theme.select;
-      ctx.fillRect(x, y, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-      ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+      ctx.fillRect(x, y, x1 - x, y1 - y);
+      ctx.strokeRect(x + 0.5, y + 0.5, x1 - x, y1 - y);
     } else if (this.hover && !d && this.s.editor.getState().playlist.tool === 'slice' && this.sliceX >= 0) {
       const row = this.laneRow(this.project(), this.hover.clip.laneId);
       ctx.fillStyle = readTheme().danger;
-      ctx.fillRect(Math.round(this.sliceX), vp.rowToY(row), 1, vp.rowHeight);
+      ctx.fillRect(vp.snap(this.sliceX), vp.snap(vp.rowToY(row)), 1, vp.rowHeight);
     } else if ((d?.kind === 'point' || d?.kind === 'tension') && d.readout) {
       // The value being set, in its units (and where).
       drawReadout(ctx, readTheme(), d.readout.x, d.readout.y, d.readout.text, vp);
@@ -739,13 +741,13 @@ export class PlaylistController {
     this.invalidate('grid', 'clips', 'overlay', 'ruler');
   }
 
-  private updatePlayhead(dpr: number, snapPx: string): void {
+  private updatePlayhead(snapPx: string): void {
     const { engine, view } = this.s;
     const v = view.getState();
     let x = NaN;
     if (v.mode === 'song') x = this.vp.tickToX(engine.playing ? engine.playhead() : v.songStart);
     // The line sits on a whole device pixel, like the grid it is drawn over.
-    const at = Number.isFinite(x) ? snapToDevicePixel(x, dpr) : NaN;
+    const at = Number.isFinite(x) ? this.vp.snap(x) : NaN;
     const el = this.els.playhead;
     if (el.dataset.snapPx !== snapPx) el.dataset.snapPx = snapPx;
     if (at === this.lastPlayheadX) return;

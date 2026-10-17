@@ -12,6 +12,8 @@ export class Viewport {
    * per frame by `snapForFrame`, so the grid, clips, ruler, overlay and playhead all share one offset.
    */
   drawShift = 0;
+  /** Device pixels per CSS pixel for this frame (set by snapForFrame). */
+  dpr = 1;
   /** Row at the top edge (fractional). */
   scrollRow = 0;
   rowHeight = 14;
@@ -38,10 +40,24 @@ export class Viewport {
    * Returns the scroll in whole device pixels, the offset the picture is drawn at.
    */
   snapForFrame(dpr: number): number {
+    this.dpr = dpr;
     const scrollPx = this.scrollTick * this.pxPerTick;
     const snapped = snapToDevicePixel(scrollPx, dpr);
     this.drawShift = scrollPx - snapped;
     return Math.round(snapped * dpr);
+  }
+
+  /** A CSS-pixel position on the whole device pixel nearest it (this frame's dpr). */
+  snap(cssPx: number): number {
+    return snapToDevicePixel(cssPx, this.dpr);
+  }
+
+  /**
+   * A tick's x on a whole device pixel. Grid lines, ruler marks, clip and note edges all use it, so the edges
+   * of one tick land on the same device pixel whatever the zoom, scroll or pixel ratio.
+   */
+  tickToPx(tick: number): number {
+    return this.snap(this.tickToX(tick));
   }
 
   rowToY(row: number): number {

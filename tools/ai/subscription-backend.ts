@@ -1,7 +1,7 @@
-import { spawn } from 'node:child_process';
-import { access, constants, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { join } from 'node:path';
+import { firstExecutable, onPath, run as runCli, type RunResult } from './cli.ts';
 import { AiServerError, type Backend, type BackendStatus, type BeatReply, type BeatRequest } from './types.ts';
 
 /**
@@ -16,7 +16,6 @@ import { AiServerError, type Backend, type BackendStatus, type BeatReply, type B
  * structured output, and API credentials removed from the environment so the subscription is used.
  */
 
-const TIMEOUT_MS = 240_000;
 export const INSTALL_HINT =
   'Install Claude Code (in Terminal: curl -fsSL https://claude.ai/install.sh | bash), then run `claude auth login` and sign in with your Claude account.';
 const SIGN_IN_HINT =
@@ -44,69 +43,20 @@ function childEnv(): NodeJS.ProcessEnv {
 /** Where Claude Code's installers put the `claude` command (the dev server's PATH may lack it). */
 function candidates(override: string | undefined): string[] {
   const home = homedir();
-  const onPath = (process.env.PATH ?? '')
-    .split(delimiter)
-    .filter(Boolean)
-    .map((d) => join(d, 'claude'));
   return [
     ...(override ? [override] : []),
     join(home, '.local', 'bin', 'claude'),
-    ...onPath,
+    ...onPath('claude'),
     '/opt/homebrew/bin/claude',
     '/usr/local/bin/claude',
     join(home, '.npm-global', 'bin', 'claude'),
   ];
 }
 
-async function findClaude(override: string | undefined): Promise<string | null> {
-  for (const path of candidates(override)) {
-    try {
-      await access(path, constants.X_OK);
-      return path;
-    } catch {
-      /* not here */
-    }
-  }
-  return null;
-}
+const findClaude = (override: string | undefined) => firstExecutable(candidates(override));
 
-interface RunResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-function run(
-  bin: string,
-  args: string[],
-  opts: { input?: string; cwd: string; signal?: AbortSignal; timeoutMs?: number },
-): Promise<RunResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd: opts.cwd, env: childEnv(), stdio: ['pipe', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    // SIGINT ends the turn cleanly; SIGTERM if it doesn't go.
-    const stop = () => {
-      child.kill('SIGINT');
-      setTimeout(() => child.kill('SIGTERM'), 5000).unref();
-    };
-    const timer = setTimeout(stop, opts.timeoutMs ?? TIMEOUT_MS);
-    opts.signal?.addEventListener('abort', stop, { once: true });
-    child.stdout.on('data', (d: Buffer) => (stdout += d.toString('utf8')));
-    child.stderr.on('data', (d: Buffer) => (stderr += d.toString('utf8')));
-    child.on('error', (e) => {
-      clearTimeout(timer);
-      reject(e);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      opts.signal?.removeEventListener('abort', stop);
-      if (opts.signal?.aborted) reject(new DOMException('Cancelled.', 'AbortError'));
-      else resolve({ code, stdout, stderr });
-    });
-    child.stdin.end(opts.input ?? '');
-  });
-}
+const run = (bin: string, args: string[], opts: { input?: string; cwd: string; signal?: AbortSignal; timeoutMs?: number }) =>
+  runCli(bin, args, { ...opts, env: childEnv() });
 
 /** The fields of `--output-format json`'s result object this backend reads. */
 interface CliResult {

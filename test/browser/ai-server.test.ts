@@ -17,13 +17,43 @@ describe('AI server endpoints', () => {
     text: 'make a beat',
   };
 
-  it('reports both backends', async () => {
+  it('reports all three backends', async () => {
     const res = await fetch('/api/ai/status');
     expect(res.ok).toBe(true);
     const body = (await res.json()) as Record<string, { ok: boolean; reason?: string }>;
+    expect(Object.keys(body).sort()).toEqual(['api', 'codex', 'subscription']);
     expect(typeof body.subscription?.ok).toBe('boolean');
     expect(typeof body.api?.ok).toBe('boolean');
+    expect(typeof body.codex?.ok).toBe('boolean');
     if (!body.api!.ok) expect(body.api!.reason).toMatch(/ANTHROPIC_API_KEY/);
+    // Not set up: it says what to do (install or sign in); set up: no reason.
+    if (!body.codex!.ok) expect(body.codex!.reason).toMatch(/codex login|Install the ChatGPT app|ChatGPT/i);
+    else expect(body.codex!.reason).toBeUndefined();
+  });
+
+  // (These requests have an empty prompt on purpose: they get as far as the checks of the backend and the model and
+  // stop at "Missing prompt", so a machine with Codex signed in never makes a real model call from a test.)
+  it('accepts the codex backend with Codex model ids, or none for Codex’s default', async () => {
+    for (const model of ['', 'gpt-5.5', 'gpt-5.5-codex', 'o4-mini']) {
+      const res = await post({ ...valid, backend: 'codex', model, text: '' });
+      expect(res.status, model).toBe(400);
+      expect(((await res.json()) as { error: { message: string } }).error.message).toBe('Missing prompt.');
+    }
+  });
+
+  it('checks the model against its backend', async () => {
+    for (const bad of [
+      { backend: 'codex', model: 'Not A Model!' },
+      { backend: 'codex', model: '-gpt' },
+      { backend: 'codex', model: 'x'.repeat(65) },
+      { backend: 'subscription', model: '' },
+      { backend: 'subscription', model: 'gpt-5.5' },
+      { backend: 'api', model: 'gpt-5.5' },
+    ]) {
+      const res = await post({ ...valid, ...bad, text: '' });
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(((await res.json()) as { error: { message: string } }).error.message).toBe('Unknown model.');
+    }
   });
 
   it('only serves AGstudio itself', async () => {

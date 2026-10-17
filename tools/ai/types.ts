@@ -1,8 +1,9 @@
 /** What the beat assistant asks the dev server for, and what it gets back. */
-export type BackendId = 'subscription' | 'api';
+export type BackendId = 'subscription' | 'api' | 'codex';
 
 export interface BeatRequest {
   backend: BackendId;
+  /** A Claude model id; for the codex backend a Codex model id, or empty for Codex's own default. */
   model: string;
   /** The conversation so far (from an earlier reply), or null for a new one. */
   session: string | null;

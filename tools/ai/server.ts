@@ -1,21 +1,25 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Plugin } from 'vite';
 import { apiBackend } from './api-backend.ts';
+import { codexBackend } from './codex-backend.ts';
 import { subscriptionBackend } from './subscription-backend.ts';
 import { AiServerError, type Backend, type BackendId, type BeatRequest } from './types.ts';
 
 /**
  * The AI studio's server side, on the dev and preview servers (the browser never holds a key):
  *
- *   GET  /api/ai/status → { subscription: BackendStatus, api: BackendStatus }
+ *   GET  /api/ai/status → { subscription: BackendStatus, api: BackendStatus, codex: BackendStatus }
  *   POST /api/ai/chat   → BeatRequest → BeatReply, or { error: { type, message } } (also /api/ai/beat)
  *
- * Two ways to reach Claude: the musician's Claude subscription through their signed-in Claude Code
- * CLI, or an API key from .env.local through the Anthropic SDK. Only same-origin requests carrying
+ * Three ways to reach an AI: the musician's Claude subscription through their signed-in Claude Code
+ * CLI, an API key from .env.local through the Anthropic SDK, or their ChatGPT plan through their signed-in
+ * Codex CLI. Only same-origin requests carrying
  * the `x-agstudio` header are served (a cross-origin page can't send it without a preflight).
  */
 const MAX_BODY_BYTES = 1024 * 1024;
-const MODEL = /^claude-[a-z0-9.-]{1,64}$/;
+const CLAUDE_MODEL = /^claude-[a-z0-9.-]{1,64}$/;
+/** Codex model ids ("gpt-5.5", "gpt-5.5-codex"…); empty means Codex's own default. */
+const CODEX_MODEL = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
 
 type Next = (err?: unknown) => void;
 type Middleware = (req: IncomingMessage, res: ServerResponse, next: Next) => void;
@@ -64,10 +68,13 @@ function parseRequest(raw: string): BeatRequest {
     throw new AiServerError('The request body is not valid JSON.', 'invalid_request_error', 400);
   }
   const str = (v: unknown, max: number) => typeof v === 'string' && v.length > 0 && v.length <= max;
-  if (b.backend !== 'subscription' && b.backend !== 'api')
+  if (b.backend !== 'subscription' && b.backend !== 'api' && b.backend !== 'codex')
     throw new AiServerError('Unknown backend.', 'invalid_request_error', 400);
-  if (!str(b.model, 80) || !MODEL.test(b.model as string))
-    throw new AiServerError('Unknown model.', 'invalid_request_error', 400);
+  const modelOk =
+    b.backend === 'codex'
+      ? b.model === '' || (str(b.model, 80) && CODEX_MODEL.test(b.model as string))
+      : str(b.model, 80) && CLAUDE_MODEL.test(b.model as string);
+  if (!modelOk) throw new AiServerError('Unknown model.', 'invalid_request_error', 400);
   if (!str(b.system, 60_000) || !str(b.text, 100_000))
     throw new AiServerError('Missing prompt.', 'invalid_request_error', 400);
   if (typeof b.schema !== 'object' || b.schema === null || Array.isArray(b.schema))
@@ -86,13 +93,18 @@ export function aiServer(env: () => Record<string, string | undefined>): Plugin 
   const backends: Record<BackendId, Backend> = {
     api: apiBackend(() => env().ANTHROPIC_API_KEY || undefined),
     subscription: subscriptionBackend(() => env().AGSTUDIO_CLAUDE_BIN || undefined),
+    codex: codexBackend(() => env().AGSTUDIO_CODEX_BIN || undefined),
   };
 
   const handle = async (req: IncomingMessage, res: ServerResponse, next: Next) => {
     const path = (req.url ?? '').split('?')[0];
     if (path === '/status' && req.method === 'GET') {
-      const [subscription, api] = await Promise.all([backends.subscription.status(), backends.api.status()]);
-      send(res, 200, { subscription, api });
+      const [subscription, api, codex] = await Promise.all([
+        backends.subscription.status(),
+        backends.api.status(),
+        backends.codex.status(),
+      ]);
+      send(res, 200, { subscription, api, codex });
       return;
     }
     if (path !== '/chat' && path !== '/beat') return next();
@@ -100,7 +112,7 @@ export function aiServer(env: () => Record<string, string | undefined>): Plugin 
     if (req.headers['x-agstudio'] !== '1' || !sameOrigin(req))
       return fail(res, 403, 'permission_error', 'Only AGstudio itself may use this endpoint.');
     const abort = new AbortController();
-    // The page went away (or the musician pressed Stop): stop the Claude call too.
+    // The page went away (or the musician pressed Stop): stop the AI call too.
     res.on('close', () => {
       if (!res.writableEnded) abort.abort();
     });

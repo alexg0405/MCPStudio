@@ -1,5 +1,5 @@
 import { targetKey } from '@core/model/targets';
-import { useCallback, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react';
+import { memo, useCallback, useSyncExternalStore, type MouseEvent as ReactMouseEvent } from 'react';
 import type { FxSlot, InsertId } from '@core/model/types';
 import { MAX_FX_SLOTS, setFxSlotMix } from '@core/ops/mixer';
 import { insertLabel } from '@core/query/mixer';
@@ -24,7 +24,17 @@ function useGraphLatency(): number {
   return useSyncExternalStore(subscribe, () => engine.graphLatency());
 }
 
-function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: FxSlot; index: number; count: number }) {
+const SlotRow = memo(function SlotRow({
+  insertId,
+  slot,
+  index,
+  count,
+}: {
+  insertId: InsertId;
+  slot: FxSlot;
+  index: number;
+  count: number;
+}) {
   const services = useServices();
   const def = usePluginDef(slot.plugin.pluginId);
   const mix = useGestureEdit<number>('Effect mix', (d, v) => setFxSlotMix(d, insertId, slot.id, v), `fxmix:${slot.id}`);
@@ -98,9 +108,17 @@ function SlotRow({ insertId, slot, index, count }: { insertId: InsertId; slot: F
       />
     </div>
   );
-}
+});
 
-function EmptySlot({ insertId, index, first }: { insertId: InsertId; index: number; first: boolean }) {
+const EmptySlot = memo(function EmptySlot({
+  insertId,
+  index,
+  first,
+}: {
+  insertId: InsertId;
+  index: number;
+  first: boolean;
+}) {
   const services = useServices();
   const add = (e: ReactMouseEvent) => {
     e.preventDefault();
@@ -126,15 +144,18 @@ function EmptySlot({ insertId, index, first }: { insertId: InsertId; index: numb
       <span className={styles.slotName}>{first ? '+ Add effect' : ''}</span>
     </button>
   );
-}
+});
 
 /** The selected insert's ten effect slots (FL's mixer track properties). */
 export function FxRack({ insertId }: { insertId: InsertId }) {
-  const insert = useDoc((pr) => pr.mixer.inserts[insertId]);
+  // The slot list and the name, not the whole insert: dragging the track's fader changes the insert object on
+  // every move, and nothing in the rack depends on its volume.
+  const fx = useDoc((pr) => pr.mixer.inserts[insertId]?.fx);
+  const insertNameNow = useDoc((pr) => pr.mixer.inserts[insertId]?.name);
   const label = useDoc((pr) => insertLabel(pr, insertId));
   const latency = useGraphLatency();
-  if (!insert) return null;
-  const fx = insert.fx;
+  if (!fx || insertNameNow === undefined) return null;
+  const insert = { name: insertNameNow };
   const ms = (latency * 1000).toFixed(1);
   return (
     <div className={styles.rack}>

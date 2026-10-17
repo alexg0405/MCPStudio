@@ -525,7 +525,9 @@ export function ChannelRack() {
   const services = useServices();
   const order = useDoc((pr) => pr.channelOrder);
   const patternId = useView((s) => s.currentPatternId);
-  const pattern = useDoc((pr) => (patternId ? pr.patterns[patternId] : undefined));
+  // Only the step count, not the pattern: a step click makes a new pattern object, and the rack (150 rows in a long
+  // song) re-rendered on every one only to find that every row is unchanged.
+  const stepCountOf = useDoc((pr) => (patternId ? pr.patterns[patternId]?.stepCount : undefined));
   const swing = useDoc((pr) => pr.transport.swing);
   const swingEdit = useGestureEdit<number>('Swing', (d, v) => setSwing(d, v), 'swing');
   /** Where a drag would drop: a channel, or the end of the rack ('new'). */
@@ -546,7 +548,7 @@ export function ChannelRack() {
     };
   }, []);
 
-  if (!patternId || !pattern)
+  if (!patternId || stepCountOf === undefined)
     return (
       <div className={styles.empty}>
         No pattern is open. Pick one under Project patterns in the browser, or click “+ New pattern” there.
@@ -559,7 +561,7 @@ export function ChannelRack() {
   const noChannel = 'Select an instrument channel first (click its name)';
   const targetOf = (e: React.DragEvent) =>
     (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
-  const stepCount = pattern.stepCount;
+  const stepCount = stepCountOf;
 
   return (
     <div className={styles.rack}>

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { createStore, useStore } from 'zustand';
 import type { Services } from '@app/services';
 import { holdModal } from '../../controls/Dialog';
@@ -19,6 +19,48 @@ export function togglePalette(query = ''): void {
 }
 
 const MAX_ROWS = 80;
+/** Row height in px (the CSS fixes it), and the list's padding: only the rows near the viewport are in the DOM. */
+const ROW_H = 32;
+const LIST_PAD = 6;
+/** Rows drawn below the first visible one: the list is at most ~560 px tall, so this always covers it. */
+const WINDOW_ROWS = 20;
+const OVERSCAN = 3;
+
+const Row = memo(function Row({
+  entry,
+  index,
+  isActive,
+  hover,
+  run,
+}: {
+  entry: ActionEntry;
+  index: number;
+  isActive: boolean;
+  hover(i: number): void;
+  run(e: ActionEntry): void;
+}) {
+  return (
+    <div
+      id={`ag-palette-${index}`}
+      data-index={index}
+      role="option"
+      aria-selected={isActive}
+      aria-disabled={entry.disabled || undefined}
+      className={`${styles.row} ${isActive ? styles.rowActive : ''} ${entry.disabled ? styles.rowDisabled : ''} ${
+        entry.key === 'ai' ? styles.rowAi : ''
+      }`}
+      onPointerMove={() => !isActive && hover(index)}
+      onClick={() => run(entry)}
+    >
+      <span className={styles.check}>
+        {entry.key === 'ai' ? <Icon name="studio" size={13} /> : entry.checked ? '✓' : ''}
+      </span>
+      <span className={styles.label}>{entry.label}</span>
+      <span className={styles.path}>{entry.path.join(' › ')}</span>
+      {entry.chord && <kbd className={styles.chord}>{entry.chord}</kbd>}
+    </div>
+  );
+});
 
 /** Hands the words to the AI studio: it opens and does it (one undoable change). */
 function askAi(s: Services, text: string): void {
@@ -41,6 +83,8 @@ function Palette() {
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState(() => paletteStore.getState().query);
   const [active, setActive] = useState(0);
+  // First row in the window: follows the list's scroll (the list can hold 80 rows; ~12 show).
+  const [scrollRow, setScrollRow] = useState(0);
   // Gathered once per opening: menus and enabled states as they are right now.
   const entries = useMemo(() => collectActions(services), [services]);
   const recent = useMemo(() => services.prefs.getState().recentActions, [services]);
@@ -61,6 +105,8 @@ function Palette() {
   }, [entries, query, recent, services]);
 
   const close = () => paletteStore.setState({ open: false, query: '' });
+  const runRef = useRef<(e: ActionEntry | undefined) => void>(() => {});
+  const runStable = useCallback((e: ActionEntry) => runRef.current(e), []);
   const run = (e: ActionEntry | undefined) => {
     if (!e || e.disabled) return;
     close();
@@ -84,7 +130,17 @@ function Palette() {
   }, []);
 
   useLayoutEffect(() => {
-    listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: 'nearest' });
+    runRef.current = run;
+  });
+
+  // Keep the active row in view by arithmetic (rows outside the window are not in the DOM to scroll to).
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const top = LIST_PAD + active * ROW_H;
+    if (top < list.scrollTop) list.scrollTop = top - LIST_PAD;
+    else if (top + ROW_H + LIST_PAD > list.scrollTop + list.clientHeight)
+      list.scrollTop = top + ROW_H + LIST_PAD - list.clientHeight;
   }, [active]);
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -121,28 +177,36 @@ function Palette() {
           aria-controls="ag-palette-list"
           aria-activedescendant={current ? `ag-palette-${active}` : undefined}
         />
-        <div ref={listRef} id="ag-palette-list" className={styles.list} role="listbox">
+        <div
+          ref={listRef}
+          id="ag-palette-list"
+          className={styles.list}
+          role="listbox"
+          onScroll={(ev) => {
+            const first = Math.max(0, Math.floor((ev.currentTarget.scrollTop - LIST_PAD) / ROW_H));
+            if (first !== scrollRow) setScrollRow(first);
+          }}
+        >
           {rows.length === 0 && <div className={styles.empty}>Type to search every menu and command.</div>}
-          {rows.map((e, i) => (
-            <div
-              key={e.key}
-              id={`ag-palette-${i}`}
-              data-index={i}
-              role="option"
-              aria-selected={i === active}
-              aria-disabled={e.disabled || undefined}
-              className={`${styles.row} ${i === active ? styles.rowActive : ''} ${e.disabled ? styles.rowDisabled : ''} ${
-                e.key === 'ai' ? styles.rowAi : ''
-              }`}
-              onPointerMove={() => i !== active && setActive(i)}
-              onClick={() => run(e)}
-            >
-              <span className={styles.check}>{e.key === 'ai' ? <Icon name="studio" size={13} /> : e.checked ? '✓' : ''}</span>
-              <span className={styles.label}>{e.label}</span>
-              <span className={styles.path}>{e.path.join(' › ')}</span>
-              {e.chord && <kbd className={styles.chord}>{e.chord}</kbd>}
-            </div>
-          ))}
+          {(() => {
+            // The window always holds the active row (the input's aria-activedescendant points at it).
+            const from = Math.max(0, Math.min(scrollRow, active) - OVERSCAN);
+            const to = Math.min(rows.length, Math.max(scrollRow + WINDOW_ROWS, active + 1 + OVERSCAN));
+            return (
+              <div style={{ paddingTop: from * ROW_H, paddingBottom: (rows.length - to) * ROW_H }}>
+                {rows.slice(from, to).map((e, k) => (
+                  <Row
+                    key={e.key}
+                    entry={e}
+                    index={from + k}
+                    isActive={from + k === active}
+                    hover={setActive}
+                    run={runStable}
+                  />
+                ))}
+              </div>
+            );
+          })()}
         </div>
         <div className={styles.footer}>
           <span className={styles.footerHint}>

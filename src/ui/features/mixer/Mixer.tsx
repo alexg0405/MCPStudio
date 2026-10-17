@@ -34,6 +34,9 @@ function routedChannels(project: Project, id: InsertId): string {
   return names.join(', ');
 }
 
+const formatPan = (v: unknown) => panText(Number(v));
+const formatSend = (v: unknown) => formatGain(Number(v));
+
 /** "Centre", "40% left", "100% right". */
 function panText(v: number): string {
   const pct = Math.round(Math.abs(v) * 100);
@@ -214,7 +217,7 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
         size={22}
         bipolar
         label={`${name} pan`}
-        format={(v) => panText(Number(v))}
+        format={formatPan}
         param={targetKey({ kind: 'insert', insertId: id, param: 'pan' })}
         {...pan}
       />
@@ -256,7 +259,7 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
                 value={send.level}
                 size={18}
                 label={`Send to ${name}`}
-                format={(v) => formatGain(Number(v))}
+                format={formatSend}
                 param={targetKey({ kind: 'route', insertId: current, to: id })}
                 {...sendLevel}
               />

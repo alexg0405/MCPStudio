@@ -9,6 +9,8 @@ import {
   LEVEL_TARGETS,
   levelMoves,
   limiterInput,
+  limiterMax,
+  LIMITER_INPUT_MAX_DB,
   PRE_LIMITER_LUFS,
   tameMasterClipper,
   type BusLevel,
@@ -91,6 +93,9 @@ describe('level math', () => {
     expect(limiterInput('lofi')).toBe(3);
     expect(limiterInput('pop', -10)).toBe(0);
     expect(limiterInput('trap', -30)).toBe(10);
+    // A loud target does not push the Limiter past what it gives cleanly: the Maximizer takes over there.
+    expect(limiterInput('dubstep', -20, -8)).toBe(LIMITER_INPUT_MAX_DB);
+    expect(limiterMax('bigroom')).toBe(LIMITER_INPUT_MAX_DB);
   });
 });
 

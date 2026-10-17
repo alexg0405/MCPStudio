@@ -1,7 +1,7 @@
 /**
  * Auto-level through the real engine: a song Studio builds in one answer (a beat on the
  * playlist and the role mix), leveled for its style; then measured on its own: every bus within
- * 1.5 dB of its style level around the kick, the master within 1.5 dB of the style's loudness and
+ * 1.5 dB of its style level around the kick, the master within 0.5 dB of the style's loudness and
  * its true peak at most −0.9 dBTP. And it is one undo step with the answer.
  */
 import { afterAll, describe, expect, it } from 'vitest';
@@ -48,7 +48,7 @@ describe.concurrent('auto-level', () => {
         `${style}: ${lines.join(', ')}; master ${m.master.lufs.toFixed(2)} LUFS (target ${t.master}), true peak ${m.master.truePeakDb!.toFixed(2)} dBTP; limiter input ${res!.limiterInput?.toFixed(2)} dB; ${res!.changes.join(' · ')}`,
       );
       for (const r of ['drums', 'bass', 'chords', 'lead'] as const) expect(Math.abs(rel(r) - t[r]), r).toBeLessThanOrEqual(1.5);
-      expect(Math.abs(m.master.lufs - t.master)).toBeLessThanOrEqual(1.5);
+      expect(Math.abs(m.master.lufs - t.master)).toBeLessThanOrEqual(0.5);
       expect(m.master.truePeakDb!).toBeLessThanOrEqual(-0.9);
       expect(progress).toContain('Kick');
       expect(progress).toContain('The mix');
@@ -82,7 +82,7 @@ describe.concurrent('auto-level', () => {
     expect(res!.buses).toEqual([]);
     const m = await measureSong(s, BARS);
     console.log(`hand-built trap: master ${m.master.lufs.toFixed(2)} LUFS, true peak ${m.master.truePeakDb!.toFixed(2)} dBTP; ${res!.changes.join(' · ')}`);
-    expect(Math.abs(m.master.lufs - LEVEL_TARGETS.trap.master)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(m.master.lufs - LEVEL_TARGETS.trap.master)).toBeLessThanOrEqual(0.5);
     expect(m.master.truePeakDb!).toBeLessThanOrEqual(-0.9);
     // Every channel moved by the same amount: the balance is the musician's.
     const after = volumes();

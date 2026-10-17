@@ -2155,6 +2155,7 @@ description and five or more descriptive presets, so the AI catalog (`app/ai/cat
 |---|---|---|
 | EQ Pro (`agstudio.eq-pro`) | 8 bands (bell, shelves, 12/24/48 dB/oct cuts, notch) of SDK Svf sections designed by `design.kernel.ts`, which the editor also draws from; bands crossfade when switched; all off = bit-exact | 0 |
 | Limiter (`agstudio.limiter`) | look-ahead brickwall: detector (true peak 4× or sample peak, same timing) → sliding minimum over look-ahead + detector span → release → box filter as long as the look-ahead; the delayed audio × that gain cannot exceed the ceiling | 5 ms + 14 frames |
+| Maximizer (`agstudio.maximizer`) | the Limiter's core (`LookaheadLimiter`, true peaks, stereo-linked) holds the peaks `clip` dB over the ceiling, then a 2× oversampled soft clip (identity under the knee, a smooth cubic to the ceiling) rounds those dB off; meters for the limiting and the clip. Goes before the master Limiter; see "Loudness stage" | 5 ms + 14 frames |
 | Multiband (`agstudio.multiband`) | Linkwitz-Riley 3-way (low band through the upper allpass: sums flat), a compressor per band (evaluated every 4 frames on the peak, gain ramped), solo/bypass | 0 |
 | Transient Shaper (`agstudio.transient`) | fast/slow attack and fast/slow release envelope pairs → attack and sustain gains in dB | 0 |
 | Saturator (`agstudio.saturator`) | tape/tube/clip at 2× or 4× (SDK Oversampler); dry/wet mixed in the oversampled domain; tilt EQ | 0 |
@@ -2638,16 +2639,19 @@ sounds, a role mix and genre loudness.
 
 - `levelMoves` (pure): every bus to its style offset from the kick (`LEVEL_TARGETS`; the first bus
   present stands in for a missing kick), moves clamped −12…+6 dB, then one trim so the buses sum to
-  −16 LUFS (power sum); when a fader would pass +5.6 dB the trim stops for all of them and the Limiter
-  makes up the loudness. `limiterInput(style, sum)` = target − sum, 0…10 dB.
+  −16 LUFS (power sum); when a fader would pass +5.6 dB the trim stops for all of them and the master
+  stage makes up the loudness. `limiterInput(style, sum)` = target − sum, 0…10 dB (`LIMITER_INPUT_MAX_DB`).
 - `autoLevel`: the busiest section's first 8 bars (most channels playing; or `fromTick`/`bars`; the
   pattern on a loop with no song; at most 20 s), one stem per role bus (`planStems`/`stemProject`, the
   master chain bypassed; other stems' tracks muted, so the reverb returns count with their sources),
   measured with `analysis/measure.ts`; one edit for the faders and the Limiter input, amended into the
-  answer's undo entry (or its own); one render of the mix to check, and one Limiter correction when it is
-  more than 1 dB off. Progress per bus, Stop (AbortSignal). Measured (`test/browser/mix-level.test.ts`):
-  trap buses exactly on target, master −10.78 LUFS, −1.05 dBTP; lo-fi buses within 0.25 dB, master
-  −13.23 LUFS, −1.05 dBTP.
+  answer's undo entry (or its own); then `tuneLoudness` listens to the master and corrects it until it is
+  within 0.5 dB of the target (`LOUDNESS_TOLERANCE`): the Limiter's input first (secant estimate, at most 3
+  corrections, never past +10 dB: past that the Limiter pumps), and when that falls short, the
+  **Maximizer** (added before the Limiter, the Limiter back at 0 dB, its input corrected up to 4 times, at
+  most +18 dB). A song whose target the Limiter reaches cleanly keeps the default chain. Progress per bus, Stop
+  (AbortSignal). Measured (`test/browser/mix-level.test.ts`): trap buses exactly on target, master −10.23 LUFS
+  (Limiter +9.9 dB), lo-fi −12.73, house −9.65 (Maximizer), all −1.05 dBTP.
 - A mix without role buses (built by hand, imported, or whose buses carry under 2/3 of the playing
   channels): `levelLoudness` renders the mix before the master chain once, trims everything into the
   master together (routes to Master, channels straight into it) to −16 LUFS, sets the Limiter input,
@@ -2762,8 +2766,7 @@ progressions; nothing reproduces a song. Artist names appear only in the Studio 
   lengths, energy, what is left out) and `defaultEnergy(style, role)` (a groove-first intro in progressive and tech house,
   a quiet breakdown in trance and melodic dubstep), which `arrange` uses for sections that give no energy.
 - **Mix** (`app/mix`): `LEVEL_TARGETS`, per-style `CHORD_DUCK` (sidechained pads, the 1/8 wobble), reverbs, delays and
-  extra reverb send, and a Limiter input up to 15 dB for the loudest styles (`limiterMax`: a dynamic mix gets only part of
-  the input back as loudness).
+  extra reverb send; a master the Limiter cannot reach cleanly (up to +10 dB of input) gets the Maximizer ("Loudness stage").
 - **Studio**: the `beat` prompt's style table (feel per style, plus the artist-phrasing map) and `paletteText()`; the
   "Song craft" section lists the usual song of every dance style; both `style` enums come from `STYLES`.
 - **Templates and help**: eight dance templates (group `dance`, listed on the welcome page under "Dance and bass music" and
@@ -2801,13 +2804,118 @@ presets are measured on the benchmark's 3–4 note chords. Unison stays at 5 or 
 - **Kits**: the three kits measured against the stock pieces (kick, snare, clap, hat, open hat, in LUFS at the writer's
   levels) set `KIT_LOUDNESS`: festival kick +2.2 dB, bass-music kick +1.5, drum & bass kick +0.7 and so on.
 - **Eight bars per style** (`test/browser/edm-pack.test.ts`: the generator's beat, mix set up, auto-level, rendered):
-  none silent, true peak −1.05 dBTP in all eight, and each within 1.5 dB of its target (measured / target LUFS): big room
-  −9.43 / −8.5, progressive −10.77 / −10, future bass −9.73 / −9, dubstep −9.20 / −8.5, melodic dubstep −10.09 / −9.5,
-  tech house −10.96 / −10, trance −10.11 / −9, drum & bass −9.83 / −9. The Limiter input settled at 7–11 dB. An
-  earlier −7 to −8 target was out of reach for these dynamic mixes even at 14 dB of input (dubstep reached −8.6).
+  none silent, true peak −1.05 dBTP in all eight, and each within 0.5 dB of its target (measured / target LUFS, with the
+  loudness stage the leveling used): big room −8.38 / −8.5 (Maximizer), progressive −10.42 / −10 (Limiter +8.2 dB), future bass
+  −8.92 / −9 (Maximizer), dubstep −8.56 / −8.5 (Maximizer), melodic dubstep −9.63 / −9.5 (Limiter +8.8 dB), tech house −9.74 / −10,
+  trance −8.86 / −9, drum & bass −9.25 / −9 (Maximizer +10 dB). Before the Maximizer these were 0.5 to 1.5 dB short (the Limiter
+  alone reached −9.2 to −9.8 at +15 dB, dubstep −8.6 at +14).
 - **Node**: every style's usual song applied through `arrange` flows (`src/app/edm-shapes.test.ts`); the generator,
   transition traits, mix tables, prompt and templates have unit tests (`core/beat/edm.test.ts`, `core/arrange/edm.test.ts`,
   `app/mix/edm-mix.test.ts`, `app/ai/edm-prompt.test.ts`); the v3 acceptance test runs over all 17 `STYLES`.
+
+## Loudness stage (`plugins/builtin/maximizer`, `sdk/dsp/lookahead-limiter.ts`, `app/mix/auto-level.ts`)
+
+Why: the Limiter alone cannot make a dance mix as loud as a loud reference. The master is peak-limited: a kick peak 13 dB over the
+mix's loudness makes it turn the whole mix down for 80 ms or more after every kick, so from about +10 dB of input a dB more gets
+a fraction of a dB (big room reached −8.69 LUFS at +20 and at +24 dB, a house song −9.35, dubstep −8.07 at +24). A hard
+clipper on the master (it did crush a user's song) is not an answer: the Studio prompt forbids it and `tameMasterClipper` turns it into tape.
+
+### The design
+
+- **`Maximizer`** (a plugin, goes just before the master Limiter; the Limiter stays last and stays at 0 dB input while it works).
+  Input gain → a look-ahead limiter (the `LookaheadLimiter` extracted from the Limiter into the SDK, stereo-linked, true peaks)
+  that holds the peaks at the ceiling + **2 dB** (`clip`) → a soft clip at 2× oversampling that takes those 2 dB off: untouched below
+  the knee (3 dB under the ceiling, `knee`), a smooth cubic (slope 1 → 0, no corner) to the ceiling at the top. So the limiter
+  does the slow work (release 80 ms) and the clip takes the top of the peaks, as a few harmonics on the transient. The clip's depth
+  is bounded by `clip` (max 4 dB), so it can never flatten a mix: the first stage guarantees nothing arrives above ceiling + clip.
+  The soft clip's output filter overshoots a little (up to 2.5 dB over the ceiling on dense material), which the Limiter after it takes off.
+- **Why a plugin, not a Limiter mode**: a plugin's latency is fixed when it loads, and the default master chain must stay as it was.
+  Adding the Maximizer only when needed keeps the normal targets on the chain they always had (the Limiter's code moved into the SDK
+  unchanged: the old and new kernels are bit-exact against the existing Limiter tests).
+- **When**: `tuneLoudness` (auto-level and every caller: `level_mix`, `match_reference`, `setup_mix` with level, "Balance the mix", the
+  Reference window's Match loudness) corrects the Limiter first and adds the Maximizer only when the Limiter at +10 dB is still more than
+  0.5 dB short (or clearly out of reach: the first reading plus half a dB per remaining dB of input is more than 1 dB short). It
+  bypasses an existing Maximizer when a later leveling needs none. One undo step with the answer; the chat says "Master: Maximizer … before
+  the Limiter" and the input it chose. The Studio prompt only gained one clause in "Mixing by role" (the AI must not add its own clipper or Maximizer).
+- **Choices, measured** (`D` = clip depth, `K` = knee; bigroom and dubstep renders at −8.5 LUFS): D 1.5 / 2 / 2.5 dB gave
+  distortion −27.8 / −27.7 / −27.2 dB (bigroom) and −26.2 / −26.0 / −25.6 (dubstep), the input needed 9.6 / 9.2 / 8.8 dB: flat, so 2 dB;
+  K 2 produced runs of flat samples in dubstep, K 3 and 4 not, and K 3 had the least distortion in the highs; the first stage's release
+  40 / 80 / 150 / 300 ms changed nothing but the input needed (80 default); the cubic, a quintic (C²) and a tanh knee were within 0.2 dB
+  of each other in every measure (cubic kept, it ends exactly at the ceiling); oversampling 4× = 2× in distortion and highs on both
+  songs, none (1×) was slightly better on big room and slightly worse on dubstep's highs: 2×, at half the cost; a low-band-only clip
+  (below 150 Hz) gained no loudness at all, because the peaks are the sum of the low and the high bands.
+
+### Objective limits (`test/helpers/loudness-quality.ts`; unit: `test/unit/loudness-stage.test.ts` on a synthetic mix, browser: `test/browser/loudness-stage.test.ts` on the engine's renders of big room, dubstep, drum & bass and house; the tables below were run with seven styles)
+
+| Measure | Definition | Limit |
+|---|---|---|
+| True peak | `TruePeak` (4×) over the output | ≤ −1 dBTP (+0.01) at every loudness |
+| Distortion | in each 1024-frame window the best gain from the stage's input to its output is taken out; the rest, in dB under the output (whole signal, 95th-percentile window, and the part above 3 kHz). Slow level changes do not count; harmonics, intermodulation and gain wobble faster than 20 ms do | total ≤ −18 dB, highs ≤ −17 dB (browser; synthetic −22 / −18), and no more than the Limiter alone's + 1 dB where it reaches the same loudness |
+| Kick punch | peak in the 25 ms after a kick over the RMS of its 400 ms, dB | ≥ 4.3 dB, and ≥ the Limiter's − 1 dB |
+| Kick weight | sub band (< 150 Hz) in the 10–120 ms after a kick, dB under the mix's LUFS | ≥ the Limiter's − 0.5 dB |
+| Hard clipping | the hard-clipping Saturator driven into the Limiter, at the same loudness, is the control: the measures must see it | the new chain's distortion ≥ 6 dB lower |
+| Loudness | auto-level on the real engine | within 0.5 dB of the target |
+
+Justification: a sine through the clip gives −31 dB THD at the ceiling and −22 dB with 2 dB clipped (the unit test prints them); on
+music it must do much better because only the top of the peaks are touched. −18 dB sits between the new chain's worst measured case
+(−19.9, house at −8 LUFS) and the hard clipper's best (−17.1, dubstep at −8.5). A "flat top" count (runs of equal samples at the peak)
+was tried and kept only on the synthetic mix: a soft crest on a sustained sub bass counts as flat (dubstep shows 6 to 58 such runs), and the
+hard clipper's plateaus are rescaled by the final Limiter so they do not repeat exactly, so on real renders it separated nothing.
+Intermodulation is inherent to any clip: a 60 Hz sine at the top with a 5 kHz tone 20 dB down gets sidebands at −8 dB re that tone
+(a hard clip: −6 dB), which is why the depth is bounded and the stage is used only when needed.
+
+### Measured: the Limiter alone against the Maximizer at equal loudness (browser, engine renders, 8 bars)
+
+Distortion in dB (lower is cleaner), kick punch and weight in dB; "—" = the Limiter cannot reach it (its loudest result in brackets).
+
+| Style @ −9.5 LUFS | Limiter alone: distortion / punch / weight | Maximizer: distortion / punch / weight | Highs: Limiter / Maximizer |
+|---|---|---|---|
+| dubstep | −28.6 / 5.6 / 2.0 (+10.1 dB) | −29.0 / 6.0 / 2.4 | −28.0 / −22.8 |
+| drum & bass | −21.7 / 8.1 / −1.8 | −24.0 / 8.8 / −1.0 | −28.4 / −25.5 |
+| future bass | −24.3 / 8.6 / −1.6 | −25.4 / 8.7 / −0.7 | −23.2 / −22.4 |
+| big room | −29.0 / 9.7 / −2.7 | −29.9 / 9.4 / −2.7 | −28.2 / −25.5 |
+| house 124 | −20.4 / 9.3 / −0.4 (needs +15.8 dB) | −22.9 / 8.6 / +0.7 | −22.8 / −22.3 |
+| trance | — (−9.63) | −28.8 / 10.0 / −3.3 | — |
+| tech house | — (−9.65) | −24.9 / 8.9 / −1.3 | — |
+
+| Style @ −8.5 LUFS | Limiter alone | Maximizer: distortion / punch / weight | Hard clipper: distortion |
+|---|---|---|---|
+| dubstep | −8.52 at +15 dB: −24.2 | −26.4 / 5.1 / 2.2 | −17.1 |
+| drum & bass | — (−8.84) | −21.5 / 7.8 / −1.4 | −10.6 |
+| future bass | — (−8.90) | −23.4 / 7.7 / −1.1 | −7.3 |
+| trance | — (−9.63) | −25.4 / 8.8 / −3.1 | −7.6 |
+| big room | — (−8.69) | −27.7 / 8.5 / −2.6 | −7.4 |
+| house 124 | — (−9.35) | −20.9 / 7.9 / +0.1 | −8.9 |
+| tech house | — (−9.65) | −22.0 / 7.8 / −1.1 (at its +16 dB cap: −8.62) | −10.5 |
+
+Reading: at −9.5 the Maximizer is as clean or cleaner overall and keeps the kick's weight (up to +1 dB better) and punch (within 0.7 dB
+of the Limiter's); its cost is the highs: 0.5 to 5 dB more distortion above 3 kHz than a slow limiter. At −8.5 and louder only it gets
+there, and the hard clipper at the same loudness is 6 to 20 dB more distorted. End to end (auto-level, real engine, measured / target):
+big room −8.32 / −8.5, dubstep −8.56 / −8.5, drum & bass −9.25 / −9, future bass −8.95 / −9, trance −8.86 / −9, house −9.63 / −9.5, tech house
+−9.74 / −10, the reference test −8.49 / −8.4, all at −1.05 dBTP.
+
+### CPU (`npm run bench:plugins`, % of one core at 48 kHz; a busy machine, best of 5)
+
+Limiter 1.5 % (unchanged by the refactor: the old and new kernel measured 1.4–1.9 % side by side), Maximizer 2.4–2.8 % with the clip on,
+1.0–1.3 % with it off. The master chain (EQ Pro 0.4, tape Saturator about 1, Limiter 1.5) costs about 3 %; with the Maximizer about 5 %.
+The benchmark script had been broken by the plugins' lazy editors (a dynamic import split its bundle); `codeSplitting: false` fixes it.
+
+### Templates, bass bus name, automation names
+
+- **Templates open at their style's loudness**: `app/template-levels.ts` bakes what `autoLevel` measured on each template's own song (bus faders, Limiter
+  and Maximizer input); `templateProject` applies it (9–68 ms to build, no rendering). `test/browser/template-levels.test.ts` renders all 13 and fails past
+  1 dB (measured −8.50 to −12.63, all within 0.43 dB of the style target, −1.05 dBTP); `VITE_BAKE_TEMPLATE_LEVELS=1` prints the table again after the
+  generator, arranger or mix recipes change. Before, dance templates opened at −14 to −16 LUFS. The default project's empty "Pattern 1" is removed when
+  nothing references it.
+- The bass bus is "808" when a channel plays an 808, "Bass" otherwise (`bassBusName`); `findMixLayout` finds either name, so old projects keep working.
+- Arranger automation clips are named after the channels that play through the swept bus ("Pad", "Arp + Lead"), else the bus.
+
+### Not done
+
+- The soft clip is memoryless: sustained bass at the limit gets harmonics for as long as it lasts (dubstep's sub shows flattened
+  crests) and the highs ride on it as sidebands. A band-split clip would avoid the second but gained no loudness (peaks are composite).
+  Tech house and house reach −8.5 only at +14 to +16 dB of input.
+- The Maximizer has no custom editor (the generic controls and its two meters).
 
 ## Sound filters (`core/filters`, `core/ops/filters.ts`, `app/filters`, `ui/features/filters`)
 
@@ -3031,9 +3139,10 @@ in the song.
   then does the craft (fills, transitions, FX) with `mix: 'keep'`, replacing the song's arrangement. The last section's
   stop effects ring a little past its last bar.
 - **Loudness**: `autoLevel` and the `level_mix` after-edit take an optional `targetLufs` (the reference's, within −30…−4).
-  With one, the Limiter's input may go to +20 dB (else 10) and is corrected up to 5 times by a secant estimate (a Limiter
-  returns less than it is given); it warns when the Limiter is pushed past +10 dB or cannot reach the target. Headless
-  Chrome, a house song at 124 BPM with the role mix: the Limiter saturates at −9.3 LUFS against a −8.4 reference.
+  The same listening loop as a style target: the Limiter up to +10 dB, then the Maximizer (see "Loudness stage"), within 0.5 dB;
+  it warns when even the Maximizer cannot reach the target. Headless Chrome, a house song at 124 BPM with the role mix: the
+  Limiter alone saturated at −9.3 LUFS against the −8.4 reference; with the Maximizer it lands at −8.49 / −8.50 (true peak
+  −1.05 dBTP).
 - Every edit is **one undo step** (`history.transact`); the Studio's edits fold into the answer's step.
 
 ### UI (`ui/features/reference`) and Studio

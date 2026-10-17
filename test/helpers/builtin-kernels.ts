@@ -42,6 +42,9 @@ import { gateParams } from '../../src/plugins/builtin/gate/params';
 import limiter from '../../src/plugins/builtin/limiter';
 import { LimiterKernel } from '../../src/plugins/builtin/limiter/kernel';
 import { limiterParams } from '../../src/plugins/builtin/limiter/params';
+import maximizer from '../../src/plugins/builtin/maximizer';
+import { MaximizerKernel } from '../../src/plugins/builtin/maximizer/kernel';
+import { maximizerParams } from '../../src/plugins/builtin/maximizer/params';
 import lofi from '../../src/plugins/builtin/lofi';
 import { LofiKernel } from '../../src/plugins/builtin/lofi/kernel';
 import { lofiParams } from '../../src/plugins/builtin/lofi/params';
@@ -229,6 +232,7 @@ export const KERNEL_ENTRIES: readonly KernelEntry[] = [
   effect(gate, gateParams, GateKernel),
   effect(limiter, limiterParams, LimiterKernel),
   effect(lofi, lofiParams, LofiKernel),
+  effect(maximizer, maximizerParams, MaximizerKernel),
   effect(multiband, multibandParams, MultibandKernel),
   effect(phaser, phaserParams, PhaserKernel),
   effect(reverb, reverbParams, ReverbKernel),

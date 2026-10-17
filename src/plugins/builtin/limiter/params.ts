@@ -1,3 +1,4 @@
+import { LIMITER_DETECTOR_FRAMES } from '@agstudio/sdk/dsp/lookahead-limiter';
 import { p } from '@agstudio/sdk/params';
 
 // Shared by the main-thread definition (index.ts) and the audio-thread kernel (kernel.ts).
@@ -5,12 +6,6 @@ export const LIMITER_ID = 'agstudio.limiter';
 
 /** The look-ahead: the gain ramps down over this long before a peak arrives. */
 const LOOKAHEAD_SECONDS = 0.005;
-/**
- * The true-peak detector sees a sample 8 frames after it arrives, and the point it reconstructs
- * between two samples depends on the 7 before and 8 after them: the gain is held flat over all of
- * them, so the latency is the look-ahead plus 14 frames.
- */
-const DETECTOR_FRAMES = 14;
 
 /** Frames of the attack ramp (the look-ahead) at a sample rate. */
 export function lookaheadFrames(sampleRate: number): number {
@@ -19,7 +14,7 @@ export function lookaheadFrames(sampleRate: number): number {
 
 /** Frames the limiter delays its audio by (reported as latency, so the mixer compensates it). */
 export function latencyFrames(sampleRate: number): number {
-  return lookaheadFrames(sampleRate) + DETECTOR_FRAMES;
+  return lookaheadFrames(sampleRate) + LIMITER_DETECTOR_FRAMES;
 }
 
 export const limiterParams = {

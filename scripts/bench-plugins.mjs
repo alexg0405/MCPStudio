@@ -42,7 +42,8 @@ const bundle = await rolldown({
   logLevel: 'silent',
   transform: { jsx: { runtime: 'automatic' } },
 });
-await bundle.write({ file, format: 'esm', sourcemap: false });
+// One file: the plugins' lazy editors (dynamic imports) are not needed here and must not split the bundle.
+await bundle.write({ file, format: 'esm', sourcemap: false, codeSplitting: false });
 await bundle.close();
 
 const run = spawnSync(process.execPath, ['--expose-gc', file, ...process.argv.slice(2)], { stdio: 'inherit' });

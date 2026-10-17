@@ -58,6 +58,19 @@ export interface Measured {
   master: Measurement;
 }
 
+/** The master as heard over bars 1–`bars` (the Limiter and everything on it), without rendering the buses one by one. */
+export async function measureMaster(s: Services, bars: number): Promise<Measurement> {
+  const project = s.doc.getState().project;
+  const toTick = bars * ticksPerBar(project.transport.timeSig);
+  const tempo = tempoMapOf(project, 'song');
+  const frames = Math.round((tempo.tickToSeconds(toTick) - tempo.tickToSeconds(0)) * SR);
+  const r = await renderOffline(project, { plugins: s.plugins, view: { mode: 'song', patternId: null, loop: null }, bars, sampleRate: SR, tail: 0, limiter: true });
+  const start = Math.round((r.preRoll + r.latency) * SR);
+  const m = new Measurer(SR, true);
+  m.push(r.buffer.getChannelData(0).subarray(start, start + frames), r.buffer.getChannelData(1).subarray(start, start + frames));
+  return m.result();
+}
+
 /** Each role bus as it reaches the master (its chain bypassed) and the master as heard, over bars 1–bars. */
 export async function measureSong(s: Services, bars: number): Promise<Measured> {
   const project = s.doc.getState().project;

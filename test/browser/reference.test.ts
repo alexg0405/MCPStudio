@@ -3,7 +3,7 @@
  * intro, a 32-bar drop, a 16-bar break and a 32-bar drop at 128 BPM, scaled to −8 LUFS) is written as a WAV,
  * stored like any imported file, analyzed (tempo, key, sections, loudness, tonal balance per section) and set
  * as the reference of a house song at another tempo. Matching it gives the project the reference's tempo and
- * section lengths and levels the mix to within 1.5 dB of −8 LUFS, as one undo step.
+ * section lengths and levels the mix to within 0.5 dB of −8 LUFS, as one undo step.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createElement } from 'react';
@@ -21,6 +21,7 @@ import { renderTestSong, PATTERNS, MINOR, chord } from '@core/dj/test-songs';
 import { encodeWav } from '@core/io/wav';
 import { songSections } from '@core/query/sections';
 import { TONE_BANDS } from '@core/reference/bands';
+import { loudnessTarget } from '@core/reference/track';
 import { ticksPerBar } from '@core/time/ppq';
 import { renderOffline } from '@engine/render-offline';
 import { tempoMapOf } from '@core/automation/tempo';
@@ -178,8 +179,12 @@ describe('reference track matching (headless Chrome, real analysis and renders)'
     console.log(
       `match loudness: ${Math.round(performance.now() - t0)} ms; master ${heard.lufs.toFixed(2)} LUFS (target ${TARGET}), true peak ${heard.truePeakDb!.toFixed(2)} dBTP over bars ${heard.window.fromTick / BAR + 1}–${heard.window.fromTick / BAR + heard.window.bars}; ${level!.changes.join(' · ')}`,
     );
-    expect(Math.abs(heard.lufs - TARGET)).toBeLessThanOrEqual(1.5);
-    expect(Math.abs(level!.master.lufs - TARGET)).toBeLessThanOrEqual(1.5);
+    // The reference file measures about −8.4 LUFS (scaled to −8 in the file's own sample rate and gating): that is the target.
+    const goal = loudnessTarget(s.doc.getState().project.reference!);
+    expect(Math.abs(goal - TARGET)).toBeLessThanOrEqual(0.6);
+    expect(Math.abs(heard.lufs - goal)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(level!.master.lufs - goal)).toBeLessThanOrEqual(0.5);
+    expect(heard.truePeakDb!).toBeLessThanOrEqual(-0.95);
     expect(s.history.steps().done.length).toBe(steps + 1);
     s.history.undo();
     expect(s.doc.getState().project).toEqual(before);
@@ -241,7 +246,8 @@ describe('reference track matching (headless Chrome, real analysis and renders)'
     expect(songSections(p).map((x) => x.from / BAR + 1)).toEqual([1, 17, 49, 65]);
     const heard = await loudnessOfBusiestPart(s2);
     console.log(`Studio match loudness: ${heard.lufs.toFixed(2)} LUFS, true peak ${heard.truePeakDb!.toFixed(2)} dBTP`);
-    expect(Math.abs(heard.lufs - TARGET)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(heard.lufs - loudnessTarget(p.reference!))).toBeLessThanOrEqual(0.5);
+    expect(heard.truePeakDb!).toBeLessThanOrEqual(-0.95);
     expect(progress).toContain('The mix');
     // Setting the reference, matching it and leveling are one undo step.
     expect(s2.history.steps().done.filter((e) => /like my reference|Set the reference|Match the reference|Level the mix/.test(e.label)).length).toBe(1);

@@ -221,6 +221,7 @@ For effects:
 | `LinkwitzRiley` | 24 dB/oct crossover: `split(x)` → `.low`, `.high`, which sum to an allpass (flat). For three bands split the high band again and pass the low band through the upper crossover's `allpass()` |
 | `Yin` | monophonic pitch detection: `push(x)` every sample, `detect()` now and then → Hz (0 = no pitch), `.confidence` |
 | `TruePeak` | 4× interpolated peak between samples (`process(x)`, `LATENCY` = 8 frames; `sample(x)` gives the plain sample peak with the same timing) |
+| `LookaheadLimiter` | the Limiter's core, one stereo frame at a time: `step(l, r, ceiling, truePeak)` → `outL`/`outR`, delayed by `latency` (look-ahead + 14 frames) and never above the ceiling; set `releaseCoef`, read `minGain` for a meter. The Maximizer builds on it |
 | `LoudnessMeter`, `KWeighting`, `loudnessOf` | BS.1770 / EBU R128 loudness: `.momentary` (400 ms), `.shortTerm` (3 s), `.integrated` (gated) in LUFS |
 | `PhaseClock`, `SYNC_OPTIONS`, `SYNC_LABELS`, `SYNC_BEATS`, `NOTE_BEATS`, `noteBeats` | tempo-synced LFOs: `clock.next(this.transport, i, rateHz, periodBeats)` follows the song while it plays and runs freely while it is stopped. `p.enum(SYNC_OPTIONS, 'off', { labels: SYNC_LABELS })` is a ready-made Sync param; `SYNC_BEATS[index]` its cycle in beats |
 | `Readings` | meter values for your editor, posted ~30 times a second (see below) |

@@ -15,6 +15,7 @@ export const DUCKER = 'agstudio.ducker';
 export const REVERB = 'agstudio.reverb';
 export const DELAY = 'agstudio.delay';
 export const LIMITER = 'agstudio.limiter';
+export const MAXIMIZER = 'agstudio.maximizer';
 
 /** One effect of a bus: a plugin, a preset of it, settings on top, and where its sidechain listens. */
 export interface FxRecipe {
@@ -255,6 +256,16 @@ export const MASTER_CHAIN: readonly FxRecipe[] = [
     label: 'Limiter (−1 dB ceiling, true peak)',
   },
 ];
+
+/**
+ * The Maximizer auto-level adds just before the master Limiter when a loudness is more than the Limiter gives cleanly (the
+ * leveling sets its input and the soft clip's depth; its ceiling follows the Limiter's).
+ */
+export const MAXIMIZER_RECIPE: FxRecipe = {
+  pluginId: MAXIMIZER,
+  params: { ceiling: -1, clip: 2, knee: 3, release: 80 },
+  label: 'Maximizer (limiter and soft clip on the peaks)',
+};
 
 /**
  * Channel volumes by role (linear; the channel default is 0.78) for channels nobody has set. The

@@ -68,7 +68,7 @@ describe('add_chain and save_chain', () => {
     const mine = s.presets.chains();
     expect(mine.map((c) => c.name)).toEqual(['My vox']);
     expect(mine[0]!.steps[0]).toMatchObject({ pluginId: 'agstudio.compressor', params: { ratio: 6 } });
-    expect(mine[0]!.steps[1]).toMatchObject({ pluginId: 'agstudio.de-esser', params: { frequency: 6000, mode: 'split' } });
+    expect(mine[0]!.steps[1]).toMatchObject({ pluginId: 'agstudio.de-esser', params: { frequency: 6500, mode: 'split' } });
   });
 });
 
@@ -78,9 +78,9 @@ describe('what the AI is told about chains', () => {
     s.presets.saveChain({ name: 'Mine', description: 'My own.', steps: [{ pluginId: 'agstudio.stereo', label: 'stereo' }] });
     const text = pluginCatalog(s.plugins, s.presets).text;
     expect(text).toMatch(/- agstudio\.de-esser "De-esser" \[Dynamics\]: .*\n {2}params: frequency: float 3000\.\.12000 Hz log = 7000/);
-    expect(text).toContain('presets: Gentle, Bright vocal, Harsh S’s, Podcast voice (wideband)');
+    expect(text).toContain('presets: Gentle, Bright vocal, Harsh S’s, Podcast voice (wideband), Deep voice, Tame bright cymbals');
     expect(text).toMatch(/- agstudio\.doubler "Doubler" \[Modulation\]: /);
-    expect(text).toContain('presets: Tight double, Wide pop, Rap ad-lib');
+    expect(text).toContain('presets: Tight double, Wide pop, Rap ad-lib, Subtle thickener, Backing vocal stack');
     expect(text).toContain('Effect chains (add_chain action');
     for (const name of ['Clean pop vocal', 'Rap vocal', 'Airy ballad', 'Lo-fi vocal', 'Trap auto-tune vocal', 'Podcast voice'])
       expect(text).toContain(`- "${name}"`);

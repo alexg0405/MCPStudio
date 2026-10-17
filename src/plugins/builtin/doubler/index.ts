@@ -29,5 +29,13 @@ export default defineWorkletEffect({
       name: 'Rap ad-lib',
       params: { voices: 2, delay: 32, spread: 0.4, drift: 9, width: 0.9, level: -6, tone: 6500 },
     },
+    {
+      name: 'Subtle thickener',
+      params: { voices: 2, delay: 12, spread: 0.2, drift: 3, width: 0.4, level: -13, tone: 9000 },
+    },
+    {
+      name: 'Backing vocal stack',
+      params: { voices: 4, delay: 30, spread: 0.8, drift: 10, width: 1, level: -7, tone: 7500 },
+    },
   ],
 });

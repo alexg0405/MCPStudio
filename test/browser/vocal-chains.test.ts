@@ -17,7 +17,6 @@ import { makeInsert } from '@core/model/defaults';
 import type { InsertId, Project } from '@core/model/types';
 import { setChannelProp } from '@core/ops/channels';
 import { addFxSlot, addInsert } from '@core/ops/mixer';
-import { setRoute } from '@core/ops/routing';
 import { renderOffline } from '@engine/render-offline';
 import { audioClipProject, TestSamples } from '../helpers/audio';
 import { syntheticVoice } from '../helpers/voice';

@@ -2269,7 +2269,7 @@ attack/release smoother on the reduction in dB. **Split band** subtracts the fir
 `out = x − (1 − g)·band(x)`, which is an analog-style bell cut: with no reduction the output is the input bit for bit,
 and only the band moves. **Wideband** multiplies the whole voice by `g`. **Listen** outputs the detector's band. The gain
 reduction is a meter (`Readings`, `kind: 'reduction'`, max 20 dB). Presets: Gentle, Bright vocal, Harsh S's, Podcast voice
-(wideband). Measured (kernel tests): a 7 kHz burst at −12 dBFS is 10.0 dB down at the defaults (≥ 6 dB asserted), a 1 kHz
+(wideband), Deep voice, Tame bright cymbals. Measured (kernel tests): a 7 kHz burst at −12 dBFS is 10.0 dB down at the defaults (≥ 6 dB asserted), a 1 kHz
 tone at any level and in every preset stays within 0.2 dB (and bit-exact below the threshold), the vowel under a hiss is
 within 0.5 dB in split mode and 6 dB down in wideband, the meter reads 10 dB on the burst and 0 after it.
 
@@ -2278,7 +2278,8 @@ written to one delay line; two to four voices read it at their own delay (Delay 
 spread) that wanders with two sines per voice (0.43–1.03 Hz and 1.71× that), each scaled so the pitch error, which is
 the speed of the delay change, peaks at the Pitch drift in cents (0–15). Voices are panned with an equal-power law
 scaled by Width (the original stays in the middle) and scaled by 1/√voices at the Double level. Adding or dropping a
-voice fades it over one control step (32 frames). Presets: Tight double, Wide pop, Rap ad-lib. Measured: drift 8 ct
+voice fades it over one control step (32 frames). Presets: Tight double, Wide pop, Rap ad-lib, Subtle thickener, Backing
+vocal stack. Measured: drift 8 ct
 stays between 3.2 and 8.8 ct at the output (zero-crossing estimates, asserted), mono sum of noise within −0.5…+2 dB of the voice and no
 sixth-octave band of the mono sum more than 5 dB down or up, in every preset (in practice 0.1 dB and well inside).
 

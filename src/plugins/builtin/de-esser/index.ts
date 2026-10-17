@@ -42,5 +42,13 @@ export default defineWorkletEffect({
       name: 'Podcast voice (wideband)',
       params: { frequency: 5500, q: 1.5, threshold: -28, ratio: 3, range: 6, attack: 1, release: 80, mode: 'wide' },
     },
+    {
+      name: 'Deep voice',
+      params: { frequency: 5200, q: 1.4, threshold: -32, ratio: 3, range: 8, attack: 1, release: 60, mode: 'split' },
+    },
+    {
+      name: 'Tame bright cymbals',
+      params: { frequency: 9500, q: 0.9, threshold: -30, ratio: 3, range: 6, attack: 0.5, release: 50, mode: 'split' },
+    },
   ],
 });

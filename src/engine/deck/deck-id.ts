@@ -65,6 +65,15 @@ export interface SyncSpec {
   selfBeat: number;
   masterFirst: number;
   masterBeat: number;
+  /**
+   * Tracked beats (frames of the song, ascending) of a song whose tempo drifts: when a deck has them, its beat phase and
+   * tempo come from the beats around its position (`BeatMap`) instead of `*First`/`*Beat`. The first downbeat is still
+   * `*First`, so beat 0 is the same one either way. Absent: the fixed grid.
+   */
+  selfBeats?: Float64Array;
+  masterBeats?: Float64Array;
+  /** The tempo multiple the follower matches (½, 1, 2); `selfBeat` already holds it, tracked beats need it. Default 1. */
+  selfMult?: number;
 }
 
 /** What the worklet tells the main thread. */

@@ -10,6 +10,7 @@ import { createDecks, type DecksDeps } from '@app/dj/decks';
 import type { DecksApi } from '@app/dj/decks-api';
 import { addSongFiles, library, type LibrarySong } from '@app/dj/library';
 import { createServices, type Services } from '@app/services';
+import { driftingBeats } from '@core/dj/beat-map';
 import { fakeAnalysis, type FakeSong } from '@core/dj/fake-analysis';
 import { encodeWav } from '@core/io/wav';
 import type { TrackAnalysis } from '@core/dj/types';
@@ -402,6 +403,80 @@ describe('decks: sync', () => {
   }
 });
 
+/** A song with a tone burst on each of `beats` (seconds): the beat positions made audible. */
+function clickTrack(beats: readonly number[], seconds: number, hz: number, level = 0.8): Float32Array[] {
+  const x = new Float32Array(Math.round(seconds * SR));
+  for (const t of beats) {
+    const at = Math.round(t * SR);
+    for (let k = 0; k < 400 && at + k < x.length; k++)
+      x[at + k] = (x[at + k] ?? 0) + level * Math.exp(-k / 90) * Math.sin((2 * Math.PI * hz * k) / SR);
+  }
+  return [x, x.slice()];
+}
+
+describe('decks: sync with a drifting beat grid', () => {
+  // A song whose drummer speeds up from 120 to 124 BPM over three minutes, synced to a steady 124 BPM song. The analysis
+  // hands the decks its tracked beats (`grid.beats`, bpm = their average) or, for the "before" run, only the fixed grid.
+  const SECS = 190;
+  const drift = driftingBeats(120, 124, SECS + 4, 0.35);
+  const avgBpm = ((drift.length - 1) * 60) / (drift[drift.length - 1]! - drift[0]!);
+
+  async function run(tracked: boolean, keyLock: boolean) {
+    const rig = makeRig(SECS + 6);
+    const steady: number[] = [];
+    for (let t = 0.1; t < SECS + 60; t += 60 / 124) steady.push(t);
+    const a = rig.add('Steady', clickTrack(steady, SECS + 60, 1000), { bpm: 124, firstDownbeat: 0.1, bars: 120 });
+    const b = rig.add('Drummer', clickTrack(drift, SECS + 6, 4000), {
+      bpm: avgBpm,
+      firstDownbeat: drift[0]!,
+      bars: 120,
+      ...(tracked ? { beats: drift } : {}),
+    });
+    await rig.decks.load('A', a, 'Steady');
+    await rig.decks.load('B', b, 'Drummer');
+    rig.decks.setCrossfader(0);
+    rig.decks.seek('A', 10);
+    rig.decks.seek('B', drift[Math.round(10 * 2.03)]! + 0.1);
+    rig.decks.setKeyLock('B', keyLock);
+    rig.decks.play('A');
+    void rig.ctx.suspend(0.5).then(async () => {
+      rig.decks.sync('B', true);
+      rig.decks.play('B');
+      await rig.decks.settled?.();
+      void rig.ctx.resume();
+    });
+    const { l } = await rig.render();
+    expect(rig.toasts).toEqual([]);
+    const ta = clickTimes(l, 1000);
+    const tb = clickTimes(l, 4000);
+    let j = 0;
+    let worst = 0;
+    let n = 0;
+    let over = Infinity;
+    for (const t of tb) {
+      if (t < 3 || t > SECS) continue;
+      while (j + 1 < ta.length && Math.abs(ta[j + 1]! - t) < Math.abs(ta[j]! - t)) j++;
+      const ms = Math.abs(t - ta[j]!) * 1000;
+      worst = Math.max(worst, ms);
+      if (ms > 5 && over === Infinity) over = t;
+      n++;
+    }
+    rig.decks.dispose();
+    return { worst, n, over };
+  }
+
+  for (const keyLock of [false, true]) {
+    it(`a drifting song stays within 5 ms of its master for three minutes (tracked beats; key lock ${keyLock ? 'on' : 'off'})`, async () => {
+      const before = await run(false, keyLock);
+      const after = await run(true, keyLock);
+      console.log(`drifting 120 to 124 BPM, key lock ${keyLock}: worst beat offset ${before.worst.toFixed(1)} ms with the fixed grid (over 5 ms from ${before.over.toFixed(0)} s), ${after.worst.toFixed(2)} ms with tracked beats (${after.n} clicks)`);
+      expect(after.n).toBeGreaterThan(SECS * 1.9);
+      expect(after.worst).toBeLessThan(5);
+      expect(before.worst).toBeGreaterThan(20);
+    }, 300_000);
+  }
+});
+
 describe('decks: cue, hot cues, loops and jumps (the controller)', () => {
   async function loadedRig() {
     const rig = makeRig(2);
@@ -513,6 +588,42 @@ describe('decks: cue, hot cues, loops and jumps (the controller)', () => {
     expect(deckA(rig).loop!.active).toBe(true);
     rig.decks.beatJumpBy('A', -1000);
     expect(deckA(rig).positionSec).toBe(0);
+    rig.decks.dispose();
+  });
+
+  it('a song with tracked beats snaps cues, loops and jumps to the beats it has, not to an even grid', async () => {
+    const rig = makeRig(2);
+    const beats = driftingBeats(100, 130, 120, 0.3);
+    const avg = ((beats.length - 1) * 60) / (beats[beats.length - 1]! - beats[0]!);
+    const song = rig.add('Drummer', clickTrack(beats, 125, 1000), { bpm: avg, firstDownbeat: 0.3, bars: 50, beats });
+    await rig.decks.load('A', song, 'Drummer', 'Test');
+    const off = (sec: number, step = 1) => {
+      // Distance (in steps) from the nearest tracked beat subdivision.
+      let i = 0;
+      while (i + 1 < beats.length && beats[i + 1]! <= sec) i++;
+      const f = (sec - beats[i]!) / (beats[i + 1]! - beats[i]!);
+      const x = f / step;
+      return Math.abs(x - Math.round(x));
+    };
+    rig.decks.seek('A', 100.37);
+    rig.decks.hotCue('A', 0);
+    expect(off(deckA(rig).hotCues[0]!)).toBeLessThan(1e-6);
+    rig.decks.autoLoop('A', 4);
+    const l = deckA(rig).loop!;
+    expect(off(l.startSec)).toBeLessThan(1e-6);
+    expect(off(l.endSec)).toBeLessThan(1e-6);
+    // Four beats of this stretch of the song, as they really are (the fixed grid would say 4 × 60 / avg).
+    const fixedLen = (4 * 60) / avg;
+    expect(Math.abs(l.endSec - l.startSec - fixedLen)).toBeGreaterThan(0.02);
+    rig.decks.exitLoop('A');
+    rig.decks.seek('A', 40.123);
+    rig.decks.beatJumpBy('A', 16);
+    const at = (sec: number) => {
+      let i = 0;
+      while (i + 1 < beats.length && beats[i + 1]! <= sec) i++;
+      return i + (sec - beats[i]!) / (beats[i + 1]! - beats[i]!);
+    };
+    expect(at(deckA(rig).positionSec) - at(40.123)).toBeCloseTo(16, 6);
     rig.decks.dispose();
   });
 

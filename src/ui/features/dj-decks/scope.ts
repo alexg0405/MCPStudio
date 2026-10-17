@@ -7,7 +7,7 @@
  */
 import type { DeckId, DecksApi, DeckState } from '@app/dj/decks-api';
 import { reducePeaks, type DeckWaveform } from '@core/dj/deck-peaks';
-import { formatDeckTime, REV_SEC } from '@core/dj/decks-math';
+import { formatDeckTime, MIN_TRACKED_BEATS, REV_SEC } from '@core/dj/decks-math';
 import { alpha, fitCanvas, mix, readTheme, themeVersion, type TimelineTheme } from '../../timeline/canvas';
 
 /** Seconds of song across the scrolling waveform. */
@@ -157,7 +157,27 @@ export class DeckScope {
     }
     // The beat grid.
     const grid = this.api.analysisOf?.(this.id)?.grid;
-    if (grid) {
+    if (grid && grid.beats.length >= MIN_TRACKED_BEATS) {
+      // A song with tracked beats (its tempo drifts): the lines sit where the beats are, not on an even grid.
+      const beats = grid.beats;
+      const lower = (v: number) => {
+        let lo = 0;
+        let hi = beats.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if ((beats[mid] as number) < v) lo = mid + 1;
+          else hi = mid;
+        }
+        return lo;
+      };
+      const zero = Math.min(beats.length - 1, lower(grid.firstDownbeat - 1e-9));
+      const near = Math.abs((beats[Math.max(0, zero - 1)] as number) - grid.firstDownbeat) < Math.abs((beats[zero] as number) - grid.firstDownbeat) ? Math.max(0, zero - 1) : zero;
+      for (let i = lower(t0); i < beats.length && (beats[i] as number) <= t0 + span; i++) {
+        const bar = (((i - near) % grid.beatsPerBar) + grid.beatsPerBar) % grid.beatsPerBar === 0;
+        g.fillStyle = bar ? alpha(theme.text, 0.35) : alpha(theme.text, 0.14);
+        g.fillRect(Math.round(x(beats[i] as number)), bar ? 0 : H * 0.62, 1, bar ? H : H * 0.38);
+      }
+    } else if (grid) {
       const period = 60 / grid.bpm;
       const first = Math.ceil((t0 - grid.firstDownbeat) / period);
       const last = Math.floor((t0 + span - grid.firstDownbeat) / period);

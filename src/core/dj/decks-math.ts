@@ -10,12 +10,42 @@
 export type CrossfaderCurve = 'smooth' | 'sharp';
 export type CrossSide = 'A' | 'B' | 'thru';
 
-/** The beat grid the decks use: a fixed tempo from the first downbeat (`TrackAnalysis.grid`). */
+/**
+ * The beat grid the decks use: a fixed tempo from the first downbeat (`TrackAnalysis.grid`), or, for a song whose tempo
+ * drifts (a live drummer, an old record: the analysis tracked its `beats`), the tracked beats as a `BeatMap`, from which
+ * loops, jumps, cues and sync read the local beat. Without a map everything is the fixed grid.
+ */
 export interface DeckGrid {
   bpm: number;
   /** Source seconds of beat 1 of a bar. */
   firstDownbeat: number;
+  /** The tracked beats (seconds) as a clock, when the song has enough of them (`beats` is what it was made from). */
+  map?: BeatMap;
+  beats?: readonly number[];
 }
+
+/** Fewest tracked beats worth following (a handful says nothing about a drift). */
+export const MIN_TRACKED_BEATS = 8;
+
+/** A grid for a song: the fixed one, with the tracked beats when the analysis has enough of them. */
+export function deckGridOf(grid: { bpm: number; firstDownbeat: number; beats?: readonly number[] }): DeckGrid {
+  const out: DeckGrid = { bpm: grid.bpm, firstDownbeat: grid.firstDownbeat };
+  const beats = grid.beats;
+  if (beats && beats.length >= MIN_TRACKED_BEATS) {
+    try {
+      const map = new BeatMap(beats, grid.firstDownbeat);
+      if (map.count >= MIN_TRACKED_BEATS) {
+        out.map = map;
+        out.beats = beats;
+      }
+    } catch {
+      /* not usable: the fixed grid it is */
+    }
+  }
+  return out;
+}
+
+import { BeatMap } from './beat-map';
 
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
 
@@ -188,14 +218,26 @@ export function alignOffsetSec(
 // ---------------------------------------------------------------------------------------------
 // Beat grid, loops and jumps
 
-/** Seconds per beat of a song (120 BPM when it has no grid). */
-export const beatSecOf = (grid: DeckGrid | null): number => 60 / (grid?.bpm ?? 120);
+/** Seconds per beat of a song (120 BPM when it has no grid); with tracked beats, the beat around `atSec`. */
+export const beatSecOf = (grid: DeckGrid | null, atSec = 0): number =>
+  grid?.map ? grid.map.lenAt(atSec) : 60 / (grid?.bpm ?? 120);
+
+/** `beats` beats after `sec` (before it when negative): the local beat length with tracked beats, the fixed one without. */
+export function addBeats(sec: number, beats: number, grid: DeckGrid | null): number {
+  if (grid?.map) return grid.map.posAt(grid.map.beatAt(sec) + beats);
+  return sec + beats * beatSecOf(grid);
+}
 
 /**
  * `sec` moved onto the grid in steps of `unitBeats` beats (nearest, or the step before it). No grid: unchanged.
  */
 export function snapToGrid(sec: number, grid: DeckGrid | null, unitBeats = 1, mode: 'nearest' | 'floor' = 'nearest'): number {
   if (!grid) return sec;
+  if (grid.map) {
+    const m = grid.map.beatAt(sec) / unitBeats;
+    const j = mode === 'floor' ? Math.floor(m + 1e-6) : Math.round(m);
+    return grid.map.posAt(j * unitBeats);
+  }
   const unit = beatSecOf(grid) * unitBeats;
   const n = (sec - grid.firstDownbeat) / unit;
   // A hair of tolerance so a position that is already on the grid (to rounding) stays there.
@@ -216,31 +258,33 @@ export interface LoopSpan {
 export function autoLoopSpan(positionSec: number, beats: number, grid: DeckGrid | null): LoopSpan {
   const b = clamp(beats, MIN_LOOP_BEATS, MAX_LOOP_BEATS);
   const start = grid ? snapToGrid(positionSec, grid, Math.min(1, b), 'floor') : positionSec;
-  return { startSec: Math.max(0, start), endSec: Math.max(0, start) + b * beatSecOf(grid) };
+  const from = Math.max(0, start);
+  return { startSec: from, endSec: addBeats(from, b, grid) };
 }
 
 /** A loop's length in beats. */
-export const loopBeats = (loop: LoopSpan, grid: DeckGrid | null): number => (loop.endSec - loop.startSec) / beatSecOf(grid);
+export const loopBeats = (loop: LoopSpan, grid: DeckGrid | null): number =>
+  grid?.map ? grid.map.beatAt(loop.endSec) - grid.map.beatAt(loop.startSec) : (loop.endSec - loop.startSec) / beatSecOf(grid);
 
 /** The same start, half or twice as long (1/32 to 32 beats); the end never passes the song's. */
 export function resizeLoop(loop: LoopSpan, factor: 0.5 | 2, grid: DeckGrid | null, durationSec: number): LoopSpan {
   const beats = clamp(loopBeats(loop, grid) * factor, MIN_LOOP_BEATS, MAX_LOOP_BEATS);
-  const end = Math.min(durationSec, loop.startSec + beats * beatSecOf(grid));
-  return { startSec: loop.startSec, endSec: Math.max(loop.startSec + MIN_LOOP_BEATS * beatSecOf(grid), end) };
+  const end = Math.min(durationSec, addBeats(loop.startSec, beats, grid));
+  return { startSec: loop.startSec, endSec: Math.max(addBeats(loop.startSec, MIN_LOOP_BEATS, grid), end) };
 }
 
 /** A hand-set loop: from `inSec` to `outSec`, both snapped to the beat, at least 1/32 beat long. */
 export function manualLoopSpan(inSec: number, outSec: number, grid: DeckGrid | null): LoopSpan {
   const a = grid ? snapToGrid(inSec, grid, 0.25) : inSec;
   let b = grid ? snapToGrid(outSec, grid, 0.25) : outSec;
-  const min = MIN_LOOP_BEATS * beatSecOf(grid);
-  if (b < a + min) b = a + Math.max(min, grid ? 0.25 * beatSecOf(grid) : 0.05);
+  const min = addBeats(a, MIN_LOOP_BEATS, grid) - a;
+  if (b < a + min) b = a + Math.max(min, grid ? addBeats(a, 0.25, grid) - a : 0.05);
   return { startSec: a, endSec: b };
 }
 
 /** Where a beat jump of `beats` (negative: back) lands: the same phase in the beat, kept inside the song. */
 export function beatJumpTarget(positionSec: number, beats: number, grid: DeckGrid | null, durationSec: number): number {
-  return clamp(positionSec + beats * beatSecOf(grid), 0, Math.max(0, durationSec));
+  return clamp(addBeats(positionSec, beats, grid), 0, Math.max(0, durationSec));
 }
 
 /** A loop moved by `deltaSec`, kept inside the song. */

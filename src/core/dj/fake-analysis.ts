@@ -21,6 +21,8 @@ export interface FakeSong {
   hash?: string;
   gridConfidence?: number;
   noGrid?: boolean;
+  /** Tracked beat times (seconds) for a song whose tempo drifts; `bpm` is then its average. */
+  beats?: number[];
 }
 
 export function fakeKey(root: number, mode: 'major' | 'minor', confidence = 0.8): TrackKey {
@@ -41,7 +43,7 @@ export function fakeAnalysis(s: FakeSong): TrackAnalysis {
     durationSec: at(bars),
     grid: s.noGrid
       ? null
-      : { bpm: s.bpm, firstDownbeat: f, beatsPerBar: 4, confidence: s.gridConfidence ?? 0.95, beats: [] },
+      : { bpm: s.bpm, firstDownbeat: f, beatsPerBar: 4, confidence: s.gridConfidence ?? (s.beats ? 0.4 : 0.95), beats: s.beats ?? [] },
     key: s.key ? fakeKey(s.key.root, s.key.mode, s.key.confidence) : null,
     lufs: s.lufs ?? -9,
     truePeakDb: -0.5,

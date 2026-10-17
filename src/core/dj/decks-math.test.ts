@@ -25,8 +25,11 @@ import {
   snapToGrid,
   syncPlan,
   wrapIntoLoop,
+  deckGridOf,
+  hotCuePosition,
   type DeckGrid,
 } from './decks-math';
+import { driftingBeats } from './beat-map';
 
 const grid: DeckGrid = { bpm: 120, firstDownbeat: 0.25 }; // a beat is 0.5 s
 
@@ -265,5 +268,67 @@ describe('formatting', () => {
     expect(rangeFor(-0.12)).toBe(0.16);
     expect(rangeFor(0.3)).toBe(0.5);
     expect(rangeFor(0.6)).toBeNull();
+  });
+});
+
+describe('tracked beats (a song whose tempo drifts)', () => {
+  // 120 BPM speeding up to 124 over three minutes: a fixed grid at the average (122) is 0.25 beat out by the middle.
+  const beats = driftingBeats(120, 124, 180, 0.5);
+  const tracked = deckGridOf({ bpm: 122, firstDownbeat: 0.5, beats });
+  const fixed = deckGridOf({ bpm: 122, firstDownbeat: 0.5 });
+  /** The distance (beats) from the nearest tracked beat. */
+  const offBeat = (sec: number) => {
+    const n = tracked.map!.beatAt(sec);
+    return Math.abs(n - Math.round(n));
+  };
+
+  it('uses the tracked beats only when there are enough of them', () => {
+    expect(tracked.map).toBeDefined();
+    expect(fixed.map).toBeUndefined();
+    expect(deckGridOf({ bpm: 122, firstDownbeat: 0.5, beats: beats.slice(0, 4) }).map).toBeUndefined();
+    expect(deckGridOf({ bpm: 122, firstDownbeat: 0.5, beats: [] }).map).toBeUndefined();
+  });
+
+  it('snaps to the beats that are there, where the fixed grid snaps to a place with no beat', () => {
+    const t = 100.2;
+    expect(offBeat(snapToGrid(t, tracked))).toBeLessThan(1e-9);
+    expect(offBeat(snapToGrid(t, fixed))).toBeGreaterThan(0.1);
+    expect(offBeat(hotCuePosition(t, tracked))).toBeLessThan(1e-9);
+    // Bars: every 4 beats from the first downbeat.
+    const bar = snapToGrid(t, tracked, 4);
+    expect(tracked.map!.beatAt(bar) % 4).toBeCloseTo(0, 9);
+  });
+
+  it('loops start on a beat and last the beats they say, as the beats really are', () => {
+    const l = autoLoopSpan(100.3, 4, tracked);
+    expect(offBeat(l.startSec)).toBeLessThan(1e-9);
+    expect(offBeat(l.endSec)).toBeLessThan(1e-9);
+    expect(loopBeats(l, tracked)).toBeCloseTo(4, 9);
+    // Four beats around 100 s at ~122.2 BPM: 1.96 s, not the fixed grid's 1.967.
+    expect(l.endSec - l.startSec).toBeCloseTo(4 * (60 / 122.2), 1);
+    const half = resizeLoop(l, 0.5, tracked, 300);
+    expect(loopBeats(half, tracked)).toBeCloseTo(2, 9);
+    expect(half.startSec).toBe(l.startSec);
+    const hand = manualLoopSpan(100.3, 103.9, tracked);
+    // Hand-set loops snap to quarter beats.
+    for (const t of [hand.startSec, hand.endSec]) {
+      const q = tracked.map!.beatAt(t) * 4;
+      expect(Math.abs(q - Math.round(q))).toBeLessThan(1e-9);
+    }
+  });
+
+  it('beat jumps land the same number of beats away, keeping the phase', () => {
+    const from = 100.123;
+    const to = beatJumpTarget(from, 16, tracked, 300);
+    expect(tracked.map!.beatAt(to) - tracked.map!.beatAt(from)).toBeCloseTo(16, 9);
+    const back = beatJumpTarget(to, -16, tracked, 300);
+    expect(back).toBeCloseTo(from, 9);
+    // Near the start the jump stops at the song's start, not before it.
+    expect(beatJumpTarget(2, -32, tracked, 300)).toBe(0);
+  });
+
+  it('without tracked beats nothing changes', () => {
+    expect(snapToGrid(1.2, grid)).toBeCloseTo(1.25, 9);
+    expect(autoLoopSpan(1.6, 4, fixed).endSec - autoLoopSpan(1.6, 4, fixed).startSec).toBeCloseTo(4 * (60 / 122), 9);
   });
 });

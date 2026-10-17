@@ -20,6 +20,7 @@
  *
  * No allocation in `process()`. The worklet (`deck.worklet.ts`) is the thin shell around it.
  */
+import { BeatMap } from '@core/dj/beat-map';
 import { DS } from './deck-id';
 import type { SyncSpec } from './deck-id';
 
@@ -76,10 +77,22 @@ const NUDGE_HOLD_SEC = 0.12;
 
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
 
+function beatMapOf(beats: Float64Array | undefined, first: number): BeatMap | null {
+  if (!beats || beats.length < 2) return null;
+  try {
+    return new BeatMap(beats, first);
+  } catch {
+    return null;
+  }
+}
+
 interface SyncState {
   spec: SyncSpec;
   state: Float64Array;
   seq: Int32Array;
+  /** The beat clocks of the two songs when they have tracked beats (null: the fixed grid in `spec`). */
+  selfMap: BeatMap | null;
+  masterMap: BeatMap | null;
 }
 
 /** What a deck publishes (see `DS`). */
@@ -394,6 +407,8 @@ export class DeckKernel {
       spec,
       state: new Float64Array(spec.master),
       seq: new Int32Array(spec.master, 0, 1),
+      selfMap: beatMapOf(spec.selfBeats, spec.selfFirst),
+      masterMap: beatMapOf(spec.masterBeats, spec.masterFirst),
     };
   }
 
@@ -927,16 +942,22 @@ export class DeckKernel {
       return;
     }
     const sp = sy.spec;
-    this.tempoEff = sp.ratio * snap.tempoRate;
+    const sMap = sy.selfMap;
+    const mMap = sy.masterMap;
+    // The master's position at the first frame of this quantum.
+    const mp = snap.pos + (frame - snap.frame) * snap.rate;
+    // Tracked beats on either side: the tempo ratio is the one of the beats here and there (it moves as the songs drift),
+    // and the phase counts the beats of each. Fixed grids on both sides keep the one ratio.
+    const mult = sp.selfMult ?? 1;
+    const selfLen = sMap ? sMap.lenAt(this.pos) / mult : sp.selfBeat;
+    this.tempoEff = sMap || mMap ? (selfLen / (mMap ? mMap.lenAt(mp) : sp.masterBeat)) * snap.tempoRate : sp.ratio * snap.tempoRate;
     this.syncLocked = true;
     if (!this.playing || snap.scratching) {
       this.syncError = 0;
       return;
     }
-    // The master's position at the first frame of this quantum.
-    const mp = snap.pos + (frame - snap.frame) * snap.rate;
-    const phM = (mp - sp.masterFirst) / sp.masterBeat;
-    const phS = (this.pos - sp.selfFirst) / sp.selfBeat;
+    const phM = mMap ? mMap.beatAt(mp) : (mp - sp.masterFirst) / sp.masterBeat;
+    const phS = sMap ? sMap.beatAt(this.pos) * mult : (this.pos - sp.selfFirst) / sp.selfBeat;
     let err = phS - phM;
     err -= Math.round(err);
     this.syncError = err;
@@ -945,13 +966,13 @@ export class DeckKernel {
       // The master may be mid-jump (its position is a quantum old): align only when it is steady is not
       // knowable here, so just land on its beat now; the phase lock does the rest.
       if (!this.fresh) this.captureTail();
-      this.pos = clamp(this.pos - err * sp.selfBeat, 0, this.frames);
+      this.pos = clamp(sMap ? sMap.posAt((phS - err) / mult) : this.pos - err * sp.selfBeat, 0, this.frames);
       this.resetStretch();
       if (this.isRunning) this.rise = this.declick;
       this.syncError = 0;
       return;
     }
-    const secPerBeat = sp.selfBeat / (this.sampleRate * Math.max(0.1, this.rateOut));
+    const secPerBeat = selfLen / (this.sampleRate * Math.max(0.1, this.rateOut));
     const trim = clamp((-err * secPerBeat) / SYNC_TAU, -MAX_TRIM, MAX_TRIM);
     this.tempoEff *= 1 + trim;
   }

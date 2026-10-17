@@ -18,6 +18,7 @@ import {
   clampPitch,
   clampTrim,
   crossfadeAt,
+  deckGridOf,
   cuePressPlan,
   hotCuePosition,
   loopBeats,
@@ -445,7 +446,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
       const a = deps.peekAnalysis(ref) ?? (await deps.analysis(ref).catch(() => null));
       if (stale()) return;
       r.analysis = a;
-      r.grid = a?.grid ? { bpm: a.grid.bpm, firstDownbeat: a.grid.firstDownbeat } : null;
+      r.grid = a?.grid ? deckGridOf(a.grid) : null;
       r.hash = a?.hash ?? (ref.source.kind === 'embedded' ? ref.source.hash : null);
       const base = r.grid?.bpm ?? null;
       let cuePoint = r.grid ? Math.max(0, r.grid.firstDownbeat) : 0;
@@ -735,6 +736,10 @@ export function createDecks(deps: DecksDeps): DecksApi {
     const fg = r.grid;
     if (!m || !mch || !mg || !fg) return null;
     const rate = sr();
+    // A song with tracked beats (its tempo drifts) hands them over in frames: the player follows the beats it has.
+    const inFrames = (g: DeckGrid) => (g.map && g.beats ? Float64Array.from(g.beats, (t) => t * rate) : undefined);
+    const selfBeats = inFrames(fg);
+    const masterBeats = inFrames(mg);
     return {
       master: mch.stateBuffer,
       ratio: mg.bpm / (fg.bpm * r.syncMult),
@@ -742,6 +747,9 @@ export function createDecks(deps: DecksDeps): DecksApi {
       selfBeat: (60 / (fg.bpm * r.syncMult)) * rate,
       masterFirst: mg.firstDownbeat * rate,
       masterBeat: (60 / mg.bpm) * rate,
+      selfMult: r.syncMult,
+      ...(selfBeats ? { selfBeats } : {}),
+      ...(masterBeats ? { masterBeats } : {}),
     };
   }
 

@@ -24,6 +24,12 @@ export interface AutomatableParam {
   readonly spec: ParamSpec;
   /** The document value (numeric encoding: enum → index, bool → 0/1). */
   readonly base: number;
+  /**
+   * Seconds the control sits behind the song's clock: what it controls is heard that long after the time the
+   * transport schedules (the mixer's delay compensation holds things back). The automation driver works in the
+   * song's time and moves everything it writes to the lane by this much (`ShiftedParam`).
+   */
+  readonly shift?: number;
   /** True while automation owns the value (live edits then only change `base`). */
   readonly driven: boolean;
   /**
@@ -92,6 +98,8 @@ export class AutoLane implements AutomatableParam {
   private drivenFlag = false;
   private readonly discrete: boolean;
   readonly automatable: boolean;
+  /** See AutomatableParam.shift; set by whoever owns the control when the mixer's compensation changes. */
+  shift = 0;
 
   constructor(
     private readonly ctx: BaseAudioContext,

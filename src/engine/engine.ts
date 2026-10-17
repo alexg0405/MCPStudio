@@ -170,6 +170,19 @@ export class Engine implements EngineApi, EngineCore {
   private songPos = 0;
   private lastSweep = 0;
   private disposed = false;
+  /** The constructor has run to its end (the mixer reports its compensation while the engine is being built). */
+  private built = false;
+  /** Inside reconcile(): a change of the compensation is applied at its end, once the strips are up to date. */
+  private reconciling = 0;
+  private realign = false;
+  /** A channel's shift changed during this reconcile (a re-plan follows while playing). */
+  private shiftsMoved = false;
+  /**
+   * The shift (seconds) each song note was dispatched with, until its release: a note's release, or its cancellation
+   * by a re-plan, must carry the shift its start did even if the compensation changed meanwhile (a release earlier
+   * than the start cancels the note; later, it would sound for the difference).
+   */
+  private readonly noteShifts = new Map<number, number>();
 
   constructor(
     ctx: BaseAudioContext,
@@ -198,13 +211,41 @@ export class Engine implements EngineApi, EngineCore {
     this.previewBus.connect(this.masterOut);
     this.monitorBus = new GainNode(ctx, { gain: 0.9 });
     this.monitorBus.connect(this.masterOut);
-    this.mixer = new MixerGraph(this, this.masterOut, () => this.emit());
+    this.mixer = new MixerGraph(
+      this,
+      this.masterOut,
+      () => this.emit(),
+      () => this.alignChannels(),
+    );
 
+    // The song's events reach a channel `shift` seconds late (the mixer's delay compensation is done in time: see
+    // ChannelStrip.shift); previews and live input go to the strips directly and are never held back.
     const sink: TransportSink = {
-      noteOn: (cid, e) => this.strips.get(cid)?.noteOn(e),
-      audioOn: (cid, e) => this.strips.get(cid)?.audioOn(e),
-      noteOff: (cid, e) => this.strips.get(cid)?.noteOff(e),
+      noteOn: (cid, e) => {
+        const strip = this.strips.get(cid);
+        if (!strip) return;
+        const shift = strip.shift;
+        if (shift === 0) return strip.noteOn(e);
+        this.noteShifts.set(e.noteId, shift);
+        strip.noteOn({ ...e, time: e.time + shift });
+      },
+      audioOn: (cid, e) => {
+        const strip = this.strips.get(cid);
+        if (!strip) return;
+        const shift = strip.shift;
+        if (shift === 0) return strip.audioOn(e);
+        this.noteShifts.set(e.noteId, shift);
+        strip.audioOn({ ...e, time: e.time + shift });
+      },
+      noteOff: (cid, e) => {
+        const shift = this.noteShifts.get(e.noteId);
+        if (shift === undefined) return this.strips.get(cid)?.noteOff(e);
+        this.noteShifts.delete(e.noteId);
+        this.strips.get(cid)?.noteOff({ ...e, time: e.time + shift });
+      },
       allNotesOff: (time) => {
+        // Everything not yet started goes, whatever shift it has (they are all at or after `time`).
+        this.noteShifts.clear();
         for (const s of this.strips.values()) s.allNotesOff(time);
       },
     };
@@ -263,7 +304,36 @@ export class Engine implements EngineApi, EngineCore {
     if (!offline && typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
       ctx.addEventListener('statechange', () => this.emit());
     }
+    this.built = true;
     this.initDone = this.init();
+  }
+
+  /** Where a channel routed to `id` is held back (seconds): see MixerGraph.shiftSeconds. */
+  channelShift(id: InsertId): number {
+    return this.mixer.shiftSeconds(id);
+  }
+
+  /**
+   * The mixer's delay compensation was recomputed: every channel (and its automation and plugin anchors) is scheduled
+   * later by what its insert is held back. While playing, what was already handed to the audio thread with the old
+   * shift is planned again.
+   */
+  private alignChannels(): void {
+    if (!this.built || this.disposed) return;
+    if (this.reconciling > 0) {
+      this.realign = true;
+      return;
+    }
+    if (this.applyAlignment() && this.transport.playing) this.updateModel();
+  }
+
+  /** Returns whether any channel's shift changed. */
+  private applyAlignment(): boolean {
+    let moved = false;
+    for (const strip of this.strips.values()) if (strip.setShift(this.mixer.shiftSeconds(strip.outputId))) moved = true;
+    // Insert and effect lanes were moved by the mixer itself; either way the driver plans the moved lanes again.
+    this.automation.retime();
+    return moved;
   }
 
   /** Inserts the master safety limiter once its worklet module has loaded. */
@@ -379,6 +449,23 @@ export class Engine implements EngineApi, EngineCore {
 
   private reconcile(prev: Project | null, next: Project): void {
     if (prev === next) return;
+    this.reconciling++;
+    this.shiftsMoved = false;
+    try {
+      this.reconcileInto(prev, next);
+    } finally {
+      this.reconciling--;
+    }
+    if (this.realign) {
+      this.realign = false;
+      if (this.applyAlignment()) this.shiftsMoved = true;
+    }
+    // Scheduling changes were re-planned at the end of reconcileInto; a moved shift needs a re-plan of its own.
+    if (this.shiftsMoved && this.transport.playing) this.updateModel();
+    this.shiftsMoved = false;
+  }
+
+  private reconcileInto(prev: Project | null, next: Project): void {
     this.project = next;
     if (!prev || prev.transport.bpm !== next.transport.bpm) this.transportInfo.setBpm(next.transport.bpm);
 
@@ -394,8 +481,11 @@ export class Engine implements EngineApi, EngineCore {
         if (!strip) this.strips.set(id, new ChannelStrip(this, ch, next));
         else {
           const prevCh = prev?.channels[id];
-          if (prevCh !== ch) strip.update(ch, next);
-          else if (prev && prev.samples !== next.samples) strip.samplesChanged(next);
+          if (prevCh !== ch) {
+            const was = strip.shift;
+            strip.update(ch, next);
+            if (strip.shift !== was) this.shiftsMoved = true;
+          } else if (prev && prev.samples !== next.samples) strip.samplesChanged(next);
         }
         this.strips.get(id)?.setMuted(muted.has(id));
       }

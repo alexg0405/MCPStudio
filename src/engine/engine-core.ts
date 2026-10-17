@@ -18,6 +18,12 @@ export interface EngineCore {
   /** Automatable params by target key (automation, controller links, knobs that follow automation). */
   readonly params: ParamRegistry;
   insertInput(id: InsertId): AudioNode;
+  /**
+   * Seconds a channel routed to insert `id` is held back for delay compensation: the song's events for it (notes,
+   * clip starts, automation) are scheduled this much later, so the audio needs no delay line and live notes are not
+   * delayed (see MixerGraph.shiftSeconds).
+   */
+  channelShift(id: InsertId): number;
   requestState(owner: PluginOwner, state: JsonValue): void;
   reportFault(owner: PluginOwner, pluginId: string, err: unknown): void;
   /** A plugin instance tapped its audio for its editor (or, live false, the tap went away). */

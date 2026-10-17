@@ -421,4 +421,41 @@ describe('AutomationDriver', () => {
     expect(times[Math.floor(times.length * 0.95)]).toBeLessThan(4);
     for (const lane of lanes) expect(lane.segmentCount).toBeLessThan(400);
   });
+
+  describe('a lane that sits behind the song’s clock (AutomatableParam.shift)', () => {
+    it('lands the curve that much later on the lane, and reads it back in the song’s time', () => {
+      const { project: base, ch } = lead();
+      const { project } = automate(base, vol(ch), linear([pt(0, 0), pt(3840, 1)]), [{ start: 0, length: 3840 }]);
+      const plain = rig(project, { loop: { start: 0, end: 7680 } });
+      const a = plain.add(vol(ch), CHANNEL_VOLUME_SPEC, 0.78);
+      plain.transport.start(0, 1.05);
+      plain.runTo(2);
+
+      const shifted = rig(project, { loop: { start: 0, end: 7680 } });
+      const b = shifted.add(vol(ch), CHANNEL_VOLUME_SPEC, 0.78);
+      b.lane.shift = 0.01;
+      shifted.driver.retime();
+      shifted.transport.start(0, 1.05);
+      shifted.runTo(2);
+      // The same curve, 10 ms later on the lane, and the song's time still finds its value.
+      for (let t = 1.1; t < 2.0; t += 0.0371) {
+        expect(b.param.at(t + 0.01)).toBeCloseTo(a.param.at(t), 6);
+        expect(shifted.driver.readValue(targetKey(vol(ch)), t)).toBeCloseTo(plain.driver.readValue(targetKey(vol(ch)), t), 6);
+      }
+    });
+
+    it('plans the lane again when its shift changes while playing', () => {
+      const { project: base, ch } = lead();
+      const { project } = automate(base, vol(ch), linear([pt(0, 0), pt(3840, 1)]), [{ start: 0, length: 3840 }]);
+      const r = rig(project, { loop: { start: 0, end: 7680 } });
+      const { lane, param } = r.add(vol(ch), CHANNEL_VOLUME_SPEC, 0.78);
+      r.transport.start(0, 1.05);
+      r.runTo(1.5);
+      lane.shift = 0.02;
+      r.driver.retime();
+      r.runTo(2.5);
+      // From a little after the change the lane follows the curve 20 ms later.
+      for (let t = 1.7; t < 2.4; t += 0.0371) expect(param.at(t + 0.02)).toBeCloseTo(1.25 * ((t - 1.05) / 2), 3);
+    });
+  });
 });

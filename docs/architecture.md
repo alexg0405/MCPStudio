@@ -115,7 +115,8 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
 - Playhead: keep a ring of segments; each frame compute the audible time from `getOutputTimestamp()`
   (`contextTime + (performance.now() − performanceTime) / 1000`, includes output latency, e.g. Bluetooth) and map it
   through the ring. Never store the playhead in React state.
-- Preview/MIDI input bypass the scheduler (`time = ctx.currentTime`, flush the worklet port). Velocity-0 noteOn = noteOff.
+- Preview/MIDI input bypass the scheduler (`time = ctx.currentTime`, flush the worklet port) and the mixer's delay
+  compensation (which is done in the song's event times, see PDC). Velocity-0 noteOn = noteOff.
   `currentTime` only moves once per audio callback, so a quick tap's release could carry the press's own time and cancel
   the note: `previewNoteOff` holds the release until `2.5 × baseLatency` (at least 10 ms) after the press.
 - Metronome and audio-clip starts are core events consumed by engine-internal players; the metronome goes to a monitor
@@ -798,7 +799,7 @@ Every insert id has persistent nodes (an `InsertBus`) that outlive its strip, so
 sidechains never reconnect when a strip is rebuilt, deleted or restored by undo:
 
 ```
-channels ──► chIn ─[pad: arrival]─► routeIn ─► slot 1 … slot N ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
+channels ──► chIn ───────────────► routeIn ─► slot 1 … slot N ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
 other inserts' routes ─[pad]──────► routeIn            sidechain out ◄─┘  mute/solo  pre sends ◄─┘   post sends, meters ◄─┘
                                                                                      (master: postTap → masterOut → limiter)
 route  : tap (pre or post) ─► level (AutoLane, `route:from:to`) ─[pad]─► target routeIn
@@ -840,23 +841,48 @@ In whole frames: an effect's `latency` (seconds) is rounded to `Math.round(laten
 - Only live slots count (enabled, loaded, not faulted; an effect's latency is only known once its async `create()`
   resolves). Slots report changes (load, enable, bypass, replace, fault) and every routing edit recomputes; edits are
   batched per reconcile.
-- For an insert X: `before(X, k)` is the latency ahead of slot k and `fx(X)` that of all its slots.
-  `arrival(X) = max(0, out(S) for every route S → X, out(S) − before(X, k) for every sidechain S → X keying a live slot k)`
-  and `out(X) = arrival(X) + fx(X)` (the latency at X's taps), solved in topological order (Kahn).
-- Every shorter edge is padded up to that: channels into X by `arrival(X)` (on `chIn → routeIn`), a route S → X by
-  `arrival(X) − out(S)`, a sidechain S → X (slot k) by `arrival(X) + before(X, k) − out(S)`. So a sidechain key arrives
-  at its effect at the same time as the audio it controls, and a track keyed by a latent track waits for it.
-- Paddings are DelayNodes of exactly `n / sampleRate`, created only where the padding is above 0, so paths without
-  latency stay plain connections and bit-exact. Each padded link (`PadLink`) has its own gain: when its delay or
-  target changes while a realtime context plays, the old path fades out over 10 ms as the new one fades in (a brief
-  comb, instead of a click); offline and before the context starts it switches exactly.
-- `graphLatency()` is `out(master)`: the longest path to the master's output, in seconds. The playhead, the step
-  lights, `readAutomation` and `tempoNow` read the transport at `audibleTime() − graphLatency()`, so they follow what is
-  heard. The engine notifies subscribers when it changes (the mixer shows "Delay comp. N ms").
+- **Compensation is done in time, as far upstream as the routing allows, not with a delay line on every join.** For an
+  insert X: `before(X, k)` is the latency ahead of slot k and `fx(X)` that of all its slots. A forward pass gives the
+  mixer's latency (`graphLatency()` = the longest path to the master's output); a backward pass ("as late as possible"
+  scheduling, `engine/pdc.ts`) gives each insert its `arrival(X)`: how long after the time the song schedules it the
+  audio entering X is: `arrival(S) = min(arrival(Y) − fx(S) over its routes S → Y, arrival(X) + before(X, k) − fx(S)
+  over the sidechains it keys)`, the master staying where the forward pass put it, and `out(X) = arrival(X) + fx(X)`
+  (the latency at X's taps). A track that feeds nothing heard (no route out, no key taken from it) constrains nobody.
+- **Channels are not padded. They are scheduled later.** The song's events for a channel (notes, audio clip starts, its
+  volume/pan/pitch and plugin automation, its plugin's transport anchors) go to it `arrival(its insert)` later
+  (`ChannelStrip.shift`; `Engine`'s transport sink adds it to each event, `MixerGraph.shiftSeconds`). Live input and
+  previews (`previewNoteOn`, MIDI, the typing piano) go to the strips directly, so they hear none of the compensation:
+  on the heavy-song fixture a key sounds as soon as on an idle song (see Latency measurements). Recorded notes still
+  land where the player heard the song (`tickAt` takes `graphLatency()` off the heard time, which is unchanged: a song
+  note is still heard `graphLatency()` after its time), and playback is sample-identical to the delay-line version
+  (`test/browser/routing.test.ts`, `pdc-shift.test.ts`: renders shifted by the latency match bit for bit; automation to
+  1e-5).
+- What is left of the old delay lines: a route S → X still gets a DelayNode of exactly `arrival(X) − out(S)` frames and a
+  sidechain S → X (slot k) `arrival(X) + before(X, k) − out(S)`: zero along the route that limits X and along any chain
+  of tracks with one route each, non-zero where one track feeds two paths that differ (a send to a latent bus and a dry
+  send). Each padded link (`PadLink`) has its own gain: when its delay or target changes while a realtime context
+  plays, the old path fades out over 10 ms as the new one fades in; offline and before the context starts it switches
+  exactly. Channel inputs (`chIn`) are plain connections, so a live audio input monitored through a track
+  (`openAudioInput`) is not delayed either.
+- **A change of the compensation while playing** (an effect finishes loading, is bypassed, a route changes): every
+  channel's shift is recomputed (`Engine.alignChannels`), automation lanes and plugin anchors are moved
+  (`AutomatableParam.shift`: the automation driver reaches a lane through `ShiftedParam`, which adds the shift to every
+  time it writes and takes it off what it reads; `AutomationDriver.retime()` plans moved lanes again) and the transport
+  re-plans from 10 ms ahead, so notes not yet started get their new place and each lands once (a note's release
+  carries the shift its start was dispatched with: `Engine.noteShifts`). Notes already sounding keep going. Changes
+  made inside `reconcile()` apply at its end, once the strips are up to date. A note in the last 10 ms before the
+  re-plan keeps the old shift (a flam of that size for one note).
+- Insert-side automation (fader and pan: `out(X)`; a slot's params: what reaches it; its mix: what leaves it; a send's
+  level: `out` of the sending insert) is moved the same way, which also closes the old gap where such controls landed
+  early by the latency.
+- `graphLatency()` is `out(master)`. The playhead, the step lights, `readAutomation` and `tempoNow` read the transport at
+  `audibleTime() − graphLatency()`, so they follow what is heard. The engine notifies subscribers when it changes (the
+  mixer shows "Delay comp. N ms").
 - `tailSeconds()` follows the routing depth (effect tails add up along the deepest route path to the master) plus the
   latency. `renderOffline` keeps its defaults and reports `latency` in its result; WAV export doesn't trim it yet.
-- Not compensated: automation of a control that sits after latent effects (an insert fader, a send level) lands early by
-  that latency; the automation driver could offset by `MixerGraph.compensation.out(insert)` per target. The master
+- Limits: a plugin's `host.transport.tempoAt(t)` looks the time up in the transport's planned segments, so within the
+  shift of a tempo change it can answer for the neighbouring segment; a note of a channel whose shift is more than the
+  lookahead (very latent chains) is dispatched with the lookahead plus its shift of lead, which is fine. The master
   limiter's 1.3 ms isn't part of `graphLatency()`.
 
 ### Solo
@@ -2529,8 +2555,23 @@ machine is shared, so compare runs by their control row ("pointermove over an in
   load on an AI app's first call), the piano roll and mixer windows, or the custom editors of seven built-in
   plugins (`lazyUi`). JS decoded before the first render 1777 -> ~1380 kB (-22 %), on the wire 627 -> 502 kB.
   What is left before the first paint is mostly React, the engine, the playlist and the rack. The biggest single
-  item of main-thread CPU at startup is creating the `AudioContext` (`Engine.realtime`; tens of ms, more on a loaded
-  machine), which belongs to the audio code. Not tried: a single initial chunk with Rolldown's `codeSplitting`
+  item of main-thread CPU at startup is creating the `AudioContext` (`Engine.realtime`; 1-2 ms when Chrome's audio
+  service is already running, ~170-250 ms for the first context of a browser process, which blocks the main thread).
+  **The engine is therefore made after the first paint** (`EngineHost` with `deferred`, which `ui/main.tsx` asks for through
+  `createServices({ deferEngine: true })`): the host starts with an inert `IdleEngine` (state 'suspended', nothing
+  playing, meters 0, the last sample rate from localStorage for the toolbar) and makes the real engine after two animation
+  frames and an idle callback (a timer covers hidden tabs), or on the spot when anything needs sound (play, a live note,
+  record, previews, `ready()`, `tickAt`, decks, `sampleRate`). The project, view, session, output device, open-ended flag and
+  the sample overviews asked for meanwhile are handed over. `resume()` before the engine exists waits for it and resumes it
+  (a first click does not pay for creating the context inside its handler; a context made after the page was interacted with
+  starts running by itself). A just-made engine is *warming* until its instruments have loaded (at most 1.5 s): live notes
+  are held and played when they are in (a tap that ended meanwhile sounds for its length, a held key carries on; held notes
+  older than 0.6 s are dropped) and play waits and shows as playing; stop and panic cancel both. Tests and tools that do
+  not pass `deferEngine` get the engine at once. Measured (`scripts/perf-startup.mjs --fresh`, a new Chrome per run, 15 runs
+  alternating builds, machine at load 10-19): cold ready (toolbar in the DOM) median 904 -> 545 ms, p95 2329 -> 881 ms, FCP
+  1056 -> 695 ms; in one shared browser (audio service already up) ready 445 -> 406 ms. Time to interactive does not move:
+  the same work runs right after the paint (marks `ag:engine-start`, `ag:engine`). Tried and dropped: `sinkId: { type: 'none' }`
+  to skip the device (no effect in this Chrome: the creation still took 250+ ms). Not tried: a single initial chunk with Rolldown's `codeSplitting`
   groups (the page rendered nothing: a circular import between that chunk and the lazy ones).
 - **Round 2** (same harness; the rows below are medians, run alternately on a shared machine):
   - *Playlist zoom* is not slower than the playlist's plain scroll: the 19-33 ms of the wheel rows is the browser
@@ -2738,8 +2779,12 @@ first sample at the master, in context time) and the rest (output buffer and dev
 play → note at tick 0, edit while playing (a note added `d` ms ahead of the schedule: the smallest `d` heard on time),
 knob (a plugin param, a channel volume). Three buffers, an idle song and the `?perf=mix30` fixture playing with its tracks
 muted. Findings: the engine's own part is 1.3 ms (p95 6.6) from `currentTime`; everything else is the output (24 / 32 / 40
-ms in this Mac's Chrome), which only the buffer size moves. The heavy song adds the mixer's delay compensation
-(`graphLatency()`, 10.6 ms there) to every live note and knob: all paths wait for the slowest plugin. An edit is heard on
+ms in this Mac's Chrome), which only the buffer size moves. Before the compensation moved into time (see PDC) the
+heavy song added the mixer's `graphLatency()` (10.6 ms there) to every live note and knob: all paths waited for the
+slowest plugin. Now live input is not held back: small buffer, heavy song, key 39.7 -> 28.5 ms median (idle song 28.4),
+MIDI 39.1 -> 28.3, plugin knob 39.7 -> 27.9, channel volume 37.8 -> 26.3; medium buffer key 51.8 -> 41.7 (idle 42.0), large
+buffer key 69.6 -> 58.3 (idle 58.1). Playing from stop on that song is unchanged (51.3 -> 51.5 ms): the first note has to
+come out `graphLatency()` after its time to line up with the slowest track, and the edit-while-playing lead is still 20 ms. An edit is heard on
 time when it is at least ~20 ms ahead of the schedule (10 ms `SAFETY` + message), independent of the lookahead (the same
 with 50 ms as with 120 ms), and the playhead the user sees trails the schedule by 30–60 ms, so edits ahead of what is
 seen are always in time: the lookahead is a jank margin, not an edit latency, and stays at 120 ms.

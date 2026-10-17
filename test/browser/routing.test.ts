@@ -168,7 +168,11 @@ describe('delay compensation', () => {
         latency = engine.graphLatency();
         const pdc = engine.mixer.compensation!;
         expect(pdc.out(ins[2]!)).toBe(LATENT);
-        expect(pdc.routePad(ins[3]!, MASTER)).toBe(LATENT);
+        // The dry track is the one that waits (its channels are scheduled late); the delay line sits on the send into it.
+        expect(pdc.arrival(ins[3]!)).toBe(LATENT);
+        expect(pdc.routePad(ins[3]!, MASTER)).toBe(0);
+        expect(pdc.routePad(ins[1]!, ins[3]!)).toBe(LATENT);
+        expect(pdc.routePad(ins[1]!, ins[2]!)).toBe(0);
       },
     });
     const i0 = argmax(bare);

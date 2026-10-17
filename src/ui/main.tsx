@@ -41,7 +41,8 @@ const [, start] = await Promise.all([
 ]);
 mark('loaded');
 const restored = start.restored;
-const services = createServices({ plugins, ...(restored ? { project: restored.project } : {}) });
+// The audio engine starts right after the first paint (or when something first needs sound), not before it.
+const services = createServices({ plugins, deferEngine: true, ...(restored ? { project: restored.project } : {}) });
 mark('services');
 registerFeatures(services);
 mark('features');

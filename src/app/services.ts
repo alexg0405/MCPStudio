@@ -108,6 +108,11 @@ export function detectPlatform(): Platform {
 
 export interface ServiceOptions {
   platform?: Platform;
+  /**
+   * Make the engine (the AudioContext and the sounds) after the first paint, or when something first needs it, instead
+   * of during startup (see EngineHostOptions.deferred). The app's entry point turns it on; tests leave it off.
+   */
+  deferEngine?: boolean;
   /** Inject an engine (tests use a fake); default is a realtime Web Audio engine. */
   createEngine?: (opts: EngineOptions) => EngineApi;
   /** Opens the audio input's stream (tests pass a generated one; default: getUserMedia). */
@@ -194,7 +199,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   };
   const makeEngine =
     opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o, AUDIO_BUFFER_HINT[effectiveBuffer(prefs.getState())]));
-  const engine = new EngineHost(() => makeEngine(engineOptions));
+  const engine = new EngineHost(() => makeEngine(engineOptions), { deferred: !!opts.deferEngine });
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
   prefs.subscribe(applyOutput);

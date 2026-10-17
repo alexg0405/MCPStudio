@@ -22,6 +22,11 @@ export class WorkletPortImpl implements WorkletPort {
   private readonly syncs = new Map<number, () => void>();
   private readonly listeners = new Set<(msg: unknown) => void>();
   private disposed = false;
+  /**
+   * Seconds this plugin sits behind the song's clock (the mixer's delay compensation: see `AutomatableParam.shift`).
+   * The song's transport anchors are sent that much later, so a tempo-synced plugin follows what it renders.
+   */
+  shift = 0;
 
   constructor(
     readonly node: AudioWorkletNode,
@@ -56,7 +61,7 @@ export class WorkletPortImpl implements WorkletPort {
 
   /** The song's transport from `time` on (see EV_TRANSPORT; engine/kernel-transport.ts sends these). */
   transport(time: number, beat: number, playing: boolean, bpm: number, replan: boolean): void {
-    this.push(EV_TRANSPORT, time, beat, playing ? 1 : 0, bpm, replan ? 1 : 0, 0);
+    this.push(EV_TRANSPORT, time + this.shift, beat, playing ? 1 : 0, bpm, replan ? 1 : 0, 0);
   }
 
   setState(state: unknown): void {

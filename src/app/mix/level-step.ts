@@ -19,6 +19,7 @@ export const levelMixStep: AfterStep | null = async (item, c) => {
   const pinned = pinnedFor.get(item);
   const res = await autoLevel(c.s, {
     style: item.style,
+    ...(item.targetLufs !== undefined ? { targetLufs: item.targetLufs } : {}),
     ...(item.fromTick !== undefined ? { fromTick: item.fromTick } : {}),
     ...(item.bars !== undefined ? { bars: item.bars } : {}),
     ...(pinned ? { pinned } : {}),

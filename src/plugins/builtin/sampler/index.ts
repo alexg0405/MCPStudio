@@ -1,4 +1,4 @@
-import { defineInstrument, dbToGain, GraphVoices, p } from '@agstudio/sdk';
+import { defineInstrument, dbToGain, GraphVoices, p, type InstrumentInstance } from '@agstudio/sdk';
 
 /** Velocity tone's cutoff at full velocity. */
 const TOP_HZ = 20000;
@@ -106,7 +106,7 @@ export default defineInstrument({
       return backwards;
     };
 
-    return {
+    const instance: InstrumentInstance = {
       output: out,
       // With the envelope, the release. Without it a note plays the whole sample even after its key is up, so the
       // tail is the rest of the sample at the slowest pitch it is played at: its length comes from the file's
@@ -207,5 +207,15 @@ export default defineInstrument({
         out.disconnect();
       },
     };
+    // An export starts as soon as every instrument is ready: it waits for the sample here, so the first note
+    // isn't dropped while an embedded sample is still decoding (live playback warms it at idle time instead).
+    if (!host.offline) return instance;
+    return host.samples.load('main').then(
+      (b) => {
+        if (!looked) setBuffer(b ?? host.samples.get('main'));
+        return instance;
+      },
+      () => instance,
+    );
   },
 });

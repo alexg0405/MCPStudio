@@ -2249,9 +2249,9 @@ cut. Now:
   0.5 s (Sampler, cold cache), 4 s (Drum Pads), 2 s (Slicer): the export ended 0.2–4 s into the sample. After: tails of
   6.4 s (Sampler, at its root with the semitone margin), 12.7 s an octave down, 6 s (pad), 6 s (slice), and the export
   holds the whole sample, fading to silence at its end.
-- Found, not changed: on a cold cache a Sampler's first note is dropped in an offline render when its embedded sample
-  is still decoding (the sampler asks for it at its first note and plays nothing until it arrives). The app avoids it
-  because the realtime engine decodes slot samples when idle and the cache is shared.
+- A Sampler in an offline render (export, freeze, mix analysis) waits for its sample in `create()`, so the render
+  starts only once it is decoded: on a cold cache its first note used to be dropped. Live playback still loads it at
+  idle time (startup stays fast). Test: `one-shot-tail.test.ts`, "completely cold cache".
 
 ## Faust plugins (M18)
 

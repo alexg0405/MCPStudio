@@ -108,6 +108,28 @@ describe('exports keep one-shot samples that start at the end of the song (cold 
     expectWhole(ch, 2 * SECONDS);
   });
 
+  it('Sampler on a completely cold cache: an export right away still plays its first note', async () => {
+    const samples = new TestSamples();
+    const ref = samples.add([oneShot()], SR, 'six seconds');
+    const { project, patternId } = instrumentProject(sampler as unknown as PluginDef, [{ at: 0, len: 1, key: 60 }], {
+      params: {},
+      samples: { main: ref },
+      bars: 1,
+      bpm: 120,
+    });
+    // Nothing decoded beforehand: the Sampler must wait for its sample before the render starts.
+    const r = await renderOffline(project, {
+      plugins: resolver(sampler as unknown as PluginDef),
+      sampleCache: new SampleCache(samples.provider),
+      view: { mode: 'pattern', patternId, loop: null },
+      bars: 1,
+      sampleRate: SR,
+      tail: 0,
+    });
+    const ch = trimExport(r, MUSIC)[0]!;
+    expect(db(ch, 0, at(0.5))).toBeGreaterThan(-20);
+  });
+
   it('Sampler with the envelope on still ends with its release', async () => {
     const { tail } = await render(sampler as unknown as PluginDef, 'main', 60, { envelope: true, release: 0.3 });
     expect(tail).toBeLessThan(2);

@@ -458,8 +458,11 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   still saves to the same file. A duplicated tab copies sessionStorage, so its id is already locked: it takes a new id.
 - Autosave: OPFS `autosave/<session>/{a,b}.agproj` plus `{a,b}.json` (meta with size and SHA-256, written after the
   data, so an interrupted save leaves the other slot valid). 3 s after the last edit (≤ every 30 s) and on tab hide,
-  alternating A/B slots. Autosaves are thin: no sample bytes (samples stay in the blob store). Encoding runs on the main
-  thread for now; the storage interface allows moving it to a worker. Each tab holds a Web Lock
+  alternating A/B slots. Autosaves are thin: no sample bytes (samples stay in the blob store). The project is serialized
+  on the main thread (`projectFileParts`: JSON and UTF-8, ~5 ms for 1 MB) and compressed in a Worker
+  (`persistence/zip-async.ts`, `zip.worker.ts`: 25-40 ms that used to run in a frame); the save for a hiding tab or a
+  closing page zips on the spot, since a Worker may never get to answer, and without Workers (tests) or when one
+  fails the zip is made on the calling thread. The bytes are those of `writeProjectFile`. Each tab holds a Web Lock
   `agstudio:session:<id>`; on startup, autosaves whose lock is free and not marked clean are recovery candidates. Only a
   clean project ends clean (on pagehide, save, open or new), so closing a tab with unsaved changes keeps them
   recoverable; only unsaved work is autosaved. The recovery dialog offers the newest candidate first (Recover /
@@ -2528,8 +2531,37 @@ machine is shared, so compare runs by their control row ("pointermove over an in
   item of main-thread CPU at startup is creating the `AudioContext` (`Engine.realtime`; tens of ms, more on a loaded
   machine), which belongs to the audio code. Not tried: a single initial chunk with Rolldown's `codeSplitting`
   groups (the page rendered nothing: a circular import between that chunk and the lazy ones).
-- Known and left: the crash autosave deflates the project on the main thread (25-40 ms for a 1 MB project, once
-  3 s after a burst of edits; a worker would remove it).
+- **Round 2** (same harness; the rows below are medians, run alternately on a shared machine):
+  - *Playlist zoom* is not slower than the playlist's plain scroll: the 19-33 ms of the wheel rows is the browser
+    holding a wheel event until the page has answered the previous one (the new "playlist scroll (wheel, no zoom)" row,
+    where the picture only slides, reads the same; "from dispatch" subtracts it: zoom ~2-3 ms, scroll ~1 ms). A zoom
+    frame already redraws once per frame (the wheel only changes the viewport; `frame()` redraws the three layers: 0.7 ms
+    of JS), so what remained was raster: the lane-header and overlay canvases were redrawn on every zoom and scroll
+    frame (headers now only when the lane scroll or height changed, the overlay not while it is blank): 12 % fewer
+    raster calls and GPU time per zoom frame in a trace. Not done: stretching the old picture during the gesture
+    (blurry, and the 2.7x of a wheel notch makes it worse than a redraw), nothing else is left to share between
+    frames since grid, clips and ruler all change with the scale.
+  - *Mixer*: a strip's volume, pan and dB readout are three small memoized components that each read their own
+    value (`StripFader`, `StripPan`, `StripDb`), so a drag renders those and not the strip's name, buttons, menus and
+    routing; and what depends on the selected track (the send arrow and knob, the IN/SC badges: `StripRoute`,
+    `StripBadges`) reads the selection itself, so picking a strip (every drag starts with that) re-renders those pieces
+    on each strip and the two strips that changed, not all 31 strips whole. React render time (`__ag.perf.react.ms`,
+    Profiler `actualDuration`, dev build with StrictMode's double render, 31 strips): per drag move 1.0 -> 0.45 ms
+    (fader) and 1.3 -> 0.55 ms (knob), at the pointer-down that selects the strip 22-25 -> 10 ms; the worst frame
+    at the start of a drag 14-19 ms -> 0-1 ms (LoAF). The paint-to-paint figures barely move (6 ms from dispatch
+    either way): most of a drag frame is the browser's style, layout and raster of the changed control.
+  - *Autosave*: the compression moved to a Worker, see Persistence. A stall of 13-19 ms (mix30, 1.2 MB project; 37 ms
+    in a quiet tab) three seconds after an edit is gone.
+  - *First-time costs* were mostly the browser's: the first pointer events of a page cost 20-30 ms by themselves
+    (the first drag measured 70 ms, the first context menu 75 ms, the first mixer drag 90 ms; with twelve pointer
+    moves sent first: 15, 18 and 22 ms, with nothing left of a first-time penalty). A person has always moved the mouse
+    before the first click, so `perf-ui.mjs` now does too (`--cold-pointer` keeps the old behaviour). Warming up code
+    with canvas or DOM work (an offscreen canvas with blur, shadow, gradient and text; a hidden element with the
+    context menu's backdrop-filter and shadow; opening and closing the real menu off-screen) changed nothing (48-51 ms
+    in each), because the time is not JIT or GPU shader compilation: JS is 9 of the ~50 ms. So there is no idle
+    warm-up in the app.
+  - Known and left: the wheel latency above (browser side; ctrl+wheel must be a blocking listener to stop the page
+    zoom); the per-move React commit of a fader (a controlled value through the document store: ~0.4 ms of JS).
 
 ## Testing
 

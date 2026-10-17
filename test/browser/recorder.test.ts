@@ -47,6 +47,32 @@ describe('recorder', () => {
     expect(error).toBeLessThan(0.15);
   });
 
+  it('a measured round trip replaces the output and input latency estimate (Hum to notes and the performance recorder use it)', async () => {
+    const dest = ctx.createMediaStreamDestination();
+    const handle = await engine.record(dest.stream, {
+      bpm: 120,
+      beatsPerBar: 4,
+      countInBeats: 4,
+      bars: 1,
+      click: false,
+      // The browser's estimate would say five seconds; the calibrated round trip says 200 ms and wins.
+      inputLatency: 5,
+      roundTrip: 0.2,
+      playAlong: false,
+    });
+    const osc = new OscillatorNode(ctx, { frequency: 440 });
+    const gain = new GainNode(ctx, { gain: 0.8 });
+    osc.connect(gain).connect(dest);
+    osc.start(handle.barOneTime + 0.5);
+    osc.stop(handle.barOneTime + 0.55);
+    const rec = await handle.done;
+    const onset = rec.samples.findIndex((v) => Math.abs(v) > 0.2) / rec.sampleRate;
+    // Bar 1 is placed 0.2 s after the click was sent, whatever the browser reports: this loopback has no delay.
+    const error = onset - (rec.barOneSec - 0.2) - 0.5;
+    expect(error).toBeGreaterThan(-0.01);
+    expect(error).toBeLessThan(0.15);
+  });
+
   it('stops early and can be cancelled', async () => {
     const dest = ctx.createMediaStreamDestination();
     const opts = {

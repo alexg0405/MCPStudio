@@ -6,7 +6,7 @@
 import { tempoMapOf } from '@core/automation/tempo';
 import { DEFAULT_CROSSFADE_MS } from '@core/audio/comp';
 import type { AudioClip, Clip, ClipId, Project, Tick } from '@core/model/types';
-import { compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
+import { compSegmentsOf, compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
 import { groupOfClip, takeGroup, takeGroups, type TakeGroup } from '@core/query/takes';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Services } from '../services';
@@ -31,7 +31,14 @@ function clipTarget(p: Project, clip: Clip | undefined): CompTarget | null {
   if (!clip) return null;
   const g = groupOfClip(p, clip);
   if (!g) return null;
-  return { group: g, take: clip.kind === 'audio' && clip.take ? clip.take.index : null, span: { from: clip.start, to: clip.start + clip.length } };
+  let span = { from: clip.start, to: clip.start + clip.length };
+  // A comp clip stands for its segment: without the part it shares with a neighbour for the crossfade.
+  if (clip.kind === 'audio' && clip.take?.comp) {
+    const mid = clip.start + clip.length / 2;
+    const seg = compSegmentsOf(g).find((x) => x.from <= mid && mid < x.to);
+    if (seg) span = { from: seg.from, to: seg.to };
+  }
+  return { group: g, take: clip.kind === 'audio' && clip.take ? clip.take.index : null, span };
 }
 
 /**

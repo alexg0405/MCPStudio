@@ -7,6 +7,7 @@ import { buildTakeGroups, takeGroups, visibleLaneOrder } from '../query/takes';
 import { compSegmentsOf, compStep, compSwipe, compUseTake, compSetCrossfade, addTakeGroup, flattenComp, newTakeGroup } from './comp';
 import { addChannel, addSample } from './channels';
 import { migrateProject, repairProject } from '../schema/migrate';
+import { addClips } from './playlist';
 
 
 const tempo = constantTempo(120); // 1920 ticks per second
@@ -156,6 +157,17 @@ describe('comp edits', () => {
     expect(clips.every((c) => !c.take && !c.muted)).toBe(true);
     expect(history.undo()).toBe(true);
     expect(get()).toEqual(before);
+  });
+});
+
+describe('copies of take clips', () => {
+  it('a clip added on its own (a paste, a duplicate, a new clip) is not part of the group', () => {
+    const { history, get, group } = setup();
+    const take = comp(get(), group).takes[0]!.clips[0]!;
+    history.transact('Paste', (d) => addClips(d, [{ ...take, id: 'clip_copy' as never }]));
+    const copy = get().playlist.clips['clip_copy' as never] as AudioClip;
+    expect(copy.take).toBeUndefined();
+    expect(comp(get(), group).takes[0]!.clips).toHaveLength(1);
   });
 });
 

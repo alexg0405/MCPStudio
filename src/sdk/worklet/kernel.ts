@@ -91,6 +91,16 @@ export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extend
 
 export abstract class EffectKernel<P extends ParamSpecs = ParamSpecs> extends KernelBase {
   /**
+   * Effects defined with `notes: { param }` hear the notes of an instrument channel through these (optional)
+   * methods. They are called at the start of the render block the event falls in (a block is 128 frames, under
+   * 3 ms), before `process()`; `velocity` is 0–1, a note off's the release velocity.
+   */
+  noteOn?(key: number, velocity: number, noteId: number): void;
+  noteOff?(noteId: number, key: number, release: number): void;
+  /** Everything held is released (the channel changed, the song stopped or jumped). */
+  allNotesOff?(hard: boolean): void;
+
+  /**
    * Writes `n` frames from `input` into `output` (input always has as many channels as output).
    * Effects defined with `sidechain: true` also get the sidechain signal (the chosen track, or the
    * effect's own input when none is chosen; zeros while the source plays nothing), with as many

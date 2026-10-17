@@ -516,6 +516,7 @@ export class FxSlotStrip {
       owner: this.owner,
       loadModule: (url) => this.core.loadModule(url),
       ports: this.core.ports,
+      noteFeed: this.core.noteFeed,
       reportFault: (err) => {
         if (gen === this.generation) this.fault(err);
       },

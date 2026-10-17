@@ -1,6 +1,7 @@
 import type { InsertId, PluginOwner } from '@core/model/types';
 import type { AudioTap, JsonValue, TransportInfo } from '@agstudio/sdk';
 import type { PluginResolver } from './api';
+import type { NoteFeedHub } from './note-feed';
 import type { ParamRegistry } from './param-lane';
 import type { SampleCache } from './samples';
 import type { SampleResidency } from './sample-residency';
@@ -30,6 +31,8 @@ export interface EngineCore {
   reportTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
   loadModule(url: string): Promise<void>;
   readonly ports: Set<WorkletPortImpl>;
+  /** The notes instrument channels play, for effects that follow a melody (`PluginHost.notes`). */
+  readonly noteFeed: NoteFeedHub;
   /** Something subscribers show changed (e.g. a time-stretch started or finished). */
   notify?(): void;
 }

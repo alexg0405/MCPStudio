@@ -349,12 +349,26 @@ export class KernelRunner {
     }
   }
 
-  /** Applies the transport anchors and param changes queued up to `frame` (effects get no notes). */
+  /**
+   * Applies the transport anchors and param changes queued up to `frame`, and the notes an effect follows (an
+   * effect that doesn't implement the note methods drops them).
+   */
   private applyTransport(frame: number): void {
     const ev = this.ev;
+    const fx = this.kernel instanceof InstrumentKernel ? null : (this.kernel as EffectKernel);
     while (this.queue.peekFrame() <= frame && this.queue.shift(ev)) {
       if (ev.type === EV_PARAM) {
         this.setParam();
+        continue;
+      }
+      if (fx && !this.faulted && (ev.type === EV_NOTE_ON || ev.type === EV_NOTE_OFF || ev.type === EV_ALL_OFF || ev.type === EV_ALL_OFF_HARD)) {
+        try {
+          if (ev.type === EV_NOTE_ON) fx.noteOn?.(ev.key, ev.vel, ev.id);
+          else if (ev.type === EV_NOTE_OFF) fx.noteOff?.(ev.id, ev.key, ev.vel);
+          else fx.allNotesOff?.(ev.type === EV_ALL_OFF_HARD);
+        } catch (err) {
+          this.fault(err);
+        }
         continue;
       }
       if (ev.type !== EV_TRANSPORT || this.faulted) continue;

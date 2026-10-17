@@ -26,6 +26,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Open… | `⌘O` / `Ctrl+O` |
 | Pattern / song mode | `L` |
 | Piano roll | `F7`, `⌥3` / `Alt+3` |
+| Pitch editor | `⌥⇧P` / `Alt+Shift+P` |
 | Play / stop | `Space` |
 | Playlist | `F5`, `⌥1` / `Alt+1` |
 | Previous pattern | `Num −` |

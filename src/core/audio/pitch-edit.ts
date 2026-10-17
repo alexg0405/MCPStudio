@@ -267,7 +267,7 @@ export function applyPitchAction(edit: PitchEdit, action: PitchAction, notes: Re
     case 'to':
       return mapNotes(edit, notes, (n) => withTarget(n, action.midi));
     case 'transition': {
-      const next = { ...edit, transition: clamp(action.ms, 0, MAX_TRANSITION_MS) };
+      const next: PitchEdit = { ...edit, transition: clamp(action.ms, 0, MAX_TRANSITION_MS) };
       if (next.transition === DEFAULT_TRANSITION_MS) delete next.transition;
       return next;
     }

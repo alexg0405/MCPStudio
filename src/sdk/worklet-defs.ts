@@ -88,6 +88,39 @@ function forwardSamples(host: PluginHost<ParamSpecs, unknown>, port: WorkletPort
   return () => offs.forEach((off) => off());
 }
 
+/**
+ * Effects with `notes: { param }`: sends the notes of the instrument channel the (int) param names to the
+ * kernel, following the param (0 = none, 1 = the first instrument channel, …). Everything held is released
+ * when the channel changes.
+ */
+function followNotes(host: PluginHost<ParamSpecs, unknown>, port: WorkletPort, param: string | undefined): () => void {
+  const feed = host.notes;
+  const handle = param
+    ? (host.params as unknown as Record<string, { value: unknown; onChange(cb: (v: unknown, t: number) => void): () => void } | undefined>)[param]
+    : undefined;
+  if (!feed || !handle) return () => {};
+  let stop: () => void = () => {};
+  const bind = (value: unknown, time = host.audioContext.currentTime) => {
+    stop();
+    port.allNotesOff(time, true);
+    const position = Math.round(Number(value));
+    stop =
+      position >= 1
+        ? feed.listen(position, (e) => {
+            if (e.kind === 'on') port.noteOn({ time: e.time, noteId: e.noteId, key: e.key, velocity: e.velocity });
+            else if (e.kind === 'off') port.noteOff({ time: e.time, noteId: e.noteId, key: e.key, release: e.velocity });
+            else port.allNotesOff(e.time, false);
+          })
+        : () => {};
+  };
+  bind(handle.value);
+  const off = handle.onChange((v, t) => bind(v, t));
+  return () => {
+    off();
+    stop();
+  };
+}
+
 export function defineWorkletInstrument<const P extends ParamSpecs, S = undefined>(
   def: WorkletInstrumentDef<P, S>,
 ): InstrumentDef<P, S> {
@@ -133,6 +166,7 @@ export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
       // The sidechain reaches the kernel as the node's second input.
       if (def.sidechain && host.sidechain) host.sidechain.connect(port.node, 0, 1);
       const stopTap = tapPort(host as PluginHost<ParamSpecs, unknown>, port, def.tap);
+      const stopNotes = followNotes(host as PluginHost<ParamSpecs, unknown>, port, def.notes?.param);
       const latency = typeof def.latency === 'function' ? def.latency(host.audioContext.sampleRate) : def.latency;
       return {
         input: port.node,
@@ -145,6 +179,7 @@ export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
         reset: () => port.reset(),
         dispose: () => {
           stopSamples();
+          stopNotes();
           cleanup?.();
           stopTap();
           port.dispose();

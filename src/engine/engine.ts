@@ -35,6 +35,7 @@ import type {
 import { AutomationDriver } from './automation/driver';
 import { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
+import { NoteFeedHub } from './note-feed';
 import { KernelTransportFeed } from './kernel-transport';
 import { Metronome } from './metronome';
 import { MixerGraph } from './mixer-graph';
@@ -156,6 +157,8 @@ export class Engine implements EngineApi, EngineCore {
   private lastLate = 0;
   private readonly modules = new Map<string, Promise<void>>();
   readonly ports = new PortSet();
+  /** Notes of instrument channels for effects that follow a melody (host.notes). */
+  readonly noteFeed = new NoteFeedHub();
   private readonly initDone: Promise<void>;
   private limiter: AudioWorkletNode | null = null;
   /** Scheduler cadence (see EngineStats.maxPumpGapMs). */
@@ -222,6 +225,7 @@ export class Engine implements EngineApi, EngineCore {
     // ChannelStrip.shift); previews and live input go to the strips directly and are never held back.
     const sink: TransportSink = {
       noteOn: (cid, e) => {
+        this.noteFeed.emit(cid, { kind: 'on', time: e.time, noteId: e.noteId, key: e.key, velocity: e.velocity });
         const strip = this.strips.get(cid);
         if (!strip) return;
         const shift = strip.shift;
@@ -238,12 +242,14 @@ export class Engine implements EngineApi, EngineCore {
         strip.audioOn({ ...e, time: e.time + shift });
       },
       noteOff: (cid, e) => {
+        this.noteFeed.emit(cid, { kind: 'off', time: e.time, noteId: e.noteId, key: e.key, velocity: e.release ?? 0.5 });
         const shift = this.noteShifts.get(e.noteId);
         if (shift === undefined) return this.strips.get(cid)?.noteOff(e);
         this.noteShifts.delete(e.noteId);
         this.strips.get(cid)?.noteOff({ ...e, time: e.time + shift });
       },
       allNotesOff: (time) => {
+        this.noteFeed.emitAllOff(time);
         // Everything not yet started goes, whatever shift it has (they are all at or after `time`).
         this.noteShifts.clear();
         for (const s of this.strips.values()) s.allNotesOff(time);
@@ -505,6 +511,7 @@ export class Engine implements EngineApi, EngineCore {
       this.mixer.automationChanged(next);
     }
 
+    if (!prev || prev.channels !== next.channels || prev.channelOrder !== next.channelOrder) this.noteFeed.setProject(next);
     const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
     const audioKey = !prev || prev.channels !== next.channels ? audioKeyOf(next) : this.audioKey;
     const schedulingChanged =
@@ -846,6 +853,7 @@ export class Engine implements EngineApi, EngineCore {
     const noteId = ++this.previewSeq;
     const time = this.ctx.currentTime;
     this.previewOn.set(noteId, time);
+    this.noteFeed.emit(channelId, { kind: 'on', time, noteId, key, velocity });
     this.strips.get(channelId)?.noteOn({ time, noteId, key, velocity });
     return noteId;
   }
@@ -858,6 +866,7 @@ export class Engine implements EngineApi, EngineCore {
     this.previewOn.delete(noteId);
     const now = this.ctx.currentTime;
     const time = on === undefined ? now : Math.max(now, on + this.previewHold());
+    this.noteFeed.emit(channelId, { kind: 'off', time, noteId, key: 0, velocity: 0.5 });
     this.strips.get(channelId)?.noteOff({ time, noteId, key: 0 });
   }
 

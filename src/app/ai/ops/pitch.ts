@@ -15,7 +15,7 @@ import * as S from '../schema/parts';
 import { fail, type OpModule } from './context';
 import { num, str, parseKey } from './values';
 
-const plain = <T>(v: T): T => (isDraft(v) ? (current(v) as T) : v);
+const plain = (v: PitchEdit): PitchEdit => (isDraft(v) ? (current(v) as PitchEdit) : v);
 
 export const pitch: OpModule = {
   schemas: [
@@ -81,7 +81,7 @@ export const pitch: OpModule = {
       if ('error' in parsed) return fail(parsed.error);
 
       const own = (c.d.playlist.clips[id] as AudioClip | undefined)?.pitchEdit;
-      const edit: PitchEdit | null = own ? plain(own) : pitchEditOf(c.base, id);
+      const edit: PitchEdit | null = own ? plain(own as PitchEdit) : pitchEditOf(c.base, id);
       const fromBar = num(a.from_bar);
       if (!edit) {
         // Not analysed yet: the app listens to the clip, then makes the same change (its own undo step).

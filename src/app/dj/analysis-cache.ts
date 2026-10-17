@@ -9,7 +9,11 @@ import { decodeAudio } from '@engine/decode';
 import { idbDel, idbGet, idbKeys, idbSet, isIdbAvailable } from '@platform/idb';
 import { opfsSampleProvider } from '../persistence/project-io';
 import type { Services } from '../services';
-import { runAnalysis, type AnalysisJob } from './analysis-run';
+import { openLongSource, type StreamSource } from './analysis-stream-run';
+import { abortError, inlineRunner, inlineStreamRunner, workerHost, workerRunner, workerStreamRunner, type AnalysisRunner, type StreamRunner } from './analysis-workers';
+
+export { inlineRunner, inlineStreamRunner };
+export type { AnalysisRunner, StreamRunner };
 
 export interface AnalysisProgress {
   hash: string;
@@ -104,75 +108,6 @@ export const defaultDecoder: AnalysisDecoder = async (s, ref) => {
   return { channels: data.channels.slice(0, 2).map((c) => c.slice()), sampleRate: data.sampleRate };
 };
 
-/** Runs one analysis job: in a Worker when there is one, else on this thread. Rejects with AbortError when cancelled. */
-export type AnalysisRunner = (job: AnalysisJob, onProgress: (f: number) => void, signal: AbortSignal) => Promise<TrackAnalysis>;
-
-const abortError = () => new DOMException('The analysis was cancelled.', 'AbortError');
-
-export const inlineRunner: AnalysisRunner = (job, onProgress, signal) =>
-  new Promise((resolve, reject) => {
-    // Let the caller's frame finish first.
-    setTimeout(() => {
-      if (signal.aborted) return reject(abortError());
-      try {
-        resolve(runAnalysis(job, { onProgress, isCancelled: () => signal.aborted }));
-      } catch (e) {
-        reject(signal.aborted ? abortError() : e);
-      }
-    }, 0);
-  });
-
-function workerRunner(): AnalysisRunner {
-  let worker: Worker | null = null;
-  let seq = 0;
-  return (job, onProgress, signal) => {
-    if (typeof Worker === 'undefined') return inlineRunner(job, onProgress, signal);
-    return new Promise((resolve, reject) => {
-      if (signal.aborted) return reject(abortError());
-      try {
-        worker ??= new Worker(new URL('./analysis.worker.ts', import.meta.url), { type: 'module' });
-      } catch {
-        return resolve(inlineRunner(job, onProgress, signal));
-      }
-      const w = worker;
-      const id = ++seq;
-      const done = () => {
-        w.removeEventListener('message', onMessage);
-        w.removeEventListener('error', onError);
-        signal.removeEventListener('abort', onAbort);
-      };
-      const onMessage = (e: MessageEvent<{ id: number; type: string; fraction?: number; analysis?: TrackAnalysis; message?: string }>) => {
-        if (e.data.id !== id) return;
-        if (e.data.type === 'progress') onProgress(e.data.fraction ?? 0);
-        else if (e.data.type === 'done' && e.data.analysis) {
-          done();
-          resolve(e.data.analysis);
-        } else if (e.data.type === 'error') {
-          done();
-          reject(new Error(e.data.message ?? 'The track analysis failed.'));
-        }
-      };
-      const onError = (e: ErrorEvent) => {
-        done();
-        worker?.terminate();
-        worker = null;
-        reject(new Error(e.message || 'The track analysis worker failed.'));
-      };
-      // Cancelling stops the computation at once: the Worker goes, the next job makes a new one.
-      const onAbort = () => {
-        done();
-        worker?.terminate();
-        worker = null;
-        reject(abortError());
-      };
-      w.addEventListener('message', onMessage);
-      w.addEventListener('error', onError);
-      signal.addEventListener('abort', onAbort);
-      w.postMessage({ id, ...job }, job.channels.map((c) => c.buffer as ArrayBuffer));
-    });
-  };
-}
-
 interface Job {
   hash: string;
   promise: Promise<TrackAnalysis>;
@@ -185,6 +120,12 @@ export interface TrackAnalyzerOptions {
   storage?: AnalysisStorage;
   decode?: AnalysisDecoder;
   run?: AnalysisRunner;
+  /**
+   * The song's file as a source read by parts when it is too long to decode whole, else null (then `decode` and `run` are
+   * used). The default reads WAV and MP3 files from the sample store that are longer than `LONG_SONG_SEC`.
+   */
+  openStream?: (s: Services, ref: SampleRef) => Promise<StreamSource | null>;
+  runStream?: StreamRunner;
 }
 
 /**
@@ -194,7 +135,10 @@ export interface TrackAnalyzerOptions {
 export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnalyzer & { ready: Promise<void> } {
   const storage = opts.storage ?? idbAnalysisStorage;
   const decode = opts.decode ?? defaultDecoder;
-  const run = opts.run ?? workerRunner();
+  const host = workerHost();
+  const run = opts.run ?? workerRunner(host);
+  const runStream = opts.runStream ?? workerStreamRunner(host);
+  const openStream = opts.openStream ?? ((_s: Services, ref: SampleRef) => openLongSource(ref));
   const cache = new Map<string, TrackAnalysis>();
   const jobs = new Map<string, Job>();
   const listeners = new Set<() => void>();
@@ -224,11 +168,22 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
       if (hit) return hit;
       controller.signal.throwIfAborted();
       progress(0);
+      // A song too long to decode whole is read and analyzed in pieces: its audio is never in memory at once.
+      const stream = await openStream(s, ref).catch(() => null);
+      if (stream) {
+        try {
+          return finished(await runStream(hash, stream, progress, controller.signal));
+        } finally {
+          stream.dispose();
+        }
+      }
       const audio = await decode(s, ref);
       if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded for analysis.`);
       controller.signal.throwIfAborted();
       progress(0.05);
-      const analysis = await run({ hash, ...audio }, (f) => progress(0.05 + 0.95 * f), controller.signal);
+      return finished(await run({ hash, ...audio }, (f) => progress(0.05 + 0.95 * f), controller.signal));
+    };
+    const finished = (analysis: TrackAnalysis): TrackAnalysis => {
       cache.set(hash, analysis);
       void storage.save(analysis).catch((e: unknown) => console.warn('[agstudio] saving a track analysis failed', e));
       progress(1);

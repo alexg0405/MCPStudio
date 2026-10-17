@@ -40,6 +40,7 @@ import type { TrackAnalysis } from '@core/dj/types';
 import { WavStreamEncoder } from '@core/io/wav';
 import type { SampleRef } from '@core/model/types';
 import type { DeckHost } from '@engine/api';
+import { LONG_SONG_SEC } from '@core/dj/long';
 import { yieldToMain } from '@engine/audio-buffers';
 import { DeckGraph } from '@engine/deck/deck-graph';
 import type { SyncSpec } from '@engine/deck/deck-id';
@@ -172,7 +173,7 @@ const emptyRt = (): Rt => ({
  * Songs longer than this are not decoded whole when their file can be read by parts (WAV, MP3): the deck holds a window
  * of them around the play position (see `deck-stream.ts`), so a 2-hour mix needs no more memory than a 5-minute song.
  */
-export const LONG_SONG_SEC = 12 * 60;
+export { LONG_SONG_SEC };
 /**
  * Files that can't be read by parts (AAC in M4A, Ogg, FLAC, AIFF) are decoded whole, once: the browser makes the whole
  * song as floats (a 45-minute song at 48 kHz is 1 GB), so longer ones are refused instead of taking the tab down.

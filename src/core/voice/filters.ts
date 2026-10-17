@@ -56,6 +56,97 @@ export function filterInPlace(x: Float32Array, sections: Float64Array): void {
 }
 
 /**
+ * Low-passes a signal (8th-order Butterworth at 0.4 × the new rate) and keeps every `factor`-th sample, a piece at a
+ * time: the filter state and the phase carry over from one `process` call to the next, so a signal fed in pieces comes
+ * out exactly as `decimate` makes it from the whole.
+ */
+export class Decimator {
+  readonly factor: number;
+  private readonly c: Float64Array;
+  private s = new Float64Array(8);
+  private phase = 0;
+
+  constructor(factor: number, sampleRate: number) {
+    this.factor = Math.max(1, Math.floor(factor));
+    this.c = this.factor === 1 ? new Float64Array(20) : butterworth('lowpass', 8, (0.4 * sampleRate) / this.factor, sampleRate);
+  }
+
+  /** How many samples `process` writes for `n` more input samples. */
+  outputLength(n: number): number {
+    return Math.max(0, Math.ceil((this.phase + n) / this.factor));
+  }
+
+  /** Filters `x[0..n)` and writes the kept samples to `out` (room for `outputLength(n)`); returns how many. */
+  process(x: ArrayLike<number>, out: Float32Array, n = x.length): number {
+    const k = this.factor;
+    if (k === 1) {
+      for (let i = 0; i < n; i++) out[i] = x[i] as number;
+      return n;
+    }
+    const c = this.c;
+    // Four sections, state in locals.
+    const st = this.s;
+    let s0 = st[0] as number,
+      s1 = st[1] as number,
+      s2 = st[2] as number,
+      s3 = st[3] as number,
+      s4 = st[4] as number,
+      s5 = st[5] as number,
+      s6 = st[6] as number,
+      s7 = st[7] as number;
+    type Section = [number, number, number, number, number];
+    const section = (s: number) => Array.from(c.subarray(5 * s, 5 * s + 5)) as Section;
+    const [a0, a1, a2, a3, a4] = section(0);
+    const [b0, b1, b2, b3, b4] = section(1);
+    const [d0, d1, d2, d3, d4] = section(2);
+    const [e0, e1, e2, e3, e4] = section(3);
+    let phase = this.phase;
+    let o = 0;
+    for (let i = 0; i < n; i++) {
+      let v = x[i] as number;
+      let y = a0 * v + s0;
+      s0 = a1 * v - a3 * y + s1;
+      s1 = a2 * v - a4 * y;
+      v = y;
+      y = b0 * v + s2;
+      s2 = b1 * v - b3 * y + s3;
+      s3 = b2 * v - b4 * y;
+      v = y;
+      y = d0 * v + s4;
+      s4 = d1 * v - d3 * y + s5;
+      s5 = d2 * v - d4 * y;
+      v = y;
+      y = e0 * v + s6;
+      s6 = e1 * v - e3 * y + s7;
+      s7 = e2 * v - e4 * y;
+      if (phase === 0) {
+        out[o++] = y;
+        // Flush denormals once per output sample; the state decays slowly enough for that.
+        if (Math.abs(s0) < 1e-30) s0 = 0;
+        if (Math.abs(s1) < 1e-30) s1 = 0;
+        if (Math.abs(s2) < 1e-30) s2 = 0;
+        if (Math.abs(s3) < 1e-30) s3 = 0;
+        if (Math.abs(s4) < 1e-30) s4 = 0;
+        if (Math.abs(s5) < 1e-30) s5 = 0;
+        if (Math.abs(s6) < 1e-30) s6 = 0;
+        if (Math.abs(s7) < 1e-30) s7 = 0;
+      }
+      if (++phase === k) phase = 0;
+    }
+    st[0] = s0;
+    st[1] = s1;
+    st[2] = s2;
+    st[3] = s3;
+    st[4] = s4;
+    st[5] = s5;
+    st[6] = s6;
+    st[7] = s7;
+    this.phase = phase;
+    return o;
+  }
+}
+
+/**
  * Low-passes `x` (8th-order Butterworth at 0.4 × the new rate) and keeps every `factor`-th sample,
  * in one pass without a full-rate copy. Output length: ceil(x.length / factor).
  */
@@ -63,54 +154,6 @@ export function decimate(x: Float32Array, factor: number, sampleRate: number): F
   const k = Math.max(1, Math.floor(factor));
   if (k === 1) return Float32Array.from(x);
   const out = new Float32Array(Math.ceil(x.length / k));
-  const c = butterworth('lowpass', 8, (0.4 * sampleRate) / k, sampleRate);
-  // Four sections, state in locals.
-  let s0 = 0,
-    s1 = 0,
-    s2 = 0,
-    s3 = 0,
-    s4 = 0,
-    s5 = 0,
-    s6 = 0,
-    s7 = 0;
-  type Section = [number, number, number, number, number];
-  const section = (s: number) => Array.from(c.subarray(5 * s, 5 * s + 5)) as Section;
-  const [a0, a1, a2, a3, a4] = section(0);
-  const [b0, b1, b2, b3, b4] = section(1);
-  const [d0, d1, d2, d3, d4] = section(2);
-  const [e0, e1, e2, e3, e4] = section(3);
-  let phase = 0;
-  let o = 0;
-  for (let i = 0; i < x.length; i++) {
-    let v = x[i] as number;
-    let y = a0 * v + s0;
-    s0 = a1 * v - a3 * y + s1;
-    s1 = a2 * v - a4 * y;
-    v = y;
-    y = b0 * v + s2;
-    s2 = b1 * v - b3 * y + s3;
-    s3 = b2 * v - b4 * y;
-    v = y;
-    y = d0 * v + s4;
-    s4 = d1 * v - d3 * y + s5;
-    s5 = d2 * v - d4 * y;
-    v = y;
-    y = e0 * v + s6;
-    s6 = e1 * v - e3 * y + s7;
-    s7 = e2 * v - e4 * y;
-    if (phase === 0) {
-      out[o++] = y;
-      // Flush denormals once per output sample; the state decays slowly enough for that.
-      if (Math.abs(s0) < 1e-30) s0 = 0;
-      if (Math.abs(s1) < 1e-30) s1 = 0;
-      if (Math.abs(s2) < 1e-30) s2 = 0;
-      if (Math.abs(s3) < 1e-30) s3 = 0;
-      if (Math.abs(s4) < 1e-30) s4 = 0;
-      if (Math.abs(s5) < 1e-30) s5 = 0;
-      if (Math.abs(s6) < 1e-30) s6 = 0;
-      if (Math.abs(s7) < 1e-30) s7 = 0;
-    }
-    if (++phase === k) phase = 0;
-  }
+  new Decimator(k, sampleRate).process(x, out);
   return out;
 }

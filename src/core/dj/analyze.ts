@@ -4,10 +4,10 @@
  * full-rate stereo audio and passed in. Pure and synchronous (the app runs it in a Worker).
  */
 import { ANALYSIS_VERSION, type BeatGrid, type TrackAnalysis } from './types';
-import { chromagram } from './chroma';
+import { chromagram, type Chromagram } from './chroma';
 import { barPhase } from './downbeat';
 import { estimateKey } from './key';
-import { onsetFeatures } from './onset';
+import { onsetFeatures, type OnsetFeatures } from './onset';
 import { analyzeStructure } from './structure';
 import { trackBeats } from './tempo';
 
@@ -44,8 +44,27 @@ export function analyzeTrack(input: AnalysisInput, opts: AnalysisRunOptions = {}
   check();
   const c = chromagram(mono, sampleRate, progress(0.45, 0.7));
   check();
+  return analyzeFeatures(f, c, { hash: input.hash, durationSec, lufs: input.lufs, truePeakDb: input.truePeakDb }, { ...opts, onProgress: progress(0.7, 1) });
+}
+
+export interface FeatureMeta {
+  hash: string;
+  durationSec: number;
+  lufs: number;
+  truePeakDb: number;
+}
+
+/**
+ * Everything after the features: tempo and beats, downbeats, key, energy, sections and mix points, from the onset
+ * features and chromagram of the whole song (however they were made: from the signal in memory or in pieces).
+ */
+export function analyzeFeatures(f: OnsetFeatures, c: Chromagram, meta: FeatureMeta, opts: AnalysisRunOptions = {}): TrackAnalysis {
+  const { durationSec } = meta;
+  const check = () => {
+    if (opts.isCancelled?.()) throw new AnalysisCancelled('The analysis was cancelled.');
+  };
   const track = trackBeats(f);
-  opts.onProgress?.(0.9);
+  opts.onProgress?.(0.67);
   check();
 
   let grid: BeatGrid | null = null;
@@ -90,12 +109,12 @@ export function analyzeTrack(input: AnalysisInput, opts: AnalysisRunOptions = {}
   opts.onProgress?.(1);
   return {
     version: ANALYSIS_VERSION,
-    hash: input.hash,
+    hash: meta.hash,
     durationSec,
     grid,
     key,
-    lufs: input.lufs,
-    truePeakDb: input.truePeakDb,
+    lufs: meta.lufs,
+    truePeakDb: meta.truePeakDb,
     energy: s.energy,
     sections: s.sections.map((x) => ({ ...x, start: round3(x.start), end: round3(x.end) })),
     mixIn: round3(s.mixIn),

@@ -165,12 +165,17 @@ export function workerStreamRunner(host: WorkerHost): StreamRunner {
           post({ kind: 'stream-end', id });
         }),
     };
+    let ok = false;
     try {
-      return await driveAnalysis(hash, source, target, { signal, onProgress });
+      const analysis = await driveAnalysis(hash, source, target, { signal, onProgress });
+      ok = true;
+      return analysis;
     } finally {
       w.removeEventListener('message', onMessage);
       w.removeEventListener('error', onError);
       signal.removeEventListener('abort', onAbort);
+      // A run that stopped half way (unreadable file, cancel) leaves the Worker holding a part of the song's features: it goes.
+      if (!ok) host.drop();
     }
   };
 }

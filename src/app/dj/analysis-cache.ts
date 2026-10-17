@@ -3,6 +3,7 @@
  * it is never computed twice (survives reloads), and shared by the library, the auto-mix and the decks.
  * (The analysis itself lives in core/dj; this is the cache and the entry point the UI and actions call.)
  */
+import { MAX_WHOLE_DECODE_SEC } from '@core/dj/long';
 import type { SampleRef } from '@core/model/types';
 import { ANALYSIS_VERSION, type TrackAnalysis } from '@core/dj/types';
 import { decodeAudio } from '@engine/decode';
@@ -177,6 +178,8 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
           stream.dispose();
         }
       }
+      if (ref.durationSec !== undefined && ref.durationSec > MAX_WHOLE_DECODE_SEC)
+        throw new Error(`“${ref.name}” is longer than ${MAX_WHOLE_DECODE_SEC / 60} minutes and its format can’t be analyzed in parts: use an MP3 or WAV of it.`);
       const audio = await decode(s, ref);
       if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded for analysis.`);
       controller.signal.throwIfAborted();

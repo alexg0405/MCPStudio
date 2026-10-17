@@ -10,6 +10,7 @@ import { planScanRegions } from '@core/dj/stream-features';
 import type { TrackAnalysis } from '@core/dj/types';
 import type { SampleRef } from '@core/model/types';
 import { blobReader, openSegmentSource, type DeckSource } from '@engine/deck/deck-source';
+import type { SampleBytesProvider } from '@engine/api';
 import { yieldToMain } from '@engine/audio-buffers';
 import { opfsSampleProvider } from '../persistence/project-io';
 import { StreamingAnalysis, type StreamInfo } from './analysis-stream';
@@ -50,7 +51,13 @@ export async function driveAnalysis(hash: string, source: StreamSource, target: 
   const rate = source.nativeRate;
   const stereo = source.channels === 2;
   const chunk = o.chunkFrames ?? CHUNK_FRAMES;
-  const progress = o.onProgress ?? (() => {});
+  // At most a couple of hundred reports (the library redraws on each).
+  let reported = -1;
+  const progress = (f: number) => {
+    if (f - reported < 0.005 && f < 1) return;
+    reported = f;
+    o.onProgress?.(f);
+  };
   const read = async (start: number, n: number): Promise<[Float32Array, Float32Array | null]> => {
     o.signal?.throwIfAborted();
     const l = new Float32Array(n);
@@ -122,11 +129,11 @@ const BIG_FILE_BYTES = 48 * 1024 * 1024;
  * The song's file as a source read by parts, when it is long (or big, with no length known) and of a format that can
  * be (WAV, MP3); null otherwise: the caller decodes it whole.
  */
-export async function openLongSource(ref: SampleRef): Promise<StreamSource | null> {
+export async function openLongSource(ref: SampleRef, provider: Pick<SampleBytesProvider, 'getBlob'> = opfsSampleProvider()): Promise<StreamSource | null> {
   if (ref.source.kind !== 'embedded') return null;
   const known = ref.durationSec;
   if (known !== undefined && known <= LONG_SONG_SEC) return null;
-  const blob = await opfsSampleProvider().getBlob?.(ref);
+  const blob = await provider.getBlob?.(ref);
   if (!blob) return null;
   if (known === undefined && blob.size <= BIG_FILE_BYTES) return null;
   // The rate given is the one a deck would convert to; the analysis reads the file's own.

@@ -156,6 +156,13 @@ describe('track analyzer', () => {
     expect(calls).toEqual(['short']);
   });
 
+  it('refuses a long file that can’t be read by parts instead of decoding hours of floats', async () => {
+    const { decode, calls } = decoder();
+    const an = createTrackAnalyzer({ storage: memoryAnalysisStorage(), decode, run: inlineRunner, openStream: () => Promise.resolve(null) });
+    await expect(an.analyze(s, { ...ref('flac'), durationSec: 3 * 3600 })).rejects.toThrow(/MP3 or WAV/);
+    expect(calls).toEqual([]);
+  });
+
   it('cancelling a song analyzed by parts stops reading it and frees the file', async () => {
     const t = song();
     let reads = 0;

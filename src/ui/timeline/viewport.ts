@@ -6,6 +6,12 @@ export class Viewport {
   /** Tick at the left edge. */
   scrollTick = 0;
   pxPerTick = 0.1;
+  /**
+   * The part of the scroll (CSS px) that drawing leaves out, so the picture sits on whole device pixels. The
+   * scroll itself stays fractional (smooth motion); every x, drawn or hit-tested, is shifted by this. Set once
+   * per frame by `snapForFrame`, so the grid, clips, ruler, overlay and playhead all share one offset.
+   */
+  drawShift = 0;
   /** Row at the top edge (fractional). */
   scrollRow = 0;
   rowHeight = 14;
@@ -20,11 +26,22 @@ export class Viewport {
   ) {}
 
   tickToX(tick: number): number {
-    return (tick - this.scrollTick) * this.pxPerTick;
+    return (tick - this.scrollTick) * this.pxPerTick + this.drawShift;
   }
 
   xToTick(x: number): number {
-    return this.scrollTick + x / this.pxPerTick;
+    return this.scrollTick + (x - this.drawShift) / this.pxPerTick;
+  }
+
+  /**
+   * Start of a frame: sets `drawShift` so the scroll's fractional part is left out of every x (see above).
+   * Returns the scroll in whole device pixels, the offset the picture is drawn at.
+   */
+  snapForFrame(dpr: number): number {
+    const scrollPx = this.scrollTick * this.pxPerTick;
+    const snapped = snapToDevicePixel(scrollPx, dpr);
+    this.drawShift = scrollPx - snapped;
+    return Math.round(snapped * dpr);
   }
 
   rowToY(row: number): number {
@@ -79,6 +96,11 @@ export class Viewport {
   clampScroll(maxTick: number): void {
     this.scrollBy(0, 0, maxTick);
   }
+}
+
+/** Rounds a CSS-pixel position to the nearest whole device pixel (`dpr` device pixels per CSS pixel). */
+export function snapToDevicePixel(cssPx: number, dpr: number): number {
+  return Math.round(cssPx * dpr) / dpr;
 }
 
 export function clamp(v: number, lo: number, hi: number): number {

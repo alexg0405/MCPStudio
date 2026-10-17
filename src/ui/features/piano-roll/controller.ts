@@ -23,7 +23,7 @@ import { onFrame } from '../../frame-loop';
 import { isContextMenuOpen } from '../../controls/ContextMenu';
 import { PlayheadFollow } from '../../timeline/follow';
 import { alpha, roundRectPath, fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
-import { clamp, Viewport } from '../../timeline/viewport';
+import { clamp, snapToDevicePixel, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
 import {
   drawGhosts,
@@ -326,6 +326,8 @@ export class PianoRollController {
       this.centerOnNotes(c);
     }
     this.followPlayhead(c);
+    // Drawing and the playhead snap to whole device pixels (viewport.ts).
+    this.vp.snapForFrame(window.devicePixelRatio || 1);
     const theme = readTheme();
     const { els, vp } = this;
     const ts = c.project.transport.timeSig;
@@ -531,13 +533,15 @@ export class PianoRollController {
   private updatePlayhead(c: Ctx): void {
     const t = this.playheadTick(c);
     const x = Number.isFinite(t) ? this.vp.tickToX(t) : NaN;
-    if (x === this.lastPlayheadX) return;
-    this.lastPlayheadX = x;
+    // The line sits on a whole device pixel, like the grid it is drawn over.
+    const at = Number.isFinite(x) ? snapToDevicePixel(x, window.devicePixelRatio || 1) : NaN;
+    if (at === this.lastPlayheadX) return;
+    this.lastPlayheadX = at;
     const el = this.els.playhead;
-    if (!Number.isFinite(x) || x < 0 || x > this.vp.width) el.style.display = 'none';
+    if (!Number.isFinite(at) || at < 0 || at > this.vp.width) el.style.display = 'none';
     else {
       el.style.display = 'block';
-      el.style.transform = `translateX(${KEYS_WIDTH + x}px)`;
+      el.style.transform = `translateX(${KEYS_WIDTH + at}px)`;
     }
   }
 

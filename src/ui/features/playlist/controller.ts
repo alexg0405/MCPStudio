@@ -53,7 +53,7 @@ import {
 import { clipBox, type ClipBox } from './clip-geometry';
 import { alpha, fitCanvas, inkOn, mix, onThemeChange, readTheme, roundRectPath } from '../../timeline/canvas';
 import { clipPaint } from './clip-paint';
-import { clamp, Viewport } from '../../timeline/viewport';
+import { clamp, snapToDevicePixel, Viewport } from '../../timeline/viewport';
 import {
   CLIP_MENU_MIN_WIDTH,
   CLIP_MENU_SIZE,
@@ -386,6 +386,10 @@ export class PlaylistController {
     const { vp, els } = this;
     vp.rows = p.playlist.laneOrder.length;
     this.followPlayhead(p);
+    // Drawing and the playhead snap to whole device pixels (viewport.ts); the grid and playhead carry the same offset.
+    const dpr = window.devicePixelRatio || 1;
+    const snapPx = String(vp.snapForFrame(dpr));
+    if (els.grid.dataset.snapPx !== snapPx) els.grid.dataset.snapPx = snapPx;
     if (this.dirty.size > 0) {
       const theme = readTheme();
       const ts = p.transport.timeSig;
@@ -458,7 +462,7 @@ export class PlaylistController {
     }
     // A take being recorded grows every frame.
     if (this.s.audioRecorder.live.getState().take) this.invalidate('overlay');
-    this.updatePlayhead();
+    this.updatePlayhead(dpr, snapPx);
   }
 
   /** The take being recorded: a red clip from where it started to now, with its waveform so far. */
@@ -735,18 +739,21 @@ export class PlaylistController {
     this.invalidate('grid', 'clips', 'overlay', 'ruler');
   }
 
-  private updatePlayhead(): void {
+  private updatePlayhead(dpr: number, snapPx: string): void {
     const { engine, view } = this.s;
     const v = view.getState();
     let x = NaN;
     if (v.mode === 'song') x = this.vp.tickToX(engine.playing ? engine.playhead() : v.songStart);
-    if (x === this.lastPlayheadX) return;
-    this.lastPlayheadX = x;
+    // The line sits on a whole device pixel, like the grid it is drawn over.
+    const at = Number.isFinite(x) ? snapToDevicePixel(x, dpr) : NaN;
     const el = this.els.playhead;
-    if (!Number.isFinite(x) || x < 0 || x > this.vp.width) el.style.display = 'none';
+    if (el.dataset.snapPx !== snapPx) el.dataset.snapPx = snapPx;
+    if (at === this.lastPlayheadX) return;
+    this.lastPlayheadX = at;
+    if (!Number.isFinite(at) || at < 0 || at > this.vp.width) el.style.display = 'none';
     else {
       el.style.display = 'block';
-      el.style.transform = `translateX(${HEADER_WIDTH + x}px)`;
+      el.style.transform = `translateX(${HEADER_WIDTH + at}px)`;
     }
   }
 

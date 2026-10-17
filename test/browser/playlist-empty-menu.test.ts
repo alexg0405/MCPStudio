@@ -446,4 +446,49 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       await until(() => !menu());
     });
   });
+
+  describe('pixel snap', () => {
+    const wheel = (deltaY: number) =>
+      grid().dispatchEvent(new WheelEvent('wheel', { deltaY, shiftKey: true, bubbles: true, cancelable: true }));
+    /** Scrolls by hand a fractional amount; the view's scroll is saved to the store about 300 ms later. */
+    const scrollBy = async (deltaY: number) => {
+      const before = s.editor.getState().playlist.scrollTick;
+      wheel(deltaY);
+      await until(() => s.editor.getState().playlist.scrollTick !== before);
+      return s.editor.getState().playlist.scrollTick;
+    };
+
+    it('draws the grid and the playhead at one whole-device-pixel offset, with the scroll still fractional', async () => {
+      s.engine.stop();
+      s.view.getState().setMode('song');
+      s.prefs.getState().set({ followPlayhead: false });
+      s.view.getState().setSongStart(9000);
+      wheel(-1e7);
+      await frames(2);
+      const dpr = window.devicePixelRatio || 1;
+      const canvas = gridEl.querySelector<HTMLCanvasElement>('canvas')!;
+      const playheadEl = host.querySelector<HTMLElement>('[data-window-type="playlist"] [class*="playhead"]')!;
+      const ppt = s.editor.getState().playlist.pxPerTick;
+      for (const dy of [37.13, 61.7, 99.3]) {
+        const scrollTick = await scrollBy(dy);
+        await frames(2);
+        expect(scrollTick % 1).not.toBe(0);
+        // The drawn offset: the scroll in whole device pixels, shared by the grid canvas and the playhead.
+        const snap = Number(canvas.dataset.snapPx);
+        expect(Number.isInteger(snap)).toBe(true);
+        expect(snap).toBe(Math.round(scrollTick * ppt * dpr));
+        expect(Number(playheadEl.dataset.snapPx)).toBe(snap);
+        // The line lands on a whole device pixel, exactly where the drawn grid puts the playhead tick (in view).
+        expect(playheadEl.style.display).toBe('block');
+        const x = Number(/translateX\(([-\d.]+)px\)/.exec(playheadEl.style.transform)?.[1]) - HEADER_WIDTH;
+        const dev = (x + HEADER_WIDTH) * dpr;
+        expect(Math.abs(dev - Math.round(dev))).toBeLessThan(1e-6);
+        expect(x).toBeCloseTo(Math.round((9000 * ppt - snap / dpr) * dpr) / dpr, 6);
+      }
+      s.view.getState().setSongStart(0);
+      s.prefs.getState().set({ followPlayhead: true });
+      wheel(-1e7);
+      await frames(2);
+    });
+  });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readProjectFile } from '@core/io/project-file';
+import { readProjectFile, zipProjectFileParts, type ProjectFileParts } from '@core/io/project-file';
 import { createEmptyProject } from '@core/model/defaults';
 import { seededBytes, setIdSource } from '@core/model/ids';
 import type { Project } from '@core/model/types';
@@ -118,6 +118,45 @@ describe('startAutosave', () => {
     }
     await advance(10_000);
     expect(t.writes.map((w) => w.at)).toEqual([30_000, 60_000, 67_000]);
+  });
+
+  it('compresses a timed save through the zip option, and a save for a hiding tab on the spot', async () => {
+    const zip = vi.fn(async (parts: ProjectFileParts) => zipProjectFileParts(parts));
+    const t = setup({ zip });
+    t.edit();
+    await advance(3000);
+    expect(zip).toHaveBeenCalledTimes(1);
+    expect(readProjectFile(t.writes[0]!.data).project.meta.title).toBe('Song 1');
+    // The tab is going away: the worker may never answer, so this one is compressed right here.
+    t.edit();
+    t.hide();
+    await advance(0);
+    expect(zip).toHaveBeenCalledTimes(1);
+    expect(t.writes).toHaveLength(2);
+    expect(readProjectFile(t.writes[1]!.data).project.meta.title).toBe('Song 2');
+  });
+
+  it('saves the document as it was when the save started, not as it is when the compression ends', async () => {
+    const gate: { release?: () => void } = {};
+    const open = () => gate.release?.();
+    const zip = vi.fn(
+      (parts: ProjectFileParts) =>
+        new Promise<Uint8Array>((resolve) => {
+          gate.release = () => resolve(zipProjectFileParts(parts));
+        }),
+    );
+    const t = setup({ zip });
+    t.edit();
+    await advance(3000);
+    t.edit(); // while the worker is busy
+    open();
+    await advance(0);
+    expect(readProjectFile(t.writes[0]!.data).project.meta.title).toBe('Song 1');
+    gate.release = undefined;
+    await advance(3000); // the later edit is saved by the next round
+    open();
+    await advance(0);
+    expect(readProjectFile(t.writes.at(-1)!.data).project.meta.title).toBe('Song 2');
   });
 
   it('alternates slots A and B', async () => {

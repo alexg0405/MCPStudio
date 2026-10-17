@@ -1,4 +1,4 @@
-import { writeProjectFile } from '@core/io/project-file';
+import { projectFileParts, zipProjectFileParts, type ProjectFileParts } from '@core/io/project-file';
 import type { Project } from '@core/model/types';
 import {
   StorageError,
@@ -9,12 +9,15 @@ import {
   type BlobStore,
 } from '@platform/opfs';
 import { openProjectFile, type OpenedProject } from './project-io';
+import { zipOffThread } from './zip-async';
 
 /**
  * Crash-safe autosave into OPFS. Saves 3 s after the last change, but at least every 30 s while
  * changes keep coming, and right away when the tab is hidden. Writes alternate between slots A and
  * B, so an interrupted write never destroys the previous save. Autosaves are "thin" project files:
- * samples stay in the sample store and are not copied into every save.
+ * samples stay in the sample store and are not copied into every save. The document is serialized on the main thread
+ * (a few ms for a 1 MB project) and compressed in a Worker (25-40 ms, which would be a dropped frame or two); the save
+ * that runs because the tab is hiding or closing compresses right here instead, since a Worker may never get to answer.
  *
  * Each tab also holds a session lock (platform/locks). On startup, sessions that are not marked
  * clean and whose lock nobody holds crashed: those are the recovery candidates.
@@ -41,6 +44,8 @@ export interface AutosaveOptions {
   storage?: Pick<AutosaveStore, 'writeAutosave' | 'markAutosaveClean'>;
   /** Default: document visibilitychange and window pagehide. */
   lifecycle?: AutosaveLifecycle;
+  /** Compresses the file's parts (default: in a Worker when there is one, else on this thread). */
+  zip?(parts: ProjectFileParts): Promise<Uint8Array>;
   debounceMs?: number;
   maxWaitMs?: number;
   /** Write failures (default: console.warn). Unavailable storage is reported once, then autosave stops. */
@@ -49,8 +54,11 @@ export interface AutosaveOptions {
 }
 
 export interface Autosave {
-  /** Saves pending changes now (after any write in progress). Rejects when the write fails. */
-  flush(): Promise<void>;
+  /**
+   * Saves pending changes now (after any write in progress). Rejects when the write fails. `urgent`: compress on this
+   * thread (the page may be about to go away).
+   */
+  flush(opts?: { urgent?: boolean }): Promise<void>;
   /** Stops listening and cancels timers. Does not save: call flush() first if needed. */
   stop(): void;
 }
@@ -78,6 +86,7 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
   const maxWaitMs = opts.maxWaitMs ?? AUTOSAVE_MAX_WAIT_MS;
   const storage = opts.storage ?? opfsStorage();
   const lifecycle = opts.lifecycle ?? browserLifecycle();
+  const zip = opts.zip ?? zipOffThread;
   const report = opts.onError ?? ((e: unknown) => console.warn('Autosave failed:', e));
 
   let dirty = false;
@@ -95,21 +104,21 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
     clearTimeout(maxWaitTimer);
     debounceTimer = maxWaitTimer = undefined;
   };
-  const fire = () => {
+  const fire = (urgent = false) => {
     clearTimers();
-    flush().catch(() => {}); // already reported
+    flush({ urgent }).catch(() => {}); // already reported
   };
   const onChange = () => {
     dirty = true;
     if (stopped || disabled) return;
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(fire, debounceMs);
+    debounceTimer = setTimeout(() => fire(), debounceMs);
     // The max-wait deadline counts from the first change since the last save.
-    maxWaitTimer ??= setTimeout(fire, maxWaitMs);
+    maxWaitTimer ??= setTimeout(() => fire(), maxWaitMs);
   };
 
-  /** A thin project file of the current state (samples stay in the sample store). */
-  function encode(): { data: Uint8Array; meta: AutosaveMeta } {
+  /** A thin project file of the current state (samples stay in the sample store), read now and zipped after. */
+  function encode(urgent: boolean): { data: Promise<Uint8Array>; meta: AutosaveMeta } {
     const { project, view } = opts.getSnapshot();
     const now = new Date();
     const meta: AutosaveMeta = {
@@ -122,23 +131,24 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
     };
     const fileKey = opts.fileKey?.();
     if (fileKey !== undefined) meta.fileKey = fileKey;
-    return { data: writeProjectFile({ project, view, samples: new Map(), appVersion: opts.appVersion, now }), meta };
+    const parts = projectFileParts({ project, view, samples: new Map(), appVersion: opts.appVersion, now });
+    return { data: urgent ? Promise.resolve(zipProjectFileParts(parts)) : zip(parts), meta };
   }
 
-  async function write(): Promise<void> {
+  async function write(urgent: boolean): Promise<void> {
     clearTimers();
     dirty = false;
-    let file: { data: Uint8Array; meta: AutosaveMeta };
+    let file: { data: Promise<Uint8Array>; meta: AutosaveMeta };
     try {
-      file = encode();
-      await storage.writeAutosave(opts.sessionId, slot, file.data, file.meta);
+      file = encode(urgent);
+      await storage.writeAutosave(opts.sessionId, slot, await file.data, file.meta);
     } catch (e) {
       dirty = true;
       if (e instanceof StorageError && e.code === 'unavailable') disabled = true;
       else if (!stopped) {
         // Retry on the next change, or after the max wait without one (don't hammer a full disk).
         clearTimeout(maxWaitTimer);
-        maxWaitTimer = setTimeout(fire, maxWaitMs);
+        maxWaitTimer = setTimeout(() => fire(), maxWaitMs);
       }
       report(e);
       throw e;
@@ -149,10 +159,10 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
     opts.onSaved?.(file.meta);
   }
 
-  async function flush(): Promise<void> {
+  async function flush(flushOpts: { urgent?: boolean } = {}): Promise<void> {
     while (inflight) await inflight.catch(() => {});
     if (!dirty || disabled) return;
-    const pending = write();
+    const pending = write(!!flushOpts.urgent);
     inflight = pending;
     try {
       await pending;
@@ -163,7 +173,7 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
 
   const unsubscribe = opts.subscribe(onChange);
   const offHidden = lifecycle.onHidden(() => {
-    if (dirty) fire();
+    if (dirty) fire(true);
   });
   const offPageHide = lifecycle.onPageHide(() => {
     if (stopped) return;
@@ -171,7 +181,7 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
     // stays a recovery candidate, which is the safe direction.
     void (async () => {
       try {
-        await flush();
+        await flush({ urgent: true });
       } catch {
         return; // not saved, so not clean
       }

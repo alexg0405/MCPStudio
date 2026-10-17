@@ -13,7 +13,7 @@
  * `vibrato` scales the wobble (0 removes it). A note with no edits is not touched at all. The
  * curve between notes glides over `transition` ms; unvoiced sound is never shifted.
  */
-import type { AudioClip, AudioClipChannel, PitchEdit, PitchEditNote, SampleId } from '../model/types';
+import type { PitchEdit, PitchEditNote, SampleId } from '../model/types';
 import {
   analyzePitch,
   cleanF0,
@@ -42,11 +42,6 @@ const round = (v: number, places: number) => {
   const f = 10 ** places;
   return Math.round(v * f) / f;
 };
-
-/** The sample a clip plays: the render of its pitch edit when it has one, else the channel's own. */
-export function clipSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: Pick<AudioClip, 'pitchEdit'> | undefined): SampleId {
-  return clip?.pitchEdit?.renderedSampleId ?? channel.sampleId;
-}
 
 // ---- Reading an edit ----
 

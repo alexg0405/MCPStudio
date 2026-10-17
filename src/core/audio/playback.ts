@@ -15,7 +15,7 @@
  * following tempo automation, while 'off' keeps the sound's own speed whatever the tempo does.
  * Reverse plays a reversed copy of the sample; `offsetSec` (the trim) is a position in that copy.
  */
-import type { AudioClip, AudioClipChannel, Tick } from '../model/types';
+import type { AudioClip, AudioClipChannel, SampleId, Tick } from '../model/types';
 import { PPQ, type TempoMap } from '../time/ppq';
 
 export type FollowMode = 'off' | 'resample' | 'stretch';
@@ -54,6 +54,15 @@ export function isPlainPlayback(m: PlaybackMode): boolean {
 export function playbackKey(ch: ModeFields & Pick<AudioClipChannel, 'sampleId'>): string {
   const m = playbackMode(ch);
   return `${ch.sampleId}|${m.cents}|${m.reverse ? 1 : 0}|${m.follow}|${m.sourceBpm ?? ''}`;
+}
+
+/**
+ * The sample a clip plays: the render of its pitch correction (`pitchEdit.renderedSampleId`, see
+ * pitch-edit.ts) when it has one, else the channel's own. Both share one timeline (the render is
+ * as long as the original), so trims, fades and tempo follow work on either.
+ */
+export function clipSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: Pick<AudioClip, 'pitchEdit'> | undefined): SampleId {
+  return clip?.pitchEdit?.renderedSampleId ?? channel.sampleId;
 }
 
 /** Source seconds per tick in the tempo-locked modes. */

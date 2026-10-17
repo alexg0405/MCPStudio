@@ -55,7 +55,8 @@ function Toolbar({ controller, tool, setTool }: { controller: React.RefObject<Pi
     if (st.rendering && st.rendering.clipId === clipId) return `Rendering corrected audio ${Math.round(st.rendering.fraction * 100)} %…`;
     if (edit && !isNeutralEdit(edit)) {
       if (edit.renderedSampleId && edit.renderedFor === editSignature(edit)) return 'Corrected audio ready: the clip plays it';
-      return 'Corrected audio is being made…';
+      // Nothing is rendering and nothing is on the way: the project was opened with an out-of-date render, or a render failed.
+      return st.rendering ? 'Corrected audio is being made…' : 'Corrected audio is not made yet';
     }
     return noteCount ? `${noteCount} note${noteCount === 1 ? '' : 's'} found: nothing corrected yet` : '';
   })();

@@ -77,6 +77,8 @@ export class PitchEditorController {
   private notes: DrawNote[] = [];
   private sung: Float32Array | null = null;
   private corrected: Float32Array | null = null;
+  /** The edit and analysis `corrected` was made from (the curve is only made again when one changes). */
+  private correctedFrom: { edit: PitchEdit; analysis: ClipPitch['analysis'] } | null = null;
   private fitted: ClipPitch['analysis'] | null = null;
   private tempo: { project: Project; map: TempoMap } | null = null;
   private lastPlayheadMs = Number.NaN;
@@ -188,7 +190,11 @@ export class PitchEditorController {
       this.edit = editFor(project, clip);
       this.notes = drawNotes(this.edit);
       if (clipChanged || !this.sung) this.sung = curveMidi(clip.analysis, null);
-      this.corrected = this.edit && !isNeutralEdit(this.edit) ? curveMidi(clip.analysis, this.edit) : null;
+      const same = this.correctedFrom?.edit === this.edit && this.correctedFrom?.analysis === clip.analysis;
+      if (!same) {
+        this.corrected = this.edit && !isNeutralEdit(this.edit) ? curveMidi(clip.analysis, this.edit) : null;
+        this.correctedFrom = this.edit ? { edit: this.edit, analysis: clip.analysis } : null;
+      }
     }
     if (clip && clip.analysis !== this.fitted) {
       this.fitted = clip.analysis;
@@ -396,6 +402,7 @@ export class PitchEditorController {
       notes: base.notes.map((n, i) => (moving.has(i) ? { ...n, shift: (n.shift ?? 0) + d.delta * 100 } : n)),
     };
     this.corrected = curveMidi(c.analysis, preview);
+    this.correctedFrom = null; // the preview is not the edit: the next data change makes the real curve again
     this.mark('content', 'overlay');
   }
 

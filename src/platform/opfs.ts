@@ -39,6 +39,8 @@ export interface BlobStore {
   listBlobs(): Promise<BlobInfo[]>;
   /** Like `listBlobs` with each file's size and last write time (clean-up of unused audio needs both). */
   blobStats?(): Promise<BlobStat[]>;
+  /** The stored file itself, read lazily (`slice(a, b).arrayBuffer()` reads that part only): for songs too long to hold whole. */
+  getFile?(hash: string, ext?: string): Promise<{ ext: string; file: Blob } | null>;
 }
 
 export type AutosaveSlot = 'a' | 'b';
@@ -359,6 +361,13 @@ export function createOpfsStorage(opts: OpfsStorageOptions = {}): OpfsStorage {
         if (!isSha256Hex(hash)) return null;
         const found = await findBlob(hash, ext);
         return found ? { ext: found.ext, bytes: new Uint8Array(await found.file.arrayBuffer()) } : null;
+      }),
+
+    getFile: (hash, ext) =>
+      guard('read a sample', async () => {
+        if (!isSha256Hex(hash)) return null;
+        const found = await findBlob(hash, ext);
+        return found ? { ext: found.ext, file: found.file } : null;
       }),
 
     hasBlob: (hash, ext) =>

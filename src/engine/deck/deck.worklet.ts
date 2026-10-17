@@ -3,7 +3,8 @@ import { DeckKernel } from './deck.kernel';
 
 /**
  * A DJ deck's player on the audio thread: the kernel (deck.kernel.ts) behind a message port. The song's audio
- * arrives once as SharedArrayBuffers (planar float32), the deck's position and speed go out through a shared state
+ * arrives once as SharedArrayBuffers (a pool of planar float32 blocks and the table that finds them, filled ahead of the play
+ * position by the main thread: `deck-stream.ts`), the deck's position and speed go out through a shared state
  * block (see `DS` in deck-id.ts), so nothing here allocates or posts per render quantum.
  */
 interface DeckOptions {
@@ -32,6 +33,11 @@ class DeckProcessor extends AudioWorkletProcessor {
           m.frames,
         );
         break;
+      case 'stream': {
+        const l = new Float32Array(m.poolL);
+        k.setStream(l, m.poolR === m.poolL ? l : new Float32Array(m.poolR), new Int32Array(m.table), m.frames);
+        break;
+      }
       case 'eject':
         k.setSong(null);
         break;

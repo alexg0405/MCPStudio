@@ -28,13 +28,16 @@ export interface PeakState {
   lp: number;
 }
 
-/** Fills buckets [from, to) from the channels (any number; mixed to mono). */
-export function fillPeaks(w: DeckWaveform, channels: readonly Float32Array[], from: number, to: number, st: PeakState): void {
+/**
+ * Fills buckets [from, to) from the channels (any number; mixed to mono). `base` is the song frame `channels[0][0]` is,
+ * when the channels hold only a part of the song (a long song is read a piece at a time): a bucket must lie in them.
+ */
+export function fillPeaks(w: DeckWaveform, channels: readonly Float32Array[], from: number, to: number, st: PeakState, base = 0): void {
   const ch0 = channels[0];
   if (!ch0) return;
   const ch1 = channels[1] ?? ch0;
   const stereo = ch1 !== ch0;
-  const frames = ch0.length;
+  const frames = ch0.length + base;
   // One-pole low-pass at ~200 Hz.
   const a = 1 - Math.exp((-2 * Math.PI * 200) / w.sampleRate);
   let lp = st.lp;
@@ -44,7 +47,7 @@ export function fillPeaks(w: DeckWaveform, channels: readonly Float32Array[], fr
     let hi = -Infinity;
     let low = 0;
     for (let i = b * w.bucket; i < end; i++) {
-      const v = stereo ? 0.5 * ((ch0[i] as number) + (ch1[i] as number)) : (ch0[i] as number);
+      const v = stereo ? 0.5 * ((ch0[i - base] as number) + (ch1[i - base] as number)) : (ch0[i - base] as number);
       if (v < lo) lo = v;
       if (v > hi) hi = v;
       lp += (v - lp) * a;

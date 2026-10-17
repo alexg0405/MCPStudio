@@ -67,6 +67,8 @@ export interface PluginResolver {
 /** Supplies encoded bytes for embedded samples (the app's sample store). */
 export interface SampleBytesProvider {
   getBytes(ref: SampleRef): Promise<ArrayBuffer | null>;
+  /** The stored file read lazily (a part at a time), for songs too long to hold in memory whole (the decks). */
+  getBlob?(ref: SampleRef): Promise<Blob | null>;
 }
 
 export interface EngineOptions {

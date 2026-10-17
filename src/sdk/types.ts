@@ -78,6 +78,12 @@ export interface SampleSlots {
    * can sound before it has loaded, above all `tailTime`: the export probe reads it before any audio is decoded.
    */
   durationSec(slot: string): number | null;
+  /**
+   * True when the slot holds an audio file that isn't decoded yet (built-in sounds are made on the spot and never
+   * need this). An instrument in an offline render can wait for `load()` in `create()` so its first note isn't lost.
+   * Optional: older hosts don't have it.
+   */
+  needsDecode?(slot: string): boolean;
 }
 
 export interface TransportInfo {

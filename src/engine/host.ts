@@ -152,6 +152,10 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
         const ref = this.refFor(slot);
         return ref ? this.deps.samples.knownDuration(ref, this.deps.ctx.sampleRate) : null;
       },
+      needsDecode: (slot) => {
+        const ref = this.refFor(slot);
+        return !!ref && ref.source.kind === 'embedded' && !this.deps.samples.has(SampleCache.keyOf(ref.source, this.deps.ctx.sampleRate));
+      },
     };
   }
 

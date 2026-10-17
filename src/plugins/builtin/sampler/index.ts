@@ -207,9 +207,9 @@ export default defineInstrument({
         out.disconnect();
       },
     };
-    // An export starts as soon as every instrument is ready: it waits for the sample here, so the first note
-    // isn't dropped while an embedded sample is still decoding (live playback warms it at idle time instead).
-    if (!host.offline) return instance;
+    // An export starts as soon as every instrument is ready: it waits here for an audio file still decoding, so
+    // the first note isn't dropped (built-in sounds are made at the first note; live playback warms it at idle time).
+    if (!host.offline || !host.samples.needsDecode?.('main')) return instance;
     return host.samples.load('main').then(
       (b) => {
         if (!looked) setBuffer(b ?? host.samples.get('main'));

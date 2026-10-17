@@ -128,7 +128,7 @@ controllers, value 0–1).
 | `audioContext` | realtime **or offline** (export): never create your own context |
 | `params` | the handles above |
 | `state` / `updateState(next)` | small JSON state for non-param data; `updateState` becomes an undoable edit and comes back through `setState()` |
-| `samples` | named sample slots: `get(slot)`, `load(slot)`, `onChange(slot, cb)`, `name(slot)`, `durationSec(slot)` (the sample's length in seconds without decoding it, or null: for `tailTime`). Declare `sampleSlots: ['main']` and the editor shows a sample picker |
+| `samples` | named sample slots: `get(slot)`, `load(slot)`, `onChange(slot, cb)`, `name(slot)`, `durationSec(slot)` (the sample's length in seconds without decoding it, or null: for `tailTime`), `needsDecode?.(slot)` (an audio file not decoded yet: an instrument in an offline render (`host.offline`) can return a promise from `create()` that waits for `load(slot)`, so its first note isn't lost). Declare `sampleSlots: ['main']` and the editor shows a sample picker |
 | `channel.rootKey` | the channel's root note (steps play at it; samplers play original pitch there) |
 | `channel.lowestKey` | the lowest key of any unmuted note the channel plays in the project's patterns (null: none): bounds how long a sampler's sample can sound, for `tailTime` |
 | `channel.pitch` | the channel's pitch in cents (pitch knob, automation, MIDI pitch bend) as a signal: `channel.pitch.connect(voice.detune)` for every voice. `channel.pitchAt(time)` gives its value |

@@ -6,7 +6,7 @@
  * crescendos keep rising to their last (loudest) hit. Kit channels (Drum Pads, Drum Synth) are read
  * and played by General MIDI key.
  */
-import { GROOVE, type Style } from '../beat/style';
+import { FOUR_FLOOR, GROOVE, type Style } from '../beat/style';
 import type { ChannelId, Tick, VariantStep } from '../model/types';
 import { cutHeldAt, listOf, removeWhere, startsIn, type NoteSet, type WorkNote } from './notes';
 import { jitter } from './random';
@@ -248,7 +248,7 @@ function snareBuild(set: NoteSet, step: VariantStep, c: StepContext, v: Voices):
   const offset = step.offset ?? 0;
   const quarter = Math.max(STEP, Math.round(total / 4 / STEP) * STEP);
   const rates = [BEAT, EIGHTH, STEP, THIRTY_SECOND];
-  const four = c.env.style === 'house' || c.env.style === 'edm';
+  const four = FOUR_FLOOR.has(c.env.style);
   clear(set, c.env, step.from, step.to, isDrum);
   const at: number[] = [];
   for (let j = 0; j < 4; j++) {

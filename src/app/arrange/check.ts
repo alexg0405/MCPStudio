@@ -94,7 +94,8 @@ export function checkArrangement(s: Services, p: Project, opts: CheckOptions = {
       if (heard[b]) continue;
       let e = b;
       while (e + 1 < heard.length && !heard[e + 1]) e++;
-      if (e - b + 1 >= 2) add('silent', 'bug', b * bar, (e + 1) * bar, `nothing but effects plays over ${span(b * bar, (e + 1) * bar)} (it sounds like the music stopped): play a beat or a layer there`);
+      // A tail of effects past the last music (an impact ringing out after a stop) is the ending, not a gap.
+      if (e - b + 1 >= 2 && !(e === heard.length - 1 && b > 0)) add('silent', 'bug', b * bar, (e + 1) * bar, `nothing but effects plays over ${span(b * bar, (e + 1) * bar)} (it sounds like the music stopped): play a beat or a layer there`);
       b = e;
     }
   }

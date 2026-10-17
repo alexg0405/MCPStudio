@@ -1,6 +1,6 @@
 /** The EDM style pack in the offline generator: tempo, kick and snare placement, swing, and the style tables. */
 import { describe, expect, it } from 'vitest';
-import { generateLocalBeat, parsePrompt } from './local';
+import { generateLocalBeat, mergeOfflinePrompt, parsePrompt } from './local';
 import { DRUM_SOUNDS, validateBeatSpec, type BeatSpec } from './spec';
 import { FOUR_FLOOR, GROOVE, guessStyle, HALF_TIME, PHRASE, STYLE_LABELS, STYLES, TEMPO, type Style } from './style';
 
@@ -152,5 +152,21 @@ describe('EDM pack: the offline generator', () => {
     expect(parsePrompt('trap').style).toBe('trap');
     expect(parsePrompt('chill').style).toBe('lofi');
     expect(parsePrompt('four on the floor').style).toBe('house');
+  });
+
+  it('a later request in the conversation changes the style, the tempo and the key (the Studio keeps the earlier ones)', () => {
+    let prompt = mergeOfflinePrompt('', 'make a trance beat');
+    expect(parsePrompt(prompt).style).toBe('trance');
+    prompt = mergeOfflinePrompt(prompt, 'now make it drum and bass');
+    expect(parsePrompt(prompt).style).toBe('dnb');
+    expect(generateLocalBeat({ prompt, bpm: 120 }).bpm).toBe(174);
+    prompt = mergeOfflinePrompt(prompt, 'no hats');
+    expect(parsePrompt(prompt).style).toBe('dnb');
+    expect(parsePrompt(prompt).noHats).toBe(true);
+    prompt = mergeOfflinePrompt(prompt, 'a house beat');
+    expect(parsePrompt(prompt).style).toBe('house');
+    expect(parsePrompt(prompt).noHats).toBe(true);
+    expect(parsePrompt(mergeOfflinePrompt('make it 100 bpm in D minor', 'make it 120 bpm in E minor')).bpm).toBe(120);
+    expect(parsePrompt(mergeOfflinePrompt('make it 100 bpm in D minor', 'make it 120 bpm in E minor')).key).toEqual({ root: 4, minor: true });
   });
 });

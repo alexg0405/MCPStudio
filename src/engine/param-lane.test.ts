@@ -210,4 +210,24 @@ describe('ParamRegistry', () => {
     offA();
     expect(r.get('x')).toEqual([b]);
   });
+
+  it('answers the newest param of a key, and the one before it once the newest unregisters', () => {
+    const r = new ParamRegistry();
+    const a = new AutoLane(ctx(), 'x', p.float(0, 1, 0), 0, 0);
+    const b = new AutoLane(ctx(), 'x', p.float(0, 1, 0), 0, 0);
+    const c = new AutoLane(ctx(), 'x', p.float(0, 1, 0), 0, 0);
+    expect(r.newest('x')).toBeUndefined();
+    const offA = r.register(a);
+    expect(r.newest('x')).toBe(a);
+    const offB = r.register(b);
+    const offC = r.register(c);
+    expect(r.newest('x')).toBe(c);
+    // Removing the newest hands the answer to the one registered before it that is still there.
+    offC();
+    expect(r.newest('x')).toBe(b);
+    offB();
+    expect(r.newest('x')).toBe(a);
+    offA();
+    expect(r.newest('x')).toBeUndefined();
+  });
 });

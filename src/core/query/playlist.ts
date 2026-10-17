@@ -15,11 +15,23 @@ export function clipsSorted(clips: Playlist['clips']): readonly Clip[] {
   return v;
 }
 
-/** End of the last clip, rounded up to whole bars (0 when the playlist is empty). */
+const lengthCache = new WeakMap<object, { num: number; den: number; value: Tick }>();
+
+/**
+ * End of the last clip, rounded up to whole bars (0 when the playlist is empty). Memoized by the clips
+ * record's identity and the time signature: the view asks for it every frame while a song plays, and
+ * walking every clip each time built a list of them each frame.
+ */
 export function songLength(project: Project): Tick {
+  const clips = project.playlist.clips;
+  const ts = project.transport.timeSig;
+  const hit = lengthCache.get(clips);
+  if (hit && hit.num === ts.num && hit.den === ts.den) return hit.value;
   let end = 0;
-  for (const c of Object.values(project.playlist.clips)) end = Math.max(end, c.start + c.length);
-  return end === 0 ? 0 : ceilToBars(end, project.transport.timeSig);
+  for (const c of Object.values(clips)) end = Math.max(end, c.start + c.length);
+  const value = end === 0 ? 0 : ceilToBars(end, ts);
+  lengthCache.set(clips, { num: ts.num, den: ts.den, value });
+  return value;
 }
 
 /** Lanes that don't play: muted, or not soloed while another lane is. */

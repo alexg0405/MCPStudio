@@ -6,7 +6,7 @@ import { addChannel, setChannelProp } from '@core/ops/channels';
 import { addNote, setStep } from '@core/ops/notes';
 import { constantTempo } from '@core/time/ppq';
 import { steppedTempo } from '@core/time/tempo';
-import { plan, tickAtTime, timeInSegment, type Timeline } from './core';
+import { plan, tickAtTime, tickNumberAt, timeInSegment, type Timeline } from './core';
 import { collectNotes, patternModeSource, type NoteEvent } from './events';
 
 const tl = (loop: Timeline['loop'], endTick = 1e9): Timeline => ({ tempo: constantTempo(62.5), loop, endTick });
@@ -57,6 +57,17 @@ describe('plan', () => {
     expect(tickAtTime(p.segs, 0.02)).toEqual({ tick: expect.closeTo(970, 6), iter: 0 });
     expect(tickAtTime(p.segs, 0.06)).toEqual({ tick: expect.closeTo(10, 6), iter: 1 });
     expect(tickAtTime(p.segs, -1)).toBeNull();
+  });
+
+  it('gives the same tick as tickAtTime, as a plain number (null before the first segment)', () => {
+    const p = plan({ tick: 950, time: 0, iter: 0 }, 0.12, tl({ start: 0, end: 1000 }));
+    for (const time of [-1, 0, 0.02, 0.04, 0.06, 0.1, 0.5]) {
+      const hit = tickAtTime(p.segs, time);
+      const tick = tickNumberAt(p.segs, time);
+      if (hit) expect(tick).toBe(hit.tick);
+      else expect(tick).toBeNull();
+    }
+    expect(tickNumberAt([], 0)).toBeNull();
   });
 });
 

@@ -113,11 +113,12 @@ export function drawNotes(
   const nh = Math.max(1, h - 2);
   const radius = nh >= 6 ? 3 : nh >= 4 ? 1.5 : 0;
   // [state][velocity step]: state 0 = normal, 1 = selected, 2 = muted.
-  const groups: NoteGroup[][] = [0, 1, 2].map(() =>
-    VEL_STEPS.map(() => ({ body: new Path2D(), top: new Path2D(), any: false })),
-  );
+  // A group (two paths) is made when its first note arrives: most frames use only a few of the 24.
+  const groups: (NoteGroup | undefined)[][] = [[], [], []];
   const labels: Note[] = [];
-  for (const n of notes) {
+  // Indexed, not for-of: an iterator object per note was garbage on every frame the view moves.
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i] as Note;
     if (n.tick > t1) break;
     if (n.tick + n.length < t0 || opts.skip?.has(n.id)) continue;
     const row = rowForKey(n.key);
@@ -126,7 +127,10 @@ export function drawNotes(
     const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
     const y = vp.rowToY(row) + 1;
     const state = n.muted ? 2 : style.selected.has(n.id) ? 1 : 0;
-    const g = (groups[state] as NoteGroup[])[velStep(n.velocity)] as NoteGroup;
+    const byStep = groups[state] as (NoteGroup | undefined)[];
+    const step = velStep(n.velocity);
+    let g = byStep[step];
+    if (!g) byStep[step] = g = { body: new Path2D(), top: new Path2D(), any: false };
     if (radius > 0 && w >= 4) g.body.roundRect(x, y, w, nh, Math.min(radius, w / 2));
     else g.body.rect(x, y, w, nh);
     if (nh >= 4 && w > 3) g.top.rect(x + 1.5, y + 0.5, w - 3, 1);
@@ -138,8 +142,8 @@ export function drawNotes(
   const edge = alpha(theme.noteBorder, 0.6);
   for (let state = 0; state < 3; state++) {
     for (let v = 0; v < VEL_STEPS.length; v++) {
-      const g = (groups[state] as NoteGroup[])[v] as NoteGroup;
-      if (!g.any) continue;
+      const g = (groups[state] as (NoteGroup | undefined)[])[v];
+      if (!g?.any) continue;
       const a = (0.4 + 0.6 * (VEL_STEPS[v] as number)) * (state === 2 ? 0.35 : 1);
       ctx.globalAlpha = base * a;
       ctx.fillStyle = colors[state] as string;
@@ -180,20 +184,25 @@ export function drawGhosts(
 ): void {
   const [t0, t1] = vp.visibleTicks();
   const h = vp.rowHeight;
-  const path = new Path2D();
+  // Built on the context's own path, not a Path2D per call: this runs every frame while the view follows
+  // the playhead, and a new Path2D each time was garbage each frame. Same shapes, same fill.
+  ctx.beginPath();
   const gh = Math.max(1, h - 4);
-  for (const n of notes) {
+  // Indexed, not for-of: an iterator per frame's walk over every ghost note was garbage (see above).
+  for (let i = 0; i < notes.length; i++) {
+    const n = notes[i] as Note;
     if (n.tick > t1) break;
     if (n.tick + n.length < t0) continue;
     const y = vp.rowToY(rowForKey(n.key));
     if (y < -h || y > vp.height) continue;
     const x = vp.tickToPx(n.tick);
     const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
-    if (gh >= 5 && w >= 4) path.roundRect(x, y + 2, w, gh, 2);
-    else path.rect(x, y + 2, w, gh);
+    if (gh >= 5 && w >= 4) ctx.roundRect(x, y + 2, w, gh, 2);
+    else ctx.rect(x, y + 2, w, gh);
   }
   ctx.fillStyle = theme.ghost;
-  ctx.fill(path);
+  ctx.fill();
+  ctx.beginPath();
 }
 
 const keyGradients = new Map<string, CanvasGradient>();

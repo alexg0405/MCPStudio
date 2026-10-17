@@ -315,11 +315,15 @@ export class AutoLane implements AutomatableParam {
 /** Every automatable param, by target key (several per key while an instance is being replaced). */
 export class ParamRegistry {
   private readonly byKey = new Map<string, Set<AutomatableParam>>();
+  /** The newest param of each key, kept up to date on register and unregister (read every frame). */
+  private readonly newestByKey = new Map<string, AutomatableParam>();
   private readonly listeners = new Set<(p: AutomatableParam, added: boolean) => void>();
 
   register(p: AutomatableParam): () => void {
     let set = this.byKey.get(p.key);
     if (!set) this.byKey.set(p.key, (set = new Set()));
+    // A param already in the set keeps its place, so the newest stays as it was.
+    if (!set.has(p)) this.newestByKey.set(p.key, p);
     set.add(p);
     for (const fn of this.listeners) fn(p, true);
     let done = false;
@@ -328,7 +332,15 @@ export class ParamRegistry {
       done = true;
       const s = this.byKey.get(p.key);
       s?.delete(p);
-      if (s && s.size === 0) this.byKey.delete(p.key);
+      if (s && s.size === 0) {
+        this.byKey.delete(p.key);
+        this.newestByKey.delete(p.key);
+      } else if (s && this.newestByKey.get(p.key) === p) {
+        // The newest went away: the one before it (rare, so the walk over the set is fine here).
+        let last: AutomatableParam | undefined;
+        for (const q of s) last = q;
+        if (last) this.newestByKey.set(p.key, last);
+      }
       for (const fn of this.listeners) fn(p, false);
     };
   }
@@ -345,12 +357,9 @@ export class ParamRegistry {
     return s ? [...s] : [];
   }
 
-  /** The most recently registered param under `key` (no allocation). */
+  /** The most recently registered param under `key` (no allocation: read from `newestByKey`). */
   newest(key: string): AutomatableParam | undefined {
-    let last: AutomatableParam | undefined;
-    const s = this.byKey.get(key);
-    if (s) for (const p of s) last = p;
-    return last;
+    return this.newestByKey.get(key);
   }
 
   /** Calls `fn` for every param under `key` (no allocation). */

@@ -64,6 +64,9 @@ export function DecksWindow() {
   return <Loaded api={api} />;
 }
 
+/** The six deck levels, read into this one buffer every frame (see Loaded's meters). */
+const levelBuffer = new Float32Array(6);
+
 function Loaded({ api }: { api: DecksApi }) {
   const count = useDecksState(api, (s) => s.deckCount);
   const learning = useLearnMode();
@@ -78,12 +81,11 @@ function Loaded({ api }: { api: DecksApi }) {
     [],
   );
   const read = useCallback(() => {
-    const levels = new Float32Array(6);
-    api.readLevels?.(levels);
+    api.readLevels?.(levelBuffer);
     for (let i = 0; i < 6; i++) {
       const el = els.current[i];
       if (!el) continue;
-      const v = Math.max(levels[i] as number, (held.current[i] as number) * 0.88);
+      const v = Math.max(levelBuffer[i] as number, (held.current[i] as number) * 0.88);
       held.current[i] = v;
       // A square-root scale so a quiet deck still shows.
       el.style.transform = `scaleY(${Math.min(1, Math.sqrt(v))})`;

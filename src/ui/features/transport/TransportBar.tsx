@@ -43,18 +43,21 @@ function Tempo() {
   // While playing, show the tempo being heard (tempo automation moves it): written straight into
   // the display's text on the frame loop, no React renders.
   useEffect(() => {
-    let shown = '';
+    // The last tempo shown (a number, compared first: the text is only built when it changes).
+    let shownBpm = Number.NaN;
+    let shownText = '';
     return onFrame(() => {
       // The DragNumber's own text node (absent while it's being typed into).
       const text = box.current?.firstElementChild?.firstChild;
       if (!text || text.nodeType !== Node.TEXT_NODE) return;
       const doc = services.doc.getState().project.transport.bpm;
       const live = services.engine.playing ? services.engine.tempoNow() : doc;
-      const next = (Math.abs(live - doc) < 5e-4 ? doc : live).toFixed(3);
-      if (next === shown && text.nodeValue === next) return;
-      shown = next;
-      text.nodeValue = next;
-      box.current?.toggleAttribute('data-live', next !== doc.toFixed(3));
+      const bpm = Math.abs(live - doc) < 5e-4 ? doc : live;
+      if (bpm === shownBpm && text.nodeValue === shownText) return;
+      shownBpm = bpm;
+      shownText = bpm.toFixed(3);
+      text.nodeValue = shownText;
+      box.current?.toggleAttribute('data-live', shownText !== doc.toFixed(3));
     });
   }, [services]);
   const hint = status
@@ -102,16 +105,26 @@ function Position() {
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let last = '';
+    // The whole tick last formatted: the text only changes when it does (formatBST floors the tick), so a
+    // frame that stays on the same tick builds no string.
+    let lastTick = Number.NaN;
+    let lastTs: unknown = null;
     return onFrame(() => {
+      const fullEl = full.current;
+      const shortEl = short.current;
+      if (!fullEl || !shortEl) return;
       const ts = services.doc.getState().project.transport.timeSig;
       const v = services.view.getState();
       const tick = services.engine.playing ? services.engine.playhead() : v.mode === 'song' ? v.songStart : 0;
+      const whole = Math.floor(tick);
+      if (whole === lastTick && ts === lastTs) return;
+      lastTick = whole;
+      lastTs = ts;
       const text = formatBST(tick, ts);
-      if (text !== last && full.current && short.current) {
-        full.current.textContent = text;
-        short.current.textContent = text.slice(0, text.lastIndexOf(':'));
-        last = text;
-      }
+      if (text === last) return;
+      fullEl.textContent = text;
+      shortEl.textContent = text.slice(0, text.lastIndexOf(':'));
+      last = text;
     });
   }, [services]);
   return (

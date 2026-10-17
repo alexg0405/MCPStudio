@@ -32,18 +32,22 @@ export function Meters({ meters, tap }: { meters: readonly PluginMeter[]; tap: A
   const bars = useRef<(HTMLSpanElement | null)[]>([]);
   useEffect(() => {
     if (!tap) return;
-    const shown: string[] = [];
+    // The last reading per meter (NaN: none yet; no reading is -Infinity): the text and bar change only with it,
+    // so a steady value builds no string and no closure.
+    const shown = new Float64Array(meters.length).fill(Number.NaN);
     return onFrame(() => {
-      meters.forEach((m, i) => {
+      for (let i = 0; i < meters.length; i++) {
+        const m = meters[i] as PluginMeter;
         const v = tap.active ? tap.reading(m.reading) : undefined;
+        const key = v ?? Number.NEGATIVE_INFINITY;
+        if (shown[i] === key) continue;
+        shown[i] = key;
         const text = formatMeter(m, v);
-        if (shown[i] === text) return;
-        shown[i] = text;
         const el = values.current[i];
         if (el) el.textContent = text;
         const bar = bars.current[i];
         if (bar) bar.style.width = `${Math.min(100, (Math.max(0, v ?? 0) / (m.max ?? 12)) * 100)}%`;
-      });
+      }
     });
   }, [meters, tap]);
   return (

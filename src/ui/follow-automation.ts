@@ -15,6 +15,8 @@ interface Follower {
 export class AutomationFollowers {
   private readonly byKey = new Map<string, Set<Follower>>();
   private keys: string[] = [];
+  /** `groups[i]` holds the followers of `keys[i]` as an array, so a frame walks them without iterator objects. */
+  private groups: Follower[][] = [];
   private out = new Float64Array(0);
   private stop: (() => void) | null = null;
 
@@ -36,6 +38,7 @@ export class AutomationFollowers {
 
   private rebuild(): void {
     this.keys = [...this.byKey.keys()];
+    this.groups = this.keys.map((key) => [...(this.byKey.get(key) ?? [])]);
     if (this.out.length < this.keys.length) this.out = new Float64Array(this.keys.length * 2);
     if (this.keys.length > 0 && !this.stop) this.stop = onFrame(() => this.frame());
     else if (this.keys.length === 0 && this.stop) {
@@ -50,9 +53,11 @@ export class AutomationFollowers {
     this.engine().readAutomation(keys, this.out);
     for (let i = 0; i < keys.length; i++) {
       const v = this.out[i] as number;
-      const set = this.byKey.get(keys[i] as string);
-      if (!set) continue;
-      for (const f of set) f.paint(Number.isNaN(v) ? null : decode(f.spec, v));
+      const group = this.groups[i] as Follower[];
+      for (let j = 0; j < group.length; j++) {
+        const f = group[j] as Follower;
+        f.paint(Number.isNaN(v) ? null : decode(f.spec, v));
+      }
     }
   }
 }

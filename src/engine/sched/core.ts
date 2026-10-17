@@ -74,15 +74,31 @@ export function timeInSegment(seg: Segment, tick: number, tempo: TempoMap): numb
   return segmentEndTime(seg) + (tempo.tickToSeconds(tick) - tempo.tickToSeconds(seg.tick1));
 }
 
+/** The newest segment that has started by `time` (its index), or -1 when none has. */
+function segmentAt(segs: readonly Segment[], time: number): number {
+  for (let i = segs.length - 1; i >= 0; i--) if (time >= (segs[i] as Segment).time0) return i;
+  return -1;
+}
+
+/** The tick within segment `s` at `time` (clamped to the segment). */
+function tickIn(s: Segment, time: number): number {
+  const t = Math.min(time, segmentEndTime(s));
+  return Math.min(s.tick1, s.tick0 + (t - s.time0) / s.spt);
+}
+
 /** Maps an audio-clock time to a tick using planned segments (newest last). */
 export function tickAtTime(segs: readonly Segment[], time: number): { tick: number; iter: number } | null {
-  for (let i = segs.length - 1; i >= 0; i--) {
-    const s = segs[i] as Segment;
-    if (time >= s.time0) {
-      const end = segmentEndTime(s);
-      const t = Math.min(time, end);
-      return { tick: Math.min(s.tick1, s.tick0 + (t - s.time0) / s.spt), iter: s.iter };
-    }
-  }
-  return null;
+  const i = segmentAt(segs, time);
+  if (i < 0) return null;
+  const s = segs[i] as Segment;
+  return { tick: tickIn(s, time), iter: s.iter };
+}
+
+/**
+ * The tick at `time` as a plain number, null when no segment has started: `tickAtTime` without the result
+ * object, for the playhead, which is asked for several times in every frame.
+ */
+export function tickNumberAt(segs: readonly Segment[], time: number): number | null {
+  const i = segmentAt(segs, time);
+  return i < 0 ? null : tickIn(segs[i] as Segment, time);
 }

@@ -14,17 +14,198 @@ import type {
   Waveform,
 } from '@engine/api';
 import type { AudioTap } from '@agstudio/sdk';
+import { INACTIVE_TAP } from '@engine/tap';
+
+/** How long a reboot waits for the new engine's sounds before playing anyway (ms). */
+const READY_WAIT_MS = 5000;
+/** A deferred engine is made at the latest this long after the host (a hidden tab never runs animation frames). */
+const START_FALLBACK_MS = 1500;
+/** After a deferred engine is made, live notes and play wait this long at most for its sounds to load (ms). */
+const WARM_MAX_MS = 1500;
+/** A live note that waited for the sounds is still played while it is this recent (or still held) (ms). */
+const REPLAY_MAX_AGE_MS = 600;
+/** Where the sample rate of the last engine is remembered, so the toolbar shows it before the engine exists. */
+const RATE_KEY = 'agstudio:audio-rate';
+/** Ids of live notes held back while the engine loaded (the engine's own previews start at 2^30). */
+const HELD_NOTE_BASE = 2 ** 29;
+
+/** Startup marks (scripts/perf-startup.mjs reads the ones that start with ag:). */
+function mark(name: string): void {
+  if (typeof performance !== 'undefined' && typeof performance.mark === 'function') performance.mark(`ag:${name}`);
+}
+
+function rememberedRate(): number {
+  try {
+    const n = Number(globalThis.localStorage?.getItem(RATE_KEY));
+    return n >= 8000 && n <= 192000 ? n : 48000;
+  } catch {
+    return 48000;
+  }
+}
+
+function rememberRate(rate: number): void {
+  try {
+    if (rate !== rememberedRate()) globalThis.localStorage?.setItem(RATE_KEY, String(rate));
+  } catch {
+    /* storage unavailable: the toolbar guesses 48 kHz until the engine exists */
+  }
+}
+
+export interface EngineHostOptions {
+  /**
+   * Start with an inert stand-in and make the real engine (the AudioContext, the graph, the sounds) right after the
+   * first paint, or the moment anything needs it (play, a live note, the first click...): creating the context is the
+   * largest single piece of main-thread work at startup and nothing on the first screen needs sound. Everything the
+   * app tells the engine meanwhile (project, view, session, output device) is remembered and handed over, so the real
+   * engine starts where one made at once would have.
+   */
+  deferred?: boolean;
+}
+
+/**
+ * What the host answers until the real engine exists: nothing plays, audio is not running (the toolbar offers
+ * "click to enable", and a click makes the engine), no meters move. Calls that need sound never reach it: the host
+ * makes the engine first.
+ */
+class IdleEngine implements EngineApi {
+  readonly state: EngineState = 'suspended';
+  readonly playing = false;
+  constructor(
+    readonly sampleRate: number,
+    private readonly bpm: () => number,
+  ) {}
+  private no(): never {
+    throw new Error('The audio engine has not started yet.');
+  }
+  resume(): Promise<void> {
+    return this.no();
+  }
+  ready(): Promise<void> {
+    return Promise.resolve();
+  }
+  applyDocChange(): void {}
+  pluginsChanged(): void {}
+  setTransportView(): void {}
+  play(): void {}
+  stop(): void {}
+  panic(): void {}
+  setOutputDevice(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+  playhead(): number {
+    return 0;
+  }
+  playheadIteration(): number {
+    return 0;
+  }
+  previewNoteOn(): number {
+    return this.no();
+  }
+  previewNoteOff(): void {}
+  previewControl(): void {}
+  previewPitchBend(): void {}
+  previewSample(): void {}
+  record(): Promise<RecordingHandle> {
+    return this.no();
+  }
+  waveform(): Waveform | null {
+    return null;
+  }
+  sampleData(): Promise<SampleData | null> {
+    return this.no();
+  }
+  openAudioInput(): Promise<AudioInput> {
+    return this.no();
+  }
+  playTestClicks(): number[] {
+    return this.no();
+  }
+  setSongOpenEnded(): void {}
+  previewAudio(): Promise<boolean> {
+    return this.no();
+  }
+  stopPreview(): void {}
+  readMeters(order: readonly InsertId[], out: Float32Array): void {
+    out.fill(0, 0, order.length * 2);
+  }
+  tickAt(): { tick: number; iter: number } {
+    return { tick: 0, iter: 0 };
+  }
+  contextTimeAt(): number {
+    return 0;
+  }
+  readAutomation(keys: readonly string[], out: Float64Array): void {
+    out.fill(Number.NaN, 0, Math.min(keys.length, out.length));
+  }
+  touch(): void {}
+  tempoNow(): number {
+    return this.bpm();
+  }
+  setSession(): void {}
+  graphLatency(): number {
+    return 0;
+  }
+  outputTap(): AudioTap {
+    return INACTIVE_TAP;
+  }
+  isStretching(): boolean {
+    return false;
+  }
+  stats(): EngineStats {
+    return {
+      state: 'suspended',
+      sampleRate: this.sampleRate,
+      baseLatency: 0,
+      outputLatency: 0,
+      lookahead: 0.12,
+      lateEvents: 0,
+      maxPumpGapMs: 0,
+      faults: 0,
+    };
+  }
+  subscribe(): () => void {
+    return () => {};
+  }
+  dispose(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+/** A live note that came while a just-made engine was still loading its sounds. */
+interface HeldNote {
+  channelId: ChannelId;
+  key: number;
+  velocity: number | undefined;
+  at: number;
+  /** When it was released, if it already was. */
+  releasedAt: number | null;
+}
 
 /**
  * A stable EngineApi that delegates to a replaceable engine. Rebooting (new AudioContext) is how
  * edited AudioWorklet code takes effect: registerProcessor names can't be redefined and worklet
- * modules can't be unloaded from a context.
+ * modules can't be unloaded from a context. With `deferred` the first engine is made after the first paint.
  */
-/** How long a reboot waits for the new engine's sounds before playing anyway (ms). */
-const READY_WAIT_MS = 5000;
-
 export class EngineHost implements EngineApi {
   private inner: EngineApi;
+  /** True until a deferred engine is made. */
+  private idle = false;
+  private startTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Samples whose overview was asked for before the engine existed: it decodes them once it does. */
+  private readonly wantedWaveforms = new Map<string, Pick<SampleRef, 'source'>>();
+  /** Callers waiting to hear if the chosen output device could be used (the engine did not exist yet). */
+  private deviceWaiters: ((ok: boolean) => void)[] = [];
+  /** Callers of resume() before the engine existed: answered once it is made and resumed. */
+  private resumeWaiters: (() => void)[] = [];
+  /** A just-made deferred engine is still loading its sounds: live notes and play wait for them, briefly. */
+  private warming = false;
+  private warmTimer: ReturnType<typeof setTimeout> | null = null;
+  private heldNotes = new Map<number, HeldNote>();
+  private heldSeq = HELD_NOTE_BASE;
+  /** Held-back live notes that were played: the host's id → the engine's. */
+  private readonly heldIds = new Map<number, number>();
+  /** Play was pressed while the sounds loaded: it starts when they are in. */
+  private pendingPlay: { from: Tick | undefined } | null = null;
   private readonly listeners = new Set<() => void>();
   private detach: () => void;
   private lastDoc: DocChange | null = null;
@@ -40,9 +221,108 @@ export class EngineHost implements EngineApi {
   private resumeCancelled = false;
   private openEnded = false;
 
-  constructor(private readonly factory: () => EngineApi) {
-    this.inner = factory();
-    this.detach = this.inner.subscribe(() => this.emit());
+  constructor(
+    private readonly factory: () => EngineApi,
+    opts: EngineHostOptions = {},
+  ) {
+    if (opts.deferred) {
+      this.idle = true;
+      this.inner = new IdleEngine(rememberedRate(), () => this.lastDoc?.next.transport.bpm ?? 130);
+      this.detach = () => {};
+      this.scheduleStart();
+    } else {
+      mark('engine-start');
+      this.inner = factory();
+      mark('engine');
+      this.detach = this.inner.subscribe(() => this.emit());
+    }
+  }
+
+  /** The real engine, made now if it was waiting for the first paint: whatever makes sound goes through this. */
+  private use(): EngineApi {
+    if (this.idle) this.start();
+    return this.inner;
+  }
+
+  /** Makes the engine after the first paint: two animation frames (the second follows a drawn frame), then idle. */
+  private scheduleStart(): void {
+    const go = () => {
+      if (this.idle) this.start();
+    };
+    const idle = () => {
+      const ric = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+        .requestIdleCallback;
+      if (ric) ric(go, { timeout: 100 });
+      else setTimeout(go, 0);
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(idle));
+    this.startTimer = setTimeout(go, START_FALLBACK_MS);
+  }
+
+  /** False only for a deferred host that has not made its engine yet. */
+  get started(): boolean {
+    return !this.idle;
+  }
+
+  /** Makes the deferred engine now (a no-op once it exists). */
+  start(): void {
+    if (!this.idle) return;
+    this.idle = false;
+    if (this.startTimer) clearTimeout(this.startTimer);
+    this.startTimer = null;
+    mark('engine-start');
+    const next = this.factory();
+    this.prepare(next, false);
+    this.swap(next);
+    mark('engine');
+    rememberRate(next.sampleRate);
+    // Overviews asked for while there was no engine: it decodes them now and tells subscribers when they are in.
+    for (const ref of this.wantedWaveforms.values()) next.waveform(ref);
+    this.wantedWaveforms.clear();
+    const waiters = this.deviceWaiters;
+    this.deviceWaiters = [];
+    if (this.outputDevice) void next.setOutputDevice(this.outputDevice).then((ok) => waiters.forEach((w) => w(ok)));
+    else waiters.forEach((w) => w(true));
+    // Asked to resume before it existed, or the page was interacted with already (then the browser lets it run).
+    const resumed = this.resumeWaiters;
+    this.resumeWaiters = [];
+    const active = (globalThis.navigator as (Navigator & { userActivation?: { hasBeenActive: boolean } }) | undefined)
+      ?.userActivation?.hasBeenActive;
+    if (resumed.length > 0 || active) {
+      const release = () => resumed.forEach((r) => r());
+      void next.resume().then(release, release);
+    }
+    // Its instruments load asynchronously: notes and play that come before they are in wait a moment, not vanish.
+    this.warming = true;
+    const done = () => this.warmed();
+    void next.ready().then(done, done);
+    this.warmTimer = setTimeout(done, WARM_MAX_MS);
+    this.emit();
+  }
+
+  /** The sounds are loaded (or waiting longer is pointless): plays what came meanwhile. */
+  private warmed(): void {
+    if (!this.warming) return;
+    this.warming = false;
+    if (this.warmTimer) clearTimeout(this.warmTimer);
+    this.warmTimer = null;
+    const inner = this.inner;
+    const now = performance.now();
+    const held = this.heldNotes;
+    this.heldNotes = new Map();
+    for (const [id, n] of held) {
+      if (n.releasedAt !== null && now - n.releasedAt > REPLAY_MAX_AGE_MS) continue;
+      const innerId = inner.previewNoteOn(n.channelId, n.key, n.velocity);
+      if (n.releasedAt !== null) {
+        // A tap that came while it loaded sounds for as long as the tap lasted (a short one at least).
+        const length = Math.min(400, Math.max(60, n.releasedAt - n.at));
+        setTimeout(() => inner.previewNoteOff(n.channelId, innerId), length);
+      } else this.heldIds.set(id, innerId);
+    }
+    const play = this.pendingPlay;
+    this.pendingPlay = null;
+    if (play) inner.play(play.from);
+    this.emit();
   }
 
   /**
@@ -51,6 +331,11 @@ export class EngineHost implements EngineApi {
    * settings each time), so the last request always wins.
    */
   reboot(): Promise<void> {
+    if (this.idle) {
+      // The engine does not exist yet: making it now is the reboot (it reads the newest settings).
+      this.start();
+      return Promise.resolve();
+    }
     if (this.rebooting) {
       this.rebootAgain = true;
       return this.rebooting;
@@ -102,11 +387,11 @@ export class EngineHost implements EngineApi {
   }
 
   /** Gives a new engine everything the running one knows. */
-  private prepare(next: EngineApi): void {
+  private prepare(next: EngineApi, device = true): void {
     if (this.lastDoc) next.applyDocChange({ ...this.lastDoc, prev: this.lastDoc.next, origin: 'load', patches: null });
     if (this.view) next.setTransportView(this.view);
     if (this.session) next.setSession(this.session);
-    if (this.outputDevice) void next.setOutputDevice(this.outputDevice);
+    if (device && this.outputDevice) void next.setOutputDevice(this.outputDevice);
     if (this.openEnded) next.setSongOpenEnded(true);
   }
 
@@ -138,19 +423,22 @@ export class EngineHost implements EngineApi {
   }
 
   get sampleRate(): number {
-    return this.inner.sampleRate;
+    return this.use().sampleRate;
   }
   get state(): EngineState {
     return this.inner.state;
   }
   get playing(): boolean {
-    return this.inner.playing;
+    return this.pendingPlay !== null || this.inner.playing;
   }
   resume(): Promise<void> {
+    // Before the engine exists this only asks for it to be resumed when it is made (right after the first paint): a
+    // click that comes first must not pay for creating the AudioContext inside its own handler.
+    if (this.idle) return new Promise((resolve) => this.resumeWaiters.push(resolve));
     return this.inner.resume();
   }
   ready(): Promise<void> {
-    return this.inner.ready();
+    return this.use().ready();
   }
   applyDocChange(change: DocChange): void {
     this.lastDoc = change;
@@ -168,19 +456,38 @@ export class EngineHost implements EngineApi {
   }
   play(fromTick?: Tick): void {
     this.resumeCancelled = true;
-    this.inner.play(fromTick);
+    const engine = this.use();
+    if (this.warming) {
+      // The engine was just made: playing waits (a moment) for the instruments to load, as a click on play after the
+      // page has settled would find them.
+      this.pendingPlay = { from: fromTick };
+      this.emit();
+      return;
+    }
+    engine.play(fromTick);
   }
   stop(): void {
     this.resumeCancelled = true;
+    this.dropWaiting();
     this.inner.stop();
   }
   panic(): void {
     this.resumeCancelled = true;
+    this.dropWaiting();
     this.inner.panic();
+  }
+  /** Stop and panic cancel a play and the notes that were waiting for the sounds to load. */
+  private dropWaiting(): void {
+    const had = this.pendingPlay !== null;
+    this.pendingPlay = null;
+    this.heldNotes.clear();
+    if (had) this.emit();
   }
   setOutputDevice(deviceId: string): Promise<boolean> {
     this.outputDevice = deviceId;
     void this.pending?.setOutputDevice(deviceId);
+    // No engine yet: the device is applied when it is made (what could be used is answered then).
+    if (this.idle) return new Promise((resolve) => this.deviceWaiters.push(resolve));
     return this.inner.setOutputDevice(deviceId);
   }
   playhead(): number {
@@ -190,9 +497,25 @@ export class EngineHost implements EngineApi {
     return this.inner.playheadIteration();
   }
   previewNoteOn(channelId: ChannelId, key: number, velocity?: number): number {
-    return this.inner.previewNoteOn(channelId, key, velocity);
+    const engine = this.use();
+    if (!this.warming) return engine.previewNoteOn(channelId, key, velocity);
+    // The instruments are still loading (a note now would find none): it is played the moment they are in.
+    const id = ++this.heldSeq;
+    this.heldNotes.set(id, { channelId, key, velocity, at: performance.now(), releasedAt: null });
+    return id;
   }
   previewNoteOff(channelId: ChannelId, noteId: number): void {
+    const held = this.heldNotes.get(noteId);
+    if (held) {
+      held.releasedAt = performance.now();
+      return;
+    }
+    const innerId = this.heldIds.get(noteId);
+    if (innerId !== undefined) {
+      this.heldIds.delete(noteId);
+      this.inner.previewNoteOff(channelId, innerId);
+      return;
+    }
     this.inner.previewNoteOff(channelId, noteId);
   }
   previewControl(channelId: ChannelId, cc: number, value: number): void {
@@ -202,25 +525,30 @@ export class EngineHost implements EngineApi {
     this.inner.previewPitchBend(channelId, cents);
   }
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
-    this.inner.previewSample(ref);
+    this.use().previewSample(ref);
   }
   record(stream: MediaStream, opts: RecordOptions & { playAlong: boolean; fromTick?: Tick }): Promise<RecordingHandle> {
-    return this.inner.record(stream, opts);
+    return this.use().record(stream, opts);
   }
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
+    if (this.idle) {
+      // Drawn before the engine exists (a restored project's samples): remembered, decoded once it does.
+      this.wantedWaveforms.set(JSON.stringify(ref.source), { source: ref.source });
+      return null;
+    }
     return this.inner.waveform(ref);
   }
   previewAudio(bytes: ArrayBuffer): Promise<boolean> {
-    return this.inner.previewAudio(bytes);
+    return this.use().previewAudio(bytes);
   }
   sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
-    return this.inner.sampleData(ref);
+    return this.use().sampleData(ref);
   }
   openAudioInput(stream: MediaStream, opts: { channels: 1 | 2; label?: string; latency?: number }): Promise<AudioInput> {
-    return this.inner.openAudioInput(stream, opts);
+    return this.use().openAudioInput(stream, opts);
   }
   playTestClicks(count: number, interval: number): number[] {
-    return this.inner.playTestClicks(count, interval);
+    return this.use().playTestClicks(count, interval);
   }
   setSongOpenEnded(on: boolean): void {
     this.openEnded = on;
@@ -234,10 +562,10 @@ export class EngineHost implements EngineApi {
     this.inner.readMeters(order, out);
   }
   tickAt(contextTime: number): { tick: number; iter: number } {
-    return this.inner.tickAt(contextTime);
+    return this.use().tickAt(contextTime);
   }
   contextTimeAt(performanceMs: number): number {
-    return this.inner.contextTimeAt(performanceMs);
+    return this.use().contextTimeAt(performanceMs);
   }
   readAutomation(keys: readonly string[], out: Float64Array): void {
     this.inner.readAutomation(keys, out);
@@ -284,13 +612,19 @@ export class EngineHost implements EngineApi {
     return this.inner.stats();
   }
   deckHost(): DeckHost | null {
-    return this.inner.deckHost?.() ?? null;
+    return this.use().deckHost?.() ?? null;
   }
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
   }
   async dispose(): Promise<void> {
+    if (this.startTimer) clearTimeout(this.startTimer);
+    this.startTimer = null;
+    if (this.warmTimer) clearTimeout(this.warmTimer);
+    this.warmTimer = null;
+    this.warming = false;
+    this.idle = false;
     this.detach();
     await this.inner.dispose();
   }

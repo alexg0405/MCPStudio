@@ -29,6 +29,10 @@ const BASES = arg('url', 'http://localhost:5422').split(',');
 const RUNS = Number(arg('runs', '9'));
 const LABEL = arg('label', '');
 const JSON_OUT = arg('json', '');
+// --fresh starts a new browser for every run (default: one browser for all runs). The first AudioContext of a browser
+// process starts Chrome's audio service on the main thread (~200 ms in headless Chrome here, 1-2 ms for the next
+// ones), so only fresh browsers see what a person opening the app after launching Chrome sees.
+const FRESH = argv.includes('--fresh');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const pct = (xs, p) => {
   const s = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
@@ -124,19 +128,22 @@ async function oneRun(context, BASE) {
   return m;
 }
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+const launch = () => chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+let browser = FRESH ? null : await launch();
 const outs = BASES.map((url) => ({ url, label: LABEL, cold: [], warm: [] }));
 try {
   for (let i = 0; i < RUNS; i++) {
     for (const o of outs) {
-      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const b = browser ?? (await launch());
+      const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
       o.cold.push(await oneRun(ctx, o.url));
       o.warm.push(await oneRun(ctx, o.url));
       await ctx.close();
+      if (!browser) await b.close();
     }
   }
 } finally {
-  await browser.close();
+  await browser?.close();
 }
 const keys = ['fp', 'fcp', 'ready', 'tti', 'firstInputDelay', 'firstInputDur', 'ltCount', 'ltTotal', 'ltMax', 'requestsBeforeReady', 'jsFilesBeforeReady', 'jsBytesBeforeReady', 'jsWire', 'jsFilesAll', 'jsBytesAll', 'scriptMs', 'taskMs'];
 for (const out of outs)

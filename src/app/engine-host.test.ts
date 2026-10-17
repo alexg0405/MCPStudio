@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '@engine/fake-engine';
 import { createEmptyProject } from '@core/model/defaults';
 import { EngineHost } from './engine-host';
@@ -176,5 +176,168 @@ describe('EngineHost', () => {
     host.play();
     expect(made[0]?.playing).toBe(true);
     expect(notified).toBeGreaterThan(0);
+  });
+});
+
+describe('EngineHost, deferred', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A fake engine that records live notes and whose sounds load when `loaded()` is called. */
+  function rig() {
+    const made: FakeEngine[] = [];
+    const log: string[] = [];
+    const waves: unknown[] = [];
+    let loaded: () => void = () => {};
+    const host = new EngineHost(
+      () => {
+        const e = new FakeEngine();
+        e.ready = () => new Promise<void>((r) => (loaded = r));
+        e.previewNoteOn = ((_c: string, key?: number) => (log.push(`on ${key}`), 100 + log.length)) as never;
+        e.previewNoteOff = ((_c: string, id?: number) => void log.push(`off ${id}`)) as never;
+        const play = e.play.bind(e);
+        e.play = (from) => (log.push('play'), play(from));
+        e.waveform = ((r: unknown) => (waves.push(r), null)) as never;
+        made.push(e);
+        return e;
+      },
+      { deferred: true },
+    );
+    return { host, made, log, waves, loaded: () => loaded() };
+  }
+
+  it('makes no engine until something needs sound, and answers calmly meanwhile', () => {
+    const { host, made } = rig();
+    expect(made).toHaveLength(0);
+    expect(host.started).toBe(false);
+    expect(host.state).toBe('suspended');
+    expect(host.playing).toBe(false);
+    expect(host.playhead()).toBe(0);
+    expect(host.stats().state).toBe('suspended');
+    expect(host.waveform({ source: { kind: 'builtin', id: 'x' } as never })).toBeNull();
+    const peaks = new Float32Array(4).fill(1);
+    host.readMeters(['a' as never, 'b' as never], peaks);
+    expect([...peaks]).toEqual([0, 0, 0, 0]);
+    const out = new Float64Array(2);
+    host.readAutomation(['k1', 'k2'], out);
+    expect(Number.isNaN(out[0])).toBe(true);
+    host.stop();
+    host.panic();
+    expect(made).toHaveLength(0);
+  });
+
+  it('makes the engine on its own a moment later and hands it the project, view, session and output device', async () => {
+    vi.useFakeTimers();
+    const { host, made } = rig();
+    const project = createEmptyProject();
+    host.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
+    host.setTransportView({ mode: 'song', patternId: null, loop: null });
+    host.setSession({ metronome: true, countInBars: 1 });
+    host.setSongOpenEnded(true);
+    const device = host.setOutputDevice('headphones');
+    let notified = 0;
+    host.subscribe(() => notified++);
+    expect(made).toHaveLength(0);
+    vi.advanceTimersByTime(2000);
+    expect(made).toHaveLength(1);
+    const e = made[0] as FakeEngine;
+    expect(e.changes[0]).toMatchObject({ origin: 'load', next: project });
+    expect(e.view).toEqual({ mode: 'song', patternId: null, loop: null });
+    expect(e.session).toEqual({ metronome: true, countInBars: 1 });
+    expect(e.openEnded).toBe(true);
+    expect(e.outputDevice).toBe('headphones');
+    await expect(device).resolves.toBe(true);
+    expect(notified).toBeGreaterThan(0);
+    expect(host.started).toBe(true);
+  });
+
+  it('a resume before the engine exists waits for it and resumes it, without making it inside the call', async () => {
+    const { host, made } = rig();
+    let done = false;
+    void host.resume().then(() => (done = true));
+    await Promise.resolve();
+    expect(made).toHaveLength(0);
+    expect(done).toBe(false);
+    host.start();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(made).toHaveLength(1);
+    expect(done).toBe(true);
+  });
+
+  it('a live note makes the engine and is played once its sounds have loaded; a tap is not lost', () => {
+    vi.useFakeTimers();
+    const { host, made, log, loaded } = rig();
+    const held = host.previewNoteOn('c' as never, 60, 0.8);
+    expect(made).toHaveLength(1);
+    // The instruments are loading: nothing reached the engine yet.
+    expect(log).toEqual([]);
+    const tapped = host.previewNoteOn('c' as never, 64, 0.8);
+    host.previewNoteOff('c' as never, tapped);
+    loaded();
+    return Promise.resolve().then(() => {
+      expect(log).toEqual(['on 60', 'on 64']);
+      // The held key is still down: its release reaches the engine under the id the engine gave.
+      host.previewNoteOff('c' as never, held);
+      expect(log.at(-1)).toBe('off 101');
+      // The tap sounds a short while, then ends by itself.
+      vi.advanceTimersByTime(100);
+      expect(log.at(-1)).toBe('off 102');
+      // Notes after the load go straight through.
+      const id = host.previewNoteOn('c' as never, 67, 0.8);
+      expect(log.at(-1)).toBe('on 67');
+      host.previewNoteOff('c' as never, id);
+      expect(log.at(-1)).toBe(`off ${id}`);
+    });
+  });
+
+  it('play waits for the sounds, shows as playing meanwhile, and stop cancels it', async () => {
+    vi.useFakeTimers();
+    const { host, made, log, loaded } = rig();
+    host.play(480);
+    expect(made).toHaveLength(1);
+    expect(host.playing).toBe(true);
+    expect(log).toEqual([]);
+    loaded();
+    await Promise.resolve();
+    expect(log).toEqual(['play']);
+    expect((made[0] as FakeEngine).lastPlayFrom).toBe(480);
+
+    const second = rig();
+    second.host.play();
+    second.host.stop();
+    expect(second.host.playing).toBe(false);
+    second.loaded();
+    await Promise.resolve();
+    expect(second.log).toEqual([]);
+  });
+
+  it('plays anyway when the sounds take too long to load', () => {
+    vi.useFakeTimers();
+    const { host, log } = rig();
+    host.play();
+    expect(log).toEqual([]);
+    vi.advanceTimersByTime(1600);
+    expect(log).toEqual(['play']);
+  });
+
+  it('a reboot before the engine exists just makes it', async () => {
+    const { host, made } = rig();
+    await host.reboot();
+    expect(made).toHaveLength(1);
+  });
+
+  it('decodes the overviews asked for before the engine existed once it does', () => {
+    const { host, waves } = rig();
+    const ref = { source: { kind: 'embedded', hash: 'abc', ext: 'wav' } } as never;
+    expect(host.waveform(ref)).toBeNull();
+    host.waveform(ref);
+    expect(waves).toHaveLength(0);
+    host.start();
+    // Once, however often it was asked.
+    expect(waves).toHaveLength(1);
+    host.waveform(ref);
+    expect(waves).toHaveLength(2);
   });
 });

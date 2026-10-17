@@ -42,6 +42,32 @@ for (let j = 0; j < N; j++) {
   START_WINDOW[j] = j < H ? 1 : (HANN[j] as number);
 }
 
+/** What `computeFrame` does with a frame (see `planTransient`). */
+const KIND_NORMAL = 0;
+const KIND_CONTINUE = 1;
+const KIND_ENTER = 2;
+/** The fraction of the lead (how far the heard input is from where the tempo puts it) that still stands after one more frame. */
+const CARRY = 0.5;
+/** The frame that starts a run around an attack may move this far (frames) to continue the one before: 1.3 ms at 48 kHz. */
+const ENTRY_SEARCH = 64;
+/** A run starts this many output frames before its attack: past the splice that starts it (H) and the attack's own lead-in. */
+const RUN_LEAD = H + 320;
+/** A run goes on until the next splice would begin this far (frames) after the attack: past its body and the search's reach. */
+const RUN_TAIL = 930;
+/** How far (output frames) a continued run may put an attack from where the tempo wants it: 2 ms at 48 kHz. */
+const LAND_TOL = 96;
+/** An attack this close (output frames) before a stronger one gives way to it (their runs could not both fit). */
+const RUN_SPAN = RUN_LEAD + H + RUN_TAIL + H;
+/** The most a run's first frame may jump from where the frame before leads on (frames). */
+const MAX_JUMP = 1500;
+/** The attack detector (the arrangement stretch's `detectOnsets`, run lazily): hops of mean-square energy per ~2.7 ms. */
+const ENG_N = 1024;
+const ON_PRE = 8;
+const ON_POST = 4;
+/** Mean square under which nothing counts as an attack (−60 dBFS). */
+const ON_GATE = 1e-6;
+const MAX_ON = 24;
+
 const MAX_TRIM = 0.02;
 /** Seconds a follower takes to close a beat-phase error. */
 const SYNC_TAU = 1.5;
@@ -177,12 +203,38 @@ export class DeckKernel {
   private sL = 0;
   private sR = 0;
 
+  // Transient preservation (see `computeFrame`).
+  /** Off turns the attack handling off (a test compares with plain WSOLA). */
+  transientsOn = true;
+  private readonly onHop: number;
+  private readonly engE = new Float64Array(ENG_N);
+  private readonly engTag = new Int32Array(ENG_N).fill(-1);
+  private readonly eL: Float32Array;
+  private readonly eR: Float32Array;
+  private readonly refL: Float32Array;
+  private readonly refR: Float32Array;
+  private readonly refTag = new Int32Array(64).fill(-1);
+  private readonly refVal = new Float64Array(64);
+  private readonly onC = new Float64Array(MAX_ON);
+  private readonly onS = new Float64Array(MAX_ON);
+  private onN = 0;
+  /** The frame before was exact (the first, or inside a run around an attack): the next may continue it. */
+  private cleanRun = false;
+  /** Where the heard input is relative to where the tempo puts it after a run; closes by `CARRY` a frame. */
+  private offCarry = 0;
+  private planStart = 0;
+
   constructor(readonly sampleRate: number) {
     this.declick = Math.max(8, Math.round(0.002 * sampleRate));
     this.tailL = new Float32Array(this.declick);
     this.tailR = new Float32Array(this.declick);
     this.keepL = new Float32Array(this.declick);
     this.keepR = new Float32Array(this.declick);
+    this.onHop = Math.max(32, Math.round(sampleRate / 375));
+    this.eL = new Float32Array(this.onHop);
+    this.eR = new Float32Array(this.onHop);
+    this.refL = new Float32Array((ON_POST + 2) * this.onHop);
+    this.refR = new Float32Array((ON_POST + 2) * this.onHop);
     const a = (sec: number) => 1 - Math.exp(-1 / (sec * sampleRate));
     this.aNorm = a(0.006);
     this.aFast = a(0.003);
@@ -213,6 +265,7 @@ export class DeckKernel {
     this.pos = 0;
     this.loopLen = 0;
     this.resetStretch();
+    this.clearOnsetCache();
     this.tailLen = 0;
   }
 
@@ -293,8 +346,10 @@ export class DeckKernel {
   setLoop(start: number, length: number): void {
     if (!(length > 0) || !this.chL) {
       this.loopLen = 0;
+      this.clearOnsetCache();
       return;
     }
+    this.clearOnsetCache();
     this.loopStart = clamp(start, 0, this.frames);
     this.loopLen = Math.min(length, this.frames - this.loopStart);
     this.loopStartI = Math.round(this.loopStart);
@@ -310,6 +365,7 @@ export class DeckKernel {
 
   clearLoop(): void {
     this.loopLen = 0;
+    this.clearOnsetCache();
   }
 
   get looping(): boolean {
@@ -574,15 +630,191 @@ export class DeckKernel {
     }
   }
 
-  /** One WSOLA frame: picks where in the song it comes from, overlap-adds it and refills the output hop. */
+  private clearOnsetCache(): void {
+    this.engTag.fill(-1);
+    this.refTag.fill(-1);
+  }
+
+  /** Mean square of the mono mix over hop `h` (frames h·hop…), cached by hop index; zero before the song. */
+  private energy(h: number): number {
+    if (h < 0) return 0;
+    const i = h & (ENG_N - 1);
+    if (this.engTag[i] === h) return this.engE[i] as number;
+    const hop = this.onHop;
+    this.readRange(this.eL, this.eR, h * hop, hop);
+    let sum = 0;
+    for (let j = 0; j < hop; j++) {
+      const m = 0.5 * ((this.eL[j] as number) + (this.eR[j] as number));
+      sum += m * m;
+    }
+    const e = sum / hop;
+    this.engTag[i] = h;
+    this.engE[i] = e;
+    return e;
+  }
+
+  /** The first frame of an attack that the hop `h` is the strongest rise of: the first sample that reaches 30 % of its peak. */
+  private refine(h: number): number {
+    const hop = this.onHop;
+    const a = (h - 1) * hop;
+    const len = (ON_POST + 2) * hop;
+    this.readRange(this.refL, this.refR, a, len);
+    let peak = 0;
+    for (let i = 0; i < len; i++) {
+      const m = Math.abs(0.5 * ((this.refL[i] as number) + (this.refR[i] as number)));
+      if (m > peak) peak = m;
+    }
+    const thr = 0.3 * peak;
+    let at = 0;
+    while (at < len - 1 && Math.abs(0.5 * ((this.refL[at] as number) + (this.refR[at] as number))) < thr) at++;
+    return a + at;
+  }
+
+  private addOnset(h: number, strength: number): void {
+    if (this.onN >= MAX_ON) return;
+    const slot = h & 63;
+    let c: number;
+    if (this.refTag[slot] === h) c = this.refVal[slot] as number;
+    else {
+      c = this.refine(h);
+      this.refTag[slot] = h;
+      this.refVal[slot] = c;
+    }
+    this.onC[this.onN] = c;
+    this.onS[this.onN] = strength;
+    this.onN++;
+  }
+
+  /**
+   * The attacks between two song positions into `onC` (frame of the attack) and `onS` (how strong), ascending: hops where
+   * the energy of the next ~10 ms is more than 8× that of the ~20 ms before, a run of such hops being one attack (its
+   * strongest). The detector of the arrangement stretch (`detectOnsets`), but lazy and without a global gate, so the same
+   * attack is found the same way from any frame that looks at it.
+   */
+  private scanOnsets(from: number, to: number): void {
+    this.onN = 0;
+    const hop = this.onHop;
+    const h0 = Math.max(ON_PRE, Math.floor(from / hop) - 12);
+    const h1 = Math.floor(to / hop);
+    let runBest = -1;
+    let runStrength = 0;
+    for (let h = h0; h <= h1; h++) {
+      let pre = 0;
+      for (let j = 1; j <= ON_PRE; j++) pre += this.energy(h - j);
+      pre /= ON_PRE;
+      let post = 0;
+      for (let j = 0; j < ON_POST; j++) post += this.energy(h + j);
+      post /= ON_POST;
+      if (post > ON_GATE && post > 8 * pre + 1e-12) {
+        const st = Math.sqrt(post) - Math.sqrt(pre);
+        if (st > runStrength) {
+          runStrength = st;
+          runBest = h;
+        }
+      } else if (runBest >= 0) {
+        this.addOnset(runBest, runStrength);
+        runBest = -1;
+        runStrength = 0;
+      }
+    }
+    if (runBest >= 0) this.addOnset(runBest, runStrength);
+  }
+
+  /**
+   * Whether the next frame should continue the one before exactly (`KIND_CONTINUE`: inside a run around an attack),
+   * start such a run (`KIND_ENTER`, placed so the attack lands on time, in `planStart`) or be an ordinary WSOLA frame.
+   *
+   * Everything is in input frames of the nominal lap (a loop's seam is unwrapped around the playhead) and output frames.
+   * `sc` is where the previous frame leads on (what a frame that continues it starts at); a run keeps that, and the attack
+   * `c` is then heard `c − sc` frames from now, against the `(c − pos)/rate` the tempo asks for.
+   */
+  private planTransient(rate: number): number {
+    const pos = this.pos;
+    let sc = this.prevC + H;
+    if (this.loopLen > 0) {
+      const len = this.loopLenI;
+      if (sc - pos > len / 2) sc -= len;
+      else if (sc - pos < -len / 2) sc += len;
+    }
+    const hop = this.onHop;
+    this.scanOnsets(Math.min(sc, pos) - RUN_TAIL - 2 * hop, Math.max(sc, pos) + (RUN_LEAD + H + RUN_SPAN) * rate + 2 * hop);
+    const n = this.onN;
+    const onC = this.onC;
+    if (this.cleanRun) {
+      for (let i = 0; i < n; i++) {
+        const c = onC[i] as number;
+        const u = c - sc;
+        if (u <= -RUN_TAIL) continue;
+        if (u >= RUN_LEAD + H) break;
+        // The next attack is within reach of the run: keep it going if the run puts it on time.
+        if (Math.abs(u - (c - pos) / rate) <= LAND_TOL) {
+          this.planStart = sc;
+          return KIND_CONTINUE;
+        }
+        break;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      const c = onC[i] as number;
+      const t = (c - pos) / rate;
+      if (t < RUN_LEAD) continue;
+      if (t >= RUN_LEAD + H) break;
+      let blocked = false;
+      for (let j = i + 1; j < n; j++) {
+        if (((onC[j] as number) - c) / rate >= RUN_SPAN) break;
+        if ((this.onS[j] as number) > (this.onS[i] as number)) {
+          blocked = true;
+          break;
+        }
+      }
+      if (blocked) continue;
+      const start = Math.round(c - t);
+      if (Math.abs(start - sc) > MAX_JUMP) continue;
+      this.planStart = start;
+      return KIND_ENTER;
+    }
+    return KIND_NORMAL;
+  }
+
+  /**
+   * One WSOLA frame: picks where in the song it comes from, overlap-adds it and refills the output hop.
+   *
+   * A frame normally comes from where the tempo says its centre is and moves (±S) to where it best continues the
+   * frame before. That splices the input, and a hit that sits in a splice is smeared or heard twice (two frames
+   * carry it at slightly different times), and a hit a splice moved lands early or late. So around each attack
+   * (`planTransient`) the frames just continue each other exactly (the input at its own speed, which overlap-adds back
+   * to the original samples); the one frame that starts such a run is placed so the attack lands where the tempo puts
+   * it, within a millisecond or two, and the stretch it skipped is made up by the frames after the run.
+   */
   private computeFrame(): void {
     const rate = clamp(this.rateOut, 0.5, 2);
     const first = !this.hasPrev;
-    const s = first ? Math.round(this.pos) : Math.round(this.pos + rate * H - H);
+    const nominal = this.pos + rate * H - H;
+    let s: number;
+    let lo = 0;
+    let hi = 2 * S;
+    let kind = KIND_NORMAL;
+    if (first) {
+      s = Math.round(this.pos);
+      this.offCarry = 0;
+    } else {
+      this.offCarry *= CARRY;
+      s = Math.round(nominal + this.offCarry);
+      if (this.transientsOn && this.stretchMode && (this.loopLen === 0 || this.loopLenI >= 4 * N)) {
+        kind = this.planTransient(rate);
+        if (kind !== KIND_NORMAL) {
+          s = this.planStart;
+          if (kind === KIND_ENTER) {
+            lo = S - ENTRY_SEARCH;
+            hi = S + ENTRY_SEARCH;
+          }
+        }
+      }
+    }
     const r0 = s - S;
     this.readRange(this.regL, this.regR, r0, R);
     let k = S;
-    if (!first) k = this.search();
+    if (!first && kind !== KIND_CONTINUE) k = this.search(lo, hi);
     const win = first ? START_WINDOW : HANN;
     const accL = this.accL;
     const accR = this.accR;
@@ -596,6 +828,9 @@ export class DeckKernel {
     this.prevC = r0 + k;
     if (this.loopLen > 0 && this.prevC >= this.loopEndI) this.prevC -= this.loopLenI;
     this.hasPrev = true;
+    // A frame that is exact (the first, or part of a run around an attack) lets the next one continue it.
+    this.cleanRun = first || kind !== KIND_NORMAL;
+    if (kind !== KIND_NORMAL) this.offCarry = r0 + k - nominal;
     for (let j = 0; j < H; j++) {
       this.fifoL[j] = accL[j] as number;
       this.fifoR[j] = accR[j] as number;
@@ -612,7 +847,7 @@ export class DeckKernel {
    * normalized cross-correlation with the part of the previous frame that is still to be heard, a coarse pass on
    * a 4× decimated mono mix, then ±4 frames at full rate, with a small cost for moving away from the middle.
    */
-  private search(): number {
+  private search(lo: number, hi: number): number {
     this.readRange(this.tL, this.tR, this.prevC + H, H);
     const mf = this.mf;
     const md = this.md;
@@ -632,14 +867,15 @@ export class DeckKernel {
     }
     let et = 1e-9;
     for (let i = 0; i < TD; i++) et += (td[i] as number) * (td[i] as number);
-    // Coarse: candidates every 4 frames across the whole ±S range (the middle is S/4).
-    const cands = (2 * S) / DEC + 1;
+    // Coarse: candidates every 4 frames across the range (the whole ±S, or less for a frame that must land on time).
+    const j0 = Math.ceil(lo / DEC);
+    const j1 = Math.floor(hi / DEC);
     let e = 1e-9;
-    for (let i = 0; i < TD; i++) e += (md[i] as number) * (md[i] as number);
-    let bestJ = S / DEC;
+    for (let i = 0; i < TD; i++) e += (md[j0 + i] as number) * (md[j0 + i] as number);
+    let bestJ = Math.round(S / DEC);
     let bestScore = -Infinity;
     const mid = S / DEC;
-    for (let j = 0; j < cands; j++) {
+    for (let j = j0; j <= j1; j++) {
       let c = 0;
       for (let i = 0; i < TD; i++) c += (td[i] as number) * (md[j + i] as number);
       const score = c / Math.sqrt(e * et) - (CENTER_BIAS * Math.abs(j - mid)) / mid;
@@ -657,9 +893,9 @@ export class DeckKernel {
     for (let i = 0; i < H; i++) etf += (tf[i] as number) * (tf[i] as number);
     let best = bestJ * DEC;
     let bestFine = -Infinity;
-    const lo = Math.max(0, bestJ * DEC - DEC);
-    const hi = Math.min(2 * S, bestJ * DEC + DEC);
-    for (let k = lo; k <= hi; k++) {
+    const kLo = Math.max(lo, bestJ * DEC - DEC);
+    const kHi = Math.min(hi, bestJ * DEC + DEC);
+    for (let k = kLo; k <= kHi; k++) {
       let c = 0;
       let ec = 1e-9;
       for (let i = 0; i < H; i++) {

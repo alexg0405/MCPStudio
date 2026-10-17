@@ -39,6 +39,8 @@ export interface DeckState {
   /** The song's own tempo (from analysis), and the tempo it plays at now (base × (1 + pitch)). */
   baseBpm: number | null;
   bpm: number | null;
+  /** A song read by parts is being analyzed in the background (0–1 done); null when it isn't. The grid and tempo come when it is done. */
+  analyzing: number | null;
   /** −0.5…+0.5; the pitch fader range is set by `pitchRange` (0.08, 0.16 or 0.5). */
   pitch: number;
   pitchRange: 0.08 | 0.16 | 0.5;

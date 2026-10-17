@@ -61,6 +61,71 @@ export function loudness(channels: readonly Float32Array[], sampleRate: number, 
   return { lufs: meter.integrated, truePeakDb: top > 0 ? 20 * Math.log10(top) : -Infinity };
 }
 
+/**
+ * `loudness` for audio that arrives in chunks (the streaming analysis): the same meter and detector, a block at a time with
+ * no look at what is to come. Where a true peak can be is judged against the loudest sample so far instead of the loudest
+ * of the song (a block within 6 dB of it, or following one, is oversampled), so early quiet blocks may be oversampled
+ * needlessly but no block that could hold the song's true peak is missed.
+ */
+export class LoudnessStream {
+  private readonly meter: LoudnessMeter;
+  private readonly tpL = new TruePeak();
+  private readonly tpR = new TruePeak();
+  private peak = 0;
+  private tp = 0;
+  private prevPeak = 0;
+  private frames = 0;
+
+  constructor(
+    sampleRate: number,
+    private readonly stereo: boolean,
+  ) {
+    this.meter = new LoudnessMeter(sampleRate, stereo ? 2 : 1);
+  }
+
+  /** The next frames (`r`: the right channel, null for a mono file). */
+  push(left: Float32Array, right: Float32Array | null): void {
+    const r = right ?? left;
+    const n = left.length;
+    const { meter, tpL, tpR, stereo } = this;
+    for (let a = 0; a < n; a += BLOCK) {
+      const b = Math.min(n, a + BLOCK);
+      let m = 0;
+      for (let i = a; i < b; i++) {
+        const l = Math.abs(left[i]!);
+        const q = Math.abs(r[i]!);
+        if (l > m) m = l;
+        if (q > m) m = q;
+      }
+      if (m > this.peak) this.peak = m;
+      // Inter-sample peaks rise at most a few dB above the samples around them.
+      const near = this.peak * 0.5;
+      const exact = m >= near || this.prevPeak >= near;
+      this.prevPeak = m;
+      let tp = this.tp;
+      for (let i = a; i < b; i++) {
+        const l = left[i]!;
+        const q = r[i]!;
+        meter.process(l, q);
+        const t = exact ? Math.max(tpL.process(l), stereo ? tpR.process(q) : 0) : Math.max(tpL.sample(l), stereo ? tpR.sample(q) : 0);
+        if (t > tp) tp = t;
+      }
+      this.tp = tp;
+    }
+    this.frames += n;
+  }
+
+  get framesSeen(): number {
+    return this.frames;
+  }
+
+  finish(): { lufs: number; truePeakDb: number } {
+    if (this.frames === 0) return { lufs: -Infinity, truePeakDb: -Infinity };
+    const top = Math.max(this.tp, this.peak);
+    return { lufs: this.meter.integrated, truePeakDb: top > 0 ? 20 * Math.log10(top) : -Infinity };
+  }
+}
+
 /** Mono at about 22 kHz (an integer fraction of the source rate). */
 export function analysisSignal(channels: readonly Float32Array[], sampleRate: number): { mono: Float32Array; sampleRate: number } {
   const n = channels[0]?.length ?? 0;

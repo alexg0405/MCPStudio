@@ -37,9 +37,14 @@ export function decksDepsFor(s: Services): DecksDeps {
     cache: s.sampleCache,
     openFile: async (ref) => (await s.sampleCache.provider?.getBlob?.(ref)) ?? null,
     peekAnalysis: (ref) => peekAnalysis(s, ref),
-    analysis: async (ref) => {
+    analysis: async (ref, opts) => {
       const a = trackAnalyzer(s);
-      return a ? a.analyze(s, ref) : null;
+      return a
+        ? a.analyze(s, ref, {
+            ...(opts?.signal ? { signal: opts.signal } : {}),
+            ...(opts?.onProgress ? { onProgress: (p) => opts.onProgress?.(p.fraction) } : {}),
+          })
+        : null;
     },
     addRecording: async (file, title) => {
       const { addSongFiles } = await import('./library');

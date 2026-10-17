@@ -5,6 +5,7 @@ import { ANALYSIS_VERSION, type TrackAnalysis } from '@core/dj/types';
 import type { Services } from '../services';
 import { analysisHash, createTrackAnalyzer, inlineRunner, memoryAnalysisStorage, type AnalysisDecoder, type AnalysisRunner } from './analysis-cache';
 import { loudness } from './analysis-run';
+import { driveAnalysis, inlineStreamTarget, type StreamSource } from './analysis-stream-run';
 
 const ref = (hash: string): SampleRef => ({
   id: `s-${hash}` as SampleId,
@@ -105,6 +106,94 @@ describe('track analyzer', () => {
     expect(an.peek('y')).toBeNull();
     // Asking again starts over and works.
     expect((await an.analyze(s, ref('y'))).hash).toBe('y');
+  });
+
+  it('analyzes a song too long to decode whole by parts, never decoding it, and caches it like any other', async () => {
+    const storage = memoryAnalysisStorage();
+    const { decode, calls } = decoder();
+    const t = song();
+    const l = t.mono;
+    let disposed = 0;
+    const source: StreamSource = {
+      nativeFrames: l.length,
+      nativeRate: 44100,
+      channels: 1,
+      readNative: (start, n, outL, outR) => {
+        for (let i = 0; i < n; i++) outL[i] = outR[i] = l[start + i] ?? 0;
+        return Promise.resolve();
+      },
+      dispose: () => void disposed++,
+    };
+    const opened: string[] = [];
+    const an = createTrackAnalyzer({
+      storage,
+      decode,
+      run: inlineRunner,
+      openStream: (_s, r) => {
+        opened.push(analysisHash(r));
+        return Promise.resolve(source);
+      },
+      runStream: (hash, src, onProgress, signal) => driveAnalysis(hash, src, inlineStreamTarget({ signal, yieldNow: () => Promise.resolve() }), { signal, onProgress }),
+    });
+    const progress: number[] = [];
+    const a = await an.analyze(s, ref('long'), { onProgress: (p) => progress.push(p.fraction) });
+    expect(a.hash).toBe('long');
+    expect(a.grid?.bpm).toBe(122);
+    expect(Math.abs(a.grid!.firstDownbeat - t.downbeats[0]!)).toBeLessThan(0.02);
+    expect(a.key?.camelot).toBe('8A');
+    expect(calls).toEqual([]);
+    expect(opened).toEqual(['long']);
+    expect(disposed).toBe(1);
+    expect(progress[0]).toBe(0);
+    expect(progress[progress.length - 1]).toBe(1);
+    expect(progress.every((f, i) => i === 0 || f >= progress[i - 1]!)).toBe(true);
+    expect(storage.items.get('long')?.grid?.bpm).toBe(122);
+    expect(await an.analyze(s, ref('long'))).toBe(a);
+    expect(opened).toEqual(['long']);
+    // A song that can't be read by parts (the opener says null) is decoded whole as before.
+    const plain = createTrackAnalyzer({ storage: memoryAnalysisStorage(), decode, run: inlineRunner, openStream: () => Promise.resolve(null) });
+    expect((await plain.analyze(s, ref('short'))).grid?.bpm).toBe(122);
+    expect(calls).toEqual(['short']);
+  });
+
+  it('refuses a long file that can’t be read by parts instead of decoding hours of floats', async () => {
+    const { decode, calls } = decoder();
+    const an = createTrackAnalyzer({ storage: memoryAnalysisStorage(), decode, run: inlineRunner, openStream: () => Promise.resolve(null) });
+    await expect(an.analyze(s, { ...ref('flac'), durationSec: 3 * 3600 })).rejects.toThrow(/MP3 or WAV/);
+    expect(calls).toEqual([]);
+  });
+
+  it('cancelling a song analyzed by parts stops reading it and frees the file', async () => {
+    const t = song();
+    let reads = 0;
+    let disposed = 0;
+    const source: StreamSource = {
+      nativeFrames: t.mono.length * 4,
+      nativeRate: 44100,
+      channels: 1,
+      readNative: async (_start, n, outL, outR) => {
+        reads++;
+        outL.fill(0.1, 0, n);
+        outR.fill(0.1, 0, n);
+      },
+      dispose: () => void disposed++,
+    };
+    const an = createTrackAnalyzer({
+      storage: memoryAnalysisStorage(),
+      decode: decoder().decode,
+      run: inlineRunner,
+      openStream: () => Promise.resolve(source),
+      runStream: (hash, src, onProgress, signal) => driveAnalysis(hash, src, inlineStreamTarget({ signal, yieldNow: () => Promise.resolve() }), { signal, onProgress, chunkFrames: 50000 }),
+    });
+    const c = new AbortController();
+    const p = an.analyze(s, ref('z'), { signal: c.signal, onProgress: (x) => x.fraction > 0.05 && c.abort() });
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(disposed).toBe(1);
+    const seen = reads;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(reads).toBe(seen);
+    expect(an.peek('z')).toBeNull();
   });
 
   it('names built-in sounds by generator', () => {

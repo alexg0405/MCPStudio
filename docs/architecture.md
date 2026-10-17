@@ -1216,10 +1216,49 @@ per content hash in a Worker and cached in IndexedDB; the auto-mix and the decks
   it, a job is cancelled (Worker terminated) when every caller has aborted. Embedded files are decoded from the sample
   store at 44.1 kHz on the main thread (`engine/decode`, not kept in the engine's cache); built-ins come from
   `engine.sampleData`. Results go to the IndexedDB kv store as `dj-analysis:v<ANALYSIS_VERSION>:<hash>`; entries of
-  other versions are deleted on load, so bumping `ANALYSIS_VERSION` re-analyzes.
+  other versions are deleted on load, so bumping `ANALYSIS_VERSION` re-analyzes. WAV and MP3 files longer than 12
+  minutes (`LONG_SONG_SEC`, the decks' limit too) are never decoded whole: see "Long songs" below.
 - `analysis-run.ts` (Worker-safe): LUFS (`LoudnessMeter`) and true peak (`TruePeak`, oversampled only in blocks
   within 6 dB of the sample peak) on the full-rate channels, downmix and decimation to ~22 kHz, then `analyzeTrack`.
-  `analysis.worker.ts` runs it and posts progress at most once per percent.
+  `analysis.worker.ts` runs it and posts progress at most once per percent. `analysis-workers.ts` is the main-thread
+  side (one Worker, made again after a cancel; inline where there are no Workers).
+
+### Long songs: analysis in pieces (`core/dj/stream-features.ts`, `app/dj/analysis-stream*.ts`)
+
+A 2-hour file decoded whole is 2.7 GB of floats at 44.1 kHz stereo, so a file the decks read by parts is analyzed by
+parts too, in about 100 MB however long it is, and gives the same `TrackAnalysis` under the same hash.
+
+- **Reading** (`analysis-stream-run.ts` `driveAnalysis`, main thread): `openLongSource` opens the file from the sample
+  store with the decks' own `openSegmentSource` (WAV from its bytes; MP3 by decoding 6.7 s pieces through
+  `decodeAudioData`, which Workers don't have) and reads it at its own rate in chunks of 2^18 frames (5.9 s: 2 MB).
+  Chunks go to the analysis Worker as transferred arrays (stereo, native rate: LUFS needs them), at most three
+  unacknowledged at a time, so reading never gets ahead of the work. Without a Worker the same code runs inline with a
+  yield between chunks. One song at a time and the same job sharing and cancel as before (cancel stops reading at the
+  next chunk, terminates the Worker and frees the file).
+- **Stages that take pieces** (all pure, and **bit for bit** what the whole-signal functions give for the same signal,
+  pinned by tests with odd piece sizes): `Decimator` (the Butterworth decimation with its state carried over, `decimate`
+  is now one call of it), `AnalysisFront` (stereo → mono → ~22 kHz), `OnsetStream` (frames are computed once the samples
+  under them are in; 46 ms of signal kept; `onsetFeatures` is a push of everything), `ChromaStream` (the bass and treble
+  decimators and frames the same way; peaks kept at 9 bytes each, 2 M for two hours, because the tuning is a circular mean over
+  all of them and is only known at the end), `LoudnessStream` (the same meter and true-peak detector; a block is
+  oversampled when within 6 dB of the loudest sample *so far* or after such a block, so no block that could hold the
+  song's peak is skipped). Features at 22 kHz are 7 arrays of 172 frames/s (35 MB for two hours) plus the chromagram
+  (10 MB).
+- **Level scan.** The onset and chroma stages compress magnitudes after scaling them by the song's overall RMS, which a
+  stream can't know before it has heard everything. `LevelScan` measures it first on regions of the file (`planScanRegions`:
+  the whole song when it is at most 10 minutes, so the result is exactly the whole-file one; else thirty 20 s regions
+  centred in equal shares of the song: 2 % of a 2-hour file, a few seconds), through the same front end. A level estimated
+  that way moves the numbers slightly (a test with 24 % of a 50 s song agrees on tempo, key and downbeat).
+- **Then the rest runs on the full features** (`analyzeFeatures`, split out of `analyzeTrack`): tempo and beats (the
+  autocorrelation, the DP and the drift check are linear in the 1.2 M frames), downbeats, key, energy per bar (the
+  per-frame power is already in the features: no second RMS pass), sections and mix points. Progress: scan 0–3 %, the pass
+  3–93 %, this 93–100 %.
+- **Wiring.** `createTrackAnalyzer` asks `openStream` first (default `openLongSource`; null for short songs and formats it
+  can't read by parts: those decode whole as before), so the library, the auto-mix and the decks all get it. The library
+  shows "Analyzing n %" as for any song. A deck that loads a long song no longer waits for a cache hit: it is playable at
+  once, `DeckState.analyzing` (0–1) shows "Finding the beat… n %", and when the analysis arrives (`applyAnalysis`) the deck
+  gets its grid, tempo, key and, if the cue point is still at the start, the first downbeat as cue (and parks there); sync,
+  snapping and bar loops work from then on. Ejecting or loading another song cancels it if nothing else (the library) wants it.
 
 ### Measured
 
@@ -1232,6 +1271,22 @@ per content hash in a Worker and cached in IndexedDB; the auto-mix and the decks
   bap reads D minor (its audio is a bass on A and D only), a Camelot neighbour of A minor.
 - Speed: a 5-minute song in 0.9–2 s of analysis in Node (M-series, varies with load); about 0.2–0.5 s for a 20 s
   template in Chrome, plus decoding.
+- Long songs (`test/browser/dj-long-analysis.test.ts`, headless Chrome; `src/app/dj/analysis-stream.test.ts`, Node). A
+  looped synthetic house song at 128 BPM in A minor, 16-bit stereo 44.1 kHz WAV that has no bytes (made on demand) and an
+  MP3 from the app's encoder. **30-minute WAV (303 MB):** BPM 128, key 8A, first downbeat on a bar line within 2 ms,
+  −18.67 LUFS against −18.66 for the song alone, 959 bars, in **7.8 s** (230× real time) with the tab and its Workers
+  **+27 MB** over idle (78 → 105 MB). **2-hour WAV (1.2 GB): 32.5 s, +62 MB (78 → 140 MB)** with the same results (3839
+  bars); in Node the whole run, driven inline, peaks at +150 MB of process memory including garbage the collector had not
+  taken yet (the live set, after a forced collection, is 53 MB at the end of the pass and 75 MB while the tempo and
+  structure run on the whole-song arrays). **13-minute MP3** (decoded in pieces through `decodeAudioData`): 3.9 s, and against the same file
+  decoded whole and analyzed the old way: BPM 128 / 128, downbeat identical, key 8A / 8A, loudness within 0.1 dB, energy per bar
+  within 0.001. Before (the 30-minute WAV decoded whole, as the analyzer did): 1.6 GB held when the analysis starts (the
+  file's bytes, the decoded buffer and the copies kept), about 2.1 GB at its peak, 8.5 s on the main thread; for two hours
+  that is 6–8 GB and not possible in a tab. The time is the same because the work is the same; what changed is that the
+  audio is never held. Streaming against whole-file on synthetic songs (house, trap 141.5, swung boom bap, 56 bars with an intro, break
+  and outro): features **bit for bit identical**, so BPM, grid, key, energy, sections, mix points and downbeat are equal, loudness
+  equal to 6 digits and true peak within 0.1 dB; with the level scan reduced to 24 % of the song the tempo (±0.05), key,
+  downbeat (10 ms) and section kinds still agree; mono files and a 48 kHz file (analyzed at 24 kHz) agree on tempo, key and downbeat.
 
 ### Limits
 
@@ -1239,7 +1294,12 @@ Tuned on synthetic and AGstudio-rendered music, not on commercial recordings (no
 recordings with rubato, songs with long beatless stretches, tempo changes mid-song and swung/triplet genres need
 checking on real files. Octave choices follow DJ conventions (trap 140, DnB 174, hip-hop 85–95, reggaeton 90–100); a
 75 BPM track with 16th hats reads 150. Relative and fifth-related keys are confused when the audio has only roots
-(bass-only loops). Sections use fixed energy thresholds; one 4/4 or 3/4 meter per song.
+(bass-only loops). Sections use fixed energy thresholds; one 4/4 or 3/4 meter per song. A 2-hour mix with many tempos
+is analyzed as one song: the drift check turns on and `grid.beats` holds every tracked beat (15 000 numbers), but the
+tempo, key and sections are those of one song, not per track. Files that can't be read by parts (AAC/M4A, Ogg, FLAC, AIFF)
+are still decoded whole, so up to 45 minutes; longer ones are refused with a message. The level scan estimates the level
+of a song over 10 minutes from 20 s regions, so its results differ a little from a whole-file analysis of the same file
+(they are identical up to 10 minutes). The deck's request waits behind the library's analysis queue (one song at a time).
 
 ### Listening to the mix (M16b)
 
@@ -1498,8 +1558,9 @@ boundaries need a CRC-8 scan) and AAC.
 
 The **overview** of a streamed song is made by reading it through once in the background at its own rate (no resampling;
 22 s per read, the drawing told every few reads, so it grows as it goes: tens of seconds for two hours) and the deck is
-playable before it is done. **Analysis** decodes the whole song, so a streamed song is only analyzed if that is already
-cached (no grid → no sync; the cue point is the start).
+playable before it is done. **Analysis** of a streamed song runs in the background from the same kind of ranged reading (see
+"Long songs: analysis in pieces" above) and the deck gets its grid when it finishes (until then no sync; the cue point is
+the start); a cached analysis is used at once.
 
 ### Measured (headless Chrome and Node, M-series Mac under other agents' load, 48 kHz)
 
@@ -1552,9 +1613,9 @@ cached (no grid → no sync; the cue point is the start).
   free-format frames or Layer I/II isn't segmented. A streamed song is read from the stored file for as long as it is on
   a deck: if clean-up of unused audio removes it meanwhile (it is no longer in the library or a project), the blocks that
   haven't been loaded yet are silent.
-- A streamed song isn't analyzed (the analysis decodes the whole song): no grid, so no sync, snapping or bar loops, unless
-  its analysis is already cached (a streaming analysis would need the onset/tempo passes to run on pieces). The
-  overview of a 2-hour file takes tens of seconds to complete (read through once, in the background).
+- A streamed song has no grid (so no sync, snapping or bar loops) until its analysis, made in the background, has
+  finished (minutes for two hours: see the measurements under "Long songs"). The overview of a 2-hour file takes tens of
+  seconds to complete (read through once, in the background).
 - Opening a long MP3 reads through the whole file for the frame index (the disk's speed: a second or so per hour); a seek beyond the
   window waits for the first blocks (WAV 6 ms, MP3 a decode of 6.7 s of frames ~ 30–60 ms plus the resample).
 - The attack runs keep drums whole; pads and sustained notes still go through the plain WSOLA (a phase vocoder would be

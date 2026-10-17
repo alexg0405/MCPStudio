@@ -67,8 +67,8 @@ export interface DecksDeps {
   /** Resumes the audio context (browsers start it suspended until a click). */
   resume(): Promise<void>;
   cache: SampleCache;
-  /** The song's analysis: cached, or computed now. Null when it can't be analyzed. */
-  analysis(ref: SampleRef): Promise<TrackAnalysis | null>;
+  /** The song's analysis: cached, or computed now. Null when it can't be analyzed. `signal` stops the work (when nothing else wants it). */
+  analysis(ref: SampleRef, opts?: { signal?: AbortSignal; onProgress?(fraction: number): void }): Promise<TrackAnalysis | null>;
   peekAnalysis(ref: SampleRef): TrackAnalysis | null;
   /** Puts a recording in the music library; resolves with its title. */
   addRecording(file: File, title: string): Promise<string | null>;
@@ -101,6 +101,7 @@ const emptyDeck = (id: DeckId): DeckState => ({
   positionAt: 0,
   baseBpm: null,
   bpm: null,
+  analyzing: null,
   pitch: 0,
   pitchRange: 0.08,
   keyLock: false,
@@ -150,6 +151,8 @@ interface Rt {
   jogAt: number;
   scratchTimer: ReturnType<typeof setTimeout> | null;
   hash: string | null;
+  /** The analysis being made in the background for a song read by parts (stopped when the deck lets go of the song). */
+  analyzing: AbortController | null;
 }
 
 const emptyRt = (): Rt => ({
@@ -167,6 +170,7 @@ const emptyRt = (): Rt => ({
   jogAt: 0,
   scratchTimer: null,
   hash: null,
+  analyzing: null,
 });
 
 /**
@@ -482,6 +486,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
     r.stream = null;
     r.hash = null;
     r.syncMaster = null;
+    r.analyzing?.abort();
+    r.analyzing = null;
   }
 
   async function load(id: DeckId, ref: SampleRef, title: string, artist?: string): Promise<void> {
@@ -528,7 +534,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
       if (buffer) {
         if (!(await fillOverview(id, source, buffer, stale))) return;
       } else void fillOverview(id, source, null, stale);
-      // Analyzing decodes the whole song: a song read by parts is only analyzed if that is already done.
+      // A song decoded whole is analyzed now. A song read by parts has its analysis made in the background (it is read through
+      // in pieces, which takes a while for a long one) unless that is done already: the deck is ready meanwhile and gets its grid after.
       const a = deps.peekAnalysis(ref) ?? (buffer ? await deps.analysis(ref).catch(() => null) : null);
       if (stale()) return;
       r.analysis = a;
@@ -547,6 +554,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
       refreshPins(id);
       // Park at the first beat so the first press of play starts on the one.
       seek(id, cuePoint);
+      if (!a && !buffer && ref.source.kind === 'embedded') analyzeInBackground(id, ref, title, stale);
     } catch (e) {
       if (stale()) return;
       if (audioReady) {
@@ -560,6 +568,51 @@ export function createDecks(deps: DecksDeps): DecksApi {
         throw e;
       }
     }
+  }
+
+  /** Analyzes a song read by parts while it sits on the deck; the grid, tempo and cue point arrive when it is done (`applyAnalysis`). */
+  function analyzeInBackground(id: DeckId, ref: SampleRef, title: string, stale: () => boolean) {
+    const r = rt[id];
+    const control = new AbortController();
+    r.analyzing = control;
+    set(id, { analyzing: 0 });
+    deps
+      .analysis(ref, {
+        signal: control.signal,
+        onProgress: (f) => {
+          const pct = Math.floor(f * 100) / 100;
+          if (!stale() && pct !== get(id).analyzing) set(id, { analyzing: pct });
+        },
+      })
+      .then((a) => {
+        if (stale()) return;
+        r.analyzing = null;
+        if (a) applyAnalysis(id, a);
+        else set(id, { analyzing: null });
+      })
+      .catch((e: unknown) => {
+        if (stale()) return;
+        r.analyzing = null;
+        set(id, { analyzing: null });
+        if ((e as { name?: string } | null)?.name !== 'AbortError') deps.toast(`Couldn’t analyze “${title}”: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      });
+  }
+
+  /** A song's analysis arriving after it was loaded: the beat grid, its tempo, and the cue point if it was left at the start. */
+  function applyAnalysis(id: DeckId, a: TrackAnalysis) {
+    const r = rt[id];
+    const d = get(id);
+    r.analysis = a;
+    r.grid = a.grid ? deckGridOf(a.grid) : null;
+    const base = r.grid?.bpm ?? null;
+    const patch: Partial<DeckState> = { analyzing: null, baseBpm: base, bpm: base === null ? null : base * (1 + d.pitch) };
+    // The cue point is the first downbeat, unless the DJ has set it somewhere (or a saved one was found: those aren't at the start).
+    const fromStart = r.grid && d.cuePoint === 0 && d.hotCues.every((c) => c === null);
+    if (fromStart) patch.cuePoint = Math.max(0, r.grid!.firstDownbeat);
+    set(id, patch);
+    refreshPins(id);
+    // A deck still parked at the start goes to the first beat, as a deck whose analysis was ready when it loaded does.
+    if (fromStart && !d.playing && d.positionSec < 0.05) seek(id, get(id).cuePoint);
   }
 
   /**

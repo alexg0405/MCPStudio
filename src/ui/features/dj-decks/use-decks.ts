@@ -27,6 +27,7 @@ export type DeckView = Pick<
   | 'playing'
   | 'baseBpm'
   | 'bpm'
+  | 'analyzing'
   | 'pitch'
   | 'pitchRange'
   | 'keyLock'
@@ -49,6 +50,7 @@ const pickView = (d: DeckState): DeckView => ({
   playing: d.playing,
   baseBpm: d.baseBpm,
   bpm: d.bpm,
+  analyzing: d.analyzing,
   pitch: d.pitch,
   pitchRange: d.pitchRange,
   keyLock: d.keyLock,

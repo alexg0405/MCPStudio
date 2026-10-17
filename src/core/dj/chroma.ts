@@ -120,9 +120,9 @@ export class ChromaStream {
   private readonly tmpX: Float32Array;
   private readonly tmpB: Float32Array;
   // The peaks of every frame so far: Hz and magnitude (float32 as before), the overtone code, and how many each frame has.
-  private readonly pHz = new BlockedF32();
-  private readonly pMag = new BlockedF32();
-  private readonly pOvertone = new BlockedU8();
+  private pHz = new BlockedF32();
+  private pMag = new BlockedF32();
+  private pOvertone = new BlockedU8();
   private readonly perFrame: GrowF32;
   // The tuning's circular mean, summed as the peaks come.
   private re = 0;
@@ -269,6 +269,10 @@ export class ChromaStream {
         energy[f] = energy[f]! + w;
       }
     }
+    // The peaks are not needed any more (the rest of the analysis is under way for a while).
+    this.pHz = new BlockedF32();
+    this.pMag = new BlockedF32();
+    this.pOvertone = new BlockedU8();
     return { frameRate: this.frameRate, frames, treble, bass, energy, tuningCents: tuning };
   }
 }

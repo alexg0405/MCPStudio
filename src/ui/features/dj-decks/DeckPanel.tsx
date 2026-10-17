@@ -131,11 +131,13 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
         </span>
         <div className={styles.titles}>
           <b className={styles.songTitle}>{d.song ? d.song.title : `Deck ${id} is empty`}</b>
-          <span className={styles.artist}>{d.loading ? 'Loading and analyzing…' : (d.song?.artist ?? '')}</span>
+          <span className={styles.artist}>
+            {d.loading ? 'Loading and analyzing…' : d.analyzing !== null ? `Finding the beat… ${Math.round(d.analyzing * 100)} %` : (d.song?.artist ?? '')}
+          </span>
         </div>
         <span
           className={styles.lcd}
-          data-hint={d.bpm === null ? 'Tempo: this song has no steady beat to read' : `Tempo now: ${d.bpm.toFixed(1)} BPM (the song’s own is ${d.baseBpm?.toFixed(1)} BPM)`}
+          data-hint={d.bpm === null ? (d.analyzing !== null ? 'Tempo: this long song is still being analyzed (sync and beat snapping start when it is done)' : 'Tempo: this song has no steady beat to read') : `Tempo now: ${d.bpm.toFixed(1)} BPM (the song’s own is ${d.baseBpm?.toFixed(1)} BPM)`}
         >
           {d.bpm === null ? '–' : d.bpm.toFixed(1)}
           <small>BPM</small>

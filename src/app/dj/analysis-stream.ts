@@ -29,6 +29,7 @@ export class StreamingAnalysis {
   private features: StreamFeatures | null = null;
   private loud: LoudnessStream | null = null;
   private pushed = 0;
+  private finished = false;
 
   constructor(readonly info: StreamInfo) {
     this.scan = new LevelScan(info.sampleRate);
@@ -63,10 +64,15 @@ export class StreamingAnalysis {
   }
 
   finish(opts: { onProgress?(fraction: number): void; isCancelled?(): boolean } = {}): TrackAnalysis {
+    if (this.finished) throw new Error('The analysis is finished.');
     if (!this.features || !this.loud) this.begin();
     if (this.pushed === 0) throw new Error('There was no audio to analyze.');
     const { lufs, truePeakDb } = this.loud!.finish();
     const { features, chroma } = this.features!.finish();
+    // What made the features is not needed any more.
+    this.features = null;
+    this.loud = null;
+    this.finished = true;
     const durationSec = this.pushed / this.info.sampleRate;
     return analyzeFeatures(features, chroma, { hash: this.info.hash, durationSec, lufs, truePeakDb }, opts);
   }

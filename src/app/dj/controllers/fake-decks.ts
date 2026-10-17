@@ -19,6 +19,7 @@ export function fakeDeckState(id: DeckId): DeckState {
     positionAt: 0,
     baseBpm: null,
     bpm: null,
+    analyzing: null,
     pitch: 0,
     pitchRange: 0.08,
     keyLock: false,

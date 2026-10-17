@@ -9,6 +9,7 @@ import type { DeckId, DecksApi, DeckState } from '@app/dj/decks-api';
 import { reducePeaks, type DeckWaveform } from '@core/dj/deck-peaks';
 import { formatDeckTime, MIN_TRACKED_BEATS, REV_SEC } from '@core/dj/decks-math';
 import { alpha, fitCanvas, mix, readTheme, themeVersion, type TimelineTheme } from '../../timeline/canvas';
+import { StallLatch } from './stall';
 
 /** Seconds of song across the scrolling waveform. */
 export const SCOPE_SPAN_SEC = 6;
@@ -20,6 +21,8 @@ export interface ScopeParts {
   platter: HTMLElement | null;
   time: HTMLElement | null;
   remaining: HTMLElement | null;
+  /** The "Loading…" note over the waveform, shown while the deck is stalled (hidden by default). */
+  stall: HTMLElement | null;
 }
 
 /** The colors of the eight hot cues, from the theme's palette tokens. */
@@ -39,6 +42,8 @@ export class DeckScope {
   private palette: { v: number; colors: string[] } | null = null;
   private reduced: { wave: DeckWaveform; cols: number; min: Float32Array; max: Float32Array; low: Float32Array } | null = null;
   private peakOf = new WeakMap<DeckWaveform, number>();
+  private readonly stallLatch = new StallLatch();
+  private stallShown = false;
 
   constructor(
     private readonly api: DecksApi,
@@ -46,8 +51,8 @@ export class DeckScope {
     private readonly parts: ScopeParts,
   ) {}
 
-  /** Called every animation frame. */
-  frame(): void {
+  /** Called every animation frame (`now`: the frame's time in ms, as requestAnimationFrame gives it). */
+  frame(now: number = performance.now()): void {
     const d = this.api.store.getState().decks[this.id];
     const pos = d.song ? this.api.positionNow(this.id) : 0;
     const zoomBox = this.parts.zoom.getBoundingClientRect();
@@ -62,6 +67,7 @@ export class DeckScope {
     const dpr = window.devicePixelRatio;
     this.text(d, pos);
     this.rotate(d, pos);
+    this.stalled(now);
     // The deck's own state is a new object whenever anything in it changes.
     const same =
       posMs === this.lastPosMs &&
@@ -109,6 +115,14 @@ export class DeckScope {
       this.lastRotation = deg;
       el.style.transform = `rotate(${deg}deg)`;
     }
+  }
+
+  /** The "Loading…" note: shown after a short stall (see StallLatch); only the DOM's `hidden` is written, on a change. */
+  private stalled(now: number): void {
+    const show = this.stallLatch.update(this.api.isStalled?.(this.id) ?? false, now);
+    if (show === this.stallShown) return;
+    this.stallShown = show;
+    if (this.parts.stall) this.parts.stall.hidden = !show;
   }
 
   private colors(theme: TimelineTheme): string[] {

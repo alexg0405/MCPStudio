@@ -263,6 +263,56 @@
   line-height: 1.35;
 }
 
+/* The "Loading…" note while a stalled deck waits for its next part: a small pill over the top-right of the waveform. */
+.stall {
+  position: absolute;
+  top: var(--ag-space-1);
+  right: var(--ag-space-1);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-1);
+  padding: 2px var(--ag-space-2) 2px var(--ag-space-2);
+  border-radius: 999px;
+  background: var(--ag-glass);
+  box-shadow: 0 0 0 1px var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+  font-size: var(--ag-font-size-sm);
+  line-height: 16px;
+  pointer-events: none;
+}
+
+.stall[hidden] {
+  display: none;
+}
+
+.stallDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ag-accent);
+  box-shadow: 0 0 6px var(--ag-accent);
+  animation: stallPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes stallPulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stallDot {
+    animation: none;
+  }
+}
+
 .overview {
   display: block;
   width: 100%;

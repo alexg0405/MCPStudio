@@ -387,6 +387,12 @@ export function createDecks(deps: DecksDeps): DecksApi {
     return Math.max(0, Math.min(d.song.durationSec, pos / rate));
   }
 
+  /** The player's stall flag (see `DecksApi.isStalled`): read from its published state, no React involved. */
+  function isStalled(id: DeckId): boolean {
+    const ch = chan(id);
+    return !!ch && loaded(id) && ch.snapshot().stalled;
+  }
+
   function refreshPosition(id: DeckId) {
     set(id, { positionSec: positionNow(id), positionAt: now() });
   }
@@ -1182,6 +1188,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
     analysisOf: (id) => rt[id].analysis,
     setCueDevice,
     keepUp: () => keepUpValue,
+    isStalled,
     settled: async () => {
       // Every deck's window has what is about to be heard (a source read from a file takes a moment after a jump), then the players
       // have handled everything sent.

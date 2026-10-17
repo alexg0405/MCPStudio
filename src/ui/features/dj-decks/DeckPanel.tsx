@@ -27,8 +27,9 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
   const platter = useRef<HTMLDivElement>(null);
   const time = useRef<HTMLSpanElement>(null);
   const remaining = useRef<HTMLSpanElement>(null);
+  const stall = useRef<HTMLDivElement>(null);
 
-  // The waveforms, the platter and the clock are drawn on the frame loop, only while this panel exists.
+  // The waveforms, the platter, the clock and the "Loading…" note are drawn on the frame loop, only while this panel exists.
   useEffect(() => {
     if (!zoom.current || !overview.current) return;
     const scope = new DeckScope(api, id, {
@@ -37,8 +38,9 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
       platter: platter.current,
       time: time.current,
       remaining: remaining.current,
+      stall: stall.current,
     });
-    return onFrame(() => scope.frame());
+    return onFrame((now) => scope.frame(now));
   }, [api, id]);
 
   const has = d.song !== null;
@@ -172,6 +174,10 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
 
       <div className={styles.scopes}>
         <canvas ref={zoom} className={styles.zoom} aria-hidden />
+        <div ref={stall} className={styles.stall} hidden data-hint="Loading this part of the song from disk; it plays as soon as it's ready">
+          <i className={styles.stallDot} aria-hidden />
+          <span>Loading…</span>
+        </div>
         {!has && (
           <div className={styles.emptyDeck}>
             {d.loading ? (

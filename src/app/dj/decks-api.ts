@@ -153,6 +153,11 @@ export interface DecksApi {
   settled?(): Promise<void>;
   /** How fast the decks' audio kept up over the last second (1 = fully; absent while nothing plays). */
   keepUp?(): number | undefined;
+  /**
+   * Whether a playing deck is waiting for audio that isn't loaded yet (a jump to a part still being read): it holds its
+   * place silently and goes on once enough is there. Read per frame by the Decks window, so it must be cheap.
+   */
+  isStalled?(deck: DeckId): boolean;
 }
 
 /** Created on first use (the Decks window, a controller, the Studio), not at startup. */

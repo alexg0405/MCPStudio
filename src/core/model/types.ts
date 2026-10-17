@@ -526,3 +526,32 @@ export interface SampleRef {
   sampleRate?: number;
   channels?: number;
 }
+
+// ---- Takes and comping (B1): optional fields, merged into the interfaces above ----
+
+/**
+ * Ties the takes of one recording together. A take clip has `{ group, index }` (0 = the first pass, in the
+ * recording's order); a clip of the comp lane (plain audio clips split at the comp's borders) also has
+ * `comp: true` and the index of the take it plays.
+ */
+export interface TakeTag {
+  group: string;
+  index: number;
+  comp?: true;
+}
+
+/** What a track of a take group is: its comp lane, or one of the take lanes folded under it. */
+export interface LaneTakes {
+  group: string;
+  role: 'comp' | 'take';
+  /** Comp lane: the crossfade at the comp's borders, in milliseconds (absent = the default, 10). */
+  crossfadeMs?: number;
+}
+
+export interface AudioClip {
+  take?: TakeTag;
+}
+
+export interface Lane {
+  takes?: LaneTakes;
+}

@@ -2343,11 +2343,70 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
   the master limiter's 1.3 ms + `MediaTrackSettings.latency`), plus a manual correction (prefs).
 - Takes (`core/audio/takes.ts`): every 50 ms the recorder notes an anchor (frame, tick heard, loop pass). On stop the
   whole capture becomes one sample and an audio clip channel on the input's mixer track (volume 1, as monitored), and
-  each loop pass becomes a clip trimmed into it at the pass's first frame: punch in/out on the loop region, the
-  newest pass on top, the newest complete pass playing and the others muted; the count-in before the record start is
-  kept in the sample (drag the clip's left edge to reveal it). Arming with audio on switches to song mode, opens the
-  input and makes song mode without a loop region play past the end (`EngineApi.setSongOpenEnded`) so a take never
-  wraps. One undo step per take set.
+  each loop pass becomes a clip trimmed into it at the pass's first frame (the count-in before the record start is
+  kept in the sample: drag the clip's left edge to reveal it). One pass is one plain clip. Several passes become a
+  **take group** (below). Arming with audio on switches to song mode, opens the input and makes song mode without a
+  loop region play past the end (`EngineApi.setSongOpenEnded`) so a take never wraps. One undo step per recording.
+- Punch range (`view.punch`, separate from the loop region; set from the ruler's right-click menu, Alt-drag on the
+  ruler, `record.punchIn/punchOut/punchRange`; saved in `view.json`): `planTakes` cuts every pass to it. With no loop
+  region the recorder finishes the take when the heard tick passes the punch-out (the song plays on) and the saved
+  sample keeps only the takes' part plus a second of handle either side (`trimToTakes`: the bars before the punch-in
+  are not stored). `transport.recordPunch` arms audio, goes to song mode and plays from `preRollBars` bars before the
+  punch-in (a pref, 0–4), after the count-in. Measured with a loopback stream in the engine's own context
+  (`test/browser/audio-punch.test.ts`): the clip starts exactly on the punch-in tick, is the length of the range, holds
+  none of the earlier bars' hits, and a hit played on a beat inside the range lands 0.01–4.7 ms off it (limit 12 ms;
+  the loopback's own delay moves between captures).
+
+### Takes and comping (`core/audio/comp.ts`, `core/ops/comp.ts`, `core/query/takes.ts`, `app/actions/comp.ts`, `ui/features/takes`)
+
+- **Take group**: the takes of one recording are tied by `AudioClip.take = { group, index }` (index = pass order, 0
+  first; a clip of the comp lane also has `comp: true` and the index of the take it plays) and by `Lane.takes =
+  { group, role: 'comp' | 'take', crossfadeMs? }`. Nothing else is stored: `takeGroups(project)` derives the groups
+  (memoized by the lanes and clips records). Recording N > 1 passes makes N + 1 tracks: the comp track, then the take
+  tracks (newest take first), the takes muted, the comp starting as the newest full pass (`addTakeGroup`). Tracks of a
+  group are never free for other recordings (`laneFree`), and `addClips` drops a `take` tag (a copy or a new clip is
+  not part of a group). `migrate.ts` (`repairTakes`) drops damaged tags and releases a group with no comp track or no
+  takes into ordinary tracks and clips.
+- **The comp is ordinary audio clips** on the comp track, split at the comp's borders; playback, export, freeze and
+  consolidate need nothing new. `planComp(segments, spans)` turns "take k plays from a to b" into clips: at a border
+  the earlier clip runs `h` ticks past it and the later one starts `h` ticks before it (10 ms in all by default, 0–500
+  per comp), each with a fade the length of the overlap, so the clips' own equal-power envelope (`envelope.ts`: sin
+  against cos) is the crossfade. Borders are symmetric, so `readComp` finds the same segments again from the clips
+  (a comp edited many times does not drift). The crossfade cannot reach past a take's audio or half a neighbouring
+  segment; where it cannot, a short dip fades instead of a click; a comp that starts inside a take or leaves a gap
+  fades in and out over at most one crossfade length; a clip that was split and continues in its sample is joined
+  without fades. Every edit rebuilds the comp lane (`setComp`: old comp clips out, new ones in), so one
+  `history.transact` undoes it exactly.
+- **Edits** (`app/actions/comp.ts`, all one undo step, also commands with hints and `argsHint`): swipe a part of a take
+  (the playlist's Comp tool `T`, or Alt-drag on a take with any tool: `chooseTake` with a range), Use this take
+  (`comp.useTake`, the whole take, or `from_bar`–`to_bar` of it), Next / Previous take (`[` `]`, the clip under the
+  pointer or the selection: `stepTake` goes round among the takes that have audio in the range), crossfade
+  (`comp.crossfade`), Flatten (the comp stays as clips, the take lanes and takes go; with merge the comp is also
+  rendered into one clip through `consolidate`, amended into the same undo step), open / fold the stack
+  (`comp.toggleTakes`, `editor.openTakes`: view state, not undoable).
+- **The playlist** shows the stack folded or open: the controller draws `visibleLaneOrder(project, openTakes)` (take
+  lanes of folded groups take no row), the comp track's header has a ▸ / ▾ toggle (also in the track's and the clips'
+  menus), take lanes are indented with an accent rule, and each take's used parts are lit by `drawTakeUse` over the
+  clips layer (the same imperative, panned canvas layers as the rest: no React per frame). A swipe previews as a band on
+  the take and on the comp track.
+- **The AI and MCP**: `record` (arm, disarm, start, stop, set_punch, clear_punch, count-in, pre-roll; it acts on the app
+  after the edit, `recordingAfter`) and `comp` (use_take, promote, next, previous, crossfade, flatten; a doc action in
+  `app/ai/ops/recording.ts`), and the `get_takes` read (groups, take clip ids, what the comp plays where in bars,
+  punch range, record settings).
+- **Hum to notes and the Studio's performance recorder** open the microphone with the device and channel count chosen in
+  Options › Audio input, and compensate with the calibrated round trip (`AudioInputService.performanceLatency`: a
+  measured value replaces the output + input estimate through `RecordOptions.roundTrip`).
+- Measured (`test/browser/comp-crossfade.test.ts`, offline render, two takes of a 440 Hz tone a rad or two apart in
+  phase cut at a border): the output is the clips' own audio times their fades to within 0.01, the largest
+  sample-to-sample step within 0.1 s of the border is 0.029 (the tone's own steepest step is 0.029) and the level
+  across the border stays above 0.2 RMS (the tone is 0.35). The engine's own 2 ms / 4 ms start and release ramps
+  already stop a hard cut from clicking (a 0 ms crossfade measures 0.033), so the crossfade's job is to keep the level
+  and the sound continuous rather than to remove a click.
+- Not done / fragile: comp clips lose a hand-made clip gain or fade when the comp is rebuilt (they follow the take
+  clip's own); moving or resizing a take clip does not rebuild the comp; Freeze and consolidate keep off these tracks
+  (`laneFree`) but the arranger, automation and dropping a file onto one can still put a clip there; auditioning a single
+  take means unmuting its clip (Use this take and play); the comp cannot span takes of different recordings.
+
 - Record mode records what the chip next to the record button says: recorders have a kind (`notes`, the default, or
   `audio`) and the prefs `recordNotes` / `recordAudio` choose. Browsers ask for microphone permission on the first
   getUserMedia, which needs a click: the commands that open the input are `gesture` commands.

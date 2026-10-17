@@ -41,6 +41,10 @@ export interface PrefsState {
   /** Measured round-trip latency in ms (−1: use the browser's estimate), and a manual correction. */
   recordLatencyMs: number;
   recordLatencyOffsetMs: number;
+  /** Bars played before the punch-in when recording a punch range (0 = start right at the punch-in). */
+  preRollBars: number;
+  /** The crossfade at a new comp's borders, in milliseconds. */
+  compCrossfadeMs: number;
   /** Hover a control for a moment to see what it does (the hint bar shows it either way). */
   tooltips: boolean;
   /** The welcome dialog was closed once; it no longer opens by itself. */
@@ -127,6 +131,8 @@ const DEFAULTS: PrefsState = {
   audioInputTrack: '',
   recordLatencyMs: -1,
   recordLatencyOffsetMs: 0,
+  preRollBars: 1,
+  compCrossfadeMs: 10,
   tooltips: true,
   welcomeSeen: false,
   recentActions: [],

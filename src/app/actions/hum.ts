@@ -40,7 +40,7 @@ export async function humToNotes(s: Services, opts: HumOptions): Promise<HumResu
   const bpm = project.transport.bpm;
   let mic: MicInput;
   try {
-    mic = await openMic({ echoCancellation: opts.playAlong });
+    mic = await openMic({ ...s.audioInput.micOptions(), echoCancellation: opts.playAlong });
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
   }
@@ -52,7 +52,7 @@ export async function humToNotes(s: Services, opts: HumOptions): Promise<HumResu
       countInBeats: ts.num,
       bars: opts.bars,
       click: true,
-      inputLatency: mic.latency,
+      ...s.audioInput.performanceLatency(mic.latency),
       playAlong: opts.playAlong,
     });
     active = { handle, mic };

@@ -32,6 +32,9 @@ import { playbackMode, sourceSecondsAt, tickAtSourceSeconds } from '@core/audio/
 import { markersSorted } from '@core/ops/markers';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
+import { takeGroups, visibleLaneOrder } from '@core/query/takes';
+import { compSegmentsOf } from '@core/ops/comp';
+import { pointerClip, chooseTake } from '@app/actions/comp';
 import { sectionMatching, songSections } from '@core/query/sections';
 import { barSpan } from '@core/time/bars';
 import { formatBST, ticksPerBar } from '@core/time/ppq';
@@ -61,6 +64,8 @@ import {
   drawClips,
   drawLaneHeaders,
   drawLanesGrid,
+  drawTakeUse,
+  FOLD_ZONE,
   drawMarkerLines,
   drawPlaylistRuler,
   HEADER_WIDTH,
@@ -118,12 +123,12 @@ function sortedMarkersOf(p: Project): ReturnType<typeof markersSorted> {
   return v;
 }
 const laneIndexCache = new WeakMap<object, Map<LaneId, number>>();
-/** Each lane's row, by lane id (kept per lane order: the order array is replaced when lanes move). */
-function laneIndexOf(p: Project): Map<LaneId, number> {
-  let v = laneIndexCache.get(p.playlist.laneOrder);
+/** Each shown lane's row, by lane id (kept per order array: it is replaced when lanes move or fold). */
+function laneIndexOf(order: readonly LaneId[]): Map<LaneId, number> {
+  let v = laneIndexCache.get(order);
   if (!v) {
-    v = new Map(p.playlist.laneOrder.map((id, i): [LaneId, number] => [id, i]));
-    laneIndexCache.set(p.playlist.laneOrder, v);
+    v = new Map(order.map((id, i): [LaneId, number] => [id, i]));
+    laneIndexCache.set(order, v);
   }
   return v;
 }
@@ -168,7 +173,9 @@ type Drag =
   | { kind: 'paint'; gesture: Gesture; lane: LaneId; last: Tick; done: Set<Tick> }
   | { kind: 'erase'; gesture: Gesture; done: Set<ClipId> }
   | { kind: 'pan'; x: number; y: number }
-  | { kind: 'loop'; t0: Tick; moved: boolean }
+  | { kind: 'loop'; t0: Tick; moved: boolean; punch?: boolean }
+  /** Comp tool: swiping across a take to use that part of it (committed as one undo step). */
+  | { kind: 'comp'; clip: AudioClip; group: string; t0: Tick; t1: Tick; moved: boolean }
   | { kind: 'marker'; id: MarkerId; x0: number; grab: number; tick: Tick; moved: boolean }
   | { kind: 'level'; clip: AudioClip; handle: AudioHandle; x0: number; y0: number; start: ClipLevels; now: ClipLevels }
   | {
@@ -298,11 +305,13 @@ export class PlaylistController {
       }),
       s.editor.subscribe((next, prev) => {
         if (next.clipSelection !== prev.clipSelection) this.invalidate('clips');
+        if (next.openTakes !== prev.openTakes) all();
         if (next.playlist.snap !== prev.playlist.snap) all();
         if (next.playlist.tool !== prev.playlist.tool) this.updateCursor();
       }),
       s.view.subscribe((next, prev) => {
         if (next.loop !== prev.loop || next.mode !== prev.mode) this.invalidate('ruler');
+        if (next.punch !== prev.punch) this.invalidate('ruler', 'grid');
         if (next.currentPatternId !== prev.currentPatternId) this.invalidate('clips');
       }),
       // A sample finished decoding: its clips can show their waveform now.
@@ -341,6 +350,7 @@ export class PlaylistController {
     on(host, 'dblclick', (e) => this.onDoubleClick(e));
     on(host, 'contextmenu', (e) => e.preventDefault());
     on(host, 'pointerleave', () => {
+      pointerClip.id = null;
       if (!this.drag && this.hover) {
         this.hover = null;
         this.invalidate('overlay');
@@ -379,6 +389,7 @@ export class PlaylistController {
   }
 
   unmount(): void {
+    pointerClip.id = null;
     this.cancelDrag();
     for (const fn of this.unsubs.splice(0)) fn();
     if (this.persistTimer) clearTimeout(this.persistTimer);
@@ -413,8 +424,15 @@ export class PlaylistController {
     return this.s.doc.getState().project;
   }
 
+  /** The tracks on screen, in order: every track except the take lanes of folded take groups. */
+  private order(p: Project): readonly LaneId[] {
+    return visibleLaneOrder(p, this.s.editor.getState().openTakes);
+  }
+
   private lanes(p: Project): Lane[] {
-    return p.playlist.laneOrder.map((id) => p.playlist.lanes[id]).filter((l): l is Lane => !!l);
+    return this.order(p)
+      .map((id) => p.playlist.lanes[id])
+      .filter((l): l is Lane => !!l);
   }
 
   private grid(p: Project, e?: { altKey: boolean }): Tick {
@@ -428,11 +446,11 @@ export class PlaylistController {
 
   private laneAtY(y: number, p: Project): LaneId | null {
     const row = Math.floor(this.vp.yToRow(y));
-    return p.playlist.laneOrder[row] ?? null;
+    return this.order(p)[row] ?? null;
   }
 
   private laneRow(p: Project, laneId: LaneId): number {
-    return p.playlist.laneOrder.indexOf(laneId);
+    return this.order(p).indexOf(laneId);
   }
 
   // ---------------------------------------------------------------- drawing
@@ -448,7 +466,7 @@ export class PlaylistController {
     // Read here, when the size changes, so the frame loop never asks the layout for it.
     this.scrollTrackW = this.els.hscroll.getBoundingClientRect().width;
     const p = this.project();
-    this.vp.rows = p.playlist.laneOrder.length;
+    this.vp.rows = this.order(p).length;
     this.vp.clampScroll(this.maxTick(p));
     this.invalidate('grid', 'clips', 'overlay', 'headers', 'ruler');
   }
@@ -456,7 +474,7 @@ export class PlaylistController {
   private frame(): void {
     const p = this.project();
     const { vp, els } = this;
-    vp.rows = p.playlist.laneOrder.length;
+    vp.rows = this.order(p).length;
     this.followPlayhead(p);
     // Drawing and the playhead snap to whole device pixels (viewport.ts); the grid and playhead carry the same offset.
     const dpr = window.devicePixelRatio || 1;
@@ -478,7 +496,15 @@ export class PlaylistController {
       if (dirty.has('headers')) {
         this.headersRow = vp.scrollRow;
         this.headersRowHeight = vp.rowHeight;
-        drawLaneHeaders(fitCanvas(els.headers, HEADER_WIDTH, vp.height), vp, readTheme(), this.lanes(p), mutedOf(p), HEADER_WIDTH);
+        drawLaneHeaders(
+          fitCanvas(els.headers, HEADER_WIDTH, vp.height),
+          vp,
+          readTheme(),
+          this.lanes(p),
+          mutedOf(p),
+          HEADER_WIDTH,
+          new Set(this.s.editor.getState().openTakes),
+        );
       }
       dirty.clear();
       this.lastBarScroll = NaN;
@@ -504,6 +530,13 @@ export class PlaylistController {
     const p = this.project();
     const theme = readTheme();
     drawLanesGrid(g, wide, theme, p.transport.timeSig, wide.rows, songLength(p));
+    const punch = this.s.view.getState().punch;
+    if (punch) {
+      // The punch range: a faint red tint down the lanes, so you can see what a recording will keep.
+      const x0 = wide.tickToPx(punch.start);
+      g.fillStyle = alpha(theme.danger, 0.06);
+      g.fillRect(x0, 0, wide.tickToPx(punch.end) - x0, wide.height);
+    }
     drawMarkerLines(g, wide, this.markersToDraw(p), theme);
   };
 
@@ -512,7 +545,7 @@ export class PlaylistController {
     const theme = readTheme();
     const muted = mutedOf(p);
     ctx.clearRect(0, 0, wide.width, wide.height);
-    const laneIndex = laneIndexOf(p);
+    const laneIndex = laneIndexOf(this.order(p));
     const selected = new Set(this.s.editor.getState().clipSelection);
     const d = this.drag;
     const hideOriginals = this.preview && (d?.kind === 'resize' || (d?.kind === 'move' && !d.duplicate));
@@ -530,6 +563,15 @@ export class PlaylistController {
       { selected, waveform: this.waveform, label, automation, ...audio, ...(skip ? { skip } : {}) },
       muted,
     );
+    const groups = takeGroups(p);
+    if (groups.length > 0)
+      drawTakeUse(
+        ctx,
+        wide,
+        theme,
+        groups.map((g) => ({ clips: g.takes.flatMap((t) => t.clips), segments: compSegmentsOf(g) })),
+        laneIndex,
+      );
     if (this.preview) {
       const sel = new Set(this.preview.map((c) => c.id));
       drawClips(
@@ -562,6 +604,7 @@ export class PlaylistController {
       this.s.view.getState().loop,
       songLength(p),
       this.markersToDraw(p),
+      this.s.view.getState().punch,
     );
   };
 
@@ -572,7 +615,9 @@ export class PlaylistController {
     const theme = readTheme();
     const x0 = vp.tickToPx(live.start);
     const x1 = Math.max(x0 + 2, vp.tickToPx(Math.max(live.start, live.now)));
-    const y = vp.rowToY(live.lane) + 1;
+    // `live.lane` is a track number of the playlist; folded take lanes take no room on screen.
+    const row = this.order(p).indexOf(p.playlist.laneOrder[live.lane] as LaneId);
+    const y = vp.rowToY(row < 0 ? Math.min(live.lane, this.order(p).length) : row) + 1;
     const h = vp.rowHeight - 2;
     if (x1 < 0 || x0 > vp.width || y > vp.height || y + h < 0) return;
     ctx.beginPath();
@@ -617,6 +662,26 @@ export class PlaylistController {
     }
   }
 
+  /** The part of a take being swiped: a band on the take and on the comp track above it. */
+  private drawCompSwipe(ctx: CanvasRenderingContext2D, d: Extract<Drag, { kind: 'comp' }>): void {
+    const { vp } = this;
+    const p = this.project();
+    const theme = readTheme();
+    const from = Math.max(d.clip.start, Math.min(d.t0, d.t1));
+    const to = Math.min(d.clip.start + d.clip.length, Math.max(d.t0, d.t1));
+    if (to <= from) return;
+    const g = takeGroups(p).find((x) => x.id === d.group);
+    const rows = [this.laneRow(p, d.clip.laneId), g?.compLane ? this.laneRow(p, g.compLane) : -1];
+    for (const row of rows) {
+      if (row < 0) continue;
+      const box = clipBox(vp, row, { start: from, length: to - from });
+      ctx.fillStyle = alpha(theme.accent, 0.35);
+      ctx.fillRect(box.x, box.y, box.w + 1, box.h);
+      ctx.strokeStyle = theme.accent;
+      ctx.strokeRect(box.x + 0.5, box.y + 0.5, box.w, box.h - 1);
+    }
+  }
+
   /** The clip under the pointer lifts a little: a brighter edge around it. */
   private drawHoverEdge(ctx: CanvasRenderingContext2D, clip: Clip): void {
     const p = this.project();
@@ -638,6 +703,7 @@ export class PlaylistController {
       !!live ||
       (!d0 && !!this.hover) ||
       d0?.kind === 'marquee' ||
+      d0?.kind === 'comp' ||
       ((d0?.kind === 'point' || d0?.kind === 'tension') && !!d0.readout);
     // Nothing to show before and after (every zoom and scroll frame asks): a clear would still re-raster the canvas.
     if (!marks && this.overlayBlank) return;
@@ -647,6 +713,7 @@ export class PlaylistController {
     if (live) this.drawLiveTake(ctx, live);
     const d = this.drag;
     if (!d && this.hover) this.drawHoverEdge(ctx, this.hover.clip);
+    if (d?.kind === 'comp') this.drawCompSwipe(ctx, d);
     if (d?.kind === 'marquee') {
       const theme = readTheme();
       const x = vp.snap(Math.min(d.x0, d.x1));
@@ -1058,7 +1125,9 @@ export class PlaylistController {
     else if (this.drag?.kind === 'tension') cursor = 'ns-resize';
     else if (level === 'gain' && tool !== 'delete' && tool !== 'slice') cursor = 'ns-resize';
     else if (level && tool !== 'delete' && tool !== 'slice') cursor = 'ew-resize';
+    else if (this.drag?.kind === 'comp') cursor = 'col-resize';
     else if (tool === 'delete') cursor = 'not-allowed';
+    else if (tool === 'comp' && h?.clip.kind === 'audio' && h.clip.take && !h.clip.take.comp) cursor = 'col-resize';
     else if (auto === 'point') cursor = 'grab';
     else if (auto === 'handle') cursor = 'ns-resize';
     else if (tool === 'slice') cursor = h ? 'col-resize' : 'default';
@@ -1166,6 +1235,17 @@ export class PlaylistController {
       return;
     }
 
+    // Comp tool (or Alt) on a take: swipe across it to use that part.
+    if (hit?.clip.kind === 'audio' && hit.clip.take && !hit.clip.take.comp && (tool === 'comp' || e.altKey)) {
+      const t = this.compTickAt(x, p);
+      editor.selectClips([hit.clip.id]);
+      this.drag = { kind: 'comp', clip: hit.clip, group: hit.clip.take.group, t0: t, t1: t, moved: false };
+      emitHint(this.els.gridHost, this.compHint(hit.clip, t, t, p));
+      this.updateCursor();
+      this.invalidate('overlay');
+      return;
+    }
+
     // Audio clips: the gain and fade handles along the top of the body.
     const handle = hit && !mod ? this.audioHandleAt(hit, x, y, p) : null;
     if (hit?.clip.kind === 'audio' && handle) {
@@ -1241,6 +1321,7 @@ export class PlaylistController {
     if (!d) {
       const hit = this.hitTest(x, y, p);
       const slice = this.s.editor.getState().playlist.tool === 'slice';
+      pointerClip.id = hit?.clip.id ?? null;
       if (hit?.clip.id !== this.hover?.clip.id || hit?.zone !== this.hover?.zone || slice) {
         this.hover = hit;
         this.sliceX = hit ? this.vp.tickToX(snapRound(this.vp.xToTick(x), this.grid(p, e))) : -1;
@@ -1253,6 +1334,15 @@ export class PlaylistController {
     }
     this.autoScroll(x, y, p);
     switch (d.kind) {
+      case 'comp': {
+        const t = this.compTickAt(x, p);
+        if (t === d.t1) return;
+        d.t1 = t;
+        if (Math.abs(x - this.vp.tickToX(d.t0)) > 3) d.moved = true;
+        emitHint(this.els.gridHost, this.compHint(d.clip, d.t0, d.t1, p));
+        this.invalidate('overlay');
+        return;
+      }
       case 'level':
         this.dragLevel(d, x, y, e);
         return;
@@ -1274,11 +1364,12 @@ export class PlaylistController {
         let dTick = snapRound(d.anchor.start + (x - d.x0) / this.vp.pxPerTick, grid) - d.anchor.start;
         const minStart = Math.min(...d.originals.map((c) => c.start));
         if (minStart + dTick < 0) dTick = -minStart;
+        const order = this.order(p);
         const rows = d.originals.map((c) => this.laneRow(p, c.laneId));
         const dLane = clamp(
           Math.floor(this.vp.yToRow(y)) - Math.floor(this.vp.yToRow(d.y0)),
           -Math.min(...rows),
-          p.playlist.laneOrder.length - 1 - Math.max(...rows),
+          order.length - 1 - Math.max(...rows),
         );
         if (dTick === d.dTick && dLane === d.dLane) return;
         d.dTick = dTick;
@@ -1286,7 +1377,7 @@ export class PlaylistController {
         this.preview = d.originals.map((c, i) => ({
           ...c,
           start: c.start + dTick,
-          laneId: p.playlist.laneOrder[(rows[i] as number) + dLane] as LaneId,
+          laneId: order[(rows[i] as number) + dLane] as LaneId,
         }));
         this.invalidate('clips');
         return;
@@ -1351,7 +1442,7 @@ export class PlaylistController {
         d.y1 = y;
         const r0 = Math.max(0, Math.floor(this.vp.yToRow(Math.min(d.y0, d.y1))));
         const r1 = Math.floor(this.vp.yToRow(Math.max(d.y0, d.y1)));
-        const lanes = new Set(p.playlist.laneOrder.slice(r0, r1 + 1));
+        const lanes = new Set(this.order(p).slice(r0, r1 + 1));
         const ids = clipsInRect(
           clipsSorted(p.playlist.clips),
           this.vp.xToTick(Math.min(d.x0, d.x1)),
@@ -1415,6 +1506,16 @@ export class PlaylistController {
       editor.selectClips([clip.id]);
     } else if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'point' || d.kind === 'tension') {
       d.gesture.commit();
+    } else if (d.kind === 'comp') {
+      if (d.moved && d.t1 !== d.t0) {
+        const from = Math.min(d.t0, d.t1);
+        const to = Math.max(d.t0, d.t1);
+        const take = d.clip.take?.index ?? 0;
+        if (chooseTake(this.s, d.group, take, { from, to })) {
+          const p = this.project();
+          emitHint(this.els.gridHost, `Comp: ${this.takeLabel(d.clip, p)} plays ${barSpan(from, to, p.transport.timeSig)} · drag across another take to change it, Ctrl+Z undoes`);
+        } else emitHint(this.els.gridHost, 'That take has no audio there: swipe over the part of the take you want');
+      }
     } else if (d.kind === 'level') {
       const { now, start, clip } = d;
       const changed = now.gain !== start.gain || now.fadeIn !== start.fadeIn || now.fadeOut !== start.fadeOut;
@@ -1468,6 +1569,29 @@ export class PlaylistController {
       this.s.view.getState().setCurrentPattern(hit.clip.patternId);
       this.s.view.getState().showWindow('channel-rack', 'channel-rack');
     }
+  }
+
+  // ---------------------------------------------------------------- comping
+
+  /** The song tick under x for a comp swipe (on the playlist grid). */
+  private compTickAt(x: number, p: Project): Tick {
+    return Math.max(0, snapRound(this.vp.xToTick(x), this.grid(p)));
+  }
+
+  /** "Take 2" for a take clip (its place among the takes of its group, in recording order). */
+  private takeLabel(clip: AudioClip, p: Project): string {
+    const g = takeGroups(p).find((x) => x.id === clip.take?.group);
+    const n = g ? g.takes.findIndex((t) => t.index === clip.take?.index) + 1 : 0;
+    return n > 0 ? `take ${n}` : 'this take';
+  }
+
+  private compHint(clip: AudioClip, t0: Tick, t1: Tick, p: Project): string {
+    const from = Math.min(t0, t1);
+    const to = Math.max(t0, t1);
+    const what = this.takeLabel(clip, p);
+    return to > from
+      ? `Comp: release to use ${what} for ${barSpan(from, to, p.transport.timeSig)} (the comp track plays it, with a short crossfade at each end)`
+      : `Comp: drag across ${what} to use that part in the comp`;
   }
 
   // ---------------------------------------------------------------- audio clips
@@ -1617,7 +1741,7 @@ export class PlaylistController {
 
   /** The ▾ button in a clip's title bar (FL's clip menu). */
   private onMenuButton(c: Clip, x: number, y: number, p: Project): boolean {
-    const row = p.playlist.laneOrder.indexOf(c.laneId);
+    const row = this.laneRow(p, c.laneId);
     if (row < 0 || c.length * this.vp.pxPerTick < CLIP_MENU_MIN_WIDTH) return false;
     const cx = this.vp.tickToX(c.start);
     const cy = this.vp.rowToY(row) + 1;
@@ -1632,6 +1756,13 @@ export class PlaylistController {
     e.preventDefault();
     if (x >= 24 && e.button === 2) {
       this.onLaneMenu?.(lane, e);
+      return;
+    }
+    // The ▸ / ▾ at the right end of a comp track opens or folds its takes.
+    const takes = p.playlist.lanes[lane]?.takes;
+    if (takes?.role === 'comp' && e.button === 0 && x >= HEADER_WIDTH - FOLD_ZONE) {
+      const ed = this.s.editor.getState();
+      ed.setTakesOpen(takes.group, !ed.openTakes.includes(takes.group));
       return;
     }
     if (x < 24) {
@@ -1740,7 +1871,8 @@ export class PlaylistController {
       return;
     }
     const t = Math.max(0, snapRound(this.vp.xToTick(x), ticksPerBar(p.transport.timeSig) / 4));
-    this.drag = { kind: 'loop', t0: t, moved: false };
+    // Alt-drag sets the punch range (what audio recording keeps) instead of the loop.
+    this.drag = { kind: 'loop', t0: t, moved: false, ...(e.altKey ? { punch: true } : {}) };
   }
 
   private onRulerMove(e: PointerEvent): void {
@@ -1776,7 +1908,9 @@ export class PlaylistController {
     );
     if (t === d.t0 && !d.moved) return;
     d.moved = true;
-    this.s.view.getState().setLoop({ start: Math.min(d.t0, t), end: Math.max(d.t0, t) });
+    const range = { start: Math.min(d.t0, t), end: Math.max(d.t0, t) };
+    if (d.punch) this.s.view.getState().setPunch(range);
+    else this.s.view.getState().setLoop(range);
   }
 
   private onRulerUp(e: PointerEvent): void {
@@ -1796,6 +1930,7 @@ export class PlaylistController {
     this.drag = null;
     if (!d.moved) {
       // A click sets the song position (playback continues from there when playing).
+      if (d.punch) return;
       const v = this.s.view.getState();
       v.setSongStart(d.t0);
       if (v.mode !== 'song') v.setMode('song');
@@ -1809,6 +1944,7 @@ export class PlaylistController {
     // A double-click on the Studio mark is two clicks on it, not a rename.
     if (hit && this.onAsk(hit, x)) return;
     if (hit) this.renameMarker(hit.id);
+    else if (e.altKey) this.s.view.getState().setPunch(null);
     else this.s.view.getState().setLoop(null);
   }
 

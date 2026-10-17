@@ -20,6 +20,7 @@ import { notes } from './notes';
 import { patterns } from './patterns';
 import { playlist } from './playlist';
 import { query } from './query';
+import { recording, RECORD_OP_NAMES } from './recording';
 import { reference } from './reference';
 import { session } from './session';
 import { song } from './song';
@@ -34,6 +35,7 @@ export const MODULES: readonly OpModule[] = [
   automation,
   playlist,
   clips,
+  recording,
   arrange,
   beat,
   mix,
@@ -51,7 +53,7 @@ export const DOC_OPS: Readonly<Record<string, OpHandler>> = Object.assign({}, ..
 
 /** Actions the UI runs after the edit (playback, windows, commands…). */
 export const UI_OP_NAMES: ReadonlySet<string> = new Set(
-  [...ui.schemas, ...session.schemas, ...query.schemas, ...decks.schemas].map((o) => o.properties.op.const),
+  [...ui.schemas, ...session.schemas, ...query.schemas, ...decks.schemas].map((o) => o.properties.op.const).concat(RECORD_OP_NAMES),
 );
 
 export const OP_SCHEMAS: readonly OpSchema[] = MODULES.flatMap((m) => m.schemas);

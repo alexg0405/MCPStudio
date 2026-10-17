@@ -4,10 +4,10 @@ import type { Snap } from '@core/time/snap';
 import { TICKS_PER_STEP } from '@core/time/ppq';
 
 /** Editor state for the piano roll (and later the playlist): tools, snap, zoom, selection, clipboard. */
-export type PlaylistTool = 'draw' | 'paint' | 'delete' | 'slice' | 'select';
-export type PianoRollTool = PlaylistTool | 'mute';
+export type PlaylistTool = 'draw' | 'paint' | 'delete' | 'slice' | 'select' | 'comp';
+export type PianoRollTool = Exclude<PlaylistTool, 'comp'> | 'mute';
 export const PIANO_ROLL_TOOLS: readonly PianoRollTool[] = ['draw', 'paint', 'delete', 'mute', 'slice', 'select'];
-export const PLAYLIST_TOOLS: readonly PlaylistTool[] = ['draw', 'paint', 'delete', 'slice', 'select'];
+export const PLAYLIST_TOOLS: readonly PlaylistTool[] = ['draw', 'paint', 'delete', 'slice', 'select', 'comp'];
 
 /** The note property the event lane under the piano roll shows and edits. */
 export type NoteLane = 'velocity' | 'pan' | 'release' | 'fine';
@@ -54,6 +54,8 @@ export interface EditorState {
   pianoRoll: PianoRollViewState;
   playlist: PlaylistViewState;
   clipSelection: readonly ClipId[];
+  /** Take groups whose stack of take lanes is open under the comp lane (view state, not undoable). */
+  openTakes: readonly string[];
   /** Copied clips, starts relative to the first one. */
   clipClipboard: readonly Clip[] | null;
   /** Selected notes of the piano roll's channel in the current pattern. Not undoable. */
@@ -77,6 +79,8 @@ export interface EditorActions {
   setPianoRoll(patch: Partial<PianoRollViewState>): void;
   setPlaylist(patch: Partial<PlaylistViewState>): void;
   selectClips(ids: readonly ClipId[]): void;
+  /** Opens or closes a take group's stack of take lanes. */
+  setTakesOpen(group: string, open: boolean): void;
   setClipClipboard(clips: readonly Clip[] | null): void;
   selectNotes(ids: readonly NoteId[]): void;
   setNoteClipboard(notes: readonly Note[] | null): void;
@@ -121,6 +125,7 @@ export function createEditorStore(
     noteSelection: [],
     noteClipboard: null,
     clipSelection: [],
+    openTakes: [],
     clipClipboard: null,
     setPlaylist(patch) {
       const cur = get().playlist;
@@ -132,6 +137,11 @@ export function createEditorStore(
       const cur = get().clipSelection;
       if (cur.length === ids.length && cur.every((id, i) => id === ids[i])) return;
       set({ clipSelection: ids });
+    },
+    setTakesOpen(group, open) {
+      const cur = get().openTakes;
+      if (cur.includes(group) === open) return;
+      set({ openTakes: open ? [...cur, group] : cur.filter((g) => g !== group) });
     },
     setClipClipboard(clips) {
       set({ clipClipboard: clips });

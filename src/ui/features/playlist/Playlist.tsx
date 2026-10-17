@@ -29,6 +29,12 @@ const TOOLS: { tool: PlaylistTool; label: string; key: string; hint: string }[] 
   { tool: 'delete', label: 'Delete', key: 'D', hint: 'Delete: click or drag over clips' },
   { tool: 'slice', label: 'Slice', key: 'C', hint: 'Slice: click a clip to split it' },
   { tool: 'select', label: 'Select', key: 'E', hint: 'Select: drag a box around clips' },
+  {
+    tool: 'comp',
+    label: 'Comp',
+    key: 'T',
+    hint: 'Comp: drag across a take (open a recording’s takes with the ▸ on its comp track) to use that part of it in the comp; the comp track plays it with a short crossfade (Alt-drag on a take does the same with any tool)',
+  },
 ];
 
 function Toolbar({ controller }: { controller: React.RefObject<PlaylistController | null> }) {
@@ -94,7 +100,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         Follow
       </button>
       <span className={styles.help}>
-        Click an empty spot for a menu · drag on the ruler to loop a range · click it to set the song position · right-click it to add a marker · the gold Ask Studio pill (or a marker's mark) asks Studio about a part
+        Click an empty spot for a menu · drag on the ruler to loop a range (Alt-drag: punch range) · click it to set the song position · right-click it to add a marker · the gold Ask Studio pill (or a marker's mark) asks Studio about a part
       </span>
     </div>
   );
@@ -183,12 +189,12 @@ export function Playlist() {
         <canvas
           ref={ruler}
           className={styles.ruler}
-          data-hint="Drag to set a loop region, click to set the song position, double-click to clear the loop · right-click to add a marker (or Alt+T)"
+          data-hint="Drag to set a loop region, click to set the song position, double-click to clear the loop · Alt-drag sets the punch range audio recording keeps (Alt-double-click clears it) · right-click for markers and the punch range (marker: Alt+T)"
         />
         <canvas
           ref={headers}
           className={styles.headers}
-          data-hint="Tracks: click the light to mute, right-click it to solo; double-click a name to rename, right-click it for options"
+          data-hint="Tracks: click the light to mute, right-click it to solo; double-click a name to rename, right-click it for options · the ▸ on a comp track opens the takes of that recording"
         />
         <div ref={gridHost} className={styles.gridHost} data-hint={TOOLS.find((t) => t.tool === tool)?.hint}>
           <canvas ref={grid} className={styles.layer} />

@@ -13,6 +13,7 @@ import {
 import { PALETTE } from '@core/model/defaults';
 import type { MarkerId, Tick } from '@core/model/types';
 import { markersSorted, recolorMarker } from '@core/ops/markers';
+import { clearPunch, punchFromLoop, setPunchIn, setPunchOut } from '@app/actions/punch';
 import { formatBST } from '@core/time/ppq';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
@@ -64,7 +65,7 @@ export function markerMenu(s: Services, id: MarkerId): MenuEntry[] {
 /** Right-click on an empty spot of the ruler. */
 export function rulerMenu(s: Services, tick: Tick): MenuEntry[] {
   const ts = s.doc.getState().project.transport.timeSig;
-  const loop = s.view.getState().loop;
+  const { loop, punch } = s.view.getState();
   return [
     {
       label: `Add marker here (${formatBST(tick, ts)})`,
@@ -89,6 +90,35 @@ export function rulerMenu(s: Services, tick: Tick): MenuEntry[] {
       disabled: !loop,
       hint: loop ? 'Play the whole song again (or double-click the ruler)' : 'There is no loop region',
       onSelect: () => s.view.getState().setLoop(null),
+    },
+    { kind: 'separator' },
+    {
+      label: `Set punch-in here (${formatBST(tick, ts)})`,
+      hint: 'Audio recording keeps sound from here on (the red IN flag on the ruler); separate from the loop region',
+      onSelect: () => setPunchIn(s, tick),
+    },
+    {
+      label: `Set punch-out here (${formatBST(tick, ts)})`,
+      hint: 'Audio recording stops keeping sound here; with no loop region the take ends there and the song plays on',
+      onSelect: () => setPunchOut(s, tick),
+    },
+    {
+      label: 'Use the loop region as the punch range',
+      disabled: !loop,
+      hint: loop ? 'The punch range becomes the same bars as the loop' : 'There is no loop region',
+      onSelect: () => void punchFromLoop(s),
+    },
+    {
+      label: 'Record the punch range',
+      disabled: !punch,
+      hint: punch ? 'Count in, play from the pre-roll and record from the punch-in to the punch-out' : 'Set the punch range first',
+      onSelect: () => void s.commands.run('transport.recordPunch'),
+    },
+    {
+      label: 'Clear the punch range',
+      disabled: !punch,
+      hint: punch ? 'Audio recording keeps everything again (or Alt-double-click the ruler)' : 'There is no punch range',
+      onSelect: () => clearPunch(s),
     },
     ...extraMenuItems('playlist.ruler', { tick }, s),
   ];

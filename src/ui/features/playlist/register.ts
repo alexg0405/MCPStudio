@@ -65,6 +65,7 @@ export function register(services: Services): void {
     ['delete', 'D', 'Click or drag over clips to delete them'],
     ['slice', 'C', 'Click a clip to cut it in two'],
     ['select', 'E', 'Drag a box around clips to select them'],
+    ['comp', 'T', 'Drag across a take to use that part of it in the comp (the comp track plays it)'],
   ] as [PlaylistTool, string, string][]) {
     commands.register({
       id: `playlist.tool.${tool}`,

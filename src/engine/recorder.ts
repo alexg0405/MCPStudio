@@ -18,6 +18,8 @@ export interface RecordOptions {
   click: boolean;
   /** Seconds the input lags the sound (MediaTrackSettings.latency, when the browser reports it). */
   inputLatency: number;
+  /** The whole round trip, when it was measured (Options › Audio input › Calibrate): used instead of the estimate. */
+  roundTrip?: number;
 }
 
 export interface Recording {
@@ -137,7 +139,7 @@ export async function startRecording(
     const firstFrame = new Float64Array(start)[0] ?? 0;
     // A click sent at time T is heard after the output latency; the answer reaches the recorder
     // after the input latency on top.
-    const latency = (ctx.outputLatency || ctx.baseLatency || 0) + Math.max(0, opts.inputLatency);
+    const latency = opts.roundTrip ?? (ctx.outputLatency || ctx.baseLatency || 0) + Math.max(0, opts.inputLatency);
     settle({
       samples: samples.slice(0, written),
       sampleRate: sr,

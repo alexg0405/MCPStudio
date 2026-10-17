@@ -374,7 +374,7 @@ export class BeatAssistant implements AssistantApi {
     if (st.phase !== 'idle') return;
     const project = this.s.doc.getState().project;
     try {
-      this.mic = await openMic({ echoCancellation: st.playAlong });
+      this.mic = await openMic({ ...this.s.audioInput.micOptions(), echoCancellation: st.playAlong });
       // Performing over the beat means the current pattern, not the song.
       if (st.playAlong) this.s.view.getState().setMode('pattern');
       const ts = project.transport.timeSig;
@@ -384,7 +384,7 @@ export class BeatAssistant implements AssistantApi {
         countInBeats: ts.num,
         bars: st.bars,
         click: st.click,
-        inputLatency: this.mic.latency,
+        ...this.s.audioInput.performanceLatency(this.mic.latency),
         playAlong: st.playAlong,
       });
     } catch (e) {

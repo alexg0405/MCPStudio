@@ -117,7 +117,12 @@ export function toggleSoloLane(d: Draft<Project>, id: LaneId): void {
 // ---- Clips ----
 
 export function addClips(d: Draft<Project>, clips: readonly Clip[]): void {
-  for (const c of clips) d.playlist.clips[c.id] = sanitizeClip(c) as Draft<Clip>;
+  for (const c of clips) {
+    const clip = sanitizeClip(c);
+    // A copy or a new clip is not part of a recording's take group (only core/ops/comp.ts makes those).
+    if (clip.kind === 'audio' && clip.take) delete (clip as { take?: unknown }).take;
+    d.playlist.clips[c.id] = clip as Draft<Clip>;
+  }
 }
 
 export function removeClips(d: Draft<Project>, ids: readonly ClipId[]): void {

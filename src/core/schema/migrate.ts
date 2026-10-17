@@ -829,6 +829,7 @@ function repairPlaylist(p: Obj, log: RepairLog): void {
     if (fixed) log.count('clip-fields', (n) => `Fixed ${count(n, CLIP)} with an invalid position or length.`);
   }
   log.flush();
+  repairTakes(playlist, log);
 
   const markers = playlist.markers as Obj;
   repairRecords(markers, MARKER, log);
@@ -844,6 +845,71 @@ function repairPlaylist(p: Obj, log: RepairLog): void {
     if (fixed) log.count('marker-fields', (n) => `Fixed ${count(n, MARKER)} with an invalid position or name.`);
   }
   log.flush();
+}
+
+/**
+ * Takes and comping: the tags that tie a recording's takes to its comp lane. Damaged tags go, and so does a
+ * group that cannot work (no comp track, or no take left to comp from): its clips and tracks become ordinary
+ * ones, so nothing is lost and nothing points at something that is not there.
+ */
+function repairTakes(playlist: Obj, log: RepairLog): void {
+  const lanes = playlist.lanes as Obj;
+  const clips = playlist.clips as Obj;
+  const damaged = () =>
+    log.count('take-tags', (n) => `Removed the take or comp mark from ${count(n, noun('playlist track or clip'))} (it was damaged).`);
+  for (const raw of Object.values(lanes)) {
+    const lane = raw as Obj;
+    if (!has(lane, 'takes') || lane.takes === undefined) continue;
+    const t = lane.takes;
+    if (!isObject(t) || !isString(t.group) || t.group === '' || (t.role !== 'comp' && t.role !== 'take')) {
+      delete lane.takes;
+      damaged();
+    } else if (has(t, 'crossfadeMs') && t.crossfadeMs !== undefined) {
+      if (clampField(t, 'crossfadeMs', 0, 500, 10)) damaged();
+    }
+  }
+  const groups = new Map<string, { comp: number; takes: number }>();
+  const entry = (g: string) => {
+    let e = groups.get(g);
+    if (!e) groups.set(g, (e = { comp: 0, takes: 0 }));
+    return e;
+  };
+  for (const raw of Object.values(lanes)) {
+    const t = (raw as Obj).takes as Obj | undefined;
+    if (t?.role === 'comp') entry(t.group as string).comp++;
+  }
+  for (const [id, raw] of Object.entries(clips)) {
+    const clip = raw as Obj;
+    if (!has(clip, 'take') || clip.take === undefined) continue;
+    const t = clip.take;
+    const ok =
+      clip.kind === 'audio' &&
+      isObject(t) &&
+      isString(t.group) &&
+      t.group !== '' &&
+      isFiniteNumber(t.index) &&
+      t.index >= 0 &&
+      Number.isInteger(t.index) &&
+      (!has(t, 'comp') || t.comp === undefined || t.comp === true);
+    if (!ok) {
+      delete clip.take;
+      damaged();
+      continue;
+    }
+    if (t.comp !== true) entry(t.group as string).takes++;
+    void id;
+  }
+  const dead = new Set([...groups].filter(([, e]) => e.comp === 0 || e.takes === 0).map(([g]) => g));
+  if (dead.size === 0) return;
+  for (const raw of Object.values(lanes)) {
+    const lane = raw as Obj;
+    if (isObject(lane.takes) && dead.has(lane.takes.group as string)) delete lane.takes;
+  }
+  for (const raw of Object.values(clips)) {
+    const clip = raw as Obj;
+    if (isObject(clip.take) && dead.has(clip.take.group as string)) delete clip.take;
+  }
+  log.add(`Made ${dead.size === 1 ? 'a set of takes' : `${dead.size} sets of takes`} ordinary tracks and clips (the comp or the takes were gone).`);
 }
 
 const isId = (v: unknown) => isString(v) && v !== '';

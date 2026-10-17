@@ -1,0 +1,161 @@
+/**
+ * Take groups: the takes of one recording, the comp lane that plays them and the take lanes folded under
+ * it. Derived from the playlist (`AudioClip.take`, `Lane.takes`), so there is nothing else to keep in step.
+ */
+import { DEFAULT_CROSSFADE_MS, type CompSpan } from '../audio/comp';
+import { playbackMode, sourceSecondsAt } from '../audio/playback';
+import type { AudioClip, Clip, ClipId, LaneId, Playlist, Project, Tick } from '../model/types';
+import type { TempoMap } from '../time/ppq';
+
+export interface TakeGroup {
+  id: string;
+  /** The track that plays the comp (null if it was deleted: the group is then repaired away). */
+  compLane: LaneId | null;
+  /** The take lanes, in playlist order (newest take first). */
+  takeLanes: LaneId[];
+  /** Take clips by take, in recording order. */
+  takes: Array<{ index: number; clips: AudioClip[] }>;
+  /** The comp lane's clips, in time order. */
+  comp: AudioClip[];
+  crossfadeMs: number;
+  /** The extent of the takes. */
+  start: Tick;
+  end: Tick;
+}
+
+type Lanes = Pick<Playlist, 'lanes' | 'laneOrder' | 'clips'>;
+
+/** Builds the groups of a playlist (not memoized: safe on immer drafts). */
+export function buildTakeGroups(pl: Lanes): TakeGroup[] {
+  const groups = new Map<string, TakeGroup>();
+  const get = (id: string): TakeGroup => {
+    let g = groups.get(id);
+    if (!g) {
+      g = { id, compLane: null, takeLanes: [], takes: [], comp: [], crossfadeMs: DEFAULT_CROSSFADE_MS, start: Infinity, end: -Infinity };
+      groups.set(id, g);
+    }
+    return g;
+  };
+  for (const laneId of pl.laneOrder) {
+    const t = pl.lanes[laneId]?.takes;
+    if (!t) continue;
+    const g = get(t.group);
+    if (t.role === 'comp') {
+      g.compLane = laneId;
+      if (t.crossfadeMs !== undefined) g.crossfadeMs = t.crossfadeMs;
+    } else g.takeLanes.push(laneId);
+  }
+  const byTake = new Map<string, Map<number, AudioClip[]>>();
+  for (const c of Object.values(pl.clips) as Clip[]) {
+    if (c.kind !== 'audio' || !c.take) continue;
+    const g = get(c.take.group);
+    if (c.take.comp) g.comp.push(c);
+    else {
+      let m = byTake.get(g.id);
+      if (!m) byTake.set(g.id, (m = new Map()));
+      const list = m.get(c.take.index);
+      if (list) list.push(c);
+      else m.set(c.take.index, [c]);
+      g.start = Math.min(g.start, c.start);
+      g.end = Math.max(g.end, c.start + c.length);
+    }
+  }
+  for (const g of groups.values()) {
+    const m = byTake.get(g.id);
+    g.takes = m
+      ? [...m.entries()].sort((a, b) => a[0] - b[0]).map(([index, clips]) => ({ index, clips: clips.sort((a, b) => a.start - b.start) }))
+      : [];
+    g.comp.sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
+    if (!Number.isFinite(g.start)) {
+      g.start = 0;
+      g.end = 0;
+    }
+  }
+  return [...groups.values()];
+}
+
+const cache = new WeakMap<object, WeakMap<object, readonly TakeGroup[]>>();
+const NONE: readonly TakeGroup[] = [];
+
+/** The take groups of a project, memoized by the playlist's lanes and clips. */
+export function takeGroups(project: Project): readonly TakeGroup[] {
+  const { clips, lanes } = project.playlist;
+  let inner = cache.get(clips);
+  if (!inner) cache.set(clips, (inner = new WeakMap()));
+  let v = inner.get(lanes);
+  if (!v) {
+    // Most projects have none: skip the walk's allocations then.
+    const any = Object.values(lanes).some((l) => l.takes) || Object.values(clips).some((c) => c.kind === 'audio' && c.take);
+    v = any ? buildTakeGroups(project.playlist) : NONE;
+    inner.set(lanes, v);
+  }
+  return v;
+}
+
+export function takeGroup(project: Project, id: string): TakeGroup | null {
+  return takeGroups(project).find((g) => g.id === id) ?? null;
+}
+
+/** The group a lane belongs to (as its comp lane or one of its take lanes). */
+export function groupOfLane(project: Project, laneId: LaneId): TakeGroup | null {
+  const t = project.playlist.lanes[laneId]?.takes;
+  return t ? takeGroup(project, t.group) : null;
+}
+
+/** The group a clip belongs to (a take or a comp clip), or one on a lane of a group. */
+export function groupOfClip(project: Project, clip: Clip): TakeGroup | null {
+  if (clip.kind === 'audio' && clip.take) return takeGroup(project, clip.take.group);
+  return groupOfLane(project, clip.laneId);
+}
+
+const orderCache = new WeakMap<object, WeakMap<object, Map<string, readonly LaneId[]>>>();
+
+/**
+ * The tracks that are on screen, in order: every track except the take lanes of groups that are folded
+ * (a group is open when its id is in `open`). Memoized by the lanes and the open set's contents.
+ */
+export function visibleLaneOrder(project: Project, open: readonly string[]): readonly LaneId[] {
+  const { laneOrder, lanes } = project.playlist;
+  const key = open.length ? [...open].sort().join('|') : '';
+  let byLanes = orderCache.get(laneOrder);
+  if (!byLanes) orderCache.set(laneOrder, (byLanes = new WeakMap()));
+  let byKey = byLanes.get(lanes);
+  if (!byKey) byLanes.set(lanes, (byKey = new Map()));
+  let v = byKey.get(key);
+  if (!v) {
+    const isOpen = new Set(open);
+    v = laneOrder.filter((id) => {
+      const t = lanes[id]?.takes;
+      return !t || t.role === 'comp' || isOpen.has(t.group);
+    });
+    if (byKey.size > 8) byKey.clear();
+    byKey.set(key, v);
+  }
+  return v;
+}
+
+/** The spans of a group's takes for the comp planner. */
+export function compSpans(project: Project, group: TakeGroup, tempo: TempoMap): CompSpan[] {
+  const out: CompSpan[] = [];
+  for (const t of group.takes)
+    for (const c of t.clips) {
+      const ch = project.channels[c.channelId];
+      const mode = playbackMode(ch?.kind === 'audioClip' ? ch : {});
+      out.push({
+        index: t.index,
+        ref: c.id,
+        start: c.start,
+        length: c.length,
+        offsetAt: (tick) => sourceSecondsAt(c, mode, tempo, tick),
+        ...(c.gain !== undefined ? { gain: c.gain } : {}),
+        ...(c.fadeIn !== undefined ? { fadeIn: c.fadeIn } : {}),
+        ...(c.fadeOut !== undefined ? { fadeOut: c.fadeOut } : {}),
+      });
+    }
+  return out;
+}
+
+/** The take clips of a group by clip id. */
+export function takeClipIds(group: TakeGroup): ClipId[] {
+  return group.takes.flatMap((t) => t.clips.map((c) => c.id));
+}

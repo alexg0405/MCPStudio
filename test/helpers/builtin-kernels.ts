@@ -17,6 +17,12 @@ import { chorusParams } from '../../src/plugins/builtin/chorus/params';
 import compressor from '../../src/plugins/builtin/compressor';
 import { CompressorKernel } from '../../src/plugins/builtin/compressor/kernel';
 import { compressorParams } from '../../src/plugins/builtin/compressor/params';
+import deEsser from '../../src/plugins/builtin/de-esser';
+import { DeEsserKernel } from '../../src/plugins/builtin/de-esser/kernel';
+import { deEsserParams } from '../../src/plugins/builtin/de-esser/params';
+import doubler from '../../src/plugins/builtin/doubler';
+import { DoublerKernel } from '../../src/plugins/builtin/doubler/kernel';
+import { doublerParams } from '../../src/plugins/builtin/doubler/params';
 import drumPads from '../../src/plugins/builtin/drum-pads';
 import { DrumPadsKernel } from '../../src/plugins/builtin/drum-pads/kernel';
 import { drumPadsParams, FIRST_KEY as PAD_FIRST_KEY, SOUND_IDS } from '../../src/plugins/builtin/drum-pads/params';
@@ -223,6 +229,8 @@ export const KERNEL_ENTRIES: readonly KernelEntry[] = [
   effect(analyzer, analyzerParams, AnalyzerKernel),
   effect(chorus, chorusParams, ChorusKernel),
   effect(compressor, compressorParams, CompressorKernel),
+  effect(deEsser, deEsserParams, DeEsserKernel),
+  effect(doubler, doublerParams, DoublerKernel),
   effect(ducker, duckerParams, DuckerKernel),
   effect(eqPro, eqProParams, EqProKernel),
   effect(flanger, flangerParams, FlangerKernel),

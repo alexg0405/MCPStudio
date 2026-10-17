@@ -106,4 +106,12 @@ describe('BUILDER_PROMPT', () => {
     // tools/ai/server.ts refuses system prompts over 60 000 characters.
     expect(BUILDER_PROMPT.length).toBeLessThan(60_000);
   });
+
+  it('leaves the on-disk sections and lazy editors out of the builder’s guide, and keeps the rest', () => {
+    expect(BUILDER_PROMPT).not.toContain('## Hot reload');
+    expect(BUILDER_PROMPT).not.toContain('## Testing');
+    expect(BUILDER_PROMPT).not.toContain('lazyUi(');
+    for (const h of ['## Custom editors', '## Note scripts', '## Presets and versions', '### Rules for audio-thread code'])
+      expect(BUILDER_PROMPT).toContain(h);
+  });
 });

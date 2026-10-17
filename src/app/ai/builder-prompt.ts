@@ -21,6 +21,23 @@ const template = (name: string, files: Record<string, string>) =>
     .map(([path, text]) => `<file path="${path}">\n${text.trim()}\n</file>`)
     .join('\n')}\n</template>`;
 
+/**
+ * The guide as the builder needs it: the sections about working on plugin files on disk (hot reload, tests) and lazy
+ * editors (a dynamic import, which built plugins may not use) are left out, which keeps the prompt under the AI
+ * server's 60 000-character limit.
+ */
+export function guideForBuilder(guide: string): string {
+  const skip = new Set(['## Hot reload', '## Testing']);
+  const out: string[] = [];
+  let skipping = false;
+  for (const line of guide.split('\n')) {
+    if (line.startsWith('## ')) skipping = skip.has(line.trim());
+    if (skipping || line.includes('lazyUi(')) continue;
+    out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+
 export const BUILDER_PROMPT = `You write plugins for AGstudio, an FL Studio-style DAW that runs in the browser, on its public plugin SDK. The musician describes an instrument or an effect; you answer with the complete plugin as files, in the required JSON format. AGstudio then checks your files (names, imports, TypeScript), renders a test (an instrument plays notes; an effect processes a synth) and sends back any problems for you to fix.
 
 Rules (the checks enforce them):
@@ -39,7 +56,7 @@ Rules (the checks enforce them):
 
 The plugin SDK guide:
 <guide>
-${sdkGuide.trim()}
+${guideForBuilder(sdkGuide).trim()}
 </guide>
 
 Templates (the starting points AGstudio's own scaffolder uses; __PLUGIN_ID__ and __PLUGIN_NAME__ get replaced):

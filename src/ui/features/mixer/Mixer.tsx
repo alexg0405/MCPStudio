@@ -43,53 +43,179 @@ function panText(v: number): string {
   return pct === 0 ? 'Centre' : `${pct}% ${v < 0 ? 'left' : 'right'}`;
 }
 
-interface StripProps {
-  id: InsertId;
-  index: number;
-  last: boolean;
-  /** The selected insert: the send arrow and knob on every other strip are relative to it. */
-  current: InsertId;
-  meters: MeterBank;
+/**
+ * The three controls that change while a fader or knob is dragged. Each reads its own value, so a drag re-renders the
+ * control and its readout and not the strip around them (its name, buttons, routing and menus), which reads
+ * everything else.
+ */
+const StripPan = memo(function StripPan({ id, label, name }: { id: InsertId; label: string; name: string }) {
+  const value = useDoc((pr) => pr.mixer.inserts[id]?.pan ?? 0);
+  const pan = useGestureEdit<number>(`${label} pan`, (d, v) => setInsertProp(d, id, 'pan', v), `inspan:${id}`);
+  return (
+    <Knob
+      spec={PAN}
+      value={value}
+      size={22}
+      bipolar
+      label={`${name} pan`}
+      format={formatPan}
+      param={targetKey({ kind: 'insert', insertId: id, param: 'pan' })}
+      {...pan}
+    />
+  );
+});
+
+const StripFader = memo(function StripFader({ id, label, name }: { id: InsertId; label: string; name: string }) {
+  const value = useDoc((pr) => pr.mixer.inserts[id]?.volume ?? 1);
+  const volume = useGestureEdit<number>(`${label} volume`, (d, v) => setInsertProp(d, id, 'volume', v), `insvol:${id}`);
+  return (
+    <Fader
+      value={value}
+      label={`${name} volume`}
+      param={targetKey({ kind: 'insert', insertId: id, param: 'volume' })}
+      {...volume}
+    />
+  );
+});
+
+/** The fader's value in dB under it. */
+const StripDb = memo(function StripDb({ id }: { id: InsertId }) {
+  const volume = useDoc((pr) => pr.mixer.inserts[id]?.volume ?? 1);
+  return <span className={styles.stripDb}>{formatGain(volume)}</span>;
+});
+
+/** The selected insert (the Master when none is, or the selected one was deleted). */
+function useCurrentInsert(): InsertId {
+  const selected = useSession((s) => s.selectedInsertId);
+  const exists = useDoc((pr) => !!selected && !!pr.mixer.inserts[selected]);
+  return selected && exists ? selected : MASTER;
 }
 
-const Strip = memo(function Strip({ id, index, last, current, meters }: StripProps) {
-  const services = useServices();
-  const insert = useDoc((pr) => pr.mixer.inserts[id]);
-  const routed = useDoc((pr) => routedChannels(pr, id));
-  const [renaming, setRenaming] = useState(false);
-  const isMaster = id === MASTER;
-  const selected = id === current;
-  const label = isMaster ? 'Master' : `Insert ${index}`;
-  const name = useDoc((pr) => insertName(pr, id));
+/**
+ * "IN" and "SC" next to the strip number: this track feeds the selected one, or the selected one's effect listens to
+ * it. They follow the selection, so they are apart from the strip: picking another track re-renders these small
+ * pieces on every strip and not the strips themselves.
+ */
+const StripBadges = memo(function StripBadges({ id, name }: { id: InsertId; name: string }) {
+  const current = useCurrentInsert();
   const currentName = useDoc((pr) => insertName(pr, current));
-  const goesTo = useDoc((pr) => routeLine(pr, id));
-  const routesText = useDoc((pr) => describeRoutes(pr, id));
-  // Routing relative to the selected insert (FL: an arrow and a send knob on every other track).
+  const feedsCurrent = useDoc((pr) => current !== id && !!pr.mixer.inserts[id]?.routes.some((r) => r.to === current));
+  const keysCurrent = useDoc(
+    (pr) => current !== id && !!pr.mixer.inserts[current]?.fx.some((s) => s.sidechain === id),
+  );
+  return (
+    <>
+      {feedsCurrent && (
+        <span className={styles.badgeIn} data-hint={`“${name}” is sent into the selected track “${currentName}”`}>
+          IN
+        </span>
+      )}
+      {keysCurrent && (
+        <span
+          className={styles.badgeSc}
+          data-hint={`An effect on the selected track “${currentName}” reacts to “${name}” (sidechain)`}
+        >
+          SC
+        </span>
+      )}
+    </>
+  );
+});
+
+/** The send arrow and send knob under a strip, relative to the selected insert (FL: on every other track). */
+const StripRoute = memo(function StripRoute({ id, name }: { id: InsertId; name: string }) {
+  const services = useServices();
+  const current = useCurrentInsert();
+  const selected = id === current;
+  const currentName = useDoc((pr) => insertName(pr, current));
   const send = useDoc((pr) => (selected ? undefined : pr.mixer.inserts[current]?.routes.find((r) => r.to === id)));
   const routable = useDoc((pr) => !selected && canRoute(pr.mixer, current, id));
-  const feedsCurrent = useDoc((pr) => !selected && !!pr.mixer.inserts[id]?.routes.some((r) => r.to === current));
-  const keysCurrent = useDoc((pr) => !selected && !!pr.mixer.inserts[current]?.fx.some((s) => s.sidechain === id));
-  const silenced = useDoc((pr) => {
-    const ins = pr.mixer.inserts[id];
-    return !!ins && !ins.muted && effectivelyMutedInserts(pr.mixer.inserts).has(id);
-  });
   const sendLevel = useGestureEdit<number>(
     `Send ${currentName} to ${name}`,
     (d, v) => setRouteLevel(d, current, id, v),
     `route:${current}:${id}`,
   );
-  const volume = useGestureEdit<number>(`${label} volume`, (d, v) => setInsertProp(d, id, 'volume', v), `insvol:${id}`);
-  const pan = useGestureEdit<number>(`${label} pan`, (d, v) => setInsertProp(d, id, 'pan', v), `inspan:${id}`);
+  if (selected) return <span className={styles.routeRow} />;
+  const sendHint = send
+    ? `“${currentName}” sends to “${name}” at ${formatGain(send.level)}${send.pre ? ' (before its fader)' : ''}. Click to stop sending`
+    : current === MASTER
+      ? 'Select a track first: this arrow sends the selected track here'
+      : routable
+        ? `Click to send “${currentName}” to “${name}” as well`
+        : LOOP_HINT;
+  return (
+    <div className={styles.routeRow}>
+      {send ? (
+        // Editing a send keeps the selection (and so the knob) where it is.
+        <span className={styles.sendKnob} onPointerDown={(e) => e.stopPropagation()}>
+          <Knob
+            spec={ROUTE_LEVEL_SPEC}
+            value={send.level}
+            size={18}
+            label={`Send to ${name}`}
+            format={formatSend}
+            param={targetKey({ kind: 'route', insertId: current, to: id })}
+            {...sendLevel}
+          />
+        </span>
+      ) : (
+        <span className={styles.knobGap} />
+      )}
+      <button
+        tabIndex={-1}
+        className={`${styles.routeArrow} ${send ? styles.routeOn : ''} ${send?.pre ? styles.routePre : ''}`}
+        disabled={!send && !routable}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={() => toggleRoute(services, current, id)}
+        data-hint={sendHint}
+        aria-label={send ? `Stop sending ${currentName} to ${name}` : `Send ${currentName} to ${name}`}
+        aria-pressed={!!send}
+      >
+        <Icon name="routeUp" size={12} />
+      </button>
+    </div>
+  );
+});
+
+interface StripProps {
+  id: InsertId;
+  index: number;
+  last: boolean;
+  /** This strip is the selected insert. (Everything that is relative to the selection reads it itself: see StripRoute.) */
+  selected: boolean;
+  meters: MeterBank;
+}
+
+const Strip = memo(function Strip({ id, index, last, selected, meters }: StripProps) {
+  const services = useServices();
+  // The fields the strip itself shows. Volume and pan are left to StripFader/StripPan (see above).
+  const exists = useDoc((pr) => !!pr.mixer.inserts[id]);
+  const ownName = useDoc((pr) => pr.mixer.inserts[id]?.name ?? '');
+  const color = useDoc((pr) => pr.mixer.inserts[id]?.color);
+  const muted = useDoc((pr) => !!pr.mixer.inserts[id]?.muted);
+  const soloed = useDoc((pr) => !!pr.mixer.inserts[id]?.solo);
+  const routed = useDoc((pr) => routedChannels(pr, id));
+  const [renaming, setRenaming] = useState(false);
+  const isMaster = id === MASTER;
+  const label = isMaster ? 'Master' : `Insert ${index}`;
+  const name = useDoc((pr) => insertName(pr, id));
+  const goesTo = useDoc((pr) => routeLine(pr, id));
+  const routesText = useDoc((pr) => describeRoutes(pr, id));
+  const silenced = useDoc((pr) => {
+    const ins = pr.mixer.inserts[id];
+    return !!ins && !ins.muted && effectivelyMutedInserts(pr.mixer.inserts).has(id);
+  });
   const canvasRef = useCallback(
     (el: HTMLCanvasElement | null) => (el ? meters.attach(id, el) : undefined),
     [meters, id],
   );
-  if (!insert) return null;
+  if (!exists) return null;
 
   const toggleMute = () =>
-    services.history.transact(`${insert.muted ? 'Unmute' : 'Mute'} ${label}`, (d) =>
-      setInsertProp(d, id, 'muted', !insert.muted),
-    );
+    services.history.transact(`${muted ? 'Unmute' : 'Mute'} ${label}`, (d) => setInsertProp(d, id, 'muted', !muted));
   const solo = (e: ReactMouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -108,11 +234,11 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
       {
         kind: 'swatches',
         colors: PALETTE,
-        ...(insert.color ? { selected: insert.color } : {}),
+        ...(color ? { selected: color } : {}),
         onSelect: (c) => services.history.transact(`${label} color`, (d) => setInsertProp(d, id, 'color', c)),
       },
     ];
-    if (insert.color)
+    if (color)
       items.push({
         label: 'Clear color',
         onSelect: () => services.history.transact(`${label} color`, (d) => setInsertProp(d, id, 'color', undefined)),
@@ -142,17 +268,10 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
   const finishRename = (value: string | null) => {
     setRenaming(false);
     const next = value?.trim();
-    if (next && next !== insert.name)
+    if (next && next !== ownName)
       services.history.transact(`Rename ${label}`, (d) => setInsertProp(d, id, 'name', next));
   };
 
-  const sendHint = send
-    ? `“${currentName}” sends to “${name}” at ${formatGain(send.level)}${send.pre ? ' (before its fader)' : ''}. Click to stop sending`
-    : current === MASTER
-      ? 'Select a track first: this arrow sends the selected track here'
-      : routable
-        ? `Click to send “${currentName}” to “${name}” as well`
-        : LOOP_HINT;
   const stripHint =
     `${name}${name !== label ? ` (${label})` : ''}: ${routed ? `plays ${routed}` : 'no channels play here'}` +
     (isMaster ? '; everything ends up here' : `; goes to ${routesText}`) +
@@ -162,7 +281,7 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
   return (
     <div
       className={`${styles.strip} ${isMaster ? styles.master : ''} ${selected ? styles.stripSelected : ''} ${silenced ? styles.stripSilenced : ''}`}
-      style={insert.color ? { ['--ins-color' as string]: insert.color } : undefined}
+      style={color ? { ['--ins-color' as string]: color } : undefined}
       onPointerDown={(e) => {
         if (e.button === 0) services.session.getState().selectInsert(id);
       }}
@@ -171,32 +290,20 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
     >
       <span className={styles.stripNumber}>
         {isMaster ? 'M' : index}
-        {feedsCurrent && (
-          <span className={styles.badgeIn} data-hint={`“${name}” is sent into the selected track “${currentName}”`}>
-            IN
-          </span>
-        )}
-        {keysCurrent && (
-          <span
-            className={styles.badgeSc}
-            data-hint={`An effect on the selected track “${currentName}” reacts to “${name}” (sidechain)`}
-          >
-            SC
-          </span>
-        )}
+        <StripBadges id={id} name={name} />
       </span>
       {renaming ? (
         <input
           className={styles.rename}
           autoFocus
-          defaultValue={insert.name}
+          defaultValue={ownName}
           onFocus={(e) => e.currentTarget.select()}
           onBlur={(e) => finishRename(e.currentTarget.value)}
           onKeyDown={(e) => {
             e.stopPropagation();
             if (e.key === 'Enter') e.currentTarget.blur();
             if (e.key === 'Escape') {
-              e.currentTarget.value = insert.name;
+              e.currentTarget.value = ownName;
               e.currentTarget.blur();
             }
           }}
@@ -205,85 +312,35 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
         <div
           className={styles.stripName}
           onDoubleClick={() => setRenaming(true)}
-          title={insert.name}
+          title={ownName}
           data-hint={`${name}. Double-click to rename`}
         >
-          {insert.name}
+          {ownName}
         </div>
       )}
-      <Knob
-        spec={PAN}
-        value={insert.pan}
-        size={22}
-        bipolar
-        label={`${name} pan`}
-        format={formatPan}
-        param={targetKey({ kind: 'insert', insertId: id, param: 'pan' })}
-        {...pan}
-      />
+      <StripPan id={id} label={label} name={name} />
       <button
         tabIndex={-1}
-        className={`${styles.led} ${insert.muted ? '' : styles.ledOn} ${insert.solo ? styles.ledSolo : ''}`}
+        className={`${styles.led} ${muted ? '' : styles.ledOn} ${soloed ? styles.ledSolo : ''}`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={toggleMute}
         onContextMenu={solo}
-        data-hint={`${name}: ${insert.muted ? 'muted' : 'on'}${insert.solo ? ', soloed' : ''}. Click to mute${isMaster ? '' : '; right-click to solo (hear only this track, what feeds it and where it goes)'}`}
-        aria-label={insert.muted ? `Unmute ${label}` : `Mute ${label}`}
-        aria-pressed={!insert.muted}
+        data-hint={`${name}: ${muted ? 'muted' : 'on'}${soloed ? ', soloed' : ''}. Click to mute${isMaster ? '' : '; right-click to solo (hear only this track, what feeds it and where it goes)'}`}
+        aria-label={muted ? `Unmute ${label}` : `Mute ${label}`}
+        aria-pressed={!muted}
       />
       <div className={styles.meterFader}>
         <canvas ref={canvasRef} className={styles.meter} aria-hidden="true" />
-        <Fader
-          value={insert.volume}
-          label={`${name} volume`}
-          param={targetKey({ kind: 'insert', insertId: id, param: 'volume' })}
-          {...volume}
-        />
+        <StripFader id={id} label={label} name={name} />
       </div>
-      <span className={styles.stripDb}>{formatGain(insert.volume)}</span>
+      <StripDb id={id} />
       <span
         className={`${styles.routeLine} ${selected ? styles.routeLineSelected : ''}`}
         data-hint={isMaster ? 'The Master plays everything to your speakers' : `${name} goes to ${routesText}`}
       >
         {goesTo}
       </span>
-      {selected ? (
-        <span className={styles.routeRow} />
-      ) : (
-        <div className={styles.routeRow}>
-          {send ? (
-            // Editing a send keeps the selection (and so the knob) where it is.
-            <span className={styles.sendKnob} onPointerDown={(e) => e.stopPropagation()}>
-              <Knob
-                spec={ROUTE_LEVEL_SPEC}
-                value={send.level}
-                size={18}
-                label={`Send to ${name}`}
-                format={formatSend}
-                param={targetKey({ kind: 'route', insertId: current, to: id })}
-                {...sendLevel}
-              />
-            </span>
-          ) : (
-            <span className={styles.knobGap} />
-          )}
-          <button
-            tabIndex={-1}
-            className={`${styles.routeArrow} ${send ? styles.routeOn : ''} ${send?.pre ? styles.routePre : ''}`}
-            disabled={!send && !routable}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            onClick={() => toggleRoute(services, current, id)}
-            data-hint={sendHint}
-            aria-label={send ? `Stop sending ${currentName} to ${name}` : `Send ${currentName} to ${name}`}
-            aria-pressed={!!send}
-          >
-            <Icon name="routeUp" size={12} />
-          </button>
-        </div>
-      )}
+      <StripRoute id={id} name={name} />
     </div>
   );
 });
@@ -292,8 +349,7 @@ const Strip = memo(function Strip({ id, index, last, current, meters }: StripPro
 export function Mixer() {
   const services = useServices();
   const order = useDoc((pr) => pr.mixer.order);
-  const selected = useSession((s) => s.selectedInsertId);
-  const current = useDoc((pr) => (selected && pr.mixer.inserts[selected] ? selected : MASTER));
+  const current = useCurrentInsert();
   const [meters] = useState(() => new MeterBank());
   useEffect(() => meters.start(services), [meters, services]);
 
@@ -301,7 +357,7 @@ export function Mixer() {
     <div className={styles.mixer}>
       <div className={styles.strips} onContextMenu={(e) => e.preventDefault()}>
         {order.map((id, i) => (
-          <Strip key={id} id={id} index={i} last={i === order.length - 1} current={current} meters={meters} />
+          <Strip key={id} id={id} index={i} last={i === order.length - 1} selected={id === current} meters={meters} />
         ))}
         <button
           tabIndex={-1}

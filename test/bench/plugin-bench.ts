@@ -13,11 +13,17 @@
  * ones in declaration order) swept by a slow sine across their whole range, so each param changes on
  * every frame, the way automation in a song does. It prints the steady and automated % side by side
  * with their ratio, sorted by ratio. Presets are not used in that mode.
+ *
+ * `--chains` measures each factory vocal chain (src/app/mix/vocal-chains.ts): its worklet effects run one after the
+ * other on the music loop, with the chain's presets and settings, as % of one core, with each effect's share. The
+ * Reverb and Delay are native Web Audio nodes (no kernel): they are left out of the sum and named; a send to a
+ * return costs nothing on the track itself.
  */
 import type { FloatSpec, ParamSpecs, ParamValue } from '@agstudio/sdk';
 import { fromNormalized, isAutomatable } from '@agstudio/sdk';
 import { paramBlock, testTransport } from '@agstudio/sdk/testing';
 import type { EffectKernel, InstrumentKernel, ParamBlock } from '@agstudio/sdk/worklet';
+import { FACTORY_CHAINS } from '../../src/app/mix/vocal-chains';
 import { KERNEL_ENTRIES, type EffectEntry, type InstrumentEntry, type KernelEntry } from '../helpers/builtin-kernels';
 import { keyInput, musicInput } from '../helpers/kernel-run';
 
@@ -41,6 +47,7 @@ const ONLY = option('only', '').split(',').filter(Boolean);
 const PRESET = option('preset', '');
 const JSON_OUT = args.includes('--json');
 const AUTOMATE = args.includes('--automate');
+const CHAINS = args.includes('--chains');
 const FRAMES = SR * SECONDS;
 
 /** Automated mode: at most this many float params are swept, one sine cycle every 4 s (a slow sweep). */
@@ -239,5 +246,61 @@ function runAutomated() {
   }
 }
 
-if (AUTOMATE) runAutomated();
+/** A chain's worklet effects in series on the music loop; each one's cost on its own is measured too (same input). */
+function runChains() {
+  const rows: { chain: string; total: number; parts: { id: string; cost: number }[]; native: string[] }[] = [];
+  for (const chain of FACTORY_CHAINS) {
+    if (ONLY.length && !ONLY.some((o) => chain.name.toLowerCase().includes(o.toLowerCase()))) continue;
+    const kernels: { entry: EffectEntry; params: ParamBlock }[] = [];
+    const native: string[] = [];
+    for (const step of chain.steps) {
+      const entry = KERNEL_ENTRIES.find((e): e is EffectEntry => e.id === step.pluginId && e.kind === 'effect');
+      if (!entry) {
+        native.push(step.pluginId.replace('agstudio.', ''));
+        continue;
+      }
+      const preset = entry.presets.find((p) => p.name === step.preset);
+      kernels.push({ entry, params: paramBlock(entry.params, { ...(preset?.params ?? {}), ...(step.params ?? {}) }) as ParamBlock });
+    }
+    const run = (parts: typeof kernels) => () => {
+      const instances = parts.map((k) => {
+        const kernel = k.entry.make(SR);
+        kernel.transport = testTransport({ playing: true, bpm: 120, sampleRate: SR });
+        return kernel;
+      });
+      const a = [new Float32Array(BLOCK), new Float32Array(BLOCK)];
+      const b = [new Float32Array(BLOCK), new Float32Array(BLOCK)];
+      settle();
+      const t0 = cpuMs();
+      for (let at = 0; at < FRAMES; at += BLOCK) {
+        a[0]!.set(INPUT[0].subarray(at, at + BLOCK));
+        a[1]!.set(INPUT[1].subarray(at, at + BLOCK));
+        let from = a;
+        let to = b;
+        for (let k = 0; k < instances.length; k++) {
+          (instances[k] as EffectKernel).process(from, to, BLOCK, (parts[k] as (typeof kernels)[number]).params);
+          [from, to] = [to, from];
+        }
+      }
+      return cpuMs() - t0;
+    };
+    rows.push({
+      chain: chain.name,
+      total: percent(run(kernels)),
+      parts: kernels.map((k) => ({ id: k.entry.id.replace('agstudio.', ''), cost: percent(run([k])) })),
+      native,
+    });
+  }
+  if (JSON_OUT) process.stdout.write(`${JSON.stringify(rows)}\n`);
+  else {
+    const lines = rows.map(
+      (r) =>
+        `${r.chain.padEnd(22)} ${r.total.toFixed(2).padStart(6)} %  (${r.parts.map((p) => `${p.id} ${p.cost.toFixed(2)}`).join(', ')}${r.native.length ? `; native, not measured: ${r.native.join(', ')}` : ''})`,
+    );
+    process.stdout.write(`Vocal chains, CPU as % of one core at ${SR} Hz (${SECONDS} s, best of ${REPS})\n${lines.join('\n')}\n`);
+  }
+}
+
+if (CHAINS) runChains();
+else if (AUTOMATE) runAutomated();
 else runSteady();

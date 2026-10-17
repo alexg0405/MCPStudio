@@ -45,8 +45,10 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
   them), Slicer (chops a loop across the keys), Drum Synth, and a generated drum kit.
 - **Built-in effects**: EQ, EQ Pro (8 bands on a draggable curve over a live spectrum), Filter, Delay, Reverb,
   Compressor (with sidechain), Limiter (true peak), Multiband, Transient Shaper, Saturator, Distortion, Ducker
-  (sidechain or tempo pump), Gate, Chorus, Flanger, Phaser, Stereo, Lo-Fi, Stutter, Vocoder, Tune and Analyzer
-  (spectrum, LUFS, true peak).
+  (sidechain or tempo pump), Gate, Chorus, Flanger, Phaser, Stereo, Lo-Fi, Stutter, Vocoder, Tune, De-esser,
+  Doubler and Analyzer (spectrum, LUFS, true peak). Vocal chains: six ready-made effect chains (clean pop, rap, airy
+  ballad, lo-fi, trap auto-tune, podcast) that go on a mixer track in one click (Chains in the browser, or
+  right-click a track), save your own track's effects as a chain and share it as a .agchain file; voices get a Vocals bus.
 - **Recording and MIDI**: metronome and count-in, note recording from MIDI or the computer keyboard (quantize,
   overdub or replace), an on-screen keyboard, MIDI learn for any knob, MIDI file import and export, hum to notes.
   FL's score log: everything you play is kept for 5 minutes, so Patterns → Dump what I played… turns a riff you

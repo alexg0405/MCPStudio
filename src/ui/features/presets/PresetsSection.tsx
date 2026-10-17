@@ -72,7 +72,7 @@ export function PresetsSection() {
       />
       {shown.length === 0 && (
         <div className={browser.empty}>
-          {q ? 'No preset matches that.' : 'Your own presets show here: save one with “Save…” in any plugin window.'}
+          {q ? 'No preset matches that.' : 'Your own presets show here: save one with “Save…” in any plugin window. Whole rows of effects are under Chains.'}
         </div>
       )}
       {shown.map(({ def, preset }) => (

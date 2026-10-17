@@ -13,6 +13,7 @@ import {
 } from '@agstudio/sdk';
 import { downloadBytes, uploadFile } from '@platform/fs-access';
 import { idbGet, idbSet, isIdbAvailable } from '@platform/idb';
+import { readChain, type ChainPreset, type UserChain } from './chains';
 import type { Services } from './services';
 
 /**
@@ -45,9 +46,13 @@ export interface PresetChoice {
 export interface PresetStorage {
   read(): Promise<unknown>;
   write(list: readonly UserPreset[]): Promise<void>;
+  /** Your effect chains (a storage without these keeps them for the session only). */
+  readChains?(): Promise<unknown>;
+  writeChains?(list: readonly UserChain[]): Promise<void>;
 }
 
 const KEY = 'user-presets:v1';
+const CHAINS_KEY = 'user-chains:v1';
 
 export const idbPresetStorage: PresetStorage = {
   read: () => (isIdbAvailable() ? idbGet(KEY) : Promise.resolve([])),
@@ -55,18 +60,41 @@ export const idbPresetStorage: PresetStorage = {
     if (!isIdbAvailable()) return Promise.reject(new Error('This browser has no storage for presets.'));
     return idbSet(KEY, list);
   },
+  readChains: () => (isIdbAvailable() ? idbGet(CHAINS_KEY) : Promise.resolve([])),
+  writeChains: (list) => {
+    if (!isIdbAvailable()) return Promise.reject(new Error('This browser has no storage for chains.'));
+    return idbSet(CHAINS_KEY, list);
+  },
 };
 
-export function memoryPresetStorage(initial: UserPreset[] = []): PresetStorage & { list: UserPreset[] } {
+export function memoryPresetStorage(
+  initial: UserPreset[] = [],
+  initialChains: UserChain[] = [],
+): PresetStorage & { list: UserPreset[]; chains: UserChain[] } {
   const store = {
     list: initial,
+    chains: initialChains,
     read: () => Promise.resolve(store.list),
     write: (list: readonly UserPreset[]) => {
       store.list = structuredClone([...list]);
       return Promise.resolve();
     },
+    readChains: () => Promise.resolve(store.chains),
+    writeChains: (list: readonly UserChain[]) => {
+      store.chains = structuredClone([...list]);
+      return Promise.resolve();
+    },
   };
   return store;
+}
+
+/** A chain read back from storage, or null when it is damaged. */
+function userChainOf(raw: unknown): UserChain | null {
+  const r = raw as Partial<UserChain> | null;
+  if (!r || typeof r.id !== 'string') return null;
+  const chain = readChain(r);
+  if ('error' in chain) return null;
+  return { ...chain, id: r.id, saved: typeof r.saved === 'number' ? r.saved : 0 };
 }
 
 const isPreset = (x: unknown): x is UserPreset => {
@@ -89,6 +117,7 @@ const ownerKey = (o: PluginOwner) => (o.kind === 'fx' ? `fx:${o.insertId}:${o.sl
 /** Your presets (loaded from browser storage once at startup) and which preset each plugin last loaded. */
 export class PresetLibrary {
   private items: UserPreset[] = [];
+  private chainItems: UserChain[] = [];
   private version = 0;
   private readonly listeners = new Set<() => void>();
   private loading: Promise<void> | null = null;
@@ -102,12 +131,17 @@ export class PresetLibrary {
 
   /** Reads the saved presets (once; later calls return the same promise). */
   load(): Promise<void> {
-    return (this.loading ??= this.storage
-      .read()
-      .then((raw) => {
+    return (this.loading ??= Promise.all([
+      this.storage.read(),
+      (this.storage.readChains?.() ?? Promise.resolve([])).catch(() => []),
+    ])
+      .then(([raw, rawChains]) => {
         const saved = Array.isArray(raw) ? raw.filter(isPreset) : [];
         const mine = new Set(this.items.map((p) => p.id));
         this.items = [...saved.filter((p) => !mine.has(p.id)), ...this.items];
+        const chains = Array.isArray(rawChains) ? rawChains.map(userChainOf).filter((c): c is UserChain => !!c) : [];
+        const mineChains = new Set(this.chainItems.map((c) => c.id));
+        this.chainItems = [...chains.filter((c) => !mineChains.has(c.id)), ...this.chainItems];
         this.emit();
       })
       .catch(() => {}));
@@ -182,6 +216,56 @@ export class PresetLibrary {
     this.changed();
   }
 
+  /** Your effect chains (a row of effects applied to a mixer insert in one step). */
+  chains(): readonly UserChain[] {
+    return this.chainItems;
+  }
+
+  getChain(id: string): UserChain | undefined {
+    return this.chainItems.find((c) => c.id === id);
+  }
+
+  findChain(name: string): UserChain | undefined {
+    return this.chainItems.find((c) => same(c.name, name));
+  }
+
+  /** Saves a chain; one of yours with the same name is replaced. */
+  saveChain(input: ChainPreset): UserChain {
+    const name = input.name.trim().slice(0, 80) || 'My chain';
+    const old = this.findChain(name);
+    const chain: UserChain = { ...structuredClone(input), name, id: old?.id ?? randomId('chn'), saved: Date.now() };
+    this.chainItems = old ? this.chainItems.map((c) => (c.id === old.id ? chain : c)) : [...this.chainItems, chain];
+    this.changedChains();
+    return chain;
+  }
+
+  /** Renames one of your chains; false when another one already has the name. */
+  renameChain(id: string, name: string): boolean {
+    const c = this.getChain(id);
+    const next = name.trim().slice(0, 80);
+    if (!c || !next) return false;
+    const clash = this.findChain(next);
+    if (clash && clash.id !== id) return false;
+    this.chainItems = this.chainItems.map((x) => (x.id === id ? { ...x, name: next } : x));
+    this.changedChains();
+    return true;
+  }
+
+  removeChain(id: string): UserChain | undefined {
+    const c = this.getChain(id);
+    if (!c) return undefined;
+    this.chainItems = this.chainItems.filter((x) => x.id !== id);
+    this.changedChains();
+    return c;
+  }
+
+  /** Puts back a chain you deleted (undo). */
+  restoreChain(c: UserChain): void {
+    if (this.getChain(c.id)) return;
+    this.chainItems = [...this.chainItems, c];
+    this.changedChains();
+  }
+
   /** The preset a plugin loaded last (the name shows "edited" once you turn a knob). */
   loadedInto(owner: PluginOwner): string | undefined {
     return this.lastLoaded.get(ownerKey(owner));
@@ -201,6 +285,17 @@ export class PresetLibrary {
       .catch((e: unknown) => {
         this.onError(
           `Your presets couldn’t be saved in this browser (${e instanceof Error ? e.message : String(e)}). Export them as files to keep them.`,
+        );
+      });
+  }
+
+  private changedChains(): void {
+    this.emit();
+    void this.load()
+      .then(() => this.storage.writeChains?.(this.chainItems))
+      .catch((e: unknown) => {
+        this.onError(
+          `Your chains couldn’t be saved in this browser (${e instanceof Error ? e.message : String(e)}). Export them as files to keep them.`,
         );
       });
   }

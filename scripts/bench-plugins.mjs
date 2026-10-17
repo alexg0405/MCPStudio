@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // CPU benchmark of every built-in worklet kernel (see test/bench/plugin-bench.ts for what it measures).
-//   npm run bench:plugins -- [--only chorus,reverb] [--reps 5] [--seconds 4] [--json] [--automate]
+//   npm run bench:plugins -- [--only chorus,reverb] [--reps 5] [--seconds 4] [--json] [--automate] [--chains]
 // --automate: steady vs automated (float params swept by a slow sine), with the ratio. See test/bench/plugin-bench.ts.
+// --chains: the factory vocal chains (each effect's share and the sum; --only takes chain names).
 // Bundles the benchmark with rolldown (the bundler Vite uses for the worklets) and runs it in Node,
 // so kernels are measured the way production runs them rather than through a test runner's module
 // wrappers.
@@ -42,7 +43,8 @@ const bundle = await rolldown({
   logLevel: 'silent',
   transform: { jsx: { runtime: 'automatic' } },
 });
-await bundle.write({ file, format: 'esm', sourcemap: false });
+// One file even where a plugin's editor is a dynamic import (lazyUi): the benchmark never opens an editor.
+await bundle.write({ file, format: 'esm', sourcemap: false, codeSplitting: false });
 await bundle.close();
 
 const run = spawnSync(process.execPath, ['--expose-gc', file, ...process.argv.slice(2)], { stdio: 'inherit' });

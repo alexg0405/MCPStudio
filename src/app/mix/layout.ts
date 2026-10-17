@@ -6,7 +6,7 @@
 import { channelRoles, type Role, type RoleHint } from '@core/arrange/roles';
 import { MASTER, type ChannelId, type InsertId, type Project, type SlotId } from '@core/model/types';
 
-export type BusRole = 'kick' | 'drums' | 'bass' | 'chords' | 'lead' | 'fx' | 'reverb' | 'delay';
+export type BusRole = 'kick' | 'drums' | 'bass' | 'chords' | 'lead' | 'vocals' | 'fx' | 'reverb' | 'delay';
 
 export const BUS_NAMES: Record<BusRole, string> = {
   kick: 'Kick',
@@ -14,6 +14,7 @@ export const BUS_NAMES: Record<BusRole, string> = {
   bass: '808',
   chords: 'Chords',
   lead: 'Lead',
+  vocals: 'Vocals',
   fx: 'FX',
   reverb: 'Reverb',
   delay: 'Delay',
@@ -52,8 +53,9 @@ export function busForRole(r: Role): BusRole | null {
     case 'lead':
     case 'pluck':
     case 'arp':
-    case 'vox':
       return 'lead';
+    case 'vox':
+      return 'vocals';
     case 'fx':
       return 'fx';
     case 'other':

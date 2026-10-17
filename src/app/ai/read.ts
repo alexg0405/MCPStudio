@@ -27,6 +27,7 @@ import { takeGroups } from '@core/query/takes';
 import { patternLength } from '@core/query/queries';
 import { songSections } from '@core/query/sections';
 import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
+import { chainChoices, findChainChoice, type ChainChoice } from '../chains';
 import { isAtPreset, presetChoices } from '../presets';
 import { referenceReport } from '../reference/summary';
 import type { Services } from '../services';
@@ -677,6 +678,36 @@ const get_plugins = tool(
   },
 );
 
+const get_chains = tool(
+  'get_chains',
+  'The effect chains add_chain can put on a mixer track (the factory vocal chains and the musician’s own): name, what it is for, and its effects in order with plugin, preset, settings, dry/wet and send; give a chain name for one in full.',
+  { chain: S.str('A chain name (or part of it): only that chain.') },
+  (s, a) => {
+    const all = chainChoices(s.presets.chains());
+    const want = str(a.chain);
+    const brief = (c: ChainChoice) => ({
+      name: c.name,
+      source: c.source,
+      ...(c.description ? { description: c.description } : {}),
+      effects: c.steps.map((x) => ({
+        plugin: x.pluginId,
+        plugin_name: pluginName(s, x.pluginId),
+        what: x.label,
+        ...(x.preset ? { preset: x.preset } : {}),
+        ...(x.params ? { params: x.params } : {}),
+        ...(x.mix !== undefined ? { mix: x.mix } : {}),
+        ...(x.enabled === false ? { bypassed: true } : {}),
+        ...(x.send ? { send_to: x.send.to, send_db: x.send.db } : {}),
+      })),
+    });
+    if (want) {
+      const hit = findChainChoice(all, want);
+      return hit ? brief(hit) : { error: `there is no chain "${want}"`, chains: all.map((c) => c.name) };
+    }
+    return { chains: all.map((c) => ({ name: c.name, source: c.source, effects: c.steps.length, ...(c.description ? { description: c.description } : {}) })) };
+  },
+);
+
 const get_reference = tool(
   'get_reference',
   'The reference song (a song the musician owns that their song should be shaped after): its measured tempo, key, sections with bar counts and energy, loudness, true peak, tonal balance per band and stereo width, next to the musician’s song (tempo, key, sections), what an arrangement like the reference would be at the song’s tempo, and the last tonal comparison of the mix with it. Only measurements: no notes or audio of the reference exist here.',
@@ -743,6 +774,7 @@ export const readTools: readonly ReadTool[] = [
   get_settings,
   get_windows,
   get_plugins,
+  get_chains,
   get_reference,
 ];
 

@@ -23,8 +23,8 @@ import type { Services } from '../services';
 import { BUS_NAMES, findMixLayout, type BusRole } from './layout';
 
 /** The buses auto-level sets (the returns follow their sends). */
-export type LeveledBus = 'kick' | 'drums' | 'bass' | 'chords' | 'lead' | 'fx';
-export const LEVELED: readonly LeveledBus[] = ['kick', 'drums', 'bass', 'chords', 'lead', 'fx'];
+export type LeveledBus = 'kick' | 'drums' | 'bass' | 'chords' | 'lead' | 'vocals' | 'fx';
+export const LEVELED: readonly LeveledBus[] = ['kick', 'drums', 'bass', 'chords', 'lead', 'vocals', 'fx'];
 
 export interface LevelTarget {
   /** Each bus's loudness relative to the kick bus, in dB. */
@@ -32,6 +32,8 @@ export interface LevelTarget {
   bass: number;
   chords: number;
   lead: number;
+  /** The Vocals bus (default: 1 dB over the lead: a voice sits in front of the instruments). */
+  vocals?: number;
   fx: number;
   /** The master's integrated loudness, LUFS. */
   master: number;
@@ -85,7 +87,7 @@ export const LIMITER_INPUT_MAX_DB_TARGET = 20;
 /** How many times the Limiter's input is corrected after listening to the result (each costs one render). */
 const CORRECTIONS = 2;
 
-const offsetOf = (role: LeveledBus, t: LevelTarget) => (role === 'kick' ? 0 : t[role]);
+const offsetOf = (role: LeveledBus, t: LevelTarget) => (role === 'kick' ? 0 : role === 'vocals' ? (t.vocals ?? t.lead + 1) : t[role]);
 const dbOf = (gain: number) => (gain > 0 ? 20 * Math.log10(gain) : -Infinity);
 const gainOf = (db: number) => Math.pow(10, db / 20);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));

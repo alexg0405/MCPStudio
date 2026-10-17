@@ -577,7 +577,7 @@ with AnalyserNodes (the per-channel ones only once you ask for a waveform); expo
 EQ Pro and the Analyzer (`src/plugins/builtin/eq-pro`, `…/analyzer`) are complete examples.
 
 Without a custom editor you can still show readings: list them as `meters` and the generated panel
-shows them live above the knobs (the Limiter, Multiband and Tune do this):
+shows them live above the knobs (the Limiter, Multiband, De-esser and Tune do this):
 
 ```ts
 meters: [

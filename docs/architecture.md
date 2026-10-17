@@ -487,6 +487,9 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   bar shows "Name (edited)" after a tweak. Randomize keeps params that look like output levels. `.agpreset` files are
   JSON (`format: "agstudio-preset"`). Samples aren't part of a preset. The AI catalog lists your presets and
   `preset: "<name>"` finds yours before the factory ones.
+- Chain presets live in the same library (`user-chains:v1`, see "Vocal chains" below): `PresetLibrary.chains()`,
+  `saveChain` (replaces by name), `renameChain`, `removeChain`, `restoreChain`; the storage's `readChains`/`writeChains`
+  are optional (a storage without them keeps chains for the session).
 
 ### Clean-up of unused audio
 
@@ -2219,6 +2222,7 @@ description and five or more descriptive presets, so the AI catalog (`app/ai/cat
 | Vocoder (`agstudio.vocoder`, sidechain) | 16/24/32 two-stage SVF bands on modulator (the sidechain) and carrier (the input), state in flat arrays | 0 |
 | Tune (`agstudio.tune`) | YIN → nearest scale note (hysteresis) → glide → pitch-synchronous splicer (a second head a whole number of periods away, 4 ms crossfade); rests at its centre delay when nothing needs correcting | 12 ms |
 | Analyzer (`agstudio.analyzer`) | pass-through; measures BS.1770 loudness, true peak and correlation exactly in the kernel and publishes them; listen modes | 0 |
+| De-esser (`agstudio.de-esser`), Doubler (`agstudio.doubler`) | see "Vocal chains" below: a split-band de-esser with listen and a gain-reduction meter; a pitch-drifting vocal doubler with a clean mono sum | 0 |
 | Ducker (`agstudio.ducker`) | new `mode` (`sidechain` / `tempo`) and `rate`: in tempo mode every grid line of the song is a hit, the release fits in one step | 0 |
 
 Latencies are whole frames at every sample rate (`latency: (sr) => frames(sr) / sr`, the kernel using the same
@@ -2279,6 +2283,70 @@ reads −23 LUFS on one channel (−20 on two), true peak of a quarter-rate sine
 - Beat repeat holds slices up to 2 s (a 1/2 note down to 60 BPM); Stutter's history is 8 s.
 - Tap readings arrive at ~30 Hz through the worklet port; the spectrum/waveform come from AnalyserNodes, so they are
   snapshots, not every sample (the Analyzer's loudness and peak are measured in the kernel for that reason).
+
+## Vocal chains: De-esser, Doubler, chain presets, the Vocals bus
+
+**De-esser** (`agstudio.de-esser`, `plugins/builtin/de-esser`, zero latency). A band-pass at the sibilance frequency
+(3–12 kHz, Q 0.5–6; two cascaded SDK `Svf` stages for the detector, so a 1 kHz vowel is 40 dB down in it) feeds a
+stereo-linked peak envelope, the static curve (threshold, ratio, range cap, a 4 dB soft knee, `deEssReduction`) and an
+attack/release smoother on the reduction in dB. **Split band** subtracts the first stage's band from the voice,
+`out = x − (1 − g)·band(x)`, which is an analog-style bell cut: with no reduction the output is the input bit for bit,
+and only the band moves. **Wideband** multiplies the whole voice by `g`. **Listen** outputs the detector's band. The gain
+reduction is a meter (`Readings`, `kind: 'reduction'`, max 20 dB). Presets: Gentle, Bright vocal, Harsh S's, Podcast voice
+(wideband), Deep voice, Tame bright cymbals. Measured (kernel tests): a 7 kHz burst at −12 dBFS is 10.0 dB down at the defaults (≥ 6 dB asserted), a 1 kHz
+tone at any level and in every preset stays within 0.2 dB (and bit-exact below the threshold), the vowel under a hiss is
+within 0.5 dB in split mode and 6 dB down in wideband, the meter reads 10 dB on the burst and 0 after it.
+
+**Doubler** (`agstudio.doubler`, `plugins/builtin/doubler`). The input is summed to mono, rolled off (Brightness) and
+written to one delay line; two to four voices read it at their own delay (Delay × a timing pattern, blended with Timing
+spread) that wanders with two sines per voice (0.43–1.03 Hz and 1.71× that), each scaled so the pitch error, which is
+the speed of the delay change, peaks at the Pitch drift in cents (0–15). Voices are panned with an equal-power law
+scaled by Width (the original stays in the middle) and scaled by 1/√voices at the Double level. Adding or dropping a
+voice fades it over one control step (32 frames). Presets: Tight double, Wide pop, Rap ad-lib, Subtle thickener, Backing
+vocal stack. Measured: drift 8 ct
+stays between 3.2 and 8.8 ct at the output (zero-crossing estimates, asserted), mono sum of noise within −0.5…+2 dB of the voice and no
+sixth-octave band of the mono sum more than 5 dB down or up, in every preset (in practice 0.1 dB and well inside).
+
+**Both** have kernel tests in Node (`kernel.test.ts`: behaviour, determinism, finite at the extremes) and are in
+`test/helpers/builtin-kernels.ts` (the plugin sweep: presets valid, bounded at every extreme, silent after the input
+stops, tails covered, and `npm run bench:plugins`). `test/unit/process-allocation.test.ts` reads each kernel's source and
+refuses anything that allocates in `process()` (`new`, array and object literals, closures, template strings, spreads,
+array methods): measuring the heap can't tell that from the number boxes V8 makes for a double a call returns.
+`npm run bench:plugins -- --only de-esser,doubler`: de-esser 0.27–0.48 %, doubler 0.16–0.32 % of one core (the low end on a
+quiet machine, the preset extremes and a busy machine at the high end). The benchmark builds again (rolldown needed `codeSplitting: false` for plugins with a lazy editor).
+
+**Chain presets** (`app/chains.ts`, `app/mix/vocal-chains.ts`, `app/actions/chains.ts`).
+- `ChainStep extends FxRecipe` (plugin id, preset name, params on top, label) with `mix` (the slot's dry/wet), `enabled`,
+  `state`, `version` (a step saved from an insert holds every param at that plugin version; `presetValues` upgrades it with
+  the plugin's `migrate`) and `send: { to: 'reverb' | 'delay', db }`. A `ChainPreset` is a name, a sentence and steps (≤ 20).
+- `applyChainToDraft(d, s, insertId, chain, 'replace' | 'append')`: replace removes the insert's effects first; each step
+  becomes an effect slot (the plugin's preset, then params, mix, bypass) or, for a send step where the project has a
+  Reverb or Delay return bus (found by name, as the mix setup does) other than the insert itself, a post-fader route at
+  `db` and no effect. Without the return a send step is an insert effect with the same preset and its own `mix` (light:
+  ≤ 0.25). What doesn't fit the ten slots, isn't installed, or would loop is skipped and reported, never half-applied.
+  `applyChain` is one `history.transact('Chain: <name>')`, names the plugins' presets in their preset bars where a step is
+  the preset itself, and toasts what it did. The UI asks once, with a plain choice ("Replace them" / "Add after them"), only
+  when the insert already has effects (`putChainOn`).
+- Factory chains (`FACTORY_CHAINS`): Clean pop vocal, Rap vocal, Airy ballad, Lo-fi vocal, Trap auto-tune vocal (Tune in
+  A minor, instant: set its key to the song's), Podcast voice (gate, EQ, compressor, wideband de-esser, limiter), built from
+  EQ Pro, Tune, Compressor, De-esser, Saturator, Doubler, Lo-Fi, Gate, Limiter and Reverb/Delay sends.
+- Your chains: `chainFromInsert` (every effect with all settings, state, mix and bypass; sidechains are not kept),
+  "Save this track's chain…" in the mixer strip's right-click menu (Effect chains ▸) and as `mixer.saveInsertChain`.
+  `.agchain` files are JSON (`format: "agstudio-chain"`); `readChainFile` validates every field and says what is wrong in
+  plain words, and needs every plugin installed. Import: Chains section and `mixer.importChain`.
+- UI: a **Chains** section in the browser right under Presets (click = put it on the mixer track selected there, the master
+  when none is; right-click: replace/add after/export/rename/delete; "Save … chain…", "Import a chain file…"), the
+  mixer strip menu, and Add ▸ "Effect chain on the selected track" (so Mod+K finds every chain). Command
+  `mixer.applyChain { chain, mode?, insert? }`.
+- AI/MCP: `add_chain { insert, chain, mode: replace | append }` and `save_chain { insert, name }` actions (a chain made
+  of sends to returns the same answer created works: the draft is searched by name), a "chains" prompt section, the chains
+  (name, sentence, effects in order, which are sends) in the plugin catalog (`catalog.ts`), and the read tool
+  `get_chains` (also an MCP tool).
+- Loudness (`test/browser/vocal-chains.test.ts`, headless Chrome, a synthetic sung phrase from
+  `test/helpers/voice.ts`: a formant vowel with vibrato and an "s", peak −10.5 dBFS, −18.2 LUFS): every chain keeps its
+  loudness within 0.3 dB on a natural voice (inserts and sends to returns) and within 1.3 dB on one with a harsh "s" as
+  loud as the vowel (the de-esser rightly takes that down); the makeup of each chain's Compressor is what calibrates it.
+  `npm run bench:plugins -- --chains` measures a chain's CPU, the worklet effects in series (3.5–5.4 % of one core).
 
 ## Audio recording, editing and export (M15)
 
@@ -2790,6 +2858,15 @@ sounds, a role mix and genre loudness.
   the master and only sets new buses' faders. Channels still at the default volume get their role's
   level. Pinned faders stay. Running it twice changes nothing.
 - `pluginRole`/`mixRoles(p)`: role hints for the built-ins (808, kits on one channel, Pluck).
+- Voices (`vox`: channels named vox, vocal, voice or chop, and recorded vocal clips) play through a **Vocals** bus
+  (`BusRole` `vocals`, between Lead and FX in `BUS_ORDER`) instead of the Lead bus: its recipe is the pop vocal chain's EQ
+  Pro, Compressor and De-esser (`VOCALS_BUS_FX` in `mix/vocal-chains.ts`), fader −2 dB, Reverb send −14 dB and Delay send
+  −20 dB, so a song with a voice gets both returns. Old projects keep working: buses are found by name, a voice already on the
+  Lead bus stays there (`fill-gaps` moves only channels on the master; `rebuild` moves every channel), and the arranger's
+  filter sweeps (`arrange/env.ts` `sweepTargets`) count a voice as Lead material only while the project has no Vocals bus.
+  Auto-level levels it like the others (`LeveledBus` `vocals`, default offset: 1 dB over the Lead; `LevelTarget.vocals`
+  overrides it per style). `mix/recipe-parts.ts` holds what `recipes.ts` and the chains share (plugin ids, `FxRecipe`,
+  `eqBands`) so the two files don't import each other.
 
 ### Auto-level (`app/mix/auto-level.ts`, `level-step.ts`)
 

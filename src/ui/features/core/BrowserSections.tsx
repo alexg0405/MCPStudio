@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from 'react';
+import { memo, useCallback, useSyncExternalStore } from 'react';
 import { KIT, KIT_VERSION } from '@core/model/kit';
 import { addEffectToSelectedInsert } from '@app/actions/mixer';
 import { showContextMenu } from '../../controls/ContextMenu';
@@ -116,59 +116,64 @@ export function SoundsSection() {
   );
 }
 
+/** One pattern in the list. It reads its own name and color, so an edit that makes a new `patterns` object (every note drawn) re-renders nothing here. */
+const PatternItem = memo(function PatternItem({ id }: { id: PatternId }) {
+  const services = useServices();
+  const name = useDoc((p) => p.patterns[id]?.name);
+  const color = useDoc((p) => p.patterns[id]?.color);
+  const on = useView((v) => v.currentPatternId === id);
+  if (name === undefined) return null;
+  return (
+    <button
+      className={`${styles.item} ${on ? styles.itemOn : ''}`}
+      onClick={() => services.view.getState().setCurrentPattern(id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const playing = isPatternPlaying(services, id);
+        showContextMenu(e, [
+          { kind: 'label', label: name },
+          playing
+            ? {
+                icon: 'stop',
+                label: 'Stop',
+                hint: 'Stop playing this pattern',
+                onSelect: () => void services.commands.run('transport.stop'),
+              }
+            : {
+                icon: 'play',
+                label: 'Play',
+                hint: 'Play this pattern on a loop (it becomes the pattern you are editing)',
+                onSelect: () => void services.commands.run('transport.playPattern', { patternId: id }),
+              },
+          {
+            label: 'Edit',
+            hint: 'Make this the pattern the channel rack and piano roll edit',
+            onSelect: () => services.view.getState().setCurrentPattern(id),
+          },
+        ]);
+      }}
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/x-agstudio-pattern', id);
+        e.dataTransfer.effectAllowed = 'copy';
+      }}
+      data-hint={`${name}: click to edit, right-click to play it, drag onto the playlist to place it`}
+    >
+      <span className={styles.swatch} style={{ background: color }} />
+      {name}
+    </button>
+  );
+});
+
 /** The project's patterns: click to edit, drag onto the playlist to place. */
 export function ProjectSection() {
   const services = useServices();
   const order = useDoc((p) => p.patternOrder);
-  const patterns = useDoc((p) => p.patterns);
-  const current = useView((v) => v.currentPatternId);
   return (
     <>
-      {order.map((id) => {
-        const pat = patterns[id];
-        if (!pat) return null;
-        return (
-          <button
-            key={id}
-            className={`${styles.item} ${id === current ? styles.itemOn : ''}`}
-            onClick={() => services.view.getState().setCurrentPattern(id as PatternId)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              const playing = isPatternPlaying(services, id as PatternId);
-              showContextMenu(e, [
-                { kind: 'label', label: pat.name },
-                playing
-                  ? {
-                      icon: 'stop',
-                      label: 'Stop',
-                      hint: 'Stop playing this pattern',
-                      onSelect: () => void services.commands.run('transport.stop'),
-                    }
-                  : {
-                      icon: 'play',
-                      label: 'Play',
-                      hint: 'Play this pattern on a loop (it becomes the pattern you are editing)',
-                      onSelect: () => void services.commands.run('transport.playPattern', { patternId: id }),
-                    },
-                {
-                  label: 'Edit',
-                  hint: 'Make this the pattern the channel rack and piano roll edit',
-                  onSelect: () => services.view.getState().setCurrentPattern(id as PatternId),
-                },
-              ]);
-            }}
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.setData('application/x-agstudio-pattern', id);
-              e.dataTransfer.effectAllowed = 'copy';
-            }}
-            data-hint={`${pat.name}: click to edit, right-click to play it, drag onto the playlist to place it`}
-          >
-            <span className={styles.swatch} style={{ background: pat.color }} />
-            {pat.name}
-          </button>
-        );
-      })}
+      {order.map((id) => (
+        <PatternItem key={id} id={id} />
+      ))}
       <button className={styles.item} onClick={() => void newPattern(services)} data-hint="Add an empty pattern (F4)">
         + New pattern
       </button>

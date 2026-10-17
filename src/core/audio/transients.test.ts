@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PATTERNS, renderTestSong } from '../dj/test-songs';
 import { detectTempo, detectTransients } from './transients';
 
 const SR = 48000;
@@ -81,5 +82,12 @@ describe('tempo detection', () => {
       levels.push(e % 2 ? 0.25 : 0.9);
     }
     expect(detectTempo([hits(t, (32 * 30) / bpm, levels)], SR)).toBe(100);
+  });
+
+  it('reads a house loop as its tempo, not as the 2/3 pulse its bass pattern repeats at (124 gave 82.7, 128 at 44.1 kHz gave 85.4)', () => {
+    for (const [bpm, rate] of [[124, 44100], [128, 44100], [140, 48000]] as const) {
+      const song = renderTestSong({ sampleRate: rate, bpm, offset: 0, tail: 0, pattern: PATTERNS.house, parts: [{ bars: 4, kick: true, snare: true, hats: true, bass: true, pads: true }] });
+      expect(detectTempo([song.mono], rate, { beatsPerBar: 4 }), `${bpm} BPM at ${rate} Hz`).toBe(bpm);
+    }
   });
 });

@@ -134,13 +134,10 @@ describe('app smoke test', () => {
   }, 90_000);
 
   it('writes a beat from a description with the assistant window (offline generator)', async () => {
-    // Studio's code loads on first use; under a busy parallel run the dev server's first transform of it
-    // can take longer than a wait. This test is about the flow, so the code is loaded up front.
-    await s.assistant.load();
     s.commands.run('view.assistant');
     await until(() => host.textContent!.includes('Ask for anything'));
     // The test server has no Claude key or Claude Code: the offline generator writes the beat.
-    s.assistant.set({ backend: 'offline' });
+    s.assistant.set({ backend: 'offline', autoplay: true });
     await until(() => s.assistant.store.getState().status !== null);
     const box = host.querySelector('textarea') as HTMLTextAreaElement;
     // Type into the React-controlled field the way a user would.

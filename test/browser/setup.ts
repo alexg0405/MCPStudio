@@ -10,3 +10,12 @@
 import { seededBytes, setIdSource } from '@core/model/ids';
 
 setIdSource(seededBytes(0x5eed));
+
+// Each file's page shares the origin's storage with the files before it: a setting one file saves (the Studio's
+// autoplay, prefs, a remembered layout) would otherwise leak into the next and make results depend on file order.
+try {
+  localStorage.clear();
+  sessionStorage.clear();
+} catch {
+  /* storage unavailable */
+}

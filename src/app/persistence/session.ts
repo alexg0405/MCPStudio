@@ -231,10 +231,13 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
 
   // ---- Reload snapshot (sessionStorage, synchronous)
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let idleHandle: number | undefined;
   let tooBig = false;
   const writeSnapshot = () => {
     clearTimeout(timer);
     timer = undefined;
+    if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
+    idleHandle = undefined;
     const storage = tabStorage();
     if (!storage) return;
     try {
@@ -251,8 +254,15 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
       storage.removeItem(SNAPSHOT_KEY);
     }
   };
+  // A second after the first change, at the next idle moment: serializing a big project is tens of milliseconds,
+  // and it must not land in the middle of a drag or a playing frame.
   const scheduleSnapshot = () => {
-    timer ??= setTimeout(writeSnapshot, 1000);
+    timer ??= setTimeout(() => {
+      timer = undefined;
+      if (typeof window.requestIdleCallback === 'function')
+        idleHandle = window.requestIdleCallback(writeSnapshot, { timeout: 4000 });
+      else writeSnapshot();
+    }, 1000);
   };
   const unsubs = [
     s.history.onChange(scheduleSnapshot),
@@ -314,6 +324,7 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
     stop() {
       autosave?.stop();
       clearTimeout(timer);
+      if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
       unsubs.forEach((u) => u());
     },
   };

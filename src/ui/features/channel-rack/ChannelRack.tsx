@@ -18,6 +18,7 @@ import { kitSampleRef } from '@app/default-project';
 import type { Services } from '@app/services';
 import { useDoc, useServices, useSession, useView } from '../../services-context';
 import { usePluginDef } from '../../plugin-hooks';
+import { useWindowedRows } from '../../controls/windowed';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
@@ -440,7 +441,10 @@ function AutomationRow({ id }: { id: ChannelId }) {
     e.preventDefault();
     showContextMenu(e, [
       { label: 'Show it in the playlist', onSelect: reveal },
-      { label: ch.muted ? 'Unmute (let it move the control again)' : 'Mute (stop moving the control)', onSelect: toggleMute },
+      {
+        label: ch.muted ? 'Unmute (let it move the control again)' : 'Mute (stop moving the control)',
+        onSelect: toggleMute,
+      },
       { kind: 'separator' },
       { label: 'Delete this automation', danger: true, onSelect: () => deleteChannel(services, id) },
     ]);
@@ -521,21 +525,169 @@ function StepLight({ stepCount }: { stepCount: number }) {
   return <div ref={ref} className={styles.stepLight} style={{ width: STEP_W, opacity: 0 }} />;
 }
 
-export function ChannelRack() {
+/**
+ * The rack's header: play, pattern, steps, swing and the tools of the selected channel. It follows the selection
+ * itself, so selecting a channel (every right-click and double-click does) re-renders this and not the rows.
+ */
+function RackHeader({ patternId, stepCount }: { patternId: PatternId; stepCount: number }) {
   const services = useServices();
-  const order = useDoc((pr) => pr.channelOrder);
-  const patternId = useView((s) => s.currentPatternId);
-  const pattern = useDoc((pr) => (patternId ? pr.patterns[patternId] : undefined));
   const swing = useDoc((pr) => pr.transport.swing);
   const swingEdit = useGestureEdit<number>('Swing', (d, v) => setSwing(d, v), 'swing');
-  /** Where a drag would drop: a channel, or the end of the rack ('new'). */
-  const [dropTarget, setDropTarget] = useState<ChannelId | 'new' | null>(null);
   const graphChannel = useStore(services.editor, (s) => s.stepGraph.channelId);
   const selected = useSession((s) => s.selectedChannelId);
   const selectedName = useDoc((pr) => {
     const ch = selected ? pr.channels[selected] : undefined;
     return ch?.kind === 'instrument' ? ch.name : null;
   });
+  const menuBelow = (e: React.MouseEvent<HTMLElement>, items: MenuEntry[]) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    showContextMenu({ x: r.left, y: r.bottom + 2 }, items);
+  };
+  const noChannel = 'Select an instrument channel first (click its name)';
+  return (
+    <div className={styles.header}>
+      <PlayPatternButton
+        patternId={patternId}
+        className={`${styles.headerButton} ${styles.playButton}`}
+        onClassName={styles.headerButtonOn}
+      />
+      <PatternPicker compact />
+      <label className={styles.headerControl} data-hint="Number of steps in this pattern">
+        Steps
+        <select
+          value={stepCount}
+          onChange={(e) =>
+            services.history.transact('Pattern steps', (d) => setStepCount(d, patternId, Number(e.target.value)))
+          }
+        >
+          {[8, 16, 24, 32, 48, 64].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <span className={styles.headerControl}>
+        <Knob spec={SWING} value={swing} size={20} label="Swing" {...swingEdit} />
+        Swing
+      </span>
+      <button
+        tabIndex={-1}
+        className={styles.headerButton}
+        disabled={!selectedName}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={(e) => menuBelow(e, stepsMenu(services, selected))}
+        data-hint={
+          selectedName
+            ? `Step tools for ${selectedName}: fill every 2, 4 or 8 steps, rotate, shift, reverse, randomize or clear`
+            : noChannel
+        }
+      >
+        Steps ▾
+      </button>
+      <button
+        tabIndex={-1}
+        className={`${styles.headerButton} ${selected && graphChannel === selected ? styles.headerButtonOn : ''}`}
+        disabled={!selectedName}
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={() => selected && stepTarget(services, selected) && toggleGraph(services, selected)}
+        data-hint={
+          selectedName
+            ? `Graph editor: a row under ${selectedName} to draw each step’s velocity, pan, release, pitch or fine pitch`
+            : noChannel
+        }
+      >
+        Graph editor
+      </button>
+    </div>
+  );
+}
+
+/** One channel row: 30 px and a 2 px gap (the CSS of `.row`); a long rack keeps only the rows near the viewport. */
+const ROW_PITCH = 32;
+
+/** The channel rows, the add button and the step light. */
+function RackRows({ patternId, stepCount }: { patternId: PatternId; stepCount: number }) {
+  const services = useServices();
+  const order = useDoc((pr) => pr.channelOrder);
+  /** Where a drag would drop: a channel, or the end of the rack ('new'). */
+  const [dropTarget, setDropTarget] = useState<ChannelId | 'new' | null>(null);
+  const graphChannel = useStore(services.editor, (s) => s.stepGraph.channelId);
+  // A long rack (150 channels in a long song) renders only the rows near the viewport, so opening the rack and
+  // switching patterns cost what a screenful costs. With the step graph open a row is taller than the rest:
+  // every row renders then.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const win = useWindowedRows(scrollRef, order.length, ROW_PITCH, { overscan: 10 });
+  const windowed = graphChannel === null;
+  const first = windowed ? win.first : 0;
+  const last = windowed ? win.last : order.length;
+  const targetOf = (e: React.DragEvent) =>
+    (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
+
+  return (
+    <div
+      ref={scrollRef}
+      className={styles.scroll}
+      onScroll={win.onScroll}
+      onDragOver={(e) => {
+        const dt = e.dataTransfer;
+        if (!dt.types.includes(SOUND) && !dragMayHaveAudio(dt)) return;
+        e.preventDefault();
+        dt.dropEffect = 'copy';
+        const target = targetOf(e) ?? 'new';
+        if (target !== dropTarget) setDropTarget(target);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+      }}
+      onDrop={(e) => {
+        setDropTarget(null);
+        const generator = e.dataTransfer.getData(SOUND);
+        // Read during the event: the DataTransfer is emptied afterwards.
+        const files = generator ? null : takeAudioFiles(e.dataTransfer);
+        if (!generator && !files) return;
+        e.preventDefault();
+        void dropOnRack(services, targetOf(e), generator, files);
+      }}
+    >
+      <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
+        {windowed && win.padTop > 0 && <div aria-hidden style={{ height: win.padTop }} />}
+        {order.slice(first, last).map((id) => (
+          <Fragment key={id}>
+            <ChannelRow id={id} dropTarget={dropTarget === id} />
+            {graphChannel === id && <StepGraph channelId={id} patternId={patternId} stepCount={stepCount} />}
+          </Fragment>
+        ))}
+        {windowed && win.padBottom > 0 && <div aria-hidden style={{ height: win.padBottom }} />}
+        <StepLight stepCount={stepCount} />
+        {order.length === 0 && (
+          <div className={styles.empty}>
+            No sounds yet. Click the + below to add a kit sound or an instrument, or drag a sample here from the
+            browser.
+          </div>
+        )}
+        <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
+          <button
+            tabIndex={-1}
+            className={styles.addButton}
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={(e) => showContextMenu(e, addChannelMenu(services))}
+            data-hint="Add a channel (kit sound or instrument)"
+            aria-label="Add a channel"
+          >
+            <Icon name="plus" size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ChannelRack() {
+  const patternId = useView((s) => s.currentPatternId);
+  // Only the step count, not the pattern: a step click makes a new pattern object, and the rack (150 rows in a long
+  // song) re-rendered on every one only to find that every row is unchanged.
+  const stepCountOf = useDoc((pr) => (patternId ? pr.patterns[patternId]?.stepCount : undefined));
   // Letting go anywhere ends a paint along a row.
   useEffect(() => {
     window.addEventListener('pointerup', endPaint);
@@ -546,128 +698,17 @@ export function ChannelRack() {
     };
   }, []);
 
-  if (!patternId || !pattern)
+  if (!patternId || stepCountOf === undefined)
     return (
       <div className={styles.empty}>
         No pattern is open. Pick one under Project patterns in the browser, or click “+ New pattern” there.
       </div>
     );
-  const menuBelow = (e: React.MouseEvent<HTMLElement>, items: MenuEntry[]) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    showContextMenu({ x: r.left, y: r.bottom + 2 }, items);
-  };
-  const noChannel = 'Select an instrument channel first (click its name)';
-  const targetOf = (e: React.DragEvent) =>
-    (e.target as Element).closest<HTMLElement>('[data-channel-id]')?.dataset.channelId as ChannelId | undefined;
-  const stepCount = pattern.stepCount;
 
   return (
     <div className={styles.rack}>
-      <div className={styles.header}>
-        <PlayPatternButton
-          patternId={patternId}
-          className={`${styles.headerButton} ${styles.playButton}`}
-          onClassName={styles.headerButtonOn}
-        />
-        <PatternPicker compact />
-        <label className={styles.headerControl} data-hint="Number of steps in this pattern">
-          Steps
-          <select
-            value={stepCount}
-            onChange={(e) =>
-              services.history.transact('Pattern steps', (d) => setStepCount(d, patternId, Number(e.target.value)))
-            }
-          >
-            {[8, 16, 24, 32, 48, 64].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className={styles.headerControl}>
-          <Knob spec={SWING} value={swing} size={20} label="Swing" {...swingEdit} />
-          Swing
-        </span>
-        <button
-          tabIndex={-1}
-          className={styles.headerButton}
-          disabled={!selectedName}
-          onPointerDown={(e) => e.preventDefault()}
-          onClick={(e) => menuBelow(e, stepsMenu(services, selected))}
-          data-hint={
-            selectedName
-              ? `Step tools for ${selectedName}: fill every 2, 4 or 8 steps, rotate, shift, reverse, randomize or clear`
-              : noChannel
-          }
-        >
-          Steps ▾
-        </button>
-        <button
-          tabIndex={-1}
-          className={`${styles.headerButton} ${selected && graphChannel === selected ? styles.headerButtonOn : ''}`}
-          disabled={!selectedName}
-          onPointerDown={(e) => e.preventDefault()}
-          onClick={() => selected && stepTarget(services, selected) && toggleGraph(services, selected)}
-          data-hint={
-            selectedName
-              ? `Graph editor: a row under ${selectedName} to draw each step’s velocity, pan, release, pitch or fine pitch`
-              : noChannel
-          }
-        >
-          Graph editor
-        </button>
-      </div>
-      <div
-        className={styles.scroll}
-        onDragOver={(e) => {
-          const dt = e.dataTransfer;
-          if (!dt.types.includes(SOUND) && !dragMayHaveAudio(dt)) return;
-          e.preventDefault();
-          dt.dropEffect = 'copy';
-          const target = targetOf(e) ?? 'new';
-          if (target !== dropTarget) setDropTarget(target);
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
-        }}
-        onDrop={(e) => {
-          setDropTarget(null);
-          const generator = e.dataTransfer.getData(SOUND);
-          // Read during the event: the DataTransfer is emptied afterwards.
-          const files = generator ? null : takeAudioFiles(e.dataTransfer);
-          if (!generator && !files) return;
-          e.preventDefault();
-          void dropOnRack(services, targetOf(e), generator, files);
-        }}
-      >
-        <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
-          {order.map((id) => (
-            <Fragment key={id}>
-              <ChannelRow id={id} dropTarget={dropTarget === id} />
-              {graphChannel === id && <StepGraph channelId={id} patternId={patternId} stepCount={stepCount} />}
-            </Fragment>
-          ))}
-          <StepLight stepCount={stepCount} />
-          {order.length === 0 && (
-            <div className={styles.empty}>
-              No sounds yet. Click the + below to add a kit sound or an instrument, or drag a sample here from the browser.
-            </div>
-          )}
-          <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
-            <button
-              tabIndex={-1}
-              className={styles.addButton}
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={(e) => showContextMenu(e, addChannelMenu(services))}
-              data-hint="Add a channel (kit sound or instrument)"
-              aria-label="Add a channel"
-            >
-              <Icon name="plus" size={14} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <RackHeader patternId={patternId} stepCount={stepCountOf} />
+      <RackRows patternId={patternId} stepCount={stepCountOf} />
     </div>
   );
 }

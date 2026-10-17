@@ -23,6 +23,7 @@ import { onFrame } from '../../frame-loop';
 import { isContextMenuOpen } from '../../controls/ContextMenu';
 import { type FollowFrame, PlayheadFollow } from '../../timeline/follow';
 import { alpha, roundRectPath, fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
+import { PannedLayer } from '../../timeline/panned';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { formatLaneAmount, formatLaneValue, laneEdit, LANES, valueAtY } from './lanes';
 import {
@@ -139,6 +140,23 @@ export class PianoRollController {
     busy: false,
   };
   private followMoved = false;
+  /**
+   * Grid, notes, ruler and the event lane are drawn once into a picture wider than the view and slid while the view
+   * scrolls (timeline/panned.ts), so smooth follow costs a transform per frame instead of a redraw.
+   */
+  private readonly gridLayer: PannedLayer;
+  private readonly notesLayer: PannedLayer;
+  private readonly rulerLayer: PannedLayer;
+  private readonly laneLayer: PannedLayer;
+  /** The scroll the scrollbar thumb was last placed for. */
+  private lastBarScroll = NaN;
+  /** `maxTick` for the notes array it was computed from (it runs every frame while the view follows). */
+  private maxTickMemo: { notes: readonly Note[] | null; end: Tick; bar: Tick; result: Tick } = {
+    notes: null,
+    end: -1,
+    bar: -1,
+    result: 0,
+  };
 
   constructor(
     private readonly s: Services,
@@ -149,6 +167,10 @@ export class PianoRollController {
     this.vp.rowHeight = pr.rowHeight;
     this.vp.scrollTick = pr.scrollTick;
     this.vp.scrollRow = pr.scrollRow ?? rowForKey(72);
+    this.gridLayer = new PannedLayer(els.grid);
+    this.notesLayer = new PannedLayer(els.notes);
+    this.rulerLayer = new PannedLayer(els.ruler, 'blit');
+    this.laneLayer = new PannedLayer(els.velocity);
     // Keep a restored scroll position; center on the notes only when it's unknown or the channel changes.
     if (pr.scrollRow !== null) {
       const c = this.ctx();
@@ -292,13 +314,20 @@ export class PianoRollController {
 
   private maxTick(c: Ctx): Tick {
     const bar = ticksPerBar(c.project.transport.timeSig);
-    let end = this.patternEnd(c);
-    // Indexed: this runs every frame while the view follows, and a for-of iterator per note was garbage.
+    const patternEnd = this.patternEnd(c);
+    const memo = this.maxTickMemo;
+    if (memo.notes === c.notes && memo.end === patternEnd && memo.bar === bar) return memo.result;
+    let end = patternEnd;
+    // Indexed: a for-of iterator per note is garbage, and this walks every note.
     for (let i = 0; i < c.notes.length; i++) {
       const n = c.notes[i] as Note;
       end = Math.max(end, n.tick + n.length);
     }
-    return end + bar * 8;
+    memo.notes = c.notes;
+    memo.end = patternEnd;
+    memo.bar = bar;
+    memo.result = end + bar * 8;
+    return memo.result;
   }
 
   private selection(): ReadonlySet<NoteId> {
@@ -334,7 +363,7 @@ export class PianoRollController {
   }
 
   private frame(): void {
-    const t0 = this.dirty.size > 0 ? performance.now() : 0;
+    const t0 = performance.now();
     const c = this.ctx();
     // Center the view on the channel's notes the first time we show it (compared field by field: no key string per frame).
     const centered = this.centeredFor;
@@ -346,43 +375,17 @@ export class PianoRollController {
     // Drawing and the playhead snap to whole device pixels (viewport.ts).
     this.vp.snapForFrame(window.devicePixelRatio || 1);
     const theme = readTheme();
-    const { els, vp } = this;
-    const ts = c.project.transport.timeSig;
+    const { els, vp, dirty } = this;
     const pr = this.s.editor.getState().pianoRoll;
-    if (this.dirty.has('grid')) {
-      drawGrid(fitCanvas(els.grid, vp.width, vp.height), vp, theme, ts, this.patternEnd(c), this.scaleRows(c));
-    }
-    if (this.dirty.has('notes')) {
-      const ctx = fitCanvas(els.notes, vp.width, vp.height);
-      ctx.clearRect(0, 0, vp.width, vp.height);
-      if (pr.ghosts && c.pattern) {
-        // for-in, not Object.entries: no array of pairs per frame.
-        for (const cid in c.pattern.notes) {
-          const notes = c.pattern.notes[cid as ChannelId];
-          if (cid !== c.channelId && notes) drawGhosts(ctx, vp, theme, notesSorted(notes));
-        }
-      }
-      const selected = this.selection();
-      const style = { color: theme.note, selected };
-      if (this.preview) {
-        const moving = this.drag?.kind === 'move' && !this.drag.duplicate;
-        drawNotes(ctx, vp, theme, c.notes, style, {
-          skip: moving || this.drag?.kind === 'resize' ? new Set(this.preview.keys()) : new Set(),
-        });
-        const shown = [...this.preview.values()].sort((a, b) => a.tick - b.tick);
-        drawNotes(ctx, vp, theme, shown, { color: theme.note, selected: new Set(shown.map((n) => n.id)) });
-      } else {
-        drawNotes(ctx, vp, theme, c.notes, style);
-      }
-      if (this.previewAdds.length > 0) {
-        drawNotes(ctx, vp, theme, this.previewAdds, {
-          color: theme.note,
-          selected: new Set(this.previewAdds.map((n) => n.id)),
-        });
-      }
-    }
-    if (this.dirty.has('overlay')) this.drawOverlay();
-    if (this.dirty.has('keys')) {
+    const now = t0;
+    // The panned layers decide for themselves whether the picture must be drawn again (dirty, zoom, size, scrolled
+    // out of the drawn part); a plain scroll only slides it.
+    let drew = this.gridLayer.paint(vp, vp.height, dirty.has('grid'), this.drawGridLayer, now);
+    if (this.notesLayer.paint(vp, vp.height, dirty.has('notes'), this.drawNotesLayer, now)) drew = true;
+    if (this.rulerLayer.paint(vp, RULER_HEIGHT, dirty.has('ruler'), this.drawRulerLayer, now)) drew = true;
+    if (pr.velocityLane && this.laneLayer.paint(vp, this.laneH, dirty.has('lane'), this.drawLaneLayer, now)) drew = true;
+    if (dirty.has('overlay')) this.drawOverlay();
+    if (dirty.has('keys')) {
       drawKeys(
         fitCanvas(els.keys, KEYS_WIDTH, vp.height),
         vp,
@@ -393,25 +396,72 @@ export class PianoRollController {
         this.scaleRows(c),
       );
     }
-    if (this.dirty.has('ruler')) {
-      drawRuler(fitCanvas(els.ruler, vp.width, RULER_HEIGHT), vp, theme, ts, RULER_HEIGHT, this.patternEnd(c));
-    }
-    if (this.dirty.has('lane') && pr.velocityLane) {
-      const h = this.laneH;
-      const style = { color: theme.note, selected: this.selection() };
-      drawLane(fitCanvas(els.velocity, vp.width, h), vp, theme, h, c.notes, style, this.preview, pr.lane);
-    }
-    if (this.dirty.size > 0) {
+    if (dirty.size > 0 || vp.scrollTick !== this.lastBarScroll) {
+      this.lastBarScroll = vp.scrollTick;
       this.updateScrollbar(c);
+    }
+    if (drew || dirty.size > 0) {
       const ms = performance.now() - t0;
       pianoRollPerf.lastDrawMs = ms;
       pianoRollPerf.maxDrawMs = Math.max(pianoRollPerf.maxDrawMs, ms);
       pianoRollPerf.draws++;
       pianoRollPerf.notesDrawn = c.notes.length;
     }
-    this.dirty.clear();
+    dirty.clear();
     this.updatePlayhead(c);
   }
+
+  // The layer drawing functions, bound once: `PannedLayer.paint` takes one every frame (an inline arrow would be
+  // a closure per frame). They read the state they draw when they run, which is only when the layer is stale.
+  private readonly drawGridLayer = (g: CanvasRenderingContext2D, wide: Viewport): void => {
+    const c = this.ctx();
+    drawGrid(g, wide, readTheme(), c.project.transport.timeSig, this.patternEnd(c), this.scaleRows(c));
+  };
+
+  private readonly drawNotesLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {
+    const c = this.ctx();
+    const theme = readTheme();
+    const pr = this.s.editor.getState().pianoRoll;
+    ctx.clearRect(0, 0, wide.width, wide.height);
+    if (pr.ghosts && c.pattern) {
+      // for-in, not Object.entries: no array of pairs.
+      for (const cid in c.pattern.notes) {
+        const notes = c.pattern.notes[cid as ChannelId];
+        if (cid !== c.channelId && notes) drawGhosts(ctx, wide, theme, notesSorted(notes));
+      }
+    }
+    const selected = this.selection();
+    const style = { color: theme.note, selected };
+    if (this.preview) {
+      const moving = this.drag?.kind === 'move' && !this.drag.duplicate;
+      drawNotes(ctx, wide, theme, c.notes, style, {
+        skip: moving || this.drag?.kind === 'resize' ? new Set(this.preview.keys()) : new Set(),
+      });
+      const shown = [...this.preview.values()].sort((a, b) => a.tick - b.tick);
+      drawNotes(ctx, wide, theme, shown, { color: theme.note, selected: new Set(shown.map((n) => n.id)) });
+    } else {
+      drawNotes(ctx, wide, theme, c.notes, style);
+    }
+    if (this.previewAdds.length > 0) {
+      drawNotes(ctx, wide, theme, this.previewAdds, {
+        color: theme.note,
+        selected: new Set(this.previewAdds.map((n) => n.id)),
+      });
+    }
+  };
+
+  private readonly drawRulerLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {
+    const c = this.ctx();
+    drawRuler(ctx, wide, readTheme(), c.project.transport.timeSig, RULER_HEIGHT, this.patternEnd(c));
+  };
+
+  private readonly drawLaneLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {
+    const c = this.ctx();
+    const theme = readTheme();
+    const pr = this.s.editor.getState().pianoRoll;
+    const style = { color: theme.note, selected: this.selection() };
+    drawLane(ctx, wide, theme, wide.height, c.notes, style, this.preview, pr.lane);
+  };
 
   private drawOverlay(): void {
     const { vp, els } = this;
@@ -549,7 +599,8 @@ export class PianoRollController {
     }
     this.vp.scrollTick = next;
     this.followMoved = true;
-    this.invalidate('grid', 'notes', 'overlay', 'ruler', 'lane');
+    // The grid, notes, ruler and lane slide (see frame); only what is drawn at the pointer follows by redrawing.
+    if (this.hover || this.stampHover || this.drag) this.invalidate('overlay');
   }
 
   private updatePlayhead(c: Ctx): void {
@@ -611,7 +662,8 @@ export class PianoRollController {
   }
 
   private viewportChanged(): void {
-    this.invalidate('grid', 'notes', 'overlay', 'keys', 'ruler', 'lane');
+    // Grid, notes, ruler and lane notice a scroll or zoom themselves (PannedLayer); the keys follow vertical scroll.
+    this.invalidate('overlay', 'keys');
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => this.persistViewport(), 300);
   }

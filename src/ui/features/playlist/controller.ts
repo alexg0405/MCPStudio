@@ -53,6 +53,7 @@ import {
 import { clipBox, type ClipBox } from './clip-geometry';
 import { alpha, fitCanvas, inkOn, mix, onThemeChange, readTheme, roundRectPath } from '../../timeline/canvas';
 import { clipPaint } from './clip-paint';
+import { PannedLayer } from '../../timeline/panned';
 import { clamp, Viewport } from '../../timeline/viewport';
 import {
   CLIP_MENU_MIN_WIDTH,
@@ -199,6 +200,12 @@ interface AutoTarget {
   hit: AutoHit;
 }
 
+/** A marker flag moved sideways (the ruler's picture is drawn wider than the view and slid). */
+function shiftedBox(b: MarkerBox, dx: number): MarkerBox {
+  if (dx === 0) return b;
+  return { ...b, x0: b.x0 + dx, x1: b.x1 + dx, ...(b.ask ? { ask: { x0: b.ask.x0 + dx, x1: b.ask.x1 + dx } } : {}) };
+}
+
 export class PlaylistController {
   readonly vp = new Viewport(32, 0.0015, 0.5);
   private dirty = new Set<Layer>(['grid', 'clips', 'overlay', 'headers', 'ruler']);
@@ -243,6 +250,15 @@ export class PlaylistController {
   private wasPlaying = false;
   /** The device-pixel snap last written to the grid and the playhead's data attribute (NaN: none yet). */
   private lastSnapPx = NaN;
+  /**
+   * Grid, clips and ruler are drawn once into a picture wider than the view and slid while the view scrolls
+   * (timeline/panned.ts), so smooth follow costs a transform per frame instead of a redraw.
+   */
+  private readonly gridLayer: PannedLayer;
+  private readonly clipsLayer: PannedLayer;
+  private readonly rulerLayer: PannedLayer;
+  /** The scroll the scrollbar thumb and the Ask AI pill were last placed for. */
+  private lastBarScroll = NaN;
 
   constructor(
     private readonly s: Services,
@@ -253,6 +269,9 @@ export class PlaylistController {
     this.vp.rowHeight = pl.laneHeight;
     this.vp.scrollTick = pl.scrollTick;
     this.vp.scrollRow = pl.scrollLane;
+    this.gridLayer = new PannedLayer(els.grid);
+    this.clipsLayer = new PannedLayer(els.clips);
+    this.rulerLayer = new PannedLayer(els.ruler, 'blit');
   }
 
   // ---------------------------------------------------------------- lifecycle
@@ -442,80 +461,102 @@ export class PlaylistController {
       els.grid.dataset.snapPx = String(snapPx);
       els.playhead.dataset.snapPx = String(snapPx);
     }
-    if (this.dirty.size > 0) {
-      const theme = readTheme();
-      const ts = p.transport.timeSig;
-      const muted = mutedOf(p);
-      const markers = { markers: sortedMarkersOf(p), hot: this.markerHot, hotAsk: this.markerAskHot, drag: this.markerDrag };
-      if (this.dirty.has('grid')) {
-        const g = fitCanvas(els.grid, vp.width, vp.height);
-        drawLanesGrid(g, vp, theme, ts, vp.rows, songLength(p));
-        drawMarkerLines(g, vp, markers, theme);
+    const dirty = this.dirty;
+    const now = performance.now();
+    // The three panned layers decide for themselves whether the picture must be drawn again (dirty, zoom, size,
+    // scrolled out of the drawn part); a plain scroll only slides it.
+    this.gridLayer.paint(vp, vp.height, dirty.has('grid'), this.drawGridLayer, now);
+    this.clipsLayer.paint(vp, vp.height, dirty.has('clips'), this.drawClipsLayer, now);
+    this.rulerLayer.paint(vp, RULER_HEIGHT, dirty.has('ruler'), this.drawRulerLayer, now);
+    if (dirty.size > 0) {
+      if (dirty.has('overlay')) this.drawOverlay();
+      if (dirty.has('headers')) {
+        drawLaneHeaders(fitCanvas(els.headers, HEADER_WIDTH, vp.height), vp, readTheme(), this.lanes(p), mutedOf(p), HEADER_WIDTH);
       }
-      if (this.dirty.has('clips')) {
-        const ctx = fitCanvas(els.clips, vp.width, vp.height);
-        ctx.clearRect(0, 0, vp.width, vp.height);
-        const laneIndex = laneIndexOf(p);
-        const selected = new Set(this.s.editor.getState().clipSelection);
-        const d = this.drag;
-        const hideOriginals = this.preview && (d?.kind === 'resize' || (d?.kind === 'move' && !d.duplicate));
-        const skip = hideOriginals ? new Set(this.preview?.map((c) => c.id)) : undefined;
-        const label = (c: Clip) => (c.kind === 'automation' ? this.autoLabel(c, p) : undefined);
-        const automation = (c: AutomationClip) => this.autoDraw(c, p, selected);
-        const audio = this.audioStyle(selected);
-        drawClips(
-          ctx,
-          vp,
-          theme,
-          p,
-          clipsSorted(p.playlist.clips),
-          laneIndex,
-          { selected, waveform: this.waveform, label, automation, ...audio, ...(skip ? { skip } : {}) },
-          muted,
-        );
-        if (this.preview) {
-          const sel = new Set(this.preview.map((c) => c.id));
-          drawClips(
-            ctx,
-            vp,
-            theme,
-            p,
-            this.preview,
-            laneIndex,
-            {
-              selected: sel,
-              waveform: this.waveform,
-              label,
-              automation: (c) => this.autoDraw(c, p, sel),
-              ...this.audioStyle(sel),
-            },
-            muted,
-          );
-        }
-      }
-      if (this.dirty.has('overlay')) this.drawOverlay();
-      if (this.dirty.has('headers')) {
-        drawLaneHeaders(fitCanvas(els.headers, HEADER_WIDTH, vp.height), vp, theme, this.lanes(p), muted, HEADER_WIDTH);
-      }
-      if (this.dirty.has('ruler')) {
-        this.markerBoxes = drawPlaylistRuler(
-          fitCanvas(els.ruler, vp.width, RULER_HEIGHT),
-          vp,
-          theme,
-          ts,
-          this.s.view.getState().loop,
-          songLength(p),
-          markers,
-        );
-      }
+      dirty.clear();
+      this.lastBarScroll = NaN;
+    }
+    if (vp.scrollTick !== this.lastBarScroll) {
+      this.lastBarScroll = vp.scrollTick;
       this.updateScrollbar(p);
       this.updateAskPill(p);
-      this.dirty.clear();
     }
     // A take being recorded grows every frame.
     if (this.s.audioRecorder.live.getState().take) this.invalidate('overlay');
     this.updatePlayhead();
   }
+
+  /** What the ruler and the grid's marker lines draw for the markers (the sorted list is cached per project). */
+  private markersToDraw(p: Project) {
+    return { markers: sortedMarkersOf(p), hot: this.markerHot, hotAsk: this.markerAskHot, drag: this.markerDrag };
+  }
+
+  // The layer drawing functions, bound once: `PannedLayer.paint` takes one every frame (an inline arrow would be
+  // a closure per frame). They read the state they draw when they run, which is only when the layer is stale.
+  private readonly drawGridLayer = (g: CanvasRenderingContext2D, wide: Viewport): void => {
+    const p = this.project();
+    const theme = readTheme();
+    drawLanesGrid(g, wide, theme, p.transport.timeSig, wide.rows, songLength(p));
+    drawMarkerLines(g, wide, this.markersToDraw(p), theme);
+  };
+
+  private readonly drawClipsLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {
+    const p = this.project();
+    const theme = readTheme();
+    const muted = mutedOf(p);
+    ctx.clearRect(0, 0, wide.width, wide.height);
+    const laneIndex = laneIndexOf(p);
+    const selected = new Set(this.s.editor.getState().clipSelection);
+    const d = this.drag;
+    const hideOriginals = this.preview && (d?.kind === 'resize' || (d?.kind === 'move' && !d.duplicate));
+    const skip = hideOriginals ? new Set(this.preview?.map((c) => c.id)) : undefined;
+    const label = (c: Clip) => (c.kind === 'automation' ? this.autoLabel(c, p) : undefined);
+    const automation = (c: AutomationClip) => this.autoDraw(c, p, selected);
+    const audio = this.audioStyle(selected);
+    drawClips(
+      ctx,
+      wide,
+      theme,
+      p,
+      clipsSorted(p.playlist.clips),
+      laneIndex,
+      { selected, waveform: this.waveform, label, automation, ...audio, ...(skip ? { skip } : {}) },
+      muted,
+    );
+    if (this.preview) {
+      const sel = new Set(this.preview.map((c) => c.id));
+      drawClips(
+        ctx,
+        wide,
+        theme,
+        p,
+        this.preview,
+        laneIndex,
+        {
+          selected: sel,
+          waveform: this.waveform,
+          label,
+          automation: (c) => this.autoDraw(c, p, sel),
+          ...this.audioStyle(sel),
+        },
+        muted,
+      );
+    }
+  };
+
+  private readonly drawRulerLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {
+    const p = this.project();
+    // Marker flags come back in picture coordinates; `markerBox` and friends add the picture's offset.
+    this.markerBoxes = drawPlaylistRuler(
+      ctx,
+      wide,
+      readTheme(),
+      p.transport.timeSig,
+      this.s.view.getState().loop,
+      songLength(p),
+      this.markersToDraw(p),
+    );
+  };
 
   /** The take being recorded: a red clip from where it started to now, with its waveform so far. */
   private drawLiveTake(ctx: CanvasRenderingContext2D, live: LiveTake): void {
@@ -800,7 +841,8 @@ export class PlaylistController {
     if (next === null || next === this.vp.scrollTick) return;
     this.vp.scrollTick = next;
     this.followMoved = true;
-    this.invalidate('grid', 'clips', 'overlay', 'ruler');
+    // The grid, clips and ruler slide (see frame); only what is drawn at the pointer follows the scroll by redrawing.
+    if (this.hover) this.invalidate('overlay');
   }
 
   private updatePlayhead(): void {
@@ -909,7 +951,7 @@ export class PlaylistController {
 
   /** A marker's flag on screen (null when it is scrolled away or the playlist is hidden). */
   markerBox(id: MarkerId): ClientBox | null {
-    const b = this.markerBoxes.find((x) => x.id === id);
+    const b = this.markerBoxInView(id);
     const r = this.els.ruler.getBoundingClientRect();
     if (!b || r.width === 0) return null;
     const x0 = Math.max(0, b.x0);
@@ -956,7 +998,8 @@ export class PlaylistController {
   }
 
   private viewportChanged(): void {
-    this.invalidate('grid', 'clips', 'overlay', 'headers', 'ruler');
+    // Grid, clips and ruler notice a scroll or zoom themselves (PannedLayer).
+    this.invalidate('overlay', 'headers');
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.persistTimer = setTimeout(() => this.persistViewport(), 300);
   }
@@ -1620,7 +1663,16 @@ export class PlaylistController {
 
   /** The marker flag under a ruler position (markers live in the lower part of the ruler). */
   private markerHit(x: number, y: number): MarkerBox | null {
-    return y >= MARKER_LANE_Y - 2 ? markerAtX(this.markerBoxes, x) : null;
+    if (y < MARKER_LANE_Y - 2) return null;
+    const off = this.rulerLayer.offset();
+    const hit = markerAtX(this.markerBoxes, x - off);
+    return hit ? shiftedBox(hit, off) : null;
+  }
+
+  /** A marker's flag as last drawn, in view coordinates (the ruler's picture slides under the view). */
+  private markerBoxInView(id: MarkerId): MarkerBox | null {
+    const b = this.markerBoxes.find((x) => x.id === id);
+    return b ? shiftedBox(b, this.rulerLayer.offset()) : null;
   }
 
   /** Whether ruler x is on a flag's Studio mark. */
@@ -1745,7 +1797,7 @@ export class PlaylistController {
   /** Shows the inline rename field on a marker's flag. */
   renameMarker(id: MarkerId): void {
     const m = this.project().playlist.markers[id];
-    const box = this.markerBoxes.find((b) => b.id === id);
+    const box = this.markerBoxInView(id);
     if (!m) return;
     const input = this.els.markerRename;
     const x = box ? box.x0 + 3 : this.vp.tickToX(m.tick);

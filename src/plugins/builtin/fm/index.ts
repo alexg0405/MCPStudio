@@ -1,7 +1,7 @@
 import { defineWorkletInstrument, FM_ALGORITHMS, type ParamValue } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './fm.worklet.ts?worker&url';
 import { FM_ID, fmParams, opParam } from './params';
-import { FmUI } from './ui';
 
 interface Op {
   ratio?: number;
@@ -44,7 +44,7 @@ export default defineWorkletInstrument({
     for (const c of algorithm?.carriers ?? [0]) release = Math.max(release, Number(v[opParam(c + 1).release]));
     return Math.max(4, 1.7 * release);
   },
-  ui: FmUI,
+  ui: lazyUi(() => import('./ui').then((m) => m.FmUI)),
   presets: [
     { name: 'Init: simple two-operator tone', params: {} },
     {

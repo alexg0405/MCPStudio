@@ -558,8 +558,9 @@ export function drawPlaylistRuler(
     const m = placed[i] as Marker;
     const x = vp.tickToPx(m.tick);
     const next = placed[i + 1];
-    const limit = next ? vp.tickToPx(next.tick) - 2 : vp.width;
     const textW = ctx.measureText(m.name).width;
+    // The last flag takes the room its text needs (not the view's edge: the picture is drawn wider than the view).
+    const limit = next ? vp.tickToPx(next.tick) - 2 : x + textW + 12 + MARKER_ASK_WIDTH;
     const ask = limit - x >= textW + 12 + MARKER_ASK_WIDTH;
     const x1 = Math.max(x + 8, Math.min(limit, x + textW + 12 + (ask ? MARKER_ASK_WIDTH : 0)));
     boxes.push({ id: m.id, tick: m.tick, x0: x - 3, x1, ...(ask ? { ask: { x0: x1 - MARKER_ASK_WIDTH, x1 } } : {}) });

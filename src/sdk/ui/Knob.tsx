@@ -1,4 +1,5 @@
 import {
+  memo,
   useContext,
   useEffect,
   useRef,
@@ -56,9 +57,10 @@ function arc(cx: number, cy: number, r: number, from: number, to: number): strin
 /**
  * Rotary knob: a stone body with the value as an accent arc around it (from the middle when
  * `bipolar`). Drag vertically (Shift = fine), double-click to reset, wheel to nudge.
- * Controlled: the host owns the value.
+ * Controlled: the host owns the value. Memoized: a host that passes stable handlers (useGestureEdit does) and
+ * stable `format`/`spec` does not re-render the knob when only something else on it changed.
  */
-export function Knob({
+export const Knob = memo(function Knob({
   spec,
   value,
   label,
@@ -237,4 +239,4 @@ export function Knob({
       {status && <i className={styles.statusDot} data-kind={status.kind} aria-hidden />}
     </div>
   );
-}
+});

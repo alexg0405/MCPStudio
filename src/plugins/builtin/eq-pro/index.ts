@@ -1,6 +1,6 @@
 import { defineWorkletEffect } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './eq-pro.worklet.ts?worker&url';
-import { EqProUI } from './EqProUI';
 import { EQ_PRO_ID, eqProParams } from './params';
 
 /**
@@ -16,7 +16,7 @@ export default defineWorkletEffect({
     'Shapes the tone with up to eight bands (bells, shelves, cuts and notches) on a curve you drag, over a live spectrum.',
   params: eqProParams,
   processor,
-  ui: EqProUI,
+  ui: lazyUi(() => import('./EqProUI').then((m) => m.EqProUI)),
   tap: { fftSize: 4096, smoothing: 0.8 },
   presets: [
     {

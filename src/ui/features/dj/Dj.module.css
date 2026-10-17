@@ -120,6 +120,7 @@
 }
 
 .table td {
+  box-sizing: border-box;
   height: 30px;
   padding: 0 var(--ag-space-2);
   border-bottom: 1px solid var(--ag-line-faint);

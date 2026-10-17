@@ -14,7 +14,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { Services } from '../services';
 import { clientLabel } from './common';
-import { createMcpTools, type McpTools } from './tools';
+import type { McpTools } from './tools';
 import {
   BRIDGE_EVENTS,
   type BridgeCall,
@@ -64,8 +64,13 @@ export interface McpLinkDeps {
 
 export class McpLink {
   readonly store: StoreApi<McpLinkState>;
-  readonly tools: McpTools;
   readonly tabId: string;
+  /**
+   * The tools AI apps call. Made on the first call: they pull in the whole of the AI studio's actions and read
+   * tools (a quarter of a megabyte), and a production build has no MCP endpoint, so it never loads them.
+   */
+  private tools: McpTools | null;
+  private toolsLoading: Promise<McpTools> | null = null;
   private hot: HotChannel | null = null;
   private readonly fetchImpl: typeof fetch;
   private readonly seen = new Set<string>();
@@ -77,11 +82,7 @@ export class McpLink {
   ) {
     this.fetchImpl = deps.fetch ?? ((...a) => fetch(...a));
     this.tabId = deps.tabId ?? globalThis.crypto.randomUUID();
-    this.tools =
-      deps.tools ??
-      createMcpTools(s, {
-        gesture: (client, commandId, args) => this.askForClick(client, commandId, args),
-      });
+    this.tools = deps.tools ?? null;
     this.store = createStore<McpLinkState>()(() => ({
       available: false,
       token: null,
@@ -89,6 +90,17 @@ export class McpLink {
       exportsDir: '',
       status: EMPTY_STATUS,
       gestures: [],
+    }));
+  }
+
+  /** The tools, loading them the first time (an AI app's first call; tests). */
+  loadTools(): Promise<McpTools> {
+    if (this.tools) return Promise.resolve(this.tools);
+    return (this.toolsLoading ??= import('./tools').then((m) => {
+      this.tools = m.createMcpTools(this.s, {
+        gesture: (client, commandId, args) => this.askForClick(client, commandId, args),
+      });
+      return this.tools;
     }));
   }
 
@@ -177,7 +189,8 @@ export class McpLink {
       if (!this.s.prefs.getState().mcpEnabled)
         throw new Error('The musician switched off connections from AI apps (Options → Settings → Connect AI apps).');
       this.greet(call.client);
-      const result = await this.tools.call(call.name, call.args, { client: call.client, ticket: call.ticket });
+      const tools = await this.loadTools();
+      const result = await tools.call(call.name, call.args, { client: call.client, ticket: call.ticket });
       reply = { id: call.id, ok: true, result };
     } catch (e) {
       reply = { id: call.id, ok: false, error: e instanceof Error ? e.message : String(e) };

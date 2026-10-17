@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { useStore } from 'zustand';
 import { trackAnalyzer } from '@app/dj/analyzer';
 import {
@@ -22,9 +22,13 @@ import type { TransitionRecipe } from '@core/dj/plan';
 import { canPickFolders } from '@app/persistence/sample-folders';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { Icon } from '../../controls/Icon';
+import { useWindowedRows } from '../../controls/windowed';
 import { useDoc, useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
 import styles from './Dj.module.css';
+
+/** A library row's height in px: the CSS of `.table td` (30) fixes it; the windowed list relies on it. */
+const ROW_H = 30;
 import {
   bpmText,
   EMPTY_TEXT,
@@ -84,6 +88,9 @@ export function DjWindow() {
     void loadLibrary().then(() => analyzeLibrary(services));
   }, [services]);
 
+  // A big library shows only the rows near the viewport (a row is ROW_H high: Dj.module.css).
+  const tableRef = useRef<HTMLDivElement>(null);
+  const win = useWindowedRows(tableRef, st.songs.length, ROW_H);
   const analyzer = trackAnalyzer(services);
   const analysisOf = (x: LibrarySong): TrackAnalysis | null => analyzer?.peek(x.key) ?? null;
   const selected = new Set(st.selected);
@@ -171,7 +178,7 @@ export function DjWindow() {
           </div>
         </div>
       ) : (
-        <div className={styles.tableWrap}>
+        <div className={styles.tableWrap} ref={tableRef} onScroll={win.onScroll}>
           <table className={styles.table}>
             <thead>
               <tr>
@@ -195,7 +202,13 @@ export function DjWindow() {
               </tr>
             </thead>
             <tbody>
-              {st.songs.map((x, i) => {
+              {win.padTop > 0 && (
+                <tr aria-hidden style={{ height: win.padTop }}>
+                  <td colSpan={9} style={{ height: win.padTop, padding: 0, border: 0 }} />
+                </tr>
+              )}
+              {st.songs.slice(win.first, win.last).map((x, k) => {
+                const i = win.first + k;
                 const a = analysisOf(x);
                 const key = keyBadge(a);
                 const status = statusText(a, st.analysis[x.key], st.analyzerMissing);
@@ -277,6 +290,11 @@ export function DjWindow() {
                   </tr>
                 );
               })}
+              {win.padBottom > 0 && (
+                <tr aria-hidden style={{ height: win.padBottom }}>
+                  <td colSpan={9} style={{ height: win.padBottom, padding: 0, border: 0 }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

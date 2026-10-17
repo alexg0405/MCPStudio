@@ -35,6 +35,11 @@ export default defineConfig([
     files: ['scripts/**/*.mjs', 'bin/**/*.mjs', 'vite.config.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
   },
+  // The interaction and startup measurements drive a browser: their page.evaluate callbacks run in the page.
+  {
+    files: ['scripts/perf-*.mjs'],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
 
   // sdk: the public plugin API. Standalone; React only inside sdk/ui.
   {

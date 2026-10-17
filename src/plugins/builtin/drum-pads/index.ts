@@ -1,4 +1,5 @@
 import { defineWorkletInstrument, type ParamValue } from '@agstudio/sdk';
+import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './drum-pads.worklet.ts?worker&url';
 import type { SoundsMessage } from './kernel';
 import {
@@ -13,7 +14,6 @@ import {
   type SoundId,
 } from './params';
 import { builtinSound } from './sounds.kernel';
-import { DrumPadsUI } from './ui';
 
 interface PadSettings {
   sound?: SoundId;
@@ -72,7 +72,7 @@ export default defineWorkletInstrument({
     }
     return Math.min(30, tail);
   },
-  ui: DrumPadsUI,
+  ui: lazyUi(() => import('./ui').then((m) => m.DrumPadsUI)),
   setup(port, host) {
     const sampleRate = host.audioContext.sampleRate;
     const msg: SoundsMessage = {

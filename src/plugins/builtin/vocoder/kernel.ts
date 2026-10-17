@@ -94,7 +94,7 @@ export class VocoderKernel extends EffectKernel<P> {
     const sibBuf = this.sibBuf;
     const accL = this.accL;
     const accR = this.accR;
-    for (let i0 = 0; i0 < n; ) {
+    for (let i0 = 0; i0 < n;) {
       if (this.countdown <= 0) {
         this.countdown = CONTROL;
         this.design(count, at(p.width, i0), at(p.formant, i0));

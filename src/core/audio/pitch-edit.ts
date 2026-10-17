@@ -237,6 +237,45 @@ export function mergeNotes(edit: PitchEdit, i: number, frames?: PitchFrames): Pi
   return { ...edit, notes };
 }
 
+/** One change to apply to notes of an edit (what the AI and the Pitch editor's buttons ask for). */
+export type PitchAction =
+  /** Pull to a key: `allowed` is the pitch classes of the scale, `strength` 0–1. */
+  | { kind: 'snap'; allowed: readonly boolean[]; strength: number }
+  /** Flatten slow drift, 0–1 (1 = dead straight). */
+  | { kind: 'drift'; amount: number }
+  /** Vibrato amount, 0–2 (1 = as sung, 0 = none). */
+  | { kind: 'vibrato'; amount: number }
+  /** Move by semitones, or to a pitch (MIDI, fractional). */
+  | { kind: 'shift'; semitones: number }
+  | { kind: 'to'; midi: number }
+  /** Glide time in ms (the whole edit). */
+  | { kind: 'transition'; ms: number }
+  /** Back as sung. */
+  | { kind: 'reset' };
+
+/** The edit after an action, on the given notes (indices) or all of them. */
+export function applyPitchAction(edit: PitchEdit, action: PitchAction, notes: ReadonlySet<number> | 'all' = 'all'): PitchEdit {
+  switch (action.kind) {
+    case 'snap':
+      return snapToKey(edit, action.allowed, action.strength, notes);
+    case 'drift':
+      return mapNotes(edit, notes, (n) => ({ ...n, drift: clamp(action.amount, 0, 1) }));
+    case 'vibrato':
+      return mapNotes(edit, notes, (n) => ({ ...n, vibrato: clamp(action.amount, 0, 2) }));
+    case 'shift':
+      return mapNotes(edit, notes, (n) => withTarget(n, noteTarget(n) + action.semitones));
+    case 'to':
+      return mapNotes(edit, notes, (n) => withTarget(n, action.midi));
+    case 'transition': {
+      const next = { ...edit, transition: clamp(action.ms, 0, MAX_TRANSITION_MS) };
+      if (next.transition === DEFAULT_TRANSITION_MS) delete next.transition;
+      return next;
+    }
+    case 'reset':
+      return mapNotes(edit, notes, (n) => ({ from: n.from, to: n.to, pitch: n.pitch }));
+  }
+}
+
 /** Median pitch (MIDI) of the voiced frames inside [from, to), or null when there are none. */
 export function medianPitchOf(frames: PitchFrames, from: number, to: number): number | null {
   const { f0, hop, t0 } = frames;

@@ -14,6 +14,7 @@
 import { tempoMapOf } from '@core/automation/tempo';
 import { clipSourceRange, playbackMode } from '@core/audio/playback';
 import {
+  applyPitchAction,
   DEFAULT_TRANSITION_MS,
   editSignature,
   isNeutralEdit,
@@ -28,6 +29,7 @@ import {
   splitNote as splitEditNote,
   tidyNote,
   withTarget,
+  type PitchAction,
 } from '@core/audio/pitch-edit';
 import type { AudioClip, AudioClipChannel, ClipId, PitchEdit, Project, SampleRef } from '@core/model/types';
 import { setPitchEdit, setPitchRender } from '@core/ops/pitch';
@@ -124,7 +126,47 @@ export async function analyzeClip(s: Services, clipId: ClipId): Promise<ClipPitc
     cache.delete(key);
     cache.set(key, analysis);
   }
-  return { clipId, range, duration: data.duration, analysis };
+  const result: ClipPitch = { clipId, range, duration: data.duration, analysis };
+  latest.set(clipId, result);
+  return result;
+}
+
+/** The last analysis made for each clip (the AI's reads and actions look here, since they cannot wait). */
+const latest = new Map<ClipId, ClipPitch>();
+
+/**
+ * The clip's analysis when one is at hand and still covers the part the clip plays (null otherwise:
+ * `analyzeClip` makes it). For callers that cannot wait for a Worker.
+ */
+export function peekClipPitch(p: Project, clipId: ClipId): ClipPitch | null {
+  const found = audioClipOf(p, clipId);
+  const hit = latest.get(clipId);
+  if (!found || !hit) return null;
+  const tempo = tempoMapOf(p, 'song');
+  const r = clipSourceRange(found.clip, playbackMode(found.channel), tempo, hit.duration);
+  return hit.range.from <= r.from + 1e-6 && hit.range.to >= r.to - 1e-6 ? hit : null;
+}
+
+/** The notes of a clip the way edits and the AI see them: the clip's own edit, else what was detected. */
+export function pitchEditOf(p: Project, clipId: ClipId): PitchEdit | null {
+  const own = audioClipOf(p, clipId)?.clip.pitchEdit;
+  if (own) return own;
+  const a = peekClipPitch(p, clipId);
+  return a ? editFor(p, a) : null;
+}
+
+/** Applies an action to a clip's notes (all, or the given indices): analyses the clip when it has no notes yet. One undo step. */
+export async function applyPitchActionToClip(
+  s: Services,
+  clipId: ClipId,
+  action: PitchAction,
+  notes: ReadonlySet<number> | 'all' = 'all',
+  label = 'Pitch correction',
+): Promise<boolean> {
+  let edit = pitchEditOf(s.doc.getState().project, clipId);
+  if (!edit) edit = editFor(s.doc.getState().project, await analyzeClip(s, clipId));
+  const next = applyPitchAction(edit, action, notes);
+  return commitEdit(s, clipId, next, label);
 }
 
 // ---- The editor's target ----
@@ -423,4 +465,79 @@ export function startPitchRenderer(s: Services): () => void {
 /** Makes the corrected audio now (the editor's "Render now" button, after a failed render). */
 export function renderNow(clipId: ClipId): void {
   active?.schedule(clipId, true);
+}
+
+// ---- Actions asked for by name (the AI, MCP and the `pitchEditor.apply` command) ----
+
+export type PitchActionName = 'snap_to_key' | 'flatten_drift' | 'vibrato' | 'shift' | 'transition' | 'reset';
+export const PITCH_ACTION_NAMES: readonly PitchActionName[] = ['snap_to_key', 'flatten_drift', 'vibrato', 'shift', 'transition', 'reset'];
+
+export interface PitchActionArgs {
+  action?: unknown;
+  key?: { root: number; scale: string } | null;
+  strength?: unknown;
+  amount?: unknown;
+  semitones?: unknown;
+  to_midi?: unknown;
+  ms?: unknown;
+  notes?: unknown;
+}
+
+const numberOf = (v: unknown): number | null =>
+  typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : null;
+
+/**
+ * What a named action means: the change to make, which notes (0-based indices; `notes` in the
+ * arguments are 1-based, as `get_pitch` lists them) and the undo label. `songKey` is the key used
+ * when none is given.
+ */
+export function parsePitchAction(
+  args: PitchActionArgs,
+  songKey: { root: number; scale: string } | null | undefined,
+): { action: PitchAction; notes: Set<number> | 'all'; label: string } | { error: string } {
+  const list = Array.isArray(args.notes)
+    ? args.notes
+        .map(numberOf)
+        .filter((n): n is number => n !== null && n >= 1)
+        .map((n) => Math.round(n) - 1)
+    : [];
+  const notes: Set<number> | 'all' = list.length ? new Set(list) : 'all';
+  const where = notes === 'all' ? '' : list.length === 1 ? ` (note ${list[0]! + 1})` : ` (${list.length} notes)`;
+  switch (args.action) {
+    case 'snap_to_key': {
+      const key = args.key ?? songKey;
+      if (!key) return { error: 'there is no song key: set it, or give key (e.g. "A minor")' };
+      const pct = numberOf(args.strength) ?? 100;
+      return {
+        action: { kind: 'snap', allowed: keyMask(key.root, key.scale), strength: Math.max(0, Math.min(1, pct / 100)) },
+        notes,
+        label: `Snap pitch to key (${Math.round(Math.max(0, Math.min(100, pct)))} %)${where}`,
+      };
+    }
+    case 'flatten_drift': {
+      const pct = numberOf(args.amount) ?? 100;
+      return { action: { kind: 'drift', amount: Math.max(0, Math.min(1, pct / 100)) }, notes, label: `Flatten pitch drift${where}` };
+    }
+    case 'vibrato': {
+      const pct = numberOf(args.amount);
+      if (pct === null) return { error: 'vibrato needs amount: 0 removes the vibrato, 100 leaves it as sung, 200 doubles it' };
+      return { action: { kind: 'vibrato', amount: Math.max(0, Math.min(2, pct / 100)) }, notes, label: `Vibrato ${Math.round(pct)} %${where}` };
+    }
+    case 'shift': {
+      const to = numberOf(args.to_midi);
+      if (to !== null) return { action: { kind: 'to', midi: to }, notes, label: `Move pitch to MIDI ${Math.round(to * 100) / 100}${where}` };
+      const st = numberOf(args.semitones);
+      if (st === null) return { error: 'shift needs semitones (e.g. 2 or -1) or to_midi (a MIDI note number)' };
+      return { action: { kind: 'shift', semitones: st }, notes, label: `Move pitch ${st > 0 ? '+' : ''}${st} st${where}` };
+    }
+    case 'transition': {
+      const ms = numberOf(args.ms);
+      if (ms === null) return { error: 'transition needs ms (0 jumps at once, 25 is natural, 100 or more slides)' };
+      return { action: { kind: 'transition', ms }, notes: 'all', label: `Pitch transition ${Math.round(ms)} ms` };
+    }
+    case 'reset':
+      return { action: { kind: 'reset' }, notes, label: `Reset pitch correction${where}` };
+    default:
+      return { error: `unknown pitch action "${String(args.action)}" (${PITCH_ACTION_NAMES.join(', ')})` };
+  }
 }

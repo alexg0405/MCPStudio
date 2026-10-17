@@ -1,11 +1,13 @@
 import type { Services } from '@app/services';
 import {
   analyzeClip,
+  applyPitchActionToClip,
   audioClipOf,
   clearClipPitch,
   defaultPitchClip,
   editFor,
   loadPitchClip,
+  parsePitchAction,
   pitchProblem,
   snapClip,
   startPitchRenderer,
@@ -15,6 +17,7 @@ import { pitchState } from '@app/pitch/state';
 import { tempoMapOf } from '@core/automation/tempo';
 import { playbackMode, tickAtSourceSeconds } from '@core/audio/playback';
 import type { ClipId } from '@core/model/types';
+import { parseKey as parseKeyText } from '@app/ai/ops/values';
 import { PITCH_NAMES, isScaleId } from '@agstudio/sdk/notes';
 import { addContextMenuItems } from '../../context-menus';
 import { addMenuItems, cmd } from '../../shell/menus';
@@ -38,24 +41,15 @@ function targetClip(s: Services, args: unknown): ClipId | null {
 
 const NO_CLIP = 'Select an audio clip on the playlist first (right-click it, then Pitch editor).';
 
-/** "A minor", "F#" … as a root (0–11) and scale id. */
-function parseKey(v: unknown): { root: number; scale: string } | null {
+/** A key from a command's arguments: "A minor", or { root: 'A' | 0–11, scale }; null for none or unreadable. */
+function keyArg(v: unknown): { root: number; scale: string } | null {
   if (!v) return null;
-  if (typeof v === 'object') {
-    const o = v as { root?: unknown; scale?: unknown };
-    const root = typeof o.root === 'number' ? o.root : typeof o.root === 'string' ? PITCH_NAMES.findIndex((n) => n.toLowerCase() === (o.root as string).toLowerCase()) : -1;
-    if (root < 0 || root > 11) return null;
-    const scale = typeof o.scale === 'string' && isScaleId(o.scale) ? o.scale : 'major';
-    return { root: Math.round(root), scale };
-  }
-  if (typeof v !== 'string') return null;
-  const m = /^\s*([A-Ga-g])\s*([#b♯♭]?)\s*(.*)$/.exec(v);
-  if (!m) return null;
-  const base = PITCH_NAMES.findIndex((n) => n === (m[1] as string).toUpperCase());
-  const acc = m[2] === '#' || m[2] === '♯' ? 1 : m[2] === 'b' || m[2] === '♭' ? -1 : 0;
-  const word = (m[3] as string).trim().toLowerCase().replace(/\s+/g, '-');
-  const scale = word === '' || word === 'maj' ? 'major' : word === 'min' ? 'minor' : isScaleId(word) ? word : null;
-  return scale ? { root: (base + acc + 12) % 12, scale } : null;
+  if (typeof v === 'string') return parseKeyText(v) ?? null;
+  if (typeof v !== 'object') return null;
+  const o = v as { root?: unknown; scale?: unknown };
+  const root = typeof o.root === 'number' ? o.root : typeof o.root === 'string' ? PITCH_NAMES.findIndex((n) => n.toLowerCase() === (o.root as string).toLowerCase()) : -1;
+  if (!Number.isFinite(root) || root < 0 || root > 11) return null;
+  return { root: Math.round(root), scale: typeof o.scale === 'string' && isScaleId(o.scale) ? o.scale : 'major' };
 }
 
 /**
@@ -150,7 +144,7 @@ export function register(services: Services): void {
         return;
       }
       const p = s.doc.getState().project;
-      const key = parseKey(args && typeof args === 'object' ? args.key : undefined) ?? (p.transport.key ? { root: p.transport.key.root, scale: p.transport.key.scale } : null);
+      const key = keyArg(args && typeof args === 'object' ? args.key : undefined) ?? (p.transport.key ? { root: p.transport.key.root, scale: p.transport.key.scale } : null);
       if (!key) {
         s.session.getState().toast('Set the song key first (piano roll, Key button), or say which key to use.');
         return;
@@ -159,6 +153,31 @@ export function register(services: Services): void {
       try {
         const clip = await analyzeClip(s, id);
         snapClip(s, clip, key, Math.max(0, Math.min(1, pct / 100)));
+      } catch (e) {
+        s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
+      }
+    },
+  });
+  commands.register<{ clip?: string; action?: string; key?: unknown; strength?: number; amount?: number; semitones?: number; to_midi?: number; ms?: number; notes?: number[] }>({
+    id: 'pitchEditor.apply',
+    title: 'Pitch correction of an audio clip: apply an action',
+    category: 'Audio clip',
+    hint: 'Changes the sung notes of an audio clip: snap to key, flatten drift, set vibrato, move notes, glide time, reset (one undo step)',
+    argsHint:
+      "{ action: 'snap_to_key' | 'flatten_drift' | 'vibrato' | 'shift' | 'transition' | 'reset', clip?: id (default: the selected audio clip), key?: 'A minor' (snap_to_key; default the song key), strength?: 0-100 % (snap_to_key, default 100), amount?: % (flatten_drift 0-100, default 100; vibrato 0-200, 100 = as sung, 0 = none), semitones?: n or to_midi?: MIDI note (shift), ms?: 0-300 (transition), notes?: [1-based note numbers, see get_pitch] (default: all notes) }",
+    run: async (s, args) => {
+      const id = targetClip(s, args);
+      if (!id) {
+        s.session.getState().toast(NO_CLIP);
+        return;
+      }
+      const parsed = parsePitchAction({ ...args, key: keyArg(args?.key) }, s.doc.getState().project.transport.key);
+      if ('error' in parsed) {
+        s.session.getState().toast(parsed.error, 'error');
+        return;
+      }
+      try {
+        await applyPitchActionToClip(s, id, parsed.action, parsed.notes, parsed.label);
       } catch (e) {
         s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
       }

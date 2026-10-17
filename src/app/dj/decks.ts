@@ -35,16 +35,18 @@ import {
   REV_SEC,
   FADER_MAX,
 } from '@core/dj/decks-math';
-import { fillPeaks, newWaveform, type DeckWaveform } from '@core/dj/deck-peaks';
+import { fillPeaks, newWaveform, PEAK_BUCKET, type DeckWaveform } from '@core/dj/deck-peaks';
 import type { TrackAnalysis } from '@core/dj/types';
 import { WavStreamEncoder } from '@core/io/wav';
 import type { SampleRef } from '@core/model/types';
 import type { DeckHost } from '@engine/api';
 import { yieldToMain } from '@engine/audio-buffers';
-import { DeckGraph, songDataOf, type DeckSongData } from '@engine/deck/deck-graph';
+import { DeckGraph } from '@engine/deck/deck-graph';
 import type { SyncSpec } from '@engine/deck/deck-id';
+import { bufferSource, blobReader, openSegmentSource, type DeckSource } from '@engine/deck/deck-source';
+import { DeckStream, type PinnedPlace } from '@engine/deck/deck-stream';
 import type { TapCapture } from '@engine/deck/tap-capture';
-import type { SampleCache } from '@engine/samples';
+import { SampleCache } from '@engine/samples';
 import {
   DECK_IDS,
   HOT_CUES,
@@ -70,6 +72,11 @@ export interface DecksDeps {
   /** Puts a recording in the music library; resolves with its title. */
   addRecording(file: File, title: string): Promise<string | null>;
   toast(message: string, kind?: 'error'): void;
+  /**
+   * The song's file, read lazily a part at a time (an OPFS file), or null: what a song too long to decode whole is
+   * played from. Without it every song is decoded whole through the cache.
+   */
+  openFile?(ref: SampleRef): Promise<Blob | null>;
   /** Cue points and hot cues kept per song (by content hash). */
   cues?: {
     load(hash: string): Promise<SavedCues | null>;
@@ -126,7 +133,8 @@ interface Rt {
   analysis: TrackAnalysis | null;
   grid: DeckGrid | null;
   wave: DeckWaveform | null;
-  data: DeckSongData | null;
+  /** The song's audio as a window of blocks the player reads (its source is decoded or read from the file as it goes). */
+  stream: DeckStream | null;
   /** Counts loads: an older load that finishes late is dropped. */
   token: number;
   /** The cue button is held and the deck plays from the cue point until it is let go. */
@@ -147,7 +155,7 @@ const emptyRt = (): Rt => ({
   analysis: null,
   grid: null,
   wave: null,
-  data: null,
+  stream: null,
   token: 0,
   previewing: false,
   syncMaster: null,
@@ -160,8 +168,20 @@ const emptyRt = (): Rt => ({
   hash: null,
 });
 
-/** The longest song a deck takes: it is held in memory, decoded (15 minutes of stereo at 48 kHz is ~350 MB). */
-export const MAX_DECK_SONG_SEC = 20 * 60;
+/**
+ * Songs longer than this are not decoded whole when their file can be read by parts (WAV, MP3): the deck holds a window
+ * of them around the play position (see `deck-stream.ts`), so a 2-hour mix needs no more memory than a 5-minute song.
+ */
+export const LONG_SONG_SEC = 12 * 60;
+/**
+ * Files that can't be read by parts (AAC in M4A, Ogg, FLAC, AIFF) are decoded whole, once: the browser makes the whole
+ * song as floats (a 45-minute song at 48 kHz is 1 GB), so longer ones are refused instead of taking the tab down.
+ */
+export const MAX_WHOLE_DECODE_SEC = 45 * 60;
+/** Files this big are opened by parts when they can be even if their length isn't known yet. */
+const BIG_FILE_BYTES = 48 * 1024 * 1024;
+/** What a hot cue keeps loaded after its point (seconds): enough to start playing while the rest of its place is read. */
+const HOT_CUE_KEEP_SEC = 2.8;
 const TICK_MS = 200;
 
 export function createDecks(deps: DecksDeps): DecksApi {
@@ -246,43 +266,96 @@ export function createDecks(deps: DecksDeps): DecksApi {
       ch.setCueListen(d.cueListen);
       ch.setCrossfade(s.crossfaderAssign[id], s.crossfader, s.crossfaderCurve);
       const r = rt[id];
-      if (!d.song || !r.data) continue;
-      if (r.data.sampleRate !== g.ctx.sampleRate) {
-        // The new context runs at another rate: decode the song again for it.
-        const pos = old ? (old.channel(idx(id)).snapshot().pos / r.data.sampleRate) : d.positionSec;
+      if (!d.song || !r.stream) continue;
+      if (r.stream.sampleRate !== g.ctx.sampleRate) {
+        // The new context runs at another rate: read the song again for it.
+        const pos = old ? old.channel(idx(id)).snapshot().pos / r.stream.sampleRate : d.positionSec;
         set(id, { positionSec: pos, positionAt: now() });
         void reloadFor(id, g);
         continue;
       }
       const pos = old ? old.channel(idx(id)).snapshot().pos : d.positionSec * g.ctx.sampleRate;
-      sendSong(id, r.data, pos);
+      sendStream(id, r.stream, pos);
     }
     // Followers need the new masters' state blocks.
     for (const id of DECK_IDS) if (rt[id].syncMaster) sendSync(id);
     startTicker();
   }
 
-  function sendSong(id: DeckId, data: DeckSongData, posFrames: number) {
+  /** Hands a deck's player the song's window (and puts it where it was, with its tempo, loop and play state). */
+  function sendStream(id: DeckId, stream: DeckStream, posFrames: number) {
     const ch = chan(id);
     if (!ch) return;
     const d = get(id);
-    ch.send({ t: 'song', channels: data.channels, frames: data.frames, sampleRate: data.sampleRate });
+    stream.moveTo(posFrames);
+    ch.send({ t: 'stream', poolL: stream.poolL, poolR: stream.poolR, table: stream.table, frames: stream.frames, sampleRate: stream.sampleRate });
     ch.send({ t: 'tempo', rate: 1 + d.pitch, keyLock: d.keyLock });
     ch.send({ t: 'seek', pos: posFrames });
     if (d.loop?.active) sendLoop(id, d.loop.startSec, d.loop.endSec);
     if (d.playing) ch.send({ t: 'play', on: true });
+    refreshPins(id);
+  }
+
+  /**
+   * How a song is read: short ones decoded whole through the shared cache (kept there, pinned while the deck has it), long
+   * ones, when their file can be read by parts, straight from the file a few seconds at a time, so no memory goes
+   * to more than the window. Files that can only be decoded whole are refused beyond `MAX_WHOLE_DECODE_SEC`.
+   */
+  async function openSource(ref: SampleRef, title: string, g: DeckGraph): Promise<{ source: DeckSource; buffer: AudioBuffer | null }> {
+    const rate = g.ctx.sampleRate;
+    const known = ref.durationSec ?? deps.cache.knownDuration(ref, rate);
+    const long = known !== null && known > LONG_SONG_SEC;
+    if (deps.openFile && (long || known === null)) {
+      const blob = await deps.openFile(ref).catch(() => null);
+      if (blob && (long || blob.size > BIG_FILE_BYTES)) {
+        const source = await openSegmentSource({ reader: blobReader(blob), sampleRate: rate, yieldNow: yieldToMain }).catch(() => null);
+        if (source) return { source, buffer: null };
+      }
+    }
+    const tooLong = () =>
+      new Error(`“${title}” is longer than ${MAX_WHOLE_DECODE_SEC / 60} minutes and its format can’t be played in parts: use an MP3 or WAV of it.`);
+    if (known !== null && known > MAX_WHOLE_DECODE_SEC) throw tooLong();
+    const buffer = await deps.cache.load(ref, g.ctx);
+    if (!buffer) throw new Error(`Couldn’t read “${title}” (it may have been removed from the library).`);
+    if (buffer.duration > MAX_WHOLE_DECODE_SEC) throw tooLong();
+    // The decoded copy stays in the cache's budget but can't be evicted while the deck plays from it.
+    const release = deps.cache.pin(SampleCache.keyOf(ref.source, rate));
+    return { source: bufferSource(buffer, release), buffer };
   }
 
   async function reloadFor(id: DeckId, g: DeckGraph) {
     const d = get(id);
     if (!d.song) return;
-    const token = ++rt[id].token;
-    const buffer = await deps.cache.load(d.song.ref, g.ctx);
-    if (!buffer || token !== rt[id].token || disposed) return;
-    const data = await songDataOf(buffer);
-    if (token !== rt[id].token || disposed) return;
-    rt[id].data = data;
-    sendSong(id, data, get(id).positionSec * data.sampleRate);
+    const r = rt[id];
+    const token = ++r.token;
+    const old = r.stream;
+    try {
+      const { source } = await openSource(d.song.ref, d.song.title, g);
+      if (token !== r.token || disposed) return void source.dispose();
+      const stream = new DeckStream(source);
+      r.stream = stream;
+      old?.dispose();
+      sendStream(id, stream, get(id).positionSec * stream.sampleRate);
+    } catch (e) {
+      if (token === r.token) deps.toast(e instanceof Error ? e.message : String(e), 'error');
+    }
+  }
+
+  /** What each deck keeps loaded beyond its window: the cue point, the hot cues (a few seconds each) and an active loop. */
+  function refreshPins(id: DeckId) {
+    const r = rt[id];
+    const stream = r.stream;
+    const d = get(id);
+    if (!stream || !d.song) return;
+    const rate = stream.sampleRate;
+    const places: PinnedPlace[] = [];
+    const keep = HOT_CUE_KEEP_SEC * rate;
+    const at = (sec: number) => places.push({ startFrame: Math.max(0, Math.round(sec * rate)), endFrame: Math.round(sec * rate + keep) });
+    if (d.loop?.active && d.loop.endSec > d.loop.startSec)
+      places.push({ startFrame: Math.round(d.loop.startSec * rate), endFrame: Math.round(d.loop.endSec * rate) });
+    for (const t of d.hotCues) if (t !== null) at(t);
+    at(d.cuePoint);
+    stream.setPins(places);
   }
 
   function sendLoop(id: DeckId, startSec: number, endSec: number) {
@@ -343,6 +416,10 @@ export function createDecks(deps: DecksDeps): DecksApi {
       }
       return;
     }
+    for (const id of playing) {
+      const snap = g.channel(idx(id)).snapshot();
+      rt[id].stream?.update(snap.pos, snap.rate);
+    }
     g.readLevels(levelBuf);
     const t = now();
     store.setState((s) => {
@@ -400,7 +477,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
     r.analysis = null;
     r.grid = null;
     r.wave = null;
-    r.data = null;
+    r.stream?.dispose();
+    r.stream = null;
     r.hash = null;
     r.syncMaster = null;
   }
@@ -419,31 +497,27 @@ export function createDecks(deps: DecksDeps): DecksApi {
       void deps.resume().catch(() => {});
       const g = await ensureGraph();
       if (stale()) return;
-      const buffer = await deps.cache.load(ref, g.ctx);
+      // The old song's window goes before the new one is made: a deck never holds two.
+      chan(id)?.send({ t: 'eject' });
+      const { source, buffer } = await openSource(ref, title, g);
+      if (stale()) return void source.dispose();
+      const stream = new DeckStream(source);
+      r.stream = stream;
+      // The first seconds are in the window before the song is announced (a source in memory needs no wait at all).
+      stream.moveTo(0);
+      await stream.whenResident(0, Math.round(2 * stream.sampleRate)).catch(() => {});
       if (stale()) return;
-      if (!buffer) throw new Error(`Couldn’t read “${title}” (it may have been removed from the library).`);
-      if (buffer.duration > MAX_DECK_SONG_SEC)
-        throw new Error(`“${title}” is longer than ${MAX_DECK_SONG_SEC / 60} minutes: a deck keeps its whole song in memory, so it can’t take that.`);
-      const data = await songDataOf(buffer);
-      if (stale()) return;
-      r.data = data;
       audioReady = true;
-      set(id, { song: { ...info, durationSec: buffer.length / buffer.sampleRate } });
-      chan(id)?.send({ t: 'song', channels: data.channels, frames: data.frames, sampleRate: data.sampleRate });
+      set(id, { song: { ...info, durationSec: source.nativeFrames / source.nativeRate } });
+      chan(id)?.send({ t: 'stream', poolL: stream.poolL, poolR: stream.poolR, table: stream.table, frames: stream.frames, sampleRate: stream.sampleRate });
       chan(id)?.send({ t: 'tempo', rate: 1, keyLock: get(id).keyLock });
-      // The waveform and the analysis arrive while the song can already be played.
-      const wave = newWaveform(buffer.length, buffer.sampleRate);
-      const chans = Array.from({ length: Math.min(2, buffer.numberOfChannels) }, (_, c) => buffer.getChannelData(c));
-      const st = { lp: 0 };
-      const PER_SLICE = 4096;
-      for (let b = 0; b < wave.buckets; b += PER_SLICE) {
-        fillPeaks(wave, chans, b, b + PER_SLICE, st);
-        if (b + PER_SLICE < wave.buckets) await yieldToMain();
-        if (stale()) return;
-      }
-      r.wave = wave;
-      set(id, {}); // wake subscribers: the waveform is there
-      const a = deps.peekAnalysis(ref) ?? (await deps.analysis(ref).catch(() => null));
+      // The waveform and the analysis arrive while the song can already be played; a song read by parts is read through once
+      // for its overview, in the background (an hour takes a while), and the deck is ready meanwhile.
+      if (buffer) {
+        if (!(await fillOverview(id, source, buffer, stale))) return;
+      } else void fillOverview(id, source, null, stale);
+      // Analyzing decodes the whole song: a song read by parts is only analyzed if that is already done.
+      const a = deps.peekAnalysis(ref) ?? (buffer ? await deps.analysis(ref).catch(() => null) : null);
       if (stale()) return;
       r.analysis = a;
       r.grid = a?.grid ? deckGridOf(a.grid) : null;
@@ -458,6 +532,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
         hotCues = Array.from({ length: HOT_CUES }, (_, i) => saved.hotCues[i] ?? null);
       }
       set(id, { loading: false, baseBpm: base, bpm: base, cuePoint, hotCues });
+      refreshPins(id);
       // Park at the first beat so the first press of play starts on the one.
       seek(id, cuePoint);
     } catch (e) {
@@ -471,6 +546,44 @@ export function createDecks(deps: DecksDeps): DecksApi {
         throw e;
       }
     }
+  }
+
+  /**
+   * The peak overview, filled a slice at a time (the page stays free): from the decoded buffer, or for a song read by
+   * parts by reading it through once in its own rate, the overview growing as it goes. False if the deck loaded
+   * something else meanwhile.
+   */
+  async function fillOverview(id: DeckId, source: DeckSource, buffer: AudioBuffer | null, stale: () => boolean): Promise<boolean> {
+    const r = rt[id];
+    const wave = newWaveform(source.nativeFrames, source.nativeRate);
+    const st = { lp: 0 };
+    if (buffer) {
+      const chans = Array.from({ length: Math.min(2, buffer.numberOfChannels) }, (_, c) => buffer.getChannelData(c));
+      const PER_SLICE = 4096;
+      for (let b = 0; b < wave.buckets; b += PER_SLICE) {
+        fillPeaks(wave, chans, b, b + PER_SLICE, st);
+        if (b + PER_SLICE < wave.buckets) await yieldToMain();
+        if (stale()) return false;
+      }
+      r.wave = wave;
+      set(id, {}); // wake subscribers: the waveform is there
+      return true;
+    }
+    // About 22 s of the song per read; the drawing is told every few reads.
+    const PIECE_BUCKETS = 4096;
+    const l = new Float32Array(PIECE_BUCKETS * PEAK_BUCKET);
+    const rr = new Float32Array(PIECE_BUCKETS * PEAK_BUCKET);
+    r.wave = wave;
+    for (let b = 0, k = 0; b < wave.buckets; b += PIECE_BUCKETS, k++) {
+      const start = b * PEAK_BUCKET;
+      const n = Math.min(l.length, source.nativeFrames - start);
+      await source.readNative(start, n, l, rr).catch(() => {});
+      if (stale()) return false;
+      fillPeaks(wave, source.channels === 2 ? [l.subarray(0, n), rr.subarray(0, n)] : [l.subarray(0, n)], b, b + PIECE_BUCKETS, st, start);
+      if (k % 4 === 3 || b + PIECE_BUCKETS >= wave.buckets) set(id, {});
+      await yieldToMain();
+    }
+    return true;
   }
 
   function stopDeck(id: DeckId) {
@@ -525,6 +638,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
   function seek(id: DeckId, sec: number) {
     if (!loaded(id)) return;
     const to = Math.max(0, Math.min(durationOf(id), sec));
+    // The window moves to where the playhead is going before the player is told (a song in memory needs no wait).
+    rt[id].stream?.moveTo(to * sr());
     chan(id)?.send({ t: 'seek', pos: to * sr() });
     rt[id].seekAt = now();
     rt[id].seekTo = to;
@@ -547,6 +662,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
     if (plan.setCue !== undefined) {
       set(id, { cuePoint: plan.setCue });
       saveCues(id);
+      refreshPins(id);
     }
     if (plan.pause) {
       rt[id].previewing = false;
@@ -586,6 +702,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
       hotCues[i] = Math.min(pos, d.song.durationSec);
       set(id, { hotCues });
       saveCues(id);
+      refreshPins(id);
       return;
     }
     seek(id, at);
@@ -599,6 +716,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
     hotCues[i] = null;
     set(id, { hotCues });
     saveCues(id);
+    refreshPins(id);
   }
 
   // ---- Jog ----
@@ -870,6 +988,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
 
   function setLoopState(id: DeckId, loop: DeckState['loop']) {
     set(id, { loop });
+    // The loop's audio stays in the window while it is on (before the player is told, so it never waits for it).
+    refreshPins(id);
     if (loop?.active) sendLoop(id, loop.startSec, loop.endSec);
     else chan(id)?.send({ t: 'noloop' });
   }
@@ -878,6 +998,7 @@ export function createDecks(deps: DecksDeps): DecksApi {
     if (!loaded(id)) return;
     const at = snapToGrid(positionNow(id), rt[id].grid, 0.25);
     set(id, { loop: { startSec: Math.max(0, at), endSec: Math.max(0, at), active: false } });
+    refreshPins(id);
     chan(id)?.send({ t: 'noloop' });
   }
 
@@ -986,6 +1107,8 @@ export function createDecks(deps: DecksDeps): DecksApi {
     for (const id of DECK_IDS) {
       stopDeck(id);
       rt[id].token++;
+      rt[id].stream?.dispose();
+      rt[id].stream = null;
     }
     graph?.dispose();
     graph = null;
@@ -1046,7 +1169,17 @@ export function createDecks(deps: DecksDeps): DecksApi {
     analysisOf: (id) => rt[id].analysis,
     setCueDevice,
     keepUp: () => keepUpValue,
-    settled: async () => void (await graph?.settled()),
+    settled: async () => {
+      // Every deck's window has what is about to be heard (a source read from a file takes a moment after a jump), then the players
+      // have handled everything sent.
+      for (const id of DECK_IDS) {
+        const stream = rt[id].stream;
+        if (!stream || !get(id).song) continue;
+        const at = Math.round(get(id).positionSec * stream.sampleRate);
+        await stream.whenResident(at - Math.round(0.5 * stream.sampleRate), at + 4 * stream.sampleRate).catch(() => {});
+      }
+      await graph?.settled();
+    },
   };
   return api;
 }

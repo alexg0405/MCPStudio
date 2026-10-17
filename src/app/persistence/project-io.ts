@@ -262,5 +262,11 @@ export function opfsSampleProvider(opts: { store?: BlobStore; transcode?: boolea
       if (!blob) return null;
       return exactArrayBuffer(opts.transcode === false ? blob.bytes : decodableBytes(blob.bytes));
     },
+    async getBlob(ref) {
+      const src = embedded(ref);
+      const store = opts.store ?? defaultSampleStore();
+      if (!src || !store.getFile) return null;
+      return (await store.getFile(src.hash, src.ext))?.file ?? null;
+    },
   };
 }

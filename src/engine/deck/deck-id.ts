@@ -27,12 +27,25 @@ export const DS = {
   syncError: 8,
   /** Follower: 1 while locked to a playing master. */
   syncLocked: 9,
+  /** 1 while the deck waits for audio that isn't in its window yet (a jump far away, a slow decode): silent, not advancing. */
+  stalled: 10,
 } as const;
 export const DECK_STATE_SLOTS = 16;
+
+/**
+ * A song's audio is read in blocks of 2^16 frames (1.4 s at 48 kHz). The player finds block `b` of the song through
+ * `table[b]`: the slot of a pool of blocks it sits in, or −1 when it isn't there (so a long song needs only a window of
+ * its audio in memory, `engine/deck/deck-stream.ts`). A song held whole is the identity table.
+ */
+export const BLOCK_BITS = 16;
+export const BLOCK_FRAMES = 1 << BLOCK_BITS;
+export const BLOCK_MASK = BLOCK_FRAMES - 1;
 
 /** What the worklet is told (main thread to audio thread). */
 export type DeckMessage =
   | { t: 'song'; channels: SharedArrayBuffer[]; frames: number; sampleRate: number }
+  /** A song as a window: the pool (planar float32, `slots × BLOCK_FRAMES` frames per channel) and its block table (Int32). */
+  | { t: 'stream'; poolL: SharedArrayBuffer; poolR: SharedArrayBuffer; table: SharedArrayBuffer; frames: number; sampleRate: number }
   | { t: 'eject' }
   | { t: 'play'; on: boolean }
   /** Jump to a position (frames), crossfading over a couple of milliseconds. */

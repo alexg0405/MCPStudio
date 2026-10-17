@@ -21,7 +21,13 @@
  * No allocation in `process()`. The worklet (`deck.worklet.ts`) is the thin shell around it.
  */
 import { BeatMap } from '@core/dj/beat-map';
-import { DS } from './deck-id';
+import { BLOCK_BITS as BLOCK_BITS_OF_ID, BLOCK_FRAMES as BLOCK_FRAMES_OF_ID, BLOCK_MASK as BLOCK_MASK_OF_ID, DS } from './deck-id';
+
+// Constants of this file: an imported binding is read through the module object (in tests, in some bundles), which made
+// the per-sample reads below 5× slower.
+const BLOCK_BITS = BLOCK_BITS_OF_ID;
+const BLOCK_FRAMES = BLOCK_FRAMES_OF_ID;
+const BLOCK_MASK = BLOCK_MASK_OF_ID;
 import type { SyncSpec } from './deck-id';
 
 /** Stretch frame, hop (half a frame), how far a frame may move to match the one before, search decimation. */
@@ -106,6 +112,7 @@ export interface DeckSnapshot {
   loopWraps: number;
   syncError: number;
   syncLocked: boolean;
+  stalled: boolean;
 }
 
 /** Reads a published state consistently (the writer may be mid-update). */
@@ -121,6 +128,7 @@ export function readDeckState(state: Float64Array, seq: Int32Array, out: DeckSna
     out.loopWraps = state[DS.loopWraps] as number;
     out.syncError = state[DS.syncError] as number;
     out.syncLocked = state[DS.syncLocked] === 1;
+    out.stalled = state[DS.stalled] === 1;
     if ((a & 1) === 0 && Atomics.load(seq, 0) === a) return;
   }
 }
@@ -135,12 +143,23 @@ export const newSnapshot = (): DeckSnapshot => ({
   loopWraps: 0,
   syncError: 0,
   syncLocked: false,
+  stalled: false,
 });
 
 export class DeckKernel {
+  /** The song's blocks: planar float32 in a pool (`BLOCK_FRAMES` per slot), found through `table` (see `BLOCK_BITS`). */
   private chL: Float32Array | null = null;
   private chR: Float32Array | null = null;
+  private table: Int32Array = new Int32Array(0);
   private frames = 0;
+  /** Where reads of the song stop being the plain blocks: the loop's end while one is on, else the song's. */
+  private readLimit = 0;
+  /** The pool holds a window of the song (some blocks may be missing): the player checks what it is about to read. */
+  private windowed = false;
+  /** Waiting for audio that isn't in the window yet: silent and not advancing until it is. */
+  private stalled = false;
+  /** How far ahead (frames) of the play position the audio must be there; twice that to leave a stall. */
+  private readonly guard: number;
 
   /** Where the deck is (frames, nominal: the stretch's frames sit within ±448 of it). */
   pos = 0;
@@ -243,6 +262,7 @@ export class DeckKernel {
     this.tailR = new Float32Array(this.declick);
     this.keepL = new Float32Array(this.declick);
     this.keepR = new Float32Array(this.declick);
+    this.guard = Math.round(0.3 * sampleRate);
     this.onHop = Math.max(32, Math.round(sampleRate / 375));
     this.eL = new Float32Array(this.onHop);
     this.eR = new Float32Array(this.onHop);
@@ -263,16 +283,38 @@ export class DeckKernel {
     this.seq = seq;
   }
 
+  /** A song held whole in memory (planar float32, one array per channel). */
   setSong(channels: readonly Float32Array[] | null, frames = 0): void {
-    this.captureTail();
     if (!channels || channels.length === 0 || frames <= 0) {
-      this.chL = this.chR = null;
-      this.frames = 0;
-    } else {
-      this.chL = channels[0] as Float32Array;
-      this.chR = (channels[1] ?? channels[0]) as Float32Array;
-      this.frames = Math.min(frames, this.chL.length);
+      this.install(null, null, new Int32Array(0), 0, false);
+      return;
     }
+    const l = channels[0] as Float32Array;
+    const n = Math.min(frames, l.length);
+    // Every block is where it would be in one array: the identity table.
+    const table = new Int32Array(Math.ceil(n / BLOCK_FRAMES));
+    for (let b = 0; b < table.length; b++) table[b] = b;
+    this.install(l, (channels[1] ?? l) as Float32Array, table, n, false);
+  }
+
+  /**
+   * A song as a window of its blocks: `poolL`/`poolR` hold `slots × BLOCK_FRAMES` frames, `table[b]` is the slot of block
+   * `b` or −1. The main thread fills the pool and the table ahead of the play position (`deck-stream.ts`); a jump
+   * outside the window waits (silent, a 2 ms fade out and in) until its blocks have come.
+   */
+  setStream(poolL: Float32Array, poolR: Float32Array, table: Int32Array, frames: number): void {
+    this.install(poolL, poolR, table, frames, true);
+  }
+
+  private install(l: Float32Array | null, r: Float32Array | null, table: Int32Array, frames: number, windowed: boolean): void {
+    this.captureTail();
+    this.chL = l;
+    this.chR = r;
+    this.table = table;
+    this.frames = l ? frames : 0;
+    this.readLimit = this.frames;
+    this.windowed = windowed;
+    this.stalled = false;
     this.playing = false;
     this.scratching = false;
     this.pos = 0;
@@ -280,6 +322,11 @@ export class DeckKernel {
     this.resetStretch();
     this.clearOnsetCache();
     this.tailLen = 0;
+  }
+
+  /** Whether the player is waiting for audio to arrive (see `setStream`). */
+  get isStalled(): boolean {
+    return this.stalled;
   }
 
   get hasSong(): boolean {
@@ -359,6 +406,7 @@ export class DeckKernel {
   setLoop(start: number, length: number): void {
     if (!(length > 0) || !this.chL) {
       this.loopLen = 0;
+      this.readLimit = this.frames;
       this.clearOnsetCache();
       return;
     }
@@ -368,6 +416,7 @@ export class DeckKernel {
     this.loopStartI = Math.round(this.loopStart);
     this.loopLenI = Math.max(1, Math.round(this.loopLen));
     this.loopEndI = this.loopStartI + this.loopLenI;
+    this.readLimit = this.loopEndI;
     if (this.pos >= this.loopStart + this.loopLen) {
       if (this.isRunning) this.captureTail();
       this.pos = this.loopStart + ((this.pos - this.loopStart) % this.loopLen);
@@ -378,6 +427,7 @@ export class DeckKernel {
 
   clearLoop(): void {
     this.loopLen = 0;
+    this.readLimit = this.frames;
     this.clearOnsetCache();
   }
 
@@ -437,8 +487,9 @@ export class DeckKernel {
     }
     this.nudgeAge += n;
     if (this.nudgeAge > NUDGE_HOLD_SEC * this.sampleRate) this.nudgeTarget = 0;
+    if (this.windowed) this.checkWindow(n);
     const declick = this.declick;
-    let running = this.isRunning;
+    let running = this.isRunning && !this.stalled;
     for (let i = 0; i < n; i++) {
       let l = 0;
       let r = 0;
@@ -516,6 +567,50 @@ export class DeckKernel {
 
   // ---- Internals ----
 
+  /**
+   * The audio a window holds must cover what the next render reads: the play position, a little behind (the stretch's
+   * search) and well ahead (`guard`, so the sound fades out in time when the supply runs dry, never mid-sample). When it
+   * doesn't (a jump to a part that hasn't been loaded, a decode that fell behind) the deck fades out over 2 ms and waits,
+   * silent and not advancing, and fades back in once there is twice that much ahead of it.
+   */
+  private checkWindow(n: number): void {
+    if (!this.isRunning) {
+      this.stalled = false;
+      return;
+    }
+    const ra = Math.min(4, Math.abs(this.rateOut) + 0.05);
+    const lo = this.pos - (this.stretchMode ? 4096 : 16 + ra * n);
+    const hi = this.pos + ra * (n + this.guard * (this.stalled ? 2 : 1)) + (this.stretchMode ? R + 4096 : 16);
+    const ok = this.isResident(lo, hi);
+    if (!this.stalled && !ok) {
+      // What sounds now fades out over the next 2 ms (it is in the window: the check above looks ahead far enough).
+      this.captureTail();
+      this.stalled = true;
+    } else if (this.stalled && ok) {
+      this.stalled = false;
+      this.resetStretch();
+      this.rise = this.declick;
+    }
+  }
+
+  /** Whether every block under frames [lo, hi) is in the window (loop seams followed). */
+  private isResident(lo: number, hi: number): boolean {
+    const a = Math.max(0, Math.floor(lo));
+    const b = Math.min(this.frames, Math.ceil(hi));
+    if (b <= a) return true;
+    if (this.loopLen > 0 && b > this.loopEndI) {
+      // Past the loop end the sound comes from its start.
+      if (a < this.loopEndI && !this.blocksResident(a, this.loopEndI)) return false;
+      return this.blocksResident(this.loopStartI, Math.min(this.loopEndI, this.loopStartI + b - Math.max(a, this.loopEndI)));
+    }
+    return this.blocksResident(a, b);
+  }
+
+  private blocksResident(a: number, b: number): boolean {
+    for (let blk = a >>> BLOCK_BITS, last = (b - 1) >>> BLOCK_BITS; blk <= last; blk++) if (Atomics.load(this.table, blk) < 0) return false;
+    return true;
+  }
+
   /** Starts sounding at the current position from nothing (play, a seek while stopped). */
   private startFresh(): void {
     this.fresh = true;
@@ -578,37 +673,47 @@ export class DeckKernel {
 
   private at(ch: Float32Array, i: number): number {
     if (this.loopLen > 0 && i >= this.loopEndI) i = this.loopStartI + ((i - this.loopStartI) % this.loopLenI);
-    return i >= 0 && i < this.frames ? (ch[i] as number) : 0;
+    if (i < 0 || i >= this.frames) return 0;
+    const s = this.table[i >>> BLOCK_BITS] as number;
+    return s < 0 ? 0 : (ch[(s << BLOCK_BITS) | (i & BLOCK_MASK)] as number);
   }
 
-  /** The song at a fractional position, cubic (Hermite) between the four nearest frames. */
+  /**
+   * The song at a fractional position, cubic (Hermite) between the four nearest frames. The usual case, four frames in one
+   * block that is there, is read straight (and small enough to be inlined into the render loop); the rest (a block
+   * edge, a loop seam, the song's ends, a missing block) goes through `at`.
+   */
   private interp(ch: Float32Array, pos: number): number {
     const i = Math.floor(pos);
     const f = pos - i;
-    if (f === 0) return this.at(ch, i);
-    const limit = this.loopLen > 0 ? this.loopEndI : this.frames;
-    let y0: number;
-    let y1: number;
-    let y2: number;
-    let y3: number;
-    if (i >= 1 && i + 2 < limit) {
-      y0 = ch[i - 1] as number;
-      y1 = ch[i] as number;
-      y2 = ch[i + 1] as number;
-      y3 = ch[i + 2] as number;
-    } else {
-      y0 = this.at(ch, i - 1);
-      y1 = this.at(ch, i);
-      y2 = this.at(ch, i + 1);
-      y3 = this.at(ch, i + 2);
+    const b = (i - 1) >>> BLOCK_BITS;
+    if (f !== 0 && i >= 1 && i + 2 < this.readLimit && b === (i + 2) >>> BLOCK_BITS) {
+      const s = this.table[b] as number;
+      if (s >= 0) {
+        const o = (s << BLOCK_BITS) | ((i - 1) & BLOCK_MASK);
+        const y0 = ch[o] as number;
+        const y1 = ch[o + 1] as number;
+        const y2 = ch[o + 2] as number;
+        const y3 = ch[o + 3] as number;
+        return (((0.5 * (y3 - y0) + 1.5 * (y1 - y2)) * f + (y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3)) * f + 0.5 * (y2 - y0)) * f + y1;
+      }
     }
+    return this.interpSlow(ch, i, f);
+  }
+
+  private interpSlow(ch: Float32Array, i: number, f: number): number {
+    if (f === 0) return this.at(ch, i);
+    const y0 = this.at(ch, i - 1);
+    const y1 = this.at(ch, i);
+    const y2 = this.at(ch, i + 1);
+    const y3 = this.at(ch, i + 2);
     const c1 = 0.5 * (y2 - y0);
     const c2 = y0 - 2.5 * y1 + 2 * y2 - 0.5 * y3;
     const c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
     return ((c3 * f + c2) * f + c1) * f + y1;
   }
 
-  /** Copies `len` frames from `start` into dst (zeros outside the song; reads past a loop end continue from its start). */
+  /** Copies `len` frames from `start` into dst (zeros outside the song and where the window has none; reads past a loop end continue from its start). */
   private readRange(dL: Float32Array, dR: Float32Array, start: number, len: number): void {
     const cl = this.chL as Float32Array;
     const cr = this.chR as Float32Array;
@@ -634,10 +739,20 @@ export class DeckKernel {
         return;
       } else {
         const limit = looping && m < this.loopEndI ? this.loopEndI : this.frames;
-        const run = Math.min(len - o, limit - m);
-        for (let k = 0; k < run; k++) {
-          dL[o + k] = cl[m + k] as number;
-          dR[o + k] = cr[m + k] as number;
+        // The part of the run that is in this block.
+        const run = Math.min(len - o, limit - m, BLOCK_FRAMES - (m & BLOCK_MASK));
+        const slot = this.table[m >>> BLOCK_BITS] as number;
+        if (slot < 0) {
+          for (let k = 0; k < run; k++) {
+            dL[o + k] = 0;
+            dR[o + k] = 0;
+          }
+        } else {
+          const base = (slot << BLOCK_BITS) | (m & BLOCK_MASK);
+          for (let k = 0; k < run; k++) {
+            dL[o + k] = cl[base + k] as number;
+            dR[o + k] = cr[base + k] as number;
+          }
         }
         o += run;
         i += run;
@@ -934,6 +1049,14 @@ export class DeckKernel {
     if (!sy) return;
     const snap = this.snap;
     readDeckState(sy.state, sy.seq, snap);
+    if (snap.stalled && this.playing) {
+      // The master waits for audio: it will come back somewhere else on its beat; land on it then.
+      this.syncLocked = false;
+      this.syncError = 0;
+      this.alignPending = true;
+      this.alignWait = Math.round(2 * this.sampleRate);
+      return;
+    }
     if (!snap.playing || snap.tempoRate <= 0) {
       this.syncLocked = false;
       this.syncError = 0;
@@ -985,13 +1108,14 @@ export class DeckKernel {
     st[DS.pos] = this.pos;
     st[DS.frame] = frame;
     const running = this.isRunning;
-    st[DS.rate] = running ? this.rateOut : 0;
+    st[DS.rate] = running && !this.stalled ? this.rateOut : 0;
     st[DS.tempoRate] = this.playing ? this.tempoEff * (1 + this.nudgeCur) : 0;
     st[DS.playing] = running ? 1 : 0;
     st[DS.scratching] = this.scratching ? 1 : 0;
     st[DS.loopWraps] = this.loopWraps;
     st[DS.syncError] = this.syncError;
     st[DS.syncLocked] = this.syncLocked ? 1 : 0;
+    st[DS.stalled] = this.stalled ? 1 : 0;
     Atomics.add(seq, 0, 1);
   }
 }

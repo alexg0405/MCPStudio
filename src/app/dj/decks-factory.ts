@@ -35,6 +35,7 @@ export function decksDepsFor(s: Services): DecksDeps {
     subscribeHost: (fn) => s.engine.subscribe(fn),
     resume: () => s.engine.resume(),
     cache: s.sampleCache,
+    openFile: async (ref) => (await s.sampleCache.provider?.getBlob?.(ref)) ?? null,
     peekAnalysis: (ref) => peekAnalysis(s, ref),
     analysis: async (ref) => {
       const a = trackAnalyzer(s);

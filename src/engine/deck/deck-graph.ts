@@ -7,8 +7,8 @@
  *   master     mixer → master volume → limiter → the engine's output (and the recorder, and the master meter)
  *
  * It only knows audio: tempo, sync, loops and cues are decided by `app/dj/decks.ts`, which sends the players
- * messages (`deck-id.ts`) and reads their shared state. A song's audio lives in SharedArrayBuffers (copied from
- * the decoded AudioBuffer a slice at a time), so the audio thread reads it directly.
+ * messages (`deck-id.ts`) and reads their shared state. A song's audio lives in SharedArrayBuffers (a window of it,
+ * filled by `deck-stream.ts`), so the audio thread reads it directly.
  */
 import {
   clampEq,
@@ -25,7 +25,6 @@ import {
 import type { DeckHost } from '../api';
 import { LIMITER_ID } from '../limiter-id';
 import limiterUrl from '../limiter.worklet.ts?worker&url';
-import { yieldToMain } from '../audio-buffers';
 import { DECK_ID, DECK_STATE_SLOTS, type DeckEvent, type DeckMessage } from './deck-id';
 import deckUrl from './deck.worklet.ts?worker&url';
 import { newSnapshot, readDeckState, type DeckSnapshot } from './deck.kernel';
@@ -35,35 +34,6 @@ export type DeckIndex = 0 | 1 | 2 | 3;
 export const DECK_COUNT = 4;
 
 export type EqBandName = 'low' | 'mid' | 'high';
-
-/** A song's audio as the players read it. */
-export interface DeckSongData {
-  channels: SharedArrayBuffer[];
-  frames: number;
-  sampleRate: number;
-}
-
-/** Frames copied between two yields (~0.7 s at 48 kHz). */
-const SLICE = 1 << 15;
-
-/** Copies a decoded buffer into shared memory a slice at a time (a long song doesn't stall the page). */
-export async function songDataOf(buffer: AudioBuffer): Promise<DeckSongData> {
-  const channels: SharedArrayBuffer[] = [];
-  for (let c = 0; c < Math.min(2, buffer.numberOfChannels); c++) {
-    const sab = new SharedArrayBuffer(buffer.length * 4);
-    const view = new Float32Array(sab);
-    for (let i = 0; i < buffer.length; i += SLICE) {
-      const n = Math.min(SLICE, buffer.length - i);
-      // copyFromChannel writes into a (non-shared) view of the right length.
-      const part = new Float32Array(n);
-      buffer.copyFromChannel(part, c, i);
-      view.set(part, i);
-      if (i + SLICE < buffer.length) await yieldToMain();
-    }
-    channels.push(sab);
-  }
-  return { channels, frames: buffer.length, sampleRate: buffer.sampleRate };
-}
 
 export class DeckChannel {
   readonly node: AudioWorkletNode;

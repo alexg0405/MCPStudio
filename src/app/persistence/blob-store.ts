@@ -137,6 +137,14 @@ export function createSampleStore(primary: BlobStore | null, opts: { guard?: Blo
       if (found && guard) await guard.hold(() => guard.touch(hash));
       return found;
     },
+    async getFile(hash, ext) {
+      const inMemory = await memory.getBlob(hash);
+      if (inMemory) return { ext: inMemory.ext, file: new Blob([inMemory.bytes as BlobPart]) };
+      const found = await read(async (p) => (p.getFile ? await p.getFile(hash, ext) : null), null);
+      const guard = guardOf();
+      if (found && guard) await guard.hold(() => guard.touch(hash));
+      return found;
+    },
     async hasBlob(hash, ext) {
       if (await memory.hasBlob(hash)) return true;
       const guard = guardOf();

@@ -18,7 +18,8 @@
  */
 import { FlpView } from './flp-bytes';
 import { FLP_LIMITS, FlpError, type FlpProject } from './flp-format';
-import { FlpEventReader, scanEvents } from './flp-reader';
+import { FlpEventReader } from './flp-reader';
+import { scanEvents } from './flp-scan';
 
 export * from './flp-format';
 export { flpVersionAtLeast } from './flp-bytes';

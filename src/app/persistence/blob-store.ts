@@ -78,28 +78,28 @@ export function createSampleStore(primary: BlobStore | null, opts: { guard?: Blo
   const guardOf = () => opts.guard ?? installedGuard;
   const memory = createMemoryBlobStore();
   const listeners = new Set<(error: unknown, hash: string) => void>();
-  let down = primary === null;
-  let downError: unknown = null;
-  const goDown = (e: unknown) => {
-    down = true;
-    downError = e;
+  let isPrimaryDown = primary === null;
+  let primaryError: unknown = null;
+  const markPrimaryDown = (e: unknown) => {
+    isPrimaryDown = true;
+    primaryError = e;
   };
 
   /** A primary read; when the primary is unavailable it counts as empty (memory only from then on). */
   async function read<T>(op: (p: BlobStore) => Promise<T>, empty: T): Promise<T> {
-    if (down || !primary) return empty;
+    if (isPrimaryDown || !primary) return empty;
     try {
       return await op(primary);
     } catch (e) {
       if (!isUnavailable(e)) throw e;
-      goDown(e);
+      markPrimaryDown(e);
       return empty;
     }
   }
 
   return {
     get memoryOnly() {
-      return down;
+      return isPrimaryDown;
     },
     onFallback(fn) {
       listeners.add(fn);
@@ -107,8 +107,8 @@ export function createSampleStore(primary: BlobStore | null, opts: { guard?: Blo
     },
     async putBlob(hash, ext, bytes) {
       checkBlobKey(hash, ext);
-      let error = downError;
-      if (!down && primary) {
+      let error = primaryError;
+      if (!isPrimaryDown && primary) {
         try {
           const guard = guardOf();
           // Written (or found already there) and marked in use before a delete can look at it.
@@ -121,7 +121,7 @@ export function createSampleStore(primary: BlobStore | null, opts: { guard?: Blo
           return;
         } catch (e) {
           if (e instanceof StorageError && e.code === 'invalid') throw e;
-          if (isUnavailable(e)) goDown(e);
+          if (isUnavailable(e)) markPrimaryDown(e);
           error = e;
         }
       }

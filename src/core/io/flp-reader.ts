@@ -18,7 +18,6 @@ import {
   FLP_EVENT,
   FLP_ITEM_MUTED,
   FLP_LIMITS,
-  FLP_MIXER_PARAM,
   FLP_MIXER_PARAM_FIELD,
   FLP_MIXER_PARAM_SIZE,
   FLP_NOTE_SIZE,
@@ -35,16 +34,10 @@ import {
   type FlpSlot,
 } from './flp-format';
 import { itemOffset, parseVst, playlistStride, readNote } from './flp-records';
+import { applyMixerParams, resolvePlaylistTracks, resolveTempoAndTimeSignature, type MixerParam } from './flp-resolve';
 
 /** What the last context-setting event opened; events that need a channel (or pattern ...) check it. */
 type Context = 'project' | 'channel' | 'pattern' | 'arrangement' | 'mixer';
-
-/** Event ids below 64 carry 1 byte, below 128 two bytes, below 192 four bytes; the rest are length-prefixed. */
-const WORD_EVENT_MIN_ID = 64;
-const DWORD_EVENT_MIN_ID = 128;
-const DATA_EVENT_MIN_ID = 192;
-/** A length prefix is LEB128: 7 bits per byte, at most 5 bytes (shift 28) for a 32-bit size. */
-const MAX_LENGTH_PREFIX_SHIFT = 28;
 
 const MAX_LAYER_CHILDREN = 256;
 const MAX_SLOTS_PER_INSERT = 64;
@@ -58,23 +51,10 @@ const TRACK_ENABLED_OFFSET = 12; // u8, in an event of at least 13 bytes
 /** A marker position event holds the position in its low 27 bits and the marker kind in the high 5. */
 const MARKER_POSITION_BITS = 27;
 const MARKER_POSITION_MASK = (1 << MARKER_POSITION_BITS) - 1;
-/** Playlist tracks are stored reversed from the last one: 500 tracks from FL 12.9.1 on, 199 before. */
-const LAST_TRACK_INDEX_MODERN = 499;
-const LAST_TRACK_INDEX_LEGACY = 198;
-const FIRST_VERSION_WITH_MODERN_TRACKS = [12, 9, 1];
 /** A mixer param's insert/slot word: insert in bits 6–12, slot in bits 0–5. */
 const MIXER_PARAM_SLOT_MASK = 0x3f;
 const MIXER_PARAM_INSERT_SHIFT = 6;
 const MIXER_PARAM_INSERT_MASK = 0x7f;
-const DEFAULT_TIME_SIGNATURE_PART = 4;
-
-/** A mixer parameter as stored, applied to the inserts once all of them are known. */
-interface MixerParam {
-  insert: number;
-  slot: number;
-  id: number;
-  value: number;
-}
 
 /** Collects an `FlpProject` from events, one `handleEvent` call each, then `finish()`. */
 export class FlpEventReader {
@@ -327,9 +307,14 @@ export class FlpEventReader {
    */
   finish(): FlpProject {
     const out = this.project;
-    this.resolveTempoAndTimeSignature();
-    this.resolvePlaylistTracks();
-    this.applyMixerParams();
+    resolveTempoAndTimeSignature(out, {
+      tempoCoarse: this.tempoCoarse,
+      tempoFine: this.tempoFine,
+      timeSigNumerator: this.timeSigNumerator,
+      timeSigBeat: this.timeSigBeat,
+    });
+    resolvePlaylistTracks(out);
+    applyMixerParams(out, this.mixerParams);
     // Holes (inserts with no events of their own) become empty inserts.
     for (let i = 0; i < out.inserts.length; i++) out.inserts[i] ??= { index: i, sends: {}, slots: [] };
     const isEmpty = out.channels.length === 0 && out.patterns.length === 0 && out.arrangements.length === 0;
@@ -650,109 +635,4 @@ export class FlpEventReader {
       });
     }
   }
-
-  // --- Finishing -------------------------------------------------------------------------------
-
-  /** Tempo: the modern dword (BPM × 1000), else the legacy coarse word plus fine thousandths. */
-  private resolveTempoAndTimeSignature(): void {
-    const project = this.project;
-    if (project.tempo === null && this.tempoCoarse !== null) project.tempo = this.tempoCoarse + this.tempoFine / 1000;
-    if (project.tempo !== null && !(project.tempo > 0)) project.tempo = null;
-    if (this.timeSigNumerator !== null || this.timeSigBeat !== null) {
-      project.timeSig = {
-        num: this.timeSigNumerator ?? DEFAULT_TIME_SIGNATURE_PART,
-        beat: this.timeSigBeat ?? DEFAULT_TIME_SIGNATURE_PART,
-      };
-    }
-  }
-
-  /** Converts stored (reversed) track numbers to 0 = top track, dropping items beyond the last track. */
-  private resolvePlaylistTracks(): void {
-    const project = this.project;
-    const hasModernTracks =
-      project.versionParts.length > 0
-        ? flpVersionAtLeast(project.versionParts, FIRST_VERSION_WITH_MODERN_TRACKS)
-        : project.arrangements.some((a) => a.items.some((item) => item.track > LAST_TRACK_INDEX_LEGACY));
-    const lastTrack = hasModernTracks ? LAST_TRACK_INDEX_MODERN : LAST_TRACK_INDEX_LEGACY;
-    for (const arrangement of project.arrangements) {
-      arrangement.items = arrangement.items.filter((item) => {
-        const track = lastTrack - item.track;
-        if (track < 0) return false;
-        item.track = track;
-        return true;
-      });
-    }
-  }
-
-  /** Mixer params: per-insert volume, pan and sends, and per-slot enabled/mix. */
-  private applyMixerParams(): void {
-    for (const param of this.mixerParams) {
-      const insert = this.project.inserts[param.insert];
-      if (!insert) continue;
-      if (param.id === FLP_MIXER_PARAM.volume) {
-        insert.volume = param.value;
-      } else if (param.id === FLP_MIXER_PARAM.pan) {
-        insert.pan = param.value;
-      } else if (param.id >= FLP_MIXER_PARAM.routeFirst && param.id <= FLP_MIXER_PARAM.routeLast) {
-        insert.sends[param.id - FLP_MIXER_PARAM.routeFirst] = param.value;
-      } else if (param.id === FLP_MIXER_PARAM.slotEnabled || param.id === FLP_MIXER_PARAM.slotMix) {
-        const slot = insert.slots.find((s) => s.index === param.slot);
-        if (!slot) continue;
-        if (param.id === FLP_MIXER_PARAM.slotEnabled) slot.enabled = param.value !== 0;
-        else slot.mix = param.value;
-      }
-    }
-  }
-}
-
-/**
- * Splits the event stream `bytes[start…end)` into events and feeds them to `reader`. Stops with a warning
- * (keeping what was read) at a damaged length or an event that runs past the end.
- */
-export function scanEvents(bytes: Uint8Array, view: FlpView, start: number, end: number, reader: FlpEventReader): void {
-  const warnings = reader.project.warnings;
-  let position = start;
-  while (position < end) {
-    const id = bytes[position++] as number;
-    let size: number;
-    if (id < WORD_EVENT_MIN_ID) size = 1;
-    else if (id < DWORD_EVENT_MIN_ID) size = 2;
-    else if (id < DATA_EVENT_MIN_ID) size = 4;
-    else {
-      // A length prefix: LEB128, 7 bits per byte, low group first. (Inline: this runs once per event.)
-      size = 0;
-      let shift = 0;
-      let isComplete = false;
-      while (position < end && shift <= MAX_LENGTH_PREFIX_SHIFT) {
-        const byte = bytes[position++] as number;
-        size += (byte & 0x7f) * 2 ** shift;
-        shift += 7;
-        if (!(byte & 0x80)) {
-          isComplete = true;
-          break;
-        }
-      }
-      if (!isComplete) {
-        warnings.push('The file is damaged near the end; what could be read was imported.');
-        break;
-      }
-    }
-    if (position + size > end) {
-      // The header may have said so already (its length reaches past the end of the file).
-      const cutOff = 'The file is cut off; what could be read was imported.';
-      if (!warnings.includes(cutOff)) warnings.push(cutOff);
-      break;
-    }
-    const at = position;
-    position += size;
-    reader.handleEvent(id, size, at, eventValue(view, id, size, at));
-  }
-}
-
-/** The payload of a 1, 2 or 4 byte event as a number (0 for data events and sizes that don't match the id). */
-function eventValue(view: FlpView, id: number, size: number, at: number): number {
-  if (size === 1) return view.u8(at);
-  if (size === 2 && id < DWORD_EVENT_MIN_ID) return view.u16(at);
-  if (size === 4 && id < DATA_EVENT_MIN_ID) return view.u32(at);
-  return 0;
 }

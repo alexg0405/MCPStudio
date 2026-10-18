@@ -14,9 +14,11 @@ import type { ClipBox } from './clip-geometry';
 const PAD = 3;
 /** Bodies lower than this show the curve but can't be edited. */
 export const MIN_EDIT_HEIGHT = 12;
+/** How close (px) the pointer must be to a point or a curve handle to be on it. */
 const POINT_HIT = 6;
 const HANDLE_HIT = 5;
 
+/** What the pointer is over inside an automation clip: a point, a curve handle, the curve, or (on a low track) nothing editable. */
 export type AutoHit =
   | { part: 'point'; index: number }
   | { part: 'handle'; index: number }
@@ -24,6 +26,7 @@ export type AutoHit =
   /** The track is too low to edit points. */
   | { part: 'small' };
 
+/** The hint-bar text for each part of an automation clip. */
 export const AUTO_HINTS = {
   point:
     'Automation point: drag to move it (hold Alt to ignore the grid) · right-click for its shape or to delete it',
@@ -35,9 +38,11 @@ export const AUTO_HINTS = {
   small: 'Make the track taller to edit points: Alt + mouse wheel over the playlist',
 };
 
+/** The height (px) of a value (0 to 1) in a clip's body. */
 export const valueToY = (v: number, box: ClipBox): number =>
   box.bodyY + PAD + (1 - v) * Math.max(1, box.bodyH - 2 * PAD);
 
+/** The value (0 to 1) at a height (px) in a clip's body (the inverse of `valueToY`). */
 export const yToValue = (y: number, box: ClipBox): number => {
   const v = 1 - (y - box.bodyY - PAD) / Math.max(1, box.bodyH - 2 * PAD);
   return v <= 0 ? 0 : v >= 1 ? 1 : v;
@@ -45,6 +50,7 @@ export const yToValue = (y: number, box: ClipBox): number => {
 
 /** Song tick of a content tick of the clip. */
 export const contentToTick = (clip: AutomationClip, c: Tick): Tick => clip.start - clip.offset + c;
+/** The clip's content tick of a song tick (the inverse of `contentToTick`). */
 export const tickToContent = (clip: AutomationClip, tick: Tick): Tick => tick - clip.start + clip.offset;
 
 /** Points inside the part of the curve the clip shows. */
@@ -91,7 +97,7 @@ export function hitAutomation(
   });
   if (best >= 0) return { part: 'point', index: best };
   // Handles show (and can be grabbed) only where points aren't crowded.
-  if (spacingOf(clip, ch.points, box) < 14) return { part: 'curve' };
+  if (spacingOf(clip, ch.points, box) < HANDLES_MIN_SPACING_PX) return { part: 'curve' };
   for (let i = 0; i + 1 < ch.points.length; i++) {
     const h = handleOf(ch.points, i);
     if (!h || h.tick < clip.offset || h.tick > clip.offset + clip.length) continue;
@@ -101,6 +107,7 @@ export function hitAutomation(
   return { part: 'curve' };
 }
 
+/** How an automation clip is drawn right now. */
 export interface AutoDraw {
   /** Points and handles are shown (selected or under the pointer). */
   showPoints: boolean;
@@ -110,6 +117,12 @@ export interface AutoDraw {
   note: string | null;
   noteIsWarning: boolean;
 }
+
+/** Points closer together than this (px, on average) show smaller dots, and curve handles only where there is room. */
+const CROWDED_SPACING_PX = 10;
+const HANDLES_MIN_SPACING_PX = 14;
+/** Points closer together than this (px) are not drawn at all (except the one under the pointer). */
+const MIN_POINT_SPACING_PX = 4;
 
 /** Draws the curve (filled underneath), and points and handles when asked. */
 export function drawAutomationBody(
@@ -123,75 +136,99 @@ export function drawAutomationBody(
   d: AutoDraw,
 ): void {
   if (box.bodyH <= 3) return;
-  const pts = ch.points;
   ctx.save();
   ctx.beginPath();
   ctx.rect(box.x, box.bodyY, box.w, box.bodyH);
   ctx.clip();
+  drawCurve(ctx, vp, clip, ch.points, box, paint);
+  if (d.showPoints && box.bodyH >= MIN_EDIT_HEIGHT) drawPointsAndHandles(ctx, vp, theme, clip, ch.points, box, paint, d.hot);
+  if (d.note && box.w > 90 && box.bodyH >= 12) drawNote(ctx, vp, theme, box, paint, d);
+  ctx.restore();
+}
+
+/** The curve as one line, and the same path closed underneath as the soft fill. */
+function drawCurve(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  clip: AutomationClip,
+  points: readonly AutoPoint[],
+  box: ClipBox,
+  paint: ClipPaint,
+): void {
   const from = Math.max(Math.floor(box.x), 0);
   const to = Math.min(Math.ceil(box.x + box.w), vp.width);
-  if (pts.length > 0 && to > from) {
-    // One pass for the curve; the same path closed underneath is the soft fill.
-    const bottom = box.bodyY + box.bodyH;
-    const ys = new Float32Array(to - from + 1);
-    for (let px = from; px <= to; px++) ys[px - from] = valueToY(curveAt(pts, tickToContent(clip, vp.xToTick(px))) ?? 0, box);
+  if (points.length === 0 || to <= from) return;
+  const bottom = box.bodyY + box.bodyH;
+  const ys = new Float32Array(to - from + 1);
+  for (let px = from; px <= to; px++) ys[px - from] = valueToY(curveAt(points, tickToContent(clip, vp.xToTick(px))) ?? 0, box);
+  ctx.beginPath();
+  ctx.moveTo(from, bottom);
+  for (let px = from; px <= to; px++) ctx.lineTo(px, ys[px - from] as number);
+  ctx.lineTo(to, bottom);
+  ctx.closePath();
+  ctx.fillStyle = paint.contentFill;
+  ctx.fill();
+  ctx.beginPath();
+  for (let px = from; px <= to; px++) {
+    if (px === from) ctx.moveTo(px, ys[0] as number);
+    else ctx.lineTo(px, ys[px - from] as number);
+  }
+  ctx.strokeStyle = paint.content;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.lineWidth = 1;
+}
+
+/** The curve handles (small rings on bendable stretches) and the points (dots); the `hot` one under the pointer is bigger. */
+function drawPointsAndHandles(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  theme: TimelineTheme,
+  clip: AutomationClip,
+  points: readonly AutoPoint[],
+  box: ClipBox,
+  paint: ClipPaint,
+  hot: AutoHit | null,
+): void {
+  // Dense curves (an LFO zoomed out) show smaller points, or only the one under the pointer.
+  const spacing = spacingOf(clip, points, box);
+  const dotRadius = spacing < CROWDED_SPACING_PX ? 1.75 : 2.5;
+  const showsHandles = spacing >= HANDLES_MIN_SPACING_PX;
+  for (let i = 0; i + 1 < points.length; i++) {
+    const isHot = hot?.part === 'handle' && hot.index === i;
+    if (!showsHandles && !isHot) continue;
+    const handle = handleOf(points, i);
+    if (!handle || handle.tick < clip.offset || handle.tick > clip.offset + clip.length) continue;
     ctx.beginPath();
-    ctx.moveTo(from, bottom);
-    for (let px = from; px <= to; px++) ctx.lineTo(px, ys[px - from] as number);
-    ctx.lineTo(to, bottom);
-    ctx.closePath();
-    ctx.fillStyle = paint.contentFill;
+    ctx.arc(vp.tickToX(contentToTick(clip, handle.tick)), valueToY(handle.value, box), isHot ? 3.5 : 2.5, 0, Math.PI * 2);
+    ctx.strokeStyle = isHot ? paint.ink : alpha(paint.ink, 0.6);
+    ctx.stroke();
+  }
+  points.forEach((point, i) => {
+    if (!visible(clip, point)) return;
+    const isHot = hot?.part === 'point' && hot.index === i;
+    if (spacing < MIN_POINT_SPACING_PX && !isHot) return;
+    ctx.beginPath();
+    ctx.arc(vp.tickToX(contentToTick(clip, point.tick)), valueToY(point.value, box), isHot ? 4 : dotRadius, 0, Math.PI * 2);
+    ctx.fillStyle = paint.ink;
     ctx.fill();
-    ctx.beginPath();
-    for (let px = from; px <= to; px++) {
-      if (px === from) ctx.moveTo(px, ys[0] as number);
-      else ctx.lineTo(px, ys[px - from] as number);
-    }
-    ctx.strokeStyle = paint.content;
+    if (!isHot) return;
+    ctx.strokeStyle = theme.select;
     ctx.lineWidth = 1.5;
-    ctx.lineJoin = 'round';
     ctx.stroke();
     ctx.lineWidth = 1;
-  }
-  if (d.showPoints && box.bodyH >= MIN_EDIT_HEIGHT) {
-    // Dense curves (an LFO zoomed out) show smaller points, or only the one under the pointer.
-    const spacing = spacingOf(clip, pts, box);
-    const r = spacing < 10 ? 1.75 : 2.5;
-    const handles = spacing >= 14;
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const hot = d.hot?.part === 'handle' && d.hot.index === i;
-      if (!handles && !hot) continue;
-      const h = handleOf(pts, i);
-      if (!h || h.tick < clip.offset || h.tick > clip.offset + clip.length) continue;
-      ctx.beginPath();
-      ctx.arc(vp.tickToX(contentToTick(clip, h.tick)), valueToY(h.value, box), hot ? 3.5 : 2.5, 0, Math.PI * 2);
-      ctx.strokeStyle = hot ? paint.ink : alpha(paint.ink, 0.6);
-      ctx.stroke();
-    }
-    pts.forEach((p, i) => {
-      if (!visible(clip, p)) return;
-      const hot = d.hot?.part === 'point' && d.hot.index === i;
-      if (spacing < 4 && !hot) return;
-      ctx.beginPath();
-      ctx.arc(vp.tickToX(contentToTick(clip, p.tick)), valueToY(p.value, box), hot ? 4 : r, 0, Math.PI * 2);
-      ctx.fillStyle = paint.ink;
-      ctx.fill();
-      if (hot) {
-        ctx.strokeStyle = theme.select;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.lineWidth = 1;
-      }
-    });
-  }
-  if (d.note && box.w > 90 && box.bodyH >= 12) {
-    ctx.font = `10px ${theme.font}`;
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = d.noteIsWarning ? theme.danger : paint.inkSoft;
-    const tx = Math.max(box.x, 0) + 6;
-    ctx.fillText(d.note, tx, box.bodyY + box.bodyH / 2, Math.max(10, Math.min(box.x + box.w, vp.width) - tx - 4));
-  }
-  ctx.restore();
+  });
+}
+
+/** A line of explanation in the body ("Flat: double-click to add points"); a warning is drawn in the danger color. */
+function drawNote(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, box: ClipBox, paint: ClipPaint, d: AutoDraw): void {
+  if (!d.note) return;
+  ctx.font = `10px ${theme.font}`;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = d.noteIsWarning ? theme.danger : paint.inkSoft;
+  const left = Math.max(box.x, 0) + 6;
+  ctx.fillText(d.note, left, box.bodyY + box.bodyH / 2, Math.max(10, Math.min(box.x + box.w, vp.width) - left - 4));
 }
 
 /** A small value label near (x, y), kept inside the canvas. */

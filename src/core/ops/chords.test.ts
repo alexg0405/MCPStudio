@@ -137,7 +137,7 @@ describe('the chord track in saved projects', () => {
       cd_f: { id: 'wrong', tick: 0, length: BAR, root: 0, quality: 'maj' },
     });
     expect(Object.values(result.project.chords!).map((event) => [event.tick, event.length])).toEqual([[0, BAR], [BAR, BAR]]);
-    expect(result.project.chords!.cd_a).toEqual({ id: 'cd_a', tick: 0, length: BAR, root: 9, quality: 'm7' });
+    expect(result.project.chords![('cd_a' as ChordId)]).toEqual({ id: 'cd_a', tick: 0, length: BAR, root: 9, quality: 'm7' });
     expect(result.repairs.join(' ')).toContain('4 chords');
     expect(repairProject(result.project).repairs).toEqual([]);
   });

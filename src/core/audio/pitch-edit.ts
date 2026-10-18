@@ -16,14 +16,13 @@
 import type { PitchEdit, PitchEditNote, SampleId } from '../model/types';
 import {
   analyzePitch,
-  cleanF0,
   framesToCents,
   PITCH_NOTE_THRESHOLDS,
   slowLine,
+  trackVoicePitch,
   type PitchFrames,
   type PitchNote,
 } from '../voice/pitch-notes';
-import { trackPitch } from '../voice/pitch';
 import { psolaShift } from './psola';
 
 /** Milliseconds of glide at note borders when the edit doesn't say. */
@@ -393,14 +392,14 @@ export function renderPitchEdit(input: PitchRenderInput): Float32Array[] {
   const k = 1 / channels.length;
   for (const ch of channels) for (let i = 0; i < length; i++) mono[i] = (mono[i] as number) + (ch[i] as number) * k;
   const hop = Math.max(1, Math.round(0.005 * sampleRate));
-  const track = trackPitch(mono, sampleRate, { minHz: 65, maxHz: 1100, hop });
-  const clean = cleanF0(track.f0, track.confidence);
-  const frames: PitchFrames = { t0: start, hop: hop / sampleRate, f0: clean.f0, conf: clean.conf };
+  // The same track the editor analysed (octave repair included), so the notes the edit names line up with the render.
+  const voice = trackVoicePitch(mono, sampleRate, { minHz: 65, maxHz: 1100 });
+  const frames: PitchFrames = { t0: start, hop: voice.hop, f0: voice.f0, conf: voice.conf };
   const shift = shiftCurve(frames, edit);
   return psolaShift(
     channels,
     sampleRate,
-    { f0: clean.f0, shift, hop, t0: 0 },
+    { f0: voice.f0, shift, hop, t0: 0 },
     input.onProgress ? { onProgress: input.onProgress } : {},
   );
 }

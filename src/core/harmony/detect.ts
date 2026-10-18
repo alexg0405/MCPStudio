@@ -43,45 +43,45 @@ export function detectChordFromWeights(weights: ArrayLike<number>, bass: number 
   for (let i = 0; i < 12; i++) max = Math.max(max, weights[i] ?? 0);
   if (!(max > 0)) return null;
   const floor = (opts.floor ?? 0.08) * max;
-  const p = new Float64Array(12);
+  const share = new Float64Array(12);
   let total = 0;
   let present = 0;
   for (let i = 0; i < 12; i++) {
-    const w = weights[i] ?? 0;
-    if (w >= floor) {
-      p[i] = w;
-      total += w;
+    const weight = weights[i] ?? 0;
+    if (weight >= floor) {
+      share[i] = weight;
+      total += weight;
       present++;
     }
   }
   if (present < 2) return null;
-  for (let i = 0; i < 12; i++) p[i] = (p[i] as number) / total;
+  for (let i = 0; i < 12; i++) share[i] = (share[i] as number) / total;
 
   const scored: { chord: ChordSymbol; score: number; mask: number }[] = [];
   for (let root = 0; root < 12; root++) {
-    for (const q of CANDIDATES) {
+    for (const quality of CANDIDATES) {
       const tones = new Map<number, number>();
-      for (const interval of q.intervals) {
+      for (const interval of quality.intervals) {
         const pc = mod12(root + interval);
         if (!tones.has(pc)) tones.set(pc, toneWeight(interval));
       }
       let inside = 0;
       let missing = 0;
-      for (const [pc, w] of tones) {
-        const have = p[pc] as number;
+      for (const [pc, toneImportance] of tones) {
+        const have = share[pc] as number;
         inside += have;
         // A tone that is hardly there costs its weight; one that is there a little costs less.
-        if (have < 0.04) missing += w * 0.25;
-        else if (have < 0.1) missing += w * 0.08;
+        if (have < 0.04) missing += toneImportance * 0.25;
+        else if (have < 0.1) missing += toneImportance * 0.08;
       }
       const outside = 1 - inside;
-      let score = inside - 0.9 * outside - missing + (PRIOR[q.id] ?? 0);
+      let score = inside - 0.9 * outside - missing + (PRIOR[quality.id] ?? 0);
       if (bass !== null) {
         if (mod12(bass) === root) score += 0.12;
         else if (tones.has(mod12(bass))) score += 0.03;
         else score -= 0.08;
       }
-      const chord: ChordSymbol = { root, quality: q.id };
+      const chord: ChordSymbol = { root, quality: quality.id };
       scored.push({ chord, score, mask: maskOf(chord) });
     }
   }

@@ -101,6 +101,8 @@ export function applyProgressionByName(s: Services, ref: string, options: ApplyP
 /** Clears the whole chord track, or the bars from `fromBar` to `toBar` (1-based, inclusive). */
 export function clearChordTrack(s: Services, fromBar?: number, toBar?: number): ActionResult {
   if (!s.doc.getState().project.chords) return { ok: false, message: 'The chord track is already empty.' };
+  // The lane was showing because of the chords: keep it, so the first new chord can be typed straight into it.
+  if (s.editor.getState().chordLane === null) s.editor.getState().setChordLane(true);
   const bar = barTicks(s);
   const from = fromBar !== undefined ? (fromBar - 1) * bar : undefined;
   const to = toBar !== undefined ? toBar * bar : undefined;

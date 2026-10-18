@@ -136,7 +136,7 @@ export function voiceChords(chords: readonly ChordSymbol[], opts: VoicingOptions
   const from: number[][] = [];
   sets.forEach((cands, i) => {
     if (i === 0) {
-      cost.push(cands.map((c) => pull(c.keys)));
+      cost.push(cands.map((candidate) => pull(candidate.keys)));
       from.push(cands.map(() => -1));
       return;
     }

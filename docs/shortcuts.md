@@ -10,6 +10,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Add marker at the song position | `⌥T` / `Alt+T` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
+| Chords | `⌥⇧H` / `Alt+Shift+H` |
 | Clip launcher | `⌥⇧L` / `Alt+Shift+L` |
 | DJ decks | `⌥D` / `Alt+D` |
 | DJ mix | `⌥J` / `Alt+J` |

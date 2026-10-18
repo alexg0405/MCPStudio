@@ -1337,7 +1337,7 @@ History like any other edit.
   empty space that doesn't drag or erase anything opens the empty-space menu too. Both menus append
   `extraMenuItems('pianoRoll.note' | 'pianoRoll.empty')`.
 - **Song key** (`setSongKey`, one undo step): "Key: A minor ▾" in the toolbar and the empty-space menu. "Highlight
-  scale" shades out-of-scale rows, tints the root's rows and dots the scale's keys; "Snap to scale" snaps drawn and
+  scale" shades out-of-scale rows, tints the root's rows and dots the scale's keys; "Scale lock" (was "Snap to scale") snaps drawn and
   painted keys and moves dragged notes by scale steps (`stamp.ts`, pure). Both are editor state, not document.
 - **Chord stamp**: drawing or painting places `stampKeys(key, chord, inversion, songKey)` (any chord type, or the
   key's triads/7ths) as one "Add chord" step; the outline and the chord's name follow the pointer and the hint bar
@@ -3837,6 +3837,86 @@ Tuned on synthetic songs; real recordings with long tails or fades make the last
 exact only when the song's key is known (setting or clear notes). Audio-clip channels are not transposed. Loudness is bounded by the
 mix's peaks: a mix with high peaks cannot be made as loud as a mastered song by the Limiter alone. The tonal bands are coarse
 (eight) and measured over the mid signal.
+
+## Harmony and chord track (`core/harmony`, `core/ops/chords.ts`, `core/query/chords.ts`, `app/harmony`, `ui/features/chords`)
+
+Chords, basslines and melodies are written against one song-wide **chord track** instead of each part guessing the key.
+
+### What is stored (`Project.chords`, optional, added in v3 without a version bump)
+- `Record<ChordId, ChordEvent>`: `{ id, tick, length, root (pitch class), quality (id from core/harmony/chord), bass?
+  (slash chord), confidence? (0-1, set by detection, cleared by a hand edit) }`. Absent until the first chord.
+- Chords never overlap: every placement (`setChord`, `placeChords`, move, resize) carves its span out of the others by
+  trimming, splitting or removing them (`core/ops/chords.ts`). A gap means "no chord". `placeChords` skips the carving when a
+  list lands on an empty stretch (a hundred-bar detection stays linear).
+- `repairChords` in `core/schema/migrate.ts` (run by `repairProject`, so by migrate and load) drops chords with a bad id,
+  tick, length, root or quality, clears a bad bass or confidence, trims overlaps, caps the track at 4096 chords and
+  removes an empty track. Idempotent; tests in `core/ops/chords.test.ts`.
+- Queries (`core/query/chords.ts`, memoized on the stored record): `chordsSorted`, `chordAt`, `chordsBetween`,
+  `patternChords(project, patternId)` (the chords as a pattern plays them: its first clip's place in the song, cut to its
+  length), `chordTrackLines` (the AI's text). The AI snapshot rule applies: planners get an Immer `current()` copy.
+
+### Pure harmony (`core/harmony`, no DOM, unit tested)
+- `chord.ts`: 21 qualities (triads, sus, 6ths, 7ths incl. m7b5 / dim7 / m(maj7), add9, 9ths, power), `parseChord` /
+  `formatChord` (round trip for every quality on every root, with and without slash bass; `C°7`, `Cø`, `CM7`, `Bb`, `F#`),
+  `parseChordLine` ("Am7 | F | C | G", a dot holds the chord), flats from the key (`keyUsesFlats`).
+- `detect.ts`: a chord from twelve pitch-class weights. Every root x quality is scored by weight inside the chord's
+  notes, weight outside, missing tones (the fifth matters least) and the bass; 6th chords are not candidates (C6 reads as
+  Am7/C), confidence is the fit scaled by the lead over the next different reading. `detectSpans` reads notes a bar or
+  half bar at a time (bass = the lowest note that sounds for a fair part of the window) and merges equal neighbours.
+  `detectSpansFromChroma` reads audio chroma the same way.
+- `scan.ts`: gathers the notes of the song, clips, patterns or a bar range; harmonic roles first (chords, pad, keys,
+  bass, 808), melody parts only when nothing harmonic exists. `audio.ts`: the DJ chromagram of an audio clip summed per
+  window of the clip (trim, pitch and tempo follow respected through `sourceSecondsAt`). The app reads audio clips of a
+  selection, or of the song when there are no chord notes (`app/harmony/detect.ts`); the AI action reads notes only.
+- `scale.ts` (key notes, diatonic chords, Roman numerals), `progressions.ts` (25 progressions by mood and genre written
+  as Roman numerals: I-V-vi-IV, vi-IV-I-V, ii-V-I, 12-bar blues, i-VI-III-VII, Andalusian, trap loops...; a minor one in a
+  major song moves to the relative minor, `key.ts`; `layoutProgression` repeats to fill bars and merges neighbours;
+  `suggestNext` ranks diatonic chords by function (home / away / tension) from a transition table, plus two borrowed
+  chords, with a plain reason each).
+- `voicing.ts`: every inversion at every height near a centre key (close, open, drop 2), then a dynamic program over the
+  progression picks the voicing sequence with the smallest total semitone movement (checked by brute force in the tests);
+  a slash chord keeps its bass lowest; `bass: true` adds the root as a low note; `compNotes` plays the voicings held,
+  every beat, off-beats or eighths.
+- `bassline.ts`: roots (held, restruck at bar lines), root and fifth (quarter notes), walking (root, chord tones, then a
+  half-step or scale-step approach to the next root; seeded), 808 (a note at each kick hit on the chord's root, held to
+  the next hit, a note at every chord change; default trap steps 0, 6, 10 when there is no kick).
+- `fit-melody.ts`: strong beats (beats 1 and 3 in 4/4, or any note a beat long) go to the nearest chord tone, others to the
+  key's scale; strength fixes the smallest moves first, 100 % is idempotent, only keys change. `plan.ts` turns these into
+  notes for a pattern (`planChordPart`, `planBassPart` with `findKickPattern`, `planMelodyFit`); `core/ops/part-notes.ts`
+  writes them (`writePart` replaces the channel's notes in the pattern and sets a blank pattern's length).
+
+### App and UI
+- `app/harmony/*`: `chord-track.ts` (type, apply a progression, edit, clear, next ideas), `detect.ts` (song, selected
+  clips, loop region, current pattern; notes, then audio), `parts.ts` (the selected channel in the current pattern). Each
+  action is one undo step and answers `{ ok, message }` for a toast.
+- The **chord lane** (`ui/features/chords/lane-controller.ts`, `ChordLane.tsx`) sits above the playlist ruler, lined up
+  with the playlist's scroll and zoom (it reads `controller.vp` every frame and redraws only when the chords, the view
+  or the theme changed). Click an empty spot to type a chord (Enter adds it, Tab adds it and moves on), drag across to
+  draw one, drag a chord to move it, drag an edge to resize (the drag previews on the canvas and commits as one undo
+  step), double-click to retype, right-click for Change to, Split, Chord ideas, Delete. Chords with confidence under 0.5
+  are drawn faded and dashed. Shown while the project has chords, or as chosen (`editor.chordLane`).
+- The **Chords window** (`ChordsWindow.tsx`, `view.chords`, Alt+Shift+H): the track as text lines, a type box, next chord
+  ideas, detect (where and how finely), the palette by mood and genre with a preview in the song key, and "Write parts
+  from the chords" (chords, bassline style, melody fit strength) for the selected channel and current pattern.
+- **Piano roll**: "Chord tones" tints the rows of the chord track's notes behind the notes over each chord's stretch (the
+  root stronger) and names the chord at the top of the grid (`drawChordBands`); "Scale lock" (the old "Snap to scale")
+  keeps drawn, painted and dragged notes in the song key. Strum has a milliseconds setting (`ctx.bpm` is new in the
+  note-script context) and a direction; Arpeggiate has pattern, rate and octaves; both are one undo step.
+- Commands (`chords.*`, each with a hint and `argsHint`), menus (Playlist, Edit, piano-roll right-click) and the action
+  search reach everything.
+
+### AI and MCP
+- Actions `chords` (set, progression, detect, clear), `voice_chords`, `bassline`, `fit_melody` (`app/ai/ops/harmony.ts`),
+  the context's "Chord track" lines (eight bars a line, repeated lines merged), the `get_chords` read tool (the chords
+  with Roman numerals, next-chord ideas for a bar, palette entries by mood or genre) and `chords` in the `open` windows. The
+  prompt section stays short: set the key, put the harmony on the chord track first, then voice, bass and fit.
+- Chord edits honour a part-of-the-song focus (`focus.span`); parts honour a notes focus.
+
+### Limits
+- Detection reads pitch classes and the lowest note, not timing: a passing note held for most of a bar can win; a 6th chord
+  is named as the 7th chord on its relative root; a dim triad with a doubled root can read as dim7.
+- Audio detection uses the DJ chromagram of the whole clip (cost grows with its length) and is a guess for dense mixes.
+- The piano roll shows the chords of the pattern's first place in the song only.
 
 ## Clip launcher (Performance mode)
 

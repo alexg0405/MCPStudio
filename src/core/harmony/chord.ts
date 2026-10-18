@@ -64,7 +64,7 @@ export const QUALITIES: readonly QualityDef[] = [
 
 export type QualityId = string;
 
-const BY_ID = new Map(QUALITIES.map((q) => [q.id, q]));
+const BY_ID = new Map(QUALITIES.map((quality) => [quality.id, quality]));
 
 export const isQualityId = (id: unknown): id is QualityId => typeof id === 'string' && BY_ID.has(id);
 
@@ -125,7 +125,9 @@ const LETTERS: Record<string, number> = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b:
 const EXACT = new Map<string, string>();
 /** Spellings matched without regard to case ("MAJ7", "Dim"), left out where two qualities share one in lower case. */
 const LOOSE = new Map<string, string>();
-for (const q of QUALITIES) for (const text of [q.suffix, ...(q.aliases ?? [])]) if (!EXACT.has(text)) EXACT.set(text, q.id);
+for (const quality of QUALITIES) {
+  for (const text of [quality.suffix, ...(quality.aliases ?? [])]) if (!EXACT.has(text)) EXACT.set(text, quality.id);
+}
 {
   const seen = new Map<string, string | null>();
   for (const [text, id] of EXACT) {

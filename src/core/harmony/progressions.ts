@@ -82,7 +82,7 @@ export const PROGRESSIONS: readonly Progression[] = [
   { id: 'rnb-minor', name: 'i7–VImaj7–iv7–V7', mode: 'minor', chords: ['i7', 'VImaj7', 'iv7', 'V7'], moods: ['smooth', 'emotional', 'dreamy'], genres: ['rnb', 'lofi', 'jazz'], note: 'Velvet seventh chords with a dominant to turn around on.' },
 ];
 
-const BY_ID = new Map(PROGRESSIONS.map((p) => [p.id, p]));
+const BY_ID = new Map(PROGRESSIONS.map((progression) => [progression.id, progression]));
 
 export const getProgression = (id: string): Progression | undefined => BY_ID.get(id);
 
@@ -90,18 +90,25 @@ export const getProgression = (id: string): Progression | undefined => BY_ID.get
 export function findProgressions(filter: { mode?: 'major' | 'minor'; mood?: string; genre?: string; text?: string } = {}): Progression[] {
   const text = filter.text?.trim().toLowerCase();
   return PROGRESSIONS.filter(
-    (p) =>
-      (!filter.mode || p.mode === filter.mode) &&
-      (!filter.mood || (p.moods as readonly string[]).includes(filter.mood.toLowerCase())) &&
-      (!filter.genre || (p.genres as readonly string[]).includes(filter.genre.toLowerCase())) &&
-      (!text || `${p.name} ${p.note} ${p.moods.join(' ')} ${p.genres.join(' ')} ${p.id}`.toLowerCase().includes(text)),
+    (progression) =>
+      (!filter.mode || progression.mode === filter.mode) &&
+      (!filter.mood || (progression.moods as readonly string[]).includes(filter.mood.toLowerCase())) &&
+      (!filter.genre || (progression.genres as readonly string[]).includes(filter.genre.toLowerCase())) &&
+      (!text ||
+        `${progression.name} ${progression.note} ${progression.moods.join(' ')} ${progression.genres.join(' ')} ${progression.id}`
+          .toLowerCase()
+          .includes(text)),
   );
 }
 
 /** A progression by id, or by (part of) its name. */
 export function lookupProgression(ref: string): Progression | undefined {
-  const t = ref.trim().toLowerCase();
-  return BY_ID.get(t) ?? PROGRESSIONS.find((p) => p.name.toLowerCase() === t) ?? PROGRESSIONS.find((p) => p.name.toLowerCase().includes(t));
+  const wanted = ref.trim().toLowerCase();
+  return (
+    BY_ID.get(wanted) ??
+    PROGRESSIONS.find((progression) => progression.name.toLowerCase() === wanted) ??
+    PROGRESSIONS.find((progression) => progression.name.toLowerCase().includes(wanted))
+  );
 }
 
 const NUMERALS: Record<string, number> = { i: 0, ii: 1, iii: 2, iv: 3, v: 4, vi: 5, vii: 6 };

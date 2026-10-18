@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useStore } from 'zustand';
+import { progressText } from './view';
 import { addSampleChannels, importAudioFile } from '@app/actions/samples';
 import {
   addSampleFolder,
@@ -48,10 +49,23 @@ const indent = (depth: number) => ({ paddingLeft: 24 + depth * 12 });
 
 /** The user's sample folders: click a file to preview it, drag it onto the rack or playlist. */
 export function SampleFoldersSection() {
+  const services = useServices();
   const folders = useStore(sampleFolders, (s) => s.folders);
   const loaded = useStore(sampleFolders, (s) => s.loaded);
+  const progress = useStore(services.sampleBrowser.store, (s) => s.progress);
+  const status = progressText(progress);
   return (
     <>
+      {folders.length > 0 && (
+        <button
+          className={styles.item}
+          onClick={() => services.commands.run('samples.open')}
+          data-hint="Search and filter your samples by type, tempo and key, hear them and drag them into the project"
+        >
+          <Icon name="wave" size={12} /> Open the sample browser
+        </button>
+      )}
+      {status && <div className={styles.empty}>{status}</div>}
       {folders.map((f) => (
         <Folder key={f.key} folder={f} />
       ))}
@@ -71,9 +85,13 @@ export function SampleFoldersSection() {
   );
 }
 
+/** Folders with more files than this are searched in the sample browser window instead of listed here. */
+const TREE_MAX = 300;
+
 function Folder({ folder }: { folder: FolderState }) {
+  const services = useServices();
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(['']));
-  const tree = useMemo(() => buildTree(folder.name, folder.files ?? []), [folder.name, folder.files]);
+  const tree = useMemo(() => buildTree(folder.name, (folder.files?.length ?? 0) > TREE_MAX ? [] : (folder.files ?? [])), [folder.name, folder.files]);
   const toggle = (path: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -84,7 +102,9 @@ function Folder({ folder }: { folder: FolderState }) {
   const menu = (e: React.MouseEvent) => {
     e.preventDefault();
     showContextMenu(e, [
+      { label: 'Open the sample browser', onSelect: () => services.commands.run('samples.open') },
       { label: 'Refresh', onSelect: () => void refreshSampleFolder(folder.key) },
+      { label: 'Analyze again', onSelect: () => void services.sampleBrowser.reanalyze(folder.key), hint: 'Work out the type, tempo and key of every sound in this folder again' },
       { kind: 'separator' },
       { label: 'Remove from browser', danger: true, onSelect: () => void removeSampleFolder(folder.key) },
     ]);
@@ -115,7 +135,16 @@ function Folder({ folder }: { folder: FolderState }) {
       )}
       {rootOpen && folder.loading && <div className={styles.empty}>Scanning…</div>}
       {rootOpen && folder.error && <div className={styles.error}>{folder.error}</div>}
-      {rootOpen && folder.access === 'granted' && <Level node={tree} depth={0} open={open} toggle={toggle} />}
+      {rootOpen && folder.access === 'granted' && folder.files && folder.files.length > TREE_MAX && (
+        <button
+          className={styles.item}
+          onClick={() => services.commands.run('samples.open')}
+          data-hint="This folder is too big for a list in the side panel: the sample browser window searches and filters it"
+        >
+          {folder.files.length.toLocaleString('en')} sounds: find them in the sample browser
+        </button>
+      )}
+      {rootOpen && folder.access === 'granted' && !(folder.files && folder.files.length > TREE_MAX) && <Level node={tree} depth={0} open={open} toggle={toggle} />}
     </>
   );
 }

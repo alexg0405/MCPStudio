@@ -109,6 +109,18 @@ export interface DeckHost {
   heardTime(): number;
 }
 
+/** How the browser's audition plays a file (`EngineApi.previewAudio`). */
+export interface PreviewOptions {
+  /** Playing speed against the recording, pitch following (a sampler's rate: 2 is an octave up and twice as fast). Default 1. */
+  rate?: number;
+  /** Time-stretch to this length ratio (new length ÷ old) keeping the pitch: a loop at 120 BPM played at 90 is 120 / 90. Default none. */
+  stretch?: number;
+  /** While the song plays, wait for its next beat before starting (so a loop lands in time). Starts at once when stopped. */
+  onBeat?: boolean;
+  /** Repeat until stopped. */
+  loop?: boolean;
+}
+
 export interface EngineApi {
   readonly sampleRate: number;
   readonly state: EngineState;
@@ -171,8 +183,10 @@ export interface EngineApi {
   /** While on, song mode without a loop region plays on past the song's end instead of looping (audio recording). */
   setSongOpenEnded(on: boolean): void;
   /** Decodes and plays an audio file on the preview bus; resolves false if it can't be decoded. */
-  previewAudio(bytes: ArrayBuffer): Promise<boolean>;
+  previewAudio(bytes: ArrayBuffer, opts?: PreviewOptions): Promise<boolean>;
   stopPreview(): void;
+  /** Level of the audition (the browser's preview): a linear gain, 0 to 2; the engine starts at 0.8. */
+  setPreviewVolume(gain: number): void;
   /**
    * Mixer meters: writes the left and right peak (linear, over the last ~43 ms) of each insert in
    * `order` to out[2i], out[2i + 1]. Allocation-free; call it from the frame loop and do peak hold

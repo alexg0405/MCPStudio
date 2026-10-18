@@ -8,6 +8,7 @@ import type {
   EngineSession,
   EngineState,
   EngineStats,
+  PreviewOptions,
   RecordOptions,
   RecordingHandle,
   SampleData,
@@ -126,6 +127,7 @@ class IdleEngine implements EngineApi {
     return this.no();
   }
   stopPreview(): void {}
+  setPreviewVolume(): void {}
   readMeters(order: readonly InsertId[], out: Float32Array): void {
     out.fill(0, 0, order.length * 2);
   }
@@ -396,6 +398,7 @@ export class EngineHost implements EngineApi {
     if (this.session) next.setSession(this.session);
     if (device && this.outputDevice) void next.setOutputDevice(this.outputDevice);
     if (this.openEnded) next.setSongOpenEnded(true);
+    if (this.previewGain !== null) next.setPreviewVolume(this.previewGain);
   }
 
   private swap(next: EngineApi): void {
@@ -547,8 +550,14 @@ export class EngineHost implements EngineApi {
     }
     return this.inner.waveform(ref);
   }
-  previewAudio(bytes: ArrayBuffer): Promise<boolean> {
-    return this.use().previewAudio(bytes);
+  previewAudio(bytes: ArrayBuffer, opts?: PreviewOptions): Promise<boolean> {
+    return this.use().previewAudio(bytes, opts);
+  }
+  /** The audition level, kept for engines made later (a reboot, or the first one of a deferred host). */
+  private previewGain: number | null = null;
+  setPreviewVolume(gain: number): void {
+    this.previewGain = gain;
+    if (!this.idle) this.inner.setPreviewVolume(gain);
   }
   sampleData(ref: Pick<SampleRef, 'source' | 'name'>): Promise<SampleData | null> {
     return this.use().sampleData(ref);

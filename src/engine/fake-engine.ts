@@ -9,6 +9,7 @@ import type {
   EngineSession,
   EngineState,
   EngineStats,
+  PreviewOptions,
   SampleData,
   TransportView,
 } from './api';
@@ -177,10 +178,17 @@ export class FakeEngine implements EngineApi {
   setSongOpenEnded(on: boolean): void {
     this.openEnded = on;
   }
-  async previewAudio(): Promise<boolean> {
+  /** What the browser's audition asked to play (the bytes' length, the options) and the volume it set. */
+  previews: { bytes: number; opts: PreviewOptions | undefined }[] = [];
+  previewVolume = 0.8;
+  async previewAudio(bytes?: ArrayBuffer, opts?: PreviewOptions): Promise<boolean> {
+    this.previews.push({ bytes: bytes?.byteLength ?? 0, opts });
     return true;
   }
   stopPreview(): void {}
+  setPreviewVolume(gain: number): void {
+    this.previewVolume = gain;
+  }
   /** Peaks readMeters() reports per insert ([left, right]); everything else reads 0. */
   meterLevels = new Map<InsertId, readonly [number, number]>();
   readMeters(order: readonly InsertId[], out: Float32Array): void {

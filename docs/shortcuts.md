@@ -34,6 +34,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Record | `R` |
 | Redo | `⌘⇧Z` / `Ctrl+Shift+Z`, `⌘Y` / `Ctrl+Y` |
 | Reference | `⌥⇧R` / `Alt+Shift+R` |
+| Sample browser | `⌥B` / `Alt+B` |
 | Save | `⌘S` / `Ctrl+S` |
 | Save as… | `⌘⇧S` / `Ctrl+Shift+S` |
 | Search actions… | `⌘K` / `Ctrl+K` |

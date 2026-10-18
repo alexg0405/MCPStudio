@@ -73,6 +73,7 @@ const COVERED_BY_OP: Readonly<Record<string, string>> = {
   'mixer.balance': 'level_mix',
   'audioClip.levels': 'edit_audio_clip',
   'options.audioInput': 'settings',
+  'samples.makeKit': 'make_kit',
 };
 
 /** The piano-roll tool (script id) a note_tool-covered command stands for. */

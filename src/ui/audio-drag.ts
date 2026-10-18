@@ -8,10 +8,15 @@ export const AUDIO_FILE_TYPE = 'application/x-agstudio-file';
 /** A built-in kit sound dragged from the browser panel (the data is its generator id). */
 export const KIT_SOUND_TYPE = 'application/x-agstudio-sound';
 
-const dragged = new Map<string, FileSystemFileHandle>();
+/** What a drag needs of a file handle (the sample browser's rows are not always the browser's own handles). */
+export interface DraggedFile {
+  getFile(): Promise<File>;
+}
+
+const dragged = new Map<string, DraggedFile>();
 let seq = 0;
 
-export function startAudioFileDrag(dt: DataTransfer, handle: FileSystemFileHandle): void {
+export function startAudioFileDrag(dt: DataTransfer, handle: DraggedFile): void {
   const token = `file-${++seq}`;
   dragged.clear(); // one drag at a time
   dragged.set(token, handle);

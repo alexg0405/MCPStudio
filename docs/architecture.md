@@ -472,7 +472,7 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   Discard / Not now); recovering autosaves into this tab before deleting the old copy. `navigator.storage.persist()`.
 - Sample folders (`persistence/sample-folders.ts`, browser section "Sample folders"): `showDirectoryPicker({ id: 'samples',
   mode: 'read' })`, handles in IndexedDB, "Reconnect…" when permission is `prompt` (usual after a reload), recursive
-  listing capped at 5000 files. Click previews (`engine.previewAudio(bytes)`, decoded once per content into the sample
+  listing capped at 30,000 files (see [Sample browser](#sample-browser-srccoresamples-srcappsamples-srcuifeaturessamples)). Click previews (`engine.previewAudio(bytes)`, decoded once per content into the sample
   cache, nothing stored), double-click adds a
   sampler channel. Drags carry a token for the file handle (`ui/audio-drag.ts`, type `application/x-agstudio-file`);
   files dragged from the desktop arrive as DataTransfer files. Drops: on a sampler/audio-clip channel the sound replaces
@@ -543,6 +543,130 @@ stats), UI in Settings → Storage.
   audio, undo, grace, dead tabs, writer vs. collector, recovery after a collection, 1,000 blobs),
   `test/browser/storage-settings.test.ts` (Settings → Storage numbers, dialog, switch). New code that stores a hash
   outside a project must keep it in IndexedDB `kv` (or tell the collector); that is all it takes to stay safe.
+
+## Sample browser (`src/core/samples`, `src/app/samples`, `src/ui/features/samples`)
+
+Your sample folders (the File System Access folders of `persistence/sample-folders.ts`) as a searchable library: every
+file is analyzed once (what it is, a loop's tempo and bars, the key or note, loudness, brightness), the results are kept,
+and the window finds, auditions and places sounds. View → Sample browser (Alt+B); the browser panel's "Sample folders"
+section lists the folders and opens it (folders under 300 files are still listed there as a tree).
+
+### Analysis (`core/samples`, pure, no DOM; `analyzeSample(channels, rate, { path })` in `analyze.ts`)
+
+- **Measurements** (`features.ts`, ~3.5 ms per short file): a peak envelope (5 ms blocks, a running maximum so a low note's
+  ripple isn't decay: onset, attack, time to fall 20/40/60 dB, audible length, ring after 0.3 s, level), the power
+  spectrum of 2048-point frames over the first 0.45 s from the onset (six bands: < 90, 90–250, 250–1000, 1–4 k, 4–10 k, > 10 kHz;
+  centroid, 85 % roll-off, flatness), bursts in the first 50 ms (a clap stutters), and the pitch of the body with the
+  voice analyzer's YIN (`core/voice/pitch.ts`: median note, share of audible frames pitched, glide down from the first
+  frames, spread).
+- **One-shot or loop** (`analyze.ts`): files over 60 s are `long` (header only). From 1 s up, a file with ≥ 5 hits
+  (`findOnsets`: 9 dB rises of a peak envelope or of its high-passed copy, against the loudest moment, so a held 808's ripple
+  is no hit) is run through the transient tempo detector (`core/audio/transients.detectTempo`, which snaps to whole bars);
+  it is a loop when its length is 0.5, 1, 2, 4… 32 bars at that tempo (or half or double it: a drum-and-bass loop read at 87
+  asks the DJ beat tracker, which knows where the drums sit, and becomes 174). A name that says "loop" (≥ 1.5 s) or "one
+  shot" decides it. Loops get tempo, bars, `loopKind` (drums / bass / melodic) and a key from the DJ chromagram
+  (`core/dj/chroma`, `estimateKey`; shown only at confidence ≥ 0.35, so a drum loop with a tuned kick has none).
+- **Category** (`classify.ts`): a score 0..1 per category (kick, snare, clap, hat, open hat, cymbal, tom, perc, 808 / bass,
+  fx, vocal, tonal) from soft ramps over the measurements (a hat is all top and falls 40 dB within 0.15 s, an open hat
+  within ~1 s, a cymbal later; a kick is low, under ~75 Hz and gliding, an 808 is the same ringing on; a clap stutters; a
+  snare has a body and a top; a tom is pitched 80–400 Hz with a glide; a tonal note sustains steadily; a sung vowel
+  wobbles). The best score is the category (nothing ≥ 0.25: none), the confidence is the score held back by the runner-up's.
+  **File names** (`names.ts`: "Kick_03", "HH open", folders such as "Snares", "128 bpm", "Am", "C#1") nudge it: the name
+  agreeing makes the answer surer and decides between categories the sound can't separate (a "Shaker" that looks like a
+  hat), while a clear sound a name contradicts (a snare named "Kick") stays what it sounds like. `basis` says which.
+  A pitched one-shot gets its note (`midi`, `root`) from the pitch, unless the file declares one (a WAV `smpl` unity note or an AIFF
+  base note, read by `decodePcm`), which wins for the pitched categories (not for hats, snares or claps).
+- **Fingerprint** (`similarity.ts`): 13 numbers in 0..1 (brightness, six bands, decay, pitched share, attack, noisiness,
+  pitch, stutter) stored with the analysis; "similar sounds" is a weighted Euclidean distance over the same kind of file, with
+  a penalty for another category (`similarTo`).
+- **Measured** (synthetic corpus, `test/helpers/sample-corpus.ts`: the engine's 11 kit sounds and 35 genre-kit pieces, the Drum
+  Pads' 18 built-in sounds, and randomized hand-made kicks, snares, claps, hats, cymbals, toms, 808s, notes, risers; the
+  thresholds were tuned on it, so read the numbers as consistency, not as a promise about every sample pack). The "clear"
+  cases are the ones a person would not argue about: **100 %** of 182 at 44.1 kHz and of 300 more from a fresh seed, 100 % at
+  22.05 kHz, 99.2 % at 48 kHz, 98.4 % at 96 kHz, 100 % with the level 24 dB down, with a −66 dBFS noise floor and with a DC
+  offset, 99.5 % with 0.3 s of silence in front (the misses are one borderline lo-fi snare that stutters like a clap, and a
+  noisy snare at 96 kHz read as perc); `sample-classification.test.ts` asserts ≥ 90 %. The unclear ones (a shaker that is a
+  hat, a conga that is a tom, a rumbling impact that is an 808, a sung vowel that may be a synth) are 22 of 26 right and not
+  counted. Notes are within half a semitone on tonal sounds and 808s. Loops (`renderTestSong`, 12 styles × drums / drums and
+  bass / everything): tempo and bars right in 33 of 36 (91.7 %; asserted ≥ 90 %); the three misses are one 75 BPM pattern read
+  at double time (150 BPM, 4 bars: the octave ambiguity of slow loops, which the window's ½× 2× filter and the preview's half/double
+  rule absorb); the key of 16 chord loops (8 tonics, major and minor) is exact 16 of 16 (asserted: the key or its relative
+  in ≥ 80 %). Speed: ~280 files/s on one core in Node (CPU time, short one-shots), **1,340 files/s** through the Worker pool (4
+  Workers, headless Chrome, 1,500 in-memory WAVs, on a laptop loaded with other work: `test/browser/sample-analysis.test.ts`
+  prints it); a real folder is slower by the time the browser takes to hand over each file.
+
+### Running it (`app/samples`)
+
+- `SampleBrowser` (`browser.ts`, `services.sampleBrowser`, started by the feature): follows the `sampleFolders` store, makes a
+  row per file (`BrowserRow`: id `<folder key>:<path>`, name, folder, path, handle, `analysis`, state, favorite, tags,
+  last used), shows cached analyses at once, then reads each file's size and time in batches of 48 and checks them against
+  the cache (`core/samples/cache.ts`: path, size, modification time and `SAMPLE_ANALYSIS_VERSION` must all match; a hash of
+  the audio is never used or stored), and queues the rest. Results are applied to the rows in batches every 200 ms (one
+  store update per batch, so 5,000 files make a few dozen React renders, not 5,000); progress is `done / total` and files per second.
+- Files are read and analyzed in a pool of Workers (`runner.ts`, `analysis.worker.ts`; `min(4, cores − 2)`, stopped 5 s after
+  the last job): `read.ts` parses WAV and AIFF (`decodePcm`, only as much of a big file as the first 32 s need), FLAC
+  (`decodeFlac`) and skips songs over 60 s by their header; MP3, OGG, M4A and unusual WAVs come back as "needs decode", the
+  main thread decodes them with `decodeAudio` at 44.1 kHz (the browser's decoder runs off the main thread) and sends the
+  audio back to the Worker. Without Workers (Node tests) the same code runs inline.
+- **Cache and storage rules**: one IndexedDB `kv` record per folder, `sample-analysis:<folder key>` (`{ version, files: { path:
+  [size, mtime, analysis] } }`, saved at most every 4 s while it grows and when the run ends; entries of removed files are
+  pruned, a removed folder's record is deleted), your marks in `sample-user:v1` (favorites, tags per file, the last 300
+  used) and the view in `sample-view:v1`. None contains a 64-hex run, so the storage clean-up (Clean-up of unused audio above:
+  "any stored value mentioning a blob's hash") never reads them as audio in use; the files are not in the sample store at
+  all until you place them, and placing one imports it through `importAudioFile` like any drop. Bumping
+  `SAMPLE_ANALYSIS_VERSION` (`core/samples/types.ts`) analyzes everything again. Failed files are retried next time.
+- Folder limit: 30,000 files per folder (`MAX_FILES_PER_FOLDER`).
+
+### The window (`ui/features/samples`)
+
+- Search over folder, path, type, tempo, key and your tags (every word must match, `-word` excludes), chips for each type
+  (with counts), loops, favorites, recently used, "song key" (`fitsKey`: a note in the song's scale, a loop in its key or the
+  relative key), a tempo range with ½× 2×, twelve key buttons, a folder list (folders and first-level subfolders), your tags,
+  sort by name, tempo, key, length, loudness, type or recently used (the column headers sort too). All of it is
+  `core/samples/query.ts` (pure, unit-tested), so the list the window shows and `list_samples` agree.
+- The list is windowed (`useWindowedRows`, 28 px rows, `overflow-anchor: none` so the spacers don't fight the scroll):
+  5,000 sounds draw ~40 rows. Rows show a star, name and folder, type (with "?" when the confidence is under 0.5), BPM, key,
+  length and your tags; click auditions, ⌘/Ctrl-click and Shift-click select, ↑ ↓ step and audition (Shift extends), Enter
+  plays or stops, A adds, F stars, Esc stops (the window's own keys: `keyboard.ts` leaves the typing piano quiet there),
+  double-click adds (a one-shot as a sampler channel, a loop as an audio clip), drag carries the file like a desktop file
+  (`ui/audio-drag.ts`, so the rack, the playlist and the Drum Pads' pads take it as before), right-click: play, add as a
+  sampler channel, add to the playlist, make a kit, find similar sounds, favorite, tags. The selection bar adds tags (Enter) and
+  "Make a kit from N one-shots". Empty states say what to do: no folders (Add folder), access to give again (Reconnect), no
+  audio, no match (Clear filters).
+- **Audition** (`actions.ts` `previewRow`, `core/samples/preview.ts`, `Engine.previewAudio(bytes, opts)`): a loop is time-stretched
+  to the project tempo keeping its pitch (WSOLA in the stretch Workers; the copy is cached like the decode) or resampled with
+  a playback rate, as the footer's switch says, starts on the song's next beat while it plays (`Engine.nextBeatTime`: the
+  audible time plus the ticks to the next beat, within ~12 ms in `test/browser/sample-preview.test.ts`) and repeats until the
+  next sound or Stop; a half or double reading of the tempo counts as the tempo it is (87 in a 174 song plays as it is). With
+  "Notes in song key" a tonal sound, 808 or vocal is moved by the smallest turn onto the song key's tonic (playback rate).
+  The preview level (0–150 %, the preview bus gain) is saved with the view.
+- **Placing** (`actions.ts`, each one undo step): sampler channels; an audio clip at the song position marker on the first
+  track with room (`ordinaryLaneFor`; a loop with a tempo gets `stretch: 'stretch'` and `sourceBpm`, and lasts its bars at any
+  song tempo); one Drum Pads pad; **Make a kit** (`core/samples/kit.ts` `planKit`): a new Drum Pads channel with kick on pad 1
+  (an 808 on 2), snares 3 and 5, clap 4, closed hats 7 and 9, open hats 11 and 13, toms low to high on 6, 8, 10, 12, cymbals
+  14 and 16, percussion and the rest on free pads from the end of the kit; pads without a sound keep their built-in drum;
+  loops and long files are left out and listed.
+
+### Studio and MCP
+
+- `list_samples` (read tool, so also an MCP tool): the sounds with type, confidence, tempo, bars, key, length, loudness and
+  brightness, favorites and tags, filtered like the window (text, category, kind, tempo range, key, in song key, favorites,
+  recent, tag, folder, similar to a sound, sort, limit) plus how many files, how far the analysis is, the by-type counts and the
+  song's tempo and key. `place_sample` (to channel, clip or pad) and `make_kit` (named sounds, or a folder and/or search words)
+  are checked when the answer is read and done after it (`ai/ops/samples.ts`, after-step `samples` in `app/samples/step.ts`:
+  the file is read and stored, then the edit joins the answer's undo entry through `amend`). Commands: `samples.open`
+  (Alt+B), `samples.addFolder`, `samples.reanalyze`, `samples.stopPreview`; `samples.makeKit` acts on the window's selection and
+  is covered by `make_kit` in `test/unit/ai-coverage.test.ts`.
+
+### Tests
+
+`core/samples/*.test.ts` (names, query, kit, cache, preview), `test/unit/sample-classification.test.ts` (accuracy and its
+variants), `sample-loops.test.ts` (tempo, bars, key, loop or one-shot), `sample-similar.test.ts` (nearest sounds; speed, tagged
+`perf`), `app/samples/browser.test.ts` (cache hit and miss, changed file, version bump, removed files, failures, batches,
+favorites and tags), `actions.test.ts`, `app/ai/ops/samples.test.ts` (ops, the step, the read tool);
+`ui/features/samples/samples-window.browser.test.ts` (5,000 rows scrolled without drawing them all, filters, keyboard,
+favorites, similar, kit, tags, every control named with a hint, empty states), `test/browser/sample-analysis.test.ts` (the Worker
+pool: 1,500 files, same answers as inline, FLAC and MP3, cache with Workers) and `sample-preview.test.ts` (the engine).
 
 ## Voice analysis (`src/core/voice`)
 

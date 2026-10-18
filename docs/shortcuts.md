@@ -18,6 +18,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Layout: Arrange | `⌥⇧1` / `Alt+Shift+1` |
 | Layout: Compose | `⌥⇧2` / `Alt+Shift+2` |
 | Layout: Mix | `⌥⇧3` / `Alt+Shift+3` |
+| Meters | `⌥⇧M` / `Alt+Shift+M` |
 | Metronome | `⌥M` / `Alt+M` |
 | Mixer | `F9`, `⌥4` / `Alt+4` |
 | New pattern | `F4` |

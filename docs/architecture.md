@@ -3838,6 +3838,95 @@ exact only when the song's key is known (setting or clear notes). Audio-clip cha
 mix's peaks: a mix with high peaks cannot be made as loud as a mastered song by the Limiter alone. The tonal bands are coarse
 (eight) and measured over the mid signal.
 
+## Metering (`engine/meter`, `core/metering`, `app/metering`, `ui/features/meters`)
+
+Loudness and stereo problems are seen while mixing: the **Meters** window (View → Meters, Alt+Shift+M, a click on the master
+meter or on the master strip's readout, action search "Check loudness and stereo"), the mixer's master readout (short-term
+LUFS and true peak), and an offline **Loudness report** (File → Loudness report…, or the window's button).
+
+### The meter on the audio thread (`src/engine/meter`)
+
+- `meter.worklet.ts` is a raw `AudioWorkletProcessor` (`agstudio.meter`) around `MeterKernel` (`suite.kernel.ts`, pure, no
+  allocation in `process()`): the SDK's `LoudnessMeter` (K-weighting as BS.1770-4, 100 ms blocks: momentary 400 ms,
+  short-term 3 s, integrated with the −70 LUFS and −10 LU gates, and **loudness range** after EBU Tech 3342: short-term values
+  above −70 LUFS, 20 LU under their power mean, 10th to 95th percentile of a 0.05 LU histogram, new in `sdk/dsp/loudness.ts`),
+  `TruePeak` per channel (4× oversampling; the maximum since the restart, and a current value that falls 20 dB/s), stereo
+  correlation (0.3 s time constant), and, at **full detail** only, two Linkwitz–Riley splits (150 Hz and 2 kHz) giving the
+  width (side / (mid + side)), correlation and mono loss of the low, mid and high band, an 8192-point stereo FFT every 2048 frames
+  (`sdk/dsp/fft.ts` `StereoSpectrum`: one complex transform serves both channels, Hann window, power scaled so a full-scale sine
+  reads 1 in its bin) and the goniometer ring (2048 frames of left/right). A loudness history (momentary and short-term every
+  100 ms while there is sound, 20 minutes in a ring) lets the graph survive a hidden tab.
+- **Shared memory, no messages**: the numbers are slots of one `Float64Array` on a `SharedArrayBuffer` (`layout.ts` `R`), plus
+  history, spectrum and scope buffers; the main thread also writes the controls there (detail, a reset counter, closed). The
+  frame loop reads them; nothing allocates per frame. After a restart the maximums wait for the windows to fill with new audio
+  (momentary 0.4 s, short-term 3 s) and the true-peak hold skips the detector's 16-frame memory.
+- **Only while somebody looks.** `MeterNode` (`meter-node.ts`) makes the worklet node, connects it to the node it listens to
+  (through a silent sink so the graph pulls it) and, on `close()`, disconnects it and sets `closed` so the processor ends.
+  `Engine.openMeter(source, { full })` listens after the fader of an insert (`MixerGraph.outputNode`; the master's is what
+  leaves the mixer, before the safety limiter and the metronome and previews) and returns null offline or without
+  cross-origin isolation. `EngineHost.openMeter` returns a `MeterLease` (`app/meter-lease.ts`) that reopens the meter on a
+  rebooted engine on the next read, so meters survive worklet reloads.
+- `services.meters` (`app/metering/service.ts`) counts **leases** per source: the Meters window (full detail) and the mixer's
+  master readout (basic) share one meter, full detail lasts as long as a lease asks for it, and the meter is closed with its
+  last lease. While any meter is open it restarts the measurement whenever the song starts playing (setting "Restart on play").
+  A Studio read opens a basic master meter for 30 s so the next read has numbers.
+
+### The window (`ui/features/meters`)
+
+- `controller.ts` runs on the frame loop (no React per frame, idle when the song is stopped and the signal is silent, readouts
+  rewritten at most every 100 ms and only when their text changes): `history-view.ts` (momentary thin, short-term bold, the
+  target as a dashed line), `stereo-view.ts` (goniometer, correlation and width bars), `spectrum-view.ts` (the FFT power
+  folded into 1/6-octave bands by `core/metering/octave.ts` `BandMap`, smoothed, peak hold 1.5 s, an optional tilt of 0, +3 or
+  +4.5 dB per octave around 1 kHz, a reference curve), `spectrogram-view.ts` (one pixel column per spectrum the audio thread made;
+  the canvas shifts itself). Text and warnings are pure in `meters-model.ts`.
+- Band math: bins fold with fractional edge weights and a Hann power divisor of 1.5, so a sine reads 0 dB in whichever band
+  holds it (tested). The **reference overlay** spreads each of the reference song's eight tonal bands (shares in dB under the
+  total) evenly over the display bands it covers and places the whole at the live signal's total power.
+- **Target line**: `app/metering/targets.ts`: a reference song's loudness when one is set, else the song style's master loudness
+  from auto-level (`LEVEL_TARGETS[inferStyle(project)]`), or Streaming −14, Apple Music −16, Broadcast −23 LUFS, or none.
+- **Mono compatibility**: the bass band (below 150 Hz) with correlation under 0 and a level above −50 dBFS shows "the bass is out
+  of phase" with the dB it loses in mono; correlation under −0.2 overall warns that the channels cancel.
+
+### The loudness report (`app/metering/report.ts`, `core/metering/report.ts`)
+
+Renders the whole song (or the bars asked for, or the current pattern on a loop when there is no song yet) through `renderOffline`
+with the master safety limiter, measures it with `LoudnessProbe` (`app/analysis/loudness-probe.ts`: the same `LoudnessMeter` and
+`TruePeak` as the live meter, plus where the loudest moments are) and reports integrated LUFS, LRA, the highest true peak and sample
+peak with their bar, the loudest momentary and short-term values with their bar, correlation and mono loss, and what Spotify,
+YouTube, Apple Music, Tidal, Amazon Music and EBU R128 do (`core/metering/targets.ts`: turned down by X dB, or turned up as far
+as the peaks allow, only by the services that do), with plain notes (true peak over −1 dBTP, very loud, almost no range, out of
+phase). It changes nothing in the project and needs no undo step; copy it as text. A 15 s house song took 1.7 s in all (its integrated loudness, −17.54 LUFS, matches the live meter's −17.5).
+
+### Studio and MCP
+
+`get_loudness` (live readings, the target, the last report), the `loudness_report` action (optional `from_bar`, `to_bar`; an
+after-step like the reference's tone check; the numbers come back as the step's lines), `meters` in `OPEN_WINDOWS`, the commands
+`view.meters`, `meters.report` and `meters.reset` (in the command catalog). MCP lists the read tool and the action by itself.
+
+### Measured (headless Chrome, M-series Mac)
+
+- Pure kernel (`suite.kernel.test.ts`), EBU Tech 3341 cases synthesized: a −23 dBFS stereo 1 kHz sine reads −23.0 LUFS (momentary,
+  short-term, integrated; also at 44.1 and 96 kHz), −33 reads −33.0, the relative gate (10 s at −36, 60 s at −23, 10 s at −36)
+  reads −23.0, an absolute-gated part never counts; loudness range cases of Tech 3342 (10, 5, 20 and 15 LU) within 1 LU; true peak
+  of fs/4 at 45° (the inter-sample peak case) within 0.2 dB at 0, −3, −6 and −12 dBTP, and of 997 Hz, 9 kHz and 11.025 kHz sines
+  at any phase within 0.2 dB; correlation +1 / −1 / about 0 for the same signal / opposite polarity / unrelated noise; a bass out
+  of phase under a mono mid is told apart (low correlation −1, 20+ dB lost in mono).
+- Worklet in Chrome against the offline measurement of the same rendered house song (`test/browser/meters.test.ts`): integrated
+  loudness identical to 0.001 LU (−17.607 both), range and true peak equal; a **live engine** playing the song reads −17.61 LUFS
+  against −17.62 offline (limit 0.3 LU).
+- Cost (offline render time of 30 s of noise and a sine, best of three, over the same render with no meter): basic detail
+  0.50 % of a core, full detail 1.33 % (limits 2 % and 4 %). A closed meter: the node and the processor are gone (`blocks` stands
+  still, `Engine.meterCount` 0).
+
+### Limits
+
+- The master meter listens before the safety limiter (−0.3 dBFS), so a mix that clips there reads a hair louder in true peak than
+  an export. Previews and the metronome are not in it.
+- The spectrum is the mean of the two channels' power; a signal that is out of phase still shows. The spectrogram's time scale is
+  23 columns a second (a late frame paints up to 12 at once).
+- Without cross-origin isolation (not the dev or preview server) there is no shared memory and the window says so.
+- The report measures one render of the master chain: tempo changes inside the song are followed, a tail after the last bar is not.
+
 ## Clip launcher (Performance mode)
 
 An FL-style Performance mode / Ableton-style session view: a grid of slots (tracks across, scenes down) that point at

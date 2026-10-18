@@ -204,8 +204,8 @@ describe('clip launcher (offline render)', () => {
       addSample(d, { ...sample, durationSec: 0.2 });
       addChannel(d, audio);
       const content = contentFromAudioChannel(d as unknown as Project, audio.id)!;
-      if (content.kind === 'audio') content.length = BEAT / 2; // a pass is one beat at 120 BPM (4 steps of 1/16 = 0.5 s)
-      setSlotContent(d, d.launcher!.trackOrder[2]!, d.launcher!.sceneOrder[0]!, { ...content, length: 960 });
+      // A pass is 960 ticks: one beat (0.5 s at 120 BPM).
+      if (content.kind === 'audio') setSlotContent(d, d.launcher!.trackOrder[2]!, d.launcher!.sceneOrder[0]!, { ...content, length: 960 });
     });
     const t3 = project.launcher!.trackOrder[2]!;
     const s1 = project.launcher!.sceneOrder[0]!;

@@ -23,6 +23,20 @@ describe('project templates', () => {
     expect(Object.values(project.playlist.markers).map((m) => m.name).sort()).toEqual(['Intro', t.name].sort());
     // The minimum: no arrangement bugs (stacked parts, layered fills, missing gaps…).
     expect(checkArrangement(s, project).filter((f) => f.severity === 'bug' && STRUCTURAL.has(f.code))).toEqual([]);
+    // The default project's empty first pattern is gone: the beat has its own, and nothing else is left over.
+    expect(Object.values(project.patterns).map((x) => x.name)).not.toContain('Pattern 1');
+    expect(project.patternOrder.slice().sort()).toEqual(Object.keys(project.patterns).sort());
+    for (const pat of Object.values(project.patterns)) {
+      const played = Object.values(project.playlist.clips).some((c) => c.kind === 'pattern' && c.patternId === pat.id);
+      expect(played || Object.keys(pat.notes).length > 0, pat.name).toBe(true);
+    }
+    // Automation clips are named after what they sweep: the channels that play through the bus (Pad, Arp + Lead), else the bus.
+    const known = new Set([...Object.values(project.channels).map((c) => c.name), ...Object.values(project.mixer.inserts).map((i) => i.name), 'Master']);
+    for (const c of Object.values(project.channels)) {
+      if (c.kind !== 'automation') continue;
+      const swept = c.name.split(' · ')[1]!.replace(/ \(.*\)$/, '');
+      for (const part of swept.split(' + ')) expect(known.has(part), c.name).toBe(true);
+    }
     // A valid project as saved files see it.
     expect(repairProject(project).repairs).toEqual([]);
   });

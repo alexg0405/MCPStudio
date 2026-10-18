@@ -338,7 +338,21 @@ export function resolveAutomationTarget(t: AutomationTarget, targets: SweepTarge
   return { kind: 'plugin', owner: { kind: 'fx', insertId: bus.insertId, slotId: bus.slotId }, paramId: EQ_BAND[t.band] };
 }
 
-const busName = (t: AutomationTarget) => (t.kind === 'eq' ? (t.bus === 'chords' ? 'Chords' : 'Lead') : t.kind === 'throw' ? 'Chords' : 'Master');
+/**
+ * What a curve moves, for its name: the channel or two that play through the swept bus ("Pad", "Arp + Lead"), else the bus's own name
+ * ("Chords"), else the generic one.
+ */
+function busName(p: Project, t: AutomationTarget, targets: SweepTargets): string {
+  if (t.kind === 'master') return 'Master';
+  const insertId = t.kind === 'throw' ? targets.throw?.from : targets[t.bus]?.insertId;
+  const insert = insertId ? p.mixer.inserts[insertId] : undefined;
+  if (!insertId || !insert) return t.kind === 'eq' ? (t.bus === 'chords' ? 'Chords' : 'Lead') : 'Chords';
+  const names = p.channelOrder.flatMap((cid) => {
+    const ch = p.channels[cid];
+    return ch && ch.kind !== 'automation' && ch.output === insertId ? [ch.name] : [];
+  });
+  return names.length >= 1 && names.length <= 2 ? names.join(' + ') : insert.name;
+}
 
 /** A curve's points normalized for its control ('neutral' = where the control sits). */
 export function automationPoints(item: AutomationItem, res: NonNullable<ReturnType<typeof resolveTarget>>): AutoPoint[] {
@@ -406,7 +420,7 @@ export function placeAutomation(
       const channel: AutomationChannel = {
         kind: 'automation',
         id: newId.channel(),
-        name: `${PURPOSE_LABEL[item.purpose]} · ${busName(item.target)}${item.purpose === 'throw' ? '' : ` (${bars} bar${bars === 1 ? '' : 's'})`}`,
+        name: `${PURPOSE_LABEL[item.purpose]} · ${busName(p, item.target, env.targets)}${item.purpose === 'throw' ? '' : ` (${bars} bar${bars === 1 ? '' : 's'})`}`,
         color: paletteColor(9),
         muted: false,
         solo: false,

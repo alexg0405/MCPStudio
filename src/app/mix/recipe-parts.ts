@@ -13,6 +13,7 @@ export const DUCKER = 'agstudio.ducker';
 export const REVERB = 'agstudio.reverb';
 export const DELAY = 'agstudio.delay';
 export const LIMITER = 'agstudio.limiter';
+export const MAXIMIZER = 'agstudio.maximizer';
 
 /** One effect of a bus: a plugin, a preset of it, settings on top, and where its sidechain listens. */
 export interface FxRecipe {

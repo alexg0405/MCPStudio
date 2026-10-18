@@ -16,12 +16,13 @@ export {
   DUCKER,
   EQ_PRO,
   LIMITER,
+  MAXIMIZER,
   REVERB,
   SATURATOR,
   eqBands,
   type FxRecipe,
 } from './recipe-parts';
-import { COMPRESSOR, DELAY, DUCKER, EQ_PRO, LIMITER, REVERB, SATURATOR, eqBands, type FxRecipe } from './recipe-parts';
+import { COMPRESSOR, DELAY, DUCKER, EQ_PRO, LIMITER, MAXIMIZER, REVERB, SATURATOR, eqBands, type FxRecipe } from './recipe-parts';
 
 export interface BusRecipe {
   fx: FxRecipe[];
@@ -240,6 +241,16 @@ export const MASTER_CHAIN: readonly FxRecipe[] = [
     label: 'Limiter (−1 dB ceiling, true peak)',
   },
 ];
+
+/**
+ * The Maximizer auto-level adds just before the master Limiter when a loudness is more than the Limiter gives cleanly (the
+ * leveling sets its input and the soft clip's depth; its ceiling follows the Limiter's).
+ */
+export const MAXIMIZER_RECIPE: FxRecipe = {
+  pluginId: MAXIMIZER,
+  params: { ceiling: -1, clip: 2, knee: 3, release: 80 },
+  label: 'Maximizer (limiter and soft clip on the peaks)',
+};
 
 /**
  * Channel volumes by role (linear; the channel default is 0.78) for channels nobody has set. The

@@ -93,3 +93,11 @@ export function libraryLine(count: number, seconds: number): string {
 }
 
 export const EMPTY_TEXT = 'Add your own music files (MP3, AAC, WAV, FLAC). Streaming services like Spotify can’t be mixed: their audio is locked.';
+
+/** A fixed mix tempo is held within this range (BPM); "Fixed" starts at the default. */
+export const MIN_MIX_BPM = 50;
+export const MAX_MIX_BPM = 250;
+export const DEFAULT_FIXED_BPM = 124;
+
+/** The longest length target that can be asked for (minutes). */
+export const MAX_LENGTH_TARGET_MIN = 600;

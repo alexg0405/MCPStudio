@@ -9,21 +9,37 @@ import { registerWindowToggle } from '../../workspace/window-commands';
 import { setWindowHelp } from '../../workspace/window-help';
 import { lazyWindow } from '../../workspace/lazy';
 import { MusicSection } from './MusicSection';
+import { MAX_LENGTH_TARGET_MIN, MAX_MIX_BPM, MIN_MIX_BPM } from './dj-view';
 import { makeMixFromUi } from './run';
+
+/** The DJ window opens this big (px) when the workspace has room, with this gap above it. */
+const WINDOW_WIDTH_PX = 940;
+const WINDOW_HEIGHT_PX = 600;
+const WINDOW_TOP_PX = 40;
+
+/** `value` when it is one of `allowed`, else `fallback`. */
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+/** The mix tempo in the args: a BPM (held in range), 'follow', or what the current options say. */
+function mixTempoFrom(wanted: unknown, fallback: DjMixOptions['mixTempo']): DjMixOptions['mixTempo'] {
+  if (typeof wanted === 'number' && Number.isFinite(wanted)) return Math.min(MAX_MIX_BPM, Math.max(MIN_MIX_BPM, wanted));
+  return wanted === 'follow' ? 'follow' : fallback;
+}
 
 /** Options for `dj.makeMix` from args (the rest from the current mix, else the defaults). */
 export function mixOptionsFrom(raw: unknown, base: DjMixOptions): DjMixOptions {
-  const a = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const pick = <T extends string>(v: unknown, ok: readonly T[], d: T): T => (ok.includes(v as T) ? (v as T) : d);
-  const tempo = typeof a.mixTempo === 'number' && Number.isFinite(a.mixTempo) ? Math.min(250, Math.max(50, a.mixTempo)) : a.mixTempo === 'follow' ? 'follow' : base.mixTempo;
-  const len = typeof a.lengthMin === 'number' && a.lengthMin > 0 ? Math.min(600, a.lengthMin) : base.lengthTargetMin;
+  const args = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const lengthMin = typeof args.lengthMin === 'number' && args.lengthMin > 0 ? Math.min(MAX_LENGTH_TARGET_MIN, args.lengthMin) : base.lengthTargetMin;
+  const keyLock = typeof args.keyLock === 'boolean' ? args.keyLock : base.keyLock;
   return {
-    order: pick(a.order, ['auto', 'keep'], base.order),
-    energy: pick(a.energy, ['build', 'party', 'chill', 'peak-time'], base.energy),
-    transition: pick(a.transition, ['auto', 'smooth', 'quick', 'cut'], base.transition),
-    mixTempo: tempo,
-    ...(len ? { lengthTargetMin: len } : {}),
-    ...((typeof a.keyLock === 'boolean' ? a.keyLock : base.keyLock) ? { keyLock: true } : {}),
+    order: oneOf(args.order, ['auto', 'keep'], base.order),
+    energy: oneOf(args.energy, ['build', 'party', 'chill', 'peak-time'], base.energy),
+    transition: oneOf(args.transition, ['auto', 'smooth', 'quick', 'cut'], base.transition),
+    mixTempo: mixTempoFrom(args.mixTempo, base.mixTempo),
+    ...(lengthMin ? { lengthTargetMin: lengthMin } : {}),
+    ...(keyLock ? { keyLock: true } : {}),
   };
 }
 
@@ -33,7 +49,12 @@ export function register(services: Services): void {
     type: 'dj',
     title: () => 'DJ mix',
     component: lazyWindow(() => import('./DjWindow'), (m) => m.DjWindow),
-    defaultRect: (ws) => ({ x: Math.max(0, Math.round(ws.w / 2 - 470)), y: 40, w: Math.min(940, ws.w), h: Math.min(600, ws.h - 60) }),
+    defaultRect: (ws) => ({
+      x: Math.max(0, Math.round(ws.w / 2 - WINDOW_WIDTH_PX / 2)),
+      y: WINDOW_TOP_PX,
+      w: Math.min(WINDOW_WIDTH_PX, ws.w),
+      h: Math.min(WINDOW_HEIGHT_PX, ws.h - WINDOW_TOP_PX - 20),
+    }),
     minSize: { w: 520, h: 300 },
   });
   registerWindowToggle(services, {

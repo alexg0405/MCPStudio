@@ -4,16 +4,8 @@ import type { DjMixOptions } from '@core/model/types';
 import { Icon } from '../../controls/Icon';
 import { useServices } from '../../services-context';
 import styles from './Dj.module.css';
-import { ENERGY_CHOICES, ORDER_CHOICES, TRANSITION_CHOICES } from './dj-view';
+import { DEFAULT_FIXED_BPM, ENERGY_CHOICES, MAX_LENGTH_TARGET_MIN, MAX_MIX_BPM, MIN_MIX_BPM, ORDER_CHOICES, TRANSITION_CHOICES } from './dj-view';
 import { makeMixFromUi } from './run';
-
-/** The tempo "Fixed" starts at when picked (BPM), and the range a fixed mix tempo can be typed in. */
-const DEFAULT_FIXED_BPM = 124;
-const MIN_FIXED_BPM = 50;
-const MAX_FIXED_BPM = 250;
-
-/** The longest length target that can be typed (minutes). */
-const MAX_LENGTH_TARGET_MIN = 600;
 
 /** A row of exclusive choices (a radio group drawn as buttons). */
 function Segmented<T extends string>({
@@ -75,11 +67,11 @@ function MixTempoField({ options, set }: { options: DjMixOptions; set(patch: Par
           <input
             className={styles.input}
             type="number"
-            min={MIN_FIXED_BPM}
-            max={MAX_FIXED_BPM}
+            min={MIN_MIX_BPM}
+            max={MAX_MIX_BPM}
             step={0.5}
             value={options.mixTempo}
-            onChange={(e) => set({ mixTempo: Math.min(MAX_FIXED_BPM, Math.max(MIN_FIXED_BPM, Number(e.target.value) || DEFAULT_FIXED_BPM)) })}
+            onChange={(e) => set({ mixTempo: Math.min(MAX_MIX_BPM, Math.max(MIN_MIX_BPM, Number(e.target.value) || DEFAULT_FIXED_BPM)) })}
             data-hint="The mix's tempo in BPM (50–250)"
           />
         )}

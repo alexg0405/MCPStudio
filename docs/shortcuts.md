@@ -118,6 +118,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Delete clips | `Del`, `⌫` |
 | Deselect clips | `Esc` |
 | Duplicate clips | `⌘B` / `Ctrl+B`, `⌘D` / `Ctrl+D` |
+| Listen to this take (solo) | `⌥L` / `Alt+L` |
 | Next take | `]` |
 | Paste clips | `⌘V` / `Ctrl+V` |
 | Playlist comp tool | `T` |

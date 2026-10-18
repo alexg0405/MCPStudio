@@ -32,9 +32,9 @@ import { playbackMode, sourceSecondsAt, tickAtSourceSeconds } from '@core/audio/
 import { markersSorted } from '@core/ops/markers';
 import { addClips, editClips, removeClips, setLaneProps, splitClip, toggleSoloLane } from '@core/ops/playlist';
 import { clipAt, clipsInRect, clipsSorted, mutedLanes, patternClipLength, songLength } from '@core/query/playlist';
-import { takeGroups, visibleLaneOrder } from '@core/query/takes';
+import { takeClipOnLane, takeGroups, visibleLaneOrder } from '@core/query/takes';
 import { compSegmentsOf } from '@core/ops/comp';
-import { pointerClip, chooseTake } from '@app/actions/comp';
+import { pointerClip, chooseTake, listenToTake } from '@app/actions/comp';
 import { sectionMatching, songSections } from '@core/query/sections';
 import { barSpan } from '@core/time/bars';
 import { formatBST, ticksPerBar } from '@core/time/ppq';
@@ -66,6 +66,7 @@ import {
   drawLanesGrid,
   drawTakeUse,
   FOLD_ZONE,
+  LISTEN_ZONE,
   drawMarkerLines,
   drawPlaylistRuler,
   HEADER_WIDTH,
@@ -143,6 +144,8 @@ function mutedOf(p: Project): ReturnType<typeof mutedLanes> {
 
 /** How far (px) the pointer may wander before a click on an empty cell counts as a drag. */
 const PRESS_SLOP = 4;
+/** A press on a take track's speaker held longer than this listens only while it is held. */
+const HOLD_LISTEN_MS = 350;
 
 /**
  * Drags that never scroll the view at its edges: points stay inside their clip, and a press on an
@@ -306,6 +309,7 @@ export class PlaylistController {
       s.editor.subscribe((next, prev) => {
         if (next.clipSelection !== prev.clipSelection) this.invalidate('clips');
         if (next.openTakes !== prev.openTakes) all();
+        if (next.auditionTake !== prev.auditionTake) this.invalidate('clips', 'headers');
         if (next.playlist.snap !== prev.playlist.snap) all();
         if (next.playlist.tool !== prev.playlist.tool) this.updateCursor();
       }),
@@ -496,6 +500,8 @@ export class PlaylistController {
       if (dirty.has('headers')) {
         this.headersRow = vp.scrollRow;
         this.headersRowHeight = vp.rowHeight;
+        const heard = this.s.editor.getState().auditionTake;
+        const heardLane = (heard && p.playlist.clips[heard]?.laneId) || null;
         drawLaneHeaders(
           fitCanvas(els.headers, HEADER_WIDTH, vp.height),
           vp,
@@ -504,6 +510,7 @@ export class PlaylistController {
           mutedOf(p),
           HEADER_WIDTH,
           new Set(this.s.editor.getState().openTakes),
+          heardLane,
         );
       }
       dirty.clear();
@@ -571,6 +578,7 @@ export class PlaylistController {
         theme,
         groups.map((g) => ({ clips: g.takes.flatMap((t) => t.clips), segments: compSegmentsOf(g) })),
         laneIndex,
+        this.s.editor.getState().auditionTake,
       );
     if (this.preview) {
       const sel = new Set(this.preview.map((c) => c.id));
@@ -1374,11 +1382,12 @@ export class PlaylistController {
         if (dTick === d.dTick && dLane === d.dLane) return;
         d.dTick = dTick;
         d.dLane = dLane;
-        this.preview = d.originals.map((c, i) => ({
-          ...c,
-          start: c.start + dTick,
-          laneId: order[(rows[i] as number) + dLane] as LaneId,
-        }));
+        this.preview = d.originals.map((c, i) => {
+          const target = order[(rows[i] as number) + dLane] as LaneId;
+          // A recording's clips stay on their tracks, and nothing else lands on those tracks (editClips does the same).
+          const stays = d.duplicate ? false : (c.kind === 'audio' && !!c.take) || !!p.playlist.lanes[target]?.takes;
+          return { ...c, start: c.start + dTick, laneId: stays ? c.laneId : target };
+        });
         this.invalidate('clips');
         return;
       }
@@ -1482,6 +1491,7 @@ export class PlaylistController {
           editClips(
             draft,
             moved.map((c) => ({ id: c.id, start: c.start, laneId: c.laneId })),
+            { tempo: tempoMapOf(this.project(), 'song') },
           ),
         );
       }
@@ -1496,6 +1506,7 @@ export class PlaylistController {
             length: c.length,
             ...(c.kind === 'audio' ? { offsetSec: c.offsetSec } : { offset: c.offset }),
           })),
+          { tempo: tempoMapOf(this.project(), 'song') },
         ),
       );
     } else if (d.kind === 'press') {
@@ -1766,6 +1777,27 @@ export class PlaylistController {
     }
     // The ▸ / ▾ at the right end of a comp track opens or folds its takes.
     const takes = p.playlist.lanes[lane]?.takes;
+    // The speaker on a take track: listen to that take alone. A quick click switches it on (click again to go back);
+    // holding it down listens only while pressed.
+    if (takes?.role === 'take' && e.button === 0 && x >= HEADER_WIDTH - LISTEN_ZONE) {
+      const clip = takeClipOnLane(p, lane);
+      if (!clip) return;
+      const ed = this.s.editor.getState();
+      if (ed.auditionTake === clip) {
+        listenToTake(this.s, null, false);
+        return;
+      }
+      listenToTake(this.s, clip, true);
+      const since = performance.now();
+      const release = () => {
+        window.removeEventListener('pointerup', release);
+        window.removeEventListener('pointercancel', release);
+        if (performance.now() - since > HOLD_LISTEN_MS && this.s.editor.getState().auditionTake === clip) listenToTake(this.s, null, false);
+      };
+      window.addEventListener('pointerup', release);
+      window.addEventListener('pointercancel', release);
+      return;
+    }
     if (takes?.role === 'comp' && e.button === 0 && x >= HEADER_WIDTH - FOLD_ZONE) {
       const ed = this.s.editor.getState();
       ed.setTakesOpen(takes.group, !ed.openTakes.includes(takes.group));

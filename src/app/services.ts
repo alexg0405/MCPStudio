@@ -3,6 +3,7 @@ import { Keymap, type Platform } from '@core/commands/keymap';
 import type { History } from '@core/history/history';
 import type { PluginOwner, Project } from '@core/model/types';
 import { setPluginState } from '@core/ops/channels';
+import { auditionProject, isTakeClip } from '@core/query/takes';
 import type { JsonValue } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions } from '@engine/api';
 import { Engine } from '@engine/engine';
@@ -351,8 +352,21 @@ function connectAudioRecording(s: Services): void {
 function connectEngine(s: Services): void {
   const { engine, history, view, doc } = s;
   const project = doc.getState().project;
-  engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
-  history.onChange((change) => engine.applyDocChange(change));
+  // "Listen to this take": the engine plays the project with one take solo'd (session state, the document is never
+  // touched); every change of the document passes through the same filter.
+  const heard = (p: Project): Project => auditionProject(p, s.editor.getState().auditionTake);
+  engine.applyDocChange({ next: heard(project), prev: project, patches: null, origin: 'load' });
+  history.onChange((change) => engine.applyDocChange(s.editor.getState().auditionTake ? { ...change, next: heard(change.next) } : change));
+  s.editor.subscribe((next, prev) => {
+    if (next.auditionTake === prev.auditionTake) return;
+    const now = doc.getState().project;
+    engine.applyDocChange({ next: heard(now), prev: now, patches: null, origin: 'edit' });
+  });
+  // The listened-to take is gone (deleted, undone away, another project): back to the comp.
+  history.onChange(({ next }) => {
+    const id = s.editor.getState().auditionTake;
+    if (id && !isTakeClip(next, id)) s.editor.getState().setAuditionTake(null);
+  });
 
   const pushView = () => {
     const v = view.getState();

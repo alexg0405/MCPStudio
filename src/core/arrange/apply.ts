@@ -194,11 +194,12 @@ const DEFAULT_LANE = /^Track \d+$/;
 
 /** A lane by name: the one with that name, else the first empty "Track N", else a new one. */
 export function laneNamed(d: Draft<Project>, name: string): LaneId {
-  for (const id of d.playlist.laneOrder) if (d.playlist.lanes[id]?.name === name) return id;
+  // Never a recording's comp or take track: they hold only that recording.
+  for (const id of d.playlist.laneOrder) if (d.playlist.lanes[id]?.name === name && !d.playlist.lanes[id]?.takes) return id;
   const used = new Set(Object.values(d.playlist.clips).map((c) => c.laneId));
   for (const id of d.playlist.laneOrder) {
     const lane = d.playlist.lanes[id];
-    if (lane && !used.has(id) && DEFAULT_LANE.test(lane.name)) {
+    if (lane && !lane.takes && !used.has(id) && DEFAULT_LANE.test(lane.name)) {
       lane.name = name.slice(0, 64);
       return id;
     }

@@ -387,6 +387,39 @@ export function drawPatternBody(
 
 /** Width of the fold toggle at the right end of a comp track's header. */
 export const FOLD_ZONE = 22;
+/** Width of the "listen to this take" button at the right end of a take track's header. */
+export const LISTEN_ZONE = 22;
+
+/** A small speaker (lit while the take is being listened to alone). */
+function drawSpeaker(ctx: CanvasRenderingContext2D, cx: number, cy: number, on: boolean, theme: TimelineTheme): void {
+  ctx.save();
+  if (on) {
+    ctx.fillStyle = theme.accent;
+    ctx.beginPath();
+    ctx.roundRect(cx - 9, cy - 8, 18, 16, 4);
+    ctx.fill();
+  }
+  const ink = on ? theme.surface2 : theme.textFaint;
+  ctx.fillStyle = ink;
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(cx - 5, cy - 2);
+  ctx.lineTo(cx - 2.5, cy - 2);
+  ctx.lineTo(cx + 0.5, cy - 5);
+  ctx.lineTo(cx + 0.5, cy + 5);
+  ctx.lineTo(cx - 2.5, cy + 2);
+  ctx.lineTo(cx - 5, cy + 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + 0.5, cy, 3.5, -0.9, 0.9);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx + 0.5, cy, 6.2, -0.9, 0.9);
+  ctx.stroke();
+  ctx.restore();
+}
 
 export function drawLaneHeaders(
   ctx: CanvasRenderingContext2D,
@@ -397,6 +430,8 @@ export function drawLaneHeaders(
   width: number,
   /** Take groups whose stack of take lanes is open. */
   openTakes: ReadonlySet<string> = new Set(),
+  /** The track of the take being listened to alone (its speaker button is lit). */
+  heardLane: LaneId | null = null,
 ): void {
   ctx.fillStyle = theme.surface2;
   ctx.fillRect(0, 0, width, vp.height);
@@ -460,6 +495,10 @@ export function drawLaneHeaders(
       ctx.fill();
       ctx.fillStyle = on ? theme.text : theme.textFaint;
       ctx.fillText(lane.name, 27, cy + 0.5, width - 33 - FOLD_ZONE + 6);
+    } else if (takes?.role === 'take') {
+      drawSpeaker(ctx, width - LISTEN_ZONE / 2 - 3, cy, heardLane === lane.id, theme);
+      ctx.fillStyle = on ? theme.text : theme.textFaint;
+      ctx.fillText(lane.name, 33, cy + 0.5, width - 41 - LISTEN_ZONE + 6);
     } else ctx.fillText(lane.name, takes ? 33 : 27, cy + 0.5, width - (takes ? 41 : 33));
   }
   ctx.fillStyle = theme.lineFaint;
@@ -675,6 +714,8 @@ export function drawTakeUse(
   theme: TimelineTheme,
   groups: ReadonlyArray<{ clips: readonly AudioClip[]; segments: ReadonlyArray<{ take: number; from: Tick; to: Tick }> }>,
   laneIndex: ReadonlyMap<LaneId, number>,
+  /** The take clip being listened to alone: an accent outline and a label. */
+  heard: ClipId | null = null,
 ): void {
   for (const g of groups) {
     for (const c of g.clips) {
@@ -682,6 +723,23 @@ export function drawTakeUse(
       if (row === undefined || !c.take) continue;
       const box = clipBox(vp, row, c);
       if (box.y + box.h < 0 || box.y > vp.height) continue;
+      if (c.id === heard) {
+        ctx.save();
+        ctx.strokeStyle = theme.accent;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2);
+        if (box.w > 90) {
+          ctx.font = `600 10px ${theme.font}`;
+          ctx.textBaseline = 'middle';
+          const label = 'Listening to this take';
+          const tw = ctx.measureText(label).width + 10;
+          ctx.fillStyle = theme.accent;
+          ctx.fillRect(box.x + 4, box.bodyY + 3, tw, 14);
+          ctx.fillStyle = theme.surface2;
+          ctx.fillText(label, box.x + 9, box.bodyY + 10.5);
+        }
+        ctx.restore();
+      }
       for (const seg of g.segments) {
         if (seg.take !== c.take.index) continue;
         const a = Math.max(seg.from, c.start);

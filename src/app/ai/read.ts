@@ -718,12 +718,13 @@ const get_reference = tool(
 
 const get_takes = tool(
   'get_takes',
-  'Audio recordings that have takes (loop passes): for each take group its comp track and take tracks (1-based playlist tracks), the takes (1-based, in recording order, with their clip ids, bar and length), what the comp plays where (take number per range of bars) and its crossfade; also the punch range and recording settings. The comp action takes these numbers.',
+  'Audio recordings that have takes (loop passes): for each take group its comp track and take tracks (1-based playlist tracks), the takes (1-based, in recording order, with their clip ids, bar and length), what the comp plays where (take number per range of bars), its crossfade and which take the musician is listening to on its own (listening_to_take; the comp.listenTake command starts that); also the punch range and recording settings. The comp action takes these numbers.',
   { group: S.str('Only this take group (its id).') },
   (s, a) => {
     const p = project(s);
     const want = str(a.group);
     const open = s.editor.getState().openTakes;
+    const heard = s.editor.getState().auditionTake;
     const trackOf = (id: string) => p.playlist.laneOrder.indexOf(id as never) + 1;
     const groups = takeGroups(p)
       .filter((g) => !want || g.id === want)
@@ -735,6 +736,8 @@ const get_takes = tool(
           comp_track: g.compLane ? trackOf(g.compLane) : null,
           take_tracks: g.takeLanes.map(trackOf),
           takes_open: open.includes(g.id),
+          // The take the musician is listening to on its own (a session switch, not in the project), else null.
+          listening_to_take: nth(g.takes.find((t) => t.clips.some((c) => c.id === heard))?.index ?? -1) || null,
           crossfade_ms: g.crossfadeMs,
           takes: g.takes.map((t) => ({
             take: nth(t.index),

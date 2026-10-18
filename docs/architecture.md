@@ -2615,10 +2615,32 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   across the border stays above 0.2 RMS (the tone is 0.35). The engine's own 2 ms / 4 ms start and release ramps
   already stop a hard cut from clicking (a 0 ms crossfade measures 0.033), so the crossfade's job is to keep the level
   and the sound continuous rather than to remove a click.
-- Not done / fragile: comp clips lose a hand-made clip gain or fade when the comp is rebuilt (they follow the take
-  clip's own); moving or resizing a take clip does not rebuild the comp; Freeze and consolidate keep off these tracks
-  (`laneFree`) but the arranger, automation and dropping a file onto one can still put a clip there; auditioning a single
-  take means unmuting its clip (Use this take and play); the comp cannot span takes of different recordings.
+- **Hand-made gain and fades survive a rebuild** (`findCompEdits` / `applyCompEdits`, `compEditsOf` in `core/ops/comp.ts`):
+  nothing is stored on the segments. Before the comp lane is rebuilt, each old comp clip is compared with what the plan
+  makes of the same segments (same takes, same crossfade); only the differences are edits (gain, a fade at an edge).
+  They are laid over the new plan by position: a gain goes to the new clip of the same take that overlaps most, a fade
+  only to a clip that still starts (or ends) at the same tick (a fade belongs to a border; where the border moved the
+  plan's crossfade is used). Changing the crossfade measures the edits against the old value first, so the new length
+  still takes effect.
+- **Moving or resizing a take clip rebuilds the comp** (`editClips(d, edits, { tempo })` calls `snapshotComps` before and
+  `refreshComps` after, in the caller's `transact`, so it is one undo step; the playlist's drags and the AI's clip edit
+  pass the tempo): what the comp plays of a moved clip moves with it (same audio, same trim), a left trim keeps the audio
+  where it is, a right trim cuts the comp to what is left, hand edits ride along. A vacated stretch is silent; where a
+  moved piece lands on another take's, the later piece wins the overlap. A take clip (and a comp clip) keeps its track.
+- **Recordings' own tracks hold only that recording.** `addClips` sends a clip meant for a comp or take track (paste,
+  duplicate, file drop, placing a pattern) to the first ordinary track with room, adding one when none has
+  (`ordinaryLaneFor`; `{ toTakeLanes: true }` is for the recorder and Flatten-and-merge); `editClips` will not move another
+  clip onto one; `firstFreeLane` (automation), `laneNamed` (the arranger), the MIDI import's track order, consolidate's
+  track and the AI's `place_pattern` skip them, and the AI's clip edit refuses `to_track` on or off them.
+- **Listen to this take** (`comp.listenTake`, Alt+L on the playlist; the clip menus; the speaker on a take track's header,
+  held = only while pressed): `editor.auditionTake` is session state. `connectEngine` passes every document change through
+  `auditionProject(project, clip)` (`core/query/takes.ts`, memoized): a copy in which the group's other clips are muted and
+  the take is on, its track un-muted (and soloed when another track is). The document, undo and exports never see it; it
+  clears itself when the take is deleted or undone away. The listened take is outlined and labelled in the playlist; the
+  `get_takes` read reports `listening_to_take`, and the command (with an `argsHint`) reaches the AI and MCP through the
+  command catalog.
+- Not done: the comp cannot span takes of different recordings; a take clip's own gain or fade changed after the comp was made
+  does not reach comp clips that already exist (measured against the current takes they read as hand edits and are kept).
 
 - Record mode records what the chip next to the record button says: recorders have a kind (`notes`, the default, or
   `audio`) and the prefs `recordNotes` / `recordAudio` choose. Browsers ask for microphone permission on the first

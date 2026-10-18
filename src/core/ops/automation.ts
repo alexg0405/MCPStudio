@@ -42,7 +42,8 @@ export function sanitizePoints(points: readonly AutoPoint[]): AutoPoint[] {
 export function firstFreeLane(p: Project, start: Tick, end: Tick): LaneId | null {
   const busy = new Set<LaneId>();
   for (const c of Object.values(p.playlist.clips)) if (c.start < end && c.start + c.length > start) busy.add(c.laneId);
-  return p.playlist.laneOrder.find((id) => !busy.has(id)) ?? null;
+  // The comp and take tracks of a recording hold only that recording.
+  return p.playlist.laneOrder.find((id) => !busy.has(id) && !p.playlist.lanes[id]?.takes) ?? null;
 }
 
 export interface CreateAutomationOptions {

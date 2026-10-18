@@ -56,6 +56,11 @@ export interface EditorState {
   clipSelection: readonly ClipId[];
   /** Take groups whose stack of take lanes is open under the comp lane (view state, not undoable). */
   openTakes: readonly string[];
+  /**
+   * The take clip being listened to on its own ("Listen to this take"): the engine plays the project with that take
+   * unmuted and the rest of its recording silent (`auditionProject`). Session state, never saved or undoable.
+   */
+  auditionTake: ClipId | null;
   /** Copied clips, starts relative to the first one. */
   clipClipboard: readonly Clip[] | null;
   /** Selected notes of the piano roll's channel in the current pattern. Not undoable. */
@@ -81,6 +86,7 @@ export interface EditorActions {
   selectClips(ids: readonly ClipId[]): void;
   /** Opens or closes a take group's stack of take lanes. */
   setTakesOpen(group: string, open: boolean): void;
+  setAuditionTake(clip: ClipId | null): void;
   setClipClipboard(clips: readonly Clip[] | null): void;
   selectNotes(ids: readonly NoteId[]): void;
   setNoteClipboard(notes: readonly Note[] | null): void;
@@ -126,6 +132,7 @@ export function createEditorStore(
     noteClipboard: null,
     clipSelection: [],
     openTakes: [],
+    auditionTake: null,
     clipClipboard: null,
     setPlaylist(patch) {
       const cur = get().playlist;
@@ -142,6 +149,9 @@ export function createEditorStore(
       const cur = get().openTakes;
       if (cur.includes(group) === open) return;
       set({ openTakes: open ? [...cur, group] : cur.filter((g) => g !== group) });
+    },
+    setAuditionTake(clip) {
+      if (get().auditionTake !== clip) set({ auditionTake: clip });
     },
     setClipClipboard(clips) {
       set({ clipClipboard: clips });

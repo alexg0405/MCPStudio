@@ -80,6 +80,8 @@ export const clips: OpModule = {
           const start = toBar !== undefined ? Math.max(0, Math.round((toBar - 1) * barT)) : clip.start;
           const length = bars !== undefined && bars > 0 ? Math.max(1, Math.round(bars * barT)) : clip.length;
           if (toBar !== undefined || bars !== undefined) c.focus.span(start, start + length, 'clip');
+          if (toTrack && (d.playlist.lanes[toTrack]?.takes || (clip.kind === 'audio' && clip.take)))
+            fail('the tracks of a recording (its comp and takes) keep only that recording: its clips cannot change track and no other clip goes there');
           editClips(d, [
             {
               id: clip.id,
@@ -88,7 +90,7 @@ export const clips: OpModule = {
               ...(toBar !== undefined ? { start } : {}),
               ...(bars !== undefined && bars > 0 ? { length } : {}),
             },
-          ]);
+          ], { tempo: tempoMapOf(c.base, 'song') });
           if (mute !== undefined) out.push(mute ? 'muted' : 'unmuted');
           if (toTrack) out.push(`to track ${d.playlist.laneOrder.indexOf(toTrack) + 1}`);
           if (toBar !== undefined) out.push(`starts at bar ${barOf(start, ts)}`);

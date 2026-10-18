@@ -195,8 +195,46 @@
   box-shadow: 0 0 0 2px var(--ag-select);
 }
 
-.drop {
+.drop,
+.slot[data-clip-drop-over] {
   box-shadow: 0 0 0 2px var(--ag-accent);
+}
+
+/* The pad page: with a grid bigger than 8 × 8 the controller pads show one page, the rest is dimmed. */
+.pageGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pageButton {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pageButton:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.pageButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.slot[data-off-page],
+.head[data-off-page],
+.scene[data-off-page],
+.stop[data-off-page] {
+  opacity: 0.55;
 }
 
 /* The play-state ring: a play triangle when idle, a ring that fills with the position while it plays. */
@@ -343,6 +381,11 @@
   background: var(--ag-glass-strong);
   box-shadow: var(--ag-elev-2);
   text-align: center;
+  /* The card sits over the grid: its text lets pointers (and drops) through to the slots below, only its buttons take them. */
+  pointer-events: none;
+}
+
+.empty button {
   pointer-events: auto;
 }
 

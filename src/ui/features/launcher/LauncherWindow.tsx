@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, type DragEvent } from 'react';
 import { useStore } from 'zustand';
-import { fillFromClips, fillFromPatterns, putInSlotAt } from '@app/launcher/edit';
+import { fillFromClips, fillFromPatterns, putAudioFilesAt, putClipsAt, putInSlotAt } from '@app/launcher/edit';
 import {
   DEFAULT_SCENES,
   DEFAULT_TRACKS,
@@ -13,7 +13,10 @@ import {
   slotMode,
 } from '@core/launcher/grid';
 import { LAUNCH_QUANTIZES, type LaunchQuantize, type LaunchSlot, type LaunchTrack, type LaunchTrackId, type PatternId, type SceneId } from '@core/model/types';
+import { LAUNCH_PAD_SIZE, type LaunchPageDir } from '@core/midi-map/targets';
 import { addLaunchTrack, addScene, moveSlot, setLauncherQuantize } from '@core/ops/launcher';
+import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
+import { CLIP_DROP_ATTR, CLIP_DROP_EVENT, type ClipDropDetail } from '../../clip-drop';
 import { Icon } from '../../controls/Icon';
 import { useDoc, useServices } from '../../services-context';
 import styles from './Launcher.module.css';
@@ -25,7 +28,7 @@ const SLOT_DRAG = 'application/x-agstudio-launch-slot';
 
 export const EMPTY_TITLE = 'Nothing to launch yet';
 export const EMPTY_TEXT =
-  'Drag a pattern from the Browser into a slot, or right-click a slot to choose one. Then press a slot (or a scene) to start it in time with the song: patterns loop, one slot plays per track, and a new one replaces it on the next bar.';
+  'Drag a pattern from the Browser, a clip from the playlist or an audio file from your computer into a slot, or right-click a slot to choose one. Then press a slot (or a scene) to start it in time with the song: patterns loop, one slot plays per track, and a new one replaces it on the next bar.';
 
 /** The clip launcher: perform and jam with the project's patterns and audio clips. */
 export function LauncherWindow() {
@@ -34,6 +37,7 @@ export function LauncherWindow() {
   const launcher = useDoc((p) => p.launcher);
   const recording = useStore(session.store, (s) => s.recording);
   const cursor = useStore(session.store, (s) => s.cursor);
+  const page = useStore(session.store, (s) => s.page);
   const rootRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<LauncherView | null>(null);
 
@@ -42,6 +46,12 @@ export function LauncherWindow() {
   const nTracks = launcher ? trackIds.length : DEFAULT_TRACKS;
   const nScenes = launcher ? sceneIds.length : DEFAULT_SCENES;
   const empty = filledSlots(launcher).length === 0;
+  // The pads (a controller) show one 8 × 8 page at a time: with a bigger grid the rest is dimmed, and arrows move the page.
+  const pages = { tracks: Math.max(1, Math.ceil(nTracks / LAUNCH_PAD_SIZE)), scenes: Math.max(1, Math.ceil(nScenes / LAUNCH_PAD_SIZE)) };
+  const paged = pages.tracks > 1 || pages.scenes > 1;
+  const padPage = { track: Math.min(page.track, pages.tracks - 1), scene: Math.min(page.scene, pages.scenes - 1) };
+  const trackOn = (ti: number) => !paged || Math.floor(ti / LAUNCH_PAD_SIZE) === padPage.track;
+  const sceneOn = (si: number) => !paged || Math.floor(si / LAUNCH_PAD_SIZE) === padPage.scene;
 
   // The live play states are painted by a frame callback, not by React.
   useEffect(() => {
@@ -57,6 +67,32 @@ export function LauncherWindow() {
     };
   }, [services]);
   useLayoutEffect(() => viewRef.current?.refresh());
+
+  // Playlist clips dragged here with the pointer (the playlist hands the drag over, see ui/clip-drop.ts).
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onClipDrop = (e: Event) => {
+      const slot = (e.target as Element).closest<HTMLElement>('[data-slot]');
+      if (!slot) return;
+      const { clipIds } = (e as CustomEvent<ClipDropDetail>).detail;
+      const r = putClipsAt(services, clipIds, Number(slot.dataset.ti), Number(slot.dataset.si));
+      const toast = services.session.getState().toast;
+      if (r.placed) toast(`Put ${r.placed} clip${r.placed === 1 ? '' : 's'} in the launcher${r.skipped ? ` (${r.skipped} could not go: automation clips can’t be launched)` : ''}. Undo takes them back.`);
+      else toast('Nothing to put there: automation clips can’t be launched.', 'error');
+    };
+    el.addEventListener(CLIP_DROP_EVENT, onClipDrop);
+    return () => el.removeEventListener(CLIP_DROP_EVENT, onClipDrop);
+  }, [services]);
+
+  // Moving the pads to another page shows it.
+  useEffect(() => {
+    if (!paged) return;
+    rootRef.current
+      ?.querySelector(`[data-ti="${padPage.track * LAUNCH_PAD_SIZE}"][data-si="${padPage.scene * LAUNCH_PAD_SIZE}"]`)
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [padPage.track, padPage.scene]);
 
   // Gate slots stop when the key is let go.
   const onKeyUp = (e: React.KeyboardEvent) => {
@@ -115,6 +151,7 @@ export function LauncherWindow() {
         <button className={styles.button} onClick={() => services.history.transact('Add launcher track', (d) => void addLaunchTrack(d))} data-hint="Add a column (a track): it plays one slot at a time">
           <Icon name="plus" size={12} /> Track
         </button>
+        {paged && <PageButtons track={padPage.track} scene={padPage.scene} pages={pages} />}
         <button className={styles.button} onClick={() => void services.commands.run('dj.controllers.open')} data-hint="Connect a pad controller (Launchpad and similar) or link pads with MIDI learn">
           <Icon name="midi" size={12} /> Pads…
         </button>
@@ -123,7 +160,7 @@ export function LauncherWindow() {
       <div className={styles.scroll}>
         <div className={styles.grid} style={{ gridTemplateColumns: `repeat(${nTracks}, minmax(104px, 1fr)) minmax(120px, 150px)` }}>
           {Array.from({ length: nTracks }, (_, ti) => (
-            <TrackHead key={trackIds[ti] ?? `t${ti}`} track={launcher?.tracks[trackIds[ti] as LaunchTrackId]} index={ti} />
+            <TrackHead key={trackIds[ti] ?? `t${ti}`} track={launcher?.tracks[trackIds[ti] as LaunchTrackId]} index={ti} off={!trackOn(ti)} />
           ))}
           <div className={styles.corner} data-hint="Scene buttons: launch a whole row of slots together">
             Scenes
@@ -145,15 +182,16 @@ export function LauncherWindow() {
                       slot={slot}
                       track={trackId ? launcher?.tracks[trackId] : undefined}
                       cursor={cursor.track === ti && cursor.scene === si}
+                      off={!trackOn(ti) || !sceneOn(si)}
                     />
                   );
                 })}
-                <SceneButton sceneId={sceneId} index={si} name={sceneId ? launcher?.scenes[sceneId]?.name : undefined} />
+                <SceneButton sceneId={sceneId} index={si} name={sceneId ? launcher?.scenes[sceneId]?.name : undefined} off={!sceneOn(si)} />
               </Fragment>
             );
           })}
           {Array.from({ length: nTracks }, (_, ti) => (
-            <StopButton key={trackIds[ti] ?? `t${ti}`} trackId={trackIds[ti]} index={ti} />
+            <StopButton key={trackIds[ti] ?? `t${ti}`} trackId={trackIds[ti]} index={ti} off={!trackOn(ti)} />
           ))}
           <div />
         </div>
@@ -209,12 +247,40 @@ function Status() {
   return <div className={styles.status}>{text}</div>;
 }
 
-const TrackHead = memo(function TrackHead({ track, index }: { track: LaunchTrack | undefined; index: number }) {
+/** The pad page: arrows move the 8 × 8 page the controller pads show (only when the grid is bigger than one page). */
+function PageButtons({ track, scene, pages }: { track: number; scene: number; pages: { tracks: number; scenes: number } }) {
+  const services = useServices();
+  const arrow = (dir: LaunchPageDir, glyph: string, can: boolean, word: string) => (
+    <button
+      className={styles.pageButton}
+      onClick={() => services.launcher.movePage(dir)}
+      disabled={!can}
+      aria-label={`Pad page ${dir}`}
+      data-hint={`Move the controller pads one page ${dir}: ${word} (the dimmed slots are off the pads’ page)`}
+    >
+      {glyph}
+    </button>
+  );
+  return (
+    <span className={styles.pageGroup} role="group" aria-label="Pad page" data-hint="Which 8 × 8 part of the grid the controller pads press and light (the Launchpad arrow buttons move it)">
+      <span className={styles.label}>
+        Pads {track + 1},{scene + 1} of {pages.tracks}×{pages.scenes}
+      </span>
+      {arrow('left', '◂', track > 0, 'tracks before these')}
+      {arrow('up', '▴', scene > 0, 'scenes above these')}
+      {arrow('down', '▾', scene < pages.scenes - 1, 'scenes below these')}
+      {arrow('right', '▸', track < pages.tracks - 1, 'tracks after these')}
+    </span>
+  );
+}
+
+const TrackHead = memo(function TrackHead({ track, index, off }: { track: LaunchTrack | undefined; index: number; off: boolean }) {
   const services = useServices();
   const laneName = useDoc((p) => (track?.laneId ? p.playlist.lanes[track.laneId]?.name : undefined));
   return (
     <div
       className={styles.head}
+      data-off-page={off ? '' : undefined}
       style={track?.color ? ({ ['--c' as string]: track.color } as React.CSSProperties) : undefined}
       onContextMenu={(e) => {
         if (!track) return;
@@ -241,9 +307,11 @@ interface SlotProps {
   slot: LaunchSlot | undefined;
   track: LaunchTrack | undefined;
   cursor: boolean;
+  /** Not on the page the controller pads show. */
+  off: boolean;
 }
 
-const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor }: SlotProps) {
+const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor, off }: SlotProps) {
   const services = useServices();
   const session = services.launcher;
   const label = useDoc((p) => (slot ? slotLabel(p, slot) : ''));
@@ -257,7 +325,16 @@ const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor 
     const dt = e.dataTransfer;
     const pattern = dt.getData(PATTERN_DRAG);
     const moved = dt.getData(SLOT_DRAG);
-    if (!pattern && !moved) return;
+    if (!pattern && !moved) {
+      // Audio files (from the computer, or out of the sample browser): read now, the drop's data is gone afterwards.
+      const files = takeAudioFiles(dt);
+      if (!files) return;
+      e.preventDefault();
+      void putAudioFilesAt(services, files, ti, si).then((n) => {
+        if (n) services.session.getState().toast(`Put ${n} audio file${n === 1 ? '' : 's'} in the launcher. Undo takes ${n === 1 ? 'it' : 'them'} back.`);
+      });
+      return;
+    }
     e.preventDefault();
     if (pattern) {
       const problem = putInSlotAt(services, ti, si, { kind: 'pattern', patternId: pattern as PatternId });
@@ -282,11 +359,15 @@ const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor 
       data-state={slot ? 'idle' : 'empty'}
       data-track-id={trackId}
       data-scene-id={sceneId}
-      data-dj-target={ti < 8 && si < 8 ? `launch.slot:${ti + 1}:${si + 1}` : undefined}
+      data-ti={ti}
+      data-si={si}
+      data-off-page={off ? '' : undefined}
+      {...{ [CLIP_DROP_ATTR]: '' }}
+      data-dj-target={`launch.slot:${(ti % LAUNCH_PAD_SIZE) + 1}:${(si % LAUNCH_PAD_SIZE) + 1}`}
       data-hint={
         slot
           ? `${label}: press to launch (${MODE_LABELS[mode].toLowerCase()}${slotLoops(slot) ? ', loops' : ', plays once'}); right-click for mode, loop, quantize and follow action`
-          : 'Empty slot: drag a pattern here from the Browser, or right-click to choose what it plays'
+          : 'Empty slot: drag a pattern here from the Browser, a clip from the playlist or an audio file from your computer, or right-click to choose what it plays'
       }
       onPointerDown={(e) => {
         if (e.button !== 0) return;
@@ -303,7 +384,7 @@ const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor 
       }}
       onDragOver={(e) => {
         const types = e.dataTransfer.types;
-        if (types.includes(PATTERN_DRAG) || types.includes(SLOT_DRAG)) {
+        if (types.includes(PATTERN_DRAG) || types.includes(SLOT_DRAG) || dragMayHaveAudio(e.dataTransfer)) {
           e.preventDefault();
           e.dataTransfer.dropEffect = types.includes(SLOT_DRAG) && !e.altKey ? 'move' : 'copy';
           ref.current?.classList.add(styles.drop as string);
@@ -337,14 +418,15 @@ const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor 
   );
 });
 
-function SceneButton({ sceneId, index, name }: { sceneId: SceneId | undefined; index: number; name: string | undefined }) {
+function SceneButton({ sceneId, index, name, off }: { sceneId: SceneId | undefined; index: number; name: string | undefined; off: boolean }) {
   const services = useServices();
   return (
     <button
       className={styles.scene}
       data-scene-btn={sceneId}
       data-state="idle"
-      data-dj-target={index < 8 ? `launch.scene:${index + 1}` : undefined}
+      data-off-page={off ? '' : undefined}
+      data-dj-target={`launch.scene:${(index % LAUNCH_PAD_SIZE) + 1}`}
       onClick={() => services.launcher.launchSceneAt(index)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -359,14 +441,15 @@ function SceneButton({ sceneId, index, name }: { sceneId: SceneId | undefined; i
   );
 }
 
-function StopButton({ trackId, index }: { trackId: LaunchTrackId | undefined; index: number }) {
+function StopButton({ trackId, index, off }: { trackId: LaunchTrackId | undefined; index: number; off: boolean }) {
   const services = useServices();
   return (
     <button
       className={styles.stop}
       data-stop-btn={trackId}
       data-state="idle"
-      data-dj-target={index < 8 ? `launch.stop:${index + 1}` : undefined}
+      data-off-page={off ? '' : undefined}
+      data-dj-target={`launch.stop:${(index % LAUNCH_PAD_SIZE) + 1}`}
       onClick={() => services.launcher.stopTrackAt(index)}
       onContextMenu={(e) => {
         e.preventDefault();

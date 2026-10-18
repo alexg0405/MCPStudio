@@ -89,6 +89,11 @@ export class SampleResidency {
   private needs: ClipNeed[] = [];
   private readonly byClip = new Map<ClipId, ClipNeed>();
   private readonly items = new Map<string, Item>();
+  /**
+   * Stretched copies the clip launcher's audio passes play (they are not playlist clips): the item and the runs using it.
+   * Kept pinned while one of those runs is alive (`endLaunch`), then they are ordinary evictable cache entries.
+   */
+  private readonly launchItems = new Map<string, { item: Item; runs: Set<string> }>();
   /** Keys asked for outside the playlist (previews of an audio clip channel). */
   private readonly extra = new Set<string>();
   private readonly pins = new Map<string, () => void>();
@@ -188,6 +193,10 @@ export class SampleResidency {
       }
       else this.extra.delete(key);
     }
+    for (const [k, l] of this.launchItems) {
+      if (![...l.item.channels].some((id) => p.channels[id]?.kind === 'audioClip')) this.launchItems.delete(k);
+      else if (!items.has(k)) items.set(k, l.item);
+    }
     this.items.clear();
     for (const [k, v] of items) this.items.set(k, v);
     this.failed.clear();
@@ -260,12 +269,67 @@ export class SampleResidency {
     return reverse ? `${sourceKey}|rev` : sourceKey;
   }
 
-  /** The clip's stretched copy at `scale`, or null while it isn't ready (the plain sample plays meanwhile). */
-  stretched(clip: AudioClip, scale: number): (StretchedCopy & { key: string }) | null {
+  /**
+   * The clip's stretched copy at `scale`, or null while it isn't ready (the plain sample plays meanwhile). A clip of the
+   * clip launcher (id `launch:<run>:<pass>`) is not in the playlist: its copy is looked up (and started) by the sample,
+   * the scale and the part it plays, under the tempo `tempo` of its pass.
+   */
+  stretched(clip: AudioClip, scale: number, tempo?: TempoMap): (StretchedCopy & { key: string }) | null {
+    if (clip.id.startsWith('launch:') && tempo) return this.launchStretched(clip, scale, tempo);
     const n = this.byClip.get(clip.id);
     if (!n || !n.stretchKey || n.scale !== scale) return null;
     const buffer = this.deps.cache.get(n.stretchKey);
     return buffer ? { buffer, from: n.stretchFrom, key: n.stretchKey } : null;
+  }
+
+  /** A pass of a launched slot: finds or starts its stretched copy (same key as a playlist clip at that scale and part). */
+  private launchStretched(clip: AudioClip, scale: number, tempo: TempoMap): (StretchedCopy & { key: string }) | null {
+    const p = this.project;
+    const ch = p?.channels[clip.channelId];
+    if (!p || ch?.kind !== 'audioClip' || scale === 1) return null;
+    const mode = playbackMode(ch);
+    const ref = p.samples[ch.sampleId];
+    if (mode.follow !== 'stretch' || !ref) return null;
+    const sourceKey = SampleCache.keyOf(ref.source, this.sr);
+    const baseKey = mode.reverse ? `${sourceKey}|rev` : sourceKey;
+    const r = clipSourceRange(clip, mode, tempo, Infinity);
+    const from = Math.max(0, Math.floor(r.from - STRETCH_MARGIN));
+    const to = Math.ceil(r.to + STRETCH_MARGIN);
+    const key = `${baseKey}|st2:${scale}:${from}-${to}`;
+    const runId = clip.id.split(':')[1] ?? '';
+    let l = this.launchItems.get(key);
+    if (!l) {
+      const mk = (k: string, kind: Kind, base: string): Item => ({ key: k, kind, ref, sourceKey, baseKey: base, scale: 1, from: 0, to: 0, channels: new Set([ch.id]) });
+      if (!this.items.has(sourceKey)) this.items.set(sourceKey, mk(sourceKey, 'source', sourceKey));
+      if (mode.reverse && !this.items.has(baseKey)) this.items.set(baseKey, mk(baseKey, 'reverse', sourceKey));
+      const item: Item = { key, kind: 'stretch', ref, sourceKey, baseKey, scale, from, to, channels: new Set([ch.id]) };
+      this.items.set(key, item);
+      this.launchItems.set(key, (l = { item, runs: new Set() }));
+      this.queueReplan();
+    }
+    l.runs.add(runId);
+    const buffer = this.deps.cache.get(key);
+    return buffer ? { buffer, from, key } : null;
+  }
+
+  /**
+   * The clip launcher's runs that are still alive (their ids): copies made only for others are no longer kept pinned,
+   * and become ordinary cache entries (evictable, and read back from disk when needed again).
+   */
+  endLaunch(alive: ReadonlySet<string>): void {
+    let changed = false;
+    for (const [key, l] of this.launchItems) {
+      for (const id of [...l.runs]) {
+        if (alive.has(id)) continue;
+        l.runs.delete(id);
+        changed = true;
+      }
+      if (l.runs.size === 0) {
+        this.launchItems.delete(key);
+        if (!this.needs.some((n) => n.stretchKey === key)) this.items.delete(key);
+      }
+    }
+    if (changed) this.queueReplan();
   }
 
   /**
@@ -343,6 +407,10 @@ export class SampleResidency {
       n.keys = keys;
     }
     const always: string[] = [];
+    for (const [k, l] of this.launchItems) {
+      always.push(k);
+      if (!ready(k)) always.push(l.item.baseKey, l.item.sourceKey);
+    }
     for (const k of this.extra) {
       always.push(k);
       const it = this.items.get(k);

@@ -3,7 +3,10 @@
  * commands and the AI. Launching itself is `LauncherSession` (live state, never undoable).
  */
 import { filledSlots, MAX_SCENES, MAX_TRACKS } from '@core/launcher/grid';
-import type { ChannelId, ClipId, LaunchContent, LaunchTrackId, PatternId, Project, SceneId } from '@core/model/types';
+import { DEFAULT_CHANNEL_VOLUME, paletteColor } from '@core/model/defaults';
+import { newId } from '@core/model/ids';
+import type { AudioClipChannel, ChannelId, ClipId, LaunchContent, LaunchTrackId, PatternId, Project, SampleRef, SceneId } from '@core/model/types';
+import { addChannel, addSample } from '@core/ops/channels';
 import {
   addScene,
   clearSlot,
@@ -17,6 +20,7 @@ import {
   type SlotPatch,
   patchSlot,
 } from '@core/ops/launcher';
+import { importAudioFile } from '../actions/samples';
 import type { Services } from '../services';
 
 /** What a drop or a menu puts in a slot. */
@@ -57,6 +61,81 @@ export function putInSlotAt(s: Services, track: number, scene: number, src: Slot
     setSlotContent(d, l.trackOrder[track]!, l.sceneOrder[scene]!, content);
   });
   return null;
+}
+
+/**
+ * Playlist clips dropped on a slot (a pointer drag handed over by the playlist, see ui/clip-drop.ts): the first clip
+ * (in time order) goes in the slot at 0-based `track`, `scene`, the next ones in the slots below it, one undo step. Pattern
+ * clips become their pattern, audio clips their sample from the clip's trim; automation clips are skipped. Slots that were
+ * filled are replaced, the grid grows to reach the last one. The playlist and its tracks are left alone.
+ */
+export function putClipsAt(s: Services, clipIds: readonly ClipId[], track: number, scene: number): { placed: number; skipped: number } {
+  const project = s.doc.getState().project;
+  const clips = clipIds
+    .map((id) => project.playlist.clips[id])
+    .filter((c): c is NonNullable<typeof c> => !!c && c.kind !== 'automation')
+    .sort((a, b) => a.start - b.start);
+  const room = Math.max(0, MAX_SCENES - scene);
+  const take = track >= MAX_TRACKS ? [] : clips.slice(0, room);
+  if (take.length === 0) return { placed: 0, skipped: clipIds.length };
+  let placed = 0;
+  s.history.transact(take.length === 1 ? 'Put clip in launcher slot' : 'Put clips in launcher slots', (d) => {
+    const l = ensureCapacity(d, track + 1, scene + take.length);
+    take.forEach((c, i) => {
+      const content = contentFor(d as unknown as Project, { kind: 'clip', clipId: c.id });
+      if (typeof content === 'string') return;
+      if (setSlotContent(d, l.trackOrder[track]!, l.sceneOrder[scene + i]!, content)) placed++;
+    });
+  });
+  return { placed, skipped: clipIds.length - placed };
+}
+
+/**
+ * Audio files dropped on a slot (from the computer, or dragged out of the sample browser): each is imported through the
+ * sample store like any dropped file, gets an audio-clip channel (the one a playlist drop makes), and goes in a slot: the
+ * first in the slot at 0-based `track`, `scene`, the next ones below it. One undo step for all of them. Returns how many
+ * were placed (files that are not readable audio are reported with a toast by the import).
+ */
+export async function putAudioFilesAt(
+  s: Services,
+  files: readonly Pick<File, 'name' | 'arrayBuffer'>[] | Promise<readonly Pick<File, 'name' | 'arrayBuffer'>[]>,
+  track: number,
+  scene: number,
+  importFile: (s: Services, f: Pick<File, 'name' | 'arrayBuffer'>) => Promise<SampleRef | null> = importAudioFile,
+): Promise<number> {
+  if (track >= MAX_TRACKS || scene >= MAX_SCENES) return 0;
+  const refs: SampleRef[] = [];
+  for (const f of (await files).slice(0, MAX_SCENES - scene)) {
+    const ref = await importFile(s, f);
+    if (!ref) continue;
+    // A launched pass needs the sound's length.
+    if (!(ref.durationSec && ref.durationSec > 0)) s.session.getState().toast(`Can't tell how long "${f.name}" is, so it can't be launched.`, 'error');
+    else refs.push(ref);
+  }
+  if (refs.length === 0) return 0;
+  let placed = 0;
+  s.history.transact(refs.length === 1 ? `Put ${refs[0]!.name} in a launcher slot` : `Put ${refs.length} audio files in launcher slots`, (d) => {
+    const l = ensureCapacity(d, track + 1, scene + refs.length);
+    refs.forEach((ref, i) => {
+      const channel: AudioClipChannel = {
+        kind: 'audioClip',
+        id: newId.channel(),
+        name: ref.name,
+        color: paletteColor(d.channelOrder.length),
+        muted: false,
+        solo: false,
+        volume: DEFAULT_CHANNEL_VOLUME,
+        pan: 0,
+        output: d.mixer.order[0] ?? ('master' as AudioClipChannel['output']),
+        sampleId: ref.id,
+      };
+      addSample(d, ref);
+      addChannel(d, channel);
+      const content = contentFromAudioChannel(d as unknown as Project, channel.id);
+      if (content && setSlotContent(d, l.trackOrder[track]!, l.sceneOrder[scene + i]!, content)) placed++;
+    });
+  });
+  return placed;
 }
 
 export function clearSlotAt(s: Services, trackId: LaunchTrackId, sceneId: SceneId): void {

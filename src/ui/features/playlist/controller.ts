@@ -82,6 +82,7 @@ import { askPillPlace, pillText, PILL_HEIGHT, type PillTarget } from './ask-pill
 import { studioMarkSvg } from '../../controls/studio-mark';
 import { hitAudioHandle, type AudioHandle } from './audio-clip';
 import { dragMayHaveAudio, takeAudioFiles } from '../../audio-drag';
+import { clipDropTargetAt, dropClipsOn, setClipDropOver } from '../../clip-drop';
 
 export interface PlaylistElements {
   gridHost: HTMLElement;
@@ -167,6 +168,8 @@ type Drag =
       duplicate: boolean;
       dTick: number;
       dLane: number;
+      /** Another window's drop target the pointer is over (see ui/clip-drop.ts): the clips are not moving then. */
+      over: HTMLElement | null;
     }
   | { kind: 'resize'; x0: number; anchor: Clip; originals: Clip[]; side: 'start' | 'end'; dTick: number }
   | { kind: 'create'; clip: PatternClip; grab: number }
@@ -1286,6 +1289,7 @@ export class PlaylistController {
           duplicate: e.shiftKey,
           dTick: 0,
           dLane: 0,
+          over: null,
         };
       } else {
         this.drag = { kind: 'resize', x0: x, anchor: hit.clip, originals, side: hit.zone, dTick: 0 };
@@ -1340,6 +1344,7 @@ export class PlaylistController {
       this.updateAudioHover(hit, x, y, p);
       return;
     }
+    if (d.kind === 'move' && this.handOff(d, e)) return;
     this.autoScroll(x, y, p);
     switch (d.kind) {
       case 'comp': {
@@ -1473,12 +1478,45 @@ export class PlaylistController {
     }
   }
 
+  /**
+   * A move whose pointer is over another window's drop target (ui/clip-drop.ts): the clips stop following it (they show
+   * where they are) and the target is marked; true while that holds.
+   */
+  private handOff(d: Extract<Drag, { kind: 'move' }>, e: PointerEvent): boolean {
+    const over = clipDropTargetAt(e.clientX, e.clientY);
+    if (over !== d.over) {
+      d.over = over;
+      setClipDropOver(over);
+    }
+    if (!over) return false;
+    if (d.dTick !== 0 || d.dLane !== 0 || this.preview) {
+      d.dTick = 0;
+      d.dLane = 0;
+      this.preview = null;
+      this.invalidate('clips');
+    }
+    const n = d.originals.length;
+    emitHint(this.els.gridHost, `Release to put ${n === 1 ? 'this clip' : `these ${n} clips`} here (the playlist is not changed)`);
+    return true;
+  }
+
   private onPointerUp(e: PointerEvent): void {
     const d = this.drag;
     if (!d) return;
     this.els.gridHost.releasePointerCapture(e.pointerId);
     this.drag = null;
     const editor = this.s.editor.getState();
+    // Where the button was let go decides (the last move may have been somewhere else).
+    if (d.kind === 'move') this.handOff(d, e);
+    if (d.kind === 'move' && d.over) {
+      // Released over another window's drop target: it gets the clips; the playlist stays as it was.
+      const over = d.over;
+      this.preview = null;
+      this.updateCursor();
+      this.invalidate('clips', 'overlay');
+      dropClipsOn(over, { clipIds: d.originals.map((c) => c.id), duplicate: d.duplicate });
+      return;
+    }
     // A Shift-click that never moved copies nothing (a copy exactly on top of the original is no use).
     if (d.kind === 'move' && this.preview && (d.dTick !== 0 || d.dLane !== 0)) {
       const moved = this.preview;
@@ -1547,6 +1585,7 @@ export class PlaylistController {
       this.invalidate('ruler', 'grid');
     }
     if (d.kind === 'paint' || d.kind === 'erase' || d.kind === 'point' || d.kind === 'tension') d.gesture.cancel();
+    if (d.kind === 'move' && d.over) setClipDropOver(null);
     this.preview = null;
     this.updateCursor();
     this.invalidate('clips', 'overlay');

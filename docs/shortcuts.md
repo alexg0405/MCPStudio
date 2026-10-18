@@ -76,6 +76,10 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Action | Keys |
 |---|---|
 | Clear the highlighted slot | `Del`, `⌫` |
+| Controller pads: page down | `⇧↓` / `Shift+↓` |
+| Controller pads: page left | `⇧←` / `Shift+←` |
+| Controller pads: page right | `⇧→` / `Shift+→` |
+| Controller pads: page up | `⇧↑` / `Shift+↑` |
 | Launch scene (number key) | `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `0` |
 | Launch the highlighted slot | `↵` |
 | Move the clip launcher cursor | `←`, `→`, `↑`, `↓` |

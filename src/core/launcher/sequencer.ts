@@ -113,6 +113,9 @@ export class LaunchSequencer implements LaunchDriver {
     const earliest = Math.ceil(clock.earliestU);
     if (g === 0) return earliest;
     let b = Math.ceil(clock.heardU / g - 1e-9) * g;
+    // Not heard yet but already inside the scheduler's margin: still this boundary when it is within the grace
+    // (LAUNCH_GRACE_SEC): the transport starts its notes late rather than the press waiting a whole quantum.
+    if (b < earliest && b >= Math.ceil(clock.lateU ?? earliest)) return b;
     if (b < earliest) b += Math.ceil((earliest - b) / g - 1e-9) * g;
     return b;
   }
@@ -387,6 +390,6 @@ export class LaunchSequencer implements LaunchDriver {
 
 /** A run ended (stopped) at `at`. */
 function cut(r: LaunchRun, at: number, stop: boolean): LaunchRun {
-  const endU = r.endU === null ? at : Math.min(r.endU, at);
+  const endU = Math.max(r.startU, r.endU === null ? at : Math.min(r.endU, at));
   return { ...r, endU, ...(stop ? { stopU: endU } : {}) };
 }

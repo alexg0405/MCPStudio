@@ -99,18 +99,23 @@ const GLOBAL: readonly TargetInfo[] = [
   { id: 'app.stop', fn: 'app.stop', label: 'Project stop', group: 'App', kind: 'button', hint: 'Stops the project’s transport (not a deck)' },
 ];
 
-// ---- The clip launcher's pads, scene buttons and stop buttons (the first 8 tracks and scenes) ----
+// ---- The clip launcher's pads, scene buttons, stop buttons and page buttons (8 tracks and 8 scenes at a time) ----
 
 export const LAUNCH_PAD_SIZE = 8;
+
+/** The page buttons: move the 8 × 8 pads one page (8 tracks or 8 scenes) over a bigger grid. */
+export type LaunchPageDir = 'left' | 'right' | 'up' | 'down';
+export const LAUNCH_PAGE_DIRS: readonly LaunchPageDir[] = ['up', 'down', 'left', 'right'];
 
 /** What a launcher target id means (1-based positions), or null for any other id. */
 export type LaunchTarget =
   | { kind: 'slot'; track: number; scene: number }
   | { kind: 'scene'; scene: number }
   | { kind: 'stop'; track: number }
-  | { kind: 'stopAll' };
+  | { kind: 'stopAll' }
+  | { kind: 'page'; dir: LaunchPageDir };
 
-const LAUNCH_RE = /^launch\.(slot):([1-8]):([1-8])$|^launch\.(scene|stop):([1-8])$|^launch\.(stopAll)$/;
+const LAUNCH_RE = /^launch\.(slot):([1-8]):([1-8])$|^launch\.(scene|stop):([1-8])$|^launch\.(stopAll)$|^launch\.page:(left|right|up|down)$/;
 
 export function parseLaunchTarget(id: string): LaunchTarget | null {
   const m = LAUNCH_RE.exec(id);
@@ -118,6 +123,7 @@ export function parseLaunchTarget(id: string): LaunchTarget | null {
   if (m[1]) return { kind: 'slot', track: Number(m[2]), scene: Number(m[3]) };
   if (m[4] === 'scene') return { kind: 'scene', scene: Number(m[5]) };
   if (m[4] === 'stop') return { kind: 'stop', track: Number(m[5]) };
+  if (m[7]) return { kind: 'page', dir: m[7] as LaunchPageDir };
   return { kind: 'stopAll' };
 }
 
@@ -155,6 +161,15 @@ function launchTargets(): TargetInfo[] {
     kind: 'button',
     hint: 'Stops everything the clip launcher plays, at the next boundary',
   });
+  for (const dir of LAUNCH_PAGE_DIRS)
+    out.push({
+      id: `launch.page:${dir}`,
+      fn: `launch.page:${dir}`,
+      label: `Launcher: page ${dir}`,
+      group: 'Page buttons',
+      kind: 'button',
+      hint: `Moves the pads one page ${dir} over the clip launcher’s grid (8 ${dir === 'left' || dir === 'right' ? 'tracks' : 'scenes'} at a time), so a grid bigger than 8 × 8 can be reached; the pad lights follow`,
+    });
   for (let t = 1; t <= LAUNCH_PAD_SIZE; t++)
     for (let s = 1; s <= LAUNCH_PAD_SIZE; s++)
       out.push({
@@ -209,7 +224,7 @@ export function globalTargets(): readonly TargetInfo[] {
   return GLOBAL;
 }
 
-/** The clip launcher's targets (scene buttons, stop buttons, pads). */
+/** The clip launcher's targets (scene buttons, stop buttons, page buttons, pads). */
 export function launcherTargets(): readonly TargetInfo[] {
   return LAUNCH;
 }

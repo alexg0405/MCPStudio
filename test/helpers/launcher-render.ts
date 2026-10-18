@@ -9,7 +9,7 @@ import { patternContent, setSlotContent, ensureCapacity } from '@core/ops/launch
 import { makePattern } from '@core/model/defaults';
 import type { LaunchClock } from '@core/launcher/run';
 import { Engine } from '@engine/engine';
-import type { TransportView } from '@engine/api';
+import type { EngineOptions, TransportView } from '@engine/api';
 import { kitProject, resolver } from './fixtures';
 
 export const SR = 48000;
@@ -42,11 +42,25 @@ export interface LaunchRender {
 export async function renderLaunch(
   project: Project,
   steps: readonly LaunchStep[],
-  opts: { seconds: number; song?: boolean; view?: TransportView; plugins?: ReturnType<typeof resolver> } = { seconds: 4 },
+  opts: {
+    seconds: number;
+    song?: boolean;
+    view?: TransportView;
+    plugins?: ReturnType<typeof resolver>;
+    /** Bytes of embedded samples (see TestSamples). */
+    samples?: EngineOptions['samples'];
+    /**
+     * Presses made before the render with nothing playing (they only decide what will be launched): what those runs
+     * need (decoded samples, stretched copies) is made first, so the render hears a settled launcher.
+     */
+    warm?: (seq: LaunchSequencer, clock: LaunchClock) => void;
+  } = { seconds: 4 },
 ): Promise<LaunchRender> {
   const length = Math.ceil(opts.seconds * SR);
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate: SR });
-  const engine = new Engine(ctx, { plugins: opts.plugins ?? resolver() }, true, { limiter: false });
+  const engine = new Engine(ctx, { plugins: opts.plugins ?? resolver(), ...(opts.samples ? { samples: opts.samples } : {}) }, true, {
+    limiter: false,
+  });
   const takes: PerformanceTake[] = [];
   const seq = new LaunchSequencer({ project: () => project, random: () => 0, onTake: (t) => takes.push(t) });
   const ranAt: number[] = [];
@@ -56,6 +70,11 @@ export async function renderLaunch(
     engine.setTransportView(opts.view ?? { mode: 'song', patternId: project.patternOrder[0] as PatternId, loop: null });
     engine.setLauncher(seq);
     await engine.ready();
+    if (opts.warm) {
+      opts.warm(seq, { playing: false, heardU: 0, earliestU: 0 });
+      await engine.launchReady();
+      seq.reset();
+    }
     if (opts.song) {
       startedAt = 128 / SR;
       engine.startOffline(0, startedAt);

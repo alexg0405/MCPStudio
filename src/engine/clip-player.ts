@@ -8,6 +8,7 @@ import {
   type PlaybackMode,
 } from '@core/audio/playback';
 import type { AudioClip } from '@core/model/types';
+import type { TempoMap } from '@core/time/ppq';
 import type { AudioOn } from './sched/transport';
 
 /** Ramp from silence when a clip starts inside its sound on a non-zero envelope (no fade-in). */
@@ -66,8 +67,11 @@ export interface ClipSources {
    * the channel's own sample; without a clip it is the channel's.
    */
   base(clip?: AudioClip): { buffer: AudioBuffer; key: string } | null;
-  /** The clip's time-stretched copy at `scale`: its buffer, key and the second of the sample its first frame is. */
-  stretched(clip: AudioClip, scale: number): { buffer: AudioBuffer; key: string; from: number } | null;
+  /**
+   * The clip's time-stretched copy at `scale`: its buffer, key and the second of the sample its first frame is. `tempo` is
+   * the tempo map the clip plays under (a clip of the clip launcher is found by the part of the sample it plays).
+   */
+  stretched(clip: AudioClip, scale: number, tempo: TempoMap): { buffer: AudioBuffer; key: string; from: number } | null;
   /** Voices wait for buffers: make sure they are on their way. */
   request(clip?: AudioClip): void;
   /** Keeps a buffer in memory while a voice reads it; returns the release. */
@@ -160,7 +164,7 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     const secAt = tempo.tickToSeconds(tick);
     const timeOf = (tk: number) => t + tempo.tickToSeconds(tk) - secAt;
     const scale = mode.follow === 'stretch' ? stretchScale(mode, tempo, clip.start) : 1;
-    const copy = scale === 1 ? null : opts.stretched(clip, scale);
+    const copy = scale === 1 ? null : opts.stretched(clip, scale, tempo);
     const base = copy ? null : opts.base(clip);
     if (!copy && !base) {
       // Not decoded yet: wait for it (it starts at the song's position then).
@@ -288,7 +292,7 @@ export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): Clip
     const at = ctx.currentTime + SWAP_LEAD;
     for (const v of [...live.values()]) {
       if (v.state === 'ok' || at >= v.end) continue;
-      const copy = v.scale !== 1 ? opts.stretched(v.e.clip, v.scale) : null;
+      const copy = v.scale !== 1 ? opts.stretched(v.e.clip, v.scale, v.e.tempo) : null;
       if (v.state === 'waiting' && !copy && !opts.base(v.e.clip)) continue;
       if (v.state === 'fallback' && !copy) continue;
       const { tempo } = v.e;

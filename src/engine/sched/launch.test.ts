@@ -6,12 +6,13 @@
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 import { LaunchSequencer } from '@core/launcher/sequencer';
-import type { LaunchClock } from '@core/launcher/run';
+import { LAUNCH_GRACE_SEC, type LaunchClock } from '@core/launcher/run';
 import { launcherFixture } from '@core/launcher/test-project';
 import type { AudioClip, ChannelId, ClipId, LaunchTrackId, PatternId, Project, SceneId } from '@core/model/types';
 import { contentFromAudioChannel, patchSlot, setSlotContent, setTrackLane } from '@core/ops/launcher';
 import { addClips } from '@core/ops/playlist';
 import { constantTempo, type TempoMap } from '@core/time/ppq';
+import { steppedTempo } from '@core/time/tempo';
 import { songModeSource, type EventSource } from './events';
 import { Transport, type AudioOn, type TransportSink } from './transport';
 
@@ -26,11 +27,11 @@ interface Call {
   channel: ChannelId;
 }
 
-function rig(opts: { song?: boolean; edit?: (p: Project, f: ReturnType<typeof launcherFixture>) => Project } = {}) {
+function rig(opts: { song?: boolean; tempo?: TempoMap; edit?: (p: Project, f: ReturnType<typeof launcherFixture>) => Project } = {}) {
   const f = launcherFixture();
   let project = produce(f.project, (d) => void (d.transport.bpm = 120));
   if (opts.edit) project = opts.edit(project, f);
-  const tempo: TempoMap = constantTempo(120);
+  const tempo: TempoMap = opts.tempo ?? constantTempo(120);
   const clock = { currentTime: 0 };
   const calls: Call[] = [];
   const audio: AudioOn[] = [];
@@ -61,7 +62,12 @@ function rig(opts: { song?: boolean; edit?: (p: Project, f: ReturnType<typeof la
   let seen = seq.runs;
   const clockOf = (): LaunchClock =>
     transport.playing
-      ? { playing: true, heardU: transport.uAtTime(clock.currentTime), earliestU: transport.uAtTime(clock.currentTime + 0.03) }
+      ? {
+          playing: true,
+          heardU: transport.uAtTime(clock.currentTime),
+          earliestU: transport.uAtTime(clock.currentTime + 0.03),
+          lateU: transport.uAtTime(clock.currentTime - LAUNCH_GRACE_SEC),
+        }
       : { playing: false, heardU: 0, earliestU: 0 };
   const sync = () => {
     seq.advance(clockOf());
@@ -103,6 +109,11 @@ function rig(opts: { song?: boolean; edit?: (p: Project, f: ReturnType<typeof la
     );
   return {
     f, seq, transport, clock, calls, audio, run, press, ons, sync,
+    /** The clock as a press would see it, with what is heard `behind` seconds (negative) off the audio clock. */
+    clockWith: (behind: number): LaunchClock => ({
+      ...clockOf(),
+      heardU: transport.uAtTime(clock.currentTime + behind),
+    }),
     setProject: (p: Project) => {
       project = p;
       const m = model();
@@ -145,6 +156,63 @@ describe('the launcher on its own', () => {
     // A: beats 0.04, 0.54, 1.04, 1.54; B from the bar line at 2.04, then 4.04. A never plays past the boundary.
     expect(times(on.filter((c) => c.key === 60))).toEqual([0.04, 0.54, 1.04, 1.54]);
     expect(times(on.filter((c) => c.key === 61))).toEqual([2.04, 4.04]);
+  });
+
+  it('a press 5 ms before the bar line lands on that bar: its notes are inserted although the scheduler is past it', () => {
+    const r = rig();
+    r.press((clk) => r.seq.launch(tr(r, 0), sc(r, 0), clk)); // A (a note every beat) from 0.04
+    r.run(2.035); // the bar line is at 2.04 s: 5 ms ahead, inside the scheduler's 30 ms margin
+    r.press((clk) => r.seq.launch(tr(r, 0), sc(r, 1), clk)); // B: one note per bar
+    expect(r.seq.runs.map((x) => [x.startU, x.endU])).toEqual([
+      [0, BAR],
+      [BAR, null],
+    ]);
+    r.run(4.5);
+    const on = r.ons();
+    // B's first note is on the bar line (exactly, not a bar later), A's note on that beat never sounds.
+    expect(times(on.filter((c) => c.key === 61))).toEqual([2.04, 4.04]);
+    expect(times(on.filter((c) => c.key === 60))).toEqual([0.04, 0.54, 1.04, 1.54]);
+    // The note went out ahead of its time (5 ms), so it is not counted as the scheduler falling behind.
+    expect(r.transport.lateEvents).toBe(0);
+    // Every cancelled A note got its release at its own start; nothing is left hanging.
+    expect(r.calls.filter((c) => c.t === 'on')).toHaveLength(r.calls.filter((c) => c.t === 'off').length);
+  });
+
+  it('a press just after the scheduler margin but before the boundary is heard is started late, by at most the grace', () => {
+    const r = rig();
+    r.press((clk) => r.seq.launch(tr(r, 0), sc(r, 0), clk));
+    // The boundary (2.04 s) is already behind the audio clock by 20 ms, but within the grace (what is heard is behind the clock).
+    r.run(2.04 + 0.02);
+    // Heard position: 25 ms behind the clock (output latency), so before the bar line.
+    const clk0 = r.clockWith(-0.025);
+    r.press(() => r.seq.launch(tr(r, 0), sc(r, 1), clk0));
+    expect(r.seq.runs.at(-1)!.startU).toBe(BAR);
+    r.run(2.5);
+    const b = r.ons().filter((c) => c.key === 61);
+    // Its note is dispatched for 2.04 s, 20 ms in the past: the audio thread plays it at once.
+    expect(times(b)).toEqual([2.04]);
+    expect(r.transport.lateEvents).toBe(0);
+  });
+
+  it('beyond the grace the press waits for the next boundary', () => {
+    const r = rig();
+    r.press((clk) => r.seq.launch(tr(r, 0), sc(r, 0), clk));
+    r.run(2.04 + LAUNCH_GRACE_SEC + 0.01);
+    const clk0 = r.clockWith(-0.06);
+    r.press(() => r.seq.launch(tr(r, 0), sc(r, 1), clk0));
+    expect(r.seq.runs.at(-1)!.startU).toBe(2 * BAR);
+    r.run(5);
+    expect(times(r.ons().filter((c) => c.key === 61))).toEqual([4.04]);
+  });
+
+  it('a stop on a boundary a few ms ahead ends the notes there, and a note that began after it never sounds', () => {
+    const r = rig();
+    r.press((clk) => r.seq.launch(tr(r, 0), sc(r, 0), clk));
+    r.run(2.035);
+    r.press((clk) => r.seq.stopTrack(tr(r, 0), clk));
+    expect(r.seq.runs[0]!.endU).toBe(BAR);
+    r.run(4);
+    expect(times(r.ons())).toEqual([0.04, 0.54, 1.04, 1.54]);
   });
 
   it('a quantize of "none" starts as soon as the scheduler can, "beat" on the beat', () => {
@@ -336,6 +404,64 @@ describe('audio slots', () => {
     const off = r.calls.find((c) => c.t === 'off' && c.noteId === on.noteId)!;
     expect(off.time).toBeCloseTo(2.04, 6);
     void ({} as AudioClip);
+  });
+});
+
+describe('audio slots under tempo automation', () => {
+  const edit = (len: number) => (p: Project, f: ReturnType<typeof launcherFixture>) =>
+    produce(p, (d) => {
+      const c = contentFromAudioChannel(d as unknown as Project, f.audioId)!;
+      if (c.kind === 'audio') c.length = len;
+      setSlotContent(d, f.tracks[2]!, f.scenes[0]!, c);
+      addClips(d, [{ kind: 'pattern', id: 'song' as ClipId, laneId: d.playlist.laneOrder[0]!, start: 0, length: 8 * BAR, patternId: f.patterns[1]!, offset: 0 }]);
+    });
+
+  it('a pass gets the song tempo along its way: constant where the tempo does not change, stepped where it does', () => {
+    // 120 BPM for the first bar, 240 after.
+    const tempo = steppedTempo([{ tick: 0, bpm: 120 }, { tick: BAR, bpm: 240 }]);
+    const r = rig({ song: true, tempo, edit: edit(2 * BAR) });
+    r.transport.start(0, 0);
+    r.press((clk) => r.seq.launch(tr(r, 2), sc(r, 0), clk)); // on the boundary at 0 (the press is at the very start)
+    r.run(2);
+    const pass = r.audio[0]!;
+    expect(pass.clip.start).toBe(0);
+    expect(pass.tempo.constant).toBe(false);
+    // Launcher tick u = song tick here: 120 BPM for a bar (2 s), then 240 BPM (1 s per bar).
+    expect(pass.tempo.bpmAt(100)).toBe(120);
+    expect(pass.tempo.bpmAt(BAR + 100)).toBe(240);
+    expect(pass.tempo.nextChange(0)).toBe(BAR);
+    expect(pass.tempo.tickToSeconds(2 * BAR) - pass.tempo.tickToSeconds(0)).toBeCloseTo(3, 9);
+    // A pass that starts after the change sees a constant 240 BPM.
+    r.press((clk) => r.seq.launch(tr(r, 2), sc(r, 0), clk));
+    r.run(5);
+    const later = r.audio.find((a) => a.clip.start >= 2 * BAR)!;
+    expect(later.tempo.constant).toBe(true);
+    expect(later.tempo.bpm).toBe(240);
+  });
+
+  it('a pass that crosses the song loop wrap follows the tempo of where the song goes next', () => {
+    // A two-bar song loop at 120 BPM in bar 1 and 240 in bar 2; the pass starts in bar 2 and runs through the wrap into bar 1.
+    const tempo = steppedTempo([{ tick: 0, bpm: 120 }, { tick: BAR, bpm: 240 }]);
+    const r = rig({
+      song: true,
+      tempo,
+      edit: (p, f) =>
+        produce(edit(2 * BAR)(p, f), (d) => {
+          for (const c of Object.values(d.playlist.clips)) if (c.id === ('song' as ClipId)) c.length = 2 * BAR;
+        }),
+    });
+    r.transport.start(0, 0);
+    r.run(0.5);
+    r.press((clk) => r.seq.launch(tr(r, 2), sc(r, 0), clk)); // the next bar line: song tick BAR
+    const run = r.seq.runs[0]!;
+    expect(run.startU).toBe(BAR);
+    r.run(2.6);
+    const pass = r.audio.find((a) => a.clip.start === BAR)!;
+    expect(pass.tempo.bpmAt(BAR)).toBe(240);
+    // Bar 2 of the song (u from BAR to 2·BAR) at 240 BPM, then the loop wraps to 120 BPM for u from 2·BAR.
+    expect(pass.tempo.bpmAt(2 * BAR + 10)).toBe(120);
+    expect(pass.tempo.nextChange(BAR)).toBe(2 * BAR);
+    expect(pass.tempo.tickToSeconds(3 * BAR) - pass.tempo.tickToSeconds(BAR)).toBeCloseTo(1 + 2, 9);
   });
 });
 

@@ -99,7 +99,7 @@ describe('Clip launcher window (UI)', { timeout: 60_000 }, () => {
 
   it('an empty launcher says what to do next, with a way to start', () => {
     expect(win().textContent).toContain(EMPTY_TITLE);
-    expect(win().textContent).toContain('Drag a pattern from the Browser into a slot');
+    expect(win().textContent).toContain('Drag a pattern from the Browser, a clip from the playlist or an audio file from your computer into a slot');
     expect(EMPTY_TEXT).toMatch(/press a slot/);
     expect(cells().every((c) => c.dataset.state === 'empty')).toBe(true);
     expect(win().querySelectorAll('[data-dj-target^="launch.scene:"]')).toHaveLength(8);

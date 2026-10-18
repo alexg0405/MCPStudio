@@ -32,6 +32,35 @@ describe('clip launcher (offline render)', () => {
     console.log(`launcher alone: first hit at frame ${f[0]} (${(f[0]! / SR).toFixed(4)} s), beat spacing error ${Math.abs(f[4]! - f[0]! - 4 * BEAT)} frames`);
   });
 
+  it('a press 5 ms before the bar line lands on that bar (the grace rule), not a bar later', async () => {
+    const { project } = jamProject();
+    const [t1] = project.launcher!.trackOrder;
+    const [s1, s2] = project.launcher!.sceneOrder;
+    // The song transport starts at 128 frames; its bar lines are 2 s apart from there. A press runs on a quantum boundary:
+    // pick the one 5.3 ms before the second bar line.
+    const bar1 = 128 / SR + 2;
+    const press = (barAt: number) => Math.floor((barAt - 0.005) * SR / BLOCK) * BLOCK / SR;
+    const r = await renderLaunch(
+      project,
+      [
+        { at: press(bar1), run: (seq, clk) => seq.launch(t1!, s1!, clk) }, // A: rim on every beat, from the bar line
+        { at: press(bar1 + 2), run: (seq, clk) => seq.launch(t1!, s2!, clk) }, // B (beats 1 and 3) replaces it on the next bar line
+      ],
+      { seconds: 7, song: true },
+    );
+    const aheadMs = ((bar1 - r.ranAt[0]! / SR) * 1000).toFixed(2);
+    const f = hits(r.buffer);
+    const rel = f.map((x) => x - bar1 * SR);
+    // A from bar 1 (not bar 2): hits at 0, 1, 2, 3 beats; B from bar 2: beat 4 and 6, then 8.
+    expect(rel.slice(0, 7).map((x) => Math.round(x / BEAT))).toEqual([0, 1, 2, 3, 4, 6, 8]);
+    const e1 = Math.abs(rel[0]!);
+    const e2 = Math.abs(rel[4]! - BAR);
+    console.log(`early press (${aheadMs} ms before the bar line): first launch ${e1} frames from the bar line, replacement ${e2} frames`);
+    expect(e1).toBeLessThanOrEqual(BLOCK);
+    expect(e2).toBeLessThanOrEqual(BLOCK);
+    expect(r.ranAt[0]! / SR).toBeLessThan(bar1);
+  });
+
   it('a slot launched mid-bar starts on the next bar line (within one render quantum) and the playing one ends there', async () => {
     const { project } = jamProject();
     const [t1] = project.launcher!.trackOrder;

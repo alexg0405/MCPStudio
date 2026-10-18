@@ -32,7 +32,7 @@ export function collectLaunchNotes(project: Project, runs: readonly LaunchRun[],
 }
 
 /** The clip a pass of an audio run plays (what the clip player needs: its start, length, gain and fades). */
-function passClip(r: LaunchRun, start: number, pass: number): AudioClip {
+export function passClip(r: LaunchRun, start: number, pass: number): AudioClip {
   const c = r.content;
   if (c.kind !== 'audio') throw new Error('not an audio run');
   return {

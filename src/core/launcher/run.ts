@@ -39,7 +39,20 @@ export interface LaunchClock {
   heardU: number;
   /** The earliest tick a launch can still be scheduled at (the scheduler's frontier plus a margin). */
   earliestU: number;
+  /**
+   * The earliest boundary a launch may still take, started late: `LAUNCH_GRACE_SEC` before the audio clock. A press that
+   * comes before its quantize boundary is heard, but after `earliestU`, lands on that boundary (its first notes are a few
+   * milliseconds late) instead of waiting a whole quantum. Absent: no grace (`earliestU`).
+   */
+  lateU?: number;
 }
+
+/**
+ * The grace rule for early presses: a launch whose boundary is already past the scheduler's margin but not more than this
+ * many seconds behind the audio clock still starts on that boundary, late by the difference (30 ms: below the
+ * flam you hear against the other music, far less than waiting up to four bars). Further behind, it rolls to the next boundary.
+ */
+export const LAUNCH_GRACE_SEC = 0.03;
 
 /** What the engine asks of whatever decides what is playing: the sequencer (`sequencer.ts`). */
 export interface LaunchDriver {

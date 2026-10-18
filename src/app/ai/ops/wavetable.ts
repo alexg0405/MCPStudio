@@ -58,20 +58,20 @@ export const wavetable: OpModule = {
     text: `Your own wavetables: wavetable_shape gives a Wavetable synth channel a table you describe by harmonics (a list of strengths per key frame: harmonics[0] is the pitch itself, [1] the octave up, and so on), and puts it on oscillator 1, 2 or both. Use several frames to make a sound that morphs (a few harmonics → many, odd harmonics only → all, a bump of harmonics that moves up for a vowel or wah) and move "position" (or a mod matrix slot such as an LFO → osc1Position) through them. The musician can then reshape the table by hand in the Wavetable's table editor.`,
   },
   handlers: {
-    wavetable_shape: (a, c) => {
-      const { d } = c;
-      const id = c.channel(a.channel);
-      const ch = d.channels[id]!;
+    wavetable_shape: (action, context) => {
+      const { draft } = context;
+      const id = context.channel(action.channel);
+      const ch = draft.channels[id]!;
       if (ch.kind !== 'instrument' || ch.plugin.pluginId !== WAVETABLE_ID)
         return fail(`“${ch.name}” is not a Wavetable channel (wavetable_shape needs ${WAVETABLE_ID})`);
-      if (!Array.isArray(a.frames) || a.frames.length === 0) return fail('frames: give at least one key frame');
-      if (a.frames.length > MAX_FRAMES) fail(`frames: a table holds at most ${MAX_FRAMES} key frames`);
-      const frames = a.frames.map((f, i) => frameFromHarmonics(harmonicsOf(f, i + 1)));
-      setPluginState(d, { kind: 'channel', channelId: id }, userTableState(frames) as never);
+      if (!Array.isArray(action.frames) || action.frames.length === 0) return fail('frames: give at least one key frame');
+      if (action.frames.length > MAX_FRAMES) fail(`frames: a table holds at most ${MAX_FRAMES} key frames`);
+      const frames = action.frames.map((f, i) => frameFromHarmonics(harmonicsOf(f, i + 1)));
+      setPluginState(draft, { kind: 'channel', channelId: id }, userTableState(frames) as never);
 
-      const which = str(a.oscillator) ?? '1';
+      const which = str(action.oscillator) ?? '1';
       const oscillators = which === 'both' ? [1, 2] : which === '2' ? [2] : [1];
-      const position = num(a.position);
+      const position = num(action.position);
       const notes: string[] = [];
       for (const n of oscillators) {
         ch.plugin.params[`osc${n}Table`] = 'user';

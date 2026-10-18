@@ -11,11 +11,11 @@ const NOTE = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const noteName = (key: number) => `${NOTE[((key % 12) + 12) % 12]}${Math.floor(key / 12) - 1}`;
 
 /** The beat sound a channel corresponds to (null for audio clips and unknown instruments). */
-export function channelSound(p: Project, ch: Channel): BeatSound | 'synth' | 'sample' | null {
+export function channelSound(project: Project, ch: Channel): BeatSound | 'synth' | 'sample' | null {
   if (ch.kind !== 'instrument') return null;
   const id = ch.plugin.pluginId;
   if (id === 'agstudio.sampler') {
-    const ref = p.samples[ch.plugin.samples?.main as keyof Project['samples']];
+    const ref = project.samples[ch.plugin.samples?.main as keyof Project['samples']];
     // Stock or genre kit pieces ("kit/trap/kick").
     if (ref?.source.kind === 'builtin') return kitPiece(ref.source.generator)?.sound ?? 'sample';
     return 'sample';
@@ -39,25 +39,25 @@ function notesLine(notes: readonly Note[], drum: boolean): string {
     .join(' ');
 }
 
-export function describeProject(p: Project, currentPatternId: PatternId | null): string {
+export function describeProject(project: Project, currentPatternId: PatternId | null): string {
   const lines: string[] = [];
   lines.push(
-    `Tempo ${p.transport.bpm} BPM, ${p.transport.timeSig.num}/${p.transport.timeSig.den}, swing ${Math.round(p.transport.swing * 100)}%.`,
+    `Tempo ${project.transport.bpm} BPM, ${project.transport.timeSig.num}/${project.transport.timeSig.den}, swing ${Math.round(project.transport.swing * 100)}%.`,
   );
-  const channels = p.channelOrder
-    .map((id) => p.channels[id])
+  const channels = project.channelOrder
+    .map((id) => project.channels[id])
     .filter((c): c is Channel => !!c)
-    .map((c) => `${c.name} (${channelSound(p, c) ?? c.kind}${c.muted ? ', muted' : ''})`);
+    .map((c) => `${c.name} (${channelSound(project, c) ?? c.kind}${c.muted ? ', muted' : ''})`);
   lines.push(`Channels: ${channels.join(', ') || 'none'}.`);
-  const pattern = currentPatternId ? p.patterns[currentPatternId] : undefined;
+  const pattern = currentPatternId ? project.patterns[currentPatternId] : undefined;
   if (pattern) {
-    const bars = patternLength(pattern, p.transport.timeSig) / ticksPerBar(p.transport.timeSig);
+    const bars = patternLength(pattern, project.transport.timeSig) / ticksPerBar(project.transport.timeSig);
     const parts: string[] = [];
-    for (const id of p.channelOrder) {
-      const ch = p.channels[id];
+    for (const id of project.channelOrder) {
+      const ch = project.channels[id];
       const notes = Object.values(pattern.notes[id] ?? {});
       if (!ch || notes.length === 0) continue;
-      const sound = channelSound(p, ch);
+      const sound = channelSound(project, ch);
       parts.push(`${ch.name}: ${notesLine(notes, sound !== null && DRUM_SOUNDS.has(sound as BeatSound))}`);
     }
     lines.push(

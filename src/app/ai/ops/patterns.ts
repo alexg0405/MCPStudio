@@ -41,94 +41,94 @@ export const patterns: OpModule = {
     S.op('remove_pattern', 'Deletes a pattern and its playlist clips.', { pattern: S.PATTERN }, ['pattern']),
   ],
   handlers: {
-    add_pattern: (a, c) => {
-      const { d } = c;
-      if (a.from !== undefined && !(a.split_by_channel === true)) {
-        const src = c.pattern(a.from);
+    add_pattern: (action, context) => {
+      const { draft } = context;
+      if (action.from !== undefined && !(action.split_by_channel === true)) {
+        const src = context.pattern(action.from);
         const id = newId.pattern();
-        const name = str(a.name) ?? `${d.patterns[src]!.name} copy`;
-        clonePattern(d, src, id, name);
-        const bars = num(a.bars);
+        const name = str(action.name) ?? `${draft.patterns[src]!.name} copy`;
+        clonePattern(draft, src, id, name);
+        const bars = num(action.bars);
         if (bars !== undefined && bars > 0) {
-          const fit = clampBars(bars, d.transport.timeSig);
-          d.patterns[id]!.length = Math.round(fit * c.bar());
-          d.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(d.transport.timeSig)));
+          const fit = clampBars(bars, draft.transport.timeSig);
+          draft.patterns[id]!.length = Math.round(fit * context.bar());
+          draft.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(draft.transport.timeSig)));
         }
-        c.remember(a.ref, { kind: 'pattern', id });
-        c.state.selectPattern = id;
-        return `Copied “${d.patterns[src]!.name}” as “${name}”`;
+        context.remember(action.ref, { kind: 'pattern', id });
+        context.state.selectPattern = id;
+        return `Copied “${draft.patterns[src]!.name}” as “${name}”`;
       }
-      if (a.from !== undefined) {
-        const src = c.pattern(a.from);
-        const from = d.patterns[src]!;
+      if (action.from !== undefined) {
+        const src = context.pattern(action.from);
+        const from = draft.patterns[src]!;
         const made: string[] = [];
-        const base = str(a.name) ?? from.name;
-        let at = d.patternOrder.indexOf(src);
-        for (const cid of d.channelOrder) {
-          const notes = Object.values(from.notes[cid] ?? {});
+        const base = str(action.name) ?? from.name;
+        let at = draft.patternOrder.indexOf(src);
+        for (const channelId of draft.channelOrder) {
+          const notes = Object.values(from.notes[channelId] ?? {});
           if (!notes.length) continue;
           const id = newId.pattern();
-          const pat = makePattern(`${base} · ${d.channels[cid]!.name}`, paletteColor(d.patternOrder.length), id);
+          const pat = makePattern(`${base} · ${draft.channels[channelId]!.name}`, paletteColor(draft.patternOrder.length), id);
           pat.stepCount = from.stepCount;
           if (from.length !== undefined) pat.length = from.length;
-          pat.notes[cid] = Object.fromEntries(
+          pat.notes[channelId] = Object.fromEntries(
             notes.map((n) => {
               const nid = newId.note();
               return [nid, { ...n, id: nid }];
             }),
           );
-          addPattern(d, pat, ++at);
+          addPattern(draft, pat, ++at);
           made.push(pat.name);
         }
         if (!made.length) fail(`“${from.name}” has no notes to split`);
         return `Split “${from.name}” into ${made.length} pattern${made.length === 1 ? '' : 's'} (one per channel)`;
       }
       const id = newId.pattern();
-      const name = str(a.name) ?? `Pattern ${d.patternOrder.length + 1}`;
-      addPattern(d, makePattern(name, paletteColor(d.patternOrder.length), id));
-      const bars = num(a.bars);
+      const name = str(action.name) ?? `Pattern ${draft.patternOrder.length + 1}`;
+      addPattern(draft, makePattern(name, paletteColor(draft.patternOrder.length), id));
+      const bars = num(action.bars);
       if (bars !== undefined && bars > 0) {
-        const fit = clampBars(bars, d.transport.timeSig);
-        d.patterns[id]!.length = Math.round(fit * c.bar());
-        d.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(d.transport.timeSig)));
+        const fit = clampBars(bars, draft.transport.timeSig);
+        draft.patterns[id]!.length = Math.round(fit * context.bar());
+        draft.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(draft.transport.timeSig)));
       }
-      c.remember(a.ref, { kind: 'pattern', id });
-      c.state.selectPattern = id;
+      context.remember(action.ref, { kind: 'pattern', id });
+      context.state.selectPattern = id;
       return `Added pattern “${name}”`;
     },
 
-    edit_pattern: (a, c) => {
-      const { d } = c;
-      let id = c.pattern(a.pattern);
+    edit_pattern: (action, context) => {
+      const { draft } = context;
+      let id = context.pattern(action.pattern);
       const out: string[] = [];
-      const bars = num(a.bars);
+      const bars = num(action.bars);
       // A new length changes what plays: in a part of the song, on the part's own copy.
-      if (bars !== undefined && bars > 0) id = c.focus.writable(id);
-      const position = num(a.position);
+      if (bars !== undefined && bars > 0) id = context.focus.writable(id);
+      const position = num(action.position);
       if (position !== undefined) {
-        movePattern(d, id, Math.round(position) - 1);
-        out.push(`place ${d.patternOrder.indexOf(id) + 1}`);
+        movePattern(draft, id, Math.round(position) - 1);
+        out.push(`place ${draft.patternOrder.indexOf(id) + 1}`);
       }
-      const name = str(a.name);
-      const color = str(a.color);
-      if (name || color) setPatternProps(d, id, { ...(name ? { name } : {}), ...(color ? { color } : {}) });
+      const name = str(action.name);
+      const color = str(action.color);
+      if (name || color) setPatternProps(draft, id, { ...(name ? { name } : {}), ...(color ? { color } : {}) });
       if (name) out.push(`renamed “${name}”`);
       if (bars !== undefined && bars > 0) {
-        const fit = clampBars(bars, d.transport.timeSig);
-        d.patterns[id]!.length = Math.round(fit * c.bar());
-        d.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(d.transport.timeSig)));
+        const fit = clampBars(bars, draft.transport.timeSig);
+        draft.patterns[id]!.length = Math.round(fit * context.bar());
+        draft.patterns[id]!.stepCount = Math.max(1, Math.round(fit * stepsPerBar(draft.transport.timeSig)));
         out.push(`${r2(fit)} bars`);
       }
-      return out.length ? `Pattern “${d.patterns[id]!.name}”: ${out.join(', ')}` : null;
+      return out.length ? `Pattern “${draft.patterns[id]!.name}”: ${out.join(', ')}` : null;
     },
 
-    remove_pattern: (a, c) => {
-      const { d } = c;
-      const id = c.pattern(a.pattern);
-      if (d.patternOrder.length <= 1) fail('the project needs at least one pattern');
-      c.focus.owned(id, 'remove pattern');
-      const name = d.patterns[id]!.name;
-      removePattern(d, id);
+    remove_pattern: (action, context) => {
+      const { draft } = context;
+      const id = context.pattern(action.pattern);
+      if (draft.patternOrder.length <= 1) fail('the project needs at least one pattern');
+      context.focus.owned(id, 'remove pattern');
+      const name = draft.patterns[id]!.name;
+      removePattern(draft, id);
       return `Deleted pattern “${name}”`;
     },
   },

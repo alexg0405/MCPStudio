@@ -25,8 +25,8 @@ export class AssistantFacade implements AssistantApi {
   private real: BeatAssistant | null = null;
   private loading: Promise<BeatAssistant> | null = null;
 
-  constructor(private readonly s: Services) {
-    this.core = createAssistantCore(s.history);
+  constructor(private readonly services: Services) {
+    this.core = createAssistantCore(services.history);
     this.store = this.core.store;
   }
 
@@ -43,7 +43,7 @@ export class AssistantFacade implements AssistantApi {
   /** Loads and starts the real assistant (once). */
   load(): Promise<BeatAssistant> {
     return (this.loading ??= loadModule().then(
-      (m) => (this.real = new m.BeatAssistant(this.s, { core: this.core })),
+      (m) => (this.real = new m.BeatAssistant(this.services, { core: this.core })),
       (err: unknown) => {
         this.loading = null; // a network hiccup: the next call tries again
         throw err;
@@ -68,7 +68,7 @@ export class AssistantFacade implements AssistantApi {
     if (this.store.getState().uiRequests.length) this.store.setState({ uiRequests: [] });
   }
   playFocus(focus: AiFocus | null = this.store.getState().focus): boolean {
-    return playFocus(this.s, focus);
+    return playFocus(this.services, focus);
   }
 
   // ---- nothing can be running before the assistant has loaded

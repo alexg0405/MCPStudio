@@ -255,8 +255,8 @@ async function postTurn(
       body: JSON.stringify(payload),
       ...(signal ? { signal } : {}),
     });
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new AiError(AI_SERVER_MISSING, 'network');
   }
   if (!res.ok) throw await errorFrom(res);

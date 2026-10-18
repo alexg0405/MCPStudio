@@ -60,40 +60,40 @@ export const playlist: OpModule = {
     }),
   ],
   handlers: {
-    place_pattern: (a, c) => {
-      const { d } = c;
-      const bar = c.bar;
-      const pid = c.pattern(a.pattern);
-      const barNo = Math.max(1, Math.round(num(a.bar) ?? 1));
+    place_pattern: (action, context) => {
+      const { draft } = context;
+      const bar = context.bar;
+      const patternId = context.pattern(action.pattern);
+      const barNo = Math.max(1, Math.round(num(action.bar) ?? 1));
       const length = Math.max(
         1,
-        Math.round((num(a.bars) ?? patternLength({ ...d.patterns[pid]! }, d.transport.timeSig) / bar()) * bar()),
+        Math.round((num(action.bars) ?? patternLength({ ...draft.patterns[patternId]! }, draft.transport.timeSig) / bar()) * bar()),
       );
-      const times = Math.max(1, Math.min(64, Math.round(num(a.times) ?? 1)));
+      const times = Math.max(1, Math.min(64, Math.round(num(action.times) ?? 1)));
       const start = (barNo - 1) * bar();
       const end = start + length * times;
-      c.focus.span(start, end, 'place pattern');
-      let laneId: LaneId | undefined = a.track !== undefined ? c.lane(a.track) : undefined;
-      if (laneId && d.playlist.lanes[laneId]?.takes)
-        fail(`track ${a.track} belongs to a recording's takes and holds only that recording: pick another track`);
-      if (bool(a.replace)) {
+      context.focus.span(start, end, 'place pattern');
+      let laneId: LaneId | undefined = action.track !== undefined ? context.lane(action.track) : undefined;
+      if (laneId && draft.playlist.lanes[laneId]?.takes)
+        fail(`track ${action.track} belongs to a recording's takes and holds only that recording: pick another track`);
+      if (bool(action.replace)) {
         if (!laneId) fail('replace needs the track to clear');
-        clearRange(d, start, end, {
+        clearRange(draft, start, end, {
           lanes: new Set([laneId!]),
           trim: true,
-          tempo: tempoMapOf(c.base, 'song'),
-          only: c.focus.clearable,
+          tempo: tempoMapOf(context.base, 'song'),
+          only: context.focus.clearable,
         });
       }
       if (!laneId) {
         const busy = (lane: string) =>
-          Object.values(d.playlist.clips).some((x) => x.laneId === lane && x.start < end && x.start + x.length > start);
-        const ordinary = d.playlist.laneOrder.filter((l) => !d.playlist.lanes[l]?.takes);
+          Object.values(draft.playlist.clips).some((x) => x.laneId === lane && x.start < end && x.start + x.length > start);
+        const ordinary = draft.playlist.laneOrder.filter((l) => !draft.playlist.lanes[l]?.takes);
         laneId = ordinary.find((l) => !busy(l)) ?? ordinary[0];
       }
       if (!laneId) fail('the playlist has no tracks');
       // The same pattern already playing at that time (on any track) would play twice as loud: skip those.
-      const playing = Object.values(d.playlist.clips).filter((x) => x.kind === 'pattern' && x.patternId === pid && !x.muted);
+      const playing = Object.values(draft.playlist.clips).filter((x) => x.kind === 'pattern' && x.patternId === patternId && !x.muted);
       const clips: Clip[] = [];
       const skipped: { from: Tick; to: Tick }[] = [];
       for (let i = 0; i < times; i++) {
@@ -110,39 +110,39 @@ export const playlist: OpModule = {
           laneId: laneId!,
           start: at,
           length,
-          patternId: pid,
+          patternId: patternId,
           offset: 0,
         };
         clips.push(clip);
       }
-      const name = d.patterns[pid]!.name;
-      const where = skipped.map((x) => barSpan(x.from, x.to, d.transport.timeSig)).join(', ');
+      const name = draft.patterns[patternId]!.name;
+      const where = skipped.map((x) => barSpan(x.from, x.to, draft.transport.timeSig)).join(', ');
       if (clips.length === 0) fail(`“${name}” already plays at ${where}, so nothing was added (it would play twice)`);
-      addClips(d, clips);
-      c.touch(start, end, clips.map((x) => x.id));
-      c.state.after.push({ kind: 'mode', mode: 'song' });
-      const lane = d.playlist.laneOrder.indexOf(laneId!) + 1;
+      addClips(draft, clips);
+      context.touch(start, end, clips.map((x) => x.id));
+      context.state.after.push({ kind: 'mode', mode: 'song' });
+      const lane = draft.playlist.laneOrder.indexOf(laneId!) + 1;
       return `Placed “${name}” on track ${lane} at bar ${barNo}${times > 1 ? ` ×${clips.length}` : ''}${
         skipped.length ? ` (skipped ${where}: it already plays there)` : ''
       }`;
     },
 
-    edit_audio_clip: (a, c) => {
-      const { d } = c;
-      const id = (str(a.clip) ?? fail('which audio clip?')) as ClipId;
-      const clip = d.playlist.clips[id];
+    edit_audio_clip: (action, context) => {
+      const { draft } = context;
+      const id = (str(action.clip) ?? fail('which audio clip?')) as ClipId;
+      const clip = draft.playlist.clips[id];
       if (clip?.kind !== 'audio') fail(`there is no audio clip "${id}"`);
-      c.focus.clip(id, 'edit audio clip');
-      const gain = num(a.gain_db);
-      const fadeIn = num(a.fade_in);
-      const fadeOut = num(a.fade_out);
-      setAudioClipEdits(d, id, {
+      context.focus.clip(id, 'edit audio clip');
+      const gain = num(action.gain_db);
+      const fadeIn = num(action.fade_in);
+      const fadeOut = num(action.fade_out);
+      setAudioClipEdits(draft, id, {
         ...(gain !== undefined ? { gain: gain <= -60 ? 0 : dbToGain(Math.min(12, gain)) } : {}),
         ...(fadeIn !== undefined ? { fadeIn } : {}),
         ...(fadeOut !== undefined ? { fadeOut } : {}),
       });
-      const after = d.playlist.clips[id] as Draft<AudioClip>;
-      const name = d.channels[after.channelId]?.name ?? 'audio';
+      const after = draft.playlist.clips[id] as Draft<AudioClip>;
+      const name = draft.channels[after.channelId]?.name ?? 'audio';
       const out = [
         gain !== undefined ? `gain ${r2(gain)} dB` : '',
         fadeIn !== undefined ? `fade-in ${Math.round((after.fadeIn ?? 0) * 1000)} ms` : '',
@@ -151,86 +151,86 @@ export const playlist: OpModule = {
       return `Audio clip “${name}”: ${out.join(', ') || 'unchanged'}`;
     },
 
-    marker: (a, c) => {
-      const { d } = c;
-      const action = str(a.action);
-      const barT = c.bar();
-      const at = num(a.bar);
+    marker: (action, context) => {
+      const { draft } = context;
+      const subAction = str(action.action);
+      const barT = context.bar();
+      const at = num(action.bar);
       const tick = at !== undefined ? Math.max(0, Math.round((at - 1) * barT)) : undefined;
       const find = (): MarkerId => {
-        const ref = str(a.marker) ?? fail('which marker?');
-        if (d.playlist.markers[ref as MarkerId]) return ref as MarkerId;
-        const hit = Object.values(d.playlist.markers).find((m) => lower(m.name) === lower(ref));
+        const ref = str(action.marker) ?? fail('which marker?');
+        if (draft.playlist.markers[ref as MarkerId]) return ref as MarkerId;
+        const hit = Object.values(draft.playlist.markers).find((m) => lower(m.name) === lower(ref));
         return (hit?.id ?? fail(`there is no marker "${ref}"`)) as MarkerId;
       };
-      const color = str(a.color);
+      const color = str(action.color);
       const okColor = color && /^#[0-9a-f]{6}$/i.test(color) ? color : undefined;
-      if (action === 'add') {
-        const name = str(a.name) ?? 'Marker';
-        addMarker(d, tick ?? 0, name, okColor ? { color: okColor } : {});
+      if (subAction === 'add') {
+        const name = str(action.name) ?? 'Marker';
+        addMarker(draft, tick ?? 0, name, okColor ? { color: okColor } : {});
         return `Marker “${name}” at bar ${r2((tick ?? 0) / barT + 1)}`;
       }
-      if (action === 'edit') {
+      if (subAction === 'edit') {
         const id = find();
-        const name = str(a.name);
-        if (name) renameMarker(d, id, name);
-        if (tick !== undefined) moveMarker(d, id, tick);
-        if (okColor) d.playlist.markers[id]!.color = okColor;
-        const m = d.playlist.markers[id]!;
+        const name = str(action.name);
+        if (name) renameMarker(draft, id, name);
+        if (tick !== undefined) moveMarker(draft, id, tick);
+        if (okColor) draft.playlist.markers[id]!.color = okColor;
+        const m = draft.playlist.markers[id]!;
         return `Marker “${m.name}” at bar ${r2(m.tick / barT + 1)}`;
       }
-      if (action === 'remove') {
+      if (subAction === 'remove') {
         const id = find();
-        const name = d.playlist.markers[id]!.name;
-        removeMarker(d, id);
+        const name = draft.playlist.markers[id]!.name;
+        removeMarker(draft, id);
         return `Removed the marker “${name}”`;
       }
-      return fail(`unknown marker action "${String(a.action)}"`);
+      return fail(`unknown marker action "${String(action.action)}"`);
     },
 
-    clear_playlist: (a, c) => {
-      const { d } = c;
-      const bar = c.bar;
-      const part = c.focus.range();
-      const from = num(a.from_bar);
-      const to = num(a.to_bar);
+    clear_playlist: (action, context) => {
+      const { draft } = context;
+      const bar = context.bar;
+      const part = context.focus.range();
+      const from = num(action.from_bar);
+      const to = num(action.to_bar);
       const t0 = from !== undefined ? (from - 1) * bar() : (part?.from ?? -Infinity);
       const t1 = to !== undefined ? to * bar() : (part?.to ?? Infinity);
-      const laneId = a.track !== undefined ? c.lane(a.track) : undefined;
+      const laneId = action.track !== undefined ? context.lane(action.track) : undefined;
       // Inside a part of the song, clips reaching past it are always trimmed (their outside stays).
-      const trim = part ? true : (bool(a.trim) ?? false);
+      const trim = part ? true : (bool(action.trim) ?? false);
       // (Without a focus this passes; with selected notes the playlist stays as it is.)
-      c.focus.span(Math.max(0, t0), t1, 'clear playlist');
+      context.focus.span(Math.max(0, t0), t1, 'clear playlist');
       if (trim && Number.isFinite(t0) && Number.isFinite(t1)) {
-        const res = clearRange(d, t0, t1, {
+        const res = clearRange(draft, t0, t1, {
           ...(laneId ? { lanes: new Set([laneId]) } : {}),
           trim: true,
-          tempo: tempoMapOf(c.base, 'song'),
-          only: c.focus.clearable,
+          tempo: tempoMapOf(context.base, 'song'),
+          only: context.focus.clearable,
         });
-        c.touch(t0, t1);
+        context.touch(t0, t1);
         return `Removed ${res.removed} playlist clip${res.removed === 1 ? '' : 's'}${res.cut ? ` (${res.cut} cut at the edges)` : ''}`;
       }
-      const ids = Object.values(d.playlist.clips)
+      const ids = Object.values(draft.playlist.clips)
         .filter(
-          (x) => x.start < t1 && x.start + x.length > t0 && (!laneId || x.laneId === laneId) && c.focus.clearable(x as Clip),
+          (x) => x.start < t1 && x.start + x.length > t0 && (!laneId || x.laneId === laneId) && context.focus.clearable(x as Clip),
         )
         .map((x) => x.id);
-      removeClips(d, ids);
-      if (Number.isFinite(t0) && Number.isFinite(t1)) c.touch(t0, t1);
+      removeClips(draft, ids);
+      if (Number.isFinite(t0) && Number.isFinite(t1)) context.touch(t0, t1);
       return `Removed ${ids.length} playlist clip${ids.length === 1 ? '' : 's'}`;
     },
   },
   // A safety net: clips this answer added on top of the same clips (any track) would play twice.
-  beforeCommit: (c) => {
-    const copies = stackedCopies(c.project, c.state.clips);
+  beforeCommit: (context) => {
+    const copies = stackedCopies(context.project, context.state.clips);
     if (!copies.length) return;
     removeClips(
-      c.d,
+      context.draft,
       copies.map((x) => x.clipId),
     );
-    const ts = c.d.transport.timeSig;
-    const span = barSpan(Math.min(...copies.map((x) => x.from)), Math.max(...copies.map((x) => x.to)), ts);
-    c.note(`Removed ${copies.length} clip${copies.length === 1 ? '' : 's'} that doubled what already plays (${span})`);
+    const timeSig = context.draft.transport.timeSig;
+    const span = barSpan(Math.min(...copies.map((x) => x.from)), Math.max(...copies.map((x) => x.to)), timeSig);
+    context.note(`Removed ${copies.length} clip${copies.length === 1 ? '' : 's'} that doubled what already plays (${span})`);
   },
 };

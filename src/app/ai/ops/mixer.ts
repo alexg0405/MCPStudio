@@ -133,147 +133,147 @@ export const mixer: OpModule = {
 - The mix setup puts voices (channels named vox, vocal, voice) on a Vocals bus with EQ, compressor and de-esser, sends to Reverb and Delay; a chain on the vocal's own track goes before that bus. save_chain keeps a track's effects as a chain of the musician's own.`,
   },
   handlers: {
-    add_insert: (a, c) => {
-      const { d, project } = c;
+    add_insert: (action, context) => {
+      const { draft, project } = context;
       const id = newId.insert();
-      addInsert(d, makeInsert(id, str(a.name) ?? `Insert ${d.mixer.order.length}`));
+      addInsert(draft, makeInsert(id, str(action.name) ?? `Insert ${draft.mixer.order.length}`));
       const extra: string[] = [];
-      const vol = num(a.volume_db);
+      const vol = num(action.volume_db);
       if (vol !== undefined) {
-        setInsertProp(d, id, 'volume', insertGain(vol));
+        setInsertProp(draft, id, 'volume', insertGain(vol));
         extra.push(`fader ${r2(vol)} dB`);
-        c.state.pinnedInserts.add(id);
+        context.state.pinnedInserts.add(id);
       }
-      const pan = num(a.pan);
+      const pan = num(action.pan);
       if (pan !== undefined) {
-        setInsertProp(d, id, 'pan', pan);
+        setInsertProp(draft, id, 'pan', pan);
         extra.push(`pan ${r2(pan)}`);
       }
-      const color = str(a.color);
-      if (color) setInsertProp(d, id, 'color', color);
-      c.remember(a.ref, { kind: 'insert', id });
-      return `Added mixer track ${insertLabel(project, id)} “${d.mixer.inserts[id]!.name}”${
+      const color = str(action.color);
+      if (color) setInsertProp(draft, id, 'color', color);
+      context.remember(action.ref, { kind: 'insert', id });
+      return `Added mixer track ${insertLabel(project, id)} “${draft.mixer.inserts[id]!.name}”${
         extra.length ? ` (${extra.join(', ')})` : ''
       }`;
     },
 
-    edit_insert: (a, c) => {
-      const { d, project } = c;
-      const id = c.insert(a.insert);
+    edit_insert: (action, context) => {
+      const { draft, project } = context;
+      const id = context.insert(action.insert);
       const out: string[] = [];
-      const name = str(a.name);
+      const name = str(action.name);
       if (name) {
-        setInsertProp(d, id, 'name', name);
+        setInsertProp(draft, id, 'name', name);
         out.push(`renamed “${name}”`);
       }
-      const vol = num(a.volume_db);
+      const vol = num(action.volume_db);
       if (vol !== undefined) {
-        setInsertProp(d, id, 'volume', insertGain(vol));
+        setInsertProp(draft, id, 'volume', insertGain(vol));
         out.push(`fader ${r2(vol)} dB`);
-        c.state.pinnedInserts.add(id);
+        context.state.pinnedInserts.add(id);
       }
-      const pan = num(a.pan);
+      const pan = num(action.pan);
       if (pan !== undefined) {
-        setInsertProp(d, id, 'pan', pan);
+        setInsertProp(draft, id, 'pan', pan);
         out.push(`pan ${r2(pan)}`);
       }
-      const mute = bool(a.mute);
+      const mute = bool(action.mute);
       if (mute !== undefined) {
-        setInsertProp(d, id, 'muted', mute);
+        setInsertProp(draft, id, 'muted', mute);
         out.push(mute ? 'muted' : 'unmuted');
       }
-      const solo = bool(a.solo);
+      const solo = bool(action.solo);
       if (solo !== undefined) {
-        setInsertProp(d, id, 'solo', solo);
+        setInsertProp(draft, id, 'solo', solo);
         out.push(solo ? 'solo' : 'unsolo');
       }
-      const color = str(a.color);
-      if (color) setInsertProp(d, id, 'color', color);
-      const position = num(a.position);
+      const color = str(action.color);
+      if (color) setInsertProp(draft, id, 'color', color);
+      const position = num(action.position);
       if (position !== undefined) {
-        if (id === MASTER) c.warn('the Master track stays first');
+        if (id === MASTER) context.warn('the Master track stays first');
         else {
-          moveInsert(d, id, Math.round(position));
-          out.push(`number ${d.mixer.order.indexOf(id)}`);
+          moveInsert(draft, id, Math.round(position));
+          out.push(`number ${draft.mixer.order.indexOf(id)}`);
         }
       }
       return out.length ? `${insertLabel(project, id)}: ${out.join(', ')}` : null;
     },
 
-    remove_insert: (a, c) => {
-      const id = c.insert(a.insert);
+    remove_insert: (action, context) => {
+      const id = context.insert(action.insert);
       if (id === MASTER) fail("the Master track can't be deleted");
-      const label = insertLabel(c.project, id);
-      removeInsert(c.d, id);
+      const label = insertLabel(context.project, id);
+      removeInsert(context.draft, id);
       return `Deleted mixer track ${label}`;
     },
 
-    add_effect: (a, c) => {
-      const { d, project } = c;
-      const insertId = c.insert(a.insert);
-      const def = c.plugin(a.plugin, 'effect');
+    add_effect: (action, context) => {
+      const { draft, project } = context;
+      const insertId = context.insert(action.insert);
+      const def = context.plugin(action.plugin, 'effect');
       const inst = makePluginInstance(def.id, def.version, defaultValues(def.params)) as Draft<PluginInstance>;
-      const parts = c.settings(inst, def, a);
-      const pos = num(a.position);
-      const slotId = addFxSlot(d, insertId, inst as PluginInstance, pos !== undefined ? pos - 1 : undefined);
+      const parts = context.settings(inst, def, action);
+      const pos = num(action.position);
+      const slotId = addFxSlot(draft, insertId, inst as PluginInstance, pos !== undefined ? pos - 1 : undefined);
       if (!slotId) fail(`${insertLabel(project, insertId)} has no free effect slot`);
-      const mix = num(a.mix);
-      if (mix !== undefined) setFxSlotMix(d, insertId, slotId!, mix > 1 && mix <= 100 ? mix / 100 : mix);
-      if (bool(a.enabled) === false) setFxSlotEnabled(d, insertId, slotId!, false);
-      c.remember(a.ref, { kind: 'effect', insertId, slotId: slotId! });
+      const mix = num(action.mix);
+      if (mix !== undefined) setFxSlotMix(draft, insertId, slotId!, mix > 1 && mix <= 100 ? mix / 100 : mix);
+      if (bool(action.enabled) === false) setFxSlotEnabled(draft, insertId, slotId!, false);
+      context.remember(action.ref, { kind: 'effect', insertId, slotId: slotId! });
       return `Added ${def.name} to ${insertLabel(project, insertId)}${parts.length ? ` (${parts.join(', ')})` : ''}`;
     },
 
-    edit_effect: (a, c) => {
-      const { d, s, project } = c;
-      const { insertId, slotId } = c.effect(a.effect);
-      const slot = d.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId) as Draft<FxSlot>;
+    edit_effect: (action, context) => {
+      const { draft, services, project } = context;
+      const { insertId, slotId } = context.effect(action.effect);
+      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId) as Draft<FxSlot>;
       const out: string[] = [];
-      let def = s.plugins.get(slot.plugin.pluginId);
-      const swap = str(a.plugin);
+      let def = services.plugins.get(slot.plugin.pluginId);
+      const swap = str(action.plugin);
       if (swap) {
-        def = c.plugin(swap, 'effect');
-        replaceFxPlugin(d, insertId, slotId, makePluginInstance(def.id, def.version, defaultValues(def.params)));
+        def = context.plugin(swap, 'effect');
+        replaceFxPlugin(draft, insertId, slotId, makePluginInstance(def.id, def.version, defaultValues(def.params)));
         out.push(`now ${def.name}`);
       }
-      if (def && (a.preset !== undefined || a.params !== undefined)) {
-        const live = d.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
-        out.push(...c.settings(live.plugin, def, a));
+      if (def && (action.preset !== undefined || action.params !== undefined)) {
+        const live = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
+        out.push(...context.settings(live.plugin, def, action));
       }
-      const mix = num(a.mix);
+      const mix = num(action.mix);
       if (mix !== undefined) {
-        setFxSlotMix(d, insertId, slotId, mix > 1 && mix <= 100 ? mix / 100 : mix);
+        setFxSlotMix(draft, insertId, slotId, mix > 1 && mix <= 100 ? mix / 100 : mix);
         out.push(`mix ${Math.round(slot.mix * 100)}%`);
       }
-      const enabled = bool(a.enabled);
+      const enabled = bool(action.enabled);
       if (enabled !== undefined) {
-        setFxSlotEnabled(d, insertId, slotId, enabled);
+        setFxSlotEnabled(draft, insertId, slotId, enabled);
         out.push(enabled ? 'on' : 'bypassed');
       }
-      const pos = num(a.position);
+      const pos = num(action.position);
       if (pos !== undefined) {
-        moveFxSlot(d, insertId, slotId, pos - 1);
+        moveFxSlot(draft, insertId, slotId, pos - 1);
         out.push(`slot ${pos}`);
       }
       return out.length ? `${def?.name ?? 'Effect'} on ${insertLabel(project, insertId)}: ${out.join(', ')}` : null;
     },
 
-    remove_effect: (a, c) => {
-      const { d, s, project } = c;
-      const { insertId, slotId } = c.effect(a.effect);
-      const slot = d.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
-      const name = s.plugins.get(slot.plugin.pluginId)?.name ?? slot.plugin.pluginId;
-      removeFxSlot(d, insertId, slotId);
+    remove_effect: (action, context) => {
+      const { draft, services, project } = context;
+      const { insertId, slotId } = context.effect(action.effect);
+      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
+      const name = services.plugins.get(slot.plugin.pluginId)?.name ?? slot.plugin.pluginId;
+      removeFxSlot(draft, insertId, slotId);
       return `Removed ${name} from ${insertLabel(project, insertId)}`;
     },
 
-    route: (a, c) => {
-      const { d, project } = c;
-      const from = c.insert(a.from);
-      const to = c.insert(a.to);
-      const level = num(a.level_db);
-      const pre = bool(a.pre);
-      const ok = setRoute(d, from, to, {
+    route: (action, context) => {
+      const { draft, project } = context;
+      const from = context.insert(action.from);
+      const to = context.insert(action.to);
+      const level = num(action.level_db);
+      const pre = bool(action.pre);
+      const ok = setRoute(draft, from, to, {
         ...(level !== undefined ? { level: insertGain(level) } : {}),
         ...(pre !== undefined ? { pre } : {}),
       });
@@ -281,57 +281,57 @@ export const mixer: OpModule = {
       return `${insertLabel(project, from)} → ${insertLabel(project, to)}${level !== undefined ? ` at ${r2(level)} dB` : ''}${pre ? ' (pre-fader)' : ''}`;
     },
 
-    unroute: (a, c) => {
-      const from = c.insert(a.from);
-      const to = c.insert(a.to);
-      removeRoute(c.d, from, to);
-      return `${insertLabel(c.project, from)} no longer routes to ${insertLabel(c.project, to)}`;
+    unroute: (action, context) => {
+      const from = context.insert(action.from);
+      const to = context.insert(action.to);
+      removeRoute(context.draft, from, to);
+      return `${insertLabel(context.project, from)} no longer routes to ${insertLabel(context.project, to)}`;
     },
 
-    route_only: (a, c) => {
-      const { d, project } = c;
-      const from = c.insert(a.from);
-      const to = c.insert(a.to);
-      if (!routeOnlyTo(d, from, to))
+    route_only: (action, context) => {
+      const { draft, project } = context;
+      const from = context.insert(action.from);
+      const to = context.insert(action.to);
+      if (!routeOnlyTo(draft, from, to))
         fail(`${insertLabel(project, from)} can't route to ${insertLabel(project, to)} (it would loop back)`);
       return `${insertLabel(project, from)} now routes only to ${insertLabel(project, to)}`;
     },
 
-    add_chain: (a, c) => {
-      const { d, s, project } = c;
-      const insertId = c.insert(a.insert);
-      const name = str(a.chain) ?? fail('which chain?');
+    add_chain: (action, context) => {
+      const { draft, services, project } = context;
+      const insertId = context.insert(action.insert);
+      const name = str(action.chain) ?? fail('which chain?');
       const chain =
-        findChainChoice(chainChoices(s.presets.chains()), name!) ??
+        findChainChoice(chainChoices(services.presets.chains()), name!) ??
         fail(`there is no effect chain "${name}" (the catalog lists them)`);
-      const mode = lower(str(a.mode) ?? 'replace') === 'append' ? 'append' : 'replace';
-      const applied = applyChainToDraft(d, s, insertId, chain!, mode);
-      if (applied.skipped.length) c.warn(`${chain!.name}: left out ${applied.skipped.join('; ')}`);
+      const mode = lower(str(action.mode) ?? 'replace') === 'append' ? 'append' : 'replace';
+      const applied = applyChainToDraft(draft, services, insertId, chain!, mode);
+      if (applied.skipped.length) context.warn(`${chain!.name}: left out ${applied.skipped.join('; ')}`);
       // A chain that put nothing anywhere did nothing: say it plainly rather than "Put it on".
       if (applied.slots.length === 0 && applied.sends.length === 0) fail(`${chain!.name} could not be put on ${insertLabel(project, insertId)}: ${applied.skipped.join('; ') || 'it has nothing to add'}`);
       return describeApplied(chain!.name, project, insertId, { ...applied, skipped: [] });
     },
 
-    save_chain: (a, c) => {
-      const { s, project } = c;
-      const insertId = c.insert(a.insert);
-      const name = str(a.name) ?? fail('what should the chain be called?');
+    save_chain: (action, context) => {
+      const { services, project } = context;
+      const insertId = context.insert(action.insert);
+      const name = str(action.name) ?? fail('what should the chain be called?');
       // A plain snapshot: the library keeps it outside the project (and outside this answer's undo step).
-      const chain = chainFromInsert(current(c.d) as unknown as typeof project, insertId, s.plugins, name!);
+      const chain = chainFromInsert(current(context.draft) as unknown as typeof project, insertId, services.plugins, name!);
       if (!chain) fail(`${insertLabel(project, insertId)} has no effects to save`);
-      const saved = s.presets.saveChain(chain!);
+      const saved = services.presets.saveChain(chain!);
       return `Saved the ${chain!.steps.length} effect${chain!.steps.length === 1 ? '' : 's'} on ${insertLabel(project, insertId)} as the chain “${saved.name}”`;
     },
 
-    sidechain: (a, c) => {
-      const { d, s, project } = c;
-      const { insertId, slotId } = c.effect(a.effect);
-      const slot = d.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
-      const def = s.plugins.get(slot.plugin.pluginId);
-      const fromText = str(a.from);
-      const source = !fromText || lower(fromText) === 'none' ? null : c.insert(fromText);
+    sidechain: (action, context) => {
+      const { draft, services, project } = context;
+      const { insertId, slotId } = context.effect(action.effect);
+      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
+      const def = services.plugins.get(slot.plugin.pluginId);
+      const fromText = str(action.from);
+      const source = !fromText || lower(fromText) === 'none' ? null : context.insert(fromText);
       if (source && def?.kind === 'effect' && !def.sidechain) fail(`${def.name} has no sidechain input`);
-      if (!setSlotSidechain(d, insertId, slotId, source)) fail('that sidechain would make audio loop');
+      if (!setSlotSidechain(draft, insertId, slotId, source)) fail('that sidechain would make audio loop');
       return source
         ? `${def?.name ?? 'Effect'} on ${insertLabel(project, insertId)} listens to ${insertLabel(project, source)}`
         : `${def?.name ?? 'Effect'} on ${insertLabel(project, insertId)}: no sidechain`;

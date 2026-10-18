@@ -6,18 +6,18 @@
 import type { Services } from '../services';
 
 /** Commands the AI can run: every registered one except those marked `ai: false`, or that need arguments nobody described. */
-export function aiCommands(s: Services) {
+export function aiCommands(services: Services) {
   const needsArgs = new Map<string, boolean>();
-  for (const b of s.keymap.all()) needsArgs.set(b.command, (needsArgs.get(b.command) ?? true) && b.args !== undefined);
-  return s.commands
+  for (const b of services.keymap.all()) needsArgs.set(b.command, (needsArgs.get(b.command) ?? true) && b.args !== undefined);
+  return services.commands
     .list()
     .filter((def) => def.ai !== false && (def.argsHint !== undefined || !needsArgs.get(def.id)))
     .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? '') || a.id.localeCompare(b.id));
 }
 
 /** The catalog text and a key that changes when it does. */
-export function commandCatalog(s: Services): { text: string; key: string } {
-  const lines = aiCommands(s).map((def) => {
+export function commandCatalog(services: Services): { text: string; key: string } {
+  const lines = aiCommands(services).map((def) => {
     const notes = [
       def.checked ? 'on/off' : '',
       def.gesture ? 'the musician confirms with one click' : '',

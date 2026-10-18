@@ -36,13 +36,13 @@ import { fail, type OpContext } from './context';
 export interface FocusGuard {
   readonly active: ResolvedFocus | null;
   /** The pattern an action should use (a copy made for the part, once one exists). */
-  resolve(pid: PatternId): PatternId;
+  resolve(patternId: PatternId): PatternId;
   /** Before a content edit: the pattern to write into (copies a pattern that also plays outside the part). */
-  writable(pid: PatternId): PatternId;
+  writable(patternId: PatternId): PatternId;
   /** Before removing a pattern: refuses one that plays outside the part. */
-  owned(pid: PatternId, what: string): void;
+  owned(patternId: PatternId, what: string): void;
   /** Before deleting a channel (its notes and clips go from the whole song): refused when that reaches outside the part. */
-  removing(cid: ChannelId, name: string): void;
+  removing(channelId: ChannelId, name: string): void;
   /** A playlist edit over from–to: refused when it reaches outside the part (±1 bar). */
   span(from: Tick, to: Tick, what: string): void;
   /** An edit of one clip: refused when the clip lies outside the part. */
@@ -52,9 +52,9 @@ export interface FocusGuard {
   /** Default range for actions that take one (clear_playlist, automate). */
   range(): { from: Tick; to: Tick } | null;
   /** A notes focus on this pattern and channel: the notes that may change (null = all). */
-  notes(pid: PatternId, cid: ChannelId): ReadonlySet<NoteId> | null;
+  notes(patternId: PatternId, channelId: ChannelId): ReadonlySet<NoteId> | null;
   /** Refuses whole-pattern edits (steps tools, clearing every channel) in a notes focus. */
-  wholePattern(pid: PatternId, cid: ChannelId | null, what: string): void;
+  wholePattern(patternId: PatternId, channelId: ChannelId | null, what: string): void;
   /**
    * An automation clip in the part: may end the curve where the control sat before (automation holds
    * its last value). Returns a change line when it did.
@@ -66,8 +66,8 @@ export interface FocusGuard {
 
 export const NO_FOCUS: FocusGuard = {
   active: null,
-  resolve: (pid) => pid,
-  writable: (pid) => pid,
+  resolve: (patternId) => patternId,
+  writable: (patternId) => patternId,
   owned: () => {},
   removing: () => {},
   span: () => {},
@@ -82,29 +82,29 @@ export const NO_FOCUS: FocusGuard = {
 
 type Ctx = Omit<OpContext, 'focus'>;
 
-export function createFocusGuard(c: Ctx, focus: ResolvedFocus | null): FocusGuard {
+export function createFocusGuard(context: Ctx, focus: ResolvedFocus | null): FocusGuard {
   if (!focus) return NO_FOCUS;
-  return focus.notes ? notesGuard(c, focus) : timeGuard(c, focus);
+  return focus.notes ? notesGuard(context, focus) : timeGuard(context, focus);
 }
 
-const spanText = (c: Ctx, from: Tick, to: Tick) =>
-  Number.isFinite(from) && Number.isFinite(to) ? barSpan(Math.max(0, from), to, c.d.transport.timeSig) : 'the whole song';
+const spanText = (context: Ctx, from: Tick, to: Tick) =>
+  Number.isFinite(from) && Number.isFinite(to) ? barSpan(Math.max(0, from), to, context.draft.transport.timeSig) : 'the whole song';
 
 /** "track 3, bars 37–38". */
-const clipPlace = (c: Ctx, clip: Clip) =>
-  `track ${c.d.playlist.laneOrder.indexOf(clip.laneId) + 1}, ${barSpan(clip.start, clip.start + clip.length, c.d.transport.timeSig)}`;
+const clipPlace = (context: Ctx, clip: Clip) =>
+  `track ${context.draft.playlist.laneOrder.indexOf(clip.laneId) + 1}, ${barSpan(clip.start, clip.start + clip.length, context.draft.transport.timeSig)}`;
 
 /** A pattern name nobody uses yet. */
-function uniqueName(c: Ctx, name: string): string {
-  const names = new Set(Object.values(c.d.patterns).map((p) => p.name.toLowerCase()));
+function uniqueName(context: Ctx, name: string): string {
+  const names = new Set(Object.values(context.draft.patterns).map((p) => p.name.toLowerCase()));
   let out = name;
   for (let n = 2; names.has(out.toLowerCase()); n++) out = `${name} ${n}`;
   return out;
 }
 
-const specsOf = (c: Ctx) => (id: string) => c.s.plugins.get(id)?.params as ParamSpecs | undefined;
-const pluginInfo = (c: Ctx) => (id: string) => {
-  const def = c.s.plugins.get(id);
+const specsOf = (context: Ctx) => (id: string) => context.services.plugins.get(id)?.params as ParamSpecs | undefined;
+const pluginInfo = (context: Ctx) => (id: string) => {
+  const def = context.services.plugins.get(id);
   return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
 };
 
@@ -112,25 +112,25 @@ const pluginInfo = (c: Ctx) => (id: string) => {
  * An edit beyond the part: noted, then refused (a warning), or let through once the musician
  * approved edits outside it. True when it may go ahead.
  */
-const outsideOf = (c: Ctx) => (message: string): true => {
-  c.state.outsideFocus.push(message);
-  if (c.apply.focusOutside === 'allow') return true;
+const outsideOf = (context: Ctx) => (message: string): true => {
+  context.state.outsideFocus.push(message);
+  if (context.apply.focusOutside === 'allow') return true;
   return fail(message);
 };
 
 /** A range, a marker section or some clips: edits stay inside a span of the song. */
-function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
-  const { d, base, state } = c;
-  const outside = outsideOf(c);
+function timeGuard(context: Ctx, r: ResolvedFocus): FocusGuard {
+  const { draft: d, base, state } = context;
+  const outside = outsideOf(context);
   const from = r.from;
   const to = r.to;
-  const ts = () => d.transport.timeSig;
+  const timeSig = () => d.transport.timeSig;
   /** Original → the part's copy: from earlier answers (r.copies), then this one's. */
   const redirect = new Map<PatternId, PatternId>(r.copies);
   const made = new Set<PatternId>();
   /** The clips of a clips focus (the guard keeps them, the rest of the song is outside). */
   const chosen = r.clips;
-  const allowed = () => ({ lo: Math.max(0, from - c.bar()), hi: to + c.bar() });
+  const allowed = () => ({ lo: Math.max(0, from - context.bar()), hi: to + context.bar() });
 
   /** This answer's own clips that sit within the part (±1 bar): they belong to it. */
   const answerClip = (x: Clip) => {
@@ -143,11 +143,11 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     chosen ? chosen.has(x.id) || answerClip(x) : (x.start < to && x.start + x.length > from) || answerClip(x);
 
   /** Where a pattern plays: clips in the part, and uses outside it (a straddling clip is both). */
-  const uses = (pid: PatternId) => {
+  const uses = (patternId: PatternId) => {
     const ins: PatternClip[] = [];
     const out: PatternClip[] = [];
     for (const x of Object.values(d.playlist.clips)) {
-      if (x.kind !== 'pattern' || x.patternId !== pid) continue;
+      if (x.kind !== 'pattern' || x.patternId !== patternId) continue;
       const clip = x as PatternClip;
       if (!inside(clip)) {
         out.push(clip);
@@ -166,15 +166,15 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       if (last && s.from <= last.to) last.to = Math.max(last.to, s.to);
       else merged.push({ ...s });
     }
-    const shown = merged.slice(0, 4).map((s) => barSpan(s.from, s.to, ts()));
+    const shown = merged.slice(0, 4).map((s) => barSpan(s.from, s.to, timeSig()));
     return `${shown.join(', ')}${merged.length > 4 ? '…' : ''}`;
   };
 
-  const resolve = (pid: PatternId): PatternId => {
-    const copy = redirect.get(pid);
-    if (!copy || !d.patterns[copy]) return pid;
+  const resolve = (patternId: PatternId): PatternId => {
+    const copy = redirect.get(patternId);
+    if (!copy || !d.patterns[copy]) return patternId;
     // A copy from an earlier answer counts while it still plays in the part.
-    if (!made.has(copy) && uses(copy).ins.length === 0) return pid;
+    if (!made.has(copy) && uses(copy).ins.length === 0) return patternId;
     return copy;
   };
 
@@ -183,56 +183,56 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     resolve,
 
     writable(raw) {
-      const pid = resolve(raw);
-      const pat = d.patterns[pid];
+      const patternId = resolve(raw);
+      const pat = d.patterns[patternId];
       // Made in this answer (a new pattern, a clip's own copy, the part's copy): only the part uses it.
-      if (!pat || !base.patterns[pid]) return pid;
-      const { ins, out } = uses(pid);
+      if (!pat || !base.patterns[patternId]) return patternId;
+      const { ins, out } = uses(patternId);
       if (ins.length === 0) {
         // Not in the song: changing it changes nothing that plays.
-        if (out.length === 0) return pid;
+        if (out.length === 0) return patternId;
         outside(
           `“${pat.name}” doesn't play in ${r.label} (it plays at ${where(out)}); add a pattern for the part, or make one of the part's clips unique (clip make_unique) and edit that`,
         );
-        return pid;
+        return patternId;
       }
-      if (out.length === 0) return pid;
+      if (out.length === 0) return patternId;
       // It plays inside and outside: the part gets its own copy, and the rest of the song keeps the original.
       const copy = newId.pattern();
-      const name = uniqueName(c, `${pat.name} (${r.short})`);
+      const name = uniqueName(context, `${pat.name} (${r.short})`);
       const answer = new Set(ins.filter(answerClip).map((x) => x.id));
       forkPattern(
         d,
-        pid,
+        patternId,
         chosen ? { clips: new Set(ins.map((x) => x.id)) } : { from, to, also: answer },
         copy,
         name,
         tempoMapOf(base, 'song'),
       );
-      redirect.set(pid, copy);
+      redirect.set(patternId, copy);
       made.add(copy);
       // The current pattern follows (the channel rack and piano roll show the part's copy).
-      const current = state.selectPattern ?? c.s.view.getState().currentPatternId;
-      if (current === pid) state.selectPattern = copy;
-      c.note(`Made a copy of “${pat.name}” for ${r.short}, so the rest of the song stays the same`);
+      const current = state.selectPattern ?? context.services.view.getState().currentPatternId;
+      if (current === patternId) state.selectPattern = copy;
+      context.note(`Made a copy of “${pat.name}” for ${r.short}, so the rest of the song stays the same`);
       return copy;
     },
 
-    owned(pid) {
-      const pat = d.patterns[pid];
-      if (!pat || !base.patterns[pid]) return;
-      const { ins, out } = uses(pid);
+    owned(patternId) {
+      const pat = d.patterns[patternId];
+      if (!pat || !base.patterns[patternId]) return;
+      const { ins, out } = uses(patternId);
       if (out.length)
         outside(`“${pat.name}” also plays outside ${r.label} (at ${where(out)}), so it stays; clear its clips in the part instead (clear_playlist)`);
       else if (ins.length === 0) outside(`“${pat.name}” doesn't play in ${r.label}, so it stays`);
     },
 
-    removing(cid, name) {
+    removing(channelId, name) {
       // Its notes in patterns that play outside the part, and its audio or automation clips there.
       const lost: string[] = [];
       for (const pat of Object.values(d.patterns))
-        if (Object.keys(pat.notes[cid] ?? {}).length > 0 && uses(pat.id).out.length) lost.push(`its notes in “${pat.name}”`);
-      const clips = Object.values(d.playlist.clips).filter((x) => x.kind !== 'pattern' && x.channelId === cid && !inside(x));
+        if (Object.keys(pat.notes[channelId] ?? {}).length > 0 && uses(pat.id).out.length) lost.push(`its notes in “${pat.name}”`);
+      const clips = Object.values(d.playlist.clips).filter((x) => x.kind !== 'pattern' && x.channelId === channelId && !inside(x));
       if (clips.length) lost.push(`its clips at ${where(clips)}`);
       if (lost.length) outside(`“${name}” reaches outside ${r.label} (${lost.slice(0, 3).join('; ')}), so it stays; mute it or silence it in the part instead`);
     },
@@ -240,9 +240,9 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     span(a, b) {
       const { lo, hi } = allowed();
       if (a >= lo && b <= hi) return;
-      const text = spanText(c, a, b);
+      const text = spanText(context, a, b);
       outside(
-        `${text} ${text.startsWith('bars ') ? 'reach' : 'reaches'} outside the part you're working on (${r.label}); only ${barSpan(from, to, ts())} can change, or ${barSpan(lo, hi, ts())} for a transition`,
+        `${text} ${text.startsWith('bars ') ? 'reach' : 'reaches'} outside the part you're working on (${r.label}); only ${barSpan(from, to, timeSig())} can change, or ${barSpan(lo, hi, timeSig())} for a transition`,
       );
     },
 
@@ -251,12 +251,12 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       if (!x) return;
       if (chosen) {
         if (inside(x)) return;
-        outside(`the clip on ${clipPlace(c, x)} isn't one of the selected clips (${r.label}); change those, or clips you add`);
+        outside(`the clip on ${clipPlace(context, x)} isn't one of the selected clips (${r.label}); change those, or clips you add`);
         return;
       }
       const { lo, hi } = allowed();
       if (x.start >= lo && x.start + x.length <= hi) return;
-      outside(`the clip on ${clipPlace(c, x)} reaches outside the part (${r.label}), so it stays as it is`);
+      outside(`the clip on ${clipPlace(context, x)} reaches outside the part (${r.label}), so it stays as it is`);
     },
 
     clearable: (x) => !chosen || inside(x),
@@ -274,8 +274,8 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       const muted = mutedLanes(d.playlist);
       for (const x of Object.values(d.playlist.clips)) {
         if (x.kind !== 'automation' || x.muted || muted.has(x.laneId)) continue;
-        const ch = d.channels[x.channelId];
-        if (ch?.kind !== 'automation' || ch.muted || !ch.target || targetKey(ch.target) !== key) continue;
+        const channel = d.channels[x.channelId];
+        if (channel?.kind !== 'automation' || channel.muted || !channel.target || targetKey(channel.target) !== key) continue;
         if (x.start <= end && end < x.start + x.length) return null;
       }
       // What played at the end before this answer: earlier automation (in its own range), else the setting.
@@ -283,7 +283,7 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       const was = ta ? automationAt(ta, end) : null;
       let value: number;
       if (was) {
-        const old = resolveTarget(base, target, specsOf(c), was.span.range);
+        const old = resolveTarget(base, target, specsOf(context), was.span.range);
         value = old ? res.toNormalized(old.fromNormalized(was.value)) : was.value;
       } else value = res.toNormalized(res.base);
       if (points.length === 0) return null;
@@ -292,8 +292,8 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       // Hold the curve to the clip's end, then step back to where the control sat.
       if (points[points.length - 1]!.tick < length) points.push({ tick: length, value: last });
       points.push({ tick: length, value });
-      const name = targetName(c.project, target, pluginInfo(c)) ?? 'The automation';
-      return `“${name}” goes back to ${formatAutomationValue(res, target, value)} at bar ${barOf(end, ts())} (where it was before), so the rest of the song stays the same`;
+      const name = targetName(context.project, target, pluginInfo(context)) ?? 'The automation';
+      return `“${name}” goes back to ${formatAutomationValue(res, target, value)} at bar ${barOf(end, timeSig())} (where it was before), so the rest of the song stays the same`;
     },
 
     finish() {
@@ -319,18 +319,18 @@ function timeGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
 }
 
 /** Some notes of one channel in a pattern: only they change, nothing else does. */
-function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
-  const { d, base } = c;
+function notesGuard(context: Ctx, r: ResolvedFocus): FocusGuard {
+  const { draft: d, base } = context;
   const { patternId: P, channelId: C, ids: picked } = r.notes!;
   const patName = () => d.patterns[P]?.name ?? 'the pattern';
   const about = () => `${r.label} in “${patName()}”`;
   /** The notes of the pattern that weren't selected: they must stay as they are. */
   const kept = new Map<ChannelId, Map<NoteId, Note>>();
   const before = base.patterns[P]?.notes;
-  for (const cid of Object.keys(before ?? {}) as ChannelId[]) {
+  for (const channelId of Object.keys(before ?? {}) as ChannelId[]) {
     const m = new Map<NoteId, Note>();
-    for (const n of Object.values(before?.[cid] ?? {})) if (!(cid === C && picked.has(n.id))) m.set(n.id, n);
-    if (m.size) kept.set(cid, m);
+    for (const n of Object.values(before?.[channelId] ?? {})) if (!(channelId === C && picked.has(n.id))) m.set(n.id, n);
+    if (m.size) kept.set(channelId, m);
   }
   /** The selection now: the channel's notes that weren't kept (new notes count as selected). */
   const selection = (): Set<NoteId> => {
@@ -339,21 +339,21 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     for (const id of Object.keys(d.patterns[P]?.notes[C] ?? {}) as NoteId[]) if (!keep?.has(id)) out.add(id);
     return out;
   };
-  const isNew = (pid: PatternId) => !base.patterns[pid];
-  const outside = outsideOf(c);
+  const isNew = (patternId: PatternId) => !base.patterns[patternId];
+  const outside = outsideOf(context);
   const noPlaylist = () =>
     void outside(`the request is about ${about()}: the playlist stays as it is (ask about bars, clips or a section to change the arrangement)`);
 
   return {
     active: r,
-    resolve: (pid) => pid,
-    writable(pid) {
-      if (pid === P || isNew(pid)) return pid;
-      outside(`the request is about ${about()}; “${d.patterns[pid]?.name ?? 'that pattern'}” stays as it is (add a pattern for new material)`);
-      return pid;
+    resolve: (patternId) => patternId,
+    writable(patternId) {
+      if (patternId === P || isNew(patternId)) return patternId;
+      outside(`the request is about ${about()}; “${d.patterns[patternId]?.name ?? 'that pattern'}” stays as it is (add a pattern for new material)`);
+      return patternId;
     },
-    owned(pid) {
-      if (isNew(pid)) return;
+    owned(patternId) {
+      if (isNew(patternId)) return;
       outside(`the request is about ${about()}, so the patterns stay`);
     },
     removing: (_cid, name) =>
@@ -362,13 +362,13 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
     clip: noPlaylist,
     clearable: () => false,
     range: () => null,
-    notes(pid, cid) {
-      if (pid !== P) return null;
+    notes(patternId, channelId) {
+      if (patternId !== P) return null;
       // Other channels of the pattern: nothing of theirs changes (new notes are added).
-      return cid === C ? selection() : new Set<NoteId>();
+      return channelId === C ? selection() : new Set<NoteId>();
     },
-    wholePattern(pid, _cid, what) {
-      if (pid !== P && isNew(pid)) return;
+    wholePattern(patternId, _cid, what) {
+      if (patternId !== P && isNew(patternId)) return;
       outside(`${what} would change the whole pattern; the request is about ${about()} (write_notes with replace or note_tool change just them)`);
     },
     closeAutomation: () => null,
@@ -377,9 +377,9 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
       const pat = d.patterns[P];
       let restored = 0;
       if (pat) {
-        for (const [cid, notes] of kept) {
+        for (const [channelId, notes] of kept) {
           for (const [id, n] of notes) {
-            const now = pat.notes[cid]?.[id];
+            const now = pat.notes[channelId]?.[id];
             const same =
               now &&
               now.tick === n.tick &&
@@ -391,13 +391,13 @@ function notesGuard(c: Ctx, r: ResolvedFocus): FocusGuard {
               now.release === n.release &&
               now.fine === n.fine;
             if (same) continue;
-            if (!pat.notes[cid]) pat.notes[cid] = {} as never;
-            pat.notes[cid]![id] = { ...n };
+            if (!pat.notes[channelId]) pat.notes[channelId] = {} as never;
+            pat.notes[channelId]![id] = { ...n };
             restored++;
           }
         }
       }
-      if (restored) c.warn(`kept ${restored} note${restored === 1 ? '' : 's'} you didn't select as they were`);
+      if (restored) context.warn(`kept ${restored} note${restored === 1 ? '' : 's'} you didn't select as they were`);
       const ids = [...selection()];
       if (!pat || ids.length === 0) return { focus: null, clips: [] };
       return { focus: { kind: 'notes', patternId: P, channelId: C, noteIds: ids, projectId: r.focus.projectId }, clips: [] };

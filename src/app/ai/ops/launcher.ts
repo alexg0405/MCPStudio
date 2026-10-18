@@ -106,119 +106,119 @@ export const launcher: OpModule = {
 - A recorded performance becomes pattern and audio clips on new playlist tracks at the bars they played (undo removes them). <launcher> in the context shows what is in the grid and what plays.`,
   },
   handlers: {
-    launcher_slot: (a, c) => {
-      const { d } = c;
-      const t = position(a.track, 'track', MAX_TRACKS);
-      const sc = position(a.scene, 'scene', MAX_SCENES);
-      const l = ensureCapacity(d, t, sc);
+    launcher_slot: (action, context) => {
+      const { draft } = context;
+      const t = position(action.track, 'track', MAX_TRACKS);
+      const sc = position(action.scene, 'scene', MAX_SCENES);
+      const l = ensureCapacity(draft, t, sc);
       const trackId = l.trackOrder[t - 1]!;
       const sceneId = l.sceneOrder[sc - 1]!;
       const where = `track ${t}, scene ${sc}`;
-      if (bool(a.clear)) {
-        clearSlot(d, trackId, sceneId);
+      if (bool(action.clear)) {
+        clearSlot(draft, trackId, sceneId);
         return `Cleared launcher ${where}`;
       }
       let content: LaunchContent | null = null;
-      if (a.pattern !== undefined) content = patternContent(c.pattern(a.pattern));
-      else if (a.audio !== undefined) {
-        const id = c.channel(a.audio);
-        content = contentFromAudioChannel(c.project, id) ?? fail(`"${String(a.audio)}" is not an audio clip with a known length`);
-      } else if (a.clip !== undefined || a.clip_track !== undefined) {
-        const clip = c.clip({ op: 'launcher_slot', clip: a.clip, track: a.clip_track, bar: a.clip_bar });
+      if (action.pattern !== undefined) content = patternContent(context.pattern(action.pattern));
+      else if (action.audio !== undefined) {
+        const id = context.channel(action.audio);
+        content = contentFromAudioChannel(context.project, id) ?? fail(`"${String(action.audio)}" is not an audio clip with a known length`);
+      } else if (action.clip !== undefined || action.clip_track !== undefined) {
+        const clip = context.clip({ op: 'launcher_slot', clip: action.clip, track: action.clip_track, bar: action.clip_bar });
         if (clip.kind === 'pattern') content = patternContent(clip.patternId);
         else if (clip.kind === 'audio') content = contentFromAudioClip(clip);
         else fail('automation clips can’t be launched');
       }
       const changes: string[] = [];
       if (content) {
-        setSlotContent(d, trackId, sceneId, content);
-        changes.push(content.kind === 'pattern' ? `“${d.patterns[content.patternId]?.name ?? 'pattern'}”` : `“${d.channels[content.channelId]?.name ?? 'audio'}”`);
+        setSlotContent(draft, trackId, sceneId, content);
+        changes.push(content.kind === 'pattern' ? `“${draft.patterns[content.patternId]?.name ?? 'pattern'}”` : `“${draft.channels[content.channelId]?.name ?? 'audio'}”`);
       }
       const slot = l.tracks[trackId]!.slots[sceneId];
       if (!slot) return fail(`launcher ${where} is empty: give it a pattern, audio or clip`);
-      if (typeof a.name === 'string') {
-        patchSlot(d, trackId, sceneId, { name: a.name.trim() ? a.name : null });
-        changes.push(a.name.trim() ? `named “${a.name.trim()}”` : 'its own name');
+      if (typeof action.name === 'string') {
+        patchSlot(draft, trackId, sceneId, { name: action.name.trim() ? action.name : null });
+        changes.push(action.name.trim() ? `named “${action.name.trim()}”` : 'its own name');
       }
-      const color = str(a.color);
+      const color = str(action.color);
       if (color) {
-        if (/^#[0-9a-f]{6}$/i.test(color)) patchSlot(d, trackId, sceneId, { color });
-        else c.warn(`launcher slot: “${color}” is not a hex colour like #c9a24a`);
+        if (/^#[0-9a-f]{6}$/i.test(color)) patchSlot(draft, trackId, sceneId, { color });
+        else context.warn(`launcher slot: “${color}” is not a hex colour like #c9a24a`);
       }
-      const mode = str(a.mode);
+      const mode = str(action.mode);
       if (mode) {
         if (isLaunchMode(lower(mode))) {
-          patchSlot(d, trackId, sceneId, { mode: lower(mode) as never });
+          patchSlot(draft, trackId, sceneId, { mode: lower(mode) as never });
           changes.push(`${lower(mode)} mode`);
-        } else c.warn(`launcher slot: unknown mode “${mode}” (${LAUNCH_MODES.join(', ')})`);
+        } else context.warn(`launcher slot: unknown mode “${mode}” (${LAUNCH_MODES.join(', ')})`);
       }
-      const loop = bool(a.loop);
+      const loop = bool(action.loop);
       if (loop !== undefined) {
-        patchSlot(d, trackId, sceneId, { loop });
+        patchSlot(draft, trackId, sceneId, { loop });
         changes.push(loop ? 'loops' : 'plays once');
       }
-      const q = str(a.quantize);
+      const q = str(action.quantize);
       if (q) {
         if (isLaunchQuantize(lower(q))) {
-          patchSlot(d, trackId, sceneId, { quantize: lower(q) as never });
+          patchSlot(draft, trackId, sceneId, { quantize: lower(q) as never });
           changes.push(`quantize ${QUANTIZE_LABELS[lower(q) as keyof typeof QUANTIZE_LABELS].toLowerCase()}`);
-        } else c.warn(`launcher slot: unknown quantize “${q}” (${LAUNCH_QUANTIZES.join(', ')})`);
+        } else context.warn(`launcher slot: unknown quantize “${q}” (${LAUNCH_QUANTIZES.join(', ')})`);
       }
-      if (isObj(a.follow)) {
-        const kind = str(a.follow.kind);
+      if (isObj(action.follow)) {
+        const kind = str(action.follow.kind);
         if (kind === 'none') {
-          patchSlot(d, trackId, sceneId, { follow: null });
+          patchSlot(draft, trackId, sceneId, { follow: null });
           changes.push('no follow action');
         } else if (kind && (FOLLOW_KINDS as readonly string[]).includes(kind)) {
-          const bars = Math.max(1, Math.min(64, Math.round(num(a.follow.bars) ?? 4)));
-          patchSlot(d, trackId, sceneId, { follow: { kind, bars } as FollowAction });
+          const bars = Math.max(1, Math.min(64, Math.round(num(action.follow.bars) ?? 4)));
+          patchSlot(draft, trackId, sceneId, { follow: { kind, bars } as FollowAction });
           changes.push(`${kind} after ${bars} bar${bars === 1 ? '' : 's'}`);
-        } else c.warn(`launcher slot: unknown follow action “${String(a.follow.kind)}”`);
+        } else context.warn(`launcher slot: unknown follow action “${String(action.follow.kind)}”`);
       }
       return `Launcher ${where}: ${changes.length ? changes.join(', ') : 'nothing changed'}`;
     },
-    launcher_layout: (a, c) => {
-      const { d } = c;
+    launcher_layout: (action, context) => {
+      const { draft } = context;
       const notes: string[] = [];
-      const q = str(a.quantize);
+      const q = str(action.quantize);
       if (q) {
         if (isLaunchQuantize(lower(q))) {
-          setLauncherQuantize(d, lower(q) as never);
+          setLauncherQuantize(draft, lower(q) as never);
           notes.push(`launches on ${QUANTIZE_LABELS[lower(q) as keyof typeof QUANTIZE_LABELS].toLowerCase()}`);
-        } else c.warn(`launcher layout: unknown quantize “${q}” (${LAUNCH_QUANTIZES.join(', ')})`);
+        } else context.warn(`launcher layout: unknown quantize “${q}” (${LAUNCH_QUANTIZES.join(', ')})`);
       }
-      const tracks = num(a.tracks);
-      const scenes = num(a.scenes);
-      const sceneNames = Array.isArray(a.scene_names) ? a.scene_names : [];
-      const trackNames = Array.isArray(a.track_names) ? a.track_names : [];
-      const links = Array.isArray(a.playlist_tracks) ? a.playlist_tracks : [];
+      const tracks = num(action.tracks);
+      const scenes = num(action.scenes);
+      const sceneNames = Array.isArray(action.scene_names) ? action.scene_names : [];
+      const trackNames = Array.isArray(action.track_names) ? action.track_names : [];
+      const links = Array.isArray(action.playlist_tracks) ? action.playlist_tracks : [];
       if (tracks !== undefined || scenes !== undefined || sceneNames.length || trackNames.length || links.length) {
-        ensureLauncher(d);
+        ensureLauncher(draft);
         const l = ensureCapacity(
-          d,
+          draft,
           Math.max(tracks === undefined ? 0 : Math.round(tracks), trackNames.length, ...links.map((x) => (isObj(x) ? (num(x.track) ?? 0) : 0))),
           Math.max(scenes === undefined ? 0 : Math.round(scenes), sceneNames.length),
         );
         if (tracks !== undefined || scenes !== undefined) notes.push(`${l.trackOrder.length} tracks × ${l.sceneOrder.length} scenes`);
         sceneNames.forEach((n, i) => {
           const id = l.sceneOrder[i];
-          if (id && typeof n === 'string' && n.trim()) renameScene(d, id, n);
+          if (id && typeof n === 'string' && n.trim()) renameScene(draft, id, n);
         });
         if (sceneNames.some((n) => typeof n === 'string' && n.trim())) notes.push('scene names');
         trackNames.forEach((n, i) => {
           const id = l.trackOrder[i];
-          if (id && typeof n === 'string' && n.trim()) renameLaunchTrack(d, id, n);
+          if (id && typeof n === 'string' && n.trim()) renameLaunchTrack(draft, id, n);
         });
         if (trackNames.some((n) => typeof n === 'string' && n.trim())) notes.push('track names');
         for (const x of links) {
           if (!isObj(x)) continue;
           const id = l.trackOrder[(num(x.track) ?? 0) - 1];
           if (!id) {
-            c.warn(`launcher layout: there is no launcher track ${String(x.track)}`);
+            context.warn(`launcher layout: there is no launcher track ${String(x.track)}`);
             continue;
           }
           const lane = num(x.playlist_track);
-          setTrackLane(d, id, lane && lane > 0 ? c.lane(lane) : null);
+          setTrackLane(draft, id, lane && lane > 0 ? context.lane(lane) : null);
           notes.push(lane && lane > 0 ? `track ${String(x.track)} takes over playlist track ${lane}` : `track ${String(x.track)} no longer takes over a playlist track`);
         }
       }
@@ -231,17 +231,17 @@ export const launcher: OpModule = {
 export const LAUNCHER_PLAY_OPS: readonly string[] = ['launcher_play'];
 
 /** Runs the answer's `launcher_play` actions, in order, after its edits are committed. */
-export function launcherAfter(s: Services, answer: AiAnswer, state: AnswerState): void {
-  for (const a of answer.actions) {
-    if (a.op !== 'launcher_play') continue;
+export function launcherAfter(services: Services, answer: AiAnswer, state: AnswerState): void {
+  for (const action of answer.actions) {
+    if (action.op !== 'launcher_play') continue;
     const warn = (m: string) => state.warnings.push(`launcher play: ${m}`);
-    const p = s.doc.getState().project;
-    const l = p.launcher;
-    const action = str(a.action);
-    const t = num(a.track);
-    const sc = num(a.scene);
-    const L = s.launcher;
-    switch (action) {
+    const project = services.doc.getState().project;
+    const l = project.launcher;
+    const subAction = str(action.action);
+    const t = num(action.track);
+    const sc = num(action.scene);
+    const L = services.launcher;
+    switch (subAction) {
       case 'launch': {
         if (!l) {
           warn('the clip launcher is empty: set up slots with launcher_slot first');
@@ -257,12 +257,12 @@ export function launcherAfter(s: Services, answer: AiAnswer, state: AnswerState)
           break;
         }
         L.pressAt(slot.track, slot.scene);
-        state.ui.push(`Launched “${slotLabel(p, slot.slot)}” (track ${slot.track + 1}, scene ${slot.scene + 1}): it starts on the next ${QUANTIZE_LABELS[slot.slot.quantize ?? l.quantize].toLowerCase()} boundary`);
+        state.ui.push(`Launched “${slotLabel(project, slot.slot)}” (track ${slot.track + 1}, scene ${slot.scene + 1}): it starts on the next ${QUANTIZE_LABELS[slot.slot.quantize ?? l.quantize].toLowerCase()} boundary`);
         break;
       }
       case 'launch_scene': {
         if (!l || sc === undefined || !l.sceneOrder[Math.round(sc) - 1]) {
-          warn(`there is no scene ${String(a.scene)}`);
+          warn(`there is no scene ${String(action.scene)}`);
           break;
         }
         L.launchSceneAt(Math.round(sc) - 1);
@@ -271,7 +271,7 @@ export function launcherAfter(s: Services, answer: AiAnswer, state: AnswerState)
       }
       case 'stop_track': {
         if (!l || t === undefined || !l.trackOrder[Math.round(t) - 1]) {
-          warn(`there is no launcher track ${String(a.track)}`);
+          warn(`there is no launcher track ${String(action.track)}`);
           break;
         }
         L.stopTrackAt(Math.round(t) - 1);
@@ -280,8 +280,8 @@ export function launcherAfter(s: Services, answer: AiAnswer, state: AnswerState)
       }
       case 'stop_all':
       case 'stop_now':
-        L.stopAll(action === 'stop_now');
-        state.ui.push(action === 'stop_now' ? 'Stopped the clip launcher' : 'Stopping the clip launcher at the next boundary');
+        L.stopAll(subAction === 'stop_now');
+        state.ui.push(subAction === 'stop_now' ? 'Stopped the clip launcher' : 'Stopping the clip launcher at the next boundary');
         break;
       case 'record':
         L.startRecording();
@@ -292,35 +292,35 @@ export function launcherAfter(s: Services, answer: AiAnswer, state: AnswerState)
         state.ui.push('Ending the performance record at the next bar: the clips go on the playlist then');
         break;
       default:
-        warn(`unknown action “${String(a.action)}”`);
+        warn(`unknown action “${String(action.action)}”`);
     }
   }
 }
 
 /** What the clip launcher holds and does, for the Studio's context. Empty when there is no grid. */
-export function launcherLines(s: Services): string[] {
-  const p: Project = s.doc.getState().project;
-  const l = p.launcher;
+export function launcherLines(services: Services): string[] {
+  const project: Project = services.doc.getState().project;
+  const l = project.launcher;
   const filled = filledSlots(l);
   if (!l || filled.length === 0) return [];
   const lines = [`<launcher> (clip launcher: tracks across, scenes down; launches on ${QUANTIZE_LABELS[l.quantize].toLowerCase()}):`];
-  const heard = s.launcher.runs.length ? s.launcher.clock().heardU : 0;
+  const heard = services.launcher.runs.length ? services.launcher.clock().heardU : 0;
   l.sceneOrder.forEach((sceneId, si) => {
     const row = filled.filter((f) => f.scene === si);
     if (!row.length) return;
     const parts = row.map((f) => {
-      const st = s.launcher.stateOf(f.trackId, f.sceneId, heard).state;
+      const st = services.launcher.stateOf(f.trackId, f.sceneId, heard).state;
       const bits = [
         slotMode(f.slot) === 'trigger' ? '' : slotMode(f.slot),
         slotLoops(f.slot) ? '' : 'once',
         f.slot.follow ? `${f.slot.follow.kind} after ${f.slot.follow.bars} bars` : '',
         st === 'playing' || st === 'queued' || st === 'stopping' ? st : '',
       ].filter(Boolean);
-      return `track ${f.track + 1} “${slotLabel(p, f.slot)}”${bits.length ? ` (${bits.join(', ')})` : ''}`;
+      return `track ${f.track + 1} “${slotLabel(project, f.slot)}”${bits.length ? ` (${bits.join(', ')})` : ''}`;
     });
     lines.push(`- Scene ${si + 1} “${l.scenes[sceneId]!.name}”: ${parts.join('; ')}`);
   });
-  if (s.launcher.store.getState().recording) lines.push('- Recording the performance.');
+  if (services.launcher.store.getState().recording) lines.push('- Recording the performance.');
   lines.push('</launcher>');
   return lines;
 }

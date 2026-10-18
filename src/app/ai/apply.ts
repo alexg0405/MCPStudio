@@ -22,38 +22,38 @@ export type { AfterEdit, AppliedTurn, ApplyContext, AuditionPhrase } from './ops
 export { coerceParam, parseKey } from './ops/values';
 
 /** `source` names who asked in the undo label ("Claude Code: …"); the Studio chat is the default. */
-export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext & { source?: string }): AppliedTurn {
+export function applyAnswer(services: Services, answer: AiAnswer, context: ApplyContext & { source?: string }): AppliedTurn {
   const state = newAnswerState();
   const docActions = answer.actions.filter((a) => !UI_OP_NAMES.has(a.op));
-  const words = (ctx.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
+  const words = (context.label ?? answer.message.split(/[.!?]/)[0] ?? '').trim();
   const label = words.length > 48 ? `${words.slice(0, 47).trimEnd()}…` : words || 'edit';
   let finished: ReturnType<ReturnType<typeof createOpContext>['focus']['finish']> | null = null;
 
-  if (ctx.dryRun && docActions.length === 0) return { changes: [], warnings: [], beat: null, after: [], edited: false };
+  if (context.dryRun && docActions.length === 0) return { changes: [], warnings: [], beat: null, after: [], edited: false };
   let edited: boolean;
   try {
     edited =
       docActions.length > 0 &&
-      s.history.transact(`${ctx.source ?? 'Studio'}: ${label}`, (d) => {
-        const c = createOpContext(s, d, answer, ctx, state);
+      services.history.transact(`${context.source ?? 'Studio'}: ${label}`, (d) => {
+        const c = createOpContext(services, d, answer, context, state);
         for (const a of docActions) {
           const fn = DOC_OPS[a.op];
           if (!fn) continue;
           try {
             const note = fn(a, c);
             if (note) state.changes.push(note);
-          } catch (e) {
-            if (e instanceof ActionError) state.warnings.push(`${a.op.replace(/_/g, ' ')}: ${e.message}`);
-            else throw e;
+          } catch (error) {
+            if (error instanceof ActionError) state.warnings.push(`${a.op.replace(/_/g, ' ')}: ${error.message}`);
+            else throw error;
           }
         }
         for (const m of MODULES) m.beforeCommit?.(c);
         finished = c.focus.finish();
         // A dry run stops here: throwing out of the recipe leaves the project as it was.
-        if (ctx.dryRun) throw DRY_RUN;
+        if (context.dryRun) throw DRY_RUN;
       });
-  } catch (e) {
-    if (e !== DRY_RUN) throw e;
+  } catch (error) {
+    if (error !== DRY_RUN) throw error;
     return {
       changes: state.changes,
       warnings: state.warnings,
@@ -64,20 +64,20 @@ export function applyAnswer(s: Services, answer: AiAnswer, ctx: ApplyContext & {
     };
   }
 
-  uiAfter(s, answer, state);
-  recordingAfter(s, answer, state);
-  decksAfter(s, answer, state);
-  launcherAfter(s, answer, state);
+  uiAfter(services, answer, state);
+  recordingAfter(services, answer, state);
+  decksAfter(services, answer, state);
+  launcherAfter(services, answer, state);
 
-  const project = s.doc.getState().project;
+  const project = services.doc.getState().project;
   if (state.selectPattern && project.patterns[state.selectPattern])
-    s.view.getState().setCurrentPattern(state.selectPattern);
+    services.view.getState().setCurrentPattern(state.selectPattern);
   if (state.selectChannel && project.channels[state.selectChannel])
-    s.session.getState().selectChannel(state.selectChannel);
-  const beat = state.beatPlan ? showBeat(s, state.beatPlan) : null;
+    services.session.getState().selectChannel(state.selectChannel);
+  const beat = state.beatPlan ? showBeat(services, state.beatPlan) : null;
   const done = finished as { focus: AppliedTurn['focus']; clips: NonNullable<AppliedTurn['selectClips']> } | null;
-  sessionAfter(s, answer, state);
-  queryAfter(s, answer, state);
+  sessionAfter(services, answer, state);
+  queryAfter(services, answer, state);
   return {
     changes: state.changes,
     warnings: state.warnings,

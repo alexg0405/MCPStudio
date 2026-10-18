@@ -66,152 +66,152 @@ export const channels: OpModule = {
     S.op('remove_channel', 'Deletes a channel and its notes and clips.', { channel: S.CHANNEL }, ['channel']),
   ],
   handlers: {
-    add_channel: (a, c) => {
-      const { d, project } = c;
-      const def = c.plugin(a.plugin, 'instrument');
-      const name = str(a.name) ?? def.name;
+    add_channel: (action, context) => {
+      const { draft, project } = context;
+      const def = context.plugin(action.plugin, 'instrument');
+      const name = str(action.name) ?? def.name;
       let samples: Record<string, ReturnType<typeof newId.sample>> | undefined;
       if (def.sampleSlots?.includes('main') || def.id === SAMPLER_ID) {
-        const generator = kitSample(a.sample, name);
+        const generator = kitSample(action.sample, name);
         if (generator) {
           const ref = kitSampleRef(generator);
-          addSample(d, ref);
+          addSample(draft, ref);
           samples = { main: ref.id };
         } else if (def.id === SAMPLER_ID)
           // Other sample players have a sound of their own until they get one (the Slicer's demo break).
-          c.warn(`"${name}" has no sample yet (say which kit sound it should play)`);
+          context.warn(`"${name}" has no sample yet (say which kit sound it should play)`);
       }
-      const ch = instrumentChannelFor(def, name, d.channelOrder.length, samples);
-      const parts = c.settings(ch.plugin as Draft<PluginInstance>, def, a);
-      const vol = num(a.volume_db);
+      const channel = instrumentChannelFor(def, name, draft.channelOrder.length, samples);
+      const parts = context.settings(channel.plugin as Draft<PluginInstance>, def, action);
+      const vol = num(action.volume_db);
       if (vol !== undefined) {
-        ch.volume = channelGain(vol);
+        channel.volume = channelGain(vol);
         parts.push(`volume ${r2(vol)} dB`);
       }
-      const pan = num(a.pan);
+      const pan = num(action.pan);
       if (pan !== undefined) {
-        ch.pan = Math.max(-1, Math.min(1, pan));
+        channel.pan = Math.max(-1, Math.min(1, pan));
         parts.push(`pan ${r2(pan)}`);
       }
-      const color = str(a.color);
-      if (color && /^#[0-9a-f]{6}$/i.test(color)) ch.color = color;
-      if (a.insert !== undefined) ch.output = c.insert(a.insert);
-      addChannel(d, ch);
-      c.remember(a.ref, { kind: 'channel', id: ch.id });
-      c.state.after.push({ kind: 'open', window: 'channel-rack' });
-      c.state.selectChannel = ch.id;
+      const color = str(action.color);
+      if (color && /^#[0-9a-f]{6}$/i.test(color)) channel.color = color;
+      if (action.insert !== undefined) channel.output = context.insert(action.insert);
+      addChannel(draft, channel);
+      context.remember(action.ref, { kind: 'channel', id: channel.id });
+      context.state.after.push({ kind: 'open', window: 'channel-rack' });
+      context.state.selectChannel = channel.id;
       return `Added channel “${name}” (${def.name}${parts.length ? `: ${parts.join(', ')}` : ''})${
-        ch.output !== MASTER ? ` → ${insertLabel(project, ch.output)}` : ''
+        channel.output !== MASTER ? ` → ${insertLabel(project, channel.output)}` : ''
       }`;
     },
 
-    edit_channel: (a, c) => {
-      const { d, s, project } = c;
-      const id = c.channel(a.channel);
-      const ch = d.channels[id]!;
+    edit_channel: (action, context) => {
+      const { draft, services, project } = context;
+      const id = context.channel(action.channel);
+      const channel = draft.channels[id]!;
       const out: string[] = [];
-      if (ch.kind === 'instrument') {
-        const swap = str(a.plugin);
-        let def = s.plugins.get(ch.plugin.pluginId);
+      if (channel.kind === 'instrument') {
+        const swap = str(action.plugin);
+        let def = services.plugins.get(channel.plugin.pluginId);
         if (swap) {
-          def = c.plugin(swap, 'instrument');
-          ch.plugin = makePluginInstance(def.id, def.version, defaultValues(def.params), {
-            ...(ch.plugin.samples && def.sampleSlots?.length ? { samples: { ...ch.plugin.samples } } : {}),
+          def = context.plugin(swap, 'instrument');
+          channel.plugin = makePluginInstance(def.id, def.version, defaultValues(def.params), {
+            ...(channel.plugin.samples && def.sampleSlots?.length ? { samples: { ...channel.plugin.samples } } : {}),
           }) as Draft<PluginInstance>;
           out.push(`instrument ${def.name}`);
         }
-        if (def && (a.preset !== undefined || a.params !== undefined)) out.push(...c.settings(ch.plugin, def, a));
-        else if (!def && (a.preset !== undefined || a.params !== undefined))
-          c.warn(`“${ch.name}”'s plugin isn't installed`);
-        const pitch = num(a.pitch_cents);
+        if (def && (action.preset !== undefined || action.params !== undefined)) out.push(...context.settings(channel.plugin, def, action));
+        else if (!def && (action.preset !== undefined || action.params !== undefined))
+          context.warn(`“${channel.name}”'s plugin isn't installed`);
+        const pitch = num(action.pitch_cents);
         if (pitch !== undefined) {
-          ch.pitch = Math.max(-2400, Math.min(2400, pitch));
-          out.push(`pitch ${ch.pitch} ct`);
+          channel.pitch = Math.max(-2400, Math.min(2400, pitch));
+          out.push(`pitch ${channel.pitch} ct`);
         }
-        const sample = str(a.sample);
-        if (a.sample !== undefined) {
+        const sample = str(action.sample);
+        if (action.sample !== undefined) {
           const slot = def?.sampleSlots?.includes('main') || def?.id === SAMPLER_ID;
           const generator = slot ? kitSample(sample, '') : undefined;
-          if (!slot) c.warn(`“${ch.name}” doesn't play a sample`);
-          else if (!generator) c.warn(`there is no kit sound "${String(a.sample)}"`);
+          if (!slot) context.warn(`“${channel.name}” doesn't play a sample`);
+          else if (!generator) context.warn(`there is no kit sound "${String(action.sample)}"`);
           else {
             const ref = kitSampleRef(generator);
-            addSample(d, ref);
-            setPluginSample(d, { kind: 'channel', channelId: id }, 'main', ref.id);
+            addSample(draft, ref);
+            setPluginSample(draft, { kind: 'channel', channelId: id }, 'main', ref.id);
             out.push(`sound ${ref.name}`);
           }
         }
-        const rootKey = num(a.root_key);
+        const rootKey = num(action.root_key);
         if (rootKey !== undefined) {
-          setChannelProp(d, id, 'rootKey', rootKey);
-          out.push(`root key ${ch.rootKey}`);
+          setChannelProp(draft, id, 'rootKey', rootKey);
+          out.push(`root key ${channel.rootKey}`);
         }
-      } else if (a.plugin !== undefined || a.params !== undefined || a.preset !== undefined)
-        c.warn(`“${ch.name}” has no instrument`);
-      if (ch.kind === 'audioClip') {
-        const pitch = num(a.pitch_cents);
-        const reverse = bool(a.reverse);
-        const follow = (['off', 'resample', 'stretch'] as const).find((x) => x === str(a.follow_tempo));
-        const bpm = num(a.source_bpm);
-        setAudioChannelEdits(d, id, {
+      } else if (action.plugin !== undefined || action.params !== undefined || action.preset !== undefined)
+        context.warn(`“${channel.name}” has no instrument`);
+      if (channel.kind === 'audioClip') {
+        const pitch = num(action.pitch_cents);
+        const reverse = bool(action.reverse);
+        const follow = (['off', 'resample', 'stretch'] as const).find((x) => x === str(action.follow_tempo));
+        const bpm = num(action.source_bpm);
+        setAudioChannelEdits(draft, id, {
           ...(pitch !== undefined ? { pitch } : {}),
           ...(reverse !== undefined ? { reverse } : {}),
           ...(follow ? { stretch: follow } : {}),
           ...(bpm !== undefined ? { sourceBpm: bpm } : {}),
         });
-        if (pitch !== undefined) out.push(`pitch ${ch.pitch ?? 0} ct`);
+        if (pitch !== undefined) out.push(`pitch ${channel.pitch ?? 0} ct`);
         if (reverse !== undefined) out.push(reverse ? 'reversed' : 'forwards');
         if (follow) out.push(follow === 'off' ? 'own speed' : `follows the tempo (${follow})`);
-        if (bpm !== undefined) out.push(`recorded at ${ch.sourceBpm} BPM`);
-        if (follow && follow !== 'off' && ch.sourceBpm === undefined)
-          c.warn(`“${ch.name}” needs source_bpm to follow the tempo`);
-      } else if (a.reverse !== undefined || a.follow_tempo !== undefined || a.source_bpm !== undefined)
-        c.warn(`“${ch.name}” is not an audio clip channel`);
-      const name = str(a.name);
+        if (bpm !== undefined) out.push(`recorded at ${channel.sourceBpm} BPM`);
+        if (follow && follow !== 'off' && channel.sourceBpm === undefined)
+          context.warn(`“${channel.name}” needs source_bpm to follow the tempo`);
+      } else if (action.reverse !== undefined || action.follow_tempo !== undefined || action.source_bpm !== undefined)
+        context.warn(`“${channel.name}” is not an audio clip channel`);
+      const name = str(action.name);
       if (name) {
-        setChannelProp(d, id, 'name', name);
+        setChannelProp(draft, id, 'name', name);
         out.push(`renamed “${name}”`);
       }
-      const vol = num(a.volume_db);
+      const vol = num(action.volume_db);
       if (vol !== undefined) {
-        setChannelProp(d, id, 'volume', channelGain(vol));
+        setChannelProp(draft, id, 'volume', channelGain(vol));
         out.push(`volume ${r2(vol)} dB`);
       }
-      const pan = num(a.pan);
+      const pan = num(action.pan);
       if (pan !== undefined) {
-        setChannelProp(d, id, 'pan', pan);
+        setChannelProp(draft, id, 'pan', pan);
         out.push(`pan ${r2(pan)}`);
       }
-      const mute = bool(a.mute);
+      const mute = bool(action.mute);
       if (mute !== undefined) {
-        ch.muted = mute;
+        channel.muted = mute;
         out.push(mute ? 'muted' : 'unmuted');
       }
-      const solo = bool(a.solo);
+      const solo = bool(action.solo);
       if (solo !== undefined) {
-        ch.solo = solo;
+        channel.solo = solo;
         out.push(solo ? 'solo' : 'unsolo');
       }
-      if (a.insert !== undefined) {
-        const to = c.insert(a.insert);
-        setChannelProp(d, id, 'output', to);
+      if (action.insert !== undefined) {
+        const to = context.insert(action.insert);
+        setChannelProp(draft, id, 'output', to);
         out.push(`→ ${insertLabel(project, to)}`);
       }
-      const color = str(a.color);
-      if (color && /^#[0-9a-f]{6}$/i.test(color)) setChannelProp(d, id, 'color', color);
-      const position = num(a.position);
+      const color = str(action.color);
+      if (color && /^#[0-9a-f]{6}$/i.test(color)) setChannelProp(draft, id, 'color', color);
+      const position = num(action.position);
       if (position !== undefined) {
-        moveChannel(d, id, Math.round(position) - 1);
-        out.push(`place ${d.channelOrder.indexOf(id) + 1}`);
+        moveChannel(draft, id, Math.round(position) - 1);
+        out.push(`place ${draft.channelOrder.indexOf(id) + 1}`);
       }
-      return out.length ? `“${ch.name}”: ${out.join(', ')}` : null;
+      return out.length ? `“${channel.name}”: ${out.join(', ')}` : null;
     },
 
-    remove_channel: (a, c) => {
-      const id = c.channel(a.channel);
-      const name = c.d.channels[id]!.name;
-      c.focus.removing(id, name);
-      removeChannel(c.d, id);
+    remove_channel: (action, context) => {
+      const id = context.channel(action.channel);
+      const name = context.draft.channels[id]!.name;
+      context.focus.removing(id, name);
+      removeChannel(context.draft, id);
       return `Deleted channel “${name}”`;
     },
   },

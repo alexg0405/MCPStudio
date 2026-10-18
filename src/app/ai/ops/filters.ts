@@ -18,30 +18,30 @@ import { num, str } from './values';
 const IDS = FILTERS.map((f) => f.id);
 
 /** The part a filter action means: clips, bars, a section, the whole song, else the part asked about, else the whole song. */
-function targetOf(a: Record<string, unknown>, c: OpContext, p: Project): FilterTarget {
-  const bar = c.bar();
-  if (a.whole_song === true) return songTarget(p) ?? fail('the playlist is empty: there is no song to filter yet');
-  if (Array.isArray(a.clips) && a.clips.length) {
-    const ids = a.clips.map(str).filter((x): x is string => !!x) as ClipId[];
-    return clipsTarget(p, ids) ?? fail('none of those clips plays (they are missing, muted or automation)');
+function targetOf(action: Record<string, unknown>, context: OpContext, project: Project): FilterTarget {
+  const bar = context.bar();
+  if (action.whole_song === true) return songTarget(project) ?? fail('the playlist is empty: there is no song to filter yet');
+  if (Array.isArray(action.clips) && action.clips.length) {
+    const ids = action.clips.map(str).filter((x): x is string => !!x) as ClipId[];
+    return clipsTarget(project, ids) ?? fail('none of those clips plays (they are missing, muted or automation)');
   }
-  const section = str(a.section);
+  const section = str(action.section);
   if (section) {
     const want = section.toLowerCase();
-    const markers = Object.values(p.playlist.markers);
+    const markers = Object.values(project.playlist.markers);
     const m = markers.find((x) => x.name.toLowerCase() === want) ?? markers.find((x) => x.name.toLowerCase().startsWith(want));
     if (!m) fail(`there is no marker “${section}” (sections are the spans between markers)`);
-    return markerTarget(p, m!.id) ?? fail(`“${section}” has no section`);
+    return markerTarget(project, m!.id) ?? fail(`“${section}” has no section`);
   }
-  const fromBar = num(a.from_bar);
+  const fromBar = num(action.from_bar);
   if (fromBar !== undefined) {
     const first = Math.max(1, Math.round(fromBar));
-    const last = Math.max(first, Math.round(num(a.to_bar) ?? first));
-    return rangeTarget(p, (first - 1) * bar, last * bar) ?? fail('that span of bars is empty');
+    const last = Math.max(first, Math.round(num(action.to_bar) ?? first));
+    return rangeTarget(project, (first - 1) * bar, last * bar) ?? fail('that span of bars is empty');
   }
-  const part = c.focus.range();
-  if (part) return rangeTarget(p, part.from, part.to) ?? fail('the part asked about is empty');
-  return songTarget(p) ?? fail('the playlist is empty: there is no song to filter yet');
+  const part = context.focus.range();
+  if (part) return rangeTarget(project, part.from, part.to) ?? fail('the part asked about is empty');
+  return songTarget(project) ?? fail('the playlist is empty: there is no song to filter yet');
 }
 
 export const filters: OpModule = {
@@ -78,32 +78,32 @@ export const filters: OpModule = {
 - remove_filter (with the filtered clip, or a bar inside it) puts the original clips back.`,
   },
   handlers: {
-    filter: (a, c) => {
-      const f = findFilter(str(a.filter) ?? '') ?? fail(`filter must be one of ${IDS.join(', ')}`);
-      const p = current(c.d) as Project;
-      const target = targetOf(a, c, p);
-      c.state.after.push({ kind: 'filter', filter: f.id, target });
-      c.touch(target.from, target.to);
-      return `${f.name} on ${targetLabel(p, target)} (rendered after the answer)`;
+    filter: (action, context) => {
+      const f = findFilter(str(action.filter) ?? '') ?? fail(`filter must be one of ${IDS.join(', ')}`);
+      const project = current(context.draft) as Project;
+      const target = targetOf(action, context, project);
+      context.state.after.push({ kind: 'filter', filter: f.id, target });
+      context.touch(target.from, target.to);
+      return `${f.name} on ${targetLabel(project, target)} (rendered after the answer)`;
     },
-    remove_filter: (a, c) => {
-      const p = current(c.d) as Project;
-      const clipId = str(a.clip);
-      const bar = num(a.bar);
-      const filtered = Object.values(p.channels).filter((x): x is AudioClipChannel => x.kind === 'audioClip' && !!x.filter);
-      const clip = clipId ? p.playlist.clips[clipId as ClipId] : undefined;
-      const tick = bar !== undefined ? (Math.round(bar) - 1) * c.bar() : null;
-      const ch =
+    remove_filter: (action, context) => {
+      const project = current(context.draft) as Project;
+      const clipId = str(action.clip);
+      const bar = num(action.bar);
+      const filtered = Object.values(project.channels).filter((x): x is AudioClipChannel => x.kind === 'audioClip' && !!x.filter);
+      const clip = clipId ? project.playlist.clips[clipId as ClipId] : undefined;
+      const tick = bar !== undefined ? (Math.round(bar) - 1) * context.bar() : null;
+      const channel =
         filtered.find((x) => clip?.kind === 'audio' && clip.channelId === x.id) ??
         filtered.find((x) => tick !== null && x.filter!.from <= tick && tick < x.filter!.to) ??
         (clipId === undefined && tick === null && filtered.length === 1 ? filtered[0] : undefined);
-      if (!ch?.filter) return fail('no filtered part there (give the filtered clip or a bar inside it)');
-      const over = filtersOver(p, ch.id);
+      if (!channel?.filter) return fail('no filtered part there (give the filtered clip or a bar inside it)');
+      const over = filtersOver(project, channel.id);
       if (over.length) fail(`“${over[0]!.name}” was made over it later: remove that filter first`);
-      const { from, to } = ch.filter;
-      removeSoundFilter(c.d, ch.id);
-      c.touch(from, to);
-      return `Removed ${ch.name}: the original clips play again`;
+      const { from, to } = channel.filter;
+      removeSoundFilter(context.draft, channel.id);
+      context.touch(from, to);
+      return `Removed ${channel.name}: the original clips play again`;
     },
   },
 };

@@ -98,47 +98,47 @@ Make it sound finished and professional in that style:
 When they performed something (beatbox or humming), you get it as events on the grid with the instrument they meant: follow its rhythm closely and keep their steps; keep a hummed contour (intervals, slides) but move it into the right register and key; build the rest around it. Performance summaries name notes scientifically (C4 = MIDI 60).`,
   },
   handlers: {
-    beat: (a, c) => {
-      const { s, d, project, state } = c;
+    beat: (action, context) => {
+      const { services, draft, project, state } = context;
       // Without a style the beat's own tempo, swing and kick pattern decide it (accents, kit, sounds).
       const checked = validateBeatSpec(
-        { ...a, message: c.answer.message },
-        { project: { bpm: d.transport.bpm, swing: d.transport.swing } },
+        { ...action, message: context.answer.message },
+        { project: { bpm: draft.transport.bpm, swing: draft.transport.swing } },
       );
       if ('error' in checked) fail(`the beat can't be used: ${checked.error}`);
       const { spec, warnings: w } = checked as Exclude<typeof checked, { error: string }>;
       state.warnings.push(...w);
       const answer = beatAnswerState(state);
-      const want = str(a.pattern);
+      const want = str(action.pattern);
       let previous: AppliedBeat | null = null;
-      let patternId: ReturnType<typeof c.pattern> | undefined;
+      let patternId: ReturnType<typeof context.pattern> | undefined;
       if (want && lower(want) !== 'new') {
         // A pattern it names (in a part of the song: the part's own copy).
-        patternId = c.focus.writable(c.pattern(want));
-        const last = state.beatPlan ?? c.apply.previousBeat;
+        patternId = context.focus.writable(context.pattern(want));
+        const last = state.beatPlan ?? context.apply.previousBeat;
         if (last?.patternId === patternId)
           previous = { patternId, channels: last.channels, created: [...last.created] };
-      } else if (!want && answer.count === 0 && c.apply.previousBeat) {
+      } else if (!want && answer.count === 0 && context.apply.previousBeat) {
         // A follow-up rewrites the conversation's beat (on the part's own copy when it also plays outside it).
-        const prior = c.apply.previousBeat;
-        const own = c.focus.writable(prior.patternId);
+        const prior = context.apply.previousBeat;
+        const own = context.focus.writable(prior.patternId);
         previous = own !== prior.patternId ? { ...prior, patternId: own } : prior;
       }
       // Rewriting a whole pattern isn't possible while only some of its notes are selected.
       const target = patternId ?? previous?.patternId;
-      if (target) c.focus.wholePattern(target, null, 'beat');
-      const plan = planBeat(s, project, spec, previous, {
+      if (target) context.focus.wholePattern(target, null, 'beat');
+      const plan = planBeat(services, project, spec, previous, {
         ...(patternId ? { patternId } : {}),
         own: answer.own,
       });
       const rewrite = !!project.patterns[plan.patternId];
-      writeBeat(s, d, spec, plan);
+      writeBeat(services, draft, spec, plan);
       state.warnings.push(...plan.warnings);
       for (const id of plan.created) answer.own.add(id);
       for (const id of plan.levels) answer.levels.add(id);
       answer.count++;
       state.beatPlan = plan;
-      c.remember(a.ref, { kind: 'pattern', id: plan.patternId });
+      context.remember(action.ref, { kind: 'pattern', id: plan.patternId });
       const what = `“${spec.title}” (${spec.tracks.map((t) => t.name).join(', ')})`;
       return rewrite && patternId ? `Rewrote the beat ${what}` : `Wrote the beat ${what}`;
     },

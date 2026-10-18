@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { AutomationChannel } from '@core/model/types';
-import { project, stackedSong } from '../../../test/helpers/focus';
-import { applyAnswer } from './apply';
-import { readTools, runReadTool } from './read';
-import type { AiAction } from './schema';
+import { project, stackedSong } from '../../../../test/helpers/focus';
+import { applyAnswer } from '../apply';
+import { readTools, runReadTool } from './index';
+import type { AiAction } from '../schema';
 
 type J = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const read = (s: ReturnType<typeof stackedSong>['s'], name: string, args: Record<string, unknown> = {}) =>

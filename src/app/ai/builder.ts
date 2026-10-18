@@ -46,8 +46,8 @@ async function post<T>(fetchImpl: typeof fetch, path: string, body: unknown, sig
       body: JSON.stringify(body),
       ...(signal ? { signal } : {}),
     });
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new AiError(devServerMissing('The plugin builder'), 'network');
   }
   // The production server (`agstudio --app`, the installed app) has no plugin builder behind /api/plugins.
@@ -116,9 +116,9 @@ export class PluginBuilder {
         );
         folder = res.folder;
         problems = res.problems;
-      } catch (e) {
-        if (!(e instanceof DraftRejected)) throw e;
-        problems = [e.message];
+      } catch (error) {
+        if (!(error instanceof DraftRejected)) throw error;
+        problems = [error.message];
       }
       let report: SmokeReport | null = null;
       if (problems.length === 0 && folder) {

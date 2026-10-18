@@ -8,8 +8,8 @@ import { fail, type OpContext, type OpModule } from './context';
 import { bool, num, str } from './values';
 
 /** The sound a place_sample or make_kit names: an id, a path (with or without the folder) or a file name. */
-function rowFor(ref: string, c: OpContext): BrowserRow {
-  const row = c.s.sampleBrowser.find(ref);
+function rowFor(ref: string, context: OpContext): BrowserRow {
+  const row = context.services.sampleBrowser.find(ref);
   if (!row) fail(`there is no sample "${ref}" in the sample folders (list_samples shows ids and paths; the musician adds folders in View → Sample browser)`);
   const r = row as BrowserRow;
   if (r.state === 'failed') fail(`“${r.name}” is not readable as audio`);
@@ -17,11 +17,11 @@ function rowFor(ref: string, c: OpContext): BrowserRow {
 }
 
 /** The answer's one batch of sample work (kept in order; done after the edit, in the answer's undo step). */
-function workOf(c: OpContext): SampleWork[] {
-  const hit = c.state.after.find((x) => x.kind === 'samples');
+function workOf(context: OpContext): SampleWork[] {
+  const hit = context.state.after.find((x) => x.kind === 'samples');
   if (hit && hit.kind === 'samples') return hit.work;
   const work: SampleWork[] = [];
-  c.state.after.push({ kind: 'samples', work });
+  context.state.after.push({ kind: 'samples', work });
   return work;
 }
 
@@ -58,57 +58,57 @@ export const samples: OpModule = {
     text: `The musician's sample folders (the Sample browser window: kicks, snares, hats, loops with their tempo and key, found by analyzing the audio): look sounds up with the list_samples query (filters: text, category kick|snare|clap|hat|open-hat|cymbal|tom|perc|808|fx|vocal|tonal, kind loop|one-shot, bpm_min/bpm_max, key like "A minor", favorites, recent, tag, folder, similar_to a sound, in_song_key; sort; limit), then use place_sample to put a sound in the project (a sampler channel, an audio clip on the playlist, or one pad of a Drum Pads channel) and make_kit to make a Drum Pads kit from one-shots. Pick by what the analysis says (type, tempo near the song's, a key that fits) and say which sounds you used by name. When there are no sample folders, say the musician adds one in View → Sample browser → Add folder (it stays on their computer) and offer the built-in drum sounds instead. A sound the analysis is unsure of (confidence under 0.5) may be something else: say so when it matters.`,
   },
   handlers: {
-    place_sample: (a, c) => {
-      const row = rowFor(str(a.sample) ?? fail('which sample? (an id, path or file name from list_samples)'), c);
+    place_sample: (action, context) => {
+      const row = rowFor(str(action.sample) ?? fail('which sample? (an id, path or file name from list_samples)'), context);
       const isLoop = row.analysis?.kind === 'loop';
-      const raw = str(a.to);
+      const raw = str(action.to);
       const to = raw === undefined ? (isLoop ? 'clip' : 'channel') : raw;
       if (to !== 'channel' && to !== 'clip' && to !== 'pad') return fail(`to must be channel, clip or pad (not "${to}")`);
       if (to === 'channel') {
-        workOf(c).push({ kind: 'place', row: row.id, to });
+        workOf(context).push({ kind: 'place', row: row.id, to });
         return `Adds “${row.name}” as a sampler channel`;
       }
       if (to === 'clip') {
-        const track = num(a.track);
-        const bar = num(a.bar);
+        const track = num(action.track);
+        const bar = num(action.bar);
         if (track !== undefined && (track < 1 || !Number.isFinite(track))) fail('track is 1-based');
         if (bar !== undefined && bar < 1) fail('bar is 1-based');
-        const follow = bool(a.follow_tempo);
-        workOf(c).push({
+        const follow = bool(action.follow_tempo);
+        workOf(context).push({
           kind: 'place',
           row: row.id,
           to,
           ...(track !== undefined ? { track: Math.round(track) } : {}),
-          ...(bar !== undefined ? { start: Math.max(0, Math.round((bar - 1) * c.bar())) } : {}),
+          ...(bar !== undefined ? { start: Math.max(0, Math.round((bar - 1) * context.bar())) } : {}),
           ...(follow === false ? { followTempo: false } : {}),
         });
         return `Puts “${row.name}” on the playlist${bar !== undefined ? ` at bar ${bar}` : ''}${track !== undefined ? ` on track ${Math.round(track)}` : ''}`;
       }
-      const channel = c.channel(a.channel);
-      const ch = c.project.channels[channel];
+      const channel = context.channel(action.channel);
+      const ch = context.project.channels[channel];
       if (!ch || ch.kind !== 'instrument' || ch.plugin.pluginId !== DRUM_PADS_ID)
-        fail(`“${ch?.name ?? a.channel}” is not a Drum Pads channel (make_kit makes one, or add_channel with plugin ${DRUM_PADS_ID})`);
-      const pad = Math.round(num(a.pad) ?? fail('which pad (1–16)?'));
+        fail(`“${ch?.name ?? action.channel}” is not a Drum Pads channel (make_kit makes one, or add_channel with plugin ${DRUM_PADS_ID})`);
+      const pad = Math.round(num(action.pad) ?? fail('which pad (1–16)?'));
       if (pad < 1 || pad > 16) fail('pad is 1–16');
-      workOf(c).push({ kind: 'place', row: row.id, to, channel, pad });
+      workOf(context).push({ kind: 'place', row: row.id, to, channel, pad });
       return `Loads “${row.name}” on pad ${pad} of ${ch?.name ?? 'the kit'}`;
     },
-    make_kit: (a, c) => {
+    make_kit: (action, context) => {
       let rows: BrowserRow[];
-      if (Array.isArray(a.samples) && a.samples.length > 0) {
-        rows = a.samples.map(str).filter((x): x is string => !!x).map((x) => rowFor(x, c));
+      if (Array.isArray(action.samples) && action.samples.length > 0) {
+        rows = action.samples.map(str).filter((x): x is string => !!x).map((x) => rowFor(x, context));
       } else {
-        const folder = str(a.folder);
-        const text = str(a.text);
+        const folder = str(action.folder);
+        const text = str(action.text);
         if (!folder && !text) return fail('name the sounds (samples), or a folder and/or search words');
         const filter = { ...NO_FILTER, kind: 'one-shot' as const, ...(folder ? { under: folder } : {}), ...(text ? { text } : {}) };
-        rows = browse(c.s.sampleBrowser.store.getState().rows, filter, 'name') as BrowserRow[];
+        rows = browse(context.services.sampleBrowser.store.getState().rows, filter, 'name') as BrowserRow[];
         if (rows.length === 0) fail('no one-shots match that folder or those words (list_samples shows what there is)');
       }
       const one = rows.filter((r) => r.analysis?.kind === 'one-shot');
       if (one.length === 0) fail(rows.some((r) => !r.analysis) ? 'those sounds are not analyzed yet: wait for the analysis to finish (list_samples says how far it is)' : 'a kit needs one-shots (those are loops or long files)');
-      const name = str(a.name);
-      workOf(c).push({ kind: 'kit', rows: rows.map((r) => r.id), ...(name ? { name } : {}) });
+      const name = str(action.name);
+      workOf(context).push({ kind: 'kit', rows: rows.map((r) => r.id), ...(name ? { name } : {}) });
       return `Makes a Drum Pads kit from ${Math.min(16, one.length)} of ${one.length} one-shots${rows.length > one.length ? ` (${rows.length - one.length} loops or long files left out)` : ''}`;
     },
   },

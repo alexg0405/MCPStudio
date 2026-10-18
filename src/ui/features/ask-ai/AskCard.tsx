@@ -167,7 +167,7 @@ function AskCard() {
       {(replies.length > 0 || busy) && (
         <div className={styles.replies} ref={list}>
           {replies.map((m) => (
-            <Message key={m.id} m={m} />
+            <Message key={m.id} message={m} />
           ))}
           {busy && (
             <div className={styles.status}>

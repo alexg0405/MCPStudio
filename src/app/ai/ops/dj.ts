@@ -12,19 +12,19 @@ import { num, str } from './values';
 const ENERGY = ['party', 'build', 'peak-time', 'chill'] as const;
 const STYLE = ['auto', 'smooth', 'quick', 'cut'] as const;
 
-function optionsOf(a: Record<string, unknown>, base: DjMixOptions): DjMixOptions {
+function optionsOf(action: Record<string, unknown>, base: DjMixOptions): DjMixOptions {
   const pick = <T extends string>(v: unknown, ok: readonly T[], d: T): T => (ok.includes(v as T) ? (v as T) : d);
-  const tempo = num(a.mix_tempo);
-  const len = num(a.length_min);
+  const tempo = num(action.mix_tempo);
+  const len = num(action.length_min);
   const o: DjMixOptions = {
-    order: pick(a.order, ['auto', 'keep'], base.order),
-    energy: pick(a.energy, ENERGY, base.energy),
-    transition: pick(a.transition, STYLE, base.transition),
-    mixTempo: tempo !== undefined ? Math.min(250, Math.max(50, tempo)) : a.mix_tempo === 'follow' ? 'follow' : base.mixTempo,
+    order: pick(action.order, ['auto', 'keep'], base.order),
+    energy: pick(action.energy, ENERGY, base.energy),
+    transition: pick(action.transition, STYLE, base.transition),
+    mixTempo: tempo !== undefined ? Math.min(250, Math.max(50, tempo)) : action.mix_tempo === 'follow' ? 'follow' : base.mixTempo,
   };
   const target = len !== undefined ? (len > 0 ? Math.min(600, len) : undefined) : base.lengthTargetMin;
   if (target) o.lengthTargetMin = target;
-  if (typeof a.key_lock === 'boolean' ? a.key_lock : base.keyLock) o.keyLock = true;
+  if (typeof action.key_lock === 'boolean' ? action.key_lock : base.keyLock) o.keyLock = true;
   return o;
 }
 
@@ -32,12 +32,12 @@ const NO_MUSIC =
   'the music library is empty: the musician adds their own song files (MP3, AAC, WAV, FLAC) in the DJ window (View → DJ mix → Add files). Streaming services like Spotify can’t be mixed: their audio is locked';
 
 /** The songs a dj_mix means: names from the library, the selection, the library, or the mix that is there. */
-function songsFor(raw: unknown, c: OpContext): MixSong[] {
+function songsFor(raw: unknown, context: OpContext): MixSong[] {
   const st = library.getState();
   if (Array.isArray(raw) && raw.length) {
     const names = raw.map(str).filter((x): x is string => !!x);
     const { found, missing } = findSongs(names);
-    if (missing.length) c.warn(`dj_mix: not in the music library: ${missing.map((m) => `“${m}”`).join(', ')}`);
+    if (missing.length) context.warn(`dj_mix: not in the music library: ${missing.map((m) => `“${m}”`).join(', ')}`);
     if (!found.length) fail(`none of those songs is in the music library (${st.songs.length} songs there)`);
     return found.map(mixSongOf);
   }
@@ -49,14 +49,14 @@ function songsFor(raw: unknown, c: OpContext): MixSong[] {
     if (!st.songs.length) fail(NO_MUSIC);
     return songsToMix(raw === 'library' ? { ...st, selected: [] } : st).map(mixSongOf);
   }
-  const mix = currentMixSongs(c.project);
+  const mix = currentMixSongs(context.project);
   if (mix?.length) return mix;
   return fail(NO_MUSIC);
 }
 
 /** A song of the mix by its 1-based number or (part of) its title; its index. */
-function mixIndex(p: Project, raw: unknown, what: string): number {
-  const songs = p.dj?.songs ?? [];
+function mixIndex(project: Project, raw: unknown, what: string): number {
+  const songs = project.dj?.songs ?? [];
   const n = num(raw) ?? (typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : undefined);
   if (n !== undefined) {
     if (n < 1 || n > songs.length) fail(`${what}: the mix has songs 1–${songs.length}`);
@@ -115,50 +115,50 @@ export const dj: OpModule = {
 - The DJ mix section of the project lists the mix's songs with their BPM, key (Camelot) and start bar. Never build a DJ mix by hand (audio clips, automation): use these actions.`,
   },
   handlers: {
-    dj_mix: (a, c) => {
-      const songs = songsFor(a.songs, c);
-      const options = optionsOf(a, c.project.dj?.options ?? DEFAULT_DJ_OPTIONS);
-      if (Array.isArray(a.songs) && a.order === undefined) options.order = 'keep';
+    dj_mix: (action, context) => {
+      const songs = songsFor(action.songs, context);
+      const options = optionsOf(action, context.project.dj?.options ?? DEFAULT_DJ_OPTIONS);
+      if (Array.isArray(action.songs) && action.order === undefined) options.order = 'keep';
       const analyses = new Map(songs.flatMap((x) => {
-        const an = peekAnalysis(c.s, x.ref);
+        const an = peekAnalysis(context.services, x.ref);
         return an ? [[x.ref.id, an] as const] : [];
       }));
-      c.state.after.push({ kind: 'mode', mode: 'song' }, { kind: 'open', window: 'playlist' });
+      context.state.after.push({ kind: 'mode', mode: 'song' }, { kind: 'open', window: 'playlist' });
       if (analyses.size < songs.length) {
         // Some songs need analyzing: that runs after the answer, in its undo step.
-        c.state.after.push({ kind: 'dj_mix', songs, options });
+        context.state.after.push({ kind: 'dj_mix', songs, options });
         return `The mix of ${songs.length} songs is made after ${songs.length - analyses.size} of them are analyzed`;
       }
-      const res = mixInDraft(c.d, c.s, songs, analyses, options);
-      for (const w of res.warnings) c.warn(`dj_mix: ${w}`);
-      c.touch(0, res.plan.totalTicks);
+      const res = mixInDraft(context.draft, context.services, songs, analyses, options);
+      for (const w of res.warnings) context.warn(`dj_mix: ${w}`);
+      context.touch(0, res.plan.totalTicks);
       return res.changes.join('; ');
     },
-    dj_transition: (a, c) => {
-      const p = current(c.d) as Project;
-      if (!p.dj) fail('there is no DJ mix in this project yet (dj_mix makes one)');
-      const from = mixIndex(p, a.from_song, 'from_song');
-      const to = a.to_song !== undefined ? mixIndex(p, a.to_song, 'to_song') : from + 1;
-      if (to !== from + 1 || to >= p.dj!.songs.length) fail('to_song must be the song right after from_song in the mix');
-      const sampleId = p.dj!.songs[to]!.sampleId;
+    dj_transition: (action, context) => {
+      const project = current(context.draft) as Project;
+      if (!project.dj) fail('there is no DJ mix in this project yet (dj_mix makes one)');
+      const from = mixIndex(project, action.from_song, 'from_song');
+      const to = action.to_song !== undefined ? mixIndex(project, action.to_song, 'to_song') : from + 1;
+      if (to !== from + 1 || to >= project.dj!.songs.length) fail('to_song must be the song right after from_song in the mix');
+      const sampleId = project.dj!.songs[to]!.sampleId;
       let tweak: TransitionTweak | null = null;
-      if (a.reset !== true) {
+      if (action.reset !== true) {
         tweak = {};
-        const bars = num(a.length_bars);
+        const bars = num(action.length_bars);
         if (bars !== undefined) tweak.bars = Math.max(0, Math.min(64, Math.round(bars)));
-        if (typeof a.recipe === 'string' && (TRANSITION_RECIPES as readonly string[]).includes(a.recipe)) tweak.recipe = a.recipe as TransitionRecipe;
-        if (typeof a.riser === 'boolean') tweak.riser = a.riser;
+        if (typeof action.recipe === 'string' && (TRANSITION_RECIPES as readonly string[]).includes(action.recipe)) tweak.recipe = action.recipe as TransitionRecipe;
+        if (typeof action.riser === 'boolean') tweak.riser = action.riser;
         if (!Object.keys(tweak).length) fail('say what to change: length_bars, recipe, riser or reset');
       }
       let res: ReturnType<typeof replanInDraft>;
       try {
-        res = replanInDraft(c.d, c.s, p, { tweaks: { [sampleId]: tweak } });
+        res = replanInDraft(context.draft, context.services, project, { tweaks: { [sampleId]: tweak } });
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }
       const t = res.plan.transitions[from]!;
-      c.touch(Math.max(0, t.start - 2 * 3840), t.start + t.length + 3840);
-      const names = `“${p.dj!.songs[from]!.title}” → “${p.dj!.songs[to]!.title}”`;
+      context.touch(Math.max(0, t.start - 2 * 3840), t.start + t.length + 3840);
+      const names = `“${project.dj!.songs[from]!.title}” → “${project.dj!.songs[to]!.title}”`;
       return `Transition ${from + 1} (${names}): ${t.bars ? `${t.bars} bars, ` : ''}${t.recipe}${t.riser ? ' with a riser' : ''}${t.why ? ` (${t.why})` : ''}`;
     },
   },

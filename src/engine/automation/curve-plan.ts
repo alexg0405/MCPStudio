@@ -25,6 +25,21 @@ export const JUMP = 0.003;
 const FAR = 7680;
 /** Sub-intervals sampled to estimate how densely a curve must be subdivided. */
 const PROBES = 16;
+/** Most intervals remembered (the playhead and the lookahead only touch a few at a time). */
+const CACHE_SIZE = 8;
+/** Guard against a plan that never reaches its end: the most iterations of a breakpoint walk. */
+const MAX_WALK_STEPS = 1_000_000;
+/** A jump smaller than this (relative to the value) is not a jump: it needs no ramp. */
+const JUMP_TOLERANCE = 1e-9;
+/** A change in a discrete curve is pinned down to this many ticks by bisection... */
+const BISECTION_TICKS = 1e-3;
+/** ...in at most this many halvings. */
+const MAX_BISECTIONS = 48;
+/** Tolerances of the ramp error measures (see rampError): dB, and a share of a parameter's range. */
+const DB_TOLERANCE = 0.1;
+const RANGE_TOLERANCE = 0.002;
+/** Safety factor on the subdivision count the error estimate asks for. */
+const DENSITY_MARGIN = 1.5;
 
 /**
  * Error of a linear ramp from `a` to `b` at its midpoint against the curve's true value `m` (spec
@@ -47,15 +62,15 @@ const dbToGain = (db: number) => Math.pow(10, db / 20);
  */
 export function rampError(key: string, spec: ParamSpec): RampError {
   if (spec.type !== 'float') return () => 0;
-  if (/^(ch:[^:]+:volume|ins:[^:]+:volume|route:)/.test(key)) return (a, b, m) => gainDb(a, b, m) / 0.1;
+  if (/^(ch:[^:]+:volume|ins:[^:]+:volume|route:)/.test(key)) return (a, b, m) => gainDb(a, b, m) / DB_TOLERANCE;
   if (spec.unit === 'Hz' || (spec.scale === 'log' && spec.min > 0))
     return (a, b, m) => (m > 0 && a + b > 0 ? Math.abs(1200 * Math.log2((a + b) / 2 / m)) : 0);
   if (spec.unit === 'ct') return (a, b, m) => Math.abs((a + b) / 2 - m);
   if (spec.unit === 'st') return (a, b, m) => Math.abs((a + b) / 2 - m) * 100;
   if (spec.unit === 'dB' || spec.scale === 'db')
-    return (a, b, m) => Math.max(Math.abs((a + b) / 2 - m), gainDb(dbToGain(a), dbToGain(b), dbToGain(m))) / 0.1;
+    return (a, b, m) => Math.max(Math.abs((a + b) / 2 - m), gainDb(dbToGain(a), dbToGain(b), dbToGain(m))) / DB_TOLERANCE;
   const range = spec.max - spec.min || 1;
-  return (a, b, m) => Math.abs((a + b) / 2 - m) / (range * 0.002);
+  return (a, b, m) => Math.abs((a + b) / 2 - m) / (range * RANGE_TOLERANCE);
 }
 
 /** A stretch of the song timeline governed by one span (or by none: the document value). */
@@ -165,23 +180,23 @@ export class CurvePlanner {
 
   /** The value at a song tick (the interval starting there, at boundaries). */
   valueAt(tick: number): number {
-    return this.ivValue(this.intervalAt(tick), tick);
+    return this.valueIn(this.intervalAt(tick), tick);
   }
 
   /** The value approaching a song tick from before (the interval ending there, at boundaries). */
   valueBefore(tick: number): number {
-    return this.ivValue(this.intervalBefore(tick), tick);
+    return this.valueIn(this.intervalBefore(tick), tick);
   }
 
   /** The interval [start, end) containing `tick`. */
   intervalAt(tick: number): Interval {
-    for (const iv of this.cache) if (iv.start <= tick && tick < iv.end) return iv;
+    for (const interval of this.cache) if (interval.start <= tick && tick < interval.end) return interval;
     return this.remember(this.compute(tick, false));
   }
 
   /** The interval (start, end] containing `tick` (the one that ends at a boundary). */
   intervalBefore(tick: number): Interval {
-    for (const iv of this.cache) if (iv.start < tick && tick <= iv.end) return iv;
+    for (const interval of this.cache) if (interval.start < tick && tick <= interval.end) return interval;
     return this.remember(this.compute(tick, true));
   }
 
@@ -193,42 +208,51 @@ export class CurvePlanner {
    */
   floatBreakpoints(from: number, through: number, end: number, out: Float64Array): number {
     const max = out.length >> 1;
-    let n = 0;
-    let t = from;
-    for (let guard = 0; guard < 1_000_000 && t < through && t < end && n + 2 <= max; guard++) {
-      const iv = this.intervalAt(t);
+    let count = 0;
+    let tick = from;
+    for (let guard = 0; guard < MAX_WALK_STEPS && tick < through && tick < end && count + 2 <= max; guard++) {
+      const interval = this.intervalAt(tick);
       let next: number;
-      let v: number;
-      if (Number.isNaN(iv.value)) {
-        next = Math.min(this.nextGrid(iv, t), end);
-        v = this.ivValue(iv, next);
+      let value: number;
+      if (Number.isNaN(interval.value)) {
+        next = Math.min(this.nextGrid(interval, tick), end);
+        value = this.valueIn(interval, next);
       } else {
-        next = Math.min(iv.end, end);
+        next = Math.min(interval.end, end);
         // An endless hold: extend it a little at a time.
-        if (!Number.isFinite(next)) next = Math.max(t, through) + FAR;
-        v = iv.value;
+        if (!Number.isFinite(next)) next = Math.max(tick, through) + FAR;
+        value = interval.value;
       }
-      out[2 * n] = next;
-      out[2 * n + 1] = v;
-      n++;
-      t = next;
-      if (t === iv.end && t < end) {
+      out[2 * count] = next;
+      out[2 * count + 1] = value;
+      count++;
+      tick = next;
+      if (tick === interval.end && tick < end) {
         // A structural boundary: if the value jumps here, ramp over JUMP instead.
-        const after = this.intervalAt(t);
-        const right = this.ivValue(after, t);
-        if (Math.abs(right - v) > 1e-9 * (1 + Math.abs(v))) {
-          const j = Math.min(this.tempo.secondsToTick(this.tempo.tickToSeconds(t) + JUMP), after.end, end);
-          if (j > t) {
-            out[2 * n] = j;
-            out[2 * n + 1] = this.ivValue(after, j);
-            n++;
-            t = j;
-          }
+        const jumpEnd = this.jumpRampEnd(tick, value, end);
+        if (jumpEnd !== null) {
+          out[2 * count] = jumpEnd.tick;
+          out[2 * count + 1] = jumpEnd.value;
+          count++;
+          tick = jumpEnd.tick;
         }
       }
     }
-    this.reached = t;
-    return n;
+    this.reached = tick;
+    return count;
+  }
+
+  /**
+   * Where the ramp over a jump ends, when the value jumps at the boundary `tick` from `valueBefore`: JUMP seconds on,
+   * but not past the next interval or `end`. Null when the value does not jump (or there is no room for a ramp).
+   */
+  private jumpRampEnd(tick: number, valueBefore: number, end: number): { tick: number; value: number } | null {
+    const after = this.intervalAt(tick);
+    const valueAfter = this.valueIn(after, tick);
+    if (!(Math.abs(valueAfter - valueBefore) > JUMP_TOLERANCE * (1 + Math.abs(valueBefore)))) return null;
+    const rampEnd = Math.min(this.tempo.secondsToTick(this.tempo.tickToSeconds(tick) + JUMP), after.end, end);
+    if (rampEnd <= tick) return null;
+    return { tick: rampEnd, value: this.valueIn(after, rampEnd) };
   }
 
   /**
@@ -240,103 +264,109 @@ export class CurvePlanner {
     const max = out.length >> 1;
     const until = Math.min(through, end);
     const inclusive = until < end;
-    let n = 0;
-    let t = from;
-    let cur = current;
-    const push = (tick: number, v: number) => {
-      out[2 * n] = tick;
-      out[2 * n + 1] = v;
-      n++;
-      cur = v;
+    let count = 0;
+    let tick = from;
+    let currentValue = current;
+    const push = (at: number, value: number) => {
+      out[2 * count] = at;
+      out[2 * count + 1] = value;
+      count++;
+      currentValue = value;
     };
-    for (let guard = 0; guard < 1_000_000 && t < until && n < max; guard++) {
-      const iv = this.intervalAt(t);
-      if (Number.isNaN(iv.value)) {
-        // A curve: look for the first change on a ~25 ms grid, then pin it down by bisection.
-        const stop = Math.min(iv.end, until);
-        let lo = t;
-        let changed = -1;
-        while (lo < stop) {
-          const g = Math.min(this.nextGrid(iv, lo), stop);
-          if (this.ivValue(iv, g) !== cur) {
-            let hi = g;
-            for (let k = 0; k < 48 && hi - lo > 1e-3; k++) {
-              const mid = (lo + hi) / 2;
-              if (this.ivValue(iv, mid) !== cur) hi = mid;
-              else lo = mid;
-            }
-            changed = hi;
-            break;
-          }
-          lo = g;
-        }
-        if (changed >= 0) {
-          push(changed, this.ivValue(iv, changed));
-          t = changed;
+    for (let guard = 0; guard < MAX_WALK_STEPS && tick < until && count < max; guard++) {
+      const interval = this.intervalAt(tick);
+      if (Number.isNaN(interval.value)) {
+        const stop = Math.min(interval.end, until);
+        const changedAt = this.firstChange(interval, tick, stop, currentValue);
+        if (changedAt >= 0) {
+          push(changedAt, this.valueIn(interval, changedAt));
+          tick = changedAt;
           continue;
         }
-        t = stop;
+        tick = stop;
       } else {
-        if (iv.end > until || (iv.end === until && !inclusive)) {
-          t = until;
+        if (interval.end > until || (interval.end === until && !inclusive)) {
+          tick = until;
           break;
         }
-        t = iv.end;
+        tick = interval.end;
       }
-      if (t === iv.end && (t < until || inclusive)) {
-        const v = this.valueAt(t);
-        if (v !== cur) push(t, v);
+      if (tick === interval.end && (tick < until || inclusive)) {
+        const value = this.valueAt(tick);
+        if (value !== currentValue) push(tick, value);
       }
     }
-    if (n >= max) this.reached = t;
-    else this.reached = Math.max(t, until);
-    this.lastValue = cur;
-    return n;
+    if (count >= max) this.reached = tick;
+    else this.reached = Math.max(tick, until);
+    this.lastValue = currentValue;
+    return count;
   }
 
-  private remember(iv: Interval): Interval {
-    this.cache.push(iv);
-    if (this.cache.length > 8) this.cache.shift();
-    return iv;
+  /**
+   * The first tick in [from, stop) where a curve interval's value differs from `current`, or −1. Looks on a ~25 ms
+   * grid for a change, then pins it down by bisection.
+   */
+  private firstChange(interval: Interval, from: number, stop: number, current: number): number {
+    let low = from;
+    while (low < stop) {
+      const gridTick = Math.min(this.nextGrid(interval, low), stop);
+      if (this.valueIn(interval, gridTick) !== current) {
+        let high = gridTick;
+        for (let k = 0; k < MAX_BISECTIONS && high - low > BISECTION_TICKS; k++) {
+          const middle = (low + high) / 2;
+          if (this.valueIn(interval, middle) !== current) high = middle;
+          else low = middle;
+        }
+        return high;
+      }
+      low = gridTick;
+    }
+    return -1;
   }
 
-  private ivValue(iv: Interval, tick: number): number {
-    if (!Number.isNaN(iv.value)) return iv.value;
-    return this.map(segmentValue(iv.a as AutoPoint, iv.b as AutoPoint, tick - iv.origin));
+  private remember(interval: Interval): Interval {
+    this.cache.push(interval);
+    if (this.cache.length > CACHE_SIZE) this.cache.shift();
+    return interval;
+  }
+
+  private valueIn(interval: Interval, tick: number): number {
+    if (!Number.isNaN(interval.value)) return interval.value;
+    return this.map(segmentValue(interval.a as AutoPoint, interval.b as AutoPoint, tick - interval.origin));
   }
 
   /** The first subdivision tick of a curve interval after `t` (its end at the latest). */
-  private nextGrid(iv: Interval, t: number): number {
-    const n = this.steps(iv);
-    const span = iv.end - iv.start;
-    let k = Math.max(1, Math.floor(((t - iv.start) / span) * n) + 1);
-    const at = (i: number) => (i >= n ? iv.end : iv.start + (span * i) / n);
+  private nextGrid(interval: Interval, t: number): number {
+    const n = this.steps(interval);
+    const span = interval.end - interval.start;
+    let k = Math.max(1, Math.floor(((t - interval.start) / span) * n) + 1);
+    const at = (i: number) => (i >= n ? interval.end : interval.start + (span * i) / n);
     let g = at(k);
     while (g <= t && k < n) g = at(++k);
-    return g > t ? g : iv.end;
+    return g > t ? g : interval.end;
   }
 
   /** Subdivisions of a curve interval: ≤ 25 ms apart, dense enough for the error target, ≥ 1 ms. */
-  private steps(iv: Interval): number {
-    if (iv.steps > 0) return iv.steps;
-    const secs = Math.max(0, this.tempo.tickToSeconds(iv.end) - this.tempo.tickToSeconds(iv.start));
+  private steps(interval: Interval): number {
+    if (interval.steps > 0) return interval.steps;
+    const secs = Math.max(0, this.tempo.tickToSeconds(interval.end) - this.tempo.tickToSeconds(interval.start));
     const byTime = Math.ceil(secs / MAX_GAP - 1e-9);
     let worst = 0;
     if (!this.discrete) {
-      const span = iv.end - iv.start;
-      let prev = this.ivValue(iv, iv.start);
+      const span = interval.end - interval.start;
+      let prev = this.valueIn(interval, interval.start);
       for (let k = 1; k <= PROBES; k++) {
-        const next = this.ivValue(iv, k === PROBES ? iv.end : iv.start + (span * k) / PROBES);
-        const mid = this.ivValue(iv, iv.start + (span * (k - 0.5)) / PROBES);
+        const next = this.valueIn(interval, k === PROBES ? interval.end : interval.start + (span * k) / PROBES);
+        const mid = this.valueIn(interval, interval.start + (span * (k - 0.5)) / PROBES);
         worst = Math.max(worst, this.error(prev, next, mid));
         prev = next;
       }
     }
     // A ramp's error shrinks with the square of its length.
-    const byError = Number.isFinite(worst) ? Math.ceil(PROBES * Math.sqrt(worst) * 1.5) : Infinity;
-    const cap = Math.max(1, Math.floor(Math.min(secs / MIN_GAP, iv.end - iv.start)));
-    iv.steps = Math.max(1, Math.min(cap, Math.max(byTime, byError)));
-    return iv.steps;
+    const byError = Number.isFinite(worst) ? Math.ceil(PROBES * Math.sqrt(worst) * DENSITY_MARGIN) : Infinity;
+    const cap = Math.max(1, Math.floor(Math.min(secs / MIN_GAP, interval.end - interval.start)));
+    interval.steps = Math.max(1, Math.min(cap, Math.max(byTime, byError)));
+    return interval.steps;
   }
 
   /** The piece containing `tick` ([start, end), or (start, end] when `left`). */

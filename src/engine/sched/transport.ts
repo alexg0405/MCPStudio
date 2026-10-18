@@ -13,6 +13,7 @@ import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
 import { plan, segmentEndTime, tickAtTime, tickNumberAt, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
 import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
+import type { LaunchRun } from '@core/launcher/run';
 import { collectLaunchAudio, collectLaunchNotes, laneOverridden, overrideStartAfter } from './launch';
 
 /** A planned segment with the launcher axis position of its start (`u`: see core/launcher/run.ts). */
@@ -95,6 +96,14 @@ export class Transport {
   private stoppedTick: Tick = 0;
   /** Next segment should also start audio clips already in progress (after start/seek/re-anchor). */
   private scanOngoing = false;
+  /** Runs whose start the planner has passed (their notes were collected, or they were already going): see `catchUp`. */
+  private launchDone = new Set<string>();
+  /**
+   * Runs that start before the cursor of a re-plan and were never planned (a press that came before its boundary
+   * was heard: the grace rule, see core/launcher/run.ts): the next segment also plays their notes from their start,
+   * late, from `catchFrom` on.
+   */
+  private catchUp: { runs: LaunchRun[]; from: number } | null = null;
   lookahead: number;
   lateEvents = 0;
   private readonly observers = new Set<TransportObserver>();
@@ -136,6 +145,7 @@ export class Transport {
     this.scanOngoing = true;
     this.cursor = { tick: fromTick, time: at, iter: 0 };
     this.uFrontier = fromTick;
+    this.markLaunchDone(fromTick);
     for (const o of this.observers) o.started?.(fromTick, at);
     this.pump();
   }
@@ -160,6 +170,7 @@ export class Transport {
     const bar = this.source.project ? ticksPerBar(this.source.project.transport.timeSig) : 0;
     const u = this.uAtTime(at);
     this.uFrontier = bar > 0 ? u + ((((tick - u) % bar) + bar) % bar) : u;
+    this.markLaunchDone(this.uFrontier);
     this.notes.clear();
     this.segs = [];
     this.endTime = null;
@@ -219,7 +230,8 @@ export class Transport {
     const timelineChanged = tempoChanged || timeline.endTick !== this.timeline.endTick || loopChanged;
     this.timeline = timeline;
     if (!this.playingFlag || !this.cursor) return;
-    const safe = this.clock.currentTime + SAFETY;
+    const now = this.clock.currentTime;
+    const safe = now + SAFETY;
     const pos = tickAtTime(this.segs, safe) ?? { tick: this.cursor.tick, iter: this.cursor.iter };
     const uPos = this.uAtTime(safe);
 
@@ -243,6 +255,9 @@ export class Transport {
     this.cursor = { tick, time: safe, iter: pos.iter };
     this.uFrontier = uPos;
     this.endTime = null;
+    // A run that starts before the new cursor and was never planned (it was launched on a boundary a few ms ago).
+    const late = source.launch?.runs.filter((r) => r.startU < uPos - 1e-6 && !this.launchDone.has(r.id) && r.content.kind === 'pattern');
+    this.catchUp = late && late.length > 0 ? { runs: late, from: Math.min(...late.map((r) => r.startU)) } : null;
 
     // Sounding notes: release ones whose source disappeared, follow length changes.
     const project = this.source.project;
@@ -262,11 +277,16 @@ export class Transport {
           keep = !!project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
         }
         if (!keep) this.release(n, safe);
-        else {
+        else if (n.startTime >= now && ev.start >= runEnd) {
+          // Its run was cut before it began (a stop or replacement on a boundary a moment ago): it never sounds.
+          this.sink.noteOff(ev.channelId, { time: n.startTime, noteId: n.noteId, key: ev.pitch });
+          n.offSent = true;
+        } else {
           const note =
             ev.kind === 'note' && ev.patternId && ev.noteId ? project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId] : undefined;
           n.endU = Math.min(note ? ev.start + note.length : ev.end, runEnd);
-          if (n.endU <= uPos) this.release(n, safe);
+          // Ended already: at its own end when that is still ahead of the clock (a cut a few ms ago), else now.
+          if (n.endU <= uPos) this.release(n, Math.min(safe, Math.max(n.startTime, this.timeAtU(n.endU) ?? safe)));
         }
         continue;
       }
@@ -405,12 +425,20 @@ export class Transport {
         for (const n of this.notes.values()) if (n.launch && n.ev.kind === 'audio' && !n.offSent) launchSounding.add(n.ev.clipId);
       }
       collectLaunchAudio(this.source.project, runs, seg.u0, u1, lauEvents, scan ? seg.u0 : null, launchSounding);
+      for (const r of runs) if (r.startU < u1) this.launchDone.add(r.id);
+    }
+    // Runs that began a few ms before this segment (never planned): their notes from the start, late but on the boundary.
+    const catchEvents: NoteEvent[] = [];
+    if (this.catchUp) {
+      collectLaunchNotes(this.source.project, this.catchUp.runs, this.catchUp.from, seg.u0, catchEvents);
+      this.catchUp = null;
     }
     this.scanOngoing = false;
     const clips = this.source.project?.playlist.clips;
-    const dispatch = (ev: NoteEvent, launch: boolean) => {
+    const dispatch = (ev: NoteEvent, launch: boolean, onPurpose = false) => {
       const time = launch ? seg.time0 + (ev.start - seg.u0) * seg.spt : timeInSegment(seg, ev.start, tempo);
-      if (time < now) this.lateEvents++;
+      // Late on purpose (the grace rule) is not the scheduler falling behind: it must not raise the lookahead.
+      if (time < now && !onPurpose) this.lateEvents++;
       const noteId = ++this.noteSeq;
       const n: Scheduled = {
         ev,
@@ -458,6 +486,7 @@ export class Transport {
       else this.sink.noteOn(ev.channelId, on);
     };
     for (const ev of events) dispatch(ev, false);
+    for (const ev of catchEvents) dispatch(ev, true, true);
     for (const ev of lauEvents) dispatch(ev, true);
     const atLoopEnd = !!L && seg.tick1 >= L.end - 1e-9;
     const atSongEnd = !L && seg.tick1 >= this.timeline.endTick - 1e-9;
@@ -507,8 +536,27 @@ export class Transport {
     });
   }
 
+  /** The runs that start before `u` are over as far as planning goes (they were going before this plan began). */
+  private markLaunchDone(u: number): void {
+    this.launchDone = new Set((this.source.launch?.runs ?? []).filter((r) => r.startU < u).map((r) => r.id));
+    this.catchUp = null;
+  }
+
+  /** The context time of launcher tick `u` on the planned segments (null before the first one). */
+  private timeAtU(u: number): number | null {
+    for (let i = this.segs.length - 1; i >= 0; i--) {
+      const s = this.segs[i] as USegment;
+      if (u >= s.u0) return s.time0 + (u - s.u0) * s.spt;
+    }
+    return null;
+  }
+
   private trim(): void {
     const now = this.clock.currentTime;
+    if (this.launchDone.size > 256) {
+      const live = new Set((this.source.launch?.runs ?? []).map((r) => r.id));
+      for (const id of this.launchDone) if (!live.has(id)) this.launchDone.delete(id);
+    }
     for (const [id, n] of this.notes) if (n.offSent && n.startTime < now) this.notes.delete(id);
     const keepAfter = now - 2;
     let i = 0;
@@ -520,5 +568,7 @@ export class Transport {
     this.notes.clear();
     this.segs = [];
     this.cursor = null;
+    this.launchDone.clear();
+    this.catchUp = null;
   }
 }

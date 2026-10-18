@@ -51,6 +51,22 @@ describe('quantize boundaries', () => {
     expect(seq.boundary('4bars', IDLE)).toBe(0);
   });
 
+  it('grace: a boundary not yet heard but already inside the scheduler margin is still taken, within the grace', () => {
+    const { seq } = setup();
+    // Heard 10 ticks before the bar line; the scheduler is 120 ticks past its heard position; the grace reaches back 100 ticks from the clock.
+    const clk = (lateU: number): LaunchClock => ({ playing: true, heardU: BAR - 10, earliestU: BAR + 110, lateU });
+    expect(seq.boundary('bar', clk(BAR - 20))).toBe(BAR);
+    expect(seq.boundary('bar', clk(BAR))).toBe(BAR); // exactly at the grace edge
+    expect(seq.boundary('bar', clk(BAR + 1))).toBe(BAR * 2); // the boundary is further back than the grace
+    expect(seq.boundary('beat', clk(BAR - 1))).toBe(BAR);
+    // No lateU (a driver without the rule): the old behaviour.
+    expect(seq.boundary('bar', { playing: true, heardU: BAR - 10, earliestU: BAR + 110 })).toBe(BAR * 2);
+    // Already heard: never a boundary behind the heard position.
+    expect(seq.boundary('bar', { playing: true, heardU: BAR + 5, earliestU: BAR + 110, lateU: 0 })).toBe(BAR * 2);
+    // 'none' starts as soon as it can, grace or not.
+    expect(seq.boundary('none', clk(0))).toBe(BAR + 110);
+  });
+
   it('follows the time signature', () => {
     const { seq, patch } = setup();
     patch((p) => produce(p, (d) => void (d.transport.timeSig = { num: 3, den: 4 })));

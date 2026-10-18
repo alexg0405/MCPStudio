@@ -50,7 +50,7 @@ import { openAudioInput, type AudioInput } from './audio-input';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
-import type { LaunchClock, LaunchDriver, LaunchRun } from '@core/launcher/run';
+import { LAUNCH_GRACE_SEC, type LaunchClock, type LaunchDriver, type LaunchRun } from '@core/launcher/run';
 import { LIMITER_ID } from './limiter-id';
 import type { WorkletPortImpl } from './worklet-port';
 import limiterUrl from './limiter.worklet.ts?worker&url';
@@ -619,8 +619,9 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   /**
-   * Where the transport is on the launcher axis: what is heard now and the earliest tick a launch can still be
-   * scheduled at (after the time the first notes need to reach the audio thread). Not playing: all zero.
+   * Where the transport is on the launcher axis: what is heard now, the earliest tick a launch can still be
+   * scheduled at (after the time the first notes need to reach the audio thread) and the earliest boundary one
+   * may still take, late (the grace rule: `LAUNCH_GRACE_SEC`). Not playing: all zero.
    */
   launcherClock(): LaunchClock {
     if (!this.transport.playing) return { playing: false, heardU: 0, earliestU: 0 };
@@ -629,6 +630,7 @@ export class Engine implements EngineApi, EngineCore {
       playing: true,
       heardU: this.transport.uAtTime(this.heardTime()),
       earliestU: this.transport.uAtTime(now + Math.max(0.015, this.startLead())),
+      lateU: this.transport.uAtTime(now - LAUNCH_GRACE_SEC),
     };
   }
 

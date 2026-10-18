@@ -13,6 +13,7 @@ import { writePerformance } from '@core/launcher/perform';
 import type { LaunchClock, LaunchRun, SlotPlayState } from '@core/launcher/run';
 import { LaunchSequencer, type PerformanceTake } from '@core/launcher/sequencer';
 import type { LaunchTrackId, Project, SceneId } from '@core/model/types';
+import { LAUNCH_PAD_SIZE, type LaunchPageDir } from '@core/midi-map/targets';
 import type { EngineApi } from '@engine/api';
 import type { DocStore } from '../stores/doc';
 
@@ -24,6 +25,11 @@ export interface LauncherSessionState {
   recording: boolean;
   /** The slot the keyboard acts on (0-based track and scene). */
   cursor: { track: number; scene: number };
+  /**
+   * Which 8 × 8 page of the grid the controller pads show and press (0-based page numbers: tracks across, scenes down).
+   * View state, not the project; a page that no longer exists (the grid shrank) counts as the last one (`padPage`).
+   */
+  page: { track: number; scene: number };
 }
 
 export interface LauncherDeps {
@@ -42,6 +48,7 @@ export class LauncherSession {
   readonly store: StoreApi<LauncherSessionState> = createStore<LauncherSessionState>(() => ({
     recording: false,
     cursor: { track: 0, scene: 0 },
+    page: { track: 0, scene: 0 },
   }));
   private readonly listeners = new Set<() => void>();
   /** The runs the last listener call saw (a change is reported once). */
@@ -78,8 +85,79 @@ export class LauncherSession {
     return this.seq.stateOf(trackId, sceneId, heardU);
   }
 
-  /** The pad colour state of the slot at 0-based grid positions. */
+  // ---- the controller pads: an 8 × 8 page of the grid ------------------------------------------
+
+  /** The page the pads are on (page numbers), kept inside the grid. */
+  padPage(): { track: number; scene: number } {
+    const l = this.project.launcher;
+    const p = this.store.getState().page;
+    const last = (n: number) => Math.max(0, Math.ceil(n / LAUNCH_PAD_SIZE) - 1);
+    return { track: Math.min(p.track, last(l?.trackOrder.length ?? 0)), scene: Math.min(p.scene, last(l?.sceneOrder.length ?? 0)) };
+  }
+
+  /** How many pages the grid has: tracks across, scenes down (at least 1 each). */
+  padPages(): { tracks: number; scenes: number } {
+    const l = this.project.launcher;
+    const n = (len: number) => Math.max(1, Math.ceil(len / LAUNCH_PAD_SIZE));
+    return { tracks: n(l?.trackOrder.length ?? 0), scenes: n(l?.sceneOrder.length ?? 0) };
+  }
+
+  /** Moves the pads one page (left/right over the tracks, up/down over the scenes); false at the edge of the grid. */
+  movePage(dir: LaunchPageDir): boolean {
+    const cur = this.padPage();
+    const pages = this.padPages();
+    const next = { ...cur };
+    if (dir === 'left') next.track--;
+    else if (dir === 'right') next.track++;
+    else if (dir === 'up') next.scene--;
+    else next.scene++;
+    if (next.track < 0 || next.scene < 0 || next.track >= pages.tracks || next.scene >= pages.scenes) return false;
+    this.store.setState({ page: next });
+    // The lights show the new page at once.
+    this.force = true;
+    this.changed();
+    return true;
+  }
+
+  /** Back to the first page (the pads show tracks and scenes 1–8). */
+  homePage(): void {
+    const stored = this.store.getState().page;
+    if (stored.track === 0 && stored.scene === 0) return;
+    this.store.setState({ page: { track: 0, scene: 0 } });
+    this.force = true;
+    this.changed();
+  }
+
+  /** Grid positions (0-based) of the pad at 0-based pad positions of the current page. */
+  private padAbs(track: number, scene: number): { track: number; scene: number } {
+    const p = this.padPage();
+    return { track: p.track * LAUNCH_PAD_SIZE + track, scene: p.scene * LAUNCH_PAD_SIZE + scene };
+  }
+
+  /** A pad of the current page was pressed (`down`) or let go: the slot under it, by its mode. */
+  padPress(track: number, scene: number, down = true): void {
+    const a = this.padAbs(track, scene);
+    this.pressAt(a.track, a.scene, down);
+  }
+
+  /** The scene button of a row of the current page. */
+  padScene(scene: number): void {
+    this.launchSceneAt(this.padAbs(0, scene).scene);
+  }
+
+  /** The stop button of a column of the current page. */
+  padStop(track: number): void {
+    this.stopTrackAt(this.padAbs(track, 0).track);
+  }
+
+  /** The pad colour state of the pad at 0-based positions of the current page. */
   padState(track: number, scene: number, heardU = this.clock().heardU): PadState {
+    const a = this.padAbs(track, scene);
+    return this.slotPadState(a.track, a.scene, heardU);
+  }
+
+  /** The pad colour state of the slot at 0-based grid positions. */
+  private slotPadState(track: number, scene: number, heardU: number): PadState {
     const l = this.project.launcher;
     const t = l?.trackOrder[track];
     const s = l?.sceneOrder[scene];
@@ -89,9 +167,9 @@ export class LauncherSession {
   }
 
   /** A scene button's light: playing when its row plays, queued when a slot of it waits, loaded when it has slots. */
-  sceneState(scene: number, heardU = this.clock().heardU): PadState {
+  sceneState(row: number, heardU = this.clock().heardU): PadState {
     const l = this.project.launcher;
-    const id = l?.sceneOrder[scene];
+    const id = l?.sceneOrder[this.padAbs(0, row).scene];
     if (!l || !id) return 'empty';
     let any = false;
     let queued = false;

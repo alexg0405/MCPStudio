@@ -3663,7 +3663,14 @@ patterns and audio clip channels and are launched live, in time with the transpo
   ticks (`time = seg.time0 + (u − u0) · spt`), so launches are as sample-accurate as the song: events for a segment come from
   `engine/sched/launch.ts` (`collectLaunchNotes` reuses `collectNotes` on virtual clips; `collectLaunchAudio` makes one clip per pass).
 - **Quantized starts and stops.** `LaunchSequencer.boundary` = the first multiple of the quantize at or after the heard position and no
-  earlier than `earliestU` (the scheduler frontier plus the time the first notes need to reach the audio thread, `Engine.launcherClock`).
+  earlier than `earliestU` (the time the first notes need to reach the audio thread past the audio clock, `Engine.launcherClock`), with one
+  exception, the **grace rule for early presses**: a boundary that is not yet heard but already inside that margin is still taken when it is
+  at most `LAUNCH_GRACE_SEC` (30 ms, `core/launcher/run.ts`) behind the audio clock (`LaunchClock.lateU`); further behind, it rolls to the next
+  boundary. So a press 5 ms before the bar lands on that bar, its first notes up to 30 ms late (a flam against the rest of the music), not a
+  whole bar later. The transport makes it work: a re-plan restarts at now + 10 ms, so `Transport.setModel` also plays, late, the notes of
+  runs that start before its cursor and were never planned (`catchUp`: `launchDone` knows which runs the planner has passed; audio passes
+  already start inside their sample through the usual ongoing scan), cancels notes of a run that was cut before they began, and releases cut
+  runs' notes at the cut. Those late notes are not counted in `lateEvents`, so they do not raise the lookahead.
   One run per track: launching replaces a queued run and cuts the playing one at the boundary; a scene launches its row together at the
   coarsest quantize among its slots; stop-track/stop-all cut at the boundary (or now). Modes: trigger (a press while it plays does nothing;
   a press cancels a pending stop), toggle (second press stops it), gate (release stops it), retrigger (every press restarts). Follow actions are
@@ -3674,9 +3681,20 @@ patterns and audio clip channels and are launched live, in time with the transpo
   track with a `laneId` silences that playlist track's notes and audio from the run's start tick (a note sounding then is released there) and
   gives it back when the run ends. Play while the launcher runs alone hands over to the song (the runs go on). Stopping ends every run;
   an engine reboot while playing ends them too (they do not carry to the new AudioContext). Launched audio uses the clip player with a
-  synthesized clip per pass; its sample is decoded ahead (`ChannelStrip.warm`). Limits: audio follows the project tempo through the clip
-  player's modes, but a 'stretch' channel plays like 'resample' in the launcher (the stretched copies are the playlist's), and tempo
-  automation is not followed by launched audio.
+  synthesized clip per pass; its sample is decoded ahead and, on a 'stretch' channel, so is its stretched copy (`ChannelStrip.warm`).
+- **Launched audio follows the song like a playlist clip.** Each pass gets the song's tempo along its way as the `AudioOn.tempo` map
+  (`engine/sched/launch-tempo.ts`): the launcher axis is the song's tick shifted (song tick = start tick + (u − start u), wrapped at the loop
+  end like the planner wraps it), so the map is the song's tempo steps (automation) laid on `u`, crossing loop wraps, and a plain constant
+  map when the tempo does not change during the pass (always, for the launcher on its own: constant project tempo). The clip player then
+  changes the playback rate at every step in 'resample' and 'stretch' mode exactly as for a playlist clip, and a tempo edit restarts the
+  pass (as for playlist clips). 'Stretch' passes play the **same copies the playlist makes**: `SampleResidency.stretched` finds a launcher
+  clip (`launch:<run>:<pass>`) by sample, scale and the part of the sample it plays (the playlist's key `…|st2:<scale>:<from>-<to>`, so a
+  copy made for either is reused, and read back from disk), starts it when it does not exist, and keeps it pinned while a run that uses it
+  lives (`endLaunch`). The first pass's copy is made at press time (`Engine.warmLaunchAudio`, under the tempo the pass will start at; a
+  pass is still never late: until the copy is ready the plain sample plays, then swaps in with the usual crossfade). A later pass that starts
+  under another tempo (automation, a song that changes tempo across a loop) makes its own copy when it comes up and plays the plain sample
+  first; at a constant tempo there is one copy for all passes. The pitch of a 'stretch' pass is that of its start tempo and drifts with later
+  tempo changes inside the pass, as for a playlist clip. `Engine.launchReady()` resolves when everything the runs need is made (tests).
 - **Record performance.** `startRecording` keeps the runs from the next bar (from `u = 0` when nothing plays), `stopRecording` ends at the
   next bar, and when the music reaches it `onTake` gives the session what played; `core/launcher/perform.ts` writes it as one History step
   ("Record performance to playlist"): pattern runs become pattern clips (a loop is one clip with the pattern repeating, a run that was playing
@@ -3687,9 +3705,22 @@ patterns and audio clip channels and are launched live, in time with the transpo
   stopping) and `--p` (a CSS ring) only when they change and does nothing while nothing runs, so idle launcher playback causes no React commits
   (`test/browser/launcher-ui.test.ts` counts them). Press launches on pointer down (gate: release stops); drag a pattern from the Browser onto a
   slot, the grip moves/copies slots; right-click for mode, loop, quantize, follow, name, colour, MIDI learn; keys: arrows, Enter, number keys
-  (scenes), Period (stop track), Delete. The empty window says what to do next.
-- **Controllers.** Launcher pads, scene buttons and stop buttons are targets of the DJ controller layer (`launch.slot:T:S`, `launch.scene:S`,
-  `launch.stop:T`, `launch.stopAll`, 1–8; `core/midi-map/targets.ts`), so MIDI learn, import/export and the Controllers window's "Clip launcher"
+  (scenes), Period (stop track), Delete, Shift+arrows (pad page). The empty window says what to do next.
+- **Filling slots from elsewhere.** *Playlist clips:* the playlist moves clips with pointer events, so it hands a clip drag over by the DOM
+  (`ui/clip-drop.ts`: elements with `data-clip-drop` take clips; while the pointer of a move drag is over one the clips stop moving and the
+  element gets `data-clip-drop-over`; on release it receives a bubbling `agstudio:clip-drop` event). The launcher's slots carry the
+  attribute; `putClipsAt` puts the first clip (time order) in the slot and the rest in the slots below, one History step, playlist untouched,
+  automation clips skipped. *Audio files* (from the desktop or out of the sample browser: `takeAudioFiles`): `putAudioFilesAt` imports each
+  through `importAudioFile` (`importSampleBytes` into the default sample store), makes the audio-clip channel a playlist drop makes, and
+  fills the slots down the track, all one History step.
+- **Pad pages.** The controller pads are an 8 × 8 window on the grid (`LauncherSessionState.page`, view state): `padPress`/`padScene`/`padStop`/
+  `padState`/`sceneState` take positions on the page, and the manager's `LauncherControl` uses only those. `launch.page:left|right|up|down`
+  targets (Launchpad arrow buttons: control changes 104–107 on the original/S/Mini/MK2, 91–94 on the Mini MK3/X, in the presets), commands
+  `launcher.pageLeft/Right/Up/Down` (Shift+arrows in the window) and the window's page buttons move it by 8 tracks or scenes and refresh the
+  lights at once. A grid that shrinks counts as its last page. The window dims what is off the page, and a slot's MIDI-learn target is its pad
+  on its page (`launch.slot:(t mod 8)+1:(s mod 8)+1`).
+- **Controllers.** Launcher pads, scene buttons, stop buttons and page buttons are targets of the DJ controller layer (`launch.slot:T:S`, `launch.scene:S`,
+  `launch.stop:T`, `launch.stopAll`, `launch.page:dir`, 1–8; `core/midi-map/targets.ts`), so MIDI learn, import/export and the Controllers window's "Clip launcher"
   section work; the window's slots carry `data-dj-target`, so learn mode picks them by click. `DjControllers` routes launcher events to
   `LauncherControl` without needing the decks and drives pad lights (`app/launcher/leds.ts`): each linked pad shows empty / loaded / queued /
   playing from `ControllerMapping.pads` (a palette of note velocities), compared every 80 ms and on every press. Presets
@@ -3700,6 +3731,9 @@ patterns and audio clip channels and are launched live, in time with the transpo
   record, stop_recording: live, runs after the edits in `applyAnswer`, so chat and MCP share it); `get_launcher` read (also an MCP tool);
   `<launcher>` in the project context; `launcher` in `OPEN_WINDOWS`; commands `launcher.*` with `argsHint`.
 - **Tests.** `core/launcher/*.test.ts` (sequencer, ops, repair, record to playlist), `engine/sched/launch.test.ts` (exact times through the transport
-  with a fake clock), `test/browser/launcher.test.ts` (offline renders through the real engine: boundary error 0–3 frames at 97–174 BPM, replace,
-  scene, stop, follow, audio, over a song), `test/browser/launcher-ui.test.ts`, `app/launcher/launcher-controllers.test.ts`, `app/ai/ops/launcher.test.ts`.
+  with a fake clock, including early presses and passes under tempo automation), `engine/sched/launch-tempo.test.ts`,
+  `test/browser/launcher.test.ts` (offline renders through the real engine: boundary error 0–3 frames at 97–174 BPM, an early press 5 ms
+  before the bar, replace, scene, stop, follow, audio, over a song), `test/browser/launcher-audio.test.ts` (stretched pitch, tempo automation),
+  `test/browser/launcher-ui.test.ts`, `test/browser/launcher-drops.test.ts` (playlist hand-off, file drops, pad page), `app/launcher/edit.test.ts`,
+  `app/launcher/launcher-controllers.test.ts` (pads, page buttons), `app/ai/ops/launcher.test.ts`.
 

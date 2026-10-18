@@ -3,7 +3,7 @@
  * lights (empty, loaded, queued, playing) through the same controller manager the DJ decks use.
  */
 import { describe, expect, it } from 'vitest';
-import { patchSlot } from '@core/ops/launcher';
+import { ensureCapacity, patchSlot, patternContent, setSlotContent } from '@core/ops/launcher';
 import { launcherFixture } from '@core/launcher/test-project';
 import { CONTROLLER_PRESETS, presetById, presetForDevice } from '@core/midi-map/presets';
 import { isLaunchTarget, launcherTargets, parseLaunchTarget, targetInfo } from '@core/midi-map/targets';
@@ -20,8 +20,12 @@ const programmer = () => presetById('novation-launchpad-mk2-mk3')!.mapping();
 const addressOf = (m: ReturnType<typeof classic>, target: string) => m.bindings.filter((b) => b.target === target).map((b) => b.input);
 
 describe('launcher targets', () => {
-  it('names the pads, scene buttons and stop buttons of the first 8 tracks and scenes', () => {
-    expect(launcherTargets()).toHaveLength(8 + 9 + 64);
+  it('names the pads, scene buttons, stop buttons and page buttons of an 8 × 8 page of tracks and scenes', () => {
+    expect(launcherTargets()).toHaveLength(8 + 9 + 4 + 64);
+    expect(parseLaunchTarget('launch.page:left')).toEqual({ kind: 'page', dir: 'left' });
+    expect(parseLaunchTarget('launch.page:down')).toEqual({ kind: 'page', dir: 'down' });
+    expect(parseLaunchTarget('launch.page:home')).toBeNull();
+    expect(targetInfo('launch.page:up')).toMatchObject({ kind: 'button', group: 'Page buttons' });
     expect(parseLaunchTarget('launch.slot:3:7')).toEqual({ kind: 'slot', track: 3, scene: 7 });
     expect(parseLaunchTarget('launch.scene:8')).toEqual({ kind: 'scene', scene: 8 });
     expect(parseLaunchTarget('launch.stop:1')).toEqual({ kind: 'stop', track: 1 });
@@ -52,7 +56,9 @@ describe('the pad presets', () => {
       const p = presetById(id)!;
       const m = p.mapping();
       expect(p.source.length, id).toBeGreaterThan(20);
-      expect(m.bindings).toHaveLength(72);
+      // 64 pads + 8 scene buttons, and the arrow buttons the preset has (one set per controller family).
+      expect(m.bindings.filter((b) => !b.target.startsWith('launch.page:'))).toHaveLength(72);
+      expect(m.bindings.filter((b) => b.target.startsWith('launch.page:')).length).toBe(id === 'generic-pad-grid-8x8' ? 0 : id === 'novation-launchpad-classic' ? 4 : 8);
       expect(m.preset).toBe(id);
       const seen = new Set<string>();
       for (const b of m.bindings) {
@@ -77,6 +83,17 @@ describe('the pad presets', () => {
     expect(addressOf(m, 'launch.scene:8')).toEqual([{ type: 'note', channel: 0, note: 120 }]);
     // Off, dim amber, yellow, green: the documented LED values.
     expect(m.pads).toEqual({ empty: 12, loaded: 29, queued: 62, playing: 60 });
+  });
+
+  it('the Launchpads’ arrow buttons are the page buttons: control changes 104–107 (original, S, Mini, MK2), 91–94 (Mini MK3, X)', () => {
+    const c = classic();
+    expect(addressOf(c, 'launch.page:up')).toEqual([{ type: 'cc', channel: 0, cc: 104 }]);
+    expect(addressOf(c, 'launch.page:down')).toEqual([{ type: 'cc', channel: 0, cc: 105 }]);
+    expect(addressOf(c, 'launch.page:left')).toEqual([{ type: 'cc', channel: 0, cc: 106 }]);
+    expect(addressOf(c, 'launch.page:right')).toEqual([{ type: 'cc', channel: 0, cc: 107 }]);
+    const p = programmer();
+    expect(addressOf(p, 'launch.page:up')).toEqual([{ type: 'cc', channel: 0, cc: 104 }, { type: 'cc', channel: 0, cc: 91 }]);
+    expect(addressOf(p, 'launch.page:right')).toEqual([{ type: 'cc', channel: 0, cc: 107 }, { type: 'cc', channel: 0, cc: 94 }]);
   });
 
   it('Launchpad MK2 / MK3: notes 11–88 from the bottom left, scene buttons 89 … 19', () => {
@@ -159,10 +176,11 @@ describe('pads drive the clip launcher', () => {
     const states: Record<string, PadState> = {};
     let notify = () => {};
     const launcher: LauncherControl = {
-      pressAt: (t, s, down) => calls.push(`${down === false ? 'release' : 'press'} ${t},${s}`),
-      launchSceneAt: (s) => calls.push(`scene ${s}`),
-      stopTrackAt: (t) => calls.push(`stop ${t}`),
+      padPress: (t, s, down) => calls.push(`${down === false ? 'release' : 'press'} ${t},${s}`),
+      padScene: (s) => calls.push(`scene ${s}`),
+      padStop: (t) => calls.push(`stop ${t}`),
       stopAll: () => calls.push('stopAll'),
+      movePage: (dir) => calls.push(`page ${dir}`),
       padState: (t, s) => states[`${t}:${s}`] ?? 'empty',
       sceneState: () => 'empty',
       subscribe: (fn) => {
@@ -190,6 +208,12 @@ describe('pads drive the clip launcher', () => {
     dev.input.emit(msg.noteOn(0, 16 * 4 + 8)); // scene button of row 5
     dev.input.emit(msg.noteOff(0, 16 * 4 + 8));
     expect(calls).toEqual(['press 3,2', 'release 3,2', 'scene 4']);
+    // The arrow buttons (control changes 104–107 on the original Launchpad).
+    dev.input.emit(msg.cc(0, 106, 127));
+    dev.input.emit(msg.cc(0, 106, 0));
+    dev.input.emit(msg.cc(0, 105, 127));
+    expect(calls.slice(3)).toEqual(['page left', 'page down']);
+    calls.length = 0;
     c.setMapping('Launchpad Mini', {
       ...c.mappingFor('Launchpad Mini'),
       bindings: [
@@ -199,7 +223,7 @@ describe('pads drive the clip launcher', () => {
     });
     dev.input.emit(msg.noteOn(0, 1));
     dev.input.emit(msg.noteOn(0, 2));
-    expect(calls.slice(3)).toEqual(['stop 1', 'stopAll']);
+    expect(calls).toEqual(['stop 1', 'stopAll']);
     c.disable();
   });
 
@@ -254,6 +278,98 @@ describe('pads through the real launcher', () => {
     // The scene button launches the row.
     dev.input.emit(msg.noteOn(0, 8));
     expect(s.launcher.runs.filter((r) => r.sceneId === f.scenes[0])).toHaveLength(2);
+    c.disable();
+  });
+});
+
+describe('paging the pads over a bigger grid', () => {
+  async function rig() {
+    const f = launcherFixture();
+    const s = createTestServices({ project: f.project });
+    // 12 tracks × 10 scenes, with a pattern in track 9, scene 9 (the first pad of the page right and down) and in track 12, scene 10.
+    s.history.transact('grow', (d) => {
+      const l = ensureCapacity(d, 12, 10);
+      setSlotContent(d, l.trackOrder[8]!, l.sceneOrder[8]!, patternContent(f.patterns[0]!));
+      setSlotContent(d, l.trackOrder[11]!, l.sceneOrder[9]!, patternContent(f.patterns[1]!));
+    });
+    const access = new FakeMidiAccess();
+    const dev = access.plug('Launchpad Mini');
+    const c = new DjControllers({
+      requestAccess: async () => access.asAccess(),
+      getDecks: async () => null,
+      storage: memoryControllerStorage({}),
+      runCommand: () => {},
+      launcher: () => s.launcher,
+    });
+    await c.restore();
+    await c.enable();
+    const light = (note: number) => dev.output!.sent.filter((m) => m[1] === note).at(-1)?.[2];
+    return { f, s, c, dev, light };
+  }
+  const UP = 104;
+  const DOWN = 105;
+  const LEFT = 106;
+  const RIGHT = 107;
+
+  it('the arrow buttons move the pads one page of 8 tracks or scenes; at the edge of the grid nothing moves', async () => {
+    const { s, dev, c } = await rig();
+    expect(s.launcher.padPages()).toEqual({ tracks: 2, scenes: 2 });
+    expect(s.launcher.padPage()).toEqual({ track: 0, scene: 0 });
+    dev.input.emit(msg.cc(0, RIGHT, 127));
+    dev.input.emit(msg.cc(0, RIGHT, 0));
+    expect(s.launcher.padPage()).toEqual({ track: 1, scene: 0 });
+    dev.input.emit(msg.cc(0, RIGHT, 127)); // no third page of tracks
+    expect(s.launcher.padPage()).toEqual({ track: 1, scene: 0 });
+    dev.input.emit(msg.cc(0, DOWN, 127));
+    expect(s.launcher.padPage()).toEqual({ track: 1, scene: 1 });
+    dev.input.emit(msg.cc(0, DOWN, 127));
+    expect(s.launcher.padPage()).toEqual({ track: 1, scene: 1 });
+    dev.input.emit(msg.cc(0, LEFT, 127));
+    dev.input.emit(msg.cc(0, UP, 127));
+    expect(s.launcher.padPage()).toEqual({ track: 0, scene: 0 });
+    dev.input.emit(msg.cc(0, UP, 127));
+    dev.input.emit(msg.cc(0, LEFT, 127));
+    expect(s.launcher.padPage()).toEqual({ track: 0, scene: 0 });
+    c.disable();
+  });
+
+  it('a pad presses the slot of its page, and the lights show that page', async () => {
+    const { f, s, dev, light, c } = await rig();
+    // First page: the fixture's slot at track 1, scene 1 is lit "loaded"; the slots further out are not on this page.
+    expect(light(0)).toBe(29);
+    dev.input.emit(msg.cc(0, RIGHT, 127));
+    dev.input.emit(msg.cc(0, DOWN, 127));
+    // Page (1, 1): pad (1,1) is track 9, scene 9; pad (4,2) is track 12, scene 10. Everything else on it is empty.
+    expect(light(0)).toBe(29);
+    expect(light(16 + 3)).toBe(29);
+    expect(light(16 * 3 + 5)).toBe(12);
+    dev.input.emit(msg.noteOn(0, 0));
+    expect(s.launcher.runs.map((r) => [r.trackId, r.sceneId])).toEqual([[s.doc.getState().project.launcher!.trackOrder[8], s.doc.getState().project.launcher!.sceneOrder[8]]]);
+    expect(light(0)).toBe(60);
+    // The scene button of the first row of this page is scene 9; the stop button of the first column is track 9.
+    dev.input.emit(msg.noteOn(0, 16 + 3)); // pad track 4, scene 2 of the page = track 12, scene 10
+    expect(s.launcher.runs.at(-1)!.sceneId).toBe(s.doc.getState().project.launcher!.sceneOrder[9]);
+    // Back to the first page: its lights again, and its pads press its slots.
+    dev.input.emit(msg.cc(0, LEFT, 127));
+    dev.input.emit(msg.cc(0, UP, 127));
+    expect(light(0)).toBe(29);
+    dev.input.emit(msg.noteOn(0, 8)); // scene button of row 1 = scene 1
+    expect(s.launcher.runs.some((r) => r.sceneId === f.scenes[0] && r.trackId === f.tracks[0])).toBe(true);
+    c.disable();
+  });
+
+  it('a grid that shrank under the pads counts as its last page', async () => {
+    const { s, dev, c } = await rig();
+    dev.input.emit(msg.cc(0, RIGHT, 127));
+    expect(s.launcher.padPage().track).toBe(1);
+    s.history.transact('shrink', (d) => {
+      const l = d.launcher!;
+      for (const id of l.trackOrder.slice(8)) {
+        delete l.tracks[id];
+      }
+      l.trackOrder = l.trackOrder.slice(0, 8);
+    });
+    expect(s.launcher.padPage().track).toBe(0);
     c.disable();
   });
 });

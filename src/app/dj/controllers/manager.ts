@@ -14,7 +14,7 @@ import { LearnDetector } from '@core/midi-map/learn';
 import { describeMidi, parseMidi, type MidiMessage } from '@core/midi-map/message';
 import { presetById, presetForDevice } from '@core/midi-map/presets';
 import { SoftTakeover } from '@core/midi-map/soft-takeover';
-import { parseLaunchTarget, parseTarget, targetInfo, type TargetKind } from '@core/midi-map/targets';
+import { parseLaunchTarget, parseTarget, targetInfo, type LaunchPageDir, type TargetKind } from '@core/midi-map/targets';
 import {
   describeInput,
   emptyMapping,
@@ -83,11 +83,13 @@ export interface LogEntry {
 
 /** What a controller drives in the clip launcher, and what its lights read (`app/launcher/session.ts` implements it). */
 export interface LauncherControl extends PadSource {
-  /** 0-based grid positions; `down` false is the pad being let go (gate slots stop). */
-  pressAt(track: number, scene: number, down?: boolean): void;
-  launchSceneAt(scene: number): void;
-  stopTrackAt(track: number): void;
+  /** 0-based pad positions of the page the pads are on; `down` false is the pad being let go (gate slots stop). */
+  padPress(track: number, scene: number, down?: boolean): void;
+  padScene(scene: number): void;
+  padStop(track: number): void;
   stopAll(): void;
+  /** The arrow buttons: the pads move one page over a bigger grid. */
+  movePage(dir: LaunchPageDir): void;
   subscribe(fn: () => void): () => void;
 }
 
@@ -429,16 +431,19 @@ export class DjControllers {
     if (!t || ev.kind !== 'button' || !launcher) return null;
     switch (t.kind) {
       case 'slot':
-        launcher.pressAt(t.track - 1, t.scene - 1, ev.down);
+        launcher.padPress(t.track - 1, t.scene - 1, ev.down);
         break;
       case 'scene':
-        if (ev.down) launcher.launchSceneAt(t.scene - 1);
+        if (ev.down) launcher.padScene(t.scene - 1);
         break;
       case 'stop':
-        if (ev.down) launcher.stopTrackAt(t.track - 1);
+        if (ev.down) launcher.padStop(t.track - 1);
         break;
       case 'stopAll':
         if (ev.down) launcher.stopAll();
+        break;
+      case 'page':
+        if (ev.down) launcher.movePage(t.dir);
         break;
     }
     this.updatePadLeds();

@@ -9,7 +9,7 @@ import { isLaunchTarget, parseLaunchTarget, type LaunchTarget } from '@core/midi
 import { DEFAULT_PAD_PALETTE, type ControllerMapping, type OutputSpec, type PadPalette } from '@core/midi-map/types';
 import type { PadState } from './session';
 
-/** What the lights read: the state of a pad, a scene button. */
+/** What the lights read: the state of a pad, a scene button (0-based positions on the page the pads are on). */
 export interface PadSource {
   padState(track: number, scene: number): PadState;
   sceneState(scene: number): PadState;

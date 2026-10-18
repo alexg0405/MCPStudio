@@ -212,12 +212,32 @@ export function register(services: Services): void {
       if (t && sc) clearSlotAt(s, t, sc);
     },
   });
+  // The pad page: which 8 × 8 part of a bigger grid the controller pads press and light (a Launchpad's arrow buttons do the same).
+  for (const [dir, word] of [
+    ['left', 'tracks before these'],
+    ['right', 'tracks after these'],
+    ['up', 'scenes above these'],
+    ['down', 'scenes below these'],
+  ] as const)
+    commands.register({
+      id: `launcher.page${dir[0]!.toUpperCase()}${dir.slice(1)}`,
+      title: `Controller pads: page ${dir}`,
+      category: 'Launcher',
+      hint: `Move the controller pads one page ${dir} over the clip launcher’s grid (${word}): a grid bigger than 8 × 8 is reached a page at a time and the pad lights follow`,
+      run: (s) => {
+        if (!s.launcher.movePage(dir)) s.session.getState().toast(`The pads are already at the ${dir === 'left' ? 'first track' : dir === 'right' ? 'last track' : dir === 'up' ? 'first scene' : 'last scene'} page.`);
+      },
+    });
   const focus = { focus: ['launcher'] } as const;
   keymap.add([
     { chord: 'ArrowLeft', command: 'launcher.cursor', args: { dx: -1, dy: 0 }, repeat: true, when: focus },
     { chord: 'ArrowRight', command: 'launcher.cursor', args: { dx: 1, dy: 0 }, repeat: true, when: focus },
     { chord: 'ArrowUp', command: 'launcher.cursor', args: { dx: 0, dy: -1 }, repeat: true, when: focus },
     { chord: 'ArrowDown', command: 'launcher.cursor', args: { dx: 0, dy: 1 }, repeat: true, when: focus },
+    { chord: 'Shift+ArrowLeft', command: 'launcher.pageLeft', when: focus },
+    { chord: 'Shift+ArrowRight', command: 'launcher.pageRight', when: focus },
+    { chord: 'Shift+ArrowUp', command: 'launcher.pageUp', when: focus },
+    { chord: 'Shift+ArrowDown', command: 'launcher.pageDown', when: focus },
     { chord: 'Enter', command: 'launcher.launchCursor', when: focus },
     { chord: 'Period', command: 'launcher.stopCursorTrack', when: focus },
     { chord: 'Escape', command: 'launcher.stopAll', when: focus },
@@ -260,6 +280,9 @@ export function register(services: Services): void {
       ['Right-click a slot', 'Mode (trigger, toggle, gate, retrigger), loop, quantize, follow action, name, colour, clear'],
       ['Arrow keys, Enter', 'Move the highlight and launch the highlighted slot'],
       ['Grip on a slot', 'Drag to move it (hold Alt to copy)'],
+      ['Drag a clip from the playlist onto a slot', 'The slot plays that clip’s pattern or audio (the playlist is not changed); several clips fill the slots below'],
+      ['Drag an audio file from your computer onto a slot', 'It is imported and the slot plays it (one undo step)'],
+      ['Shift + arrow keys', 'Move the controller pads one page over a grid bigger than 8 × 8 (a Launchpad’s arrow buttons do the same)'],
       ['Right-click a track name', 'Rename it, or let it take over a playlist track while it plays'],
       ['Record performance', 'Keeps what you launch; press again and it goes on the playlist as clips (one undo)'],
       ['Pads…', 'Link a Launchpad or any pad controller: its pads launch slots and light up with their state'],

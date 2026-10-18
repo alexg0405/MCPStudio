@@ -319,7 +319,11 @@ export class SampleResidency {
   endLaunch(alive: ReadonlySet<string>): void {
     let changed = false;
     for (const [key, l] of this.launchItems) {
-      for (const id of l.runs) if (!alive.has(id)) l.runs.delete(id), (changed = true);
+      for (const id of [...l.runs]) {
+        if (alive.has(id)) continue;
+        l.runs.delete(id);
+        changed = true;
+      }
       if (l.runs.size === 0) {
         this.launchItems.delete(key);
         if (!this.needs.some((n) => n.stretchKey === key)) this.items.delete(key);

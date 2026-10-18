@@ -1,0 +1,166 @@
+.editor {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.status {
+  margin: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.link {
+  margin-right: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-accent-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed var(--ag-line-strong);
+  border-radius: var(--ag-radius-lg);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.empty p {
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.button {
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--ag-hover);
+  color: var(--ag-accent-ink);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.select {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+}
+
+/* The key frames side by side; the oscillators' markers sit over them. */
+.strip {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  padding: 18px 0 2px;
+  overflow-x: auto;
+}
+
+.frame {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.frameActive {
+  border-color: var(--ag-accent);
+  box-shadow: 0 0 0 1px var(--ag-accent-soft);
+}
+
+.thumb {
+  display: block;
+  width: 60px;
+  height: 32px;
+}
+
+.frameNumber {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  color: var(--ag-text-faint);
+  font-size: 9px;
+}
+
+.marker {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  color: var(--ag-accent-ink);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.marker::after {
+  content: '▾';
+  display: block;
+  line-height: 6px;
+  text-align: center;
+}
+
+.padBox {
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  overflow: hidden;
+}
+
+.pad {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 1120 / 340;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.bars {
+  display: block;
+  width: 100%;
+  max-width: 560px;
+  aspect-ratio: 1120 / 200;
+  border-radius: var(--ag-radius-lg);
+  box-shadow: var(--ag-inset);
+  cursor: ns-resize;
+  touch-action: none;
+}

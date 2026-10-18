@@ -260,6 +260,8 @@ export default defineWorkletInstrument({
 A `SharedArrayBuffer` (the dev and preview servers are cross-origin isolated) reaches every kernel
 without a copy; `WavetableBank.build(specs, frames, true)` uses one when it can.
 
+`onState(state, port, host)` runs on the main thread when the instance is made and when its state changes: `port.send` the kernel what it needs.
+
 Two kernel patterns the built-ins use:
 - **Start notes in `render`.** Param values only arrive with `render()`, and a note at the first frame
   of a block reaches `noteOn` before that block renders. Queue note events in `noteOn`/`noteOff` and

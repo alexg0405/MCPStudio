@@ -2446,6 +2446,49 @@ in Node (`*/kernel.test.ts`) and offline renders through the real engine (`test/
   note stack (last-note priority, releasing returns to the newest held key without a new attack); legato doesn't
   retrigger overlapping notes; glide is constant-time and linear in semitones.
 
+#### Your own table: "My table" (`wavetable/table-editor.tsx`, `sdk/dsp/wavetable-frames.ts`)
+
+- **Model.** A user table is 1–32 key frames, evenly spaced from position 0 to 100 %; the oscillator morphs between
+  neighbours exactly as it does between a factory table's frames. A frame is a Fourier series (`Frame`: `sin[k]`,
+  `cos[k]` for k = 1…256, `cos[0]` the DC offset). The drawing buffer is 1024 points (all 256 harmonics fit). Every
+  editing operation is a pure function in the SDK (`wavetable-frames.ts`, no DOM): `drawStroke`, `smoothFrame` (Gaussian
+  low-pass on the harmonics), `normalizeFrame`, `removeDc`, `bandLimit` (brick wall or tapered, in the frequency
+  domain), `setHarmonic` / `frameFromHarmonics` (additive bars), `invertFrame`, `reverseFrame`, `morphFrames` /
+  `framesBetween` (fill between key frames), `frameFromWave` (an FFT for power-of-two cycles, a direct transform for any
+  other length, so a 600-sample single cycle reads exactly), `framesFromCycles` (a single cycle or a table of cycles,
+  `clm ` chunk honoured, thinned to 32), `framesFromSlices` (a sample cut into N parts, each Hann-windowed and read as one
+  cycle), `decodeWav` / `encodeWav` (float32 with a `clm ` chunk: Serum and Vital load the export).
+- **Stored compactly, versioned.** The plugin's state is `{ v: 2, user: { frames: string[] } | null }` and each frame a
+  base64 string: highest harmonic (u16), a scale (f32), the DC and every harmonic's cos and sin as 16-bit integers of
+  that scale (rounding error far below −60 dB of the peak). A smooth shape is a few dozen bytes, a full 256-harmonic one
+  1 KB, a whole 32-frame table at most ~44 KB. `readUserTableState` makes any saved state valid (missing, older or
+  damaged states become an empty table, undecodable frames are dropped); the plugin is at `version: 2` and its `migrate`
+  turns version 1 (which had no state) into an empty table. Presets may carry a table in their `state`.
+- **Mip levels off the audio thread.** `defineWorkletInstrument`'s new `onState(state, port, host)` hook runs on the main
+  thread when the instance is made and on every state change (edit, undo, preset, load). `table-sync.ts` builds the
+  band-limited bank (`buildFrameBank`: one table, one frame per key frame, nine mip levels each, peak-normalized per frame
+  like the factory tables, about a millisecond a frame) and sends `{ type: 'userBank', data, frames }`; an unchanged
+  table is not rebuilt, an empty one shares a single one-sine bank. The kernel treats table index 10 ('user', the option
+  after the ten factory tables) as that bank: every oscillator keeps a reference to the data its frames are read from, and
+  the frame cache key includes a counter that changes when a new table arrives. Factory tables take exactly the old code
+  path (the golden test holds all 22 presets and the default patch to their recorded output, bit for bit on the machine
+  that recorded it, `golden.test.ts`); an instance with no table plays a sine when an oscillator is set to "My table".
+- **Editor.** A lazy section of the Wavetable's window: frame strip (thumbnails, oscillator position markers), wave pad
+  (draw with the mouse, neighbouring frames faint behind it, a stroke is one undo step), 48 harmonic bars, tools (smooth,
+  normalize, remove DC, invert, reverse, band-limit to N harmonics, replace with a shape, clear), add/delete/move frames and
+  "Fill between" (exact in-between frames), import WAV (single cycle or a table), slice a sample into 4–32 frames, export
+  WAV. It starts with a message and buttons when the table is empty. The oscillator's shape preview shows the table.
+- **AI and MCP.** The `wavetable_shape` action (`app/ai/ops/wavetable.ts`) gives a Wavetable channel a table from lists
+  of harmonic strengths per key frame (`{ channel, frames: [{ harmonics: [1, 0.5, …] }], oscillator: 1|2|both, position }`):
+  it sets the plugin state through `setPluginState`, points the oscillator(s) at "My table" and turns an off oscillator on,
+  in the answer's one undo step; empty, silent, over-long or over-many frames and non-Wavetable channels are refused
+  with a message. The catalog lists the Granular and the Wavetable's new table option and presets like any plugin
+  (`add_channel` / `edit_channel` with `preset` and `params`); over MCP the action is in `apply_actions` at once.
+- **Tests.** `sdk/dsp/wavetable-frames.test.ts` (views, drawing, tools, imports, WAV, storage, bank levels),
+  `table-edit.test.ts` (the key-frame list), `user-table.test.ts` (state → bank → kernel, morphing, replacing the table
+  while a note sounds, aliasing at keys 84, 96 and 108 of a hand-drawn square: the energy that is not a harmonic stays
+  below −60 dB where a naive read of the same table is above −45 dB, migration, presets with tables), `ai/ops/wavetable.test.ts`.
+
 ### FM (`fm/`)
 
 - `FM_ALGORITHMS` (`sdk/dsp/fm.ts`): the TX81Z/DX21 set — 1: 4→3→2→1, 2: (3+4)→2→1, 3: (4 + 3→2)→1,
@@ -2460,6 +2503,40 @@ in Node (`*/kernel.test.ts`) and offline renders through the real engine (`test/
   each operator's role and effective ratio. Kernel tests check each algorithm: heard operators are pure sines at
   their frequencies, modulators alone are silent, a first-order sideband exists on a heard operator exactly where
   an arrow points, and a modulator changes nothing once the operator it feeds is silenced.
+
+### Granular (`granular/`)
+
+- **Idea.** Every note is a cloud of short grains read from a sample (the `main` slot, a drop on the editor like the
+  Sampler's) or, while the slot is empty, from one of five built-in stereo textures (`textures.kernel.ts`: a sung "ah"
+  chord, glass bells, strings, airy noise, a plucked arpeggio; additive, 4 s at 32 kHz, built once per page on the
+  main thread, about 30 ms, and shared with the kernels through shared memory). A loaded sample wins over the texture.
+- **Params** (`params.ts`): position, position spray, grain size 5–500 ms, density 1–200 grains/s, timing randomness,
+  grain shape (Hann, Gaussian, triangle, flat top, percussive, reverse swell: tables in `shapes.kernel.ts`, every shape
+  is 0 at both ends so grains never click), reverse probability, pitch / fine / pitch spray / key tracking (key 60 plays the
+  sample at its own pitch), stereo spread, scan speed (−4…4×, 1× = the sample's own speed; or tempo-synced: one pass per
+  1 beat…8 bars locked to the song, free-running while stopped), freeze (holds the scan where it is, automatable), a
+  low-/high-pass filter, an amp ADSR, velocity, voices (1–8), a random seed, volume.
+- **Kernel** (`kernel.ts`, `voice.kernel.ts`). 8 voices, each with a fixed pool of 64 grains in parallel typed arrays
+  (a full pool takes over the grain that is furthest along). Grains start at exact frames (the gap to the next one is
+  `sampleRate / density`, randomized by the timing knob), read the source in a loop (any position and speed is safe, a
+  tiny sample at an extreme pitch just wraps) with linear interpolation, and are scaled by 1/√(grains sounding at once)
+  so the level stays about the same whatever the density and size. Knobs are read once per render call (control rate),
+  the envelope per sample. Stealing a voice fades it out over 256 frames. All randomness is a seeded mulberry32 per voice:
+  seed knob and the number of notes so far choose the cloud, so renders repeat exactly. The audio-thread code sits
+  between two marker comments and a test refuses `new`, literals, closures, spreads and array methods there.
+- **Telemetry.** The kernel fills a `Readings` set 60 times a second (posted at 30 Hz): `grains`, `voices` and, for the 24
+  newest grains, `gp<i>` (position 0–1, −1 for an empty slot), `gq<i>` (progress through the grain) and `gx<i>` (pan).
+  No SDK change was needed: `Readings` takes any list of names and posts allocation-free. The editor reads them with
+  `tap.reading(name)` on the frame loop and draws the grains as dots on the waveform, with the position line and the spray
+  window (drag to edit them, one undo step per drag).
+- **CPU** (`npm run bench:plugins -- --only granular`, % of one core at 48 kHz, 8-note chord, best of 5, a busy machine):
+  default patch 0.8–0.9 %; the "Dense cloud" preset (64 grains/s per note × 8 notes, 90 ms grains: about 46 grains
+  sounding) 0.8–1.2 %; the worst preset (Shimmer: 36 grains/s of 320 ms, pitched up) 1.7–2.0 %.
+- **Tests** (`kernel.test.ts`): finite and bounded output for every preset, every grain shape fades without steps (the
+  biggest step between samples is a small share of the level, a sine source stays clean), density and size (grains started
+  ≈ density × time; sounding ≈ density × size), position / spray / scan / backwards scan / freeze / synced scan checked
+  through the sample position of new grains on a ramp, key tracking by octave, spread, reverse, determinism with a seed,
+  voices and stealing, the filter, the telemetry, and the no-allocation scan.
 
 ### Drum Pads (`drum-pads/`)
 

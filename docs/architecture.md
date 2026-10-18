@@ -3290,8 +3290,10 @@ The benchmark script had been broken by the plugins' lazy editors (a dynamic imp
 
 - **Templates open at their style's loudness**: `app/template-levels.ts` bakes what `autoLevel` measured on each template's own song (bus faders, Limiter
   and Maximizer input); `templateProject` applies it (9–68 ms to build, no rendering). `test/browser/template-levels.test.ts` renders all 13 and fails past
-  1 dB (measured −8.50 to −12.63, all within 0.43 dB of the style target, −1.05 dBTP); `VITE_BAKE_TEMPLATE_LEVELS=1` prints the table again after the
-  generator, arranger or mix recipes change. Before, dance templates opened at −14 to −16 LUFS. The default project's empty "Pattern 1" is removed when
+  1 dB (measured −8.50 to −12.64, all within 0.39 dB of the style target, −1.05 dBTP; tech house now levels its voice on the Vocals bus, which `LeveledBus`
+  has and the table can hold); `VITE_BAKE_TEMPLATE_LEVELS=1` prints the table again after the generator, arranger or mix recipes change (re-baked when the
+  loudness stage was merged onto the vocal-chain main). The DJ analysis fixtures (`test/browser/dj-analysis.test.ts`) are these leveled templates: the house
+  one reaches its −9.5 LUFS through the Maximizer at +16 dB, which is why the beat tracker trims beats off its line (see "Track analysis (DJ mode)"). Before, dance templates opened at −14 to −16 LUFS. The default project's empty "Pattern 1" is removed when
   nothing references it.
 - The bass bus is "808" when a channel plays an 808, "Bass" otherwise (`bassBusName`); `findMixLayout` finds either name, so old projects keep working.
 - Arranger automation clips are named after the channels that play through the swept bus ("Pad", "Arp + Lead"), else the bus.

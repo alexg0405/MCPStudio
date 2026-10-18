@@ -267,11 +267,14 @@ function fitLine(idx: number[], t: number[]): [number, number] {
   return [mt - p * mi, p];
 }
 
-/** Line t = a + p·i by the median of the slopes between all pairs (a few outliers do not move it); returns [a, p]. */
+/**
+ * Line t = a + p·i by the median of the slopes between each beat and the one half the list later (a few outliers do not move
+ * it, and a song of 15 000 beats costs 7 500 slopes, not 110 million); returns [a, p].
+ */
 function theilSen(idx: number[], t: number[]): [number, number] {
   const slopes: number[] = [];
-  for (let i = 0; i < idx.length; i++)
-    for (let j = i + 1; j < idx.length; j++) if (idx[j]! !== idx[i]!) slopes.push((t[j]! - t[i]!) / (idx[j]! - idx[i]!));
+  const h = Math.max(1, idx.length >> 1);
+  for (let i = 0; i + h < idx.length; i++) if (idx[i + h]! !== idx[i]!) slopes.push((t[i + h]! - t[i]!) / (idx[i + h]! - idx[i]!));
   const p = median(slopes);
   return [median(t.map((x, k) => x - p * idx[k]!)), p];
 }

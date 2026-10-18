@@ -11,7 +11,7 @@ import { ZIP_MAX_BYTES } from '@core/io/project-file';
 import { planStems, stemProject, withoutMasterChain, type StemPlan } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Project } from '@core/model/types';
-import { measureTail, renderStream } from '@engine/render-offline';
+import { measureTail } from '@engine/render-offline';
 import { isFileSystemAccessSupported, pickDirectory, pickSaveExportFile } from '@platform/fs-access';
 import { downloadParts, memorySink, openFileSink, openTempFile, type ByteSink, type MemorySink } from '@platform/sinks';
 import type { PrefsState } from '../stores/prefs';
@@ -26,7 +26,7 @@ import {
   type EncodeSpec,
 } from './encode';
 import { ExportError, type ExportProgress } from './export-wav';
-import { StreamTrimmer } from './stream-trim';
+import { renderPass } from './render-pass';
 import { planExport, planSeconds, type ExportPlan, type ExportRange } from './plan';
 
 export interface AudioExportSettings {
@@ -139,7 +139,7 @@ function scale(channels: readonly Float32Array[], gain: number): void {
 }
 
 /** Where one exported file's bytes go as they are encoded (a download or `memory` target collects them). */
-async function sinkFor(target: ExportTarget, mime: string): Promise<{ sink: ByteSink; done(): Promise<void> }> {
+export async function sinkFor(target: ExportTarget, mime: string): Promise<{ sink: ByteSink; done(): Promise<void> }> {
   if ((target.kind === 'file' || target.kind === 'zip') && target.handle) {
     const sink = await openFileSink(target.handle);
     return { sink, done: () => sink.close() };
@@ -220,7 +220,6 @@ async function runExportOf(
   const spec = encodeSpecOf(settings);
   const musical = planSeconds(project, plan);
   const musicFrames = Math.ceil(musical * rate);
-  const extra = Math.round(0.01 * rate);
   const raw = settings.stems && !settings.masterChain;
   const base = raw ? withoutMasterChain(project) : project;
   const engineOpts = { plugins: s.plugins, sampleCache: s.sampleCache };
@@ -234,39 +233,28 @@ async function runExportOf(
   signal?.throwIfAborted();
 
   /** One render pass; every kept piece goes to `consume`. Returns the frames kept. */
-  const pass = async (
+  const pass = (
     p: Project,
     step: number,
     label: string,
     length: number | undefined,
     consume: (piece: Float32Array[]) => Promise<void>,
-  ): Promise<number> => {
-    let trimmer: StreamTrimmer | null = null;
-    const r = await renderStream(p, {
-      ...engineOpts,
-      view: { mode: plan.mode, patternId: plan.patternId, loop: null },
-      bars: plan.bars,
-      fromTick: plan.fromTick,
-      sampleRate: rate,
-      tail,
-      limiter: !raw,
-      onProgress: (f) => hooks.onProgress?.({ stage: 'render', fraction: ((step + f) / steps) * 0.98, label }),
-      ...(signal ? { signal } : {}),
-      onAudio: async (channels, frame, info) => {
-        // Every render of one export has the same start (pre-roll and delay compensation, see measureTail).
-        trimmer ??= new StreamTrimmer(Math.round((info.preRoll + info.latency) * rate), musicFrames, {
-          extra,
-          ...(length !== undefined ? { length } : {}),
-        });
-        for (const piece of trimmer.push(channels, frame)) await consume(piece);
+  ): Promise<number> =>
+    renderPass(
+      {
+        s,
+        project: p,
+        plan,
+        sampleRate: rate,
+        tail,
+        musicFrames,
+        limiter: !raw,
+        length,
+        signal,
+        onRender: (f) => hooks.onProgress?.({ stage: 'render', fraction: ((step + f) / steps) * 0.98, label }),
       },
-    });
-    signal?.throwIfAborted();
-    const t = trimmer as StreamTrimmer | null;
-    if (!t) return 0;
-    for (const piece of t.finish(r.frames)) await consume(piece);
-    return t.frames;
-  };
+      consume,
+    );
 
   // The mix's length and peak (stems, normalize): a pass that only measures.
   let gain = 1;

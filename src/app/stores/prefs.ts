@@ -1,4 +1,5 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { VIDEO_FORMATS, VIDEO_SIZES, VIDEO_STYLES, type VideoFormat, type VideoSize, type VideoStyle } from '@core/video/formats';
 
 /** Per-browser preferences (localStorage). Not part of any project. */
 export interface PrefsState {
@@ -20,6 +21,11 @@ export interface PrefsState {
   exportStems: boolean;
   exportMasterChain: boolean;
   exportStemsTo: 'folder' | 'zip';
+  /** Last video export settings: picture style, size, frame rate and file format (File > Export as video). */
+  exportVideoStyle: VideoStyle;
+  exportVideoSize: VideoSize;
+  exportVideoFps: number;
+  exportVideoFormat: VideoFormat;
   /** Metronome clicks while playing. */
   metronome: boolean;
   /** Bars of count-in when recording (0 = none). */
@@ -119,6 +125,10 @@ const DEFAULTS: PrefsState = {
   exportStems: false,
   exportMasterChain: true,
   exportStemsTo: 'folder',
+  exportVideoStyle: 'bars',
+  exportVideoSize: '1080p',
+  exportVideoFps: 30,
+  exportVideoFormat: 'mp4-h264',
   metronome: false,
   countInBars: 1,
   recordQuantize: 0,
@@ -173,6 +183,10 @@ function load(): PrefsState {
     if (!Object.hasOwn(AUDIO_BUFFER_HINT, out.autoBufferSize as string)) out.autoBufferSize = DEFAULTS.autoBufferSize;
     // Settings saved before Auto existed hold 'large' whether or not it was a choice: only a picked size stays.
     if (out.audioBuffer === 'large' && saved.audioBufferPicked !== true) out.audioBuffer = 'auto';
+    if (!VIDEO_STYLES.includes(out.exportVideoStyle as VideoStyle)) out.exportVideoStyle = DEFAULTS.exportVideoStyle;
+    if (!VIDEO_SIZES.includes(out.exportVideoSize as VideoSize)) out.exportVideoSize = DEFAULTS.exportVideoSize;
+    if (!VIDEO_FORMATS.includes(out.exportVideoFormat as VideoFormat)) out.exportVideoFormat = DEFAULTS.exportVideoFormat;
+    if (out.exportVideoFps !== 30 && out.exportVideoFps !== 60) out.exportVideoFps = DEFAULTS.exportVideoFps;
     if (out.followStyle !== 'smooth' && out.followStyle !== 'page') out.followStyle = DEFAULTS.followStyle;
     return out as unknown as PrefsState;
   } catch {

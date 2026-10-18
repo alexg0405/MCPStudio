@@ -64,33 +64,30 @@ export function collectLaunchAudio(
   sounding?: ReadonlySet<string>,
 ): void {
   let muted: ReadonlySet<ChannelId> | null = null;
-  for (const r of runs) {
-    const c = r.content;
-    if (c.kind !== 'audio' || r.passLength <= 0) continue;
-    const runEnd = r.endU ?? OPEN;
+  for (const run of runs) {
+    const content = run.content;
+    if (content.kind !== 'audio' || run.passLength <= 0) continue;
+    const runEnd = run.endU ?? OPEN;
     if (runEnd <= from && (ongoingAt === null || runEnd <= ongoingAt)) continue;
-    if (r.startU >= to) continue;
-    if (project.channels[c.channelId]?.kind !== 'audioClip') continue;
+    if (run.startU >= to) continue;
+    if (project.channels[content.channelId]?.kind !== 'audioClip') continue;
     muted ??= effectivelyMuted(project.channels);
-    if (muted.has(c.channelId)) continue;
+    if (muted.has(content.channelId)) continue;
     // The passes that can matter: the one playing at `from` (for a mid-way start) up to the last one starting before `to`.
-    const first = Math.max(0, Math.floor((Math.min(from, ongoingAt ?? from) - r.startU) / r.passLength));
-    const last = r.loop ? Math.floor((Math.min(to, runEnd) - 1e-9 - r.startU) / r.passLength) : 0;
-    for (let k = first; k <= last; k++) {
-      const start = r.startU + k * r.passLength;
-      const passEnd = Math.min(start + r.passLength, runEnd);
+    const first = Math.max(0, Math.floor((Math.min(from, ongoingAt ?? from) - run.startU) / run.passLength));
+    const last = run.loop ? Math.floor((Math.min(to, runEnd) - PASS_EPSILON - run.startU) / run.passLength) : 0;
+    for (let pass = first; pass <= last; pass++) {
+      const start = run.startU + pass * run.passLength;
       if (start >= runEnd) break;
-      const clip = passClip(r, start, r.passLength);
-      let at: number | null = null;
-      if (start >= from && start < to) at = start;
-      else if (ongoingAt !== null && start < ongoingAt && ongoingAt < passEnd && ongoingAt >= from && ongoingAt < to && !sounding?.has(clip.id))
-        at = ongoingAt;
+      const passEnd = Math.min(start + run.passLength, runEnd);
+      const clip = passClip(run, start, run.passLength);
+      const at = passStartIn(start, passEnd, from, to, ongoingAt, sounding?.has(clip.id) ?? false);
       if (at === null) continue;
       out.push({
         kind: 'audio',
         key: `${clip.id}:audio`,
         clipId: clip.id,
-        channelId: c.channelId,
+        channelId: content.channelId,
         patternId: null,
         noteId: null,
         clipEnd: passEnd,
@@ -99,11 +96,31 @@ export function collectLaunchAudio(
         end: passEnd,
         pitch: 60,
         velocity: 1,
-        offsetSec: c.offsetSec,
-        launch: { runId: r.id, clip },
+        offsetSec: content.offsetSec,
+        launch: { runId: run.id, clip },
       });
     }
   }
+}
+
+/** Rounding slack at the end of a span when counting the passes that start before it (ticks). */
+const PASS_EPSILON = 1e-9;
+
+/**
+ * Where a pass starts being played in [from, to): at its own start, or (when playback is already inside it, `ongoingAt`)
+ * at that position, unless its sample is already sounding. Null when it does not start in the span.
+ */
+function passStartIn(
+  start: number,
+  passEnd: number,
+  from: number,
+  to: number,
+  ongoingAt: number | null,
+  isSounding: boolean,
+): number | null {
+  if (start >= from && start < to) return start;
+  const isInsideNow = ongoingAt !== null && start < ongoingAt && ongoingAt < passEnd && ongoingAt >= from && ongoingAt < to;
+  return isInsideNow && !isSounding ? ongoingAt : null;
 }
 
 /** Positions on the axis come out of sums of fractional ticks: compare within a millionth of a tick. */

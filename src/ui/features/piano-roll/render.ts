@@ -9,7 +9,9 @@ import { alpha, inkOn, isBlackKey, mix, roundRectPath, type TimelineTheme } from
 import type { Viewport } from '../../timeline/viewport';
 import { laneValue, LANES } from './lanes';
 
+/** The key shown on a row of the grid (the top row is the highest key, 127). */
 export const keyForRow = (row: number) => 127 - row;
+/** The row of the grid a key is shown on (the inverse of `keyForRow`). */
 export const rowForKey = (key: number) => 127 - key;
 
 /** The song key as the grid shows it: which pitch classes are in the scale, and the tonic. */
@@ -117,6 +119,7 @@ export function drawGrid(
   }
 }
 
+/** How notes are drawn: their color and which are selected. */
 export interface NoteStyle {
   color: string;
   selected: ReadonlySet<NoteId>;
@@ -136,6 +139,26 @@ interface NoteGroup {
   any: boolean;
 }
 
+/** A note is drawn in one of these states: its batch of paths (and its fill color) depends on it. */
+const NOTE_NORMAL = 0;
+const NOTE_SELECTED = 1;
+const NOTE_MUTED = 2;
+const NOTE_STATES = 3;
+/** Muted notes are drawn this much fainter. */
+const MUTED_OPACITY = 0.35;
+/** Notes at least this wide (px), on rows at least this tall (px), get their key name written on them. */
+const MIN_LABELED_WIDTH = 26;
+const MIN_LABELED_ROW_HEIGHT = 10;
+
+/** The visible notes batched by state and velocity step, and the ones that get a label. */
+interface NoteBatches {
+  /** [state][velocity step]: a group (two paths) is made when its first note arrives, as most frames use only a few. */
+  groups: (NoteGroup | undefined)[][];
+  labels: Note[];
+  /** The height of a note (px). */
+  noteHeight: number;
+}
+
 /**
  * Notes overlapping the view: rounded, gold with a lighter top edge, velocity as opacity, selected
  * ones in the selection color. Notes are batched into a few paths (by state and velocity step), so
@@ -149,72 +172,108 @@ export function drawNotes(
   style: NoteStyle,
   opts: { skip?: ReadonlySet<NoteId>; alpha?: number } = {},
 ): void {
-  const [t0, t1] = vp.visibleTicks();
-  const [r0, r1] = vp.visibleRows();
-  const h = vp.rowHeight;
-  const nh = Math.max(1, h - 2);
-  const radius = nh >= 6 ? 3 : nh >= 4 ? 1.5 : 0;
-  // [state][velocity step]: state 0 = normal, 1 = selected, 2 = muted.
-  // A group (two paths) is made when its first note arrives: most frames use only a few of the 24.
+  const batches = batchVisibleNotes(vp, notes, style, opts.skip);
+  const baseAlpha = opts.alpha ?? 1;
+  fillNoteBatches(ctx, theme, style, batches, baseAlpha);
+  ctx.lineWidth = 1;
+  if (batches.labels.length) drawNoteLabels(ctx, vp, theme, style, batches.labels, baseAlpha);
+  ctx.globalAlpha = 1;
+}
+
+/** Sorts the notes in view into paths by state and velocity step (rounded when there is room). */
+function batchVisibleNotes(vp: Viewport, notes: readonly Note[], style: NoteStyle, skip?: ReadonlySet<NoteId>): NoteBatches {
+  const [firstTick, lastTick] = vp.visibleTicks();
+  const [firstRow, lastRow] = vp.visibleRows();
+  const rowHeight = vp.rowHeight;
+  const noteHeight = Math.max(1, rowHeight - 2);
+  const radius = cornerRadius(noteHeight);
   const groups: (NoteGroup | undefined)[][] = [[], [], []];
   const labels: Note[] = [];
   // Indexed, not for-of: an iterator object per note was garbage on every frame the view moves.
   for (let i = 0; i < notes.length; i++) {
-    const n = notes[i] as Note;
-    if (n.tick > t1) break;
-    if (n.tick + n.length < t0 || opts.skip?.has(n.id)) continue;
-    const row = rowForKey(n.key);
-    if (row < r0 - 1 || row > r1 + 1) continue;
-    const x = vp.tickToPx(n.tick);
-    const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
+    const note = notes[i] as Note;
+    if (note.tick > lastTick) break;
+    if (note.tick + note.length < firstTick || skip?.has(note.id)) continue;
+    const row = rowForKey(note.key);
+    if (row < firstRow - 1 || row > lastRow + 1) continue;
+    const x = vp.tickToPx(note.tick);
+    const width = Math.max(2, vp.tickToPx(note.tick + note.length) - x - 1);
     const y = vp.rowToY(row) + 1;
-    const state = n.muted ? 2 : style.selected.has(n.id) ? 1 : 0;
+    const state = noteStateOf(note, style);
     const byStep = groups[state] as (NoteGroup | undefined)[];
-    const step = velStep(n.velocity);
-    let g = byStep[step];
-    if (!g) byStep[step] = g = { body: new Path2D(), top: new Path2D(), any: false };
-    if (radius > 0 && w >= 4) g.body.roundRect(x, y, w, nh, Math.min(radius, w / 2));
-    else g.body.rect(x, y, w, nh);
-    if (nh >= 4 && w > 3) g.top.rect(x + 1.5, y + 0.5, w - 3, 1);
-    g.any = true;
-    if (w > 26 && h >= 10) labels.push(n);
+    const step = velStep(note.velocity);
+    let group = byStep[step];
+    if (!group) byStep[step] = group = { body: new Path2D(), top: new Path2D(), any: false };
+    if (radius > 0 && width >= 4) group.body.roundRect(x, y, width, noteHeight, Math.min(radius, width / 2));
+    else group.body.rect(x, y, width, noteHeight);
+    if (noteHeight >= 4 && width > 3) group.top.rect(x + 1.5, y + 0.5, width - 3, 1);
+    group.any = true;
+    if (width > MIN_LABELED_WIDTH && rowHeight >= MIN_LABELED_ROW_HEIGHT) labels.push(note);
   }
-  const base = opts.alpha ?? 1;
+  return { groups, labels, noteHeight };
+}
+
+/** Corner radius of a note (px): none on notes too short to show one. */
+function cornerRadius(noteHeight: number): number {
+  if (noteHeight >= 6) return 3;
+  return noteHeight >= 4 ? 1.5 : 0;
+}
+
+function noteStateOf(note: Note, style: NoteStyle): number {
+  if (note.muted) return NOTE_MUTED;
+  return style.selected.has(note.id) ? NOTE_SELECTED : NOTE_NORMAL;
+}
+
+/** Fills each batch: the body in the state's color with the velocity as opacity, an outline, the lighter top edge. */
+function fillNoteBatches(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  style: NoteStyle,
+  batches: NoteBatches,
+  baseAlpha: number,
+): void {
   const colors = [style.color, theme.noteSelected, style.color];
   const edge = alpha(theme.noteBorder, 0.6);
-  for (let state = 0; state < 3; state++) {
-    for (let v = 0; v < VEL_STEPS.length; v++) {
-      const g = (groups[state] as (NoteGroup | undefined)[])[v];
-      if (!g?.any) continue;
-      const a = (0.4 + 0.6 * (VEL_STEPS[v] as number)) * (state === 2 ? 0.35 : 1);
-      ctx.globalAlpha = base * a;
+  for (let state = 0; state < NOTE_STATES; state++) {
+    for (let step = 0; step < VEL_STEPS.length; step++) {
+      const group = (batches.groups[state] as (NoteGroup | undefined)[])[step];
+      if (!group?.any) continue;
+      const opacity = (0.4 + 0.6 * (VEL_STEPS[step] as number)) * (state === NOTE_MUTED ? MUTED_OPACITY : 1);
+      ctx.globalAlpha = baseAlpha * opacity;
       ctx.fillStyle = colors[state] as string;
-      ctx.fill(g.body);
-      ctx.globalAlpha = base * Math.max(0.55, a);
-      if (nh >= 6) {
-        ctx.strokeStyle = state === 1 ? theme.select : edge;
-        ctx.lineWidth = state === 1 ? 1.25 : 0.75;
-        ctx.stroke(g.body);
+      ctx.fill(group.body);
+      ctx.globalAlpha = baseAlpha * Math.max(0.55, opacity);
+      if (batches.noteHeight >= 6) {
+        ctx.strokeStyle = state === NOTE_SELECTED ? theme.select : edge;
+        ctx.lineWidth = state === NOTE_SELECTED ? 1.25 : 0.75;
+        ctx.stroke(group.body);
       }
       ctx.fillStyle = theme.noteTop;
-      ctx.fill(g.top);
+      ctx.fill(group.top);
     }
   }
-  ctx.lineWidth = 1;
-  if (labels.length) {
-    ctx.globalAlpha = base;
-    ctx.font = `500 ${Math.min(10, h - 4)}px ${theme.font}`;
-    ctx.textBaseline = 'middle';
-    for (const n of labels) {
-      const x = vp.tickToPx(n.tick);
-      const w = Math.max(2, vp.tickToPx(n.tick + n.length) - x - 1);
-      const y = vp.rowToY(rowForKey(n.key));
-      const fill = style.selected.has(n.id) ? theme.noteSelected : style.color;
-      ctx.fillStyle = alpha(inkOn(fill, theme), 0.72);
-      ctx.fillText(keyName(n.key), x + 4, y + h / 2 + 0.5, w - 6);
-    }
+}
+
+/** The key name ("C4") written on the notes wide enough for it. */
+function drawNoteLabels(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  theme: TimelineTheme,
+  style: NoteStyle,
+  labels: readonly Note[],
+  baseAlpha: number,
+): void {
+  ctx.globalAlpha = baseAlpha;
+  ctx.font = `500 ${Math.min(10, vp.rowHeight - 4)}px ${theme.font}`;
+  ctx.textBaseline = 'middle';
+  for (const note of labels) {
+    const x = vp.tickToPx(note.tick);
+    const width = Math.max(2, vp.tickToPx(note.tick + note.length) - x - 1);
+    const y = vp.rowToY(rowForKey(note.key));
+    const fill = style.selected.has(note.id) ? theme.noteSelected : style.color;
+    ctx.fillStyle = alpha(inkOn(fill, theme), 0.72);
+    ctx.fillText(keyName(note.key), x + 4, y + vp.rowHeight / 2 + 0.5, width - 6);
   }
-  ctx.globalAlpha = 1;
 }
 
 /** Other channels' notes, drawn as faint outlines behind the edited channel. */
@@ -264,6 +323,18 @@ function blackKeyFill(ctx: CanvasRenderingContext2D, theme: TimelineTheme, w: nu
   return g;
 }
 
+/** The sizes and colors shared by every key of the strip. */
+interface KeyStrip {
+  width: number;
+  rowHeight: number;
+  /** How far a black key reaches into the strip (px). */
+  blackWidth: number;
+  /** Dark ink for marks on the ivory keys. */
+  ink: string;
+  /** The seam between two white keys. */
+  seam: string;
+}
+
 /**
  * Piano keyboard on the left: ivory keys with soft shadows under the black ones, black keys like
  * polished stone. `pressed` keys light in gold; with a song key, scale keys get a dot.
@@ -279,63 +350,85 @@ export function drawKeys(
 ): void {
   ctx.fillStyle = theme.keyWhite;
   ctx.fillRect(0, 0, width, vp.height);
-  const [r0, r1] = vp.visibleRows();
-  const h = vp.rowHeight;
-  const blackW = Math.round(width * 0.6);
+  const [firstRow, lastRow] = vp.visibleRows();
+  const rowHeight = vp.rowHeight;
   const ink = theme.onLight;
-  const seam = alpha(ink, 0.14);
-  ctx.font = `500 ${Math.min(9, h - 3)}px ${theme.font}`;
+  const strip: KeyStrip = { width, rowHeight, blackWidth: Math.round(width * 0.6), ink, seam: alpha(ink, 0.14) };
+  ctx.font = `500 ${Math.min(9, rowHeight - 3)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
-  for (let row = r0; row <= r1; row++) {
+  for (let row = firstRow; row <= lastRow; row++) {
     const key = keyForRow(row);
-    const y = vp.rowToY(row);
-    const black = isBlackKey(key);
-    const isPressed = pressed.has(key);
-    const pc = ((key % 12) + 12) % 12;
-    if (!black && isPressed) {
-      ctx.fillStyle = alpha(theme.accent, 0.55);
-      ctx.fillRect(0, y, width, h);
-    }
-    // The seam between two white keys (B|C and E|F sit next to each other).
-    if (pc === 0 || pc === 5) {
-      ctx.fillStyle = seam;
-      ctx.fillRect(0, y + h - 1, width, 1);
-    }
-    if (black) {
-      // A soft shadow the key casts on the ivory below it.
-      ctx.fillStyle = alpha(ink, 0.12);
-      ctx.fillRect(0, y + h - 0.5, blackW + 2, 2.5);
-      ctx.fillStyle = isPressed ? theme.accent : blackKeyFill(ctx, theme, blackW);
-      ctx.beginPath();
-      roundRectPath(ctx, -3, y + 0.5, blackW + 3, h - 1, 2);
-      ctx.fill();
-      if (!isPressed && h >= 6) {
-        ctx.fillStyle = alpha(theme.keyWhite, 0.12);
-        ctx.fillRect(2, y + 1.5, blackW - 6, 1);
-      }
-    }
-    if (key === rootKey) {
-      ctx.fillStyle = theme.accent;
-      ctx.beginPath();
-      roundRectPath(ctx, width - 4.5, y + 1, 2.5, h - 2, 1.25);
-      ctx.fill();
-    }
-    if (scale?.mask[pc] && h >= 6) {
-      // A dot at the left end of the scale's keys (gold for the root), clear of the octave labels.
-      const r = Math.min(2.25, (h - 3) / 2);
-      ctx.beginPath();
-      ctx.arc(7, y + h / 2, r, 0, Math.PI * 2);
-      ctx.fillStyle = pc === scale.root ? theme.accent : black ? alpha(theme.keyWhite, 0.6) : alpha(ink, 0.35);
-      ctx.fill();
-    }
-    if (pc === 0 && h >= 8) {
-      ctx.fillStyle = alpha(ink, 0.5);
-      ctx.fillText(keyName(key), blackW + 3, y + h / 2 + 0.5);
-    }
+    drawKeyRow(ctx, theme, strip, key, vp.rowToY(row), pressed.has(key), key === rootKey, scale);
   }
   // The keyboard's edge against the grid.
   ctx.fillStyle = alpha(ink, 0.18);
   ctx.fillRect(width - 1, 0, 1, vp.height);
+}
+
+/** One key of the strip, at height `y`: its ivory or stone, its seam and shadow, the root marker, the scale dot, the octave name. */
+function drawKeyRow(
+  ctx: CanvasRenderingContext2D,
+  theme: TimelineTheme,
+  strip: KeyStrip,
+  key: number,
+  y: number,
+  isPressed: boolean,
+  isRoot: boolean,
+  scale: ScaleRows | null,
+): void {
+  const { width, rowHeight: h, blackWidth, ink } = strip;
+  const isBlack = isBlackKey(key);
+  const pitchClass = ((key % 12) + 12) % 12;
+  if (!isBlack && isPressed) {
+    ctx.fillStyle = alpha(theme.accent, 0.55);
+    ctx.fillRect(0, y, width, h);
+  }
+  // The seam between two white keys (B|C and E|F sit next to each other).
+  if (pitchClass === 0 || pitchClass === 5) {
+    ctx.fillStyle = strip.seam;
+    ctx.fillRect(0, y + h - 1, width, 1);
+  }
+  if (isBlack) {
+    // A soft shadow the key casts on the ivory below it.
+    ctx.fillStyle = alpha(ink, 0.12);
+    ctx.fillRect(0, y + h - 0.5, blackWidth + 2, 2.5);
+    ctx.fillStyle = isPressed ? theme.accent : blackKeyFill(ctx, theme, blackWidth);
+    ctx.beginPath();
+    roundRectPath(ctx, -3, y + 0.5, blackWidth + 3, h - 1, 2);
+    ctx.fill();
+    if (!isPressed && h >= 6) {
+      ctx.fillStyle = alpha(theme.keyWhite, 0.12);
+      ctx.fillRect(2, y + 1.5, blackWidth - 6, 1);
+    }
+  }
+  if (isRoot) {
+    ctx.fillStyle = theme.accent;
+    ctx.beginPath();
+    roundRectPath(ctx, width - 4.5, y + 1, 2.5, h - 2, 1.25);
+    ctx.fill();
+  }
+  if (scale?.mask[pitchClass] && h >= 6) drawScaleDot(ctx, theme, strip, y, pitchClass === scale.root, isBlack);
+  if (pitchClass === 0 && h >= 8) {
+    ctx.fillStyle = alpha(ink, 0.5);
+    ctx.fillText(keyName(key), blackWidth + 3, y + h / 2 + 0.5);
+  }
+}
+
+/** A dot at the left end of the scale's keys (gold for the root), clear of the octave labels. */
+function drawScaleDot(ctx: CanvasRenderingContext2D, theme: TimelineTheme, strip: KeyStrip, y: number, isRoot: boolean, isBlack: boolean): void {
+  const radius = Math.min(2.25, (strip.rowHeight - 3) / 2);
+  ctx.beginPath();
+  ctx.arc(7, y + strip.rowHeight / 2, radius, 0, Math.PI * 2);
+  if (isRoot) ctx.fillStyle = theme.accent;
+  else ctx.fillStyle = isBlack ? alpha(theme.keyWhite, 0.6) : alpha(strip.ink, 0.35);
+  ctx.fill();
+}
+
+/** Every how many bars a number is written: all of them when there is room, fewer as the view zooms out. */
+function barLabelInterval(barWidthPx: number): number {
+  if (barWidthPx >= 40) return 1;
+  if (barWidthPx >= 20) return 2;
+  return barWidthPx >= 8 ? 4 : 16;
 }
 
 /** Bar numbers and beat ticks above the grid: hairlines, faint numbers, the pattern end as a gold flag. */
@@ -353,7 +446,7 @@ export function drawRuler(
   const beat = ticksPerBeat(ts);
   const [t0, t1] = vp.visibleTicks();
   const barPx = bar * vp.pxPerTick;
-  const labelEvery = barPx >= 40 ? 1 : barPx >= 20 ? 2 : barPx >= 8 ? 4 : 16;
+  const labelEvery = barLabelInterval(barPx);
   ctx.font = `500 10px ${theme.font}`;
   ctx.textBaseline = 'top';
   if (beat * vp.pxPerTick >= 8) {

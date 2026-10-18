@@ -24,12 +24,37 @@
 import { MASTER, type InsertId, type SlotId } from '@core/model/types';
 import type { RoutingEdge } from '@core/query/routing';
 
+/** What the compensation needs to know about one effect slot of an insert. */
 export interface SlotLatency {
   slotId: SlotId;
   /** Frames the slot delays its output by (0 unless the effect is live). */
   frames: number;
   /** The slot's live effect listens to a sidechain (so its key's arrival matters). */
   keyed: boolean;
+}
+
+/** The routing graph of the known inserts, with what Kahn's algorithm needs to walk it. */
+interface Graph {
+  incoming: Map<InsertId, RoutingEdge[]>;
+  outgoing: Map<InsertId, RoutingEdge[]>;
+  /** Edges into each insert that are not settled yet. */
+  pending: Map<InsertId, number>;
+}
+
+/** The effect latency of each insert, and which slots have a sidechain that is listened to. */
+interface SlotTotals {
+  /** Frames of all the live slots of an insert. */
+  fx: Map<InsertId, number>;
+  /** Keys (`insert/slot`) of the slots that listen to a sidechain. */
+  keyed: Set<string>;
+}
+
+/** The first pass: the earliest each insert's audio can be aligned. */
+interface ForwardPass {
+  early: Map<InsertId, number>;
+  /** The inserts in the order they were settled (sources before what they feed). */
+  order: InsertId[];
+  total: number;
 }
 
 export class DelayCompensation {
@@ -48,30 +73,35 @@ export class DelayCompensation {
     edges: readonly RoutingEdge[],
     slots: (id: InsertId) => readonly SlotLatency[],
   ) {
-    const known = new Set(ids);
-    const incoming = new Map<InsertId, RoutingEdge[]>();
-    const outgoing = new Map<InsertId, RoutingEdge[]>();
-    const pending = new Map<InsertId, number>();
-    for (const id of ids) pending.set(id, 0);
-    for (const e of edges) {
-      if (!known.has(e.from) || !known.has(e.to)) continue;
-      push(incoming, e.to, e);
-      push(outgoing, e.from, e);
-      pending.set(e.to, (pending.get(e.to) ?? 0) + 1);
-    }
+    const graph = buildGraph(ids, edges);
+    const slotTotals = this.measureSlots(ids, slots);
+    const forward = this.settleForward(ids, graph, slotTotals);
+    this.total = forward.total;
+    this.settleBackward(forward, graph, slotTotals);
+  }
+
+  /** Records the latency ahead of every slot (`befores`) and sums each insert's slots. */
+  private measureSlots(ids: readonly InsertId[], slots: (id: InsertId) => readonly SlotLatency[]): SlotTotals {
     const fx = new Map<InsertId, number>();
     const keyed = new Set<string>();
     for (const id of ids) {
       let sum = 0;
-      for (const s of slots(id)) {
-        this.befores.set(slotKey(id, s.slotId), sum);
-        if (s.keyed) keyed.add(slotKey(id, s.slotId));
-        sum += Math.max(0, Math.round(s.frames));
+      for (const slot of slots(id)) {
+        this.befores.set(slotKey(id, slot.slotId), sum);
+        if (slot.keyed) keyed.add(slotKey(id, slot.slotId));
+        sum += Math.max(0, Math.round(slot.frames));
       }
       fx.set(id, sum);
     }
-    // Forward (Kahn's algorithm: an insert is settled once everything feeding it is): the earliest each insert's
-    // audio can be aligned, which gives the mixer's latency.
+    return { fx, keyed };
+  }
+
+  /**
+   * Forward (Kahn's algorithm: an insert is settled once everything feeding it is): the earliest each insert's
+   * audio can be aligned, which gives the mixer's latency.
+   */
+  private settleForward(ids: readonly InsertId[], graph: Graph, { fx, keyed }: SlotTotals): ForwardPass {
+    const { incoming, outgoing, pending } = graph;
     const early = new Map<InsertId, number>();
     const earlyOut = new Map<InsertId, number>();
     const order: InsertId[] = [];
@@ -80,40 +110,51 @@ export class DelayCompensation {
       const id = ready.pop()!;
       order.push(id);
       let arrival = 0;
-      for (const e of incoming.get(id) ?? []) {
-        const src = earlyOut.get(e.from) ?? 0;
-        if (e.kind === 'route') arrival = Math.max(arrival, src);
-        else if (e.slotId && keyed.has(slotKey(id, e.slotId)))
-          arrival = Math.max(arrival, src - (this.befores.get(slotKey(id, e.slotId)) ?? 0));
+      for (const edge of incoming.get(id) ?? []) {
+        const sourceOut = earlyOut.get(edge.from) ?? 0;
+        if (edge.kind === 'route') {
+          arrival = Math.max(arrival, sourceOut);
+        } else if (edge.slotId && keyed.has(slotKey(id, edge.slotId))) {
+          arrival = Math.max(arrival, sourceOut - (this.befores.get(slotKey(id, edge.slotId)) ?? 0));
+        }
       }
       early.set(id, arrival);
       earlyOut.set(id, arrival + (fx.get(id) ?? 0));
-      for (const e of outgoing.get(id) ?? []) {
-        const left = (pending.get(e.to) ?? 0) - 1;
-        pending.set(e.to, left);
-        if (left === 0) ready.push(e.to);
+      for (const edge of outgoing.get(id) ?? []) {
+        const left = (pending.get(edge.to) ?? 0) - 1;
+        pending.set(edge.to, left);
+        if (left === 0) ready.push(edge.to);
       }
     }
-    this.total = earlyOut.get(MASTER) ?? 0;
-    // Backward: each insert as late as what it feeds allows. The master stays where the forward pass put it (so
-    // the total is the same); an insert that feeds nothing that is heard (no route out, no key taken from it) is
-    // silent and constrains nobody.
+    return { early, order, total: earlyOut.get(MASTER) ?? 0 };
+  }
+
+  /**
+   * Backward: each insert as late as what it feeds allows. The master stays where the forward pass put it (so
+   * the total is the same); an insert that feeds nothing that is heard (no route out, no key taken from it) is
+   * silent and constrains nobody.
+   */
+  private settleBackward({ early, order }: ForwardPass, { outgoing }: Graph, { fx, keyed }: SlotTotals): void {
     const dead = new Set<InsertId>();
     for (const id of order) if (id !== MASTER && (outgoing.get(id)?.length ?? 0) === 0) dead.add(id);
     for (let i = order.length - 1; i >= 0; i--) {
       const id = order[i] as InsertId;
+      const ownFx = fx.get(id) ?? 0;
       let arrival = id === MASTER ? (early.get(MASTER) ?? 0) : Number.POSITIVE_INFINITY;
-      for (const e of outgoing.get(id) ?? []) {
-        if (dead.has(e.to)) continue;
-        const to = this.arrivals.get(e.to);
-        if (to === undefined) continue;
-        if (e.kind === 'route') arrival = Math.min(arrival, to - (fx.get(id) ?? 0));
-        else if (e.slotId && keyed.has(slotKey(e.to, e.slotId)))
-          arrival = Math.min(arrival, to + (this.befores.get(slotKey(e.to, e.slotId)) ?? 0) - (fx.get(id) ?? 0));
+      for (const edge of outgoing.get(id) ?? []) {
+        if (dead.has(edge.to)) continue;
+        const targetArrival = this.arrivals.get(edge.to);
+        if (targetArrival === undefined) continue;
+        if (edge.kind === 'route') {
+          arrival = Math.min(arrival, targetArrival - ownFx);
+        } else if (edge.slotId && keyed.has(slotKey(edge.to, edge.slotId))) {
+          const beforeSlot = this.befores.get(slotKey(edge.to, edge.slotId)) ?? 0;
+          arrival = Math.min(arrival, targetArrival + beforeSlot - ownFx);
+        }
       }
       if (!Number.isFinite(arrival)) arrival = early.get(id) ?? 0;
       this.arrivals.set(id, arrival);
-      this.outs.set(id, arrival + (fx.get(id) ?? 0));
+      this.outs.set(id, arrival + ownFx);
     }
   }
 
@@ -154,4 +195,20 @@ function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list) list.push(value);
   else map.set(key, [value]);
+}
+
+/** The edges between the known inserts, indexed by both ends. Edges touching an unknown insert are ignored. */
+function buildGraph(ids: readonly InsertId[], edges: readonly RoutingEdge[]): Graph {
+  const known = new Set(ids);
+  const incoming = new Map<InsertId, RoutingEdge[]>();
+  const outgoing = new Map<InsertId, RoutingEdge[]>();
+  const pending = new Map<InsertId, number>();
+  for (const id of ids) pending.set(id, 0);
+  for (const edge of edges) {
+    if (!known.has(edge.from) || !known.has(edge.to)) continue;
+    push(incoming, edge.to, edge);
+    push(outgoing, edge.from, edge);
+    pending.set(edge.to, (pending.get(edge.to) ?? 0) + 1);
+  }
+  return { incoming, outgoing, pending };
 }

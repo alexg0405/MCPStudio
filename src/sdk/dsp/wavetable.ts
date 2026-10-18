@@ -245,7 +245,7 @@ function synthesize(
 }
 
 // ---------------------------------------------------------------------------------------------
-// A small radix-2 FFT for building tables (private: building is the only user).
+// A small radix-2 FFT for building and editing tables (`wavetable-frames.ts` shares it).
 
 interface Plan {
   cos: Float64Array;
@@ -278,7 +278,7 @@ function plan(n: number): Plan {
 }
 
 /** In-place complex FFT of size n (a power of two); `inverse` uses e^(+i) and does not scale. */
-function fft(re: Float64Array, im: Float64Array, n: number, inverse: boolean): void {
+export function fft(re: Float64Array, im: Float64Array, n: number, inverse: boolean): void {
   const { cos, sin, rev } = plan(n);
   for (let i = 0; i < n; i++) {
     const j = rev[i] as number;

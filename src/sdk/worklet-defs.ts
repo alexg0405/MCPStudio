@@ -12,6 +12,14 @@ import type { EffectDef, InstrumentDef, PluginHost, TapOptions, WorkletPort } fr
  */
 type WorkletSetup<P extends ParamSpecs, S> = (port: WorkletPort, host: PluginHost<P, S>) => void | (() => void);
 
+/**
+ * Runs on the main thread with the plugin's state when the instance is made (before any note) and again every time the
+ * state changes (an edit, undo, a preset, a project load): turn the state into something the kernel needs and send it
+ * (`port.send`). For data derived from the state that is too heavy for the audio thread, such as a drawn wavetable's
+ * band-limited mip levels. Keep it quick: it runs inside the edit.
+ */
+type WorkletStateHook<P extends ParamSpecs, S> = (state: S, port: WorkletPort, host: PluginHost<P, S>) => void;
+
 type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, 'kind' | 'create'> & {
   processor: string;
   /**
@@ -22,6 +30,7 @@ type WorkletInstrumentDef<P extends ParamSpecs, S> = Omit<InstrumentDef<P, S>, '
    */
   tailTime?: number | ((values: ParamValues<P>, host: PluginHost<P, S>) => number);
   setup?: WorkletSetup<P, S>;
+  onState?: WorkletStateHook<P, S>;
   /**
    * Show the processor's output in the editor (`PluginUIProps.tap`); messages the kernel posts as
    * `{ readings: { name: value } }` (the `Readings` helper) become the tap's readings.
@@ -130,6 +139,7 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
     async create(host) {
       const port = await host.worklet({ numberOfInputs: 0, outputChannelCount: [2] });
       const cleanup = def.setup?.(port, host);
+      def.onState?.(host.state, port, host);
       const stopSamples = forwardSamples(host as PluginHost<ParamSpecs, unknown>, port, def.sampleSlots);
       const stopTap = tapPort(host as PluginHost<ParamSpecs, unknown>, port, def.tap);
       return {
@@ -141,7 +151,10 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
         noteOff: (e) => port.noteOff(e),
         allNotesOff: (time, hard) => port.allNotesOff(time, hard),
         controlChange: (cc, value, time) => port.controlChange(cc, value, time),
-        setState: (state) => port.setState(state),
+        setState: (state) => {
+          port.setState(state);
+          def.onState?.(state as S, port, host);
+        },
         dispose: () => {
           stopSamples();
           cleanup?.();

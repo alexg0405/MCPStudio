@@ -51,8 +51,14 @@ const DESTINATIONS = 9;
 const MODE_MONO = 1;
 const MODE_LEGATO = 2;
 
+const NO_DATA = new Float32Array(1);
+/** Frame keys of the user table start here, so they never equal a factory table's (those are below 10 tables × 64 frames × 16 levels). */
+const USER_KEY = 1e9;
+
 /** Oscillator state of one voice (one per oscillator). */
 class Osc {
+  /** The bank data its frames are read from (the factory bank, or the user table's). */
+  data: Float32Array = NO_DATA;
   readonly phase = new Float64Array(MAX_UNISON);
   readonly inc = new Float64Array(MAX_UNISON);
   readonly gl = new Float64Array(MAX_UNISON);
@@ -256,6 +262,10 @@ class WtVoice implements Voice {
  */
 export class WavetableKernel extends InstrumentKernel<Params> {
   private bank: WavetableBank | null = null;
+  /** The drawn table (one table, any number of frames) when the plugin's state has one; the table after the factory ones. */
+  private user: WavetableBank | null = null;
+  /** Counts the user tables received, so a voice rereads its frames when the table is replaced. */
+  private userEpoch = 0;
   private readonly pool: VoicePool<WtVoice>;
   private readonly controlRate: number;
   private readonly events = new Float64Array(MAX_EVENTS * EVENT_SIZE);
@@ -286,15 +296,29 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     this.pool = new VoicePool(VOICES, () => new WtVoice(this.controlRate, 1000 + 7919 * seed++));
   }
 
-  /** The bank arrives from the main thread once (`{ type: 'bank', data, tables, frames }`). */
+  /**
+   * The factory bank arrives from the main thread once (`{ type: 'bank', data, tables, frames }`), and the user's
+   * drawn table every time it changes (`{ type: 'userBank', data, frames }`: one table of `frames` frames).
+   */
   override onMessage(msg: unknown): void {
     const m = msg as { type?: string; data?: Float32Array; tables?: number; frames?: number } | null;
-    if (m?.type !== 'bank' || !(m.data instanceof Float32Array) || !m.tables || !m.frames) return;
-    this.useBank(WavetableBank.wrap(m.data, m.tables, m.frames));
+    if (!m || !(m.data instanceof Float32Array) || !m.frames) return;
+    try {
+      if (m.type === 'bank' && m.tables) this.useBank(WavetableBank.wrap(m.data, m.tables, m.frames));
+      else if (m.type === 'userBank') this.useUserBank(WavetableBank.wrap(m.data, 1, m.frames));
+    } catch {
+      // Data too short for what it claims: keep what plays.
+    }
   }
 
   useBank(bank: WavetableBank): void {
     this.bank = bank;
+  }
+
+  /** Plays this bank (one table) for oscillators set to the user table, from the next control step. */
+  useUserBank(bank: WavetableBank | null): void {
+    this.user = bank;
+    this.userEpoch++;
   }
 
   noteOn(key: number, velocity: number, noteId: number, pan: number, fine = 0): void {
@@ -368,7 +392,7 @@ export class WavetableKernel extends InstrumentKernel<Params> {
           v.countdown = CONTROL;
         }
         const seg = Math.min(v.countdown, n - i);
-        this.renderSegment(v, bank, oL, oR, from + i, seg, master);
+        this.renderSegment(v, oL, oR, from + i, seg, master);
         v.countdown -= seg;
         i += seg;
       }
@@ -378,7 +402,6 @@ export class WavetableKernel extends InstrumentKernel<Params> {
   /** Synthesizes `seg` samples of a voice into the output at `start`. */
   private renderSegment(
     v: WtVoice,
-    bank: WavetableBank,
     oL: Float32Array,
     oR: Float32Array,
     start: number,
@@ -389,11 +412,11 @@ export class WavetableKernel extends InstrumentKernel<Params> {
     const R = this.bufR;
     L.fill(0, 0, seg);
     R.fill(0, 0, seg);
-    const d = bank.data;
     const unison = v.unison;
     for (let which = 0; which < 2; which++) {
       const osc = which === 0 ? v.osc1 : v.osc2;
       if (!osc.on) continue;
+      const d = osc.data;
       const a = osc.a;
       const b = osc.b;
       const size = osc.size;
@@ -598,7 +621,12 @@ export class WavetableKernel extends InstrumentKernel<Params> {
       osc.on = level > 0;
       if (!osc.on) continue;
       const base = 440 * Math.pow(2, (semis + o.coarse + o.fine / 100 - 69) / 12);
-      const table = Math.max(0, Math.min(bank.tables - 1, Math.round(o.table)));
+      // Tables 0…tables−1 are the factory ones; the next index is the user's drawn table (the factory one 'basic'
+      // until it arrives).
+      const index = Math.max(0, Math.min(bank.tables, Math.round(o.table)));
+      const mine = index >= bank.tables && this.user !== null;
+      const tb = mine ? (this.user as WavetableBank) : bank;
+      const table = mine ? 0 : Math.min(index, bank.tables - 1);
       let top = 0;
       for (let u = 0; u < unison; u++) {
         const inc = (base * (S.detuneRatio[u] as number)) / sr;
@@ -610,16 +638,17 @@ export class WavetableKernel extends InstrumentKernel<Params> {
       // The frames to morph between at the mip level for the highest unison voice.
       const mod = (which === 0 ? mods[DST_POS1] : mods[DST_POS2]) as number;
       const position = Math.max(0, Math.min(1, o.position + mod));
-      const fpos = position * (bank.frames - 1);
-      const f0 = Math.min(bank.frames - 2 < 0 ? 0 : bank.frames - 2, Math.floor(fpos));
-      const frac = bank.frames > 1 ? fpos - f0 : 0;
+      const fpos = position * (tb.frames - 1);
+      const f0 = Math.min(tb.frames - 2 < 0 ? 0 : tb.frames - 2, Math.floor(fpos));
+      const frac = tb.frames > 1 ? fpos - f0 : 0;
       const level2 = WavetableBank.levelFor(top);
-      const frameKey = (table * 64 + f0) * 16 + level2;
+      const frameKey = mine ? USER_KEY + (this.userEpoch * 64 + f0) * 16 + level2 : (table * 64 + f0) * 16 + level2;
       if (frameKey !== osc.frame) {
         // Crossing to another frame pair (or level): continuous, since neighbours share a frame.
         osc.frame = frameKey;
-        osc.a = bank.offset(table, f0, level2);
-        osc.b = bank.offset(table, Math.min(bank.frames - 1, f0 + 1), level2);
+        osc.data = tb.data;
+        osc.a = tb.offset(table, f0, level2);
+        osc.b = tb.offset(table, Math.min(tb.frames - 1, f0 + 1), level2);
         osc.size = WavetableBank.size(level2);
         osc.morph = frac;
         osc.morphStep = 0;

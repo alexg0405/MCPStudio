@@ -1,7 +1,15 @@
 import { defineWorkletInstrument, type ParamValue } from '@agstudio/sdk';
+import {
+  EMPTY_TABLE_STATE,
+  frameFromHarmonics,
+  readUserTableState,
+  userTableState,
+  type UserTableState,
+} from '@agstudio/sdk/dsp/wavetable-frames';
 import { lazyUi } from '@agstudio/sdk/ui';
 import processor from './wavetable.worklet.ts?worker&url';
 import { WAVETABLE_ID, wavetableParams } from './params';
+import { syncUserTable } from './table-sync';
 import { factoryBank } from './tables';
 
 /** Mod matrix slots as `[source, destination, amount]` (slots left out are off). */
@@ -15,20 +23,35 @@ function routes(...slots: [string, string, number][]): Record<string, ParamValue
   return out;
 }
 
+/** Frames of sines from lists of harmonic strengths, as the state a preset or the AI sets. */
+const drawn = (...frames: number[][]): UserTableState => userTableState(frames.map((h) => frameFromHarmonics(h)));
+/** Harmonic strengths of a vowel-like bump: a peak at harmonic `centre`, `width` wide, over a 1/√k slope. */
+const bump = (centre: number, width: number, count = 40): number[] =>
+  Array.from({ length: count }, (_, i) => (0.05 + Math.exp(-(((i + 1 - centre) / width) ** 2))) / Math.sqrt(i + 1));
+
 /**
- * Wavetable: two morphing wavetable oscillators and a full modulation section. The tables are
+ * Wavetable: two morphing wavetable oscillators and a full modulation section. The factory tables are
  * built once on the main thread (tables.ts) and handed to every kernel in `setup` (shared memory
- * when the page is cross-origin isolated, a copy otherwise).
+ * when the page is cross-origin isolated, a copy otherwise). Each instance also has a table of its own,
+ * "My table": drawn, imported or sliced from a sample in the table editor, stored compactly in the
+ * plugin's state (`wavetable-frames.ts` in the SDK) and turned into a band-limited bank on the main
+ * thread (`onState`), so it never aliases and costs the audio thread nothing extra.
  */
-export default defineWorkletInstrument({
+export default defineWorkletInstrument<typeof wavetableParams, UserTableState>({
   id: WAVETABLE_ID,
   name: 'Wavetable',
-  version: 1,
+  version: 2,
   category: 'Synths',
   description:
-    'Wavetable synth: two morphing oscillators (10 tables) with unison, sub and noise, a filter, two envelopes, two tempo-syncable LFOs and a 6-slot mod matrix, for pads, leads, basses and evolving sounds.',
+    'Wavetable synth: two morphing oscillators (10 tables, plus one you draw, import or slice from a sample) with unison, sub and noise, a filter, two envelopes, two tempo-syncable LFOs and a 6-slot mod matrix, for pads, leads, basses and evolving sounds.',
   params: wavetableParams,
   processor,
+  defaultState: EMPTY_TABLE_STATE,
+  // Version 1 had no state: its projects and presets get an empty table. Anything else that is not a valid table
+  // state becomes empty too, so a damaged project still opens.
+  migrate: ({ params, state }) => ({ params, state: readUserTableState(state) }),
+  onState: syncUserTable,
+
   // At least 4 s; longer when the amp release is (it reaches −60 dB at its time, −100 dB at 1.7×).
   tailTime: (v) => Math.max(4, 1.7 * Number(v.ampRelease)),
   ui: lazyUi(() => import('./ui').then((m) => m.WavetableUI)),
@@ -549,6 +572,106 @@ export default defineWorkletInstrument({
         ...routes(['lfo1', 'osc1Position', 0.6], ['lfo2', 'osc2Position', 0.5], ['lfo2', 'pan', 0.4]),
         level: -10,
       },
+    },
+    // ---- Tables you draw ("My table"): each preset carries its table in its state, so it plays anywhere. Open the
+    // table editor to reshape it, then save it as your own preset.
+    {
+      name: 'Drawn: additive organ morph',
+      params: {
+        osc1Table: 'user',
+        osc1Position: 0.3,
+        unison: 2,
+        detune: 8,
+        cutoff: 6000,
+        ampAttack: 0.01,
+        ampSustain: 0.9,
+        ampRelease: 0.3,
+        lfo1Shape: 'smooth',
+        lfo1Rate: 0.25,
+        lfo1Retrigger: false,
+        ...routes(['lfo1', 'osc1Position', 0.5]),
+        level: -9,
+      },
+      state: drawn(
+        [1, 0, 0, 0, 0, 0, 0, 0.6],
+        [1, 0.8, 0.6, 0.7, 0.3, 0.3, 0.2, 0.4],
+        [1, 1, 1, 1, 0.8, 0.8, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3],
+      ),
+    },
+    {
+      name: 'Drawn: hollow reed (odd harmonics)',
+      params: {
+        osc1Table: 'user',
+        osc1Position: 0.2,
+        filterType: 'lp24',
+        cutoff: 1400,
+        resonance: 0.2,
+        keyTrack: 0.5,
+        envAmount: 0.3,
+        modDecay: 0.4,
+        modSustain: 0.4,
+        ampAttack: 0.03,
+        ampSustain: 0.85,
+        ampRelease: 0.25,
+        ...routes(['modEnv', 'osc1Position', 0.5]),
+        voiceMode: 'legato',
+        glide: 0.05,
+        level: -7,
+      },
+      state: drawn(
+        [1, 0, 1 / 3, 0, 1 / 5, 0, 1 / 7, 0, 1 / 9],
+        [1, 0, 0.6, 0, 0.5, 0, 0.4, 0, 0.3, 0, 0.25, 0, 0.2],
+        [1, 0, 0.9, 0, 0.9, 0, 0.8, 0, 0.8, 0, 0.7, 0, 0.7, 0, 0.6, 0, 0.5, 0, 0.4],
+      ),
+    },
+    {
+      name: 'Drawn: glass choir pad',
+      params: {
+        osc1Table: 'user',
+        osc1Position: 0,
+        osc2Table: 'user',
+        osc2Position: 1,
+        osc2Level: 0.5,
+        unison: 4,
+        detune: 14,
+        spread: 1,
+        cutoff: 7000,
+        ampAttack: 1.2,
+        ampSustain: 1,
+        ampRelease: 2.5,
+        lfo1Shape: 'smooth',
+        lfo1Rate: 0.09,
+        lfo1Retrigger: false,
+        lfo2Shape: 'triangle',
+        lfo2Rate: 0.13,
+        lfo2Retrigger: false,
+        ...routes(['lfo1', 'osc1Position', 0.5], ['lfo2', 'osc2Position', -0.5]),
+        level: -11,
+      },
+      state: drawn(bump(4, 1.5), bump(8, 2), bump(13, 2.5), bump(6, 1.5)),
+    },
+    {
+      name: 'Drawn: metal pluck (inharmonic partials)',
+      params: {
+        osc1Table: 'user',
+        osc1Position: 0.5,
+        cutoff: 9000,
+        keyTrack: 0.6,
+        ampAttack: 0.001,
+        ampDecay: 0.7,
+        ampSustain: 0,
+        ampRelease: 0.4,
+        envAmount: 0.2,
+        modDecay: 0.3,
+        modSustain: 0,
+        ...routes(['modEnv', 'osc1Position', -0.5]),
+        level: -7,
+      },
+      state: drawn(
+        [1, 0, 0, 0.8, 0, 0, 0.6, 0, 0, 0.5, 0, 0, 0.3],
+        [1, 0, 0, 0.5, 0, 0, 0.7, 0, 0, 0.6, 0, 0, 0.5, 0, 0, 0.4],
+        [1, 0.1, 0, 0.3, 0, 0.5, 0, 0.6, 0, 0.7, 0.2, 0.6, 0.1, 0.5, 0.3, 0.4],
+      ),
     },
   ],
 });

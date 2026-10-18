@@ -3,7 +3,10 @@ import { p, type ParamSpec } from '@agstudio/sdk/params';
 // Shared by the main-thread definition (index.ts) and the audio-thread kernel (kernel.ts).
 export const WAVETABLE_ID = 'agstudio.wavetable';
 
-/** The factory tables, in bank order (tables.ts builds them in the same order). */
+/**
+ * The tables, in bank order (tables.ts builds the factory ones in the same order). The last, 'user', is the table the
+ * musician draws or imports (kept in the plugin's state, built per instance): its index is the factory bank's size.
+ */
 export const TABLE_OPTIONS = [
   ['basic', 'Basic shapes'],
   ['pulse', 'Pulse width'],
@@ -15,7 +18,11 @@ export const TABLE_OPTIONS = [
   ['glass', 'Glass'],
   ['resonant', 'Resonant sweep'],
   ['grit', 'Digital grit'],
+  ['user', 'My table (drawn or imported)'],
 ] as const;
+/** The id of the drawn table, and how many factory tables come before it. */
+export const USER_TABLE = 'user';
+export const FACTORY_TABLES = TABLE_OPTIONS.length - 1;
 const TABLE_IDS = TABLE_OPTIONS.map(([id]) => id);
 const TABLE_LABELS = Object.fromEntries(TABLE_OPTIONS) as Record<(typeof TABLE_IDS)[number], string>;
 
@@ -118,7 +125,7 @@ function osc(n: number, d: { table: (typeof TABLE_IDS)[number]; position: number
       label: `Osc ${n} table`,
       labels: TABLE_LABELS,
       group,
-      hint: 'The family of shapes the oscillator morphs through',
+      hint: 'The family of shapes the oscillator morphs through ("My table" is the one you draw or import in the table editor)',
     }),
     [id.position]: p.float(0, 1, d.position, {
       label: `Osc ${n} position`,

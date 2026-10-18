@@ -10,7 +10,7 @@ import {
   type KernelEvent,
 } from '@agstudio/sdk/testing';
 import { WavetableKernel } from './kernel';
-import { TABLE_OPTIONS, wavetableParams } from './params';
+import { FACTORY_TABLES, TABLE_OPTIONS, USER_TABLE, wavetableParams } from './params';
 import { factoryBank, TABLES } from './tables';
 
 const SR = 48000;
@@ -65,8 +65,10 @@ function brightness(x: Float32Array, from: number, to: number): number {
 
 describe('Wavetable kernel', () => {
   it('builds the tables in the order the table param lists them', () => {
-    expect(TABLES.map((t) => t.id)).toEqual(TABLE_OPTIONS.map(([id]) => id));
-    expect(bank.tables).toBe(TABLE_OPTIONS.length);
+    // The factory tables come first in the same order; the drawn table ('user') is the option after them.
+    expect(TABLES.map((t) => t.id)).toEqual(TABLE_OPTIONS.slice(0, FACTORY_TABLES).map(([id]) => id));
+    expect(TABLE_OPTIONS[FACTORY_TABLES]?.[0]).toBe(USER_TABLE);
+    expect(bank.tables).toBe(FACTORY_TABLES);
   });
 
   it('plays in tune, follows coarse/fine, the note’s fine pitch and the channel pitch', () => {

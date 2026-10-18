@@ -10,10 +10,12 @@ import { IN_MODE, IN_STATE, INPUT_RECORDER_ID, LEVEL_BLOCKS } from './input-reco
 
 /** Seconds of audio the ring holds between drains (the main thread may stall that long). */
 const RING_SECONDS = 30;
+/** How often a capture drains the ring into chunks (ms): the ring holds 30 s, so there is a lot of slack. */
 const DRAIN_MS = 50;
 /** Frames per [min, max] pair of the live peak overview. */
 export const CAPTURE_BUCKET = 256;
 
+/** The result of a finished capture. */
 export interface CapturedAudio {
   /** One array per channel, from the first captured frame. */
   channels: Float32Array[];
@@ -24,6 +26,7 @@ export interface CapturedAudio {
   dropped: number;
 }
 
+/** A capture in progress: a take of any length streamed from the input. */
 export interface AudioCapture {
   readonly sampleRate: number;
   readonly channelCount: number;
@@ -41,6 +44,7 @@ export interface AudioCapture {
   cancel(): void;
 }
 
+/** A live input opened on the engine's clock. */
 export interface AudioInput {
   readonly channelCount: 1 | 2;
   readonly label: string;
@@ -59,6 +63,7 @@ export interface AudioInput {
   close(): void;
 }
 
+/** What an audio input needs from the engine. */
 export interface AudioInputDeps {
   loadModule(url: string): Promise<void>;
   insertInput(id: InsertId): AudioNode;
@@ -66,6 +71,7 @@ export interface AudioInputDeps {
   outputLatency(): number;
 }
 
+/** True where shared memory exists (cross-origin isolation): the worklet writes into shared memory. */
 export function canCapture(): boolean {
   return (
     typeof SharedArrayBuffer !== 'undefined' &&
@@ -73,6 +79,293 @@ export function canCapture(): boolean {
   );
 }
 
+/** Int32 slots of the recorder's shared state (see IN_STATE). */
+const STATE_SLOTS = 4;
+/** Bytes of a 32-bit float or integer. */
+const BYTES_PER_VALUE = 4;
+/** The slot of the shared state that holds the first frame's context frame number: one 64-bit float. */
+const START_BYTES = 8;
+/** Initial size of a capture's live peak overview, in floats (it doubles when full). */
+const INITIAL_PEAKS_FLOATS = 1024;
+/** `written` value before the worklet has written a frame of the current capture. */
+const NOTHING_WRITTEN = -1;
+
+/** The shared memory the input worklet writes into, with views of it for this side. */
+class SharedRing {
+  /** Frames the ring holds before it overwrites the oldest. */
+  readonly capacity: number;
+  /** The audio, interleaved: `channels` values per frame. */
+  readonly samples: Float32Array;
+  readonly state: Int32Array;
+  /** Context frame of the first recorded frame (slot 0). */
+  readonly start: Float64Array;
+  /** Peak levels per block and channel, for the meter. */
+  readonly levels: Float32Array;
+  private readonly buffers: { data: SharedArrayBuffer; state: SharedArrayBuffer; start: SharedArrayBuffer; levels: SharedArrayBuffer };
+
+  constructor(
+    sampleRate: number,
+    readonly channels: number,
+  ) {
+    this.capacity = Math.round(RING_SECONDS * sampleRate);
+    this.buffers = {
+      data: new SharedArrayBuffer(this.capacity * channels * BYTES_PER_VALUE),
+      state: new SharedArrayBuffer(STATE_SLOTS * BYTES_PER_VALUE),
+      start: new SharedArrayBuffer(START_BYTES),
+      levels: new SharedArrayBuffer(LEVEL_BLOCKS * 2 * BYTES_PER_VALUE),
+    };
+    this.samples = new Float32Array(this.buffers.data);
+    this.state = new Int32Array(this.buffers.state);
+    this.start = new Float64Array(this.buffers.start);
+    this.levels = new Float32Array(this.buffers.levels);
+  }
+
+  /** What the worklet processor is started with. */
+  get processorOptions(): { data: SharedArrayBuffer; state: SharedArrayBuffer; start: SharedArrayBuffer; levels: SharedArrayBuffer; channels: number } {
+    return { ...this.buffers, channels: this.channels };
+  }
+}
+
+/**
+ * One take: drains the ring every DRAIN_MS into chunks (so a take is limited only by memory) and keeps a live
+ * peak overview for drawing.
+ */
+class RingCapture implements AudioCapture {
+  readonly bucket = CAPTURE_BUCKET;
+  readonly sampleRate: number;
+  readonly channelCount: number;
+  /** One list of chunks per channel. */
+  private readonly chunks: Float32Array[][];
+  /** Frames read from the ring so far. */
+  private framesRead = 0;
+  private dropped = 0;
+  private peakValues = new Float32Array(INITIAL_PEAKS_FLOATS);
+  private bucketCount = 0;
+  /** Frames in the bucket being filled, and its lowest and highest value so far. */
+  private bucketFill = 0;
+  private low = 0;
+  private high = 0;
+  private done = false;
+  private readonly timer: ReturnType<typeof setInterval>;
+
+  constructor(
+    private readonly ring: SharedRing,
+    sampleRate: number,
+    /** Called once when the capture ends (finished or cancelled). */
+    private readonly onEnd: (capture: RingCapture) => void,
+  ) {
+    this.sampleRate = sampleRate;
+    this.channelCount = ring.channels;
+    this.chunks = Array.from({ length: ring.channels }, () => []);
+    Atomics.store(ring.state, IN_STATE.written, NOTHING_WRITTEN);
+    Atomics.store(ring.state, IN_STATE.mode, IN_MODE.recording);
+    this.timer = setInterval(() => this.drain(), DRAIN_MS);
+  }
+
+  get startTime(): number {
+    const hasFrames = Atomics.load(this.ring.state, IN_STATE.written) > 0 || this.framesRead > 0;
+    return hasFrames ? (this.ring.start[0] as number) / this.sampleRate : Number.NaN;
+  }
+
+  get frames(): number {
+    return this.framesRead;
+  }
+
+  get peaks(): Float32Array {
+    return this.peakValues;
+  }
+
+  get buckets(): number {
+    return this.bucketCount;
+  }
+
+  stop(tail = 0): Promise<CapturedAudio> {
+    if (this.done) return Promise.reject(new Error('The capture has already ended.'));
+    return new Promise((resolve) => setTimeout(() => resolve(this.finish()), Math.max(0, tail * 1000)));
+  }
+
+  cancel(): void {
+    if (this.done) return;
+    this.done = true;
+    clearInterval(this.timer);
+    Atomics.store(this.ring.state, IN_STATE.mode, IN_MODE.meter);
+    this.onEnd(this);
+  }
+
+  /** Moves what the worklet has written since the last drain from the ring into chunks. */
+  drain(): void {
+    const { state, samples, capacity, channels } = this.ring;
+    const written = Atomics.load(state, IN_STATE.written);
+    if (written <= this.framesRead) return;
+    let from = this.framesRead;
+    if (written - this.framesRead > capacity) {
+      // The main thread stalled longer than the ring: those frames are lost; keep time with silence.
+      const lost = written - this.framesRead - capacity;
+      this.dropped += lost;
+      for (let c = 0; c < channels; c++) (this.chunks[c] as Float32Array[]).push(new Float32Array(lost));
+      from = written - capacity;
+    }
+    const frameCount = written - from;
+    const out = Array.from({ length: channels }, () => new Float32Array(frameCount));
+    for (let i = 0; i < frameCount; i++) {
+      const base = ((from + i) % capacity) * channels;
+      for (let c = 0; c < channels; c++) (out[c] as Float32Array)[i] = samples[base + c] as number;
+      this.addToOverview(this.meanOfFrame(base));
+    }
+    for (let c = 0; c < channels; c++) (this.chunks[c] as Float32Array[]).push(out[c] as Float32Array);
+    this.framesRead = written;
+  }
+
+  /** The mean of all channels of the frame whose first value is at `base` in the ring. */
+  private meanOfFrame(base: number): number {
+    const { samples, channels } = this.ring;
+    let sum = 0;
+    for (let c = 0; c < channels; c++) sum += samples[base + c] as number;
+    return sum / channels;
+  }
+
+  /** Folds a frame into the bucket being filled; a full bucket is pushed to the overview. */
+  private addToOverview(value: number): void {
+    if (value < this.low) this.low = value;
+    if (value > this.high) this.high = value;
+    if (++this.bucketFill === CAPTURE_BUCKET) this.pushBucket();
+  }
+
+  private pushBucket(): void {
+    if (this.bucketCount * 2 + 2 > this.peakValues.length) {
+      const grown = new Float32Array(this.peakValues.length * 2);
+      grown.set(this.peakValues);
+      this.peakValues = grown;
+    }
+    this.peakValues[this.bucketCount * 2] = this.low;
+    this.peakValues[this.bucketCount * 2 + 1] = this.high;
+    this.bucketCount++;
+    this.bucketFill = 0;
+    this.low = 0;
+    this.high = 0;
+  }
+
+  /** Ends the take: the last drain, then all chunks joined per channel. */
+  private finish(): CapturedAudio {
+    this.done = true;
+    clearInterval(this.timer);
+    this.drain();
+    Atomics.store(this.ring.state, IN_STATE.mode, IN_MODE.meter);
+    const total = this.framesRead;
+    const channels = this.chunks.map((list) => {
+      const all = new Float32Array(total);
+      let offset = 0;
+      for (const part of list) {
+        all.set(part.subarray(0, Math.min(part.length, total - offset)), offset);
+        offset += part.length;
+      }
+      return all;
+    });
+    this.onEnd(this);
+    return {
+      channels,
+      sampleRate: this.sampleRate,
+      startTime: (this.ring.start[0] as number) / this.sampleRate,
+      dropped: this.dropped,
+    };
+  }
+}
+
+/** A live input: the worklet that records it, its meter, its monitoring path and its captures. */
+class LiveAudioInput implements AudioInput {
+  readonly channelCount: 1 | 2;
+  readonly label: string;
+  private readonly source: MediaStreamAudioSourceNode;
+  private readonly node: AudioWorkletNode;
+  /** A silent path to the destination keeps the recorder running. */
+  private readonly sink: GainNode;
+  private readonly monitor: GainNode;
+  private monitorTo: AudioNode | null = null;
+  private capture: RingCapture | null = null;
+  private isClosed = false;
+  /** The input's own latency as the browser reports it (seconds). */
+  private readonly inputLatencySec: number;
+
+  constructor(
+    private readonly ctx: AudioContext,
+    private readonly deps: AudioInputDeps,
+    private readonly ring: SharedRing,
+    stream: MediaStream,
+    opts: { channels: 1 | 2; label?: string; latency?: number },
+  ) {
+    this.channelCount = opts.channels;
+    this.label = opts.label ?? 'Audio input';
+    this.inputLatencySec = Math.max(0, opts.latency ?? 0);
+    this.source = new MediaStreamAudioSourceNode(ctx, { mediaStream: stream });
+    this.node = new AudioWorkletNode(ctx, INPUT_RECORDER_ID, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCount: opts.channels,
+      channelCountMode: 'explicit',
+      channelInterpretation: 'speakers',
+      processorOptions: ring.processorOptions,
+    });
+    this.sink = new GainNode(ctx, { gain: 0 });
+    this.source.connect(this.node).connect(this.sink).connect(ctx.destination);
+    this.monitor = new GainNode(ctx, { gain: 1 });
+  }
+
+  get estimatedLatency(): number {
+    return this.deps.outputLatency() + this.inputLatencySec;
+  }
+
+  get closed(): boolean {
+    return this.isClosed;
+  }
+
+  levels(out: Float32Array): void {
+    let left = 0;
+    let right = 0;
+    for (let block = 0; block < LEVEL_BLOCKS; block++) {
+      left = Math.max(left, this.ring.levels[block * 2] as number);
+      right = Math.max(right, this.ring.levels[block * 2 + 1] as number);
+    }
+    out[0] = left;
+    out[1] = this.channelCount === 1 ? left : right;
+  }
+
+  setMonitor(track: InsertId | null, gain = 1): void {
+    if (this.isClosed) return;
+    if (this.monitorTo) {
+      this.source.disconnect(this.monitor);
+      this.monitor.disconnect();
+      this.monitorTo = null;
+    }
+    if (track === null) return;
+    this.monitor.gain.value = gain;
+    this.monitorTo = this.deps.insertInput(track);
+    this.source.connect(this.monitor).connect(this.monitorTo);
+  }
+
+  startCapture(): AudioCapture {
+    if (this.isClosed) throw new Error('The audio input is closed.');
+    this.capture?.cancel();
+    const capture = new RingCapture(this.ring, this.ctx.sampleRate, (ended) => {
+      if (this.capture === ended) this.capture = null;
+    });
+    this.capture = capture;
+    return capture;
+  }
+
+  close(): void {
+    if (this.isClosed) return;
+    this.capture?.cancel();
+    this.setMonitor(null);
+    this.isClosed = true;
+    Atomics.store(this.ring.state, IN_STATE.mode, IN_MODE.closed);
+    this.source.disconnect();
+    this.node.disconnect();
+    this.sink.disconnect();
+  }
+}
+
+/** Opens a live input on the engine's clock. Rejects where shared memory is not available. */
 export async function openAudioInput(
   ctx: AudioContext,
   deps: AudioInputDeps,
@@ -82,189 +375,6 @@ export async function openAudioInput(
   if (!canCapture())
     throw new Error('Recording needs cross-origin isolation: run AGstudio from its own dev or preview server.');
   await deps.loadModule(inputRecorderUrl);
-  const ch = opts.channels;
-  const sr = ctx.sampleRate;
-  const capacity = Math.round(RING_SECONDS * sr);
-  const data = new SharedArrayBuffer(capacity * ch * 4);
-  const stateBuf = new SharedArrayBuffer(4 * 4);
-  const startBuf = new SharedArrayBuffer(8);
-  const levelBuf = new SharedArrayBuffer(LEVEL_BLOCKS * 2 * 4);
-  const ring = new Float32Array(data);
-  const state = new Int32Array(stateBuf);
-  const start = new Float64Array(startBuf);
-  const levelRing = new Float32Array(levelBuf);
-
-  const source = new MediaStreamAudioSourceNode(ctx, { mediaStream: stream });
-  const node = new AudioWorkletNode(ctx, INPUT_RECORDER_ID, {
-    numberOfInputs: 1,
-    numberOfOutputs: 1,
-    outputChannelCount: [1],
-    channelCount: ch,
-    channelCountMode: 'explicit',
-    channelInterpretation: 'speakers',
-    processorOptions: { data, state: stateBuf, start: startBuf, levels: levelBuf, channels: ch },
-  });
-  // A silent path to the destination keeps the recorder running.
-  const sink = new GainNode(ctx, { gain: 0 });
-  source.connect(node).connect(sink).connect(ctx.destination);
-  const monitor = new GainNode(ctx, { gain: 1 });
-  let monitorTo: AudioNode | null = null;
-  let capture: (AudioCapture & { drain(): void }) | null = null;
-  let closed = false;
-
-  const setMonitor = (track: InsertId | null, gain = 1) => {
-    if (closed) return;
-    if (monitorTo) {
-      source.disconnect(monitor);
-      monitor.disconnect();
-      monitorTo = null;
-    }
-    if (track === null) return;
-    monitor.gain.value = gain;
-    monitorTo = deps.insertInput(track);
-    source.connect(monitor).connect(monitorTo);
-  };
-
-  const startCapture = (): AudioCapture => {
-    if (closed) throw new Error('The audio input is closed.');
-    capture?.cancel();
-    const chunks: Float32Array[][] = Array.from({ length: ch }, () => []);
-    let read = 0;
-    let dropped = 0;
-    let peaks = new Float32Array(1024);
-    let buckets = 0;
-    let bucketFill = 0;
-    let lo = 0;
-    let hi = 0;
-    let done = false;
-    Atomics.store(state, IN_STATE.written, -1);
-    Atomics.store(state, IN_STATE.mode, IN_MODE.recording);
-
-    const pushPeak = () => {
-      if (buckets * 2 + 2 > peaks.length) {
-        const grown = new Float32Array(peaks.length * 2);
-        grown.set(peaks);
-        peaks = grown;
-      }
-      peaks[buckets * 2] = lo;
-      peaks[buckets * 2 + 1] = hi;
-      buckets++;
-      bucketFill = 0;
-      lo = 0;
-      hi = 0;
-    };
-
-    const drain = () => {
-      const written = Atomics.load(state, IN_STATE.written);
-      if (written <= read) return;
-      let from = read;
-      if (written - read > capacity) {
-        // The main thread stalled longer than the ring: those frames are lost; keep time with silence.
-        const lost = written - read - capacity;
-        dropped += lost;
-        for (let c = 0; c < ch; c++) (chunks[c] as Float32Array[]).push(new Float32Array(lost));
-        from = written - capacity;
-      }
-      const n = written - from;
-      const out = Array.from({ length: ch }, () => new Float32Array(n));
-      for (let i = 0; i < n; i++) {
-        const o = ((from + i) % capacity) * ch;
-        for (let c = 0; c < ch; c++) (out[c] as Float32Array)[i] = ring[o + c] as number;
-        let v = 0;
-        for (let c = 0; c < ch; c++) v += ring[o + c] as number;
-        v /= ch;
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-        if (++bucketFill === CAPTURE_BUCKET) pushPeak();
-      }
-      for (let c = 0; c < ch; c++) (chunks[c] as Float32Array[]).push(out[c] as Float32Array);
-      read = written;
-    };
-    const timer = setInterval(drain, DRAIN_MS);
-
-    const finish = (): CapturedAudio => {
-      done = true;
-      clearInterval(timer);
-      drain();
-      Atomics.store(state, IN_STATE.mode, IN_MODE.meter);
-      const total = read;
-      const channels = chunks.map((list) => {
-        const all = new Float32Array(total);
-        let o = 0;
-        for (const part of list) {
-          all.set(part.subarray(0, Math.min(part.length, total - o)), o);
-          o += part.length;
-        }
-        return all;
-      });
-      if (capture === c) capture = null;
-      return { channels, sampleRate: sr, startTime: (start[0] as number) / sr, dropped };
-    };
-
-    const c: AudioCapture & { drain(): void } = {
-      sampleRate: sr,
-      channelCount: ch,
-      get startTime() {
-        return Atomics.load(state, IN_STATE.written) > 0 || read > 0 ? (start[0] as number) / sr : NaN;
-      },
-      get frames() {
-        return read;
-      },
-      get peaks() {
-        return peaks;
-      },
-      get buckets() {
-        return buckets;
-      },
-      bucket: CAPTURE_BUCKET,
-      drain,
-      stop(tail = 0) {
-        if (done) return Promise.reject(new Error('The capture has already ended.'));
-        return new Promise((resolve) => setTimeout(() => resolve(finish()), Math.max(0, tail * 1000)));
-      },
-      cancel() {
-        if (done) return;
-        done = true;
-        clearInterval(timer);
-        Atomics.store(state, IN_STATE.mode, IN_MODE.meter);
-        if (capture === c) capture = null;
-      },
-    };
-    capture = c;
-    return c;
-  };
-
-  const trackLatency = Math.max(0, opts.latency ?? 0);
-  return {
-    channelCount: ch,
-    label: opts.label ?? 'Audio input',
-    get estimatedLatency() {
-      return deps.outputLatency() + trackLatency;
-    },
-    get closed() {
-      return closed;
-    },
-    levels(out) {
-      let l = 0;
-      let r = 0;
-      for (let b = 0; b < LEVEL_BLOCKS; b++) {
-        l = Math.max(l, levelRing[b * 2] as number);
-        r = Math.max(r, levelRing[b * 2 + 1] as number);
-      }
-      out[0] = l;
-      out[1] = ch === 1 ? l : r;
-    },
-    setMonitor,
-    startCapture,
-    close() {
-      if (closed) return;
-      capture?.cancel();
-      setMonitor(null);
-      closed = true;
-      Atomics.store(state, IN_STATE.mode, IN_MODE.closed);
-      source.disconnect();
-      node.disconnect();
-      sink.disconnect();
-    },
-  };
+  const ring = new SharedRing(ctx.sampleRate, opts.channels);
+  return new LiveAudioInput(ctx, deps, ring, stream, opts);
 }

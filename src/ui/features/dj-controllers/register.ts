@@ -1,13 +1,18 @@
 import type { Services } from '@app/services';
 import { djControllers, restoreControllers } from '@app/dj/controllers';
 import { isTargetId } from '@core/midi-map/targets';
-import { showContextMenu } from '../../controls/ContextMenu';
 import { addActionProvider } from '../../shell/actions';
 import { addMenuItems, cmd } from '../../shell/menus';
 import { lazyWindow } from '../../workspace/lazy';
 import { openWindow, registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { setWindowHelp } from '../../workspace/window-help';
+import { installLearnModeListeners } from './learn-listeners';
+
+/** The Controllers window opens this big (px) when the workspace has room, with this gap above it. */
+const WINDOW_WIDTH_PX = 800;
+const WINDOW_HEIGHT_PX = 620;
+const WINDOW_TOP_PX = 50;
 
 /** What `dj.controllers.learn` accepts. */
 export interface LearnArgs {
@@ -27,7 +32,12 @@ export function register(services: Services): void {
     type: 'dj-controllers',
     title: () => 'DJ controllers',
     component: lazyWindow(() => import('./ControllersWindow'), (m) => m.ControllersWindow),
-    defaultRect: (ws) => ({ x: Math.max(0, Math.round(ws.w / 2 - 400)), y: 50, w: Math.min(800, ws.w), h: Math.min(620, ws.h - 70) }),
+    defaultRect: (ws) => ({
+      x: Math.max(0, Math.round(ws.w / 2 - WINDOW_WIDTH_PX / 2)),
+      y: WINDOW_TOP_PX,
+      w: Math.min(WINDOW_WIDTH_PX, ws.w),
+      h: Math.min(WINDOW_HEIGHT_PX, ws.h - WINDOW_TOP_PX - 20),
+    }),
     minSize: { w: 520, h: 320 },
   });
   registerWindowToggle(services, {
@@ -96,47 +106,7 @@ export function register(services: Services): void {
     ],
   });
 
-  if (typeof document === 'undefined') return;
-  const dj = djControllers(services);
-  const targetOf = (e: Event): string | null => {
-    const el = (e.target as Element | null)?.closest?.('[data-dj-target]');
-    const id = el?.getAttribute('data-dj-target') ?? null;
-    return id && isTargetId(id) ? id : null;
-  };
-  // In learn mode a click on a deck control picks it as the control to link.
-  document.addEventListener(
-    'click',
-    (e) => {
-      if (!dj.store.getState().learn) return;
-      const id = targetOf(e);
-      if (!id) return;
-      e.preventDefault();
-      e.stopPropagation();
-      dj.learnTarget(id);
-    },
-    true,
-  );
-  // In learn mode a press on a deck control must not also play it: a fader would jump, CUE would set a cue
-  // point, the platter would start a scratch. The click that follows is the one that picks the control.
-  const swallowInLearn = (e: Event) => {
-    if (!dj.store.getState().learn || !targetOf(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-  };
-  document.addEventListener('pointerdown', swallowInLearn, true);
-  document.addEventListener('pointerup', swallowInLearn, true);
-  // Right-click on a deck control: link it (unless that control has a menu of its own).
-  document.addEventListener('contextmenu', (e) => {
-    if (e.defaultPrevented) return;
-    const id = targetOf(e);
-    if (!id) return;
-    e.preventDefault();
-    const linked = dj.store.getState().selected ? dj.bindingsFor(dj.store.getState().selected!, id).length > 0 : false;
-    showContextMenu(e, [
-      { label: 'Link to controller…', onSelect: () => void services.commands.run('dj.controllers.learn', { target: id }) },
-      ...(linked ? [{ label: 'Unlink controller', onSelect: () => dj.clearTarget(dj.store.getState().selected!, id) }] : []),
-    ]);
-  });
+  installLearnModeListeners(services);
   // Come back on after a reload when the browser already allows MIDI.
   void restoreControllers(services);
 }

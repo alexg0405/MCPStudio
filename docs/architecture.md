@@ -902,6 +902,11 @@ The edit works on the clip's sample, not on its reverse or on a stretched copy (
   1/32 and triplet rolls fit). `validateBeatSpec` clamps everything and drops what doesn't fit; nothing unvalidated
   reaches the project. Sounds: the kit pieces (samplers), `808` (`agstudio.bass808`: overlapping notes glide), `bass`,
   `lead`, `pad` (3xOsc settings) and `pluck`.
+- **The assistant class** (`app/assistant/assistant.ts`) is only the public surface (`AssistantApi`). The work is one
+  module per job in `app/assistant/beat-assistant/`, each working on the shared `AssistantSession` (services, store,
+  the AI conversation, the request in flight): `send.ts` (a request and its backend), `turn.ts` (apply an answer, look
+  things up, listen to the mix and ask again), `take-recorder.ts` (mic recording and import), `mix-listening.ts`,
+  `follow-up-steps.ts`, `plugin-building.ts`, `external-apply.ts` (AI apps over MCP), `offline-beat.ts`.
 - **Applying** (`app/assistant/apply.ts`): one history transaction writes a pattern and its channels, reusing the
   project's channels that already play the same kit sound (or its 808), so beats share channels like FL patterns do.
   Mix and sound settings only go to channels the assistant created. Follow-ups rewrite the same pattern.
@@ -3764,7 +3769,7 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   - The tab acknowledges at once, so a frozen tab (no ack in 4 s) is told apart from a slow tool (waits up to 60 s,
     15 min for `apply_actions`, renders and exports). A tab that closes mid-call fails the call within a second.
   - Liveness is the websocket itself (`server.ws.clients`), not a heartbeat: hidden tabs throttle timers.
-- **`apply_actions`** goes through `BeatAssistant.applyExternal` (`app/assistant/assistant.ts`), which is `applyTurn`
+- **`apply_actions`** goes through `BeatAssistant.applyExternal` (`app/assistant/beat-assistant/external-apply.ts`), which is `applyTurn`
   for an outside caller: `applyAnswer(s, answer, { source: "Claude Code", label: summary, focus })` is **one** history
   transaction labelled "Claude Code: <summary>" (`applyAnswer`'s optional `source`; Studio's stays "Studio: …"); the
   chat gets "Claude Code changed: <summary>" (`detail: "over MCP"`) with the usual Undo at that history point;

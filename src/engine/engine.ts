@@ -50,6 +50,7 @@ import { openAudioInput, type AudioInput } from './audio-input';
 import type { Timeline } from './sched/core';
 import { patternModeSource, songModeSource, type EventSource } from './sched/events';
 import { Transport, type TransportSink } from './sched/transport';
+import type { LaunchClock, LaunchDriver, LaunchRun } from '@core/launcher/run';
 import { LIMITER_ID } from './limiter-id';
 import type { WorkletPortImpl } from './worklet-port';
 import limiterUrl from './limiter.worklet.ts?worker&url';
@@ -143,6 +144,12 @@ export class Engine implements EngineApi, EngineCore {
   private project: Project | null = null;
   private view: TransportView = { mode: 'pattern', patternId: null, loop: null };
   private readonly transport: Transport;
+  /** The clip launcher: decides what plays on top of the song (see core/launcher). */
+  private launcher: LaunchDriver | null = null;
+  /** The runs the transport was last given. */
+  private launchSeen: readonly LaunchRun[] | null = null;
+  /** The launcher plays on its own (the song is not playing): the transport runs for it alone. */
+  private soloLauncher = false;
   private clock: Worker | null = null;
   private readonly listeners = new Set<() => void>();
   private previewSeq = PREVIEW_ID_BASE;
@@ -562,6 +569,20 @@ export class Engine implements EngineApi, EngineCore {
   private model(): { source: EventSource; timeline: Timeline } | null {
     const p = this.project;
     if (!p) return null;
+    const launch = this.launcher ? { launch: { runs: this.launcher.runs } } : {};
+    if (this.soloLauncher) {
+      // The launcher on its own: no song, the project's tempo, until something stops it.
+      const tempo = tempoMapOf(p, 'pattern');
+      return {
+        source: { project: p, clips: [], ...launch },
+        timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER },
+      };
+    }
+    const m = this.songModel(p);
+    return { source: { ...m.source, ...launch }, timeline: m.timeline };
+  }
+
+  private songModel(p: Project): { source: EventSource; timeline: Timeline } {
     const tempo = tempoMapOf(p, this.view.mode);
     if (this.view.mode === 'song') {
       // Song mode loops the loop region, or the whole song (FL's default); while recording audio
@@ -585,6 +606,73 @@ export class Engine implements EngineApi, EngineCore {
     const m = this.model();
     if (m) this.transport.setModel(m.source, m.timeline);
     this.updateResidency(true);
+  }
+
+  // ---- The clip launcher ----
+
+  /** Hands over what decides what the launcher plays (null lets go). The engine reads its runs on every scheduler tick. */
+  setLauncher(driver: LaunchDriver | null): void {
+    this.launcher = driver;
+    this.launchSeen = driver ? driver.runs : null;
+    if (!driver) this.soloLauncher = false;
+    this.updateModel();
+  }
+
+  /**
+   * Where the transport is on the launcher axis: what is heard now and the earliest tick a launch can still be
+   * scheduled at (after the time the first notes need to reach the audio thread). Not playing: all zero.
+   */
+  launcherClock(): LaunchClock {
+    if (!this.transport.playing) return { playing: false, heardU: 0, earliestU: 0 };
+    const now = this.ctx.currentTime;
+    return {
+      playing: true,
+      heardU: this.transport.uAtTime(this.heardTime()),
+      earliestU: this.transport.uAtTime(now + Math.max(0.015, this.startLead())),
+    };
+  }
+
+  /**
+   * The launcher's runs changed (a press): plays them. While nothing plays, the transport starts for the launcher
+   * alone, from tick 0 with the first run starting right there.
+   */
+  launcherChanged(): void {
+    const d = this.launcher;
+    if (!d || !this.project) return;
+    if (!this.transport.playing) {
+      if (d.runs.length === 0) return;
+      this.soloLauncher = true;
+      this.launchSeen = d.runs;
+      void this.resume();
+      this.warmLaunchAudio(d.runs);
+      this.updateModel();
+      this.maxPumpGap = 0;
+      this.transport.start(0, this.ctx.currentTime + this.startLead());
+      this.startClock();
+      this.emit();
+      return;
+    }
+    this.syncLauncher();
+  }
+
+  /** Follow actions, ended runs; new runs are planned. Called on every scheduler tick. */
+  private syncLauncher(): void {
+    const d = this.launcher;
+    if (!d || !this.transport.playing) return;
+    const clock = this.launcherClock();
+    d.advance(clock);
+    if (d.runs !== this.launchSeen) {
+      this.launchSeen = d.runs;
+      this.warmLaunchAudio(d.runs);
+      this.updateModel();
+    }
+    // The launcher alone stops with its last run.
+    if (this.soloLauncher && d.runs.length > 0 && d.idleAt(clock.heardU)) this.stop();
+  }
+
+  /** Audio runs: their samples are decoded before the first pass (the playlist's residency does not know them). */
+  private warmLaunchAudio(runs: readonly LaunchRun[]): void {
+    for (const r of runs) if (r.content.kind === 'audio') this.strips.get(r.content.channelId)?.warm();
   }
 
   /**
@@ -651,6 +739,8 @@ export class Engine implements EngineApi, EngineCore {
   play(fromTick = 0): void {
     if (!this.project) return;
     void this.resume();
+    // The launcher alone gives way to the song (its runs go on, over the song).
+    this.soloLauncher = false;
     this.updateModel();
     // Playing again while playing is a seek: what was scheduled is cancelled or released first.
     const lateBefore = this.transport.lateEvents;
@@ -698,6 +788,9 @@ export class Engine implements EngineApi, EngineCore {
 
   stop(): void {
     this.transport.stop(0);
+    this.soloLauncher = false;
+    this.launcher?.reset?.();
+    this.launchSeen = this.launcher ? this.launcher.runs : null;
     this.stopClock();
     // Stopped: the residency lets its pins go, and the voices' buffers once their release is over.
     this.updateResidency(true);
@@ -737,6 +830,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   pumpOffline(horizon: number): void {
+    this.syncLauncher();
     this.transport.pump(horizon);
   }
 
@@ -816,6 +910,7 @@ export class Engine implements EngineApi, EngineCore {
     if (wasPlaying && this.lastPumpAt > 0) this.maxPumpGap = Math.max(this.maxPumpGap, now - this.lastPumpAt);
     this.lastPumpAt = now;
     if (wasPlaying) this.measureKeepUp(now);
+    this.syncLauncher();
     this.transport.pump();
     this.updateResidency();
     // Raise the lookahead when notes arrive late (main-thread jank).

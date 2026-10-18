@@ -1,6 +1,7 @@
 import type { Draft } from 'immer';
 import { playbackMode, sourceSecondsAt } from '../audio/playback';
 import { newId } from '../model/ids';
+import { pruneLauncher } from './launcher';
 import type { TempoMap } from '../time/ppq';
 import type {
   ChannelId,
@@ -55,6 +56,7 @@ export function removePattern(d: Draft<Project>, id: PatternId): void {
   }
   // Its variants keep their notes and become ordinary patterns.
   for (const pat of Object.values(d.patterns)) if (pat.derived?.from === id) delete pat.derived;
+  pruneLauncher(d);
 }
 
 export function setPatternProps(d: Draft<Project>, id: PatternId, patch: { name?: string; color?: string }): void {
@@ -100,6 +102,7 @@ export function removeLane(d: Draft<Project>, id: LaneId): void {
   for (const [cid, clip] of Object.entries(d.playlist.clips)) {
     if (clip.laneId === id) delete d.playlist.clips[cid as ClipId];
   }
+  pruneLauncher(d);
 }
 
 /** FL-style exclusive lane solo (soloing the only soloed lane clears it). */

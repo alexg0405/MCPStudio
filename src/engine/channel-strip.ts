@@ -170,6 +170,17 @@ export class ChannelStrip {
     }
   }
 
+  /**
+   * Audio-clip channels: the clip launcher is about to play this sample, which no playlist clip may need: have it
+   * decoded (and kept) before the first pass starts.
+   */
+  warm(): void {
+    const ch = this.channel;
+    if (ch.kind !== 'audioClip') return;
+    const ref = this.project.samples[ch.sampleId];
+    if (ref) this.core.residency.request(ref, playbackMode(ch).reverse, ch.id);
+  }
+
   /** Audio-clip channels: frees the buffers of finished voices. */
   sweep(): void {
     this.clipPlayer?.sweep();

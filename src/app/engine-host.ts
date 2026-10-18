@@ -1,5 +1,6 @@
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, SampleRef, Tick } from '@core/model/types';
+import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
 import type {
   AudioInput,
   DeckHost,
@@ -220,6 +221,8 @@ export class EngineHost implements EngineApi {
   /** Stop or play was pressed during a reboot: the engine does not start by itself afterwards. */
   private resumeCancelled = false;
   private openEnded = false;
+  /** The clip launcher's sequencer: the running engine (never two) plays it. */
+  private launcher: LaunchDriver | null = null;
 
   constructor(
     private readonly factory: () => EngineApi,
@@ -397,7 +400,13 @@ export class EngineHost implements EngineApi {
 
   private swap(next: EngineApi): void {
     this.detach();
+    // One engine at a time reads the launcher: it does not carry over a reboot that moved playback (the runs end).
+    if (this.launcher && this.inner !== next) {
+      this.inner.setLauncher?.(null);
+      if (this.inner.playing) this.launcher.reset?.();
+    }
     this.inner = next;
+    if (this.launcher) next.setLauncher?.(this.launcher);
     this.detach = next.subscribe(() => this.emit());
   }
 
@@ -549,6 +558,16 @@ export class EngineHost implements EngineApi {
   }
   playTestClicks(count: number, interval: number): number[] {
     return this.use().playTestClicks(count, interval);
+  }
+  setLauncher(driver: LaunchDriver | null): void {
+    this.launcher = driver;
+    this.inner.setLauncher?.(driver);
+  }
+  launcherClock(): LaunchClock {
+    return this.inner.launcherClock?.() ?? { playing: false, heardU: 0, earliestU: 0 };
+  }
+  launcherChanged(): void {
+    this.use().launcherChanged?.();
   }
   setSongOpenEnded(on: boolean): void {
     this.openEnded = on;

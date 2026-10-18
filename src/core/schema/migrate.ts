@@ -1192,6 +1192,140 @@ function repairReference(p: Obj, log: RepairLog): void {
   if (fixed) log.add('Fixed damaged reference song details.');
 }
 
+
+const LAUNCH_MODE_IDS: readonly string[] = ['trigger', 'toggle', 'gate', 'retrigger'];
+const LAUNCH_QUANTIZE_IDS: readonly string[] = ['none', 'beat', 'bar', '2bars', '4bars'];
+const FOLLOW_KIND_IDS: readonly string[] = ['next', 'random', 'stop'];
+const MAX_LAUNCH_TRACKS = 32;
+const MAX_LAUNCH_SCENES = 64;
+
+/**
+ * The clip launcher (`Project.launcher`, optional): a grid of slots that point at patterns and audio clip
+ * channels. Slots whose pattern or channel is gone are dropped, track links to deleted playlist tracks too,
+ * order arrays are made to match the records, and broken settings go back to their defaults.
+ */
+function repairLauncher(p: Obj, log: RepairLog): void {
+  if (!has(p, 'launcher') || p.launcher === undefined) return;
+  const l = p.launcher;
+  if (!isObject(l) || !isObject(l.tracks) || !isObject(l.scenes) || !Array.isArray(l.trackOrder) || !Array.isArray(l.sceneOrder)) {
+    delete p.launcher;
+    log.add('Forgot the damaged clip launcher grid (patterns and clips are not changed).');
+    return;
+  }
+  let fixed = false;
+  if (!LAUNCH_QUANTIZE_IDS.includes(l.quantize as string)) {
+    l.quantize = 'bar';
+    fixed = true;
+  }
+  const patterns = isObject(p.patterns) ? p.patterns : {};
+  const channels = isObject(p.channels) ? p.channels : {};
+  const lanes = isObject(p.playlist) && isObject(p.playlist.lanes) ? p.playlist.lanes : {};
+  const scenes = l.scenes;
+  for (const [id, raw] of Object.entries(scenes)) {
+    if (!isObject(raw)) {
+      delete scenes[id];
+      fixed = true;
+      continue;
+    }
+    if (raw.id !== id) {
+      raw.id = id;
+      fixed = true;
+    }
+    if (!isString(raw.name)) {
+      raw.name = 'Scene';
+      fixed = true;
+    }
+    if (has(raw, 'color') && raw.color !== undefined && !isString(raw.color)) {
+      delete raw.color;
+      fixed = true;
+    }
+  }
+  const tracks = l.tracks;
+  for (const [id, raw] of Object.entries(tracks)) {
+    if (!isObject(raw) || !isObject(raw.slots)) {
+      delete tracks[id];
+      fixed = true;
+      continue;
+    }
+    if (raw.id !== id) {
+      raw.id = id;
+      fixed = true;
+    }
+    if (!isString(raw.name)) {
+      raw.name = 'Track';
+      fixed = true;
+    }
+    if (has(raw, 'color') && raw.color !== undefined && !isString(raw.color)) {
+      delete raw.color;
+      fixed = true;
+    }
+    if (has(raw, 'laneId') && raw.laneId !== undefined && !(isString(raw.laneId) && has(lanes, raw.laneId))) {
+      delete raw.laneId;
+      fixed = true;
+    }
+    const slots = raw.slots;
+    for (const [sceneId, rawSlot] of Object.entries(slots)) {
+      const slot = rawSlot;
+      const c = isObject(slot) ? slot.content : undefined;
+      const ok =
+        has(scenes, sceneId) &&
+        isObject(slot) &&
+        isObject(c) &&
+        ((c.kind === 'pattern' && isString(c.patternId) && has(patterns, c.patternId)) ||
+          (c.kind === 'audio' &&
+            isString(c.channelId) &&
+            has(channels, c.channelId) &&
+            isObject(channels[c.channelId]) &&
+            (channels[c.channelId] as Obj).kind === 'audioClip' &&
+            isFiniteNumber(c.length) &&
+            c.length >= 1));
+      if (!ok) {
+        delete slots[sceneId];
+        fixed = true;
+        continue;
+      }
+      const sl = slot as Obj;
+      const content = c as Obj;
+      if (content.kind === 'audio') {
+        fixed = requireField(content, 'offsetSec', (v) => isFiniteNumber(v) && v >= 0, 0) || fixed;
+        content.length = Math.round(content.length as number);
+        fixed = optionalField(content, 'gain', (v) => isFiniteNumber(v) && v >= 0 && v <= 4) || fixed;
+        fixed = optionalField(content, 'fadeIn', (v) => isFiniteNumber(v) && v >= 0) || fixed;
+        fixed = optionalField(content, 'fadeOut', (v) => isFiniteNumber(v) && v >= 0) || fixed;
+      }
+      fixed = optionalField(sl, 'name', isString) || fixed;
+      fixed = optionalField(sl, 'color', isString) || fixed;
+      fixed = optionalField(sl, 'mode', (v) => LAUNCH_MODE_IDS.includes(v as string)) || fixed;
+      fixed = optionalField(sl, 'loop', isBoolean) || fixed;
+      fixed = optionalField(sl, 'quantize', (v) => LAUNCH_QUANTIZE_IDS.includes(v as string)) || fixed;
+      fixed =
+        optionalField(
+          sl,
+          'follow',
+          (v) => isObject(v) && FOLLOW_KIND_IDS.includes(v.kind as string) && Number.isInteger(v.bars) && (v.bars as number) >= 1 && (v.bars as number) <= 64,
+        ) || fixed;
+    }
+  }
+  const order = (key: 'trackOrder' | 'sceneOrder', records: Obj, max: number) => {
+    const raw = l[key] as unknown[];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const id of raw) {
+      if (!isString(id) || !has(records, id) || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    for (const id of Object.keys(records)) if (!seen.has(id)) out.push(id);
+    const kept = out.slice(0, max);
+    for (const id of out.slice(max)) delete records[id];
+    if (kept.length !== raw.length || kept.some((id, i) => id !== raw[i])) fixed = true;
+    l[key] = kept;
+  };
+  order('trackOrder', tracks, MAX_LAUNCH_TRACKS);
+  order('sceneOrder', scenes, MAX_LAUNCH_SCENES);
+  if (fixed) log.add('Fixed the clip launcher grid (dropped slots whose pattern or audio is gone).');
+}
+
 /**
  * Returns a repaired deep copy of a structurally valid project (see migrateProject) and one
  * human-readable line per kind of fix. Never mutates the input. A project that needs no repair comes
@@ -1210,6 +1344,7 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairControllers(p, log);
   repairDj(p, log);
   repairReference(p, log);
+  repairLauncher(p, log);
   log.flush();
   return { project: p as unknown as Project, repairs: log.messages };
 }

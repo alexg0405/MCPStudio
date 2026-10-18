@@ -1839,7 +1839,8 @@ loaded; `services.decks.peek()` looks without starting them.
   plays through a second output device (`setCueOutput`: a MediaStream destination into an `<audio>` element with
   `setSinkId`).
 - `app/dj/decks.ts`: the `DecksApi` (a zustand store plus the control logic: load, cues, loops, jog, sync, mixer,
-  recording). `EngineApi.deckHost()` (optional; `engine/api.ts`) hands out the running context, a node feeding the
+  recording), wired together from one module per job in `app/dj/deck-control/` (transport, cues, jog, loops, tempo and
+  sync, mixer, graph lifecycle, loader, recorder, ticker), all built from a shared `DeckContext`. `EngineApi.deckHost()` (optional; `engine/api.ts`) hands out the running context, a node feeding the
   master limiter, `loadModule` and the audible clock. When the engine reboots (a new AudioContext) the decks notice
   through `engine.subscribe`, rebuild the graph, hand the songs over (decoding again if the rate changed) and carry
   on from where each deck was.

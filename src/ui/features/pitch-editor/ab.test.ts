@@ -4,9 +4,11 @@
  */
 import { describe, expect, it } from 'vitest';
 import { audioClipProject, TestSamples } from '../../../../test/helpers/audio';
+import { aiCommands } from '@app/ai/commands';
 import { pitchState } from '@app/pitch/state';
 import { createTestServices } from '@app/testing';
 import { hearOriginal } from '@app/actions/pitch';
+import { pitchReport } from '@app/pitch/report';
 import { editSignature } from '@core/audio/pitch-edit';
 import type { AudioClip, ClipId, SampleId, SampleRef } from '@core/model/types';
 import { setPitchEdit, setPitchRender } from '@core/ops/pitch';
@@ -81,6 +83,16 @@ describe('A/B: original or corrected', () => {
     await s.commands.run('pitchEditor.toggleOriginal', { clip: clipId });
     expect(s.editor.getState().pitchOriginal).toEqual([]);
     pitchState.setState({ clipId: null });
+  });
+
+  it('the AI and MCP reach it through the command catalog, and get_pitch says which sound is heard', () => {
+    const { s, clipId } = setup();
+    expect(aiCommands(s).find((c) => c.id === 'pitchEditor.toggleOriginal')?.argsHint).toMatch(/original: true/);
+    hearOriginal(s, clipId, true);
+    const report = pitchReport(s, { clip: clipId }) as { hearing?: string };
+    expect(report.hearing).toBe('original recording');
+    hearOriginal(s, clipId, false);
+    expect((pitchReport(s, { clip: clipId }) as { hearing?: string }).hearing).toBe('corrected sound');
   });
 
   it('is cleared when the clip goes away', () => {

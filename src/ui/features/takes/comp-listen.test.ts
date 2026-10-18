@@ -10,6 +10,7 @@ import { addChannel, addSample } from '@core/ops/channels';
 import { addTakeGroup, newTakeGroup } from '@core/ops/comp';
 import { removeClips } from '@core/ops/playlist';
 import { auditionProject, takeClipOnLane, takeGroups } from '@core/query/takes';
+import { aiCommands } from '@app/ai/commands';
 import { createTestServices } from '@app/testing';
 import { listenToTake } from '@app/actions/comp';
 
@@ -132,6 +133,12 @@ describe('listen to this take', () => {
     expect(s.editor.getState().auditionTake).toBeNull();
     const last = s.fakeEngine.changes[s.fakeEngine.changes.length - 1]!.next;
     expect(heardClips(last)).toEqual(['comp2']);
+  });
+
+  it('the AI and MCP reach it through the command catalog (with its arguments described)', () => {
+    const { s } = setup();
+    const def = aiCommands(s).find((c) => c.id === 'comp.listenTake');
+    expect(def?.argsHint).toMatch(/take: 1-based/);
   });
 
   it('only a take clip can be listened to', () => {

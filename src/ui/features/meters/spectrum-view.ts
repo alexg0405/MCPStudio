@@ -45,10 +45,14 @@ export class SpectrumView {
     return this.map;
   }
 
-  /** Takes a new spectrum from the meter when there is one. Returns true when the levels changed. */
-  update(meter: MeterHandle, nowMs: number, slopeDb: number): boolean {
+  /**
+   * Takes a new spectrum from the meter when there is one. Returns how many spectra the audio thread made since the
+   * last call (0: nothing new), so a slow frame rate can still keep the spectrogram's time scale.
+   */
+  update(meter: MeterHandle, nowMs: number, slopeDb: number): number {
     const sequence = meter.readings[R.spectrumSeq] as number;
-    if (!meter.active || meter.sampleRate === 0 || sequence === this.seenSequence) return false;
+    if (!meter.active || meter.sampleRate === 0 || sequence === this.seenSequence) return 0;
+    const made = this.seenSequence < 0 ? 1 : Math.max(1, sequence - this.seenSequence);
     this.seenSequence = sequence;
     const map = this.mapFor(meter.sampleRate);
     map.fold(meter.spectrum, this.bandPower);
@@ -69,7 +73,7 @@ export class SpectrumView {
       }
     }
     this.totalDb = powerToDb(total);
-    return true;
+    return made;
   }
 
   /** Forgets the levels (the meter was restarted or its source changed). */

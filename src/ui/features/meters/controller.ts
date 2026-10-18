@@ -33,6 +33,8 @@ const READOUT_EVERY_MS = 100;
 /** After this many spectrum updates in silence the spectrum and spectrogram stop redrawing (about 3 s). */
 const SILENT_UPDATES_BEFORE_IDLE = 70;
 const SILENT_TOTAL_DB = -100;
+/** A frame that was very late paints at most this many spectrogram columns (the rest is skipped, not caught up). */
+const MAX_COLUMNS_PER_FRAME = 12;
 
 type CanvasName = 'history' | 'gonio' | 'bars' | 'spectrum' | 'spectrogram';
 
@@ -135,7 +137,8 @@ export class MetersController {
     this.followReset(meter);
     this.refreshTarget();
     const slope = this.services.meters.store.getState().slopeDb;
-    const gotSpectrum = this.spectrum.update(meter, now, slope);
+    const newSpectra = this.spectrum.update(meter, now, slope);
+    const gotSpectrum = newSpectra > 0;
     this.trackSilence(gotSpectrum);
     if (now - this.lastReadoutMs >= READOUT_EVERY_MS) {
       this.lastReadoutMs = now;
@@ -156,7 +159,7 @@ export class MetersController {
     signature[2] = readings[R.correlation] as number;
     signature[3] = readings[R.momentary] as number;
     signature[4] = readings[R.peakL] as number;
-    this.draw(meter, gotSpectrum);
+    this.draw(meter, newSpectra);
     this.resizedSince = false;
   }
 
@@ -222,7 +225,7 @@ export class MetersController {
     this.readouts.set('target', `Target ${lufsText(lufs)} LUFS (${this.target.label})${against ? `: integrated is ${against}` : ''}`);
   }
 
-  private draw(meter: MeterHandle, gotSpectrum: boolean): void {
+  private draw(meter: MeterHandle, newSpectra: number): void {
     const theme = readTheme();
     const history = this.boxes.get('history');
     if (history) drawHistory(fitCanvas(history.canvas, history.width, history.height), history.width, history.height, theme, meter, this.target);
@@ -231,15 +234,16 @@ export class MetersController {
     if (gonio) drawGoniometer(fitCanvas(gonio.canvas, gonio.width, gonio.height), gonio.width, gonio.height, theme, meter, hasScope);
     const bars = this.boxes.get('bars');
     if (bars) drawStereoBars(fitCanvas(bars.canvas, bars.width, bars.height), bars.width, bars.height, theme, meter);
-    this.drawSpectra(gotSpectrum, theme);
+    this.drawSpectra(newSpectra, theme);
   }
 
-  private drawSpectra(gotSpectrum: boolean, theme: TimelineTheme): void {
+  private drawSpectra(newSpectra: number, theme: TimelineTheme): void {
     const spectrum = this.boxes.get('spectrum');
     const spectrogram = this.boxes.get('spectrogram');
     if (spectrogram && this.spectrogram.fit(spectrogram.canvas, spectrogram.width, spectrogram.height)) this.spectrogram.clear(spectrogram.canvas);
-    if (gotSpectrum && this.silentUpdates < SILENT_UPDATES_BEFORE_IDLE) {
-      if (spectrogram) this.spectrogram.push(spectrogram.canvas, this.spectrum.levels);
+    if (newSpectra > 0 && this.silentUpdates < SILENT_UPDATES_BEFORE_IDLE) {
+      // One column per spectrum the audio thread made, so the time scale holds even when a frame is late.
+      if (spectrogram) for (let i = 0; i < Math.min(newSpectra, MAX_COLUMNS_PER_FRAME); i++) this.spectrogram.push(spectrogram.canvas, this.spectrum.levels);
       this.referenceLine = this.referenceFor(this.services.doc.getState().project);
     }
     if (spectrum) this.spectrum.draw(fitCanvas(spectrum.canvas, spectrum.width, spectrum.height), spectrum.width, spectrum.height, theme, this.showReference ? this.referenceLine : null);

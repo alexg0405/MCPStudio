@@ -79,8 +79,8 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--ag-space-3);
   padding: var(--ag-space-3);
-  flex: 1;
-  min-height: 0;
+  /* Never squeezed below its content: the window scrolls instead of the panels overlapping. */
+  flex: 1 0 auto;
 }
 
 /* Narrow windows stack the three panels. */
@@ -194,7 +194,7 @@
 .canvasBox {
   position: relative;
   flex: 1;
-  min-height: 110px;
+  min-height: 140px;
   border-radius: var(--ag-radius);
   background: var(--ag-grid-bg);
   box-shadow: var(--ag-inset);

@@ -16,7 +16,7 @@ export function register(services: Services): void {
     type: 'meters',
     title: () => 'Meters',
     component: lazyWindow(() => import('./MetersWindow'), (m) => m.MetersWindow),
-    defaultRect: (ws) => ({ x: Math.max(0, Math.round(ws.w / 2 - 400)), y: 44, w: Math.min(800, ws.w), h: Math.min(640, ws.h - 70) }),
+    defaultRect: (ws) => ({ x: Math.max(0, Math.round(ws.w / 2 - 400)), y: 44, w: Math.min(800, ws.w), h: Math.min(740, ws.h - 60) }),
     minSize: { w: 340, h: 300 },
   });
   registerWindowToggle(services, {

@@ -113,7 +113,8 @@ function startMuxer(r: Run): void {
   const info = VIDEO_FORMAT_INFO[cfg.format];
   const hasAudio = r.audioSeen;
   if (info.container === 'webm') {
-    const head = r.audioDescription && r.audioDescription.length >= 19 ? r.audioDescription : opusHead(2, cfg.sampleRate, 312);
+    const head =
+      r.audioDescription && r.audioDescription.length >= 19 ? r.audioDescription : opusHead(2, cfg.sampleRate, 312);
     const preSkip = new DataView(head.buffer, head.byteOffset, head.byteLength).getUint16(10, true);
     r.muxer = new WebmMuxer(writer, {
       video: {
@@ -123,18 +124,29 @@ function startMuxer(r: Run): void {
         fps: cfg.fps,
         codecPrivate: cfg.format === 'webm-av1' ? (r.videoDescription ?? AV1C) : undefined,
       },
-      audio: hasAudio ? { codec: 'A_OPUS', channels: 2, sampleRate: cfg.sampleRate, codecPrivate: head, preSkip } : undefined,
+      audio: hasAudio
+        ? { codec: 'A_OPUS', channels: 2, sampleRate: cfg.sampleRate, codecPrivate: head, preSkip }
+        : undefined,
       title: cfg.title || undefined,
     });
   } else {
     if (!r.videoDescription)
-      throw new Error("This browser's H.264 encoder did not describe its stream, so an MP4 file cannot be written. Choose WebM instead.");
+      throw new Error(
+        "This browser's H.264 encoder did not describe its stream, so an MP4 file cannot be written. Choose WebM instead.",
+      );
     if (hasAudio && !r.audioDescription)
-      throw new Error("This browser's AAC encoder did not describe its stream, so an MP4 file cannot be written. Choose WebM instead.");
+      throw new Error(
+        "This browser's AAC encoder did not describe its stream, so an MP4 file cannot be written. Choose WebM instead.",
+      );
     r.muxer = new Mp4Muxer(writer, {
       video: { width: cfg.width, height: cfg.height, fps: cfg.fps, avcC: r.videoDescription },
       audio: hasAudio
-        ? { channels: 2, sampleRate: cfg.sampleRate, audioSpecificConfig: r.audioDescription as Uint8Array, priming: AAC_PRIMING }
+        ? {
+            channels: 2,
+            sampleRate: cfg.sampleRate,
+            audioSpecificConfig: r.audioDescription as Uint8Array,
+            priming: AAC_PRIMING,
+          }
         : undefined,
       maxSeconds: cfg.seconds + 90,
       keyFrameSeconds: cfg.keyframeSeconds,
@@ -191,13 +203,18 @@ const unsupported = (what: string, codec: string) =>
   new Error(`This browser cannot encode ${what} (${codec}). Try another format, or a recent Chrome or Edge.`);
 
 async function open(cfg: VideoWorkerConfig, image: ImageBitmap | null): Promise<void> {
-  if (typeof VideoEncoder === 'undefined' || typeof AudioEncoder === 'undefined' || typeof OffscreenCanvas === 'undefined')
+  if (
+    typeof VideoEncoder === 'undefined' ||
+    typeof AudioEncoder === 'undefined' ||
+    typeof OffscreenCanvas === 'undefined'
+  )
     throw new Error('This browser cannot encode video (it needs WebCodecs: use a recent Chrome or Edge).');
   const info = VIDEO_FORMAT_INFO[cfg.format];
   const vcfg = videoEncoderConfig(cfg);
   const acfg = audioEncoderConfig(cfg);
   const vs = await VideoEncoder.isConfigSupported(vcfg);
-  if (!vs.supported) throw unsupported(`${info.label} video at ${cfg.width}×${cfg.height}, ${cfg.fps} fps`, cfg.videoCodec);
+  if (!vs.supported)
+    throw unsupported(`${info.label} video at ${cfg.width}×${cfg.height}, ${cfg.fps} fps`, cfg.videoCodec);
   const as = await AudioEncoder.isConfigSupported(acfg);
   if (!as.supported) throw unsupported(`${cfg.audioCodec === 'opus' ? 'Opus' : 'AAC'} audio`, cfg.audioCodec);
 
@@ -268,7 +285,8 @@ function readWindow(r: Run, start: number, out: Float32Array): void {
     if (pEnd <= start || p.start >= end) continue;
     const from = Math.max(start, p.start);
     const to = Math.min(end, pEnd);
-    for (let i = from; i < to; i++) out[i - start] = ((p.l[i - p.start] as number) + (p.r[i - p.start] as number)) * 0.5;
+    for (let i = from; i < to; i++)
+      out[i - start] = ((p.l[i - p.start] as number) + (p.r[i - p.start] as number)) * 0.5;
   }
 }
 
@@ -312,14 +330,18 @@ async function produce(r: Run, final: boolean): Promise<void> {
       wave: r.window.subarray(HALF - 1024, HALF + 1024),
       level: r.analyzer.level,
     });
-    const frame = new VideoFrame(r.canvas, { timestamp: frameTimeUs(i, cfg.fps), duration: frameDurationUs(i, cfg.fps) });
+    const frame = new VideoFrame(r.canvas, {
+      timestamp: frameTimeUs(i, cfg.fps),
+      duration: frameDurationUs(i, cfg.fps),
+    });
     r.venc.encode(frame, { keyFrame: isKeyframe(i, cfg.fps, cfg.keyframeSeconds) });
     frame.close();
     r.next++;
   }
   // Audio that no frame can look at any more is dropped.
   const keepFrom = audioCenterFor(r.next, cfg.fps, cfg.sampleRate) - LAG - HALF;
-  while (r.pieces.length > 1 && (r.pieces[0] as Piece).start + (r.pieces[0] as Piece).l.length < keepFrom) r.pieces.shift();
+  while (r.pieces.length > 1 && (r.pieces[0] as Piece).start + (r.pieces[0] as Piece).l.length < keepFrom)
+    r.pieces.shift();
 }
 
 async function finish(r: Run): Promise<void> {
@@ -331,7 +353,8 @@ async function finish(r: Run): Promise<void> {
   const m = r.muxer as AnyMuxer;
   m.endVideo();
   m.endAudio();
-  m.finish();
+  if (m instanceof Mp4Muxer) m.finish(r.received);
+  else m.finish();
   if (r.failure) throw r.failure;
   const frames = r.next;
   post({ t: 'done', frames, seconds: r.received / r.cfg.sampleRate, bytes: m.size });

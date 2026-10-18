@@ -30,7 +30,10 @@ export interface RenderPassOptions {
 }
 
 /** Renders and trims; returns the frames kept. */
-export async function renderPass(o: RenderPassOptions, consume: (piece: Float32Array[]) => Promise<void>): Promise<number> {
+export async function renderPass(
+  o: RenderPassOptions,
+  consume: (piece: Float32Array[]) => Promise<void>,
+): Promise<number> {
   const { s, plan, sampleRate: rate, signal } = o;
   let trimmer: StreamTrimmer | null = null;
   const extra = Math.round(0.01 * rate);

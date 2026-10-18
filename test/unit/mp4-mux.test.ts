@@ -165,11 +165,28 @@ describe('Mp4Muxer', () => {
     expect(v.stsc[0]).toEqual([1, 15, 1]);
     expect(v.sizes.length).toBe(video.length);
     // Chunk offsets rise and video and audio chunks alternate in the file (interleaved).
-    const all = [...v.chunkOffsets.map((o) => ['v', o] as const), ...a.chunkOffsets.map((o) => ['a', o] as const)].sort((x, y) => x[1] - y[1]);
+    const all = [...v.chunkOffsets.map((o) => ['v', o] as const), ...a.chunkOffsets.map((o) => ['a', o] as const)].sort(
+      (x, y) => x[1] - y[1],
+    );
     let switches = 0;
     for (let i = 1; i < all.length; i++) if (all[i]![0] !== all[i - 1]![0]) switches++;
     expect(switches).toBeGreaterThanOrEqual(all.length - 2);
     for (let i = 1; i < v.chunkOffsets.length; i++) expect(v.chunkOffsets[i]!).toBeGreaterThan(v.chunkOffsets[i - 1]!);
+  });
+
+  it('cuts the sound where the music ends when told how many samples the encoder was given', () => {
+    const mem = memoryWriter();
+    const m = new Mp4Muxer(mem.w, opts());
+    for (const v of video) m.addVideo(v);
+    for (const a of audio) m.addAudio(a);
+    // 6.9 s of music were given; the encoder's packets run a little past it (6.97 s after the priming).
+    m.finish(Math.round(6.9 * 48000));
+    const f = parseMp4(mem.bytes());
+    const a = f.tracks[1]!;
+    expect(a.elst[0]!.duration).toBe(6900);
+    expect(a.elst[0]!.mediaTime).toBe(AAC_PRIMING);
+    expect(a.duration).toBe(6900);
+    expect(f.movie.duration).toBe(7000);
   });
 
   it('makes a video-only file', () => {
@@ -209,7 +226,9 @@ describe('Mp4Muxer', () => {
     const m = new Mp4Muxer(mem.w, opts({ audio: undefined }));
     m.addVideo({ timestampUs: 0, durationUs: 33333, key: true, data: new Uint8Array([1]) });
     m.addVideo({ timestampUs: 66667, durationUs: 33333, key: false, data: new Uint8Array([2]) });
-    expect(() => m.addVideo({ timestampUs: 33333, durationUs: 33333, key: false, data: new Uint8Array([3]) })).toThrow(Mp4Error);
+    expect(() => m.addVideo({ timestampUs: 33333, durationUs: 33333, key: false, data: new Uint8Array([3]) })).toThrow(
+      Mp4Error,
+    );
   });
 
   it('writes an index smaller than the space it reserved', () => {

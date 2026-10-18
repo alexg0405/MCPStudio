@@ -101,7 +101,7 @@ const OWN_TOOL_DEFS: readonly ToolDef[] = [
     name: 'run_command',
     title: 'Run an app command',
     description:
-      'Runs an app command from list_commands (like clicking its menu item). Commands that open a file dialog cannot run from here: the browser needs the musician\'s click, so AGstudio shows them a button ("Claude Code wants to export: click to choose where") and the result says it is waiting. To render audio to a file without a dialog use export_audio.',
+      'Runs an app command from list_commands (like clicking its menu item). Commands that open a file dialog cannot run from here: the browser needs the musician\'s click, so AGstudio shows them a button ("Claude Code wants to export: click to choose where") and the result says it is waiting. To render audio to a file without a dialog use export_audio (a music video: export_video).',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -254,6 +254,28 @@ const OWN_TOOL_DEFS: readonly ToolDef[] = [
         bars: bars('Export just this part of the song (default: the whole song).'),
         format: { type: 'string', enum: ['wav', 'flac', 'mp3'], description: 'File format (default: the last one used).' },
         stems: { type: 'boolean', description: 'One file per mixer track, all the same length (into a sub-folder). Default false.' },
+        normalize: { type: 'boolean', description: 'Raise the level so the loudest moment peaks at −0.3 dBFS.' },
+        file_name: { type: 'string', description: 'Name without extension (default: the project name).' },
+      },
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: 'export_video',
+    title: 'Export a music video to a file',
+    description:
+      'Renders the song (or some bars) offline and makes a shareable music video (MP4 or WebM) in the AGstudio folder inside the Music folder (no file dialog needed); returns its path. The audio goes through the same render as export_audio and the pictures (spectrum bars, a waveform, a circle or a minimal look, with a title and a beat pulse) are drawn from it, so no playing is needed. Songs over 4 minutes: use File → Export as video in the app. Defaults to the last video settings.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        bars: bars('Make the video of just this part of the song (default: the whole song).'),
+        style: { type: 'string', enum: ['bars', 'wave', 'circle', 'minimal'], description: 'The look: spectrum bars, waveform line, circular spectrum, or minimal (title and progress bar).' },
+        size: { type: 'string', enum: ['1080p', 'vertical', 'square'], description: '1080p: widescreen 1920×1080. vertical: 1080×1920 for shorts, reels and TikTok. square: 1080×1080.' },
+        fps: { type: 'integer', enum: [30, 60], description: 'Frames per second (default 30).' },
+        format: { type: 'string', enum: ['mp4-h264', 'webm-vp9', 'webm-av1'], description: 'File format (default: the last one used; MP4 plays everywhere).' },
+        title: { type: 'string', description: 'The big text on the video (default: the project title).' },
+        artist: { type: 'string', description: 'The smaller text under it (default: the project author, if any).' },
         normalize: { type: 'boolean', description: 'Raise the level so the loudest moment peaks at −0.3 dBFS.' },
         file_name: { type: 'string', description: 'Name without extension (default: the project name).' },
       },

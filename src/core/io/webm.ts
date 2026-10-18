@@ -368,7 +368,8 @@ export class WebmMuxer {
   private write(chunk: MuxChunk, video: boolean): void {
     const ms = Math.round(chunk.timestampUs / 1000);
     const c = this.cluster;
-    if (!c || (video && chunk.key && ms - c.startMs >= this.clusterMs) || ms - c.startMs > 30_000) this.startCluster(ms);
+    if (!c || (video && chunk.key && ms - c.startMs >= this.clusterMs) || ms - c.startMs > 30_000)
+      this.startCluster(ms);
     const cl = this.cluster as Cluster;
     const rel = ms - cl.startMs;
     // SimpleBlock: track number (1 byte), signed 16-bit time since the cluster, flags (0x80 = key frame).

@@ -154,10 +154,7 @@ export function parseWebm(b: Uint8Array): ParsedWebm {
   const top = children(b, 0, b.length);
   const ebml = top.find((e) => e.id === ID.EBML);
   if (!ebml) throw new Error('no EBML header');
-  const docType = textOf(
-    b,
-    children(b, ebml.start, ebml.start + ebml.size).find((e) => e.id === ID.DocType) as El,
-  );
+  const docType = textOf(b, children(b, ebml.start, ebml.start + ebml.size).find((e) => e.id === ID.DocType) as El);
   const segment = top.find((e) => e.id === ID.Segment);
   if (!segment) throw new Error('no Segment');
   const segEnd = segment.size < 0 ? b.length : segment.start + segment.size;
@@ -229,7 +226,7 @@ export function parseWebm(b: Uint8Array): ParsedWebm {
       for (const k of kidsOf) {
         if (k.id !== ID.SimpleBlock) continue;
         const track = (b[k.start] as number) & 0x7f;
-        const rel = (((b[k.start + 1] as number) << 8) | (b[k.start + 2] as number)) << 16 >> 16;
+        const rel = ((((b[k.start + 1] as number) << 8) | (b[k.start + 2] as number)) << 16) >> 16;
         const flags = b[k.start + 3] as number;
         blocks.push({
           track,

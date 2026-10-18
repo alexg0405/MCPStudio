@@ -14,6 +14,7 @@ import { addClips } from '@core/ops/playlist';
 import { VIDEO_FORMAT_INFO, type VideoFormat } from '@core/video/formats';
 import { frameCountFor } from '@core/video/timing';
 import { kitProject } from '../helpers/fixtures';
+import { perfLimit, settle } from '../helpers/perf';
 import { parseMp4, readSamples } from '../helpers/mp4-parse';
 import { parseWebm } from '../helpers/webm-parse';
 
@@ -133,7 +134,12 @@ describe('video export', () => {
   const exportTo = async (s: Services, patch: Partial<VideoExportSettings> = {}) => {
     const files = new Map<string, Uint8Array>();
     const progress: number[] = [];
-    const res = await runVideoExport(s, settings(patch), { kind: 'memory', files, name: 'v' }, { onProgress: (p) => progress.push(p.fraction) });
+    const res = await runVideoExport(
+      s,
+      settings(patch),
+      { kind: 'memory', files, name: 'v' },
+      { onProgress: (p) => progress.push(p.fraction) },
+    );
     return { bytes: files.get('v')!, res, progress };
   };
 
@@ -161,7 +167,15 @@ describe('video export', () => {
       for (let f = first; f < first + 10; f++) {
         await seek(video, Math.max(0, f) / FPS + 0.002);
         const d = grab(video, canvas);
-        series.push(lum(d, Math.round(d.width * 0.03), Math.round(d.height * 0.42), Math.round(d.width * 0.13), Math.round(d.height * 0.58)));
+        series.push(
+          lum(
+            d,
+            Math.round(d.width * 0.03),
+            Math.round(d.height * 0.42),
+            Math.round(d.width * 0.13),
+            Math.round(d.height * 0.58),
+          ),
+        );
       }
       const lo = Math.min(...series);
       const hi = Math.max(...series);
@@ -242,7 +256,8 @@ describe('video export', () => {
         }
         const [a, b] = looks;
         let differ = 0;
-        for (let i = 0; i < a!.data.length; i += 4) if (Math.abs((a!.data[i] as number) - (b!.data[i] as number)) > 20) differ++;
+        for (let i = 0; i < a!.data.length; i += 4)
+          if (Math.abs((a!.data[i] as number) - (b!.data[i] as number)) > 20) differ++;
         expect(differ).toBeGreaterThan(50);
 
         // The sound is there and the same length.
@@ -255,11 +270,186 @@ describe('video export', () => {
         expect(Math.sqrt(sum / left.length)).toBeGreaterThan(0.01);
 
         // The click and the pulse line up within one frame.
-        const sync = await checkSync(video, sound, [0, 1, 2, 3, 4, 5, 7, 10].map((k) => k * BEAT));
+        const sync = await checkSync(
+          video,
+          sound,
+          [0, 1, 2, 3, 4, 5, 7, 10].map((k) => k * BEAT),
+        );
         const worst = Math.max(...sync.map((r) => Math.abs(r.offsetMs)));
         // One frame at 30 fps is 33.3 ms (plus the click's own attack).
         expect(worst, JSON.stringify(sync)).toBeLessThanOrEqual(1000 / FPS + 3);
       }, 240_000);
     });
   }
+
+  describe('shapes, looks and options', () => {
+    it('makes every style at every shape, and 60 fps', async () => {
+      const s = make(song(1));
+      for (const [size, w, h] of [
+        ['vertical', 270, 480],
+        ['square', 270, 270],
+      ] as const)
+        for (const style of ['bars', 'wave', 'circle', 'minimal'] as const) {
+          const { bytes, res } = await exportTo(s, { style, size, scale: 0.25 });
+          const f = parseWebm(bytes);
+          expect(f.tracks[0], `${style} ${size}`).toMatchObject({ width: w, height: h });
+          expect(f.clusters.flatMap((c) => c.blocks).filter((b) => b.track === 1)).toHaveLength(res.frames);
+        }
+      const { bytes, res } = await exportTo(s, { fps: 60, size: 'square', scale: 0.25 });
+      const f = parseWebm(bytes);
+      expect(f.tracks[0]!.defaultDuration).toBe(Math.round(1e9 / 60));
+      expect(res.frames).toBe(frameCountFor(res.seconds, 60));
+      // Key frames every two seconds: every 120 frames.
+      const keys = f.clusters.flatMap((c) => c.blocks).filter((b) => b.track === 1 && b.key);
+      expect(keys.map((b) => b.ms)).toEqual(Array.from({ length: Math.ceil(res.frames / 120) }, (_, k) => 2000 * k));
+    });
+
+    it('uses a picture as the background, and AV1 where the browser can make it', async () => {
+      const s = make(song(1));
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 64;
+      const g = c.getContext('2d')!;
+      g.fillStyle = '#2060ff';
+      g.fillRect(0, 0, 64, 64);
+      const image = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+      const plain = await exportTo(s, { style: 'minimal' });
+      const pictured = await exportTo(s, { style: 'minimal', image });
+      const grab1 = async (bytes: Uint8Array) => {
+        const v = await loadVideo(bytes, 'video/webm');
+        await seek(v, 0.7);
+        const cv = document.createElement('canvas');
+        cv.width = 480;
+        cv.height = 270;
+        const d = grab(v, cv);
+        // The left edge, away from the text: the picture's blue against the plain brown.
+        let r = 0;
+        let b = 0;
+        let n = 0;
+        for (let y = 100; y < 170; y++)
+          for (let x = 10; x < 60; x++) {
+            const i = (y * d.width + x) * 4;
+            r += d.data[i]!;
+            b += d.data[i + 2]!;
+            n++;
+          }
+        return { r: r / n, b: b / n };
+      };
+      const a = await grab1(plain.bytes);
+      const p = await grab1(pictured.bytes);
+      expect(p.b - p.r).toBeGreaterThan(a.b - a.r + 15);
+      if ((await probeFormats('1080p', FPS, 0.25))['webm-av1'] === null) {
+        const av1 = await exportTo(s, { format: 'webm-av1' });
+        const f = parseWebm(av1.bytes);
+        expect(f.tracks[0]!.codecId).toBe('V_AV1');
+        expect(f.tracks[0]!.codecPrivate!.length).toBeGreaterThanOrEqual(4);
+        const v = await loadVideo(av1.bytes, 'video/webm');
+        await seek(v, 0.5);
+        const cv = document.createElement('canvas');
+        cv.width = 480;
+        cv.height = 270;
+        expect(stdev(grab(v, cv))).toBeGreaterThan(8);
+      }
+    });
+
+    it('exports just a part of the song, normalizes, and can be cancelled', async () => {
+      const s = make(song(3));
+      const whole = await exportTo(s, { scale: 0.25 });
+      const part = await exportTo(s, { scale: 0.25, range: { from: BAR, to: 2 * BAR } });
+      // One bar of three at 128 BPM is 1.875 s of music against 5.6.
+      expect(whole.res.seconds - part.res.seconds).toBeGreaterThan(3.2);
+      expect(whole.res.seconds - part.res.seconds).toBeLessThan(4.3);
+      const loudness = async (bytes: Uint8Array) => {
+        const x = (await decodeSound(bytes)).getChannelData(0);
+        let sum = 0;
+        for (const v of x) sum += v * v;
+        return Math.sqrt(sum / x.length);
+      };
+      const norm = await exportTo(s, { scale: 0.25, normalize: true });
+      expect(await loudness(norm.bytes)).toBeGreaterThan(1.05 * (await loudness(whole.bytes)));
+      expect(norm.progress.at(-1)).toBe(1);
+      // Cancelling stops the render and leaves no file behind.
+      const files = new Map<string, Uint8Array>();
+      const controller = new AbortController();
+      const run = runVideoExport(
+        s,
+        settings({ scale: 0.25 }),
+        { kind: 'memory', files, name: 'v' },
+        {
+          signal: controller.signal,
+          onProgress: (p) => {
+            if (p.fraction > 0.2) controller.abort();
+          },
+        },
+      );
+      await expect(run).rejects.toThrow();
+      expect(files.size).toBe(0);
+    });
+  });
+
+  it('makes a three-minute song as MP4 and WebM: every cluster and index entry in place, seeking to the end works', async () => {
+    const s = make(song(96));
+    for (const format of ['mp4-h264', 'webm-vp9'] as VideoFormat[]) {
+      const { bytes, res } = await exportTo(s, { format, scale: 0.2, fps: 30 });
+      // 96 bars at 128 BPM is 180 s.
+      expect(res.seconds).toBeGreaterThan(180);
+      expect(res.seconds).toBeLessThan(184);
+      expect(res.frames).toBe(frameCountFor(res.seconds, FPS));
+      if (format === 'webm-vp9') {
+        const f = parseWebm(bytes);
+        expect(f.clusters.length).toBe(Math.ceil(res.frames / 60));
+        expect(f.cues).toHaveLength(f.clusters.length);
+        for (const c of f.clusters.slice(0, -1)) expect(c.blocks.length).toBeGreaterThan(40);
+      } else {
+        const f = parseMp4(bytes);
+        expect(f.top.map((b) => b.type)).toEqual(['ftyp', 'moov', 'free', 'mdat']);
+        expect(f.tracks[0]!.sizes).toHaveLength(res.frames);
+        expect(f.tracks[0]!.stss).toHaveLength(Math.ceil(res.frames / 60));
+      }
+      const video = await loadVideo(bytes, VIDEO_FORMAT_INFO[format].mime);
+      const detail =
+        format === 'mp4-h264'
+          ? JSON.stringify(parseMp4(bytes).tracks.map((t) => [t.duration, t.mediaDuration, t.timescale, t.elst])) +
+            parseMp4(bytes).movie.duration
+          : '';
+      expect(
+        Math.abs(video.duration - res.seconds),
+        `${format} ${video.duration} vs ${res.seconds} ${detail}`,
+      ).toBeLessThanOrEqual(1 / FPS + 0.002);
+      await seek(video, res.seconds - 1);
+      const cv = document.createElement('canvas');
+      cv.width = 384;
+      cv.height = 216;
+      const d = grab(video, cv);
+      expect(stdev(d), `${format} near the end`).toBeGreaterThan(8);
+    }
+  });
+
+  // Speed of the whole pipeline (render, draw, encode, mux) at 1080p30: seconds of video made per second of work.
+  describe('speed at 1080p, 30 fps', () => {
+    for (const format of ['webm-vp9', 'mp4-h264'] as VideoFormat[]) {
+      it(`${format} encodes faster than the limit`, { tags: ['perf'], timeout: 300_000 }, async () => {
+        const support = await probeFormats('1080p', FPS);
+        if (support[format]) {
+          console.warn(`skipping ${format}: ${support[format]}`);
+          return;
+        }
+        const s = make(song(4));
+        let last = { seconds: 0, took: 0, bytes: 0, frames: 0 };
+        const speed = await settle(
+          async () => {
+            const { res } = await exportTo(s, { format, scale: 1 });
+            last = res;
+            return res.seconds / res.took;
+          },
+          (v) => v >= perfLimit(3, 1),
+          { attempts: 2, better: 'higher' },
+        );
+        console.info(
+          `VIDEO SPEED ${format} 1080p30: ${speed.toFixed(2)}x realtime (${last.seconds.toFixed(1)} s of video in ${last.took.toFixed(1)} s, ${last.frames} frames, ${(last.bytes / 1e6).toFixed(2)} MB, ${((last.bytes * 8) / last.seconds / 1e6).toFixed(2)} Mbit/s)`,
+        );
+        expect(speed).toBeGreaterThanOrEqual(perfLimit(3, 1));
+      });
+    }
+  });
 });

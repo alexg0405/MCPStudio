@@ -9,7 +9,7 @@ import {
 } from '@app/export/audio-export';
 import { MP3_SAMPLE_RATES, type AudioCodec } from '@app/export/encode';
 import { ExportError, type ExportProgress } from '@app/export/export-wav';
-import { planExport, planSeconds, type NamedExportRange as ExportRange } from '@app/export/plan';
+import { planExport, planSeconds, type ExportRange, type NamedExportRange } from '@app/export/plan';
 import type { PrefsState } from '@app/stores/prefs';
 import { planStems, withoutMasterChain } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
@@ -17,8 +17,8 @@ import { holdModal } from '../../controls/Dialog';
 import { useDoc, useServices, useView } from '../../services-context';
 import dialog from '../../controls/Dialog.module.css';
 import { exportStore } from './export-store';
+import { VideoPanel } from './VideoPanel';
 import styles from './ExportDialog.module.css';
-
 
 const RATES = [44100, 48000, 96000];
 
@@ -65,8 +65,16 @@ function ExportDialog() {
   const name = useStore(services.files.store, (f) => f.name);
   const prefs = useStore(services.prefs);
   const set = (patch: Partial<PrefsState>) => services.prefs.getState().set(patch);
+  const tab = useStore(exportStore, (e) => e.tab);
+  const span = useStore(exportStore, (e) => e.span);
   const songRange = planExport(project, view, 'song');
-  const [range, setRange] = useState<ExportRange>(() => (!('error' in songRange) ? 'song' : 'pattern'));
+  /** What the Range section shows as chosen: a named range, or the span the dialog was opened for. */
+  const [choice, setChoice] = useState<NamedExportRange | 'span'>(() =>
+    span ? 'span' : !('error' in songRange) ? 'song' : 'pattern',
+  );
+  const range: ExportRange =
+    choice === 'span' && span ? { from: span.from, to: span.to } : choice === 'span' ? 'song' : choice;
+  const [videoBusy, setVideoBusy] = useState(false);
   const [progress, setProgress] = useState<(ExportProgress & { label?: string }) | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -102,7 +110,10 @@ function ExportDialog() {
     const bars = Math.round(plan.bars * 100) / 100;
     return `${bars} bar${bars === 1 ? '' : 's'}, ${formatTime(seconds)}`;
   };
-  const ranges: { value: ExportRange; label: string; hint: string }[] = [
+  const ranges: { value: NamedExportRange | 'span'; label: string; hint: string }[] = [
+    ...(span
+      ? [{ value: 'span' as const, label: span.label, hint: `Only ${span.label}, with every track playing there` }]
+      : []),
     { value: 'song', label: 'Song', hint: 'The whole playlist, from bar 1 to the end of the last clip' },
     {
       value: 'pattern',
@@ -111,6 +122,8 @@ function ExportDialog() {
     },
     { value: 'loop', label: 'Loop region', hint: 'The range selected on the playlist ruler' },
   ];
+  const rangeOf = (c: NamedExportRange | 'span'): ExportRange =>
+    c === 'span' ? (span ? { from: span.from, to: span.to } : 'song') : c;
 
   const plan = planExport(project, view, range);
   const stems = useMemo(() => {
@@ -177,18 +190,38 @@ function ExportDialog() {
       <div
         ref={ref}
         tabIndex={-1}
-        className={`${dialog.dialog} ${styles.export}`}
+        className={`${dialog.dialog} ${styles.export} ${tab === 'video' ? styles.exportVideo : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ag-export-title"
       >
         <h2 id="ag-export-title" className={dialog.title}>
-          Export audio
+          {tab === 'video' ? 'Export as video' : 'Export audio'}
         </h2>
-        <fieldset className={styles.group} disabled={busy}>
+        <div className={`${styles.segmented} ${styles.tabs}`} role="radiogroup" aria-label="What to export">
+          {(['audio', 'video'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              role="radio"
+              aria-checked={tab === t}
+              disabled={busy || videoBusy}
+              className={`${styles.segment} ${tab === t ? styles.segmentOn : ''}`}
+              onClick={() => exportStore.setState({ tab: t })}
+              data-hint={
+                t === 'audio'
+                  ? 'Export sound as a WAV, FLAC or MP3 file, or as stems'
+                  : 'Export a music video: the song with moving pictures, as a shareable MP4 or WebM file'
+              }
+            >
+              {t === 'audio' ? 'Audio' : 'Video'}
+            </button>
+          ))}
+        </div>
+        <fieldset className={styles.group} disabled={busy || videoBusy}>
           <legend>Range</legend>
           {ranges.map((r) => {
-            const info = describe(r.value);
+            const info = describe(rangeOf(r.value));
             return (
               <label
                 key={r.value}
@@ -198,9 +231,9 @@ function ExportDialog() {
                 <input
                   type="radio"
                   name="range"
-                  checked={range === r.value}
+                  checked={choice === r.value}
                   disabled={!info}
-                  onChange={() => setRange(r.value)}
+                  onChange={() => setChoice(r.value)}
                 />
                 <span>{r.label}</span>
                 <span className={styles.meta}>{info ?? 'not available'}</span>
@@ -209,179 +242,215 @@ function ExportDialog() {
           })}
         </fieldset>
 
-        <fieldset className={styles.group} disabled={busy}>
-          <legend>What to export</legend>
-          <label className={styles.option} data-hint="Everything you hear, mixed into one file">
-            <input type="radio" name="what" checked={!settings.stems} onChange={() => set({ exportStems: false })} />
-            <span>The mix (one file)</span>
-          </label>
-          <label
-            className={`${styles.option} ${stems.length ? '' : styles.optionOff}`}
-            data-hint="One file per mixer track that plays something, all the same length, so they line up in another app"
-          >
-            <input
-              type="radio"
-              name="what"
-              checked={settings.stems}
-              disabled={stems.length === 0}
-              onChange={() => set({ exportStems: true })}
-            />
-            <span>Stems: one file per mixer track</span>
-            <span className={styles.meta}>
-              {stems.length ? `${stems.length} track${stems.length === 1 ? '' : 's'}` : 'nothing plays'}
-            </span>
-          </label>
-          {settings.stems && (
-            <div className={styles.sub}>
-              <p className={styles.note}>{stems.map((s) => s.name).join(' · ')}</p>
+        {tab === 'video' ? (
+          <VideoPanel range={range} onBusy={setVideoBusy} abortRef={abort} onClose={close} />
+        ) : (
+          <>
+            <fieldset className={styles.group} disabled={busy}>
+              <legend>What to export</legend>
+              <label className={styles.option} data-hint="Everything you hear, mixed into one file">
+                <input
+                  type="radio"
+                  name="what"
+                  checked={!settings.stems}
+                  onChange={() => set({ exportStems: false })}
+                />
+                <span>The mix (one file)</span>
+              </label>
+              <label
+                className={`${styles.option} ${stems.length ? '' : styles.optionOff}`}
+                data-hint="One file per mixer track that plays something, all the same length, so they line up in another app"
+              >
+                <input
+                  type="radio"
+                  name="what"
+                  checked={settings.stems}
+                  disabled={stems.length === 0}
+                  onChange={() => set({ exportStems: true })}
+                />
+                <span>Stems: one file per mixer track</span>
+                <span className={styles.meta}>
+                  {stems.length ? `${stems.length} track${stems.length === 1 ? '' : 's'}` : 'nothing plays'}
+                </span>
+              </label>
+              {settings.stems && (
+                <div className={styles.sub}>
+                  <p className={styles.note}>{stems.map((s) => s.name).join(' · ')}</p>
+                  <label
+                    className={styles.option}
+                    data-hint="On: each stem goes through the master's effects and volume, like the mix. Off: raw stems that add up exactly to the master's input"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={settings.masterChain}
+                      onChange={(e) => set({ exportMasterChain: e.target.checked })}
+                    />
+                    <span>Through the master track (its effects and volume)</span>
+                  </label>
+                  <p className={styles.note}>
+                    {settings.masterChain
+                      ? 'Each stem sounds like it does in the mix. With master effects such as a compressor, stems played together can differ slightly from the mix.'
+                      : 'Raw stems: they add up exactly to the mix before the master. Best when you mix or master in another app (use 32-bit float WAV if they are loud).'}
+                  </p>
+                  <div className={styles.row} data-hint="Where the stem files go">
+                    <label className={styles.option}>
+                      <input
+                        type="radio"
+                        name="to"
+                        checked={settings.stemsTo === 'folder'}
+                        onChange={() => set({ exportStemsTo: 'folder' })}
+                      />
+                      <span>Into a folder</span>
+                    </label>
+                    <label className={styles.option}>
+                      <input
+                        type="radio"
+                        name="to"
+                        checked={settings.stemsTo === 'zip'}
+                        onChange={() => set({ exportStemsTo: 'zip' })}
+                      />
+                      <span>As one .zip file</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </fieldset>
+
+            <fieldset className={styles.group} disabled={busy}>
+              <legend>File format</legend>
+              <div className={styles.segmented} role="radiogroup" aria-label="File format">
+                {CODECS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={settings.codec === c.value}
+                    className={`${styles.segment} ${settings.codec === c.value ? styles.segmentOn : ''}`}
+                    onClick={() => set({ exportCodec: c.value })}
+                    data-hint={`${c.label}: ${c.note}`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+              <p className={styles.note}>{codec.note}</p>
+              <div className={styles.row}>
+                {settings.codec === 'wav' && (
+                  <label
+                    className={styles.field}
+                    data-hint="Bits per sample: more bits keep more detail in quiet passages"
+                  >
+                    Bit depth
+                    <select
+                      value={prefs.exportFormat}
+                      onChange={(e) => set({ exportFormat: e.target.value as PrefsState['exportFormat'] })}
+                    >
+                      {WAV_DEPTHS.map((d) => (
+                        <option key={d.value} value={d.value} title={d.hint}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {settings.codec === 'flac' && (
+                  <label
+                    className={styles.field}
+                    data-hint="Bits per sample: 16-bit is CD quality (dithered), 24-bit keeps more detail"
+                  >
+                    Bit depth
+                    <select value={settings.flacBits} onChange={(e) => set({ exportFlacBits: Number(e.target.value) })}>
+                      <option value={16}>16-bit</option>
+                      <option value={24}>24-bit</option>
+                    </select>
+                  </label>
+                )}
+                {settings.codec === 'mp3' && (
+                  <label
+                    className={styles.field}
+                    data-hint="Bit rate in kbps (kilobits per second): higher sounds better and makes bigger files"
+                  >
+                    Quality
+                    <select value={settings.mp3Kbps} onChange={(e) => set({ exportMp3Kbps: Number(e.target.value) })}>
+                      {MP3_BITRATES.map((k) => (
+                        <option key={k} value={k}>
+                          {k} kbps{k === 320 ? ' (best)' : k === 128 ? ' (smallest)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label
+                  className={styles.field}
+                  data-hint="Samples per second in kHz: 44.1 for music sites and CDs, 48 for video"
+                >
+                  Sample rate
+                  <select value={rate} onChange={(e) => set({ exportSampleRate: Number(e.target.value) })}>
+                    {rates.map((r) => (
+                      <option key={r} value={r}>
+                        {r / 1000} kHz
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <label
                 className={styles.option}
-                data-hint="On: each stem goes through the master's effects and volume, like the mix. Off: raw stems that add up exactly to the master's input"
+                data-hint="Turns the whole export up (or down) so its loudest moment peaks at −0.3 dBFS, just under the maximum"
               >
                 <input
                   type="checkbox"
-                  checked={settings.masterChain}
-                  onChange={(e) => set({ exportMasterChain: e.target.checked })}
+                  checked={settings.normalize}
+                  onChange={(e) => set({ exportNormalize: e.target.checked })}
                 />
-                <span>Through the master track (its effects and volume)</span>
+                <span>Normalize: make the loudest moment peak at −0.3 dB</span>
               </label>
-              <p className={styles.note}>
-                {settings.masterChain
-                  ? 'Each stem sounds like it does in the mix. With master effects such as a compressor, stems played together can differ slightly from the mix.'
-                  : 'Raw stems: they add up exactly to the mix before the master. Best when you mix or master in another app (use 32-bit float WAV if they are loud).'}
-              </p>
-              <div className={styles.row} data-hint="Where the stem files go">
-                <label className={styles.option}>
-                  <input
-                    type="radio"
-                    name="to"
-                    checked={settings.stemsTo === 'folder'}
-                    onChange={() => set({ exportStemsTo: 'folder' })}
-                  />
-                  <span>Into a folder</span>
-                </label>
-                <label className={styles.option}>
-                  <input
-                    type="radio"
-                    name="to"
-                    checked={settings.stemsTo === 'zip'}
-                    onChange={() => set({ exportStemsTo: 'zip' })}
-                  />
-                  <span>As one .zip file</span>
-                </label>
+              {settings.normalize && settings.stems && (
+                <p className={styles.note}>
+                  Stems are raised together, by the same amount, so they still add up to the mix.
+                </p>
+              )}
+            </fieldset>
+            <p className={dialog.detail}>
+              Renders with the same engine as playback, including release and effect tails; the silence after the last
+              tail is trimmed. For MIDI, use File › Export song as MIDI.
+            </p>
+            {busy && (
+              <div className={styles.progress} role="progressbar" aria-valuenow={Math.round(progress.fraction * 100)}>
+                <div className={styles.bar} style={{ width: `${progress.fraction * 100}%` }} />
+                <span>
+                  {stage}… {Math.round(progress.fraction * 100)}%
+                </span>
               </div>
-            </div>
-          )}
-        </fieldset>
-
-        <fieldset className={styles.group} disabled={busy}>
-          <legend>File format</legend>
-          <div className={styles.segmented} role="radiogroup" aria-label="File format">
-            {CODECS.map((c) => (
+            )}
+            {error && <p className={styles.error}>{error}</p>}
+            <div className={dialog.buttons}>
               <button
-                key={c.value}
-                type="button"
-                role="radio"
-                aria-checked={settings.codec === c.value}
-                className={`${styles.segment} ${settings.codec === c.value ? styles.segmentOn : ''}`}
-                onClick={() => set({ exportCodec: c.value })}
-                data-hint={`${c.label}: ${c.note}`}
+                className={dialog.button}
+                onClick={close}
+                data-hint="Close without exporting (Esc); stops an export that is running"
               >
-                {c.label}
+                Cancel
               </button>
-            ))}
-          </div>
-          <p className={styles.note}>{codec.note}</p>
-          <div className={styles.row}>
-            {settings.codec === 'wav' && (
-              <label className={styles.field} data-hint="Bits per sample: more bits keep more detail in quiet passages">
-                Bit depth
-                <select value={prefs.exportFormat} onChange={(e) => set({ exportFormat: e.target.value as PrefsState['exportFormat'] })}>
-                  {WAV_DEPTHS.map((d) => (
-                    <option key={d.value} value={d.value} title={d.hint}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {settings.codec === 'flac' && (
-              <label className={styles.field} data-hint="Bits per sample: 16-bit is CD quality (dithered), 24-bit keeps more detail">
-                Bit depth
-                <select value={settings.flacBits} onChange={(e) => set({ exportFlacBits: Number(e.target.value) })}>
-                  <option value={16}>16-bit</option>
-                  <option value={24}>24-bit</option>
-                </select>
-              </label>
-            )}
-            {settings.codec === 'mp3' && (
-              <label className={styles.field} data-hint="Bit rate in kbps (kilobits per second): higher sounds better and makes bigger files">
-                Quality
-                <select value={settings.mp3Kbps} onChange={(e) => set({ exportMp3Kbps: Number(e.target.value) })}>
-                  {MP3_BITRATES.map((k) => (
-                    <option key={k} value={k}>
-                      {k} kbps{k === 320 ? ' (best)' : k === 128 ? ' (smallest)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <label className={styles.field} data-hint="Samples per second in kHz: 44.1 for music sites and CDs, 48 for video">
-              Sample rate
-              <select value={rate} onChange={(e) => set({ exportSampleRate: Number(e.target.value) })}>
-                {rates.map((r) => (
-                  <option key={r} value={r}>
-                    {r / 1000} kHz
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <label
-            className={styles.option}
-            data-hint="Turns the whole export up (or down) so its loudest moment peaks at −0.3 dBFS, just under the maximum"
-          >
-            <input type="checkbox" checked={settings.normalize} onChange={(e) => set({ exportNormalize: e.target.checked })} />
-            <span>Normalize: make the loudest moment peak at −0.3 dB</span>
-          </label>
-          {settings.normalize && settings.stems && (
-            <p className={styles.note}>Stems are raised together, by the same amount, so they still add up to the mix.</p>
-          )}
-        </fieldset>
-        <p className={dialog.detail}>
-          Renders with the same engine as playback, including release and effect tails; the silence after the last tail is
-          trimmed. For MIDI, use File › Export song as MIDI.
-        </p>
-        {busy && (
-          <div className={styles.progress} role="progressbar" aria-valuenow={Math.round(progress.fraction * 100)}>
-            <div className={styles.bar} style={{ width: `${progress.fraction * 100}%` }} />
-            <span>
-              {stage}… {Math.round(progress.fraction * 100)}%
-            </span>
-          </div>
+              {!busy && (
+                <button
+                  className={`${dialog.button} ${dialog.primary}`}
+                  disabled={'error' in plan || (settings.stems && stems.length === 0)}
+                  onClick={() => void start()}
+                  data-hint={
+                    settings.stems
+                      ? settings.stemsTo === 'folder'
+                        ? 'Choose a folder, then the stems are rendered into it'
+                        : 'Choose where to save the .zip, then the stems are rendered'
+                      : `Choose where to save the ${codec.label} file, then it is rendered`
+                  }
+                >
+                  Export…
+                </button>
+              )}
+            </div>
+          </>
         )}
-        {error && <p className={styles.error}>{error}</p>}
-        <div className={dialog.buttons}>
-          <button className={dialog.button} onClick={close} data-hint="Close without exporting (Esc); stops an export that is running">
-            Cancel
-          </button>
-          {!busy && (
-            <button
-              className={`${dialog.button} ${dialog.primary}`}
-              disabled={'error' in plan || (settings.stems && stems.length === 0)}
-              onClick={() => void start()}
-              data-hint={
-                settings.stems
-                  ? settings.stemsTo === 'folder'
-                    ? 'Choose a folder, then the stems are rendered into it'
-                    : 'Choose where to save the .zip, then the stems are rendered'
-                  : `Choose where to save the ${codec.label} file, then it is rendered`
-              }
-            >
-              Export…
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

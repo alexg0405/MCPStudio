@@ -88,7 +88,17 @@ function fullBox(type: string, version: number, flags: number, ...payload: Uint8
 }
 
 /** The 3×3 identity matrix every tkhd and mvhd carries. */
-const MATRIX = concat([u32(0x00010000), u32(0), u32(0), u32(0), u32(0x00010000), u32(0), u32(0), u32(0), u32(0x40000000)]);
+const MATRIX = concat([
+  u32(0x00010000),
+  u32(0),
+  u32(0),
+  u32(0),
+  u32(0x00010000),
+  u32(0),
+  u32(0),
+  u32(0),
+  u32(0x40000000),
+]);
 
 /** An MPEG-4 descriptor: tag, a length in one byte (all ours are short), the payload. */
 function descriptor(tag: number, ...payload: Uint8Array[]): Uint8Array {
@@ -114,7 +124,14 @@ interface TrackTable {
   duration: number;
 }
 
-const newTable = (): TrackTable => ({ sizes: [], durations: [], syncs: [], chunkOffsets: [], chunkSamples: [], duration: 0 });
+const newTable = (): TrackTable => ({
+  sizes: [],
+  durations: [],
+  syncs: [],
+  chunkOffsets: [],
+  chunkSamples: [],
+  duration: 0,
+});
 
 function pushDuration(t: TrackTable, delta: number): void {
   const last = t.durations[t.durations.length - 1];
@@ -212,18 +229,22 @@ function audioEntry(a: Mp4AudioTrack): Uint8Array {
       0x03,
       u16(2),
       u8(0),
-      descriptor(
-        0x04,
-        u8(0x40, 0x15),
-        u8(0, 0, 0),
-        u32(0),
-        u32(0),
-        descriptor(0x05, a.audioSpecificConfig),
-      ),
+      descriptor(0x04, u8(0x40, 0x15), u8(0, 0, 0), u32(0), u32(0), descriptor(0x05, a.audioSpecificConfig)),
       descriptor(0x06, u8(2)),
     ),
   );
-  return box('mp4a', zeros(6), u16(1), zeros(8), u16(a.channels), u16(16), u16(0), u16(0), u32((Math.min(65535, a.sampleRate) << 16) >>> 0), esds);
+  return box(
+    'mp4a',
+    zeros(6),
+    u16(1),
+    zeros(8),
+    u16(a.channels),
+    u16(16),
+    u16(0),
+    u16(0),
+    u32((Math.min(65535, a.sampleRate) << 16) >>> 0),
+    esds,
+  );
 }
 
 interface MoovInput {
@@ -233,6 +254,8 @@ interface MoovInput {
   audioTable?: TrackTable;
   /** Absolute file offset of the first sample byte. */
   base: number;
+  /** Samples of real audio the encoder was given: the music ends there, not at the end of the last (padded) packet. */
+  audioFrames?: number | undefined;
 }
 
 /** The movie box for what has been written (also used, with worst-case tables, to size the reservation). */
@@ -251,7 +274,11 @@ export function buildMoov(m: MoovInput): Uint8Array {
           'minf',
           fullBox('vmhd', 0, 1, zeros(8)),
           dinf(),
-          box('stbl', fullBox('stsd', 0, 0, u32(1), videoEntry(m.video)), ...sampleTableBoxes(m.videoTable, m.base, true)),
+          box(
+            'stbl',
+            fullBox('stsd', 0, 0, u32(1), videoEntry(m.video)),
+            ...sampleTableBoxes(m.videoTable, m.base, true),
+          ),
         ),
       ),
     ),
@@ -260,7 +287,7 @@ export function buildMoov(m: MoovInput): Uint8Array {
   if (m.audio && m.audioTable) {
     const a = m.audio;
     const t = m.audioTable;
-    const music = Math.max(0, t.duration - a.priming);
+    const music = Math.min(Math.max(0, t.duration - a.priming), m.audioFrames ?? Infinity);
     audioMs = Math.round((music * MOVIE_TIMESCALE) / a.sampleRate);
     traks.push(
       box(
@@ -429,7 +456,15 @@ export class Mp4Muxer {
 
   private startGroup(ms: number): Group {
     this.flushGroup();
-    return (this.group = { startMs: ms, video: [], videoSamples: 0, videoBytes: 0, audio: [], audioSamples: 0, audioBytes: 0 });
+    return (this.group = {
+      startMs: ms,
+      video: [],
+      videoSamples: 0,
+      videoBytes: 0,
+      audio: [],
+      audioSamples: 0,
+      audioBytes: 0,
+    });
   }
 
   private takeVideo(c: MuxChunk): void {
@@ -437,7 +472,8 @@ export class Mp4Muxer {
     const g = !this.group || ms - this.group.startMs >= this.groupMs ? this.startGroup(ms) : this.group;
     const ticks = Math.round((c.timestampUs * VIDEO_TIMESCALE) / 1_000_000);
     if (this.lastVideoTicks >= 0) {
-      if (ticks <= this.lastVideoTicks) throw new Mp4Error('The video encoder reordered frames, which this MP4 writer cannot store. Use WebM instead.');
+      if (ticks <= this.lastVideoTicks)
+        throw new Mp4Error('The video encoder reordered frames, which this MP4 writer cannot store. Use WebM instead.');
       pushDuration(this.vt, ticks - this.lastVideoTicks);
     }
     this.lastVideoTicks = ticks;
@@ -465,7 +501,9 @@ export class Mp4Muxer {
     if (!g) return;
     this.group = null;
     if (this.dataBytes + g.videoBytes + g.audioBytes + this.dataAt > MAX_BYTES)
-      throw new Mp4Error('This video is too long for an MP4 file (4 GB). Export it as WebM, or a shorter part of the song.');
+      throw new Mp4Error(
+        'This video is too long for an MP4 file (4 GB). Export it as WebM, or a shorter part of the song.',
+      );
     if (g.videoSamples > 0) {
       this.vt.chunkOffsets.push(this.dataBytes);
       this.vt.chunkSamples.push(g.videoSamples);
@@ -480,8 +518,12 @@ export class Mp4Muxer {
     }
   }
 
-  /** Ends the file: the last group, then the real index and the mdat size written over the start. */
-  finish(): void {
+  /**
+   * Ends the file: the last group, then the real index and the mdat size written over the start.
+   * `audioFrames`: samples of audio the encoder was given; the encoder pads its last packet (and may add one to
+   * flush its delay), and the edit list cuts the sound where the music ends.
+   */
+  finish(audioFrames?: number): void {
     if (this.finished) return;
     this.finished = true;
     this.vEnded = this.aEnded = true;
@@ -495,10 +537,13 @@ export class Mp4Muxer {
       videoTable: this.vt,
       ...(o.audio ? { audio: o.audio, audioTable: this.at } : {}),
       base: this.dataAt,
+      audioFrames,
     });
     const room = this.reserved - moov.length;
     if (room < 8)
-      throw new Mp4Error('The MP4 index outgrew the space reserved for it: the video is longer than planned. Use WebM, or export a shorter part.');
+      throw new Mp4Error(
+        'The MP4 index outgrew the space reserved for it: the video is longer than planned. Use WebM, or export a shorter part.',
+      );
     this.out.patch(this.moovAt, concat([moov, u32(room), ascii('free'), zeros(room - 8)]));
     this.out.patch(this.mdatAt, u32(8 + this.dataBytes));
     this.size = this.pos;

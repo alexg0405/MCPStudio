@@ -55,7 +55,11 @@ export interface VideoExportSettings {
 }
 
 /** The video settings remembered in the prefs, for a range; the text is the song's. */
-export function videoSettingsFrom(p: PrefsState, range: ExportRange, text: { title: string; artist: string }): VideoExportSettings {
+export function videoSettingsFrom(
+  p: PrefsState,
+  range: ExportRange,
+  text: { title: string; artist: string },
+): VideoExportSettings {
   return {
     range,
     style: p.exportVideoStyle,
@@ -69,7 +73,9 @@ export function videoSettingsFrom(p: PrefsState, range: ExportRange, text: { tit
 }
 
 /** The prefs that remember a video export's choices. */
-export function videoPrefsPatch(v: Pick<VideoExportSettings, 'style' | 'size' | 'fps' | 'format' | 'normalize'>): Partial<PrefsState> {
+export function videoPrefsPatch(
+  v: Pick<VideoExportSettings, 'style' | 'size' | 'fps' | 'format' | 'normalize'>,
+): Partial<PrefsState> {
   return {
     exportVideoStyle: v.style,
     exportVideoSize: v.size,
@@ -125,7 +131,7 @@ export interface VideoExportResult {
 const MUSIC_AUDIO_RATE = VIDEO_SAMPLE_RATE;
 
 /** What the codec needs to start, from settings. */
-export function workerSettings(settings: VideoExportSettings) {
+export function workerSettings(settings: Pick<VideoExportSettings, 'format' | 'size' | 'fps' | 'scale'>) {
   const info = VIDEO_FORMAT_INFO[settings.format];
   const { width, height } = videoDimensions(settings.size, settings.scale ?? 1);
   return {
@@ -208,7 +214,8 @@ async function runVideoExportOf(
   }
 
   const image = settings.image ? await createImageBitmap(settings.image).catch(() => null) : null;
-  if (settings.image && !image) throw new ExportError('That picture could not be read. Choose a JPEG, PNG, WebP or GIF image.');
+  if (settings.image && !image)
+    throw new ExportError('That picture could not be read. Choose a JPEG, PNG, WebP or GIF image.');
   const { sink, done } = await sinkFor(target, info.mime);
   let session: VideoSession | null = null;
   try {
@@ -240,8 +247,12 @@ async function runVideoExportOf(
     let renderFraction = 0;
     // The render (fast) and the pictures (slower) share the bar: a tenth for the render, the rest for the video.
     const show = () =>
-      report(first, 0.1 * renderFraction + 0.9 * Math.min(1, delivered / Math.max(1, musical * rate)), delivered > 0 ? 'encode' : 'render',
-        delivered > 0 ? 'the video' : 'the audio');
+      report(
+        first,
+        0.1 * renderFraction + 0.9 * Math.min(1, delivered / Math.max(1, musical * rate)),
+        delivered > 0 ? 'encode' : 'render',
+        delivered > 0 ? 'the video' : 'the audio',
+      );
     const sent = session;
     await renderPass(
       {
@@ -274,7 +285,13 @@ async function runVideoExportOf(
     const r = await session.finish();
     await done();
     hooks.onProgress?.({ stage: 'encode', fraction: 1 });
-    return { name: target.name, seconds: r.seconds, frames: r.frames, bytes: r.bytes, took: (performance.now() - started) / 1000 };
+    return {
+      name: target.name,
+      seconds: r.seconds,
+      frames: r.frames,
+      bytes: r.bytes,
+      took: (performance.now() - started) / 1000,
+    };
   } catch (e) {
     session?.close();
     await sink.abort();

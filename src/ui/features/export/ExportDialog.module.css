@@ -168,3 +168,67 @@
   color: var(--ag-on-accent);
   font-weight: 600;
 }
+
+/* The dialog is wider for video: the look's controls beside a preview of one frame. */
+.exportVideo {
+  width: min(700px, 100%);
+}
+
+/* Audio / Video, above the range. */
+.tabs {
+  margin: 0 0 6px;
+}
+
+.videoLook {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.videoControls {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.previewBox {
+  display: flex;
+  flex: 0 1 260px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The frame: an inset window, sized by its own aspect ratio (widescreen, tall or square). */
+.preview {
+  display: block;
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+}
+
+.previewLabel {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
+}
+
+.text {
+  min-width: 190px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.text::placeholder {
+  color: var(--ag-text-faint);
+}

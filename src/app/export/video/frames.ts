@@ -81,7 +81,8 @@ export function bandCount(style: VideoStyle, width: number, height: number): num
 /** `color` (as `rgba(…)` or `#rrggbb`) with its alpha multiplied by `a`. */
 export function withAlpha(color: string, a: number): string {
   const m = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)(?:[\s,/]+([\d.]+))?\s*\)$/i.exec(color.trim());
-  if (m) return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${Math.max(0, Math.min(1, (m[4] === undefined ? 1 : Number(m[4])) * a))})`;
+  if (m)
+    return `rgba(${m[1]}, ${m[2]}, ${m[3]}, ${Math.max(0, Math.min(1, (m[4] === undefined ? 1 : Number(m[4])) * a))})`;
   const h = /^#([0-9a-f]{6})$/i.exec(color.trim());
   if (h) {
     const n = parseInt(h[1] as string, 16);
@@ -367,7 +368,10 @@ export class FrameRenderer {
     const trace = () => {
       g.beginPath();
       for (let i = 0; i < points; i++) {
-        const v = Math.max(-1, Math.min(1, (wave[start + Math.floor((i * (span - 1)) / (points - 1))] as number) * 1.15));
+        const v = Math.max(
+          -1,
+          Math.min(1, (wave[start + Math.floor((i * (span - 1)) / (points - 1))] as number) * 1.15),
+        );
         const x = viz.x + (i / (points - 1)) * viz.w;
         if (i === 0) g.moveTo(x, mid - v * amp);
         else g.lineTo(x, mid - v * amp);
@@ -398,7 +402,7 @@ export class FrameRenderer {
     const cx = viz.x + viz.w / 2;
     const cy = viz.y + viz.h / 2;
     const reach = Math.min(viz.w, viz.h) / 2;
-    const inner = reach * 0.42 * (1 + 0.07 * p);
+    const inner = reach * 0.46 * (1 + 0.07 * p);
     const long = reach * 0.5;
     const spokes = bands * 2;
     const turn = f.t * 0.12;
@@ -415,7 +419,7 @@ export class FrameRenderer {
       g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
     }
     g.strokeStyle = o.theme.accent;
-    g.lineWidth = Math.max(3 * u, ((2 * Math.PI * (inner + 10 * u)) / spokes) * 0.55);
+    g.lineWidth = Math.max(3 * u, ((2 * Math.PI * (inner + 10 * u)) / spokes) * 0.7);
     g.stroke();
     // The ring, bright on the beat.
     g.strokeStyle = withAlpha(o.theme.accentLight, 0.35 + 0.55 * p);

@@ -15,7 +15,9 @@ import { audioEncoderConfig, videoEncoderConfig } from './codec-config';
 
 /** True when the browser has WebCodecs encoders and an OffscreenCanvas to draw on. */
 export function webCodecsAvailable(): boolean {
-  return typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined';
+  return (
+    typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined' && typeof OffscreenCanvas !== 'undefined'
+  );
 }
 
 /** What to say when the browser cannot make videos at all. */
@@ -52,7 +54,9 @@ export async function probeFormats(size: VideoSize, fps: number, scale = 1): Pro
         continue;
       }
       const a = await AudioEncoder.isConfigSupported(audioEncoderConfig(settings));
-      out[format] = a.supported ? null : `This browser cannot encode ${info.audioCodec === 'opus' ? 'Opus' : 'AAC'} audio, which ${info.label} needs.`;
+      out[format] = a.supported
+        ? null
+        : `This browser cannot encode ${info.audioCodec === 'opus' ? 'Opus' : 'AAC'} audio, which ${info.label} needs.`;
     } catch (e) {
       out[format] = e instanceof Error ? e.message : String(e);
     }

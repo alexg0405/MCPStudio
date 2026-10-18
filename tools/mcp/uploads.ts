@@ -9,12 +9,12 @@ import type { Readable } from 'node:stream';
 /**
  * Exports for AI apps: no file picker is needed because this server writes the file. The page renders
  * the audio and sends the bytes here, under a one-time ticket that exists only while an authenticated
- * `export_audio` call is running, into one folder (default `~/Music/AGstudio/`). Names are cleaned
- * and only audio extensions are written, never over an existing file.
+ * `export_audio` or `export_video` call is running, into one folder (default `~/Music/AGstudio/`). Names are cleaned
+ * and only audio and video extensions are written, never over an existing file.
  */
 export const defaultExportsDir = (): string => join(homedir(), 'Music', 'AGstudio');
 
-const EXTENSIONS = new Set(['.wav', '.flac', '.mp3', '.zip']);
+const EXTENSIONS = new Set(['.wav', '.flac', '.mp3', '.zip', '.mp4', '.webm']);
 const MAX_BYTES = 4 * 1024 ** 3;
 
 /** One path segment that is safe to create: no separators, no control characters, not hidden. */

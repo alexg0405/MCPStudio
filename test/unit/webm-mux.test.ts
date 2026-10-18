@@ -30,7 +30,9 @@ function memoryWriter() {
   return { w, bytes: () => buf.slice(0, size) };
 }
 
-const OPUS_HEAD = new Uint8Array([0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, 1, 2, 0x38, 0x01, 0x80, 0xbb, 0, 0, 0, 0, 0]);
+const OPUS_HEAD = new Uint8Array([
+  0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64, 1, 2, 0x38, 0x01, 0x80, 0xbb, 0, 0, 0, 0, 0,
+]);
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -50,7 +52,7 @@ function videoChunks(seconds: number, fps: number, keyEvery: number, seed = 1): 
     timestampUs: frameTimeUs(i, fps),
     durationUs: frameDurationUs(i, fps),
     key: i % keyEvery === 0,
-    data: Uint8Array.from({ length: 50 + Math.floor(r() * 400), }, () => Math.floor(r() * 256)),
+    data: Uint8Array.from({ length: 50 + Math.floor(r() * 400) }, () => Math.floor(r() * 256)),
   }));
 }
 
@@ -67,18 +69,25 @@ function audioChunks(seconds: number, seed = 2): MuxChunk[] {
 
 const options = (audio = true) => ({
   video: { codec: 'V_VP9' as const, width: 1920, height: 1080, fps: 30 },
-  ...(audio ? { audio: { codec: 'A_OPUS' as const, channels: 2, sampleRate: 48000, codecPrivate: OPUS_HEAD, preSkip: 312 } } : {}),
+  ...(audio
+    ? { audio: { codec: 'A_OPUS' as const, channels: 2, sampleRate: 48000, codecPrivate: OPUS_HEAD, preSkip: 312 } }
+    : {}),
   title: 'My song',
 });
 
-function mux(video: MuxChunk[], audio: MuxChunk[], order: 'interleaved' | 'video first' | 'audio first' = 'interleaved') {
+function mux(
+  video: MuxChunk[],
+  audio: MuxChunk[],
+  order: 'interleaved' | 'video first' | 'audio first' = 'interleaved',
+) {
   const mem = memoryWriter();
   const m = new WebmMuxer(mem.w, options(audio.length > 0));
   if (order === 'interleaved') {
     let ai = 0;
     for (const v of video) {
       m.addVideo(v);
-      while (ai < audio.length && (audio[ai] as MuxChunk).timestampUs <= v.timestampUs + 40000) m.addAudio(audio[ai++] as MuxChunk);
+      while (ai < audio.length && (audio[ai] as MuxChunk).timestampUs <= v.timestampUs + 40000)
+        m.addAudio(audio[ai++] as MuxChunk);
     }
     while (ai < audio.length) m.addAudio(audio[ai++] as MuxChunk);
   } else if (order === 'video first') {
@@ -121,7 +130,14 @@ describe('WebmMuxer', () => {
     const [v, a] = f.tracks;
     expect(v).toMatchObject({ number: 1, type: 1, codecId: 'V_VP9', width: 1920, height: 1080 });
     expect(v?.defaultDuration).toBe(Math.round(1e9 / 30));
-    expect(a).toMatchObject({ number: 2, type: 2, codecId: 'A_OPUS', sampleRate: 48000, channels: 2, seekPreRoll: 80_000_000 });
+    expect(a).toMatchObject({
+      number: 2,
+      type: 2,
+      codecId: 'A_OPUS',
+      sampleRate: 48000,
+      channels: 2,
+      seekPreRoll: 80_000_000,
+    });
     expect(a?.codecDelay).toBe(Math.round((312 * 1e9) / 48000));
     expect([...(a?.codecPrivate ?? [])]).toEqual([...OPUS_HEAD]);
     // Top-level order: SeekHead, Info, Tracks, Clusters…, Cues.
@@ -236,7 +252,12 @@ describe('WebmMuxer', () => {
     const v: MuxChunk[] = [];
     for (let i = 0; i < 4; i++) {
       const t = frameTimeUs(hour * 60 + i, 60);
-      v.push({ timestampUs: t, durationUs: frameDurationUs(hour * 60 + i, 60), key: i === 0, data: new Uint8Array([1, 2, 3]) });
+      v.push({
+        timestampUs: t,
+        durationUs: frameDurationUs(hour * 60 + i, 60),
+        key: i === 0,
+        data: new Uint8Array([1, 2, 3]),
+      });
     }
     const mem = memoryWriter();
     const m = new WebmMuxer(mem.w, { video: { codec: 'V_VP9', width: 640, height: 360, fps: 60 } });

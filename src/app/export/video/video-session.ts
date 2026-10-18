@@ -88,7 +88,9 @@ export async function openVideoSession(
       await writes;
       if (failed) throw failed;
       worker.terminate();
-      return r.t === 'done' ? { frames: r.frames, seconds: r.seconds, bytes: r.bytes } : { frames, seconds: 0, bytes: 0 };
+      return r.t === 'done'
+        ? { frames: r.frames, seconds: r.seconds, bytes: r.bytes }
+        : { frames, seconds: 0, bytes: 0 };
     },
     close() {
       failed ??= new VideoEncodeError('The export was cancelled.');

@@ -30,7 +30,7 @@ import { cleanName, defaultExportsDir, saveUpload, UploadError, UploadTickets } 
  */
 const MAX_BODY = 8 * 1024 * 1024;
 /** Tools that render audio or wait for follow-up work get longer than a plain read. */
-const SLOW = new Set(['apply_actions', 'analyze_mix', 'render_preview', 'export_audio', 'run_command']);
+const SLOW = new Set(['apply_actions', 'analyze_mix', 'render_preview', 'export_audio', 'export_video', 'run_command']);
 
 export interface McpServerOptions {
   /** The AGstudio folder (the token lives in `<root>/.agstudio/mcp-token`). */
@@ -157,7 +157,7 @@ export function mcpServer(options: McpServerOptions): Plugin {
         async call(name, args, client) {
           if (!(await defs()).TOOL_DEFS.some((t) => t.name === name)) throw new UnknownToolError(name);
           status.touch(client, true);
-          const ticket = name === 'export_audio' ? uploads.issue() : undefined;
+          const ticket = name === 'export_audio' || name === 'export_video' ? uploads.issue() : undefined;
           try {
             return await bridge.call(name, args, { client, ticket }, SLOW.has(name) ? 15 * 60_000 : 60_000);
           } catch (e) {

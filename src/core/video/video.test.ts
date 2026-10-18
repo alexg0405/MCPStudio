@@ -2,13 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { constantTempo } from '../time/ppq';
 import { steppedTempo } from '../time/tempo';
 import { beatGrid, lastAtOrBefore, pulseAt, STRONG_PULSE, WEAK_PULSE } from './beats';
-import {
-  KEYFRAME_SECONDS,
-  VIDEO_FORMAT_INFO,
-  VIDEO_FORMATS,
-  videoBitrate,
-  videoDimensions,
-} from './formats';
+import { KEYFRAME_SECONDS, VIDEO_FORMAT_INFO, VIDEO_FORMATS, videoBitrate, videoDimensions } from './formats';
 import { SpectrumAnalyzer, bandEdges } from './spectrum';
 import {
   audioCenterFor,
@@ -221,7 +215,8 @@ describe('beat grid', () => {
 
 describe('spectrum bars', () => {
   const SR = 48000;
-  const sine = (hz: number, amp: number, n = 4096) => Float32Array.from({ length: n }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / SR));
+  const sine = (hz: number, amp: number, n = 4096) =>
+    Float32Array.from({ length: n }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / SR));
 
   it('has log-spaced band edges', () => {
     const e = bandEdges(4, 100, 1600);

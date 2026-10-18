@@ -18,6 +18,13 @@ import {
   type ExportTarget,
 } from '../export/audio-export';
 import { ExportError, trimExport } from '../export/export-wav';
+import {
+  runVideoExport,
+  videoFileName,
+  videoSettingsFrom,
+  type VideoExportSettings,
+} from '../export/video/video-export';
+import { VIDEO_FORMATS, VIDEO_SIZES, VIDEO_STYLES } from '@core/video/formats';
 import { planExport, planSeconds, type ExportRange } from '../export/plan';
 import type { Services } from '../services';
 import { barsArg, fail, ok, str, toBase64, type ToolFn } from './common';
@@ -25,12 +32,15 @@ import { barsArg, fail, ok, str, toBase64, type ToolFn } from './common';
 const PREVIEW_RATE = 32000;
 /** An export is held in memory until it is uploaded: longer songs go through the Export dialog. */
 const MAX_EXPORT_SECONDS = 20 * 60;
+/** A video is far bigger than its audio (tens of megabytes a minute): longer ones go through the Export dialog. */
+const MAX_VIDEO_SECONDS = 4 * 60;
 
 export interface AudioDeps {
   analyze: typeof analyzeMix;
   /** Renders the part and returns a WAV (Node tests pass a fake). */
   preview(s: Services, bars: { from: number; to: number } | undefined, maxSeconds: number): Promise<{ wav: Uint8Array; seconds: number; what: string }>;
   exportAudio: typeof runExport;
+  exportVideo: typeof runVideoExport;
   /** Sends a rendered file to the dev server (it writes it under the Music folder); returns its path. */
   upload(ticket: string, file: { name: string; folder?: string; bytes: Uint8Array }): Promise<string>;
 }
@@ -164,12 +174,55 @@ export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
     }
   };
 
-  return { analyze_mix, render_preview, export_audio };
+  const export_video: ToolFn = async (s, args, ctx) => {
+    if (!ctx.ticket) return fail('Exporting needs the AGstudio dev server (it writes the file).');
+    const bars = barsArg(args.bars);
+    if (typeof bars === 'string') return fail(bars);
+    const project = s.doc.getState().project;
+    const range: ExportRange = bars ? ticksOf(project, bars) : songLength(project) > 0 ? 'song' : 'pattern';
+    const plan = planExport(project, s.view.getState(), range);
+    if ('error' in plan) return fail(plan.error);
+    const seconds = planSeconds(project, plan);
+    if (seconds > MAX_VIDEO_SECONDS)
+      return fail(`That is ${Math.round(seconds / 60)} minutes of music: too long to make a video from here (the file is held in memory). Use File → Export as video in AGstudio, or make a part with "bars".`);
+    const pick = <T extends string>(v: unknown, all: readonly T[], fallback: T): T => (all as readonly string[]).includes(v as string) ? (v as T) : fallback;
+    const base = videoSettingsFrom(s.prefs.getState(), range, {
+      title: str(args.title) ?? (project.meta.title?.trim() || s.files.store.getState().name.replace(/\.agproj$/i, '') || 'Untitled'),
+      artist: str(args.artist) ?? project.meta.author?.trim() ?? '',
+    });
+    const settings: VideoExportSettings = {
+      ...base,
+      style: pick(args.style, VIDEO_STYLES, base.style),
+      size: pick(args.size, VIDEO_SIZES, base.size),
+      fps: args.fps === 30 || args.fps === 60 ? args.fps : base.fps,
+      format: pick(args.format, VIDEO_FORMATS, base.format),
+      normalize: typeof args.normalize === 'boolean' ? args.normalize : base.normalize,
+    };
+    const name = str(args.file_name) ?? s.files.store.getState().name;
+    const files = new Map<string, Uint8Array>();
+    const target: ExportTarget = { kind: 'memory', files, name: videoFileName(name, settings.format) };
+    try {
+      const res = await deps.exportVideo(s, settings, target);
+      const bytes = files.get(target.name);
+      if (!bytes) return fail('Nothing was rendered.');
+      const path = await deps.upload(ctx.ticket, { name: target.name, bytes });
+      return ok(
+        `Made a ${settings.size === 'vertical' ? 'vertical' : settings.size === 'square' ? 'square' : 'widescreen'} ${settings.style} video of ${Math.round(res.seconds)} s (${Math.round(bytes.length / 1e5) / 10} MB, ${settings.format}) at ${path}.`,
+        { files: [path], seconds: Math.round(res.seconds * 10) / 10, bytes: bytes.length, format: settings.format, style: settings.style, size: settings.size, fps: settings.fps },
+      );
+    } catch (e) {
+      if (e instanceof ExportError) return fail(e.message);
+      return fail(`The video export failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  return { analyze_mix, render_preview, export_audio, export_video };
 }
 
 export const defaultAudioDeps = (): AudioDeps => ({
   analyze: analyzeMix,
   preview: renderPreview,
   exportAudio: runExport,
+  exportVideo: runVideoExport,
   upload: uploadViaServer(),
 });

@@ -58,15 +58,15 @@ export class SpectrumAnalyzer {
     let sum = 0;
     for (let i = 0; i < this.window.length; i++) sum += this.window[i] as number;
     this.norm = 2 / sum;
-    this.topDb = opts.topDb ?? -14;
-    this.rangeDb = opts.rangeDb ?? 58;
+    this.topDb = opts.topDb ?? -8;
+    this.rangeDb = opts.rangeDb ?? 62;
     this.hzPerBin = sampleRate / this.fftSize;
     this.bars = new Float32Array(bands);
-    // +3 dB per octave above 1 kHz and below: pink-ish music reads flat across the bars.
+    // +2.5 dB per octave about 1 kHz: pink-ish music reads about flat across the bars.
     this.tilt = new Float64Array(bands);
     for (let b = 0; b < bands; b++) {
       const centre = Math.sqrt((this.edges[b] as number) * (this.edges[b + 1] as number));
-      this.tilt[b] = 3 * Math.log2(centre / 1000);
+      this.tilt[b] = 2.5 * Math.log2(centre / 1000);
     }
   }
 

@@ -18,7 +18,12 @@ export function boxes(b: Uint8Array, from = 0, to = b.length): Box[] {
   let at = from;
   while (at + 8 <= to) {
     let size = dv.getUint32(at);
-    const type = String.fromCharCode(b[at + 4] as number, b[at + 5] as number, b[at + 6] as number, b[at + 7] as number);
+    const type = String.fromCharCode(
+      b[at + 4] as number,
+      b[at + 5] as number,
+      b[at + 6] as number,
+      b[at + 7] as number,
+    );
     let start = at + 8;
     if (size === 1) {
       size = Number(dv.getBigUint64(at + 8));
@@ -71,7 +76,8 @@ export function parseMp4(b: Uint8Array): ParsedMp4 {
   const mdat = find(top, 'mdat');
   if (!ftyp || !moov || !mdat) throw new Error('missing ftyp, moov or mdat');
   const brands = [String.fromCharCode(...b.subarray(ftyp.start, ftyp.start + 4))];
-  for (let o = ftyp.start + 8; o + 4 <= ftyp.at + ftyp.size; o += 4) brands.push(String.fromCharCode(...b.subarray(o, o + 4)));
+  for (let o = ftyp.start + 8; o + 4 <= ftyp.at + ftyp.size; o += 4)
+    brands.push(String.fromCharCode(...b.subarray(o, o + 4)));
   const kids = boxes(b, moov.start, moov.at + moov.size);
   const mvhd = find(kids, 'mvhd');
   if (!mvhd) throw new Error('no mvhd');
@@ -88,12 +94,20 @@ export function parseMp4(b: Uint8Array): ParsedMp4 {
     const duration = dv.getUint32(tkhd.start + 20);
     const width = dv.getUint32(tkhd.start + 76) / 65536;
     const height = dv.getUint32(tkhd.start + 80) / 65536;
-    const elstBox = find(tk, 'edts') ? find(boxes(b, (find(tk, 'edts') as Box).start, (find(tk, 'edts') as Box).at + (find(tk, 'edts') as Box).size), 'elst') : undefined;
+    const elstBox = find(tk, 'edts')
+      ? find(
+          boxes(b, (find(tk, 'edts') as Box).start, (find(tk, 'edts') as Box).at + (find(tk, 'edts') as Box).size),
+          'elst',
+        )
+      : undefined;
     const elst: ParsedTrack['elst'] = [];
     if (elstBox) {
       const n = dv.getUint32(elstBox.start + 4);
       for (let i = 0; i < n; i++)
-        elst.push({ duration: dv.getUint32(elstBox.start + 8 + 12 * i), mediaTime: dv.getInt32(elstBox.start + 12 + 12 * i) });
+        elst.push({
+          duration: dv.getUint32(elstBox.start + 8 + 12 * i),
+          mediaTime: dv.getInt32(elstBox.start + 12 + 12 * i),
+        });
     }
     const mdia = find(tk, 'mdia') as Box;
     const md = boxes(b, mdia.start, mdia.at + mdia.size);
@@ -113,7 +127,8 @@ export function parseMp4(b: Uint8Array): ParsedMp4 {
     const stts = tbl('stts') as Box;
     const sttsN = dv.getUint32(stts.start + 4);
     const sttsRows: Array<[number, number]> = [];
-    for (let i = 0; i < sttsN; i++) sttsRows.push([dv.getUint32(stts.start + 8 + 8 * i), dv.getUint32(stts.start + 12 + 8 * i)]);
+    for (let i = 0; i < sttsN; i++)
+      sttsRows.push([dv.getUint32(stts.start + 8 + 8 * i), dv.getUint32(stts.start + 12 + 8 * i)]);
     const stssBox = tbl('stss');
     const stss: number[] | null = stssBox ? [] : null;
     if (stssBox && stss) {
@@ -124,7 +139,11 @@ export function parseMp4(b: Uint8Array): ParsedMp4 {
     const stscN = dv.getUint32(stscBox.start + 4);
     const stsc: Array<[number, number, number]> = [];
     for (let i = 0; i < stscN; i++)
-      stsc.push([dv.getUint32(stscBox.start + 8 + 12 * i), dv.getUint32(stscBox.start + 12 + 12 * i), dv.getUint32(stscBox.start + 16 + 12 * i)]);
+      stsc.push([
+        dv.getUint32(stscBox.start + 8 + 12 * i),
+        dv.getUint32(stscBox.start + 12 + 12 * i),
+        dv.getUint32(stscBox.start + 16 + 12 * i),
+      ]);
     const stszBox = tbl('stsz') as Box;
     const fixed = dv.getUint32(stszBox.start + 4);
     const stszN = dv.getUint32(stszBox.start + 8);

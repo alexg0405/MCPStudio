@@ -2740,6 +2740,79 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
 - Normalize: one gain so the loudest moment peaks at −0.3 dBFS (stems all by the mix's gain, so they still add up).
   `file.exportAudioNow` exports straight away with settings from its args (for the AI; asks where to save first).
 
+### Video export (`app/export/video/*`, `core/video/*`, `core/io/webm.ts`, `core/io/mp4.ts`)
+
+File > Export as video… (the Video tab of the Export dialog; also the marker, ruler and clip right-click menus for a part
+of the song, the action search, `file.exportVideo` / `file.exportVideoNow` for Studio and the MCP tool `export_video`)
+makes a music video **offline**: nothing plays, so a 3-minute song takes a few seconds to tens of seconds.
+
+- **Audio**: the same render as the audio export. `render-pass.ts` (`renderPass`) is the shared pass: the plan's range
+  (`planExport`: song, pattern, loop, or a `{ from, to }` span), `renderStream` window by window, `StreamTrimmer` for the
+  pre-roll, delay compensation and tail. Normalize renders once more first to find the peak (the same −0.3 dBFS gain as
+  the audio export). Always 48 kHz stereo (Opus needs it; AAC and players are happiest there).
+- **Pictures**: `video.worker.ts` receives the audio a piece (one second) at a time (`video-session.ts` awaits an `ack`
+  per piece, so memory stays at a few seconds of audio, a few frames in the encoder and one muxer cluster). For picture
+  `i` it reads a 4096-sample Hann window centred 1024 samples *behind* `i / fps` (the bars show what has just been
+  heard; a picture that leads the sound looks wrong), `SpectrumAnalyzer` (`core/video/spectrum.ts`: FFT from
+  `core/voice/fft`, log-spaced bands, a small tilt, dB to 0…1, instant attack, 0.14 s release) makes the bars and a
+  level, `FrameRenderer` (`frames.ts`, the same drawing for the Worker's OffscreenCanvas and the dialog's preview canvas)
+  draws one of four styles over the app theme's colors (`readTheme()` resolved on the main thread into `VideoTheme`,
+  because Workers can't read CSS; `videoThemeOf` in `ui/features/export/video-preview.ts`), then
+  `new VideoFrame(canvas, { timestamp })` goes to the `VideoEncoder`. Everything is laid out in units of
+  (short side / 1080), so one design serves 1920×1080, 1080×1920 and 1080×1080, and the tests and the preview draw at
+  a quarter size. The cover picture is decoded on the main thread (`createImageBitmap`), dimmed behind everything (and
+  in the middle of the circle), and kept only for the export (not stored in the project).
+- **Beat pulse**: `beatGrid(tempo, timeSig, fromTick, toTick)` (`core/video/beats.ts`) lists every beat of the range in
+  seconds from its start through the project's `TempoMap`, so tempo automation is followed; `pulseAt` is 1 on a beat
+  (bar starts a bit stronger), falling to ≈ 5 % by the next one, as a share of the beat so slow songs breathe slower. It
+  drives a glow behind everything, the ring, the line width and the bars' lift.
+- **Frame timing** (`core/video/timing.ts`): frame `i` is shown at `round(i · 10⁶ / fps)` µs (rounded from the exact
+  time, so an hour of frames has no drift), lasts until the next frame's time, and there are
+  `ceil(seconds · fps − 1e-6)` of them (at least 1), so the video is at most one frame longer than the audio.
+  Key frames are forced every 2 s (`KEYFRAME_SECONDS`, every 60 or 120 frames).
+- **Encoding** (`codec-config.ts`, shared with the dialog's support check): `VideoEncoder` (H.264 `avc1.640028` /
+  `avc1.64002a` for 60 fps with `avc: { format: 'avc' }`, VP9 `vp09.00.40.08` / `41`, AV1 `av01.0.08M.08`;
+  `latencyMode: 'quality'`, variable bit rate: 7 / 10 Mbit/s H.264, 5 / 7 VP9, 3.5 / 5 AV1 for 1080p at 30 / 60 fps,
+  scaled by pixels) and `AudioEncoder` (Opus 160 kbit/s, or AAC-LC `mp4a.40.2` 192 kbit/s with `aac: { format: 'aac' }`).
+  The dialog asks `isConfigSupported` for the chosen size and frame rate (`support.ts`) and greys out what this browser
+  can't make, with the reason; with no WebCodecs at all the dialog and `runVideoExport` say so in plain words.
+- **WebM muxer** (`core/io/webm.ts`, EBML): EBML header, Segment (size written as "unknown" and patched at the end, so a
+  cut-short export still plays), SeekHead (fixed-width positions), Info (TimecodeScale 1 ms, Duration patched at the
+  end), Tracks (V_VP9 / V_AV1 with av1C, A_OPUS with the encoder's OpusHead, CodecDelay = the pre-skip, SeekPreRoll
+  80 ms), then Clusters of about two seconds that start at a video key frame (SimpleBlocks, relative time as int16, a
+  cluster is also cut before 30 s whatever happens), and at the end the Cues (one per cluster, on the video track).
+  Video and audio chunks wait in two queues and are written in time order (a queue is held only while it waits for the
+  other, a few chunks). Unit-tested by reading its output back with an independent parser (`test/helpers/webm-parse.ts`).
+- **MP4 muxer** (`core/io/mp4.ts`, ISO BMFF, H.264 + AAC-LC): `ftyp`, **`moov` before `mdat`** (faststart), `mdat`.
+  The `moov` can only be written once the last sample is known, so its space is reserved up front from the longest the
+  video can be (`maxSeconds` = the music + 90 s): the muxer builds the largest `moov` such a file could need (the worst
+  sample, chunk and sync tables), writes a `free` box of that size (+ 16 bytes), streams the samples after it in groups
+  of 0.5 s (one chunk per track per group, video then audio), and at the end writes the real `moov` and a `free` box
+  over the reservation and the `mdat` size over its header (an hour at 60 fps reserves under 2 MB). AAC's priming (2112
+  samples) and the encoder's padding are cut by an `elst` edit list (`mediaTime = 2112`, `duration` = the music's length
+  from the samples the encoder was given), which is what lines the sound up with the picture. No B-frames: it refuses
+  frames that arrive out of order and a file past 4 GB (32-bit offsets), telling the musician to use WebM. Unit-tested
+  with `test/helpers/mp4-parse.ts` (box tree, every sample's bytes through the tables, the reservation).
+- **The file**: the Worker posts `write` and `patch` messages; `video-session.ts` applies them in order to a `ByteSink`
+  (`platform/sinks.ts`, the same sinks as the audio export: a File System Access handle written as it goes, with the
+  save picker opened first from the click, or a memory sink for the download fallback and for `export_video`, which
+  uploads it to the dev server). Progress is a tenth for the render and the rest for the pictures; Cancel (and Esc)
+  aborts the render, terminates the Worker and aborts the sink, leaving no file.
+- **Formats and what Chrome does here** (headless Chrome 14x on an M-series Mac): H.264 (hardware), VP9, AV1 and
+  Opus/AAC all encode; `<video>` plays both containers and decodes the sound with `decodeAudioData`. The file with the
+  best reach is MP4 (the default; the dialog falls back to the first format the browser can make).
+- **Measured** (`test/browser/video-export.test.ts`, a 15 s song, one run, headless Chrome on an M-series Mac, render
+  and encode included): 1080p30 H.264 7.8× real time, 12.7 MB (6.7 Mbit/s); VP9 6.9×, 9.8 MB (5.2 Mbit/s); AV1 6.0×,
+  5.2 MB (2.8 Mbit/s); 1080p60 H.264 4.0×, 19.3 MB; VP9 4.3×, 13.6 MB; 1080×1920 H.264 circle 7.7×; 1080×1080 wave 9.8×.
+  A three-minute song at a fifth of the size makes a correct MP4 and WebM (every cluster, the index, seeking to the end).
+- **Sync** (same test, 128 BPM so beats fall between frames): the first frame whose glow rises at each beat is at most
+  one frame (33 ms at 30 fps) from the first loud sample of the decoded sound, for WebM and MP4; the decoded duration is
+  within one frame of the audio's. An MP4's audio starts 2 ms after the WebM's (the first sample of a kick).
+- **Not done / limits**: no B-frame reordering (MP4); WebM leaves the last Opus packet's padding in (under 20 ms);
+  the AAC priming is the usual 2112 samples (a browser whose encoder primes differently would be a few ms off); the
+  picture is not stored in the project; fonts are the system's UI font (Workers can't load the page's fonts); `export_video`
+  is limited to four minutes because the file is held in memory until uploaded (the dialog has no limit).
+
 ### Importing FL Studio projects
 
 `core/io/flp.ts` (reader), `core/io/flp-import.ts` (mapper + report text), `core/io/flp-package.ts` (zipped loop

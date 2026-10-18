@@ -4,7 +4,7 @@ import type { ClientInfo, ToolResult } from './types';
 /** What a tool handler gets besides its arguments. */
 export interface ToolContext {
   client?: ClientInfo | undefined;
-  /** Present on `export_audio`: lets it upload the files it renders to the dev server. */
+  /** Present on `export_audio` and `export_video`: lets them upload the files it renders to the dev server. */
   ticket?: string | undefined;
 }
 

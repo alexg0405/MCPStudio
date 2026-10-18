@@ -64,6 +64,11 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 - **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
   and shortcuts you can change (Help → Keyboard shortcuts).
+- **Music videos** (File → Export as video…, or right-click a marker, the loop or a clip): the song or a part of it
+  as an MP4 (H.264 + AAC) or WebM (VP9 or AV1 + Opus) file, rendered offline, several times faster than real time.
+  Four looks (spectrum bars, waveform, circular spectrum, minimal with a progress bar) with your title and artist, an
+  optional cover picture, a pulse on every beat, in the app's colors; widescreen 1920×1080, vertical 1080×1920
+  (shorts, reels, TikTok) or square, at 30 or 60 fps. The Studio chat and MCP (`export_video`) make them too.
 - **FL Studio import** (File → Import FL Studio project…, or drop an `.flp` / zipped loop package): channels,
   patterns and notes, the arrangement (clips, track names, markers), mixer names, levels, routing and matching
   effects. Samples come along from a zipped loop package; VST and other plugins get a built-in stand-in that keeps
@@ -198,8 +203,9 @@ sends Claude, optionally with the detail of some bars), `list_plugins`, and the 
 reaching outside it come back as a question until `approve_outside: true`), `list_commands` / `run_command` (every
 menu item; file dialogs become a button for you to click: "Claude Code wants to export…"), `play`, `stop`, `seek`,
 `set_loop`, `transport_state`, `undo`, `redo`, `history`, `analyze_mix` (loudness, balance and findings),
-`render_preview` (a short WAV as audio content) and `export_audio` (writes WAV, FLAC or MP3, or stems, into
-`~/Music/AGstudio/`, no file dialog). The project, the commands, the plugins and the guide are also MCP resources.
+`render_preview` (a short WAV as audio content), `export_audio` (writes WAV, FLAC or MP3, or stems, into
+`~/Music/AGstudio/`, no file dialog) and `export_video` (a music video of up to four minutes, MP4 or WebM, into the
+same folder). The project, the commands, the plugins and the guide are also MCP resources.
 
 **Safety**: the endpoint only answers connections from this computer, only for the `localhost`, `127.0.0.1` or `[::1]`
 Host and Origin (against DNS rebinding), and only with the access token (`Authorization: Bearer …` or `?token=`),

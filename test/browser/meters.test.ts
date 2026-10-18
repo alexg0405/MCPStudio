@@ -14,6 +14,7 @@ import { R } from '@engine/meter/layout';
 import { MeterNode } from '@engine/meter/meter-node';
 import { renderOffline } from '@engine/render-offline';
 import { buildSong, measureMaster } from '../helpers/mix-level';
+import { perfLimit } from '../helpers/perf';
 
 const SR = 48000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -159,7 +160,7 @@ describe('a live engine', () => {
 });
 
 describe('cost', () => {
-  it('a meter node costs under 2 % of a core at basic detail and under 4 % at full detail (offline render time of 30 s of music-like noise)', { tags: ['perf'], timeout: 180_000 }, async () => {
+  it('a meter node costs under 2 % of a core at basic detail and under 4 % at full detail (looser limits in the regular run) (offline render time of 30 s of music-like noise)', { tags: ['perf'], timeout: 180_000 }, async () => {
     let seed = 99;
     const noise = () => {
       seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -184,7 +185,7 @@ describe('cost', () => {
     await render(true);
     const base = await best(null);
     const rows: string[] = [];
-    for (const [name, full, limit] of [['basic', false, 2], ['full', true, 4]] as const) {
+    for (const [name, full, limit] of [['basic', false, perfLimit(2, 6)], ['full', true, perfLimit(4, 12)]] as const) {
       const extra = Math.max(0, (await best(full)) - base);
       const share = (extra / (seconds * 1000)) * 100;
       rows.push(`${name}: ${share.toFixed(2)} % of a core`);

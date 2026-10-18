@@ -148,6 +148,9 @@ export interface TrackAnalyzerOptions {
   runStream?: StreamRunner;
 }
 
+/** The share of a song's progress bar that decoding it takes; the analysis fills the rest. */
+const DECODE_SHARE = 0.05;
+
 /**
  * The analyzer: one song at a time, from a queue. A 'now' job goes ahead of every queued 'background' job (it never
  * interrupts the running one); within a priority, jobs run first in first out. Callers asking for the same song share its
@@ -213,8 +216,8 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
     const audio = await decode(s, ref);
     if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded for analysis.`);
     controller.signal.throwIfAborted();
-    progress(0.05);
-    return finished(await run({ hash, ...audio }, (f) => progress(0.05 + 0.95 * f), controller.signal));
+    progress(DECODE_SHARE);
+    return finished(await run({ hash, ...audio }, (f) => progress(DECODE_SHARE + (1 - DECODE_SHARE) * f), controller.signal));
   };
 
   const newJob = (s: Services, ref: SampleRef, hash: string, priority: AnalysisPriority): Job => {

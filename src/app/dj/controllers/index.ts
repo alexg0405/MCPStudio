@@ -14,7 +14,7 @@ import { resolveDecks } from './decks-source';
 export { setDecksProvider } from './decks-source';
 export { DjControllers } from './manager';
 export { pickMappingFile, saveMappingFile } from './files';
-export type { ControllersState, ControllerDevice, LearnState, LogEntry } from './manager';
+export type { ControllersState, ControllerDevice, LearnState, LogEntry } from './types';
 
 const instances = new WeakMap<Services, DjControllers>();
 

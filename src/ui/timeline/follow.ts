@@ -51,6 +51,24 @@ export interface FollowFrame {
   style?: FollowStyle;
 }
 
+/**
+ * An empty frame record. An editor keeps one for its whole life and fills it in each frame (see `FollowFrame`), so the
+ * frame loop allocates nothing.
+ */
+export function createFollowFrame(): FollowFrame {
+  return {
+    now: 0,
+    enabled: false,
+    playing: false,
+    playhead: NaN,
+    scrollTick: 0,
+    visible: 0,
+    maxScroll: 0,
+    wrapEnd: Infinity,
+    busy: false,
+  };
+}
+
 export class PlayheadFollow {
   private wasPlaying = false;
   /** Scrolled by hand: wait until the playhead shows again (or playback restarts). */

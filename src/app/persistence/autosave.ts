@@ -23,8 +23,12 @@ import { zipOffThread } from './zip-async';
  * clean and whose lock nobody holds crashed: those are the recovery candidates.
  */
 
+/** How long after the last change an autosave waits, so a burst of edits is saved once. */
 export const AUTOSAVE_DEBOUNCE_MS = 3_000;
+/** The longest an autosave waits while changes keep coming. */
 export const AUTOSAVE_MAX_WAIT_MS = 30_000;
+/** How many autosaved sessions are kept when old ones are pruned. */
+const DEFAULT_AUTOSAVES_KEPT = 5;
 
 /** Page lifecycle hooks (injectable for tests). Each returns an unsubscribe function. */
 export interface AutosaveLifecycle {
@@ -63,6 +67,7 @@ export interface Autosave {
   stop(): void;
 }
 
+/** The real page lifecycle: the tab becoming hidden, and the page being hidden or closed. */
 export function browserLifecycle(): AutosaveLifecycle {
   return {
     onHidden(fn) {
@@ -81,6 +86,7 @@ export function browserLifecycle(): AutosaveLifecycle {
   };
 }
 
+/** Starts autosaving the project: listens for changes and saves them after a pause, on hide and on request. */
 export function startAutosave(opts: AutosaveOptions): Autosave {
   const debounceMs = opts.debounceMs ?? AUTOSAVE_DEBOUNCE_MS;
   const maxWaitMs = opts.maxWaitMs ?? AUTOSAVE_MAX_WAIT_MS;
@@ -89,15 +95,15 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
   const zip = opts.zip ?? zipOffThread;
   const report = opts.onError ?? ((e: unknown) => console.warn('Autosave failed:', e));
 
-  let dirty = false;
-  let stopped = false;
+  let hasUnsavedChanges = false;
+  let isStopped = false;
   /** Storage is unavailable (e.g. no OPFS): reported once, then nothing more is attempted. */
-  let disabled = false;
-  let saved = false;
+  let isDisabled = false;
+  let hasSavedOnce = false;
   let slot: AutosaveSlot = 'a';
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
   let maxWaitTimer: ReturnType<typeof setTimeout> | undefined;
-  let inflight: Promise<void> | null = null;
+  let writeInProgress: Promise<void> | null = null;
 
   const clearTimers = () => {
     clearTimeout(debounceTimer);
@@ -109,8 +115,8 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
     flush({ urgent }).catch(() => {}); // already reported
   };
   const onChange = () => {
-    dirty = true;
-    if (stopped || disabled) return;
+    hasUnsavedChanges = true;
+    if (isStopped || isDisabled) return;
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fire(), debounceMs);
     // The max-wait deadline counts from the first change since the last save.
@@ -137,15 +143,15 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
 
   async function write(urgent: boolean): Promise<void> {
     clearTimers();
-    dirty = false;
+    hasUnsavedChanges = false;
     let file: { data: Promise<Uint8Array>; meta: AutosaveMeta };
     try {
       file = encode(urgent);
       await storage.writeAutosave(opts.sessionId, slot, await file.data, file.meta);
     } catch (e) {
-      dirty = true;
-      if (e instanceof StorageError && e.code === 'unavailable') disabled = true;
-      else if (!stopped) {
+      hasUnsavedChanges = true;
+      if (e instanceof StorageError && e.code === 'unavailable') isDisabled = true;
+      else if (!isStopped) {
         // Retry on the next change, or after the max wait without one (don't hammer a full disk).
         clearTimeout(maxWaitTimer);
         maxWaitTimer = setTimeout(() => fire(), maxWaitMs);
@@ -153,30 +159,30 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
       report(e);
       throw e;
     }
-    saved = true;
+    hasSavedOnce = true;
     // Only a successful write moves on: the other slot still holds the newest good save.
     slot = slot === 'a' ? 'b' : 'a';
     opts.onSaved?.(file.meta);
   }
 
   async function flush(flushOpts: { urgent?: boolean } = {}): Promise<void> {
-    while (inflight) await inflight.catch(() => {});
-    if (!dirty || disabled) return;
+    while (writeInProgress) await writeInProgress.catch(() => {});
+    if (!hasUnsavedChanges || isDisabled) return;
     const pending = write(!!flushOpts.urgent);
-    inflight = pending;
+    writeInProgress = pending;
     try {
       await pending;
     } finally {
-      if (inflight === pending) inflight = null;
+      if (writeInProgress === pending) writeInProgress = null;
     }
   }
 
   const unsubscribe = opts.subscribe(onChange);
   const offHidden = lifecycle.onHidden(() => {
-    if (dirty) fire(true);
+    if (hasUnsavedChanges) fire(true);
   });
   const offPageHide = lifecycle.onPageHide(() => {
-    if (stopped) return;
+    if (isStopped) return;
     // Best effort: the page may be gone before this completes. If it doesn't, the session simply
     // stays a recovery candidate, which is the safe direction.
     void (async () => {
@@ -185,7 +191,7 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
       } catch {
         return; // not saved, so not clean
       }
-      if (dirty || disabled || !saved) return;
+      if (hasUnsavedChanges || isDisabled || !hasSavedOnce) return;
       try {
         await storage.markAutosaveClean(opts.sessionId);
       } catch (e) {
@@ -197,8 +203,8 @@ export function startAutosave(opts: AutosaveOptions): Autosave {
   return {
     flush,
     stop() {
-      if (stopped) return;
-      stopped = true;
+      if (isStopped) return;
+      isStopped = true;
       clearTimers();
       unsubscribe();
       offHidden();
@@ -243,7 +249,7 @@ export function selectRecoveryCandidates(
  */
 export function pruneAutosaves(
   metas: readonly AutosaveMeta[],
-  keep = 5,
+  keep = DEFAULT_AUTOSAVES_KEPT,
   protect: ReadonlySet<string> = new Set(),
 ): string[] {
   return metas

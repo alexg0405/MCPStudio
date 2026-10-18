@@ -198,6 +198,77 @@ function float32(v: number): Uint8Array {
 const VIDEO_TRACK = 1;
 const AUDIO_TRACK = 2;
 
+// The header's elements.
+/** TrackType values of a Matroska track entry. */
+const TRACK_TYPE_VIDEO = 1;
+const TRACK_TYPE_AUDIO = 2;
+/** Segment times count in this many nanoseconds per tick: 1 ms. */
+const TIMECODE_SCALE_NS = 1_000_000;
+const NANOSECONDS_PER_SECOND = 1e9;
+/** Opus always decodes at 48 kHz, and its pre-skip is counted in samples at that rate. */
+const OPUS_PRE_SKIP_RATE_HZ = 48000;
+/** Opus needs 80 ms of earlier audio to be decoded before a seek target (RFC 7845). */
+const OPUS_SEEK_PRE_ROLL_NS = 80_000_000;
+/** An EBML size of eight bytes, all ones after the length marker: "unknown size" (the Segment until finish()). */
+// (A new array each time: the writer may take the bytes away, so one must never be shared.)
+const unknownSize8Bytes = () => new Uint8Array([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+
+/** The EBML header: the format version and that this is a "webm" document. */
+function ebmlHeader(): Uint8Array {
+  return elementOf(
+    ID.EBML,
+    uint(ID.EBMLVersion, 1),
+    uint(ID.EBMLReadVersion, 1),
+    uint(ID.EBMLMaxIDLength, 4),
+    uint(ID.EBMLMaxSizeLength, 8),
+    str(ID.DocType, 'webm'),
+    uint(ID.DocTypeVersion, 4),
+    uint(ID.DocTypeReadVersion, 2),
+  );
+}
+
+/** The Segment's Info: millisecond timecodes, who wrote the file, an optional title and a Duration (patched in finish()). */
+function segmentInfo(title: string | undefined): Uint8Array {
+  return elementOf(
+    ID.Info,
+    uint(ID.TimecodeScale, TIMECODE_SCALE_NS),
+    str(ID.MuxingApp, 'AGstudio'),
+    str(ID.WritingApp, 'AGstudio'),
+    ...(title ? [str(ID.Title, title)] : []),
+    element(ID.Duration, float64(0)),
+  );
+}
+
+function videoTrackEntry(video: WebmVideoTrack): Uint8Array {
+  return elementOf(
+    ID.TrackEntry,
+    uint(ID.TrackNumber, VIDEO_TRACK),
+    uint(ID.TrackUID, VIDEO_TRACK),
+    uint(ID.TrackType, TRACK_TYPE_VIDEO),
+    uint(ID.FlagLacing, 0),
+    str(ID.CodecID, video.codec),
+    uint(ID.DefaultDuration, Math.round(NANOSECONDS_PER_SECOND / video.fps)),
+    ...(video.codecPrivate && video.codecPrivate.length ? [element(ID.CodecPrivate, video.codecPrivate)] : []),
+    elementOf(ID.Video, uint(ID.PixelWidth, video.width), uint(ID.PixelHeight, video.height)),
+  );
+}
+
+function audioTrackEntry(audio: WebmAudioTrack): Uint8Array {
+  return elementOf(
+    ID.TrackEntry,
+    uint(ID.TrackNumber, AUDIO_TRACK),
+    uint(ID.TrackUID, AUDIO_TRACK),
+    uint(ID.TrackType, TRACK_TYPE_AUDIO),
+    uint(ID.FlagLacing, 0),
+    str(ID.CodecID, audio.codec),
+    element(ID.CodecPrivate, audio.codecPrivate),
+    // The decoder drops the pre-skip; nanoseconds at 48 kHz.
+    uint(ID.CodecDelay, Math.round((audio.preSkip * NANOSECONDS_PER_SECOND) / OPUS_PRE_SKIP_RATE_HZ)),
+    uint(ID.SeekPreRoll, OPUS_SEEK_PRE_ROLL_NS),
+    elementOf(ID.Audio, element(ID.SamplingFrequency, float32(audio.sampleRate)), uint(ID.Channels, audio.channels)),
+  );
+}
+
 interface Cluster {
   startMs: number;
   /** Offset of the cluster's first byte from the start of the segment's data. */
@@ -247,66 +318,21 @@ export class WebmMuxer {
     this.pos += n;
   }
 
+  /**
+   * Writes everything before the first cluster: the EBML header, the Segment's start (size unknown for now),
+   * then SeekHead, Info and Tracks. Remembers where the three values that are patched in finish() sit.
+   */
   private writeHeader(): void {
     const { video, audio } = this.opts;
-    this.emit(
-      elementOf(
-        ID.EBML,
-        uint(ID.EBMLVersion, 1),
-        uint(ID.EBMLReadVersion, 1),
-        uint(ID.EBMLMaxIDLength, 4),
-        uint(ID.EBMLMaxSizeLength, 8),
-        str(ID.DocType, 'webm'),
-        uint(ID.DocTypeVersion, 4),
-        uint(ID.DocTypeReadVersion, 2),
-      ),
-    );
+    this.emit(ebmlHeader());
     // The Segment: its size is "unknown" (all ones) until finish() writes the real one over it.
     this.emit(idBytes(ID.Segment));
     this.segmentSizeAt = this.pos;
-    this.emit(new Uint8Array([0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]));
+    this.emit(unknownSize8Bytes());
     this.segmentStart = this.pos;
 
-    const title = this.opts.title;
-    const info = elementOf(
-      ID.Info,
-      uint(ID.TimecodeScale, 1_000_000),
-      str(ID.MuxingApp, 'AGstudio'),
-      str(ID.WritingApp, 'AGstudio'),
-      ...(title ? [str(ID.Title, title)] : []),
-      element(ID.Duration, float64(0)),
-    );
-    const videoEntry = elementOf(
-      ID.TrackEntry,
-      uint(ID.TrackNumber, VIDEO_TRACK),
-      uint(ID.TrackUID, VIDEO_TRACK),
-      uint(ID.TrackType, 1),
-      uint(ID.FlagLacing, 0),
-      str(ID.CodecID, video.codec),
-      uint(ID.DefaultDuration, Math.round(1e9 / video.fps)),
-      ...(video.codecPrivate && video.codecPrivate.length ? [element(ID.CodecPrivate, video.codecPrivate)] : []),
-      elementOf(ID.Video, uint(ID.PixelWidth, video.width), uint(ID.PixelHeight, video.height)),
-    );
-    const audioEntry = audio
-      ? elementOf(
-          ID.TrackEntry,
-          uint(ID.TrackNumber, AUDIO_TRACK),
-          uint(ID.TrackUID, AUDIO_TRACK),
-          uint(ID.TrackType, 2),
-          uint(ID.FlagLacing, 0),
-          str(ID.CodecID, audio.codec),
-          element(ID.CodecPrivate, audio.codecPrivate),
-          // The decoder drops the pre-skip; nanoseconds at 48 kHz.
-          uint(ID.CodecDelay, Math.round((audio.preSkip * 1e9) / 48000)),
-          uint(ID.SeekPreRoll, 80_000_000),
-          elementOf(
-            ID.Audio,
-            element(ID.SamplingFrequency, float32(audio.sampleRate)),
-            uint(ID.Channels, audio.channels),
-          ),
-        )
-      : new Uint8Array(0);
-    const tracks = elementOf(ID.Tracks, videoEntry, audioEntry);
+    const info = segmentInfo(this.opts.title);
+    const tracks = elementOf(ID.Tracks, videoTrackEntry(video), audio ? audioTrackEntry(audio) : new Uint8Array(0));
 
     // The SeekHead goes first and has a fixed size (8-byte positions), so the positions it holds are known now.
     const seek = (id: number, position: number) =>

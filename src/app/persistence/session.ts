@@ -82,10 +82,10 @@ function tabStorage(): Storage | null {
   }
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 function sessionFile(v: unknown, fallbackName: string): SessionFile {
-  const f = isObj(v) ? v : {};
+  const f = isRecord(v) ? v : {};
   return {
     name: typeof f.name === 'string' && f.name ? f.name : fallbackName,
     fileKey: typeof f.fileKey === 'string' ? f.fileKey : null,
@@ -110,7 +110,7 @@ function readSnapshot(): Omit<RestoredProject, 'handle'> | null {
     const data = JSON.parse(raw) as Record<string, unknown>;
     const project = usableProject(data.project);
     if (!project) return null;
-    const t = isObj(data.transport) ? data.transport : null;
+    const t = isRecord(data.transport) ? data.transport : null;
     const transport =
       t && typeof t.playing === 'boolean' && typeof t.tick === 'number' && typeof t.at === 'number'
         ? { playing: t.playing, tick: Math.max(0, t.tick), at: t.at }
@@ -186,7 +186,7 @@ export async function startSession(): Promise<SessionStart> {
 async function restoreAutosave(sessionId: string): Promise<RestoredProject | null> {
   const saved = await loadAutosave(sessionId);
   if (!saved) return null;
-  const view = isObj(saved.view) ? saved.view : {};
+  const view = isRecord(saved.view) ? saved.view : {};
   const file = sessionFile(view.session, saved.meta.title || UNTITLED);
   file.fileKey ??= saved.meta.fileKey ?? null;
   return {
@@ -212,6 +212,7 @@ export function loadRecovery(meta: AutosaveMeta): Promise<RestoredProject | null
   return restoreAutosave(meta.sessionId);
 }
 
+/** Deletes a recovery candidate's autosave (the musician chose not to recover it). */
 export function discardRecovery(meta: AutosaveMeta): Promise<void> {
   return deleteAutosave(meta.sessionId);
 }
@@ -228,16 +229,37 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
     const f = s.files.store.getState();
     return { name: f.name, fileKey: f.fileKey, dirty: s.history.status().dirty };
   };
+  const snapshot = startReloadSnapshot(s, fileInfo);
+  const crashAutosave = isOpfsAvailable() ? startCrashAutosave(s, sessionId, fileInfo) : null;
+  return {
+    flush: () => crashAutosave?.autosave.flush() ?? Promise.resolve(),
+    stop() {
+      crashAutosave?.stop();
+      snapshot.stop();
+    },
+  };
+}
 
-  // ---- Reload snapshot (sessionStorage, synchronous)
+/** How long after a change the reload snapshot is scheduled, and the longest it then waits for an idle moment. */
+const SNAPSHOT_DELAY_MS = 1000;
+const SNAPSHOT_IDLE_TIMEOUT_MS = 4000;
+
+/**
+ * The reload snapshot: the project, view and file link mirrored into sessionStorage a second after changes (at
+ * the next idle moment), and synchronously when the page is hidden.
+ */
+function startReloadSnapshot(s: Services, fileInfo: () => SessionFile): { stop(): void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let idleHandle: number | undefined;
-  let tooBig = false;
-  const writeSnapshot = () => {
+  let isTooBig = false;
+  const cancelScheduled = () => {
     clearTimeout(timer);
     timer = undefined;
     if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
     idleHandle = undefined;
+  };
+  const writeSnapshot = () => {
+    cancelScheduled();
     const storage = tabStorage();
     if (!storage) return;
     try {
@@ -246,11 +268,11 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
         SNAPSHOT_KEY,
         JSON.stringify({ project: s.doc.getState().project, view: captureView(s), file: fileInfo(), transport }),
       );
-      tooBig = false;
+      isTooBig = false;
     } catch {
       // Over the quota (huge project): the OPFS autosave covers reloads instead.
-      if (!tooBig) console.warn('Project too large for the reload snapshot; relying on autosave.');
-      tooBig = true;
+      if (!isTooBig) console.warn('Project too large for the reload snapshot; relying on autosave.');
+      isTooBig = true;
       storage.removeItem(SNAPSHOT_KEY);
     }
   };
@@ -259,12 +281,14 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
   const scheduleSnapshot = () => {
     timer ??= setTimeout(() => {
       timer = undefined;
-      if (typeof window.requestIdleCallback === 'function')
-        idleHandle = window.requestIdleCallback(writeSnapshot, { timeout: 4000 });
-      else writeSnapshot();
-    }, 1000);
+      if (typeof window.requestIdleCallback === 'function') {
+        idleHandle = window.requestIdleCallback(writeSnapshot, { timeout: SNAPSHOT_IDLE_TIMEOUT_MS });
+      } else {
+        writeSnapshot();
+      }
+    }, SNAPSHOT_DELAY_MS);
   };
-  const unsubs = [
+  const unsubscribes = [
     s.history.onChange(scheduleSnapshot),
     s.history.onStatus(scheduleSnapshot),
     s.view.subscribe(scheduleSnapshot),
@@ -274,58 +298,68 @@ export function installSessionPersistence(s: Services, sessionId: string): Sessi
     }),
   ];
   window.addEventListener('pagehide', writeSnapshot);
-  unsubs.push(() => window.removeEventListener('pagehide', writeSnapshot));
-
-  // ---- Crash autosave (OPFS)
-  let autosave: Autosave | null = null;
-  if (isOpfsAvailable()) {
-    autosave = startAutosave({
-      sessionId,
-      appVersion: APP_VERSION,
-      storage: {
-        writeAutosave,
-        // Closing a tab with unsaved changes keeps them recoverable: only a saved project ends clean.
-        markAutosaveClean: (id) => (s.history.status().dirty ? Promise.resolve() : markAutosaveClean(id)),
-      },
-      getSnapshot: () => {
-        const project = s.doc.getState().project;
-        const file = fileInfo();
-        return {
-          // The recovery prompt shows the title: use the file's name.
-          project: { ...project, meta: { ...project.meta, title: file.name } },
-          view: { ...captureView(s), session: file },
-        };
-      },
-      // Only unsaved work needs a crash copy (a clean project is in its file already).
-      subscribe: (fn) => {
-        const onChange = () => {
-          if (s.history.status().dirty) fn();
-        };
-        const offs = [s.history.onChange(onChange), s.view.subscribe(onChange)];
-        return () => offs.forEach((off) => off());
-      },
-      fileKey: () => s.files.store.getState().fileKey ?? undefined,
-      onError: (e) => console.warn('Autosave failed:', e),
-    });
-    // Saved, opened or started fresh: the old crash copy holds nothing worth recovering.
-    const settle = () => {
-      if (!s.history.status().dirty) void markAutosaveClean(sessionId).catch(() => {});
-    };
-    unsubs.push(
-      s.files.onSaved(settle),
-      s.history.onChange((c) => {
-        if (c.origin === 'load') settle();
-      }),
-    );
-  }
-
+  unsubscribes.push(() => window.removeEventListener('pagehide', writeSnapshot));
   return {
-    flush: () => autosave?.flush() ?? Promise.resolve(),
     stop() {
-      autosave?.stop();
       clearTimeout(timer);
       if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
-      unsubs.forEach((u) => u());
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+    },
+  };
+}
+
+/**
+ * The crash autosave into OPFS (autosave.ts) of unsaved work. A saved, opened or fresh project marks the old
+ * crash copy clean, since it holds nothing worth recovering.
+ */
+function startCrashAutosave(
+  s: Services,
+  sessionId: string,
+  fileInfo: () => SessionFile,
+): { autosave: Autosave; stop(): void } {
+  const autosave = startAutosave({
+    sessionId,
+    appVersion: APP_VERSION,
+    storage: {
+      writeAutosave,
+      // Closing a tab with unsaved changes keeps them recoverable: only a saved project ends clean.
+      markAutosaveClean: (id) => (s.history.status().dirty ? Promise.resolve() : markAutosaveClean(id)),
+    },
+    getSnapshot: () => {
+      const project = s.doc.getState().project;
+      const file = fileInfo();
+      return {
+        // The recovery prompt shows the title: use the file's name.
+        project: { ...project, meta: { ...project.meta, title: file.name } },
+        view: { ...captureView(s), session: file },
+      };
+    },
+    // Only unsaved work needs a crash copy (a clean project is in its file already).
+    subscribe: (fn) => {
+      const onChange = () => {
+        if (s.history.status().dirty) fn();
+      };
+      const unsubscribes = [s.history.onChange(onChange), s.view.subscribe(onChange)];
+      return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+    },
+    fileKey: () => s.files.store.getState().fileKey ?? undefined,
+    onError: (e) => console.warn('Autosave failed:', e),
+  });
+  // Saved, opened or started fresh: the old crash copy holds nothing worth recovering.
+  const markCleanIfSaved = () => {
+    if (!s.history.status().dirty) void markAutosaveClean(sessionId).catch(() => {});
+  };
+  const unsubscribes = [
+    s.files.onSaved(markCleanIfSaved),
+    s.history.onChange((change) => {
+      if (change.origin === 'load') markCleanIfSaved();
+    }),
+  ];
+  return {
+    autosave,
+    stop() {
+      autosave.stop();
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
     },
   };
 }

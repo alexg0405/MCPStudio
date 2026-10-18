@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { firstExecutable, onPath, run, type RunResult } from './cli.ts';
 import { stripNulls, toStrictSchema } from './strict-schema.ts';
 import { AiServerError, type Backend, type BackendStatus, type BeatReply, type BeatRequest } from './types.ts';
@@ -20,9 +20,11 @@ import { AiServerError, type Backend, type BackendStatus, type BeatReply, type B
  * after the turn.
  */
 
+/** The longest one turn may take before it is given up on. */
 const TIMEOUT_MS = 240_000;
 const BASE_DIR = join(tmpdir(), 'agstudio-codex');
 
+/** What to tell the musician when Codex isn't installed. */
 export const INSTALL_HINT =
   'Install the ChatGPT app (it includes Codex) or the Codex CLI (in Terminal: npm i -g @openai/codex), then run `codex login` and sign in with your ChatGPT account.';
 const signInHint = (bin: string | null) =>
@@ -179,7 +181,13 @@ export function readEvents(stdout: string): TurnEvents {
   for (const line of stdout.split('\n')) {
     const text = line.trim();
     if (!text.startsWith('{')) continue;
-    let e: { type?: string; thread_id?: string; message?: string; error?: { message?: string }; item?: { type?: string; text?: string } };
+    let e: {
+      type?: string;
+      thread_id?: string;
+      message?: string;
+      error?: { message?: string };
+      item?: { type?: string; text?: string };
+    };
     try {
       e = JSON.parse(text) as typeof e;
     } catch {
@@ -199,19 +207,37 @@ export function readEvents(stdout: string): TurnEvents {
 /** Maps a failed run to a message for the musician. */
 export function failure(text: string, model: string, bin: string | null): AiServerError {
   const t = text.trim();
-  if (/usage limit|rate limit|limit (reached|exceeded)|out of (usage|credits)|too many requests|\b429\b|hit your/i.test(t))
-    return new AiServerError(`Your ChatGPT plan's usage limit is reached for now. ${t}`.trim(), 'rate_limit_error', 429);
-  if (/model.*(not (found|supported|available)|does not exist|unsupported)|unsupported model|not supported when using codex/i.test(t))
+  if (
+    /usage limit|rate limit|limit (reached|exceeded)|out of (usage|credits)|too many requests|\b429\b|hit your/i.test(t)
+  )
+    return new AiServerError(
+      `Your ChatGPT plan's usage limit is reached for now. ${t}`.trim(),
+      'rate_limit_error',
+      429,
+    );
+  if (
+    /model.*(not (found|supported|available)|does not exist|unsupported)|unsupported model|not supported when using codex/i.test(
+      t,
+    )
+  )
     return new AiServerError(
       `Codex can't use ${model ? `the model "${model}"` : 'its default model'} with your ChatGPT plan: ${t}`,
       'invalid_request_error',
       400,
     );
-  if (/log ?in|sign ?in|not (authenticated|logged)|unauthorized|\b401\b|credential|oauth|token.*(expired|invalid|revoked)|expired/i.test(t))
+  if (
+    /log ?in|sign ?in|not (authenticated|logged)|unauthorized|\b401\b|credential|oauth|token.*(expired|invalid|revoked)|expired/i.test(
+      t,
+    )
+  )
     return new AiServerError(signInHint(bin), 'not_signed_in', 503);
   if (/overloaded|at capacity|\b503\b/i.test(t))
     return new AiServerError('ChatGPT is overloaded right now; try again shortly.', 'overloaded_error', 529);
-  if (/(no|could not find|unable to find).*(session|thread|conversation)|(session|thread|conversation).*not found/i.test(t))
+  if (
+    /(no|could not find|unable to find).*(session|thread|conversation)|(session|thread|conversation).*not found/i.test(
+      t,
+    )
+  )
     return new AiServerError(
       'Codex no longer has this conversation (its saved thread is gone). Start a new chat in Studio and ask again.',
       'api_error',
@@ -232,36 +258,119 @@ async function sweepStale(): Promise<void> {
   }
 }
 
+/** How long the result of "is Codex installed and signed in" is trusted before asking again. */
+const STATUS_CACHE_MS = 15_000;
+/** Timeout of the two quick questions asked of the CLI (`login status`, `features list`). */
+const QUICK_COMMAND_TIMEOUT_MS = 20_000;
+/** Temp folders and files are private to the musician: the prompt carries their project. */
+const PRIVATE_FOLDER_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+const SIGNED_IN_WITH_API_KEY =
+  'Codex is signed in with an API key, not your ChatGPT plan: run `codex login` in Terminal and choose "Sign in with ChatGPT".';
+const NOT_SIGNED_IN_WITH_CHATGPT =
+  'Codex is not signed in with your ChatGPT account: run `codex login` in Terminal and choose "Sign in with ChatGPT".';
+
+/** What `check()` learned about the installed Codex. */
+interface CodexCheck {
+  status: BackendStatus;
+  bin: string | null;
+  /** The tool features to switch off (only those this Codex knows). */
+  disable: string[];
+}
+
+/**
+ * Asks `codex login status` whether Codex is signed in, and how. Exit 0 means signed in, and the one line
+ * it prints says with what ("Logged in using ChatGPT" or "... an API key").
+ */
+async function loginStatus(bin: string, workDir: string): Promise<BackendStatus> {
+  const result = await run(bin, ['login', 'status'], {
+    cwd: workDir,
+    env: childEnv(),
+    timeoutMs: QUICK_COMMAND_TIMEOUT_MS,
+  });
+  const said = `${result.stdout}\n${result.stderr}`;
+  if (result.code !== 0 || /not logged in|logged out/i.test(said)) return { ok: false, reason: signInHint(bin) };
+  if (/chatgpt/i.test(said)) return { ok: true };
+  return { ok: false, reason: /api key/i.test(said) ? SIGNED_IN_WITH_API_KEY : NOT_SIGNED_IN_WITH_CHATGPT };
+}
+
+/** The tool features to disable: those of TOOL_FEATURES that this Codex has switched on (all of them when it can't say). */
+async function featuresToDisable(bin: string, workDir: string): Promise<string[]> {
+  const result = await run(bin, ['features', 'list'], {
+    cwd: workDir,
+    env: childEnv(),
+    timeoutMs: QUICK_COMMAND_TIMEOUT_MS,
+  }).catch(() => null);
+  const on = result && result.code === 0 ? enabledFeatures(result.stdout) : null;
+  return on && on.size > 0 ? TOOL_FEATURES.filter((feature) => on.has(feature)) : [...TOOL_FEATURES];
+}
+
+/** Writes the turn's system prompt and answer schema into private files (the folder is deleted after the turn). */
+async function writeTurnFiles(req: BeatRequest, files: TurnFiles): Promise<void> {
+  await mkdir(dirname(files.instructions), { recursive: true, mode: PRIVATE_FOLDER_MODE });
+  await Promise.all([
+    writeFile(files.instructions, req.system, { mode: PRIVATE_FILE_MODE }),
+    writeFile(files.schema, JSON.stringify(toStrictSchema(req.schema)), { mode: PRIVATE_FILE_MODE }),
+  ]);
+}
+
+/** Runs `codex exec` for one turn; an abort is passed on, any other failure to run becomes an AiServerError. */
+async function runTurn(
+  req: BeatRequest,
+  files: TurnFiles,
+  bin: string,
+  disable: readonly string[],
+  workDir: string,
+  signal: AbortSignal,
+): Promise<RunResult> {
+  try {
+    return await run(bin, cliArgs(req, files, disable), {
+      input: req.text,
+      cwd: workDir,
+      env: childEnv(),
+      signal,
+      timeoutMs: TIMEOUT_MS,
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e;
+    throw new AiServerError(`Codex didn't run: ${e instanceof Error ? e.message : e}`, 'api_error', 502);
+  }
+}
+
+/** The answer text of a finished turn (the -o file, else the last agent message), or the error to throw. */
+async function answerOf(
+  result: RunResult,
+  files: TurnFiles,
+  model: string,
+  bin: string,
+): Promise<{ answer: string; events: TurnEvents }> {
+  const events = readEvents(result.stdout);
+  let answer = await readFile(files.out, 'utf8').catch(() => '');
+  if (!answer.trim()) answer = events.message ?? '';
+  if (result.code === 0 && !events.failed && answer.trim()) return { answer, events };
+  const said =
+    events.errors.join('; ') || result.stderr.trim().split('\n').slice(-3).join(' ') || `exit ${result.code}`;
+  const isEmptyAnswer = result.code === 0 && !events.failed && !events.errors.length;
+  throw isEmptyAnswer ? new AiServerError("ChatGPT's answer was empty.", 'bad_output', 502) : failure(said, model, bin);
+}
+
+/** The ChatGPT backend: one `codex exec` turn per request (see the top of this file). */
 export function codexBackend(override: () => string | undefined): Backend {
-  let cached: { at: number; status: BackendStatus; bin: string | null; disable: string[] } | null = null;
+  let cached: (CodexCheck & { at: number }) | null = null;
   const workDir = join(BASE_DIR, 'work');
 
-  async function check(): Promise<{ status: BackendStatus; bin: string | null; disable: string[] }> {
-    if (cached && Date.now() - cached.at < 15_000) return cached;
-    await mkdir(workDir, { recursive: true, mode: 0o700 });
+  async function check(): Promise<CodexCheck> {
+    if (cached && Date.now() - cached.at < STATUS_CACHE_MS) return cached;
+    await mkdir(workDir, { recursive: true, mode: PRIVATE_FOLDER_MODE });
     await sweepStale();
     const bin = await firstExecutable(candidates(override()));
     let status: BackendStatus = { ok: false, reason: INSTALL_HINT };
     let disable = [...TOOL_FEATURES];
     if (bin) {
       try {
-        // Exit 0 = signed in, and the one line says how ("Logged in using ChatGPT" / "… an API key").
-        const r = await run(bin, ['login', 'status'], { cwd: workDir, env: childEnv(), timeoutMs: 20_000 });
-        const said = `${r.stdout}\n${r.stderr}`;
-        if (r.code !== 0 || /not logged in|logged out/i.test(said)) status = { ok: false, reason: signInHint(bin) };
-        else if (/chatgpt/i.test(said)) status = { ok: true };
-        else
-          status = {
-            ok: false,
-            reason: /api key/i.test(said)
-              ? 'Codex is signed in with an API key, not your ChatGPT plan: run `codex login` in Terminal and choose "Sign in with ChatGPT".'
-              : 'Codex is not signed in with your ChatGPT account: run `codex login` in Terminal and choose "Sign in with ChatGPT".',
-          };
-        if (status.ok) {
-          const f = await run(bin, ['features', 'list'], { cwd: workDir, env: childEnv(), timeoutMs: 20_000 }).catch(() => null);
-          const on = f && f.code === 0 ? enabledFeatures(f.stdout) : null;
-          if (on && on.size > 0) disable = TOOL_FEATURES.filter((x) => on.has(x));
-        }
+        status = await loginStatus(bin, workDir);
+        if (status.ok) disable = await featuresToDisable(bin, workDir);
       } catch (e) {
         status = { ok: false, reason: `Codex didn't start: ${e instanceof Error ? e.message : e}` };
       }
@@ -285,29 +394,16 @@ export function codexBackend(override: () => string | undefined): Backend {
         out: join(turnDir, 'answer.txt'),
       };
       try {
-        // The prompt carries the musician's project: only they can read it while the turn runs.
-        await mkdir(turnDir, { recursive: true, mode: 0o700 });
-        await Promise.all([
-          writeFile(files.instructions, req.system, { mode: 0o600 }),
-          writeFile(files.schema, JSON.stringify(toStrictSchema(req.schema)), { mode: 0o600 }),
-        ]);
-        let r: RunResult;
+        await writeTurnFiles(req, files);
+        const result = await runTurn(req, files, bin, disable, workDir, signal);
+        let answerAndEvents: { answer: string; events: TurnEvents };
         try {
-          r = await run(bin, cliArgs(req, files, disable), { input: req.text, cwd: workDir, env: childEnv(), signal, timeoutMs: TIMEOUT_MS });
+          answerAndEvents = await answerOf(result, files, req.model, bin);
         } catch (e) {
-          if (e instanceof DOMException && e.name === 'AbortError') throw e;
-          throw new AiServerError(`Codex didn't run: ${e instanceof Error ? e.message : e}`, 'api_error', 502);
-        }
-        const events = readEvents(r.stdout);
-        let answer = await readFile(files.out, 'utf8').catch(() => '');
-        if (!answer.trim()) answer = events.message ?? '';
-        if (r.code !== 0 || events.failed || !answer.trim()) {
           cached = null; // look again next time (signed out, updated, …)
-          const said = events.errors.join('; ') || r.stderr.trim().split('\n').slice(-3).join(' ') || `exit ${r.code}`;
-          throw r.code === 0 && !events.failed && !events.errors.length
-            ? new AiServerError("ChatGPT's answer was empty.", 'bad_output', 502)
-            : failure(said, req.model, bin);
+          throw e;
         }
+        const { answer, events } = answerAndEvents;
         let beat: unknown;
         try {
           beat = stripNulls(JSON.parse(answer));

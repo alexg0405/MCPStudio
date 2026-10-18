@@ -18,12 +18,14 @@ import type { Plugin } from 'vite';
  * it up. Only same-origin requests with the `x-agstudio` header are served.
  */
 
+/** Limits on a draft: files, bytes per file, bytes in all, bytes in one request, and how long the type check may run. */
 const MAX_FILES = 8;
 const MAX_FILE_BYTES = 64 * 1024;
 const MAX_TOTAL_BYTES = 256 * 1024;
 const MAX_BODY_BYTES = 512 * 1024;
 const TSC_TIMEOUT_MS = 90_000;
 
+/** A problem with a draft request, with the HTTP status to answer with. */
 export class DraftError extends Error {
   constructor(
     message: string,
@@ -33,6 +35,7 @@ export class DraftError extends Error {
   }
 }
 
+/** One file of a draft: a flat file name and its text. */
 export interface DraftFile {
   path: string;
   content: string;
@@ -55,7 +58,8 @@ export function checkFiles(files: unknown): DraftFile[] {
   for (const f of files) {
     const path = (f as DraftFile | null)?.path;
     const content = (f as DraftFile | null)?.content;
-    if (typeof path !== 'string' || typeof content !== 'string') throw new DraftError('Every file needs a path and text.');
+    if (typeof path !== 'string' || typeof content !== 'string')
+      throw new DraftError('Every file needs a path and text.');
     if (!/^[a-z0-9][a-z0-9_-]{0,48}(\.(worklet|kernel))?\.(ts|tsx|md|dsp)$/i.test(path) || /^tsconfig/i.test(path))
       throw new DraftError(`"${path}" is not an allowed file name (flat names ending in .ts, .tsx, .dsp or .md).`);
     if (seen.has(path.toLowerCase())) throw new DraftError(`"${path}" appears twice.`);
@@ -66,7 +70,8 @@ export function checkFiles(files: unknown): DraftFile[] {
     out.push({ path, content });
   }
   if (total > MAX_TOTAL_BYTES) throw new DraftError('The draft is too large.');
-  if (!seen.has('index.ts') && !seen.has('index.tsx')) throw new DraftError('A plugin needs an index.ts (or index.tsx).');
+  if (!seen.has('index.ts') && !seen.has('index.tsx'))
+    throw new DraftError('A plugin needs an index.ts (or index.tsx).');
   return out;
 }
 
@@ -109,7 +114,13 @@ export function scanSource(file: DraftFile): string[] {
   return problems;
 }
 
-function run(cmd: string, args: string[], cwd: string, timeoutMs: number): Promise<{ code: number | null; out: string }> {
+/** Runs a program and collects its output; a timeout kills it, a failure to start gives code -1. */
+function run(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+): Promise<{ code: number | null; out: string }> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd, env: process.env });
     let out = '';
@@ -135,7 +146,12 @@ export async function typeCheck(root: string, dir: string): Promise<string[]> {
   const configs = {
     '.check-main.json': {
       extends: base,
-      compilerOptions: { lib: ['ES2023', 'DOM', 'DOM.Iterable'], types: ['vite/client'], jsx: 'react-jsx', noEmit: true },
+      compilerOptions: {
+        lib: ['ES2023', 'DOM', 'DOM.Iterable'],
+        types: ['vite/client'],
+        jsx: 'react-jsx',
+        noEmit: true,
+      },
       include: ['./*.ts', './*.tsx', dspModules],
       exclude: ['./*.worklet.ts'],
     },
@@ -160,7 +176,8 @@ export async function typeCheck(root: string, dir: string): Promise<string[]> {
       const m = /^(.+?)\((\d+),(\d+)\): error (TS\d+): (.+)$/.exec(line.trim());
       if (m) problems.push(`${relative(dir, join(root, m[1]!))}:${m[2]}:${m[3]} ${m[4]}: ${m[5]}`);
     }
-    if (problems.length === 0) problems.push(`The type check failed: ${out.trim().slice(0, 400) || `exit code ${code}`}`);
+    if (problems.length === 0)
+      problems.push(`The type check failed: ${out.trim().slice(0, 400) || `exit code ${code}`}`);
   }
   return problems.slice(0, 25);
 }
@@ -171,105 +188,136 @@ const exists = (p: string) =>
     () => false,
   );
 
-export function draftServer(root: string): Plugin {
+/** The folders a draft moves between: `plugins/` (installed), `plugins/_drafts/` and `plugins/_backup/`. */
+function pluginFolders(root: string) {
   const plugins = join(root, 'plugins');
-  const drafts = join(plugins, '_drafts');
+  return { plugins, drafts: join(plugins, '_drafts'), backup: join(plugins, '_backup') };
+}
 
-  const handlers: Record<string, (body: Record<string, unknown>) => Promise<unknown>> = {
-    async '/draft'(body) {
-      const folder = draftFolder(body.id);
-      const files = checkFiles(body.files);
-      const dir = join(drafts, folder);
-      await rm(dir, { recursive: true, force: true });
-      await mkdir(dir, { recursive: true });
-      for (const f of files) await writeFile(join(dir, f.path), f.content);
-      const problems = files.flatMap(scanSource);
-      // Imports outside the SDK would make the type check report confusing errors first.
-      if (problems.length === 0) problems.push(...(await typeCheck(root, dir)));
-      return { folder, problems };
-    },
-    async '/install'(body) {
-      const folder = draftFolder(body.id);
-      const from = join(drafts, folder);
-      if (!(await exists(from))) throw new DraftError('There is no draft of that plugin to install.', 404);
-      const to = join(plugins, folder);
-      const replaced = await exists(to);
-      if (replaced) {
-        const backup = join(plugins, '_backup', `${folder}-${new Date().toISOString().replace(/[:.]/g, '-')}`);
-        await mkdir(join(plugins, '_backup'), { recursive: true });
-        await rename(to, backup);
+type RequestBody = Record<string, unknown>;
+
+/** POST /draft: writes the files into plugins/_drafts/<name>/, then checks the imports and the types. */
+async function saveDraft(root: string, body: RequestBody) {
+  const folder = draftFolder(body.id);
+  const files = checkFiles(body.files);
+  const dir = join(pluginFolders(root).drafts, folder);
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true });
+  for (const f of files) await writeFile(join(dir, f.path), f.content);
+  const problems = files.flatMap(scanSource);
+  // Imports outside the SDK would make the type check report confusing errors first.
+  if (problems.length === 0) problems.push(...(await typeCheck(root, dir)));
+  return { folder, problems };
+}
+
+/** POST /install: moves the draft to plugins/<name>/; a plugin already there goes to plugins/_backup/ first. */
+async function installDraft(root: string, body: RequestBody) {
+  const folder = draftFolder(body.id);
+  const { plugins, drafts, backup } = pluginFolders(root);
+  const from = join(drafts, folder);
+  if (!(await exists(from))) throw new DraftError('There is no draft of that plugin to install.', 404);
+  const to = join(plugins, folder);
+  const replaced = await exists(to);
+  if (replaced) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    await mkdir(backup, { recursive: true });
+    await rename(to, join(backup, `${folder}-${stamp}`));
+  }
+  await rename(from, to);
+  return { folder, replaced };
+}
+
+/** POST /discard: deletes the draft. */
+async function discardDraft(root: string, body: RequestBody) {
+  const folder = draftFolder(body.id);
+  await rm(join(pluginFolders(root).drafts, folder), { recursive: true, force: true });
+  return { folder };
+}
+
+/** POST /new: a new plugin of your own from a template (what `npm run new:plugin` does), for Add → New plugin…. */
+async function newPluginFromTemplate(root: string, body: RequestBody) {
+  const folder = draftFolder(body.id);
+  const kind = body.kind === 'effect' || body.kind === 'note-script' ? body.kind : 'instrument';
+  const style = body.style === 'worklet' || body.style === 'faust' ? body.style : 'graph';
+  const name =
+    typeof body.name === 'string' && body.name.trim()
+      ? body.name
+          .trim()
+          .slice(0, 60)
+          .replace(/['"`$\\]/g, '')
+      : folder;
+  const template = join(root, 'templates', kind === 'note-script' ? 'note-script' : `${kind}-${style}`);
+  const target = join(pluginFolders(root).plugins, folder);
+  if (await exists(target)) throw new DraftError(`There already is a plugin folder plugins/${folder}.`, 409);
+  await cp(template, target, { recursive: true });
+  const files = await fillPlaceholders(target, String(body.id), name);
+  // The file to start editing: the DSP for worklet and Faust plugins, else the definition.
+  const main =
+    kind === 'note-script' || style === 'graph'
+      ? 'index.ts'
+      : (files.find((f) => f.endsWith('.worklet.ts') || f.endsWith('.dsp')) ?? 'index.ts');
+  return { folder, files, main: `plugins/${folder}/${main}` };
+}
+
+/** Writes the plugin's id and name into the copied template's `__PLUGIN_ID__` and `__PLUGIN_NAME__`. Returns the file paths. */
+async function fillPlaceholders(target: string, pluginId: string, pluginName: string): Promise<string[]> {
+  const files: string[] = [];
+  const fill = async (dir: string, relativeDir: string) => {
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await fill(path, `${relativeDir}${entry.name}/`);
+        continue;
       }
-      await rename(from, to);
-      return { folder, replaced };
-    },
-    async '/discard'(body) {
-      const folder = draftFolder(body.id);
-      await rm(join(drafts, folder), { recursive: true, force: true });
-      return { folder };
-    },
-    // A new plugin of your own from a template (what `npm run new:plugin` does), for Add → New plugin….
-    async '/new'(body) {
-      const folder = draftFolder(body.id);
-      const kind = body.kind === 'effect' || body.kind === 'note-script' ? body.kind : 'instrument';
-      const style = body.style === 'worklet' || body.style === 'faust' ? body.style : 'graph';
-      const name =
-        typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60).replace(/['"`$\\]/g, '') : folder;
-      const template = join(root, 'templates', kind === 'note-script' ? 'note-script' : `${kind}-${style}`);
-      const target = join(plugins, folder);
-      if (await exists(target)) throw new DraftError(`There already is a plugin folder plugins/${folder}.`, 409);
-      await cp(template, target, { recursive: true });
-      const files: string[] = [];
-      const fill = async (dir: string, rel: string) => {
-        for (const entry of await readdir(dir, { withFileTypes: true })) {
-          const path = join(dir, entry.name);
-          if (entry.isDirectory()) await fill(path, `${rel}${entry.name}/`);
-          else {
-            const text = await readFile(path, 'utf8');
-            await writeFile(path, text.replaceAll('__PLUGIN_ID__', String(body.id)).replaceAll('__PLUGIN_NAME__', name));
-            files.push(`${rel}${entry.name}`);
-          }
-        }
-      };
-      await fill(target, '');
-      // The file to start editing: the DSP for worklet and Faust plugins, else the definition.
-      const main =
-        kind === 'note-script' || style === 'graph'
-          ? 'index.ts'
-          : (files.find((f) => f.endsWith('.worklet.ts') || f.endsWith('.dsp')) ?? 'index.ts');
-      return { folder, files, main: `plugins/${folder}/${main}` };
-    },
-  };
-
-  const send = (res: ServerResponse, status: number, body: unknown) => {
-    res.statusCode = status;
-    res.setHeader('content-type', 'application/json');
-    res.setHeader('cache-control', 'no-store');
-    res.end(JSON.stringify(body));
-  };
-
-  const readBody = (req: IncomingMessage) =>
-    new Promise<string>((resolve, reject) => {
-      let size = 0;
-      const chunks: Buffer[] = [];
-      req.on('data', (c: Buffer) => {
-        size += c.length;
-        if (size > MAX_BODY_BYTES) {
-          reject(new DraftError('The draft is too large.', 413));
-          req.destroy();
-        } else chunks.push(c);
-      });
-      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-      req.on('error', reject);
-    });
-
-  const sameOrigin = (req: IncomingMessage) => {
-    const origin = req.headers.origin;
-    if (!origin) return true;
-    try {
-      return new URL(origin).host === req.headers.host;
-    } catch {
-      return false;
+      const text = await readFile(path, 'utf8');
+      await writeFile(path, text.replaceAll('__PLUGIN_ID__', pluginId).replaceAll('__PLUGIN_NAME__', pluginName));
+      files.push(`${relativeDir}${entry.name}`);
     }
+  };
+  await fill(target, '');
+  return files;
+}
+
+const sendJson = (res: ServerResponse, status: number, body: unknown) => {
+  res.statusCode = status;
+  res.setHeader('content-type', 'application/json');
+  res.setHeader('cache-control', 'no-store');
+  res.end(JSON.stringify(body));
+};
+
+const readRequestBody = (req: IncomingMessage) =>
+  new Promise<string>((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY_BYTES) {
+        reject(new DraftError('The draft is too large.', 413));
+        req.destroy();
+      } else chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
+
+/** True when the request has no Origin header or comes from the page this server serves. */
+const isSameOrigin = (req: IncomingMessage) => {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+};
+
+/** The dev-server plugin that serves `/api/plugins/*` for the AI studio's plugin builder. */
+export function draftServer(root: string): Plugin {
+  const handlers: Record<string, (body: RequestBody) => Promise<unknown>> = {
+    '/draft': (body) => saveDraft(root, body),
+    '/install': (body) => installDraft(root, body),
+    '/discard': (body) => discardDraft(root, body),
+    '/new': (body) => newPluginFromTemplate(root, body),
   };
 
   return {
@@ -279,18 +327,19 @@ export function draftServer(root: string): Plugin {
         const path = (req.url ?? '').split('?')[0] ?? '';
         const handler = handlers[path];
         if (!handler) return next();
-        if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' });
-        if (req.headers['x-agstudio'] !== '1' || !sameOrigin(req))
-          return send(res, 403, { error: 'Only AGstudio itself may use this endpoint.' });
+        if (req.method !== 'POST') return sendJson(res, 405, { error: 'Use POST.' });
+        if (req.headers['x-agstudio'] !== '1' || !isSameOrigin(req)) {
+          return sendJson(res, 403, { error: 'Only AGstudio itself may use this endpoint.' });
+        }
         void (async () => {
           try {
-            const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
-            send(res, 200, await handler(body));
+            const body = JSON.parse(await readRequestBody(req)) as RequestBody;
+            sendJson(res, 200, await handler(body));
           } catch (e) {
-            if (e instanceof DraftError) return send(res, e.status, { error: e.message });
-            if (e instanceof SyntaxError) return send(res, 400, { error: 'The request is not valid JSON.' });
+            if (e instanceof DraftError) return sendJson(res, e.status, { error: e.message });
+            if (e instanceof SyntaxError) return sendJson(res, 400, { error: 'The request is not valid JSON.' });
             console.error('[agstudio] plugin draft request failed', e);
-            send(res, 500, { error: e instanceof Error ? e.message : String(e) });
+            sendJson(res, 500, { error: e instanceof Error ? e.message : String(e) });
           }
         })();
       });

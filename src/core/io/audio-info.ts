@@ -27,8 +27,7 @@ export interface AudioInfo {
   exact: boolean;
 }
 
-const tag = (b: Uint8Array, o: number) =>
-  String.fromCharCode(b[o] ?? 0, b[o + 1] ?? 0, b[o + 2] ?? 0, b[o + 3] ?? 0);
+const tag = (b: Uint8Array, o: number) => String.fromCharCode(b[o] ?? 0, b[o + 1] ?? 0, b[o + 2] ?? 0, b[o + 3] ?? 0);
 
 function viewOf(b: Uint8Array): DataView {
   return new DataView(b.buffer, b.byteOffset, b.byteLength);
@@ -118,7 +117,8 @@ function flacInfo(b: Uint8Array, start: number): AudioInfo | null {
   const s = o + 4 + 10;
   const rate = (b[s]! << 12) | (b[s + 1]! << 4) | (b[s + 2]! >> 4);
   const channels = ((b[s + 2]! >> 1) & 7) + 1;
-  const total = (b[s + 3]! & 0x0f) * 2 ** 32 + ((b[s + 4]! << 24) >>> 0) + (b[s + 5]! << 16) + (b[s + 6]! << 8) + b[s + 7]!;
+  const total =
+    (b[s + 3]! & 0x0f) * 2 ** 32 + ((b[s + 4]! << 24) >>> 0) + (b[s + 5]! << 16) + (b[s + 6]! << 8) + b[s + 7]!;
   if (!rate || total === 0) return null; // 0 = unknown length (a stream)
   return { format: 'flac', durationSec: total / rate, sampleRate: rate, channels, exact: true };
 }
@@ -129,7 +129,8 @@ function skipId3(b: Uint8Array): number {
   let o = 0;
   // Some files carry more than one ID3v2 tag.
   while (tag(b, o).startsWith('ID3') && o + 10 <= b.length) {
-    const size = ((b[o + 6]! & 0x7f) << 21) | ((b[o + 7]! & 0x7f) << 14) | ((b[o + 8]! & 0x7f) << 7) | (b[o + 9]! & 0x7f);
+    const size =
+      ((b[o + 6]! & 0x7f) << 21) | ((b[o + 7]! & 0x7f) << 14) | ((b[o + 8]! & 0x7f) << 7) | (b[o + 9]! & 0x7f);
     o += 10 + size + (b[o + 5]! & 0x10 ? 10 : 0);
   }
   return o;
@@ -185,60 +186,109 @@ export function mpegFrameAt(b: Uint8Array, o: number): MpegFrame | null {
   return length >= 4 ? { version, layer, rate, channels, length, samples } : null;
 }
 
+/** How far into the file the first MPEG frame is searched for, in bytes. */
+const FIRST_FRAME_SEARCH_BYTES = 64 * 1024;
+/** Bytes of an MPEG frame header. */
+const MPEG_HEADER_BYTES = 4;
+/** Where the VBRI header sits in the first frame: always 32 bytes after the frame header, so 36 from its start. */
+const VBRI_OFFSET = 36;
+const VBRI_MIN_BYTES = 18;
+/** Xing/Info flag bits: which optional fields follow (frame count, byte count, 100-byte seek table, quality). */
+const XING_HAS_FRAMES = 1;
+const XING_HAS_BYTES = 2;
+const XING_HAS_TOC = 4;
+const XING_HAS_QUALITY = 8;
+const XING_TOC_BYTES = 100;
+/** LAME's tag: the encoder delay and padding (12 bits each) start this far into it. */
+const LAME_DELAY_OFFSET = 21;
+/** How far past a broken frame the frame scan looks for the next one before giving up. */
+const RESYNC_SEARCH_BYTES = 4096;
+
+/** The first frame: two valid headers in a row (a lone 0xFF 0xE? in a tag is no proof). Null when there is none. */
+function findFirstMpegFrame(b: Uint8Array, start: number): { frame: MpegFrame; at: number } | null {
+  const end = Math.min(b.length, start + FIRST_FRAME_SEARCH_BYTES);
+  for (let at = start; at < end; at++) {
+    const frame = mpegFrameAt(b, at);
+    if (frame && (at + frame.length >= b.length || mpegFrameAt(b, at + frame.length))) return { frame, at };
+  }
+  return null;
+}
+
 function mpegInfo(b: Uint8Array, start: number): AudioInfo | null {
-  // The first frame: two valid headers in a row (a lone 0xFF 0xE? in a tag is no proof).
-  let o = start;
-  let first: MpegFrame | null = null;
-  for (const end = Math.min(b.length, start + 64 * 1024); o < end; o++) {
-    const f = mpegFrameAt(b, o);
-    if (f && (o + f.length >= b.length || mpegFrameAt(b, o + f.length))) {
-      first = f;
-      break;
-    }
-  }
-  if (!first) return adtsInfo(b, start);
-  const v = viewOf(b);
+  const found = findFirstMpegFrame(b, start);
+  if (!found) return adtsInfo(b, start);
+  const { frame: first, at } = found;
   // Xing/Info (VBR and LAME CBR) after the side info, or VBRI 32 bytes in.
-  const side = first.version === 1 ? (first.channels === 1 ? 17 : 32) : first.channels === 1 ? 9 : 17;
-  const x = o + 4 + side;
-  const xt = tag(b, x);
-  if ((xt === 'Xing' || xt === 'Info') && x + 8 <= b.length) {
-    const flags = v.getUint32(x + 4);
-    if (flags & 1) {
-      const frames = v.getUint32(x + 8);
-      let p = x + 8 + (flags & 1 ? 4 : 0) + (flags & 2 ? 4 : 0) + (flags & 4 ? 100 : 0) + (flags & 8 ? 4 : 0);
-      // LAME's tag: encoder delay and padding (12 bits each, 21 bytes into it), so the length is exact.
-      let delay = 0;
-      let padding = 0;
-      let exact = false;
-      if (tag(b, p).startsWith('LAME') || tag(b, p).startsWith('Lavc') || tag(b, p).startsWith('Lavf')) {
-        p += 21;
-        if (p + 3 <= b.length) {
-          delay = (b[p]! << 4) | (b[p + 1]! >> 4);
-          padding = ((b[p + 1]! & 0x0f) << 8) | b[p + 2]!;
-          exact = true;
-        }
-      }
-      // The Xing frame itself is silent and not counted by it.
-      const total = Math.max(0, frames * first.samples - delay - padding);
-      return { format: 'mp3', durationSec: total / first.rate, sampleRate: first.rate, channels: first.channels, exact };
+  return xingInfo(b, at, first) ?? vbriInfo(b, at, first) ?? countedFramesInfo(b, at, first);
+}
+
+/** Duration from a Xing/Info header (frame count, with LAME's delay and padding when present), or null. */
+function xingInfo(b: Uint8Array, frameAt: number, first: MpegFrame): AudioInfo | null {
+  const sideInfoBytes = first.version === 1 ? (first.channels === 1 ? 17 : 32) : first.channels === 1 ? 9 : 17;
+  const x = frameAt + MPEG_HEADER_BYTES + sideInfoBytes;
+  const xingTag = tag(b, x);
+  if ((xingTag !== 'Xing' && xingTag !== 'Info') || x + 8 > b.length) return null;
+  const v = viewOf(b);
+  const flags = v.getUint32(x + 4);
+  if (!(flags & XING_HAS_FRAMES)) return null;
+  const frames = v.getUint32(x + 8);
+  let p =
+    x +
+    8 +
+    (flags & XING_HAS_FRAMES ? 4 : 0) +
+    (flags & XING_HAS_BYTES ? 4 : 0) +
+    (flags & XING_HAS_TOC ? XING_TOC_BYTES : 0) +
+    (flags & XING_HAS_QUALITY ? 4 : 0);
+  // LAME's tag: encoder delay and padding (12 bits each, 21 bytes into it), so the length is exact.
+  let delay = 0;
+  let padding = 0;
+  let isExact = false;
+  const encoderTag = tag(b, p);
+  if (encoderTag.startsWith('LAME') || encoderTag.startsWith('Lavc') || encoderTag.startsWith('Lavf')) {
+    p += LAME_DELAY_OFFSET;
+    if (p + 3 <= b.length) {
+      delay = (b[p]! << 4) | (b[p + 1]! >> 4);
+      padding = ((b[p + 1]! & 0x0f) << 8) | b[p + 2]!;
+      isExact = true;
     }
   }
-  if (tag(b, o + 36) === 'VBRI' && o + 36 + 18 <= b.length) {
-    const delay = v.getUint16(o + 36 + 6);
-    const frames = v.getUint32(o + 36 + 14);
-    const total = Math.max(0, frames * first.samples - delay);
-    return { format: 'mp3', durationSec: total / first.rate, sampleRate: first.rate, channels: first.channels, exact: false };
-  }
-  // No header: count the frames.
+  // The Xing frame itself is silent and not counted by it.
+  const total = Math.max(0, frames * first.samples - delay - padding);
+  return {
+    format: 'mp3',
+    durationSec: total / first.rate,
+    sampleRate: first.rate,
+    channels: first.channels,
+    exact: isExact,
+  };
+}
+
+/** Duration from a Fraunhofer VBRI header, or null. */
+function vbriInfo(b: Uint8Array, frameAt: number, first: MpegFrame): AudioInfo | null {
+  if (tag(b, frameAt + VBRI_OFFSET) !== 'VBRI' || frameAt + VBRI_OFFSET + VBRI_MIN_BYTES > b.length) return null;
+  const v = viewOf(b);
+  const delay = v.getUint16(frameAt + VBRI_OFFSET + 6);
+  const frames = v.getUint32(frameAt + VBRI_OFFSET + 14);
+  const total = Math.max(0, frames * first.samples - delay);
+  return {
+    format: 'mp3',
+    durationSec: total / first.rate,
+    sampleRate: first.rate,
+    channels: first.channels,
+    exact: false,
+  };
+}
+
+/** No header: count the frames, resynchronizing over damage and stopping at a trailing tag. */
+function countedFramesInfo(b: Uint8Array, firstFrameAt: number, first: MpegFrame): AudioInfo {
   let frames = 0;
-  let p = o;
+  let p = firstFrameAt;
   while (p < b.length) {
     const f = mpegFrameAt(b, p);
     if (!f) {
       // A broken frame or a trailing tag (ID3v1 'TAG', APE): resynchronize a little further on.
       let q = p + 1;
-      const end = Math.min(b.length, p + 4096);
+      const end = Math.min(b.length, p + RESYNC_SEARCH_BYTES);
       while (q < end && !mpegFrameAt(b, q)) q++;
       if (q >= end) break;
       p = q;

@@ -294,6 +294,88 @@ export interface SampleSource {
   read(): Promise<{ bytes: Uint8Array; ext?: string } | null>;
 }
 
+/** Samples are handed to the zip in pieces of this many bytes, so memory holds one piece of one sample at a time. */
+const SAMPLE_PIECE_BYTES = 1 << 20;
+/** Room kept per entry for its zip headers when checking that the file will fit its size limit. */
+const ENTRY_OVERHEAD_BYTES = 1024;
+/** Deflate level of the JSON entries (audio is stored as is). */
+const JSON_DEFLATE_LEVEL = 6;
+
+/**
+ * A zip being written a piece at a time: finished bytes go to `write` in order, the first failure is kept and
+ * thrown by `flushed()`, so a slow or failing destination never reorders or loses bytes.
+ */
+class ZipOutput {
+  private readonly zip: Zip;
+  private chain: Promise<void> = Promise.resolve();
+  private error: unknown = null;
+  private readonly ended: Promise<void>;
+  /** Bytes the zip has produced so far. */
+  produced = 0;
+
+  constructor(
+    write: (bytes: Uint8Array) => Promise<void>,
+    private readonly modifiedAt: Date,
+  ) {
+    let resolveEnd!: () => void;
+    this.ended = new Promise<void>((resolve) => (resolveEnd = resolve));
+    this.zip = new Zip((err, chunk, isFinal) => {
+      if (err) this.error ??= err;
+      if (chunk.byteLength > 0) {
+        this.produced += chunk.byteLength;
+        const copy = chunk.slice();
+        this.chain = this.chain
+          .then(() => write(copy))
+          .catch((e: unknown) => {
+            this.error ??= e;
+          });
+      }
+      if (isFinal) void this.chain.then(resolveEnd);
+    });
+  }
+
+  /** Waits for every produced piece to be written; throws the first failure. */
+  async flushed(): Promise<void> {
+    await this.chain;
+    if (this.error) throw this.error;
+  }
+
+  /** Adds a JSON entry (compressed). */
+  addJson(name: string, value: unknown, indent?: number): void {
+    const file = new ZipDeflate(name, { level: JSON_DEFLATE_LEVEL });
+    file.mtime = this.modifiedAt;
+    this.zip.add(file);
+    file.push(strToU8(JSON.stringify(value ?? null, null, indent)), true);
+  }
+
+  /** Adds a stored (uncompressed) entry and feeds it in pieces, waiting for the destination between pieces. */
+  async addStored(name: string, bytes: Uint8Array): Promise<void> {
+    const file = new ZipPassThrough(name);
+    file.mtime = this.modifiedAt;
+    this.zip.add(file);
+    if (bytes.length === 0) file.push(bytes, true);
+    for (let at = 0; at < bytes.length; at += SAMPLE_PIECE_BYTES) {
+      const isLastPiece = at + SAMPLE_PIECE_BYTES >= bytes.length;
+      file.push(bytes.subarray(at, Math.min(bytes.length, at + SAMPLE_PIECE_BYTES)), isLastPiece);
+      await this.flushed();
+    }
+  }
+
+  /** Ends the zip (writes the directory) and waits for everything to be written. */
+  async finish(): Promise<void> {
+    this.zip.end();
+    await this.ended;
+    await this.flushed();
+  }
+}
+
+/** The limit in words: "4 GB" for the real limit, megabytes for the small ones tests use. */
+function describeSizeLimit(maxBytes: number): string {
+  return maxBytes >= 2 ** 29
+    ? `${Math.round(maxBytes / 2 ** 30)} GB`
+    : `${Math.max(1, Math.round(maxBytes / 2 ** 20))} MB`;
+}
+
 /**
  * Writes the zip a piece at a time (big projects): the JSON entries, then each sample, read only
  * when it is written and passed on in 1 MB pieces, so memory holds one sample at most. Readers of
@@ -307,78 +389,42 @@ export async function writeProjectFileStream(
   },
   write: (bytes: Uint8Array) => Promise<void>,
 ): Promise<{ missing: string[] }> {
-  const now = zipTime(input.now ?? new Date());
+  const maxBytes = input.maxBytes ?? ZIP_MAX_BYTES;
   const meta: ProjectFileMeta = {
     format: PROJECT_FILE_FORMAT,
     appVersion: input.appVersion,
     savedAt: (input.now ?? new Date()).toISOString(),
   };
-  let chain: Promise<void> = Promise.resolve();
-  let error: unknown = null;
-  let resolveEnd!: () => void;
-  let produced = 0;
-  const maxBytes = input.maxBytes ?? ZIP_MAX_BYTES;
-  const ended = new Promise<void>((r) => (resolveEnd = r));
-  const zip = new Zip((err, chunk, final) => {
-    if (err) error ??= err;
-    if (chunk.byteLength > 0) {
-      produced += chunk.byteLength;
-      const copy = chunk.slice();
-      chain = chain.then(() => write(copy)).catch((e: unknown) => {
-        error ??= e;
-      });
-    }
-    if (final) void chain.then(resolveEnd);
-  });
-  const flushed = async () => {
-    await chain;
-    if (error) throw error;
-  };
-  const json = (name: string, value: unknown, indent?: number) => {
-    const f = new ZipDeflate(name, { level: 6 });
-    f.mtime = now;
-    zip.add(f);
-    f.push(strToU8(JSON.stringify(value ?? null, null, indent)), true);
-  };
-  json('meta.json', meta, 2);
-  json('project.json', input.project);
-  json('view.json', input.view);
-  await flushed();
+  const output = new ZipOutput(write, zipTime(input.now ?? new Date()));
+  output.addJson('meta.json', meta, 2);
+  output.addJson('project.json', input.project);
+  output.addJson('view.json', input.view);
+  await output.flushed();
+
   const missing: string[] = [];
   const seen = new Set<string>();
-  for (const s of [...input.samples].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))) {
-    if (seen.has(s.hash)) continue;
-    seen.add(s.hash);
-    if (!isSha256Hex(s.hash)) throw new TypeError(`writeProjectFile: "${s.hash}" is not a SHA-256 hex hash.`);
-    const got = await s.read();
+  const samplesByHash = [...input.samples].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
+  for (const sample of samplesByHash) {
+    if (seen.has(sample.hash)) continue;
+    seen.add(sample.hash);
+    if (!isSha256Hex(sample.hash)) throw new TypeError(`writeProjectFile: "${sample.hash}" is not a SHA-256 hex hash.`);
+    const got = await sample.read();
     if (!got) {
-      missing.push(s.hash);
+      missing.push(sample.hash);
       continue;
     }
-    const ext = normalizeSampleExt(got.ext ?? s.ext);
-    if (!ext) throw new TypeError(`writeProjectFile: "${got.ext ?? s.ext}" is not a valid sample extension.`);
-    const bytes = got.bytes;
+    const ext = normalizeSampleExt(got.ext ?? sample.ext);
+    if (!ext) throw new TypeError(`writeProjectFile: "${got.ext ?? sample.ext}" is not a valid sample extension.`);
     // Room for this sample, its headers and the directory that ends the file.
-    if (produced + bytes.length + 1024 * (seen.size + 1) > maxBytes) {
-      const limit = maxBytes >= 2 ** 29 ? `${Math.round(maxBytes / 2 ** 30)} GB` : `${Math.max(1, Math.round(maxBytes / 2 ** 20))} MB`;
+    if (output.produced + got.bytes.length + ENTRY_OVERHEAD_BYTES * (seen.size + 1) > maxBytes) {
       throw new Error(
-        `This project is too big to save as one file (the limit is ${limit}): remove some songs or samples, then save again.`,
+        `This project is too big to save as one file (the limit is ${describeSizeLimit(maxBytes)}): remove some songs or samples, then save again.`,
       );
     }
     // Audio is already compressed or doesn't deflate well: stored as is.
-    const f = new ZipPassThrough(`samples/${s.hash}.${ext}`);
-    f.mtime = now;
-    zip.add(f);
-    const step = 1 << 20;
-    if (bytes.length === 0) f.push(bytes, true);
-    for (let o = 0; o < bytes.length; o += step) {
-      f.push(bytes.subarray(o, Math.min(bytes.length, o + step)), o + step >= bytes.length);
-      await flushed();
-    }
+    await output.addStored(`samples/${sample.hash}.${ext}`, got.bytes);
   }
-  zip.end();
-  await ended;
-  await flushed();
+  await output.finish();
   return { missing };
 }
 

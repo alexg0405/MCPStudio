@@ -1,0 +1,2144 @@
+rich
+{
+ "project": {
+  "schemaVersion": 3,
+  "projectId": "prj_uSyqUW02ka",
+  "meta": {
+   "title": "Night Drive",
+   "createdAt": "2026-01-01T00:00:00.000Z",
+   "appVersion": "0.1.0",
+   "author": "AG"
+  },
+  "transport": {
+   "bpm": 128,
+   "timeSig": {
+    "num": 6,
+    "den": 8
+   },
+   "swing": 0
+  },
+  "channels": {
+   "ch_fWKk_adqfR": {
+    "kind": "instrument",
+    "id": "ch_fWKk_adqfR",
+    "name": "Kick",
+    "color": "#5f8fbf",
+    "muted": false,
+    "solo": false,
+    "volume": 0.78125,
+    "pan": 0,
+    "output": "ins_SPzK8N4P2C",
+    "plugin": {
+     "pluginId": "agstudio.sampler",
+     "pluginVersion": 2,
+     "params": {},
+     "samples": {
+      "main": "smp_test000000"
+     }
+    },
+    "rootKey": 60
+   },
+   "ch_MEZZO9vvGR": {
+    "kind": "instrument",
+    "id": "ch_MEZZO9vvGR",
+    "name": "Lead (stand-in for Serum)",
+    "color": "#ff2233",
+    "muted": false,
+    "solo": false,
+    "volume": 1,
+    "pan": -1,
+    "output": "ins_RGAOMGsQPk",
+    "plugin": {
+     "pluginId": "agstudio.wavetable",
+     "pluginVersion": 2,
+     "params": {}
+    },
+    "rootKey": 60,
+    "pitch": -300
+   },
+   "ch_V313rmhLzz": {
+    "kind": "instrument",
+    "id": "ch_V313rmhLzz",
+    "name": "Pad",
+    "color": "#c9a24a",
+    "muted": true,
+    "solo": false,
+    "volume": 0.78,
+    "pan": 0,
+    "output": "master",
+    "plugin": {
+     "pluginId": "agstudio.3xosc",
+     "pluginVersion": 2,
+     "params": {
+      "osc1Wave": "saw",
+      "cutoff": 8000
+     }
+    },
+    "rootKey": 48
+   },
+   "ch_7T6OeU2ux4": {
+    "kind": "audioClip",
+    "id": "ch_7T6OeU2ux4",
+    "name": "Vox",
+    "color": "#c76b5b",
+    "muted": false,
+    "solo": false,
+    "volume": 0.78,
+    "pan": 0,
+    "output": "master",
+    "sampleId": "smp_test000001"
+   },
+   "ch_AU3zUxFX2s": {
+    "kind": "instrument",
+    "id": "ch_AU3zUxFX2s",
+    "name": "Snare Drum (stand-in for Sytrus)",
+    "color": "#4fa6a6",
+    "muted": false,
+    "solo": false,
+    "volume": 0.78,
+    "pan": 0,
+    "output": "master",
+    "plugin": {
+     "pluginId": "agstudio.sampler",
+     "pluginVersion": 2,
+     "params": {},
+     "samples": {
+      "main": "smp_fnWV14CXRX"
+     }
+    },
+    "rootKey": 60
+   },
+   "ch_xUh3oQMYa1": {
+    "kind": "instrument",
+    "id": "ch_xUh3oQMYa1",
+    "name": "808 Sub (stand-in for Some Bass)",
+    "color": "#c77fa8",
+    "muted": false,
+    "solo": false,
+    "volume": 0.78,
+    "pan": 0,
+    "output": "master",
+    "plugin": {
+     "pluginId": "agstudio.bass808",
+     "pluginVersion": 2,
+     "params": {}
+    },
+    "rootKey": 60
+   },
+   "ch_d8AW4cRyJg": {
+    "kind": "automation",
+    "id": "ch_d8AW4cRyJg",
+    "name": "Vol curve",
+    "color": "#8c9a5b",
+    "muted": false,
+    "solo": false,
+    "target": {
+     "kind": "channel",
+     "channelId": "ch_fWKk_adqfR",
+     "param": "volume"
+    },
+    "points": [
+     {
+      "tick": 0,
+      "value": 0.2
+     },
+     {
+      "tick": 3840,
+      "value": 0.9,
+      "tension": 0.5
+     }
+    ]
+   },
+   "ch_Dhzl9EqiVp": {
+    "kind": "automation",
+    "id": "ch_Dhzl9EqiVp",
+    "name": "Orphan curve",
+    "color": "#c48a4f",
+    "muted": false,
+    "solo": false,
+    "target": null,
+    "points": [
+     {
+      "tick": 0,
+      "value": 0.5
+     }
+    ]
+   }
+  },
+  "channelOrder": [
+   "ch_fWKk_adqfR",
+   "ch_MEZZO9vvGR",
+   "ch_V313rmhLzz",
+   "ch_7T6OeU2ux4",
+   "ch_AU3zUxFX2s",
+   "ch_xUh3oQMYa1",
+   "ch_d8AW4cRyJg",
+   "ch_Dhzl9EqiVp"
+  ],
+  "patterns": {
+   "pat_EtycfnwERb": {
+    "id": "pat_EtycfnwERb",
+    "name": "Beat",
+    "color": "#5f8fbf",
+    "stepCount": 24,
+    "notes": {
+     "ch_fWKk_adqfR": {
+      "n_g-mHowuEez": {
+       "id": "n_g-mHowuEez",
+       "tick": 0,
+       "length": 240,
+       "key": 60,
+       "velocity": 1
+      },
+      "n_1w4F-Yo-R7": {
+       "id": "n_1w4F-Yo-R7",
+       "tick": 960,
+       "length": 240,
+       "key": 60,
+       "velocity": 0.5,
+       "pan": -1,
+       "release": 1,
+       "fine": 100
+      },
+      "n_4MTYq3NOgr": {
+       "id": "n_4MTYq3NOgr",
+       "tick": 1440,
+       "length": 480,
+       "key": 65,
+       "velocity": 0.78125
+      }
+     },
+     "ch_V313rmhLzz": {
+      "n_d3eUHflog0": {
+       "id": "n_d3eUHflog0",
+       "tick": 1440,
+       "length": 480,
+       "key": 65,
+       "velocity": 0.78125
+      }
+     }
+    },
+    "length": 5760
+   },
+   "pat_mscYEV71tj": {
+    "id": "pat_mscYEV71tj",
+    "name": "Lead line",
+    "color": "#00ff00",
+    "stepCount": 60,
+    "notes": {
+     "ch_MEZZO9vvGR": {
+      "n__4khsjDPWn": {
+       "id": "n__4khsjDPWn",
+       "tick": 0,
+       "length": 3840,
+       "key": 72,
+       "velocity": 0.78125
+      }
+     }
+    },
+    "length": 14400
+   },
+   "pat_OgnPRgIcfR": {
+    "id": "pat_OgnPRgIcfR",
+    "name": "Pattern 3",
+    "color": "#c9a24a",
+    "stepCount": 16,
+    "notes": {}
+   }
+  },
+  "patternOrder": [
+   "pat_EtycfnwERb",
+   "pat_mscYEV71tj",
+   "pat_OgnPRgIcfR"
+  ],
+  "playlist": {
+   "lanes": {
+    "lane_tmz2DFwwao": {
+     "id": "lane_tmz2DFwwao",
+     "name": "Drums",
+     "muted": false,
+     "color": "#ff0000"
+    },
+    "lane_0x8NE9ptwR": {
+     "id": "lane_0x8NE9ptwR",
+     "name": "Track 2",
+     "muted": false
+    },
+    "lane_U7R8SUAkC1": {
+     "id": "lane_U7R8SUAkC1",
+     "name": "Lead",
+     "muted": true,
+     "color": "#565148"
+    },
+    "lane_NnxOYNzhmc": {
+     "id": "lane_NnxOYNzhmc",
+     "name": "Track 4",
+     "muted": false
+    },
+    "lane_BFExU3ds6W": {
+     "id": "lane_BFExU3ds6W",
+     "name": "Track 5",
+     "muted": false
+    },
+    "lane__FVT2k01l5": {
+     "id": "lane__FVT2k01l5",
+     "name": "Track 6",
+     "muted": false
+    },
+    "lane_uh7037rAed": {
+     "id": "lane_uh7037rAed",
+     "name": "Track 7",
+     "muted": false
+    },
+    "lane_otxUy5LNsc": {
+     "id": "lane_otxUy5LNsc",
+     "name": "Track 8",
+     "muted": false
+    },
+    "lane_4Vf6ikaLUH": {
+     "id": "lane_4Vf6ikaLUH",
+     "name": "Track 9",
+     "muted": false
+    },
+    "lane_FMTX9uO_pz": {
+     "id": "lane_FMTX9uO_pz",
+     "name": "Track 10",
+     "muted": false
+    },
+    "lane_DTxaomgvfU": {
+     "id": "lane_DTxaomgvfU",
+     "name": "Track 11",
+     "muted": false
+    },
+    "lane_z2d6t1Z5T0": {
+     "id": "lane_z2d6t1Z5T0",
+     "name": "Track 12",
+     "muted": false
+    },
+    "lane_MwLbL5wKNj": {
+     "id": "lane_MwLbL5wKNj",
+     "name": "Track 13",
+     "muted": false
+    },
+    "lane_BHyeJ8t3fD": {
+     "id": "lane_BHyeJ8t3fD",
+     "name": "Track 14",
+     "muted": false
+    },
+    "lane_EO58wZotVJ": {
+     "id": "lane_EO58wZotVJ",
+     "name": "Track 15",
+     "muted": false
+    },
+    "lane_mHF4eHycKH": {
+     "id": "lane_mHF4eHycKH",
+     "name": "Track 16",
+     "muted": false
+    },
+    "lane_UQt_xcyAZj": {
+     "id": "lane_UQt_xcyAZj",
+     "name": "Track 17",
+     "muted": false
+    },
+    "lane_6YhChFnbf4": {
+     "id": "lane_6YhChFnbf4",
+     "name": "Track 18",
+     "muted": false
+    },
+    "lane_fHAcmbkC2G": {
+     "id": "lane_fHAcmbkC2G",
+     "name": "Track 19",
+     "muted": false
+    },
+    "lane_xgxE1Gx97I": {
+     "id": "lane_xgxE1Gx97I",
+     "name": "Track 20",
+     "muted": false
+    },
+    "lane_F66I3p6uFW": {
+     "id": "lane_F66I3p6uFW",
+     "name": "Track 21",
+     "muted": false
+    },
+    "lane_D8JVogBztT": {
+     "id": "lane_D8JVogBztT",
+     "name": "Track 22",
+     "muted": false
+    },
+    "lane_VBEmhPHp3T": {
+     "id": "lane_VBEmhPHp3T",
+     "name": "Track 23",
+     "muted": false
+    },
+    "lane_1iLWDj3wRr": {
+     "id": "lane_1iLWDj3wRr",
+     "name": "Track 24",
+     "muted": false
+    },
+    "lane_wDDTW9zK-a": {
+     "id": "lane_wDDTW9zK-a",
+     "name": "Track 25",
+     "muted": false
+    },
+    "lane_ZK0e-oamZj": {
+     "id": "lane_ZK0e-oamZj",
+     "name": "Track 26",
+     "muted": false
+    },
+    "lane_fHOcOcONN0": {
+     "id": "lane_fHOcOcONN0",
+     "name": "Track 27",
+     "muted": false
+    },
+    "lane_RwW8AAHQLl": {
+     "id": "lane_RwW8AAHQLl",
+     "name": "Track 28",
+     "muted": false
+    },
+    "lane_U_JJuWoVY0": {
+     "id": "lane_U_JJuWoVY0",
+     "name": "Track 29",
+     "muted": false
+    },
+    "lane_jH51wuHab0": {
+     "id": "lane_jH51wuHab0",
+     "name": "Track 30",
+     "muted": false
+    },
+    "lane_aBcF4UcYh1": {
+     "id": "lane_aBcF4UcYh1",
+     "name": "Track 31",
+     "muted": false
+    },
+    "lane_fh-ejwtQSP": {
+     "id": "lane_fh-ejwtQSP",
+     "name": "Track 32",
+     "muted": false
+    }
+   },
+   "laneOrder": [
+    "lane_tmz2DFwwao",
+    "lane_0x8NE9ptwR",
+    "lane_U7R8SUAkC1",
+    "lane_NnxOYNzhmc",
+    "lane_BFExU3ds6W",
+    "lane__FVT2k01l5",
+    "lane_uh7037rAed",
+    "lane_otxUy5LNsc",
+    "lane_4Vf6ikaLUH",
+    "lane_FMTX9uO_pz",
+    "lane_DTxaomgvfU",
+    "lane_z2d6t1Z5T0",
+    "lane_MwLbL5wKNj",
+    "lane_BHyeJ8t3fD",
+    "lane_EO58wZotVJ",
+    "lane_mHF4eHycKH",
+    "lane_UQt_xcyAZj",
+    "lane_6YhChFnbf4",
+    "lane_fHAcmbkC2G",
+    "lane_xgxE1Gx97I",
+    "lane_F66I3p6uFW",
+    "lane_D8JVogBztT",
+    "lane_VBEmhPHp3T",
+    "lane_1iLWDj3wRr",
+    "lane_wDDTW9zK-a",
+    "lane_ZK0e-oamZj",
+    "lane_fHOcOcONN0",
+    "lane_RwW8AAHQLl",
+    "lane_U_JJuWoVY0",
+    "lane_jH51wuHab0",
+    "lane_aBcF4UcYh1",
+    "lane_fh-ejwtQSP"
+   ],
+   "clips": {
+    "clip_YfNYBjk5n4": {
+     "kind": "pattern",
+     "id": "clip_YfNYBjk5n4",
+     "laneId": "lane_tmz2DFwwao",
+     "start": 0,
+     "length": 3840,
+     "patternId": "pat_EtycfnwERb",
+     "offset": 0
+    },
+    "clip_J5Za1dAMjU": {
+     "kind": "pattern",
+     "id": "clip_J5Za1dAMjU",
+     "laneId": "lane_U7R8SUAkC1",
+     "start": 3840,
+     "length": 11520,
+     "patternId": "pat_mscYEV71tj",
+     "offset": 960,
+     "muted": true
+    },
+    "clip_KLH0_YCYT5": {
+     "kind": "audio",
+     "id": "clip_KLH0_YCYT5",
+     "laneId": "lane__FVT2k01l5",
+     "start": 1920,
+     "length": 3840,
+     "channelId": "ch_7T6OeU2ux4",
+     "offsetSec": 0.234375
+    },
+    "clip_aRv2qpbOiM": {
+     "kind": "automation",
+     "id": "clip_aRv2qpbOiM",
+     "laneId": "lane_otxUy5LNsc",
+     "start": 0,
+     "length": 960,
+     "channelId": "ch_d8AW4cRyJg",
+     "offset": 0
+    }
+   },
+   "markers": {
+    "mk_Nh6cQyTbES": {
+     "id": "mk_Nh6cQyTbES",
+     "tick": 3840,
+     "name": "3/4"
+    },
+    "mk_GQCLacm8VN": {
+     "id": "mk_GQCLacm8VN",
+     "tick": 7680,
+     "name": "Drop"
+    }
+   }
+  },
+  "mixer": {
+   "inserts": {
+    "master": {
+     "id": "master",
+     "name": "Master",
+     "volume": 1.905,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [
+      {
+       "id": "fx_ow8OzGKBx1",
+       "plugin": {
+        "pluginId": "agstudio.limiter",
+        "pluginVersion": 2,
+        "params": {}
+       },
+       "enabled": true,
+       "mix": 1,
+       "sidechain": null
+      }
+     ],
+     "routes": []
+    },
+    "ins_SPzK8N4P2C": {
+     "id": "ins_SPzK8N4P2C",
+     "name": "Drums",
+     "volume": 1,
+     "pan": -0.5,
+     "muted": false,
+     "solo": false,
+     "fx": [
+      {
+       "id": "fx_joAc8FJ-o2",
+       "plugin": {
+        "pluginId": "agstudio.reverb",
+        "pluginVersion": 2,
+        "params": {}
+       },
+       "enabled": true,
+       "mix": 1,
+       "sidechain": null
+      }
+     ],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      },
+      {
+       "to": "ins_RGAOMGsQPk",
+       "level": 0.2573130190689605,
+       "pre": false
+      }
+     ]
+    },
+    "ins_RGAOMGsQPk": {
+     "id": "ins_RGAOMGsQPk",
+     "name": "Lead bus",
+     "volume": 1,
+     "pan": 0,
+     "muted": true,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_4qriuz1Zwz": {
+     "id": "ins_4qriuz1Zwz",
+     "name": "Insert 3",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [
+      {
+       "id": "fx_qWVWK67yUj",
+       "plugin": {
+        "pluginId": "agstudio.reverb",
+        "pluginVersion": 2,
+        "params": {}
+       },
+       "enabled": true,
+       "mix": 1,
+       "sidechain": null
+      }
+     ],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_woMCQkGlCQ": {
+     "id": "ins_woMCQkGlCQ",
+     "name": "Insert 4",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_wz-d7c9711": {
+     "id": "ins_wz-d7c9711",
+     "name": "Insert 5",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_2vwYvV1cMp": {
+     "id": "ins_2vwYvV1cMp",
+     "name": "Insert 6",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Pd0ujtd9be": {
+     "id": "ins_Pd0ujtd9be",
+     "name": "Insert 7",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_0wouYcIhuR": {
+     "id": "ins_0wouYcIhuR",
+     "name": "Insert 8",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins__Jr9TBjy_s": {
+     "id": "ins__Jr9TBjy_s",
+     "name": "Insert 9",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_WZJXrPXsUh": {
+     "id": "ins_WZJXrPXsUh",
+     "name": "Insert 10",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_o84CwcklgQ": {
+     "id": "ins_o84CwcklgQ",
+     "name": "Insert 11",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Ek_5MgSQ8s": {
+     "id": "ins_Ek_5MgSQ8s",
+     "name": "Insert 12",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_kNqScZJegn": {
+     "id": "ins_kNqScZJegn",
+     "name": "Insert 13",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_xz3uF7DBBT": {
+     "id": "ins_xz3uF7DBBT",
+     "name": "Insert 14",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_8l5KnnBSgg": {
+     "id": "ins_8l5KnnBSgg",
+     "name": "Insert 15",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Owe-pH2eU9": {
+     "id": "ins_Owe-pH2eU9",
+     "name": "Insert 16",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    }
+   },
+   "order": [
+    "master",
+    "ins_SPzK8N4P2C",
+    "ins_RGAOMGsQPk",
+    "ins_4qriuz1Zwz",
+    "ins_woMCQkGlCQ",
+    "ins_wz-d7c9711",
+    "ins_2vwYvV1cMp",
+    "ins_Pd0ujtd9be",
+    "ins_0wouYcIhuR",
+    "ins__Jr9TBjy_s",
+    "ins_WZJXrPXsUh",
+    "ins_o84CwcklgQ",
+    "ins_Ek_5MgSQ8s",
+    "ins_kNqScZJegn",
+    "ins_xz3uF7DBBT",
+    "ins_8l5KnnBSgg",
+    "ins_Owe-pH2eU9"
+   ]
+  },
+  "samples": {
+   "smp_test000000": {
+    "id": "smp_test000000",
+    "name": "Kick 01",
+    "source": {
+     "kind": "embedded",
+     "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0",
+     "ext": "wav",
+     "originalName": "Kick 01.wav"
+    }
+   },
+   "smp_test000001": {
+    "id": "smp_test000001",
+    "name": "Vox",
+    "source": {
+     "kind": "embedded",
+     "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1",
+     "ext": "wav",
+     "originalName": "Vox.wav"
+    }
+   },
+   "smp_fnWV14CXRX": {
+    "id": "smp_fnWV14CXRX",
+    "name": "Snare",
+    "source": {
+     "kind": "builtin",
+     "generator": "kit/snare",
+     "version": 1
+    }
+   }
+  },
+  "controllers": {}
+ },
+ "report": {
+  "title": "Night Drive",
+  "flVersion": "21.2.3.4004",
+  "channels": 8,
+  "patterns": 3,
+  "notes": 5,
+  "clips": 4,
+  "markers": 2,
+  "inserts": 3,
+  "effects": 3,
+  "arrangement": "Main",
+  "otherArrangements": [
+   "Alt"
+  ],
+  "standIns": [
+   {
+    "channel": "Lead",
+    "plugin": "Serum",
+    "using": "wavetable",
+    "vst": true
+   },
+   {
+    "channel": "Snare Drum",
+    "plugin": "Sytrus",
+    "using": "sampler",
+    "vst": false
+   },
+   {
+    "channel": "808 Sub",
+    "plugin": "Some Bass",
+    "using": "bass808",
+    "vst": true
+   }
+  ],
+  "missingSamples": [
+   {
+    "channel": "Vox",
+    "file": "Vox.wav",
+    "path": "/Users/me/Vox.wav"
+   }
+  ],
+  "effectStandIns": [
+   {
+    "insert": "Insert 3",
+    "plugin": "Plain Reverb Hall",
+    "using": "reverb"
+   }
+  ],
+  "skippedEffects": [
+   {
+    "insert": "Drums",
+    "plugin": "Kickstart 2"
+   },
+   {
+    "insert": "Drums",
+    "plugin": "Gross Beat"
+   }
+  ],
+  "untargetedAutomation": [
+   "Orphan curve"
+  ],
+  "layers": [
+   {
+    "channel": "Layer",
+    "children": 2
+   }
+  ],
+  "slideNotes": 1,
+  "orphanNotes": 1,
+  "skippedClips": 1,
+  "warnings": []
+ },
+ "firstPatternId": "pat_EtycfnwERb",
+ "hasSong": true,
+ "text": {
+  "headline": "Imported 8 channels, 3 patterns, the arrangement “Main” (4 clips), 2 markers and 3 effects.",
+  "details": [
+   "Not imported: 2 VST plugins (Serum, Some Bass). Their channels keep their notes and play a stand-in (wavetable, bass808), marked “stand-in” in the channel name.",
+   "FL instruments without a match here (Sytrus) play a stand-in instead (sampler); their notes are all there.",
+   "1 sample wasn’t in the file (Vox.wav): an .flp only points at samples on the computer that made it. Drop the zipped loop package (in FL: File > Export > Zipped loop package) to bring them, or use File > Find missing samples….",
+   "Effects not imported: Kickstart 2 (Drums), Gross Beat (Drums).",
+   "Effects replaced by a built-in: Plain Reverb Hall → reverb.",
+   "Only the open arrangement came in; not imported: “Alt”.",
+   "Layer channels (Layer) became their child channels, which play the layer’s notes.",
+   "1 automation clip came in without a target (Orphan curve): right-click a control and use “Create automation clip” to redo them.",
+   "1 slide note (FL’s pitch slides) were left out.",
+   "1 note on channels that couldn’t be imported were left out.",
+   "1 playlist clip couldn’t be placed and were left out.",
+   "Plugin settings aren’t read from FL Studio: every instrument and effect starts from its default sound."
+  ]
+ }
+}
+
+legacy
+{
+ "project": {
+  "schemaVersion": 3,
+  "projectId": "prj_uSyqUW02ka",
+  "meta": {
+   "title": "legacy",
+   "createdAt": "2026-01-01T00:00:00.000Z",
+   "appVersion": "0.1.0"
+  },
+  "transport": {
+   "bpm": 100.5,
+   "timeSig": {
+    "num": 4,
+    "den": 4
+   },
+   "swing": 0
+  },
+  "channels": {
+   "ch_ow8OzGKBx1": {
+    "kind": "instrument",
+    "id": "ch_ow8OzGKBx1",
+    "name": "Pad",
+    "color": "#5f8fbf",
+    "muted": false,
+    "solo": false,
+    "volume": 0.78,
+    "pan": 0,
+    "output": "master",
+    "plugin": {
+     "pluginId": "agstudio.3xosc",
+     "pluginVersion": 2,
+     "params": {
+      "osc1Wave": "saw",
+      "cutoff": 8000
+     }
+    },
+    "rootKey": 60
+   },
+   "ch_joAc8FJ-o2": {
+    "kind": "instrument",
+    "id": "ch_joAc8FJ-o2",
+    "name": "Piano (stand-in for Grand Piano)",
+    "color": "#6aa86b",
+    "muted": false,
+    "solo": false,
+    "volume": 0.78,
+    "pan": 0,
+    "output": "master",
+    "plugin": {
+     "pluginId": "agstudio.3xosc",
+     "pluginVersion": 2,
+     "params": {
+      "osc1Wave": "triangle",
+      "cutoff": 3500
+     }
+    },
+    "rootKey": 60
+   }
+  },
+  "channelOrder": [
+   "ch_ow8OzGKBx1",
+   "ch_joAc8FJ-o2"
+  ],
+  "patterns": {
+   "pat_qWVWK67yUj": {
+    "id": "pat_qWVWK67yUj",
+    "name": "Pattern 1",
+    "color": "#5f8fbf",
+    "stepCount": 32,
+    "notes": {
+     "ch_ow8OzGKBx1": {
+      "n_fWKk_adqfR": {
+       "id": "n_fWKk_adqfR",
+       "tick": 960,
+       "length": 480,
+       "key": 60,
+       "velocity": 0.78125
+      }
+     }
+    },
+    "length": 7680
+   }
+  },
+  "patternOrder": [
+   "pat_qWVWK67yUj"
+  ],
+  "playlist": {
+   "lanes": {
+    "lane_MEZZO9vvGR": {
+     "id": "lane_MEZZO9vvGR",
+     "name": "Track 1",
+     "muted": false
+    },
+    "lane_V313rmhLzz": {
+     "id": "lane_V313rmhLzz",
+     "name": "Track 2",
+     "muted": false
+    },
+    "lane_7T6OeU2ux4": {
+     "id": "lane_7T6OeU2ux4",
+     "name": "Track 3",
+     "muted": false
+    },
+    "lane_fnWV14CXRX": {
+     "id": "lane_fnWV14CXRX",
+     "name": "Track 4",
+     "muted": false
+    },
+    "lane_AU3zUxFX2s": {
+     "id": "lane_AU3zUxFX2s",
+     "name": "Track 5",
+     "muted": false
+    },
+    "lane_xUh3oQMYa1": {
+     "id": "lane_xUh3oQMYa1",
+     "name": "Track 6",
+     "muted": false
+    },
+    "lane_d8AW4cRyJg": {
+     "id": "lane_d8AW4cRyJg",
+     "name": "Track 7",
+     "muted": false
+    },
+    "lane_Dhzl9EqiVp": {
+     "id": "lane_Dhzl9EqiVp",
+     "name": "Track 8",
+     "muted": false
+    },
+    "lane_EtycfnwERb": {
+     "id": "lane_EtycfnwERb",
+     "name": "Track 9",
+     "muted": false
+    },
+    "lane_g-mHowuEez": {
+     "id": "lane_g-mHowuEez",
+     "name": "Track 10",
+     "muted": false
+    },
+    "lane_1w4F-Yo-R7": {
+     "id": "lane_1w4F-Yo-R7",
+     "name": "Track 11",
+     "muted": false
+    },
+    "lane_4MTYq3NOgr": {
+     "id": "lane_4MTYq3NOgr",
+     "name": "Track 12",
+     "muted": false
+    },
+    "lane_d3eUHflog0": {
+     "id": "lane_d3eUHflog0",
+     "name": "Track 13",
+     "muted": false
+    },
+    "lane_mscYEV71tj": {
+     "id": "lane_mscYEV71tj",
+     "name": "Track 14",
+     "muted": false
+    },
+    "lane__4khsjDPWn": {
+     "id": "lane__4khsjDPWn",
+     "name": "Track 15",
+     "muted": false
+    },
+    "lane_OgnPRgIcfR": {
+     "id": "lane_OgnPRgIcfR",
+     "name": "Track 16",
+     "muted": false
+    },
+    "lane_tmz2DFwwao": {
+     "id": "lane_tmz2DFwwao",
+     "name": "Track 17",
+     "muted": false
+    },
+    "lane_0x8NE9ptwR": {
+     "id": "lane_0x8NE9ptwR",
+     "name": "Track 18",
+     "muted": false
+    },
+    "lane_U7R8SUAkC1": {
+     "id": "lane_U7R8SUAkC1",
+     "name": "Track 19",
+     "muted": false
+    },
+    "lane_NnxOYNzhmc": {
+     "id": "lane_NnxOYNzhmc",
+     "name": "Track 20",
+     "muted": false
+    },
+    "lane_BFExU3ds6W": {
+     "id": "lane_BFExU3ds6W",
+     "name": "Track 21",
+     "muted": false
+    },
+    "lane__FVT2k01l5": {
+     "id": "lane__FVT2k01l5",
+     "name": "Track 22",
+     "muted": false
+    },
+    "lane_uh7037rAed": {
+     "id": "lane_uh7037rAed",
+     "name": "Track 23",
+     "muted": false
+    },
+    "lane_otxUy5LNsc": {
+     "id": "lane_otxUy5LNsc",
+     "name": "Track 24",
+     "muted": false
+    },
+    "lane_4Vf6ikaLUH": {
+     "id": "lane_4Vf6ikaLUH",
+     "name": "Track 25",
+     "muted": false
+    },
+    "lane_FMTX9uO_pz": {
+     "id": "lane_FMTX9uO_pz",
+     "name": "Track 26",
+     "muted": false
+    },
+    "lane_DTxaomgvfU": {
+     "id": "lane_DTxaomgvfU",
+     "name": "Track 27",
+     "muted": false
+    },
+    "lane_z2d6t1Z5T0": {
+     "id": "lane_z2d6t1Z5T0",
+     "name": "Track 28",
+     "muted": false
+    },
+    "lane_MwLbL5wKNj": {
+     "id": "lane_MwLbL5wKNj",
+     "name": "Track 29",
+     "muted": false
+    },
+    "lane_BHyeJ8t3fD": {
+     "id": "lane_BHyeJ8t3fD",
+     "name": "Track 30",
+     "muted": false
+    },
+    "lane_EO58wZotVJ": {
+     "id": "lane_EO58wZotVJ",
+     "name": "Track 31",
+     "muted": false
+    },
+    "lane_mHF4eHycKH": {
+     "id": "lane_mHF4eHycKH",
+     "name": "Track 32",
+     "muted": false
+    }
+   },
+   "laneOrder": [
+    "lane_MEZZO9vvGR",
+    "lane_V313rmhLzz",
+    "lane_7T6OeU2ux4",
+    "lane_fnWV14CXRX",
+    "lane_AU3zUxFX2s",
+    "lane_xUh3oQMYa1",
+    "lane_d8AW4cRyJg",
+    "lane_Dhzl9EqiVp",
+    "lane_EtycfnwERb",
+    "lane_g-mHowuEez",
+    "lane_1w4F-Yo-R7",
+    "lane_4MTYq3NOgr",
+    "lane_d3eUHflog0",
+    "lane_mscYEV71tj",
+    "lane__4khsjDPWn",
+    "lane_OgnPRgIcfR",
+    "lane_tmz2DFwwao",
+    "lane_0x8NE9ptwR",
+    "lane_U7R8SUAkC1",
+    "lane_NnxOYNzhmc",
+    "lane_BFExU3ds6W",
+    "lane__FVT2k01l5",
+    "lane_uh7037rAed",
+    "lane_otxUy5LNsc",
+    "lane_4Vf6ikaLUH",
+    "lane_FMTX9uO_pz",
+    "lane_DTxaomgvfU",
+    "lane_z2d6t1Z5T0",
+    "lane_MwLbL5wKNj",
+    "lane_BHyeJ8t3fD",
+    "lane_EO58wZotVJ",
+    "lane_mHF4eHycKH"
+   ],
+   "clips": {
+    "clip_UQt_xcyAZj": {
+     "kind": "pattern",
+     "id": "clip_UQt_xcyAZj",
+     "laneId": "lane_fnWV14CXRX",
+     "start": 0,
+     "length": 4000,
+     "patternId": "pat_qWVWK67yUj",
+     "offset": 0
+    }
+   },
+   "markers": {}
+  },
+  "mixer": {
+   "inserts": {
+    "master": {
+     "id": "master",
+     "name": "Master",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": []
+    },
+    "ins_SPzK8N4P2C": {
+     "id": "ins_SPzK8N4P2C",
+     "name": "Insert 1",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_RGAOMGsQPk": {
+     "id": "ins_RGAOMGsQPk",
+     "name": "Insert 2",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_4qriuz1Zwz": {
+     "id": "ins_4qriuz1Zwz",
+     "name": "Insert 3",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_woMCQkGlCQ": {
+     "id": "ins_woMCQkGlCQ",
+     "name": "Insert 4",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_wz-d7c9711": {
+     "id": "ins_wz-d7c9711",
+     "name": "Insert 5",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_2vwYvV1cMp": {
+     "id": "ins_2vwYvV1cMp",
+     "name": "Insert 6",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Pd0ujtd9be": {
+     "id": "ins_Pd0ujtd9be",
+     "name": "Insert 7",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_0wouYcIhuR": {
+     "id": "ins_0wouYcIhuR",
+     "name": "Insert 8",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins__Jr9TBjy_s": {
+     "id": "ins__Jr9TBjy_s",
+     "name": "Insert 9",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_WZJXrPXsUh": {
+     "id": "ins_WZJXrPXsUh",
+     "name": "Insert 10",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_o84CwcklgQ": {
+     "id": "ins_o84CwcklgQ",
+     "name": "Insert 11",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Ek_5MgSQ8s": {
+     "id": "ins_Ek_5MgSQ8s",
+     "name": "Insert 12",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_kNqScZJegn": {
+     "id": "ins_kNqScZJegn",
+     "name": "Insert 13",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_xz3uF7DBBT": {
+     "id": "ins_xz3uF7DBBT",
+     "name": "Insert 14",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_8l5KnnBSgg": {
+     "id": "ins_8l5KnnBSgg",
+     "name": "Insert 15",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Owe-pH2eU9": {
+     "id": "ins_Owe-pH2eU9",
+     "name": "Insert 16",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    }
+   },
+   "order": [
+    "master",
+    "ins_SPzK8N4P2C",
+    "ins_RGAOMGsQPk",
+    "ins_4qriuz1Zwz",
+    "ins_woMCQkGlCQ",
+    "ins_wz-d7c9711",
+    "ins_2vwYvV1cMp",
+    "ins_Pd0ujtd9be",
+    "ins_0wouYcIhuR",
+    "ins__Jr9TBjy_s",
+    "ins_WZJXrPXsUh",
+    "ins_o84CwcklgQ",
+    "ins_Ek_5MgSQ8s",
+    "ins_kNqScZJegn",
+    "ins_xz3uF7DBBT",
+    "ins_8l5KnnBSgg",
+    "ins_Owe-pH2eU9"
+   ]
+  },
+  "samples": {},
+  "controllers": {}
+ },
+ "report": {
+  "title": "legacy",
+  "flVersion": "11.0.0.1",
+  "channels": 2,
+  "patterns": 1,
+  "notes": 1,
+  "clips": 1,
+  "markers": 0,
+  "inserts": 0,
+  "effects": 0,
+  "arrangement": null,
+  "otherArrangements": [],
+  "standIns": [
+   {
+    "channel": "Piano",
+    "plugin": "Grand Piano",
+    "using": "3xosc",
+    "vst": true
+   }
+  ],
+  "missingSamples": [],
+  "effectStandIns": [],
+  "skippedEffects": [],
+  "untargetedAutomation": [],
+  "layers": [],
+  "slideNotes": 0,
+  "orphanNotes": 0,
+  "skippedClips": 0,
+  "warnings": []
+ },
+ "firstPatternId": "pat_qWVWK67yUj",
+ "hasSong": true,
+ "text": {
+  "headline": "Imported 2 channels, 1 pattern and the playlist (1 clip).",
+  "details": [
+   "Not imported: 1 VST plugin (Grand Piano). Their channels keep their notes and play a stand-in (3xosc), marked “stand-in” in the channel name.",
+   "Plugin settings aren’t read from FL Studio: every instrument and effect starts from its default sound."
+  ]
+ }
+}
+
+empty
+{
+ "project": {
+  "schemaVersion": 3,
+  "projectId": "prj_uSyqUW02ka",
+  "meta": {
+   "title": "empty",
+   "createdAt": "2026-01-01T00:00:00.000Z",
+   "appVersion": "0.1.0"
+  },
+  "transport": {
+   "bpm": 140,
+   "timeSig": {
+    "num": 4,
+    "den": 4
+   },
+   "swing": 0
+  },
+  "channels": {},
+  "channelOrder": [],
+  "patterns": {
+   "pat_sSeWn0VrtY": {
+    "id": "pat_sSeWn0VrtY",
+    "name": "Pattern 1",
+    "color": "#5f8fbf",
+    "stepCount": 16,
+    "notes": {}
+   }
+  },
+  "patternOrder": [
+   "pat_sSeWn0VrtY"
+  ],
+  "playlist": {
+   "lanes": {
+    "lane_ow8OzGKBx1": {
+     "id": "lane_ow8OzGKBx1",
+     "name": "Track 1",
+     "muted": false
+    },
+    "lane_joAc8FJ-o2": {
+     "id": "lane_joAc8FJ-o2",
+     "name": "Track 2",
+     "muted": false
+    },
+    "lane_qWVWK67yUj": {
+     "id": "lane_qWVWK67yUj",
+     "name": "Track 3",
+     "muted": false
+    },
+    "lane_fWKk_adqfR": {
+     "id": "lane_fWKk_adqfR",
+     "name": "Track 4",
+     "muted": false
+    },
+    "lane_MEZZO9vvGR": {
+     "id": "lane_MEZZO9vvGR",
+     "name": "Track 5",
+     "muted": false
+    },
+    "lane_V313rmhLzz": {
+     "id": "lane_V313rmhLzz",
+     "name": "Track 6",
+     "muted": false
+    },
+    "lane_7T6OeU2ux4": {
+     "id": "lane_7T6OeU2ux4",
+     "name": "Track 7",
+     "muted": false
+    },
+    "lane_fnWV14CXRX": {
+     "id": "lane_fnWV14CXRX",
+     "name": "Track 8",
+     "muted": false
+    },
+    "lane_AU3zUxFX2s": {
+     "id": "lane_AU3zUxFX2s",
+     "name": "Track 9",
+     "muted": false
+    },
+    "lane_xUh3oQMYa1": {
+     "id": "lane_xUh3oQMYa1",
+     "name": "Track 10",
+     "muted": false
+    },
+    "lane_d8AW4cRyJg": {
+     "id": "lane_d8AW4cRyJg",
+     "name": "Track 11",
+     "muted": false
+    },
+    "lane_Dhzl9EqiVp": {
+     "id": "lane_Dhzl9EqiVp",
+     "name": "Track 12",
+     "muted": false
+    },
+    "lane_EtycfnwERb": {
+     "id": "lane_EtycfnwERb",
+     "name": "Track 13",
+     "muted": false
+    },
+    "lane_g-mHowuEez": {
+     "id": "lane_g-mHowuEez",
+     "name": "Track 14",
+     "muted": false
+    },
+    "lane_1w4F-Yo-R7": {
+     "id": "lane_1w4F-Yo-R7",
+     "name": "Track 15",
+     "muted": false
+    },
+    "lane_4MTYq3NOgr": {
+     "id": "lane_4MTYq3NOgr",
+     "name": "Track 16",
+     "muted": false
+    },
+    "lane_d3eUHflog0": {
+     "id": "lane_d3eUHflog0",
+     "name": "Track 17",
+     "muted": false
+    },
+    "lane_mscYEV71tj": {
+     "id": "lane_mscYEV71tj",
+     "name": "Track 18",
+     "muted": false
+    },
+    "lane__4khsjDPWn": {
+     "id": "lane__4khsjDPWn",
+     "name": "Track 19",
+     "muted": false
+    },
+    "lane_OgnPRgIcfR": {
+     "id": "lane_OgnPRgIcfR",
+     "name": "Track 20",
+     "muted": false
+    },
+    "lane_tmz2DFwwao": {
+     "id": "lane_tmz2DFwwao",
+     "name": "Track 21",
+     "muted": false
+    },
+    "lane_0x8NE9ptwR": {
+     "id": "lane_0x8NE9ptwR",
+     "name": "Track 22",
+     "muted": false
+    },
+    "lane_U7R8SUAkC1": {
+     "id": "lane_U7R8SUAkC1",
+     "name": "Track 23",
+     "muted": false
+    },
+    "lane_NnxOYNzhmc": {
+     "id": "lane_NnxOYNzhmc",
+     "name": "Track 24",
+     "muted": false
+    },
+    "lane_BFExU3ds6W": {
+     "id": "lane_BFExU3ds6W",
+     "name": "Track 25",
+     "muted": false
+    },
+    "lane__FVT2k01l5": {
+     "id": "lane__FVT2k01l5",
+     "name": "Track 26",
+     "muted": false
+    },
+    "lane_uh7037rAed": {
+     "id": "lane_uh7037rAed",
+     "name": "Track 27",
+     "muted": false
+    },
+    "lane_otxUy5LNsc": {
+     "id": "lane_otxUy5LNsc",
+     "name": "Track 28",
+     "muted": false
+    },
+    "lane_4Vf6ikaLUH": {
+     "id": "lane_4Vf6ikaLUH",
+     "name": "Track 29",
+     "muted": false
+    },
+    "lane_FMTX9uO_pz": {
+     "id": "lane_FMTX9uO_pz",
+     "name": "Track 30",
+     "muted": false
+    },
+    "lane_DTxaomgvfU": {
+     "id": "lane_DTxaomgvfU",
+     "name": "Track 31",
+     "muted": false
+    },
+    "lane_z2d6t1Z5T0": {
+     "id": "lane_z2d6t1Z5T0",
+     "name": "Track 32",
+     "muted": false
+    }
+   },
+   "laneOrder": [
+    "lane_ow8OzGKBx1",
+    "lane_joAc8FJ-o2",
+    "lane_qWVWK67yUj",
+    "lane_fWKk_adqfR",
+    "lane_MEZZO9vvGR",
+    "lane_V313rmhLzz",
+    "lane_7T6OeU2ux4",
+    "lane_fnWV14CXRX",
+    "lane_AU3zUxFX2s",
+    "lane_xUh3oQMYa1",
+    "lane_d8AW4cRyJg",
+    "lane_Dhzl9EqiVp",
+    "lane_EtycfnwERb",
+    "lane_g-mHowuEez",
+    "lane_1w4F-Yo-R7",
+    "lane_4MTYq3NOgr",
+    "lane_d3eUHflog0",
+    "lane_mscYEV71tj",
+    "lane__4khsjDPWn",
+    "lane_OgnPRgIcfR",
+    "lane_tmz2DFwwao",
+    "lane_0x8NE9ptwR",
+    "lane_U7R8SUAkC1",
+    "lane_NnxOYNzhmc",
+    "lane_BFExU3ds6W",
+    "lane__FVT2k01l5",
+    "lane_uh7037rAed",
+    "lane_otxUy5LNsc",
+    "lane_4Vf6ikaLUH",
+    "lane_FMTX9uO_pz",
+    "lane_DTxaomgvfU",
+    "lane_z2d6t1Z5T0"
+   ],
+   "clips": {},
+   "markers": {}
+  },
+  "mixer": {
+   "inserts": {
+    "master": {
+     "id": "master",
+     "name": "Master",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": []
+    },
+    "ins_SPzK8N4P2C": {
+     "id": "ins_SPzK8N4P2C",
+     "name": "Insert 1",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_RGAOMGsQPk": {
+     "id": "ins_RGAOMGsQPk",
+     "name": "Insert 2",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_4qriuz1Zwz": {
+     "id": "ins_4qriuz1Zwz",
+     "name": "Insert 3",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_woMCQkGlCQ": {
+     "id": "ins_woMCQkGlCQ",
+     "name": "Insert 4",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_wz-d7c9711": {
+     "id": "ins_wz-d7c9711",
+     "name": "Insert 5",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_2vwYvV1cMp": {
+     "id": "ins_2vwYvV1cMp",
+     "name": "Insert 6",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Pd0ujtd9be": {
+     "id": "ins_Pd0ujtd9be",
+     "name": "Insert 7",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_0wouYcIhuR": {
+     "id": "ins_0wouYcIhuR",
+     "name": "Insert 8",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins__Jr9TBjy_s": {
+     "id": "ins__Jr9TBjy_s",
+     "name": "Insert 9",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_WZJXrPXsUh": {
+     "id": "ins_WZJXrPXsUh",
+     "name": "Insert 10",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_o84CwcklgQ": {
+     "id": "ins_o84CwcklgQ",
+     "name": "Insert 11",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Ek_5MgSQ8s": {
+     "id": "ins_Ek_5MgSQ8s",
+     "name": "Insert 12",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_kNqScZJegn": {
+     "id": "ins_kNqScZJegn",
+     "name": "Insert 13",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_xz3uF7DBBT": {
+     "id": "ins_xz3uF7DBBT",
+     "name": "Insert 14",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_8l5KnnBSgg": {
+     "id": "ins_8l5KnnBSgg",
+     "name": "Insert 15",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    },
+    "ins_Owe-pH2eU9": {
+     "id": "ins_Owe-pH2eU9",
+     "name": "Insert 16",
+     "volume": 1,
+     "pan": 0,
+     "muted": false,
+     "solo": false,
+     "fx": [],
+     "routes": [
+      {
+       "to": "master",
+       "level": 1,
+       "pre": false
+      }
+     ]
+    }
+   },
+   "order": [
+    "master",
+    "ins_SPzK8N4P2C",
+    "ins_RGAOMGsQPk",
+    "ins_4qriuz1Zwz",
+    "ins_woMCQkGlCQ",
+    "ins_wz-d7c9711",
+    "ins_2vwYvV1cMp",
+    "ins_Pd0ujtd9be",
+    "ins_0wouYcIhuR",
+    "ins__Jr9TBjy_s",
+    "ins_WZJXrPXsUh",
+    "ins_o84CwcklgQ",
+    "ins_Ek_5MgSQ8s",
+    "ins_kNqScZJegn",
+    "ins_xz3uF7DBBT",
+    "ins_8l5KnnBSgg",
+    "ins_Owe-pH2eU9"
+   ]
+  },
+  "samples": {},
+  "controllers": {}
+ },
+ "report": {
+  "title": "empty",
+  "flVersion": "21.2.3.4004",
+  "channels": 0,
+  "patterns": 0,
+  "notes": 0,
+  "clips": 0,
+  "markers": 0,
+  "inserts": 0,
+  "effects": 0,
+  "arrangement": null,
+  "otherArrangements": [],
+  "standIns": [],
+  "missingSamples": [],
+  "effectStandIns": [],
+  "skippedEffects": [],
+  "untargetedAutomation": [],
+  "layers": [],
+  "slideNotes": 0,
+  "orphanNotes": 0,
+  "skippedClips": 0,
+  "warnings": []
+ },
+ "firstPatternId": "pat_sSeWn0VrtY",
+ "hasSong": false,
+ "text": {
+  "headline": "Imported 0 channels and 0 patterns.",
+  "details": []
+ }
+}

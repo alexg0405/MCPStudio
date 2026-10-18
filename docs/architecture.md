@@ -433,7 +433,7 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
 
 - `.agproj` = zip (fflate, `core/io/project-file.ts`): `meta.json` (`{ format: 1, appVersion, savedAt }`),
   `project.json` and `view.json` (deflate 6), `samples/<sha256>.<ext>` (original bytes, stored uncompressed). Plugin code
-  is never embedded; plugins are referenced by id + version. Reading migrates and repairs (`core/schema/migrate.ts`) and
+  is never embedded; plugins are referenced by id + version. Reading migrates (`core/schema/migrate.ts`) and repairs (`core/schema/repair/`, one file per part of the project) and
   throws `ProjectFileError` with a user-facing message; a damaged `meta.json`/`view.json` is tolerated and reported in
   `repairs`. Opening verifies each embedded sample against its hash before it enters the store. Save writes the zip
   a piece at a time and Open reads it an entry at a time (see [Long audio](#long-audio-dj-mode-foundations)).
@@ -441,7 +441,7 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   full (`app/persistence/blob-store.ts`); decoded per `(hash, sampleRate)` into the shared sample cache (memory budget,
   see [Long audio](#long-audio-dj-mode-foundations)); undo removes references, not blobs; unused blobs are removed by the
   safe clean-up described under [Clean-up of unused audio](#clean-up-of-unused-audio). `decodeAudioData` resamples and detaches its input; Chrome
-  rejects AIFF, so the engine's decoder has the PCM parser in `core/io/wav.ts` (which also reads `smpl` and AIFF
+  rejects AIFF, so the engine's decoder has the PCM parser in `core/io/wav-decode.ts` (which also reads `smpl` and AIFF
   `INST`/`MARK` loop/root data) turn it into float WAV in a Worker (`engine/pcm.worker.ts`).
 - Save/Open (`app/project-files.ts`, `services.files`): `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for
   Cmd+S, `createWritable()` swaps atomically. Fallback: `<input type=file>` / `<a download>`. Pickers need a recent
@@ -756,7 +756,7 @@ scales the wobble (0 removes it, 1 as sung, 2 doubles it). With c the sung pitch
 A note with nothing changed is not touched at all; the shift curve glides over `transition` ms (default 25; 0 = hard tune) and
 never moves unvoiced frames. `snapToKey` picks the nearest allowed pitch class (ties down) by a strength 0–1;
 `splitNote`/`mergeNotes` keep the target; `applyPitchAction` is the one entry for the editor's buttons and the AI. The field is
-one commented block in `types.ts`; `migrate.ts` cleans it (`sanitizePitchEdit`: clamps, sorts, removes overlaps, and forgets a
+one commented block in `types.ts`; `core/schema/repair/playlist.ts` cleans it (`sanitizePitchEdit`: clamps, sorts, removes overlaps, and forgets a
 render whose sample is missing).
 
 ### TD-PSOLA (`core/audio/psola.ts`)
@@ -1766,7 +1766,7 @@ channels with their clips, markers), then finds or makes (renaming an empty "Ins
 send to **Echo**) and **Echo** (Delay ¼ ping-pong, fully wet), a Limiter last on the master; the tempo curve
 ("Mix tempo" track, holds and glides), one audio clip channel per song on its deck (samples reused by hash),
 clips on "Deck A"/"Deck B", curves on "Deck A FX n"/"Deck B FX n" (one automation channel per control and
-shape), risers on "DJ FX", a marker per song. `Project.dj` (optional, repaired in `migrate.ts`) keeps the songs
+shape), risers on "DJ FX", a marker per song. `Project.dj` (optional, repaired in `core/schema/repair/dj.ts`) keeps the songs
 (title, BPM, Camelot, deck, span), options, tweaks and what it made. `replanInDraft`/`tweakTransition` plan the
 same songs again in order with a changed tweak; `planOfCurrentMix` gives the plan for the UI.
 
@@ -2101,7 +2101,7 @@ structure** (sections, which beats play, the energy); **deterministic code does 
 - Rebuilt when the source changes: the arrange module's `beforeCommit` compares each source with `c.base` and
   rebuilds its *unmodified* variants (notes still match the hash); a variant edited by hand is left as it is.
   "Refresh variations" (Playlist menu) does the same after hand edits to a source.
-- Repair (`migrate.ts`): a variant whose source is missing, itself, part of a loop or whose steps are malformed
+- Repair (`core/schema/repair/variants.ts`): a variant whose source is missing, itself, part of a loop or whose steps are malformed
   becomes an ordinary pattern; deleting a source does the same (`removePattern`).
 
 ### Core (`src/core/arrange`, pure, plain loops so drafts are fine)
@@ -2758,7 +2758,7 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   (memoized by the lanes and clips records). Recording N > 1 passes makes N + 1 tracks: the comp track, then the take
   tracks (newest take first), the takes muted, the comp starting as the newest full pass (`addTakeGroup`). Tracks of a
   group are never free for other recordings (`laneFree`), and `addClips` drops a `take` tag (a copy or a new clip is
-  not part of a group). `migrate.ts` (`repairTakes`) drops damaged tags and releases a group with no comp track or no
+  not part of a group). `core/schema/repair/takes.ts` (`repairTakes`) drops damaged tags and releases a group with no comp track or no
   takes into ordinary tracks and clips.
 - **The comp is ordinary audio clips** on the comp track, split at the comp's borders; playback, export, freeze and
   consolidate need nothing new. `planComp(segments, spans)` turns "take k plays from a to b" into clips: at a border
@@ -2828,7 +2828,7 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
 - Measured with a loopback stream in the engine's own context: after calibrating the loopback, a hit played on a beat
   lands within 12 ms of it (the loopback's own delay moves by 3–6 ms between captures).
 
-### Export (`app/export/audio-export.ts`, `encode.ts`, `core/io/flac.ts`, `core/query/stems.ts`)
+### Export (`app/export/audio-export.ts`, `encode.ts`, `core/io/flac.ts` (the door of `flac-encoder.ts`, `flac-decoder.ts`, `flac-subframes.ts`, `flac-rice.ts`, `flac-bits.ts`, `flac-format.ts`), `core/query/stems.ts`)
 
 - WAV (16-bit dithered, 24, 32 float), FLAC (our encoder: fixed and LPC subframes, partitioned Rice residuals,
   stereo decorrelation, the MD5 in STREAMINFO; 16 and 24 bits; decodes bit-exactly in Chrome and with macOS
@@ -2941,7 +2941,7 @@ makes a music video **offline**: nothing plays, so a 3-minute song takes a few s
 
 ### Importing FL Studio projects
 
-`core/io/flp.ts` (reader), `core/io/flp-import.ts` (mapper + report text), `core/io/flp-package.ts` (zipped loop
+`core/io/flp.ts` (reader: the door of `flp-reader.ts`, `flp-format.ts`, `flp-records.ts`, `flp-bytes.ts`), `core/io/flp-import.ts` (mapper: the door of `flp-import-mixer.ts`, `-channels.ts`, `-song.ts`, `-plugins.ts` and the report text in `-report.ts`), `core/io/flp-package.ts` (zipped loop
 packages), `app/actions/flp-import.ts` (samples, opening), `ui/features/fl-import` (File menu, drops, report dialog).
 
 - **Format.** FL's `.flp` is undocumented. The ids and record layouts come from two open-source readers checked
@@ -3758,7 +3758,7 @@ in the song.
   is stored through the sample store like any import, so the clean-up of unused audio keeps it while the project
   mentions its hash; a saved project file bundles it with the other samples. No channel or clip plays it. Replacing
   or clearing the reference drops the sample when nothing else uses it (`app/reference/doc.ts`).
-- `repairReference` (`core/schema/migrate.ts`): a reference that cannot be read as measurements is forgotten (the song
+- `repairReference` (`core/schema/repair/reference.ts`): a reference that cannot be read as measurements is forgotten (the song
   stays), values are clamped, bad sections dropped, a gone sample leaves the numbers in place. Idempotent.
 
 ### Measuring (`app/reference/analyze.ts`, `spectrum.ts`)

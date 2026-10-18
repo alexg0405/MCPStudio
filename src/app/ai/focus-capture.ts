@@ -9,38 +9,38 @@ import type { Services } from '../services';
 import type { AiFocus } from './focus';
 
 /** A marker's section (from the marker to the next one, the last to the song's end). */
-export function focusFromMarker(s: Services, markerId: MarkerId): AiFocus | null {
-  const p = s.doc.getState().project;
-  const section = songSections(p).find((x) => x.markerId === markerId);
+export function focusFromMarker(services: Services, markerId: MarkerId): AiFocus | null {
+  const project = services.doc.getState().project;
+  const section = songSections(project).find((x) => x.markerId === markerId);
   if (!section) return null;
-  return { kind: 'section', markerId, from: section.from, to: section.to, projectId: p.projectId };
+  return { kind: 'section', markerId, from: section.from, to: section.to, projectId: project.projectId };
 }
 
 /** Some playlist clips (the ones that exist). */
-export function focusFromClips(s: Services, clipIds: readonly ClipId[]): AiFocus | null {
-  const p = s.doc.getState().project;
-  const ids = [...new Set(clipIds)].filter((id) => p.playlist.clips[id]);
-  return ids.length ? { kind: 'clips', clipIds: ids, projectId: p.projectId } : null;
+export function focusFromClips(services: Services, clipIds: readonly ClipId[]): AiFocus | null {
+  const project = services.doc.getState().project;
+  const ids = [...new Set(clipIds)].filter((id) => project.playlist.clips[id]);
+  return ids.length ? { kind: 'clips', clipIds: ids, projectId: project.projectId } : null;
 }
 
 /** A span of the song: the section it matches exactly, else a range. */
-export function focusFromRange(s: Services, from: number, to: number): AiFocus | null {
-  const p = s.doc.getState().project;
+export function focusFromRange(services: Services, from: number, to: number): AiFocus | null {
+  const project = services.doc.getState().project;
   const a = Math.max(0, Math.round(Math.min(from, to)));
   const b = Math.round(Math.max(from, to));
   if (b <= a) return null;
-  const section = sectionMatching(p, a, b);
+  const section = sectionMatching(project, a, b);
   return section
-    ? { kind: 'section', markerId: section.markerId, from: a, to: b, projectId: p.projectId }
-    : { kind: 'range', from: a, to: b, projectId: p.projectId };
+    ? { kind: 'section', markerId: section.markerId, from: a, to: b, projectId: project.projectId }
+    : { kind: 'range', from: a, to: b, projectId: project.projectId };
 }
 
 /** The playlist's selection: the selected clips, else the loop region; null when neither is set. */
-export function focusFromPlaylist(s: Services): AiFocus | null {
-  const fromClips = focusFromClips(s, s.editor.getState().clipSelection);
+export function focusFromPlaylist(services: Services): AiFocus | null {
+  const fromClips = focusFromClips(services, services.editor.getState().clipSelection);
   if (fromClips) return fromClips;
-  const loop = s.view.getState().loop;
-  return loop ? focusFromRange(s, loop.start, loop.end) : null;
+  const loop = services.view.getState().loop;
+  return loop ? focusFromRange(services, loop.start, loop.end) : null;
 }
 
 /**
@@ -48,19 +48,19 @@ export function focusFromPlaylist(s: Services): AiFocus | null {
  * the current pattern: its selected notes, or all of them when none is selected).
  */
 export function focusFromNotes(
-  s: Services,
+  services: Services,
   at?: { patternId: PatternId; channelId: ChannelId; noteIds?: readonly NoteId[] },
 ): AiFocus | null {
-  const p = s.doc.getState().project;
-  const patternId = at?.patternId ?? s.view.getState().currentPatternId;
-  const channelId = at?.channelId ?? s.session.getState().selectedChannelId;
-  const pattern = patternId ? p.patterns[patternId] : undefined;
-  const channel = channelId ? p.channels[channelId] : undefined;
+  const project = services.doc.getState().project;
+  const patternId = at?.patternId ?? services.view.getState().currentPatternId;
+  const channelId = at?.channelId ?? services.session.getState().selectedChannelId;
+  const pattern = patternId ? project.patterns[patternId] : undefined;
+  const channel = channelId ? project.channels[channelId] : undefined;
   if (!patternId || !channelId || !pattern || channel?.kind !== 'instrument') return null;
   const notes = pattern.notes[channelId] ?? {};
-  const wanted = at?.noteIds ?? s.editor.getState().noteSelection;
+  const wanted = at?.noteIds ?? services.editor.getState().noteSelection;
   let ids = wanted.filter((id) => notes[id]);
   if (ids.length === 0) ids = Object.keys(notes) as NoteId[];
   if (ids.length === 0) return null;
-  return { kind: 'notes', patternId, channelId, noteIds: [...new Set(ids)], projectId: p.projectId };
+  return { kind: 'notes', patternId, channelId, noteIds: [...new Set(ids)], projectId: project.projectId };
 }

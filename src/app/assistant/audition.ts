@@ -59,19 +59,19 @@ export function phraseNotes(project: Project, channelId: ChannelId, phrase: Audi
 }
 
 /** Plays the phrase now; returns a function that stops it (and releases its notes). */
-export function audition(s: Services, channelId: ChannelId, phrase: AuditionPhrase): () => void {
-  const notes = phraseNotes(s.doc.getState().project, channelId, phrase);
+export function audition(services: Services, channelId: ChannelId, phrase: AuditionPhrase): () => void {
+  const notes = phraseNotes(services.doc.getState().project, channelId, phrase);
   const timers: ReturnType<typeof setTimeout>[] = [];
   const sounding = new Set<number>();
-  void s.engine.resume().catch(() => {});
+  void services.engine.resume().catch(() => {});
   for (const n of notes) {
     timers.push(
       setTimeout(() => {
-        const id = s.engine.previewNoteOn(channelId, n.key, n.velocity);
+        const id = services.engine.previewNoteOn(channelId, n.key, n.velocity);
         sounding.add(id);
         timers.push(
           setTimeout(() => {
-            s.engine.previewNoteOff(channelId, id);
+            services.engine.previewNoteOff(channelId, id);
             sounding.delete(id);
           }, n.dur * 1000),
         );
@@ -80,7 +80,7 @@ export function audition(s: Services, channelId: ChannelId, phrase: AuditionPhra
   }
   return () => {
     for (const t of timers) clearTimeout(t);
-    for (const id of sounding) s.engine.previewNoteOff(channelId, id);
+    for (const id of sounding) services.engine.previewNoteOff(channelId, id);
     sounding.clear();
   };
 }

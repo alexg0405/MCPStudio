@@ -177,6 +177,43 @@ describe('sample browser model', () => {
   });
 });
 
+/** A WAV with a `smpl` chunk that says the sound is tuned to `note`. */
+function wavWithRoot(x: Float32Array, note: number): File {
+  const bytes = encodeWav([x], SR, { bitDepth: 16 });
+  const smpl = new Uint8Array(8 + 36);
+  const v = new DataView(smpl.buffer);
+  smpl.set([0x73, 0x6d, 0x70, 0x6c]);
+  v.setUint32(4, 36, true);
+  v.setUint32(8 + 12, note, true);
+  const out = new Uint8Array(bytes.length + smpl.length);
+  out.set(bytes);
+  out.set(smpl, bytes.length);
+  new DataView(out.buffer).setUint32(4, out.length - 8, true);
+  return new File([out as BlobPart], 'Pad.wav', { lastModified: 1_700_000_000_000 });
+}
+
+describe('sample browser: notes the file declares', () => {
+  it('takes the note from the file`s sampler chunk over the pitch it measures, for pitched sounds', async () => {
+    const note = pick('tonal');
+    const file = wavWithRoot(note.x, 50); // D3, whatever the audio is
+    const t = setup([{ name: 'Keys/Pad.wav', file }]);
+    t.browser.start();
+    await t.browser.whenIdle();
+    const a = t.browser.store.getState().rows[0]!.analysis!;
+    expect(a.category).toBe('tonal');
+    expect(a.midi).toBe(50);
+    expect(a.root).toBe(2);
+    expect(a.keyConfidence).toBe(0.95);
+    // A hat has no note to declare.
+    const hat = setup([{ name: 'Hats/Hat.wav', file: wavWithRoot(pick('hat').x, 50) }]);
+    hat.browser.start();
+    await hat.browser.whenIdle();
+    expect(hat.browser.store.getState().rows[0]!.analysis!.midi).toBeUndefined();
+    t.browser.stop();
+    hat.browser.stop();
+  });
+});
+
 describe('sample browser: your marks on files', () => {
   it('keeps favorites, your tags and recently used sounds, and brings them back with the folder', async () => {
     const files = basicFiles();

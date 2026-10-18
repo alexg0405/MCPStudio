@@ -24,6 +24,7 @@ import { playlist } from './playlist';
 import { query } from './query';
 import { recording, RECORD_OP_NAMES } from './recording';
 import { reference } from './reference';
+import { samples } from './samples';
 import { session } from './session';
 import { song } from './song';
 import { ui } from './ui';
@@ -47,6 +48,7 @@ export const MODULES: readonly OpModule[] = [
   decks,
   launcher,
   filters,
+  samples,
   ui,
   session,
   query,

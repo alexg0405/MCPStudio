@@ -32,6 +32,8 @@ import { chainChoices, findChainChoice, type ChainChoice } from '../chains';
 import { isAtPreset, presetChoices } from '../presets';
 import { pitchReport } from '../pitch/report';
 import { referenceReport } from '../reference/summary';
+import { listSamples, SAMPLE_SORTS } from '../samples/listing';
+import { SAMPLE_CATEGORIES } from '@core/samples/types';
 import type { Services } from '../services';
 import { automationDrives, ownUnitOf, paramTargetOf } from './ops/automation';
 import { ActionError, createOpContext, newAnswerState, type OpContext } from './ops/context';
@@ -809,6 +811,30 @@ const get_launcher = tool(
 );
 
 /** Every read tool, in the order they are listed to the model. */
+const list_samples = tool(
+  'list_samples',
+  'The sounds in the musician’s sample folders (the Sample browser window), each with what the analysis found: type (kick, snare, clap, hat, open-hat, cymbal, tom, perc, 808, fx, vocal, tonal, or loop / long), the confidence of a one-shot’s type, a loop’s tempo and bars, the key of a loop or the note of a one-shot, length, loudness and brightness, favorites and the musician’s tags. Filters like the window’s; ids, paths and file names are what place_sample and make_kit take. Also says how many files there are, how far the analysis is, and the song’s tempo and key to match against.',
+  {
+    text: S.str('Words that must all appear in the name, folder, type, tempo, key or tags ("kick", "128 bpm", "a minor"); -word leaves matches out.'),
+    category: { type: 'string', enum: [...SAMPLE_CATEGORIES], description: 'Only one-shots of this type.' },
+    kind: { type: 'string', enum: ['one-shot', 'loop'], description: 'Only one-shots or only loops.' },
+    bpm_min: S.num('Loops from this tempo.'),
+    bpm_max: S.num('Loops up to this tempo.'),
+    half_double: S.bool('With bpm_min / bpm_max: also loops at half or double those tempos.'),
+    key: S.str('Sounds in this key or note: "A", "C#", "A minor" (a note alone matches both modes).'),
+    in_song_key: S.bool('Only sounds whose note or key fits the song key.'),
+    favorites: S.bool('Only the starred sounds.'),
+    recent: S.bool('Only sounds the musician used lately.'),
+    tag: S.str('Only sounds with this tag of the musician’s.'),
+    folder: S.str('Only this folder or subfolder (Folder or Folder/Sub, as the paths show).'),
+    similar_to: S.str('The sounds nearest to this one (its id, path or name), closest first.'),
+    sort: { type: 'string', enum: [...SAMPLE_SORTS], description: 'Order (default name).' },
+    descending: S.bool('Reverse the order.'),
+    limit: S.int('How many to list (default 40, at most 200).'),
+  },
+  (s, a) => listSamples(s.sampleBrowser, a, { bpm: project(s).transport.bpm, key: project(s).transport.key }),
+);
+
 export const readTools: readonly ReadTool[] = [
   get_project,
   get_transport,
@@ -826,6 +852,7 @@ export const readTools: readonly ReadTool[] = [
   get_reference,
   get_pitch,
   get_launcher,
+  list_samples,
 ];
 
 /** Runs a read tool by name; an unknown name or a bad argument comes back as `{ error }`. */

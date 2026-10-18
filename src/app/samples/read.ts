@@ -14,7 +14,7 @@ const WHOLE_FILE_BYTES = 16 * 1024 * 1024;
 const HEAD_BYTES = 64 * 1024;
 
 export type FileRead =
-  | { kind: 'audio'; channels: Float32Array[]; sampleRate: number; durationSec: number }
+  | { kind: 'audio'; channels: Float32Array[]; sampleRate: number; durationSec: number; /** The note the file says it is tuned to (a WAV `smpl` unity note, an AIFF base note). */ rootKey?: number }
   | { kind: 'long'; durationSec: number }
   | { kind: 'needs-decode'; durationSec: number | null }
   | { kind: 'unreadable' };
@@ -39,7 +39,7 @@ export async function readForAnalysis(file: Blob): Promise<FileRead> {
     const frames = decoded.channels[0].length;
     // The file's own length (the header's) when only the start was read.
     const durationSec = info && info.durationSec > 0 ? info.durationSec : frames / decoded.sampleRate;
-    return { kind: 'audio', channels: decoded.channels.slice(0, 2), sampleRate: decoded.sampleRate, durationSec };
+    return { kind: 'audio', channels: decoded.channels.slice(0, 2), sampleRate: decoded.sampleRate, durationSec, ...(decoded.rootKey !== undefined ? { rootKey: decoded.rootKey } : {}) };
   }
   // FLAC is read here too (the browser decodes it off the main thread, but a Worker cannot ask it).
   if (info?.format === 'flac') {

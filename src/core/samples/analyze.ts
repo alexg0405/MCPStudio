@@ -28,6 +28,8 @@ export interface AnalyzeOptions {
   path?: string;
   /** The real length when `channels` hold only the start of the file. */
   durationSec?: number;
+  /** The MIDI note the file says it is tuned to (a WAV `smpl` unity note): the producer's word beats a pitch measurement. */
+  rootKey?: number;
 }
 
 /**
@@ -212,8 +214,13 @@ export function analyzeSample(channels: readonly Float32Array[], sampleRate: num
 
   const c = applyHint(classify(f), hint);
   const out: SampleAnalysis = { ...base, kind: 'one-shot', category: c.category, confidence: c.confidence, ...level, vec: fingerprint(f, 'one-shot'), basis: c.basis };
-  // The note it sounds at, when it has a steady pitch (kicks and 808s are tuned too).
-  if (f.f0 > 0 && f.voiced >= 0.6 && f.f0 >= 20 && f.f0 <= 4200) {
+  // The note it sounds at: the file's own word when it carries one (not for noisy hits), else its steady pitch (kicks and 808s are tuned too).
+  const NOTE_CATEGORIES = new Set(['tonal', '808', 'kick', 'tom', 'vocal', 'perc']);
+  if (opts.rootKey !== undefined && Number.isInteger(opts.rootKey) && opts.rootKey >= 0 && opts.rootKey <= 127 && (!out.category || NOTE_CATEGORIES.has(out.category))) {
+    out.midi = opts.rootKey;
+    out.root = opts.rootKey % 12;
+    out.keyConfidence = 0.95;
+  } else if (f.f0 > 0 && f.voiced >= 0.6 && f.f0 >= 20 && f.f0 <= 4200) {
     const midi = 69 + 12 * Math.log2(f.f0 / 440);
     out.midi = Math.round(midi * 100) / 100;
     out.root = ((Math.round(midi) % 12) + 12) % 12;

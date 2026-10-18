@@ -47,7 +47,7 @@ const f = (over: Partial<SampleFilter>): SampleFilter => ({ ...NO_FILTER, ...ove
 describe('tags', () => {
   it('describes a one-shot and a loop in words', () => {
     expect(analysisTags(rows[0]!.analysis)).toEqual(['one-shot', 'kick', 'low', 'c♯', 'warm']);
-    expect(analysisTags(rows[5]!.analysis)).toEqual(['loop', 'drums loop', '128 bpm', '4 bars', 'warm']);
+    expect(analysisTags(rows[5]!.analysis)).toEqual(['loop', 'drum loop', '128 bpm', '4 bars', 'warm']);
     expect(analysisTags(rows[7]!.analysis)).toContain('a minor');
     expect(analysisTags(null)).toEqual([]);
   });

@@ -70,7 +70,7 @@ export function analysisTags(a: SampleAnalysis | null): string[] {
   const tags: string[] = [];
   if (a.kind === 'loop') {
     tags.push('loop');
-    if (a.loopKind) tags.push(`${a.loopKind} loop`);
+    if (a.loopKind) tags.push(a.loopKind === 'drums' ? 'drum loop' : `${a.loopKind} loop`);
     if (a.bpm) tags.push(`${Math.round(a.bpm)} bpm`);
     if (a.bars) tags.push(`${a.bars} bar${a.bars === 1 ? '' : 's'}`);
   } else if (a.kind === 'long') {

@@ -3,6 +3,7 @@ import type { Style } from '@core/beat/style';
 import type { FilterTarget } from '@core/filters/target';
 import type { DjMixOptions } from '@core/model/types';
 import type { MixSong } from '../../dj/mix';
+import type { SampleWork } from '../../samples/work';
 import type { DeckAction } from './decks';
 import type { ChannelId, ClipId, InsertId, SampleRef, SlotId, Tick } from '@core/model/types';
 import type { AppliedBeat } from '../../assistant/apply';
@@ -35,6 +36,8 @@ export type AfterEdit =
   | { kind: 'level_mix'; style: Style; fromTick?: Tick; bars?: number; targetLufs?: number }
   /** Analyze songs that need it, then make the DJ mix (its own step, after the edit). */
   | { kind: 'dj_mix'; songs: MixSong[]; options: DjMixOptions }
+  /** Sounds from the sample folders put in the project, and kits made from them (their own step, after the edit). */
+  | { kind: 'samples'; work: SampleWork[] }
   /** Live DJ deck actions (load, play, sync, crossfade…): they run after the answer; the decks are not part of the project. */
   | { kind: 'decks'; actions: DeckAction[] }
   /** Render a part and play it through a sound filter (its own step, after the edit). */

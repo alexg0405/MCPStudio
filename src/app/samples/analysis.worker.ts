@@ -18,7 +18,7 @@ scope.onmessage = async (e) => {
     }
     const read = await readForAnalysis(m.file);
     if (read.kind === 'audio') {
-      scope.postMessage({ id: m.id, ok: true, analysis: analyzeSample(read.channels, read.sampleRate, { path: m.path, durationSec: read.durationSec }) });
+      scope.postMessage({ id: m.id, ok: true, analysis: analyzeSample(read.channels, read.sampleRate, { path: m.path, durationSec: read.durationSec, ...(read.rootKey !== undefined ? { rootKey: read.rootKey } : {}) }) });
     } else if (read.kind === 'long') {
       scope.postMessage({
         id: m.id,

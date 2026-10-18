@@ -51,7 +51,7 @@ export function inlineRunner(decode: DecodeForAnalysis = browserDecode): Analysi
   return {
     async run(file, path) {
       const read = await readForAnalysis(file);
-      if (read.kind === 'audio') return analyzeSample(read.channels, read.sampleRate, { path, durationSec: read.durationSec });
+      if (read.kind === 'audio') return analyzeSample(read.channels, read.sampleRate, { path, durationSec: read.durationSec, ...(read.rootKey !== undefined ? { rootKey: read.rootKey } : {}) });
       if (read.kind === 'long') return longAnalysis(read.durationSec);
       if (read.kind === 'unreadable') return null;
       const audio = await decode(await file.arrayBuffer());

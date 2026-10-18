@@ -7,7 +7,7 @@ import type { ChannelId, ClipId, LaneId, SampleRef, Tick } from '@core/model/typ
 import { addChannel, addSample } from '@core/ops/channels';
 import { padSlot, planKit, type KitPlan } from '@core/samples/kit';
 import { previewPlan } from '@core/samples/preview';
-import { addAudioClip, addSampleChannels, importAudioFile, setPluginSlotSample } from '../actions/samples';
+import { addAudioClip, addSampleChannels, importAudioFile, setPluginSlotSample, type EditOptions } from '../actions/samples';
 import { instrumentChannelFor } from '../default-project';
 import type { Services } from '../services';
 import type { BrowserRow } from './browser';
@@ -84,7 +84,7 @@ export async function sampleRefOf(s: Services, row: BrowserRow): Promise<SampleR
 }
 
 /** Sampler channels for rows (one undo step), after the selected channel. */
-export async function addRowsAsChannels(s: Services, rows: readonly BrowserRow[]): Promise<ChannelId[]> {
+export async function addRowsAsChannels(s: Services, rows: readonly BrowserRow[], edit: EditOptions = {}): Promise<ChannelId[]> {
   const refs: SampleRef[] = [];
   const used: string[] = [];
   for (const r of rows) {
@@ -96,7 +96,7 @@ export async function addRowsAsChannels(s: Services, rows: readonly BrowserRow[]
   }
   if (refs.length === 0) return [];
   s.sampleBrowser.markUsed(used);
-  return addSampleChannels(s, refs);
+  return addSampleChannels(s, refs, undefined, edit);
 }
 
 /**
@@ -106,25 +106,26 @@ export async function addRowsAsChannels(s: Services, rows: readonly BrowserRow[]
 export async function addRowAsClip(
   s: Services,
   row: BrowserRow,
-  opts: { startTick?: Tick; laneId?: LaneId | null; followTempo?: boolean } = {},
+  opts: { startTick?: Tick; laneId?: LaneId | null; followTempo?: boolean } & EditOptions = {},
 ): Promise<ClipId | null> {
   const ref = await sampleRefOf(s, row);
   if (!ref) return null;
   const a = row.analysis;
   const follow = opts.followTempo !== false && a?.kind === 'loop' && a.bpm ? { followBpm: a.bpm, ...(a.bars ? { bars: a.bars } : {}) } : {};
+  const amend = opts.amend !== undefined ? { amend: opts.amend } : {};
   const start = opts.startTick ?? s.view.getState().songStart;
   s.sampleBrowser.markUsed([row.id]);
-  return addAudioClip(s, ref, opts.laneId ?? null, start, follow);
+  return addAudioClip(s, ref, opts.laneId ?? null, start, { ...follow, ...amend });
 }
 
 /** Puts a row on one pad (1–16) of a Drum Pads channel (one undo step). */
-export async function loadRowOnPad(s: Services, row: BrowserRow, channelId: ChannelId, pad: number): Promise<boolean> {
+export async function loadRowOnPad(s: Services, row: BrowserRow, channelId: ChannelId, pad: number, edit: EditOptions = {}): Promise<boolean> {
   if (!Number.isInteger(pad) || pad < 1 || pad > 16) return false;
   const ch = s.doc.getState().project.channels[channelId];
   if (!ch || ch.kind !== 'instrument' || ch.plugin.pluginId !== DRUM_PADS_ID) return false;
   const ref = await sampleRefOf(s, row);
   if (!ref) return false;
-  setPluginSlotSample(s, { kind: 'channel', channelId }, padSlot(pad), ref);
+  setPluginSlotSample(s, { kind: 'channel', channelId }, padSlot(pad), ref, edit);
   s.sampleBrowser.markUsed([row.id]);
   return true;
 }
@@ -140,7 +141,7 @@ export interface KitResult {
  * A Drum Pads channel whose pads are the rows' one-shots, laid out like the default kit (kick on pad 1, snare 3, clap 4, hats 7
  * and 9, open hat 11, toms on the left, cymbals at the end). One undo step; pads without a sound keep their built-in drum.
  */
-export async function makeKitFromRows(s: Services, rows: readonly BrowserRow[], name?: string): Promise<KitResult> {
+export async function makeKitFromRows(s: Services, rows: readonly BrowserRow[], name?: string, edit: EditOptions = {}): Promise<KitResult> {
   const plan = planKit(rows);
   const def = s.plugins.get(DRUM_PADS_ID);
   const empty: KitResult = { channelId: null, plan, placed: [] };
@@ -163,10 +164,14 @@ export async function makeKitFromRows(s: Services, rows: readonly BrowserRow[], 
   const channel = instrumentChannelFor(def, (name ?? (firstFolder ? `${firstFolder} kit` : 'Kit')).slice(0, 64), project.channelOrder.length, samples);
   const sel = s.session.getState().selectedChannelId;
   const at = sel ? project.channelOrder.indexOf(sel) + 1 : project.channelOrder.length;
-  s.history.transact(`Make a kit from ${refs.size} sample${refs.size === 1 ? '' : 's'}`, (d) => {
-    for (const ref of refs.values()) addSample(d, ref);
-    addChannel(d, channel, at);
-  });
+  s.history.transact(
+    `Make a kit from ${refs.size} sample${refs.size === 1 ? '' : 's'}`,
+    (d) => {
+      for (const ref of refs.values()) addSample(d, ref);
+      addChannel(d, channel, at);
+    },
+    edit,
+  );
   s.session.getState().selectChannel(channel.id);
   s.sampleBrowser.markUsed(used);
   return { channelId: channel.id, plan, placed: [...refs].map(([pad, ref]) => ({ pad, name: ref.name })) };

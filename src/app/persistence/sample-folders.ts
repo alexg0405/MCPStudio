@@ -30,8 +30,8 @@ export interface FolderState {
 
 const LIST = 'sample-folders';
 const handleKey = (key: string) => `sample-folder:${key}`;
-/** Keeps huge libraries from flooding the browser panel. */
-export const MAX_FILES_PER_FOLDER = 5000;
+/** Keeps one folder from holding the browser for minutes (the sample browser windows lists and analyzes them all). */
+export const MAX_FILES_PER_FOLDER = 30000;
 
 export const sampleFolders = createStore<{ folders: FolderState[]; loaded: boolean }>(() => ({
   folders: [],

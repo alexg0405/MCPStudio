@@ -123,10 +123,25 @@ export function silentFeatures(durationSec: number): SoundFeatures {
   };
 }
 
+/** A copy without any DC offset (some files have one: it would read as a long tail on a short hit): a one-pole high-pass at 15 Hz. */
+function withoutDc(x: Float32Array, sr: number): Float32Array {
+  const out = new Float32Array(x.length);
+  const r = 1 - (2 * Math.PI * 15) / sr;
+  let prev = 0;
+  let y = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = x[i] as number;
+    y = v - prev + r * y;
+    prev = v;
+    out[i] = y;
+  }
+  return out;
+}
+
 /** Measures a mono signal (`x` may be longer than needed: only the start is read). */
 export function extractFeatures(xFull: Float32Array, sampleRate: number, durationSec = xFull.length / sampleRate): SoundFeatures {
-  const x = xFull.length > ENVELOPE_SEC * sampleRate ? xFull.subarray(0, Math.round(ENVELOPE_SEC * sampleRate)) : xFull;
   const sr = sampleRate;
+  const x = withoutDc(xFull.length > ENVELOPE_SEC * sr ? xFull.subarray(0, Math.round(ENVELOPE_SEC * sr)) : xFull, sr);
   const f = silentFeatures(durationSec);
   if (x.length < 32) return f;
 

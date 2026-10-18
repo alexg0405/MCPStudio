@@ -92,15 +92,24 @@ export function pickAudioFile(): Promise<File | null> {
  * Puts a sample into one of a plugin's sample slots, or empties the slot with null (one undo step):
  * Drum Pads' pads, a slicer's sample, any plugin that declares `sampleSlots`.
  */
-export function setPluginSlotSample(s: Services, owner: PluginOwner, slot: string, ref: SampleRef | null): void {
-  s.history.transact(ref ? `Load ${ref.name}` : 'Remove sample', (d) => {
-    if (ref) addSample(d, ref);
-    setPluginSample(d, owner, slot, ref ? ref.id : null);
-  });
+export function setPluginSlotSample(s: Services, owner: PluginOwner, slot: string, ref: SampleRef | null, edit: EditOptions = {}): void {
+  s.history.transact(
+    ref ? `Load ${ref.name}` : 'Remove sample',
+    (d) => {
+      if (ref) addSample(d, ref);
+      setPluginSample(d, owner, slot, ref ? ref.id : null);
+    },
+    edit,
+  );
+}
+
+/** `amend`: fold the edit into the undo entry with this id (the Studio does, for work that comes after its answer). */
+export interface EditOptions {
+  amend?: number;
 }
 
 /** Adds sampler channels for samples (one undo step), after the selected channel. */
-export function addSampleChannels(s: Services, refs: readonly SampleRef[], index?: number): ChannelId[] {
+export function addSampleChannels(s: Services, refs: readonly SampleRef[], index?: number, edit: EditOptions = {}): ChannelId[] {
   const sampler = s.plugins.get(SAMPLER_ID);
   if (!sampler || refs.length === 0) return [];
   const project = s.doc.getState().project;
@@ -109,12 +118,16 @@ export function addSampleChannels(s: Services, refs: readonly SampleRef[], index
   const channels = refs.map((ref, i) =>
     instrumentChannelFor(sampler, ref.name, project.channelOrder.length + i, { main: ref.id }),
   );
-  s.history.transact(refs.length === 1 ? `Add ${refs[0]?.name}` : `Add ${refs.length} samples`, (d) => {
-    refs.forEach((ref, i) => {
-      addSample(d, ref);
-      addChannel(d, channels[i] as (typeof channels)[number], at + i);
-    });
-  });
+  s.history.transact(
+    refs.length === 1 ? `Add ${refs[0]?.name}` : `Add ${refs.length} samples`,
+    (d) => {
+      refs.forEach((ref, i) => {
+        addSample(d, ref);
+        addChannel(d, channels[i] as (typeof channels)[number], at + i);
+      });
+    },
+    edit,
+  );
   const last = channels[channels.length - 1];
   if (last) s.session.getState().selectChannel(last.id);
   return channels.map((c) => c.id);
@@ -140,7 +153,7 @@ export function setChannelSample(s: Services, channelId: ChannelId, ref: SampleR
 }
 
 /** How an audio clip made from a sample behaves: a loop can follow the song's tempo. */
-export interface AudioClipOptions {
+export interface AudioClipOptions extends EditOptions {
   /** The tempo the audio was made at: the clip follows the song tempo by time-stretching (pitch kept). */
   followBpm?: number;
   /** With `followBpm`: the loop's length in bars, which the clip lasts whatever the song tempo. */
@@ -175,13 +188,17 @@ export function addAudioClip(s: Services, ref: SampleRef, laneId: LaneId | null,
       ? Math.max(1, Math.round(opts.bars * project.transport.timeSig.num * ((PPQ * 4) / project.transport.timeSig.den)))
       : Math.max(1, Math.round(tempo.secondsToTick(tempo.tickToSeconds(start) + seconds) - start));
   const clipId = newId.clip();
-  s.history.transact(`Add ${channel.name} clip`, (d) => {
-    addSample(d, { ...ref, durationSec: seconds });
-    addChannel(d, channel);
-    const lane = laneId ?? ordinaryLaneFor(d, start, start + ticks);
-    const clip: AudioClip = { kind: 'audio', id: clipId, laneId: lane, start, length: ticks, channelId: channel.id, offsetSec: 0 };
-    addClips(d, [clip]);
-  });
+  s.history.transact(
+    `Add ${channel.name} clip`,
+    (d) => {
+      addSample(d, { ...ref, durationSec: seconds });
+      addChannel(d, channel);
+      const lane = laneId ?? ordinaryLaneFor(d, start, start + ticks);
+      const clip: AudioClip = { kind: 'audio', id: clipId, laneId: lane, start, length: ticks, channelId: channel.id, offsetSec: 0 };
+      addClips(d, [clip]);
+    },
+    opts.amend !== undefined ? { amend: opts.amend } : {},
+  );
   s.editor.getState().selectClips([clipId]);
   return clipId;
 }

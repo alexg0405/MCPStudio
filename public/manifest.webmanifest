@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "AGstudio",
+  "short_name": "AGstudio",
+  "description": "An FL Studio-style DAW for making beats and songs, with your own instruments and effects as code plugins.",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#0b0c0e",
+  "theme_color": "#16171a",
+  "categories": ["music", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "application/x-agstudio-project": [".agproj"],
+        "application/json": [".agchain", ".agpreset"]
+      },
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }],
+      "launch_type": "single-client"
+    }
+  ],
+  "launch_handler": { "client_mode": ["focus-existing", "auto"] }
+}

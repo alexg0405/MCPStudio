@@ -6,6 +6,10 @@
     <meta name="color-scheme" content="dark" />
     <title>AGstudio</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Installable app (docs/architecture.md, "Installable app (PWA)"): the manifest, the title-bar color and the icon. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#16171a" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <!-- A plain dark page while the app loads (no texture until the app is up). -->
     <style>
       html,
@@ -13,6 +17,14 @@
         background: var(--boot-bg, #0b0c0e);
       }
     </style>
+    <script>
+      // Chrome offers the install prompt once, soon after the page loads, maybe before the app's code runs:
+      // keep it for the "Install AGstudio as an app" menu entry (src/app/pwa).
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__agInstallPrompt = e;
+      });
+    </script>
     <script>
       // The saved theme is on the page before anything paints: no flash of the default dark stone before a
       // light or slate theme (the stylesheet keys its colors off data-theme; the app re-applies it when it starts).

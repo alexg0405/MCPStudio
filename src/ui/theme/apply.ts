@@ -76,4 +76,7 @@ export function applyTheme(theme: string, accent: string, accentPicked = false):
   if (!accentPicked && a === themeDefaultAccent(t)) delete root.dataset.accent;
   else root.dataset.accent = a;
   invalidateTheme();
+  // The installed app's title bar (and the browser's chrome on phones) takes the toolbar's color.
+  const surface = getComputedStyle(root).getPropertyValue('--ag-surface-1').trim();
+  if (/^#[0-9a-f]{6}$/i.test(surface)) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', surface);
 }

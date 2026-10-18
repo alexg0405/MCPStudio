@@ -1,7 +1,7 @@
 # Writing AGstudio plugins
 
 AGstudio's instruments and effects are plugins: TypeScript modules written against `@agstudio/sdk`.
-The built-ins (Sampler, 3xOsc, Pluck, 808 Bass, Wavetable, Granular, FM, Drum Pads, Slicer, Drum Synth and the
+The built-ins (Sampler, 3xOsc, Pluck, 808 Bass, Wavetable, FM, Drum Pads, Slicer, Drum Synth and the
 mixer effects) use exactly the same API you do, so anything they can do, your plugins can do.
 `src/plugins/builtin/<name>/` has each one's source: Wavetable and FM are full worklet synths with
 custom editors, Drum Pads and Slicer show sample slots in a custom editor.
@@ -201,8 +201,6 @@ the song with `atBeat`), `Rng`, `mtof`, `dbToGain`, `pow2` (2^u for a pitch rati
   that of a smooth curve. `WavetableBank.build(specs, frames, shared)` takes tens of milliseconds:
   build it on the main thread and send `bank.data` to the kernel (see `setup` below), where
   `WavetableBank.wrap(data, tables, frames)` reads it.
-- `WavetableBank.build` and the frame tools above make tables from your own data; a drawn table is stored in the plugin's
-  state (see `onState` below).
 - `FmOperator` (a sine with phase modulation and smooth self-feedback), `sinCycles` (a fast table
   sine) and `FM_ALGORITHMS` (the eight classic 4-operator routings: modulators, carriers, labels).
 - `Kick`, `Snare`, `Clap`, `HiHat`, `Tom`, `Perc`: synthesized drum voices (808/909-style) with a few
@@ -262,13 +260,7 @@ export default defineWorkletInstrument({
 A `SharedArrayBuffer` (the dev and preview servers are cross-origin isolated) reaches every kernel
 without a copy; `WavetableBank.build(specs, frames, true)` uses one when it can.
 
-State that the kernel needs in another form: `onState(state, port, host)` on `defineWorkletInstrument` runs on the main
-thread when the instance is made (before any note) and again whenever the plugin's state changes (an edit, undo, a preset,
-a project load). Turn the state into what the kernel reads and `port.send` it. The Wavetable builds the band-limited mip
-levels of the table you draw there (`@agstudio/sdk/dsp/wavetable-frames`: frames as Fourier series, drawing, smoothing,
-band-limiting, additive harmonics, WAV import and slicing, compact base64 storage for the state, `buildFrameBank`; pure
-TypeScript, so a plugin of yours can offer a drawable table too). Keep `onState` quick and skip the work when the state is
-the same as last time.
+`onState(state, port, host)` runs on the main thread when the instance is made and when its state changes: `port.send` the kernel what it needs.
 
 Two kernel patterns the built-ins use:
 - **Start notes in `render`.** Param values only arrive with `render()`, and a note at the first frame
@@ -589,8 +581,6 @@ create(host) {
   tap?.publish({ gr: 0 }); // readings: any numbers your editor shows
   …
 }
-// A kernel can also report many numbers (the Granular posts the position, progress and pan of its 24 newest grains as
-// gp0…, gq0…, gx0…): name them all in `Readings` and read each with `tap.reading(name)` on the frame loop.
 // Worklet plugins: `tap: true` (or the options) in defineWorkletEffect/Instrument taps the processor's
 // output, and kernel messages `{ readings: {...} }` become readings. The Readings helper posts them:
 //   private readonly meter = new Readings(this.host, ['gr'] as const);

@@ -766,7 +766,7 @@ const get_takes = tool(
 
 const get_pitch = tool(
   'get_pitch',
-  'The sung notes of a recorded audio clip, as the Pitch editor shows them: per note its number (1-based, what the pitch action takes), bar, start/end seconds, pitch (MIDI and note name), how many cents off the nearest note, whether it is in the song key, drift and vibrato measured, and what has been changed (target, shift, flattened drift, vibrato %). The first look at a clip it listens first (state "analyzing": ask again in a moment).',
+  'The sung notes of a recorded audio clip, as the Pitch editor shows them: per note its number (1-based, what the pitch action takes), bar, start/end seconds, pitch (MIDI and note name), how many cents off the nearest note, whether it is in the song key, drift and vibrato measured, and what has been changed (target, shift, flattened drift, vibrato %); also which sound the musician hears (the A/B switch: hearing). The first look at a clip it listens first (state "analyzing": ask again in a moment).',
   { clip: S.str('An audio clip id (clip_…; default: the selected audio clip).') },
   (s, a) => pitchReport(s, a),
 );

@@ -42,6 +42,12 @@ export interface PitchAnalysis extends PitchFrames {
   notes: PitchNote[];
 }
 
+/**
+ * The version of the analysis (tracker, cleaning, octave repair, segmentation): stored analyses carry it in their key, so a
+ * change that can alter a result bumps it and old entries are ignored and deleted. 1: first release; 2: octave repair.
+ */
+export const PITCH_ANALYSIS_VERSION = 2;
+
 export const PITCH_NOTE_THRESHOLDS = {
   /** A note ends when the pitch is this far (cents) from its centre and settles elsewhere. */
   splitCents: 65,

@@ -6,6 +6,7 @@ import {
   clearClipPitch,
   defaultPitchClip,
   editFor,
+  hearOriginal,
   loadPitchClip,
   parsePitchAction,
   pitchProblem,
@@ -15,6 +16,7 @@ import {
 import { playFrom } from '@app/actions/transport';
 import { pitchState } from '@app/pitch/state';
 import { tempoMapOf } from '@core/automation/tempo';
+import { isNeutralEdit } from '@core/audio/pitch-edit';
 import { playbackMode, tickAtSourceSeconds } from '@core/audio/playback';
 import type { ClipId } from '@core/model/types';
 import { parseKey as parseKeyText } from '@app/ai/ops/values';
@@ -86,10 +88,11 @@ export function register(services: Services): void {
       ['Right-click', 'a menu for the note: split, merge, snap, octave, reset'],
       ['Wheel / Ctrl+wheel / Alt+wheel', 'scroll, zoom in time, zoom the rows'],
       ['Delete', 'puts the selected notes back as sung'],
+      ['B (or the A/B button)', 'switches between the corrected sound and your original recording so you can compare; nothing in the project changes'],
     ],
   });
 
-  const { commands } = services;
+  const { commands, keymap } = services;
   commands.register<{ clip?: string } | string>({
     id: 'pitchEditor.openClip',
     title: 'Pitch editor for the selected audio clip',
@@ -183,6 +186,31 @@ export function register(services: Services): void {
       }
     },
   });
+  commands.register<{ clip?: string; original?: boolean }>({
+    id: 'pitchEditor.toggleOriginal',
+    title: 'Pitch editor: hear the original or the corrected sound (A/B)',
+    category: 'Audio clip',
+    hint: 'Switches an audio clip between its corrected sound and its own recording so you can compare (B in the Pitch editor). Only what you hear changes: nothing in the project does, and it goes back to corrected when the clip is closed',
+    argsHint: 'optional { clip: id (default: the clip in the Pitch editor, else the selected audio clip), original: true to hear the original, false for the corrected sound (default: switch) }',
+    run: (s, args) => {
+      // The clip in the editor first (that is the one being compared), then the usual choice.
+      const open = pitchState.getState().clipId;
+      const given = args && typeof args === 'object' && typeof args.clip === 'string';
+      const id = !given && open && audioClipOf(s.doc.getState().project, open) ? open : targetClip(s, args);
+      if (!id) {
+        s.session.getState().toast(NO_CLIP);
+        return;
+      }
+      const edit = audioClipOf(s.doc.getState().project, id)?.clip.pitchEdit;
+      if (!edit || isNeutralEdit(edit)) {
+        s.session.getState().toast('This clip has no correction yet: change a note first, then compare.');
+        return;
+      }
+      const original = hearOriginal(s, id, typeof args?.original === 'boolean' ? args.original : undefined);
+      s.session.getState().setHint(original ? 'Hearing the original recording (press B for the corrected sound)' : 'Hearing the corrected sound (press B for the original)');
+    },
+  });
+  keymap.add([{ chord: 'B', command: 'pitchEditor.toggleOriginal', when: { focus: [WINDOW] } }]);
   commands.register<{ clip?: string }>({
     id: 'pitchEditor.clear',
     title: 'Remove pitch correction from an audio clip',

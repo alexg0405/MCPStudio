@@ -26,6 +26,10 @@ export const SEEN_PREFIX = 'gc:seen:';
 export const LAST_RUN_KEY = 'gc:last-run';
 /** Cached track analyses are keyed by content hash but are not "use" of the audio (see analysis-cache.ts). */
 export const ANALYSIS_PREFIX = 'dj-analysis:';
+/** Cached pitch analyses of clips (app/pitch/analysis-store.ts): keyed by sample hash (last segment), not a use either. */
+export const PITCH_ANALYSIS_PREFIX = 'pitch-analysis:';
+/** True for keys of cached analyses: derived data that names a hash without using the audio. */
+export const isAnalysisKey = (key: string): boolean => key.startsWith(ANALYSIS_PREFIX) || key.startsWith(PITCH_ANALYSIS_PREFIX);
 /** The DJ library's saved songs (app/dj/library.ts). */
 export const DJ_LIBRARY_KEY = 'dj-library';
 

@@ -108,6 +108,12 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Transpose (1) | `↑` |
 | Transpose (12) | `⇧↑` / `Shift+↑` |
 
+## When the pitch-editor window is focused
+
+| Action | Keys |
+|---|---|
+| Pitch editor: hear the original or the corrected sound (A/B) | `B` |
+
 ## When the playlist window is focused
 
 | Action | Keys |

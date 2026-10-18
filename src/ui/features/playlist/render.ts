@@ -17,6 +17,7 @@ import type {
   Tick,
   TimeSignature,
 } from '@core/model/types';
+import { clipSampleId } from '@core/audio/playback';
 import { clipChannelId } from '@core/model/clips';
 import { notesSorted, patternLength } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
@@ -217,8 +218,14 @@ export function drawClips(
     } else if (bodyH > 3 && pattern && c.kind === 'pattern')
       drawPatternBody(ctx, vp, pattern, ts, c, x, w, bodyY, bodyH, paint);
     else if (bodyH > 3 && c.kind === 'audio') {
-      const ref = channel?.kind === 'audioClip' ? project.samples[channel.sampleId] : undefined;
-      const wave = ref ? (style.waveform?.(ref) ?? null) : null;
+      // The waveform of what plays: a pitch-corrected clip draws its render (the same length and timeline as the
+      // recording) once the engine has it, and the recording until then.
+      let wave: Waveform | null = null;
+      if (channel?.kind === 'audioClip') {
+        const played = project.samples[clipSampleId(channel, c)];
+        const own = project.samples[channel.sampleId];
+        wave = (played && style.waveform?.(played)) || (own ? (style.waveform?.(own) ?? null) : null);
+      }
       if (channel?.kind === 'audioClip') {
         const levels = style.levels?.(c) ?? c;
         const handles = style.audioHandles?.(c) ?? { show: selected, hot: null };

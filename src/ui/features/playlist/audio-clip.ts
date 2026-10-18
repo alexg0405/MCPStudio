@@ -41,6 +41,8 @@ export function audioClipTags(
   }
   if (m.reverse) tags.push('Reversed');
   if (clip.gain !== undefined && clip.gain !== 1) tags.push(formatDb(clip.gain));
+  // A pitch-corrected clip plays its corrected render (the waveform shows it).
+  if (clip.pitchEdit?.renderedSampleId) tags.push('Pitch corrected');
   return tags;
 }
 

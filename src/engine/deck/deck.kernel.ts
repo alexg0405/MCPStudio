@@ -5,9 +5,9 @@
  *  - Turntable playback: the position advances by the speed each output frame and the song is read with
  *    4-point cubic (Hermite) interpolation, so a faster deck is also higher, like a record. At exactly 1× it
  *    is a sample-exact copy.
- *  - Key lock: the same speed as a tempo only, by a streaming WSOLA (waveform-similarity overlap-add): frames
- *    of 2048 samples, Hann-windowed, overlapped by half, each taken near where the tempo says it should come
- *    from and moved (±448 samples) to where it best continues the frame before, so the pitch holds. The
+ *  - Key lock: the same speed as a tempo only, by a streaming WSOLA (waveform-similarity overlap-add, see
+ *    `deck-stretch.ts`): frames of 2048 samples, Hann-windowed, overlapped by half, each taken near where the tempo says
+ *    it should come from and moved (±448 samples) to where it best continues the frame before, so the pitch holds. The
  *    nominal position keeps counting at the tempo, which is what sync and the loop read.
  *  - Loops: when the position crosses the loop end it moves back by the loop length (a fraction of a sample
  *    kept), and reads past the end continue from the loop start, so the seam is sample-accurate and seamless.
@@ -16,76 +16,27 @@
  *  - Scratch: the speed follows what the platter does (any speed, backwards too); nudge bends the tempo for a
  *    moment; the speed always glides.
  *  - Sync: a follower reads its master's published position and speed (shared memory) and holds the same tempo
- *    and beat phase by itself, every render quantum, so it never drifts and needs no messages.
+ *    and beat phase by itself, every render quantum (`deck-sync.ts`), so it never drifts and needs no messages.
  *
- * No allocation in `process()`. The worklet (`deck.worklet.ts`) is the thin shell around it. The attack detector the
- * stretch uses is `onset-scanner.ts`; what a deck publishes is `deck-snapshot.ts`.
+ * No allocation in `process()`. The worklet (`deck.worklet.ts`) is the thin shell around it. What a deck publishes
+ * is `deck-snapshot.ts`.
  *
  * Speed: the per-sample loop in `process()` and the interpolator are written so the engine inlines them. Anything
  * called per output sample stays in this file as a small method or inline code; helpers that run per block, per
- * stretch frame or per command are free to be separate methods.
+ * stretch frame or per command are free to be separate methods or objects.
  */
-import { BeatMap } from '@core/dj/beat-map';
 import { BLOCK_BITS as BLOCK_BITS_OF_ID, BLOCK_FRAMES as BLOCK_FRAMES_OF_ID, BLOCK_MASK as BLOCK_MASK_OF_ID, DS } from './deck-id';
 import type { SyncSpec } from './deck-id';
-import { newSnapshot, readDeckState } from './deck-snapshot';
-import { OnsetScanner } from './onset-scanner';
+import { STRETCH_HOP_LEN, STRETCH_REGION_LEN, Stretcher } from './deck-stretch';
+import { SyncFollower } from './deck-sync';
 
 // Constants of this file: an imported binding is read through the module object (in tests, in some bundles), which made
 // the per-sample reads below 5× slower.
 const BLOCK_BITS = BLOCK_BITS_OF_ID;
 const BLOCK_FRAMES = BLOCK_FRAMES_OF_ID;
 const BLOCK_MASK = BLOCK_MASK_OF_ID;
-
-// ---- Stretch (key lock) geometry ----
-
-/** Length of a stretch frame (samples), and the hop between frames (half a frame: they overlap by half). */
-const FRAME_LEN = 2048;
-const HOP_LEN = FRAME_LEN / 2;
-/** How far (samples) a frame may move from where the tempo says it comes from, to better continue the frame before. */
-const SEARCH_RADIUS = 448;
-/** The coarse similarity search looks at every this-many-th sample of a mono mix. */
-const SEARCH_DECIMATION = 4;
-/** The region of the song a frame's search reads (the frame plus the search radius either side). */
-const REGION_LEN = 2 * SEARCH_RADIUS + FRAME_LEN;
-/** The same region, and the half-frame template it is matched against, after decimation. */
-const REGION_LEN_DECIMATED = REGION_LEN / SEARCH_DECIMATION;
-const TEMPLATE_LEN_DECIMATED = HOP_LEN / SEARCH_DECIMATION;
-/** How far from the nominal place a frame's best match may sit before it costs (correlation points per full range). */
-const CENTER_BIAS = 0.03;
-
-const HANN_WINDOW = new Float32Array(FRAME_LEN);
-/** The window of the very first frame: full for its first half (nothing to overlap with), Hann after. */
-const FIRST_FRAME_WINDOW = new Float32Array(FRAME_LEN);
-for (let j = 0; j < FRAME_LEN; j++) {
-  HANN_WINDOW[j] = 0.5 * (1 - Math.cos((2 * Math.PI * j) / FRAME_LEN));
-  FIRST_FRAME_WINDOW[j] = j < HOP_LEN ? 1 : (HANN_WINDOW[j] as number);
-}
-
-// ---- Transient preservation: what `computeFrame` does with a frame (see `planTransient`) ----
-
-const FRAME_NORMAL = 0;
-const FRAME_CONTINUE = 1;
-const FRAME_ENTER = 2;
-/** The fraction of the lead (how far the heard input is from where the tempo puts it) that still stands after one more frame. */
-const LEAD_CARRY = 0.5;
-/** The frame that starts a run around an attack may move this far (frames) to continue the one before: 1.3 ms at 48 kHz. */
-const ENTRY_SEARCH = 64;
-/** A run starts this many output frames before its attack: past the splice that starts it (a hop) and the attack's own lead-in. */
-const RUN_LEAD = HOP_LEN + 320;
-/** A run goes on until the next splice would begin this far (frames) after the attack: past its body and the search's reach. */
-const RUN_TAIL = 930;
-/** How far (output frames) a continued run may put an attack from where the tempo wants it: 2 ms at 48 kHz. */
-const LANDING_TOLERANCE = 96;
-/** An attack this close (output frames) before a stronger one gives way to it (their runs could not both fit). */
-const RUN_SPAN = RUN_LEAD + HOP_LEN + RUN_TAIL + HOP_LEN;
-/** The most a run's first frame may jump from where the frame before leads on (frames). */
-const MAX_ENTRY_JUMP = 1500;
-/** Loops shorter than this many frames are too short for a run around an attack to fit, so they use plain WSOLA. */
-const MIN_LOOP_FOR_TRANSIENTS = 4 * FRAME_LEN;
-/** The stretch only follows tempos between half and double speed (outside it the search region would not cover the frame). */
-const MIN_STRETCH_RATE = 0.5;
-const MAX_STRETCH_RATE = 2;
+const HOP_LEN = STRETCH_HOP_LEN;
+const REGION_LEN = STRETCH_REGION_LEN;
 
 // ---- Tempo, nudge, scratch ----
 
@@ -124,42 +75,8 @@ const WINDOW_AHEAD_STRETCH = REGION_LEN + 4096;
 const WINDOW_MAX_RATE = 4;
 const WINDOW_RATE_SLACK = 0.05;
 
-// ---- Sync ----
-
-/** The most a follower trims its tempo to close a beat-phase error (a fraction). */
-const MAX_SYNC_TRIM = 0.02;
-/** Seconds a follower takes to close a beat-phase error. */
-const SYNC_TIME_CONSTANT_SEC = 1.5;
-/** A pending align waits this long (seconds) for a master that isn't playing yet. */
-const ALIGN_WAIT_SEC = 0.15;
-/** ... or this long when the master is waiting for audio and will come back somewhere else. */
-const ALIGN_WAIT_AFTER_STALL_SEC = 2;
-/** The slowest speed the sync's beat-phase trim assumes (so a nearly stopped deck doesn't divide by nothing). */
-const MIN_SYNC_RATE = 0.1;
-
 const clamp = (x: number, lo: number, hi: number) => (x < lo ? lo : x > hi ? hi : x);
 
-/** The clock of a song's tracked beats, or null when there are too few to follow (or they don't make a clock). */
-function beatMapOf(beats: Float64Array | undefined, firstDownbeat: number): BeatMap | null {
-  if (!beats || beats.length < 2) return null;
-  try {
-    return new BeatMap(beats, firstDownbeat);
-  } catch {
-    return null;
-  }
-}
-
-/** A follower deck's link to its master: the spec it was given and the shared state it reads. */
-interface SyncState {
-  spec: SyncSpec;
-  state: Float64Array;
-  seq: Int32Array;
-  /** The beat clocks of the two songs when they have tracked beats (null: the fixed grid in `spec`). */
-  selfMap: BeatMap | null;
-  masterMap: BeatMap | null;
-}
-
-/** The deck player: one object that plays a song at a smoothed speed with key lock, loops, fades, scratch and sync (see the file comment). */
 export class DeckKernel {
   /** The song's blocks: planar float32 in a pool (`BLOCK_FRAMES` per slot), found through `table` (see `BLOCK_BITS`). */
   private poolLeft: Float32Array | null = null;
@@ -188,8 +105,6 @@ export class DeckKernel {
   /** The speed in use (smoothed): song frames per output frame. */
   private currentRate = 1;
   private spinUpFramesLeft = 0;
-  /** The tempo the deck runs at: its own, or the master's matched (and trimmed to close the beat-phase error) when following. */
-  private effectiveTempo = 1;
 
   /** The loop: its start and length as fractions of a frame, and rounded to whole frames for reading the song. */
   private loopStart = 0;
@@ -199,16 +114,10 @@ export class DeckKernel {
   private loopEndFrame = 0;
   loopWraps = 0;
 
-  private sync: SyncState | null = null;
-  private syncError = 0;
-  private syncLocked = false;
-  /** Jump to the master's beat at the next quantum (a start, a sync press, the master jumped). */
-  private alignPending = false;
-  /** Frames a pending align waits for a master that isn't playing yet (a follower started together with it). */
-  private alignWaitFrames = 0;
+  /** Following another deck: the tempo to run at, the phase lock, when to jump onto the master's beat. */
+  private readonly follower: SyncFollower;
   /** Set when the deck starts from nothing, until its first frame is out. */
   private startingFromSilence = false;
-  private readonly masterSnapshot = newSnapshot();
 
   private shared: Float64Array | null = null;
   private seq: Int32Array | null = null;
@@ -232,44 +141,11 @@ export class DeckKernel {
   private readonly glideSpinUp: number;
   private readonly glideNudge: number;
 
-  // Stretch state.
-  /** The overlap-add accumulator: the frame being built (two hops long); its first hop is finished at each frame. */
-  private readonly overlapLeft = new Float32Array(FRAME_LEN);
-  private readonly overlapRight = new Float32Array(FRAME_LEN);
-  /** The finished hop being played out, and where in it the output is. */
-  private readonly fifoLeft = new Float32Array(HOP_LEN);
-  private readonly fifoRight = new Float32Array(HOP_LEN);
-  private fifoReadIndex = HOP_LEN;
-  private hasPreviousFrame = false;
-  /** The song frame the previous stretch frame was taken from. */
-  private previousFrameStart = 0;
-  /** The region of the song a frame's search reads, and its mono and decimated mono mixes. */
-  private readonly regionLeft = new Float32Array(REGION_LEN);
-  private readonly regionRight = new Float32Array(REGION_LEN);
-  private readonly regionMono = new Float32Array(REGION_LEN);
-  private readonly regionMonoDecimated = new Float32Array(REGION_LEN_DECIMATED);
-  /** The part of the previous frame still to be heard (what the next frame must continue), as mono and decimated mono. */
-  private readonly templateLeft = new Float32Array(HOP_LEN);
-  private readonly templateRight = new Float32Array(HOP_LEN);
-  private readonly templateMono = new Float32Array(HOP_LEN);
-  private readonly templateMonoDecimated = new Float32Array(TEMPLATE_LEN_DECIMATED);
+  /** The key-lock stretch. */
+  private readonly stretcher: Stretcher;
   /** The sample the stretch (or the interpolator) produced last. */
   private sampleLeft = 0;
   private sampleRight = 0;
-
-  // Transient preservation (see `computeFrame`).
-  /** Off turns the attack handling off (a test compares with plain WSOLA). */
-  transientsOn = true;
-  private readonly onsets: OnsetScanner;
-  /** The frame before was exact (the first, or inside a run around an attack): the next may continue it. */
-  private previousFrameWasExact = false;
-  /** Where the heard input is relative to where the tempo puts it after a run; closes by `LEAD_CARRY` a frame. */
-  private leadCarry = 0;
-  /** Set by `planTransient`: the song frame a continued or entering frame starts from. */
-  private plannedStart = 0;
-  /** Set by `planFrame`: where the frame's search may look, as offsets in the region (0…2·SEARCH_RADIUS). */
-  private searchLow = 0;
-  private searchHigh = 0;
 
   constructor(readonly sampleRate: number) {
     this.declickFrames = Math.max(MIN_DECLICK_FRAMES, Math.round(DECLICK_SEC * sampleRate));
@@ -278,12 +154,22 @@ export class DeckKernel {
     this.olderTailLeft = new Float32Array(this.declickFrames);
     this.olderTailRight = new Float32Array(this.declickFrames);
     this.guardFrames = Math.round(WINDOW_GUARD_SEC * sampleRate);
-    this.onsets = new OnsetScanner(sampleRate, (left, right, start, len) => this.readRange(left, right, start, len));
+    this.stretcher = new Stretcher(sampleRate, (left, right, start, len) => this.readRange(left, right, start, len));
+    this.follower = new SyncFollower(sampleRate);
     const glideOf = (sec: number) => 1 - Math.exp(-1 / (sec * sampleRate));
     this.glideNormal = glideOf(GLIDE_NORMAL_SEC);
     this.glideScratch = glideOf(GLIDE_SCRATCH_SEC);
     this.glideSpinUp = glideOf(GLIDE_SPIN_UP_SEC);
     this.glideNudge = glideOf(GLIDE_NUDGE_SEC);
+  }
+
+  /** Off turns the attack handling of the key-lock stretch off (a test compares with plain WSOLA). */
+  get transientsOn(): boolean {
+    return this.stretcher.transientsOn;
+  }
+
+  set transientsOn(on: boolean) {
+    this.stretcher.transientsOn = on;
   }
 
   // ---- Wiring ----
@@ -330,8 +216,8 @@ export class DeckKernel {
     this.scratching = false;
     this.pos = 0;
     this.loopLength = 0;
-    this.resetStretch();
-    this.onsets.clearCache();
+    this.stretcher.reset();
+    this.stretcher.clearOnsetCache();
     this.tailLength = 0;
   }
 
@@ -364,12 +250,12 @@ export class DeckKernel {
     if (this.pos >= this.frames) this.pos = 0;
     this.playing = true;
     if (!this.scratching) {
-      const isFollowing = this.sync !== null && this.syncLocked;
-      this.currentRate = (isFollowing ? this.effectiveTempo : this.tempo) * (1 + this.nudgeCurrent);
+      const isFollowing = this.follower.isFollowing && this.follower.isLocked;
+      this.currentRate = (isFollowing ? this.follower.effectiveTempo : this.tempo) * (1 + this.nudgeCurrent);
       this.startFresh();
     }
     // A follower starts on the master's beat.
-    if (this.sync) this.requestAlign();
+    if (this.follower.isFollowing) this.follower.requestAlign();
   }
 
   /** Jumps to `pos` (frames), fading over a couple of milliseconds when the deck is sounding. */
@@ -377,7 +263,7 @@ export class DeckKernel {
     if (!this.poolLeft) return;
     if (this.isRunning) this.captureTail();
     this.pos = clamp(pos, 0, this.frames);
-    this.resetStretch();
+    this.stretcher.reset();
     if (this.isRunning) this.fadeInFramesLeft = this.declickFrames;
   }
 
@@ -399,7 +285,7 @@ export class DeckKernel {
       if (!this.playing) this.currentRate = 0;
       this.scratchTarget = 0;
       if (this.poolLeft) this.fadeInFramesLeft = this.declickFrames;
-      if (!this.playing) this.resetStretch();
+      if (!this.playing) this.stretcher.reset();
       return;
     }
     this.scratching = false;
@@ -420,10 +306,10 @@ export class DeckKernel {
     if (!(length > 0) || !this.poolLeft) {
       this.loopLength = 0;
       this.readLimit = this.frames;
-      this.onsets.clearCache();
+      this.stretcher.clearOnsetCache();
       return;
     }
-    this.onsets.clearCache();
+    this.stretcher.clearOnsetCache();
     this.loopStart = clamp(start, 0, this.frames);
     this.loopLength = Math.min(length, this.frames - this.loopStart);
     this.loopStartFrame = Math.round(this.loopStart);
@@ -433,7 +319,7 @@ export class DeckKernel {
     if (this.pos >= this.loopStart + this.loopLength) {
       if (this.isRunning) this.captureTail();
       this.pos = this.loopStart + ((this.pos - this.loopStart) % this.loopLength);
-      this.resetStretch();
+      this.stretcher.reset();
       if (this.isRunning) this.fadeInFramesLeft = this.declickFrames;
     }
   }
@@ -441,7 +327,7 @@ export class DeckKernel {
   clearLoop(): void {
     this.loopLength = 0;
     this.readLimit = this.frames;
-    this.onsets.clearCache();
+    this.stretcher.clearOnsetCache();
   }
 
   get looping(): boolean {
@@ -450,36 +336,18 @@ export class DeckKernel {
 
   /** Moves a following deck to the master's beat at the next render quantum (it does so by itself when it starts). */
   align(): void {
-    if (this.sync) this.requestAlign();
-  }
-
-  private requestAlign(): void {
-    this.alignPending = true;
-    this.alignWaitFrames = Math.round(ALIGN_WAIT_SEC * this.sampleRate);
+    if (this.follower.isFollowing) this.follower.requestAlign();
   }
 
   setSync(spec: SyncSpec | null): void {
-    if (!spec) {
-      this.sync = null;
-      this.syncLocked = false;
-      this.syncError = 0;
-      return;
-    }
-    this.alignPending = false;
-    this.sync = {
-      spec,
-      state: new Float64Array(spec.master),
-      seq: new Int32Array(spec.master, 0, 1),
-      selfMap: beatMapOf(spec.selfBeats, spec.selfFirst),
-      masterMap: beatMapOf(spec.masterBeats, spec.masterFirst),
-    };
+    this.follower.set(spec);
   }
 
   // ---- Rendering ----
 
   /** Renders `n` frames into outL/outR. `frame` is the context frame of the first one. */
   process(outL: Float32Array, outR: Float32Array, n: number, frame: number): void {
-    this.updateSync(frame, n);
+    this.followMaster(frame, n);
     this.publish(frame);
     if (!this.poolLeft) {
       for (let i = 0; i < n; i++) {
@@ -501,7 +369,7 @@ export class DeckKernel {
         this.fadeInFramesLeft = this.declickFrames;
       }
       this.stretchMode = wantStretch;
-      this.resetStretch();
+      this.stretcher.reset();
     }
     this.nudgeAgeFrames += n;
     if (this.nudgeAgeFrames > NUDGE_HOLD_SEC * this.sampleRate) this.nudgeTarget = 0;
@@ -515,6 +383,11 @@ export class DeckKernel {
    */
   private renderFrames(outL: Float32Array, outR: Float32Array, n: number): void {
     const declickFrames = this.declickFrames;
+    const stretcher = this.stretcher;
+    const fifoLeft = stretcher.fifoLeft;
+    const fifoRight = stretcher.fifoRight;
+    // The tempo the deck runs at is worked out once per block (`followMaster`), before the samples.
+    const effectiveTempo = this.follower.effectiveTempo;
     let isSounding = this.isRunning && !this.stalled;
     for (let i = 0; i < n; i++) {
       let left = 0;
@@ -533,7 +406,7 @@ export class DeckKernel {
           targetRate = this.scratchTarget;
           glide = this.glideScratch;
         } else {
-          targetRate = this.effectiveTempo * (1 + this.nudgeCurrent);
+          targetRate = effectiveTempo * (1 + this.nudgeCurrent);
           if (this.spinUpFramesLeft > 0) {
             glide = this.glideSpinUp;
             this.spinUpFramesLeft--;
@@ -543,10 +416,12 @@ export class DeckKernel {
         const rate = this.currentRate;
 
         if (this.stretchMode) {
-          if (this.fifoReadIndex >= HOP_LEN) this.computeFrame();
-          this.sampleLeft = this.fifoLeft[this.fifoReadIndex] as number;
-          this.sampleRight = this.fifoRight[this.fifoReadIndex] as number;
-          this.fifoReadIndex++;
+          if (stretcher.fifoReadIndex >= HOP_LEN) {
+            stretcher.computeFrame(this.pos, this.currentRate, this.loopLength > 0 ? this.loopLengthFrames : 0, this.loopEndFrame);
+          }
+          this.sampleLeft = fifoLeft[stretcher.fifoReadIndex] as number;
+          this.sampleRight = fifoRight[stretcher.fifoReadIndex] as number;
+          stretcher.fifoReadIndex++;
         } else {
           this.sampleLeft = this.interp(this.poolLeft as Float32Array, this.pos);
           this.sampleRight = this.poolRight === this.poolLeft ? this.sampleLeft : this.interp(this.poolRight as Float32Array, this.pos);
@@ -591,6 +466,18 @@ export class DeckKernel {
     }
   }
 
+  // ---- Sync ----
+
+  /** Follows the master's tempo and beat phase for this render quantum; jumps onto its beat when it is time. */
+  private followMaster(frame: number, n: number): void {
+    const landing = this.follower.update(frame, n, this.tempo, this.playing, this.pos, this.currentRate);
+    if (landing === null) return;
+    if (!this.startingFromSilence) this.captureTail();
+    this.pos = clamp(landing, 0, this.frames);
+    this.stretcher.reset();
+    if (this.isRunning) this.fadeInFramesLeft = this.declickFrames;
+  }
+
   // ---- The streaming window ----
 
   /**
@@ -615,7 +502,7 @@ export class DeckKernel {
       this.stalled = true;
     } else if (this.stalled && isReady) {
       this.stalled = false;
-      this.resetStretch();
+      this.stretcher.reset();
       this.fadeInFramesLeft = this.declickFrames;
     }
   }
@@ -645,16 +532,9 @@ export class DeckKernel {
   /** Starts sounding at the current position from nothing (play, a seek while stopped). */
   private startFresh(): void {
     this.startingFromSilence = true;
-    this.resetStretch();
+    this.stretcher.reset();
     this.fadeInFramesLeft = this.declickFrames;
     this.stretchMode = this.keyLock && !this.scratching;
-  }
-
-  private resetStretch(): void {
-    this.fifoReadIndex = HOP_LEN;
-    this.hasPreviousFrame = false;
-    this.overlapLeft.fill(0);
-    this.overlapRight.fill(0);
   }
 
   /** Renders the next 2 ms of what is sounding, faded out, so a jump or a stop can play it under the new sound. */
@@ -665,7 +545,7 @@ export class DeckKernel {
       return;
     }
     const keptFrames = this.setAsideOlderTail();
-    if (this.stretchMode) this.renderTailFromStretch();
+    if (this.stretchMode) this.stretcher.copyTail(this.tailLeft, this.tailRight, this.declickFrames);
     else this.renderTailFromSong();
     this.fadeTailOut(keptFrames);
     this.tailLength = this.declickFrames;
@@ -680,20 +560,6 @@ export class DeckKernel {
       this.olderTailRight[k] = this.tailRight[this.tailReadIndex + k] as number;
     }
     return left;
-  }
-
-  /** The tail of a stretching deck: the finished samples first, then the half-frame still waiting to be overlapped. */
-  private renderTailFromStretch(): void {
-    const length = this.declickFrames;
-    let k = 0;
-    for (let f = this.fifoReadIndex; f < HOP_LEN && k < length; f++, k++) {
-      this.tailLeft[k] = this.fifoLeft[f] as number;
-      this.tailRight[k] = this.fifoRight[f] as number;
-    }
-    for (let j = 0; k < length; j++, k++) {
-      this.tailLeft[k] = this.overlapLeft[j] as number;
-      this.tailRight[k] = this.overlapRight[j] as number;
-    }
   }
 
   /** The tail of a turntable-style deck: the song read on at the speed it has, following a loop, stopping at the song's ends. */
@@ -809,326 +675,6 @@ export class DeckKernel {
     }
   }
 
-  // ---- Key lock: planning around attacks ----
-
-  /**
-   * Whether the next frame should continue the one before exactly (`FRAME_CONTINUE`: inside a run around an attack),
-   * start such a run (`FRAME_ENTER`, placed so the attack lands on time, in `plannedStart`) or be an ordinary WSOLA frame.
-   *
-   * Everything is in input frames of the nominal lap (a loop's seam is unwrapped around the playhead) and output frames.
-   * `leadsOn` is where the previous frame leads on (what a frame that continues it starts at); a run keeps that, and the
-   * attack at `c` is then heard `c − leadsOn` frames from now, against the `(c − pos)/rate` the tempo asks for.
-   */
-  private planTransient(rate: number): number {
-    const pos = this.pos;
-    let leadsOn = this.previousFrameStart + HOP_LEN;
-    if (this.loopLength > 0) {
-      const loopLen = this.loopLengthFrames;
-      if (leadsOn - pos > loopLen / 2) leadsOn -= loopLen;
-      else if (leadsOn - pos < -loopLen / 2) leadsOn += loopLen;
-    }
-    const hop = this.onsets.hop;
-    this.onsets.scan(
-      Math.min(leadsOn, pos) - RUN_TAIL - 2 * hop,
-      Math.max(leadsOn, pos) + (RUN_LEAD + HOP_LEN + RUN_SPAN) * rate + 2 * hop,
-    );
-    if (this.previousFrameWasExact && this.canContinueRun(leadsOn, pos, rate)) {
-      this.plannedStart = leadsOn;
-      return FRAME_CONTINUE;
-    }
-    return this.findEntry(leadsOn, pos, rate) ? FRAME_ENTER : FRAME_NORMAL;
-  }
-
-  /** Whether the next attack within reach of the run is one the run, kept going, puts on time. */
-  private canContinueRun(leadsOn: number, pos: number, rate: number): boolean {
-    const count = this.onsets.count;
-    const attackFrames = this.onsets.frames;
-    for (let i = 0; i < count; i++) {
-      const attack = attackFrames[i] as number;
-      const heardIn = attack - leadsOn;
-      if (heardIn <= -RUN_TAIL) continue;
-      if (heardIn >= RUN_LEAD + HOP_LEN) return false;
-      return Math.abs(heardIn - (attack - pos) / rate) <= LANDING_TOLERANCE;
-    }
-    return false;
-  }
-
-  /** Looks for an attack that is about to come due, and if one is, plans the frame that starts a run around it (`plannedStart`). */
-  private findEntry(leadsOn: number, pos: number, rate: number): boolean {
-    const count = this.onsets.count;
-    const attackFrames = this.onsets.frames;
-    const strengths = this.onsets.strengths;
-    for (let i = 0; i < count; i++) {
-      const attack = attackFrames[i] as number;
-      const dueIn = (attack - pos) / rate;
-      if (dueIn < RUN_LEAD) continue;
-      if (dueIn >= RUN_LEAD + HOP_LEN) break;
-      if (this.isOutdoneByNextAttack(i, rate, attackFrames, strengths)) continue;
-      const start = Math.round(attack - dueIn);
-      if (Math.abs(start - leadsOn) > MAX_ENTRY_JUMP) continue;
-      this.plannedStart = start;
-      return true;
-    }
-    return false;
-  }
-
-  /** Whether a stronger attack follows attack `i` closely enough that their runs could not both fit. */
-  private isOutdoneByNextAttack(i: number, rate: number, attackFrames: Float64Array, strengths: Float64Array): boolean {
-    const count = this.onsets.count;
-    const attack = attackFrames[i] as number;
-    for (let j = i + 1; j < count; j++) {
-      if (((attackFrames[j] as number) - attack) / rate >= RUN_SPAN) return false;
-      if ((strengths[j] as number) > (strengths[i] as number)) return true;
-    }
-    return false;
-  }
-
-  // ---- Key lock: one WSOLA frame ----
-
-  /**
-   * One WSOLA frame: picks where in the song it comes from, overlap-adds it and refills the output hop.
-   *
-   * A frame normally comes from where the tempo says its centre is and moves (±SEARCH_RADIUS) to where it best continues
-   * the frame before. That splices the input, and a hit that sits in a splice is smeared or heard twice (two frames
-   * carry it at slightly different times), and a hit a splice moved lands early or late. So around each attack
-   * (`planTransient`) the frames just continue each other exactly (the input at its own speed, which overlap-adds back
-   * to the original samples); the one frame that starts such a run is placed so the attack lands where the tempo puts
-   * it, within a millisecond or two, and the stretch it skipped is made up by the frames after the run.
-   */
-  private computeFrame(): void {
-    const rate = clamp(this.currentRate, MIN_STRETCH_RATE, MAX_STRETCH_RATE);
-    const isFirst = !this.hasPreviousFrame;
-    const nominalStart = this.pos + rate * HOP_LEN - HOP_LEN;
-    const kind = this.planFrame(isFirst, rate, nominalStart);
-    const regionStart = this.plannedStart - SEARCH_RADIUS;
-    this.readRange(this.regionLeft, this.regionRight, regionStart, REGION_LEN);
-    let offset = SEARCH_RADIUS;
-    if (!isFirst && kind !== FRAME_CONTINUE) offset = this.search(this.searchLow, this.searchHigh);
-    this.overlapAdd(offset, isFirst ? FIRST_FRAME_WINDOW : HANN_WINDOW);
-    this.previousFrameStart = regionStart + offset;
-    if (this.loopLength > 0 && this.previousFrameStart >= this.loopEndFrame) this.previousFrameStart -= this.loopLengthFrames;
-    this.hasPreviousFrame = true;
-    // A frame that is exact (the first, or part of a run around an attack) lets the next one continue it.
-    this.previousFrameWasExact = isFirst || kind !== FRAME_NORMAL;
-    if (kind !== FRAME_NORMAL) this.leadCarry = regionStart + offset - nominalStart;
-    this.emitFinishedHop();
-  }
-
-  /**
-   * Decides where the next frame is taken from (`plannedStart`, the song frame at the middle of the search region) and
-   * how far its search may look (`searchLow`…`searchHigh`). Returns the kind of frame (see `planTransient`).
-   */
-  private planFrame(isFirst: boolean, rate: number, nominalStart: number): number {
-    this.searchLow = 0;
-    this.searchHigh = 2 * SEARCH_RADIUS;
-    if (isFirst) {
-      this.plannedStart = Math.round(this.pos);
-      this.leadCarry = 0;
-      return FRAME_NORMAL;
-    }
-    this.leadCarry *= LEAD_CARRY;
-    this.plannedStart = Math.round(nominalStart + this.leadCarry);
-    const canPreserveAttacks = this.transientsOn && this.stretchMode && (this.loopLength === 0 || this.loopLengthFrames >= MIN_LOOP_FOR_TRANSIENTS);
-    if (!canPreserveAttacks) return FRAME_NORMAL;
-    const kind = this.planTransient(rate);
-    if (kind === FRAME_ENTER) {
-      this.searchLow = SEARCH_RADIUS - ENTRY_SEARCH;
-      this.searchHigh = SEARCH_RADIUS + ENTRY_SEARCH;
-    }
-    // `planTransient` set `plannedStart` for a continued or entering frame; a normal one keeps the tempo's place.
-    return kind;
-  }
-
-  /** Adds the chosen part of the region, windowed, into the overlap accumulator. */
-  private overlapAdd(offset: number, window: Float32Array): void {
-    const overlapLeft = this.overlapLeft;
-    const overlapRight = this.overlapRight;
-    const regionLeft = this.regionLeft;
-    const regionRight = this.regionRight;
-    for (let j = 0; j < FRAME_LEN; j++) {
-      const w = window[j] as number;
-      overlapLeft[j] = (overlapLeft[j] as number) + w * (regionLeft[offset + j] as number);
-      overlapRight[j] = (overlapRight[j] as number) + w * (regionRight[offset + j] as number);
-    }
-  }
-
-  /** The first hop of the accumulator is finished: it becomes the output, and the second hop moves up to be overlapped next. */
-  private emitFinishedHop(): void {
-    const overlapLeft = this.overlapLeft;
-    const overlapRight = this.overlapRight;
-    for (let j = 0; j < HOP_LEN; j++) {
-      this.fifoLeft[j] = overlapLeft[j] as number;
-      this.fifoRight[j] = overlapRight[j] as number;
-    }
-    overlapLeft.copyWithin(0, HOP_LEN, FRAME_LEN);
-    overlapRight.copyWithin(0, HOP_LEN, FRAME_LEN);
-    overlapLeft.fill(0, HOP_LEN, FRAME_LEN);
-    overlapRight.fill(0, HOP_LEN, FRAME_LEN);
-    this.fifoReadIndex = 0;
-  }
-
-  // ---- Key lock: the similarity search ----
-
-  /**
-   * The offset in the region (0…2·SEARCH_RADIUS, SEARCH_RADIUS = the nominal place) whose first half-frame best continues
-   * the frame before: normalized cross-correlation with the part of the previous frame that is still to be heard, a
-   * coarse pass on a 4× decimated mono mix, then ±4 frames at full rate, with a small cost for moving away from the middle.
-   */
-  private search(low: number, high: number): number {
-    this.readRange(this.templateLeft, this.templateRight, this.previousFrameStart + HOP_LEN, HOP_LEN);
-    this.downmixRegionAndTemplate();
-    const coarseIndex = this.searchCoarse(low, high);
-    return this.searchFine(coarseIndex, low, high);
-  }
-
-  /** Mono mixes of the region and of the template, each also decimated by averaging groups of `SEARCH_DECIMATION`. */
-  private downmixRegionAndTemplate(): void {
-    const regionMono = this.regionMono;
-    const regionMonoDecimated = this.regionMonoDecimated;
-    const templateMono = this.templateMono;
-    const templateMonoDecimated = this.templateMonoDecimated;
-    const regionLeft = this.regionLeft;
-    const regionRight = this.regionRight;
-    for (let i = 0; i < REGION_LEN; i++) regionMono[i] = 0.5 * ((regionLeft[i] as number) + (regionRight[i] as number));
-    for (let m = 0; m < REGION_LEN_DECIMATED; m++) {
-      const b = m * SEARCH_DECIMATION;
-      regionMonoDecimated[m] = 0.25 * ((regionMono[b] as number) + (regionMono[b + 1] as number) + (regionMono[b + 2] as number) + (regionMono[b + 3] as number));
-    }
-    for (let i = 0; i < HOP_LEN; i++) templateMono[i] = 0.5 * ((this.templateLeft[i] as number) + (this.templateRight[i] as number));
-    for (let m = 0; m < TEMPLATE_LEN_DECIMATED; m++) {
-      const b = m * SEARCH_DECIMATION;
-      templateMonoDecimated[m] = 0.25 * ((templateMono[b] as number) + (templateMono[b + 1] as number) + (templateMono[b + 2] as number) + (templateMono[b + 3] as number));
-    }
-  }
-
-  /** Coarse pass: candidates every 4 frames across the range (the whole ±radius, or less for a frame that must land on time). Returns the best candidate's index (in decimated frames). */
-  private searchCoarse(low: number, high: number): number {
-    const region = this.regionMonoDecimated;
-    const template = this.templateMonoDecimated;
-    let templateEnergy = 1e-9;
-    for (let i = 0; i < TEMPLATE_LEN_DECIMATED; i++) templateEnergy += (template[i] as number) * (template[i] as number);
-    const firstIndex = Math.ceil(low / SEARCH_DECIMATION);
-    const lastIndex = Math.floor(high / SEARCH_DECIMATION);
-    // The energy of the region under the template, slid along by adding the sample that enters and dropping the one that leaves.
-    let regionEnergy = 1e-9;
-    for (let i = 0; i < TEMPLATE_LEN_DECIMATED; i++) regionEnergy += (region[firstIndex + i] as number) * (region[firstIndex + i] as number);
-    let bestIndex = Math.round(SEARCH_RADIUS / SEARCH_DECIMATION);
-    let bestScore = -Infinity;
-    const middle = SEARCH_RADIUS / SEARCH_DECIMATION;
-    for (let index = firstIndex; index <= lastIndex; index++) {
-      let correlation = 0;
-      for (let i = 0; i < TEMPLATE_LEN_DECIMATED; i++) correlation += (template[i] as number) * (region[index + i] as number);
-      const score = correlation / Math.sqrt(regionEnergy * templateEnergy) - (CENTER_BIAS * Math.abs(index - middle)) / middle;
-      if (score > bestScore) {
-        bestScore = score;
-        bestIndex = index;
-      }
-      const leaving = region[index] as number;
-      const entering = region[index + TEMPLATE_LEN_DECIMATED] as number;
-      regionEnergy += entering * entering - leaving * leaving;
-      if (regionEnergy < 1e-9) regionEnergy = 1e-9;
-    }
-    return bestIndex;
-  }
-
-  /** Fine pass: ±`SEARCH_DECIMATION` frames around the coarse winner at full rate. Returns the best offset in the region. */
-  private searchFine(coarseIndex: number, low: number, high: number): number {
-    const region = this.regionMono;
-    const template = this.templateMono;
-    let templateEnergy = 1e-9;
-    for (let i = 0; i < HOP_LEN; i++) templateEnergy += (template[i] as number) * (template[i] as number);
-    let best = coarseIndex * SEARCH_DECIMATION;
-    let bestScore = -Infinity;
-    const first = Math.max(low, coarseIndex * SEARCH_DECIMATION - SEARCH_DECIMATION);
-    const last = Math.min(high, coarseIndex * SEARCH_DECIMATION + SEARCH_DECIMATION);
-    for (let offset = first; offset <= last; offset++) {
-      let correlation = 0;
-      let regionEnergy = 1e-9;
-      for (let i = 0; i < HOP_LEN; i++) {
-        const v = region[offset + i] as number;
-        correlation += (template[i] as number) * v;
-        regionEnergy += v * v;
-      }
-      const score = correlation / Math.sqrt(regionEnergy * templateEnergy) - (CENTER_BIAS * Math.abs(offset - SEARCH_RADIUS)) / SEARCH_RADIUS;
-      if (score > bestScore) {
-        bestScore = score;
-        best = offset;
-      }
-    }
-    return best;
-  }
-
-  // ---- Sync ----
-
-  /** Follows the master's tempo and beat phase for this render quantum. */
-  private updateSync(frame: number, n: number): void {
-    const sync = this.sync;
-    this.effectiveTempo = this.tempo;
-    if (!sync) return;
-    const master = this.masterSnapshot;
-    readDeckState(sync.state, sync.seq, master);
-    if (master.stalled && this.playing) {
-      // The master waits for audio: it will come back somewhere else on its beat; land on it then.
-      this.syncLocked = false;
-      this.syncError = 0;
-      this.alignPending = true;
-      this.alignWaitFrames = Math.round(ALIGN_WAIT_AFTER_STALL_SEC * this.sampleRate);
-      return;
-    }
-    if (!master.playing || master.tempoRate <= 0) {
-      this.syncLocked = false;
-      this.syncError = 0;
-      // A follower started together with its master waits a moment for it to start.
-      if (this.alignPending && (this.alignWaitFrames -= n) <= 0) this.alignPending = false;
-      return;
-    }
-    const spec = sync.spec;
-    const selfMap = sync.selfMap;
-    const masterMap = sync.masterMap;
-    // The master's position at the first frame of this quantum.
-    const masterPos = master.pos + (frame - master.frame) * master.rate;
-    // Tracked beats on either side: the tempo ratio is the one of the beats here and there (it moves as the songs drift),
-    // and the phase counts the beats of each. Fixed grids on both sides keep the one ratio.
-    const multiple = spec.selfMult ?? 1;
-    const selfBeatLen = selfMap ? selfMap.lenAt(this.pos) / multiple : spec.selfBeat;
-    const hasTrackedBeats = selfMap || masterMap;
-    this.effectiveTempo = hasTrackedBeats
-      ? (selfBeatLen / (masterMap ? masterMap.lenAt(masterPos) : spec.masterBeat)) * master.tempoRate
-      : spec.ratio * master.tempoRate;
-    this.syncLocked = true;
-    if (!this.playing || master.scratching) {
-      this.syncError = 0;
-      return;
-    }
-    const masterPhase = masterMap ? masterMap.beatAt(masterPos) : (masterPos - spec.masterFirst) / spec.masterBeat;
-    const selfPhase = selfMap ? selfMap.beatAt(this.pos) * multiple : (this.pos - spec.selfFirst) / spec.selfBeat;
-    // The phase error in beats, wrapped to the nearest beat (a follower a whole beat off is in phase).
-    let phaseError = selfPhase - masterPhase;
-    phaseError -= Math.round(phaseError);
-    this.syncError = phaseError;
-    if (this.alignPending) {
-      this.alignToMaster(sync, selfPhase, phaseError, multiple);
-      return;
-    }
-    // Close the error gently: a small tempo trim, so the phase glides in instead of jumping.
-    const secPerBeat = selfBeatLen / (this.sampleRate * Math.max(MIN_SYNC_RATE, this.currentRate));
-    const trim = clamp((-phaseError * secPerBeat) / SYNC_TIME_CONSTANT_SEC, -MAX_SYNC_TRIM, MAX_SYNC_TRIM);
-    this.effectiveTempo *= 1 + trim;
-  }
-
-  /** Jumps to the master's beat now (a start, a sync press, a master that jumped); the phase lock does the rest. */
-  private alignToMaster(sync: SyncState, selfPhase: number, phaseError: number, multiple: number): void {
-    this.alignPending = false;
-    // The master may be mid-jump (its position is a quantum old): align only when it is steady is not
-    // knowable here, so just land on its beat now.
-    if (!this.startingFromSilence) this.captureTail();
-    const landing = sync.selfMap ? sync.selfMap.posAt((selfPhase - phaseError) / multiple) : this.pos - phaseError * sync.spec.selfBeat;
-    this.pos = clamp(landing, 0, this.frames);
-    this.resetStretch();
-    if (this.isRunning) this.fadeInFramesLeft = this.declickFrames;
-    this.syncError = 0;
-  }
-
   // ---- Publishing ----
 
   /** Writes the deck's state where the main thread and followers read it (under the sequence lock, see `deck-snapshot.ts`). */
@@ -1141,12 +687,12 @@ export class DeckKernel {
     state[DS.frame] = frame;
     const isRunning = this.isRunning;
     state[DS.rate] = isRunning && !this.stalled ? this.currentRate : 0;
-    state[DS.tempoRate] = this.playing ? this.effectiveTempo * (1 + this.nudgeCurrent) : 0;
+    state[DS.tempoRate] = this.playing ? this.follower.effectiveTempo * (1 + this.nudgeCurrent) : 0;
     state[DS.playing] = isRunning ? 1 : 0;
     state[DS.scratching] = this.scratching ? 1 : 0;
     state[DS.loopWraps] = this.loopWraps;
-    state[DS.syncError] = this.syncError;
-    state[DS.syncLocked] = this.syncLocked ? 1 : 0;
+    state[DS.syncError] = this.follower.phaseError;
+    state[DS.syncLocked] = this.follower.isLocked ? 1 : 0;
     state[DS.stalled] = this.stalled ? 1 : 0;
     Atomics.add(seq, 0, 1);
   }

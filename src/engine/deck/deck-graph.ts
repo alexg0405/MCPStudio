@@ -27,7 +27,7 @@ import { LIMITER_ID } from '../limiter-id';
 import limiterUrl from '../limiter.worklet.ts?worker&url';
 import { DECK_ID, DECK_STATE_SLOTS, type DeckEvent, type DeckMessage } from './deck-id';
 import deckUrl from './deck.worklet.ts?worker&url';
-import { newSnapshot, readDeckState, type DeckSnapshot } from './deck.kernel';
+import { newSnapshot, readDeckState, type DeckSnapshot } from './deck-snapshot';
 import { openTapCapture, type TapCapture } from './tap-capture';
 
 export type DeckIndex = 0 | 1 | 2 | 3;

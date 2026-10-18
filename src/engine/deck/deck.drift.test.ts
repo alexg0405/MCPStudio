@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { BeatMap, driftingBeats } from '@core/dj/beat-map';
 import { syncPlan } from '@core/dj/decks-math';
 import { DECK_STATE_SLOTS } from './deck-id';
-import { DeckKernel, newSnapshot, readDeckState } from './deck.kernel';
+import { newSnapshot, readDeckState } from './deck-snapshot';
+import { DeckKernel } from './deck.kernel';
 
 const SR = 48000;
 const Q = 128;

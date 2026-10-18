@@ -11,7 +11,7 @@ import { takeGroups } from '../query/takes';
 import { constantTempo } from '../time/ppq';
 import { addChannel, addSample } from './channels';
 import { compSegmentsOf, compSetCrossfade, compSwipe, addTakeGroup, newTakeGroup, compUseTake } from './comp';
-import { firstFreeLane } from './automation';
+import { createAutomationClip, firstFreeLane } from './automation';
 import { addClips, addLane, editClips, ordinaryLaneFor } from './playlist';
 
 const tempo = constantTempo(120); // 1920 ticks per second
@@ -239,6 +239,18 @@ describe('a recording keeps its own tracks', () => {
     const comp = grp(get(), group).compLane!;
     history.transact('Move', (d) => editClips(d, [{ id: c.id, laneId: comp }]));
     expect(get().playlist.clips[c.id]!.laneId).toBe(free);
+  });
+
+  it('an automation clip asked for on one of those tracks goes to a free ordinary track', () => {
+    const { history, get, group } = setup();
+    const comp = grp(get(), group).compLane!;
+    let laneId: string | undefined;
+    history.transact('Automate', (d) => {
+      laneId = createAutomationClip(d, { target: { kind: 'tempo' }, name: 'Tempo', color: '#fff', start: 0, length: 3840, laneId: comp }).laneId;
+    });
+    expect(laneId).toBeDefined();
+    expect(get().playlist.lanes[laneId as never]!.takes).toBeUndefined();
+    expect(laneId).not.toBe(comp);
   });
 
   it('automation, the arranger and ordinaryLaneFor never choose them', () => {

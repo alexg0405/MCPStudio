@@ -113,6 +113,54 @@ describe('get_takes', () => {
     expect(r.punch).toEqual({ from_bar: 5, to_bar: 8 });
     expect(r.recording).toMatchObject({ record_mode_armed: false, pre_roll_bars: 1 });
   });
+
+  it('says which take the musician is listening to on its own', () => {
+    const { s } = withTakes();
+    const g = takeGroups(s.doc.getState().project)[0]!;
+    const listening = () => (runReadTool(s, 'get_takes') as { groups: Array<{ listening_to_take: number | null }> }).groups[0]!.listening_to_take;
+    expect(listening()).toBeNull();
+    s.editor.getState().setAuditionTake(g.takes[1]!.clips[0]!.id);
+    expect(listening()).toBe(2);
+  });
+});
+
+describe('a recording keeps its own tracks (the AI cannot put anything on them)', () => {
+  it('place_pattern refuses a comp or take track and otherwise skips them; clip edit will not move a take or onto them', () => {
+    const { s } = withTakes();
+    const p = s.doc.getState().project;
+    const name = p.patterns[p.patternOrder[0]!]!.name;
+    const clipsOnTracks = () => Object.values(s.doc.getState().project.playlist.clips).filter((c) => c.kind === 'pattern');
+    let res = run(s, [{ op: 'place_pattern', pattern: name, bar: 1, track: 1 }]);
+    expect(res.warnings.join(' ')).toMatch(/belongs to a recording's takes/);
+    expect(clipsOnTracks()).toHaveLength(0);
+    res = run(s, [{ op: 'place_pattern', pattern: name, bar: 5 }]);
+    expect(res.warnings).toEqual([]);
+    const placed = clipsOnTracks()[0]!;
+    // Tracks 1-4 hold the comp and three takes: the pattern goes to the first one after them.
+    expect(s.doc.getState().project.playlist.laneOrder.indexOf(placed.laneId)).toBe(4);
+    res = run(s, [{ op: 'clip', action: 'edit', track: 2, bar: 5, to_track: 7 }]);
+    expect(res.warnings.join(' ')).toMatch(/keep only that recording/);
+    res = run(s, [{ op: 'clip', action: 'edit', track: 5, bar: 5, to_track: 1 }]);
+    expect(res.warnings.join(' ')).toMatch(/keep only that recording/);
+  });
+
+  it('moving a take clip with the AI moves what the comp plays of it, in the same undo step', () => {
+    const { s } = withTakes();
+    run(s, [{ op: 'comp', action: 'use_take', take: 1 }]);
+    expect(segs(s)).toEqual([[0, 5, 9]]);
+    const before = s.history.status().cursor;
+    const res = run(s, [{ op: 'clip', action: 'edit', track: 4, bar: 5, to_bar: 6 }]);
+    expect(res.warnings).toEqual([]);
+    expect(s.history.status().cursor).toBe(before + 1);
+    // Take 1 (the oldest, on the lowest take track) started at bar 5 and now at bar 6; the comp's part of it moved too.
+    expect(segs(s)).toEqual([[0, 6, 10]]);
+    const g = takeGroups(s.doc.getState().project)[0]!;
+    const take1 = g.takes.find((t) => t.index === 0)!.clips[0]!;
+    expect(take1.start).toBe(BAR * 5);
+    expect(g.comp.some((c) => c.take?.index === 0 && c.start >= BAR * 5)).toBe(true);
+    s.history.undo();
+    expect(takeGroups(s.doc.getState().project)[0]!.takes.find((t) => t.index === 0)!.clips[0]!.start).toBe(BAR * 4);
+  });
 });
 
 describe('record action', () => {

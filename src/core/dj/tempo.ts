@@ -14,6 +14,7 @@
  *    to a whole number when that fits as well), and a drift check: when a fixed grid slips by more
  *    than 15 ms anywhere, the tracked beats are the answer.
  */
+import { fitFixedGrid, fitLine, gridResiduals, mean, median, slip, STRONG_BEAT_SHARE, type GridFit } from './beat-fit';
 import type { OnsetFeatures } from './onset';
 
 export interface BeatTrack {
@@ -54,12 +55,6 @@ function peakNear(x: ArrayLike<number>, i: number, r = 2): number {
   for (let j = Math.max(0, c - r); j <= Math.min(x.length - 1, c + r); j++) if (x[j]! > m) m = x[j]!;
   return m;
 }
-
-const median = (v: number[]): number => {
-  if (v.length === 0) return 0;
-  const s = [...v].sort((a, b) => a - b);
-  return s[s.length >> 1]!;
-};
 
 /** Autocorrelation of the mean-removed envelope for lags 0..maxLag, normalized per lag. */
 function autocorrelation(o: Float32Array, maxLag: number): Float64Array {
@@ -145,8 +140,6 @@ function prepared(o: Float32Array): Float32Array {
   for (let i = 0; i < n; i++) y[i] = y[i]! / sd;
   return y;
 }
-
-const mean = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0);
 
 /**
  * Whether the drums want `frames` (beats at the faster tempo F) rather than every other one of them
@@ -252,197 +245,170 @@ function refineFrame(o: Float32Array, b: number): number {
   return best + (den < 0 ? Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / den)) : 0);
 }
 
-/** Least-squares line t = a + p·i through (i, t); returns [a, p]. */
-function fitLine(idx: number[], t: number[]): [number, number] {
-  const n = idx.length;
-  const mi = mean(idx);
-  const mt = mean(t);
-  let sxy = 0;
-  let sxx = 0;
-  for (let k = 0; k < n; k++) {
-    sxy += (idx[k]! - mi) * (t[k]! - mt);
-    sxx += (idx[k]! - mi) ** 2;
-  }
-  const p = sxx > 0 ? sxy / sxx : 0;
-  return [mt - p * mi, p];
-}
+/** Fewest beats a track needs to say anything about the tempo. */
+const MIN_TRACKED_BEATS = 8;
+/** Beats at the start and end whose onset is weaker than this share of the typical beat's are not real (the tracker ran on into silence). */
+const WEAK_ONSET_SHARE = 0.2;
+/** A fixed grid that slips more than this (seconds) against the tracked beats is a song with a drifting tempo. */
+const DRIFT_SLIP_SEC = 0.015;
+/** A BPM within this of a whole number may be snapped to it (music is mostly made at whole BPMs). */
+const WHOLE_BPM_TOLERANCE = 0.1;
+/** The whole BPM is taken when it slips less than this (seconds), or about as little as the fitted line: 1.4 times its slip. */
+const WHOLE_BPM_FREE_SLIP_SEC = 0.02;
+const WHOLE_BPM_SLIP_FACTOR = 1.4;
+/** Beats must stand out of the onset envelope by this factor, or there is no beat to speak of. */
+const MIN_SALIENCE = 1.3;
+/** The salience range (above the minimum) that maps to confidence 0…1. */
+const SALIENCE_RANGE = 2.5;
+/** Beats per bar the pulse check looks at, and the share of the strongest position a position needs to count as hit. */
+const BAR_POSITIONS = 4;
+const BAR_HIT_SHARE = 0.3;
+/** A pulse has hits on at least this share of the bar's beats (a pad struck once a bar doesn't make a beat). */
+const MIN_BAR_HITS = 0.5;
+/** Confidence of a drifting track (a fixed grid does not describe it), and the fit error (seconds) at which a fixed grid's confidence falls to 1/e. */
+const DRIFT_FIT_CONFIDENCE = 0.35;
+const FIT_ERROR_SCALE_SEC = 0.012;
 
-/**
- * Line t = a + p·i by the median of the slopes between each beat and the one half the list later (a few outliers do not move
- * it, and a song of 15 000 beats costs 7 500 slopes, not 110 million); returns [a, p].
- */
-function theilSen(idx: number[], t: number[]): [number, number] {
-  const slopes: number[] = [];
-  const h = Math.max(1, idx.length >> 1);
-  for (let i = 0; i + h < idx.length; i++) if (idx[i + h]! !== idx[i]!) slopes.push((t[i + h]! - t[i]!) / (idx[i + h]! - idx[i]!));
-  const p = median(slopes);
-  return [median(t.map((x, k) => x - p * idx[k]!)), p];
-}
-
-/** Largest |running median over 9 beats| of the residuals. */
-function slip(res: number[]): number {
-  let worst = 0;
-  for (let k = 0; k < res.length; k++) {
-    const w = res.slice(Math.max(0, k - 4), Math.min(res.length, k + 5));
-    worst = Math.max(worst, Math.abs(median(w)));
-  }
-  return worst;
-}
-
-export function trackBeats(f: OnsetFeatures): BeatTrack | null {
-  const fr = f.frameRate;
-  const o = prepared(f.onset);
-  const fam = tempoFamily(o, fr);
-  if (!fam) return null;
-  let fast = fam.bpm;
-  while (fast * 2 <= MAX_BPM) fast *= 2;
-  let frames = dpBeats(o, (60 * fr) / fast);
-  let bpm = fast;
+/** Beat frames of the faster tempo, halved while the slower tempo explains the drums as well, and put on the real beats. Null when there is no pulse. */
+function roughBeatFrames(f: OnsetFeatures, envelope: Float32Array): number[] | null {
+  const frameRate = f.frameRate;
+  const family = tempoFamily(envelope, frameRate);
+  if (!family) return null;
+  let fastBpm = family.bpm;
+  while (fastBpm * 2 <= MAX_BPM) fastBpm *= 2;
+  let frames = dpBeats(envelope, (60 * frameRate) / fastBpm);
+  let bpm = fastBpm;
   // Halve while the slower tempo explains the drums as well.
-  while (bpm / 2 >= MIN_BPM && frames.length >= 8) {
-    const d = preferFaster(f, o, frames, bpm);
-    if (d.faster) break;
-    frames = frames.filter((_, i) => i % 2 === d.parity);
+  while (bpm / 2 >= MIN_BPM && frames.length >= MIN_TRACKED_BEATS) {
+    const decision = preferFaster(f, envelope, frames, bpm);
+    if (decision.faster) break;
+    frames = frames.filter((_, i) => i % 2 === decision.parity);
     bpm /= 2;
   }
-  frames = onTheBeat(f, frames);
-  // Keep the beats between the first and the last real onset.
-  let strength = frames.map((b) => peakNear(o, b));
+  return onTheBeat(f, frames);
+}
+
+/** Beats between the first and the last real onset, with their onset strengths and the typical strength. Null when too few remain. */
+function keepBeatsWithOnsets(envelope: Float32Array, frames: number[]): { frames: number[]; strength: number[]; typical: number } | null {
+  const strength = frames.map((b) => peakNear(envelope, b));
   const typical = median(strength);
   if (!(typical > 0)) return null;
   let first = 0;
   let last = frames.length - 1;
-  while (first < last && strength[first]! < 0.2 * typical) first++;
-  while (last > first && strength[last]! < 0.2 * typical) last--;
-  frames = frames.slice(first, last + 1);
-  strength = strength.slice(first, last + 1);
-  if (frames.length < 8) return null;
-  // The flux of a hit that decays peaks a little before its attack reaches the frame centre.
-  const times = frames.map((b) => refineFrame(o, b) / fr + ONSET_LAG);
+  while (first < last && strength[first]! < WEAK_ONSET_SHARE * typical) first++;
+  while (last > first && strength[last]! < WEAK_ONSET_SHARE * typical) last--;
+  if (last + 1 - first < MIN_TRACKED_BEATS) return null;
+  return { frames: frames.slice(first, last + 1), strength: strength.slice(first, last + 1), typical };
+}
 
-  // Fixed grid through the beats that have an onset. The tracker can follow offbeats for a while
-  // (an intro of offbeat hats) and then jump: fit the strongest stretch of evenly spaced beats first,
-  // then every beat that lies on that line.
-  const p0 = median(times.slice(1).map((t, i) => t - times[i]!));
-  const isStrong = (k: number) => strength[k]! >= 0.35 * typical;
-  let best: [number, number] = [0, times.length];
-  let bestScore = -1;
-  for (let a0 = 0; a0 < times.length; ) {
-    let b0 = a0 + 1;
-    while (b0 < times.length && Math.abs(times[b0]! - times[b0 - 1]! - p0) < 0.25 * p0) b0++;
-    let sc = 0;
-    for (let k = a0; k < b0; k++) if (isStrong(k)) sc += strength[k]!;
-    if (sc > bestScore) {
-      bestScore = sc;
-      best = [a0, b0];
-    }
-    a0 = b0;
-  }
-  const seg: number[] = [];
-  for (let k = best[0]; k < best[1]; k++) if (isStrong(k)) seg.push(k);
-  let [a, p] = seg.length >= 4 ? fitLine(seg.map((k) => k - best[0]), seg.map((k) => times[k]!)) : [times[0]!, p0];
-  const strong: number[] = [];
-  for (let k = 0; k < times.length; k++) if (isStrong(k)) strong.push(k);
-  let idx = strong.map((k) => Math.round((times[k]! - a) / p));
-  let use = strong.map((_, j) => j).filter((j) => Math.abs(times[strong[j]!]! - (a + p * idx[j]!)) < 0.03);
-  if (use.length < 8) return null;
-  for (let pass = 0; pass < 2; pass++) {
-    [a, p] = fitLine(
-      use.map((j) => idx[j]!),
-      use.map((j) => times[strong[j]!]!),
-    );
-    idx = strong.map((k) => Math.round((times[k]! - a) / p));
-    const keep = strong.map((_, j) => j).filter((j) => Math.abs(times[strong[j]!]! - (a + p * idx[j]!)) < 0.03);
-    if (keep.length < 8) break;
-    use = keep;
-  }
-  const residuals = (aa: number, pp: number) => use.map((j) => times[strong[j]!]! - (aa + pp * idx[j]!));
-  // A few beats that sit off the line (a fill, a break, the last beats of a section) pull a least-squares slope, and so the BPM,
-  // off by a tenth: take the median slope of the pairs as the first estimate, drop the beats beyond three robust sigmas
-  // (at least 8 ms) of it while most of the beats stay, and fit the rest.
-  if (use.length >= 12) {
-    const [ra, rp] = theilSen(
-      use.map((j) => idx[j]!),
-      use.map((j) => times[strong[j]!]!),
-    );
-    const r = use.map((j) => times[strong[j]!]! - (ra + rp * idx[j]!));
-    const tol = Math.min(0.03, Math.max(0.008, 3 * 1.4826 * median(r.map(Math.abs))));
-    const keep = use.filter((_, k) => Math.abs(r[k]!) <= tol);
-    if (keep.length >= Math.max(8, Math.ceil(0.7 * use.length)) && keep.length < use.length) {
-      use = keep;
-      [a, p] = fitLine(
-        use.map((j) => idx[j]!),
-        use.map((j) => times[strong[j]!]!),
-      );
+/** A fixed grid, and the BPM it stands for. */
+interface SnappedGrid {
+  origin: number;
+  period: number;
+  residuals: number[];
+  maxSlip: number;
+  /** The tempo before rounding to 0.01: a whole BPM when that fits as well as the line. */
+  bpm: number;
+}
+
+/**
+ * The fitted grid as the BPM to report: most produced music sits on a whole BPM, so take it when it fits as well (a whole
+ * BPM that slips about as little as the best line does; a 127.95 song over minutes doesn't. Under 20 ms the two can't be
+ * told apart in a short clip, and whole is what music is made at).
+ */
+function snapToWholeBpm(fit: GridFit, times: number[]): SnappedGrid {
+  let { origin, period } = fit;
+  let residuals = gridResiduals(fit, times, origin, period);
+  let maxSlip = slip(residuals);
+  let bpm = 60 / period;
+  const whole = Math.round(bpm);
+  if (Math.abs(bpm - whole) < WHOLE_BPM_TOLERANCE) {
+    const wholePeriod = 60 / whole;
+    const wholeOrigin = mean(fit.use.map((j) => times[fit.strong[j]!]! - wholePeriod * fit.idx[j]!));
+    const wholeResiduals = gridResiduals(fit, times, wholeOrigin, wholePeriod);
+    const wholeSlip = slip(wholeResiduals);
+    if (wholeSlip <= Math.max(WHOLE_BPM_FREE_SLIP_SEC, WHOLE_BPM_SLIP_FACTOR * maxSlip)) {
+      origin = wholeOrigin;
+      period = wholePeriod;
+      residuals = wholeResiduals;
+      maxSlip = wholeSlip;
+      bpm = whole;
     }
   }
-  let res = residuals(a, p);
-  let maxSlip = slip(res);
-  let exact = 60 / p;
-  // Most produced music sits on a whole BPM: take it when it fits as well.
-  const whole = Math.round(exact);
-  if (Math.abs(exact - whole) < 0.1) {
-    const pw = 60 / whole;
-    const aw = mean(use.map((j) => times[strong[j]!]! - pw * idx[j]!));
-    const rw = residuals(aw, pw);
-    const sw = slip(rw);
-    // (a whole BPM that slips about as little as the best line does; a 127.95 song over minutes doesn't.
-    // Under 20 ms the two can't be told apart in a short clip, and whole is what music is made at.)
-    if (sw <= Math.max(0.02, 1.4 * maxSlip)) {
-      a = aw;
-      p = pw;
-      res = rw;
-      maxSlip = sw;
-      exact = whole;
-    }
-  }
-  const drift = maxSlip > 0.015;
-  const rms = Math.sqrt(mean(res.map((r) => r * r)));
-  // How much the beats stand out of the onset envelope.
+  return { origin, period, residuals, maxSlip, bpm };
+}
+
+/** How much the beats stand out of the onset envelope between the first and the last beat (their mean strength over the envelope's mean). */
+function beatSalience(envelope: Float32Array, times: number[], strength: number[], frameRate: number): number {
   let total = 0;
-  const a0 = Math.max(0, Math.round(times[0]! * fr));
-  const a1 = Math.min(o.length, Math.round(times[times.length - 1]! * fr) + 1);
-  for (let i = a0; i < a1; i++) total += o[i]!;
-  const background = total / Math.max(1, a1 - a0);
-  const salience = mean(strength) / Math.max(1e-9, background);
-  if (salience < 1.3) return null;
-  // A pulse has hits on more than one beat of the bar (a pad struck once a bar doesn't make a beat).
-  const byPos = [0, 1, 2, 3].map((r) => mean(strength.filter((_, k) => k % 4 === r)));
-  const strongest = Math.max(...byPos);
-  const hits = byPos.filter((x) => x >= 0.3 * strongest).length / 4;
-  if (hits < 0.5) return null;
-  const cSal = Math.max(0, Math.min(1, (salience - 1.3) / 2.5));
-  const cFit = drift ? 0.35 : Math.exp(-((rms / 0.012) ** 2));
+  const first = Math.max(0, Math.round(times[0]! * frameRate));
+  const end = Math.min(envelope.length, Math.round(times[times.length - 1]! * frameRate) + 1);
+  for (let i = first; i < end; i++) total += envelope[i]!;
+  const background = total / Math.max(1, end - first);
+  return mean(strength) / Math.max(1e-9, background);
+}
+
+/** A pulse has hits on more than one beat of the bar (a pad struck once a bar doesn't make a beat). */
+function hasBarPulse(strength: number[]): boolean {
+  const byPosition = Array.from({ length: BAR_POSITIONS }, (_, position) => mean(strength.filter((_, k) => k % BAR_POSITIONS === position)));
+  const strongest = Math.max(...byPosition);
+  const hits = byPosition.filter((x) => x >= BAR_HIT_SHARE * strongest).length / BAR_POSITIONS;
+  return hits >= MIN_BAR_HITS;
+}
+
+/** Tracks the beats of a song from its onset features: tempo, the beat times, a fixed grid or (for a drifting tempo) the tracked beats, and a confidence. Null when there is no steady beat. */
+export function trackBeats(f: OnsetFeatures): BeatTrack | null {
+  const frameRate = f.frameRate;
+  const envelope = prepared(f.onset);
+  const roughFrames = roughBeatFrames(f, envelope);
+  if (!roughFrames) return null;
+  const kept = keepBeatsWithOnsets(envelope, roughFrames);
+  if (!kept) return null;
+  const { frames, strength, typical } = kept;
+  // The flux of a hit that decays peaks a little before its attack reaches the frame centre.
+  const times = frames.map((b) => refineFrame(envelope, b) / frameRate + ONSET_LAG);
+
+  const fit = fitFixedGrid(times, strength, typical);
+  if (!fit) return null;
+  const grid = snapToWholeBpm(fit, times);
+  const { origin, period, maxSlip } = grid;
+  const drift = maxSlip > DRIFT_SLIP_SEC;
+  const rms = Math.sqrt(mean(grid.residuals.map((r) => r * r)));
+  const salience = beatSalience(envelope, times, strength, frameRate);
+  if (salience < MIN_SALIENCE) return null;
+  if (!hasBarPulse(strength)) return null;
+  const salienceConfidence = Math.max(0, Math.min(1, (salience - MIN_SALIENCE) / SALIENCE_RANGE));
+  const fitConfidence = drift ? DRIFT_FIT_CONFIDENCE : Math.exp(-((rms / FIT_ERROR_SCALE_SEC) ** 2));
   // On a fixed grid the beats are the grid's, from the first to the last tracked beat.
   let beats: number[];
   let beatStrength = strength;
-  if (drift) beats = smoothBeats(times, strength, typical);
-  else {
-    const k0 = Math.ceil((times[0]! - a) / p - 0.5);
-    const k1 = Math.floor((times[times.length - 1]! - a) / p + 0.5);
+  if (drift) {
+    beats = smoothBeats(times, strength, typical);
+  } else {
+    const firstBeat = Math.ceil((times[0]! - origin) / period - 0.5);
+    const lastBeat = Math.floor((times[times.length - 1]! - origin) / period + 0.5);
     beats = [];
-    for (let k = k0; k <= k1; k++) beats.push(a + k * p);
-    beatStrength = beats.map((t) => peakNear(o, (t - ONSET_LAG) * fr));
+    for (let k = firstBeat; k <= lastBeat; k++) beats.push(origin + k * period);
+    beatStrength = beats.map((t) => peakNear(envelope, (t - ONSET_LAG) * frameRate));
   }
   return {
-    bpm: Math.round(exact * 100) / 100,
-    period: p,
-    origin: a,
+    bpm: Math.round(grid.bpm * 100) / 100,
+    period,
+    origin,
     beats,
     strength: beatStrength,
     drift,
-    confidence: Math.round(cSal * cFit * 100) / 100,
+    confidence: Math.round(salienceConfidence * fitConfidence * 100) / 100,
     maxSlip,
   };
 }
-
 /** Tracked beats with their jitter smoothed: a local line through ±4 beats (beats with onsets count). */
 function smoothBeats(times: number[], strength: number[], typical: number): number[] {
   return times.map((t, k) => {
     const idx: number[] = [];
     const ts: number[] = [];
     for (let j = Math.max(0, k - 4); j <= Math.min(times.length - 1, k + 4); j++)
-      if (strength[j]! >= 0.35 * typical || j === k) {
+      if (strength[j]! >= STRONG_BEAT_SHARE * typical || j === k) {
         idx.push(j);
         ts.push(times[j]!);
       }

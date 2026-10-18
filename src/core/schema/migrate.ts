@@ -18,6 +18,7 @@ import {
   paletteColor,
 } from '../model/defaults';
 import { sanitizePitchEdit } from '../audio/pitch-edit';
+import { isQualityId } from '../harmony/chord';
 import { isSha256Hex } from '../io/hash';
 import { newId } from '../model/ids';
 import {
@@ -1326,6 +1327,69 @@ function repairLauncher(p: Obj, log: RepairLog): void {
   if (fixed) log.add('Fixed the clip launcher grid (dropped slots whose pattern or audio is gone).');
 }
 
+/** The most chords the chord track keeps (same as `MAX_CHORDS` in core/ops/chords.ts). */
+const MAX_CHORD_TRACK = 4096;
+
+const isPitchClass = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 11;
+
+/** Whether a stored chord has every field it needs, in range. */
+function isValidChord(id: string, event: unknown): event is Obj {
+  return (
+    isObject(event) &&
+    event.id === id &&
+    Number.isInteger(event.tick) &&
+    (event.tick as number) >= 0 &&
+    Number.isInteger(event.length) &&
+    (event.length as number) >= 1 &&
+    isPitchClass(event.root) &&
+    isQualityId(event.quality)
+  );
+}
+
+/**
+ * The chord track (`Project.chords`, optional): damaged chords are dropped, a bass or confidence out of range is cleared,
+ * overlapping chords are trimmed so each ends where the next starts, and an empty track is removed.
+ */
+function repairChords(p: Obj, log: RepairLog): void {
+  if (!has(p, 'chords') || p.chords === undefined) return;
+  if (!isObject(p.chords)) {
+    delete p.chords;
+    log.add('Forgot the damaged chord track (notes and patterns are not changed).');
+    return;
+  }
+  const kept: Obj[] = [];
+  let dropped = 0;
+  for (const [id, event] of Object.entries(p.chords)) {
+    if (!isValidChord(id, event)) dropped++;
+    else kept.push(event);
+  }
+  for (const event of kept) {
+    if (has(event, 'bass') && !isPitchClass(event.bass)) delete event.bass;
+    if (has(event, 'confidence') && !(isFiniteNumber(event.confidence) && event.confidence >= 0 && event.confidence <= 1)) delete event.confidence;
+  }
+  kept.sort((a, b) => (a.tick as number) - (b.tick as number));
+  if (kept.length > MAX_CHORD_TRACK) {
+    dropped += kept.length - MAX_CHORD_TRACK;
+    kept.length = MAX_CHORD_TRACK;
+  }
+  let trimmed = 0;
+  for (let i = 0; i + 1 < kept.length; i++) {
+    const event = kept[i] as Obj;
+    const gap = (kept[i + 1]!.tick as number) - (event.tick as number);
+    if (gap < (event.length as number)) {
+      event.length = gap;
+      trimmed++;
+    }
+  }
+  // A chord squeezed to nothing by one that starts at the same tick is gone.
+  const usable = kept.filter((event) => (event.length as number) >= 1);
+  dropped += kept.length - usable.length;
+  if (usable.length === 0) delete p.chords;
+  else p.chords = Object.fromEntries(usable.map((event) => [event.id as string, event]));
+  if (dropped) log.add(`Dropped ${count(dropped, noun('chord'))} from the chord track that could not be read.`);
+  if (trimmed) log.add('Trimmed overlapping chords on the chord track.');
+}
+
 /**
  * Returns a repaired deep copy of a structurally valid project (see migrateProject) and one
  * human-readable line per kind of fix. Never mutates the input. A project that needs no repair comes
@@ -1345,6 +1409,7 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairDj(p, log);
   repairReference(p, log);
   repairLauncher(p, log);
+  repairChords(p, log);
   log.flush();
   return { project: p as unknown as Project, repairs: log.messages };
 }

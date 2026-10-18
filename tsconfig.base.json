@@ -22,6 +22,7 @@
       "@platform/*": ["./src/platform/*"],
       "@app/*": ["./src/app/*"],
       "@ui/*": ["./src/ui/*"],
+      "@sw/*": ["./src/sw/*"],
       "@agstudio/sdk": ["./src/sdk/index.ts"],
       "@agstudio/sdk/*": ["./src/sdk/*"]
     }

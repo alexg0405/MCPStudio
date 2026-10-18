@@ -7,6 +7,7 @@ import { draftServer } from './tools/ai/drafts.ts';
 import { faustPlugin } from './tools/faust/vite-plugin.ts';
 import { aiServer } from './tools/ai/server.ts';
 import { mcpServer } from './tools/mcp/server.ts';
+import { pwaPrecache } from './tools/pwa/precache.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -69,6 +70,8 @@ export default defineConfig(({ mode }) => ({
       ],
     }),
     workletHmr(),
+    // Installable app: after the build, dist/sw.js (the service worker) with the list of files it keeps offline.
+    pwaPrecache({ entry: `${root}src/sw/sw.ts` }),
   ],
   resolve: {
     alias: [
@@ -79,6 +82,7 @@ export default defineConfig(({ mode }) => ({
       { find: /^@platform\/(.*)$/, replacement: `${root}src/platform/$1` },
       { find: /^@app\/(.*)$/, replacement: `${root}src/app/$1` },
       { find: /^@ui\/(.*)$/, replacement: `${root}src/ui/$1` },
+      { find: /^@sw\/(.*)$/, replacement: `${root}src/sw/$1` },
     ],
   },
   // 'es' is required for AudioWorklet modules: the default 'iife' rewrites import.meta.url to
@@ -117,7 +121,9 @@ export default defineConfig(({ mode }) => ({
       '@breezystack/lamejs',
     ],
   },
-  preview: { headers: isolation },
+  // The production build served locally (`agstudio --app`): its own port, so the installed app's address never
+  // collides with the dev server's (an installed app belongs to one origin, port included).
+  preview: { headers: isolation, port: Number(process.env.APP_PORT) || 5391, strictPort: true },
   test: {
     // Vitest's persistent transform cache keys modules by their own source, so an `import.meta.glob`
     // (plugin discovery, feature registration) keeps its old matches after folders are added or

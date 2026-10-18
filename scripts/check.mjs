@@ -1,5 +1,5 @@
 // `npm run check`: everything CI would run, in three phases.
-//   1. tsc -b (all four tsconfigs) and eslint run side by side: they are independent, mostly single-threaded
+//   1. tsc -b (all five tsconfigs) and eslint run side by side: they are independent, mostly single-threaded
 //      and both cached (tsc incremental state, eslint --cache), so a warm run costs a few seconds. Their output is
 //      buffered so the two never interleave.
 //   2. the unit tests (Node), 3. the audio tests (headless Chrome), one after the other. They used to share one

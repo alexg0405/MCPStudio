@@ -20,6 +20,7 @@
   ],
   "exclude": [
     "**/*.worklet.ts",
+    "src/sw/sw.ts",
     "plugins/_*/**"
   ]
 }

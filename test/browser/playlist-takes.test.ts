@@ -19,7 +19,7 @@ import { closeContextMenu } from '@ui/controls/ContextMenu';
 import { installKeyboard } from '@ui/keyboard';
 import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
-import { HEADER_WIDTH, FOLD_ZONE, LISTEN_ZONE } from '@ui/features/playlist/render';
+import { HEADER_WIDTH, FOLD_ZONE, LISTEN_ZONE } from '@ui/features/playlist/layout';
 import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';

@@ -5,7 +5,7 @@
  * height and dropped when the theme changes, so drawing hundreds of clips stays cheap.
  */
 import { alpha, luminance, mix, onThemeChange, type TimelineTheme } from '../../timeline/canvas';
-import { TITLE_H } from './clip-geometry';
+import { CLIP_TITLE_HEIGHT } from './clip-geometry';
 
 export interface ClipPaint {
   /** The color as drawn against the stone (slightly desaturated). */
@@ -80,7 +80,7 @@ export function clipGradient(
   const bodyBottom = light ? mix(base, bg, 0.48 + lift) : mix(base, bg, 0.36 + lift);
   const edge = light ? mix(base, theme.surface2, 0.35) : mix(base, theme.text, 0.6);
   const shadow = light ? mix(base, bg, 0.56 + lift) : mix(base, bg, 0.26 + lift);
-  const t = Math.min(TITLE_H, h);
+  const t = Math.min(CLIP_TITLE_HEIGHT, h);
   const s = (y: number) => Math.max(0, Math.min(1, y / h));
   g = ctx.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, edge);

@@ -8,7 +8,7 @@ import type { ChannelId, Note, Pattern, PatternClip, TimeSignature } from '@core
 import { newId } from '@core/model/ids';
 import { Rng } from '@agstudio/sdk/dsp/random';
 import { Viewport } from '@ui/timeline/viewport';
-import { drawPatternBody } from '@ui/features/playlist/render';
+import { drawPatternBody } from '@ui/features/playlist/pattern-body';
 import type { ClipPaint } from '@ui/features/playlist/clip-paint';
 
 const TS: TimeSignature = { num: 4, den: 4 };

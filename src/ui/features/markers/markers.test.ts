@@ -13,7 +13,7 @@ import { readProjectFile, writeProjectFile } from '@core/io/project-file';
 import { markersSorted } from '@core/ops/markers';
 import { registerFeatures } from '@ui/features';
 import { getActionProviders } from '../../shell/actions';
-import { markerAtX } from '../playlist/render';
+import { markerAtX } from '../playlist/marker-flags';
 
 const BAR = 3840;
 

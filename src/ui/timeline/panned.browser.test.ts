@@ -4,7 +4,7 @@
  * scratch. It also must not be drawn again while the view only scrolls inside what was drawn.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { drawLanesGrid } from '../features/playlist/render';
+import { drawLanesGrid } from '../features/playlist/lane-grid';
 import { drawGrid } from '../features/piano-roll/render';
 import { readTheme } from './canvas';
 import { PannedLayer } from './panned';
@@ -70,7 +70,7 @@ function differing(a: ImageData, b: ImageData): number {
 }
 
 const CASES: [string, (c: CanvasRenderingContext2D, vp: Viewport) => void][] = [
-  ['playlist grid', (c, vp) => drawLanesGrid(c, vp, readTheme(), TS, 12, 100_000)],
+  ['playlist grid', (c, vp) => drawLanesGrid(c, vp, readTheme(), TS, 12)],
   ['piano roll grid', (c, vp) => drawGrid(c, vp, readTheme(), TS, 3840 * 6)],
 ];
 

@@ -15,7 +15,7 @@ import { pointMenu } from '../automation/actions';
 import { registerAnchorSource } from '../ask-ai/anchors';
 import { askAboutMarker, askAboutSelection } from '../ask-ai/ask-state';
 import { showContextMenu } from '../../controls/ContextMenu';
-import { HEADER_WIDTH, RULER_HEIGHT } from './render';
+import { HEADER_WIDTH, RULER_HEIGHT } from './layout';
 import { ChordLane, useChordLaneVisible } from '../chords/ChordLane';
 import styles from './Playlist.module.css';
 

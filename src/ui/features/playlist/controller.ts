@@ -53,30 +53,18 @@ import {
   type AutoDraw,
   type AutoHit,
 } from './automation';
-import { clipBox, type ClipBox } from './clip-geometry';
+import { CLIP_RADIUS, CLIP_MENU_MIN_WIDTH, CLIP_MENU_SIZE, clipBox, type ClipBox } from './clip-geometry';
 import { alpha, fitCanvas, inkOn, mix, onThemeChange, readTheme, roundRectPath } from '../../timeline/canvas';
 import { clipPaint } from './clip-paint';
 import { PannedLayer } from '../../timeline/panned';
 import { clamp, Viewport } from '../../timeline/viewport';
-import {
-  CLIP_MENU_MIN_WIDTH,
-  CLIP_MENU_SIZE,
-  drawClips,
-  drawLaneHeaders,
-  drawLanesGrid,
-  drawTakeUse,
-  FOLD_ZONE,
-  LISTEN_ZONE,
-  drawMarkerLines,
-  drawPlaylistRuler,
-  HEADER_WIDTH,
-  MARKER_LANE_Y,
-  markerAtX,
-  RULER_HEIGHT,
-  type MarkerBox,
-  CLIP_RADIUS,
-  clipColorOf,
-} from './render';
+import { clipColorOf, drawClips } from './draw-clips';
+import { drawLaneHeaders } from './lane-headers';
+import { drawLanesGrid } from './lane-grid';
+import { FOLD_ZONE, HEADER_WIDTH, LISTEN_ZONE, MARKER_LANE_Y, RULER_HEIGHT } from './layout';
+import { drawMarkerLines, markerAtX, type MarkerBox } from './marker-flags';
+import { drawPlaylistRuler } from './ruler';
+import { drawTakeUse } from './take-use';
 import { markerRename } from './markers';
 import { askPillPlace, pillText, PILL_HEIGHT, type PillTarget } from './ask-pill';
 import { studioMarkSvg } from '../../controls/studio-mark';
@@ -505,16 +493,11 @@ export class PlaylistController {
         this.headersRowHeight = vp.rowHeight;
         const heard = this.s.editor.getState().auditionTake;
         const heardLane = (heard && p.playlist.clips[heard]?.laneId) || null;
-        drawLaneHeaders(
-          fitCanvas(els.headers, HEADER_WIDTH, vp.height),
-          vp,
-          readTheme(),
-          this.lanes(p),
-          mutedOf(p),
-          HEADER_WIDTH,
-          new Set(this.s.editor.getState().openTakes),
+        drawLaneHeaders(fitCanvas(els.headers, HEADER_WIDTH, vp.height), vp, readTheme(), this.lanes(p), HEADER_WIDTH, {
+          muted: mutedOf(p),
+          openTakes: new Set(this.s.editor.getState().openTakes),
           heardLane,
-        );
+        });
       }
       dirty.clear();
       this.lastBarScroll = NaN;
@@ -539,7 +522,7 @@ export class PlaylistController {
   private readonly drawGridLayer = (g: CanvasRenderingContext2D, wide: Viewport): void => {
     const p = this.project();
     const theme = readTheme();
-    drawLanesGrid(g, wide, theme, p.transport.timeSig, wide.rows, songLength(p));
+    drawLanesGrid(g, wide, theme, p.transport.timeSig, wide.rows);
     const punch = this.s.view.getState().punch;
     if (punch) {
       // The punch range: a faint red tint down the lanes, so you can see what a recording will keep.
@@ -607,16 +590,14 @@ export class PlaylistController {
   private readonly drawRulerLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {
     const p = this.project();
     // Marker flags come back in picture coordinates; `markerBox` and friends add the picture's offset.
-    this.markerBoxes = drawPlaylistRuler(
-      ctx,
-      wide,
-      readTheme(),
-      p.transport.timeSig,
-      this.s.view.getState().loop,
-      songLength(p),
-      this.markersToDraw(p),
-      this.s.view.getState().punch,
-    );
+    const { loop, punch } = this.s.view.getState();
+    this.markerBoxes = drawPlaylistRuler(ctx, wide, readTheme(), {
+      timeSig: p.transport.timeSig,
+      loop,
+      punch,
+      songEnd: songLength(p),
+      markers: this.markersToDraw(p),
+    });
   };
 
   /** The take being recorded: a red clip from where it started to now, with its waveform so far. */

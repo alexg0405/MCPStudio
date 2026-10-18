@@ -8,7 +8,7 @@ import type { TimeSignature } from '@core/model/types';
 import type { TimelineTheme } from '../../timeline/canvas';
 import { Viewport } from '../../timeline/viewport';
 import { clipBox } from './clip-geometry';
-import { drawLanesGrid } from './render';
+import { drawLanesGrid } from './lane-grid';
 import { drawGrid } from '../piano-roll/render';
 
 const DPR = 2;
@@ -57,7 +57,7 @@ describe('retina drawing (devicePixelRatio 2)', () => {
     for (const scrollTick of [1234.37, 1234.61, 1301.9, 5555.5]) {
       const vp = viewport(scrollTick, 0.037);
       const { ctx, rects } = recorder();
-      drawLanesGrid(ctx, vp, theme, TS, 8, 100_000);
+      drawLanesGrid(ctx, vp, theme, TS, 8);
       expect(rects.length).toBeGreaterThan(10);
       for (const r of rects) {
         expect(onDevicePixel(r.x)).toBe(true);
@@ -70,7 +70,7 @@ describe('retina drawing (devicePixelRatio 2)', () => {
     for (const scrollTick of [1234.37, 1234.61, 1301.9]) {
       const vp = viewport(scrollTick, 0.037);
       const { ctx, rects } = recorder();
-      drawLanesGrid(ctx, vp, theme, TS, 8, 100_000);
+      drawLanesGrid(ctx, vp, theme, TS, 8);
       // The bar lines are the 1 px wide rects in the bar colour.
       const bars = rects.filter((r) => r.fill === 'bar' && r.w === 1 && r.y === 0);
       for (const tick of [BAR, 2 * BAR, 5 * BAR]) {

@@ -20,7 +20,7 @@ import { installKeyboard } from '@ui/keyboard';
 import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
 import { closeContextMenu, showContextMenu } from '@ui/controls/ContextMenu';
-import { HEADER_WIDTH } from '@ui/features/playlist/render';
+import { HEADER_WIDTH } from '@ui/features/playlist/layout';
 import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';

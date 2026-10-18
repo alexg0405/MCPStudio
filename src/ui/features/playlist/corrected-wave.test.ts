@@ -8,7 +8,7 @@ import { createEmptyProject } from '@core/model/defaults';
 import { audioClipTags } from './audio-clip';
 import type { TimelineTheme } from '../../timeline/canvas';
 import { Viewport } from '../../timeline/viewport';
-import { drawClips } from './render';
+import { drawClips } from './draw-clips';
 import { produce } from 'immer';
 
 const theme = new Proxy({} as Record<string, string>, { get: (_t, key) => (key === 'font' ? 'sans-serif' : '#808080') }) as unknown as TimelineTheme;

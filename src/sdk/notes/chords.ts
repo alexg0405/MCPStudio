@@ -4,6 +4,7 @@
  */
 import { getScale, keyAtStep, PITCH_NAMES, pitchClass, scaleStep } from './scales';
 
+/** A chord quality: its id, label, symbol and the semitones above the root. */
 export interface Chord {
   /** Stable id (used by note scripts and the piano roll's chord stamp). */
   readonly id: string;
@@ -14,6 +15,7 @@ export interface Chord {
   readonly intervals: readonly number[];
 }
 
+/** Every chord quality the SDK knows. */
 export const CHORDS: readonly Chord[] = [
   { id: 'major', label: 'Major', symbol: '', intervals: [0, 4, 7] },
   { id: 'minor', label: 'Minor', symbol: 'm', intervals: [0, 3, 7] },
@@ -55,6 +57,7 @@ export function getChord(id: string): Chord {
   return BY_ID.get(id) ?? MAJOR;
 }
 
+/** Whether `id` names a known chord quality. */
 export function isChordId(id: string): boolean {
   return BY_ID.has(id);
 }
@@ -68,6 +71,7 @@ export function isChordId(id: string): boolean {
  * - spread: open, plus the bass note.
  */
 export type Voicing = 'close' | 'open' | 'drop2' | 'drop3' | 'bass' | 'spread';
+/** Every voicing, for menus. */
 export const VOICINGS: readonly Voicing[] = ['close', 'open', 'drop2', 'drop3', 'bass', 'spread'];
 
 /** Folds keys into 0–127 by octaves, sorts them and drops duplicates. */
@@ -127,6 +131,7 @@ export function voice(keys: readonly number[], voicing: Voicing): number[] {
   return out.sort((a, b) => a - b);
 }
 
+/** How to build a chord: its inversion and voicing. */
 export interface ChordOptions {
   /** 0 = root position, 1 = first inversion, … (negative: notes from the top move down). */
   inversion?: number;
@@ -160,6 +165,7 @@ export function diatonicQuality(degree: number, root: number, scaleId: string, s
   return found && found.root === pitchClass(base) ? found.chord.id : null;
 }
 
+/** What `detectChord` found: the root, the chord quality, the bass note and the name of the chord. */
 export interface DetectedChord {
   /** Pitch class of the chord's root. */
   root: number;

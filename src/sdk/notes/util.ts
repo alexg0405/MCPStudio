@@ -16,6 +16,7 @@ export function seeded(seed: number): Rand {
 
 const finite = (v: number, fallback: number) => (Number.isFinite(v) ? v : fallback);
 
+/** Limits `v` to [lo, hi]. */
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
@@ -55,6 +56,7 @@ export function byTime(notes: readonly ScriptNote[]): ScriptNote[] {
   return [...notes].sort((a, b) => a.tick - b.tick || a.key - b.key);
 }
 
+/** The time and key range a set of notes covers. */
 export interface Span {
   /** First start. */
   start: number;

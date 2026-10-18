@@ -4,6 +4,7 @@
  */
 export const HINT_EVENT = 'ag-hint';
 
+/** Reports a live value ("Cutoff 1.20 kHz") from a control; the host shows it in its hint bar. */
 export function emitHint(from: Element, text: string): void {
   from.dispatchEvent(new CustomEvent(HINT_EVENT, { bubbles: true, detail: text }));
 }

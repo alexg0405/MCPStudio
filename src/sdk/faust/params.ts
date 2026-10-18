@@ -34,6 +34,7 @@ export interface FaustMeta {
   ui: FaustUiItem[];
 }
 
+/** One Faust control that became a param: the param id and where the DSP keeps the control. */
 export interface FaustControl {
   /** The AGstudio param id. */
   id: string;

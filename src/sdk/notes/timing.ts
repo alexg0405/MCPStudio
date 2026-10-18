@@ -8,6 +8,7 @@ import { bend, byTime, chordGroups, clamp, clampNote, noteEnd, span, withoutId, 
 // ---------------------------------------------------------------------------------------------
 // Quantize
 
+/** Settings for `quantize`. */
 export interface QuantizeOptions {
   /** Grid size in ticks (a note script's `ctx.grid` is the piano roll's snap). */
   grid: number;
@@ -82,6 +83,7 @@ export function quantize(notes: readonly ScriptNote[], opts: QuantizeOptions): S
 // ---------------------------------------------------------------------------------------------
 // Humanize
 
+/** Settings for `humanize`. */
 export interface HumanizeOptions {
   rand: Rand;
   /** Largest timing change in ticks, either way (960 = a beat). */
@@ -111,6 +113,7 @@ export function humanize(notes: readonly ScriptNote[], opts: HumanizeOptions): S
 // ---------------------------------------------------------------------------------------------
 // Legato
 
+/** Settings for `legato`. */
 export interface LegatoOptions {
   /** Ticks left between a note's end and the next start (default 0). */
   gap?: number;
@@ -140,6 +143,7 @@ export function legato(notes: readonly ScriptNote[], opts: LegatoOptions = {}): 
 // ---------------------------------------------------------------------------------------------
 // Chop and glue
 
+/** Settings for `chop`. */
 export interface ChopOptions {
   /** Cut at every multiple of this many ticks (grid lines)… */
   grid?: number;
@@ -176,6 +180,7 @@ export function chop(notes: readonly ScriptNote[], opts: ChopOptions): ScriptNot
   return out;
 }
 
+/** Settings for `glue`. */
 export interface GlueOptions {
   /** Same-key notes this many ticks apart (or closer, or overlapping) are joined. Default 0 (touching). */
   gap?: number;
@@ -213,6 +218,7 @@ export function glue(notes: readonly ScriptNote[], opts: GlueOptions = {}): Scri
 // ---------------------------------------------------------------------------------------------
 // Strum
 
+/** Settings for `strum`. */
 export interface StrumOptions {
   /** Ticks from the first to the last note of each chord. */
   time: number;
@@ -271,6 +277,7 @@ function shuffle<T>(items: T[], rand: Rand): T[] {
 // ---------------------------------------------------------------------------------------------
 // Flip and stretch
 
+/** The range `flip` mirrors in (it defaults to the notes' own range). */
 export interface FlipBounds {
   /** Time range to mirror in (default: from the first start to the last end). */
   start?: number;
@@ -295,6 +302,7 @@ export function flip(notes: readonly ScriptNote[], axis: 'time' | 'pitch', bound
   return notes.map((n) => clampNote({ ...n, key: sum - n.key }));
 }
 
+/** Settings for `stretch`. */
 export interface StretchOptions {
   /** 2 = twice as long (half time), 0.5 = double time. */
   factor: number;

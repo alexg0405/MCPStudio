@@ -6,6 +6,7 @@
 /** Pitch-class names with sharps (index = pitch class), as FL Studio writes them. */
 export const PITCH_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;
 
+/** A scale: its id, label and the semitones above the root. */
 export interface Scale {
   /** Stable id stored in projects (`transport.key.scale`). */
   readonly id: string;
@@ -56,6 +57,7 @@ export function getScale(id: string): Scale {
   return BY_ID.get(id) ?? MAJOR;
 }
 
+/** Whether `id` names a known scale. */
 export function isScaleId(id: string): boolean {
   return BY_ID.has(id);
 }
@@ -89,6 +91,7 @@ export function scaleMask(root: number, scaleId: string): boolean[] {
   return mask;
 }
 
+/** Whether a key belongs to the scale on `root`. */
 export function inScale(key: number, root: number, scaleId: string): boolean {
   return getScale(scaleId).intervals.includes(pitchClass(key - root));
 }

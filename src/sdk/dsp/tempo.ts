@@ -22,6 +22,7 @@ export const NOTE_BEATS = {
   '1/32': 0.125,
 } as const;
 
+/** The name of a note length in `NOTE_BEATS` ("1/8", "1/4d"). */
 export type NoteLength = keyof typeof NOTE_BEATS;
 
 /** Every note length, longest first (for `p.enum` options). */
@@ -59,7 +60,9 @@ export const SYNC_OPTIONS = [
   '1/8t',
   '1/16',
 ] as const;
+/** One entry of `SYNC_OPTIONS`. */
 export type SyncOption = (typeof SYNC_OPTIONS)[number];
+/** Display names for `SYNC_OPTIONS`. */
 export const SYNC_LABELS: Record<SyncOption, string> = {
   ...(NOTE_LABELS as Record<Exclude<SyncOption, 'off'>, string>),
   off: 'Off (use Rate)',

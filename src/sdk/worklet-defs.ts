@@ -130,6 +130,7 @@ function followNotes(host: PluginHost<ParamSpecs, unknown>, port: WorkletPort, p
   };
 }
 
+/** Declares an instrument whose DSP runs in an AudioWorklet kernel (registered with `registerKernel` in the `processor` file). */
 export function defineWorkletInstrument<const P extends ParamSpecs, S = undefined>(
   def: WorkletInstrumentDef<P, S>,
 ): InstrumentDef<P, S> {
@@ -166,6 +167,7 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
   };
 }
 
+/** Declares an effect whose DSP runs in an AudioWorklet kernel (registered with `registerKernel` in the `processor` file). */
 export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
   def: WorkletEffectDef<P, S>,
 ): EffectDef<P, S> {

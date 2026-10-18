@@ -7,6 +7,14 @@ import { polyBlep } from './polyblep';
 import { Svf } from './svf';
 import { Noise } from './noise';
 
+/** Per-sample multiplier of an exponential fall with time constant `seconds` (it falls to 1/e of its value in that time). */
+function decayCoefficient(seconds: number, sampleRate: number): number {
+  return Math.exp(-1 / (seconds * sampleRate));
+}
+
+/** Highest filter frequency a voice asks for, as a share of the sample rate (keeps designs below Nyquist). */
+const MAX_FILTER_SHARE = 0.45;
+
 /** Per-sample multiplier that falls by 60 dB over `seconds`. */
 function t60(seconds: number, sampleRate: number): number {
   return Math.exp(-6.907755 / Math.max(1e-4, seconds * sampleRate));
@@ -23,6 +31,27 @@ export function softClip(x: number): number {
 /** Below this the voice is done (−80 dB). */
 const SILENT = 1e-4;
 const CHOKE_SECONDS = 0.005;
+
+/** Kick: the click's fall time and band-pass, and the shortest pitch sweep time (seconds, Hz). */
+const KICK_CLICK_SEC = 0.0012;
+const KICK_CLICK_CENTRE_HZ = 3500;
+const KICK_CLICK_Q = 0.8;
+const KICK_MIN_SWEEP_SEC = 0.001;
+/** Snare: how fast the head's pitch bend dies away (seconds). */
+const SNARE_BEND_SEC = 0.012;
+/** Clap: how fast each burst dies away (seconds). */
+const CLAP_BURST_SEC = 0.0035;
+/** Hi-hat: fade-in that keeps the first sample from clicking (seconds). */
+const HAT_FADE_IN_SEC = 0.001;
+/** Tom: how fast the pitch bend and the noise hit die away (seconds), and its noise low-pass (Hz). */
+const TOM_BEND_SEC = 0.05;
+const TOM_HIT_SEC = 0.004;
+const TOM_NOISE_LOWPASS_HZ = 6000;
+/** Perc: how fast the click spike dies away (seconds), and its high-pass (Hz). */
+const PERC_SPIKE_SEC = 0.004;
+const PERC_CLICK_HIGHPASS_HZ = 2000;
+/** Length of the fade-out when `renderDrum` cuts a hit off at `maxSeconds`. */
+const CUT_OFF_FADE_SEC = 0.01;
 
 abstract class DrumVoice {
   active = false;
@@ -113,11 +142,11 @@ export class Kick extends DrumVoice {
     this.amp = 1;
     this.ampCoef = t60(this.decay, sr);
     this.clickEnv = 1;
-    this.clickCoef = Math.exp(-1 / (0.0012 * sr));
+    this.clickCoef = decayCoefficient(KICK_CLICK_SEC, sr);
     this.sweepEnv = 1;
-    this.sweepCoef = Math.exp(-1 / (Math.max(0.001, this.sweepTime) * sr));
+    this.sweepCoef = decayCoefficient(Math.max(KICK_MIN_SWEEP_SEC, this.sweepTime), sr);
     this.clickFilter.reset();
-    this.clickFilter.set('bandpass', 3500, 0.8, sr);
+    this.clickFilter.set('bandpass', KICK_CLICK_CENTRE_HZ, KICK_CLICK_Q, sr);
   }
 
   protected tick(): number {
@@ -176,7 +205,7 @@ export class Snare extends DrumVoice {
     this.nz = 1;
     this.nzCoef = t60(this.decay, sr);
     this.bend = 1;
-    this.bendCoef = Math.exp(-1 / (0.012 * sr));
+    this.bendCoef = decayCoefficient(SNARE_BEND_SEC, sr);
     this.hp.reset();
     this.hp.set('highpass', this.brightness, 0.7, sr);
     this.peak.reset();
@@ -224,7 +253,7 @@ export class Clap extends DrumVoice {
     const sr = this.sampleRate;
     this.tail = 0;
     this.tailCoef = t60(this.decay, sr);
-    this.burstCoef = Math.exp(-1 / (0.0035 * sr));
+    this.burstCoef = decayCoefficient(CLAP_BURST_SEC, sr);
     this.burst = 0;
     this.bp.reset();
     this.bp.set('bandpass', this.tone, 1.4, sr);
@@ -281,9 +310,9 @@ export class HiHat extends DrumVoice {
     this.coef = t60(this.decay, sr);
     const centre = 5500 + 7000 * this.tone;
     this.bp.reset();
-    this.bp.set('bandpass', Math.min(centre, sr * 0.45), 1.1, sr);
+    this.bp.set('bandpass', Math.min(centre, sr * MAX_FILTER_SHARE), 1.1, sr);
     this.hp.reset();
-    this.hp.set('highpass', Math.min(3500 + 5000 * this.tone, sr * 0.45), 0.7, sr);
+    this.hp.set('highpass', Math.min(3500 + 5000 * this.tone, sr * MAX_FILTER_SHARE), 0.7, sr);
   }
 
   protected tick(): number {
@@ -303,7 +332,7 @@ export class HiHat extends DrumVoice {
     }
     const src = (1 - this.noiseMix) * metal * (1 / 6) + this.noiseMix * this.noise.white();
     // A 1 ms fade-in keeps the very first sample from clicking.
-    if (this.attack < 1) this.attack = Math.min(1, this.attack + 1 / (0.001 * sr));
+    if (this.attack < 1) this.attack = Math.min(1, this.attack + 1 / (HAT_FADE_IN_SEC * sr));
     const y = this.hp.process(this.bp.process(src)) * this.env * this.attack * 4.8;
     this.env *= this.coef;
     if (this.env < SILENT) this.active = false;
@@ -337,11 +366,11 @@ export class Tom extends DrumVoice {
     this.amp = 1;
     this.coef = t60(this.decay, sr);
     this.bend = 1;
-    this.bendCoef = Math.exp(-1 / (0.05 * sr));
+    this.bendCoef = decayCoefficient(TOM_BEND_SEC, sr);
     this.hit = 1;
-    this.hitCoef = Math.exp(-1 / (0.004 * sr));
+    this.hitCoef = decayCoefficient(TOM_HIT_SEC, sr);
     this.lp.reset();
-    this.lp.set('lowpass', Math.min(6000, sr * 0.45), 0.7, sr);
+    this.lp.set('lowpass', Math.min(TOM_NOISE_LOWPASS_HZ, sr * MAX_FILTER_SHARE), 0.7, sr);
   }
 
   protected tick(): number {
@@ -389,11 +418,11 @@ export class Perc extends DrumVoice {
     this.env = 1;
     this.coef = t60(this.decay, sr);
     this.spike = 1;
-    this.spikeCoef = Math.exp(-1 / (0.004 * sr));
+    this.spikeCoef = decayCoefficient(PERC_SPIKE_SEC, sr);
     this.bp.reset();
-    this.bp.set('bandpass', Math.min(this.pitch * 1.6, sr * 0.45), 1.6, sr);
+    this.bp.set('bandpass', Math.min(this.pitch * 1.6, sr * MAX_FILTER_SHARE), 1.6, sr);
     this.clickHp.reset();
-    this.clickHp.set('highpass', 2000, 0.7, sr);
+    this.clickHp.set('highpass', PERC_CLICK_HIGHPASS_HZ, 0.7, sr);
   }
 
   protected tick(): number {
@@ -439,7 +468,7 @@ export function renderDrum(voice: DrumModel, velocity = 1, maxSeconds = 3): Floa
   while (n < max && voice.active) tmp[n++] = voice.next();
   // A short fade-out if it was cut off by maxSeconds.
   if (voice.active) {
-    const fade = Math.min(n, Math.round(0.01 * sr));
+    const fade = Math.min(n, Math.round(CUT_OFF_FADE_SEC * sr));
     for (let i = 0; i < fade; i++) tmp[n - fade + i] = (tmp[n - fade + i] as number) * (1 - (i + 1) / fade);
     voice.reset();
   }

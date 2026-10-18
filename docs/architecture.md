@@ -2659,7 +2659,7 @@ slot's dry path line up exactly (`test/browser/effects.test.ts` checks the Limit
 - Editors: a 2-D drag (EQ Pro handles move frequency and gain) is one undo step: `usePluginEditing.setParam` joins the
   gesture in progress for a param without its own (`ui/plugin-hooks.ts`).
 
-### Shared DSP and test helpers (`src/sdk/dsp`, `src/sdk/testing.ts`)
+### Shared DSP and test helpers (`src/sdk/dsp`, `src/sdk/testing.ts`, whose parts live in `src/sdk/test-kit`)
 
 `Halfband`/`Oversampler` (HIIR-style polyphase allpass halfbands: 9 coefficients at 100 dB / 0.04 transition for the
 first 2× stage, 4 for the second), `LinkwitzRiley`, `Yin` (real-time, decimated to ≥ 8 kHz, parabolic interpolation
@@ -3150,7 +3150,7 @@ cut. Now:
     log scale, tooltips, groups, camelCase ids, `[n]` order. For instruments it sets the voice controls
     (`freq/gain/gate/key/vel`) apart.
   - `defineFaustEffect` and `defineFaustInstrument` build plugin definitions on `host.worklet({ name })`.
-- The kernel (`sdk/faust/kernel.ts`):
+- The kernel (`sdk/faust/`: `kernel.ts` registers it, `instance.ts` owns the wasm memory, `effect.ts` and `instrument.ts` are the two kernels):
   - It instantiates the wasm (internal memory, math imports only) with faustwasm's layout: the struct at 0, then
     the channel pointer arrays, then one 128-frame buffer per channel.
   - It sets changed params per block and computes in 128-frame slices.

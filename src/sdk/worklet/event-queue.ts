@@ -1,5 +1,16 @@
 import { EV_ALL_OFF, EV_ALL_OFF_HARD, EV_NOTE_OFF, EV_NOTE_ON, EV_STRIDE, EV_TRANSPORT } from '../protocol';
 
+/** One event as `shift` hands it out (see protocol.ts for what the fields mean per event type). */
+export interface QueuedEvent {
+  type: number;
+  frame: number;
+  id: number;
+  key: number;
+  vel: number;
+  pan: number;
+  fine: number;
+}
+
 /**
  * Frame-sorted note event queue for the audio thread. Storage is preallocated (it only grows if a
  * burst exceeds capacity). Implements the SDK's cancellation rule: a noteOff timed at or before its
@@ -55,63 +66,72 @@ export class EventQueue {
     }
   }
 
+  /**
+   * Adds one event. A note off at or before its pending note on cancels the note; an all-notes-off
+   * drops everything queued at or after its frame; a re-planned transport anchor (`pan` 1) drops the
+   * stale anchors. The event then goes in after any with the same frame.
+   */
   push(type: number, frame: number, id: number, key: number, vel: number, pan: number, fine = 0): void {
     if (type === EV_NOTE_OFF) {
-      // Cancel a note that has not started yet.
-      for (let k = 0; k < this.size; k++) {
-        const j = this.index(k);
-        if (this.types[j] === EV_NOTE_ON && this.ids[j] === id && frame <= (this.frames[j] as number)) {
-          this.removeAt(k);
-          return;
-        }
-      }
+      if (this.cancelPendingNoteOn(id, frame)) return;
     } else if (type === EV_ALL_OFF || type === EV_ALL_OFF_HARD) {
-      // Drop everything already queued at or after this frame.
-      let k = 0;
-      while (k < this.size) {
-        if ((this.frames[this.index(k)] as number) >= frame) this.removeAt(k);
-        else k++;
-      }
+      this.dropFrom(frame, null);
     } else if (type === EV_TRANSPORT && pan === 1) {
-      // A re-planned transport: the anchors queued from this frame on are stale.
-      let k = 0;
-      while (k < this.size) {
-        const j = this.index(k);
-        if (this.types[j] === EV_TRANSPORT && (this.frames[j] as number) >= frame) this.removeAt(k);
-        else k++;
-      }
+      this.dropFrom(frame, EV_TRANSPORT);
     }
     if (this.size === this.frames.length) this.grow();
-    // Insert after any events with the same frame (keeps arrival order).
-    let lo = 0;
-    let hi = this.size;
-    while (lo < hi) {
-      const mid = (lo + hi) >>> 1;
-      if ((this.frames[this.index(mid)] as number) <= frame) lo = mid + 1;
-      else hi = mid;
-    }
-    for (let k = this.size; k > lo; k--) this.copy(this.index(k), this.index(k - 1));
-    const j = this.index(lo);
-    this.frames[j] = frame;
-    this.types[j] = type;
-    this.ids[j] = id;
-    this.keys[j] = key;
-    this.vels[j] = vel;
-    this.pans[j] = pan;
-    this.fines[j] = fine;
+    const slot = this.index(this.insertionPoint(frame));
+    this.frames[slot] = frame;
+    this.types[slot] = type;
+    this.ids[slot] = id;
+    this.keys[slot] = key;
+    this.vels[slot] = vel;
+    this.pans[slot] = pan;
+    this.fines[slot] = fine;
     this.size++;
   }
 
+  /** Removes the note on of note `id` if it starts at or after `offFrame`; true when it was found. */
+  private cancelPendingNoteOn(id: number, offFrame: number): boolean {
+    for (let k = 0; k < this.size; k++) {
+      const j = this.index(k);
+      if (this.types[j] === EV_NOTE_ON && this.ids[j] === id && offFrame <= (this.frames[j] as number)) {
+        this.removeAt(k);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Removes the events at or after `frame`: all of them, or only those of type `onlyType`. */
+  private dropFrom(frame: number, onlyType: number | null): void {
+    let k = 0;
+    while (k < this.size) {
+      const j = this.index(k);
+      const isStale = (this.frames[j] as number) >= frame && (onlyType === null || this.types[j] === onlyType);
+      if (isStale) this.removeAt(k);
+      else k++;
+    }
+  }
+
+  /**
+   * Makes room at the queue position for an event of `frame`, after any events with the same frame
+   * (which keeps arrival order); returns that position.
+   */
+  private insertionPoint(frame: number): number {
+    let low = 0;
+    let high = this.size;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if ((this.frames[this.index(middle)] as number) <= frame) low = middle + 1;
+      else high = middle;
+    }
+    for (let k = this.size; k > low; k--) this.copy(this.index(k), this.index(k - 1));
+    return low;
+  }
+
   /** Removes the earliest event; call peek* before. */
-  shift(out: {
-    type: number;
-    frame: number;
-    id: number;
-    key: number;
-    vel: number;
-    pan: number;
-    fine: number;
-  }): boolean {
+  shift(out: QueuedEvent): boolean {
     if (this.size === 0) return false;
     const j = this.head;
     out.type = this.types[j] as number;

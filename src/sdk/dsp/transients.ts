@@ -36,6 +36,7 @@ export function peakOverview(
   return peaks;
 }
 
+/** How to find slices: how sensitive, how short, how many. */
 export interface SliceOptions {
   /** 0–1: higher finds quieter and softer hits (more slices). */
   sensitivity: number;
@@ -47,6 +48,16 @@ export interface SliceOptions {
 
 /** A hit is a jump in level over the quietest of the previous few buckets (~16 ms). */
 const LOOKBACK = 3;
+/** The rise a bucket needs over the quietest recent one: 14 dB at sensitivity 0, 12 dB less at sensitivity 1. */
+const RISE_DB_AT_ZERO = 14;
+const RISE_DB_RANGE = 12;
+/** A bucket must be no more than this far under the loudest one: 30 dB at sensitivity 0, 30 dB more at 1. */
+const FLOOR_DB_AT_ZERO = 30;
+const FLOOR_DB_RANGE = 30;
+/** Below this many dB under the loudest bucket, sound counts as silence. */
+const SILENCE_DB = 50;
+/** A bucket this far (dB) above the silence level counts as sound that was heard before the first hit. */
+const HEARD_MARGIN_DB = 1;
 
 /**
  * Finds hits (transients) in a peak overview and writes the slice start frames to `out` (sorted);
@@ -68,22 +79,15 @@ export function detectSlicesInto(
   const max = Math.min(opts.max, out.length);
   if (buckets <= 0 || max <= 0) return 0;
   const level = scratch && scratch.length >= buckets ? scratch : new Float64Array(buckets);
-  let loudest = 0;
-  for (let b = 0; b < buckets; b++) {
-    const lo = -(peaks[b * 2] as number);
-    const hi = peaks[b * 2 + 1] as number;
-    const v = lo > hi ? lo : hi;
-    level[b] = v;
-    if (v > loudest) loudest = v;
-  }
+  const loudest = bucketLevels(peaks, buckets, level);
   if (!(loudest > 0)) {
     out[0] = 0;
     return 1;
   }
-  const s = opts.sensitivity < 0 ? 0 : opts.sensitivity > 1 ? 1 : opts.sensitivity;
-  const rise = 14 - 12 * s;
-  const floor = loudest * Math.pow(10, -(30 + 30 * s) / 20);
-  const silence = loudest * Math.pow(10, -50 / 20);
+  const sensitivity = opts.sensitivity < 0 ? 0 : opts.sensitivity > 1 ? 1 : opts.sensitivity;
+  const riseDb = RISE_DB_AT_ZERO - RISE_DB_RANGE * sensitivity;
+  const floor = loudest * Math.pow(10, -(FLOOR_DB_AT_ZERO + FLOOR_DB_RANGE * sensitivity) / 20);
+  const silence = loudest * Math.pow(10, -SILENCE_DB / 20);
   const minGap = Math.max(1, Math.round((opts.minLength * sampleRate) / bucket));
   // In dB, with a floor so silence doesn't count as huge jumps.
   const silenceDb = 20 * Math.log10(silence);
@@ -91,33 +95,51 @@ export function detectSlicesInto(
   const floorDb = 20 * Math.log10(floor);
 
   let count = 0;
-  let last = 0;
+  let lastSliceBucket = 0;
   // Whether anything above silence came before the bucket being looked at.
   let heard = false;
   // A hit spans a few rising buckets: only the first of them starts a slice.
   let rising = false;
   for (let b = 0; b < buckets && count < max; b++) {
-    const v = level[b] as number;
-    let prev = b === 0 ? silenceDb : Infinity;
-    for (let j = Math.max(0, b - LOOKBACK); j < b; j++) if ((level[j] as number) < prev) prev = level[j] as number;
-    const candidate = v >= floorDb && v - prev >= rise;
-    const onset = candidate && !rising;
-    rising = candidate;
-    if (onset && (count === 0 || b - last >= minGap)) {
+    const levelDb = level[b] as number;
+    const isCandidate = levelDb >= floorDb && levelDb - quietestRecentLevel(level, b, silenceDb) >= riseDb;
+    const isOnset = isCandidate && !rising;
+    rising = isCandidate;
+    if (isOnset && (count === 0 || b - lastSliceBucket >= minGap)) {
       if (count === 0 && heard) {
         // Sound before the first hit stays in the first slice (merged when the hit is that close).
         out[count++] = 0;
-        last = 0;
+        lastSliceBucket = 0;
         if (b < minGap) continue;
         if (count >= max) break;
       }
       out[count++] = b * bucket;
-      last = b;
+      lastSliceBucket = b;
     }
-    if (v > silenceDb + 1) heard = true;
+    if (levelDb > silenceDb + HEARD_MARGIN_DB) heard = true;
   }
   if (count === 0) out[count++] = 0;
   return count;
+}
+
+/** Writes each bucket's loudest absolute peak to `level` and returns the loudest of all. */
+function bucketLevels(peaks: Float32Array, buckets: number, level: Float64Array): number {
+  let loudest = 0;
+  for (let b = 0; b < buckets; b++) {
+    const lowPeak = -(peaks[b * 2] as number);
+    const highPeak = peaks[b * 2 + 1] as number;
+    const peak = lowPeak > highPeak ? lowPeak : highPeak;
+    level[b] = peak;
+    if (peak > loudest) loudest = peak;
+  }
+  return loudest;
+}
+
+/** The quietest level (dB) of the `LOOKBACK` buckets before bucket `b`; before the first bucket, silence. */
+function quietestRecentLevel(level: Float64Array, b: number, silenceDb: number): number {
+  let quietest = b === 0 ? silenceDb : Infinity;
+  for (let j = Math.max(0, b - LOOKBACK); j < b; j++) if ((level[j] as number) < quietest) quietest = level[j] as number;
+  return quietest;
 }
 
 /** `detectSlicesInto` returning a new array of slice start frames. */

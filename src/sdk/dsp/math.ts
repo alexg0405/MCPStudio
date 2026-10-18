@@ -20,10 +20,12 @@ export function gainToDb(gain: number): number {
   return gain <= 0 ? -Infinity : 20 * Math.log10(gain);
 }
 
+/** Limits `v` to [lo, hi]. */
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }
 
+/** Linear interpolation: `a` at t = 0, `b` at t = 1. */
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }

@@ -3,7 +3,8 @@
 An FL Studio-style DAW that runs in Chrome (TypeScript, React, Web Audio + AudioWorklet), built so its owner
 can keep adding features and, above all, their own instruments and effects as code plugins.
 
-Read `docs/architecture.md` before making structural changes. The plugin author guide is `docs/plugin-sdk.md`.
+Read `docs/architecture.md` before making structural changes. Write code the way `docs/code-style.md` describes (plain names, small
+files and functions, comments that say why). The plugin author guide is `docs/plugin-sdk.md`.
 
 ## Commands
 

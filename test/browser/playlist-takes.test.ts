@@ -19,7 +19,7 @@ import { closeContextMenu } from '@ui/controls/ContextMenu';
 import { installKeyboard } from '@ui/keyboard';
 import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
-import { HEADER_WIDTH, FOLD_ZONE } from '@ui/features/playlist/render';
+import { HEADER_WIDTH, FOLD_ZONE, LISTEN_ZONE } from '@ui/features/playlist/render';
 import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
@@ -218,6 +218,24 @@ describe('takes in the playlist (UI)', { timeout: 40_000 }, () => {
     await s.history.undo();
     expect(takeGroups(s.doc.getState().project)[0]!.takes).toHaveLength(3);
     s.editor.getState().setTakesOpen(group, true);
+  });
+
+  it('the speaker on a take track listens to that take alone: a click switches it on and off, a hold listens only while pressed', async () => {
+    const speaker = { x: HEADER_WIDTH - LISTEN_ZONE / 2 - 3, y: LANE_H + LANE_H / 2 };
+    const heard = () => s.editor.getState().auditionTake;
+    const newest = takeGroups(s.doc.getState().project)[0]!.takes.find((t) => t.index === 2)!.clips[0]!.id;
+    // A quick click switches it on and leaves it on; the next click switches it off.
+    fire(headers, 'pointerdown', speaker);
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    expect(heard()).toBe(newest);
+    fire(headers, 'pointerdown', speaker);
+    expect(heard()).toBeNull();
+    // Held down it listens only while it is pressed.
+    fire(headers, 'pointerdown', speaker);
+    expect(heard()).toBe(newest);
+    await new Promise((r) => setTimeout(r, 450));
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    expect(heard()).toBeNull();
   });
 
   it('Alt-drag on the ruler sets the punch range (not the loop); Alt-double-click clears it', async () => {

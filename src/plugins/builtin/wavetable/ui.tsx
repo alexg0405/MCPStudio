@@ -1,21 +1,53 @@
 import { useMemo } from 'react';
 import { formatValue, type EnumSpec, type ParamSpec, type PluginUIProps } from '@agstudio/sdk';
+import {
+  frameAt,
+  framesOfState,
+  frameToWave,
+  normalizeFrame,
+  type Frame,
+  type UserTableState,
+} from '@agstudio/sdk/dsp/wavetable-frames';
 import { formatPan, Knob, ParamKnob, ParamSelect, ParamToggle, Section, Select } from '@agstudio/sdk/ui';
-import { lfoParam, MOD_SLOTS, modParam, oscParam, TABLE_OPTIONS, type wavetableParams } from './params';
+import {
+  FACTORY_TABLES,
+  lfoParam,
+  MOD_SLOTS,
+  modParam,
+  oscParam,
+  TABLE_OPTIONS,
+  type wavetableParams,
+} from './params';
+import { TableEditor } from './table-editor';
 import { factoryBank, TABLES } from './tables';
 import styles from './ui.module.css';
 
-type Props = PluginUIProps<typeof wavetableParams>;
+type Props = PluginUIProps<typeof wavetableParams, UserTableState>;
 
 const SHAPE_W = 96;
 const SHAPE_H = 40;
-const POINTS = 96;
+/** Points of the shape preview: a power of two, because a drawn table's cycle goes through an FFT. */
+const POINTS = 128;
 
-/** One cycle of the oscillator's current shape. */
-function ShapePreview({ table, position, off }: { table: number; position: number; off: boolean }) {
+/** One cycle of the oscillator's current shape (a factory table's, or "My table" from its key frames). */
+function ShapePreview({
+  table,
+  position,
+  off,
+  user,
+}: {
+  table: number;
+  position: number;
+  off: boolean;
+  user: readonly Frame[];
+}) {
+  const isUser = table >= FACTORY_TABLES;
   const path = useMemo(() => {
     const pts = new Float32Array(POINTS);
-    factoryBank().shape(table, position, pts, 3);
+    if (isUser) {
+      const shown = normalizeFrame(frameAt(user, position));
+      frameToWave(shown, pts);
+    } else factoryBank().shape(table, position, pts, 3);
     let d = '';
     for (let i = 0; i < POINTS; i++) {
       const x = (i / (POINTS - 1)) * SHAPE_W;
@@ -23,16 +55,16 @@ function ShapePreview({ table, position, off }: { table: number; position: numbe
       d += `${i ? ' L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
     }
     return d;
-  }, [table, position]);
-  const t = TABLES[table];
+  }, [table, position, isUser, user]);
+  const t = isUser ? null : TABLES[table];
   return (
     <svg
       className={`${styles.shape} ${off ? styles.off : ''}`}
       width={SHAPE_W}
       height={SHAPE_H}
-      data-hint={`${t?.label ?? 'Table'} at ${Math.round(position * 100)}%: ${t?.hint ?? ''}`}
+      data-hint={`${t?.label ?? 'My table'} at ${Math.round(position * 100)}%: ${t?.hint ?? 'the table you draw or import below'}`}
       role="img"
-      aria-label={`Shape preview: ${t?.label ?? ''}`}
+      aria-label={`Shape preview: ${t?.label ?? 'My table'}`}
     >
       <line x1={0} y1={SHAPE_H / 2} x2={SHAPE_W} y2={SHAPE_H / 2} className={styles.axis} />
       <path d={path} className={styles.wave} />
@@ -57,7 +89,7 @@ function EnvelopeCurve({ a, d, s, r }: { a: number; d: number; s: number; r: num
   );
 }
 
-function Oscillator({ ui, n }: { ui: Props; n: number }) {
+function Oscillator({ ui, n, user }: { ui: Props; n: number; user: readonly Frame[] }) {
   const id = oscParam(n);
   const table = TABLE_OPTIONS.findIndex(([t]) => t === ui.values[id.table]);
   const off = Number(ui.values[id.level]) === 0;
@@ -68,7 +100,7 @@ function Oscillator({ ui, n }: { ui: Props; n: number }) {
     >
       <div className={styles.oscTop}>
         <ParamSelect ui={ui} param={id.table} label="Table" />
-        <ShapePreview table={Math.max(0, table)} position={Number(ui.values[id.position])} off={off} />
+        <ShapePreview table={Math.max(0, table)} position={Number(ui.values[id.position])} off={off} user={user} />
       </div>
       <ParamKnob ui={ui} param={id.position} label="Position" />
       <ParamKnob ui={ui} param={id.coarse} label="Coarse" />
@@ -153,12 +185,13 @@ function ModRow({ ui, n }: { ui: Props; n: number }) {
 /** The Wavetable editor: oscillators, filter, envelopes, LFOs, the mod matrix and the voice settings. */
 export function WavetableUI(ui: Props) {
   const v = ui.values;
+  const userFrames = useMemo(() => framesOfState(ui.state), [ui.state]);
   return (
     <div className={styles.root}>
       <h2 className={styles.heading}>Oscillators</h2>
       <div className={styles.row}>
-        <Oscillator ui={ui} n={1} />
-        <Oscillator ui={ui} n={2} />
+        <Oscillator ui={ui} n={1} user={userFrames} />
+        <Oscillator ui={ui} n={2} user={userFrames} />
         <Section title="Unison" hint="Stacks detuned copies of both oscillators for a wide, thick sound">
           <ParamKnob ui={ui} param="unison" label="Voices" />
           <ParamKnob ui={ui} param="detune" label="Detune" />
@@ -171,6 +204,11 @@ export function WavetableUI(ui: Props) {
           <ParamKnob ui={ui} param="noiseLevel" label="Noise" />
           <ParamKnob ui={ui} param="noiseTone" label="Tone" />
         </Section>
+      </div>
+
+      <h2 className={styles.heading}>Your own table</h2>
+      <div className={styles.row}>
+        <TableEditor ui={ui} />
       </div>
 
       <h2 className={styles.heading}>Filter</h2>

@@ -170,6 +170,24 @@ function sampleTableBoxes(t: TrackTable, base: number, withSyncs: boolean): Uint
 
 // ---------------------------------------------------------------- the moov box
 
+/** mdhd `language`: "und" (undetermined) as three 5-bit letters, each letter minus 0x60. */
+const LANGUAGE_UNDETERMINED = 0x55c4;
+/** tkhd `flags`: track enabled (1) and in the movie (2). */
+const TRACK_ENABLED_IN_MOVIE = 3;
+/** tkhd `volume` of an audio track: 8.8 fixed point 1.0. */
+const FIXED_8_8_ONE = 0x0100;
+/** mvhd `rate`: 16.16 fixed point 1.0. */
+const FIXED_16_16_ONE = 0x00010000;
+/** Visual sample entry `horizresolution` and `vertresolution`: 72 dpi in 16.16 fixed point. */
+const DPI_72 = 0x00480000;
+/** Visual sample entry `depth`: 24-bit colour with no alpha. */
+const DEPTH_COLOR = 0x0018;
+/** esds (ISO/IEC 14496-1): decoder config object type 0x40 (MPEG-4 audio) and stream type 5 (audio) as 0x15. */
+const ESDS_OBJECT_TYPE_AAC = 0x40;
+const ESDS_STREAM_TYPE_AUDIO = 0x15;
+/** Bits per sample written in the audio sample entry (AAC has no real bit depth; players ignore it). */
+const AUDIO_SAMPLE_SIZE_BITS = 16;
+
 const handler = (type: string, name: string) =>
   fullBox('hdlr', 0, 0, u32(0), ascii(type), zeros(12), concat([ascii(name), u8(0)]));
 
@@ -177,14 +195,14 @@ const dinf = () => box('dinf', fullBox('dref', 0, 0, u32(1), fullBox('url ', 0, 
 
 function mdhd(timescale: number, duration: number): Uint8Array {
   // Language "und" packed as three 5-bit letters.
-  return fullBox('mdhd', 0, 0, u32(0), u32(0), u32(timescale), u32(duration), u16(0x55c4), u16(0));
+  return fullBox('mdhd', 0, 0, u32(0), u32(0), u32(timescale), u32(duration), u16(LANGUAGE_UNDETERMINED), u16(0));
 }
 
 function tkhd(id: number, duration: number, audio: boolean, width: number, height: number): Uint8Array {
   return fullBox(
     'tkhd',
     0,
-    3,
+    TRACK_ENABLED_IN_MOVIE,
     u32(0),
     u32(0),
     u32(id),
@@ -193,7 +211,7 @@ function tkhd(id: number, duration: number, audio: boolean, width: number, heigh
     zeros(8),
     u16(0),
     u16(0),
-    u16(audio ? 0x0100 : 0),
+    u16(audio ? FIXED_8_8_ONE : 0),
     u16(0),
     MATRIX,
     u32(width * 65536),
@@ -209,12 +227,12 @@ function videoEntry(v: Mp4VideoTrack): Uint8Array {
     zeros(16),
     u16(v.width),
     u16(v.height),
-    u32(0x00480000),
-    u32(0x00480000),
+    u32(DPI_72),
+    u32(DPI_72),
     u32(0),
     u16(1),
     zeros(32),
-    u16(0x0018),
+    u16(DEPTH_COLOR),
     u16(0xffff), // pre_defined (-1)
     box('avcC', v.avcC),
   );
@@ -229,7 +247,14 @@ function audioEntry(a: Mp4AudioTrack): Uint8Array {
       0x03,
       u16(2),
       u8(0),
-      descriptor(0x04, u8(0x40, 0x15), u8(0, 0, 0), u32(0), u32(0), descriptor(0x05, a.audioSpecificConfig)),
+      descriptor(
+        0x04,
+        u8(ESDS_OBJECT_TYPE_AAC, ESDS_STREAM_TYPE_AUDIO),
+        u8(0, 0, 0),
+        u32(0),
+        u32(0),
+        descriptor(0x05, a.audioSpecificConfig),
+      ),
       descriptor(0x06, u8(2)),
     ),
   );
@@ -239,7 +264,7 @@ function audioEntry(a: Mp4AudioTrack): Uint8Array {
     u16(1),
     zeros(8),
     u16(a.channels),
-    u16(16),
+    u16(AUDIO_SAMPLE_SIZE_BITS),
     u16(0),
     u16(0),
     u32((Math.min(65535, a.sampleRate) << 16) >>> 0),
@@ -261,70 +286,80 @@ interface MoovInput {
 /** The movie box for what has been written (also used, with worst-case tables, to size the reservation). */
 export function buildMoov(m: MoovInput): Uint8Array {
   const videoMs = Math.round((m.videoTable.duration * MOVIE_TIMESCALE) / VIDEO_TIMESCALE);
-  const traks: Uint8Array[] = [];
-  traks.push(
+  const traks: Uint8Array[] = [videoTrack(m, videoMs)];
+  let audioMs = 0;
+  if (m.audio && m.audioTable) {
+    const audio = audioTrack(m, m.audio, m.audioTable);
+    audioMs = audio.durationMs;
+    traks.push(audio.trak);
+  }
+  return box('moov', movieHeader(Math.max(videoMs, audioMs), m.audio !== undefined), ...traks);
+}
+
+/** The video `trak`: header, media header, handler and the sample tables with their key frames. */
+function videoTrack(m: MoovInput, durationMs: number): Uint8Array {
+  return box(
+    'trak',
+    tkhd(1, durationMs, false, m.video.width, m.video.height),
     box(
-      'trak',
-      tkhd(1, videoMs, false, m.video.width, m.video.height),
+      'mdia',
+      mdhd(VIDEO_TIMESCALE, m.videoTable.duration),
+      handler('vide', 'AGstudio video'),
       box(
-        'mdia',
-        mdhd(VIDEO_TIMESCALE, m.videoTable.duration),
-        handler('vide', 'AGstudio video'),
+        'minf',
+        fullBox('vmhd', 0, 1, zeros(8)),
+        dinf(),
         box(
-          'minf',
-          fullBox('vmhd', 0, 1, zeros(8)),
-          dinf(),
-          box(
-            'stbl',
-            fullBox('stsd', 0, 0, u32(1), videoEntry(m.video)),
-            ...sampleTableBoxes(m.videoTable, m.base, true),
-          ),
+          'stbl',
+          fullBox('stsd', 0, 0, u32(1), videoEntry(m.video)),
+          ...sampleTableBoxes(m.videoTable, m.base, true),
         ),
       ),
     ),
   );
-  let audioMs = 0;
-  if (m.audio && m.audioTable) {
-    const a = m.audio;
-    const t = m.audioTable;
-    const music = Math.min(Math.max(0, t.duration - a.priming), m.audioFrames ?? Infinity);
-    audioMs = Math.round((music * MOVIE_TIMESCALE) / a.sampleRate);
-    traks.push(
+}
+
+/** The audio `trak` and how long its music lasts (the edit list drops the encoder's priming and padding). */
+function audioTrack(m: MoovInput, audio: Mp4AudioTrack, table: TrackTable): { trak: Uint8Array; durationMs: number } {
+  const music = Math.min(Math.max(0, table.duration - audio.priming), m.audioFrames ?? Infinity);
+  const durationMs = Math.round((music * MOVIE_TIMESCALE) / audio.sampleRate);
+  const trak = box(
+    'trak',
+    tkhd(2, durationMs, true, 0, 0),
+    // The edit list drops the encoder's priming from the start.
+    box('edts', fullBox('elst', 0, 0, u32(1), u32(durationMs), u32(audio.priming), u16(1), u16(0))),
+    box(
+      'mdia',
+      mdhd(audio.sampleRate, table.duration),
+      handler('soun', 'AGstudio audio'),
       box(
-        'trak',
-        tkhd(2, audioMs, true, 0, 0),
-        // The edit list drops the encoder's priming from the start.
-        box('edts', fullBox('elst', 0, 0, u32(1), u32(audioMs), u32(a.priming), u16(1), u16(0))),
-        box(
-          'mdia',
-          mdhd(a.sampleRate, t.duration),
-          handler('soun', 'AGstudio audio'),
-          box(
-            'minf',
-            fullBox('smhd', 0, 0, zeros(4)),
-            dinf(),
-            box('stbl', fullBox('stsd', 0, 0, u32(1), audioEntry(a)), ...sampleTableBoxes(t, m.base, false)),
-          ),
-        ),
+        'minf',
+        fullBox('smhd', 0, 0, zeros(4)),
+        dinf(),
+        box('stbl', fullBox('stsd', 0, 0, u32(1), audioEntry(audio)), ...sampleTableBoxes(table, m.base, false)),
       ),
-    );
-  }
-  const mvhd = fullBox(
+    ),
+  );
+  return { trak, durationMs };
+}
+
+/** The movie header: the movie's timescale and duration, rate 1.0, volume 1.0, and the next free track id. */
+function movieHeader(durationMs: number, hasAudio: boolean): Uint8Array {
+  return fullBox(
     'mvhd',
     0,
     0,
     u32(0),
     u32(0),
     u32(MOVIE_TIMESCALE),
-    u32(Math.max(videoMs, audioMs)),
-    u32(0x00010000),
-    u16(0x0100),
+    u32(durationMs),
+    u32(FIXED_16_16_ONE),
+    u16(FIXED_8_8_ONE),
     zeros(10),
     MATRIX,
     zeros(24),
-    u32(m.audio ? 3 : 2),
+    u32(hasAudio ? 3 : 2),
   );
-  return box('moov', mvhd, ...traks);
 }
 
 /** A table with `n` samples in `chunks` chunks and `keys` key frames: the biggest index a file of that size can have. */

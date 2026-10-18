@@ -32,6 +32,37 @@ class Stage {
 }
 
 /**
+ * Stage 1 of the K-weighting: a high shelf (+4 dB above ~1.7 kHz) that models the head. The three
+ * numbers are the analog prototype's, as fitted by the standard (they reproduce its coefficients at
+ * 48 kHz); `k`, `vh`, `vb` and `a0` follow the bilinear transform of that prototype.
+ */
+function headShelf(sampleRate: number): Stage {
+  const f0 = 1681.974450955533;
+  const gain = 3.999843853973347;
+  const q = 0.7071752369554196;
+  const k = Math.tan((Math.PI * f0) / sampleRate);
+  const vh = Math.pow(10, gain / 20);
+  const vb = Math.pow(vh, 0.4996667741545416);
+  const a0 = 1 + k / q + k * k;
+  return new Stage(
+    (vh + (vb * k) / q + k * k) / a0,
+    (2 * (k * k - vh)) / a0,
+    (vh - (vb * k) / q + k * k) / a0,
+    (2 * (k * k - 1)) / a0,
+    (1 - k / q + k * k) / a0,
+  );
+}
+
+/** Stage 2 of the K-weighting: the "RLB" high-pass (a second-order filter at ~38 Hz), from the standard's prototype. */
+function rlbHighpass(sampleRate: number): Stage {
+  const f0 = 38.13547087602444;
+  const q = 0.5003270373238773;
+  const k = Math.tan((Math.PI * f0) / sampleRate);
+  const a0 = 1 + k / q + k * k;
+  return new Stage(1, -2, 1, (2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0);
+}
+
+/**
  * The BS.1770 K-weighting filter (a high shelf for the head, then the "RLB" high-pass), designed
  * for any sample rate from the analog prototypes; at 48 kHz it matches the standard's coefficients.
  */
@@ -40,35 +71,16 @@ export class KWeighting {
   private readonly highpass: Stage;
 
   constructor(sampleRate: number) {
-    {
-      const f0 = 1681.974450955533;
-      const gain = 3.999843853973347;
-      const q = 0.7071752369554196;
-      const k = Math.tan((Math.PI * f0) / sampleRate);
-      const vh = Math.pow(10, gain / 20);
-      const vb = Math.pow(vh, 0.4996667741545416);
-      const a0 = 1 + k / q + k * k;
-      this.shelf = new Stage(
-        (vh + (vb * k) / q + k * k) / a0,
-        (2 * (k * k - vh)) / a0,
-        (vh - (vb * k) / q + k * k) / a0,
-        (2 * (k * k - 1)) / a0,
-        (1 - k / q + k * k) / a0,
-      );
-    }
-    {
-      const f0 = 38.13547087602444;
-      const q = 0.5003270373238773;
-      const k = Math.tan((Math.PI * f0) / sampleRate);
-      const a0 = 1 + k / q + k * k;
-      this.highpass = new Stage(1, -2, 1, (2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0);
-    }
+    this.shelf = headShelf(sampleRate);
+    this.highpass = rlbHighpass(sampleRate);
   }
 
+  /** Filters one sample. */
   process(x: number): number {
     return this.highpass.process(this.shelf.process(x));
   }
 
+  /** Clears the filters' memory. */
   reset(): void {
     this.shelf.reset();
     this.highpass.reset();

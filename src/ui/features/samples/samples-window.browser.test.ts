@@ -227,13 +227,14 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     await frames(3);
     key(list(), 'ArrowDown');
     await frames(3);
+    // Polled, not a fixed number of frames: under a loaded machine the audition can land a frame later.
+    await expect.poll(() => s.fakeEngine.previews.length).toBe(2);
     expect(s.sampleBrowser.store.getState().cursor).toBe(rows()[1]!.dataset.sampleRow);
-    expect(s.fakeEngine.previews.length).toBe(2);
     expect(rows()[1]!.getAttribute('aria-selected')).toBe('true');
     key(list(), 'ArrowUp');
     await frames(3);
+    await expect.poll(() => s.fakeEngine.previews.length).toBe(3);
     expect(s.sampleBrowser.store.getState().cursor).toBe(rows()[0]!.dataset.sampleRow);
-    expect(s.fakeEngine.previews.length).toBe(3);
     // Auto-play off: stepping only moves.
     s.sampleBrowser.setPrefs({ autoPreview: false });
     await frames(2);
@@ -241,11 +242,9 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     await frames(2);
     expect(s.fakeEngine.previews.length).toBe(3);
     key(list(), 'Enter');
-    await frames(2);
-    expect(s.fakeEngine.previews.length).toBe(4);
+    await expect.poll(() => s.fakeEngine.previews.length).toBe(4);
     key(list(), 'Escape');
-    await frames(2);
-    expect(s.sampleBrowser.store.getState().playing).toBeNull();
+    await expect.poll(() => s.sampleBrowser.store.getState().playing).toBeNull();
     s.sampleBrowser.setPrefs({ autoPreview: true });
   });
 

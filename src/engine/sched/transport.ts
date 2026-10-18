@@ -7,7 +7,7 @@
  * cancels it), planning restarts 10 ms from now with the new model, and sounding notes whose
  * source was deleted are released.
  */
-import type { AudioClip, ChannelId, Clip, LaneId, Tick } from '@core/model/types';
+import type { AudioClip, ChannelId, Clip, LaneId, Project, Tick } from '@core/model/types';
 import { followsTempo, playbackKey, playbackMode } from '@core/audio/playback';
 import { ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
@@ -82,7 +82,25 @@ interface Scheduled {
   laneId?: LaneId;
 }
 
-const SAFETY = 0.01;
+/**
+ * A note that starts less than this far (seconds) after "now" has already reached the audio thread and can no longer
+ * be cancelled; a re-plan starts this far ahead of the clock.
+ */
+const SAFETY_SEC = 0.01;
+/** The default lookahead (seconds): how far past the clock the scheduler plans on each tick. */
+const DEFAULT_LOOKAHEAD_SEC = 0.12;
+/** The default delay between a start or seek and its first beat (seconds), when the caller gives none. */
+const DEFAULT_START_DELAY_SEC = 0.04;
+/** A release is nudged this far (seconds) past the note's start, because a release at the start time would cancel it. */
+const RELEASE_NUDGE_SEC = 1e-4;
+/** Rounding slack when comparing positions on the launcher axis (ticks). */
+const U_EPSILON = 1e-6;
+/** Rounding slack when comparing a segment's end with the loop or song end (ticks). */
+const END_EPSILON = 1e-9;
+/** Past this many remembered runs, the ones that are gone are forgotten. */
+const MAX_REMEMBERED_RUNS = 256;
+/** Planned segments are kept this long after they end (seconds), for the playhead and the tempo readouts. */
+const KEEP_SEGMENTS_SEC = 2;
 
 export class Transport {
   private playingFlag = false;
@@ -116,7 +134,7 @@ export class Transport {
     private timeline: Timeline,
     opts: { lookahead?: number } = {},
   ) {
-    this.lookahead = opts.lookahead ?? 0.12;
+    this.lookahead = opts.lookahead ?? DEFAULT_LOOKAHEAD_SEC;
   }
 
   get playing(): boolean {
@@ -139,7 +157,7 @@ export class Transport {
     return this.notes.size;
   }
 
-  start(fromTick: Tick, at: number = this.clock.currentTime + 0.04): void {
+  start(fromTick: Tick, at: number = this.clock.currentTime + DEFAULT_START_DELAY_SEC): void {
     this.reset();
     this.playingFlag = true;
     this.endTime = null;
@@ -155,14 +173,14 @@ export class Transport {
    * Jumps while playing: notes that haven't started are cancelled, sounding ones are released at
    * `at`, and playback continues from `tick` at `at`. While stopped it only moves the stop position.
    */
-  seek(tick: Tick, at: number = this.clock.currentTime + 0.04): void {
+  seek(tick: Tick, at: number = this.clock.currentTime + DEFAULT_START_DELAY_SEC): void {
     if (!this.playingFlag || !this.cursor) {
       this.stoppedTick = tick;
       return;
     }
     const now = this.clock.currentTime;
     for (const n of this.notes.values()) {
-      if (n.startTime >= now + SAFETY) {
+      if (n.startTime >= now + SAFETY_SEC) {
         this.sink.noteOff(n.ev.channelId, { time: n.startTime, noteId: n.noteId, key: n.ev.pitch });
         n.offSent = true;
       } else if (!n.offSent) this.release(n, at);
@@ -201,18 +219,18 @@ export class Transport {
       this.onEnded?.();
       return;
     }
-    const p = plan(this.cursor, horizon, this.timeline);
-    const L = this.timeline.loop;
-    for (const plain of p.segs) {
+    const planned = plan(this.cursor, horizon, this.timeline);
+    const loop = this.timeline.loop;
+    for (const plain of planned.segs) {
       const seg: USegment = { ...plain, u0: this.uFrontier };
       this.uFrontier += seg.tick1 - seg.tick0;
-      const wrapped = !!L && seg.iter > 0 && seg.tick0 === L.start;
-      for (const o of this.observers) o.segment?.(seg, wrapped);
+      const wrapped = !!loop && seg.iter > 0 && seg.tick0 === loop.start;
+      for (const observer of this.observers) observer.segment?.(seg, wrapped);
       this.process(seg);
       this.segs.push(seg);
     }
-    this.cursor = p.next;
-    if (p.ended && this.endTime === null) this.endTime = p.next.time;
+    this.cursor = planned.next;
+    if (planned.ended && this.endTime === null) this.endTime = planned.next.time;
     this.trim();
   }
 
@@ -232,94 +250,149 @@ export class Transport {
     this.timeline = timeline;
     if (!this.playingFlag || !this.cursor) return;
     const now = this.clock.currentTime;
-    const safe = now + SAFETY;
-    const pos = tickAtTime(this.segs, safe) ?? { tick: this.cursor.tick, iter: this.cursor.iter };
-    const uPos = this.uAtTime(safe);
+    const safe = now + SAFETY_SEC;
+    const position = tickAtTime(this.segs, safe) ?? { tick: this.cursor.tick, iter: this.cursor.iter };
+    const uPosition = this.uAtTime(safe);
 
-    for (const n of [...this.notes.values()]) {
-      if (n.startTime >= safe) {
-        this.sink.noteOff(n.ev.channelId, { time: n.startTime, noteId: n.noteId, key: n.ev.pitch });
-        this.notes.delete(n.noteId);
-      }
-    }
-
-    // Drop the planned future; keep the past for the playhead.
-    this.segs = this.segs.filter((s) => s.time0 < safe);
-    const last = this.segs[this.segs.length - 1];
-    if (last && segmentEndTime(last) > safe) this.segs[this.segs.length - 1] = { ...last, tick1: pos.tick };
-
-    let tick = pos.tick;
-    const L = timeline.loop;
-    if (loopChanged && L && L.end > L.start && (tick >= L.end || tick < L.start)) {
-      tick = L.start + ((((tick - L.start) % (L.end - L.start)) + (L.end - L.start)) % (L.end - L.start));
-    }
-    this.cursor = { tick, time: safe, iter: pos.iter };
-    this.uFrontier = uPos;
+    this.cancelNotesNotStarted(safe);
+    this.dropPlannedFuture(safe, position.tick);
+    const tick = loopChanged ? this.wrapIntoLoop(position.tick, timeline.loop) : position.tick;
+    this.cursor = { tick, time: safe, iter: position.iter };
+    this.uFrontier = uPosition;
     this.endTime = null;
-    // A run that starts before the new cursor and was never planned (it was launched on a boundary a few ms ago).
-    const late = source.launch?.runs.filter((r) => r.startU < uPos - 1e-6 && !this.launchDone.has(r.id) && r.content.kind === 'pattern');
-    this.catchUp = late && late.length > 0 ? { runs: late, from: Math.min(...late.map((r) => r.startU)) } : null;
-
-    // Sounding notes: release ones whose source disappeared, follow length changes.
-    const project = this.source.project;
-    for (const n of [...this.notes.values()]) {
-      if (n.offSent) continue;
-      const ev = n.ev;
-      const channel = project.channels[ev.channelId];
-      let end: number | null = null;
-      if (ev.launch) {
-        // A launcher note goes on while its run does (a cut run ends its notes at the cut).
-        const run = this.source.launch?.runs.find((r) => r.id === ev.launch?.runId);
-        const runEnd = run ? (run.endU ?? Infinity) : -1;
-        let keep = !!run && !!channel;
-        if (keep && ev.kind === 'audio') {
-          keep = channel?.kind === 'audioClip' && playbackKey(channel) === n.audioKey && !(tempoChanged && n.follows) && run?.content.kind === 'audio' && run.content.channelId === ev.channelId;
-        } else if (keep && ev.patternId && ev.noteId) {
-          keep = !!project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
-        }
-        if (!keep) this.release(n, safe);
-        else if (n.startTime >= now && ev.start >= runEnd) {
-          // Its run was cut before it began (a stop or replacement on a boundary a moment ago): it never sounds.
-          this.sink.noteOff(ev.channelId, { time: n.startTime, noteId: n.noteId, key: ev.pitch });
-          n.offSent = true;
-        } else {
-          const note =
-            ev.kind === 'note' && ev.patternId && ev.noteId ? project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId] : undefined;
-          n.endU = Math.min(note ? ev.start + note.length : ev.end, runEnd);
-          // Ended already: at its own end when that is still ahead of the clock (a cut a few ms ago), else now.
-          if (n.endU <= uPos) this.release(n, Math.min(safe, Math.max(n.startTime, this.timeAtU(n.endU) ?? safe)));
-        }
-        continue;
-      }
-      if (ev.kind === 'audio') {
-        const clip = project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
-        // An edited clip (moved, trimmed…) restarts from the new model; an untouched one keeps playing,
-        // unless its channel now plays it differently (pitch, reverse, tempo follow, another sample) or
-        // the tempo changed under a clip that follows it.
-        const same =
-          clip?.kind === 'audio' &&
-          clip.channelId === ev.channelId &&
-          clip === n.clip &&
-          channel?.kind === 'audioClip' &&
-          playbackKey(channel) === n.audioKey &&
-          !(tempoChanged && n.follows);
-        if (same) end = clip.start + clip.length;
-      } else if (ev.patternId && ev.noteId) {
-        const note = project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
-        const clipGone =
-          ev.clipId !== 'pattern' && !project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
-        if (note && !clipGone) end = Math.min(ev.start + note.length, ev.clipEnd);
-      }
-      if (end === null || !channel) {
-        this.release(n, safe);
-        continue;
-      }
-      n.endTick = end;
-      if (n.iter === pos.iter && n.endTick <= tick) this.release(n, safe);
-    }
+    this.catchUp = this.runsToCatchUp(source, uPosition);
+    this.reviseSoundingNotes({ now, safe, uPosition, tick, iter: position.iter, tempoChanged });
     this.scanOngoing = true;
-    for (const o of this.observers) o.reanchored?.(safe, timelineChanged);
+    for (const observer of this.observers) observer.reanchored?.(safe, timelineChanged);
     this.pump();
+  }
+
+  /** Notes that start at or after `safe` have not reached the audio thread's clock yet: they are cancelled. */
+  private cancelNotesNotStarted(safe: number): void {
+    for (const scheduled of [...this.notes.values()]) {
+      if (scheduled.startTime < safe) continue;
+      this.sink.noteOff(scheduled.ev.channelId, { time: scheduled.startTime, noteId: scheduled.noteId, key: scheduled.ev.pitch });
+      this.notes.delete(scheduled.noteId);
+    }
+  }
+
+  /** Drops the planned future; keeps the past for the playhead. */
+  private dropPlannedFuture(safe: number, tickAtSafe: Tick): void {
+    this.segs = this.segs.filter((seg) => seg.time0 < safe);
+    const last = this.segs[this.segs.length - 1];
+    if (last && segmentEndTime(last) > safe) this.segs[this.segs.length - 1] = { ...last, tick1: tickAtSafe };
+  }
+
+  /** A new loop region may leave the position outside it: the position wraps into the loop as playback would. */
+  private wrapIntoLoop(tick: Tick, loop: Timeline['loop']): Tick {
+    if (!loop || loop.end <= loop.start || (tick >= loop.start && tick < loop.end)) return tick;
+    const length = loop.end - loop.start;
+    return loop.start + ((((tick - loop.start) % length) + length) % length);
+  }
+
+  /** Runs that start before the new cursor and were never planned (they were launched on a boundary a few ms ago). */
+  private runsToCatchUp(source: EventSource, uPosition: number): { runs: LaunchRun[]; from: number } | null {
+    const late = source.launch?.runs.filter(
+      (run) => run.startU < uPosition - U_EPSILON && !this.launchDone.has(run.id) && run.content.kind === 'pattern',
+    );
+    if (!late || late.length === 0) return null;
+    return { runs: late, from: Math.min(...late.map((run) => run.startU)) };
+  }
+
+  /** Sounding notes after a re-plan: release those whose source disappeared, follow length changes. */
+  private reviseSoundingNotes(at: {
+    now: number;
+    safe: number;
+    uPosition: number;
+    tick: Tick;
+    iter: number;
+    tempoChanged: boolean;
+  }): void {
+    const project = this.source.project;
+    for (const scheduled of [...this.notes.values()]) {
+      if (scheduled.offSent) continue;
+      const ev = scheduled.ev;
+      const channel = project.channels[ev.channelId];
+      if (ev.launch) {
+        this.reviseLauncherNote(scheduled, project, at);
+        continue;
+      }
+      const end = ev.kind === 'audio' ? this.audioClipEnd(scheduled, project, at.tempoChanged) : this.patternNoteEnd(ev, project);
+      if (end === null || !channel) {
+        this.release(scheduled, at.safe);
+        continue;
+      }
+      scheduled.endTick = end;
+      if (scheduled.iter === at.iter && scheduled.endTick <= at.tick) this.release(scheduled, at.safe);
+    }
+  }
+
+  /**
+   * A launcher note goes on while its run does (a cut run ends its notes at the cut): releases it when its run, its
+   * channel or its note is gone, silences one whose run was cut before it began, and follows length changes.
+   */
+  private reviseLauncherNote(
+    scheduled: Scheduled,
+    project: Project,
+    at: { now: number; safe: number; uPosition: number; tempoChanged: boolean },
+  ): void {
+    const ev = scheduled.ev;
+    const channel = project.channels[ev.channelId];
+    const run = this.source.launch?.runs.find((r) => r.id === ev.launch?.runId);
+    const runEnd = run ? (run.endU ?? Infinity) : -1;
+    let keep = !!run && !!channel;
+    if (keep && ev.kind === 'audio') {
+      keep =
+        channel?.kind === 'audioClip' &&
+        playbackKey(channel) === scheduled.audioKey &&
+        !(at.tempoChanged && scheduled.follows) &&
+        run?.content.kind === 'audio' &&
+        run.content.channelId === ev.channelId;
+    } else if (keep && ev.patternId && ev.noteId) {
+      keep = !!project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
+    }
+    if (!keep) {
+      this.release(scheduled, at.safe);
+    } else if (scheduled.startTime >= at.now && ev.start >= runEnd) {
+      // Its run was cut before it began (a stop or replacement on a boundary a moment ago): it never sounds.
+      this.sink.noteOff(ev.channelId, { time: scheduled.startTime, noteId: scheduled.noteId, key: ev.pitch });
+      scheduled.offSent = true;
+    } else {
+      const note =
+        ev.kind === 'note' && ev.patternId && ev.noteId ? project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId] : undefined;
+      scheduled.endU = Math.min(note ? ev.start + note.length : ev.end, runEnd);
+      // Ended already: at its own end when that is still ahead of the clock (a cut a few ms ago), else now.
+      if (scheduled.endU <= at.uPosition) {
+        this.release(scheduled, Math.min(at.safe, Math.max(scheduled.startTime, this.timeAtU(scheduled.endU) ?? at.safe)));
+      }
+    }
+  }
+
+  /**
+   * Where a sounding audio clip note ends after an edit, or null when it must be released. An edited clip (moved,
+   * trimmed…) restarts from the new model; an untouched one keeps playing, unless its channel now plays it differently
+   * (pitch, reverse, tempo follow, another sample) or the tempo changed under a clip that follows it.
+   */
+  private audioClipEnd(scheduled: Scheduled, project: Project, tempoChanged: boolean): Tick | null {
+    const ev = scheduled.ev;
+    const clip = project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
+    const channel = project.channels[ev.channelId];
+    const unchanged =
+      clip?.kind === 'audio' &&
+      clip.channelId === ev.channelId &&
+      clip === scheduled.clip &&
+      channel?.kind === 'audioClip' &&
+      playbackKey(channel) === scheduled.audioKey &&
+      !(tempoChanged && scheduled.follows);
+    return unchanged ? clip.start + clip.length : null;
+  }
+
+  /** Where a sounding pattern note ends after an edit (its note's length, within its clip), or null when it is gone. */
+  private patternNoteEnd(ev: NoteEvent, project: Project): Tick | null {
+    if (!ev.patternId || !ev.noteId) return null;
+    const note = project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
+    const clipGone = ev.clipId !== 'pattern' && !project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
+    return note && !clipGone ? Math.min(ev.start + note.length, ev.clipEnd) : null;
   }
 
   /**
@@ -407,138 +480,178 @@ export class Transport {
     return tickAtTime(this.segs, time)?.iter ?? 0;
   }
 
+  /** Collects, dispatches and releases everything a newly planned segment holds. */
   private process(seg: USegment): void {
     const now = this.clock.currentTime;
-    const events: NoteEvent[] = [];
-    collectNotes(this.source, seg.tick0, seg.tick1, events);
-    const L = this.timeline.loop;
-    const tempo = this.timeline.tempo;
+    const loop = this.timeline.loop;
     // Audio clips also start mid-way after a start/seek/edit, or when the loop wraps into one, unless
     // their sample is still playing from before an edit.
-    const wrapped = !!L && seg.iter > 0 && seg.tick0 === L.start;
+    const wrapped = !!loop && seg.iter > 0 && seg.tick0 === loop.start;
     const scan = this.scanOngoing || wrapped;
-    let sounding: Set<string> | undefined;
-    if (scan) {
-      sounding = new Set();
-      for (const n of this.notes.values())
-        if (n.ev.kind === 'audio' && !n.offSent && n.iter === seg.iter && !n.launch) sounding.add(n.ev.clipId);
-    }
-    collectAudio(this.source, seg.tick0, seg.tick1, events, scan ? seg.tick0 : null, tempo, sounding);
+    const events: NoteEvent[] = [];
+    this.collectSongEvents(seg, scan, events);
     const u1 = seg.u0 + (seg.tick1 - seg.tick0);
     const runs = this.source.launch?.runs;
-    const lauEvents: NoteEvent[] = [];
-    if (runs && runs.length > 0) {
-      // A launcher track takes over its playlist track from where its slot starts.
-      const clipsById = this.source.project?.playlist.clips;
-      if (clipsById) {
-        let kept = 0;
-        for (const ev of events) {
-          const lane = clipsById[ev.clipId as keyof typeof clipsById]?.laneId;
-          if (lane && laneOverridden(runs, lane, seg.u0 + (ev.start - seg.tick0))) continue;
-          events[kept++] = ev;
-        }
-        events.length = kept;
-      }
-      collectLaunchNotes(this.source.project, runs, seg.u0, u1, lauEvents);
-      let launchSounding: Set<string> | undefined;
-      if (scan) {
-        launchSounding = new Set();
-        for (const n of this.notes.values()) if (n.launch && n.ev.kind === 'audio' && !n.offSent) launchSounding.add(n.ev.clipId);
-      }
-      collectLaunchAudio(this.source.project, runs, seg.u0, u1, lauEvents, scan ? seg.u0 : null, launchSounding);
-      for (const r of runs) if (r.startU < u1) this.launchDone.add(r.id);
-    }
+    const launcherEvents: NoteEvent[] = [];
+    if (runs && runs.length > 0) this.collectLauncherEvents(seg, runs, u1, scan, events, launcherEvents);
     // Runs that began a few ms before this segment (never planned): their notes from the start, late but on the boundary.
-    const catchEvents: NoteEvent[] = [];
+    const caughtUpEvents: NoteEvent[] = [];
     if (this.catchUp) {
-      collectLaunchNotes(this.source.project, this.catchUp.runs, this.catchUp.from, seg.u0, catchEvents);
+      collectLaunchNotes(this.source.project, this.catchUp.runs, this.catchUp.from, seg.u0, caughtUpEvents);
       this.catchUp = null;
     }
     this.scanOngoing = false;
-    const clips = this.source.project?.playlist.clips;
-    const dispatch = (ev: NoteEvent, launch: boolean, onPurpose = false) => {
-      const time = launch ? seg.time0 + (ev.start - seg.u0) * seg.spt : timeInSegment(seg, ev.start, tempo);
-      // Late on purpose (the grace rule) is not the scheduler falling behind: it must not raise the lookahead.
-      if (time < now && !onPurpose) this.lateEvents++;
-      const noteId = ++this.noteSeq;
-      const n: Scheduled = {
-        ev,
-        noteId,
-        startTime: time,
-        iter: seg.iter,
-        endTick: ev.end,
-        offSent: false,
-        ...(launch ? { launch: true, endU: ev.end } : { startU: seg.u0 + (ev.start - seg.tick0) }),
-      };
-      let audioClip: AudioClip | null = null;
-      let evTempo = tempo;
-      const evTick = ev.start;
-      if (ev.kind === 'audio' && launch && ev.launch?.clip) {
-        // A pass of a slot's audio: its clip starts on the launcher axis, which runs at the song's tempo along the way
-        // (a constant map unless the tempo changes during the pass: see launch-tempo.ts).
-        audioClip = ev.launch.clip;
-        n.clip = audioClip;
-        // (A pass already going when planned (a re-plan) is followed back to its start: fades and 'off' read from there.)
-        evTempo = launchPassTempo(
-          this.timeline,
-          retreatTick(this.timeline, seg.tick0 + (ev.start - seg.u0), ev.start - audioClip.start),
-          audioClip.start,
-          audioClip.start + audioClip.length,
-        );
-      } else if (!launch && clips) {
-        const clip = clips[ev.clipId as keyof typeof clips];
-        if (clip) {
-          n.laneId = clip.laneId;
-          if (ev.kind === 'audio') n.clip = clip;
-          if (ev.kind === 'audio' && clip.kind === 'audio') audioClip = clip;
-        }
+    for (const event of events) this.dispatch(seg, event, 'song', now);
+    for (const event of caughtUpEvents) this.dispatch(seg, event, 'caughtUp', now);
+    for (const event of launcherEvents) this.dispatch(seg, event, 'launcher', now);
+    this.releaseEnded(seg, runs, u1);
+  }
+
+  /** The notes and audio clip starts of the song (pattern or playlist) inside the segment. */
+  private collectSongEvents(seg: USegment, scan: boolean, events: NoteEvent[]): void {
+    collectNotes(this.source, seg.tick0, seg.tick1, events);
+    let sounding: Set<string> | undefined;
+    if (scan) {
+      sounding = new Set();
+      for (const scheduled of this.notes.values()) {
+        const isSongAudio = scheduled.ev.kind === 'audio' && !scheduled.offSent && scheduled.iter === seg.iter && !scheduled.launch;
+        if (isSongAudio) sounding.add(scheduled.ev.clipId);
       }
-      if (ev.kind === 'audio') {
-        const channel = this.source.project.channels[ev.channelId];
-        if (channel?.kind === 'audioClip') {
-          n.audioKey = playbackKey(channel);
-          n.follows = followsTempo(playbackMode(channel));
-        }
+    }
+    collectAudio(this.source, seg.tick0, seg.tick1, events, scan ? seg.tick0 : null, this.timeline.tempo, sounding);
+  }
+
+  /**
+   * The launcher's notes and audio passes inside the segment (into `launcherEvents`). A launcher track takes over its
+   * playlist track from where its slot starts: the song's events under it are removed from `songEvents`.
+   */
+  private collectLauncherEvents(
+    seg: USegment,
+    runs: readonly LaunchRun[],
+    u1: number,
+    scan: boolean,
+    songEvents: NoteEvent[],
+    launcherEvents: NoteEvent[],
+  ): void {
+    const clipsById = this.source.project?.playlist.clips;
+    if (clipsById) {
+      let kept = 0;
+      for (const event of songEvents) {
+        const lane = clipsById[event.clipId as keyof typeof clipsById]?.laneId;
+        if (lane && laneOverridden(runs, lane, seg.u0 + (event.start - seg.tick0))) continue;
+        songEvents[kept++] = event;
       }
-      this.notes.set(noteId, n);
-      const on: NoteOn = {
-        time,
-        noteId,
-        key: ev.pitch,
-        velocity: ev.velocity,
-        ...(ev.pan !== undefined ? { pan: ev.pan } : {}),
-        ...(ev.fine !== undefined ? { fine: ev.fine } : {}),
-        ...(ev.offsetSec !== undefined ? { offset: ev.offsetSec } : {}),
-      };
-      if (audioClip && this.sink.audioOn) this.sink.audioOn(ev.channelId, { ...on, clip: audioClip, tick: evTick, tempo: evTempo });
-      else this.sink.noteOn(ev.channelId, on);
+      songEvents.length = kept;
+    }
+    collectLaunchNotes(this.source.project, runs, seg.u0, u1, launcherEvents);
+    let launchSounding: Set<string> | undefined;
+    if (scan) {
+      launchSounding = new Set();
+      for (const scheduled of this.notes.values()) {
+        if (scheduled.launch && scheduled.ev.kind === 'audio' && !scheduled.offSent) launchSounding.add(scheduled.ev.clipId);
+      }
+    }
+    collectLaunchAudio(this.source.project, runs, seg.u0, u1, launcherEvents, scan ? seg.u0 : null, launchSounding);
+    for (const run of runs) if (run.startU < u1) this.launchDone.add(run.id);
+  }
+
+  /**
+   * Sends one event to the sink as a note-on (or an audio clip start) and remembers it until it has both started
+   * and been released. 'caughtUp' events are late on purpose (the grace rule): that is not the scheduler falling
+   * behind, so it must not raise the lookahead.
+   */
+  private dispatch(seg: USegment, event: NoteEvent, kind: 'song' | 'launcher' | 'caughtUp', now: number): void {
+    const isLauncher = kind !== 'song';
+    const tempo = this.timeline.tempo;
+    const time = isLauncher ? seg.time0 + (event.start - seg.u0) * seg.spt : timeInSegment(seg, event.start, tempo);
+    if (time < now && kind !== 'caughtUp') this.lateEvents++;
+    const noteId = ++this.noteSeq;
+    const scheduled: Scheduled = {
+      ev: event,
+      noteId,
+      startTime: time,
+      iter: seg.iter,
+      endTick: event.end,
+      offSent: false,
+      ...(isLauncher ? { launch: true, endU: event.end } : { startU: seg.u0 + (event.start - seg.tick0) }),
     };
-    for (const ev of events) dispatch(ev, false);
-    for (const ev of catchEvents) dispatch(ev, true, true);
-    for (const ev of lauEvents) dispatch(ev, true);
-    const atLoopEnd = !!L && seg.tick1 >= L.end - 1e-9;
-    const atSongEnd = !L && seg.tick1 >= this.timeline.endTick - 1e-9;
-    const segEnd = segmentEndTime(seg);
-    for (const n of this.notes.values()) {
-      if (n.offSent) continue;
-      if (n.launch) {
+    let audioClip: AudioClip | null = null;
+    let eventTempo = tempo;
+    const clips = this.source.project?.playlist.clips;
+    if (event.kind === 'audio' && isLauncher && event.launch?.clip) {
+      // A pass of a slot's audio: its clip starts on the launcher axis, which runs at the song's tempo along the way
+      // (a constant map unless the tempo changes during the pass: see launch-tempo.ts).
+      audioClip = event.launch.clip;
+      scheduled.clip = audioClip;
+      // (A pass already going when planned (a re-plan) is followed back to its start: fades and 'off' read from there.)
+      eventTempo = launchPassTempo(
+        this.timeline,
+        retreatTick(this.timeline, seg.tick0 + (event.start - seg.u0), event.start - audioClip.start),
+        audioClip.start,
+        audioClip.start + audioClip.length,
+      );
+    } else if (!isLauncher && clips) {
+      const clip = clips[event.clipId as keyof typeof clips];
+      if (clip) {
+        scheduled.laneId = clip.laneId;
+        if (event.kind === 'audio') scheduled.clip = clip;
+        if (event.kind === 'audio' && clip.kind === 'audio') audioClip = clip;
+      }
+    }
+    if (event.kind === 'audio') {
+      const channel = this.source.project.channels[event.channelId];
+      if (channel?.kind === 'audioClip') {
+        scheduled.audioKey = playbackKey(channel);
+        scheduled.follows = followsTempo(playbackMode(channel));
+      }
+    }
+    this.notes.set(noteId, scheduled);
+    const noteOn: NoteOn = {
+      time,
+      noteId,
+      key: event.pitch,
+      velocity: event.velocity,
+      ...(event.pan !== undefined ? { pan: event.pan } : {}),
+      ...(event.fine !== undefined ? { fine: event.fine } : {}),
+      ...(event.offsetSec !== undefined ? { offset: event.offsetSec } : {}),
+    };
+    if (audioClip && this.sink.audioOn) {
+      this.sink.audioOn(event.channelId, { ...noteOn, clip: audioClip, tick: event.start, tempo: eventTempo });
+    } else {
+      this.sink.noteOn(event.channelId, noteOn);
+    }
+  }
+
+  /** Schedules the release of every note of the song or the launcher that ends inside (or before) the segment. */
+  private releaseEnded(seg: USegment, runs: readonly LaunchRun[] | undefined, u1: number): void {
+    const loop = this.timeline.loop;
+    const tempo = this.timeline.tempo;
+    const atLoopEnd = !!loop && seg.tick1 >= loop.end - END_EPSILON;
+    const atSongEnd = !loop && seg.tick1 >= this.timeline.endTick - END_EPSILON;
+    const segmentEnd = segmentEndTime(seg);
+    for (const scheduled of this.notes.values()) {
+      if (scheduled.offSent) continue;
+      if (scheduled.launch) {
         // Launcher notes end at their position on the launcher axis (a loop wrap does not end them).
-        const endU = n.endU as number;
-        if (endU < u1) this.release(n, Math.max(n.startTime, seg.time0 + (endU - seg.u0) * seg.spt));
+        const endU = scheduled.endU as number;
+        if (endU < u1) this.release(scheduled, Math.max(scheduled.startTime, seg.time0 + (endU - seg.u0) * seg.spt));
         continue;
       }
       // A launcher track taking over the note's playlist track cuts it where its slot starts.
-      if (runs && runs.length > 0 && n.laneId && n.startU !== undefined) {
-        const cutU = overrideStartAfter(runs, n.laneId, n.startU);
+      if (runs && runs.length > 0 && scheduled.laneId && scheduled.startU !== undefined) {
+        const cutU = overrideStartAfter(runs, scheduled.laneId, scheduled.startU);
         if (cutU !== null && cutU < u1) {
-          this.release(n, Math.max(n.startTime, seg.time0 + (cutU - seg.u0) * seg.spt));
+          this.release(scheduled, Math.max(scheduled.startTime, seg.time0 + (cutU - seg.u0) * seg.spt));
           continue;
         }
       }
-      if (n.iter < seg.iter) this.release(n, seg.time0);
-      else if (n.iter === seg.iter && n.endTick < seg.tick1) {
-        this.release(n, Math.max(n.startTime, timeInSegment(seg, n.endTick, tempo)));
-      } else if (n.iter === seg.iter && (atLoopEnd || atSongEnd)) this.release(n, segEnd);
+      if (scheduled.iter < seg.iter) {
+        this.release(scheduled, seg.time0);
+      } else if (scheduled.iter === seg.iter && scheduled.endTick < seg.tick1) {
+        this.release(scheduled, Math.max(scheduled.startTime, timeInSegment(seg, scheduled.endTick, tempo)));
+      } else if (scheduled.iter === seg.iter && (atLoopEnd || atSongEnd)) {
+        this.release(scheduled, segmentEnd);
+      }
     }
   }
 
@@ -555,7 +668,7 @@ export class Transport {
   private release(n: Scheduled, time: number): void {
     n.offSent = true;
     // A release at the start time would cancel the note; nudge it just past the start.
-    const t = time <= n.startTime ? n.startTime + 1e-4 : time;
+    const t = time <= n.startTime ? n.startTime + RELEASE_NUDGE_SEC : time;
     this.sink.noteOff(n.ev.channelId, {
       time: t,
       noteId: n.noteId,
@@ -581,12 +694,12 @@ export class Transport {
 
   private trim(): void {
     const now = this.clock.currentTime;
-    if (this.launchDone.size > 256) {
+    if (this.launchDone.size > MAX_REMEMBERED_RUNS) {
       const live = new Set((this.source.launch?.runs ?? []).map((r) => r.id));
       for (const id of this.launchDone) if (!live.has(id)) this.launchDone.delete(id);
     }
     for (const [id, n] of this.notes) if (n.offSent && n.startTime < now) this.notes.delete(id);
-    const keepAfter = now - 2;
+    const keepAfter = now - KEEP_SEGMENTS_SEC;
     let i = 0;
     while (i < this.segs.length - 1 && segmentEndTime(this.segs[i] as Segment) < keepAfter) i++;
     if (i > 0) this.segs.splice(0, i);

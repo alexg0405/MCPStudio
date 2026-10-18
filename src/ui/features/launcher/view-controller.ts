@@ -12,7 +12,9 @@ interface Cell {
   el: HTMLElement;
   trackId: LaunchTrackId | null;
   sceneId: SceneId | null;
+  /** What was written last: the state, and for a playing slot its position. */
   last: string;
+  state: string;
 }
 
 export class LauncherView {
@@ -45,6 +47,7 @@ export class LauncherView {
       trackId: (el.dataset.trackId as LaunchTrackId | undefined) ?? null,
       sceneId: (el.dataset.sceneId as SceneId | undefined) ?? null,
       last: '',
+      state: '',
     }));
     this.scenes = q('[data-scene-btn]').map((el) => ({ el, sceneId: el.dataset.sceneBtn as SceneId, last: '' }));
     this.stops = q('[data-stop-btn]').map((el) => ({ el, trackId: el.dataset.stopBtn as LaunchTrackId, last: '' }));
@@ -79,7 +82,11 @@ export class LauncherView {
       const key = state === 'playing' ? `${state}|${p.toFixed(3)}` : state;
       if (key === c.last) continue;
       c.last = key;
-      c.el.dataset.state = state;
+      // Only a change of state is a write to the DOM's attributes; a playing slot's position is a style property.
+      if (state !== c.state) {
+        c.state = state;
+        c.el.dataset.state = state;
+      }
       if (state === 'playing') c.el.style.setProperty('--p', p.toFixed(3));
       else c.el.style.removeProperty('--p');
     }

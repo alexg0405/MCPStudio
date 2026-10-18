@@ -64,7 +64,17 @@ export function LauncherWindow() {
   };
 
   return (
-    <div ref={rootRef} className={styles.root} tabIndex={0} onKeyUp={onKeyUp} data-tour="launcher" data-window-focus="launcher">
+    <div
+      ref={rootRef}
+      className={styles.root}
+      tabIndex={0}
+      role="group"
+      aria-label="Clip launcher"
+      onKeyUp={onKeyUp}
+      data-tour="launcher"
+      data-window-focus="launcher"
+      data-hint="Clip launcher: arrow keys move the highlight, Enter launches the highlighted slot, number keys launch scenes, the period key stops its track"
+    >
       <div className={styles.bar}>
         <span className={styles.label}>Launch on</span>
         <select
@@ -305,8 +315,10 @@ const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, cursor 
       <span className={styles.ring} aria-hidden="true">
         {slot ? <Icon name="play" size={11} /> : <Icon name="plus" size={11} />}
       </span>
-      <span className={styles.name}>{slot ? label : ''}</span>
-      {meta && <span className={styles.meta}>{meta}</span>}
+      <span className={styles.text}>
+        <span className={styles.name}>{slot ? label : ''}</span>
+        {meta && <span className={styles.meta}>{meta}</span>}
+      </span>
       {slot && trackId && sceneId && (
         <span
           className={styles.grip}

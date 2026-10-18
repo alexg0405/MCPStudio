@@ -13,7 +13,7 @@ This is the design reference. `CLAUDE.md` has the short rules; this file explain
 - An **AI studio** that can drive every feature (it acts through the same ops and commands as the UI), listens to the
   mix, and can write new plugins.
 - The UI explains itself: hints and tooltips on everything, a "?" on every window, the action search, lessons.
-- Still open: a desktop wrapper, a clip launcher.
+- Still open: a desktop wrapper.
 
 ## Layers
 
@@ -3452,3 +3452,68 @@ Tuned on synthetic songs; real recordings with long tails or fades make the last
 exact only when the song's key is known (setting or clear notes). Audio-clip channels are not transposed. Loudness is bounded by the
 mix's peaks: a mix with high peaks cannot be made as loud as a mastered song by the Limiter alone. The tonal bands are coarse
 (eight) and measured over the mid signal.
+
+## Clip launcher (Performance mode)
+
+An FL-style Performance mode / Ableton-style session view: a grid of slots (tracks across, scenes down) that point at
+patterns and audio clip channels and are launched live, in time with the transport. Files: `core/launcher/*`,
+`core/ops/launcher.ts`, `engine/sched/launch.ts` (+ `transport.ts`, `engine.ts`), `app/launcher/*`, `app/ai/ops/launcher.ts`,
+`ui/features/launcher`, pad presets in `core/midi-map/presets/pads.ts`.
+
+- **Document** (`Project.launcher`, optional, no schema bump; `repairProject` validates it and drops slots whose pattern or
+  channel is gone): `quantize` (grid default: none, beat, bar, 2 bars, 4 bars), `tracks`/`trackOrder`, `scenes`/`sceneOrder`.
+  A track has a name, colour, optional `laneId` (the playlist track it takes over while it plays) and `slots` by scene id.
+  A slot has `content` (a pattern id, or an audio clip channel + trim + length in ticks + gain/fades: the sample is never
+  copied), name, colour, `mode` (trigger default, toggle, gate, retrigger), `loop` (default on), own `quantize`, and `follow`
+  (next / random / stop after 1–64 bars). Edits are `core/ops/launcher.ts` mutators, so they are ordinary History steps; deleting
+  a pattern, channel or playlist track prunes the grid in the same step (undo restores both).
+- **Live state is not the document.** `LaunchRun`s (`core/launcher/run.ts`) are session state, never saved, never undoable, like the DJ
+  decks. `app/launcher/session.ts` (`services.launcher`, created in `createServices`) owns the pure `LaunchSequencer`
+  (`core/launcher/sequencer.ts`) and hands it to the engine (`EngineApi.setLauncher`).
+- **The launcher axis `u`.** A continuous tick count that advances with the transport and never wraps: a looping song or pattern jumps
+  its own tick back, `u` keeps counting, so a launched loop carries on across the song's loop wrap. A song played from tick `t0`
+  starts at `u = t0` (so the quantize grid is the song's bar grid); a seek keeps `u` counting, lined up to the new position's bars;
+  the launcher on its own starts at 0. `Transport` stamps every planned segment with `u0` (`USegment`) and converts exactly like song
+  ticks (`time = seg.time0 + (u − u0) · spt`), so launches are as sample-accurate as the song: events for a segment come from
+  `engine/sched/launch.ts` (`collectLaunchNotes` reuses `collectNotes` on virtual clips; `collectLaunchAudio` makes one clip per pass).
+- **Quantized starts and stops.** `LaunchSequencer.boundary` = the first multiple of the quantize at or after the heard position and no
+  earlier than `earliestU` (the scheduler frontier plus the time the first notes need to reach the audio thread, `Engine.launcherClock`).
+  One run per track: launching replaces a queued run and cuts the playing one at the boundary; a scene launches its row together at the
+  coarsest quantize among its slots; stop-track/stop-all cut at the boundary (or now). Modes: trigger (a press while it plays does nothing;
+  a press cancels a pending stop), toggle (second press stops it), gate (release stops it), retrigger (every press restarts). Follow actions are
+  scheduled a bar ahead on each scheduler tick (`advance`), so a press in between wins. A change to the runs re-plans through the
+  existing `Transport.setModel` (not-yet-started notes are cancelled and collected again; sounding launcher notes follow their run's new end).
+- **On its own or over the song.** With the transport stopped, the first launch starts it for the launcher alone (`Engine.soloLauncher`:
+  no playlist, constant tempo, runs from `u = 0`); it stops with the last run. While the song plays, launched slots play over it; a launcher
+  track with a `laneId` silences that playlist track's notes and audio from the run's start tick (a note sounding then is released there) and
+  gives it back when the run ends. Play while the launcher runs alone hands over to the song (the runs go on). Stopping ends every run;
+  an engine reboot while playing ends them too (they do not carry to the new AudioContext). Launched audio uses the clip player with a
+  synthesized clip per pass; its sample is decoded ahead (`ChannelStrip.warm`). Limits: audio follows the project tempo through the clip
+  player's modes, but a 'stretch' channel plays like 'resample' in the launcher (the stretched copies are the playlist's), and tempo
+  automation is not followed by launched audio.
+- **Record performance.** `startRecording` keeps the runs from the next bar (from `u = 0` when nothing plays), `stopRecording` ends at the
+  next bar, and when the music reaches it `onTake` gives the session what played; `core/launcher/perform.ts` writes it as one History step
+  ("Record performance to playlist"): pattern runs become pattern clips (a loop is one clip with the pattern repeating, a run that was playing
+  at the start keeps its place through `offset`), audio runs become one clip per pass, on the launcher track's playlist track when it is free
+  there, else on a new "Jam · track" lane, at `u` as song ticks.
+- **UI** (`ui/features/launcher`): the Clip launcher window (View menu, `Alt+L`, action search, the playlist clip menu's "Send to clip
+  launcher"). Slots are painted off the React path: `LauncherView` (a frame-loop callback) writes `data-state` (empty/idle/queued/playing/
+  stopping) and `--p` (a CSS ring) only when they change and does nothing while nothing runs, so idle launcher playback causes no React commits
+  (`test/browser/launcher-ui.test.ts` counts them). Press launches on pointer down (gate: release stops); drag a pattern from the Browser onto a
+  slot, the grip moves/copies slots; right-click for mode, loop, quantize, follow, name, colour, MIDI learn; keys: arrows, Enter, number keys
+  (scenes), Period (stop track), Delete. The empty window says what to do next.
+- **Controllers.** Launcher pads, scene buttons and stop buttons are targets of the DJ controller layer (`launch.slot:T:S`, `launch.scene:S`,
+  `launch.stop:T`, `launch.stopAll`, 1–8; `core/midi-map/targets.ts`), so MIDI learn, import/export and the Controllers window's "Clip launcher"
+  section work; the window's slots carry `data-dj-target`, so learn mode picks them by click. `DjControllers` routes launcher events to
+  `LauncherControl` without needing the decks and drives pad lights (`app/launcher/leds.ts`): each linked pad shows empty / loaded / queued /
+  playing from `ControllerMapping.pads` (a palette of note velocities), compared every 80 ms and on every press. Presets
+  (`presets/pads.ts`): Launchpad original/S/Mini (note = 16·row + column, scene buttons in column 8), Launchpad MK2/MK3/X in note layout (11–88,
+  scene buttons 89 … 19), and a generic 8×8 grid (notes 36–99), from Novation's programmer's references.
+- **AI and MCP.** `launcher_slot` (pattern/audio/clip into a slot, name, colour, mode, loop, quantize, follow, clear), `launcher_layout` (default
+  quantize, grid size, scene and track names, track ↔ playlist track links), `launcher_play` (launch, launch_scene, stop_track, stop_all, stop_now,
+  record, stop_recording: live, runs after the edits in `applyAnswer`, so chat and MCP share it); `get_launcher` read (also an MCP tool);
+  `<launcher>` in the project context; `launcher` in `OPEN_WINDOWS`; commands `launcher.*` with `argsHint`.
+- **Tests.** `core/launcher/*.test.ts` (sequencer, ops, repair, record to playlist), `engine/sched/launch.test.ts` (exact times through the transport
+  with a fake clock), `test/browser/launcher.test.ts` (offline renders through the real engine: boundary error 0–3 frames at 97–174 BPM, replace,
+  scene, stop, follow, audio, over a song), `test/browser/launcher-ui.test.ts`, `app/launcher/launcher-controllers.test.ts`, `app/ai/ops/launcher.test.ts`.
+

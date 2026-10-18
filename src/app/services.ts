@@ -3,6 +3,8 @@ import { Keymap, type Platform } from '@core/commands/keymap';
 import type { History } from '@core/history/history';
 import type { ClipId, PluginOwner, Project } from '@core/model/types';
 import { setPluginState } from '@core/ops/channels';
+import { heardProject } from '@core/query/hear';
+import { isTakeClip } from '@core/query/takes';
 import type { JsonValue } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions } from '@engine/api';
 import { Engine } from '@engine/engine';
@@ -366,8 +368,30 @@ function connectAudioRecording(s: Services): void {
 function connectEngine(s: Services): void {
   const { engine, history, view, doc } = s;
   const project = doc.getState().project;
-  engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
-  history.onChange((change) => engine.applyDocChange(change));
+  // Listening differently without touching the document: one take on its own (comping), or a clip's original recording
+  // instead of its pitch-corrected render (the Pitch editor's A/B). Both are session state in the editor store; the
+  // engine plays a copy of the project (`heardProject`) and every change of the document passes through the same filter.
+  const listening = () => {
+    const e = s.editor.getState();
+    return { audition: e.auditionTake, original: e.pitchOriginal };
+  };
+  const altered = () => {
+    const l = listening();
+    return l.audition !== null || l.original.length > 0;
+  };
+  engine.applyDocChange({ next: heardProject(project, listening()), prev: project, patches: null, origin: 'load' });
+  history.onChange((change) => engine.applyDocChange(altered() ? { ...change, next: heardProject(change.next, listening()) } : change));
+  s.editor.subscribe((next, prev) => {
+    if (next.auditionTake === prev.auditionTake && next.pitchOriginal === prev.pitchOriginal) return;
+    const now = doc.getState().project;
+    engine.applyDocChange({ next: heardProject(now, listening()), prev: now, patches: null, origin: 'edit' });
+  });
+  // The listened-to take or clip is gone (deleted, undone away, another project): back to the normal sound.
+  history.onChange(({ next }) => {
+    const e = s.editor.getState();
+    if (e.auditionTake && !isTakeClip(next, e.auditionTake)) e.setAuditionTake(null);
+    for (const id of e.pitchOriginal) if (next.playlist.clips[id]?.kind !== 'audio') e.setPitchOriginal(id, false);
+  });
 
   const pushView = () => {
     const v = view.getState();

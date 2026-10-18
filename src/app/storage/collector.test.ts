@@ -144,6 +144,17 @@ describe('collectGarbage: what counts as in use', () => {
     expect(w.kv.data.has(`dj-analysis:v3:${A}`)).toBe(true);
   });
 
+  it('a cached pitch analysis is not a use of the audio either, and goes with a removed blob', async () => {
+    const w = world({ blobs: [old(A), old(B), old(C)] });
+    w.kv.data.set('dj-library', [{ key: A, title: 't', label: 'l', ref: sampleRef(A) }]);
+    w.kv.data.set(`pitch-analysis:v2:48000:0.00:3.00:${B}`, { version: 2, at: 1, analysis: {} });
+    w.kv.data.set(`pitch-analysis:v2:48000:0.00:3.00:${A}`, { version: 2, at: 1, analysis: {} });
+    await collectGarbage(w.deps);
+    expect(w.deleted.sort()).toEqual([B, C]);
+    expect(w.kv.data.has(`pitch-analysis:v2:48000:0.00:3.00:${B}`)).toBe(false);
+    expect(w.kv.data.has(`pitch-analysis:v2:48000:0.00:3.00:${A}`)).toBe(true);
+  });
+
   it('keeps audio mentioned by any other stored value (presets, recent files…)', async () => {
     const w = world({ blobs: [old(A), old(B)] });
     w.kv.data.set('user-presets:v1', [{ name: 'p', state: { sample: sampleRef(A) } }]);

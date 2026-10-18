@@ -11,6 +11,8 @@ import {
   setTakesOpen,
   stepTakeFor,
   chooseTake,
+  listenToTake,
+  takeClipFor,
   type CompTarget,
 } from '@app/actions/comp';
 import type { Services } from '@app/services';
@@ -22,7 +24,7 @@ import { showFormDialog } from '../../controls/FormDialog';
 import { addContextMenuItems } from '../../context-menus';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 
-type Args = { clip?: string; group?: string; take?: number; from_bar?: number; to_bar?: number; merge?: boolean; ms?: number; open?: boolean };
+type Args = { clip?: string; group?: string; take?: number; from_bar?: number; to_bar?: number; merge?: boolean; ms?: number; open?: boolean; on?: boolean };
 
 const GROUP_ARGS =
   'optional { clip: id of a take or comp clip, or group: take group id } (default: the selected clip, the clip under the pointer, or the song’s only take group)';
@@ -63,7 +65,14 @@ export function takeClipMenu(s: Services, clip: Clip): MenuEntry[] {
   if (!t) return [];
   const isTake = !clip.take.comp;
   const open = s.editor.getState().openTakes.includes(t.group.id);
+  const heard = s.editor.getState().auditionTake === clip.id;
   return [
+    {
+      label: heard ? 'Stop listening to this take' : isTake ? 'Listen to this take' : 'Listen to the take this plays',
+      shortcut: 'Alt+L',
+      hint: 'Hear this one take on its own, without unmuting it (the comp and the other takes go quiet); the project is not changed. Choose it again to go back to the comp',
+      onSelect: () => void s.commands.run('comp.listenTake', { clip: clip.id }),
+    },
     ...(isTake
       ? [
           {
@@ -175,6 +184,40 @@ export function register(services: Services): void {
     keymap.add([{ chord, command: id, when: { focus: ['playlist'] } }]);
   }
   commands.register<Args>({
+    id: 'comp.listenTake',
+    title: 'Listen to this take (solo)',
+    category: 'Takes',
+    hint: 'Hear one take on its own: the comp and the other takes go quiet, nothing is unmuted or changed in the project. Run it again to go back to the comp. The speaker on a take track does the same: hold it to listen only while pressed',
+    argsHint: `${GROUP_ARGS}; take: 1-based take number to hear (default: the selected take clip's); on: false goes back to the comp`,
+    enabled: (s) => hasGroup(s) || s.editor.getState().auditionTake !== null,
+    run: (s, args) => {
+      const ed = s.editor.getState();
+      const stop = () => {
+        listenToTake(s, null, false);
+        s.session.getState().setHint('Back to the comp');
+      };
+      if (args?.on === false) return stop();
+      const t = compTarget(s, args);
+      if (!t) {
+        if (ed.auditionTake) return stop();
+        s.session.getState().toast('Select a take (a clip on one of the take tracks) first.');
+        return;
+      }
+      const index = takeIndexOf(s, t, args);
+      if (index === null) return;
+      const project = s.doc.getState().project;
+      const given = typeof args?.clip === 'string' ? project.playlist.clips[args.clip as never] : undefined;
+      // The clip named (or selected) when it is a take clip, else the take's clip under the target's span.
+      const clip = given?.kind === 'audio' && given.take && !given.take.comp && typeof args?.take !== 'number' ? given.id : takeClipFor(t.group, index, t.span);
+      const now = listenToTake(s, clip, args?.on);
+      if (now) {
+        const n = t.group.takes.findIndex((x) => x.index === index) + 1;
+        s.session.getState().setHint(`Listening to take ${n} on its own: the comp and the other takes are quiet. Alt+L again (or the speaker on the track) goes back`);
+      } else s.session.getState().setHint('Back to the comp');
+    },
+  });
+  keymap.add([{ chord: 'Alt+L', command: 'comp.listenTake', when: { focus: ['playlist'] } }]);
+  commands.register<Args>({
     id: 'comp.flatten',
     title: 'Flatten comp',
     category: 'Takes',
@@ -225,6 +268,7 @@ export function register(services: Services): void {
     cmd('comp.useTake', 60),
     cmd('comp.nextTake', 61),
     cmd('comp.previousTake', 62),
+    cmd('comp.listenTake', 66),
     cmd('comp.toggleTakes', 63),
     cmd('comp.crossfade', 64),
     cmd('comp.flatten', 65),

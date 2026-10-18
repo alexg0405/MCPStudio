@@ -2,7 +2,10 @@ import type { Draft } from 'immer';
 import { playbackMode, sourceSecondsAt } from '../audio/playback';
 import { newId } from '../model/ids';
 import { pruneLauncher } from './launcher';
+import { makeLane } from '../model/defaults';
+import { freeLaneRun } from '../query/lanes';
 import type { TempoMap } from '../time/ppq';
+import { refreshComps, snapshotComps } from './comp';
 import type {
   ChannelId,
   Clip,
@@ -119,11 +122,36 @@ export function toggleSoloLane(d: Draft<Project>, id: LaneId): void {
 
 // ---- Clips ----
 
-export function addClips(d: Draft<Project>, clips: readonly Clip[]): void {
+/** True when the lane is a comp or take track of a recording (it holds only that recording's clips). */
+export function isTakeLane(d: Pick<Draft<Project>, 'playlist'>, id: LaneId): boolean {
+  return !!d.playlist.lanes[id]?.takes;
+}
+
+/**
+ * The first ordinary track with room for [start, end), skipping comp and take tracks; a new track at the bottom
+ * when none has. Mutates `d` only to add that track.
+ */
+export function ordinaryLaneFor(d: Draft<Project>, start: Tick, end: Tick): LaneId {
+  const i = freeLaneRun(d as unknown as Project, start, end, 1, 0);
+  const existing = d.playlist.laneOrder[i];
+  if (existing) return existing;
+  const lane = makeLane(`Track ${d.playlist.laneOrder.length + 1}`);
+  addLane(d, lane);
+  return lane.id;
+}
+
+/**
+ * Adds clips. A copy or a new clip is not part of a recording's take group, and a clip meant for a comp or take
+ * track (a paste, a file drop, a pattern placed there) goes to the first ordinary track with room instead:
+ * those tracks hold only their recording. `toTakeLanes` is for the code that builds a recording's own lanes.
+ */
+export function addClips(d: Draft<Project>, clips: readonly Clip[], opts: { toTakeLanes?: boolean } = {}): void {
   for (const c of clips) {
-    const clip = sanitizeClip(c);
+    let clip = sanitizeClip(c);
     // A copy or a new clip is not part of a recording's take group (only core/ops/comp.ts makes those).
     if (clip.kind === 'audio' && clip.take) delete (clip as { take?: unknown }).take;
+    if (!opts.toTakeLanes && isTakeLane(d, clip.laneId))
+      clip = { ...clip, laneId: ordinaryLaneFor(d, clip.start, clip.start + clip.length) };
     d.playlist.clips[c.id] = clip as Draft<Clip>;
   }
 }
@@ -144,17 +172,28 @@ export interface ClipEdit {
   muted?: boolean;
 }
 
-export function editClips(d: Draft<Project>, edits: readonly ClipEdit[]): void {
+/**
+ * Edits clips (move, resize, mute). With `tempo`, moving or resizing a take clip of a recording also rebuilds its
+ * comp (what the comp plays of the take follows it, hand-made gains and fades kept), so the take and the comp stay
+ * consistent and one undo step undoes both. A take clip stays on its own track, and no other clip can be put on a
+ * comp or take track.
+ */
+export function editClips(d: Draft<Project>, edits: readonly ClipEdit[], opts: { tempo?: TempoMap } = {}): void {
+  const snaps = opts.tempo ? snapshotComps(d, edits.map((e) => e.id), opts.tempo) : [];
   for (const e of edits) {
     const c = d.playlist.clips[e.id];
     if (!c) continue;
     if (e.start !== undefined) c.start = Math.max(0, Math.round(e.start));
     if (e.length !== undefined) c.length = Math.max(1, Math.round(e.length));
-    if (e.laneId !== undefined && d.playlist.lanes[e.laneId]) c.laneId = e.laneId;
+    if (e.laneId !== undefined && d.playlist.lanes[e.laneId]) {
+      // A clip of a recording stays on its track; others do not move onto one.
+      if (!(c.kind === 'audio' && c.take) && !isTakeLane(d, e.laneId)) c.laneId = e.laneId;
+    }
     if (e.muted !== undefined) c.muted = e.muted;
     if (e.offset !== undefined && c.kind !== 'audio') c.offset = Math.max(0, Math.round(e.offset));
     if (e.offsetSec !== undefined && c.kind === 'audio') c.offsetSec = Math.max(0, e.offsetSec);
   }
+  if (opts.tempo && snaps.length) refreshComps(d, snaps, opts.tempo);
 }
 
 /**

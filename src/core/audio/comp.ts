@@ -283,3 +283,119 @@ export function readComp(clips: ReadonlyArray<{ start: Tick; length: Tick; take:
   }
   return normalizeSegments(segments);
 }
+
+/**
+ * A hand-made change to a comp clip (its gain or a fade), kept when the comp is rebuilt. Found by comparing
+ * a comp lane's clips with what the plan makes of the same segments: only what differs is an edit. `start` and
+ * `end` are the clip's extent in song ticks; a fade is carried only to a clip that starts (or ends) at the
+ * same tick, a gain to any clip of the same take that overlaps it.
+ */
+export interface CompEdit {
+  take: number;
+  start: Tick;
+  end: Tick;
+  gain?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
+/** What a comp clip looks like to the edit finder. */
+export interface CompClipLike {
+  take: number;
+  start: Tick;
+  length: Tick;
+  gain?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
+const EPS = 1e-6;
+
+function bestOverlap<T extends { take: number; start: Tick }>(
+  list: readonly T[],
+  endOf: (x: T) => Tick,
+  take: number,
+  start: Tick,
+  stop: Tick,
+): T | null {
+  let best: T | null = null;
+  let most = 0;
+  for (const x of list) {
+    if (x.take !== take) continue;
+    const o = Math.min(stop, endOf(x)) - Math.max(start, x.start);
+    if (o > most) {
+      most = o;
+      best = x;
+    }
+  }
+  return best;
+}
+
+/** The hand-made gains and fades of `clips`, measured against `baseline` (the plan of the same segments). */
+export function findCompEdits(clips: readonly CompClipLike[], baseline: readonly CompClipPlan[]): CompEdit[] {
+  const out: CompEdit[] = [];
+  for (const c of clips) {
+    const b = bestOverlap(baseline, (x) => x.start + x.length, c.take, c.start, c.start + c.length);
+    if (!b) continue;
+    const e: CompEdit = { take: c.take, start: c.start, end: c.start + c.length };
+    if (Math.abs((c.gain ?? 1) - (b.gain ?? 1)) > EPS) e.gain = c.gain ?? 1;
+    if (c.start === b.start && Math.abs((c.fadeIn ?? 0) - (b.fadeIn ?? 0)) > EPS) e.fadeIn = c.fadeIn ?? 0;
+    if (c.start + c.length === b.start + b.length && Math.abs((c.fadeOut ?? 0) - (b.fadeOut ?? 0)) > EPS) e.fadeOut = c.fadeOut ?? 0;
+    if (e.gain !== undefined || e.fadeIn !== undefined || e.fadeOut !== undefined) out.push(e);
+  }
+  return out;
+}
+
+/** The plan with the hand-made edits laid over it (by position, see `CompEdit`). */
+export function applyCompEdits(plan: readonly CompClipPlan[], edits: readonly CompEdit[]): CompClipPlan[] {
+  if (edits.length === 0) return plan.map((p) => ({ ...p }));
+  return plan.map((p) => {
+    const out = { ...p };
+    const e = bestOverlap(edits, (x) => x.end, p.take, p.start, p.start + p.length);
+    if (!e) return out;
+    if (e.gain !== undefined) {
+      if (Math.abs(e.gain - 1) > EPS) out.gain = e.gain;
+      else delete out.gain;
+    }
+    // A fade belongs to a border: it is kept only where the clip still begins (or ends) at the same tick.
+    const set = (key: 'fadeIn' | 'fadeOut', v: number | undefined, same: boolean) => {
+      if (v === undefined || !same) return;
+      if (v > 0) out[key] = v;
+      else delete out[key];
+    };
+    set('fadeIn', e.fadeIn, p.start === e.start);
+    set('fadeOut', e.fadeOut, p.start + p.length === e.end);
+    return out;
+  });
+}
+
+/**
+ * Moves the part of the comp that plays `take` between `from` and `to` by `shift` ticks (a take clip that was
+ * moved: what the comp plays of it goes with it). Segments and edits are cut at the clip's old edges.
+ */
+export function shiftTakePart(
+  segments: readonly CompSegment[],
+  edits: readonly CompEdit[],
+  take: number,
+  from: Tick,
+  to: Tick,
+  shift: Tick,
+): { segments: CompSegment[]; edits: CompEdit[] } {
+  const out: CompSegment[] = [];
+  for (const s of segments) {
+    if (s.take !== take || s.to <= from || s.from >= to || shift === 0) {
+      out.push({ ...s });
+      continue;
+    }
+    const a = Math.max(s.from, from);
+    const b = Math.min(s.to, to);
+    if (s.from < a) out.push({ ...s, to: a });
+    out.push({ take, from: a + shift, to: b + shift });
+    if (s.to > b) out.push({ ...s, from: b });
+  }
+  const moved = edits.map((e) => {
+    if (e.take !== take || shift === 0 || (e.start + e.end) / 2 < from || (e.start + e.end) / 2 >= to) return { ...e };
+    return { ...e, start: e.start + shift, end: e.end + shift };
+  });
+  return { segments: out, edits: moved };
+}

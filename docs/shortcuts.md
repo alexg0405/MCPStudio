@@ -10,7 +10,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Add marker at the song position | `⌥T` / `Alt+T` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
-| Clip launcher | `⌥L` / `Alt+L` |
+| Clip launcher | `⌥⇧L` / `Alt+Shift+L` |
 | DJ decks | `⌥D` / `Alt+D` |
 | DJ mix | `⌥J` / `Alt+J` |
 | Export audio… | `⌘R` / `Ctrl+R` |
@@ -120,6 +120,12 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Transpose (1) | `↑` |
 | Transpose (12) | `⇧↑` / `Shift+↑` |
 
+## When the pitch-editor window is focused
+
+| Action | Keys |
+|---|---|
+| Pitch editor: hear the original or the corrected sound (A/B) | `B` |
+
 ## When the playlist window is focused
 
 | Action | Keys |
@@ -130,6 +136,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Delete clips | `Del`, `⌫` |
 | Deselect clips | `Esc` |
 | Duplicate clips | `⌘B` / `Ctrl+B`, `⌘D` / `Ctrl+D` |
+| Listen to this take (solo) | `⌥L` / `Alt+L` |
 | Next take | `]` |
 | Paste clips | `⌘V` / `Ctrl+V` |
 | Playlist comp tool | `T` |

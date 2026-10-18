@@ -4,11 +4,14 @@ import { audioClipProject, TestSamples } from '../../../test/helpers/audio';
 import { editSignature } from '@core/audio/pitch-edit';
 import { collectHashes } from '@core/gc/refs';
 import type { AudioClip, ClipId, Project } from '@core/model/types';
+import { createPitchAnalysisStore, setPitchAnalysisStore, type PitchAnalysisStore } from '../pitch/analysis-store';
+import { memoryKv } from '../storage/kv';
 import { pitchState } from '../pitch/state';
 import { createTestServices } from '../testing';
 import {
   analyzeClip,
   clearClipPitch,
+  clearPitchAnalysisMemory,
   commitEdit,
   currentEdit,
   editFor,
@@ -66,6 +69,49 @@ describe('pitch editing actions', () => {
     expect(a.range.from).toBeLessThanOrEqual(0.05);
     const b = await analyzeClip(s, clipId);
     expect(b.analysis).toBe(a.analysis);
+  });
+
+  it('keeps the analysis between sessions: a stored one is used for the same sample, range and version', async () => {
+    const kv = memoryKv();
+    const store = createPitchAnalysisStore(kv);
+    setPitchAnalysisStore(store);
+    try {
+      const { s, clipId } = await setup();
+      clearPitchAnalysisMemory();
+      const a = await analyzeClip(s, clipId);
+      // Written in the background, after the answer.
+      await until(() => kv.data.size === 1);
+      const [key] = [...kv.data.keys()];
+      expect(key).toMatch(/^pitch-analysis:v\d+:48000:0\.\d\d:\d\.\d\d:[0-9a-f]{64}$/);
+      // A new session (memory forgotten) reads it back instead of listening again: prove it by what the store holds.
+      const marked = { ...a.analysis, notes: a.analysis.notes.map((n) => ({ ...n, pitch: n.pitch + 5 })) };
+      await store.set(key as string, marked);
+      clearPitchAnalysisMemory();
+      const b = await analyzeClip(s, clipId);
+      expect(b.analysis.notes[0]!.pitch).toBeCloseTo(a.analysis.notes[0]!.pitch + 5, 6);
+      // A different version's key is a different entry: nothing is read for it.
+      expect(await store.get((key as string).replace(/:v\d+:/, ':v0:'))).toBeNull();
+    } finally {
+      setPitchAnalysisStore(null);
+      clearPitchAnalysisMemory();
+    }
+  });
+
+  it('a damaged or failing store is only a missed shortcut', async () => {
+    const broken: PitchAnalysisStore = {
+      get: () => Promise.reject(new Error('disk')),
+      set: () => Promise.reject(new Error('disk')),
+    };
+    setPitchAnalysisStore(broken);
+    try {
+      const { s, clipId } = await setup();
+      clearPitchAnalysisMemory();
+      const a = await analyzeClip(s, clipId);
+      expect(a.analysis.notes.length).toBe(2);
+    } finally {
+      setPitchAnalysisStore(null);
+      clearPitchAnalysisMemory();
+    }
   });
 
   it('refuses reversed audio with a plain message', async () => {

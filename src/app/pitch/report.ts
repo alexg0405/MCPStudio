@@ -64,6 +64,8 @@ export function pitchReport(s: Services, args: { clip?: unknown }): unknown {
     name: channel.name,
     state: 'ready',
     corrected_audio: isNeutralEdit(edit) ? 'none (nothing changed)' : corrected ? 'ready' : 'being made',
+    // The musician's A/B switch (a listening choice, not part of the project): which one they hear now.
+    hearing: s.editor.getState().pitchOriginal.includes(id) ? 'original recording' : 'corrected sound',
     ...(key ? { song_key: keyLabel(key.root, key.scale) } : {}),
     ...(edit.transition !== undefined ? { transition_ms: edit.transition } : {}),
     notes: edit.notes.map((n, i) => {

@@ -36,6 +36,7 @@ import { setPitchEdit, setPitchRender } from '@core/ops/pitch';
 import { scaleMask } from '@agstudio/sdk/notes';
 import { encodeOffThread } from '../export/encode';
 import { importSampleBytes } from '../persistence/sample-import';
+import { pitchAnalysisKey, pitchAnalysisStore } from '../pitch/analysis-store';
 import { analyzeInWorker, PitchJobCancelled, renderInWorker, type RunningPitchJob } from '../pitch/pitch-jobs';
 import { pitchState, type ClipPitch } from '../pitch/state';
 import type { Services } from '../services';
@@ -82,6 +83,13 @@ const cache = new Map<string, ClipPitch['analysis']>();
 const inflight = new Map<string, Promise<ClipPitch['analysis']>>();
 const CACHE_LIMIT = 8;
 
+/** Forgets the analyses kept in memory (tests; the stored ones stay). */
+export function clearPitchAnalysisMemory(): void {
+  cache.clear();
+  inflight.clear();
+  latest.clear();
+}
+
 function sourceKey(ref: SampleRef): string {
   return ref.source.kind === 'embedded' ? `${ref.source.hash}.${ref.source.ext}` : `${ref.source.generator}@${ref.source.version}`;
 }
@@ -107,9 +115,18 @@ export async function analyzeClip(s: Services, clipId: ClipId): Promise<ClipPitc
   if (!analysis) {
     let pending = inflight.get(key);
     if (!pending) {
-      const a = Math.floor(from * sr);
-      const mono = monoMix(data.channels, a, Math.ceil(to * sr));
-      pending = analyzeInWorker(mono, sr, a / sr).result;
+      // Recorded audio is also kept between sessions (IndexedDB, by sample hash, range and analysis version).
+      const stored = ref.source.kind === 'embedded' ? pitchAnalysisStore() : null;
+      const storedKey = stored && ref.source.kind === 'embedded' ? pitchAnalysisKey(ref.source.hash, sr, from, to) : null;
+      pending = (async () => {
+        const hit = stored && storedKey ? await stored.get(storedKey).catch(() => null) : null;
+        if (hit) return hit;
+        const a = Math.floor(from * sr);
+        const mono = monoMix(data.channels, a, Math.ceil(to * sr));
+        const res = await analyzeInWorker(mono, sr, a / sr).result;
+        if (stored && storedKey) void stored.set(storedKey, res).catch(() => {});
+        return res;
+      })();
       inflight.set(key, pending);
       void pending.then(
         (res) => {
@@ -129,6 +146,19 @@ export async function analyzeClip(s: Services, clipId: ClipId): Promise<ClipPitc
   const result: ClipPitch = { clipId, range, duration: data.duration, analysis };
   latest.set(clipId, result);
   return result;
+}
+
+/**
+ * A/B: hear a clip's original recording instead of its corrected render (`original` true), or the corrected sound
+ * again (false); without `original` it switches. Session state only: nothing in the document changes, and the
+ * render is untouched. Returns true when the original is heard now.
+ */
+export function hearOriginal(s: Services, clipId: ClipId, original?: boolean): boolean {
+  const ed = s.editor.getState();
+  const now = ed.pitchOriginal.includes(clipId);
+  const next = original ?? !now;
+  ed.setPitchOriginal(clipId, next);
+  return next;
 }
 
 /** The last analysis made for each clip (the AI's reads and actions look here, since they cannot wait). */
@@ -180,6 +210,8 @@ export async function loadPitchClip(s: Services, clipId: ClipId): Promise<ClipPi
     return null;
   }
   const same = pitchState.getState().clipId === clipId;
+  // A/B is for the clip being compared: another clip starts on its corrected sound.
+  if (!same) s.editor.getState().clearPitchOriginal();
   pitchState.setState({ clipId, phase: 'analyzing', message: '', clip: same ? pitchState.getState().clip : null, selected: same ? pitchState.getState().selected : [] });
   try {
     const clip = await analyzeClip(s, clipId);

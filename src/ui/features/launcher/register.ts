@@ -44,7 +44,7 @@ export function register(services: Services): void {
     type: 'launcher',
     title: 'Clip launcher',
     hint: 'Perform with your patterns and audio clips: a grid of slots you launch live, in time with the song, and record onto the playlist',
-    chords: ['Alt+L'],
+    chords: ['Alt+Shift+L'],
     menuOrder: 61,
   });
 

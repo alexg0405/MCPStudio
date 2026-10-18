@@ -49,9 +49,13 @@ function Toolbar({ controller, tool, setTool }: { controller: React.RefObject<Pi
   const scope = sel.length > 0 ? (sel.length === 1 ? 'the selected note' : `the ${sel.length} selected notes`) : 'all notes';
   const keyLabel = `${PITCH_NAMES[st.keyRoot] ?? 'C'} ${SCALES.find((s) => s.id === st.keyScale)?.label.toLowerCase() ?? st.keyScale}`;
 
+  const hearingOriginal = useStore(services.editor, (e) => !!clipId && e.pitchOriginal.includes(clipId));
+  const comparable = !!edit && !isNeutralEdit(edit) && st.phase === 'ready';
+
   const status = (() => {
     if (st.phase === 'analyzing') return 'Listening to the clip…';
     if (st.phase !== 'ready') return '';
+    if (hearingOriginal) return 'Hearing your original recording (B switches back to the corrected sound)';
     if (st.rendering && st.rendering.clipId === clipId) return `Rendering corrected audio ${Math.round(st.rendering.fraction * 100)} %…`;
     if (edit && !isNeutralEdit(edit)) {
       if (edit.renderedSampleId && edit.renderedFor === editSignature(edit)) return 'Corrected audio ready: the clip plays it';
@@ -88,6 +92,32 @@ function Toolbar({ controller, tool, setTool }: { controller: React.RefObject<Pi
       >
         <Icon name={playing ? 'stop' : 'play'} size={14} />
       </button>
+      <div className={styles.tools} role="group" aria-label="Hear">
+        <button
+          type="button"
+          tabIndex={-1}
+          className={`${styles.tool} ${!hearingOriginal ? styles.toolOn : ''}`}
+          disabled={!comparable}
+          aria-pressed={!hearingOriginal}
+          onPointerDown={keepFocus}
+          onClick={() => clipId && services.commands.run('pitchEditor.toggleOriginal', { clip: clipId, original: false })}
+          data-hint="A: hear the corrected sound (what the clip plays). Press B to switch between A and B; nothing in the project changes"
+        >
+          Corrected
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className={`${styles.tool} ${hearingOriginal ? styles.toolOn : ''}`}
+          disabled={!comparable}
+          aria-pressed={hearingOriginal}
+          onPointerDown={keepFocus}
+          onClick={() => clipId && services.commands.run('pitchEditor.toggleOriginal', { clip: clipId, original: true })}
+          data-hint="B: hear your original recording instead of the correction, to compare (press B to switch). Nothing in the project changes; it goes back to corrected when the editor is closed"
+        >
+          Original
+        </button>
+      </div>
       <div className={styles.tools} role="toolbar">
         <button type="button" tabIndex={-1} className={`${styles.tool} ${tool === 'select' ? styles.toolOn : ''}`} onPointerDown={keepFocus} onClick={() => setTool('select')} data-hint="Select: click a note, drag it up or down to retune it (snaps to semitones; hold Alt to move by cents), drag empty space to select several">
           Select
@@ -320,6 +350,8 @@ export function PitchEditor() {
   useEffect(() => {
     if (controller.current) controller.current.tool = tool;
   }, [tool]);
+  // Closing the editor puts every clip back on its corrected sound (A/B is for comparing while the editor is open).
+  useEffect(() => () => services.editor.getState().clearPitchOriginal(), [services]);
 
   const message = useMemo(() => {
     if (!clipIdNow && phase === 'none')

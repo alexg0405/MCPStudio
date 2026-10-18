@@ -235,6 +235,8 @@ export function importMidi(
       result.channels.push(m.channelId);
     }
     let lane = 0;
+    // Tracks of a recording's takes hold only that recording: patterns go on the others.
+    const trackIds = d.playlist.laneOrder.filter((l) => !d.playlist.lanes[l]?.takes);
     for (const [track, list] of groups) {
       const id = newId.pattern();
       const trackName = data.tracks[track]?.name;
@@ -260,7 +262,7 @@ export function importMidi(
       pat.stepCount = Math.min(512, Math.max(16, Math.round((pat.length / bar) * 16)));
       result.patterns.push(id);
       if (opts.place) {
-        const laneId = d.playlist.laneOrder[lane++];
+        const laneId = trackIds[lane++];
         if (laneId) {
           const clip: PatternClip = {
             kind: 'pattern',
@@ -294,7 +296,7 @@ export function importMidi(
       };
       addChannel(d, ch);
       const songEnd = Math.max(...result.patterns.map((p) => d.patterns[p]?.length ?? bar));
-      const laneId = d.playlist.laneOrder[lane];
+      const laneId = trackIds[lane];
       if (laneId) {
         const clip: AutomationClip = {
           kind: 'automation',

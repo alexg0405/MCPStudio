@@ -2,6 +2,7 @@
  * Take groups: the takes of one recording, the comp lane that plays them and the take lanes folded under
  * it. Derived from the playlist (`AudioClip.take`, `Lane.takes`), so there is nothing else to keep in step.
  */
+import { produce } from 'immer';
 import { DEFAULT_CROSSFADE_MS, type CompSpan } from '../audio/comp';
 import { playbackMode, sourceSecondsAt } from '../audio/playback';
 import type { AudioClip, Clip, ClipId, LaneId, Playlist, Project, Tick } from '../model/types';
@@ -153,6 +154,55 @@ export function compSpans(project: Project, group: TakeGroup, tempo: TempoMap): 
       });
     }
   return out;
+}
+
+/** The take clip a take track's speaker button listens to: its first clip (null on any other track). */
+export function takeClipOnLane(project: Project, laneId: LaneId): ClipId | null {
+  if (project.playlist.lanes[laneId]?.takes?.role !== 'take') return null;
+  let best: AudioClip | null = null;
+  for (const c of Object.values(project.playlist.clips) as Clip[])
+    if (c.kind === 'audio' && c.laneId === laneId && c.take && !c.take.comp && (!best || c.start < best.start)) best = c;
+  return best?.id ?? null;
+}
+
+const auditionCache = new WeakMap<object, Map<string, Project>>();
+
+/** True when the clip is a take clip (a recording's own take, not the comp) that can be listened to alone. */
+export function isTakeClip(project: Project, id: ClipId | null | undefined): boolean {
+  const c = id ? project.playlist.clips[id] : undefined;
+  return c?.kind === 'audio' && !!c.take && !c.take.comp;
+}
+
+/**
+ * The project as the engine plays it while one take is auditioned ("listen to this take"): every clip of the take's
+ * group (the comp and the other takes) is silent except that take, whose track is made audible even when it is
+ * muted or another track is soloed. The document is not touched: this is a copy for the engine (memoized by
+ * project and clip), and the same project comes back when the clip is not a take clip.
+ */
+export function auditionProject(project: Project, clipId: ClipId | null): Project {
+  if (!clipId || !isTakeClip(project, clipId)) return project;
+  let byClip = auditionCache.get(project);
+  if (!byClip) auditionCache.set(project, (byClip = new Map()));
+  let v = byClip.get(clipId);
+  if (!v) {
+    const group = (project.playlist.clips[clipId] as AudioClip).take!.group;
+    v = produce(project, (d) => {
+      const anySolo = Object.values(d.playlist.lanes).some((l) => l.solo);
+      for (const c of Object.values(d.playlist.clips)) {
+        if (c.kind !== 'audio' || c.take?.group !== group) continue;
+        c.muted = c.id !== clipId;
+        if (c.id === clipId) {
+          const lane = d.playlist.lanes[c.laneId];
+          if (lane) {
+            lane.muted = false;
+            if (anySolo) lane.solo = true;
+          }
+        }
+      }
+    });
+    byClip.set(clipId, v);
+  }
+  return v;
 }
 
 /** The take clips of a group by clip id. */

@@ -7,7 +7,7 @@ import { tempoMapOf } from '@core/automation/tempo';
 import { DEFAULT_CROSSFADE_MS } from '@core/audio/comp';
 import type { AudioClip, Clip, ClipId, Project, Tick } from '@core/model/types';
 import { compSegmentsOf, compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
-import { groupOfClip, takeGroup, takeGroups, type TakeGroup } from '@core/query/takes';
+import { groupOfClip, isTakeClip, takeGroup, takeGroups, type TakeGroup } from '@core/query/takes';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Services } from '../services';
 import { consolidate } from './render-to-audio';
@@ -131,7 +131,7 @@ export async function flatten(s: Services, groupId: string, merge: boolean): Pro
   if (!g) return false;
   if (!merge) return s.history.transact('Flatten comp', (d) => void flattenComp(d, groupId));
   if (g.comp.length === 0) return false;
-  await consolidate(s, g.comp as AudioClip[]);
+  await consolidate(s, g.comp as AudioClip[], { onTakeTrack: true });
   const cursor = s.history.status().cursor;
   s.history.transact('Flatten comp', (d) => void flattenComp(d, groupId), { amend: cursor });
   return true;
@@ -143,6 +143,37 @@ export function setTakesOpen(s: Services, groupId: string, open?: boolean): bool
   const now = ed.openTakes.includes(groupId);
   ed.setTakesOpen(groupId, open ?? !now);
   return open ?? !now;
+}
+
+/**
+ * "Listen to this take": the take plays on its own (the comp and the other takes of its recording go quiet) without
+ * unmuting anything in the project: a session-state switch the engine's input follows (`auditionProject`). Called
+ * with the clip already heard (or `on: false`) it goes back to the comp. Returns the clip heard now, or null.
+ */
+export function listenToTake(s: Services, clip: ClipId | null, on?: boolean): ClipId | null {
+  const ed = s.editor.getState();
+  const p = s.doc.getState().project;
+  const now = ed.auditionTake;
+  const next = clip && isTakeClip(p, clip) && on !== false && !(on === undefined && now === clip) ? clip : null;
+  ed.setAuditionTake(next);
+  return next;
+}
+
+/** The take clip that plays [from, to] of take `index` best: the clip with the most overlap, else the first. */
+export function takeClipFor(g: TakeGroup, index: number, span: { from: Tick; to: Tick } | null): ClipId | null {
+  const clips = g.takes.find((t) => t.index === index)?.clips ?? [];
+  if (!clips.length) return null;
+  if (!span) return clips[0]!.id;
+  let best = clips[0]!;
+  let most = -Infinity;
+  for (const c of clips) {
+    const o = Math.min(span.to, c.start + c.length) - Math.max(span.from, c.start);
+    if (o > most) {
+      most = o;
+      best = c;
+    }
+  }
+  return best.id;
 }
 
 /** "3 takes · the comp plays take 2 of bars 1–2…": for toasts and the AI. */

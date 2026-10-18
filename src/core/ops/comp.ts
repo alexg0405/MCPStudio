@@ -5,8 +5,12 @@
  */
 import type { Draft } from 'immer';
 import {
+  applyCompEdits,
+  findCompEdits,
   planComp,
   readComp,
+  shiftTakePart,
+  type CompEdit,
   stepTake,
   swipeSegments,
   wholeTake,
@@ -33,15 +37,45 @@ export function compSegmentsOf(group: TakeGroup): CompSegment[] {
 }
 
 /**
- * Replaces the comp lane's clips with the plan for `segments`. Returns the new clips' ids (empty when the
- * group has no comp lane).
+ * The hand-made gains and fades on a group's comp clips (what differs from the plan of the same segments), found
+ * with the group's current takes and crossfade: call it before changing either.
  */
-export function setComp(d: Draft<Project>, groupId: string, segments: readonly CompSegment[], tempo: TempoMap): ClipId[] {
+export function compEditsOf(d: Draft<Project>, groupId: string, tempo: TempoMap): CompEdit[] {
+  const g = groupIn(d, groupId);
+  if (!g?.compLane || g.comp.length === 0) return [];
+  const spans = compSpans(d as unknown as Project, g, tempo);
+  const baseline = planComp(compSegmentsOf(g), spans, { tempo, crossfadeSec: g.crossfadeMs / 1000 });
+  return findCompEdits(
+    g.comp.map((c) => ({
+      take: c.take?.index ?? 0,
+      start: c.start,
+      length: c.length,
+      ...(c.gain !== undefined ? { gain: c.gain } : {}),
+      ...(c.fadeIn !== undefined ? { fadeIn: c.fadeIn } : {}),
+      ...(c.fadeOut !== undefined ? { fadeOut: c.fadeOut } : {}),
+    })),
+    baseline,
+  );
+}
+
+/**
+ * Replaces the comp lane's clips with the plan for `segments`. A gain or fade made by hand on the old comp clips
+ * is kept by position (`edits`, default: found now). Returns the new clips' ids (empty when the group has no
+ * comp lane).
+ */
+export function setComp(
+  d: Draft<Project>,
+  groupId: string,
+  segments: readonly CompSegment[],
+  tempo: TempoMap,
+  edits?: readonly CompEdit[],
+): ClipId[] {
   const g = groupIn(d, groupId);
   if (!g?.compLane) return [];
+  const kept = edits ?? compEditsOf(d, groupId, tempo);
   const project = d as unknown as Project;
   const spans = compSpans(project, g, tempo);
-  const plan = planComp(segments, spans, { tempo, crossfadeSec: g.crossfadeMs / 1000 });
+  const plan = applyCompEdits(planComp(segments, spans, { tempo, crossfadeSec: g.crossfadeMs / 1000 }), kept);
   const byRef = new Map(g.takes.flatMap((t) => t.clips).map((c) => [c.id as string, c]));
   for (const c of g.comp) delete d.playlist.clips[c.id];
   const ids: ClipId[] = [];
@@ -128,8 +162,11 @@ export function compSetCrossfade(d: Draft<Project>, groupId: string, ms: number,
   const value = Math.round(Math.max(0, Math.min(MAX_CROSSFADE_MS, Number.isFinite(ms) ? ms : DEFAULT_CROSSFADE_MS)) * 10) / 10;
   const lane = d.playlist.lanes[g.compLane];
   if (!lane?.takes) return;
+  // The hand-made edits are measured against the old crossfade, before it changes.
+  const edits = compEditsOf(d, groupId, tempo);
+  const segments = compSegmentsOf(g);
   lane.takes.crossfadeMs = value;
-  setComp(d, groupId, compSegmentsOf(g), tempo);
+  setComp(d, groupId, segments, tempo, edits);
 }
 
 /**
@@ -152,6 +189,75 @@ export function flattenComp(d: Draft<Project>, groupId: string): { removedLanes:
   const comp = g.compLane ? d.playlist.lanes[g.compLane] : undefined;
   if (comp) delete comp.takes;
   return { removedLanes };
+}
+
+/** A take clip as it was before an edit (see `snapshotComps`). */
+interface TakeClipState {
+  id: ClipId;
+  take: number;
+  start: Tick;
+  length: Tick;
+  offsetSec: number;
+}
+
+/** What `refreshComps` needs from before an edit of take clips. */
+export interface CompSnapshot {
+  group: string;
+  segments: CompSegment[];
+  edits: CompEdit[];
+  clips: TakeClipState[];
+}
+
+/**
+ * Before take clips are edited (moved, resized): what their groups' comps play and the hand-made gains and fades
+ * on them. Pass the result to `refreshComps` after the edit, in the same `transact`.
+ */
+export function snapshotComps(d: Draft<Project>, clipIds: Iterable<ClipId>, tempo: TempoMap): CompSnapshot[] {
+  const wanted = new Set<string>();
+  for (const id of clipIds) {
+    const c = d.playlist.clips[id];
+    if (c?.kind === 'audio' && c.take && !c.take.comp) wanted.add(c.take.group);
+  }
+  const out: CompSnapshot[] = [];
+  for (const groupId of wanted) {
+    const g = groupIn(d, groupId);
+    if (!g?.compLane) continue;
+    out.push({
+      group: groupId,
+      segments: compSegmentsOf(g),
+      edits: compEditsOf(d, groupId, tempo),
+      clips: g.takes.flatMap((t) =>
+        t.clips.map((c) => ({ id: c.id, take: t.index, start: c.start, length: c.length, offsetSec: c.offsetSec })),
+      ),
+    });
+  }
+  return out;
+}
+
+/**
+ * After take clips were moved or resized: the comp follows. What the comp plays of a moved clip moves with it (the
+ * same audio stays in the same place), a trimmed clip's comp is cut to what is left, and the comp lane is rebuilt
+ * with the hand-made gains and fades kept: one undo step with the edit. Groups whose takes did not change are left
+ * alone.
+ */
+export function refreshComps(d: Draft<Project>, snaps: readonly CompSnapshot[], tempo: TempoMap): void {
+  for (const snap of snaps) {
+    let segments = snap.segments;
+    let edits = snap.edits;
+    let changed = false;
+    for (const old of snap.clips) {
+      const now = d.playlist.clips[old.id];
+      if (!now || now.kind !== 'audio') continue;
+      if (now.start === old.start && now.length === old.length && now.offsetSec === old.offsetSec) continue;
+      changed = true;
+      // A pure move keeps the audio's trim; a trim from the left keeps the audio where it is.
+      const moved = Math.abs(now.offsetSec - old.offsetSec) < 1e-9 ? now.start - old.start : 0;
+      const r = shiftTakePart(segments, edits, old.take, old.start, old.start + old.length, moved);
+      segments = r.segments;
+      edits = r.edits;
+    }
+    if (changed) setComp(d, snap.group, segments, tempo, edits);
+  }
 }
 
 /** Deletes a lane that holds no clips any more (the playlist keeps at least one). */

@@ -504,7 +504,7 @@ stats), UI in Settings → Storage.
   `History.referencedHashes()`, and audio pinned by a running export/render, `app/storage/busy.ts`); every autosave
   slot file (`projectFileHashes`: the text of `project.json`/`view.json`, valid or not); the DJ library
   (`dj-library`); and **every other value in the IndexedDB `kv` store** except `gc:*` and the cached track analyses
-  (`dj-analysis:*`, which are keyed by hash but are not a use). Recent files hold handles, never bytes, so they pin
+  (`dj-analysis:*` and `pitch-analysis:*`, which are keyed by hash but are not a use; both go with the blob). Recent files hold handles, never bytes, so they pin
   nothing. The DJ-mix and sound-filter records live inside the project, so they are covered through it.
 - **Tabs publish** a `gc:tab:<session id>` record (hashes, heartbeat, `playing`, `busy`), 1 s after a change and every
   30 s (`tab-refs.ts`). A record counts only while the tab's life lock `agstudio:session:<id>` is held (the same lock
@@ -591,13 +591,32 @@ tames vibrato. The corrected sound is a new sample that the clip plays; the orig
   where the median-filtered pitch leaves the note's running centre by 65 cents and settles on a new level for 50 ms (the
   boundary goes where the glide began); pieces under 40 ms join the nearer neighbour (a sliver at the end of a run far from it is
   dropped), notes with under 30 ms of pitch are dropped. Thresholds: `PITCH_NOTE_THRESHOLDS`.
+- **Octave repair** (`core/voice/octave.ts`, in `trackVoicePitch`, which the analysis and the renderer share): YIN follows the
+  strongest periodicity, so a voice whose fundamental is far weaker than its second harmonic (a strong formant near 900 Hz over a
+  note at 440 Hz or above) was read an octave high for a whole note, and a third-harmonic voice an octave and a fifth. After
+  `cleanF0` the track is walked in 29 ms steps; for each step with a pitch (median of its frames) a Hann-window spectrum is taken
+  (58 ms, or 116 ms when the lowest candidate is under ~175 Hz) of the audio decimated to 8.8 kHz. For the divisors 3, 2 and 1.5
+  (lowest candidate first) the candidate fundamental g = f / d is accepted when the spectrum has narrow lines at the two multiples
+  of g that f's own comb lacks (g and 3g for d = 2; g and 2g for d = 3 and 1.5): each at least 7 % / 3.5 % of the strongest peak, 4×
+  above the floor around it (the lower quartile of the magnitudes within ±0.45 g) and together 11× (geometric mean). Mains hum or
+  noise gives one line, never both. A step's answer stands only if a neighbouring step agrees; the step's frames near its pitch
+  (±150 cents) are divided by d. It runs per window, not per note, because a note read an octave high can join the true note above
+  it into one long note. Cost: +34 ms of CPU for 60 s of singing on top of the tracker's 170 ms (a loaded machine). Candidates
+  below 80 Hz are not tried, and fundamentals under ~86 Hz cannot be resolved by the 116 ms window.
 - Per note: `pitch` (the median, MIDI, fractional), `drift` (3–97 % range of the slow line, cents: a 170 ms moving average, which
   follows glides and wander but not vibrato, measured away from the ends where the window is short), `vibratoDepth` (cents,
   peak to peak) and `vibratoRate` (Hz, from the zero crossings of pitch − slow line; none outside 3.5–9.5 Hz or under 25 cents).
-- Cost: 112 ms for 60 s of audio (Node, one thread). Results are cached in memory (`actions/pitch.ts`, 8 analyses, keyed by
-  sample hash + sample rate + the analysed range, which is the clip's part of the sample plus 0.25 s each side) and always run
-  in a Worker per job (`app/pitch/pitch.worker.ts`, `pitch-jobs.ts`; inline in Node tests). They are recomputed after a
-  reload (cheap), not stored.
+- Cost: 112 ms for 60 s of audio before the octave repair, about 150 ms with it (Node, one thread). Results are cached in
+  memory (`actions/pitch.ts`, 8 analyses, keyed by sample hash + sample rate + the analysed range, which is the clip's part of
+  the sample plus 0.25 s each side) and always run in a Worker per job (`app/pitch/pitch.worker.ts`, `pitch-jobs.ts`; inline in
+  Node tests). Analyses of recorded (embedded) audio are also **kept in the IndexedDB `kv` store**
+  (`app/pitch/analysis-store.ts`): key `pitch-analysis:v<PITCH_ANALYSIS_VERSION>:<rate>:<from>:<to>:<sample hash>`, value
+  `{ version, at, analysis }` (typed arrays and numbers). A reload or reopened project reads the entry instead of listening
+  again; a damaged entry or a failing store is a cache miss. Any change that can alter a result bumps `PITCH_ANALYSIS_VERSION`
+  (now 2: the octave repair), older entries are never read and are deleted once per session, and at most 24 are kept (the
+  newest by when they were stored). **Storage clean-up**: the key starts with `pitch-analysis:` and ends in the hash, so the
+  collector (`app/storage/kv.ts` `isAnalysisKey`, like the DJ analyses) neither counts the entry as a use of the audio nor
+  pins it, and deletes it with the blob; nothing else about the audio is stored.
 
 ### The edit (`AudioClip.pitchEdit`, `core/audio/pitch-edit.ts`)
 
@@ -644,11 +663,18 @@ re-analysed): matched notes within 1.8 cents (median 0.5). 60 s of stereo render
   undo restores the earlier edit with its earlier render (the old render's `SampleRef` comes back through the same patches;
   history keeps its hash referenced). If something else became the newest entry meanwhile, the render is a step of its own.
 - **Storage**: the render's hash is in `Project.samples`, so it is kept like any sample (app/storage); the original stays
-  referenced by the channel. Nothing else is stored; the analysis is not.
+  referenced by the channel. The analysis is kept separately and pins nothing (above).
 - **Engine**: `clipSampleId(channel, clip)` (`core/audio/playback.ts`) is `pitchEdit.renderedSampleId` else the channel's sample;
   `sample-residency.ts` plans a clip's buffers from its own sample, the clip player's `base(clip)` / `request(clip)` read it
   (`channel-strip.ts`), and a missing render falls back to the channel's sample. Offline renders and exports use the same path.
-  Reverse is refused (the edit's timeline is the forwards sample). Waveforms still draw the original.
+  Reverse is refused (the edit's timeline is the forwards sample). The playlist clip draws the **corrected render's waveform**
+  (`clipSampleId`, the same length and timeline as the recording; the recording's own until the engine has the render's) and
+  carries a "Pitch corrected" tag in its title.
+- **A/B** (`editor.pitchOriginal`, `core/query/hear.ts`): session state, not in the document and not undoable. While a clip is in
+  the list, `connectEngine` hands the engine `originalSound(project, ids)`: a memoized copy in which that clip has no
+  `renderedSampleId`, so it plays its own recording; every change of the document passes through the same filter (together with
+  the comping "listen to this take"), exports and offline renders read the real project. It clears when the clip goes away, when
+  the editor shows another clip and when its window closes.
 - Analysis range ≤ 15 minutes of sample (`PITCH_MAX_SECONDS`).
 
 ### The Pitch editor window (`ui/features/pitch-editor`, window type `pitch-editor`)
@@ -664,6 +690,9 @@ re-analysed): matched notes within 1.8 cents (median 0.5). 60 s of stereo render
   Delete resets; ↑/↓ move by a semitone (Alt: a cent); right-click menu. Toolbar: Snap all (or selected) to key with a key chooser
   (starts as the song key) and Strength 0–100 %, Drift and Vibrato sliders (selected notes, or all), Transition, play from the
   selected note, status ("Listening…", "Rendering 40 %…", "Corrected audio ready"), Render now, More ▾ (merge, reset, remove all).
+  The **Corrected / Original** pair next to Play is the A/B switch (key **B** while the editor has focus, command
+  `pitchEditor.toggleOriginal`): the lit one is what you hear and the status line says "Hearing your original recording" while it
+  is on; both are disabled until the clip has a correction.
   Sliders merge into one undo step per drag (`mergeKey`).
 - Empty states say what to do (no clip chosen, listening, reversed audio, no notes found). Every control has a `data-hint`;
   the "?" panel lists the moves.
@@ -678,11 +707,13 @@ re-analysed): matched notes within 1.8 cents (median 0.5). 60 s of stereo render
   command (an app command after-step, its own undo step) that listens first. The render follows by itself.
 - `get_pitch` (`app/pitch/report.ts`): per note its number, bar, start/end seconds, MIDI pitch and name, cents off, in-key flag,
   drift and vibrato measured, and what was changed. A clip never analysed starts its analysis and answers `analyzing`.
-- Commands `pitchEditor.openClip`, `.play`, `.snapToKey`, `.apply`, `.clear`; window `pitch-editor` in `OPEN_WINDOWS`.
+- Commands `pitchEditor.openClip`, `.play`, `.snapToKey`, `.apply`, `.clear`, `.toggleOriginal` (A/B; `argsHint` describes `clip` and
+  `original`, so it is in the command catalog the AI and MCP see; a listening choice, not an edit); window `pitch-editor` in
+  `OPEN_WINDOWS`. `get_pitch` also says `hearing` (`corrected sound` or `original recording`).
 
 ### Tune (`plugins/builtin/tune`)
 
-New params (all defaults sound as before; the golden test pins the six old presets and the default patch): **Target** (key and
+New params (all defaults sound as before except the return to rest below; the golden test pins the default patch and the presets): **Target** (key and
 scale, or the notes of a guide channel), **Guide channel** (which instrument channel, see `notes: { param }` in
 [plugin-sdk.md](plugin-sdk.md#effects-that-follow-notes)), **Keep natural drift** (the singer's slow line, a 100 ms one-pole
 against a 1 s average, minus the note's average, is left in by that share), **Added vibrato** depth (cents) and rate (Hz, fades
@@ -692,6 +723,20 @@ overlap-add on the same delay lines (up to 8 grains of two periods, read at spee
 latency, spaced period ÷ ratio, taken from the voice's own period grid, normalised by the window sum and faded in and out
 against the splice shifter's output), so the latency is unchanged and no allocation happens in `process()`. Presets added: "Hard
 trap tune (C minor)", "Natural pop (C major)", "Robot".
+
+**Return to rest.** After a correction ends the splice head used to drift back to its centre at ≈ 3 cents (0.002 frames per
+frame) from as far as 376 frames away: 1.1–2.9 s, with the output meanwhile off the delayed input (and off the dry path of the
+mix). Now, once the correction has stayed under a cent for 30 ms (a glide through a note is not an end), `rest()` starts a
+crossfade to a nearer head: straight to the centre once no pitch has been found for 8 detections (≈ 43 ms: a pause, a
+consonant), else a whole number of periods towards it (the same waveform point, so no click), and what is left (under half a
+period) drifts at 0.0035 frames per frame (≈ 6 cents; it was 0.002). No allocation (`rest` is in the audio-thread audit).
+Measured (head back at its centre, a note 23 cents sharp for 2.5 s then exactly in tune, 110–262 Hz): while the voice goes on
+1.5–2.9 s → 0.2–1.0 s (higher notes return sooner: the leftover is under half a period); after a 0.4 s pause 1.1–2.5 s →
+0.05–0.11 s after the pause ends (it is home during it). The largest sample step stays within 1.2× the voice's own (also across
+noise between notes). The golden test pins the default patch and nine presets: six of those ten renders (Natural vocal tune,
+Hard tune robot, Minor pentatonic snap, Deep voice hard tune, Hard trap tune, Natural pop) are bit-identical to before;
+**default patch, Gentle correction, Pop tune and Robot** differ only from the first such return on (0.48, 0.48, 1.74 and 1.31 s
+into the melody; chunk levels within 0.35 dB), so their goldens were regenerated on purpose (`TUNE_GOLDEN_RECORD=1`).
 
 Measured (Node, 48 kHz, voice with a 900 Hz formant at 196 Hz moved +500…+900 cents): pitch error ≤ 2 cents either way; the
 formant (energy centroid) moves 31–64 % with the plain shifter and 1–5 % with Keep formants. CPU (% of one core, best of 7,
@@ -706,17 +751,22 @@ a sag; offsets; silence and noise), `pitch-edit.test.ts` (snap, split/merge, val
 vibrato numbers, the whole chain landing on the key within 6 cents, determinism), `core/ops/pitch.test.ts` (undo restores the
 earlier edit and render, render replacement, shared render after a split), `app/actions/pitch.test.ts` (each editor operation is
 one undo step, slider drags merge, render amended into the edit's step, hashes kept), `app/ai/ops/pitch.test.ts`,
-`core/schema/migrate.test.ts` (repairs), `ui/features/pitch-editor/model.test.ts`, Tune kernel tests (guide notes, drift, vibrato,
+`core/schema/migrate.test.ts` (repairs), `core/voice/octave.test.ts` (160 synthetic notes over four formant voices: the tracker alone
+misreads 14, the repair none, with vibrato and noise 9 of 60 → 0; no false repairs on calm voices, breath and mains hum, a missing
+fundamental or an octave leap; the evidence and the cost), `app/pitch/analysis-store.test.ts` and the stored-analysis cases of
+`app/actions/pitch.test.ts`, `ui/features/pitch-editor/ab.test.ts` (A/B), `ui/features/playlist/corrected-wave.test.ts`,
+`ui/features/pitch-editor/model.test.ts`, Tune kernel tests (guide notes, drift, vibrato,
 formants, a source audit that the audio-thread methods allocate nothing, heap kept after a long run) and golden test, runner and
 `NoteFeedHub` tests. Browser: `test/browser/pitch-correction.test.ts` (the engine plays the render, the original without it, falls
 back when it is missing), `tune-notes.test.ts` (a guide channel pulls a recorded voice through a real AudioWorklet), UX audit.
 
 ### Limits
 
-YIN follows the strongest periodicity: a voice whose fundamental is far weaker than its second harmonic can read an octave
-high for a whole note (synthetic voices with a strong formant at 880 Hz do; ordinary vocals rarely). One voice at a time: chords
+The octave repair needs two clear lines of the lower fundamental in the spectrum: a fundamental that is only just there (under
+~5 % of the strongest peak) or below ~86 Hz stays as the tracker read it, and a note shorter than a window beside a loud neighbour
+can be mixed. One voice at a time: chords
 and noisy takes give no notes. TD-PSOLA keeps formants well within about ±5 semitones and sounds rougher at ±12; a shifted
-note repeats or skips whole periods. Breaths and "s" sounds are never shifted. The analysis is not kept between sessions.
+note repeats or skips whole periods. Breaths and "s" sounds are never shifted.
 The edit works on the clip's sample, not on its reverse or on a stretched copy (tempo follow still works on the render).
 
 ## Beat assistant (`src/core/beat`, `src/core/voice`, `src/app/assistant`, `tools/ai`)
@@ -2619,10 +2669,32 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   across the border stays above 0.2 RMS (the tone is 0.35). The engine's own 2 ms / 4 ms start and release ramps
   already stop a hard cut from clicking (a 0 ms crossfade measures 0.033), so the crossfade's job is to keep the level
   and the sound continuous rather than to remove a click.
-- Not done / fragile: comp clips lose a hand-made clip gain or fade when the comp is rebuilt (they follow the take
-  clip's own); moving or resizing a take clip does not rebuild the comp; Freeze and consolidate keep off these tracks
-  (`laneFree`) but the arranger, automation and dropping a file onto one can still put a clip there; auditioning a single
-  take means unmuting its clip (Use this take and play); the comp cannot span takes of different recordings.
+- **Hand-made gain and fades survive a rebuild** (`findCompEdits` / `applyCompEdits`, `compEditsOf` in `core/ops/comp.ts`):
+  nothing is stored on the segments. Before the comp lane is rebuilt, each old comp clip is compared with what the plan
+  makes of the same segments (same takes, same crossfade); only the differences are edits (gain, a fade at an edge).
+  They are laid over the new plan by position: a gain goes to the new clip of the same take that overlaps most, a fade
+  only to a clip that still starts (or ends) at the same tick (a fade belongs to a border; where the border moved the
+  plan's crossfade is used). Changing the crossfade measures the edits against the old value first, so the new length
+  still takes effect.
+- **Moving or resizing a take clip rebuilds the comp** (`editClips(d, edits, { tempo })` calls `snapshotComps` before and
+  `refreshComps` after, in the caller's `transact`, so it is one undo step; the playlist's drags and the AI's clip edit
+  pass the tempo): what the comp plays of a moved clip moves with it (same audio, same trim), a left trim keeps the audio
+  where it is, a right trim cuts the comp to what is left, hand edits ride along. A vacated stretch is silent; where a
+  moved piece lands on another take's, the later piece wins the overlap. A take clip (and a comp clip) keeps its track.
+- **Recordings' own tracks hold only that recording.** `addClips` sends a clip meant for a comp or take track (paste,
+  duplicate, file drop, placing a pattern) to the first ordinary track with room, adding one when none has
+  (`ordinaryLaneFor`; `{ toTakeLanes: true }` is for the recorder and Flatten-and-merge); `editClips` will not move another
+  clip onto one; `firstFreeLane` (automation), `laneNamed` (the arranger), the MIDI import's track order, consolidate's
+  track and the AI's `place_pattern` skip them, and the AI's clip edit refuses `to_track` on or off them.
+- **Listen to this take** (`comp.listenTake`, Alt+L on the playlist; the clip menus; the speaker on a take track's header,
+  held = only while pressed): `editor.auditionTake` is session state. `connectEngine` passes every document change through
+  `auditionProject(project, clip)` (`core/query/takes.ts`, memoized): a copy in which the group's other clips are muted and
+  the take is on, its track un-muted (and soloed when another track is). The document, undo and exports never see it; it
+  clears itself when the take is deleted or undone away. The listened take is outlined and labelled in the playlist; the
+  `get_takes` read reports `listening_to_take`, and the command (with an `argsHint`) reaches the AI and MCP through the
+  command catalog.
+- Not done: the comp cannot span takes of different recordings; a take clip's own gain or fade changed after the comp was made
+  does not reach comp clips that already exist (measured against the current takes they read as hand edits and are kept).
 
 - Record mode records what the chip next to the record button says: recorders have a kind (`notes`, the default, or
   `audio`) and the prefs `recordNotes` / `recordAudio` choose. Browsers ask for microphone permission on the first
@@ -3610,7 +3682,7 @@ patterns and audio clip channels and are launched live, in time with the transpo
   ("Record performance to playlist"): pattern runs become pattern clips (a loop is one clip with the pattern repeating, a run that was playing
   at the start keeps its place through `offset`), audio runs become one clip per pass, on the launcher track's playlist track when it is free
   there, else on a new "Jam · track" lane, at `u` as song ticks.
-- **UI** (`ui/features/launcher`): the Clip launcher window (View menu, `Alt+L`, action search, the playlist clip menu's "Send to clip
+- **UI** (`ui/features/launcher`): the Clip launcher window (View menu, `Alt+Shift+L`, action search, the playlist clip menu's "Send to clip
   launcher"). Slots are painted off the React path: `LauncherView` (a frame-loop callback) writes `data-state` (empty/idle/queued/playing/
   stopping) and `--p` (a CSS ring) only when they change and does nothing while nothing runs, so idle launcher playback causes no React commits
   (`test/browser/launcher-ui.test.ts` counts them). Press launches on pointer down (gate: release stops); drag a pattern from the Browser onto a

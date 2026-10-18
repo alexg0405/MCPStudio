@@ -12,8 +12,8 @@ import { projectFileHashes } from '@core/io/project-file';
 import type { AutosaveFile, BlobStore } from '@platform/opfs';
 import { BLOBS_LOCK, GC_LOCK, withExclusiveLock } from '@platform/locks';
 import {
-  ANALYSIS_PREFIX,
   DJ_LIBRARY_KEY,
+  isAnalysisKey,
   LAST_RUN_KEY,
   SEEN_PREFIX,
   TAB_PREFIX,
@@ -100,7 +100,7 @@ export async function gatherReferences(d: CollectorDeps): Promise<References> {
 
   const library = new Set<string>();
   const other = new Set<string>();
-  for (const [key, value] of await d.kv.entries((k) => !k.startsWith('gc:') && !k.startsWith(ANALYSIS_PREFIX))) {
+  for (const [key, value] of await d.kv.entries((k) => !k.startsWith('gc:') && !isAnalysisKey(k))) {
     collectHashes(value, key === DJ_LIBRARY_KEY ? library : other);
   }
 
@@ -276,7 +276,7 @@ export async function collectGarbage(d: CollectorDeps, opts: CollectOptions = {}
     if (removed.length) {
       // Their marks and cached analyses go with them.
       const hashes = new Set(removed.map((b) => b.hash));
-      const analyses = await d.kv.keys((k) => k.startsWith(ANALYSIS_PREFIX) && hashes.has(k.slice(k.lastIndexOf(':') + 1)));
+      const analyses = await d.kv.keys((k) => isAnalysisKey(k) && hashes.has(k.slice(k.lastIndexOf(':') + 1)));
       await d.kv.del([...removed.map((b) => seenKey(b.hash)), ...analyses]).catch(() => {});
     }
     return { removed, failed, stop: false };

@@ -74,6 +74,8 @@ export const playlist: OpModule = {
       const end = start + length * times;
       c.focus.span(start, end, 'place pattern');
       let laneId: LaneId | undefined = a.track !== undefined ? c.lane(a.track) : undefined;
+      if (laneId && d.playlist.lanes[laneId]?.takes)
+        fail(`track ${a.track} belongs to a recording's takes and holds only that recording: pick another track`);
       if (bool(a.replace)) {
         if (!laneId) fail('replace needs the track to clear');
         clearRange(d, start, end, {
@@ -86,7 +88,8 @@ export const playlist: OpModule = {
       if (!laneId) {
         const busy = (lane: string) =>
           Object.values(d.playlist.clips).some((x) => x.laneId === lane && x.start < end && x.start + x.length > start);
-        laneId = d.playlist.laneOrder.find((l) => !busy(l)) ?? d.playlist.laneOrder[0];
+        const ordinary = d.playlist.laneOrder.filter((l) => !d.playlist.lanes[l]?.takes);
+        laneId = ordinary.find((l) => !busy(l)) ?? ordinary[0];
       }
       if (!laneId) fail('the playlist has no tracks');
       // The same pattern already playing at that time (on any track) would play twice as loud: skip those.

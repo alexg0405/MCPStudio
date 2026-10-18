@@ -9,6 +9,7 @@
  * 40 ms join their neighbour, notes under 30 ms of pitched sound are dropped. Thresholds are in
  * `PITCH_NOTE_THRESHOLDS`.
  */
+import { repairOctaveSlips } from './octave';
 import { hzToMidi, trackPitch } from './pitch';
 
 /** The pitch track at a fixed frame spacing. */
@@ -40,6 +41,12 @@ export interface PitchNote {
 export interface PitchAnalysis extends PitchFrames {
   notes: PitchNote[];
 }
+
+/**
+ * The version of the analysis (tracker, cleaning, octave repair, segmentation): stored analyses carry it in their key, so a
+ * change that can alter a result bumps it and old entries are ignored and deleted. 1: first release; 2: octave repair.
+ */
+export const PITCH_ANALYSIS_VERSION = 2;
 
 export const PITCH_NOTE_THRESHOLDS = {
   /** A note ends when the pitch is this far (cents) from its centre and settles elsewhere. */
@@ -370,18 +377,42 @@ export interface AnalyzeOptions {
   /** The range of voices to look for, Hz (default 65–1100). */
   minHz?: number;
   maxHz?: number;
+  /** Repair notes the tracker read an octave or more high (default true; tests turn it off to measure the tracker alone). */
+  repairOctaves?: boolean;
+}
+
+/** What `trackVoicePitch` makes of a mono signal. */
+export interface VoicePitch {
+  /** Cleaned and octave-repaired fundamental per frame, Hz (0 = unvoiced). */
+  f0: Float32Array;
+  conf: Float32Array;
+  /** Seconds between frames. */
+  hop: number;
+  /** Frames moved down because the tracker read them an octave (or more) above the sound's fundamental. */
+  repaired: number;
+}
+
+/**
+ * The pitch track the editor and the renderer both use: YIN (`trackPitch`), cleaned (`cleanF0`), then notes whose
+ * fundamental the tracker read an octave (or an octave and a fifth) high are moved down where a short-window spectrum
+ * shows the lower fundamental's lines (`octave.ts`). Deterministic.
+ */
+export function trackVoicePitch(
+  mono: Float32Array,
+  sampleRate: number,
+  opts: { minHz?: number; maxHz?: number; repairOctaves?: boolean } = {},
+): VoicePitch {
+  const hop = Math.max(1, Math.round(0.005 * sampleRate));
+  const track = trackPitch(mono, sampleRate, { minHz: opts.minHz ?? 65, maxHz: opts.maxHz ?? 1100, hop });
+  const clean = cleanF0(track.f0, track.confidence);
+  const hopSec = hop / sampleRate;
+  const repaired = opts.repairOctaves === false ? 0 : repairOctaveSlips(mono, sampleRate, clean.f0, hop);
+  return { f0: clean.f0, conf: clean.conf, hop: hopSec, repaired };
 }
 
 /** Tracks and segments the pitch of a mono recording. */
 export function analyzePitch(mono: Float32Array, sampleRate: number, opts: AnalyzeOptions = {}): PitchAnalysis {
-  const hop = Math.max(1, Math.round(0.005 * sampleRate));
-  const track = trackPitch(mono, sampleRate, { minHz: opts.minHz ?? 65, maxHz: opts.maxHz ?? 1100, hop });
-  const clean = cleanF0(track.f0, track.confidence);
-  const frames: PitchFrames = {
-    t0: opts.start ?? 0,
-    hop: hop / sampleRate,
-    f0: clean.f0,
-    conf: clean.conf,
-  };
+  const v = trackVoicePitch(mono, sampleRate, opts);
+  const frames: PitchFrames = { t0: opts.start ?? 0, hop: v.hop, f0: v.f0, conf: v.conf };
   return { ...frames, notes: segmentNotes(frames) };
 }

@@ -138,7 +138,12 @@ export function consolidationSet(s: Services): Clip[] {
  * the top-most of their tracks. Automation and tempo keep playing in the render, so it sounds the
  * same. Rejects with RenderToAudioError when there is nothing to render.
  */
-export async function consolidate(s: Services, clips: readonly Clip[] = consolidationSet(s)): Promise<ClipId> {
+export async function consolidate(
+  s: Services,
+  clips: readonly Clip[] = consolidationSet(s),
+  /** The merged clip may go on a comp or take track (Flatten and merge does: it releases them right after). */
+  opts: { onTakeTrack?: boolean } = {},
+): Promise<ClipId> {
   const p = s.doc.getState().project;
   const list = clips.filter((c) => !c.muted && c.kind !== 'automation');
   if (list.length === 0) throw new RenderToAudioError('Select the clips to consolidate (or set a loop region) first.');
@@ -154,7 +159,9 @@ export async function consolidate(s: Services, clips: readonly Clip[] = consolid
   const name = list.length === 1 ? `${clipName(p, list[0]!)} (consolidated)` : 'Consolidated';
   const { ref, gain } = await renderRange(s, solo, from, to, name);
   const lanes = p.playlist.laneOrder;
-  const laneId = lanes.find((id) => list.some((c) => c.laneId === id)) ?? (lanes[0] as LaneId);
+  // The top-most of their tracks; a recording's comp and take tracks hold only that recording (addClips finds
+  // another track when the clips were all there).
+  const laneId = lanes.find((id) => list.some((c) => c.laneId === id) && (opts.onTakeTrack || !p.playlist.lanes[id]?.takes)) ?? (lanes[0] as LaneId);
   const ch = audioChannel(name, paletteColor(p.channelOrder.length), ref.id);
   const tempo = tempoMapOf(p, 'song');
   const clip: AudioClip = {
@@ -171,7 +178,7 @@ export async function consolidate(s: Services, clips: readonly Clip[] = consolid
     addSample(d, ref);
     addChannel(d, ch);
     removeClips(d, [...keep]);
-    addClips(d, [clip]);
+    addClips(d, [clip], { toTakeLanes: !!opts.onTakeTrack });
   });
   s.editor.getState().selectClips([clip.id]);
   return clip.id;

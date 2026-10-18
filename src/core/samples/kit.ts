@@ -85,3 +85,6 @@ export function planKit(rows: readonly SampleRow[]): KitPlan {
   for (const r of (byCategory.get('none') ?? []).sort((x, y) => x.path.localeCompare(y.path))) place(r, []);
   return { pads, skipped };
 }
+
+/** The Drum Pads' sample slot of pad `n` (1–16): what `PluginInstance.samples` is keyed by. */
+export const padSlot = (n: number): string => `pad${n}`;

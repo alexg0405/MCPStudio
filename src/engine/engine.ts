@@ -29,6 +29,7 @@ import type {
   EngineState,
   EngineStats,
   PluginResolver,
+  PreviewOptions,
   SampleData,
   TransportView,
 } from './api';
@@ -42,6 +43,7 @@ import { MixerGraph } from './mixer-graph';
 import { ParamRegistry } from './param-lane';
 import { SampleCache } from './samples';
 import { decodeAudio } from './decode';
+import { bufferFromPcm16, copyChannels, runStretch } from './audio-buffers';
 import { sha256Hex } from '@core/io/hash';
 import type { Waveform } from './waveform';
 import { SampleResidency } from './sample-residency';
@@ -1100,16 +1102,29 @@ export class Engine implements EngineApi, EngineCore {
     return { sampleRate: buffer.sampleRate, channels, duration: buffer.duration };
   }
 
-  async previewAudio(bytes: ArrayBuffer): Promise<boolean> {
+  async previewAudio(bytes: ArrayBuffer, opts: PreviewOptions = {}): Promise<boolean> {
     void this.resume();
     const token = ++this.previewToken;
     // Decoded once per file content (the shared cache keeps it, within its budget): clicking the
     // same file again in the browser plays at once.
     const key = `p:${await sha256Hex(new Uint8Array(bytes))}:${this.ctx.sampleRate}`;
-    const buffer = await this.samples.derive(key, () => decodeAudio(this.ctx, bytes).catch(() => null));
+    let buffer = await this.samples.derive(key, () => decodeAudio(this.ctx, bytes).catch(() => null));
     if (!buffer) return false;
+    // A tempo match that keeps the pitch: stretched once per file and ratio (kept in the cache like the decode).
+    const stretch = opts.stretch;
+    let playKey = key;
+    if (stretch !== undefined && Number.isFinite(stretch) && Math.abs(stretch - 1) > 0.002 && stretch > 0.25 && stretch < 4) {
+      const source = buffer;
+      playKey = `${key}|pst:${stretch.toFixed(4)}`;
+      const stretched = await this.samples.derive(playKey, async () => {
+        const channels = await copyChannels(source);
+        return bufferFromPcm16(await runStretch({ channels, scale: stretch, sampleRate: source.sampleRate }, -1));
+      });
+      if (stretched) buffer = stretched;
+      else playKey = key;
+    }
     // A newer preview (or a stop) was requested while this one decoded.
-    if (token === this.previewToken) this.playPreview(buffer, key);
+    if (token === this.previewToken) this.playPreview(buffer, playKey, opts);
     return true;
   }
 
@@ -1125,17 +1140,43 @@ export class Engine implements EngineApi, EngineCore {
     this.previewRelease = null;
   }
 
+  setPreviewVolume(gain: number): void {
+    const g = Number.isFinite(gain) ? Math.min(2, Math.max(0, gain)) : 0.8;
+    this.previewBus.gain.setTargetAtTime(g, this.ctx.currentTime, 0.01);
+  }
+
+  /**
+   * The context time of the song's next beat as it will be heard, or null while it does not play (or the beat is
+   * too close to catch). The song's own audio is heard `audibleTime` minus the mixer's latency after it was scheduled,
+   * and a source started at context time t is heard at t: so the beat is at `audibleTime + ticks until it`.
+   */
+  private nextBeatTime(): number | null {
+    if (!this.transport.playing) return null;
+    const heard = this.heardTime();
+    const { tick } = this.transport.tickAt(heard);
+    const tempo = this.tempoMap();
+    const nextTick = (Math.floor(tick / PPQ) + 1) * PPQ;
+    const wait = (nextTick - tick) * tempo.secondsPerTick(tick);
+    if (!Number.isFinite(wait) || wait < 0) return null;
+    let at = this.audibleTime() + wait;
+    // Too late to catch this beat: the one after.
+    if (at < this.ctx.currentTime + 0.02) at += PPQ * tempo.secondsPerTick(nextTick);
+    return at;
+  }
+
   /** Plays a buffer on the preview bus; its cache entry stays pinned while it sounds. */
-  private playPreview(buffer: AudioBuffer, key: string): void {
+  private playPreview(buffer: AudioBuffer, key: string, opts: PreviewOptions = {}): void {
     this.stopPreview();
-    const src = new AudioBufferSourceNode(this.ctx, { buffer });
+    const rate = opts.rate !== undefined && Number.isFinite(opts.rate) ? Math.min(8, Math.max(0.125, opts.rate)) : 1;
+    const src = new AudioBufferSourceNode(this.ctx, { buffer, playbackRate: rate, loop: opts.loop === true });
     const release = this.samples.pin(key);
     src.connect(this.previewBus);
     src.onended = () => {
       src.disconnect();
       release();
     };
-    src.start();
+    const at = opts.onBeat ? this.nextBeatTime() : null;
+    src.start(at ?? 0);
     this.previewSource = src;
     this.previewRelease = release;
   }

@@ -36,6 +36,7 @@ import { AssistantFacade } from './assistant/facade';
 import { McpLink } from './mcp/bridge';
 import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
+import { SampleBrowser, type SampleBrowserOptions } from './samples/browser';
 import { TapRegistry } from './taps';
 import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
 import { createDecksFactory, type DecksAccess } from './dj/decks-factory';
@@ -93,6 +94,11 @@ export interface Services {
   /** DJ mode: each song's tempo, beat grid, key, energy, sections and mix points (cached by content hash). */
   readonly trackAnalyzer: TrackAnalyzer;
   /**
+   * The sample browser's model: the files of your sample folders with their analysis (category, tempo, key…), favorites,
+   * tags, the filter and the audition settings. Started by its feature; not part of the project.
+   */
+  readonly sampleBrowser: SampleBrowser;
+  /**
    * DJ live decks: created on first use (the audio graph on the first song loaded), always the same object.
    * Deck state is live performance state: not in the project, not in History.
    */
@@ -135,6 +141,8 @@ export interface ServiceOptions {
   presetStorage?: PresetStorage;
   /** Where track analyses are kept (default: IndexedDB). */
   analysisStorage?: AnalysisStorage;
+  /** The sample browser's storage, analysis runner and folders (default: IndexedDB, Workers, your sample folders). */
+  sampleBrowser?: SampleBrowserOptions;
 }
 
 export function createServices(opts: ServiceOptions = {}): Services {
@@ -248,6 +256,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   );
   void presets.load();
   const trackAnalyzer = createTrackAnalyzer(opts.analysisStorage ? { storage: opts.analysisStorage } : {});
+  const sampleBrowser = new SampleBrowser(opts.sampleBrowser);
   const launcher = new LauncherSession({
     engine,
     doc,
@@ -297,6 +306,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     },
     presets,
     trackAnalyzer,
+    sampleBrowser,
     decks: createDecksFactory(() => services),
     launcher,
     rebootEngine: () => engine.reboot(),

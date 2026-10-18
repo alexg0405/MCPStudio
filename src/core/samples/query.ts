@@ -37,9 +37,11 @@ export interface SampleFilter {
   recent: boolean;
   /** Your own tags: all of them must be on the sample. */
   tags: readonly string[];
+  /** Only files under this folder: `<folder>` or `<folder>/<subfolders>` (null: everywhere). */
+  under: string | null;
 }
 
-export const NO_FILTER: SampleFilter = { text: '', categories: [], kind: 'any', bpm: null, halfDouble: false, keys: [], favorites: false, recent: false, tags: [] };
+export const NO_FILTER: SampleFilter = { text: '', categories: [], kind: 'any', bpm: null, halfDouble: false, keys: [], favorites: false, recent: false, tags: [], under: null };
 
 export type SampleSort = 'name' | 'bpm' | 'key' | 'length' | 'recent' | 'category' | 'loudness';
 export const SORT_LABELS: Readonly<Record<SampleSort, string>> = {
@@ -88,7 +90,7 @@ export function analysisTags(a: SampleAnalysis | null): string[] {
 
 /** The haystack a text search looks in. */
 function haystack(r: SampleRow): string {
-  return [r.path, ...analysisTags(r.analysis), ...r.userTags, r.favorite ? 'favorite' : ''].join(' ').toLowerCase();
+  return [r.folder, r.path, ...analysisTags(r.analysis), ...r.userTags, r.favorite ? 'favorite' : ''].join(' ').toLowerCase();
 }
 
 /** Words of a search, lower case. A word with a leading "-" must be absent. */
@@ -102,6 +104,12 @@ export function searchWords(text: string): { has: string[]; not: string[] } {
   return { has, not };
 }
 
+/** Whether a row's file is in the folder `under` names (`<folder>` or `<folder>/<subfolders>`). */
+export function isUnder(r: Pick<SampleRow, 'folder' | 'path'>, under: string): boolean {
+  const full = `${r.folder}/${r.path}`;
+  return full === under || full.startsWith(under.endsWith('/') ? under : `${under}/`);
+}
+
 const inRange = (bpm: number, [lo, hi]: readonly [number, number]) => bpm >= lo && bpm <= hi;
 
 /** Whether a row passes the filter. */
@@ -110,6 +118,7 @@ export function matches(r: SampleRow, f: SampleFilter): boolean {
   if (f.favorites && !r.favorite) return false;
   if (f.recent && r.lastUsed <= 0) return false;
   if (f.tags.length > 0 && !f.tags.every((t) => r.userTags.includes(t))) return false;
+  if (f.under !== null && !isUnder(r, f.under)) return false;
   if (f.kind !== 'any' && a?.kind !== f.kind) return false;
   if (f.categories.length > 0 && !(a?.category && f.categories.includes(a.category))) return false;
   if (f.bpm) {

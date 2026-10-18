@@ -3,10 +3,11 @@ import { decodePcm } from '@core/io/wav';
 import { newId } from '@core/model/ids';
 import { fxSeconds, parseFxName } from '@core/model/fx';
 import { kitPiece } from '@core/model/kit';
-import type { AudioClip, AudioClipChannel, ChannelId, LaneId, PluginOwner, SampleRef, Tick } from '@core/model/types';
+import type { AudioClip, AudioClipChannel, ChannelId, ClipId, LaneId, PluginOwner, SampleRef, Tick } from '@core/model/types';
 import { DEFAULT_CHANNEL_VOLUME, paletteColor } from '@core/model/defaults';
 import { addChannel, addSample, setPluginSample } from '@core/ops/channels';
-import { addClips } from '@core/ops/playlist';
+import { addClips, ordinaryLaneFor } from '@core/ops/playlist';
+import { PPQ } from '@core/time/ppq';
 import { tempoMapOf } from '@core/automation/tempo';
 import { generate } from '@engine/kit/generators';
 import type { Services } from '../services';
@@ -138,11 +139,20 @@ export function setChannelSample(s: Services, channelId: ChannelId, ref: SampleR
   return true;
 }
 
+/** How an audio clip made from a sample behaves: a loop can follow the song's tempo. */
+export interface AudioClipOptions {
+  /** The tempo the audio was made at: the clip follows the song tempo by time-stretching (pitch kept). */
+  followBpm?: number;
+  /** With `followBpm`: the loop's length in bars, which the clip lasts whatever the song tempo. */
+  bars?: number;
+}
+
 /**
  * FL behaviour: dropping a sample on the playlist creates an "audio clip" channel for it plus a
- * clip as long as the sample (at the current tempo).
+ * clip as long as the sample (at the current tempo). `laneId` null puts it on the first track with room. A loop with a
+ * known tempo can follow the song tempo (`followBpm`).
  */
-export function addAudioClip(s: Services, ref: SampleRef, laneId: LaneId, start: Tick): void {
+export function addAudioClip(s: Services, ref: SampleRef, laneId: LaneId | null, start: Tick, opts: AudioClipOptions = {}): ClipId {
   const project = s.doc.getState().project;
   const seconds = ref.durationSec ?? (ref.source.kind === 'builtin' ? kitDuration(ref.source.generator) : 1);
   const channel: AudioClipChannel = {
@@ -156,25 +166,24 @@ export function addAudioClip(s: Services, ref: SampleRef, laneId: LaneId, start:
     pan: 0,
     output: project.mixer.order[0] ?? ('master' as AudioClipChannel['output']),
     sampleId: ref.id,
+    ...(opts.followBpm ? { stretch: 'stretch' as const, sourceBpm: opts.followBpm } : {}),
   };
-  // The clip lasts as long as the sample at the tempo where it lands.
+  // The clip lasts as long as the sample at the tempo where it lands; a loop that follows the tempo lasts its bars.
   const tempo = tempoMapOf(project, 'song');
-  const ticks = Math.max(1, Math.round(tempo.secondsToTick(tempo.tickToSeconds(start) + seconds) - start));
-  const clip: AudioClip = {
-    kind: 'audio',
-    id: newId.clip(),
-    laneId,
-    start,
-    length: ticks,
-    channelId: channel.id,
-    offsetSec: 0,
-  };
+  const ticks =
+    opts.followBpm && opts.bars
+      ? Math.max(1, Math.round(opts.bars * project.transport.timeSig.num * ((PPQ * 4) / project.transport.timeSig.den)))
+      : Math.max(1, Math.round(tempo.secondsToTick(tempo.tickToSeconds(start) + seconds) - start));
+  const clipId = newId.clip();
   s.history.transact(`Add ${channel.name} clip`, (d) => {
     addSample(d, { ...ref, durationSec: seconds });
     addChannel(d, channel);
+    const lane = laneId ?? ordinaryLaneFor(d, start, start + ticks);
+    const clip: AudioClip = { kind: 'audio', id: clipId, laneId: lane, start, length: ticks, channelId: channel.id, offsetSec: 0 };
     addClips(d, [clip]);
   });
-  s.editor.getState().selectClips([clip.id]);
+  s.editor.getState().selectClips([clipId]);
+  return clipId;
 }
 
 /** A kit sound dropped on the playlist. */

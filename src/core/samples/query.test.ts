@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analysisTags, browse, cleanTag, countByCategory, fitsKey, matches, NO_FILTER, searchWords, semitonesToKey, similarTo, sortRows, type SampleFilter, type SampleRow } from './query';
+import { analysisTags, browse, cleanTag, countByCategory, fitsKey, isUnder, matches, NO_FILTER, searchWords, semitonesToKey, similarTo, sortRows, type SampleFilter, type SampleRow } from './query';
 import { distance } from './similarity';
 import { SAMPLE_ANALYSIS_VERSION, type SampleAnalysis } from './types';
 
@@ -95,6 +95,15 @@ describe('filters', () => {
   it('by key (the note of a one-shot or the key of a loop)', () => {
     expect(names(rows.filter((r) => matches(r, f({ keys: [9] }))))).toEqual(['808 A', 'Keys Loop']);
     expect(names(rows.filter((r) => matches(r, f({ keys: [0, 1] }))))).toEqual(['Kick Deep', 'Pad C']);
+  });
+
+  it('by folder (the folder and what is below it)', () => {
+    expect(names(rows.filter((r) => matches(r, f({ under: 'Pack/Loops' }))))).toEqual(['Drum Loop 90']);
+    expect(names(rows.filter((r) => matches(r, f({ under: 'Pack' }))))).toHaveLength(rows.length);
+    expect(names(rows.filter((r) => matches(r, f({ under: 'Other' }))))).toEqual([]);
+    expect(names(rows.filter((r) => matches(r, f({ under: 'Pack/Loop' }))))).toEqual([]);
+    expect(isUnder({ folder: 'A', path: 'x/y.wav' }, 'A/x/')).toBe(true);
+    expect(isUnder({ folder: 'A', path: 'x/y.wav' }, 'A/x/y.wav')).toBe(true);
   });
 
   it('combines filters, and rows not analyzed yet only show with no analysis filter on', () => {

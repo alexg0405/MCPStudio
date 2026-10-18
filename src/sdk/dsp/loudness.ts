@@ -89,10 +89,15 @@ const RELATIVE_GATE = -10;
 /** Integrated-loudness histogram: 0.05 LU bins from the absolute gate up to +10 LUFS. */
 const BIN_LU = 0.05;
 const HISTOGRAM_TOP = 10;
+/** Loudness range (EBU Tech 3342): short-term values above −70 LUFS, then 20 LU under their power mean; the 10th to 95th percentile. */
+const RANGE_GATE = -20;
+const RANGE_LOW_PERCENTILE = 0.1;
+const RANGE_HIGH_PERCENTILE = 0.95;
 
 /**
- * Loudness meter (BS.1770-4, EBU R128): momentary (400 ms), short-term (3 s) and integrated
- * (gated, since the last reset) loudness in LUFS, from K-weighted mean squares in 100 ms steps.
+ * Loudness meter (BS.1770-4, EBU R128): momentary (400 ms), short-term (3 s), integrated
+ * (gated, since the last reset) loudness in LUFS and loudness range (LRA, EBU Tech 3342), from K-weighted
+ * mean squares in 100 ms steps.
  * Stereo channels count fully (G = 1). Values are −Infinity until there is something to measure.
  */
 export class LoudnessMeter {
@@ -115,6 +120,11 @@ export class LoudnessMeter {
   /** Histogram of 400 ms gating blocks: count and summed mean square per bin. */
   private readonly binCount: Float64Array;
   private readonly binPower: Float64Array;
+  /** The same for the short-term values (every 100 ms), for the loudness range. */
+  private readonly rangeCount: Float64Array;
+  private readonly rangePower: Float64Array;
+  /** Short-term values from blocks counted before this one don't join the loudness range (after resetIntegrated). */
+  private rangeFrom = 0;
 
   constructor(
     readonly sampleRate: number,
@@ -125,6 +135,8 @@ export class LoudnessMeter {
     const bins = Math.ceil((HISTOGRAM_TOP - ABSOLUTE_GATE) / BIN_LU);
     this.binCount = new Float64Array(bins);
     this.binPower = new Float64Array(bins);
+    this.rangeCount = new Float64Array(bins);
+    this.rangePower = new Float64Array(bins);
   }
 
   /** Feeds one frame (`right` is ignored by a one-channel meter). */
@@ -148,17 +160,32 @@ export class LoudnessMeter {
     this.accFrames = 0;
     this.binCount.fill(0);
     this.binPower.fill(0);
+    this.rangeCount.fill(0);
+    this.rangePower.fill(0);
     this.gateFrom = 0;
+    this.rangeFrom = 0;
     this.momentary = this.shortTerm = this.integrated = -Infinity;
   }
 
-  /** Forgets the integrated loudness only: a new measurement of what comes from now on. */
+  /** Forgets the integrated loudness and the loudness range: a new measurement of what comes from now on. */
   resetIntegrated(): void {
     this.binCount.fill(0);
     this.binPower.fill(0);
+    this.rangeCount.fill(0);
+    this.rangePower.fill(0);
     this.integrated = -Infinity;
     // The gating blocks overlap by 300 ms: wait until one is made of new audio only.
     this.gateFrom = this.blockCount + MOMENTARY_BLOCKS;
+    this.rangeFrom = this.blockCount + SHORT_TERM_BLOCKS;
+  }
+
+  /**
+   * Loudness range (LRA) in LU of everything since the last reset: the spread of the short-term loudness
+   * (10th to 95th percentile of the values that pass the −70 LUFS and −20 LU gates), EBU Tech 3342. 0 until
+   * there is a short-term value above the gates. Computed on demand (it scans the histogram).
+   */
+  get range(): number {
+    return loudnessRangeOf(this.rangeCount, this.rangePower);
   }
 
   private endBlock(): void {
@@ -179,6 +206,14 @@ export class LoudnessMeter {
         this.binPower[bin] = (this.binPower[bin] as number) + m;
       }
       this.integrated = this.gated();
+    }
+    if (this.blockCount >= SHORT_TERM_BLOCKS && this.blockCount >= this.rangeFrom) {
+      const level = this.shortTerm;
+      if (level > ABSOLUTE_GATE) {
+        const bin = Math.min(this.rangeCount.length - 1, Math.floor((level - ABSOLUTE_GATE) / BIN_LU));
+        this.rangeCount[bin] = (this.rangeCount[bin] as number) + 1;
+        this.rangePower[bin] = (this.rangePower[bin] as number) + this.mean(SHORT_TERM_BLOCKS);
+      }
     }
   }
 
@@ -208,4 +243,30 @@ export class LoudnessMeter {
     }
     return n > 0 ? loudnessOf(power / n) : -Infinity;
   }
+}
+
+/** LRA from a histogram of short-term values (count and summed mean square per 0.05 LU bin from −70 LUFS). */
+export function loudnessRangeOf(count: Float64Array, power: Float64Array): number {
+  let n = 0;
+  let sum = 0;
+  for (let b = 0; b < count.length; b++) {
+    n += count[b] as number;
+    sum += power[b] as number;
+  }
+  if (n === 0) return 0;
+  const threshold = loudnessOf(sum / n) + RANGE_GATE;
+  const from = Math.max(0, Math.floor((threshold - ABSOLUTE_GATE) / BIN_LU));
+  let kept = 0;
+  for (let b = from; b < count.length; b++) kept += count[b] as number;
+  if (kept === 0) return 0;
+  const percentile = (fraction: number): number => {
+    const goal = fraction * kept;
+    let seen = 0;
+    for (let b = from; b < count.length; b++) {
+      seen += count[b] as number;
+      if (seen >= goal && (count[b] as number) > 0) return ABSOLUTE_GATE + (b + 0.5) * BIN_LU;
+    }
+    return ABSOLUTE_GATE + (count.length - 0.5) * BIN_LU;
+  };
+  return Math.max(0, percentile(RANGE_HIGH_PERCENTILE) - percentile(RANGE_LOW_PERCENTILE));
 }

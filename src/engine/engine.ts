@@ -29,6 +29,7 @@ import type {
   EngineSession,
   EngineState,
   EngineStats,
+  MeterHandle,
   PluginResolver,
   PreviewOptions,
   SampleData,
@@ -55,6 +56,7 @@ import { patternModeSource, songModeSource, type EventSource } from './sched/eve
 import { Transport, type TransportSink } from './sched/transport';
 import { LAUNCH_GRACE_SEC, type LaunchClock, type LaunchDriver, type LaunchRun } from '@core/launcher/run';
 import { LIMITER_ID } from './limiter-id';
+import { MeterNode, canMeter } from './meter/meter-node';
 import type { WorkletPortImpl } from './worklet-port';
 import limiterUrl from './limiter.worklet.ts?worker&url';
 
@@ -1217,6 +1219,23 @@ export class Engine implements EngineApi, EngineCore {
     this.mixer.readMeters(order, out);
   }
 
+  /** Live meters (the metering suite): one worklet node each, taken away when closed. */
+  private readonly liveMeters = new Set<MeterNode>();
+
+  openMeter(source: InsertId, opts: { full?: boolean } = {}): MeterHandle | null {
+    if (this.offline || this.disposed || !canMeter()) return null;
+    const from = this.mixer.outputNode(source);
+    if (!from) return null;
+    const meter = new MeterNode(this.ctx, (url) => this.loadModule(url), from, opts, (m) => this.liveMeters.delete(m));
+    this.liveMeters.add(meter);
+    return meter;
+  }
+
+  /** Meters that are open (a closed Meters window leaves none). */
+  get meterCount(): number {
+    return this.liveMeters.size;
+  }
+
   // ---- Timeline, automation, session ----
 
   tickAt(contextTime: number): { tick: number; iter: number } {
@@ -1348,6 +1367,7 @@ export class Engine implements EngineApi, EngineCore {
     for (const p of [...this.ports]) p.dispose();
     for (const input of [...this.inputs]) input.close();
     this.limiter?.port.postMessage({ t: 'dispose' });
+    for (const m of [...this.liveMeters]) m.close();
     this.outTap?.dispose();
     this.listeners.clear();
     if (typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state !== 'closed') {

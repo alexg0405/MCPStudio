@@ -16,7 +16,8 @@ export { LinkwitzRiley } from './dsp/crossover';
 export { Yin, type YinOptions } from './dsp/yin';
 export { TruePeak } from './dsp/true-peak';
 export { LookaheadLimiter, LIMITER_DETECTOR_FRAMES } from './dsp/lookahead-limiter';
-export { KWeighting, LoudnessMeter, loudnessOf } from './dsp/loudness';
+export { KWeighting, LoudnessMeter, loudnessOf, loudnessRangeOf } from './dsp/loudness';
+export { Fft, StereoSpectrum } from './dsp/fft';
 export {
   NOTE_BEATS,
   NOTE_LABELS,

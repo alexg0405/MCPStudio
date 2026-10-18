@@ -279,6 +279,11 @@ export class MixerGraph {
     return this.bus(id).chIn;
   }
 
+  /** After the fader of an insert (the master's is what leaves the mixer): where a meter listens. Null for an unknown insert. */
+  outputNode(id: InsertId): AudioNode | null {
+    return this.strips.has(id) ? this.bus(id).postTap : null;
+  }
+
   strip(id: InsertId): InsertStrip | undefined {
     return this.strips.get(id);
   }

@@ -9,11 +9,51 @@ import type {
   EngineSession,
   EngineState,
   EngineStats,
+  MeterHandle,
   PreviewOptions,
   SampleData,
   TransportView,
 } from './api';
+import { initReadings, plainViews, R, type MeterViews } from './meter/layout';
 import { INACTIVE_TAP } from './tap';
+
+/** A meter for Node tests: set `readings` (see `R`) and the app reads them as the audio thread's. */
+export class FakeMeter implements MeterHandle {
+  readonly readings: Float64Array;
+  readonly history: Float32Array;
+  readonly spectrum: Float32Array;
+  readonly scope: Float32Array;
+  readonly sampleRate = 48000;
+  closed = false;
+  active = true;
+  blocks = 0;
+  full: boolean;
+  resets = 0;
+  constructor(
+    readonly source: InsertId,
+    full: boolean,
+    views: MeterViews = plainViews(),
+  ) {
+    this.readings = views.readings;
+    this.history = views.history;
+    this.spectrum = views.spectrum;
+    this.scope = views.scope;
+    this.full = full;
+    initReadings(this.readings, 48000);
+  }
+  setDetail(full: boolean): void {
+    this.full = full;
+    this.readings[R.detail] = full ? 1 : 0;
+  }
+  reset(): void {
+    this.resets++;
+    this.readings[R.resetSeq] = (this.readings[R.resetSeq] as number) + 1;
+  }
+  close(): void {
+    this.closed = true;
+    this.active = false;
+  }
+}
 
 /**
  * A live input for Node tests: `feed()` appends audio as if it arrived from the microphone; a
@@ -188,6 +228,13 @@ export class FakeEngine implements EngineApi {
   stopPreview(): void {}
   setPreviewVolume(gain: number): void {
     this.previewVolume = gain;
+  }
+  /** The meters opened on this engine (`openMeter`), for tests to feed and inspect. */
+  readonly meters: FakeMeter[] = [];
+  openMeter(source: InsertId, opts: { full?: boolean } = {}): MeterHandle | null {
+    const meter = new FakeMeter(source, !!opts.full);
+    this.meters.push(meter);
+    return meter;
   }
   /** Peaks readMeters() reports per insert ([left, right]); everything else reads 0. */
   meterLevels = new Map<InsertId, readonly [number, number]>();

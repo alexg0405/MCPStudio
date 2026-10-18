@@ -13,6 +13,31 @@ import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
 
 export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio };
 
+/**
+ * A live meter on one audio node (see engine/meter): the numbers the audio thread measures, in shared memory (a
+ * `readings` slot per value: `R` in engine/meter/layout), for the frame loop to read without any message. Closing it
+ * takes the processor off the audio thread.
+ */
+export interface MeterHandle {
+  readonly readings: Float64Array;
+  /** Momentary and short-term loudness every 100 ms (a ring: `R.histCount` points were written). */
+  readonly history: Float32Array;
+  /** Linear power per FFT bin (full detail only). */
+  readonly spectrum: Float32Array;
+  /** The newest 2048 frames, left and right interleaved (a ring; full detail only). */
+  readonly scope: Float32Array;
+  readonly sampleRate: number;
+  /** The processor runs. */
+  readonly active: boolean;
+  /** Render quanta handled so far: it stands still once closed. */
+  readonly blocks: number;
+  /** Full: also bands, spectrum and scope (costs more). */
+  setDetail(full: boolean): void;
+  /** Restarts the integrated loudness, the loudness range, the maximums and the history. */
+  reset(): void;
+  close(): void;
+}
+
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
 
 /** A decoded sample's audio (at the engine's sample rate). Read-only: it is the engine's own copy. */
@@ -224,6 +249,12 @@ export interface EngineApi {
    */
   isStretching(channelId: ChannelId): boolean;
   stats(): EngineStats;
+  /**
+   * Opens a meter on the master (`MASTER`) or on an insert's output (after its fader): BS.1770 loudness, true peak,
+   * correlation, bands, spectrum. Null where metering is not possible (offline engines, no cross-origin isolation, the
+   * engine has not started). `close()` it when nobody watches. A rebooted engine's meters are made again by `EngineHost`.
+   */
+  openMeter?(source: InsertId, opts?: { full?: boolean }): MeterHandle | null;
   /**
    * The live-audio host of a realtime engine (null offline and in tests): the DJ decks play through it, so the
    * output device choice and the safety limiter apply to them too.

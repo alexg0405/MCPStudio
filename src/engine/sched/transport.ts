@@ -9,11 +9,12 @@
  */
 import type { AudioClip, ChannelId, Clip, LaneId, Tick } from '@core/model/types';
 import { followsTempo, playbackKey, playbackMode } from '@core/audio/playback';
-import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
+import { ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
 import { plan, segmentEndTime, tickAtTime, tickNumberAt, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
 import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
 import type { LaunchRun } from '@core/launcher/run';
+import { advanceTick, launchPassTempo, retreatTick } from './launch-tempo';
 import { collectLaunchAudio, collectLaunchNotes, laneOverridden, overrideStartAfter } from './launch';
 
 /** A planned segment with the launcher axis position of its start (`u`: see core/launcher/run.ts). */
@@ -381,6 +382,26 @@ export class Transport {
     return c ? this.uFrontier + (time - c.time) / this.timeline.tempo.secondsPerTick(c.tick) : this.uFrontier;
   }
 
+  /**
+   * The song tick launcher tick `u` is (or will be) played at: on the planned segments, past them by carrying the
+   * plan on (loop wraps included).
+   */
+  tickAtU(u: number): number {
+    if (!this.playingFlag) return u;
+    for (let i = this.segs.length - 1; i >= 0; i--) {
+      const s = this.segs[i] as USegment;
+      if (u >= s.u0 && u <= s.u0 + (s.tick1 - s.tick0)) return s.tick0 + (u - s.u0);
+    }
+    if (this.cursor && u >= this.uFrontier) return advanceTick(this.timeline, this.cursor.tick, u - this.uFrontier);
+    const first = this.segs[0];
+    return first ? Math.max(0, first.tick0 - (first.u0 - u)) : u;
+  }
+
+  /** The tempo a launched pass over launcher ticks [u0, u1] plays under, on the plan as it stands (see launch-tempo.ts). */
+  launchTempo(u0: number, u1: number): TempoMap {
+    return launchPassTempo(this.timeline, this.tickAtU(u0), u0, u1);
+  }
+
   /** The loop iteration heard at `time` (UI uses it for the current step light). */
   iterationAt(time: number): number {
     return tickAtTime(this.segs, time)?.iter ?? 0;
@@ -453,10 +474,17 @@ export class Transport {
       let evTempo = tempo;
       const evTick = ev.start;
       if (ev.kind === 'audio' && launch && ev.launch?.clip) {
-        // A pass of a slot's audio: its clip starts on the launcher axis, which runs at the tempo of this segment.
+        // A pass of a slot's audio: its clip starts on the launcher axis, which runs at the song's tempo along the way
+        // (a constant map unless the tempo changes during the pass: see launch-tempo.ts).
         audioClip = ev.launch.clip;
         n.clip = audioClip;
-        evTempo = constantTempo(Math.round((60 / (seg.spt * PPQ)) * 1e6) / 1e6);
+        // (A pass already going when planned (a re-plan) is followed back to its start: fades and 'off' read from there.)
+        evTempo = launchPassTempo(
+          this.timeline,
+          retreatTick(this.timeline, seg.tick0 + (ev.start - seg.u0), ev.start - audioClip.start),
+          audioClip.start,
+          audioClip.start + audioClip.length,
+        );
       } else if (!launch && clips) {
         const clip = clips[ev.clipId as keyof typeof clips];
         if (clip) {

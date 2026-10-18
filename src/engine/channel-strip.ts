@@ -2,7 +2,8 @@ import { CHANNEL_PAN_SPEC, CHANNEL_PITCH_SPEC, CHANNEL_VOLUME_SPEC } from '@core
 import { targetKey } from '@core/model/targets';
 import { automatedOwners, ownerKey } from '@core/automation/owners';
 import type { AudioClip, AudioClipChannel, InsertId, InstrumentChannel, Project } from '@core/model/types';
-import { clipSampleId, playbackMode } from '@core/audio/playback';
+import { clipSampleId, playbackMode, stretchScale } from '@core/audio/playback';
+import type { TempoMap } from '@core/time/ppq';
 import type { InstrumentInstance, JsonValue, NoteOff, NoteOn, ParamSignal } from '@agstudio/sdk';
 import { HostImpl } from './host';
 import { createClipPlayer, type ClipPlayer } from './clip-player';
@@ -172,13 +173,18 @@ export class ChannelStrip {
 
   /**
    * Audio-clip channels: the clip launcher is about to play this sample, which no playlist clip may need: have it
-   * decoded (and kept) before the first pass starts.
+   * decoded (and kept) before the first pass starts. With `pass` (the clip of the first pass and the tempo it plays under), a
+   * 'stretch' channel also gets its time-stretched copy started, the one the playlist would make for that clip.
    */
-  warm(): void {
+  warm(pass?: { clip: AudioClip; tempo: TempoMap }): void {
     const ch = this.channel;
     if (ch.kind !== 'audioClip') return;
     const ref = this.project.samples[ch.sampleId];
-    if (ref) this.core.residency.request(ref, playbackMode(ch).reverse, ch.id);
+    if (!ref) return;
+    const mode = playbackMode(ch);
+    this.core.residency.request(ref, mode.reverse, ch.id);
+    if (pass && mode.follow === 'stretch')
+      this.core.residency.stretched(pass.clip, stretchScale(mode, pass.tempo, pass.clip.start), pass.tempo);
   }
 
   /** Audio-clip channels: frees the buffers of finished voices. */
@@ -334,7 +340,7 @@ export class ChannelStrip {
           const buffer = residency.base(r, reverse);
           return buffer ? { buffer, key: residency.baseKey(r, reverse) } : null;
         },
-        stretched: (clip, scale) => residency.stretched(clip, scale),
+        stretched: (clip, scale, tempo) => residency.stretched(clip, scale, tempo),
         request: (clip) => {
           const r = ref(clip);
           if (r) residency.request(r, playbackMode(ch()).reverse, ch().id);

@@ -16,6 +16,7 @@ import type {
 } from '@core/model/types';
 import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
+import { passClip } from './sched/launch';
 import { automatedOwners } from '@core/automation/owners';
 import { playbackKey } from '@core/audio/playback';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
@@ -672,9 +673,35 @@ export class Engine implements EngineApi, EngineCore {
     if (this.soloLauncher && d.runs.length > 0 && d.idleAt(clock.heardU)) this.stop();
   }
 
-  /** Audio runs: their samples are decoded before the first pass (the playlist's residency does not know them). */
+  /**
+   * Audio runs: their samples are decoded before the first pass (the playlist's residency does not know them), and on
+   * a 'stretch' channel the stretched copy the playlist would play for the first pass is made too, under the tempo the
+   * pass starts at (later passes under another tempo make theirs when they come up).
+   */
   private warmLaunchAudio(runs: readonly LaunchRun[]): void {
-    for (const r of runs) if (r.content.kind === 'audio') this.strips.get(r.content.channelId)?.warm();
+    const p = this.project;
+    const alive = new Set<string>();
+    for (const r of runs) {
+      if (r.content.kind !== 'audio' || r.passLength <= 0) continue;
+      const strip = this.strips.get(r.content.channelId);
+      if (!strip || !p) continue;
+      alive.add(r.id);
+      const clip = passClip(r, r.startU, r.passLength);
+      const tempo = this.transport.playing
+        ? this.transport.launchTempo(r.startU, r.startU + r.passLength)
+        : constantTempo(Math.round(tempoMapOf(p, 'pattern').bpm * 1e6) / 1e6);
+      strip.warm({ clip, tempo });
+    }
+    this.residency.endLaunch(alive);
+  }
+
+  /**
+   * Resolves when what the launcher's runs play is ready: samples decoded and stretched copies made. Presses never wait for
+   * it (a pass whose copy is late plays the plain sample first); tests and renders do, to hear what a settled launcher plays.
+   */
+  async launchReady(): Promise<void> {
+    if (this.launcher) this.warmLaunchAudio(this.launcher.runs);
+    await this.residency.settled();
   }
 
   /**
@@ -793,6 +820,7 @@ export class Engine implements EngineApi, EngineCore {
     this.soloLauncher = false;
     this.launcher?.reset?.();
     this.launchSeen = this.launcher ? this.launcher.runs : null;
+    this.residency.endLaunch(new Set());
     this.stopClock();
     // Stopped: the residency lets its pins go, and the voices' buffers once their release is over.
     this.updateResidency(true);

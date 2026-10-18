@@ -12,6 +12,7 @@ import type { AudioClip, ChannelId, ClipId, LaunchTrackId, PatternId, Project, S
 import { contentFromAudioChannel, patchSlot, setSlotContent, setTrackLane } from '@core/ops/launcher';
 import { addClips } from '@core/ops/playlist';
 import { constantTempo, type TempoMap } from '@core/time/ppq';
+import { steppedTempo } from '@core/time/tempo';
 import { songModeSource, type EventSource } from './events';
 import { Transport, type AudioOn, type TransportSink } from './transport';
 
@@ -26,11 +27,11 @@ interface Call {
   channel: ChannelId;
 }
 
-function rig(opts: { song?: boolean; edit?: (p: Project, f: ReturnType<typeof launcherFixture>) => Project } = {}) {
+function rig(opts: { song?: boolean; tempo?: TempoMap; edit?: (p: Project, f: ReturnType<typeof launcherFixture>) => Project } = {}) {
   const f = launcherFixture();
   let project = produce(f.project, (d) => void (d.transport.bpm = 120));
   if (opts.edit) project = opts.edit(project, f);
-  const tempo: TempoMap = constantTempo(120);
+  const tempo: TempoMap = opts.tempo ?? constantTempo(120);
   const clock = { currentTime: 0 };
   const calls: Call[] = [];
   const audio: AudioOn[] = [];
@@ -403,6 +404,64 @@ describe('audio slots', () => {
     const off = r.calls.find((c) => c.t === 'off' && c.noteId === on.noteId)!;
     expect(off.time).toBeCloseTo(2.04, 6);
     void ({} as AudioClip);
+  });
+});
+
+describe('audio slots under tempo automation', () => {
+  const edit = (len: number) => (p: Project, f: ReturnType<typeof launcherFixture>) =>
+    produce(p, (d) => {
+      const c = contentFromAudioChannel(d as unknown as Project, f.audioId)!;
+      if (c.kind === 'audio') c.length = len;
+      setSlotContent(d, f.tracks[2]!, f.scenes[0]!, c);
+      addClips(d, [{ kind: 'pattern', id: 'song' as ClipId, laneId: d.playlist.laneOrder[0]!, start: 0, length: 8 * BAR, patternId: f.patterns[1]!, offset: 0 }]);
+    });
+
+  it('a pass gets the song tempo along its way: constant where the tempo does not change, stepped where it does', () => {
+    // 120 BPM for the first bar, 240 after.
+    const tempo = steppedTempo([{ tick: 0, bpm: 120 }, { tick: BAR, bpm: 240 }]);
+    const r = rig({ song: true, tempo, edit: edit(2 * BAR) });
+    r.transport.start(0, 0);
+    r.press((clk) => r.seq.launch(tr(r, 2), sc(r, 0), clk)); // on the boundary at 0 (the press is at the very start)
+    r.run(2);
+    const pass = r.audio[0]!;
+    expect(pass.clip.start).toBe(0);
+    expect(pass.tempo.constant).toBe(false);
+    // Launcher tick u = song tick here: 120 BPM for a bar (2 s), then 240 BPM (1 s per bar).
+    expect(pass.tempo.bpmAt(100)).toBe(120);
+    expect(pass.tempo.bpmAt(BAR + 100)).toBe(240);
+    expect(pass.tempo.nextChange(0)).toBe(BAR);
+    expect(pass.tempo.tickToSeconds(2 * BAR) - pass.tempo.tickToSeconds(0)).toBeCloseTo(3, 9);
+    // A pass that starts after the change sees a constant 240 BPM.
+    r.press((clk) => r.seq.launch(tr(r, 2), sc(r, 0), clk));
+    r.run(5);
+    const later = r.audio.find((a) => a.clip.start >= 2 * BAR)!;
+    expect(later.tempo.constant).toBe(true);
+    expect(later.tempo.bpm).toBe(240);
+  });
+
+  it('a pass that crosses the song loop wrap follows the tempo of where the song goes next', () => {
+    // A two-bar song loop at 120 BPM in bar 1 and 240 in bar 2; the pass starts in bar 2 and runs through the wrap into bar 1.
+    const tempo = steppedTempo([{ tick: 0, bpm: 120 }, { tick: BAR, bpm: 240 }]);
+    const r = rig({
+      song: true,
+      tempo,
+      edit: (p, f) =>
+        produce(edit(2 * BAR)(p, f), (d) => {
+          for (const c of Object.values(d.playlist.clips)) if (c.id === ('song' as ClipId)) c.length = 2 * BAR;
+        }),
+    });
+    r.transport.start(0, 0);
+    r.run(0.5);
+    r.press((clk) => r.seq.launch(tr(r, 2), sc(r, 0), clk)); // the next bar line: song tick BAR
+    const run = r.seq.runs[0]!;
+    expect(run.startU).toBe(BAR);
+    r.run(2.6);
+    const pass = r.audio.find((a) => a.clip.start === BAR)!;
+    expect(pass.tempo.bpmAt(BAR)).toBe(240);
+    // Bar 2 of the song (u from BAR to 2·BAR) at 240 BPM, then the loop wraps to 120 BPM for u from 2·BAR.
+    expect(pass.tempo.bpmAt(2 * BAR + 10)).toBe(120);
+    expect(pass.tempo.nextChange(BAR)).toBe(2 * BAR);
+    expect(pass.tempo.tickToSeconds(3 * BAR) - pass.tempo.tickToSeconds(BAR)).toBeCloseTo(1 + 2, 9);
   });
 });
 

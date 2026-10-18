@@ -9,7 +9,7 @@ import { isBusy } from './busy';
 import { collectGarbage, previewCollection, type CollectResult, type CollectorDeps, type Preview } from './collector';
 import { createBlobGuard } from './guard';
 import { idbKv, LAST_RUN_KEY, type GcKv, type GcLastRun } from './kv';
-import { startTabRefs, type TabRefs } from './tab-refs';
+import { startTabRefs } from './tab-refs';
 import { measureUsage, type StorageUsage } from './usage';
 
 /** The first automatic clean-up waits this long after the tab opens (startup is busy enough). */
@@ -53,6 +53,7 @@ export interface StorageService {
   stop(): void;
 }
 
+/** Why a clean-up can't run right now, in plain words, by the reason the collector gives. */
 export const BLOCKED_TEXT = {
   'tab-starting': 'Another AGstudio tab is still starting up. Try again in a moment.',
   busy: 'An export or import is running. Try again when it finishes.',
@@ -91,9 +92,31 @@ export function storageService(): StorageService | null {
   return current;
 }
 
+/** Clean-up needs OPFS (the files), IndexedDB (the records) and Web Locks (to coordinate tabs). */
 export function isStorageCleanupSupported(): boolean {
   return isOpfsAvailable() && isIdbAvailable() && isWebLocksAvailable();
 }
+
+/** The service where clean-up isn't supported: nothing runs and nothing is ever deleted. */
+function unsupportedService(status: StoreApi<StorageStatus>): StorageService {
+  const unavailable = () => Promise.reject(new Error('Storage clean-up is not available in this browser.'));
+  return {
+    status,
+    usage: unavailable,
+    preview: unavailable,
+    cleanUp: () => Promise.resolve({ status: 'skipped', reason: 'unsupported' }),
+    publishNow: () => Promise.resolve(),
+    stop: () => {},
+  };
+}
+
+/** Blobs per batch of a clean-up: smaller for the automatic one, which runs while the musician works. */
+const AUTO_BATCH_SIZE = 10;
+const MANUAL_BATCH_SIZE = 25;
+/** Pause between batches, in ms, so the page can breathe. */
+const BATCH_PAUSE_MS = 40;
+/** How long the automatic clean-up waits for an idle moment before running anyway. */
+const IDLE_WAIT_MS = 10_000;
 
 /**
  * Starts this tab's part of the clean-up of unused audio: publishes what the tab uses, guards the sample
@@ -102,33 +125,25 @@ export function isStorageCleanupSupported(): boolean {
  */
 export function installStorage(s: Services, sessionId: string, opts: StorageOptions = {}): StorageService {
   const supported = isStorageCleanupSupported();
-  const kv = opts.kv ?? idbKv;
   const status = createStore<StorageStatus>(() => ({
     supported,
     running: null,
     lastRun: null,
     dryRunOnly: opts.dryRunOnly === true,
   }));
-  const none: StorageService = {
-    status,
-    usage: () => Promise.reject(new Error('Storage clean-up is not available in this browser.')),
-    preview: () => Promise.reject(new Error('Storage clean-up is not available in this browser.')),
-    cleanUp: () => Promise.resolve({ status: 'skipped', reason: 'unsupported' }),
-    publishNow: () => Promise.resolve(),
-    stop: () => {},
-  };
-  if (!supported) return (current = none);
+  if (!supported) return (current = unsupportedService(status));
 
+  const kv = opts.kv ?? idbKv;
   const now = opts.now ?? Date.now;
   installBlobGuard(createBlobGuard({ kv, now }));
-  const refs: TabRefs = startTabRefs({
+  const refs = startTabRefs({
     id: sessionId,
     kv,
     project: () => s.doc.getState().project,
     history: s.history,
     subscribe: (fn) => {
-      const offs = [s.history.onChange(fn), s.history.onStatus(fn), s.engine.subscribe(fn)];
-      return () => offs.forEach((off) => off());
+      const unsubscribes = [s.history.onChange(fn), s.history.onStatus(fn), s.engine.subscribe(fn)];
+      return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
     },
     isPlaying: () => s.engine.playing,
     now,
@@ -144,28 +159,30 @@ export function installStorage(s: Services, sessionId: string, opts: StorageOpti
     heldTabs: opts.heldTabs ?? heldSessionLocks,
     self: { id: sessionId, record: refs.record },
     now,
-    log: (m) => console.info(m),
+    log: (message) => console.info(message),
     derived,
   };
 
+  /** Reads the last clean-up's record into the status (and returns it). */
   const readLastRun = async () => {
     const got = await kv.getMany([LAST_RUN_KEY]).catch(() => new Map<string, unknown>());
-    const v = got.get(LAST_RUN_KEY) as GcLastRun | undefined;
-    status.setState({ lastRun: v && typeof v.at === 'number' ? v : null });
-    return v ?? null;
+    const lastRun = got.get(LAST_RUN_KEY) as GcLastRun | undefined;
+    status.setState({ lastRun: lastRun && typeof lastRun.at === 'number' ? lastRun : null });
+    return lastRun ?? null;
   };
   void readLastRun();
 
-  const pause = () => new Promise<void>((r) => setTimeout(r, 40));
-  const run = async (auto: boolean): Promise<CollectResult> => {
+  const pause = () => new Promise<void>((resolve) => setTimeout(resolve, BATCH_PAUSE_MS));
+  /** One clean-up, manual or automatic; only one runs at a time in this tab. */
+  const run = async (isAutomatic: boolean): Promise<CollectResult> => {
     if (status.getState().running) return { status: 'skipped', reason: 'locked' };
     status.setState({ running: { done: 0, total: 0 } });
     try {
       return await collectGarbage(deps, {
-        idle: auto,
-        dryRun: auto && opts.dryRunOnly === true,
-        batch: auto ? 10 : 25,
-        shouldStop: () => s.engine.playing && auto,
+        idle: isAutomatic,
+        dryRun: isAutomatic && opts.dryRunOnly === true,
+        batch: isAutomatic ? AUTO_BATCH_SIZE : MANUAL_BATCH_SIZE,
+        shouldStop: () => s.engine.playing && isAutomatic,
         pause,
         onProgress: (done, total) => status.setState({ running: { done, total } }),
       });
@@ -175,28 +192,12 @@ export function installStorage(s: Services, sessionId: string, opts: StorageOpti
     }
   };
 
-  // ---- Automatic clean-up: at idle, every few hours, never while playing or exporting.
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let stopped = false;
-  const tick = async () => {
-    if (stopped) return;
-    try {
-      if (s.prefs.getState().autoCleanup && !s.engine.playing && !isBusy()) {
-        const last = await readLastRun();
-        if (!last || now() - last.at >= AUTO_INTERVAL_MS) {
-          await new Promise<void>((resolve) => {
-            if (typeof requestIdleCallback === 'function') requestIdleCallback(() => resolve(), { timeout: 10_000 });
-            else setTimeout(resolve, 0);
-          });
-          if (!s.engine.playing && !isBusy()) await run(true);
-        }
-      }
-    } catch (e) {
-      console.warn('Automatic cleanup of unused audio failed:', e);
-    }
-    if (!stopped) timer = setTimeout(() => void tick(), CHECK_EVERY_MS);
-  };
-  timer = setTimeout(() => void tick(), opts.autoStartDelayMs ?? FIRST_RUN_DELAY_MS);
+  const autoCleanup = startAutoCleanup(s, {
+    now,
+    readLastRun,
+    run,
+    firstDelayMs: opts.autoStartDelayMs ?? FIRST_RUN_DELAY_MS,
+  });
 
   const service: StorageService = {
     status,
@@ -205,12 +206,56 @@ export function installStorage(s: Services, sessionId: string, opts: StorageOpti
     cleanUp: () => run(false),
     publishNow: () => refs.publishNow(),
     stop() {
-      stopped = true;
-      clearTimeout(timer);
+      autoCleanup.stop();
       refs.stop();
     },
   };
   return (current = service);
+}
+
+/** What the automatic clean-up needs from the service. */
+interface AutoCleanupDeps {
+  now(): number;
+  /** The last clean-up's record (any tab), or null. */
+  readLastRun(): Promise<GcLastRun | null>;
+  run(isAutomatic: boolean): Promise<CollectResult>;
+  firstDelayMs: number;
+}
+
+/**
+ * The automatic clean-up: at idle, every few hours (across all tabs), never while playing or exporting.
+ * A first check after `firstDelayMs`, then one every half hour while the tab stays open.
+ */
+function startAutoCleanup(s: Services, deps: AutoCleanupDeps): { stop(): void } {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let isStopped = false;
+  const isWorkAllowed = () => !s.engine.playing && !isBusy();
+  const tick = async () => {
+    if (isStopped) return;
+    try {
+      if (s.prefs.getState().autoCleanup && isWorkAllowed()) {
+        const last = await deps.readLastRun();
+        if (!last || deps.now() - last.at >= AUTO_INTERVAL_MS) {
+          await new Promise<void>((resolve) => {
+            if (typeof requestIdleCallback === 'function')
+              requestIdleCallback(() => resolve(), { timeout: IDLE_WAIT_MS });
+            else setTimeout(resolve, 0);
+          });
+          if (isWorkAllowed()) await deps.run(true);
+        }
+      }
+    } catch (e) {
+      console.warn('Automatic cleanup of unused audio failed:', e);
+    }
+    if (!isStopped) timer = setTimeout(() => void tick(), CHECK_EVERY_MS);
+  };
+  timer = setTimeout(() => void tick(), deps.firstDelayMs);
+  return {
+    stop() {
+      isStopped = true;
+      clearTimeout(timer);
+    },
+  };
 }
 
 export type { StorageUsage };

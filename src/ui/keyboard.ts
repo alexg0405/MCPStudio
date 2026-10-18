@@ -32,9 +32,11 @@ export function installKeyboard(services: Services): () => void {
     // A dialog handles its own keys (Enter, Escape); nothing else should react meanwhile.
     if (isModalOpen()) return;
     const inInput = isTextInput(e.target);
-    // The Decks window uses the letter keys for its decks: the typing piano stays quiet there.
+    // The Decks window uses the letter keys for its decks and the clip launcher the number keys for its scenes:
+    // the typing piano stays quiet there.
     const focusedId = services.view.getState().focusedId;
-    const inDecks = !!focusedId && services.view.getState().windows[focusedId]?.type === 'dj-decks';
+    const focusedType = focusedId ? services.view.getState().windows[focusedId]?.type : undefined;
+    const inDecks = focusedType === 'dj-decks' || focusedType === 'launcher';
     if (!inDecks && piano.keyDown(e, inInput)) {
       e.stopPropagation();
       return;

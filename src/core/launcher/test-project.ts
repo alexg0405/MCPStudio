@@ -6,6 +6,8 @@ import type {
   AudioClipChannel,
   ChannelId,
   LaunchTrackId,
+  Note,
+  NoteId,
   PatternId,
   Project,
   SampleId,
@@ -63,10 +65,11 @@ export function launcherFixture(): LauncherFixture {
     const noteTicks = [[0, 960, 1920, 2880], [0], [0, 1920]];
     ['A', 'B', 'C'].forEach((name, i) => {
       const pat = makePattern(`Pattern ${name}`, paletteColor(i + 2));
-      pat.notes[channelId] = {};
+      const notes: Record<NoteId, Note> = {};
+      pat.notes[channelId] = notes;
       for (const tick of noteTicks[i] ?? []) {
         const id = newId.note();
-        pat.notes[channelId][id] = { id, tick, length: 240, key: 60 + i, velocity: 0.8 };
+        notes[id] = { id, tick, length: 240, key: 60 + i, velocity: 0.8 };
       }
       patterns.push(pat.id);
       addPattern(d, pat);

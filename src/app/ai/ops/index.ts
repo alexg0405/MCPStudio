@@ -12,6 +12,7 @@ import { clips } from './clips';
 import { decks } from './decks';
 import { dj } from './dj';
 import { filters } from './filters';
+import { launcher } from './launcher';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
 import { mix } from './mix';
@@ -44,6 +45,7 @@ export const MODULES: readonly OpModule[] = [
   reference,
   dj,
   decks,
+  launcher,
   filters,
   ui,
   session,
@@ -55,7 +57,9 @@ export const DOC_OPS: Readonly<Record<string, OpHandler>> = Object.assign({}, ..
 
 /** Actions the UI runs after the edit (playback, windows, commands…). */
 export const UI_OP_NAMES: ReadonlySet<string> = new Set(
-  [...ui.schemas, ...session.schemas, ...query.schemas, ...decks.schemas].map((o) => o.properties.op.const).concat(RECORD_OP_NAMES),
+  [...ui.schemas, ...session.schemas, ...query.schemas, ...decks.schemas, ...launcher.schemas.filter((o) => o.properties.op.const === 'launcher_play')]
+    .map((o) => o.properties.op.const)
+    .concat(RECORD_OP_NAMES),
 );
 
 export const OP_SCHEMAS: readonly OpSchema[] = MODULES.flatMap((m) => m.schemas);

@@ -31,6 +31,12 @@ const NOT_FOR_AI: Readonly<Record<string, string>> = {
   'ai.clearFocus': 'a UI control of the Studio window: which part of the song the next request is about',
   'view.assistant': 'Studio’s own window: opening or closing it in the middle of a conversation is the musician’s choice',
   'help.palette': 'the action search box: Studio is the search for what the musician wants to do',
+  'launcher.cursor': 'moves the keyboard highlight of the clip launcher window: Studio launches slots by track and scene number',
+  'launcher.launchCursor': 'launches the slot under the clip launcher window’s keyboard highlight: Studio launches by track and scene number (launcher_play)',
+  'launcher.sceneKey': 'the number keys of the clip launcher window: Studio launches scenes with launcher_play',
+  'launcher.stopCursorTrack': 'stops the track under the clip launcher window’s keyboard highlight: Studio stops tracks by number (launcher_play)',
+  'launcher.clearCursor': 'clears the slot under the clip launcher window’s keyboard highlight: Studio clears slots by track and scene number (launcher_slot)',
+  'launcher.fromSelection': 'acts on the clips selected in the playlist window: Studio puts a clip in a slot by its track and bar (launcher_slot)',
 };
 
 /** Commands that open a dialog, a menu or work on a UI selection, and the action that does the same with arguments. */

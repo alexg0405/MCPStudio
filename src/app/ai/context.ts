@@ -20,6 +20,7 @@ import type { ParamSpec, ParamSpecs } from '@agstudio/sdk';
 import { arrangementLines, derivedLabel } from '../arrange/summary';
 import { musicLibraryLines } from '../dj/library';
 import { deckLines } from './ops/decks';
+import { launcherLines } from './ops/launcher';
 import { djLines } from '../dj/mix';
 import { referenceLines } from '../reference/summary';
 import { noteName } from '../assistant/context';
@@ -512,6 +513,8 @@ function renderContext(s: Services, r: Render): string {
   if (music.length) lines.push('', ...music);
   const live = deckLines(s);
   if (live.length) lines.push('', ...live);
+  const jam = launcherLines(s);
+  if (jam.length) lines.push('', ...jam);
   const check = songCheckLines(p);
   if (check.length) lines.push('', 'Song check (problems in the arrangement right now):', ...check);
 

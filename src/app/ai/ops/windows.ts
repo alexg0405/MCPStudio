@@ -21,6 +21,7 @@ export const OPEN_WINDOWS = [
   'dj',
   'dj-controllers',
   'dj-decks',
+  'launcher',
   'reference',
   'pitch-editor',
   'browser',

@@ -1,7 +1,7 @@
 import { CommandRegistry } from '@core/commands/registry';
 import { Keymap, type Platform } from '@core/commands/keymap';
 import type { History } from '@core/history/history';
-import type { PluginOwner, Project } from '@core/model/types';
+import type { ClipId, PluginOwner, Project } from '@core/model/types';
 import { setPluginState } from '@core/ops/channels';
 import type { JsonValue } from '@agstudio/sdk';
 import type { EngineApi, EngineOptions } from '@engine/api';
@@ -37,6 +37,7 @@ import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { TapRegistry } from './taps';
 import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
 import { createDecksFactory, type DecksAccess } from './dj/decks-factory';
+import { LauncherSession } from './launcher/session';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -94,6 +95,11 @@ export interface Services {
    * Deck state is live performance state: not in the project, not in History.
    */
   readonly decks: DecksAccess;
+  /**
+   * The clip launcher while it plays (Performance mode): launching slots and scenes, stopping tracks, the performance
+   * record. Live state, not the project; the grid itself is `project.launcher`.
+   */
+  readonly launcher: LauncherSession;
   /** Replaces the audio engine with a fresh AudioContext (after AudioWorklet code changed). */
   rebootEngine(): Promise<void>;
   /** Fires after any store, registry or engine change; used to refresh command enabled/checked state. */
@@ -240,6 +246,13 @@ export function createServices(opts: ServiceOptions = {}): Services {
   );
   void presets.load();
   const trackAnalyzer = createTrackAnalyzer(opts.analysisStorage ? { storage: opts.analysisStorage } : {});
+  const launcher = new LauncherSession({
+    engine,
+    doc,
+    history,
+    toast: (message, kind) => session.getState().toast(message, kind),
+    onRecorded: (clips) => editor.getState().selectClips(clips as ClipId[]),
+  });
   let files: ProjectFiles | null = null;
   let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
@@ -283,6 +296,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     presets,
     trackAnalyzer,
     decks: createDecksFactory(() => services),
+    launcher,
     rebootEngine: () => engine.reboot(),
     subscribe(fn) {
       const unsubs = [
@@ -297,6 +311,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
         editor.subscribe(fn),
         midi.subscribe(fn),
         recording.store.subscribe(fn),
+        launcher.store.subscribe(fn),
         audioInput.store.subscribe(fn),
         services.files.store.subscribe(fn),
         presets.subscribe(fn),

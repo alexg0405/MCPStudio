@@ -17,16 +17,16 @@ const SHOWN_FINDINGS = 4;
  * the AI's answer is a card on the left: its text, what it changed (folded into "12 changes · Show"),
  * what it couldn't do (one amber line), a plugin it built, and small Play / Undo buttons.
  */
-export function Message({ m }: { m: AssistantMessage }) {
-  if (m.from === 'you') {
+export function Message({ message }: { message: AssistantMessage }) {
+  if (message.from === 'you') {
     return (
       <div className={`${styles.message} ${styles.mine}`}>
-        <div className={styles.bubble}>{m.text}</div>
-        {m.detail && <div className={styles.mineDetail}>{m.detail}</div>}
+        <div className={styles.bubble}>{message.text}</div>
+        {message.detail && <div className={styles.mineDetail}>{message.detail}</div>}
       </div>
     );
   }
-  return <Answer m={m} />;
+  return <Answer message={message} />;
 }
 
 /**
@@ -38,7 +38,7 @@ async function undoAnswer(services: Services, before: number, later: readonly st
     const shown = later.slice(-6).reverse();
     const choice = await showDialog({
       title: 'Undo this answer?',
-      message: `Changes made after it are undone too:\n${shown.map((l) => `• ${l}`).join('\n')}${later.length > shown.length ? `\n• and ${later.length - shown.length} more` : ''}`,
+      message: `Changes made after it are undone too:\n${shown.map((undoneLabel) => `• ${undoneLabel}`).join('\n')}${later.length > shown.length ? `\n• and ${later.length - shown.length} more` : ''}`,
       detail: 'Redo (Shift+Cmd+Z) brings them all back.',
       buttons: [
         { id: 'cancel', label: 'Cancel' },
@@ -51,39 +51,47 @@ async function undoAnswer(services: Services, before: number, later: readonly st
   services.history.goTo(before);
 }
 
-function Answer({ m }: { m: AssistantMessage }) {
+/** The Undo button's tooltip: already undone, or how much undoing this answer takes with it. */
+function undoHint(canUndo: boolean, laterCount: number): string {
+  if (!canUndo) return 'Already undone (Redo brings it back)';
+  if (laterCount === 0) return 'Undo everything this answer did (Redo brings it back)';
+  const laterChanges = laterCount === 1 ? 'change' : `${laterCount} changes`;
+  return `Undo everything this answer did, and the ${laterChanges} made after it (Redo brings them back)`;
+}
+
+function Answer({ message }: { message: AssistantMessage }) {
   const services = useServices();
   const status = useHistoryStatus();
   // (a negative point is one from before a page reload: its step is gone)
-  const point = m.undo ?? m.beat?.cursor;
+  const point = message.undo ?? message.beat?.cursor;
   const undoAt = point !== undefined && point >= 0 ? point : undefined;
   // Still in the history as done (not undone already, not dropped by opening another project).
   const done = undoAt !== undefined && status.canUndo ? services.history.steps().done : [];
-  const at = undoAt === undefined ? -1 : done.findIndex((d) => d.id === undoAt);
+  const at = undoAt === undefined ? -1 : done.findIndex((step) => step.id === undoAt);
   const canUndo = at >= 0;
   const later = canUndo ? done.slice(at + 1) : [];
-  const hasFooter = !!(m.detail || m.offline || m.beat || undoAt !== undefined);
+  const hasFooter = !!(message.detail || message.offline || message.beat || undoAt !== undefined);
   return (
-    <div className={`${styles.message} ${m.error ? styles.errorMessage : ''}`}>
+    <div className={`${styles.message} ${message.error ? styles.errorMessage : ''}`}>
       <div className={styles.card}>
         <div className={styles.cardText}>
-          {!m.error && <Icon name="studio" size={13} className={styles.spark} />}
-          {m.text}
+          {!message.error && <Icon name="studio" size={13} className={styles.spark} />}
+          {message.text}
         </div>
-        {m.findings && m.findings.length > 0 && (
-          <Fold items={m.findings} shown={SHOWN_FINDINGS} className={styles.findings} noun="findings" />
+        {message.findings && message.findings.length > 0 && (
+          <Fold items={message.findings} shown={SHOWN_FINDINGS} className={styles.findings} noun="findings" />
         )}
-        {m.changes && m.changes.length > 0 && <Changes changes={m.changes} />}
-        {m.warnings && m.warnings.length > 0 && <Warnings warnings={m.warnings} />}
-        {m.plugin && <PluginCard m={m} />}
-        {m.approval && <ApprovalCard id={m.id} approval={m.approval} />}
+        {message.changes && message.changes.length > 0 && <Changes changes={message.changes} />}
+        {message.warnings && message.warnings.length > 0 && <Warnings warnings={message.warnings} />}
+        {message.plugin && <PluginCard message={message} />}
+        {message.approval && <ApprovalCard id={message.id} approval={message.approval} />}
         {hasFooter && (
           <div className={styles.cardFoot}>
             <span className={styles.detail}>
-              {m.offline && <span className={styles.badge}>offline</span>}
-              {m.detail}
+              {message.offline && <span className={styles.badge}>offline</span>}
+              {message.detail}
             </span>
-            {m.beat && (
+            {message.beat && (
               <button
                 className={styles.iconButton}
                 onClick={() => {
@@ -101,14 +109,8 @@ function Answer({ m }: { m: AssistantMessage }) {
               <button
                 className={styles.iconButton}
                 disabled={!canUndo}
-                onClick={() => void undoAnswer(services, done[at - 1]?.id ?? 0, later.map((d) => d.label))}
-                data-hint={
-                  !canUndo
-                    ? 'Already undone (Redo brings it back)'
-                    : later.length
-                      ? `Undo everything this answer did, and the ${later.length === 1 ? 'change' : `${later.length} changes`} made after it (Redo brings them back)`
-                      : 'Undo everything this answer did (Redo brings it back)'
-                }
+                onClick={() => void undoAnswer(services, done[at - 1]?.id ?? 0, later.map((step) => step.label))}
+                data-hint={undoHint(canUndo, later.length)}
                 aria-label="Undo"
               >
                 <Icon name="undo" size={11} />
@@ -128,8 +130,8 @@ function Changes({ changes }: { changes: string[] }) {
   if (changes.length <= SHOWN_CHANGES) {
     return (
       <ul className={styles.changes}>
-        {changes.map((c, i) => (
-          <li key={i}>{c}</li>
+        {changes.map((line, index) => (
+          <li key={index}>{line}</li>
         ))}
       </ul>
     );
@@ -138,7 +140,7 @@ function Changes({ changes }: { changes: string[] }) {
     <div className={styles.fold}>
       <button
         className={styles.summary}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
         aria-expanded={open}
         data-hint={open ? 'Hide the list of changes' : 'Show every change this answer made'}
       >
@@ -148,8 +150,8 @@ function Changes({ changes }: { changes: string[] }) {
       </button>
       {open && (
         <ul className={styles.changes}>
-          {changes.map((c, i) => (
-            <li key={i}>{c}</li>
+          {changes.map((line, index) => (
+            <li key={index}>{line}</li>
           ))}
         </ul>
       )}
@@ -166,7 +168,7 @@ function Warnings({ warnings }: { warnings: string[] }) {
     <div className={styles.warning}>
       <button
         className={styles.warningLine}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
         aria-expanded={open}
         data-hint={open ? 'Hide the details' : 'What Studio couldn’t do: click for the details'}
       >
@@ -178,8 +180,8 @@ function Warnings({ warnings }: { warnings: string[] }) {
       </button>
       {open && (
         <ul className={styles.warningList}>
-          {warnings.map((c, i) => (
-            <li key={i}>{c}</li>
+          {warnings.map((line, index) => (
+            <li key={index}>{line}</li>
           ))}
         </ul>
       )}
@@ -194,14 +196,14 @@ function Fold({ items, shown, className, noun }: { items: string[]; shown: numbe
   return (
     <div className={styles.fold}>
       <ul className={`${styles.changes} ${className ?? ''}`}>
-        {visible.map((c, i) => (
-          <li key={i}>{c}</li>
+        {visible.map((line, index) => (
+          <li key={index}>{line}</li>
         ))}
       </ul>
       {items.length > shown && (
         <button
           className={styles.more}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => setOpen((wasOpen) => !wasOpen)}
           aria-expanded={open}
           data-hint={open ? `Show only the first ${shown}` : `Show all ${items.length} ${noun}`}
         >
@@ -213,9 +215,9 @@ function Fold({ items, shown, className, noun }: { items: string[]; shown: numbe
 }
 
 /** A plugin the builder wrote: what it is, what the checks said, its code, Install and Discard. */
-function PluginCard({ m }: { m: AssistantMessage }) {
+function PluginCard({ message }: { message: AssistantMessage }) {
   const services = useServices();
-  const plugin = m.plugin!;
+  const plugin = message.plugin!;
   const { draft, state } = plugin;
   return (
     <div className={styles.pluginCard}>
@@ -230,10 +232,10 @@ function PluginCard({ m }: { m: AssistantMessage }) {
         <summary data-hint="Show the plugin's source files">
           View the code ({draft.files.length} file{draft.files.length === 1 ? '' : 's'})
         </summary>
-        {draft.files.map((f) => (
-          <div key={f.path}>
-            <div className={styles.pluginFile}>{f.path}</div>
-            <pre className={styles.pluginPre}>{f.content}</pre>
+        {draft.files.map((file) => (
+          <div key={file.path}>
+            <div className={styles.pluginFile}>{file.path}</div>
+            <pre className={styles.pluginPre}>{file.content}</pre>
           </div>
         ))}
       </details>
@@ -242,14 +244,14 @@ function PluginCard({ m }: { m: AssistantMessage }) {
           <>
             <button
               className={styles.primaryButton}
-              onClick={() => void services.assistant.installPlugin(m.id)}
+              onClick={() => void services.assistant.installPlugin(message.id)}
               data-hint={`Add it to your plugins (plugins/${draft.folder}); it then appears in the browser`}
             >
               Install
             </button>
             <button
               className={styles.ghost}
-              onClick={() => void services.assistant.discardPlugin(m.id)}
+              onClick={() => void services.assistant.discardPlugin(message.id)}
               data-hint="Throw this draft away"
             >
               Discard
@@ -259,7 +261,7 @@ function PluginCard({ m }: { m: AssistantMessage }) {
         {state === 'failed' && (
           <button
             className={styles.ghost}
-            onClick={() => void services.assistant.discardPlugin(m.id)}
+            onClick={() => void services.assistant.discardPlugin(message.id)}
             data-hint="Throw this draft away (it didn't pass the checks)"
           >
             Discard draft
@@ -273,6 +275,20 @@ function PluginCard({ m }: { m: AssistantMessage }) {
   );
 }
 
+/** What an approval card says: asking, what was applied, or why it can't be applied any more. */
+function approvalHeadline(approval: ApprovalMessage): string {
+  switch (approval.state) {
+    case 'ask':
+      return `This also changes things outside ${approval.part}:`;
+    case 'all':
+      return `Applied everything, outside ${approval.part} too.`;
+    case 'part':
+      return `Applied only what stays in ${approval.part}.`;
+    case 'expired':
+      return 'This can’t be applied any more (you asked something else, or another project is open). Ask again.';
+  }
+}
+
 /**
  * An answer that also changes things outside the part being worked on: what reaches outside, and the
  * musician's choice (everything, or the part only). Nothing changed until they pick.
@@ -280,22 +296,13 @@ function PluginCard({ m }: { m: AssistantMessage }) {
 function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage }) {
   const services = useServices();
   // Choosing waits while Studio is busy with something else.
-  const busy = useStore(services.assistant.store, (s) => s.phase !== 'idle');
-  const a = approval;
+  const busy = useStore(services.assistant.store, (state) => state.phase !== 'idle');
   return (
     <div className={styles.approval}>
-      <div className={styles.approvalHead}>
-        {a.state === 'ask'
-          ? `This also changes things outside ${a.part}:`
-          : a.state === 'all'
-            ? 'Applied everything, outside ' + a.part + ' too.'
-            : a.state === 'part'
-              ? `Applied only what stays in ${a.part}.`
-              : 'This can’t be applied any more (you asked something else, or another project is open). Ask again.'}
-      </div>
-      {a.state === 'ask' && (
+      <div className={styles.approvalHead}>{approvalHeadline(approval)}</div>
+      {approval.state === 'ask' && (
         <>
-          <Fold items={a.outside} shown={2} className={styles.approvalList} noun="more" />
+          <Fold items={approval.outside} shown={2} className={styles.approvalList} noun="more" />
           <div className={styles.pluginActions}>
             <button
               className={styles.primaryButton}
@@ -309,9 +316,9 @@ function ApprovalCard({ id, approval }: { id: number; approval: ApprovalMessage 
               className={styles.ghost}
               disabled={busy}
               onClick={() => void services.assistant.approve(id, 'part')}
-              data-hint={`Make only the changes inside ${a.part}; the rest of the song stays as it is`}
+              data-hint={`Make only the changes inside ${approval.part}; the rest of the song stays as it is`}
             >
-              Only {a.part}
+              Only {approval.part}
             </button>
           </div>
         </>

@@ -36,7 +36,7 @@ export function GranularUI(ui: Props) {
             </span>
           ) : (
             <span className={styles.builtIn} data-hint="No sample loaded: the grains come from this built-in sound. Drop a sample on the waveform to use your own">
-              Built-in sound: {textureName}. Drop a sample on the waveform, or choose one.
+              Built-in sound ({textureName}): drop a sample here to use your own
             </span>
           )}
           <span className={styles.buttons}>

@@ -28,6 +28,7 @@ import { samples } from './samples';
 import { session } from './session';
 import { song } from './song';
 import { ui } from './ui';
+import { wavetable } from './wavetable';
 
 export const MODULES: readonly OpModule[] = [
   song,
@@ -49,6 +50,7 @@ export const MODULES: readonly OpModule[] = [
   launcher,
   filters,
   samples,
+  wavetable,
   ui,
   session,
   query,

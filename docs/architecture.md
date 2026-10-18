@@ -376,12 +376,24 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   overlay, when something is drawn at the pointer). Measured (`scripts/perf-follow.mjs`, 12 s of smooth follow with
   both windows open): JS per frame 0.36 -> 0.12 ms (stacked-song), 0.90 -> 0.18 ms (notes10k), allocation per second
   down by 60 % (what remains is the audio scheduler).
+  **Where the editor code lives.** The playlist and the piano roll each have a thin controller class
+  (`playlist/controller.ts`, `piano-roll/controller.ts`: the window's handle, the events wired, the frame run) and one
+  folder of modules that take a shared context (`playlist/control/`, `piano-roll/control/`): the services, the elements,
+  the viewport, the mutable interaction state and the long-lived helpers. Each module does one job: drawing the layers
+  (`layers.ts`, `overlay.ts`), one tool's pointer handling (`clip-drag.ts`, `pattern-draw.ts`, `cut-tools.ts`,
+  `comp-swipe.ts`, `note-drag.ts`, `draw-tools.ts`, `note-tools.ts`...), the ruler and markers, the track headers or the
+  piano keys and event lane, the follow, the viewport (`viewport-control.ts`), and `pointer.ts`, which only decides which
+  tool a press belongs to. What both editors do the same way is in `timeline/`: `listeners.ts` (the cleanup list),
+  `scrollbar.ts`, `wheel.ts`, `edge-scroll.ts`, `playhead-line.ts`, `viewport-saver.ts`, `selection-box.ts`. Their
+  drawing is in plain files next to the controllers (`playlist/draw-clips.ts`, `lane-grid.ts`, `lane-headers.ts`,
+  `ruler.ts`, `marker-flags.ts`, `take-use.ts`; `piano-roll/render.ts`). Frame-loop code in these modules is written
+  to allocate nothing (a frame record filled in place, drawing functions bound once): keep it that way.
   "Play this" (`app/actions/transport.ts`; commands `transport.playPattern`, `transport.playFrom`,
   `transport.playRange`): the piano roll's and channel rack's ▶/■ (`transport/PlayPatternButton`), the browser's
   pattern menu and the playlist's clip, marker, empty-spot and ruler menus set the transport view (pattern + mode,
   or the loop region) and then play, so the toolbar's play button is never needed. The buttons subscribe to the
   engine's play/stop events and the view's mode and current pattern, never the playhead. Pattern bodies in playlist
-  clips (`playlist/render.ts`) are built once per pattern and zoom as a path per velocity step, and blitted from a
+  clips (`playlist/pattern-body.ts`) are built once per pattern and zoom as a path per velocity step, and blitted from a
   small canvas when the pattern fits one, so a dense pattern used by dozens of clips costs a blit per clip. Canvases
   redraw when the screen's pixel ratio changes (`timeline/canvas.ts`). Frame-loop code never reads layout
   (`getBoundingClientRect`, `offsetLeft`): measure in a ResizeObserver callback and cache (a read after the

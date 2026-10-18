@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
-import { addAudioClip, addKitAudioClip, importAudioFile } from '@app/actions/samples';
 import type { PlaylistTool } from '@app/stores/editor';
-import type { Services } from '@app/services';
-import type { LaneId, Tick } from '@core/model/types';
 import { useServices } from '../../services-context';
 import { PatternPicker } from '../patterns/PatternPicker';
 import { PlaylistController, type PlaylistElements } from './controller';
-import { clipMenu, laneMenu } from './menus';
-import { emptyMenu } from './empty-menu';
-import { markerMenu, rulerMenu } from './markers';
-import { pointMenu } from '../automation/actions';
-import { registerAnchorSource } from '../ask-ai/anchors';
-import { askAboutMarker, askAboutSelection } from '../ask-ai/ask-state';
-import { showContextMenu } from '../../controls/ContextMenu';
+import { connectPlaylistController, registerPlaylistAnchors } from './connect';
+import { askAboutSelection } from '../ask-ai/ask-state';
 import { HEADER_WIDTH, RULER_HEIGHT } from './layout';
 import { ChordLane, useChordLaneVisible } from '../chords/ChordLane';
 import styles from './Playlist.module.css';
@@ -144,37 +136,10 @@ export function Playlist() {
     };
     if (Object.values(els).some((el) => !el)) return;
     const c = new PlaylistController(services, els as PlaylistElements);
-    c.onSampleDrop = (generator, laneId, tick) => addKitAudioClip(services, generator, laneId, tick);
-    c.onFilesDrop = (files, laneId, tick) => void dropAudioFiles(services, files, laneId, tick);
-    c.onClipMenu = (clip, at) => showContextMenu(at, clipMenu(services, clip));
-    c.onPointMenu = (clip, index, at) => showContextMenu(at, pointMenu(services, clip, index));
-    c.onMarkerMenu = (id, at) => showContextMenu(at, markerMenu(services, id));
-    c.onRulerMenu = (tick, at) => showContextMenu(at, rulerMenu(services, tick));
-    c.onEmptyMenu = (tick, laneId, at) => {
-      const items = emptyMenu(services, tick, laneId, () => c.renameLane(laneId));
-      if (items.length) showContextMenu(at, items);
-    };
-    // A flag's Studio mark: loop that section and open the Ask AI card on it.
-    c.onMarkerAsk = (id, at) =>
-      void askAboutMarker(services, id, { kind: 'marker', markerId: id, fallback: { x: at.clientX, y: at.clientY } });
-    c.onLaneMenu = (laneId, at) =>
-      showContextMenu(
-        at,
-        laneMenu(services, laneId, () => c.renameLane(laneId)),
-      );
+    connectPlaylistController(services, c);
     controller.current = c;
     c.mount();
-    // Where the Ask AI card sits: the pill, a marker's flag, bars on the ruler.
-    const offAnchor = registerAnchorSource('playlist', (anchor) =>
-      anchor.kind === 'pill'
-        ? c.pillBox()
-        : anchor.kind === 'marker'
-          ? c.markerBox(anchor.markerId)
-          : anchor.kind === 'span'
-            ? c.spanBox(anchor.from, anchor.to)
-            : null,
-      (anchor) => (anchor.kind === 'marker' ? c.revealMarker(anchor.markerId) : anchor.kind === 'span' ? c.revealSpan(anchor.from, anchor.to) : false),
-    );
+    const offAnchor = registerPlaylistAnchors(c);
     return () => {
       offAnchor();
       c.unmount();
@@ -227,18 +192,4 @@ export function Playlist() {
       </div>
     </div>
   );
-}
-
-/** FL behaviour: several files dropped at once go on consecutive tracks, all starting at the drop point. */
-async function dropAudioFiles(s: Services, files: Promise<File[]>, laneId: LaneId, tick: Tick): Promise<void> {
-  const lanes = s.doc.getState().project.playlist.laneOrder;
-  let lane = lanes.indexOf(laneId);
-  for (const file of await files) {
-    const ref = await importAudioFile(s, file);
-    const target = lanes[Math.min(lane, lanes.length - 1)];
-    if (ref && target) {
-      addAudioClip(s, ref, target, tick);
-      lane++;
-    }
-  }
 }

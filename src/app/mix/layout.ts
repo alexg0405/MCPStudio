@@ -38,8 +38,8 @@ export interface MixLayout {
 }
 
 /** The bus a channel of this role plays through (null: leave it where it is). */
-export function busForRole(r: Role): BusRole | null {
-  switch (r) {
+export function busForRole(role: Role): BusRole | null {
+  switch (role) {
     case 'kick':
       return 'kick';
     case 'snare':
@@ -92,22 +92,24 @@ export const pluginRole: RoleHint = (pluginId) => {
 };
 
 /** Every channel's role, with the built-in plugins' hints. */
-export function mixRoles(p: Project): Map<ChannelId, Role> {
-  return channelRoles(p, pluginRole);
+export function mixRoles(project: Project): Map<ChannelId, Role> {
+  return channelRoles(project, pluginRole);
 }
 
 /** The role buses already in the project (by their names), with their EQ slots and the master Limiter. */
-export function findMixLayout(p: Project): MixLayout {
+export function findMixLayout(project: Project): MixLayout {
   const layout: MixLayout = { buses: {}, eq: {} };
   for (const [role, name] of Object.entries(BUS_NAMES) as [BusRole, string][]) {
-    const names = [name, ...(BUS_ALIASES[role] ?? [])].map((n) => n.toLowerCase());
-    const id = p.mixer.order.find((x) => x !== MASTER && names.includes(p.mixer.inserts[x]?.name.toLowerCase() ?? ''));
+    const names = [name, ...(BUS_ALIASES[role] ?? [])].map((busName) => busName.toLowerCase());
+    const id = project.mixer.order.find(
+      (insertId) => insertId !== MASTER && names.includes(project.mixer.inserts[insertId]?.name.toLowerCase() ?? ''),
+    );
     if (!id) continue;
     layout.buses[role] = id;
-    const eq = p.mixer.inserts[id]!.fx.find((f) => f.plugin.pluginId === EQ_PRO);
-    if (eq) layout.eq[role] = eq.id;
+    const eqSlot = project.mixer.inserts[id]!.fx.find((effect) => effect.plugin.pluginId === EQ_PRO);
+    if (eqSlot) layout.eq[role] = eqSlot.id;
   }
-  const limiters = p.mixer.inserts[MASTER]?.fx.filter((f) => f.plugin.pluginId === LIMITER) ?? [];
+  const limiters = project.mixer.inserts[MASTER]?.fx.filter((effect) => effect.plugin.pluginId === LIMITER) ?? [];
   if (limiters.length) layout.limiter = limiters[limiters.length - 1]!.id;
   return layout;
 }

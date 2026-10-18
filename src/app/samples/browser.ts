@@ -241,13 +241,15 @@ export class SampleBrowser {
         await new Promise<void>((r) => setTimeout(r, 0));
       }
       const { hits, misses } = reconcile(record, idents);
-      const pruned = prune(record, idents);
+      // Entries of files that are gone from the folder go; a file that is only unreadable now keeps its entry.
+      const pruned = prune(record, files.map((e) => ({ path: e.path, size: 0, lastModified: 0 })));
       if (Object.keys(pruned.files).length !== Object.keys(record.files).length) {
         this.records.set(key, pruned);
         this.dirty.add(key);
       }
       const missing = new Set(misses.map((m) => m.path));
-      const unreadable = new Set(files.filter((e) => !idents.some((i) => i.path === e.path)).map((e) => e.path));
+      const readable = new Set(idents.map((i) => i.path));
+      const unreadable = new Set(files.filter((e) => !readable.has(e.path)).map((e) => e.path));
       // Rows whose cached analysis no longer fits the file (or whose file cannot be read) lose it.
       this.patchRows((r) => {
         if (r.folderKey !== key) return r;

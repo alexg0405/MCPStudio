@@ -45,6 +45,7 @@ export function keyBadge(a: TrackAnalysis | null): { text: string; hint: string;
   };
 }
 
+/** A song's tempo as text: one decimal, "no beat" when it has none, a dash when not analyzed. */
 export function bpmText(a: TrackAnalysis | null): string {
   if (!a) return '–';
   if (!a.grid) return 'no beat';
@@ -59,11 +60,13 @@ export function statusText(a: TrackAnalysis | null, st: AnalysisStatus | undefin
   return analyzerMissing ? 'Not analyzed' : 'Queued';
 }
 
+/** The choices of the Order option, with their hints. */
 export const ORDER_CHOICES: readonly { value: 'auto' | 'keep'; label: string; hint: string }[] = [
   { value: 'auto', label: 'Auto', hint: 'Studio orders the songs: keys that fit (Camelot wheel), close tempos, and the energy shape you pick. Pinned songs keep their place' },
   { value: 'keep', label: 'Keep', hint: 'The songs play in the order of the list (drag rows to reorder)' },
 ];
 
+/** The choices of the Energy option, with their hints. */
 export const ENERGY_CHOICES: readonly { value: EnergyShape; label: string; hint: string }[] = [
   { value: 'party', label: 'Party', hint: 'Warm up, a first peak, a breather, then the biggest peak to close' },
   { value: 'build', label: 'Build', hint: 'From the calmest song to the hottest' },
@@ -71,6 +74,7 @@ export const ENERGY_CHOICES: readonly { value: EnergyShape; label: string; hint:
   { value: 'chill', label: 'Chill', hint: 'Small energy changes, long smooth transitions' },
 ];
 
+/** The choices of the Transitions option, with their hints. */
 export const TRANSITION_CHOICES: readonly { value: MixTransitionStyle; label: string; hint: string }[] = [
   { value: 'auto', label: 'Auto', hint: 'Each transition by the songs: 16 bars (32 for chill), shorter where keys clash, a cut where tempos are too far apart' },
   { value: 'smooth', label: 'Smooth', hint: 'Long 32-bar blends' },
@@ -78,6 +82,7 @@ export const TRANSITION_CHOICES: readonly { value: MixTransitionStyle; label: st
   { value: 'cut', label: 'Cut', hint: 'Straight cuts on the downbeat, with an echo on the last beat' },
 ];
 
+/** The recipes a single transition can be changed to, with their hints. */
 export const RECIPE_CHOICES: readonly { value: TransitionRecipe; label: string; hint: string }[] = [
   { value: 'bass-swap', label: 'Bass swap', hint: 'The next song comes in without its bass; halfway its bass comes in as this one’s goes' },
   { value: 'filter', label: 'Filter out', hint: 'Like the bass swap, and this song fades into a low-pass filter (good when the energy drops)' },
@@ -85,6 +90,7 @@ export const RECIPE_CHOICES: readonly { value: TransitionRecipe; label: string; 
   { value: 'cut', label: 'Cut', hint: 'A cut on the downbeat with an echo on the last beat' },
 ];
 
+/** The overlap lengths (bars) a transition can be set to (besides a cut). */
 export const LENGTH_CHOICES: readonly number[] = [4, 8, 16, 32];
 
 /** "1:05:00" mix length line: "12 songs · 54:20". */
@@ -92,11 +98,14 @@ export function libraryLine(count: number, seconds: number): string {
   return `${count} song${count === 1 ? '' : 's'}${seconds > 0 ? ` · ${formatLength(seconds)}` : ''}`;
 }
 
+/** What the empty music library says about where music comes from. */
 export const EMPTY_TEXT = 'Add your own music files (MP3, AAC, WAV, FLAC). Streaming services like Spotify can’t be mixed: their audio is locked.';
 
 /** A fixed mix tempo is held within this range (BPM); "Fixed" starts at the default. */
 export const MIN_MIX_BPM = 50;
+/** The highest fixed mix tempo (BPM). */
 export const MAX_MIX_BPM = 250;
+/** The tempo "Fixed" starts at (BPM). */
 export const DEFAULT_FIXED_BPM = 124;
 
 /** The longest length target that can be asked for (minutes). */

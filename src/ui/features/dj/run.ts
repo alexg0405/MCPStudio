@@ -5,6 +5,7 @@ import type { DjMixOptions } from '@core/model/types';
 import { showDialog } from '../../controls/Dialog';
 import { openWindow } from '../../workspace/registry';
 
+/** Makes the mix from the DJ window or a command: asks before replacing other music on the playlist, shows progress and reports the result. */
 export async function makeMixFromUi(s: Services, options: DjMixOptions): Promise<void> {
   const toast = s.session.getState().toast;
   const { hasOtherMusic } = await import('@app/dj/mix');

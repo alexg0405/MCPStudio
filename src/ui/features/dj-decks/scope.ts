@@ -15,6 +15,7 @@ import { StallLatch } from './stall';
 export const SCOPE_SPAN_SEC = 6;
 const PALETTE = 16;
 
+/** The elements a deck's scope draws on or updates. */
 export interface ScopeParts {
   zoom: HTMLCanvasElement;
   overview: HTMLCanvasElement;
@@ -28,6 +29,7 @@ export interface ScopeParts {
 /** The colors of the eight hot cues, from the theme's palette tokens. */
 export const HOT_CUE_VARS = Array.from({ length: 8 }, (_, i) => `var(--ag-palette-${i + 1})`);
 
+/** Draws a deck's waveforms, platter, clock and "Loading…" note once per frame, without React. */
 export class DeckScope {
   /** What the picture was last drawn for (see frame). */
   private lastPosMs = NaN;

@@ -30,11 +30,15 @@ import deckUrl from './deck.worklet.ts?worker&url';
 import { newSnapshot, readDeckState, type DeckSnapshot } from './deck-snapshot';
 import { openTapCapture, type TapCapture } from './tap-capture';
 
+/** A deck's slot in the graph. */
 export type DeckIndex = 0 | 1 | 2 | 3;
+/** How many decks the graph has. */
 export const DECK_COUNT = 4;
 
+/** The three EQ bands of a channel. */
 export type EqBandName = 'low' | 'mid' | 'high';
 
+/** One deck's channel: its player, trim, EQ, filter, fader and crossfader gain, cue send and meter. */
 export class DeckChannel {
   readonly node: AudioWorkletNode;
   private readonly trim: GainNode;
@@ -178,6 +182,7 @@ export class DeckChannel {
   }
 }
 
+/** The four deck channels, the mixer sum, the master and the cue (headphone) output. */
 export class DeckGraph {
   readonly ctx: BaseAudioContext;
   readonly channels: readonly DeckChannel[];

@@ -159,6 +159,7 @@ interface SyncState {
   masterMap: BeatMap | null;
 }
 
+/** The deck player: one object that plays a song at a smoothed speed with key lock, loops, fades, scratch and sync (see the file comment). */
 export class DeckKernel {
   /** The song's blocks: planar float32 in a pool (`BLOCK_FRAMES` per slot), found through `table` (see `BLOCK_BITS`). */
   private poolLeft: Float32Array | null = null;

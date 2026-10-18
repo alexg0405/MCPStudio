@@ -138,8 +138,8 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
 [Mixer routing, sidechain and delay compensation (M10)](#mixer-routing-sidechain-and-delay-compensation-m10).
 
 - `engine/engine.ts` is the facade (`EngineApi`); each job it delegates has its own file: `output-clock.ts` (the heard time,
-  the start lead), `song-note-sink.ts` (song events held back by delay compensation), `channel-strip-sync.ts` and
-  `scheduling-watch.ts` (what a new project version changes), `launcher-link.ts` (the clip launcher on the transport),
+  the start lead), `song-note-sink.ts` (song events held back by delay compensation), `project-mirror.ts` (a new project version applied to the
+  graph), `channel-strip-sync.ts` and `scheduling-watch.ts` (its steps), `transport-model.ts` (what the transport plays), `launcher-link.ts` (the clip launcher on the transport),
   `scheduler-clock.ts` (the worker timer and the keep-up statistics), `note-preview.ts` and `sample-preview.ts` (live
   notes and the browser's audition), `live-capture.ts` (recording and live inputs), `live-meters.ts`, `test-clicks.ts`,
   `tempo-info.ts` (the tempo plugins see) and `port-set.ts`.

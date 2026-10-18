@@ -8,9 +8,7 @@
  */
 import type { DocChange } from '@core/history/history';
 import type { ChannelId, InsertId, PluginInstance, PluginOwner, Project, SampleId, SampleRef, Tick } from '@core/model/types';
-import { effectivelyMuted } from '@core/query/queries';
 import { tempoMapOf } from '@core/automation/tempo';
-import { automatedOwners } from '@core/automation/owners';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
 import type { AudioTap, JsonValue, ParamSpecs } from '@agstudio/sdk';
@@ -29,7 +27,6 @@ import type {
 } from './api';
 import { AutomationDriver } from './automation/driver';
 import type { ChannelStrip } from './channel-strip';
-import { syncChannelStrips } from './channel-strip-sync';
 import type { EngineCore } from './engine-core';
 import { KernelTransportFeed } from './kernel-transport';
 import { LauncherLink } from './launcher-link';
@@ -43,18 +40,18 @@ import { NotePreview } from './note-preview';
 import { OutputClock } from './output-clock';
 import { ParamRegistry } from './param-lane';
 import { PortSet } from './port-set';
+import { ProjectMirror } from './project-mirror';
 import { isRealtimeContext } from './realtime-context';
 import { SampleResidency } from './sample-residency';
 import { DEFAULT_PREVIEW_VOLUME, SamplePreview } from './sample-preview';
 import { SampleCache } from './samples';
 import { SchedulerClock, PumpMonitor } from './scheduler-clock';
-import { SchedulingWatch, residencyInputsChanged } from './scheduling-watch';
-import { patternModeSource, songModeSource, type EventSource } from './sched/events';
-import type { Timeline } from './sched/core';
+import type { EventSource } from './sched/events';
 import { Transport } from './sched/transport';
 import { SongNoteSink } from './song-note-sink';
 import { TempoInfo, TempoReporter } from './tempo-info';
 import { TestClicks } from './test-clicks';
+import { launcherOnlyModel, planTransportModel, sameView, type TransportModel } from './transport-model';
 import { INACTIVE_TAP, TapImpl } from './tap';
 import type { Waveform } from './waveform';
 import type { RecordingHandle } from './recorder';
@@ -127,7 +124,7 @@ export class Engine implements EngineApi, EngineCore {
   private readonly monitorBus: GainNode;
   private readonly metronome: Metronome | null;
   private readonly strips = new Map<ChannelId, ChannelStrip>();
-  private project: Project | null = null;
+  private readonly mirror: ProjectMirror;
   private view: TransportView = { mode: 'pattern', patternId: null, loop: null };
   private readonly transport: Transport;
   private readonly schedulerClock: SchedulerClock;
@@ -139,7 +136,6 @@ export class Engine implements EngineApi, EngineCore {
   private readonly testClicks: TestClicks;
   private readonly liveCapture: LiveCapture;
   private readonly liveMeters: LiveMeters;
-  private readonly schedulingWatch = new SchedulingWatch();
   private readonly listeners = new Set<() => void>();
   /** Sample files whose waveform is being decoded (one that can't be decoded stays, so redraws don't retry it). */
   private readonly waveformKeysLoading = new Set<string>();
@@ -158,13 +154,13 @@ export class Engine implements EngineApi, EngineCore {
   private disposed = false;
   /** The constructor has run to its end (the mixer reports its compensation while the engine is being built). */
   private built = false;
-  /** Inside reconcile(): a change of the compensation is applied at its end, once the strips are up to date. */
-  private reconciling = 0;
-  private realign = false;
-  /** A channel's shift changed during this reconcile (a re-plan follows while playing). */
-  private shiftsMoved = false;
   private outputTapCache: TapImpl | null = null;
   private deckHostCache: DeckHost | null = null;
+
+  /** The project as last applied, or null before the first one. */
+  private get project(): Project | null {
+    return this.mirror.project;
+  }
 
   constructor(
     ctx: BaseAudioContext,
@@ -177,15 +173,7 @@ export class Engine implements EngineApi, EngineCore {
     this.offline = offline;
     this.plugins = opts.plugins;
     this.samples = opts.sampleCache ?? new SampleCache(opts.samples);
-    this.residency = new SampleResidency({
-      cache: this.samples,
-      ctx,
-      offline,
-      onReady: (ids) => {
-        for (const id of ids) this.strips.get(id)?.buffersChanged();
-      },
-      onStretching: () => this.emit(),
-    });
+    this.residency = this.createResidency();
     this.transportInfo = new TempoInfo(DEFAULT_BPM, ctx);
     this.outputClock = new OutputClock(ctx);
     this.masterOut = new GainNode(ctx);
@@ -200,57 +188,109 @@ export class Engine implements EngineApi, EngineCore {
       () => this.emit(),
       () => this.alignChannels(),
     );
-    this.transport = new Transport(ctx, new SongNoteSink(this.strips, this.noteFeed), NO_EVENTS, {
-      tempo: constantTempo(DEFAULT_BPM),
-      loop: { start: 0, end: 1 },
-      endTick: 1,
-    });
-    this.transport.onEnded = () => this.emit();
-    this.transportInfo.secondsPerTickAt = (time) => this.transport.sptAt(time);
-    this.automation = new AutomationDriver({
-      ctx,
-      params: this.params,
-      offline,
-      specsOf: (pluginId) => this.plugins.get(pluginId)?.params as ParamSpecs | undefined,
-      timeline: () => this.transport.currentTimeline,
-    });
-    this.metronome = offline
-      ? null
-      : new Metronome(
-          ctx,
-          this.monitorBus,
-          () => (this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null),
-          () => this.mixer.latency,
-        );
+    this.transport = this.createTransport();
+    this.automation = this.createAutomation();
+    this.mirror = this.createProjectMirror();
+    this.metronome = offline ? null : this.createMetronome();
     this.observeTransport();
     this.schedulerClock = new SchedulerClock(() => this.tick());
     this.pumpMonitor = new PumpMonitor(ctx);
     this.launcherLink = this.createLauncherLink();
-    this.samplePreview = new SamplePreview({
-      ctx,
+    this.samplePreview = this.createSamplePreview();
+    this.notePreview = this.createNotePreview();
+    this.testClicks = new TestClicks(ctx, this.monitorBus);
+    this.liveCapture = this.createLiveCapture();
+    this.liveMeters = this.createLiveMeters();
+    if (!offline && isRealtimeContext(ctx)) ctx.addEventListener('statechange', () => this.emit());
+    this.built = true;
+    this.initDone = this.installSafetyLimiter();
+  }
+
+  private createResidency(): SampleResidency {
+    return new SampleResidency({
+      cache: this.samples,
+      ctx: this.ctx,
+      offline: this.offline,
+      onReady: (ids) => {
+        for (const id of ids) this.strips.get(id)?.buffersChanged();
+      },
+      onStretching: () => this.emit(),
+    });
+  }
+
+  /** The transport starts with nothing to play; the project's events and timeline arrive with `updateModel`. */
+  private createTransport(): Transport {
+    const transport = new Transport(this.ctx, new SongNoteSink(this.strips, this.noteFeed), NO_EVENTS, {
+      tempo: constantTempo(DEFAULT_BPM),
+      loop: { start: 0, end: 1 },
+      endTick: 1,
+    });
+    transport.onEnded = () => this.emit();
+    this.transportInfo.secondsPerTickAt = (time) => transport.sptAt(time);
+    return transport;
+  }
+
+  private createAutomation(): AutomationDriver {
+    return new AutomationDriver({
+      ctx: this.ctx,
+      params: this.params,
+      offline: this.offline,
+      specsOf: (pluginId) => this.plugins.get(pluginId)?.params as ParamSpecs | undefined,
+      timeline: () => this.transport.currentTimeline,
+    });
+  }
+
+  private createProjectMirror(): ProjectMirror {
+    return new ProjectMirror({
+      core: this,
+      strips: this.strips,
+      mixer: this.mixer,
+      noteFeed: this.noteFeed,
+      residency: this.residency,
+      automation: this.automation,
+      tempo: this.transportInfo,
+      view: () => this.view,
+      isPlaying: () => this.transport.playing,
+      replan: () => this.updateModel(),
+    });
+  }
+
+  private createMetronome(): Metronome {
+    return new Metronome(
+      this.ctx,
+      this.monitorBus,
+      () => (this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null),
+      () => this.mixer.latency,
+    );
+  }
+
+  private createSamplePreview(): SamplePreview {
+    return new SamplePreview({
+      ctx: this.ctx,
       samples: this.samples,
       bus: this.previewBus,
       resume: () => this.resume(),
       nextBeatTime: () => this.nextBeatTime(),
     });
-    this.notePreview = new NotePreview({
-      ctx,
+  }
+
+  private createNotePreview(): NotePreview {
+    return new NotePreview({
+      ctx: this.ctx,
       strips: this.strips,
       noteFeed: this.noteFeed,
       clock: this.outputClock,
       resume: () => this.resume(),
     });
-    this.testClicks = new TestClicks(ctx, this.monitorBus);
-    this.liveCapture = this.createLiveCapture();
-    this.liveMeters = new LiveMeters({
-      ctx,
+  }
+
+  private createLiveMeters(): LiveMeters {
+    return new LiveMeters({
+      ctx: this.ctx,
       canOpen: () => !this.offline && !this.disposed,
       loadModule: (url) => this.loadModule(url),
       outputNode: (source) => this.mixer.outputNode(source),
     });
-    if (!offline && isRealtimeContext(ctx)) ctx.addEventListener('statechange', () => this.emit());
-    this.built = true;
-    this.initDone = this.installSafetyLimiter();
   }
 
   /** What the transport tells while it runs: automation, the metronome, worklet kernels and tempo-synced plugins. */
@@ -415,55 +455,7 @@ export class Engine implements EngineApi, EngineCore {
   // ---- Document mirroring ----
 
   applyDocChange(change: DocChange): void {
-    const prev = change.origin === 'load' ? null : this.project;
-    this.reconcile(prev, change.next);
-  }
-
-  /** Brings the graph in line with a new project, then applies a change of the delay compensation once. */
-  private reconcile(prev: Project | null, next: Project): void {
-    if (prev === next) return;
-    this.reconciling++;
-    this.shiftsMoved = false;
-    try {
-      this.reconcileInto(prev, next);
-    } finally {
-      this.reconciling--;
-    }
-    if (this.realign) {
-      this.realign = false;
-      if (this.applyAlignment()) this.shiftsMoved = true;
-    }
-    // Scheduling changes were re-planned at the end of reconcileInto; a moved shift needs a re-plan of its own.
-    if (this.shiftsMoved && this.transport.playing) this.updateModel();
-    this.shiftsMoved = false;
-  }
-
-  private reconcileInto(prev: Project | null, next: Project): void {
-    this.project = next;
-    if (!prev || prev.transport.bpm !== next.transport.bpm) this.transportInfo.setBpm(next.transport.bpm);
-
-    // Inserts first (channels connect to them), removals last.
-    const removedInserts = this.mixer.reconcile(prev, next);
-    const muted = effectivelyMuted(next.channels);
-    if (syncChannelStrips(this, this.strips, prev, next, muted)) this.shiftsMoved = true;
-    // Insert removals last; anything still routed to a removed insert falls back to the master.
-    this.mixer.removeStrips(removedInserts);
-    this.rebuildNewlyAutomatedPlugins(prev, next);
-
-    if (!prev || prev.channels !== next.channels || prev.channelOrder !== next.channelOrder) this.noteFeed.setProject(next);
-    const schedulingChanged = this.schedulingWatch.update(prev, next, muted);
-    if (residencyInputsChanged(prev, next)) this.residency.setProject(next);
-    // Automation first: a re-planning transport then schedules segments with the new curves.
-    this.automation.update(next, this.view);
-    if (schedulingChanged) this.updateModel();
-  }
-
-  /** First automation on a plugin that ran without AudioParams: it gets them (a new instance). */
-  private rebuildNewlyAutomatedPlugins(prev: Project | null, next: Project): void {
-    if (!prev || prev.channels === next.channels) return;
-    if (automatedOwners(prev.channels) === automatedOwners(next.channels)) return;
-    for (const strip of this.strips.values()) strip.automationChanged(next);
-    this.mixer.automationChanged(next);
+    this.mirror.applyDocChange(change);
   }
 
   /** True while a time-stretched copy of the channel's sample is being computed. */
@@ -475,34 +467,15 @@ export class Engine implements EngineApi, EngineCore {
     this.emit();
   }
 
-  // ---- Delay compensation ----
-
   /** Where a channel routed to `id` is held back (seconds): see MixerGraph.shiftSeconds. */
   channelShift(id: InsertId): number {
     return this.mixer.shiftSeconds(id);
   }
 
-  /**
-   * The mixer's delay compensation was recomputed: every channel (and its automation and plugin anchors) is scheduled
-   * later by what its insert is held back. While playing, what was already handed to the audio thread with the old
-   * shift is planned again.
-   */
+  /** The mixer recomputed its delay compensation (it may do so while the engine is still being built). */
   private alignChannels(): void {
     if (!this.built || this.disposed) return;
-    if (this.reconciling > 0) {
-      this.realign = true;
-      return;
-    }
-    if (this.applyAlignment() && this.transport.playing) this.updateModel();
-  }
-
-  /** Returns whether any channel's shift changed. */
-  private applyAlignment(): boolean {
-    let moved = false;
-    for (const strip of this.strips.values()) if (strip.setShift(this.mixer.shiftSeconds(strip.outputId))) moved = true;
-    // Insert and effect lanes were moved by the mixer itself; either way the driver plans the moved lanes again.
-    this.automation.retime();
-    return moved;
+    this.mirror.alignChannels();
   }
 
   // ---- What the transport plays ----
@@ -515,35 +488,12 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   /** What the transport plays and its timeline, or null before a project is loaded. */
-  private model(): { source: EventSource; timeline: Timeline } | null {
+  private model(): TransportModel | null {
     const project = this.project;
     if (!project) return null;
     const launch = this.launcherLink.eventSourceExtras();
-    if (this.launcherLink.isAlone) {
-      // The launcher on its own: no song, the project's tempo, until something stops it.
-      const tempo = tempoMapOf(project, 'pattern');
-      return {
-        source: { project, clips: [], ...launch },
-        timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER },
-      };
-    }
-    const song = this.songModel(project);
-    return { source: { ...song.source, ...launch }, timeline: song.timeline };
-  }
-
-  private songModel(project: Project): { source: EventSource; timeline: Timeline } {
-    const tempo = tempoMapOf(project, this.view.mode);
-    if (this.view.mode === 'song') {
-      // Song mode loops the loop region, or the whole song (FL's default); while recording audio
-      // without a loop region it plays on past the end.
-      const { source, length } = songModeSource(project);
-      const songEnd = Math.max(length, ticksPerBar(project.transport.timeSig));
-      const region = this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : null;
-      if (!region && this.openEnded) return { source, timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER } };
-      return { source, timeline: { tempo, loop: region ?? { start: 0, end: songEnd }, endTick: songEnd } };
-    }
-    const { source, length } = patternModeSource(project, this.view.patternId ?? project.patternOrder[0] ?? null);
-    return { source, timeline: { tempo, loop: { start: 0, end: length }, endTick: length } };
+    if (this.launcherLink.isAlone) return launcherOnlyModel(project, launch);
+    return planTransportModel(project, this.view, this.openEnded, launch);
   }
 
   /** The tempo map playback uses now (song mode follows tempo automation). */
@@ -1021,16 +971,6 @@ export class Engine implements EngineApi, EngineCore {
     if (typeof document !== 'undefined' && document.hidden) return;
     await new Promise((resolve) => setTimeout(resolve, DISPOSE_FADE_SEC * 1000 + DISPOSE_FADE_SLACK_MS));
   }
-}
-
-/** Whether two transport views play the same thing. */
-function sameView(a: TransportView, b: TransportView): boolean {
-  return (
-    a.mode === b.mode &&
-    a.patternId === b.patternId &&
-    a.loop?.start === b.loop?.start &&
-    a.loop?.end === b.loop?.end
-  );
 }
 
 /** Every sample a plugin slot (an instrument's or an effect's) refers to. */

@@ -26,6 +26,7 @@ export interface Ticker {
   keepUp(): number | undefined;
 }
 
+/** Makes the heartbeat of a set of decks (it starts when a deck plays). */
 export function createTicker(context: DeckContext, positions: Positions): Ticker {
   const { store, runtime, now } = context;
   let intervalId: ReturnType<typeof setInterval> | null = null;

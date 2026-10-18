@@ -15,17 +15,23 @@ import type { CrossfaderCurve } from '@core/dj/decks-math';
 
 export type { DeckWaveform };
 
+/** The four decks. */
 export type DeckId = 'A' | 'B' | 'C' | 'D';
+/** Every deck, in order. */
 export const DECK_IDS: readonly DeckId[] = ['A', 'B', 'C', 'D'];
+/** The three EQ bands of a deck. */
 export type EqBand = 'low' | 'mid' | 'high';
+/** How many hot cue pads a deck has. */
 export const HOT_CUES = 8;
 
+/** A deck's loop: its place in the song (seconds) and whether it is running. */
 export interface DeckLoop {
   startSec: number;
   endSec: number;
   active: boolean;
 }
 
+/** Everything a deck shows and a controller can read: the song, the transport, tempo, mixer settings, cues and loop. */
 export interface DeckState {
   id: DeckId;
   /** The loaded song (a library song's sample), or null. */
@@ -65,6 +71,7 @@ export interface DeckState {
   level: number;
 }
 
+/** The state of all decks, the crossfader, the master and the recorder. */
 export interface DecksState {
   decks: Record<DeckId, DeckState>;
   /** How many decks are shown (2 or 4). */
@@ -78,6 +85,7 @@ export interface DecksState {
   recording: { startedAt: number } | null;
 }
 
+/** What drives the decks: every control of the Decks window, a controller or the Studio (the optional ones are for the window and the Studio). */
 export interface DecksApi {
   readonly store: StoreApi<DecksState>;
 

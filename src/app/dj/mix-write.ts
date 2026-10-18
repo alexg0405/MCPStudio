@@ -41,7 +41,9 @@ import { sampleHash } from './analyzer';
 import { DECK_NAMES, ensureDecks } from './mix-mixer';
 import type { DeckSlots, MixSong } from './mix-types';
 
+/** The playlist track the mix tempo curve sits on. */
 export const TEMPO_LANE = 'Mix tempo';
+/** The playlist track the risers sit on. */
 export const DJ_FX_LANE = 'DJ FX';
 
 /** Ticks per beat (the project's resolution). */

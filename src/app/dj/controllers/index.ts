@@ -18,6 +18,7 @@ export type { ControllersState, ControllerDevice, LearnState, LogEntry } from '.
 
 const instances = new WeakMap<Services, DjControllers>();
 
+/** The DJ controllers of an app (made on first use). */
 export function djControllers(services: Services): DjControllers {
   let c = instances.get(services);
   if (!c) {

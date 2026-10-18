@@ -23,6 +23,7 @@ export interface StreamInfo {
   channels: 1 | 2;
 }
 
+/** The analysis of a song fed in pieces: a level scan first, then the features, then the tempo and structure. */
 export class StreamingAnalysis {
   private readonly scan: LevelScan;
   private levels: Levels | null = null;

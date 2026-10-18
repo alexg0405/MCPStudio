@@ -30,13 +30,15 @@ export interface StreamTarget {
 
 /** Frames per chunk (5.9 s at 44.1 kHz: 2 MB of stereo floats). */
 export const CHUNK_FRAMES = 1 << 18;
-/** Seconds of the song the level scan reads, and how long each region of it is. */
+/** Seconds of the song the level scan reads in all. */
 export const SCAN_BUDGET_SEC = 600;
+/** How long (seconds) each region the level scan reads is. */
 export const SCAN_REGION_SEC = 20;
 /** The share of the progress bar for the level scan, the pass over the song, and what is left for the tempo and structure. */
 const SCAN_SHARE = 0.03;
 const PASS_END = 0.93;
 
+/** How to drive an analysis of a song read by parts: when to stop, where to report progress and how big the pieces are. */
 export interface DriveOptions {
   signal?: AbortSignal;
   onProgress?(fraction: number): void;

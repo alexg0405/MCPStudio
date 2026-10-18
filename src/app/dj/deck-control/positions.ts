@@ -24,6 +24,7 @@ export interface Positions {
   refreshPosition(deckId: DeckId): void;
 }
 
+/** Makes the position readers of a set of decks. */
 export function createPositions(context: DeckContext): Positions {
   const { runtime, deckState, patchDeck, channelOf, now } = context;
 

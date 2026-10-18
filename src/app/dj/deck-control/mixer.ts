@@ -41,6 +41,7 @@ export interface Mixer {
   cancelFade(): void;
 }
 
+/** Makes the mixer controls of a set of decks. */
 export function createMixer(context: DeckContext, tempo: Tempo): Mixer {
   const { store, deckState, patchDeck, channelOf, now } = context;
   let fadeTimer: ReturnType<typeof setInterval> | null = null;

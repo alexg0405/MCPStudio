@@ -21,6 +21,7 @@ export const APP_COMMANDS: Record<string, string> = {
   'app.stop': 'transport.stop',
 };
 
+/** What the dispatcher drives: the decks, the browse cursor, the app's commands and where to report problems. */
 export interface DispatchEnv {
   decks: DecksApi;
   browse: BrowseCursor;
@@ -29,6 +30,7 @@ export interface DispatchEnv {
   report?(message: string): void;
 }
 
+/** Turns a controller's events ("A.play pressed", "crossfader 0.4") into calls on the decks. */
 export class DjDispatcher {
   /** Decks whose jog platter is being touched (the jog scratches while it is). */
   private readonly touching = new Set<DeckId>();

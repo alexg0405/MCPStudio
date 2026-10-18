@@ -20,6 +20,7 @@ export interface Cues {
   clearHotCue(deckId: DeckId, padIndex: number): void;
 }
 
+/** Makes the cue and hot cue controls of a set of decks. */
 export function createCues(context: DeckContext, positions: Positions, streams: Streams, transport: Transport): Cues {
   const { deps, runtime, deckState, patchDeck, channelOf } = context;
 

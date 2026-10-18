@@ -43,6 +43,7 @@ export interface Loops {
   setBeatJump(deckId: DeckId, beats: number): void;
 }
 
+/** Makes the loop and beat jump controls of a set of decks. */
 export function createLoops(context: DeckContext, positions: Positions, streams: Streams, transport: Transport): Loops {
   const { runtime, deckState, patchDeck, channelOf, durationOf } = context;
   const loopOf = (deckId: DeckId) => deckState(deckId).loop;

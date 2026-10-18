@@ -15,11 +15,17 @@ import { defaultValues } from '@agstudio/sdk';
 import type { Services } from '../services';
 import type { DeckSlots } from './mix-types';
 
+/** The EQ Pro plugin id. */
 export const EQ_PRO = 'agstudio.eq-pro';
+/** The Filter plugin id. */
 export const FILTER = 'agstudio.filter';
+/** The Delay plugin id. */
 export const DELAY = 'agstudio.delay';
+/** The Limiter plugin id. */
 export const LIMITER = 'agstudio.limiter';
+/** The mixer track name of each deck. */
 export const DECK_NAMES: Record<Deck, string> = { A: 'Deck A', B: 'Deck B' };
+/** The mixer track name of the echo return. */
 export const ECHO_NAME = 'Echo';
 
 /** EQ Pro on a deck: band 1 the bass-swap low cut, band 8 a high cut, both at neutral. */

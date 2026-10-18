@@ -14,8 +14,10 @@ export type AnalysisRunner = (job: AnalysisJob, onProgress: (f: number) => void,
 /** Runs the analysis of a song read by parts: in a Worker when there is one, else on this thread. Rejects with AbortError when cancelled. */
 export type StreamRunner = (hash: string, source: StreamSource, onProgress: (f: number) => void, signal: AbortSignal) => Promise<TrackAnalysis>;
 
+/** The error of a stopped analysis. */
 export const abortError = () => new DOMException('The analysis was cancelled.', 'AbortError');
 
+/** Runs an analysis on the page itself (where there are no workers). */
 export const inlineRunner: AnalysisRunner = (job, onProgress, signal) =>
   new Promise((resolve, reject) => {
     // Let the caller's frame finish first.
@@ -29,6 +31,7 @@ export const inlineRunner: AnalysisRunner = (job, onProgress, signal) =>
     }, 0);
   });
 
+/** Runs the analysis of a song read by parts on the page itself. */
 export const inlineStreamRunner: StreamRunner = (hash, source, onProgress, signal) =>
   driveAnalysis(hash, source, inlineStreamTarget({ signal }), { signal, onProgress });
 
@@ -39,6 +42,7 @@ export interface WorkerHost {
   nextId(): number;
 }
 
+/** The analysis worker, made when first needed and made again after it was stopped. */
 export function workerHost(): WorkerHost {
   let worker: Worker | null = null;
   let seq = 0;
@@ -55,6 +59,7 @@ export function workerHost(): WorkerHost {
   };
 }
 
+/** Runs analyses on the worker (inline where there is no Worker). */
 export function workerRunner(host: WorkerHost): AnalysisRunner {
   return (job, onProgress, signal) => {
     if (typeof Worker === 'undefined') return inlineRunner(job, onProgress, signal);
@@ -105,6 +110,7 @@ export function workerRunner(host: WorkerHost): AnalysisRunner {
 /** Chunks the Worker may be holding at once (each is acknowledged when worked on): reading stays this far ahead and no further. */
 export const MAX_IN_FLIGHT = 3;
 
+/** Runs the analysis of a song read by parts on the worker (inline where there is no Worker). */
 export function workerStreamRunner(host: WorkerHost): StreamRunner {
   return async (hash, source, onProgress, signal) => {
     if (typeof Worker === 'undefined') return inlineStreamRunner(hash, source, onProgress, signal);

@@ -27,6 +27,7 @@ export interface Tempo {
   bpmOf(deckId: DeckId): number | null;
 }
 
+/** Makes the pitch, key lock and sync controls of a set of decks. */
 export function createTempo(context: DeckContext): Tempo {
   const { deps, runtime, deckState, patchDeck, channelOf } = context;
 

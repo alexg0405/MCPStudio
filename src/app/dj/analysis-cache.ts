@@ -16,6 +16,7 @@ import { abortError, inlineRunner, inlineStreamRunner, workerHost, workerRunner,
 export { inlineRunner, inlineStreamRunner };
 export type { AnalysisRunner, StreamRunner };
 
+/** How far the analysis of one song has got. */
 export interface AnalysisProgress {
   hash: string;
   /** 0–1 */
@@ -25,6 +26,7 @@ export interface AnalysisProgress {
 /** 'now' (a deck is waiting for it) goes ahead of every queued 'background' job (the library's); it never interrupts the running one. */
 export type AnalysisPriority = 'now' | 'background';
 
+/** Analyses songs one at a time and remembers the results (in memory and in storage). */
 export interface TrackAnalyzer {
   /** The cached analysis, or null (not analyzed yet). */
   peek(hash: string): TrackAnalysis | null;
@@ -82,6 +84,7 @@ export const idbAnalysisStorage: AnalysisStorage = {
   save: (a) => (isIdbAvailable() ? idbSet(keyOf(a.hash), a) : Promise.resolve()),
 };
 
+/** A storage that keeps analyses in memory only (tests). */
 export function memoryAnalysisStorage(initial: TrackAnalysis[] = []): AnalysisStorage & { items: Map<string, TrackAnalysis> } {
   const items = new Map(initial.map((a) => [a.hash, a]));
   return {
@@ -136,6 +139,7 @@ interface Job {
   run(): Promise<TrackAnalysis>;
 }
 
+/** The parts of the analyzer that tests replace: storage, decoder and runners. */
 export interface TrackAnalyzerOptions {
   storage?: AnalysisStorage;
   decode?: AnalysisDecoder;

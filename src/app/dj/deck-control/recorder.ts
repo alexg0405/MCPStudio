@@ -27,6 +27,7 @@ export interface Recorder {
   cancel(): void;
 }
 
+/** Makes the recorder of a set of decks; `ensureGraph` brings up the audio graph when recording starts. */
 export function createRecorder(context: DeckContext, ensureGraph: () => Promise<DeckGraph>): Recorder {
   const { deps, store, now } = context;
   let capture: Capture | null = null;

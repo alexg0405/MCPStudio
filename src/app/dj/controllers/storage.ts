@@ -1,6 +1,7 @@
 /** Where controller mappings are kept: per device name, in this browser (IndexedDB), next to whether the controllers were switched on. */
 import { idbGet, idbSet, isIdbAvailable } from '@platform/idb';
 
+/** What is kept about the controllers between sessions. */
 export interface SavedControllers {
   /** The musician connected controllers last time (so they come back on reload). */
   enabled: boolean;
@@ -8,6 +9,7 @@ export interface SavedControllers {
   mappings: Record<string, unknown>;
 }
 
+/** Where the controller settings are kept. */
 export interface ControllerStorage {
   load(): Promise<SavedControllers>;
   save(data: SavedControllers): Promise<void>;
@@ -15,6 +17,7 @@ export interface ControllerStorage {
 
 const KEY = 'dj-controllers';
 
+/** Keeps the controller settings in this browser's key-value store. */
 export const idbControllerStorage: ControllerStorage = {
   async load() {
     if (!isIdbAvailable()) return { enabled: false, mappings: {} };

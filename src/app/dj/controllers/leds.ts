@@ -50,6 +50,7 @@ export function ledBindings(mapping: ControllerMapping): LedBinding[] {
 
 const addressOf = (l: LedBinding) => `${l.out.type}:${l.out.channel}:${l.out.number}`;
 
+/** Lights a controller's LEDs to follow the decks, sending only what changed. */
 export class LedFeedback {
   private leds: LedBinding[] = [];
   private readonly last = new Map<string, number>();

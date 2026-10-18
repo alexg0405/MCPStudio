@@ -57,6 +57,7 @@ interface OpenPort {
   listener: (e: Event) => void;
 }
 
+/** Connects MIDI controllers to the live decks: devices, mappings, MIDI learn, lights and the test view. */
 export class DjControllers {
   readonly store: StoreApi<ControllersState> = createStore<ControllersState>(() => ({
     access: 'off',

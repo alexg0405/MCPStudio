@@ -9,6 +9,7 @@ import { decimate } from '@core/voice/filters';
 import { LoudnessMeter } from '@agstudio/sdk/dsp/loudness';
 import { TruePeak } from '@agstudio/sdk/dsp/true-peak';
 
+/** A song handed to the analysis: its hash, one or two channels of audio and the loudness measured at decode. */
 export interface AnalysisJob {
   hash: string;
   /** One or two channels (more are ignored). */
@@ -137,6 +138,7 @@ export function analysisSignal(channels: readonly Float32Array[], sampleRate: nu
   return factor > 1 ? { mono: decimate(mono, factor, sampleRate), sampleRate: sampleRate / factor } : { mono, sampleRate };
 }
 
+/** Runs the analysis of a song held in memory (on the worker, or inline where there is none). */
 export function runAnalysis(
   job: AnalysisJob,
   opts: { onProgress?(fraction: number): void; isCancelled?(): boolean } = {},

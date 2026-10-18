@@ -50,6 +50,7 @@ export interface Streams {
   sendLoop(deckId: DeckId, startSec: number, endSec: number): void;
 }
 
+/** Makes the song streaming of a set of decks. */
 export function createStreams(context: DeckContext): Streams {
   const { deps, runtime, deckState, channelOf } = context;
 

@@ -24,6 +24,7 @@ export interface BackgroundAnalysis {
   apply(deckId: DeckId, analysis: TrackAnalysis): void;
 }
 
+/** Makes the background analysis of a set of decks. */
 export function createBackgroundAnalysis(context: DeckContext, streams: Streams, transport: Transport): BackgroundAnalysis {
   const { deps, runtime, deckState, patchDeck } = context;
 

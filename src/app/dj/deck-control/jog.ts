@@ -30,6 +30,7 @@ export interface Jog {
   jogTouch(deckId: DeckId, isTouching: boolean): void;
 }
 
+/** Makes the jog wheel controls of a set of decks. */
 export function createJog(context: DeckContext, positions: Positions, transport: Transport): Jog {
   const { runtime, deckState, channelOf, now } = context;
 

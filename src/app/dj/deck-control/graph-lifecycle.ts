@@ -25,6 +25,7 @@ export interface GraphLifecycle {
   disposeGraph(): void;
 }
 
+/** Makes the graph lifecycle of a set of decks (it starts watching the engine at once). */
 export function createGraphLifecycle(
   context: DeckContext,
   parts: { streams: Streams; tempo: Tempo; ticker: Ticker; transport: Transport },

@@ -14,6 +14,7 @@ export function setTrackAnalyzer(a: TrackAnalyzer | null): void {
   override = a;
 }
 
+/** The analyzer in use: the one set for tests and demos, else the app's (null when there is none). */
 export function trackAnalyzer(s: Services): TrackAnalyzer | null {
   return override ?? (s as Partial<Pick<Services, 'trackAnalyzer'>>).trackAnalyzer ?? null;
 }

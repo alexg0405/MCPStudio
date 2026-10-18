@@ -29,6 +29,7 @@ export interface Loader {
   eject(deckId: DeckId): void;
 }
 
+/** Makes the loader of a set of decks. */
 export function createLoader(
   context: DeckContext,
   parts: {

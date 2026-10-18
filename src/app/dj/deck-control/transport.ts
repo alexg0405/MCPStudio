@@ -25,6 +25,7 @@ export interface Transport {
   alignFollowersSoon(masterId: DeckId): void;
 }
 
+/** Makes the transport controls of a set of decks. */
 export function createTransport(context: DeckContext, positions: Positions, ticker: Ticker): Transport {
   const { deps, runtime, deckState, patchDeck, channelOf, now } = context;
 

@@ -40,6 +40,10 @@ import flanger from '../../src/plugins/builtin/flanger';
 import { FlangerKernel } from '../../src/plugins/builtin/flanger/kernel';
 import { flangerParams } from '../../src/plugins/builtin/flanger/params';
 import fm from '../../src/plugins/builtin/fm';
+import granular from '../../src/plugins/builtin/granular';
+import { GranularKernel } from '../../src/plugins/builtin/granular/kernel';
+import { granularParams } from '../../src/plugins/builtin/granular/params';
+import { buildTexture, TEXTURE_RATE } from '../../src/plugins/builtin/granular/textures.kernel';
 import { FmKernel } from '../../src/plugins/builtin/fm/kernel';
 import { fmParams } from '../../src/plugins/builtin/fm/params';
 import gate from '../../src/plugins/builtin/gate';
@@ -192,6 +196,16 @@ export const KERNEL_ENTRIES: readonly KernelEntry[] = [
     (sr) => {
       const k = new WavetableKernel(testHost(sr, 7));
       k.useBank(factoryBank());
+      return k;
+    },
+    CHORD,
+  ),
+  instrument(
+    granular,
+    granularParams,
+    (sr) => {
+      const k = new GranularKernel(testHost(sr, 7));
+      k.onMessage({ type: 'texture', channels: buildTexture('choir'), sampleRate: TEXTURE_RATE });
       return k;
     },
     CHORD,

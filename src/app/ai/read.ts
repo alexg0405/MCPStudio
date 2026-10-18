@@ -8,7 +8,13 @@ import type { Draft } from 'immer';
 import { formatValue, type ParamSpec, type ParamSpecs, type ParamValue, type PluginDef } from '@agstudio/sdk';
 import { formatAutomationValue } from '@core/automation/labels';
 import { resolveTarget } from '@core/automation/targets';
+import { formatChord } from '@core/harmony/chord';
+import { harmonyKey } from '@core/harmony/key';
+import { findProgressions, GENRES, MOODS } from '@core/harmony/progressions';
+import { romanOf } from '@core/harmony/scale';
 import { gainToDecibels } from '@core/model/fader';
+import { symbolOf } from '@core/ops/chords';
+import { chordsSorted, chordTrackLines, projectUsesFlats } from '@core/query/chords';
 import { sameTarget } from '@core/model/targets';
 import type {
   AutomationChannel,
@@ -29,6 +35,8 @@ import { patternLength } from '@core/query/queries';
 import { songSections } from '@core/query/sections';
 import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
 import { chainChoices, findChainChoice, type ChainChoice } from '../chains';
+import { rolesOf } from '../arrange/env';
+import { nextChordSuggestions } from '../harmony/chord-track';
 import { isAtPreset, presetChoices } from '../presets';
 import { pitchReport } from '../pitch/report';
 import { referenceReport } from '../reference/summary';
@@ -835,9 +843,52 @@ const list_samples = tool(
   (s, a) => listSamples(s.sampleBrowser, a, { bpm: project(s).transport.bpm, key: project(s).transport.key }),
 );
 
+const get_chords = tool(
+  'get_chords',
+  'The chord track: the song key, every chord with its bar, length, Roman numeral in the key and (when it was detected) confidence, as one line per eight bars. With next_bar, chords that could start at that bar ranked by function; with mood or genre, the matching palette progressions (ids for the chords action).',
+  {
+    next_bar: S.int('1-based bar: suggest the chords that could start there (from the chord before it).'),
+    mood: S.str(`Palette filter: ${MOODS.join(', ')}.`),
+    genre: S.str(`Palette filter: ${GENRES.join(', ')}.`),
+  },
+  (s, a) => {
+    const p = project(s);
+    const key = harmonyKey(p, rolesOf(p));
+    const flats = projectUsesFlats(p);
+    const out: Record<string, unknown> = {
+      key: { root: key.root, scale: key.scale, from: key.from },
+      chords: chordsSorted(p).map((event) => ({
+        bar: r2(event.tick / barT(p) + 1),
+        bars: r2(event.length / barT(p)),
+        chord: formatChord(symbolOf(event), flats),
+        roman: romanOf(key, symbolOf(event)),
+        ...(event.confidence !== undefined ? { confidence: event.confidence } : {}),
+      })),
+      lines: chordTrackLines(p),
+    };
+    const nextBar = num(a.next_bar);
+    if (nextBar !== undefined) {
+      out.next = nextChordSuggestions(s, (Math.max(1, Math.round(nextBar)) - 1) * barT(p)).map((next) => ({
+        chord: formatChord(next.chord, flats),
+        roman: next.roman,
+        function: next.function,
+        score: next.score,
+        why: next.reason,
+      }));
+    }
+    const mood = str(a.mood);
+    const genre = str(a.genre);
+    if (mood || genre) {
+      out.progressions = findProgressions({ mood, genre }).map((x) => ({ id: x.id, name: x.name, mode: x.mode, note: x.note }));
+    }
+    return out;
+  },
+);
+
 export const readTools: readonly ReadTool[] = [
   get_project,
   get_transport,
+  get_chords,
   get_selection,
   get_pattern_notes,
   get_channel,

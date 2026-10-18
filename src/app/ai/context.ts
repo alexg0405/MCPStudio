@@ -4,6 +4,7 @@
  * selected. Ids are included so actions can refer to things exactly; only settings that differ from
  * the plugin defaults are listed.
  */
+import { chordTrackLines } from '@core/query/chords';
 import { formatAutomationValue, targetName } from '@core/automation/labels';
 import { resolveTarget } from '@core/automation/targets';
 import { gainToDecibels } from '@core/model/fader';
@@ -503,6 +504,8 @@ function renderContext(s: Services, r: Render): string {
   }
 
   lines.push('', ...playlistLines(p, r));
+  const chordLines = chordTrackLines(p);
+  if (chordLines.length) lines.push('', 'Chord track (chord per bar; · two chords in a bar, – none):', ...chordLines.map((line) => `  ${line}`));
   const arrangement = arrangementLines(p);
   if (arrangement.length) lines.push(...arrangement);
   const djMix = djLines(p);

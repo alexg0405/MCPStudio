@@ -1,6 +1,6 @@
 import type { RelEncoding } from '../relative';
 import type { DeckLetter } from '../targets';
-import { emptyMapping, type Binding, type ControllerMapping, type InputSpec, type LedBinding, type PadPalette } from '../types';
+import { emptyMapping, type Binding, type ControllerMapping, type InputSpec, type LedBinding } from '../types';
 
 export interface ControllerPreset {
   id: string;

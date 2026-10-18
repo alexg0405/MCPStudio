@@ -12,13 +12,15 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 
 - `npm run dev`: dev server (port 5390 by default, or `$PORT`). `bin/agstudio` (linked as `agstudio` in ~/.local/bin)
   starts it and opens the browser, or just opens it when it is already running.
-- `npm run check`: everything CI would run (`scripts/check.mjs`): `tsc -b` (all four tsconfigs, incremental) and `eslint .`
+- `npm run check`: everything CI would run (`scripts/check.mjs`): `tsc -b` (all five tsconfigs, incremental) and `eslint .`
   (cached) side by side, then the unit project, then the audio project, one after the other so the speed tests are not
   starved. A warm run with nothing changed spends seconds on the static checks.
 - `npm test`: unit tests only (Node). `npm run test:audio`: browser tests in headless Chrome (installed Chrome, no download).
 - `npm run test:perf`: only the tests tagged `perf` (speed assertions), with their real limits (`VITE_PERF_STRICT`); run it
   on a quiet machine. The regular run keeps loose bounds for them. Speed assertions use `cpuNow`/`settle` from
   `@agstudio/sdk/testing` (CPU time, best of a few attempts), never a single wall-clock sample.
+- `agstudio --app` (`bin/agstudio`): serves the production build on port 5391 (`$APP_PORT`) and opens the installed app; the
+  installed app (PWA, `docs/architecture.md` "Installable app (PWA)") belongs to that origin, not to the dev server's.
 - `npm run new:plugin -- --kind instrument|effect --style graph|worklet|faust --id user.my-thing`: scaffold a user plugin
   into `plugins/` (templates in `templates/`, guide in `docs/plugin-sdk.md`).
 
@@ -31,6 +33,7 @@ Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
 | `src/engine` | Web Audio engine, scheduler, reconcile, offline render | core, sdk |
 | `src/plugins/builtin` | Built-in instruments/effects | `@agstudio/sdk*` and react only |
 | `src/platform` | File System Access, OPFS, IndexedDB, Web Locks | core |
+| `src/sw` | The service worker (`sw.ts`, bundled into `dist/sw.js` by `tools/pwa`) and its pure routing; production only, never registered in dev | nothing (`tsconfig.sw.json`, WebWorker lib) |
 | `src/app` | Composition root (`services.ts`), stores, persistence, plugin discovery | core, sdk, engine, platform |
 | `src/ui` | React shell, workspace, canvases, `features/*` | core, sdk, app, `@engine/api` (types) |
 | `plugins/` | User plugins (folders starting with `_` are ignored) | `@agstudio/sdk*`, react |

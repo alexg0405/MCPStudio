@@ -25,6 +25,32 @@ Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm
 `npm run test:perf` (speed assertions with their real limits; run it on a quiet machine),
 `npm run build` (production build in `dist/`).
 
+## Install as an app
+
+AGstudio installs from Chrome as an app: its own window and dock icon, no browser tab, a start that works without any server
+running, and a double-click on a project (`.agproj`, also `.agchain` and `.agpreset`) opens it.
+
+```bash
+agstudio --app
+```
+
+builds the production version when it is missing or older than the code, serves it on http://localhost:5391 (`$APP_PORT`) and
+opens it. Then **Help → Install AGstudio as an app** (also in the action search, and on the welcome screen), or the install icon at
+the right end of Chrome's address bar. From then on open AGstudio from the dock or Launchpad; `agstudio --app` opens the installed
+app once it exists. (An installed app belongs to its address, so keep using port 5391 for it. `agstudio` without `--app` is still
+the development server on 5390, with hot reload, and has nothing to do with the installed app.)
+
+- **Works offline, with no server:** the whole editor, audio, saving and opening projects, export, the offline beat generator,
+  your plugins (they are part of the build).
+- **Needs `agstudio --app` running** (a terminal is enough): the AI studio (Claude, ChatGPT, API key).
+- **Needs the dev server, `agstudio`, in a browser tab:** AI apps connecting over MCP, the AI plugin builder, New plugin…, Edit
+  code, and hot reload while you write plugins. These say so when they cannot be reached. Plugins you add or change reach the
+  installed app the next time `agstudio --app` builds (it rebuilds by itself when the code is newer).
+- **Updates:** a new build downloads in the background and a small "Update ready" note offers Reload; nothing reloads by itself, and
+  Reload waits while a song plays.
+- **Window controls in the toolbar:** the installed window's title bar has Chrome's toggle for "Window Controls Overlay"; with it on,
+  the toolbar takes the title bar's place and its empty parts drag the window (not verified in a real window yet).
+
 ## What's in it
 
 - **Help everywhere**: point at anything for a tooltip and the hint bar; a **?** on every window explains it;

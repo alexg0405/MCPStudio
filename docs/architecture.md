@@ -13,7 +13,8 @@ This is the design reference. `CLAUDE.md` has the short rules; this file explain
 - An **AI studio** that can drive every feature (it acts through the same ops and commands as the UI), listens to the
   mix, and can write new plugins.
 - The UI explains itself: hints and tooltips on everything, a "?" on every window, the action search, lessons.
-- Still open: a desktop wrapper.
+- Installable as a desktop app (a PWA from Chrome: its own window, dock icon, offline start, opens project files); see
+  "Installable app (PWA)". No Electron.
 
 ## Layers
 
@@ -27,8 +28,9 @@ src/ui        React shell, workspace, canvas editors, features/*
 src/plugins/builtin, plugins/ (user), templates/
 ```
 
-Enforcement: ESLint `no-restricted-imports` per folder (see `eslint.config.js`), plus four tsconfigs run by `tsc -b`:
-`app` (DOM), `core` (no DOM lib, keeps core pure), `worklet` (`types: ["audioworklet"]`), `node` (build config).
+Enforcement: ESLint `no-restricted-imports` per folder (see `eslint.config.js`), plus five tsconfigs run by `tsc -b`:
+`app` (DOM), `core` (no DOM lib, keeps core pure), `worklet` (`types: ["audioworklet"]`), `node` (build config), `sw` (the service
+worker, WebWorker lib).
 
 ## Data model (`src/core/model`)
 
@@ -3703,3 +3705,74 @@ patterns and audio clip channels and are launched live, in time with the transpo
   with a fake clock), `test/browser/launcher.test.ts` (offline renders through the real engine: boundary error 0–3 frames at 97–174 BPM, replace,
   scene, stop, follow, audio, over a song), `test/browser/launcher-ui.test.ts`, `app/launcher/launcher-controllers.test.ts`, `app/ai/ops/launcher.test.ts`.
 
+
+## Installable app (PWA)
+
+AGstudio installs from Chrome as an app (its own window, dock or Start-menu icon, starts without a server, opens `.agproj`
+files). No Electron and no dependency: a manifest, a hand-written service worker and a small build step.
+
+- **Which server, which origin.** An installed app belongs to one origin, port included, so the dev server (`agstudio`, port
+  5390) is not what gets installed: `agstudio --app` builds when needed and serves the production build with `vite preview` on
+  5391 (`$APP_PORT`; `preview.port` in `vite.config.ts`). The installed app opens from the service worker's cache, so it starts
+  with that server stopped too. Nothing else changed for `npm run dev`.
+- **Manifest** (`public/manifest.webmanifest`, linked from `index.html`): `id`/`start_url`/`scope` `/`, `display: standalone`
+  with `display_override: [window-controls-overlay, standalone]`, `background_color` = `--ag-bg`, `theme_color` = `--ag-surface-1`
+  (the page keeps `<meta name=theme-color>` on the toolbar color of the current theme, `ui/theme/apply.ts`), icons 192/512 plus a
+  maskable one, `file_handlers` for `.agproj` (`application/x-agstudio-project`), `.agchain` and `.agpreset`, and
+  `launch_handler: focus-existing` (a file opened while the app runs goes to that window, no second one and no reload).
+  Window controls overlay (`Shell.module.css`, only under `@media (display-mode: window-controls-overlay)`): the toolbar keeps
+  clear of the controls (`env(titlebar-area-*)`) and its empty parts drag the window; everything with a button, role, tabindex or
+  `data-hint` is `no-drag`. Not checked in a real overlay window (headless Chrome has none).
+- **Icons** (`public/icons`): one design (obsidian tile, gold bars, the favicon's silhouette) written as an SVG and rasterized by
+  `scripts/make-icons.mjs` with only Node built-ins (shape renderer with 4x4 supersampling, PNG encoder on `node:zlib`); the
+  generated files are committed.
+- **Build** (`tools/pwa/precache.ts`, a Vite plugin, build only): in `closeBundle` it lists every file in `dist/` (not `sw.js`,
+  maps, dotfiles), derives a build id (SHA-256 over names and contents: any change makes a new id), and bundles `src/sw/sw.ts` into
+  `dist/sw.js` (a nested `vite build`, IIFE) with `__AG_PRECACHE__` (the list) and `__AG_BUILD_ID__` defined. A new build is therefore
+  a byte-different worker, and its cache is named `agstudio-shell-<id>`.
+- **Worker** (`src/sw/sw.ts`, typed by `tsconfig.sw.json` with the WebWorker lib; the decisions are in `src/sw/routing.ts`, pure and
+  unit tested). *install*: fetch every listed file (`cache: 'reload'`) into the new cache, all or nothing; no `skipWaiting`.
+  *activate*: delete every other `agstudio-shell-*` cache, claim the clients. *fetch*, by `routeRequest`: only same-origin GETs;
+  `/api/*`, `/mcp`, `/__*` and Vite's dev paths are never touched (the browser's own network path, so nothing of the server is cached
+  and a POST never reaches the worker's logic); a navigation is **network first** with the cached `/index.html` as the fallback (a
+  4 s limit when a cached copy exists, so a hung server does not hold the window); a precached file or anything under `/assets/` is
+  **cache first** (a lazy chunk of a newer build that the list missed is kept when first fetched). The network never refreshes the
+  cached `index.html`: it always matches the cached assets of its own version. **Isolation**: every response the worker serves is
+  rebuilt with `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp` and
+  `Cross-Origin-Resource-Policy: same-origin` (also worker and worklet scripts, which need the COEP header themselves), so the
+  offline app stays `crossOriginIsolated`.
+- **Page side** (`src/app/pwa/pwa.ts`, `services.pwa`): `start()` registers `/sw.js` (`scope: '/'`, `updateViaCache: 'none'`) in
+  production builds only, after the first paint. **Development never registers it**; instead it unregisters a worker (and the
+  `agstudio-*` caches) that an earlier production build left on the same address, so HMR and the dev workflow see the real files.
+  A new version that finishes installing under a running one, or one already waiting from an earlier visit, sets `updateReady`; the
+  page checks for a new version hourly and when the window becomes visible. **Updates never reload by themselves**: the "Update
+  ready" prompt (`ui/features/install-app`, and Help → "Update ready — reload") has Reload (disabled while a song plays) and Later;
+  Reload posts `agstudio:skip-waiting`, and the reload happens on the new worker's `controllerchange`, only after that click.
+- **Install UX** (`ui/features/install-app`): command `app.install` ("Install AGstudio as an app", Help menu and the action search
+  through a dynamic menu entry, the welcome screen), hidden when the display mode says it is already an app. `index.html` keeps
+  Chrome's `beforeinstallprompt` (it fires once, maybe before the app's code runs) for the entry to open; without one the dialog
+  gives the steps for Chrome's own install icon. Not for the AI studio (`NOT_FOR_AI` in `test/unit/ai-coverage.test.ts`): the prompt
+  needs the musician's own click and changes the computer, not the project.
+- **Files** (`src/app/pwa/launch.ts`): `launchQueue.setConsumer` receives the handles: the first `.agproj` opens through the normal
+  open path (`ProjectFiles.openFile`, with the handle, so Save writes back and "unsaved changes" is asked first); `.agchain` and
+  `.agpreset` files are added to the chains and presets (`importChainText`, `importPresetText`, the same code as the file pickers);
+  anything else says what it cannot open.
+- **What needs a server** (`src/app/local-server.ts` has the words; each feature says them instead of failing obscurely). Offline,
+  with no server: the whole editor, the engine, projects (File System Access, OPFS, IndexedDB), export, the offline beat generator,
+  built-in and (build-time bundled) user plugins. `agstudio --app` (production server): additionally `/api/ai` (the AI studio's
+  backends: Claude subscription, Codex, API key). Only `agstudio` (dev server): MCP for AI apps (`/mcp`, tokens), the plugin builder
+  and "New plugin…" (`/api/plugins`), "Edit code" (`/__open-in-editor`), hot reload of code and of `plugins/`. User plugins are part of the
+  production build (`import.meta.glob` at build time): add or edit one, rebuild (`agstudio --app` does when the code is newer).
+- **Tests.** `src/sw/routing.test.ts` (routes, caches, headers), `test/unit/pwa-precache.test.ts` (the list and the build id),
+  `test/unit/pwa.test.ts` (installability by hand, since Lighthouse is not installed: manifest fields, icon files and sizes, colors from
+  the tokens, file handlers, the page links, the worker's fetch handler and its no-`skipWaiting`), `src/app/pwa/*.test.ts` (install
+  prompt, registration, update flow, launched files), `src/app/local-server.test.ts` (messages without a server), and
+  `test/unit/pwa-offline.test.ts`: the real production build in a temporary folder, the real `vite preview` on a free port and
+  headless Chrome (like `mcp-e2e.test.ts`): the worker registers and controls the page, `crossOriginIsolated`, one versioned cache with
+  every file, then with the server **stopped** the page reloads from the cache, still isolated, every file is served, `/api`, POST and
+  `/mcp` fail like any request to a stopped server (and are not cached), then a new build waits as "Update ready" with nothing
+  reloading until Reload, after which the old cache is gone. It lives in the Node project (not the browser one) because the browser
+  tests' pages come from the test runner's dev server, which has no production build or worker.
+- **Limits.** Chrome's install and file-handling UI is Chrome's (there is no way to install from a script); the installed app's
+  files and settings are the browser profile's (the same IndexedDB and OPFS as the tab on that origin, a different origin than
+  `agstudio`'s dev server, so projects kept only in the browser are separate per origin); window controls overlay is untested here.

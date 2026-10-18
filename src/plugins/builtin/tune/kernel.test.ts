@@ -260,6 +260,108 @@ describe('TuneKernel: keep formants', () => {
   });
 });
 
+describe('TuneKernel: the return to rest after a correction ends', () => {
+  /**
+   * A note 23 cents sharp for 2.5 s (pulled to the chromatic note below it), then, after `gap` seconds of silence or
+   * noise, the exact note: seconds from the end of the correction until the read head is back at its centre (the
+   * output is the delayed input again), and the largest sample step of the output against the input's own.
+   */
+  function rest(hz: number, opts: { gap?: number; noise?: boolean } = {}): { seconds: number; step: number; inputStep: number } {
+    const gap = opts.gap ?? 0;
+    const sharp = hz * Math.pow(2, 23 / 1200);
+    const t1 = 2.5;
+    const t2 = t1 + gap;
+    const frames = Math.round(8 * SR);
+    // The input is made once (the voice keeps phase state), then replayed.
+    const base = tone((t) => (t < t2 ? sharp : hz), 1);
+    const voiceNow: TestSignal = (frame, ch) => ((frame / SR >= t1 && frame / SR < t2 ? 0 : 0.3) * base(frame, ch)) / 0.5 * 0.5;
+    let s = 11;
+    const samples = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) {
+      const t = i / SR;
+      if (t >= t1 && t < t2 && opts.noise) {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        samples[i] = 0.05 * (s / 2147483648 - 1);
+        voiceNow(i, 0);
+      } else samples[i] = voiceNow(i, 0);
+    }
+    const params = { key: 'C', scale: 'chromatic', speed: 20 } as const;
+    const out = runEffect(TuneKernel, tuneParams, (i) => samples[i] as number, frames, { params })[0];
+    // A second copy follows the same path (the kernel is deterministic): read where its head is, block by block.
+    const probe = new TuneKernel(testHost(SR));
+    const pb = paramBlock(tuneParams, params);
+    const block = 128;
+    const inp = [new Float32Array(block), new Float32Array(block)];
+    const o = [new Float32Array(block), new Float32Array(block)];
+    let back = Number.NaN;
+    for (let at = 0; at < frames; at += block) {
+      for (let i = 0; i < block; i++) {
+        (inp[0] as Float32Array)[i] = samples[at + i] as number;
+        (inp[1] as Float32Array)[i] = samples[at + i] as number;
+      }
+      probe.process(inp, o, block, pb);
+      const t = (at + block) / SR;
+      if (t > t2 + 0.05 && Number.isNaN(back) && Math.abs(probe.headOffset) < 0.75) back = t - t2;
+    }
+    let step = 0;
+    let inputStep = 0;
+    // (From 0.1 s: the signal itself starts with a step at 0.)
+    for (let i = Math.round(0.1 * SR); i < frames; i++) {
+      step = Math.max(step, Math.abs((out[i] as number) - (out[i - 1] as number)));
+      inputStep = Math.max(inputStep, Math.abs((samples[i] as number) - (samples[i - 1] as number)));
+    }
+    return { seconds: back, step, inputStep };
+  }
+
+  it('after a gap the head is back at its centre within 0.2 s of the next note (it took 1.1-2.5 s)', () => {
+    for (const hz of [110, 164.81, 220, 261.63]) {
+      const r = rest(hz, { gap: 0.4 });
+      expect(r.seconds, `${hz} Hz`).toBeLessThan(0.2);
+    }
+  });
+
+  it('with the voice still sounding it jumps whole periods, then drifts the rest: well under the old 1.5-2.9 s', () => {
+    for (const [hz, limit] of [
+      [110, 1.4],
+      [164.81, 1.2],
+      [220, 0.7],
+      [261.63, 0.4],
+    ] as const) {
+      const r = rest(hz);
+      expect(r.seconds, `${hz} Hz`).toBeLessThan(limit);
+    }
+  });
+
+  it('makes no click: no sample step beyond the voice’s own, also across noise between notes', () => {
+    for (const opts of [{}, { gap: 0.4 }, { gap: 0.4, noise: true }]) {
+      const r = rest(220, opts);
+      expect(r.step, JSON.stringify(opts)).toBeLessThan(r.inputStep * 1.2);
+    }
+  });
+
+  it('a glide that passes a note for a moment does not send the head home: the correction goes on', () => {
+    // The pitch slides up through A (440 Hz) in 0.3 s: the correction is under a cent only briefly, never for 30 ms.
+    const sweep = tone((t) => 415.3 * Math.pow(2, (Math.min(t, 0.3) / 0.3) * (100 / 1200)));
+    const k = new TuneKernel(testHost(SR));
+    const pb = paramBlock(tuneParams, { key: 'A', scale: 'chromatic', speed: 0 });
+    const block = 128;
+    const inp = [new Float32Array(block), new Float32Array(block)];
+    const o = [new Float32Array(block), new Float32Array(block)];
+    let moved = 0;
+    for (let at = 0; at < Math.round(0.5 * SR); at += block) {
+      for (let i = 0; i < block; i++) {
+        const v = sweep(at + i, 0);
+        (inp[0] as Float32Array)[i] = v;
+        (inp[1] as Float32Array)[i] = v;
+      }
+      k.process(inp, o, block, pb);
+      moved = Math.max(moved, Math.abs(k.headOffset));
+    }
+    // The head really moved (it was correcting), and nothing broke.
+    expect(moved).toBeGreaterThan(0.5);
+  });
+});
+
 describe('TuneKernel: audio-thread rules', () => {
   /** The body of a method of the kernel, comments removed. */
   function body(name: string): string {
@@ -283,7 +385,7 @@ describe('TuneKernel: audio-thread rules', () => {
       ['template string', /`/],
       ['copying call', /\.(map|filter|slice|concat|forEach|reduce|splice|from)\(/],
     ];
-    for (const method of ['process', 'grains', 'retarget', 'nearestHeld', 'noteOn', 'noteOff', 'allNotesOff', 'startSplice', 'stopGrains']) {
+    for (const method of ['process', 'grains', 'retarget', 'nearestHeld', 'noteOn', 'noteOff', 'allNotesOff', 'startSplice', 'rest', 'stopGrains']) {
       const text = body(method);
       for (const [what, re] of forbidden) expect(re.test(text), `${method}() has a ${what}`).toBe(false);
     }

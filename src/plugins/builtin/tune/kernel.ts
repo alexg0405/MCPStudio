@@ -20,8 +20,22 @@ const HYSTERESIS = 0.2;
 const MIN_CONFIDENCE = 0.6;
 /** Corrections smaller than this (cents) let the shifter rest (output = the delayed input). */
 const REST_CENTS = 1;
-/** How fast a resting read head drifts back to its centre, frames per frame (≈ 3 cents). */
-const REST_RATE = 0.002;
+/**
+ * How fast a resting read head drifts back to its centre, frames per frame (≈ 6 cents): only what is left after the jumps
+ * below (less than half a period, or less than one frame), so the drift is short and stays far under a vibrato.
+ */
+const REST_RATE = 0.0035;
+/** The drift until a rest has lasted REST_HOLD: what it always was (≈ 3 cents). */
+const REST_RATE_SLOW = 0.002;
+/**
+ * After a correction ends the read head is a few milliseconds off its centre. While the voice sounds it jumps back a
+ * whole number of periods (the same waveform point, with the splice's crossfade); once no pitch has been found for this
+ * many detections (≈ 43 ms) nothing pitched needs lining up and it crosses straight to the centre. Either way the output
+ * is the delayed input again within a few milliseconds, instead of after seconds of drifting.
+ */
+const UNPITCHED_HOPS = 8;
+/** The correction must have stayed below REST_CENTS this long (seconds) before the head is brought back (a glide crossing a note is not an end). */
+const REST_HOLD = 0.03;
 /** Largest correction applied, semitones. */
 const MAX_SHIFT = 12;
 /** Length of a splice's crossfade, seconds. */
@@ -85,7 +99,10 @@ export function nearestNote(midi: number, root: number, mask: number, current: n
  * number of detected periods away (so both read the same point of the waveform) and a short
  * crossfade hands over to it. No phase cancellation, no pitch bias. With nothing to correct the
  * head rests at the centre: the output is exactly the input delayed by the reported latency, and
- * the dry signal for the mix is read at the same delay.
+ * the dry signal for the mix is read at the same delay. When a correction ends (it stays under a
+ * cent for 30 ms) the head goes home the same way it splices: a whole number of periods while the
+ * voice sounds, straight to the centre once no pitch has been found for ~43 ms, so the output is
+ * the delayed input again within milliseconds of a pause and under a second of a held note.
  */
 export class TuneKernel extends EffectKernel<P> {
   readonly latency = tuneLatencyFrames(this.sampleRate);
@@ -144,6 +161,11 @@ export class TuneKernel extends EffectKernel<P> {
   private lastCentre = 0;
   /** True while the last detection found a pitch with something to pull to. */
   private voiced = false;
+  /** Detections in a row that found no pitch at all (the voice is silent or unpitched). */
+  private unpitched = 0;
+  /** Frames the correction has been under REST_CENTS, and how long it takes to count as over. */
+  private restFor = 0;
+  private readonly restHold = Math.round(REST_HOLD * this.sampleRate);
 
   constructor(host: KernelHost) {
     super(host);
@@ -170,6 +192,8 @@ export class TuneKernel extends EffectKernel<P> {
     this.held = 0;
     this.driftFresh = true;
     this.vibEnv = 0;
+    this.unpitched = 0;
+    this.restFor = 0;
     this.stopGrains();
   }
 
@@ -274,10 +298,14 @@ export class TuneKernel extends EffectKernel<P> {
         this.drift = 1 - pow2(this.cents / 1200);
       }
       const drift = this.drift;
+      if (Math.abs(this.cents) < REST_CENTS) {
+        if (this.restFor < this.restHold) this.restFor++;
+      } else this.restFor = 0;
       if (this.fade < 0 && Math.abs(this.cents) < REST_CENTS) {
-        // Nothing to correct: drift back to the centre (where the output is the delayed input).
+        // Nothing to correct: back to the centre (where the output is the delayed input).
         const off = this.head - centre;
-        this.head = off > REST_RATE ? this.head - REST_RATE : off < -REST_RATE ? this.head + REST_RATE : centre;
+        if (off > REST_RATE || off < -REST_RATE) this.rest(off);
+        else this.head = centre;
       } else {
         this.head += drift;
         if (this.fade >= 0) this.next += drift;
@@ -391,6 +419,41 @@ export class TuneKernel extends EffectKernel<P> {
     this.seq = false;
   }
 
+  /**
+   * The head is `off` frames from its centre with nothing to correct: start a crossfade to a head nearer the centre
+   * (a whole number of periods away while a pitch is known, straight to the centre once the voice has been unpitched
+   * for a while), else drift the last stretch. Never allocates.
+   */
+  private rest(off: number): void {
+    const period = this.period;
+    // A glide through a note, or a moment of in-tune pitch, is not the end of a correction: only the slow drift until it has lasted.
+    if (this.restFor < this.restHold) {
+      this.head += off > 0 ? -REST_RATE_SLOW : REST_RATE_SLOW;
+      return;
+    }
+    if (this.unpitched >= UNPITCHED_HOPS && (off > 0.5 || off < -0.5)) {
+      this.next = this.latency;
+      this.fade = 0;
+      return;
+    }
+    const jumps = Math.round(off / period);
+    if (jumps !== 0) {
+      const next = this.head - jumps * period;
+      // Never read closer than the cubic reader allows.
+      if (next >= 2) {
+        this.next = next;
+        this.fade = 0;
+        return;
+      }
+    }
+    this.head += off > 0 ? -REST_RATE : REST_RATE;
+  }
+
+  /** How far the read head is from its centre (frames; 0 = the output is the delayed input). For tests and meters. */
+  get headOffset(): number {
+    return this.head - this.latency;
+  }
+
   /** Hands over to a head a whole number of periods back towards the centre. */
   private startSplice(): void {
     const period = this.period;
@@ -407,6 +470,7 @@ export class TuneKernel extends EffectKernel<P> {
     const f = yin.detect();
     const v = this.meter.values;
     if (f <= 0 || yin.confidence < MIN_CONFIDENCE) {
+      if (this.unpitched < 1e6) this.unpitched++;
       this.target = -1;
       this.goal = 0;
       this.voiced = false;
@@ -418,6 +482,7 @@ export class TuneKernel extends EffectKernel<P> {
       return;
     }
     this.period = this.sampleRate / f;
+    this.unpitched = 0;
     const midi = 69 + 12 * Math.log2(f / 440);
     const previous = this.target;
     this.target = fromNotes ? this.nearestHeld(midi, this.target) : nearestNote(midi, root, mask, this.target);

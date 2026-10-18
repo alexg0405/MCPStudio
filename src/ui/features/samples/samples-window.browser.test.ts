@@ -253,23 +253,19 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     s.fakeEngine.previews.length = 0;
     await frames(3);
     click(rows()[2]!);
-    await frames(2);
-    expect(s.fakeEngine.previews.length).toBe(1);
+    // Polled, not a fixed number of frames: on a loaded machine the audition and the store can land a frame later.
+    await expect.poll(() => s.fakeEngine.previews.length).toBe(1);
     key(list(), 'f');
-    await frames(2);
-    expect(s.sampleBrowser.rowById(rows()[2]!.dataset.sampleRow!)!.favorite).toBe(true);
+    await expect.poll(() => s.sampleBrowser.rowById(rows()[2]!.dataset.sampleRow!)!.favorite).toBe(true);
     click(rows()[2]!.querySelector('button')!);
-    await frames(2);
-    expect(s.sampleBrowser.rowById(rows()[2]!.dataset.sampleRow!)!.favorite).toBe(false);
+    await expect.poll(() => s.sampleBrowser.rowById(rows()[2]!.dataset.sampleRow!)!.favorite).toBe(false);
     click(rows()[5]!, { shiftKey: true });
-    await frames(2);
-    expect(s.sampleBrowser.store.getState().selected).toHaveLength(4);
+    await expect.poll(() => s.sampleBrowser.store.getState().selected.length).toBe(4);
     // Only the favorites chip.
     click(rows()[3]!.querySelector('button')!);
     await frames(2);
     click(chip('★ Favorites'));
-    await frames(3);
-    expect(rows()).toHaveLength(1);
+    await expect.poll(() => rows().length).toBe(1);
   });
 
   it('"Find similar sounds" lists the nearest, and the selection bar tags and makes a kit', async () => {

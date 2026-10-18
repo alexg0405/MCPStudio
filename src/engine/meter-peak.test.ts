@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { METER_FRAMES, MeterScratch, peakOf } from './insert-strip';
+import { METER_FRAMES, MeterScratch, peakOf } from './meter-peak';
 
 /** The scan this replaced: the largest |sample|, NaNs ignored. */
 function floatPeak(samples: Float32Array): number {

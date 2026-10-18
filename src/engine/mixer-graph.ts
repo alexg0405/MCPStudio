@@ -35,7 +35,9 @@ import { targetKey } from '@core/model/targets';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { playableEdges, type RoutingEdge } from '@core/query/routing';
 import type { EngineCore } from './engine-core';
-import { disconnectFrom, frameDelay, InsertStrip, MeterScratch, type InsertTaps } from './insert-strip';
+import { disconnectFrom, frameDelay } from './audio-graph';
+import { InsertStrip, type InsertTaps } from './insert-strip';
+import { MeterScratch } from './meter-peak';
 import { AutoLane } from './param-lane';
 import { DelayCompensation } from './pdc';
 

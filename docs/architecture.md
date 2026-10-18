@@ -143,8 +143,8 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
   `scheduler-clock.ts` (the worker timer and the keep-up statistics), `note-preview.ts` and `sample-preview.ts` (live
   notes and the browser's audition), `live-capture.ts` (recording and live inputs), `live-meters.ts`, `test-clicks.ts`,
   `tempo-info.ts` (the tempo plugins see) and `port-set.ts`.
-- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too) and `FxSlotStrip`; `engine/mixer-graph.ts` owns
-  them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
+- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too), `engine/fx-slot-strip.ts` `FxSlotStrip` (with `fx-instance.ts`
+  and, for the peak meters, `insert-meters.ts`); `engine/mixer-graph.ts` owns them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
   insert exists and the master otherwise (not created yet, deleted, unknown id), so channels never reconnect when
   inserts come and go, undo included.
 - Reconcile `DocChange` by reference identity: inserts first (keyed by id; removals after the channels), then channels.

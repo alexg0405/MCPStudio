@@ -59,6 +59,7 @@ export function decksDepsFor(s: Services): DecksDeps {
 /** The decks factory, with a way to look at the decks without starting them (null until something made them). */
 export type DecksAccess = DecksFactory & { peek(): DecksApi | null };
 
+/** Makes the decks factory: the decks (and their code) are made the first time something asks for them. */
 export function createDecksFactory(services: () => Services): DecksAccess {
   let made: Promise<DecksApi> | null = null;
   let api: DecksApi | null = null;

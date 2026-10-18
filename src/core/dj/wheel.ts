@@ -6,12 +6,14 @@
  */
 import type { Camelot, TrackAnalysis, TrackKey } from './types';
 
+/** A position on the Camelot wheel. */
 export interface WheelPos {
   /** 1–12 */
   n: number;
   letter: 'A' | 'B';
 }
 
+/** Reads a Camelot code like "8A" (null when it is not one). */
 export function parseCamelot(c: string): WheelPos | null {
   const m = /^(1[0-2]|[1-9])([AB])$/.exec(c.trim().toUpperCase());
   return m ? { n: Number(m[1]), letter: m[2] as 'A' | 'B' } : null;
@@ -39,6 +41,7 @@ export function wheelSteps(a: number, b: number): number {
   return d > 6 ? d - 12 : d;
 }
 
+/** How one key moves to another on the Camelot wheel: how well the songs blend. */
 export type HarmonicMove = 'same' | 'step' | 'relative' | 'boost' | 'diagonal' | 'clash' | 'unknown';
 
 /** How the key moves from a to b (a key with low confidence counts as unknown). */
@@ -73,6 +76,7 @@ export const HARMONIC_COST: Record<HarmonicMove, number> = {
 /** The largest share a song may be sped up or slowed down by in a beat-matched transition (follow mode). */
 export const TEMPO_LIMIT = 0.06;
 
+/** How to play a song at a tempo near another's: the half/double factor and how far each song moves. */
 export interface TempoMatch {
   /** The incoming song plays at `bpm × factor` beats: 1 normally, 0.5 or 2 for a half/double-time match. */
   factor: 0.5 | 1 | 2;

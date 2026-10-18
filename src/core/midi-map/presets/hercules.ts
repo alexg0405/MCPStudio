@@ -66,6 +66,7 @@ function inpulse(name: string, preset: string, opts: { pads: number; threeBandEq
   return mappingOf(name, preset, bindings, leds);
 }
 
+/** The map for the Hercules DJControl Inpulse 300. */
 export const INPULSE_300: ControllerPreset = {
   id: 'hercules-inpulse-300',
   name: 'Hercules DJControl Inpulse 300',
@@ -75,6 +76,7 @@ export const INPULSE_300: ControllerPreset = {
   mapping: () => inpulse('Hercules DJControl Inpulse 300', 'hercules-inpulse-300', { pads: 8, threeBandEq: true, jogPlatterOnly: false }),
 };
 
+/** The map for the Hercules DJControl Inpulse 200. */
 export const INPULSE_200: ControllerPreset = {
   id: 'hercules-inpulse-200',
   name: 'Hercules DJControl Inpulse 200',
@@ -84,4 +86,5 @@ export const INPULSE_200: ControllerPreset = {
   mapping: () => inpulse('Hercules DJControl Inpulse 200', 'hercules-inpulse-200', { pads: 4, threeBandEq: false, jogPlatterOnly: true }),
 };
 
+/** The Hercules maps. */
 export const HERCULES_PRESETS: readonly ControllerPreset[] = [INPULSE_300, INPULSE_200];

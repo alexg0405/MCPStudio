@@ -2,7 +2,9 @@
 import { allTargets, DECK_LETTERS, globalTargets, launcherTargets, type DeckLetter, type TargetInfo } from '@core/midi-map/targets';
 import { describeInput, type Binding } from '@core/midi-map/types';
 
+/** A group of controls in the Controllers window: a deck, the mixer and library, or the clip launcher. */
 export type Section = DeckLetter | 'global' | 'launcher';
+/** The sections, with the names they have in the window. */
 export const SECTIONS: readonly { id: Section; label: string }[] = [
   ...DECK_LETTERS.map((d) => ({ id: d, label: `Deck ${d}` })),
   { id: 'global', label: 'Mixer & library' },
@@ -35,9 +37,12 @@ export function chipText(b: Binding): string {
   return `${b.layer ? 'Shift + ' : ''}${describeInput(b.input)}${extras ? ` (${extras})` : ''}`;
 }
 
+/** What the empty test view says to do. */
 export const TEST_EMPTY = 'Move a fader, turn a knob or press a button on your controller: every message shows up here with what it did.';
 
+/** What the window says before a controller is connected. */
 export const NO_DEVICE_TEXT =
   'Plug in your DJ controller or pad controller (a Launchpad), then press “Connect controllers” and allow MIDI in the browser’s prompt. AGstudio listens to it and lights its buttons to match the decks and the clip launcher.';
 
+/** What the window says when the live decks are missing. */
 export const NO_DECKS_TEXT = 'The live decks are not available in this build, so controls do nothing yet.';

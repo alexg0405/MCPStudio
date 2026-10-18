@@ -17,11 +17,13 @@ import type { RelEncoding } from './relative';
 import type { TargetKind } from './targets';
 import type { InputSpec } from './types';
 
+/** Where MIDI learn stands after a message: still waiting, making progress (with what to tell the musician), or done. */
 export type LearnOutcome =
   | { status: 'waiting' }
   | { status: 'progress'; message: string }
   | { status: 'done'; input: InputSpec; certain: boolean };
 
+/** What a stream of one CC's values turned out to be: a fader or knob, or an endless dial with its encoding. */
 export type CcAnalysis = { type: 'abs' } | { type: 'rel'; encoding: RelEncoding; certain: boolean };
 
 const inRange = (v: number, lo: number, hi: number) => v >= lo && v <= hi;
@@ -65,6 +67,7 @@ function looksLikeSweep(values: readonly number[]): boolean {
   return (up === 0 || down === 0) && Math.max(...values) - Math.min(...values) >= 3;
 }
 
+/** Works out what kind of control the musician is touching from the messages it sends. */
 export class LearnDetector {
   private group: { channel: number; base: number } | null = null;
   private readonly byCc = new Map<number, number[]>();

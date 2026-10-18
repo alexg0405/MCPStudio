@@ -7,8 +7,10 @@ import { createStore } from 'zustand/vanilla';
 import type { SampleRef } from '@core/model/types';
 import { DECK_IDS, HOT_CUES, type DeckId, type DeckState, type DecksApi, type DecksState, type EqBand } from '../decks-api';
 
+/** A call recorded by the stand-in decks: the method and its arguments. */
 export type FakeCall = [method: string, ...args: unknown[]];
 
+/** The state of one stand-in deck. */
 export function fakeDeckState(id: DeckId): DeckState {
   return {
     id,
@@ -37,6 +39,7 @@ export function fakeDeckState(id: DeckId): DeckState {
   };
 }
 
+/** The state of the stand-in decks. */
 export function fakeDecksState(): DecksState {
   return {
     decks: Object.fromEntries(DECK_IDS.map((id) => [id, fakeDeckState(id)])) as Record<DeckId, DeckState>,
@@ -49,6 +52,7 @@ export function fakeDecksState(): DecksState {
   };
 }
 
+/** Stand-in decks that only record what they were asked (tests, and development before the real decks are wired in). */
 export class FakeDecks implements DecksApi {
   readonly store = createStore<DecksState>(() => fakeDecksState());
   /** Every call, in order: `['play', 'A']`, `['setEq', 'B', 'low', -6]`… */

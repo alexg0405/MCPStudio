@@ -18,6 +18,7 @@ import { peekAnalysis, sampleHash, trackAnalyzer } from './analyzer';
 import type { MakeMixResult, MixSong } from './mix';
 import type { DjMixOptions } from '@core/model/types';
 
+/** A song in the music library. */
 export interface LibrarySong {
   /** Content hash (the song's identity). */
   key: string;
@@ -33,8 +34,10 @@ export interface LibrarySong {
   pinned?: boolean;
 }
 
+/** Where the analysis of a library song stands. */
 export type AnalysisStatus = { state: 'queued' } | { state: 'running'; fraction: number } | { state: 'error'; message: string };
 
+/** The music library as the DJ window shows it: the songs, what is being added or made, and the selection. */
 export interface LibraryState {
   songs: LibrarySong[];
   loaded: boolean;
@@ -56,6 +59,7 @@ export const MAX_FOLDER_FILES = 500;
 /** Extensions the pickers offer (the browser decodes them). */
 export const MUSIC_EXTENSIONS = [...AUDIO_EXTENSIONS, 'aac'] as const;
 
+/** The music library store (the songs are kept in this browser). */
 export const library = createStore<LibraryState>(() => ({
   songs: [],
   loaded: false,
@@ -164,6 +168,7 @@ export async function pickSongFolder(s: Services): Promise<number> {
   return addSongFiles(s, files);
 }
 
+/** Takes songs out of the library (the files on the computer stay). */
 export async function removeSongs(keys: readonly string[]): Promise<void> {
   const drop = new Set(keys);
   library.setState((st) => ({ songs: st.songs.filter((x) => !drop.has(x.key)), selected: st.selected.filter((k) => !drop.has(k)) }));
@@ -183,11 +188,13 @@ export async function moveSong(key: string, to: number): Promise<void> {
   await save();
 }
 
+/** Pins a song to its place in the list, or lets it go again. */
 export async function togglePin(key: string): Promise<void> {
   library.setState((st) => ({ songs: st.songs.map((x) => (x.key === key ? { ...x, pinned: !x.pinned } : x)) }));
   await save();
 }
 
+/** Selects songs by key (only selected songs go in the mix; none selected means all). */
 export function setSelection(keys: readonly string[]): void {
   library.setState({ selected: [...new Set(keys)] });
 }
@@ -198,6 +205,7 @@ export function songsToMix(st: Pick<LibraryState, 'songs' | 'selected'>): Librar
   return sel.size ? st.songs.filter((x) => sel.has(x.key)) : st.songs;
 }
 
+/** A library song as the mix takes it. */
 export const mixSongOf = (x: LibrarySong): MixSong => ({ ref: x.ref, title: x.label, ...(x.pinned ? { pinned: true } : {}) });
 
 let running: Promise<void> | null = null;

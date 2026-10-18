@@ -10,11 +10,13 @@ import { decodeRelative } from './relative';
 import { targetInfo } from './targets';
 import type { Binding, ControllerMapping, InputSpec } from './types';
 
+/** What a mapped control did: a button went down or up, a fader or knob moved to a value, or a dial turned by some steps. */
 export type ControlEvent =
   | { target: string; kind: 'button'; down: boolean; velocity: number }
   | { target: string; kind: 'abs'; value: number; layer?: string }
   | { target: string; kind: 'rel'; delta: number };
 
+/** Turns the MIDI messages of a device into control events through its mapping (shift layers, 14-bit pairs, dial encodings). */
 export class MappingInterpreter {
   private mapping!: ControllerMapping;
   private notes = new Map<string, Binding[]>();

@@ -5,6 +5,7 @@
 import { ANALYSIS_VERSION, type TrackAnalysis, type TrackKey } from './types';
 import { camelotOf } from './wheel';
 
+/** What a hand-made analysis is told about its song (tests and demos). */
 export interface FakeSong {
   bpm: number;
   /** Tonic 0–11 and mode, or null for no key. */
@@ -25,10 +26,12 @@ export interface FakeSong {
   beats?: number[];
 }
 
+/** A key as the analysis would report it. */
 export function fakeKey(root: number, mode: 'major' | 'minor', confidence = 0.8): TrackKey {
   return { root, mode, camelot: camelotOf(root, mode), confidence };
 }
 
+/** The analysis a song with these properties would get: a steady grid, phrase-long sections and mix points on phrase starts. */
 export function fakeAnalysis(s: FakeSong): TrackAnalysis {
   const bars = s.bars ?? 96;
   const f = s.firstDownbeat ?? 0;

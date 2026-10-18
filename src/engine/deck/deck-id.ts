@@ -30,6 +30,7 @@ export const DS = {
   /** 1 while the deck waits for audio that isn't in its window yet (a jump far away, a slow decode): silent, not advancing. */
   stalled: 10,
 } as const;
+/** How many slots a deck's shared state block has. */
 export const DECK_STATE_SLOTS = 16;
 
 /**
@@ -38,7 +39,9 @@ export const DECK_STATE_SLOTS = 16;
  * its audio in memory, `engine/deck/deck-stream.ts`). A song held whole is the identity table.
  */
 export const BLOCK_BITS = 16;
+/** Frames per block. */
 export const BLOCK_FRAMES = 1 << BLOCK_BITS;
+/** Masks a frame number down to its place within its block. */
 export const BLOCK_MASK = BLOCK_FRAMES - 1;
 
 /** What the worklet is told (main thread to audio thread). */

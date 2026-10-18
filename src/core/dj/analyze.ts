@@ -11,6 +11,7 @@ import { onsetFeatures, type OnsetFeatures } from './onset';
 import { analyzeStructure } from './structure';
 import { trackBeats } from './tempo';
 
+/** A song to analyze: its content hash, mono audio and the loudness numbers measured when it was decoded. */
 export interface AnalysisInput {
   hash: string;
   /** Mono audio at `sampleRate` (16–24 kHz works best; the app sends 22.05 kHz). */
@@ -22,6 +23,7 @@ export interface AnalysisInput {
   truePeakDb: number;
 }
 
+/** What a running analysis can be told: where to report progress and how to check for a stop. */
 export interface AnalysisRunOptions {
   /** 0–1 as the analysis goes. */
   onProgress?(fraction: number): void;
@@ -29,10 +31,12 @@ export interface AnalysisRunOptions {
   isCancelled?(): boolean;
 }
 
+/** Thrown when an analysis is stopped (callers that wait for it see an AbortError). */
 export class AnalysisCancelled extends Error {
   override name = 'AbortError';
 }
 
+/** Analyzes a song held in memory: features first, then tempo, beats, key, sections and mix points (see `analyzeFeatures`). */
 export function analyzeTrack(input: AnalysisInput, opts: AnalysisRunOptions = {}): TrackAnalysis {
   const { mono, sampleRate } = input;
   const durationSec = input.durationSec ?? mono.length / sampleRate;
@@ -47,6 +51,7 @@ export function analyzeTrack(input: AnalysisInput, opts: AnalysisRunOptions = {}
   return analyzeFeatures(f, c, { hash: input.hash, durationSec, lufs: input.lufs, truePeakDb: input.truePeakDb }, { ...opts, onProgress: progress(0.7, 1) });
 }
 
+/** What the analysis needs to know about a song besides its features. */
 export interface FeatureMeta {
   hash: string;
   durationSec: number;

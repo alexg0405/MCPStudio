@@ -12,6 +12,7 @@
 import type { Services } from '../../services';
 import type { DecksApi, DecksFactory } from '../decks-api';
 
+/** Something that hands the controllers the live decks (set by the app or a test). */
 export type DecksProvider = () => DecksApi | null | Promise<DecksApi | null>;
 
 let provider: DecksProvider | null = null;
@@ -23,12 +24,14 @@ export function setDecksProvider(p: DecksProvider | null): void {
 
 const isDecksApi = (x: unknown): x is DecksApi => !!x && typeof x === 'object' && 'store' in x && 'togglePlay' in x;
 
+/** The decks the controllers drive, and whether they are the development stand-in. */
 export interface ResolvedDecks {
   decks: DecksApi;
   /** True for the development stand-in. */
   fake: boolean;
 }
 
+/** Finds the decks for the controllers: the provider's, the services', or in a development build a stand-in. */
 export async function resolveDecks(services: Pick<Services, 'platform'> & { decks?: unknown }): Promise<ResolvedDecks | null> {
   if (provider) {
     const d = await provider();

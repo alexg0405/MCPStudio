@@ -5,6 +5,7 @@
  */
 import type { DeckId, DecksApi, DecksState } from '../decks-api';
 
+/** A fader or knob of a deck: how to read its value off the screen state (for soft takeover) and how to write one. */
 export interface AbsControl {
   read(state: DecksState, deck: DeckId | undefined): number;
   write(decks: DecksApi, deck: DeckId | undefined, v: number): void;
@@ -12,8 +13,11 @@ export interface AbsControl {
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
+/** The trim knob goes this far either way (dB). */
 export const TRIM_RANGE_DB = 12;
+/** The lowest an EQ knob goes (dB): a kill. */
 export const EQ_MIN_DB = -26;
+/** The highest an EQ knob goes (dB). */
 export const EQ_MAX_DB = 6;
 const FILTER_DEAD_ZONE = 0.04;
 
@@ -23,6 +27,7 @@ export function eqDbFromKnob(v: number): number {
   // "+ 0" turns -0 into 0 at the centre.
   return (x <= 0.5 ? EQ_MIN_DB * (1 - x * 2) : EQ_MAX_DB * (x * 2 - 1)) + 0;
 }
+/** The knob position (0–1) of an EQ level in dB (the inverse of the knob mapping). */
 export function eqKnobFromDb(db: number): number {
   return clamp01(db <= 0 ? 0.5 + db / (-EQ_MIN_DB * 2) : 0.5 + db / (EQ_MAX_DB * 2));
 }
@@ -36,6 +41,7 @@ export function filterFromKnob(v: number): number {
 
 /** Fader position → pitch (a fraction of tempo), higher = faster, within ±range. */
 export const pitchFromFader = (v: number, range: number): number => (clamp01(v) - 0.5) * 2 * range;
+/** The fader position (0–1) of a pitch within its range. */
 export const faderFromPitch = (pitch: number, range: number): number => clamp01(pitch / (2 * range) + 0.5);
 
 const deckState = (s: DecksState, deck: DeckId | undefined) => s.decks[deck ?? 'A'];

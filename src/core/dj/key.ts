@@ -23,9 +23,12 @@ const blend = (a: number[], b: number[]) => {
   const ub = unit(b);
   return ua.map((x, i) => (x + ub[i]!) / 2);
 };
+/** The pitch-class profile of a major key that songs are compared with. */
 export const MAJOR_PROFILE = blend(KK_MAJOR, T_MAJOR);
+/** The pitch-class profile of a minor key that songs are compared with. */
 export const MINOR_PROFILE = blend(KK_MINOR, T_MINOR);
 
+/** The names of the 12 pitch classes, from C. */
 export const PITCH_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'] as const;
 
 /** Camelot position of a key: 8B = C major, 8A = A minor; one step round the wheel is a fifth. */
@@ -63,6 +66,7 @@ function pearson(a: ArrayLike<number>, b: ArrayLike<number>, shift: number): num
   return saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : 0;
 }
 
+/** How well each of the 24 keys fits a song, and the pitch-class profile they were scored from. */
 export interface KeyScores {
   /** Correlation of each key: index root (major) and 12 + root (minor). */
   scores: number[];
@@ -104,6 +108,7 @@ export function songProfile(c: Chromagram, emphasis: KeyEmphasis = [], bassWeigh
   return out;
 }
 
+/** How well each of the 24 keys fits a pitch-class profile (indexes as in `KeyScores`). */
 export function keyScores(profile: Float64Array): number[] {
   const scores: number[] = [];
   for (let r = 0; r < 12; r++) scores.push(pearson(profile, MAJOR_PROFILE, r));

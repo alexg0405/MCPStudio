@@ -22,6 +22,7 @@ import {
   type WavLayout,
 } from '@core/io/audio-segments';
 
+/** Where a deck's song comes from: frames at the context rate, read a piece at a time (from memory or from a file). */
 export interface DeckSource {
   /** Length in frames at the context's rate. */
   readonly frames: number;
@@ -162,6 +163,7 @@ interface Piece {
 /** What decodes a run of MP3 frames (a valid file of just those frames) at the file's own rate: the browser's `decodeAudioData`. */
 export type DecodeBytes = (bytes: Uint8Array, sampleRate: number) => Promise<{ l: Float32Array; r: Float32Array }>;
 
+/** A decoder that uses the browser's own (one offline context per rate). */
 export function decodeWithAudioContext(): DecodeBytes {
   const ctxs = new Map<number, OfflineAudioContext>();
   return async (bytes, rate) => {
@@ -242,6 +244,7 @@ function mp3Reader(r: ByteReader, m: Mp3Layout, decode: DecodeBytes): NativeRead
   };
 }
 
+/** What opening a song by parts needs: how to read bytes, the context rate and how to decode. */
 export interface SegmentOptions {
   reader: ByteReader;
   /** The audio context's rate: the source converts to it. */

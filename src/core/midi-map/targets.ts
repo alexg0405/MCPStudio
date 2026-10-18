@@ -5,11 +5,13 @@
  */
 
 export type DeckLetter = 'A' | 'B' | 'C' | 'D';
+/** The deck letters used in target ids ("A.play"). */
 export const DECK_LETTERS: readonly DeckLetter[] = ['A', 'B', 'C', 'D'];
 
 /** button: pressed or released. abs: a fader or knob (0–1). rel: an endless dial or jog wheel (steps). */
 export type TargetKind = 'button' | 'abs' | 'rel';
 
+/** A control a mapping can drive: its id, deck, kind, label and hint. */
 export interface TargetInfo {
   id: string;
   deck?: DeckLetter;
@@ -33,6 +35,7 @@ interface FnDef {
 }
 
 const HOT_CUE_COUNT = 8;
+/** The loop sizes (beats) that have their own targets. */
 export const AUTO_LOOP_BEATS = [1, 2, 4, 8, 16, 32] as const;
 
 const DECK_FNS: readonly (FnDef & { group: string })[] = [
@@ -105,6 +108,7 @@ export const LAUNCH_PAD_SIZE = 8;
 
 /** The page buttons: move the 8 × 8 pads one page (8 tracks or 8 scenes) over a bigger grid. */
 export type LaunchPageDir = 'left' | 'right' | 'up' | 'down';
+/** The directions the clip launcher's page can be moved in. */
 export const LAUNCH_PAGE_DIRS: readonly LaunchPageDir[] = ['up', 'down', 'left', 'right'];
 
 /** What a launcher target id means (1-based positions), or null for any other id. */
@@ -117,6 +121,7 @@ export type LaunchTarget =
 
 const LAUNCH_RE = /^launch\.(slot):([1-8]):([1-8])$|^launch\.(scene|stop):([1-8])$|^launch\.(stopAll)$|^launch\.page:(left|right|up|down)$/;
 
+/** Reads a clip launcher target id (null for any other id). */
 export function parseLaunchTarget(id: string): LaunchTarget | null {
   const m = LAUNCH_RE.exec(id);
   if (!m) return null;
@@ -127,6 +132,7 @@ export function parseLaunchTarget(id: string): LaunchTarget | null {
   return { kind: 'stopAll' };
 }
 
+/** Whether an id is a clip launcher target. */
 export const isLaunchTarget = (id: string): boolean => LAUNCH_RE.test(id);
 
 /** The id of the pad for a track and a scene (1-based). */
@@ -207,10 +213,12 @@ export function allTargets(): readonly TargetInfo[] {
   return all;
 }
 
+/** What is known about a target id (undefined for an unknown id). */
 export function targetInfo(id: string): TargetInfo | undefined {
   return byId.get(id);
 }
 
+/** Whether a value is the id of a known target. */
 export function isTargetId(id: unknown): id is string {
   return typeof id === 'string' && byId.has(id);
 }
@@ -220,6 +228,7 @@ export function deckTargets(deck: DeckLetter): TargetInfo[] {
   return all.filter((t) => t.deck === deck);
 }
 
+/** The targets that belong to no deck (the mixer, the library and the like). */
 export function globalTargets(): readonly TargetInfo[] {
   return GLOBAL;
 }

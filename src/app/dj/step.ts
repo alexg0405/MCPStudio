@@ -6,6 +6,7 @@ import type { AfterStep } from '../assistant/after-steps';
 import { library } from './library';
 import { makeMix } from './mix';
 
+/** The Studio's answer step that makes a DJ mix from the songs it asked for. */
 export const djMixStep: AfterStep = async (item, c) => {
   if (item.kind !== 'dj_mix') return null;
   library.setState({ making: { label: 'Analyzing the songs…', fraction: 0 } });

@@ -59,6 +59,7 @@ const programmer: Layout = { pad: (col, row) => 10 * (8 - row) + col + 1, scene:
 /** Ableton Push's pad notes: 36 at the bottom left, 99 at the top right, 8 per row. */
 const pushLike: Layout = { pad: (col, row) => 36 + (7 - row) * 8 + col, scene: (row) => 100 + (7 - row) };
 
+/** The map for Launchpad MK2, MK3 and X pad controllers (note layout). */
 export const LAUNCHPAD_MK2_MK3: ControllerPreset = {
   id: 'novation-launchpad-mk2-mk3',
   name: 'Novation Launchpad MK2 / MK3 / X (note layout)',
@@ -69,6 +70,7 @@ export const LAUNCHPAD_MK2_MK3: ControllerPreset = {
   mapping: () => padMapping('Novation Launchpad MK2 / MK3', 'novation-launchpad-mk2-mk3', programmer, PROGRAMMER_PALETTE, [ARROWS_104, ARROWS_91]),
 };
 
+/** The map for the original Launchpad, S and Mini. */
 export const LAUNCHPAD_CLASSIC: ControllerPreset = {
   id: 'novation-launchpad-classic',
   name: 'Novation Launchpad, S and Mini (original)',
@@ -78,6 +80,7 @@ export const LAUNCHPAD_CLASSIC: ControllerPreset = {
   mapping: () => padMapping('Novation Launchpad', 'novation-launchpad-classic', classic, CLASSIC_PALETTE, [ARROWS_104]),
 };
 
+/** The map for any 8×8 pad grid that sends notes 36–99. */
 export const PAD_GRID_GENERIC: ControllerPreset = {
   id: 'generic-pad-grid-8x8',
   name: 'Generic 8×8 pad grid (notes 36–99)',
@@ -87,4 +90,5 @@ export const PAD_GRID_GENERIC: ControllerPreset = {
   mapping: () => padMapping('Pad grid', 'generic-pad-grid-8x8', pushLike, { empty: 0, loaded: 20, queued: 64, playing: 127 }),
 };
 
+/** The pad controller maps. */
 export const PAD_PRESETS: readonly ControllerPreset[] = [LAUNCHPAD_MK2_MK3, LAUNCHPAD_CLASSIC, PAD_GRID_GENERIC];

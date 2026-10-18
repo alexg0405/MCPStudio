@@ -1826,7 +1826,10 @@ loaded; `services.decks.peek()` looks without starting them.
   context frame, whether it waits for audio) under a sequence lock in a shared state block (`deck-id.ts` `DS`), which
   the main thread (waveforms, platter) and a follower deck read. Commands are messages (`DeckMessage`); `ping`/`pong`
   is the barrier offline renders and tests wait on (`DecksApi.settled`, which also waits for every deck's window to
-  hold what is about to be heard).
+  hold what is about to be heard). The kernel keeps what runs per output sample (playback, fades, loops, the window
+  check); the key-lock stretch (`deck-stretch.ts`, with the attack detector `onset-scanner.ts`) and the sync follower
+  (`deck-sync.ts`) run per block or per stretch frame and are their own objects; `deck-snapshot.ts` reads a
+  deck's published state.
 - `core/dj/beat-map.ts` (`BeatMap`): tracked beats as a clock (phase exact at each beat, linear between; tempo from
   the beats around, averaged over ±2 and interpolated, so it doesn't step at every beat). `DeckGrid` carries one
   (`deckGridOf`) when the analysis has `grid.beats` (≥ 8): loop/jump/cue snapping in `decks-math.ts` and sync in the
@@ -1839,7 +1842,8 @@ loaded; `services.decks.peek()` looks without starting them.
   plays through a second output device (`setCueOutput`: a MediaStream destination into an `<audio>` element with
   `setSinkId`).
 - `app/dj/decks.ts`: the `DecksApi` (a zustand store plus the control logic: load, cues, loops, jog, sync, mixer,
-  recording). `EngineApi.deckHost()` (optional; `engine/api.ts`) hands out the running context, a node feeding the
+  recording), wired together from one module per job in `app/dj/deck-control/` (transport, cues, jog, loops, tempo and
+  sync, mixer, graph lifecycle, loader, recorder, ticker), all built from a shared `DeckContext`. `EngineApi.deckHost()` (optional; `engine/api.ts`) hands out the running context, a node feeding the
   master limiter, `loadModule` and the audible clock. When the engine reboots (a new AudioContext) the decks notice
   through `engine.subscribe`, rebuild the graph, hand the songs over (decoding again if the rate changed) and carry
   on from where each deck was.

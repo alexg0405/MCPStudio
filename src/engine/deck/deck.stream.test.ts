@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { beatPhase, phaseDiff, syncPlan } from '@core/dj/decks-math';
 import { BLOCK_FRAMES, DECK_STATE_SLOTS } from './deck-id';
-import { DeckKernel, newSnapshot, readDeckState } from './deck.kernel';
+import { newSnapshot, readDeckState } from './deck-snapshot';
+import { DeckKernel } from './deck.kernel';
 
 const SR = 48000;
 const Q = 128;

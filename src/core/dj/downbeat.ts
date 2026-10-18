@@ -7,6 +7,7 @@
 import { chromaBetween, type Chromagram } from './chroma';
 import type { OnsetFeatures } from './onset';
 
+/** Where the bars start among the tracked beats, and how many beats a bar has. */
 export interface BarPhase {
   /** Index into the beats of the first downbeat. */
   first: number;
@@ -74,6 +75,7 @@ export function downbeatEvidence(f: OnsetFeatures, c: Chromagram, beats: readonl
   return beats.map((_, i) => zk[i]! - 0.6 * zs[i]! + zh[i]! + 0.5 * ze[i]!);
 }
 
+/** Finds which beat is the first of a bar, and whether bars are 3 or 4 beats, from the drums and the harmony. */
 export function barPhase(f: OnsetFeatures, c: Chromagram, beats: readonly number[]): BarPhase {
   const ev = downbeatEvidence(f, c, beats);
   const fold = (m: number) => {

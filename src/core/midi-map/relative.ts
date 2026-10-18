@@ -3,8 +3,10 @@
  * Three encodings are common; each maps a 7-bit value to a signed step count (clockwise = positive).
  */
 export type RelEncoding = 'twos' | 'signmag' | 'offset64';
+/** Every way an endless dial can send its steps. */
 export const REL_ENCODINGS: readonly RelEncoding[] = ['twos', 'signmag', 'offset64'];
 
+/** How each dial encoding is described to the musician. */
 export const REL_ENCODING_LABEL: Record<RelEncoding, string> = {
   twos: 'Two’s complement (1 = right, 127 = left)',
   signmag: 'Sign and magnitude (1 = right, 65 = left)',

@@ -70,6 +70,7 @@ function ddj4xx(name: string, preset: string): ControllerMapping {
   return mappingOf(name, preset, bindings, leds);
 }
 
+/** The map for the Pioneer DDJ-400. */
 export const DDJ_400: ControllerPreset = {
   id: 'pioneer-ddj-400',
   name: 'Pioneer DDJ-400',
@@ -79,6 +80,7 @@ export const DDJ_400: ControllerPreset = {
   mapping: () => ddj4xx('Pioneer DDJ-400', 'pioneer-ddj-400'),
 };
 
+/** The map for the Pioneer DDJ-FLX4. */
 export const DDJ_FLX4: ControllerPreset = {
   id: 'pioneer-ddj-flx4',
   name: 'Pioneer DDJ-FLX4',
@@ -123,4 +125,5 @@ export const DDJ_200: ControllerPreset = {
   },
 };
 
+/** The Pioneer maps. */
 export const PIONEER_PRESETS: readonly ControllerPreset[] = [DDJ_FLX4, DDJ_400, DDJ_200];

@@ -11,6 +11,7 @@ import { IN_MODE, IN_STATE, INPUT_RECORDER_ID, LEVEL_BLOCKS } from '../input-rec
 const RING_SECONDS = 30;
 const DRAIN_MS = 50;
 
+/** A recording tap on an audio node: stop it (with a short tail) or throw it away. */
 export interface TapCapture {
   readonly sampleRate: number;
   /** Frames handed over so far. */
@@ -20,6 +21,7 @@ export interface TapCapture {
   cancel(): void;
 }
 
+/** Opens a tap on `source` that hands over its sound in chunks until stopped. */
 export async function openTapCapture(
   ctx: AudioContext,
   loadModule: (url: string) => Promise<void>,

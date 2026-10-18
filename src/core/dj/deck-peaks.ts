@@ -7,6 +7,7 @@
 /** Frames per bucket (5.3 ms at 48 kHz): a 5-minute song is ~56 000 buckets. */
 export const PEAK_BUCKET = 256;
 
+/** A song's peak overview for the deck display: the lowest and highest sample (and a low-passed level) per bucket of frames. */
 export interface DeckWaveform {
   sampleRate: number;
   bucket: number;
@@ -18,6 +19,7 @@ export interface DeckWaveform {
   low: Float32Array;
 }
 
+/** An empty overview for a song of `frames` frames, to be filled by `fillPeaks`. */
 export function newWaveform(frames: number, sampleRate: number, bucket = PEAK_BUCKET): DeckWaveform {
   const buckets = Math.ceil(frames / bucket);
   return { sampleRate, bucket, buckets, min: new Float32Array(buckets), max: new Float32Array(buckets), low: new Float32Array(buckets) };

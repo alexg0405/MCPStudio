@@ -16,6 +16,7 @@ import { abortError, inlineRunner, inlineStreamRunner, workerHost, workerRunner,
 export { inlineRunner, inlineStreamRunner };
 export type { AnalysisRunner, StreamRunner };
 
+/** How far the analysis of one song has got. */
 export interface AnalysisProgress {
   hash: string;
   /** 0–1 */
@@ -25,6 +26,7 @@ export interface AnalysisProgress {
 /** 'now' (a deck is waiting for it) goes ahead of every queued 'background' job (the library's); it never interrupts the running one. */
 export type AnalysisPriority = 'now' | 'background';
 
+/** Analyses songs one at a time and remembers the results (in memory and in storage). */
 export interface TrackAnalyzer {
   /** The cached analysis, or null (not analyzed yet). */
   peek(hash: string): TrackAnalysis | null;
@@ -82,6 +84,7 @@ export const idbAnalysisStorage: AnalysisStorage = {
   save: (a) => (isIdbAvailable() ? idbSet(keyOf(a.hash), a) : Promise.resolve()),
 };
 
+/** A storage that keeps analyses in memory only (tests). */
 export function memoryAnalysisStorage(initial: TrackAnalysis[] = []): AnalysisStorage & { items: Map<string, TrackAnalysis> } {
   const items = new Map(initial.map((a) => [a.hash, a]));
   return {
@@ -136,6 +139,7 @@ interface Job {
   run(): Promise<TrackAnalysis>;
 }
 
+/** The parts of the analyzer that tests replace: storage, decoder and runners. */
 export interface TrackAnalyzerOptions {
   storage?: AnalysisStorage;
   decode?: AnalysisDecoder;
@@ -147,6 +151,9 @@ export interface TrackAnalyzerOptions {
   openStream?: (s: Services, ref: SampleRef) => Promise<StreamSource | null>;
   runStream?: StreamRunner;
 }
+
+/** The share of a song's progress bar that decoding it takes; the analysis fills the rest. */
+const DECODE_SHARE = 0.05;
 
 /**
  * The analyzer: one song at a time, from a queue. A 'now' job goes ahead of every queued 'background' job (it never
@@ -213,8 +220,8 @@ export function createTrackAnalyzer(opts: TrackAnalyzerOptions = {}): TrackAnaly
     const audio = await decode(s, ref);
     if (!audio || (audio.channels[0]?.length ?? 0) === 0) throw new Error(`“${ref.name}” couldn’t be decoded for analysis.`);
     controller.signal.throwIfAborted();
-    progress(0.05);
-    return finished(await run({ hash, ...audio }, (f) => progress(0.05 + 0.95 * f), controller.signal));
+    progress(DECODE_SHARE);
+    return finished(await run({ hash, ...audio }, (f) => progress(DECODE_SHARE + (1 - DECODE_SHARE) * f), controller.signal));
   };
 
   const newJob = (s: Services, ref: SampleRef, hash: string, priority: AnalysisPriority): Job => {

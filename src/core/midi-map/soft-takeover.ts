@@ -5,6 +5,7 @@
  */
 export const PICKUP_TOLERANCE = 0.03;
 
+/** Holds a fader or knob back until it meets the value on the screen, so nothing jumps when it is touched somewhere else. */
 export class SoftTakeover {
   private picked = false;
   private lastHw: number | null = null;

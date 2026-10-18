@@ -4,6 +4,7 @@
  */
 export const STALL_SHOW_MS = 150;
 
+/** Decides when to show the "Loading…" note of a stalled deck: not for a blink, and not flickering on and off. */
 export class StallLatch {
   /** When the current stall began (NaN: not stalled). */
   private since = NaN;

@@ -14,10 +14,11 @@ import { resolveDecks } from './decks-source';
 export { setDecksProvider } from './decks-source';
 export { DjControllers } from './manager';
 export { pickMappingFile, saveMappingFile } from './files';
-export type { ControllersState, ControllerDevice, LearnState, LogEntry } from './manager';
+export type { ControllersState, ControllerDevice, LearnState, LogEntry } from './types';
 
 const instances = new WeakMap<Services, DjControllers>();
 
+/** The DJ controllers of an app (made on first use). */
 export function djControllers(services: Services): DjControllers {
   let c = instances.get(services);
   if (!c) {

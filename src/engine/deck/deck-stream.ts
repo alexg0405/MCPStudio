@@ -16,6 +16,7 @@ import { yieldToMain } from '../audio-buffers';
 import { BLOCK_BITS, BLOCK_FRAMES } from './deck-id';
 import type { DeckSource } from './deck-source';
 
+/** How much of a song a window holds around the play position, and how many slots are kept for pinned places. */
 export interface DeckStreamOptions {
   behindSec?: number;
   aheadSec?: number;
@@ -30,11 +31,13 @@ export interface DeckStreamOptions {
 /** Frames are pinned for this long before their start too, so a cue that sits a little before its beat is whole. */
 const PIN_LEAD_SEC = 0.1;
 
+/** A place in the song (frames) the window keeps loaded. */
 export interface PinnedPlace {
   startFrame: number;
   endFrame: number;
 }
 
+/** A deck's song as a window of blocks in shared memory, kept filled around the play position (see the file comment). */
 export class DeckStream {
   readonly frames: number;
   readonly sampleRate: number;

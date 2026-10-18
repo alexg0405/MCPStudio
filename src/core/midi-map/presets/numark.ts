@@ -15,6 +15,7 @@ import { bind, cc, cc14, ledNote, mappingOf, note, rel, type ControllerPreset } 
 
 const LED_OFF = 0x01;
 
+/** The map for the Numark Mixtrack Pro FX. */
 export const MIXTRACK_PRO_FX: ControllerPreset = {
   id: 'numark-mixtrack-pro-fx',
   name: 'Numark Mixtrack Pro FX',
@@ -56,4 +57,5 @@ export const MIXTRACK_PRO_FX: ControllerPreset = {
   },
 };
 
+/** The Numark maps. */
 export const NUMARK_PRESETS: readonly ControllerPreset[] = [MIXTRACK_PRO_FX];

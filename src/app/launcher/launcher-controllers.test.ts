@@ -9,7 +9,9 @@ import { CONTROLLER_PRESETS, presetById, presetForDevice } from '@core/midi-map/
 import { isLaunchTarget, launcherTargets, parseLaunchTarget, targetInfo } from '@core/midi-map/targets';
 import { DEFAULT_PAD_PALETTE, mappingFromJson, mappingToJson } from '@core/midi-map/types';
 import { FakeMidiAccess, msg } from '../../../test/helpers/fake-midi';
-import { learnMismatch, DjControllers, type LauncherControl } from '../dj/controllers/manager';
+import { learnMismatch } from '../dj/controllers/learn-rules';
+import { DjControllers } from '../dj/controllers/manager';
+import type { LauncherControl } from '../dj/controllers/types';
 import { memoryControllerStorage } from '../dj/controllers/storage';
 import { createTestServices } from '../testing';
 import { launcherLeds, LauncherLeds } from './leds';

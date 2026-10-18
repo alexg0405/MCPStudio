@@ -37,6 +37,7 @@ export function MidiTarget({ id, children }: { id: string | undefined; children:
   );
 }
 
+/** What a deck slider takes: its range, how to show the value, a reset value and the learn target. */
 export interface SliderProps {
   value: number;
   min: number;

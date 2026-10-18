@@ -15,11 +15,13 @@ export interface BrowseSong {
   label: string;
 }
 
+/** Where the browse encoder points in the library. */
 export interface BrowseState {
   /** Index of the highlighted song in the library (0 when the library is empty). */
   index: number;
 }
 
+/** The browse encoder's place in the music library: turning it moves the highlight, a deck's load button takes the song. */
 export class BrowseCursor {
   readonly store: StoreApi<BrowseState> = createStore<BrowseState>(() => ({ index: 0 }));
 

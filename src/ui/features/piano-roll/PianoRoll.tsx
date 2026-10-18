@@ -112,11 +112,20 @@ function Toolbar({ controller }: { controller: React.RefObject<PianoRollControll
           onClick={() => set({ scaleSnap: !pr.scaleSnap })}
           data-hint={
             songKey
-              ? `Snap to scale ${pr.scaleSnap ? 'on' : 'off'}: notes you draw or move stay on the notes of ${keyName}`
+              ? `Scale lock ${pr.scaleSnap ? 'on' : 'off'}: notes you draw, paint or drag snap to the notes of ${keyName}, so a melody cannot leave the key`
               : noKey
           }
         >
-          Snap to scale
+          Scale lock
+        </button>
+        <button
+          tabIndex={-1}
+          className={`${styles.tool} ${pr.chordHighlight ? styles.toolOn : ''}`}
+          onPointerDown={keepFocus}
+          onClick={() => set({ chordHighlight: !pr.chordHighlight })}
+          data-hint={`Chord tones ${pr.chordHighlight ? 'on' : 'off'}: tints the rows of the chord track’s notes behind the notes, with each chord’s name at the top (add chords in the Chords window or the lane above the playlist)`}
+        >
+          Chord tones
         </button>
       </span>
       <label

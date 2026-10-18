@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
 import { addAudioClip, addKitAudioClip, importAudioFile } from '@app/actions/samples';
@@ -16,6 +16,7 @@ import { registerAnchorSource } from '../ask-ai/anchors';
 import { askAboutMarker, askAboutSelection } from '../ask-ai/ask-state';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT } from './render';
+import { ChordLane, useChordLaneVisible } from '../chords/ChordLane';
 import styles from './Playlist.module.css';
 
 const TOOLS: { tool: PlaylistTool; label: string; key: string; hint: string }[] = [
@@ -122,6 +123,9 @@ export function Playlist() {
   const rename = useRef<HTMLInputElement>(null);
   const markerRename = useRef<HTMLInputElement>(null);
   const askPill = useRef<HTMLButtonElement>(null);
+  const showChordLane = useChordLaneVisible(services);
+  // The chord lane reads the playlist's scroll and zoom every frame, so its bars stay lined up with the playlist's.
+  const laneView = useCallback(() => controller.current?.vp ?? null, []);
 
   useEffect(() => {
     const els = {
@@ -181,6 +185,7 @@ export function Playlist() {
   return (
     <div className={styles.root}>
       <Toolbar controller={controller} />
+      {showChordLane && <ChordLane view={laneView} headerWidth={HEADER_WIDTH} />}
       <div
         className={styles.area}
         style={{ gridTemplateColumns: `${HEADER_WIDTH}px 1fr`, gridTemplateRows: `${RULER_HEIGHT}px 1fr 12px` }}

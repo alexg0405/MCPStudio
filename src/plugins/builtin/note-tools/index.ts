@@ -231,6 +231,11 @@ const strumTool = defineNoteScript({
   description: 'Spreads the notes of each chord out in time, like strumming a guitar.',
   params: {
     time: p.float(0, 1, 0.125, { label: 'Strum time', unit: 'beats', hint: 'From the first to the last chord note' }),
+    ms: p.float(0, 500, 0, {
+      label: 'Strum time in ms',
+      unit: 'ms',
+      hint: 'Above 0 it replaces the beats value: the strum lasts this many milliseconds whatever the tempo (30 ms is a tight strum, 120 ms a slow one)',
+    }),
     direction: p.enum(['up', 'down', 'alternate', 'random'], 'up', {
       label: 'Direction',
       labels: {
@@ -260,7 +265,8 @@ const strumTool = defineNoteScript({
   },
   run: (ctx) =>
     strum(ctx.notes, {
-      time: ctx.values.time * ctx.ppq,
+      // Milliseconds win when set: a strum feels the same length at any tempo.
+      time: ctx.values.ms > 0 ? (ctx.values.ms / 1000) * (ctx.bpm / 60) * ctx.ppq : ctx.values.time * ctx.ppq,
       direction: ctx.values.direction,
       curve: ctx.values.curve,
       velocity: ctx.values.velocity,

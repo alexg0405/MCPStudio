@@ -30,8 +30,10 @@ export interface PianoRollViewState {
   lane: NoteLane;
   /** Shade the rows of keys outside the song key's scale (and mark the root). */
   scaleHighlight: boolean;
-  /** Drawn, painted and moved notes stay on the song key's scale. */
+  /** Scale lock: drawn, painted and moved notes stay on the song key's scale. */
   scaleSnap: boolean;
+  /** Tint the rows of the chord track's notes behind the notes, and name the chords in the ruler. */
+  chordHighlight: boolean;
   /**
    * Chord stamp: drawing a note draws this chord on it. '' = single notes, 'diatonic' / 'diatonic7'
    * = the song key's triads / seventh chords, anything else a chord id from `@agstudio/sdk/notes`.
@@ -74,6 +76,8 @@ export interface EditorState {
   noteClipboard: readonly Note[] | null;
   /** The channel rack's graph editor: the channel whose per-step row is open (one at a time) and what it edits. */
   stepGraph: StepGraphState;
+  /** The chord lane above the playlist: shown, hidden, or (null) shown while the project has chords. View state, not undoable. */
+  chordLane: boolean | null;
 }
 
 /** The property the channel rack's graph editor edits per step. */
@@ -98,6 +102,7 @@ export interface EditorActions {
   selectNotes(ids: readonly NoteId[]): void;
   setNoteClipboard(notes: readonly Note[] | null): void;
   setStepGraph(patch: Partial<StepGraphState>): void;
+  setChordLane(show: boolean | null): void;
 }
 
 export type EditorStore = StoreApi<EditorState & EditorActions>;
@@ -115,6 +120,7 @@ export const defaultPianoRoll = (): PianoRollViewState => ({
   lane: 'velocity',
   scaleHighlight: true,
   scaleSnap: false,
+  chordHighlight: true,
   chord: '',
   inversion: 0,
 });
@@ -187,6 +193,10 @@ export function createEditorStore(
       set({ noteClipboard: notes });
     },
     stepGraph: { channelId: null, lane: 'velocity' },
+    chordLane: null,
+    setChordLane(show) {
+      if (get().chordLane !== show) set({ chordLane: show });
+    },
     setStepGraph(patch) {
       const cur = get().stepGraph;
       if (Object.entries(patch).every(([k, v]) => cur[k as keyof StepGraphState] === v)) return;

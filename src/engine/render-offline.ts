@@ -4,6 +4,7 @@ import { tempoMapOf } from '@core/automation/tempo';
 import { ticksPerBar, type TempoMap } from '@core/time/ppq';
 import { Engine } from './engine';
 
+/** What an offline render is asked for (see the fields). */
 export interface RenderOptions extends EngineOptions {
   view: TransportView;
   /** Length to render, in bars of the current pattern/song (fractions allowed). */
@@ -31,6 +32,7 @@ export interface RenderOptions extends EngineOptions {
   limiter?: boolean;
 }
 
+/** A finished render and the numbers needed to trim it. */
 export interface RenderResult {
   buffer: AudioBuffer;
   /** Seconds of silence before the music starts. */
@@ -183,6 +185,7 @@ export async function renderOffline(project: Project, opts: RenderOptions): Prom
   return r;
 }
 
+/** Options of a streamed render (`renderStream`). */
 export interface StreamRenderOptions extends RenderOptions {
   /**
    * Seconds of output per render window (default 512). A render that fits in one window is one
@@ -197,6 +200,7 @@ export interface StreamRenderOptions extends RenderOptions {
   onAudio(channels: Float32Array[], frame: number, info: { preRoll: number; latency: number }): void | Promise<void>;
 }
 
+/** What `renderStream` reports when it is done. */
 export interface StreamRenderResult {
   preRoll: number;
   latency: number;

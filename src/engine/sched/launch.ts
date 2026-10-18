@@ -11,6 +11,7 @@ import { collectNotes, type NoteEvent, type PlayClip } from './events';
 /** A run that never ends by itself is this long as far as the collector is concerned. */
 const OPEN = 2 ** 40;
 
+/** The id of the virtual clip a run's audio plays as. */
 export const launchClipId = (run: LaunchRun) => `launch:${run.id}`;
 
 /** Notes of the pattern runs that start in [from, to). */

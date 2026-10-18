@@ -83,6 +83,7 @@ export function migrated(def: PluginDef, data: PluginInstance): { params: Record
   return { params: data.params, state: data.state ?? def.defaultState };
 }
 
+/** What a plugin instance sees as `host` (the SDK's PluginHost): its params, samples, transport info and worklet. */
 export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   readonly audioContext: BaseAudioContext;
   readonly params: Record<string, ParamHandleImpl<ParamSpec>> = {};

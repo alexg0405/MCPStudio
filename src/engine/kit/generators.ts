@@ -9,6 +9,7 @@ import { Biquad } from '@agstudio/sdk/dsp/biquad';
 import { Clap, HiHat, Kick, renderDrum, Snare, type DrumModel } from '@agstudio/sdk/dsp/drums';
 import { Rng } from '@agstudio/sdk/dsp/random';
 
+/** Makes a built-in sound at a sample rate from a seed: one array of samples per channel. */
 export type Generator = (sampleRate: number, seed: number) => Float32Array[];
 
 const TAU = Math.PI * 2;
@@ -319,6 +320,7 @@ function genreKit(kit: KitStyle): Record<string, Generator> {
   };
 }
 
+/** The built-in sounds by name (`kit/kick`, the genre kits, ...). */
 export const GENERATORS: Readonly<Record<string, Generator>> = {
   'kit/kick': kick,
   'kit/snare': snare,
@@ -341,6 +343,7 @@ export function seedFor(name: string): number {
   return h >>> 0;
 }
 
+/** Makes the built-in sound `name` at `sampleRate`, or null for a name that is not a built-in. */
 export function generate(name: string, sampleRate: number): Float32Array[] | null {
   const gen = GENERATORS[name];
   return gen ? gen(sampleRate, seedFor(name)) : null;

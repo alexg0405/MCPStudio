@@ -29,6 +29,7 @@ export interface AudioOn extends NoteOn {
   tempo: TempoMap;
 }
 
+/** Where the transport sends the notes and audio clip starts it dispatches (the engine's channels). */
 export interface TransportSink {
   noteOn(channelId: ChannelId, e: NoteOn): void;
   noteOff(channelId: ChannelId, e: NoteOff): void;
@@ -37,6 +38,7 @@ export interface TransportSink {
   audioOn?(channelId: ChannelId, e: AudioOn): void;
 }
 
+/** The clock the transport reads: an audio context, or a fake in tests. */
 export interface Clock {
   readonly currentTime: number;
 }
@@ -102,6 +104,7 @@ const MAX_REMEMBERED_RUNS = 256;
 /** Planned segments are kept this long after they end (seconds), for the playhead and the tempo readouts. */
 const KEEP_SEGMENTS_SEC = 2;
 
+/** The lookahead scheduler: plans segments of the timeline a little ahead of the clock and dispatches their notes to the sink. */
 export class Transport {
   private playingFlag = false;
   private cursor: Cursor | null = null;

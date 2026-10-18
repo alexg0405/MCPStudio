@@ -18,6 +18,7 @@ interface Anchor {
   replan: boolean;
 }
 
+/** What the kernel transport feed needs from the engine. */
 export interface KernelTransportDeps {
   readonly ports: ReadonlySet<WorkletPortImpl>;
   /** Tick and loop pass at a scheduling time (the stop position while stopped). */
@@ -29,6 +30,7 @@ export interface KernelTransportDeps {
 
 const bpmOf = (spt: number) => 60 / (spt * PPQ);
 
+/** Tells every worklet kernel where the song is (anchors of beat position against context time), as a transport observer. */
 export class KernelTransportFeed implements TransportObserver {
   private playing = false;
   private lastSpt = 0;

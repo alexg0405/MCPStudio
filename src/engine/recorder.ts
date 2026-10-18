@@ -6,6 +6,7 @@
 import recorderUrl from './recorder.worklet.ts?worker&url';
 import { REC_MODE, REC_STATE, RECORDER_ID } from './recorder-id';
 
+/** How a recording is made: tempo, bars, count-in, click and latencies. */
 export interface RecordOptions {
   bpm: number;
   beatsPerBar: number;
@@ -21,6 +22,7 @@ export interface RecordOptions {
   roundTrip?: number;
 }
 
+/** A finished recording. */
 export interface Recording {
   /** Mono samples from the moment recording started (count-in included). */
   samples: Float32Array;
@@ -29,6 +31,7 @@ export interface Recording {
   barOneSec: number;
 }
 
+/** A recording in progress. */
 export interface RecordingHandle {
   /** Context time of bar 1 (after the count-in). */
   readonly barOneTime: number;

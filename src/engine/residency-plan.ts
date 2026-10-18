@@ -12,6 +12,7 @@ export interface ClipSpan {
   keys: readonly string[];
 }
 
+/** What the residency plan is made from. */
 export interface ResidencyInput {
   clips: readonly ClipSpan[];
   /** Keys needed whatever the position (samples played by notes and previews). */
@@ -31,6 +32,7 @@ export interface ResidencyInput {
   prefetchWithin?: number;
 }
 
+/** Which buffers to pin and which to prefetch. */
 export interface ResidencyPlan {
   /** Must be in memory (window clips and `always`). */
   pinned: string[];
@@ -64,6 +66,7 @@ function distance(c: ClipSpan, pos: number, ahead: number, loop: { start: number
   return 4 * Math.max(0, pos - c.end);
 }
 
+/** Decides which buffers to pin and which to prefetch for a playhead position, within the byte budget. */
 export function planResidency(input: ResidencyInput): ResidencyPlan {
   const spans = windowSpans(input.pos, input.behind, input.ahead, input.loop);
   const pinned = new Set<string>(input.always);

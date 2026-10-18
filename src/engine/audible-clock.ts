@@ -12,6 +12,7 @@ export const CLOCK_TAU = 0.25;
 /** A disagreement larger than this (seconds) is real (a seek, a stall): it jumps instead of easing. */
 export const CLOCK_RESYNC = 0.06;
 
+/** Smooths the raw heard-time estimates into a time that runs evenly and never goes back. */
 export class AudibleClock {
   private t = Number.NaN;
   private at = 0;

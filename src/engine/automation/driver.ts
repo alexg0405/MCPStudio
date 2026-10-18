@@ -41,6 +41,7 @@ import type { TransportObserver } from '../sched/transport';
 import { CurvePlanner, JUMP, rampError } from './curve-plan';
 import { ShiftedParam } from './shifted';
 
+/** What the automation driver needs from the engine. */
 export interface DriverDeps {
   readonly ctx: BaseAudioContext;
   readonly params: ParamRegistry;
@@ -103,6 +104,7 @@ const DEFAULT_BPM = 120;
 
 const EMPTY = new Map<string, TargetAutomation>();
 
+/** Drives the registered automatable params from the song's automation clips, following the transport (see the file comment). */
 export class AutomationDriver implements TransportObserver {
   private readonly touched = new Set<string>();
   private readonly plans = new Map<string, Plan>();

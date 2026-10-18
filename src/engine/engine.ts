@@ -99,6 +99,7 @@ const OUTPUT_TAP_OPTIONS = { fftSize: 4096, smoothing: 0.8 };
 /** What a transport that has not been given a project yet plays: nothing. */
 const NO_EVENTS: EventSource = { project: null as unknown as Project, clips: [] };
 
+/** The audio engine: a Web Audio mirror of the project, driven by the lookahead transport (see the file comment). */
 export class Engine implements EngineApi, EngineCore {
   readonly ctx: BaseAudioContext;
   readonly plugins: PluginResolver;

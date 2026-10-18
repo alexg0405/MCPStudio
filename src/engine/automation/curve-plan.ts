@@ -148,6 +148,7 @@ const constant = (start: number, end: number, value: number): Interval => ({
   steps: 0,
 });
 
+/** Plans one target's automation as breakpoints: constant stretches and subdivided curves, with a small cache of the intervals asked for last. */
 export class CurvePlanner {
   private readonly pieces: Piece[];
   private readonly cache: Interval[] = [];

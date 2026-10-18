@@ -6,10 +6,12 @@ import { EffectKernel, dbToGain, p, type KernelHost, type ParamBlock } from '@ag
 import { LIMITER_LOOKAHEAD_SEC } from './limiter-id';
 
 export { LIMITER_ID } from './limiter-id';
+/** The limiter's one param: the ceiling (dB) it holds the output under. */
 export const limiterParams = {
   ceiling: p.float(-12, 0, -0.3, { label: 'Ceiling', unit: 'dB' }),
 };
 
+/** A look-ahead brickwall limiter (see the file comment). */
 export class SafetyLimiterKernel extends EffectKernel<typeof limiterParams> {
   private readonly look: number;
   private readonly delayL: Float32Array;

@@ -1,3 +1,4 @@
+/** A function an Emitter calls. */
 export type Listener<T extends unknown[]> = (...args: T) => void;
 
 /** A tiny synchronous event emitter. */

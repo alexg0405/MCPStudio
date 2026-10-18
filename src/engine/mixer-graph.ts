@@ -43,6 +43,7 @@ const DEFAULT_MASTER = makeInsert(MASTER, 'Master');
 /** Identifies a route between two inserts in the route map. */
 const routeKey = (from: InsertId, to: InsertId) => `${from}>${to}`;
 
+/** The mixer as a Web Audio graph (see the file comment). */
 export class MixerGraph {
   readonly master: InsertStrip;
   private readonly strips = new Map<InsertId, InsertStrip>();

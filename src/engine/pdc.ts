@@ -57,6 +57,7 @@ interface ForwardPass {
   total: number;
 }
 
+/** The delay compensation of one mixer routing graph: arrivals, outs, pads and the total latency (see the file comment). */
 export class DelayCompensation {
   private readonly arrivals = new Map<InsertId, number>();
   private readonly outs = new Map<InsertId, number>();

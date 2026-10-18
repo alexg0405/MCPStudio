@@ -84,6 +84,7 @@ class BandSplitter {
   }
 }
 
+/** The whole metering suite for one stereo signal: loudness, true peak, bands, correlation, spectrum and scope. */
 export class MeterKernel {
   private readonly loudness: LoudnessMeter;
   private readonly truePeakLeft = new TruePeak();

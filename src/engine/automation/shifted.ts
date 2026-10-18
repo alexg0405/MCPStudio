@@ -10,6 +10,7 @@
 import type { ParamSpec } from '@agstudio/sdk';
 import type { AutomatableParam } from '../param-lane';
 
+/** A lane seen in the song's time: every time passed in or read out is moved by the control's shift. */
 export class ShiftedParam implements AutomatableParam {
   /** The shift the driver last planned with. */
   private applied: number;

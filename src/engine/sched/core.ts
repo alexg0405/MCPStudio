@@ -5,6 +5,7 @@
  */
 import type { TempoMap } from '@core/time/ppq';
 
+/** What the planner plans against: a tempo map, a loop region and the song's end. */
 export interface Timeline {
   /** The tempo (stepped; segments split at its changes). */
   tempo: TempoMap;
@@ -13,6 +14,7 @@ export interface Timeline {
   endTick: number;
 }
 
+/** The planning frontier: where the next segment starts. */
 export interface Cursor {
   /** May be fractional: the planning frontier rarely lands on a whole tick. */
   tick: number;
@@ -21,6 +23,7 @@ export interface Cursor {
   iter: number;
 }
 
+/** A stretch of the timeline at one tempo, with the context time it starts playing at. */
 export interface Segment {
   tick0: number;
   tick1: number;
@@ -30,6 +33,7 @@ export interface Segment {
   spt: number;
 }
 
+/** The segments planned up to a horizon, and where planning goes on. */
 export interface Plan {
   segs: Segment[];
   next: Cursor;
@@ -37,8 +41,10 @@ export interface Plan {
   ended: boolean;
 }
 
+/** The context time at which a segment ends. */
 export const segmentEndTime = (s: Segment) => s.time0 + (s.tick1 - s.tick0) * s.spt;
 
+/** Plans the segments from the cursor up to `horizon` (a context time): split at tempo changes, wrapped at the loop end. */
 export function plan(cursor: Cursor, horizon: number, tl: Timeline): Plan {
   const segs: Segment[] = [];
   const L = tl.loop && tl.loop.end > tl.loop.start ? tl.loop : null;

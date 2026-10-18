@@ -91,6 +91,7 @@ function evalSeg(s: Seg, t: number): number {
   }
 }
 
+/** The single writer of an automatable value: it holds the base value and the scheduled breakpoints and drives every AudioParam bound to it. */
 export class AutoLane implements AutomatableParam {
   private segs: Seg[] = [];
   private bindings: Binding[] = [];

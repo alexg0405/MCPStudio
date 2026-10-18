@@ -53,9 +53,12 @@ export const R = {
   /** 1: the processor ends. */
   closed: 26,
 } as const;
+/** Slots (Float64) of the readings array. */
 export const READINGS_LENGTH = 32;
 
+/** FFT size of the spectrum analysis (frames). */
 export const SPECTRUM_SIZE = 8192;
+/** Frames between two spectrum analyses. */
 export const SPECTRUM_HOP = 2048;
 /** Bins of the shared spectrum (linear power, `StereoSpectrum` scaling). */
 export const SPECTRUM_BINS = SPECTRUM_SIZE / 2;
@@ -63,10 +66,12 @@ export const SPECTRUM_BINS = SPECTRUM_SIZE / 2;
 export const SCOPE_FRAMES = 2048;
 /** Points of the loudness history (momentary and short-term every 100 ms: 20 minutes). */
 export const HISTORY_CAPACITY = 12000;
+/** Seconds between two points of the loudness history. */
 export const HISTORY_STEP_SECONDS = 0.1;
 
 /** Band edges for the stereo width and the bass phase check (Hz). */
 export const BAND_LOW_HZ = 150;
+/** The upper edge of the mid band (Hz). */
 export const BAND_HIGH_HZ = 2000;
 
 /** The shared memory of one meter. */
@@ -77,6 +82,7 @@ export interface MeterMemory {
   scope: SharedArrayBuffer;
 }
 
+/** The shared memory of one meter as typed arrays. */
 export interface MeterViews {
   readings: Float64Array;
   /** momentary, short-term per point (HISTORY_CAPACITY points, a ring indexed by point number). */
@@ -85,6 +91,7 @@ export interface MeterViews {
   scope: Float32Array;
 }
 
+/** Allocates the shared memory of one meter (the processor gets it, the main thread keeps views of it). */
 export function allocateMeterMemory(): MeterMemory {
   return {
     readings: new SharedArrayBuffer(READINGS_LENGTH * 8),
@@ -94,6 +101,7 @@ export function allocateMeterMemory(): MeterMemory {
   };
 }
 
+/** Typed views of a meter's shared memory. */
 export function viewsOf(m: MeterMemory): MeterViews {
   return {
     readings: new Float64Array(m.readings),

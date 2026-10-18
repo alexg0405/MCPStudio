@@ -74,6 +74,7 @@ interface LoopSec {
   end: number;
 }
 
+/** Keeps the decoded buffers the song needs in memory (see the file comment). */
 export class SampleResidency {
   private project: Project | null = null;
   private tempo: TempoMap | null = null;

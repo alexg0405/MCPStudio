@@ -14,6 +14,7 @@ function selected(s: Services): Clip[] {
     .filter((c): c is Clip => !!c);
 }
 
+/** The playlist's clip editing commands, usable from shortcuts, menus and tests. */
 export const playlistCommands = {
   selectAll(s: Services) {
     s.editor.getState().selectClips(clipsSorted(s.doc.getState().project.playlist.clips).map((c) => c.id));

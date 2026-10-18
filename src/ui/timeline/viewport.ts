@@ -1,10 +1,12 @@
 /**
- * Shared coordinate system for timeline editors (piano roll now, playlist in M4):
- * x ↔ ticks (horizontal scroll + zoom) and y ↔ rows (vertical scroll, fixed row height).
+ * What part of the song and the rows a view shows, and how to convert between pixels, ticks and rows. It is the
+ * coordinate system the timeline editors (playlist, piano roll, pitch editor) share: x and ticks (horizontal scroll and
+ * zoom), y and rows (vertical scroll, a row height). All sizes are CSS pixels.
  */
 export class Viewport {
   /** Tick at the left edge. */
   scrollTick = 0;
+  /** Zoom: how many pixels one tick is wide. */
   pxPerTick = 0.1;
   /**
    * The part of the scroll (CSS px) that drawing leaves out, so the picture sits on whole device pixels. The
@@ -16,21 +18,25 @@ export class Viewport {
   dpr = 1;
   /** Row at the top edge (fractional). */
   scrollRow = 0;
+  /** How tall a row is (px). */
   rowHeight = 14;
   /** Visible area in CSS pixels. */
   width = 0;
   height = 0;
 
+  /** `rows` is how many rows there are; the zoom stays between `minPxPerTick` and `maxPxPerTick`. */
   constructor(
     public rows: number,
     public minPxPerTick = 0.004,
     public maxPxPerTick = 2,
   ) {}
 
+  /** The x (px, in the view) of a tick. */
   tickToX(tick: number): number {
     return (tick - this.scrollTick) * this.pxPerTick + this.drawShift;
   }
 
+  /** The tick at an x (px, in the view). */
   xToTick(x: number): number {
     return this.scrollTick + (x - this.drawShift) / this.pxPerTick;
   }
@@ -60,10 +66,12 @@ export class Viewport {
     return this.snap(this.tickToX(tick));
   }
 
+  /** The y (px, in the view) of the top of a row. */
   rowToY(row: number): number {
     return (row - this.scrollRow) * this.rowHeight;
   }
 
+  /** The row (fractional) at a y (px, in the view). */
   yToRow(y: number): number {
     return this.scrollRow + y / this.rowHeight;
   }
@@ -78,6 +86,7 @@ export class Viewport {
     return [Math.max(0, Math.floor(this.scrollRow)), Math.min(this.rows - 1, Math.ceil(this.yToRow(this.height)))];
   }
 
+  /** Scrolls by `dx` and `dy` pixels, kept inside the song (`maxTick` long) and the rows. */
   scrollBy(dx: number, dy: number, maxTick: number): void {
     this.scrollTick = clamp(
       this.scrollTick + dx / this.pxPerTick,
@@ -109,6 +118,7 @@ export class Viewport {
     );
   }
 
+  /** Brings the scroll back inside the song (after the view or the song changed size). */
   clampScroll(maxTick: number): void {
     this.scrollBy(0, 0, maxTick);
   }
@@ -119,6 +129,7 @@ export function snapToDevicePixel(cssPx: number, dpr: number): number {
   return Math.round(cssPx * dpr) / dpr;
 }
 
+/** `v` kept between `lo` and `hi`. */
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
 }

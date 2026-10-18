@@ -25,8 +25,10 @@ export const FOLLOW_ANCHOR = 0.4;
 /** Smooth style: a gap to the anchor larger than this (fraction of the width) is closed with a glide, not a jump. */
 const CATCH_UP = 0.05;
 
+/** How the view follows the playhead: `smooth` moves with it, `page` turns a page at the right edge. */
 export type FollowStyle = 'smooth' | 'page';
 
+/** The inputs of one frame of playhead following, filled in by the editor (one record kept for its whole life). */
 export interface FollowFrame {
   /** Frame time (performance.now() based, like requestAnimationFrame's). */
   now: number;
@@ -69,6 +71,7 @@ export function createFollowFrame(): FollowFrame {
   };
 }
 
+/** The follow-the-playhead logic of one editor. Call `step` every frame; it says where the view should scroll to, if anywhere. */
 export class PlayheadFollow {
   private wasPlaying = false;
   /** Scrolled by hand: wait until the playhead shows again (or playback restarts). */

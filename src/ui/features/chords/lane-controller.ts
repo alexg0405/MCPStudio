@@ -48,12 +48,14 @@ const CLICK_SLOP_PX = 4;
 /** Confidence below this draws the chord as a guess (faded, dashed). */
 const GUESS_BELOW = 0.5;
 
+/** The elements the chord lane draws on and listens to, given by its React component. */
 export interface ChordLaneElements {
   canvas: HTMLCanvasElement;
   /** The text box chords are typed in (placed by the controller). */
   input: HTMLInputElement;
 }
 
+/** The chord lane above the playlist: draws the chord bars lined up with the playlist's scroll and zoom, and edits them with the pointer and the keyboard. */
 export class ChordLaneController {
   private dirty = true;
   private boxes: ChordBox[] = [];

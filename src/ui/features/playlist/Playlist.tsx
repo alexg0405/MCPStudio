@@ -99,6 +99,7 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
   );
 }
 
+/** The playlist window: the toolbar, the ruler, the track headers and the grid. The canvases are drawn by `PlaylistController`. */
 export function Playlist() {
   const services = useServices();
   const tool = useStore(services.editor, (s) => s.playlist.tool);

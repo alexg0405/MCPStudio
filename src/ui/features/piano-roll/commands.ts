@@ -12,6 +12,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks, snapRound } from '@core/time/snap';
 import { transposeDegrees } from '@agstudio/sdk/notes';
 
+/** The notes a piano roll command works on: the selected channel's notes in the current pattern, and which of them are selected. */
 export interface NoteTarget {
   channelId: ChannelId;
   patternId: PatternId;
@@ -19,6 +20,7 @@ export interface NoteTarget {
   selected: Note[];
 }
 
+/** The notes a piano roll command works on, or null when no instrument channel with notes in a pattern is chosen. */
 export function noteTarget(s: Services): NoteTarget | null {
   const p = s.doc.getState().project;
   const channelId = s.session.getState().selectedChannelId;
@@ -42,6 +44,7 @@ function grid(s: Services): number {
   return gridTicks(pr.snap, p.transport.timeSig, pr.pxPerTick);
 }
 
+/** The piano roll's note editing commands, usable from shortcuts, menus and tests. */
 export const pianoRollCommands = {
   selectAll(s: Services) {
     const t = noteTarget(s);

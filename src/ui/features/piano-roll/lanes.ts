@@ -7,6 +7,7 @@ import type { NoteLane } from '@app/stores/editor';
 import type { Note, NoteId } from '@core/model/types';
 import type { NoteEdit } from '@core/ops/notes';
 
+/** How one event lane looks and resets: its name, whether bars grow from the centre, and its default value. */
 export interface LaneInfo {
   label: string;
   /** Bars grow from the centre line instead of the bottom. */
@@ -15,6 +16,7 @@ export interface LaneInfo {
   reset: number;
 }
 
+/** The four event lanes by name. */
 export const LANES: Record<NoteLane, LaneInfo> = {
   velocity: { label: 'Velocity', bipolar: false, reset: 100 / 128 },
   pan: { label: 'Pan', bipolar: true, reset: 0 },

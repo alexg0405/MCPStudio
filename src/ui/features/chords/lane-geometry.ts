@@ -16,6 +16,7 @@ export interface ChordBox {
   right: number;
 }
 
+/** Where on a chord bar the pointer is: its start edge, its body, or its end edge (the edges resize it). */
 export type ChordZone = 'start' | 'body' | 'end';
 
 /** What is under x: the chord and which part of it (edges win when the chord is wide enough to have a body). */

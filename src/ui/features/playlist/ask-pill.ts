@@ -15,6 +15,7 @@ export interface PillTarget {
   compact: boolean;
 }
 
+/** The pill's height (px). */
 export const PILL_HEIGHT = 20;
 /** Pill to part, and pill to the grid's edges. */
 const GAP = 3;

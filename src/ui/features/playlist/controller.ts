@@ -30,8 +30,10 @@ import { currentProject } from './control/lanes';
 import { measureLayout, revealSpan, zoomBy } from './control/viewport-control';
 import { forgetPointerClip, listenToElements, subscribeToChanges } from './control/wiring';
 
+/** The types the window (and the Ask AI card) use with the controller. */
 export type { ClientBox, PlaylistElements };
 
+/** The playlist editor: mount it on its canvases, plug in its menus (the `on...` hooks), and it runs itself on the frame loop. */
 export class PlaylistController implements PlaylistHooks {
   /** The view onto the song (scroll and zoom); the chord lane above the playlist reads it every frame to stay lined up. */
   readonly vp: Viewport;

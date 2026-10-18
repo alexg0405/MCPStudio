@@ -29,10 +29,13 @@ import { editTarget } from './control/target';
 import { measureLayout, zoomBy } from './control/viewport-control';
 import { listenToElements, subscribeToChanges } from './control/wiring';
 
+/** The sizes of the keys and the ruler (the window's layout uses them), and the redraw timings. */
 export { KEYS_WIDTH, RULER_HEIGHT } from './layout';
 export { pianoRollPerf };
+/** The types the window uses with the controller. */
 export type { PianoRollElements, PianoRollMenuRequest };
 
+/** The piano roll editor: mount it on its canvases, plug in its menu (`onMenu`), and it runs itself on the frame loop. */
 export class PianoRollController implements PianoRollHooks {
   /** The view onto the pattern (scroll and zoom). */
   readonly vp: Viewport;

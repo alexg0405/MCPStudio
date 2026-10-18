@@ -14,6 +14,7 @@ import { extraMenuItems, type MenuScopes } from '../../context-menus';
 import { noteTarget } from './commands';
 import { openNoteScript, scriptMenu } from './tools';
 
+/** The ids of the built-in note scripts the menus and commands run. */
 export const SCRIPT = {
   quantize: 'agstudio.notes.quantize',
   humanize: 'agstudio.notes.humanize',

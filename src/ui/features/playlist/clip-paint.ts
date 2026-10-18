@@ -7,6 +7,7 @@
 import { alpha, luminance, mix, onThemeChange, type TimelineTheme } from '../../timeline/canvas';
 import { CLIP_TITLE_HEIGHT } from './clip-geometry';
 
+/** The colors a clip is drawn with, derived from its base color and the theme. */
 export interface ClipPaint {
   /** The color as drawn against the stone (slightly desaturated). */
   tone: string;
@@ -34,6 +35,7 @@ export function lightStone(theme: TimelineTheme): boolean {
   return luminance(theme.bg) > 0.45;
 }
 
+/** The colors for a clip of this base color (kept per color until the theme changes). */
 export function clipPaint(base: string, theme: TimelineTheme): ClipPaint {
   let p = paints.get(base);
   if (p) return p;

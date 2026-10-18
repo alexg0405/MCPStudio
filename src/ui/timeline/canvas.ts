@@ -64,6 +64,7 @@ let cached: TimelineTheme | null = null;
 
 // ---------------------------------------------------------------- colour maths
 
+/** A color as red, green, blue (0-255) and alpha (0-1). */
 export type RGBA = readonly [number, number, number, number];
 
 const parsed = new Map<string, RGBA>();
@@ -135,6 +136,7 @@ function memo(key: string, make: () => string): string {
  */
 const alphaByColor = new Map<string, Map<number, string>>();
 
+/** `color` with its alpha multiplied by `a` (cached, so it is cheap per frame). */
 export function alpha(color: string, a: number): string {
   let byAlpha = alphaByColor.get(color);
   if (!byAlpha) {
@@ -185,6 +187,7 @@ export function roundRectPath(ctx: CanvasRenderingContext2D, x: number, y: numbe
 
 // ---------------------------------------------------------------- reading the theme
 
+/** The theme colors for canvas drawing, read from the page's styles once and kept until the theme changes. */
 export function readTheme(el: Element = document.documentElement): TimelineTheme {
   if (cached) return cached;
   const s = getComputedStyle(el);
@@ -308,6 +311,7 @@ export function fitCanvas(canvas: HTMLCanvasElement, width: number, height: numb
 
 const BLACK = new Set([1, 3, 6, 8, 10]);
 
+/** True for the black keys of a piano (a key number, 0-127). */
 export function isBlackKey(key: number): boolean {
   return BLACK.has(((key % 12) + 12) % 12);
 }

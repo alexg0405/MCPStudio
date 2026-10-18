@@ -15,6 +15,7 @@ import type { DynamicMenuEntry } from '../../shell/menus';
 /** Values each script's dialog last applied (this session), so it reopens where you left it. */
 const lastValues = new Map<string, Record<string, ParamValue>>();
 
+/** Options for opening a note script's dialog. */
 export interface OpenScriptOptions {
   /** Replaces the dialog (tests drive it directly). */
   form?: (options: FormDialogOptions<FormValues>) => Promise<FormValues | null>;

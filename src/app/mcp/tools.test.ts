@@ -27,6 +27,10 @@ function setup(audio: Partial<AudioDeps> = {}) {
         if (target.kind === 'memory') target.files.set(target.name, new Uint8Array([1, 2, 3]));
         return { names: [target.name], seconds: 4 };
       }) as unknown as AudioDeps['exportAudio'],
+      exportVideo: vi.fn(async (_s, _settings, target) => {
+        if (target.kind === 'memory') target.files.set(target.name, new Uint8Array(1_500_000));
+        return { name: target.name, seconds: 8.4, frames: 252, bytes: 1_500_000, took: 3 };
+      }) as unknown as AudioDeps['exportVideo'],
       upload: vi.fn(async (_t, f) => `/Users/me/Music/AGstudio/${f.folder ? `${f.folder}/` : ''}${f.name}`),
       ...audio,
     },
@@ -527,6 +531,43 @@ describe('listening and rendering', () => {
     expect(r.isError).toBeUndefined();
     expect(text(r)).toMatch(/^Exported \d+ s of audio to /);
     expect(s.prefs.getState().exportCodec).toBe('wav');
+  });
+
+  it('export_video makes a video in memory with the given look and hands it to the dev server', async () => {
+    const exportVideo = vi.fn(async (_s, _set, target) => {
+      if (target.kind === 'memory') target.files.set(target.name, new Uint8Array(2_000_000));
+      return { name: target.name, seconds: 8, frames: 240, bytes: 2_000_000, took: 2 };
+    });
+    const { call } = setup({ exportVideo: exportVideo as unknown as AudioDeps['exportVideo'] });
+    const r = await call(
+      'export_video',
+      { bars: { from_bar: 1, to_bar: 2 }, style: 'circle', size: 'vertical', fps: 60, format: 'webm-vp9', title: 'My Song', artist: 'Me', file_name: 'Demo' },
+      { ...CLAUDE, ticket: 'tk' } as typeof CLAUDE,
+    );
+    expect(r.isError).toBeUndefined();
+    expect(text(r)).toBe('Made a vertical circle video of 8 s (2 MB, webm-vp9) at /Users/me/Music/AGstudio/Demo.webm.');
+    expect(r.structuredContent).toMatchObject({ files: ['/Users/me/Music/AGstudio/Demo.webm'], style: 'circle', size: 'vertical', fps: 60, format: 'webm-vp9' });
+    const settings = exportVideo.mock.calls[0]![1] as Record<string, unknown>;
+    expect(settings).toMatchObject({ style: 'circle', size: 'vertical', fps: 60, format: 'webm-vp9', title: 'My Song', artist: 'Me', range: { from: 0, to: 7680 } });
+  });
+
+  it('export_video needs a ticket, ignores unknown looks, and refuses a song too long to hold in memory', async () => {
+    const exportVideo = vi.fn(async (_s, _set, target) => {
+      if (target.kind === 'memory') target.files.set(target.name, new Uint8Array(10));
+      return { name: target.name, seconds: 4, frames: 120, bytes: 10, took: 1 };
+    });
+    const { call } = setup({ exportVideo: exportVideo as unknown as AudioDeps['exportVideo'] });
+    expect((await call('export_video', {})).isError).toBe(true);
+    expect(exportVideo).not.toHaveBeenCalled();
+    const ctx = { ...CLAUDE, ticket: 'tk' } as typeof CLAUDE;
+    const ok = await call('export_video', { style: 'disco', size: 'huge', fps: 24 }, ctx);
+    expect(ok.isError).toBeUndefined();
+    // Unknown choices fall back to the remembered ones.
+    expect(exportVideo.mock.calls[0]![1]).toMatchObject({ style: 'bars', size: '1080p', fps: 30, format: 'mp4-h264' });
+    // 200 bars at 130 BPM is over six minutes, past the 4 minutes a video held in memory may be.
+    const long = await call('export_video', { bars: { from_bar: 1, to_bar: 200 } }, ctx);
+    expect(long.isError).toBe(true);
+    expect(text(long)).toMatch(/too long/);
   });
 
   it('export_audio puts stems in a folder', async () => {

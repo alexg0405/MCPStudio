@@ -92,6 +92,8 @@ const AUDIO_TYPES: Record<string, FilePickerAcceptType> = {
   flac: { description: 'FLAC audio (lossless, smaller)', accept: { 'audio/flac': ['.flac'] } },
   mp3: { description: 'MP3 audio', accept: { 'audio/mpeg': ['.mp3'] } },
   zip: { description: 'Zip archive', accept: { 'application/zip': ['.zip'] } },
+  mp4: { description: 'MP4 video', accept: { 'video/mp4': ['.mp4'] } },
+  webm: { description: 'WebM video', accept: { 'video/webm': ['.webm'] } },
 };
 
 /**

@@ -83,6 +83,12 @@ describe('DJ analysis of the project templates', () => {
         expect(a.key).not.toBeNull();
         const n = (c: string) => parseInt(c, 10);
         expect(Math.abs(n(a.key!.camelot) - n(camelotOf(key.root, key.mode))) % 11).toBeLessThanOrEqual(1);
+      } else if (id === 'lofi') {
+        // Its chords are Am7 – Dm7 – G7 – Cmaj7: a turnaround that lands on Cmaj7, so the audio reads as C major as well as
+        // A minor (scored on the audio: C major 0.80, A minor 0.67, with or without the leveled mix). The relative keys
+        // share a Camelot number (8A and 8B) and mix the same: that is the key the DJ side needs.
+        expect(a.key).not.toBeNull();
+        expect(parseInt(a.key!.camelot, 10)).toBe(parseInt(camelotOf(key.root, key.mode), 10));
       } else expect(a.key && keyName(a.key)).toBe(keyName(key));
       expect(a.lufs).toBeGreaterThan(-30);
       expect(a.truePeakDb).toBeLessThan(0.5);

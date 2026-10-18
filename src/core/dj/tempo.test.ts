@@ -61,3 +61,29 @@ describe('beat tracking', () => {
     expect(t!.bpm).toBeLessThan(124);
   });
 });
+
+describe('beat tracking: beats off the grid', () => {
+  /** Onset features of a four-on-the-floor kick at `bpm`, with the beats from `lateFrom` on landing `late` seconds after the grid. */
+  function features(bpm: number, beats: number, lateFrom: number, late: number) {
+    const frameRate = SR / 256;
+    const n = Math.ceil((beats + 2) * (60 / bpm) * frameRate);
+    const peaks = (at: (b: number) => number, width = 1.2) => {
+      const x = new Float32Array(n);
+      for (let b = 0; b < beats; b++) {
+        const c = at(b) * frameRate;
+        for (let i = Math.max(0, Math.floor(c - 4)); i < Math.min(n, c + 5); i++) x[i] = x[i]! + Math.exp(-(((i - c) / width) ** 2));
+      }
+      return x;
+    };
+    const on = peaks((b) => 0.5 + (b * 60) / bpm + (b >= lateFrom ? late : 0));
+    const zero = new Float32Array(n);
+    return { frameRate, onset: on, low: on, lowMid: zero, highMid: zero, high: zero, power: new Float32Array(n).fill(1), lowPower: new Float32Array(n).fill(1) };
+  }
+
+  it('keeps the whole BPM when the last beats of a section land 15 ms late', () => {
+    const t = trackBeats(features(124, 48, 40, 0.015));
+    expect(t).not.toBeNull();
+    expect(t!.bpm).toBe(124);
+    expect(t!.maxSlip).toBeLessThan(0.005);
+  });
+});

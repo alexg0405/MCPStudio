@@ -1402,8 +1402,9 @@ per content hash in a Worker and cached in IndexedDB; the auto-mix and the decks
   87), hats on the 8ths of a tempo ≤ 160 (trap reads 140, not 70). Then the phase (`onTheBeat`): the biggest
   section start (> 8 dB over a beat, not out of silence) lands on a beat; else where kick/snare/bass weigh more
   (house's offbeat bass and hats can pull the tracker half a beat off). Beat times are refined between frames
-  (+8 ms onset lag), BPM is a least-squares line through the strongest evenly spaced stretch and every beat on it, to
-  0.01, snapped to a whole BPM when that slips about as little; a fixed grid that slips > 15 ms (9-beat median)
+  (+8 ms onset lag), BPM is a least-squares line through the strongest evenly spaced stretch and every beat on it (first the beats
+  beyond three robust sigmas, at least 8 ms, of the median-slope line are dropped while 70 % stay: a fill or the last
+  beats of a section tilted the line by 0.1 BPM on a limited master), to 0.01, snapped to a whole BPM when that slips about as little; a fixed grid that slips > 15 ms (9-beat median)
   anywhere means drift and `grid.beats` holds the tracked beats. No grid when beats don't stand out of the onset
   envelope or only one beat position of four has hits (a pad struck once a bar).
 - **Downbeats** (`downbeat.ts`): per beat, kick minus snare, chord change (chroma 2 beats before vs after) and level
@@ -1480,9 +1481,11 @@ parts too, in about 100 MB however long it is, and gives the same `TrackAnalysis
   (swung) at 3 tempos each incl. fractional BPMs, random offsets and keys (`accuracy.test.ts`): BPM ±0.05 21/21,
   octave 21/21, first downbeat ±20 ms 21/21 (median 1.2 ms), key exact 21/21; all 24 keys on cadences; detuned
   +35 cents; drift 120→124 BPM tracked within 20 ms; a pickup, 3/4, mix points on the right phrase.
-- AGstudio templates rendered offline in Chrome (`test/browser/dj-analysis.test.ts`): trap 140, boom bap 90, house
-  124, lo-fi 80, drill 142 all exact, downbeats within 2.3 ms, keys F minor / A major / A minor / F minor exact; boom
-  bap reads D minor (its audio is a bass on A and D only), a Camelot neighbour of A minor.
+- AGstudio templates rendered offline in Chrome as they open, at their style's loudness (`test/browser/dj-analysis.test.ts`):
+  trap 140, boom bap 90, house 124 (through the Maximizer at +16 dB), lo-fi 80, drill 142 all exact, downbeats within 2.3 ms,
+  keys F minor / A major / F minor exact; boom bap reads D minor (its audio is a bass on A and D only), a Camelot neighbour
+  of A minor; lo-fi reads C major, the relative of its A minor (Am7 Dm7 G7 Cmaj7 lands on Cmaj7: C major scores 0.80, A minor
+  0.67, leveled or not), the same Camelot number (8A / 8B), which is what the test asks for.
 - Speed: a 5-minute song in 0.9–2 s of analysis in Node (M-series, varies with load); about 0.2–0.5 s for a 20 s
   template in Chrome, plus decoding.
 - Long songs (`test/browser/dj-long-analysis.test.ts`, headless Chrome; `src/app/dj/analysis-stream.test.ts`, Node). A

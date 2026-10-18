@@ -9,7 +9,8 @@
  *    snare on its beats, no four-on-the-floor kick on its offbeats, no strong 8th-note pulse at the
  *    faster tempo. So house stays 128 (not 64), drum and bass 174 (not 87), trap 140 (its hats),
  *    boom bap 90 and reggaeton 100 (not 180/200).
- * 4. Beat times refined between frames, BPM by a least-squares line through them (to 0.01, snapped
+ * 4. Beat times refined between frames, BPM by a least-squares line through them (beats far off the median-slope line are
+ *    dropped first: a fill or the last beats of a section must not tilt it; to 0.01, snapped
  *    to a whole number when that fits as well), and a drift check: when a fixed grid slips by more
  *    than 15 ms anywhere, the tracked beats are the answer.
  */
@@ -266,6 +267,15 @@ function fitLine(idx: number[], t: number[]): [number, number] {
   return [mt - p * mi, p];
 }
 
+/** Line t = a + p·i by the median of the slopes between all pairs (a few outliers do not move it); returns [a, p]. */
+function theilSen(idx: number[], t: number[]): [number, number] {
+  const slopes: number[] = [];
+  for (let i = 0; i < idx.length; i++)
+    for (let j = i + 1; j < idx.length; j++) if (idx[j]! !== idx[i]!) slopes.push((t[j]! - t[i]!) / (idx[j]! - idx[i]!));
+  const p = median(slopes);
+  return [median(t.map((x, k) => x - p * idx[k]!)), p];
+}
+
 /** Largest |running median over 9 beats| of the residuals. */
 function slip(res: number[]): number {
   let worst = 0;
@@ -344,6 +354,25 @@ export function trackBeats(f: OnsetFeatures): BeatTrack | null {
     use = keep;
   }
   const residuals = (aa: number, pp: number) => use.map((j) => times[strong[j]!]! - (aa + pp * idx[j]!));
+  // A few beats that sit off the line (a fill, a break, the last beats of a section) pull a least-squares slope, and so the BPM,
+  // off by a tenth: take the median slope of the pairs as the first estimate, drop the beats beyond three robust sigmas
+  // (at least 8 ms) of it while most of the beats stay, and fit the rest.
+  if (use.length >= 12) {
+    const [ra, rp] = theilSen(
+      use.map((j) => idx[j]!),
+      use.map((j) => times[strong[j]!]!),
+    );
+    const r = use.map((j) => times[strong[j]!]! - (ra + rp * idx[j]!));
+    const tol = Math.min(0.03, Math.max(0.008, 3 * 1.4826 * median(r.map(Math.abs))));
+    const keep = use.filter((_, k) => Math.abs(r[k]!) <= tol);
+    if (keep.length >= Math.max(8, Math.ceil(0.7 * use.length)) && keep.length < use.length) {
+      use = keep;
+      [a, p] = fitLine(
+        use.map((j) => idx[j]!),
+        use.map((j) => times[strong[j]!]!),
+      );
+    }
+  }
   let res = residuals(a, p);
   let maxSlip = slip(res);
   let exact = 60 / p;

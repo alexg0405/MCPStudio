@@ -35,33 +35,40 @@ function storeOutputs(dsp: FaustInstance, output: Float32Array[], offset: number
   }
 }
 
-/** The kernel class for an effect DSP (a class per DSP, since the compiled module and controls are shared by its instances). */
+class FaustEffect extends EffectKernel<ParamSpecs> {
+  private readonly dsp: FaustInstance;
+  private readonly sync: ParamSync;
+
+  constructor(host: KernelHost, module: WebAssembly.Module, meta: FaustMeta, controls: readonly FaustControl[]) {
+    super(host);
+    this.sync = new ParamSync(controls);
+    this.dsp = new FaustInstance(module, meta, host.sampleRate);
+  }
+
+  process(input: Float32Array[], output: Float32Array[], n: number, block: ParamBlock): void {
+    if (this.sync.read(block)) this.sync.apply(this.dsp);
+    for (let offset = 0; offset < n; offset += FAUST_BLOCK_FRAMES) {
+      const count = Math.min(FAUST_BLOCK_FRAMES, n - offset);
+      loadInputs(this.dsp, input, offset, count);
+      this.dsp.compute(count);
+      storeOutputs(this.dsp, output, offset, count);
+    }
+  }
+
+  override reset(): void {
+    this.dsp.clear();
+  }
+}
+
+/** The kernel class for an effect DSP (a subclass that carries the compiled module and controls, since a kernel's constructor takes only the host). */
 export function faustEffectClass(
   module: WebAssembly.Module,
   meta: FaustMeta,
   controls: readonly FaustControl[],
 ): new (host: KernelHost) => EffectKernel<ParamSpecs> {
-  return class FaustEffect extends EffectKernel<ParamSpecs> {
-    private readonly dsp: FaustInstance;
-    private readonly sync = new ParamSync(controls);
-
+  return class extends FaustEffect {
     constructor(host: KernelHost) {
-      super(host);
-      this.dsp = new FaustInstance(module, meta, host.sampleRate);
-    }
-
-    process(input: Float32Array[], output: Float32Array[], n: number, block: ParamBlock): void {
-      if (this.sync.read(block)) this.sync.apply(this.dsp);
-      for (let offset = 0; offset < n; offset += FAUST_BLOCK_FRAMES) {
-        const count = Math.min(FAUST_BLOCK_FRAMES, n - offset);
-        loadInputs(this.dsp, input, offset, count);
-        this.dsp.compute(count);
-        storeOutputs(this.dsp, output, offset, count);
-      }
-    }
-
-    override reset(): void {
-      this.dsp.clear();
+      super(host, module, meta, controls);
     }
   };
 }

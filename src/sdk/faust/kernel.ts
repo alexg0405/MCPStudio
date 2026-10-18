@@ -32,6 +32,8 @@ export function registerFaustKernel(
   const module = new WebAssembly.Module(decodeBase64(wasmBase64) as Uint8Array<ArrayBuffer>);
   const { params, controls, voice } = faustControls(meta, kind);
   const Kernel =
-    kind === 'instrument' ? faustInstrumentClass(module, meta, controls, voice, voices) : faustEffectClass(module, meta, controls);
+    kind === 'instrument'
+      ? faustInstrumentClass({ module, meta, controls, voice, voiceCount: voices })
+      : faustEffectClass(module, meta, controls);
   registerKernel(name, params, Kernel);
 }

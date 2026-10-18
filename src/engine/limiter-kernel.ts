@@ -3,12 +3,15 @@
  * runaway plugin) can blast your speakers. Written as an SDK EffectKernel like any plugin.
  */
 import { EffectKernel, dbToGain, p, type KernelHost, type ParamBlock } from '@agstudio/sdk/worklet';
+import { LIMITER_LOOKAHEAD_SEC } from './limiter-id';
 
 export { LIMITER_ID } from './limiter-id';
+/** The limiter's one param: the ceiling (dB) it holds the output under. */
 export const limiterParams = {
   ceiling: p.float(-12, 0, -0.3, { label: 'Ceiling', unit: 'dB' }),
 };
 
+/** A look-ahead brickwall limiter (see the file comment). */
 export class SafetyLimiterKernel extends EffectKernel<typeof limiterParams> {
   private readonly look: number;
   private readonly delayL: Float32Array;
@@ -26,7 +29,7 @@ export class SafetyLimiterKernel extends EffectKernel<typeof limiterParams> {
 
   constructor(host: KernelHost) {
     super(host);
-    this.look = Math.max(1, Math.round(0.0013 * host.sampleRate));
+    this.look = Math.max(1, Math.round(LIMITER_LOOKAHEAD_SEC * host.sampleRate));
     this.delayL = new Float32Array(this.look);
     this.delayR = new Float32Array(this.look);
     this.qVal = new Float32Array(this.look + 2);

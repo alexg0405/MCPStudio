@@ -22,6 +22,7 @@ export interface DerivedAudioStore {
   has?(key: string): Promise<boolean>;
 }
 
+/** Options of a SampleCache. */
 export interface SampleCacheOptions {
   /** Keeps stretched copies on disk (so each is computed once per file, not once per session). */
   store?: DerivedAudioStore;
@@ -31,6 +32,7 @@ export interface SampleCacheOptions {
   maxDecodes?: number;
 }
 
+/** Bytes a decoded buffer takes (float32 frames x channels x 4). */
 export const bufferBytes = (b: Pick<AudioBuffer, 'length' | 'numberOfChannels'>) => b.length * b.numberOfChannels * 4;
 
 /**

@@ -137,8 +137,14 @@ master : the same strip; postTap → masterOut → SafetyLimiter (worklet) → d
 Routes, sidechains, delay compensation and the persistent per-insert nodes are described in
 [Mixer routing, sidechain and delay compensation (M10)](#mixer-routing-sidechain-and-delay-compensation-m10).
 
-- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too) and `FxSlotStrip`; `engine/mixer-graph.ts` owns
-  them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
+- `engine/engine.ts` is the facade (`EngineApi`); each job it delegates has its own file: `output-clock.ts` (the heard time,
+  the start lead), `song-note-sink.ts` (song events held back by delay compensation), `project-mirror.ts` (a new project version applied to the
+  graph), `channel-strip-sync.ts` and `scheduling-watch.ts` (its steps), `transport-model.ts` (what the transport plays), `launcher-link.ts` (the clip launcher on the transport),
+  `scheduler-clock.ts` (the worker timer and the keep-up statistics), `note-preview.ts` and `sample-preview.ts` (live
+  notes and the browser's audition), `live-capture.ts` (recording and live inputs), `live-meters.ts`, `test-clicks.ts`,
+  `tempo-info.ts` (the tempo plugins see) and `port-set.ts`.
+- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too), `engine/fx-slot-strip.ts` `FxSlotStrip` (with `fx-instance.ts`
+  and, for the peak meters, `insert-meters.ts`); `engine/mixer-graph.ts` owns them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
   insert exists and the master otherwise (not created yet, deleted, unknown id), so channels never reconnect when
   inserts come and go, undo included.
 - Reconcile `DocChange` by reference identity: inserts first (keyed by id; removals after the channels), then channels.
@@ -2670,7 +2676,7 @@ slot's dry path line up exactly (`test/browser/effects.test.ts` checks the Limit
 - Editors: a 2-D drag (EQ Pro handles move frequency and gain) is one undo step: `usePluginEditing.setParam` joins the
   gesture in progress for a param without its own (`ui/plugin-hooks.ts`).
 
-### Shared DSP and test helpers (`src/sdk/dsp`, `src/sdk/testing.ts`)
+### Shared DSP and test helpers (`src/sdk/dsp`, `src/sdk/testing.ts`, whose parts live in `src/sdk/test-kit`)
 
 `Halfband`/`Oversampler` (HIIR-style polyphase allpass halfbands: 9 coefficients at 100 dB / 0.04 transition for the
 first 2× stage, 4 for the second), `LinkwitzRiley`, `Yin` (real-time, decimated to ≥ 8 kHz, parabolic interpolation
@@ -3161,7 +3167,7 @@ cut. Now:
     log scale, tooltips, groups, camelCase ids, `[n]` order. For instruments it sets the voice controls
     (`freq/gain/gate/key/vel`) apart.
   - `defineFaustEffect` and `defineFaustInstrument` build plugin definitions on `host.worklet({ name })`.
-- The kernel (`sdk/faust/kernel.ts`):
+- The kernel (`sdk/faust/`: `kernel.ts` registers it, `instance.ts` owns the wasm memory, `effect.ts` and `instrument.ts` are the two kernels):
   - It instantiates the wasm (internal memory, math imports only) with faustwasm's layout: the struct at 0, then
     the channel pointer arrays, then one 128-frame buffer per channel.
   - It sets changed params per block and computes in 128-frame slices.

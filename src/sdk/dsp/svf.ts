@@ -1,8 +1,16 @@
 // State-variable filter, Andrew Simper's (Cytomic) trapezoidal "linear trap optimised" form.
 // Stable under fast cutoff modulation, unlike a biquad. Allocation-free; usable on any thread.
 
+/** The filter shapes. `bell`, `lowshelf` and `highshelf` use the gain; the others ignore it. */
 export type SvfType =
   'lowpass' | 'highpass' | 'bandpass' | 'notch' | 'peak' | 'allpass' | 'bell' | 'lowshelf' | 'highshelf';
+
+/** Highest centre frequency, as a share of the sample rate (a hair under Nyquist). */
+const MAX_FREQ_SHARE = 0.49;
+/** Smallest Q (keeps the damping finite). */
+const MIN_Q = 1e-3;
+/** Below this the integrator states are flushed to zero, so silence never runs on denormal numbers. */
+const DENORMAL_FLOOR = 1e-20;
 
 /**
  * 12 dB/octave multimode filter. `set()` computes the coefficients (cheap enough to call per block,
@@ -20,16 +28,25 @@ export class Svf {
   private a2 = 0;
   private a3 = 0;
   private k = 1.414;
+  /** How much of the input, the band-pass state and the low-pass state make up the chosen response. */
   private m0 = 0;
   private m1 = 0;
   private m2 = 1;
   private ic1 = 0;
   private ic2 = 0;
 
-  /** `gainDb` is used by the bell and shelf types only. `q` 0.707 = Butterworth. */
+  /**
+   * Designs the filter: `freq` in Hz (kept between 1 Hz and just under Nyquist), `q` (0.707 =
+   * Butterworth), `gainDb` for the bell and shelf types only.
+   *
+   * In Simper's names g is the prewarped cutoff, k the damping (1/Q) and A the amplitude of the
+   * gain; m0, m1 and m2 mix the input, the band-pass and the low-pass into the response. It stays
+   * one function on purpose: designs are redone per sample while sweeping, and splitting the
+   * switch into helper calls made `set` about 25 % slower.
+   */
   set(type: SvfType, freq: number, q: number, sampleRate: number, gainDb = 0): this {
-    const f = Math.min(Math.max(freq, 1), sampleRate * 0.49);
-    const qq = Math.max(q, 1e-3);
+    const f = Math.min(Math.max(freq, 1), sampleRate * MAX_FREQ_SHARE);
+    const qq = Math.max(q, MIN_Q);
     const A = gainDb === 0 ? 1 : Math.pow(10, gainDb / 40);
     let g = Math.tan((Math.PI * f) / sampleRate);
     let k = 1 / qq;
@@ -104,6 +121,7 @@ export class Svf {
     return this;
   }
 
+  /** Filters one sample; returns the chosen response (`low`, `band` and `high` hold the core outputs). */
   process(x: number): number {
     const v3 = x - this.ic2;
     const v1 = this.a1 * this.ic1 + this.a2 * v3;
@@ -111,8 +129,8 @@ export class Svf {
     let s1 = 2 * v1 - this.ic1;
     let s2 = 2 * v2 - this.ic2;
     // Flush denormals (and NaN) in the integrator states.
-    if (!(Math.abs(s1) > 1e-20)) s1 = 0;
-    if (!(Math.abs(s2) > 1e-20)) s2 = 0;
+    if (!(Math.abs(s1) > DENORMAL_FLOOR)) s1 = 0;
+    if (!(Math.abs(s2) > DENORMAL_FLOOR)) s2 = 0;
     this.ic1 = s1;
     this.ic2 = s2;
     this.low = v2;
@@ -121,6 +139,7 @@ export class Svf {
     return this.m0 * x + this.m1 * v1 + this.m2 * v2;
   }
 
+  /** Clears the filter's memory (a silent start). */
   reset(): void {
     this.ic1 = 0;
     this.ic2 = 0;

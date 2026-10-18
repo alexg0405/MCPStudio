@@ -1,5 +1,6 @@
 // Seeded noise generators. Allocation-free; usable on any thread.
 
+/** The spectrum of a noise generator. */
 export type NoiseColor = 'white' | 'pink' | 'brown';
 
 /**

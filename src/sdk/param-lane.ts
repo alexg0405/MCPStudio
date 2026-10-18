@@ -42,6 +42,7 @@ function valueOf(s: Segment, t: number): number {
 
 const isRamp = (s: Segment) => s.kind === 'lin' || s.kind === 'exp';
 
+/** A rewindable lane of automation on one AudioParam (see the file comment for why plain Web Audio is not enough). */
 export class ParamLane {
   private segs: Segment[] = [];
   /** Time of the latest event scheduled on the param (-Infinity: none). */

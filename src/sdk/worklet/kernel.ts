@@ -13,7 +13,9 @@ export function at(values: Float32Array, i: number): number {
   return (values.length > 1 ? values[i] : values[0]) as number;
 }
 
+/** What the SDK gives a kernel's constructor: the context's rate, its starting state, a channel to the main thread and seeded randomness. */
 export interface KernelHost {
+  /** The audio context's sample rate in Hz. */
   readonly sampleRate: number;
   /** Plugin state at construction (later changes arrive via setState). */
   readonly state: unknown;
@@ -36,8 +38,10 @@ export interface KernelTransport {
   beatAt(i: number): number;
 }
 
+/** The transport a kernel sees before the SDK installs the live one: stopped at 120 BPM, position 0. */
 const STOPPED: KernelTransport = { playing: false, bpm: 120, beatAt: () => 0 };
 
+/** What instrument and effect kernels share: the song transport, the sample rate and the optional lifecycle hooks. */
 abstract class KernelBase {
   constructor(protected readonly host: KernelHost) {}
 
@@ -46,6 +50,7 @@ abstract class KernelBase {
   /** The transport played, stopped, jumped, wrapped or changed tempo (e.g. to restart LFO phases). */
   transportChanged?(): void;
 
+  /** The audio context's sample rate in Hz. */
   get sampleRate(): number {
     return this.host.sampleRate;
   }
@@ -60,6 +65,10 @@ abstract class KernelBase {
   reset?(): void;
 }
 
+/**
+ * A synth or sampler: the SDK calls `noteOn`/`noteOff` at the exact frame of each event and `render`
+ * for the frames in between. Extend it and register the class with `registerKernel`.
+ */
 export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extends KernelBase {
   /**
    * The channel's pitch in cents for the current block (its pitch knob, automation and MIDI pitch
@@ -89,6 +98,10 @@ export abstract class InstrumentKernel<P extends ParamSpecs = ParamSpecs> extend
   abstract render(out: Float32Array[], from: number, to: number, params: ParamBlock<P>): void;
 }
 
+/**
+ * An insert or send effect: the SDK calls `process` once per block with the input and the params.
+ * Extend it and register the class with `registerKernel`.
+ */
 export abstract class EffectKernel<P extends ParamSpecs = ParamSpecs> extends KernelBase {
   /**
    * Effects defined with `notes: { param }` hear the notes of an instrument channel through these (optional)
@@ -117,6 +130,7 @@ export abstract class EffectKernel<P extends ParamSpecs = ParamSpecs> extends Ke
 
 export { PITCH_PARAM } from '../protocol';
 
+/** A kernel's constructor, as `registerKernel` takes it. */
 export type KernelClass<P extends ParamSpecs = ParamSpecs> = new (
   host: KernelHost,
 ) => InstrumentKernel<P> | EffectKernel<P>;

@@ -35,6 +35,23 @@ export interface ThemeColors {
   palette: readonly string[];
 }
 
+/** Reads a CSS token, or returns its fallback (no document, or the host never defined the token). */
+type ReadToken = (name: string, fallback: string) => string;
+
+/** The eight palette colours, with the host's token names and fallbacks. */
+function readPalette(v: ReadToken): string[] {
+  return [
+    v('--ag-palette-1', '#d98a7e'),
+    v('--ag-palette-2', '#d9a066'),
+    v('--ag-palette-3', '#d6c06f'),
+    v('--ag-palette-4', '#9cc48a'),
+    v('--ag-palette-5', '#7fc1b3'),
+    v('--ag-palette-6', '#8eb4e3'),
+    v('--ag-palette-7', '#a99be0'),
+    v('--ag-palette-8', '#d394bf'),
+  ];
+}
+
 let cached: ThemeColors | null = null;
 let cachedKey = '';
 
@@ -54,7 +71,7 @@ export function themeColors(): ThemeColors {
   const key = root ? `${root.getAttribute('data-theme') ?? ''}|${root.getAttribute('data-accent') ?? ''}` : '';
   if (cached && key === cachedKey) return cached;
   const s = root ? getComputedStyle(root) : null;
-  const v = (name: string, fallback: string) => s?.getPropertyValue(name).trim() || fallback;
+  const v: ReadToken = (name, fallback) => s?.getPropertyValue(name).trim() || fallback;
   cachedKey = key;
   cached = {
     accent: v('--ag-accent', '#c9a45c'),
@@ -78,16 +95,7 @@ export function themeColors(): ThemeColors {
     onLight: v('--ag-on-light', '#111214'),
     font: v('--ag-font', 'system-ui, sans-serif'),
     monoFont: v('--ag-font-mono', 'ui-monospace, monospace'),
-    palette: [
-      v('--ag-palette-1', '#d98a7e'),
-      v('--ag-palette-2', '#d9a066'),
-      v('--ag-palette-3', '#d6c06f'),
-      v('--ag-palette-4', '#9cc48a'),
-      v('--ag-palette-5', '#7fc1b3'),
-      v('--ag-palette-6', '#8eb4e3'),
-      v('--ag-palette-7', '#a99be0'),
-      v('--ag-palette-8', '#d394bf'),
-    ],
+    palette: readPalette(v),
   };
   return cached;
 }

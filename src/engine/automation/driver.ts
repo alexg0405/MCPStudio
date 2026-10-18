@@ -32,7 +32,7 @@
 import { automationModelOf, type TargetAutomation } from '@core/automation/model';
 import { resolveTarget, type ResolvedTarget, type SpecsResolver } from '@core/automation/targets';
 import type { Project } from '@core/model/types';
-import type { TempoMap } from '@core/time/ppq';
+import { PPQ, type TempoMap } from '@core/time/ppq';
 import { isAutomatable } from '@agstudio/sdk';
 import type { TransportView } from '../api';
 import type { AutomatableParam, ParamRegistry } from '../param-lane';
@@ -41,6 +41,7 @@ import type { TransportObserver } from '../sched/transport';
 import { CurvePlanner, JUMP, rampError } from './curve-plan';
 import { ShiftedParam } from './shifted';
 
+/** What the automation driver needs from the engine. */
 export interface DriverDeps {
   readonly ctx: BaseAudioContext;
   readonly params: ParamRegistry;
@@ -57,6 +58,10 @@ export const RETURN = 0.03;
 export const RELEASE = 0.02;
 /** Playback starts: from the held value to the value at the start tick over this long. */
 export const START = 0.005;
+/** A schedule is never changed closer than this to the audio clock (seconds)... */
+const MIN_GUARD_SEC = 0.02;
+/** ...nor closer than the base latency plus this many frames (two render quanta of 128). */
+const GUARD_FRAMES = 256;
 
 /** Where breakpoint times are measured from: playback start, a seek, a loop wrap or a timeline change. */
 interface Run {
@@ -94,8 +99,12 @@ interface LaneState {
   base: number;
 }
 
+/** The tempo assumed (BPM) while there is neither a timeline nor a project. */
+const DEFAULT_BPM = 120;
+
 const EMPTY = new Map<string, TargetAutomation>();
 
+/** Drives the registered automatable params from the song's automation clips, following the transport (see the file comment). */
 export class AutomationDriver implements TransportObserver {
   private readonly touched = new Set<string>();
   private readonly plans = new Map<string, Plan>();
@@ -127,47 +136,59 @@ export class AutomationDriver implements TransportObserver {
       const resolved = resolveTarget(project, automation.target, specsOf);
       if (!resolved || !isAutomatable(resolved.spec)) continue;
       seen.add(key);
-      const plan = this.plans.get(key);
-      if (
-        plan &&
-        plan.automation === automation &&
-        plan.resolved.base === resolved.base &&
-        plan.resolved.spec === resolved.spec
-      ) {
-        plan.resolved = resolved;
-        continue;
-      }
-      const planner = new CurvePlanner(
-        automation,
-        resolved.fromNormalized,
-        resolved.base,
-        resolved.spec.type !== 'float',
-        rampError(key, resolved.spec),
-        tempo,
-      );
-      if (plan) {
-        plan.automation = automation;
-        plan.resolved = resolved;
-        plan.planner = planner;
-        for (const lane of plan.lanes) this.stateOf(lane, plan).pending = JUMP;
-      } else {
-        const fresh: Plan = { key, automation, resolved, planner, lanes: this.deps.params.get(key).map((l) => this.view(l)) };
-        this.plans.set(key, fresh);
-        for (const lane of fresh.lanes) this.stateOf(lane, fresh).pending = JUMP;
-      }
+      this.updatePlan(key, automation, resolved, tempo);
     }
     for (const [key, plan] of this.plans) {
       if (seen.has(key)) continue;
       this.plans.delete(key);
       this.letGo(plan.lanes, RELEASE);
     }
-    // Edits while stopped are heard: a held value lets go when the document value changes.
-    for (const [lane, ls] of this.states) {
-      if (lane.base === ls.base) continue;
-      ls.base = lane.base;
+    this.letGoOfEditedParams();
+  }
+
+  /**
+   * Makes the plan of one target match its automation: an unchanged one is kept (its schedule goes on), a changed one
+   * gets a new curve planner, and the lanes it drives re-anchor with a short ramp to the new curve.
+   */
+  private updatePlan(key: string, automation: TargetAutomation, resolved: ResolvedTarget, tempo: TempoMap): void {
+    const plan = this.plans.get(key);
+    if (
+      plan &&
+      plan.automation === automation &&
+      plan.resolved.base === resolved.base &&
+      plan.resolved.spec === resolved.spec
+    ) {
+      plan.resolved = resolved;
+      return;
+    }
+    const planner = new CurvePlanner(
+      automation,
+      resolved.fromNormalized,
+      resolved.base,
+      resolved.spec.type !== 'float',
+      rampError(key, resolved.spec),
+      tempo,
+    );
+    if (plan) {
+      plan.automation = automation;
+      plan.resolved = resolved;
+      plan.planner = planner;
+      for (const lane of plan.lanes) this.stateOf(lane, plan).pending = JUMP;
+      return;
+    }
+    const fresh: Plan = { key, automation, resolved, planner, lanes: this.deps.params.get(key).map((lane) => this.view(lane)) };
+    this.plans.set(key, fresh);
+    for (const lane of fresh.lanes) this.stateOf(lane, fresh).pending = JUMP;
+  }
+
+  /** Edits while stopped are heard: a held value lets go when the document value changes. */
+  private letGoOfEditedParams(): void {
+    for (const [lane, state] of this.states) {
+      if (lane.base === state.base) continue;
+      state.base = lane.base;
       if (!this.playing && lane.driven) {
         lane.release(this.deps.ctx.currentTime + this.guard(), RELEASE);
-        ls.run = null;
+        state.run = null;
       }
     }
   }
@@ -292,14 +313,14 @@ export class AutomationDriver implements TransportObserver {
   private guard(): number {
     if (this.deps.offline) return 0;
     const ctx = this.deps.ctx as BaseAudioContext & { baseLatency?: number };
-    return Math.max(0.02, (ctx.baseLatency ?? 0) + 256 / ctx.sampleRate);
+    return Math.max(MIN_GUARD_SEC, (ctx.baseLatency ?? 0) + GUARD_FRAMES / ctx.sampleRate);
   }
 
   private currentTempo(): TempoMap {
     const tl = this.deps.timeline?.();
     if (tl) return tl.tempo;
-    const bpm = this.project?.transport.bpm ?? 120;
-    const spt = 60 / (bpm * 960);
+    const bpm = this.project?.transport.bpm ?? DEFAULT_BPM;
+    const spt = 60 / (bpm * PPQ);
     return {
       bpm,
       constant: true,

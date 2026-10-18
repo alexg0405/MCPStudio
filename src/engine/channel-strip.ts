@@ -1,76 +1,23 @@
-import { CHANNEL_PAN_SPEC, CHANNEL_PITCH_SPEC, CHANNEL_VOLUME_SPEC } from '@core/model/target-specs';
+import { CHANNEL_PAN_SPEC, CHANNEL_VOLUME_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
 import { automatedOwners, ownerKey } from '@core/automation/owners';
 import type { AudioClip, AudioClipChannel, InsertId, InstrumentChannel, Project } from '@core/model/types';
 import { clipSampleId, playbackMode, stretchScale } from '@core/audio/playback';
 import type { TempoMap } from '@core/time/ppq';
-import type { InstrumentInstance, JsonValue, NoteOff, NoteOn, ParamSignal } from '@agstudio/sdk';
+import type { AnyInstrumentDef, InstrumentInstance, JsonValue, NoteOff, NoteOn } from '@agstudio/sdk';
 import { HostImpl } from './host';
 import { createClipPlayer, type ClipPlayer } from './clip-player';
 import type { EngineCore } from './engine-core';
 import { AutoLane } from './param-lane';
+import { PitchSignal } from './pitch-signal';
 import type { AudioOn } from './sched/transport';
 
-/** Time constant of channel volume/pan/pitch moves. */
-const TAU = 0.004;
-
-/**
- * The channel's pitch in cents: its pitch knob (and automation) plus live pitch bend, summed into
- * one node instruments connect to their voices' detune.
- */
-class PitchSignal implements ParamSignal {
-  readonly node: GainNode;
-  readonly lane: AutoLane;
-  private readonly knob: ConstantSourceNode;
-  private readonly bend: ConstantSourceNode;
-  private bendCents = 0;
-
-  constructor(ctx: BaseAudioContext, key: string, cents: number) {
-    this.node = new GainNode(ctx);
-    this.knob = new ConstantSourceNode(ctx, { offset: 0 });
-    this.bend = new ConstantSourceNode(ctx, { offset: 0 });
-    this.lane = new AutoLane(ctx, key, CHANNEL_PITCH_SPEC, cents, TAU);
-    this.lane.bind(this.knob.offset);
-    this.knob.connect(this.node);
-    this.bend.connect(this.node);
-    this.knob.start();
-    this.bend.start();
-  }
-
-  connect(target: AudioParam): () => void {
-    this.node.connect(target);
-    return () => {
-      try {
-        this.node.disconnect(target);
-      } catch {
-        /* already disconnected */
-      }
-    };
-  }
-
-  /** Live pitch bend in cents (MIDI input). */
-  setBend(cents: number, time: number): void {
-    this.bendCents = cents;
-    this.bend.offset.setTargetAtTime(cents, time, 0.002);
-  }
-
-  pitchAt(time: number): number {
-    return this.lane.valueAt(time) + this.bendCents;
-  }
-
-  dispose(): void {
-    for (const n of [this.knob, this.bend]) {
-      try {
-        n.stop();
-      } catch {
-        /* not started */
-      }
-      n.disconnect();
-    }
-    this.lane.dispose();
-    this.node.disconnect();
-  }
-}
+/** Time constant of channel volume and pan moves (seconds). */
+const CHANNEL_GLIDE_TAU_SEC = 0.004;
+/** Time constant of a mute or unmute (seconds): fast, but without a click. */
+const MUTE_GLIDE_TAU_SEC = 0.003;
+/** What an instrument that has not loaded (or failed) is assumed to ring for after its last note (seconds). */
+const DEFAULT_TAIL_SEC = 0.5;
 
 /**
  * A channel in the channel rack: instrument → volume → pan → mute → its mixer insert.
@@ -115,8 +62,8 @@ export class ChannelStrip {
     this.panner = new StereoPannerNode(ctx);
     this.out = new GainNode(ctx);
     const key = (param: 'volume' | 'pan' | 'pitch') => targetKey({ kind: 'channel', channelId: channel.id, param });
-    this.volLane = new AutoLane(ctx, key('volume'), CHANNEL_VOLUME_SPEC, channel.volume, TAU);
-    this.panLane = new AutoLane(ctx, key('pan'), CHANNEL_PAN_SPEC, channel.pan, TAU);
+    this.volLane = new AutoLane(ctx, key('volume'), CHANNEL_VOLUME_SPEC, channel.volume, CHANNEL_GLIDE_TAU_SEC);
+    this.panLane = new AutoLane(ctx, key('pan'), CHANNEL_PAN_SPEC, channel.pan, CHANNEL_GLIDE_TAU_SEC);
     this.volLane.bind(this.vol.gain);
     this.panLane.bind(this.panner.pan);
     this.pitch = channel.kind === 'instrument' ? new PitchSignal(ctx, key('pitch'), channel.pitch ?? 0) : null;
@@ -250,7 +197,7 @@ export class ChannelStrip {
   setMuted(muted: boolean): void {
     if (muted === this.muted) return;
     this.muted = muted;
-    this.out.gain.setTargetAtTime(muted ? 0 : 1, this.core.ctx.currentTime, 0.003);
+    this.out.gain.setTargetAtTime(muted ? 0 : 1, this.core.ctx.currentTime, MUTE_GLIDE_TAU_SEC);
   }
 
   noteOn(e: NoteOn): void {
@@ -292,7 +239,7 @@ export class ChannelStrip {
   }
 
   get tailTime(): number {
-    return this.instance?.tailTime ?? 0.5;
+    return this.instance?.tailTime ?? DEFAULT_TAIL_SEC;
   }
 
   /** A MIDI control change for the instrument. */
@@ -322,35 +269,12 @@ export class ChannelStrip {
     this.input.disconnect();
   }
 
+  /** Replaces what the channel plays with: the clip player of an audio clip channel, or its instrument plugin. */
   private load(channel: InstrumentChannel | AudioClipChannel, project: Project): void {
-    const gen = ++this.generation;
+    const generation = ++this.generation;
     this.disposePlugin();
     if (channel.kind === 'audioClip') {
-      this.pending = Promise.resolve();
-      const residency = this.core.residency;
-      const ch = () => this.channel as AudioClipChannel;
-      // A clip with a pitch correction plays the render of it; everything else the channel's own sample.
-      const ref = (clip?: AudioClip) => this.project.samples[clipSampleId(ch(), clip)] ?? this.project.samples[ch().sampleId];
-      const inst = createClipPlayer(this.core.ctx, {
-        mode: () => playbackMode(ch()),
-        base: (clip) => {
-          const r = ref(clip);
-          if (!r) return null;
-          const reverse = playbackMode(ch()).reverse;
-          const buffer = residency.base(r, reverse);
-          return buffer ? { buffer, key: residency.baseKey(r, reverse) } : null;
-        },
-        stretched: (clip, scale, tempo) => residency.stretched(clip, scale, tempo),
-        request: (clip) => {
-          const r = ref(clip);
-          if (r) residency.request(r, playbackMode(ch()).reverse, ch().id);
-        },
-        hold: (key) => residency.hold(key),
-      });
-      inst.output.connect(this.input);
-      this.instance = inst;
-      this.clipPlayer = inst;
-      this.faulted = false;
+      this.loadClipPlayer();
       return;
     }
     const def = this.core.plugins.get(channel.plugin.pluginId);
@@ -360,7 +284,45 @@ export class ChannelStrip {
       if (!def) this.core.reportFault({ kind: 'channel', channelId: channel.id }, channel.plugin.pluginId, 'missing');
       return;
     }
-    const host = new HostImpl({
+    const host = this.createHost(def, channel, project);
+    host.setShift(this.shiftSec);
+    this.liveHost = host;
+    this.pending = this.instantiate(def, host, generation);
+  }
+
+  /** An audio clip channel plays through a clip player that reads its buffers from the engine's residency. */
+  private loadClipPlayer(): void {
+    this.pending = Promise.resolve();
+    const residency = this.core.residency;
+    const channel = () => this.channel as AudioClipChannel;
+    // A clip with a pitch correction plays the render of it; everything else the channel's own sample.
+    const sampleOf = (clip?: AudioClip) =>
+      this.project.samples[clipSampleId(channel(), clip)] ?? this.project.samples[channel().sampleId];
+    const player = createClipPlayer(this.core.ctx, {
+      mode: () => playbackMode(channel()),
+      base: (clip) => {
+        const sample = sampleOf(clip);
+        if (!sample) return null;
+        const reverse = playbackMode(channel()).reverse;
+        const buffer = residency.base(sample, reverse);
+        return buffer ? { buffer, key: residency.baseKey(sample, reverse) } : null;
+      },
+      stretched: (clip, scale, tempo) => residency.stretched(clip, scale, tempo),
+      request: (clip) => {
+        const sample = sampleOf(clip);
+        if (sample) residency.request(sample, playbackMode(channel()).reverse, channel().id);
+      },
+      hold: (key) => residency.hold(key),
+    });
+    player.output.connect(this.input);
+    this.instance = player;
+    this.clipPlayer = player;
+    this.faulted = false;
+  }
+
+  private createHost(def: AnyInstrumentDef, channel: InstrumentChannel, project: Project): HostImpl {
+    const owner = { kind: 'channel', channelId: channel.id } as const;
+    return new HostImpl({
       ctx: this.core.ctx,
       def,
       data: channel.plugin,
@@ -371,39 +333,39 @@ export class ChannelStrip {
       ...(this.pitch ? { pitch: this.pitch } : {}),
       offline: this.core.offline,
       registry: this.core.params,
-      requestState: (state: JsonValue) => this.core.requestState({ kind: 'channel', channelId: channel.id }, state),
-      owner: { kind: 'channel', channelId: channel.id },
+      requestState: (state: JsonValue) => this.core.requestState(owner, state),
+      owner,
       loadModule: (url) => this.core.loadModule(url),
       ports: this.core.ports,
       reportFault: (err) => this.fault(err),
-      reportTap: (tap, live) => this.core.reportTap?.({ kind: 'channel', channelId: channel.id }, tap, live),
-      lite: () => !automatedOwners(this.project.channels).has(ownerKey({ kind: 'channel', channelId: channel.id })),
+      reportTap: (tap, live) => this.core.reportTap?.(owner, tap, live),
+      lite: () => !automatedOwners(this.project.channels).has(ownerKey(owner)),
     });
-    host.setShift(this.shiftSec);
-    this.liveHost = host;
-    this.pending = (async () => {
-      try {
-        const inst = await def.create(host);
-        if (gen !== this.generation) {
-          inst.dispose();
-          host.dispose();
-          return;
-        }
-        inst.output.connect(this.input);
-        host.onState = (s) => inst.setState?.(s as never);
-        this.instance = inst;
-        this.host = host;
-        this.faulted = false;
-        // Catch up with edits made while the plugin was loading.
-        if (this.channel.kind === 'instrument') {
-          host.setRootKey(this.channel.rootKey);
-          host.apply(this.channel.plugin, this.project, this.core.ctx.currentTime);
-        }
-      } catch (err) {
+  }
+
+  /** Creates the instrument, and makes it the channel's own unless a newer load has started meanwhile. */
+  private async instantiate(def: AnyInstrumentDef, host: HostImpl, generation: number): Promise<void> {
+    try {
+      const instance = await def.create(host);
+      if (generation !== this.generation) {
+        instance.dispose();
         host.dispose();
-        if (gen === this.generation) this.fault(err);
+        return;
       }
-    })();
+      instance.output.connect(this.input);
+      host.onState = (state) => instance.setState?.(state as never);
+      this.instance = instance;
+      this.host = host;
+      this.faulted = false;
+      // Catch up with edits made while the plugin was loading.
+      if (this.channel.kind === 'instrument') {
+        host.setRootKey(this.channel.rootKey);
+        host.apply(this.channel.plugin, this.project, this.core.ctx.currentTime);
+      }
+    } catch (err) {
+      host.dispose();
+      if (generation === this.generation) this.fault(err);
+    }
   }
 
   private disposePlugin(): void {

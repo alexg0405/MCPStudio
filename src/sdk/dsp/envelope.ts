@@ -1,5 +1,6 @@
 // Envelope follower (attack/release ballistics). Allocation-free; usable on any thread.
 
+/** What an envelope follower tracks: the peak of |x|, or the RMS level. */
 export type EnvelopeMode = 'peak' | 'rms';
 
 /**

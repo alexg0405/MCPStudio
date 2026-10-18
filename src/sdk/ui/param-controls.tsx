@@ -27,6 +27,19 @@ interface Common<P extends ParamSpecs> {
   hint?: string;
 }
 
+/** What `ParamKnob` takes besides the editor props and the param. */
+type ParamKnobProps<P extends ParamSpecs> = Common<P> & {
+  /** Knob diameter in px (default 32). */
+  size?: number;
+  /** Draw from the centre (defaults to true for ranges around 0, like pan and detune). */
+  bipolar?: boolean;
+  /** Text for a value (under the knob and in the hint bar); defaults to the param's units. */
+  format?(value: ParamValue): string;
+  /** Arc colour (defaults to the theme accent). */
+  color?: string;
+  disabled?: boolean;
+};
+
 /**
  * A knob for one param, with its label and current value underneath. Dragging is one undo step,
  * right-click opens the host's param menu, and the hint says the value and what the knob does.
@@ -41,15 +54,7 @@ export function ParamKnob<P extends ParamSpecs>({
   format,
   color,
   disabled,
-}: Common<P> & {
-  size?: number;
-  /** Draw from the centre (defaults to true for ranges around 0, like pan and detune). */
-  bipolar?: boolean;
-  /** Text for a value (under the knob and in the hint bar); defaults to the param's units. */
-  format?(value: ParamValue): string;
-  color?: string;
-  disabled?: boolean;
-}) {
+}: ParamKnobProps<P>) {
   const spec = ui.specs[param] as ParamSpec;
   const value = ui.values[param] as ParamValue;
   const text = label ?? spec.label ?? param;

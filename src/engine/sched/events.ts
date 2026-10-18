@@ -2,11 +2,11 @@
  * Turns the project into note events for a tick range. Pure; shares semantics with the UI through
  * core/query (pattern length, sorted notes, effective mute).
  */
-import type { AudioClip, ChannelId, NoteId, PatternId, Project, Tick } from '@core/model/types';
+import type { AudioClip, ChannelId, Note, NoteId, Pattern, PatternId, Project, Tick } from '@core/model/types';
 import type { LaunchRun } from '@core/launcher/run';
 import { effectivelyMuted, lowerBound, notesSorted, patternLength } from '@core/query/queries';
 import { audibleClips, songLength } from '@core/query/playlist';
-import type { TempoMap } from '@core/time/ppq';
+import { PPQ, type TempoMap } from '@core/time/ppq';
 import { swingDelay } from '@core/time/swing';
 
 /** A pattern placed on the timeline: a playlist clip, or the virtual clip used in pattern mode. */
@@ -28,6 +28,7 @@ export interface AudioPlayClip {
   offsetSec: number;
 }
 
+/** A note (or an audio clip start) the transport will send to a channel, with its times in ticks. */
 export interface NoteEvent {
   /** 'audio' events start an audio clip's sample (pitch/velocity unused). */
   kind: 'note' | 'audio';
@@ -60,6 +61,7 @@ export interface NoteEvent {
   launch?: { runId: string; clip?: AudioClip };
 }
 
+/** What the transport plays: the project, the clips to play and what the launcher adds. */
 export interface EventSource {
   project: Project;
   clips: readonly PlayClip[];
@@ -146,10 +148,15 @@ export function patternModeSource(
   };
 }
 
+/** One bar of the project's time signature, in ticks (the length of "no pattern": an empty loop). */
 function patternLengthOrBar(project: Project): Tick {
-  const ts = project.transport.timeSig;
-  return (ts.num * 4 * 960) / ts.den;
+  const { num, den } = project.transport.timeSig;
+  const quarterNotesPerWhole = 4;
+  return (num * quarterNotesPerWhole * PPQ) / den;
 }
+
+/** Rounding slack when deciding which repetition of a pattern the end of a span falls in (ticks). */
+const REPETITION_EPSILON = 1e-9;
 
 /**
  * Collects note events whose (unswung) start is in [from, to). Appends to `out`. Swing follows the
@@ -158,55 +165,84 @@ function patternLengthOrBar(project: Project): Tick {
 export function collectNotes(source: EventSource, from: number, to: number, out: NoteEvent[]): void {
   const { project } = source;
   const muted = effectivelyMuted(project.channels);
-  const swing = project.transport.swing;
   for (const clip of source.clips) {
     const clipEnd = clip.start + clip.length;
-    const a = Math.max(from, clip.start);
-    const b = Math.min(to, clipEnd);
-    if (b <= a) continue;
+    const spanStart = Math.max(from, clip.start);
+    const spanEnd = Math.min(to, clipEnd);
+    if (spanEnd <= spanStart) continue;
     const pattern = project.patterns[clip.patternId];
     if (!pattern) continue;
-    const P = patternLength(pattern, project.transport.timeSig);
-    // Clip-local [a,b) → content positions, repeating every P ticks.
-    const la = a - clip.start + clip.offset;
-    const lb = b - clip.start + clip.offset;
-    const firstRep = Math.floor(la / P);
-    const lastRep = Math.floor((lb - 1e-9) / P);
-    for (const cid in pattern.notes) {
-      const channelId = cid as ChannelId;
-      const ch = project.channels[channelId];
-      if (!ch || ch.kind !== 'instrument' || muted.has(channelId)) continue;
-      const notes = notesSorted(pattern.notes[channelId]);
-      if (notes.length === 0) continue;
-      for (let rep = firstRep; rep <= lastRep; rep++) {
-        const c0 = Math.max(la - rep * P, 0);
-        const c1 = Math.min(lb - rep * P, P);
-        for (let i = lowerBound(notes, Math.ceil(c0)); i < notes.length; i++) {
-          const n = notes[i];
-          if (!n || n.tick >= c1) break;
-          if (n.muted) continue;
-          const start = clip.start - clip.offset + rep * P + n.tick;
-          if (start < clip.start) continue;
-          const swung = start + swingDelay(n.tick, swing);
-          out.push({
-            kind: 'note',
-            key: `${clip.clipId}:${n.id}:${rep}`,
-            clipId: clip.clipId,
-            channelId,
-            patternId: clip.patternId,
-            noteId: n.id,
-            clipEnd,
-            rawStart: start,
-            start: swung,
-            end: Math.min(swung + n.length, clipEnd),
-            pitch: n.key,
-            velocity: n.velocity,
-            ...(n.pan !== undefined ? { pan: n.pan } : {}),
-            ...(n.fine !== undefined ? { fine: n.fine } : {}),
-            ...(n.release !== undefined ? { release: n.release } : {}),
-          });
-        }
-      }
+    collectClipNotes(project, clip, pattern, muted, spanStart, spanEnd, out);
+  }
+}
+
+/** The notes of one pattern clip whose start falls in [spanStart, spanEnd) (a part of the clip), for every instrument channel. */
+function collectClipNotes(
+  project: Project,
+  clip: PlayClip,
+  pattern: Pattern,
+  muted: ReadonlySet<ChannelId>,
+  spanStart: number,
+  spanEnd: number,
+  out: NoteEvent[],
+): void {
+  const patternTicks = patternLength(pattern, project.transport.timeSig);
+  // Clip-local [spanStart, spanEnd) → content positions, repeating every patternTicks ticks.
+  const contentStart = spanStart - clip.start + clip.offset;
+  const contentEnd = spanEnd - clip.start + clip.offset;
+  const firstRepetition = Math.floor(contentStart / patternTicks);
+  const lastRepetition = Math.floor((contentEnd - REPETITION_EPSILON) / patternTicks);
+  for (const channelKey in pattern.notes) {
+    const channelId = channelKey as ChannelId;
+    const channel = project.channels[channelId];
+    if (!channel || channel.kind !== 'instrument' || muted.has(channelId)) continue;
+    const notes = notesSorted(pattern.notes[channelId]);
+    if (notes.length === 0) continue;
+    for (let repetition = firstRepetition; repetition <= lastRepetition; repetition++) {
+      const from = Math.max(contentStart - repetition * patternTicks, 0);
+      const to = Math.min(contentEnd - repetition * patternTicks, patternTicks);
+      collectRepetition(project, clip, channelId, notes, repetition, patternTicks, from, to, out);
     }
+  }
+}
+
+/** The notes of one channel in one repetition of the pattern whose tick is in [from, to), as events. */
+function collectRepetition(
+  project: Project,
+  clip: PlayClip,
+  channelId: ChannelId,
+  notes: readonly Note[],
+  repetition: number,
+  patternTicks: number,
+  from: number,
+  to: number,
+  out: NoteEvent[],
+): void {
+  const clipEnd = clip.start + clip.length;
+  const swing = project.transport.swing;
+  for (let i = lowerBound(notes, Math.ceil(from)); i < notes.length; i++) {
+    const note = notes[i];
+    if (!note || note.tick >= to) break;
+    if (note.muted) continue;
+    const start = clip.start - clip.offset + repetition * patternTicks + note.tick;
+    if (start < clip.start) continue;
+    const swung = start + swingDelay(note.tick, swing);
+    out.push({
+      kind: 'note',
+      key: `${clip.clipId}:${note.id}:${repetition}`,
+      clipId: clip.clipId,
+      channelId,
+      patternId: clip.patternId,
+      noteId: note.id,
+      clipEnd,
+      rawStart: start,
+      start: swung,
+      end: Math.min(swung + note.length, clipEnd),
+      pitch: note.key,
+      velocity: note.velocity,
+      ...(note.pan !== undefined ? { pan: note.pan } : {}),
+      ...(note.fine !== undefined ? { fine: note.fine } : {}),
+      ...(note.release !== undefined ? { release: note.release } : {}),
+    });
   }
 }

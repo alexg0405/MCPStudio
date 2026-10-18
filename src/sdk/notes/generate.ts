@@ -14,6 +14,7 @@ import { byTime, clamp, clampNote, noteEnd, overlapGroups, withoutId, type Rand 
  * - random: a random note each step (never the same twice in a row).
  */
 export type ArpPattern = 'up' | 'down' | 'up-down' | 'down-up' | 'converge' | 'diverge' | 'as-played' | 'random';
+/** Every arpeggio pattern, for menus. */
 export const ARP_PATTERNS: readonly ArpPattern[] = [
   'up',
   'down',
@@ -25,6 +26,7 @@ export const ARP_PATTERNS: readonly ArpPattern[] = [
   'random',
 ];
 
+/** Settings for `arpeggiate`. */
 export interface ArpeggiateOptions {
   /** Ticks between the arpeggio's notes (240 = 1/16). */
   rate: number;
@@ -65,6 +67,60 @@ function arpSequence(keys: number[], pattern: ArpPattern): number[] {
   }
 }
 
+/** Longest note length an arpeggio uses, as a share of its rate, and the shortest (a gate of 0 still sounds). */
+const MIN_GATE = 0.01;
+const DEFAULT_GATE = 0.9;
+const MAX_OCTAVES = 8;
+const MAX_KEY = 127;
+
+/**
+ * Every key the arpeggio can play for one chord, in the pattern's base order, with the chord note it
+ * copies (the first note to start on that key): the chord's keys, repeated up `octaves` octaves and
+ * no further than `range` semitones above the lowest key (0 or absent = no limit).
+ */
+function arpSources(group: readonly ScriptNote[], pattern: ArpPattern, octaves: number, range: number | undefined) {
+  const firstByKey = new Map<number, ScriptNote>();
+  for (const n of group) if (!firstByKey.has(n.key)) firstByKey.set(n.key, n);
+  const base = [...firstByKey.values()];
+  if (pattern !== 'as-played') base.sort((a, b) => a.key - b.key);
+  const lowest = Math.min(...base.map((n) => n.key));
+  const source = new Map<number, ScriptNote>();
+  for (let o = 0; o < octaves; o++)
+    for (const n of base) {
+      const key = n.key + 12 * o;
+      if (key <= MAX_KEY && (!range || key - lowest <= range) && !source.has(key)) source.set(key, n);
+    }
+  return source;
+}
+
+/** Appends the arpeggio of one chord to `out`: a note every `rate` ticks from the chord's first start to its last end. */
+function arpeggiateChord(
+  group: readonly ScriptNote[],
+  settings: { rate: number; length: number; octaves: number; pattern: ArpPattern; range?: number; rand?: Rand },
+  out: ScriptNote[],
+): void {
+  const { rate, length, octaves, pattern, range, rand } = settings;
+  const start = group[0]?.tick ?? 0;
+  const end = Math.max(...group.map(noteEnd));
+  const source = arpSources(group, pattern, octaves, range);
+  if (source.size === 0) return;
+  const keys = [...source.keys()];
+  if (pattern !== 'as-played') keys.sort((a, b) => a - b);
+  const sequence = arpSequence(keys, pattern);
+  let previous = -1;
+  for (let tick = start, step = 0; tick < end; tick += rate, step++) {
+    let pick = step % sequence.length;
+    if (pattern === 'random' && rand) {
+      pick = Math.floor(rand() * sequence.length);
+      if (sequence.length > 1 && pick === previous) pick = (pick + 1) % sequence.length;
+      previous = pick;
+    }
+    const key = sequence[pick] as number;
+    const from = source.get(key) as ScriptNote;
+    out.push(clampNote({ ...withoutId(from), tick, length: Math.min(length, end - tick), key }));
+  }
+}
+
 /**
  * Plays chords as arpeggios. Notes that overlap in time form a chord; its arpeggio runs from the
  * chord's first start to its last end at `rate`. Each arpeggio note copies the velocity, pan and
@@ -72,49 +128,23 @@ function arpSequence(keys: number[], pattern: ArpPattern): number[] {
  */
 export function arpeggiate(notes: readonly ScriptNote[], opts: ArpeggiateOptions): ScriptNote[] {
   const rate = Math.max(1, Math.round(opts.rate));
-  const length = Math.max(1, Math.round(rate * clamp(opts.gate ?? 0.9, 0.01, 1)));
-  const octaves = clamp(Math.round(opts.octaves ?? 1), 1, 8);
-  const pattern = opts.pattern ?? 'up';
+  const settings = {
+    rate,
+    length: Math.max(1, Math.round(rate * clamp(opts.gate ?? DEFAULT_GATE, MIN_GATE, 1))),
+    octaves: clamp(Math.round(opts.octaves ?? 1), 1, MAX_OCTAVES),
+    pattern: opts.pattern ?? 'up',
+    range: opts.range,
+    rand: opts.rand,
+  };
   const out: ScriptNote[] = [];
-  for (const group of overlapGroups(notes)) {
-    const start = group[0]?.tick ?? 0;
-    const end = Math.max(...group.map(noteEnd));
-    // One source note per key (the first to start), in the pattern's base order.
-    const firstByKey = new Map<number, ScriptNote>();
-    for (const n of group) if (!firstByKey.has(n.key)) firstByKey.set(n.key, n);
-    const base = [...firstByKey.values()];
-    if (pattern !== 'as-played') base.sort((a, b) => a.key - b.key);
-    const lowest = Math.min(...base.map((n) => n.key));
-    // Every key the arpeggio can play, with the note it copies.
-    const source = new Map<number, ScriptNote>();
-    for (let o = 0; o < octaves; o++)
-      for (const n of base) {
-        const key = n.key + 12 * o;
-        if (key <= 127 && (!opts.range || key - lowest <= opts.range) && !source.has(key)) source.set(key, n);
-      }
-    if (source.size === 0) continue;
-    const keys = [...source.keys()];
-    if (pattern !== 'as-played') keys.sort((a, b) => a - b);
-    const seq = arpSequence(keys, pattern);
-    let previous = -1;
-    for (let t = start, i = 0; t < end; t += rate, i++) {
-      let pick = i % seq.length;
-      if (pattern === 'random' && opts.rand) {
-        pick = Math.floor(opts.rand() * seq.length);
-        if (seq.length > 1 && pick === previous) pick = (pick + 1) % seq.length;
-        previous = pick;
-      }
-      const key = seq[pick] as number;
-      const from = source.get(key) as ScriptNote;
-      out.push(clampNote({ ...withoutId(from), tick: t, length: Math.min(length, end - t), key }));
-    }
-  }
+  for (const group of overlapGroups(notes)) arpeggiateChord(group, settings, out);
   return out;
 }
 
 // ---------------------------------------------------------------------------------------------
 // Randomize existing notes
 
+/** Settings for `randomize`. */
 export interface RandomizeOptions {
   rand: Rand;
   /** Largest pitch change in semitones, either way (0 = keep pitches). */
@@ -148,6 +178,7 @@ export function randomize(notes: readonly ScriptNote[], opts: RandomizeOptions):
 // ---------------------------------------------------------------------------------------------
 // Generate new notes
 
+/** Settings for `generate`. */
 export interface GenerateOptions {
   rand: Rand;
   /** Tick range to fill: [start, end). */
@@ -176,16 +207,65 @@ export interface GenerateOptions {
   monophonic?: boolean;
 }
 
+/** The keys a generated melody may use: the key's scale within [low, high], else every key in the range. */
+function keyPool(key: KeyLike | null | undefined, low: number, high: number): number[] {
+  const pool = key ? scaleNotes(key.root, key.scale, low, high) : [];
+  if (pool.length === 0) for (let k = low; k <= high; k++) pool.push(k);
+  return pool;
+}
+
+/** Where the first voice of a smooth melody is in the key pool (it walks from cell to cell). */
+interface MelodyWalk {
+  index: number;
+}
+
+/**
+ * The distinct keys of one started cell. Each voice takes one random value; the first voice of a
+ * smooth melody (`smooth` > 0) steps up to `maxStep` pool positions from where the walk was, the
+ * others pick anywhere in the pool. A key a voice shares with an earlier voice is dropped.
+ */
+function cellKeys(
+  randoms: readonly number[],
+  pool: readonly number[],
+  smooth: number,
+  maxStep: number,
+  walk: MelodyWalk,
+): number[] {
+  const keys: number[] = [];
+  const used = new Set<number>();
+  randoms.forEach((r, voice) => {
+    let i: number;
+    if (voice === 0 && smooth > 0) {
+      i = clamp(walk.index + Math.round((r * 2 - 1) * maxStep), 0, pool.length - 1);
+      walk.index = i;
+    } else i = Math.floor(r * pool.length);
+    const key = pool[i] as number;
+    if (used.has(key)) return;
+    used.add(key);
+    keys.push(key);
+  });
+  return keys;
+}
+
+/** Cuts every note short so it ends by the time the next one starts. */
+function endAtNextStart(notes: readonly ScriptNote[]): ScriptNote[] {
+  const starts = [...new Set(notes.map((n) => n.tick))].sort((a, b) => a - b);
+  const next = new Map(starts.map((s, i) => [s, starts[i + 1] ?? Infinity]));
+  return byTime(notes).map((n) => ({
+    ...n,
+    length: Math.max(1, Math.min(n.length, (next.get(n.tick) ?? Infinity) - n.tick)),
+  }));
+}
+
 /**
  * Random notes in a key (FL's randomizer). Each cell takes the same number of `rand()` values
  * whatever the settings, so turning up the density adds notes without reshuffling the others.
  */
 export function generate(opts: GenerateOptions): ScriptNote[] {
   const grid = Math.max(1, Math.round(opts.grid));
-  const low = clamp(Math.round(Math.min(opts.low, opts.high)), 0, 127);
-  const high = clamp(Math.round(Math.max(opts.low, opts.high)), 0, 127);
-  const pool = opts.key ? scaleNotes(opts.key.root, opts.key.scale, low, high) : [];
-  if (pool.length === 0) for (let k = low; k <= high; k++) pool.push(k);
+  const low = clamp(Math.round(Math.min(opts.low, opts.high)), 0, MAX_KEY);
+  const high = clamp(Math.round(Math.max(opts.low, opts.high)), 0, MAX_KEY);
+  const pool = keyPool(opts.key, low, high);
   const minLen = Math.max(1, Math.round(opts.minLength ?? 1));
   const maxLen = Math.max(minLen, Math.round(opts.maxLength ?? minLen));
   const vLo = clamp(opts.minVelocity ?? 0.6, 0, 1);
@@ -194,7 +274,7 @@ export function generate(opts: GenerateOptions): ScriptNote[] {
   const smooth = clamp(opts.smoothness ?? 0, 0, 1);
   const maxStep = Math.max(1, Math.round((1 - smooth) * (pool.length - 1)));
   const out: ScriptNote[] = [];
-  let index = Math.floor(pool.length / 2);
+  const walk: MelodyWalk = { index: Math.floor(pool.length / 2) };
   for (let t = Math.ceil(opts.start / grid) * grid; t < opts.end; t += grid) {
     const hit = opts.rand();
     const rLen = opts.rand();
@@ -205,25 +285,7 @@ export function generate(opts: GenerateOptions): ScriptNote[] {
     const cells = minLen + Math.floor(rLen * (maxLen - minLen + 1));
     const length = Math.min(cells * grid, opts.end - t);
     const velocity = vLo + rVel * (vHi - vLo);
-    const used = new Set<number>();
-    rKeys.forEach((r, v) => {
-      let i: number;
-      if (v === 0 && smooth > 0) {
-        i = clamp(index + Math.round((r * 2 - 1) * maxStep), 0, pool.length - 1);
-        index = i;
-      } else i = Math.floor(r * pool.length);
-      const key = pool[i] as number;
-      if (used.has(key)) return;
-      used.add(key);
-      out.push(clampNote({ tick: t, length, key, velocity }));
-    });
+    for (const key of cellKeys(rKeys, pool, smooth, maxStep, walk)) out.push(clampNote({ tick: t, length, key, velocity }));
   }
-  if (opts.monophonic === false) return out;
-  // A note lasts at most until the next start.
-  const starts = [...new Set(out.map((n) => n.tick))].sort((a, b) => a - b);
-  const next = new Map(starts.map((s, i) => [s, starts[i + 1] ?? Infinity]));
-  return byTime(out).map((n) => ({
-    ...n,
-    length: Math.max(1, Math.min(n.length, (next.get(n.tick) ?? Infinity) - n.tick)),
-  }));
+  return opts.monophonic === false ? out : endAtNextStart(out);
 }

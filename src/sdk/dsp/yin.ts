@@ -1,6 +1,7 @@
 // Real-time YIN pitch detector. Allocation-free after construction; usable on any thread.
 import { Svf } from './svf';
 
+/** Settings for a `Yin` pitch detector. */
 export interface YinOptions {
   /** Lowest fundamental to look for, Hz (default 60). */
   minHz?: number;
@@ -94,61 +95,88 @@ export class Yin {
 
   /** Estimates the pitch of the latest window; returns `frequency`. */
   detect(): number {
-    const n = this.ring.length;
-    if (this.filled < n) return this.unvoiced(0);
+    if (this.filled < this.ring.length) return this.unvoiced(0);
+    this.copyWindowOldestFirst();
     const x = this.frame;
-    // Oldest first.
-    for (let i = 0, j = this.pos; i < n; i++, j = j + 1 < n ? j + 1 : 0) x[i] = this.ring[j] as number;
     const w = this.window;
-    let energy = 0;
-    for (let j = 0; j < w; j++) energy += (x[j] as number) * (x[j] as number);
-    if (Math.sqrt(energy / w) < SILENCE_RMS) return this.unvoiced(0);
+    if (this.rmsOf(x, w) < SILENCE_RMS) return this.unvoiced(0);
     // Difference function and its cumulative mean normalization (d'(0) = 1), lag by lag and only as far
-    // as the search below reads: the first dip under the threshold usually comes well before the
-    // longest lag.
+    // as the search reads: the first dip under the threshold usually comes well before the longest lag.
     const d = this.diff;
-    const raw = this.raw;
-    const maxLag = this.maxLag;
     d[0] = 1;
-    raw[0] = 0;
+    this.raw[0] = 0;
     this.done = 0;
     this.sum = 0;
-    // The first dip under the threshold (then down to its bottom), else the deepest one.
-    let best = -1;
+    let bestLag = this.firstDipLag(x, w);
+    if (bestLag < 0) {
+      bestLag = this.deepestDipLag(x, w);
+      const depth = bestLag < 0 ? Infinity : (d[bestLag] as number);
+      if (depth > this.maxAperiodicity) return this.unvoiced(1 - depth);
+    }
+    this.frequency = this.analysisRate / (bestLag + this.parabolicShift(x, w, bestLag));
+    this.confidence = Math.max(0, Math.min(1, 1 - (d[bestLag] as number)));
+    return this.frequency;
+  }
+
+  /** Copies the ring into `frame`, the oldest sample first. */
+  private copyWindowOldestFirst(): void {
+    const n = this.ring.length;
+    const x = this.frame;
+    for (let i = 0, j = this.pos; i < n; i++, j = j + 1 < n ? j + 1 : 0) x[i] = this.ring[j] as number;
+  }
+
+  /** Root mean square of the first `w` samples of `x`. */
+  private rmsOf(x: Float64Array, w: number): number {
+    let energy = 0;
+    for (let j = 0; j < w; j++) energy += (x[j] as number) * (x[j] as number);
+    return Math.sqrt(energy / w);
+  }
+
+  /** The first lag whose normalized difference is under the threshold, followed down to the bottom of its dip; -1 when none. */
+  private firstDipLag(x: Float64Array, w: number): number {
+    const d = this.diff;
+    const maxLag = this.maxLag;
     for (let tau = this.minLag; tau <= maxLag; tau++) {
       this.lagsTo(x, w, tau);
-      if ((d[tau] as number) < this.threshold) {
-        for (;;) {
-          if (tau + 1 > maxLag) break;
-          this.lagsTo(x, w, tau + 1);
-          if (!((d[tau + 1] as number) < (d[tau] as number))) break;
-          tau++;
-        }
-        best = tau;
-        break;
+      if (!((d[tau] as number) < this.threshold)) continue;
+      for (;;) {
+        if (tau + 1 > maxLag) break;
+        this.lagsTo(x, w, tau + 1);
+        if (!((d[tau + 1] as number) < (d[tau] as number))) break;
+        tau++;
+      }
+      return tau;
+    }
+    return -1;
+  }
+
+  /** The lag with the smallest normalized difference (the first, on a tie); -1 when none is comparable. */
+  private deepestDipLag(x: Float64Array, w: number): number {
+    const d = this.diff;
+    this.lagsTo(x, w, this.maxLag);
+    let lowest = Infinity;
+    let bestLag = -1;
+    for (let tau = this.minLag; tau <= this.maxLag; tau++) {
+      if ((d[tau] as number) < lowest) {
+        lowest = d[tau] as number;
+        bestLag = tau;
       }
     }
-    if (best < 0) {
-      this.lagsTo(x, w, maxLag);
-      let min = Infinity;
-      for (let tau = this.minLag; tau <= maxLag; tau++) {
-        if ((d[tau] as number) < min) {
-          min = d[tau] as number;
-          best = tau;
-        }
-      }
-      if (min > this.maxAperiodicity) return this.unvoiced(1 - min);
-    }
-    // Parabolic interpolation of the raw difference around the dip (less biased than d').
-    this.lagsTo(x, w, best + 1);
-    const a = raw[best - 1] as number;
-    const b = raw[best] as number;
-    const c = raw[best + 1] as number;
-    const den = a - 2 * b + c;
-    const shift = den > 0 ? Math.max(-0.5, Math.min(0.5, (a - c) / (2 * den))) : 0;
-    this.frequency = this.analysisRate / (best + shift);
-    this.confidence = Math.max(0, Math.min(1, 1 - (d[best] as number)));
-    return this.frequency;
+    return bestLag;
+  }
+
+  /**
+   * Parabolic interpolation of the raw difference around the dip at `bestLag` (less biased than d'):
+   * how far, from -0.5 to 0.5 lags, the true minimum lies from it.
+   */
+  private parabolicShift(x: Float64Array, w: number, bestLag: number): number {
+    const raw = this.raw;
+    this.lagsTo(x, w, bestLag + 1);
+    const before = raw[bestLag - 1] as number;
+    const at = raw[bestLag] as number;
+    const after = raw[bestLag + 1] as number;
+    const curvature = before - 2 * at + after;
+    return curvature > 0 ? Math.max(-0.5, Math.min(0.5, (before - after) / (2 * curvature))) : 0;
   }
 
   /** Extends the difference function (and the raw one) of the window `x` (length `w`) to lag `to`. */

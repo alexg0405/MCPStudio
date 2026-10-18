@@ -1,6 +1,6 @@
 import type { MeterHandle } from '../api';
 import meterUrl from './meter.worklet.ts?worker&url';
-import { allocateMeterMemory, initReadings, METER_ID, R, viewsOf, type MeterViews } from './layout';
+import { allocateMeterMemory, initReadings, METER_ID, R, viewsOf, type MeterMemory, type MeterViews } from './layout';
 
 /** True where shared memory exists (cross-origin isolation): the meters need it to cost nothing per frame. */
 export function canMeter(): boolean {
@@ -42,26 +42,29 @@ export class MeterNode implements MeterHandle {
     this.readings[R.detail] = this.full ? 1 : 0;
     initReadings(this.readings, ctx.sampleRate);
     void loadModule(meterUrl).then(
-      () => {
-        if (this.closed) return;
-        const node = new AudioWorkletNode(ctx, METER_ID, {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [1],
-          channelCount: 2,
-          channelCountMode: 'explicit',
-          channelInterpretation: 'speakers',
-          processorOptions: { memory },
-        });
-        // A silent path to the destination keeps the processor pulled by the render graph.
-        const sink = new GainNode(ctx, { gain: 0 });
-        source.connect(node);
-        node.connect(sink).connect(ctx.destination);
-        this.node = node;
-        this.sink = sink;
-      },
+      () => this.attachProcessor(memory),
       (err) => console.warn('[agstudio] the meters are unavailable', err),
     );
+  }
+
+  /** Makes the worklet node (once the module has loaded) and listens to the source with it, unless closed meanwhile. */
+  private attachProcessor(memory: MeterMemory): void {
+    if (this.closed) return;
+    const node = new AudioWorkletNode(this.ctx, METER_ID, {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [1],
+      channelCount: 2,
+      channelCountMode: 'explicit',
+      channelInterpretation: 'speakers',
+      processorOptions: { memory },
+    });
+    // A silent path to the destination keeps the processor pulled by the render graph.
+    const sink = new GainNode(this.ctx, { gain: 0 });
+    this.source.connect(node);
+    node.connect(sink).connect(this.ctx.destination);
+    this.node = node;
+    this.sink = sink;
   }
 
   /** The processor is running (its node is connected and not closed). */
@@ -74,6 +77,7 @@ export class MeterNode implements MeterHandle {
     return this.readings[R.blocks] as number;
   }
 
+  /** Switches the extra detail (bands, spectrum, scope) on or off; it costs more on the audio thread. */
   setDetail(full: boolean): void {
     this.full = full;
     this.readings[R.detail] = full ? 1 : 0;
@@ -84,6 +88,7 @@ export class MeterNode implements MeterHandle {
     this.readings[R.resetSeq] = seq;
   }
 
+  /** Takes the processor off the audio thread (its node, its input connection and its processor all go away). */
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -102,6 +107,7 @@ export class MeterNode implements MeterHandle {
     this.onClose(this);
   }
 
+  /** Whether the full detail is on. */
   get isFull(): boolean {
     return this.full;
   }

@@ -61,36 +61,47 @@ interface Binding {
 
 type SegKind = 'set' | 'lin' | 'target';
 
+/** One scheduled event of the lane, as it models it: a step, a linear ramp or an exponential approach. */
 interface Seg {
   kind: SegKind;
   /** Start time. */
-  t: number;
-  /** Value at `t`. */
-  v0: number;
+  time: number;
+  /** Value at `time`. */
+  fromValue: number;
   /** Ramp end value / target / held value. */
-  v: number;
-  /** Ramp end time (= t for 'set' and 'target'). */
+  value: number;
+  /** Ramp end time (= time for 'set' and 'target'). */
   end: number;
+  /** Time constant of a 'target' approach (seconds). */
   tau: number;
 }
 
 const identity: Map = (v) => v;
-/** Segments that ended this long ago are forgotten. */
-const KEEP = 1;
-/** Events strictly after a breakpoint are cancelled from this far past it. */
-const EPS = 1e-6;
+/** Segments that ended this long ago (seconds) are forgotten. */
+const KEEP_SEGMENTS_SEC = 1;
+/** Events strictly after a breakpoint are cancelled from this far past it (seconds). */
+const CANCEL_EPSILON_SEC = 1e-6;
+/** The shortest ramp a release or a restart uses (seconds): a step in all but name. */
+const MIN_RAMP_SEC = 1e-4;
+/** The ramp a release takes back to the document value, when the caller gives none (seconds). */
+const DEFAULT_RELEASE_RAMP_SEC = 0.02;
 
-function evalSeg(s: Seg, t: number): number {
-  switch (s.kind) {
+/** The value a segment gives at `time` (before its start it is what it started from). */
+function evalSeg(seg: Seg, time: number): number {
+  switch (seg.kind) {
     case 'set':
-      return s.v;
+      return seg.value;
     case 'lin':
-      return t >= s.end ? s.v : t <= s.t ? s.v0 : s.v0 + (s.v - s.v0) * ((t - s.t) / (s.end - s.t));
+      if (time >= seg.end) return seg.value;
+      if (time <= seg.time) return seg.fromValue;
+      return seg.fromValue + (seg.value - seg.fromValue) * ((time - seg.time) / (seg.end - seg.time));
     case 'target':
-      return t <= s.t ? s.v0 : s.v + (s.v0 - s.v) * Math.exp(-(t - s.t) / s.tau);
+      if (time <= seg.time) return seg.fromValue;
+      return seg.value + (seg.fromValue - seg.value) * Math.exp(-(time - seg.time) / seg.tau);
   }
 }
 
+/** The single writer of an automatable value: it holds the base value and the scheduled breakpoints and drives every AudioParam bound to it. */
 export class AutoLane implements AutomatableParam {
   private segs: Seg[] = [];
   private bindings: Binding[] = [];
@@ -112,7 +123,7 @@ export class AutoLane implements AutomatableParam {
     this.discrete = spec.type !== 'float';
     this.automatable = isAutomatable(spec);
     this.baseValue = initial;
-    this.segs.push({ kind: 'set', t: 0, v0: initial, v: initial, end: 0, tau: 0 });
+    this.segs.push({ kind: 'set', time: 0, fromValue: initial, value: initial, end: 0, tau: 0 });
   }
 
   get base(): number {
@@ -142,17 +153,17 @@ export class AutoLane implements AutomatableParam {
       // Before an (offline) render starts: exact, no smoothing.
       this.cancel(0);
       this.segs = [];
-      this.push({ kind: 'set', t: 0, v0: value, v: value, end: 0, tau: 0 });
+      this.push({ kind: 'set', time: 0, fromValue: value, value, end: 0, tau: 0 });
       for (const b of this.bindings) this.schedule(b, 'set', 0, value, 0);
       return;
     }
     // Live edits queue after anything scheduled (only a release ramp, while not driven).
     const at = t;
     if (this.discrete || this.tau <= 0) {
-      this.push({ kind: 'set', t: at, v0: value, v: value, end: at, tau: 0 });
+      this.push({ kind: 'set', time: at, fromValue: value, value, end: at, tau: 0 });
       for (const b of this.bindings) this.schedule(b, 'set', at, value, 0);
     } else {
-      this.push({ kind: 'target', t: at, v0: this.valueAt(at), v: value, end: at, tau: this.tau });
+      this.push({ kind: 'target', time: at, fromValue: this.valueAt(at), value, end: at, tau: this.tau });
       for (const b of this.bindings) this.schedule(b, 'target', at, value, this.tau);
     }
   }
@@ -160,11 +171,11 @@ export class AutoLane implements AutomatableParam {
   cut(at: number): number {
     const segs = this.segs;
     let i = segs.length - 1;
-    while (i > 0 && (segs[i] as Seg).t > at) i--;
+    while (i > 0 && (segs[i] as Seg).time > at) i--;
     const s = segs[i] as Seg;
-    if (s.kind === 'lin' && s.t < at && at < s.end && s.v0 !== s.v) {
+    if (s.kind === 'lin' && s.time < at && at < s.end && s.fromValue !== s.value) {
       // A ramp is running at `at`: cancelling its end would make the value jump. Keep it, drop what follows.
-      for (const b of this.bindings) b.param.cancelScheduledValues(s.end + EPS);
+      for (const b of this.bindings) b.param.cancelScheduledValues(s.end + CANCEL_EPSILON_SEC);
       segs.length = i + 1;
       return s.end;
     }
@@ -173,20 +184,20 @@ export class AutoLane implements AutomatableParam {
     const v = this.valueAt(at);
     for (let s2 = segs[segs.length - 1] as Seg; segs.length > 1; s2 = segs[segs.length - 1] as Seg) {
       // Ramps and setTargets starting at `at` go too (a linear ramp must not follow a setTarget).
-      if (s2.t > at || (s2.t === at && s2.kind !== 'set')) segs.pop();
+      if (s2.time > at || (s2.time === at && s2.kind !== 'set')) segs.pop();
       else break;
     }
     const last = segs[segs.length - 1] as Seg;
     if (last.end === at && last.kind !== 'target') {
       // An event exactly at `at` (a ramp ending or a step there) already anchors the value.
-      for (const b of this.bindings) b.param.cancelScheduledValues(at + EPS);
+      for (const b of this.bindings) b.param.cancelScheduledValues(at + CANCEL_EPSILON_SEC);
       return at;
     }
     for (const b of this.bindings) b.param.cancelScheduledValues(at);
     // A constant ramp that ran past `at` lost its end event: it now ends at `at`.
     if (last.kind === 'lin' && last.end > at) last.end = at;
     // Anchor: later ramps start from here (not from the start of whatever held before).
-    this.push({ kind: 'set', t: at, v0: v, v, end: at, tau: 0 });
+    this.push({ kind: 'set', time: at, fromValue: v, value: v, end: at, tau: 0 });
     for (const b of this.bindings) this.schedule(b, 'set', at, v, 0);
     return at;
   }
@@ -196,11 +207,11 @@ export class AutoLane implements AutomatableParam {
     if (this.ctx.currentTime > 0) {
       // Already rendering: the closest thing is a step at the next opportunity.
       this.cut(this.ctx.currentTime);
-      this.extend([this.ctx.currentTime + 1e-4, v]);
+      this.extend([this.ctx.currentTime + MIN_RAMP_SEC, v]);
       return;
     }
     for (const b of this.bindings) b.param.cancelScheduledValues(0);
-    this.segs = [{ kind: 'set', t: 0, v0: v, v, end: 0, tau: 0 }];
+    this.segs = [{ kind: 'set', time: 0, fromValue: v, value: v, end: 0, tau: 0 }];
     for (const b of this.bindings) this.schedule(b, 'set', 0, v, 0);
     this.drivenFlag = true;
     this.onScheduled?.(v, 0);
@@ -221,7 +232,7 @@ export class AutoLane implements AutomatableParam {
   extend(points: ArrayLike<number>): void {
     const tail = this.segs[this.segs.length - 1] as Seg;
     // A linear ramp must not follow a running setTarget: anchor it first.
-    if (tail.kind === 'target') this.cut(Math.max(this.ctx.currentTime, tail.t));
+    if (tail.kind === 'target') this.cut(Math.max(this.ctx.currentTime, tail.time));
     this.drivenFlag = true;
     const report = this.onScheduled;
     for (let i = 0; i + 1 < points.length; i += 2) {
@@ -232,10 +243,10 @@ export class AutoLane implements AutomatableParam {
       const v = this.clamp(raw);
       const before = this.valueAt(last);
       if (this.discrete) {
-        this.push({ kind: 'set', t, v0: v, v, end: t, tau: 0 });
+        this.push({ kind: 'set', time: t, fromValue: v, value: v, end: t, tau: 0 });
         for (const b of this.bindings) this.schedule(b, 'set', t, v, 0);
       } else {
-        this.push({ kind: 'lin', t: last, v0: before, v, end: t, tau: 0 });
+        this.push({ kind: 'lin', time: last, fromValue: before, value: v, end: t, tau: 0 });
         for (const b of this.bindings) this.schedule(b, 'lin', t, v, 0);
       }
       if (report && v !== before) report(v, t);
@@ -243,16 +254,16 @@ export class AutoLane implements AutomatableParam {
     this.trim();
   }
 
-  release(at: number, ramp = 0.02): void {
+  release(at: number, ramp = DEFAULT_RELEASE_RAMP_SEC): void {
     const tb = this.cut(at);
-    this.extend([tb + Math.max(ramp, 1e-4), this.baseValue]);
+    this.extend([tb + Math.max(ramp, MIN_RAMP_SEC), this.baseValue]);
     this.drivenFlag = false;
   }
 
   valueAt(time: number): number {
     for (let i = this.segs.length - 1; i >= 0; i--) {
       const s = this.segs[i] as Seg;
-      if (s.t <= time || i === 0) return evalSeg(s, time);
+      if (s.time <= time || i === 0) return evalSeg(s, time);
     }
     return this.baseValue;
   }
@@ -278,9 +289,9 @@ export class AutoLane implements AutomatableParam {
 
   /** Forgets segments that ended long ago (keeps the one in effect then). */
   private trim(): void {
-    const old = this.ctx.currentTime - KEEP;
+    const old = this.ctx.currentTime - KEEP_SEGMENTS_SEC;
     let drop = 0;
-    while (drop < this.segs.length - 1 && (this.segs[drop + 1] as Seg).t < old) drop++;
+    while (drop < this.segs.length - 1 && (this.segs[drop + 1] as Seg).time < old) drop++;
     if (drop > 0) this.segs.splice(0, drop);
   }
 
@@ -311,11 +322,11 @@ export class AutoLane implements AutomatableParam {
     if (v !== null) b.param.setValueAtTime(v, now);
     for (const s of this.segs) {
       if (s.kind === 'target') {
-        if (s.t >= now) this.schedule(b, 'target', s.t, s.v, s.tau);
-        else if (s === this.segs[this.segs.length - 1]) this.schedule(b, 'target', now, s.v, s.tau);
+        if (s.time >= now) this.schedule(b, 'target', s.time, s.value, s.tau);
+        else if (s === this.segs[this.segs.length - 1]) this.schedule(b, 'target', now, s.value, s.tau);
       } else if (s.kind === 'lin') {
-        if (s.end > now) this.schedule(b, 'lin', s.end, s.v, 0);
-      } else if (s.t > now) this.schedule(b, 'set', s.t, s.v, 0);
+        if (s.end > now) this.schedule(b, 'lin', s.end, s.value, 0);
+      } else if (s.time > now) this.schedule(b, 'set', s.time, s.value, 0);
     }
   }
 }

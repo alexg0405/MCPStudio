@@ -29,194 +29,21 @@
  */
 import { makeInsert } from '@core/model/defaults';
 import { MASTER, type InsertId, type Mixer, type Project, type Route } from '@core/model/types';
-import { ROUTE_LEVEL_SPEC } from '@core/model/target-specs';
-import { MAX_INSERT_VOLUME } from '@core/model/fader';
-import { targetKey } from '@core/model/targets';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { playableEdges, type RoutingEdge } from '@core/query/routing';
 import type { EngineCore } from './engine-core';
-import { disconnectFrom, frameDelay, InsertStrip, MeterScratch, type InsertTaps } from './insert-strip';
-import { AutoLane } from './param-lane';
+import { InsertStrip } from './insert-strip';
+import { MeterScratch } from './meter-peak';
+import { InsertBus, RouteLink } from './mixer-links';
 import { DelayCompensation } from './pdc';
 
 /** Used when a document has no master insert (repair adds one; the engine never runs without). */
 const DEFAULT_MASTER = makeInsert(MASTER, 'Master');
-/** Time constant of send-level moves (matches faders). */
-const ROUTE_TAU = 0.004;
-/** Crossfade when a padded link changes its delay or target while audio runs. */
-const LINK_FADE = 0.01;
-/** The faded-out path is dropped after this long. */
-const LINK_DROP_MS = 60;
 
-const clampLevel = (v: number) => (Number.isFinite(v) ? Math.min(MAX_INSERT_VOLUME, Math.max(0, v)) : 1);
-
-interface Path {
-  to: AudioNode;
-  frames: number;
-  delay: DelayNode | null;
-  gain: GainNode;
-}
-
-/**
- * from ─► [DelayNode of `frames` frames] ─► gain ─► to. Changing the delay or the target while a
- * realtime context runs crossfades the old path out over 10 ms (a hard switch would click); before
- * the context starts, and always offline (exports apply everything at time 0; wall-clock timers
- * don't follow offline time), it switches exactly.
- */
-export class PadLink {
-  private path: Path | null = null;
-  /** Paths fading out, dropped by their timer (or on dispose). */
-  private readonly fading = new Map<Path, ReturnType<typeof setTimeout>>();
-
-  constructor(
-    private readonly ctx: BaseAudioContext,
-    private readonly from: AudioNode,
-    private readonly offline: boolean,
-  ) {}
-
-  get frames(): number {
-    return this.path?.frames ?? 0;
-  }
-
-  get target(): AudioNode | null {
-    return this.path?.to ?? null;
-  }
-
-  set(to: AudioNode | null, frames: number): void {
-    const old = this.path;
-    if (old?.to === to && (to === null || old?.frames === frames)) return;
-    // Crossfade only while audio runs and there is something to fade from.
-    const fade = !!old && !this.offline && this.ctx.currentTime > 0;
-    const next = to ? this.build(to, frames, fade ? 0 : 1) : null;
-    this.path = next;
-    if (old && fade) {
-      const t = this.ctx.currentTime;
-      old.gain.gain.cancelScheduledValues(t);
-      old.gain.gain.setValueAtTime(1, t);
-      old.gain.gain.linearRampToValueAtTime(0, t + LINK_FADE);
-      next?.gain.gain.setValueAtTime(0, t);
-      next?.gain.gain.linearRampToValueAtTime(1, t + LINK_FADE);
-      this.fading.set(
-        old,
-        setTimeout(() => {
-          this.fading.delete(old);
-          this.drop(old);
-        }, LINK_DROP_MS),
-      );
-    } else if (old) this.drop(old);
-  }
-
-  dispose(): void {
-    for (const [p, timer] of this.fading) {
-      clearTimeout(timer);
-      this.drop(p);
-    }
-    this.fading.clear();
-    if (this.path) this.drop(this.path);
-    this.path = null;
-  }
-
-  private build(to: AudioNode, frames: number, gain: number): Path {
-    const g = new GainNode(this.ctx, { gain });
-    let delay: DelayNode | null = null;
-    if (frames > 0) {
-      delay = frameDelay(this.ctx, frames);
-      this.from.connect(delay).connect(g);
-    } else this.from.connect(g);
-    g.connect(to);
-    return { to, frames, delay, gain: g };
-  }
-
-  private drop(p: Path): void {
-    if (p.delay) {
-      disconnectFrom(this.from, p.delay);
-      p.delay.disconnect();
-    } else disconnectFrom(this.from, p.gain);
-    p.gain.disconnect();
-  }
-}
-
-/** The persistent nodes of one insert id (see the file comment). */
-class InsertBus implements InsertTaps {
-  readonly chIn: GainNode;
-  readonly routeIn: GainNode;
-  readonly scTap: GainNode;
-  readonly preTap: GainNode;
-  readonly postTap: GainNode;
-  /** chIn → routeIn, or chIn → the master while the insert is gone (never padded: see DelayCompensation). */
-  readonly chLink: PadLink;
-
-  constructor(ctx: BaseAudioContext, offline: boolean) {
-    this.chIn = new GainNode(ctx);
-    this.routeIn = new GainNode(ctx);
-    this.scTap = new GainNode(ctx);
-    this.preTap = new GainNode(ctx);
-    this.postTap = new GainNode(ctx);
-    this.chLink = new PadLink(ctx, this.chIn, offline);
-  }
-
-  dispose(): void {
-    this.chLink.dispose();
-    for (const n of [this.chIn, this.routeIn, this.scTap, this.preTap, this.postTap]) n.disconnect();
-  }
-}
-
-/** A route between two inserts: tap → level → [pad] → the target's routeIn. */
-class RouteLink {
-  readonly gain: GainNode;
-  readonly pad: PadLink;
-  private readonly lane: AutoLane;
-  private readonly unregister: () => void;
-  private tap: AudioNode;
-  private route: Route;
-
-  constructor(
-    private readonly ctx: BaseAudioContext,
-    core: EngineCore,
-    readonly from: InsertId,
-    readonly to: InsertId,
-    route: Route,
-    private readonly source: InsertBus,
-  ) {
-    this.route = route;
-    const level = clampLevel(route.level);
-    this.gain = new GainNode(ctx, { gain: level });
-    this.lane = new AutoLane(ctx, targetKey({ kind: 'route', insertId: from, to }), ROUTE_LEVEL_SPEC, level, ROUTE_TAU);
-    this.lane.bind(this.gain.gain);
-    this.unregister = core.params.register(this.lane);
-    this.tap = route.pre ? source.preTap : source.postTap;
-    this.tap.connect(this.gain);
-    this.pad = new PadLink(ctx, this.gain, core.offline);
-  }
-
-  /** The send level follows what leaves the insert: `seconds` behind the song's clock (see DelayCompensation.out). */
-  setShift(seconds: number): void {
-    this.lane.shift = seconds;
-  }
-
-  update(route: Route): void {
-    const prev = this.route;
-    if (prev === route) return;
-    this.route = route;
-    if (prev.level !== route.level) this.lane.setBase(clampLevel(route.level), this.ctx.currentTime);
-    if (prev.pre !== route.pre) {
-      disconnectFrom(this.tap, this.gain);
-      this.tap = route.pre ? this.source.preTap : this.source.postTap;
-      this.tap.connect(this.gain);
-    }
-  }
-
-  dispose(): void {
-    this.pad.dispose();
-    disconnectFrom(this.tap, this.gain);
-    this.gain.disconnect();
-    this.unregister();
-    this.lane.dispose();
-  }
-}
-
+/** Identifies a route between two inserts in the route map. */
 const routeKey = (from: InsertId, to: InsertId) => `${from}>${to}`;
 
+/** The mixer as a Web Audio graph (see the file comment). */
 export class MixerGraph {
   readonly master: InsertStrip;
   private readonly strips = new Map<InsertId, InsertStrip>();
@@ -294,30 +121,37 @@ export class MixerGraph {
    * fall back to the master.
    */
   reconcile(prev: Project | null, next: Project): InsertStrip[] {
-    const removed: InsertStrip[] = [];
+    let removed: InsertStrip[] = [];
     if (!prev || prev.mixer !== next.mixer) {
       this.batch(() => {
-        const inserts = next.mixer.inserts;
-        for (const id of Object.keys(inserts) as InsertId[]) {
-          const insert = inserts[id];
-          if (!insert) continue;
-          const strip = this.strips.get(id);
-          if (strip) strip.update(insert, next);
-          else this.strips.set(id, new InsertStrip(this.core, insert, next, this.bus(id), () => this.latencyChanged()));
-        }
-        if (!inserts[MASTER]) this.master.update(DEFAULT_MASTER, next);
-        for (const [id, strip] of this.strips) {
-          if (id === MASTER || inserts[id]) continue;
-          this.strips.delete(id);
-          removed.push(strip);
-        }
-        const muted = effectivelyMutedInserts(inserts);
-        for (const [id, strip] of this.strips) strip.setMuted(muted.has(id));
+        removed = this.syncStrips(next);
         this.rewire(next.mixer);
         this.dirty = true;
       });
     }
     if (prev && prev.samples !== next.samples) for (const strip of this.strips.values()) strip.samplesChanged(next);
+    return removed;
+  }
+
+  /** Creates and updates the strips of the document's inserts, sets their mutes; returns the strips of removed inserts. */
+  private syncStrips(next: Project): InsertStrip[] {
+    const inserts = next.mixer.inserts;
+    for (const id of Object.keys(inserts) as InsertId[]) {
+      const insert = inserts[id];
+      if (!insert) continue;
+      const strip = this.strips.get(id);
+      if (strip) strip.update(insert, next);
+      else this.strips.set(id, new InsertStrip(this.core, insert, next, this.bus(id), () => this.latencyChanged()));
+    }
+    if (!inserts[MASTER]) this.master.update(DEFAULT_MASTER, next);
+    const removed: InsertStrip[] = [];
+    for (const [id, strip] of this.strips) {
+      if (id === MASTER || inserts[id]) continue;
+      this.strips.delete(id);
+      removed.push(strip);
+    }
+    const muted = effectivelyMutedInserts(inserts);
+    for (const [id, strip] of this.strips) strip.setMuted(muted.has(id));
     return removed;
   }
 
@@ -353,26 +187,27 @@ export class MixerGraph {
    * tails (a reverb on a bus after a delay on a track rings for both).
    */
   tailSeconds(): number {
-    const after = new Map<InsertId, number>();
-    const next = new Map<InsertId, InsertId[]>();
-    for (const e of this.edges) {
-      if (e.kind !== 'route') continue;
-      const l = next.get(e.from);
-      if (l) l.push(e.to);
-      else next.set(e.from, [e.to]);
+    const tailAfter = new Map<InsertId, number>();
+    const targetsOf = new Map<InsertId, InsertId[]>();
+    for (const edge of this.edges) {
+      if (edge.kind !== 'route') continue;
+      const targets = targetsOf.get(edge.from);
+      if (targets) targets.push(edge.to);
+      else targetsOf.set(edge.from, [edge.to]);
     }
-    const down = (id: InsertId): number => {
-      const known = after.get(id);
+    /** The tail of an insert's own effects plus the longest tail of what it feeds. */
+    const tailFrom = (id: InsertId): number => {
+      const known = tailAfter.get(id);
       if (known !== undefined) return known;
-      let rest = 0;
-      for (const to of next.get(id) ?? []) rest = Math.max(rest, down(to));
-      const total = (this.strips.get(id)?.tailTime ?? 0) + rest;
-      after.set(id, total);
+      let longestBeyond = 0;
+      for (const to of targetsOf.get(id) ?? []) longestBeyond = Math.max(longestBeyond, tailFrom(to));
+      const total = (this.strips.get(id)?.tailTime ?? 0) + longestBeyond;
+      tailAfter.set(id, total);
       return total;
     };
-    let max = 0;
-    for (const id of this.strips.keys()) max = Math.max(max, down(id));
-    return max;
+    let longest = 0;
+    for (const id of this.strips.keys()) longest = Math.max(longest, tailFrom(id));
+    return longest;
   }
 
   dispose(): void {
@@ -416,32 +251,35 @@ export class MixerGraph {
   /** Brings routes and sidechain sources in line with the document: removals first, then additions. */
   private rewire(mixer: Mixer): void {
     const edges = playableEdges(mixer);
-    const wanted = new Map<string, { from: InsertId; to: InsertId; route: Route }>();
-    const keys = new Map<string, InsertId>();
-    for (const e of edges) {
-      if (e.kind === 'route') {
-        const route = mixer.inserts[e.from]?.routes.find((r) => r.to === e.to);
-        if (route) wanted.set(routeKey(e.from, e.to), { from: e.from, to: e.to, route });
-      } else if (e.slotId) keys.set(`${e.to}/${e.slotId}`, e.from);
+    const wantedRoutes = new Map<string, { from: InsertId; to: InsertId; route: Route }>();
+    const sidechainSources = new Map<string, InsertId>();
+    for (const edge of edges) {
+      if (edge.kind === 'route') {
+        const route = mixer.inserts[edge.from]?.routes.find((r) => r.to === edge.to);
+        if (route) wantedRoutes.set(routeKey(edge.from, edge.to), { from: edge.from, to: edge.to, route });
+      } else if (edge.slotId) {
+        sidechainSources.set(`${edge.to}/${edge.slotId}`, edge.from);
+      }
     }
     // 1. Disconnect: routes that went away, sidechain inputs whose source changed or went away
     //    (they key from their own input until applyPdc connects the new source).
     for (const [key, link] of this.routes) {
-      if (wanted.has(key)) continue;
+      if (wantedRoutes.has(key)) continue;
       link.dispose();
       this.routes.delete(key);
     }
-    for (const [id, strip] of this.strips)
+    for (const [id, strip] of this.strips) {
       for (const slot of strip.slotStrips) {
-        const from = keys.get(`${id}/${slot.id}`);
+        const from = sidechainSources.get(`${id}/${slot.id}`);
         if (slot.keySource !== (from ? this.bus(from).scTap : null)) slot.setKey(null);
       }
+    }
     // 2. New routes, connected only up to their level gain: applyPdc connects them to their
     //    targets (padded), and the new sidechain sources, once everything stale is gone.
-    for (const [key, w] of wanted) {
+    for (const [key, wanted] of wantedRoutes) {
       const link = this.routes.get(key);
-      if (link) link.update(w.route);
-      else this.routes.set(key, new RouteLink(this.core.ctx, this.core, w.from, w.to, w.route, this.bus(w.from)));
+      if (link) link.update(wanted.route);
+      else this.routes.set(key, new RouteLink(this.core.ctx, this.core, wanted.from, wanted.to, wanted.route, this.bus(wanted.from)));
     }
     this.edges = edges;
   }
@@ -464,10 +302,10 @@ export class MixerGraph {
       if (this.strips.has(id)) bus.chLink.set(bus.routeIn, 0);
       else if (id !== MASTER) bus.chLink.set(masterIn, 0);
     }
-    const sr = this.core.ctx.sampleRate;
+    const sampleRate = this.core.ctx.sampleRate;
     for (const link of this.routes.values()) {
       link.pad.set(this.bus(link.to).routeIn, pdc.routePad(link.from, link.to));
-      link.setShift(pdc.out(link.from) / sr);
+      link.setShift(pdc.out(link.from) / sampleRate);
     }
     for (const [id, strip] of this.strips) strip.setAlignment(pdc.arrival(id));
     for (const e of this.edges) {

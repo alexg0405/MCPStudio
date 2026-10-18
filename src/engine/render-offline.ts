@@ -1,9 +1,10 @@
 import type { Project } from '@core/model/types';
 import type { EngineOptions, TransportView } from './api';
 import { tempoMapOf } from '@core/automation/tempo';
-import { ticksPerBar } from '@core/time/ppq';
+import { ticksPerBar, type TempoMap } from '@core/time/ppq';
 import { Engine } from './engine';
 
+/** What an offline render is asked for (see the fields). */
 export interface RenderOptions extends EngineOptions {
   view: TransportView;
   /** Length to render, in bars of the current pattern/song (fractions allowed). */
@@ -31,6 +32,7 @@ export interface RenderOptions extends EngineOptions {
   limiter?: boolean;
 }
 
+/** A finished render and the numbers needed to trim it. */
 export interface RenderResult {
   buffer: AudioBuffer;
   /** Seconds of silence before the music starts. */
@@ -55,15 +57,36 @@ interface Timing {
   length: number;
 }
 
+/** Frames of one render quantum: the finest timing the audio thread has. */
+const RENDER_QUANTUM = 128;
+/** Frames rendered per chunk when the caller gives no size: while suspended between chunks the clips are made ready. */
+const DEFAULT_CHUNK_FRAMES = RENDER_QUANTUM * 256;
+/** The sample rate of a render that does not ask for one. */
+const DEFAULT_SAMPLE_RATE = 48000;
+/** The tail after the last bar of a render that does not ask for one (seconds). */
+const DEFAULT_TAIL_SEC = 1;
+/** Pre-roll of a one-piece render (frames): silence before the first note, so processors exist before it. */
+const ONE_PIECE_PRE_ROLL_FRAMES = 2048;
+/** Pre-roll of a streamed render (seconds). */
+const STREAM_PRE_ROLL_SEC = 0.25;
+/** How far past the chunk's end the transport plans (seconds), and how far ahead the samples are made ready. */
+const PLAN_AHEAD_SEC = 0.05;
+/** The music ends this far (seconds) before the end of the render span, so a note ending right there is released in it. */
+const END_SLACK_SEC = 1e-6;
+/** Seconds of output per render window of a streamed render, when the caller gives none. */
+const DEFAULT_WINDOW_SEC = 512;
+/** Output is handed to the caller in pieces of at most this many seconds. */
+const PIECE_SEC = 1;
+
 async function timingOf(project: Project, opts: RenderOptions, defaultPreRoll: (sr: number) => number): Promise<Timing> {
-  const sampleRate = opts.sampleRate ?? 48000;
+  const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const ts = project.transport.timeSig;
   const preRoll = opts.preRoll ?? defaultPreRoll(sampleRate);
   // The rendered span follows the tempo map (tempo automation in song mode).
   const from = opts.fromTick ?? 0;
   const tempo = tempoMapOf(project, opts.view.mode);
   const musical = tempo.tickToSeconds(from + opts.bars * ticksPerBar(ts)) - tempo.tickToSeconds(from);
-  const tail = opts.tail === 'auto' ? await measureTail(project, opts, sampleRate) : (opts.tail ?? 1);
+  const tail = opts.tail === 'auto' ? await measureTail(project, opts, sampleRate) : (opts.tail ?? DEFAULT_TAIL_SEC);
   opts.signal?.throwIfAborted();
   return { sampleRate, preRoll, from, musical, tail, length: Math.ceil((preRoll + musical + tail) * sampleRate) };
 }
@@ -85,19 +108,16 @@ async function renderSpan(
   length: number,
   onProgress: (frames: number) => void,
 ): Promise<RenderResult> {
-  const { sampleRate, preRoll, from } = t;
-  const chunk = opts.chunk ?? 128 * 256;
+  const { sampleRate, preRoll } = t;
+  const chunk = opts.chunk ?? DEFAULT_CHUNK_FRAMES;
   const ctx = new OfflineAudioContext({ numberOfChannels: 2, length, sampleRate });
   const engine = new Engine(ctx, opts, true, { limiter: opts.limiter ?? true });
   const tempo = tempoMapOf(project, opts.view.mode);
   try {
     const offset = startFrame / sampleRate;
-    const end = preRoll + t.musical - offset - 1e-6;
+    const end = preRoll + t.musical - offset - END_SLACK_SEC;
     let synced = true;
-    // Where the transport starts: the song tick at context time 0 (or the pre-roll in the first window).
-    const startSec = Math.max(0, offset - preRoll);
-    const startTick = startSec > 0 ? tempo.secondsToTick(tempo.tickToSeconds(from) + startSec) : from;
-    const startAt = startSec > 0 ? preRoll + startSec - offset : preRoll;
+    const { startTick, startAt } = transportStart(t, tempo, offset);
     engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
     engine.setTransportView(opts.view);
     // The samples around the start first (long songs aren't all decoded), then the plugins.
@@ -110,9 +130,9 @@ async function renderSpan(
       // Aborted: the context stays suspended and is dropped; `aborted` below rejects.
       if (opts.signal?.aborted) return;
       const next = frame + chunk;
-      const horizon = Math.min(end, next / sampleRate + 0.05);
+      const horizon = Math.min(end, next / sampleRate + PLAN_AHEAD_SEC);
       if (end > 0) {
-        await engine.prepareOffline(horizon + 0.05);
+        await engine.prepareOffline(horizon + PLAN_AHEAD_SEC);
         engine.pumpOffline(horizon);
         // The span's last notes are planned: whatever still sounds (or ends right here) stops now, so
         // the tail holds only what the sound itself leaves (releases, reverb), not held notes.
@@ -126,16 +146,9 @@ async function renderSpan(
       if (next < length) void ctx.suspend(next / sampleRate).then(() => step(next));
       await ctx.resume();
     };
-    const aborted = new Promise<never>((_, reject) => {
-      const signal = opts.signal;
-      if (!signal) return;
-      const fail = () => reject(signal.reason ?? new DOMException('Rendering was cancelled.', 'AbortError'));
-      if (signal.aborted) fail();
-      else signal.addEventListener('abort', fail, { once: true });
-    });
     // The first stop comes one quantum in: processors exist by then and the pre-roll covers it.
-    void ctx.suspend(128 / sampleRate).then(() => step(128));
-    const buffer = await Promise.race([ctx.startRendering(), aborted]);
+    void ctx.suspend(RENDER_QUANTUM / sampleRate).then(() => step(RENDER_QUANTUM));
+    const buffer = await Promise.race([ctx.startRendering(), rejectWhenAborted(opts.signal)]);
     onProgress(length);
     return { buffer, preRoll, synced, latency: engine.graphLatency() };
   } finally {
@@ -143,17 +156,36 @@ async function renderSpan(
   }
 }
 
+/** Where the transport starts: the song tick at context time 0 (or the pre-roll in the first window), and when. */
+function transportStart(t: Timing, tempo: TempoMap, offsetSec: number): { startTick: number; startAt: number } {
+  const startSec = Math.max(0, offsetSec - t.preRoll);
+  const startTick = startSec > 0 ? tempo.secondsToTick(tempo.tickToSeconds(t.from) + startSec) : t.from;
+  const startAt = startSec > 0 ? t.preRoll + startSec - offsetSec : t.preRoll;
+  return { startTick, startAt };
+}
+
+/** A promise that never resolves and rejects when the signal aborts (immediately if it already has). */
+function rejectWhenAborted(signal: AbortSignal | undefined): Promise<never> {
+  return new Promise<never>((_, reject) => {
+    if (!signal) return;
+    const fail = () => reject(signal.reason ?? new DOMException('Rendering was cancelled.', 'AbortError'));
+    if (signal.aborted) fail();
+    else signal.addEventListener('abort', fail, { once: true });
+  });
+}
+
 /**
  * Renders with an OfflineAudioContext using the same engine code as playback, in one piece (the
  * whole render is in memory: use renderStream for long songs).
  */
 export async function renderOffline(project: Project, opts: RenderOptions): Promise<RenderResult> {
-  const t = await timingOf(project, opts, (sr) => 2048 / sr);
+  const t = await timingOf(project, opts, (sampleRate) => ONE_PIECE_PRE_ROLL_FRAMES / sampleRate);
   const r = await renderSpan(project, opts, t, 0, t.length, (f) => opts.onProgress?.(f / t.length));
   opts.onProgress?.(1);
   return r;
 }
 
+/** Options of a streamed render (`renderStream`). */
 export interface StreamRenderOptions extends RenderOptions {
   /**
    * Seconds of output per render window (default 512). A render that fits in one window is one
@@ -168,6 +200,7 @@ export interface StreamRenderOptions extends RenderOptions {
   onAudio(channels: Float32Array[], frame: number, info: { preRoll: number; latency: number }): void | Promise<void>;
 }
 
+/** What `renderStream` reports when it is done. */
 export interface StreamRenderResult {
   preRoll: number;
   latency: number;
@@ -193,9 +226,48 @@ export function windowGrid(sampleRate: number): number {
 }
 
 /** Seconds the windows overlap by and crossfade (identical audio stays bit for bit). */
-const CROSSFADE = 0.1;
+const CROSSFADE_SEC = 0.1;
 /** Seconds of warm-up beyond the effects' tails (delays and filters settle completely). */
-const SETTLE = 8;
+const SETTLE_SEC = 8;
+
+/** One render window: the output frames it delivers, and the frames it renders (a warm-up before, a crossfade after). */
+interface WindowSpan {
+  outStart: number;
+  outEnd: number;
+  renderStart: number;
+  renderEnd: number;
+}
+
+/** Splits the render into windows of `windowFrames`, each starting early by `warmFrames` and running on by `fadeFrames`. */
+function planWindows(totalFrames: number, windowFrames: number, warmFrames: number, fadeFrames: number): WindowSpan[] {
+  const count = Math.max(1, Math.ceil(totalFrames / windowFrames));
+  const spans: WindowSpan[] = [];
+  for (let k = 0; k < count; k++) {
+    const outStart = k * windowFrames;
+    const outEnd = Math.min(totalFrames, outStart + windowFrames);
+    spans.push({
+      outStart,
+      outEnd,
+      renderStart: k === 0 ? 0 : Math.max(0, outStart - warmFrames),
+      renderEnd: k === count - 1 ? totalFrames : Math.min(totalFrames, outEnd + fadeFrames),
+    });
+  }
+  return spans;
+}
+
+/** Crossfades the previous window's audio past its end (`overlap`) into the start of this one's output, in place. */
+function crossfadeInto(data: Float32Array[], base: number, overlap: Float32Array[]): void {
+  const frames = overlap[0]?.length ?? 0;
+  data.forEach((channelData, c) => {
+    const previous = overlap[c] as Float32Array;
+    for (let i = 0; i < frames; i++) {
+      const a = previous[i] as number;
+      const b = channelData[base + i] as number;
+      // a + w·(b − a): exactly a (and b) where both windows agree.
+      channelData[base + i] = a === b ? a : a + ((i + 0.5) / frames) * (b - a);
+    }
+  });
+}
 
 /**
  * Renders like renderOffline but hands the audio over a piece at a time, so an hour-long mix
@@ -208,59 +280,64 @@ const SETTLE = 8;
  * is the crossfade. Notes held longer than the warm-up across a boundary are not heard after it.
  */
 export async function renderStream(project: Project, opts: StreamRenderOptions): Promise<StreamRenderResult> {
-  const t = await timingOf(project, opts, () => 0.25);
-  const sr = t.sampleRate;
-  const grid = windowGrid(sr);
-  const windowFrames = Math.max(1, Math.ceil((opts.windowSec ?? 512) / grid)) * grid * sr;
-  const warm = Math.ceil((t.tail + SETTLE) / grid) * grid * sr;
-  const fade = Math.round(CROSSFADE * sr);
-  const count = Math.max(1, Math.ceil(t.length / windowFrames));
+  const t = await timingOf(project, opts, () => STREAM_PRE_ROLL_SEC);
+  const sampleRate = t.sampleRate;
+  const grid = windowGrid(sampleRate);
+  const windowFrames = Math.max(1, Math.ceil((opts.windowSec ?? DEFAULT_WINDOW_SEC) / grid)) * grid * sampleRate;
+  const warmFrames = Math.ceil((t.tail + SETTLE_SEC) / grid) * grid * sampleRate;
+  const fadeFrames = Math.round(CROSSFADE_SEC * sampleRate);
+  const spans = planWindows(t.length, windowFrames, warmFrames, fadeFrames);
   // Progress over everything rendered, warm-ups included.
-  const spans: Array<{ out0: number; out1: number; f0: number; f1: number }> = [];
-  for (let k = 0; k < count; k++) {
-    const out0 = k * windowFrames;
-    const out1 = Math.min(t.length, out0 + windowFrames);
-    spans.push({ out0, out1, f0: k === 0 ? 0 : Math.max(0, out0 - warm), f1: k === count - 1 ? t.length : Math.min(t.length, out1 + fade) });
-  }
-  const work = spans.reduce((n, s) => n + (s.f1 - s.f0), 0);
+  const work = spans.reduce((total, span) => total + (span.renderEnd - span.renderStart), 0);
   let done = 0;
   let latency = 0;
   let synced = true;
   /** The previous window's audio past its end: crossfaded into this one's start. */
   let overlap: Float32Array[] | null = null;
-  for (const s of spans) {
+  for (const span of spans) {
     opts.signal?.throwIfAborted();
-    const r = await renderSpan(project, opts, t, s.f0, s.f1 - s.f0, (f) => opts.onProgress?.(Math.min(1, (done + f) / work)));
-    done += s.f1 - s.f0;
-    latency = r.latency;
-    synced &&= r.synced;
-    const data = Array.from({ length: r.buffer.numberOfChannels }, (_, c) => r.buffer.getChannelData(c));
-    const base = s.out0 - s.f0;
-    if (overlap) {
-      const n = overlap[0]?.length ?? 0;
-      data.forEach((d, c) => {
-        const prev = overlap![c] as Float32Array;
-        for (let i = 0; i < n; i++) {
-          const a = prev[i] as number;
-          const b = d[base + i] as number;
-          // a + w·(b − a): exactly a (and b) where both windows agree.
-          d[base + i] = a === b ? a : a + ((i + 0.5) / n) * (b - a);
-        }
-      });
-    }
-    for (let f = s.out0; f < s.out1; f += sr) {
-      const n = Math.min(sr, s.out1 - f);
-      opts.signal?.throwIfAborted();
-      await opts.onAudio(
-        data.map((d) => d.slice(base + f - s.out0, base + f - s.out0 + n)),
-        f,
-        { preRoll: t.preRoll, latency },
-      );
-    }
-    overlap = s.f1 > s.out1 ? data.map((d) => d.slice(base + (s.out1 - s.out0), base + (s.f1 - s.out0))) : null;
+    const frames = span.renderEnd - span.renderStart;
+    const rendered = await renderSpan(project, opts, t, span.renderStart, frames, (f) =>
+      opts.onProgress?.(Math.min(1, (done + f) / work)),
+    );
+    done += frames;
+    latency = rendered.latency;
+    synced &&= rendered.synced;
+    const data = Array.from({ length: rendered.buffer.numberOfChannels }, (_, c) => rendered.buffer.getChannelData(c));
+    // Where this window's own output starts in what was rendered (after its warm-up).
+    const base = span.outStart - span.renderStart;
+    if (overlap) crossfadeInto(data, base, overlap);
+    await deliver(opts, data, base, span, sampleRate, t.preRoll, latency);
+    overlap =
+      span.renderEnd > span.outEnd
+        ? data.map((d) => d.slice(base + (span.outEnd - span.outStart), base + (span.renderEnd - span.outStart)))
+        : null;
   }
   opts.onProgress?.(1);
-  return { preRoll: t.preRoll, latency, synced, frames: t.length, sampleRate: sr, windows: count };
+  return { preRoll: t.preRoll, latency, synced, frames: t.length, sampleRate, windows: spans.length };
+}
+
+/** Hands the window's output to the caller in pieces of at most PIECE_SEC, in order. */
+async function deliver(
+  opts: StreamRenderOptions,
+  data: Float32Array[],
+  base: number,
+  span: WindowSpan,
+  sampleRate: number,
+  preRoll: number,
+  latency: number,
+): Promise<void> {
+  const pieceFrames = PIECE_SEC * sampleRate;
+  for (let frame = span.outStart; frame < span.outEnd; frame += pieceFrames) {
+    const length = Math.min(pieceFrames, span.outEnd - frame);
+    opts.signal?.throwIfAborted();
+    const from = base + frame - span.outStart;
+    await opts.onAudio(
+      data.map((channelData) => channelData.slice(from, from + length)),
+      frame,
+      { preRoll, latency },
+    );
+  }
 }
 
 /**

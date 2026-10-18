@@ -25,6 +25,7 @@ interface Entry<T> {
   bytes: number;
 }
 
+/** A cache of values with a byte budget: the least recently used entries go first, pinned ones stay, and a load in progress is shared by everyone who asks. */
 export class BudgetCache<T> {
   /** Map order is recency: the first entry is the least recently used. */
   private readonly entries = new Map<string, Entry<T>>();

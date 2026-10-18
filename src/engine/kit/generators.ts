@@ -9,31 +9,34 @@ import { Biquad } from '@agstudio/sdk/dsp/biquad';
 import { Clap, HiHat, Kick, renderDrum, Snare, type DrumModel } from '@agstudio/sdk/dsp/drums';
 import { Rng } from '@agstudio/sdk/dsp/random';
 
+/** Makes a built-in sound at a sample rate from a seed: one array of samples per channel. */
 export type Generator = (sampleRate: number, seed: number) => Float32Array[];
 
 const TAU = Math.PI * 2;
 
-function normalize(chs: Float32Array[], peak = 0.9): Float32Array[] {
+/** Scales the channels so the loudest sample reaches `peak`, and fades out the last 256 frames (no click at the end). */
+function normalize(channels: Float32Array[], peak = 0.9): Float32Array[] {
   let max = 0;
-  for (const ch of chs) for (let i = 0; i < ch.length; i++) max = Math.max(max, Math.abs(ch[i] as number));
-  const g = max > 0 ? peak / max : 0;
-  for (const ch of chs) {
-    const fade = Math.min(ch.length, 256);
-    for (let i = 0; i < ch.length; i++) {
-      let v = (ch[i] as number) * g;
-      const fromEnd = ch.length - 1 - i;
+  for (const channel of channels) for (let i = 0; i < channel.length; i++) max = Math.max(max, Math.abs(channel[i] as number));
+  const gain = max > 0 ? peak / max : 0;
+  for (const channel of channels) {
+    const fade = Math.min(channel.length, 256);
+    for (let i = 0; i < channel.length; i++) {
+      let v = (channel[i] as number) * gain;
+      const fromEnd = channel.length - 1 - i;
       if (fromEnd < fade) v *= fromEnd / fade;
-      ch[i] = v;
+      channel[i] = v;
     }
   }
-  return chs;
+  return channels;
 }
 
-const len = (sr: number, seconds: number) => Math.max(1, Math.round(sr * seconds));
+/** Frames of `seconds` at `sampleRate` (at least one). */
+const len = (sampleRate: number, seconds: number) => Math.max(1, Math.round(sampleRate * seconds));
 
 /** Pitch-swept sine body (kicks and toms). */
 function body(
-  sr: number,
+  sampleRate: number,
   seconds: number,
   base: number,
   sweep: number,
@@ -41,43 +44,43 @@ function body(
   ampTau: number,
   drive: number,
 ): Float32Array {
-  const out = new Float32Array(len(sr, seconds));
+  const out = new Float32Array(len(sampleRate, seconds));
   let phase = 0;
   for (let i = 0; i < out.length; i++) {
-    const t = i / sr;
+    const t = i / sampleRate;
     const f = base + sweep * Math.exp(-t / sweepTau);
-    phase += (TAU * f) / sr;
+    phase += (TAU * f) / sampleRate;
     const attack = Math.min(1, t / 0.0015);
     out[i] = Math.tanh(drive * Math.sin(phase)) * Math.exp(-t / ampTau) * attack;
   }
   return out;
 }
 
-const kick: Generator = (sr, seed) => {
-  const out = body(sr, 0.6, 46, 140, 0.032, 0.24, 1.7);
+const kick: Generator = (sampleRate, seed) => {
+  const out = body(sampleRate, 0.6, 46, 140, 0.032, 0.24, 1.7);
   // Short high-passed noise click for attack.
   const rng = new Rng(seed);
-  const hp = new Biquad().set('highpass', 2500, 0.7, sr);
-  const click = len(sr, 0.004);
+  const hp = new Biquad().set('highpass', 2500, 0.7, sampleRate);
+  const click = len(sampleRate, 0.004);
   for (let i = 0; i < click; i++) out[i] = (out[i] as number) + hp.process(rng.bipolar()) * 0.35 * (1 - i / click);
   return normalize([out]);
 };
 
 function tom(base: number): Generator {
-  return (sr) => normalize([body(sr, 0.7, base, base * 0.6, 0.05, 0.18, 1.2)]);
+  return (sampleRate) => normalize([body(sampleRate, 0.7, base, base * 0.6, 0.05, 0.18, 1.2)]);
 }
 
-const snare: Generator = (sr, seed) => {
-  const out = new Float32Array(len(sr, 0.42));
+const snare: Generator = (sampleRate, seed) => {
+  const out = new Float32Array(len(sampleRate, 0.42));
   const rng = new Rng(seed);
-  const hp = new Biquad().set('highpass', 1500, 0.7, sr);
-  const peak = new Biquad().set('peaking', 5000, 1, sr, 4);
+  const hp = new Biquad().set('highpass', 1500, 0.7, sampleRate);
+  const peak = new Biquad().set('peaking', 5000, 1, sampleRate, 4);
   let p1 = 0;
   let p2 = 0;
   for (let i = 0; i < out.length; i++) {
-    const t = i / sr;
-    p1 += (TAU * (185 + 40 * Math.exp(-t / 0.01))) / sr;
-    p2 += (TAU * 330) / sr;
+    const t = i / sampleRate;
+    p1 += (TAU * (185 + 40 * Math.exp(-t / 0.01))) / sampleRate;
+    p2 += (TAU * 330) / sampleRate;
     const tone = (Math.sin(p1) * 0.7 + Math.sin(p2) * 0.4) * Math.exp(-t / 0.055);
     const noise = peak.process(hp.process(rng.bipolar())) * Math.exp(-t / 0.13);
     out[i] = (tone * 0.9 + noise * 0.8) * Math.min(1, t / 0.0008);
@@ -85,14 +88,14 @@ const snare: Generator = (sr, seed) => {
   return normalize([out]);
 };
 
-const clap: Generator = (sr, seed) => {
-  const out = new Float32Array(len(sr, 0.5));
+const clap: Generator = (sampleRate, seed) => {
+  const out = new Float32Array(len(sampleRate, 0.5));
   const rng = new Rng(seed);
-  const bp = new Biquad().set('bandpass', 1200, 1.4, sr);
-  const hp = new Biquad().set('highpass', 600, 0.7, sr);
+  const bp = new Biquad().set('bandpass', 1200, 1.4, sampleRate);
+  const hp = new Biquad().set('highpass', 600, 0.7, sampleRate);
   const bursts = [0, 0.011, 0.022];
   for (let i = 0; i < out.length; i++) {
-    const t = i / sr;
+    const t = i / sampleRate;
     let env = 0;
     for (const b of bursts) if (t >= b) env = Math.max(env, Math.exp(-(t - b) / 0.0075));
     if (t >= 0.03) env = Math.max(env, 0.55 * Math.exp(-(t - 0.03) / 0.11));
@@ -102,14 +105,14 @@ const clap: Generator = (sr, seed) => {
 };
 
 /** 808-style metallic source: six detuned square waves. */
-function metal(sr: number, n: number, ratioScale = 1): Float32Array {
+function metal(sampleRate: number, n: number, ratioScale = 1): Float32Array {
   const freqs = [205.3, 304.4, 369.6, 522.7, 540, 800].map((f) => f * ratioScale);
   const out = new Float32Array(n);
   const phases = new Float64Array(freqs.length);
   for (let i = 0; i < n; i++) {
     let s = 0;
     for (let k = 0; k < freqs.length; k++) {
-      phases[k] = ((phases[k] as number) + (freqs[k] as number) / sr) % 1;
+      phases[k] = ((phases[k] as number) + (freqs[k] as number) / sampleRate) % 1;
       s += (phases[k] as number) < 0.5 ? 1 : -1;
     }
     out[i] = s / freqs.length;
@@ -118,15 +121,15 @@ function metal(sr: number, n: number, ratioScale = 1): Float32Array {
 }
 
 function hat(seconds: number, tau: number): Generator {
-  return (sr, seed) => {
-    const n = len(sr, seconds);
-    const src = metal(sr, n);
+  return (sampleRate, seed) => {
+    const n = len(sampleRate, seconds);
+    const src = metal(sampleRate, n);
     const rng = new Rng(seed);
-    const bp = new Biquad().set('bandpass', 10000, 0.9, sr);
-    const hp = new Biquad().set('highpass', 7000, 0.7, sr);
+    const bp = new Biquad().set('bandpass', 10000, 0.9, sampleRate);
+    const hp = new Biquad().set('highpass', 7000, 0.7, sampleRate);
     const out = new Float32Array(n);
     for (let i = 0; i < n; i++) {
-      const t = i / sr;
+      const t = i / sampleRate;
       const x = (src[i] as number) * 0.8 + rng.bipolar() * 0.35;
       out[i] = hp.process(bp.process(x)) * Math.exp(-t / tau) * Math.min(1, t / 0.0005);
     }
@@ -134,30 +137,30 @@ function hat(seconds: number, tau: number): Generator {
   };
 }
 
-const rim: Generator = (sr, seed) => {
-  const out = new Float32Array(len(sr, 0.09));
+const rim: Generator = (sampleRate, seed) => {
+  const out = new Float32Array(len(sampleRate, 0.09));
   const rng = new Rng(seed);
-  const hp = new Biquad().set('highpass', 3000, 0.7, sr);
+  const hp = new Biquad().set('highpass', 3000, 0.7, sampleRate);
   let p1 = 0;
   let p2 = 0;
   for (let i = 0; i < out.length; i++) {
-    const t = i / sr;
-    p1 += (TAU * 1700) / sr;
-    p2 += (TAU * 480) / sr;
+    const t = i / sampleRate;
+    p1 += (TAU * 1700) / sampleRate;
+    p2 += (TAU * 480) / sampleRate;
     out[i] = (Math.sin(p1) * 0.6 + Math.sin(p2) * 0.5 + hp.process(rng.bipolar()) * 0.5) * Math.exp(-t / 0.009);
   }
   return normalize([out]);
 };
 
-const cowbell: Generator = (sr) => {
-  const out = new Float32Array(len(sr, 0.5));
-  const bp = new Biquad().set('bandpass', 2600, 1.2, sr);
+const cowbell: Generator = (sampleRate) => {
+  const out = new Float32Array(len(sampleRate, 0.5));
+  const bp = new Biquad().set('bandpass', 2600, 1.2, sampleRate);
   let a = 0;
   let b = 0;
   for (let i = 0; i < out.length; i++) {
-    const t = i / sr;
-    a = (a + 540 / sr) % 1;
-    b = (b + 800 / sr) % 1;
+    const t = i / sampleRate;
+    a = (a + 540 / sampleRate) % 1;
+    b = (b + 800 / sampleRate) % 1;
     const sq = (a < 0.5 ? 1 : -1) + (b < 0.5 ? 1 : -1);
     const env = 0.7 * Math.exp(-t / 0.03) + 0.3 * Math.exp(-t / 0.22);
     out[i] = bp.process(sq) * env;
@@ -165,19 +168,19 @@ const cowbell: Generator = (sr) => {
   return normalize([out], 0.8);
 };
 
-const crash: Generator = (sr, seed) => {
-  const n = len(sr, 2.6);
-  const src = metal(sr, n, 1.47);
+const crash: Generator = (sampleRate, seed) => {
+  const n = len(sampleRate, 2.6);
+  const src = metal(sampleRate, n, 1.47);
   const out: Float32Array[] = [new Float32Array(n), new Float32Array(n)];
   for (let c = 0; c < 2; c++) {
     const rng = new Rng(seed + c * 7919);
-    const hp = new Biquad().set('highpass', 4800, 0.7, sr);
-    const shelf = new Biquad().set('highshelf', 9000, 0.7, sr, 3);
-    const ch = out[c] as Float32Array;
+    const hp = new Biquad().set('highpass', 4800, 0.7, sampleRate);
+    const shelf = new Biquad().set('highshelf', 9000, 0.7, sampleRate, 3);
+    const channel = out[c] as Float32Array;
     for (let i = 0; i < n; i++) {
-      const t = i / sr;
+      const t = i / sampleRate;
       const x = rng.bipolar() * 0.8 + (src[i] as number) * 0.3;
-      ch[i] = shelf.process(hp.process(x)) * Math.exp(-t / 0.9) * Math.min(1, t / 0.002);
+      channel[i] = shelf.process(hp.process(x)) * Math.exp(-t / 0.9) * Math.min(1, t / 0.002);
     }
   }
   return normalize(out, 0.75);
@@ -299,8 +302,8 @@ function tame(x: Float32Array, sampleRate: number, maxCrestDb: number): Float32A
 
 /** One hit of a drum model, normalized to the stock kit's peak for that piece. */
 function drumHit(voice: DrumModel, peak: number, maxCrestDb = Infinity): Float32Array[] {
-  const sr = voice.sampleRate;
-  return normalize([tame(trimSilence(renderDrum(voice, 1, 3), sr), sr, maxCrestDb)], peak);
+  const sampleRate = voice.sampleRate;
+  return normalize([tame(trimSilence(renderDrum(voice, 1, 3), sampleRate), sampleRate, maxCrestDb)], peak);
 }
 
 /** The stock snare's crest factor is ~12 dB; a genre snare may be up to this peaky. */
@@ -309,16 +312,17 @@ const SNARE_CREST_DB = 13.5;
 function genreKit(kit: KitStyle): Record<string, Generator> {
   const k = GENRE_SETTINGS[kit];
   return {
-    [`kit/${kit}/kick`]: (sr, seed) => drumHit(Object.assign(new Kick(sr, seed), k.kick), 0.9),
-    [`kit/${kit}/snare`]: (sr, seed) => drumHit(Object.assign(new Snare(sr, seed), k.snare), 0.9, SNARE_CREST_DB),
-    [`kit/${kit}/clap`]: (sr, seed) => drumHit(Object.assign(new Clap(sr, seed), k.clap), 0.9),
+    [`kit/${kit}/kick`]: (sampleRate, seed) => drumHit(Object.assign(new Kick(sampleRate, seed), k.kick), 0.9),
+    [`kit/${kit}/snare`]: (sampleRate, seed) => drumHit(Object.assign(new Snare(sampleRate, seed), k.snare), 0.9, SNARE_CREST_DB),
+    [`kit/${kit}/clap`]: (sampleRate, seed) => drumHit(Object.assign(new Clap(sampleRate, seed), k.clap), 0.9),
     // The Drum Synth's noise mix for closed and open hats.
-    [`kit/${kit}/hat`]: (sr, seed) => drumHit(Object.assign(new HiHat(sr, seed), k.hat, { noiseMix: 0.25 }), 0.8),
-    [`kit/${kit}/open-hat`]: (sr, seed) =>
-      drumHit(Object.assign(new HiHat(sr, seed), k.openHat, { noiseMix: 0.32 }), 0.8),
+    [`kit/${kit}/hat`]: (sampleRate, seed) => drumHit(Object.assign(new HiHat(sampleRate, seed), k.hat, { noiseMix: 0.25 }), 0.8),
+    [`kit/${kit}/open-hat`]: (sampleRate, seed) =>
+      drumHit(Object.assign(new HiHat(sampleRate, seed), k.openHat, { noiseMix: 0.32 }), 0.8),
   };
 }
 
+/** The built-in sounds by name (`kit/kick`, the genre kits, ...). */
 export const GENERATORS: Readonly<Record<string, Generator>> = {
   'kit/kick': kick,
   'kit/snare': snare,
@@ -341,6 +345,7 @@ export function seedFor(name: string): number {
   return h >>> 0;
 }
 
+/** Makes the built-in sound `name` at `sampleRate`, or null for a name that is not a built-in. */
 export function generate(name: string, sampleRate: number): Float32Array[] | null {
   const gen = GENERATORS[name];
   return gen ? gen(sampleRate, seedFor(name)) : null;

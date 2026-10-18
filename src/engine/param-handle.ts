@@ -9,6 +9,7 @@ import { AutoLane } from './param-lane';
 
 const identity = (v: number) => v;
 
+/** The host's side of a plugin param: reads, change notifications and AudioParam bindings, all through one AutoLane. */
 export class ParamHandleImpl<S extends ParamSpec> implements ParamHandle<S> {
   readonly lane: AutoLane;
   private sources: ConstantSourceNode[] = [];

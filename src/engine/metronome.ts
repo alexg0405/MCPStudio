@@ -21,6 +21,7 @@ function clickBuffer(ctx: BaseAudioContext, freq: number, level: number): AudioB
   return buf;
 }
 
+/** Clicks on every beat while the transport plays and `enabled` is on; it also clicks the count-in before a recording. */
 export class Metronome implements TransportObserver {
   enabled = false;
   private scheduled: { time: number; src: AudioBufferSourceNode }[] = [];

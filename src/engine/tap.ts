@@ -33,6 +33,7 @@ export const INACTIVE_TAP: AudioTap = {
   reading: () => undefined,
 };
 
+/** An analyser on an audio node, read on the frame loop for spectrum and waveform (the plugin editors' and the visualizer's view). */
 export class TapImpl implements AudioTap, PluginTap {
   readonly sampleRate: number;
   readonly fftSize: number;

@@ -1,27 +1,17 @@
 /**
  * The audio engine: owns the AudioContext (or an OfflineAudioContext for export), mirrors the
  * project document into a Web Audio graph and drives the lookahead transport.
+ *
+ * The engine is the facade the app talks to (`EngineApi`). The work is split between collaborators that each have
+ * one job: the mixer graph (`MixerGraph`), the channel strips (`ChannelStrip`), the transport and its scheduler
+ * clock (`Transport`, `SchedulerClock`), the clip launcher link, previews, recording and the metering suite.
  */
-import { AudibleClock } from './audible-clock';
 import type { DocChange } from '@core/history/history';
-import type {
-  ChannelId,
-  InsertId,
-  PluginInstance,
-  PluginOwner,
-  Project,
-  SampleId,
-  SampleRef,
-  Tick,
-} from '@core/model/types';
-import { effectivelyMuted } from '@core/query/queries';
+import type { ChannelId, InsertId, PluginInstance, PluginOwner, Project, SampleId, SampleRef, Tick } from '@core/model/types';
 import { tempoMapOf } from '@core/automation/tempo';
-import { passClip } from './sched/launch';
-import { automatedOwners } from '@core/automation/owners';
-import { playbackKey } from '@core/audio/playback';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
-import type { AudioTap, JsonValue, ParamSpecs, TransportInfo } from '@agstudio/sdk';
-import { INACTIVE_TAP, TapImpl } from './tap';
+import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
+import type { AudioTap, JsonValue, ParamSpecs } from '@agstudio/sdk';
 import type {
   DeckHost,
   EngineApi,
@@ -36,97 +26,80 @@ import type {
   TransportView,
 } from './api';
 import { AutomationDriver } from './automation/driver';
-import { ChannelStrip } from './channel-strip';
+import type { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
-import { NoteFeedHub } from './note-feed';
 import { KernelTransportFeed } from './kernel-transport';
+import { LauncherLink } from './launcher-link';
+import { LIMITER_ID } from './limiter-id';
+import { LiveCapture, type RecordAlongOptions } from './live-capture';
+import { LiveMeters } from './live-meters';
 import { Metronome } from './metronome';
 import { MixerGraph } from './mixer-graph';
+import { NoteFeedHub } from './note-feed';
+import { NotePreview } from './note-preview';
+import { OutputClock } from './output-clock';
 import { ParamRegistry } from './param-lane';
-import { SampleCache } from './samples';
-import { decodeAudio } from './decode';
-import { bufferFromPcm16, copyChannels, runStretch } from './audio-buffers';
-import { sha256Hex } from '@core/io/hash';
-import type { Waveform } from './waveform';
+import { PortSet } from './port-set';
+import { ProjectMirror } from './project-mirror';
+import { isRealtimeContext } from './realtime-context';
 import { SampleResidency } from './sample-residency';
-import { startRecording, type RecordOptions, type RecordingHandle } from './recorder';
-import { openAudioInput, type AudioInput } from './audio-input';
-import type { Timeline } from './sched/core';
-import { patternModeSource, songModeSource, type EventSource } from './sched/events';
-import { Transport, type TransportSink } from './sched/transport';
-import { LAUNCH_GRACE_SEC, type LaunchClock, type LaunchDriver, type LaunchRun } from '@core/launcher/run';
-import { LIMITER_ID } from './limiter-id';
-import { MeterNode, canMeter } from './meter/meter-node';
-import type { WorkletPortImpl } from './worklet-port';
+import { DEFAULT_PREVIEW_VOLUME, SamplePreview } from './sample-preview';
+import { SampleCache } from './samples';
+import { SchedulerClock, PumpMonitor } from './scheduler-clock';
+import type { EventSource } from './sched/events';
+import { Transport } from './sched/transport';
+import { SongNoteSink } from './song-note-sink';
+import { TempoInfo, TempoReporter } from './tempo-info';
+import { TestClicks } from './test-clicks';
+import { launcherOnlyModel, planTransportModel, sameView, type TransportModel } from './transport-model';
+import { INACTIVE_TAP, TapImpl } from './tap';
+import type { Waveform } from './waveform';
+import type { RecordingHandle } from './recorder';
+import type { AudioInput } from './audio-input';
 import limiterUrl from './limiter.worklet.ts?worker&url';
 
-const PREVIEW_ID_BASE = 2 ** 30;
+/** The tempo (BPM) before any project is loaded. */
+const DEFAULT_BPM = 130;
 
-const audioKeys = new WeakMap<Project['channels'], string>();
+/** Level of the monitor bus (metronome and count-in clicks), a linear gain. */
+const MONITOR_BUS_GAIN = 0.9;
 
-/** One string for how every audio clip channel plays (see playbackKey), memoized per channels record. */
-function audioKeyOf(p: Project): string {
-  let key = audioKeys.get(p.channels);
-  if (key === undefined) {
-    const parts: string[] = [];
-    for (const id of p.channelOrder) {
-      const ch = p.channels[id];
-      if (ch?.kind === 'audioClip') parts.push(`${id}:${playbackKey(ch)}`);
-    }
-    key = parts.join(',');
-    audioKeys.set(p.channels, key);
-  }
-  return key;
-}
+/** Seconds a replaced engine takes to fade out. */
+const DISPOSE_FADE_SEC = 0.012;
+/** Extra milliseconds waited after the fade, so the ramp has certainly finished. */
+const DISPOSE_FADE_SLACK_MS = 3;
+
+/** The scheduler's lookahead grows by this factor (to at most MAX_LOOKAHEAD_SEC) each time notes went out late. */
+const LOOKAHEAD_GROWTH = 1.5;
+const MAX_LOOKAHEAD_SEC = 0.25;
+
+/** Finished voices let go of their buffers at most this often while playing (seconds). */
+const VOICE_SWEEP_INTERVAL_SEC = 0.5;
+/** After a stop, voices that were still releasing are swept once more after this long (ms). */
+const SWEEP_AFTER_STOP_MS = 300;
 
 /**
- * Tempo as plugins see it: the tempo now, the tempo at a scheduled time (from the transport's
- * planned segments, so tempo automation is followed), and change notifications with the time the
- * new tempo starts at.
+ * Panic ducks the output over this long (seconds), holds it silent until PANIC_SILENT_UNTIL_SEC (long enough for
+ * ringing tails to die), and is back at full level at PANIC_FULL_AT_SEC. All counted from the call.
  */
-class TempoInfo implements TransportInfo {
-  readonly ppq = PPQ;
-  private fns = new Set<(bpm: number, time: number) => void>();
-  /** Seconds per tick → BPM at a context time (set once the transport exists). */
-  sptAt: ((time: number) => number) | null = null;
-  constructor(
-    public bpm: number,
-    private readonly clock: { readonly currentTime: number },
-  ) {}
-  tempoAt(time: number): number {
-    const spt = this.sptAt?.(time);
-    return spt ? Math.round((60 / (spt * PPQ)) * 1e6) / 1e6 : this.bpm;
-  }
-  onTempo(cb: (bpm: number, time: number) => void): () => void {
-    this.fns.add(cb);
-    return () => this.fns.delete(cb);
-  }
-  setBpm(bpm: number, time = this.clock.currentTime): void {
-    if (bpm === this.bpm) return;
-    this.bpm = bpm;
-    for (const fn of this.fns) fn(bpm, time);
-  }
-}
+const PANIC_DUCK_SEC = 0.01;
+const PANIC_SILENT_UNTIL_SEC = 0.6;
+const PANIC_FULL_AT_SEC = 0.65;
 
-/** The live worklet ports; a new one is told where the song is right away. */
-class PortSet extends Set<WorkletPortImpl> {
-  onAdd: ((port: WorkletPortImpl) => void) | null = null;
-  override add(port: WorkletPortImpl): this {
-    super.add(port);
-    this.onAdd?.(port);
-    return this;
-  }
-}
+/** The song's next beat is skipped for the one after when it is closer than this (seconds). */
+const MIN_BEAT_LEAD_SEC = 0.02;
 
-/** How far past the output's last timestamp the heard time may run on the wall clock (seconds). */
-const MAX_EXTRAPOLATION = 0.1;
-/** Seconds a replaced engine takes to fade out. */
-const DISPOSE_FADE = 0.012;
-/** How long (ms) one reading of the output clock answers every reader (a frame is 16 ms). */
-const AUDIBLE_CACHE_MS = 2;
-/** The most the start lead learns to add after late starts (seconds). */
-const MAX_START_PAD = 0.03;
+/** Export tails: at least this long (seconds), at most MAX_TAIL_SEC (before the mixer's latency is added). */
+const MIN_TAIL_SEC = 0.5;
+const MAX_TAIL_SEC = 30;
 
+/** The output visualizer's FFT size and smoothing (0 to 1). */
+const OUTPUT_TAP_OPTIONS = { fftSize: 4096, smoothing: 0.8 };
+
+/** What a transport that has not been given a project yet plays: nothing. */
+const NO_EVENTS: EventSource = { project: null as unknown as Project, clips: [] };
+
+/** The audio engine: a Web Audio mirror of the project, driven by the lookahead transport (see the file comment). */
 export class Engine implements EngineApi, EngineCore {
   readonly ctx: BaseAudioContext;
   readonly plugins: PluginResolver;
@@ -135,7 +108,15 @@ export class Engine implements EngineApi, EngineCore {
   readonly offline: boolean;
   readonly transportInfo: TempoInfo;
   readonly params = new ParamRegistry();
+  /** The live worklet ports; a new one is told where the song is right away. */
+  readonly ports = new PortSet();
+  /** Notes of instrument channels for effects that follow a melody (host.notes). */
+  readonly noteFeed = new NoteFeedHub();
+  /** Inserts, routes, sidechains and delay compensation (engine/mixer-graph.ts). */
+  readonly mixer: MixerGraph;
+
   private readonly automation: AutomationDriver;
+  private readonly outputClock: OutputClock;
   private session: EngineSession = { metronome: false, countInBars: 0 };
   /** Post-master bus: master insert + previews → safety limiter → destination. */
   private readonly masterOut: GainNode;
@@ -143,61 +124,44 @@ export class Engine implements EngineApi, EngineCore {
   /** Metronome and count-in clicks: after the master track, before the limiter; never exported. */
   private readonly monitorBus: GainNode;
   private readonly metronome: Metronome | null;
-  /** Inserts, routes, sidechains and delay compensation (engine/mixer-graph.ts). */
-  readonly mixer: MixerGraph;
   private readonly strips = new Map<ChannelId, ChannelStrip>();
-  private project: Project | null = null;
+  private readonly mirror: ProjectMirror;
   private view: TransportView = { mode: 'pattern', patternId: null, loop: null };
   private readonly transport: Transport;
+  private readonly schedulerClock: SchedulerClock;
+  private readonly pumpMonitor: PumpMonitor;
   /** The clip launcher: decides what plays on top of the song (see core/launcher). */
-  private launcher: LaunchDriver | null = null;
-  /** The runs the transport was last given. */
-  private launchSeen: readonly LaunchRun[] | null = null;
-  /** The launcher plays on its own (the song is not playing): the transport runs for it alone. */
-  private soloLauncher = false;
-  private clock: Worker | null = null;
+  private readonly launcherLink: LauncherLink;
+  private readonly samplePreview: SamplePreview;
+  private readonly notePreview: NotePreview;
+  private readonly testClicks: TestClicks;
+  private readonly liveCapture: LiveCapture;
+  private readonly liveMeters: LiveMeters;
   private readonly listeners = new Set<() => void>();
-  private previewSeq = PREVIEW_ID_BASE;
-  private previewSource: AudioBufferSourceNode | null = null;
-  private previewToken = 0;
-  private previewRelease: (() => void) | null = null;
-  private readonly waveformsLoading = new Set<string>();
+  /** Sample files whose waveform is being decoded (one that can't be decoded stays, so redraws don't retry it). */
+  private readonly waveformKeysLoading = new Set<string>();
   private faults = 0;
-  private muteKey = '';
-  /** How every audio clip channel plays its sample (playing clips restart when it changes). */
-  private audioKey = '';
-  private lastLate = 0;
+  /** How many `lateEvents` the lookahead already grew for. */
+  private lateEventsSeen = 0;
+  /** Worklet modules by URL: each is added to the context once. */
   private readonly modules = new Map<string, Promise<void>>();
-  readonly ports = new PortSet();
-  /** Notes of instrument channels for effects that follow a melody (host.notes). */
-  readonly noteFeed = new NoteFeedHub();
   private readonly initDone: Promise<void>;
   private limiter: AudioWorkletNode | null = null;
-  /** Scheduler cadence (see EngineStats.maxPumpGapMs). */
-  private lastPumpAt = 0;
-  private maxPumpGap = 0;
-  /** Live inputs (closed with the engine). */
-  private readonly inputs = new Set<AudioInput>();
   /** Song mode without a loop region plays past the end (recording) instead of looping. */
   private openEnded = false;
-  private testClick: AudioBuffer | null = null;
   /** Song mode position the residency plans around while stopped (where playback last started). */
-  private songPos = 0;
-  private lastSweep = 0;
+  private songPosition = 0;
+  private lastSweepTime = 0;
   private disposed = false;
   /** The constructor has run to its end (the mixer reports its compensation while the engine is being built). */
   private built = false;
-  /** Inside reconcile(): a change of the compensation is applied at its end, once the strips are up to date. */
-  private reconciling = 0;
-  private realign = false;
-  /** A channel's shift changed during this reconcile (a re-plan follows while playing). */
-  private shiftsMoved = false;
-  /**
-   * The shift (seconds) each song note was dispatched with, until its release: a note's release, or its cancellation
-   * by a re-plan, must carry the shift its start did even if the compensation changed meanwhile (a release earlier
-   * than the start cancels the note; later, it would sound for the difference).
-   */
-  private readonly noteShifts = new Map<number, number>();
+  private outputTapCache: TapImpl | null = null;
+  private deckHostCache: DeckHost | null = null;
+
+  /** The project as last applied, or null before the first one. */
+  private get project(): Project | null {
+    return this.mirror.project;
+  }
 
   constructor(
     ctx: BaseAudioContext,
@@ -210,21 +174,14 @@ export class Engine implements EngineApi, EngineCore {
     this.offline = offline;
     this.plugins = opts.plugins;
     this.samples = opts.sampleCache ?? new SampleCache(opts.samples);
-    this.residency = new SampleResidency({
-      cache: this.samples,
-      ctx,
-      offline,
-      onReady: (ids) => {
-        for (const id of ids) this.strips.get(id)?.buffersChanged();
-      },
-      onStretching: () => this.emit(),
-    });
-    this.transportInfo = new TempoInfo(130, ctx);
+    this.residency = this.createResidency();
+    this.transportInfo = new TempoInfo(DEFAULT_BPM, ctx);
+    this.outputClock = new OutputClock(ctx);
     this.masterOut = new GainNode(ctx);
-    this.previewBus = new GainNode(ctx, { gain: 0.8 });
+    this.previewBus = new GainNode(ctx, { gain: DEFAULT_PREVIEW_VOLUME });
+    this.monitorBus = new GainNode(ctx, { gain: MONITOR_BUS_GAIN });
     this.masterOut.connect(ctx.destination);
     this.previewBus.connect(this.masterOut);
-    this.monitorBus = new GainNode(ctx, { gain: 0.9 });
     this.monitorBus.connect(this.masterOut);
     this.mixer = new MixerGraph(
       this,
@@ -232,65 +189,114 @@ export class Engine implements EngineApi, EngineCore {
       () => this.emit(),
       () => this.alignChannels(),
     );
+    this.transport = this.createTransport();
+    this.automation = this.createAutomation();
+    this.mirror = this.createProjectMirror();
+    this.metronome = offline ? null : this.createMetronome();
+    this.observeTransport();
+    this.schedulerClock = new SchedulerClock(() => this.tick());
+    this.pumpMonitor = new PumpMonitor(ctx);
+    this.launcherLink = this.createLauncherLink();
+    this.samplePreview = this.createSamplePreview();
+    this.notePreview = this.createNotePreview();
+    this.testClicks = new TestClicks(ctx, this.monitorBus);
+    this.liveCapture = this.createLiveCapture();
+    this.liveMeters = this.createLiveMeters();
+    if (!offline && isRealtimeContext(ctx)) ctx.addEventListener('statechange', () => this.emit());
+    this.built = true;
+    this.initDone = this.installSafetyLimiter();
+  }
 
-    // The song's events reach a channel `shift` seconds late (the mixer's delay compensation is done in time: see
-    // ChannelStrip.shift); previews and live input go to the strips directly and are never held back.
-    const sink: TransportSink = {
-      noteOn: (cid, e) => {
-        this.noteFeed.emit(cid, { kind: 'on', time: e.time, noteId: e.noteId, key: e.key, velocity: e.velocity });
-        const strip = this.strips.get(cid);
-        if (!strip) return;
-        const shift = strip.shift;
-        if (shift === 0) return strip.noteOn(e);
-        this.noteShifts.set(e.noteId, shift);
-        strip.noteOn({ ...e, time: e.time + shift });
+  private createResidency(): SampleResidency {
+    return new SampleResidency({
+      cache: this.samples,
+      ctx: this.ctx,
+      offline: this.offline,
+      onReady: (ids) => {
+        for (const id of ids) this.strips.get(id)?.buffersChanged();
       },
-      audioOn: (cid, e) => {
-        const strip = this.strips.get(cid);
-        if (!strip) return;
-        const shift = strip.shift;
-        if (shift === 0) return strip.audioOn(e);
-        this.noteShifts.set(e.noteId, shift);
-        strip.audioOn({ ...e, time: e.time + shift });
-      },
-      noteOff: (cid, e) => {
-        this.noteFeed.emit(cid, { kind: 'off', time: e.time, noteId: e.noteId, key: e.key, velocity: e.release ?? 0.5 });
-        const shift = this.noteShifts.get(e.noteId);
-        if (shift === undefined) return this.strips.get(cid)?.noteOff(e);
-        this.noteShifts.delete(e.noteId);
-        this.strips.get(cid)?.noteOff({ ...e, time: e.time + shift });
-      },
-      allNotesOff: (time) => {
-        this.noteFeed.emitAllOff(time);
-        // Everything not yet started goes, whatever shift it has (they are all at or after `time`).
-        this.noteShifts.clear();
-        for (const s of this.strips.values()) s.allNotesOff(time);
-      },
-    };
-    const empty: EventSource = { project: null as unknown as Project, clips: [] };
-    this.transport = new Transport(ctx, sink, empty, {
-      tempo: constantTempo(130),
+      onStretching: () => this.emit(),
+    });
+  }
+
+  /** The transport starts with nothing to play; the project's events and timeline arrive with `updateModel`. */
+  private createTransport(): Transport {
+    const transport = new Transport(this.ctx, new SongNoteSink(this.strips, this.noteFeed), NO_EVENTS, {
+      tempo: constantTempo(DEFAULT_BPM),
       loop: { start: 0, end: 1 },
       endTick: 1,
     });
-    this.transport.onEnded = () => this.emit();
-    this.transportInfo.sptAt = (time) => this.transport.sptAt(time);
-    this.automation = new AutomationDriver({
-      ctx,
+    transport.onEnded = () => this.emit();
+    this.transportInfo.secondsPerTickAt = (time) => transport.sptAt(time);
+    return transport;
+  }
+
+  private createAutomation(): AutomationDriver {
+    return new AutomationDriver({
+      ctx: this.ctx,
       params: this.params,
-      offline,
+      offline: this.offline,
       specsOf: (pluginId) => this.plugins.get(pluginId)?.params as ParamSpecs | undefined,
       timeline: () => this.transport.currentTimeline,
     });
+  }
+
+  private createProjectMirror(): ProjectMirror {
+    return new ProjectMirror({
+      core: this,
+      strips: this.strips,
+      mixer: this.mixer,
+      noteFeed: this.noteFeed,
+      residency: this.residency,
+      automation: this.automation,
+      tempo: this.transportInfo,
+      view: () => this.view,
+      isPlaying: () => this.transport.playing,
+      replan: () => this.updateModel(),
+    });
+  }
+
+  private createMetronome(): Metronome {
+    return new Metronome(
+      this.ctx,
+      this.monitorBus,
+      () => (this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null),
+      () => this.mixer.latency,
+    );
+  }
+
+  private createSamplePreview(): SamplePreview {
+    return new SamplePreview({
+      ctx: this.ctx,
+      samples: this.samples,
+      bus: this.previewBus,
+      resume: () => this.resume(),
+      nextBeatTime: () => this.nextBeatTime(),
+    });
+  }
+
+  private createNotePreview(): NotePreview {
+    return new NotePreview({
+      ctx: this.ctx,
+      strips: this.strips,
+      noteFeed: this.noteFeed,
+      clock: this.outputClock,
+      resume: () => this.resume(),
+    });
+  }
+
+  private createLiveMeters(): LiveMeters {
+    return new LiveMeters({
+      ctx: this.ctx,
+      canOpen: () => !this.offline && !this.disposed,
+      loadModule: (url) => this.loadModule(url),
+      outputNode: (source) => this.mixer.outputNode(source),
+    });
+  }
+
+  /** What the transport tells while it runs: automation, the metronome, worklet kernels and tempo-synced plugins. */
+  private observeTransport(): void {
     this.transport.observe(this.automation);
-    this.metronome = offline
-      ? null
-      : new Metronome(
-          ctx,
-          this.monitorBus,
-          () => (this.project ? { tempo: this.tempoMap(), timeSig: this.project.transport.timeSig } : null),
-          () => this.mixer.latency,
-        );
     if (this.metronome) this.transport.observe(this.metronome);
     // Worklet kernels' view of the song (tempo-synced effects and instruments).
     const kernelTransport = new KernelTransportFeed({
@@ -303,59 +309,53 @@ export class Engine implements EngineApi, EngineCore {
     this.transportInfo.onTempo((bpm, time) => kernelTransport.tempoChanged(bpm, time));
     this.ports.onAdd = (port) => kernelTransport.adopt(port);
     // Tempo automation: tell tempo-synced plugins when the tempo of the planned segments changes.
-    let lastSpt = 0;
-    this.transport.observe({
-      started: () => {
-        lastSpt = 0;
+    this.transport.observe(new TempoReporter(this.transportInfo, () => this.project?.transport.bpm ?? null));
+  }
+
+  private createLauncherLink(): LauncherLink {
+    return new LauncherLink({
+      ctx: this.ctx,
+      transport: this.transport,
+      strips: this.strips,
+      residency: this.residency,
+      project: () => this.project,
+      heardTime: () => this.heardTime(),
+      startLead: () => this.outputClock.startLead(),
+      replan: () => this.updateModel(),
+      resume: () => this.resume(),
+      startTransportForLauncher: () => {
+        this.pumpMonitor.resetGap();
+        this.transport.start(0, this.ctx.currentTime + this.outputClock.startLead());
+        this.startClock();
+        this.emit();
       },
-      segment: (seg) => {
-        if (seg.spt !== lastSpt) {
-          if (lastSpt !== 0) this.transportInfo.setBpm(Math.round((60 / (seg.spt * PPQ)) * 1e6) / 1e6, seg.time0);
-          lastSpt = seg.spt;
-        }
-      },
-      stopped: (time) => {
-        if (this.project) this.transportInfo.setBpm(this.project.transport.bpm, time);
+      stop: () => this.stop(),
+    });
+  }
+
+  private createLiveCapture(): LiveCapture {
+    return new LiveCapture({
+      ctx: this.ctx,
+      previewBus: this.previewBus,
+      resume: () => this.resume(),
+      loadModule: (url) => this.loadModule(url),
+      insertInput: (id) => this.insertInput(id),
+      stop: () => this.stop(),
+      hasProject: () => this.project !== null,
+      songBpmAt: (tick) => this.tempoMap().bpmAt(tick),
+      startPlayAlong: (fromTick, at) => {
+        this.updateModel();
+        this.transport.start(fromTick, at);
+        this.startClock();
+        this.emit();
       },
     });
-
-    if (!offline && typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
-      ctx.addEventListener('statechange', () => this.emit());
-    }
-    this.built = true;
-    this.initDone = this.init();
   }
 
-  /** Where a channel routed to `id` is held back (seconds): see MixerGraph.shiftSeconds. */
-  channelShift(id: InsertId): number {
-    return this.mixer.shiftSeconds(id);
-  }
-
-  /**
-   * The mixer's delay compensation was recomputed: every channel (and its automation and plugin anchors) is scheduled
-   * later by what its insert is held back. While playing, what was already handed to the audio thread with the old
-   * shift is planned again.
-   */
-  private alignChannels(): void {
-    if (!this.built || this.disposed) return;
-    if (this.reconciling > 0) {
-      this.realign = true;
-      return;
-    }
-    if (this.applyAlignment() && this.transport.playing) this.updateModel();
-  }
-
-  /** Returns whether any channel's shift changed. */
-  private applyAlignment(): boolean {
-    let moved = false;
-    for (const strip of this.strips.values()) if (strip.setShift(this.mixer.shiftSeconds(strip.outputId))) moved = true;
-    // Insert and effect lanes were moved by the mixer itself; either way the driver plans the moved lanes again.
-    this.automation.retime();
-    return moved;
-  }
+  // ---- Boot and plugin modules ----
 
   /** Inserts the master safety limiter once its worklet module has loaded. */
-  private async init(): Promise<void> {
+  private async installSafetyLimiter(): Promise<void> {
     if (this.build.limiter === false) return;
     try {
       await this.loadModule(limiterUrl);
@@ -375,29 +375,30 @@ export class Engine implements EngineApi, EngineCore {
     }
   }
 
+  /** Adds an AudioWorklet module to the context, once per URL (a failed load may be tried again). */
   loadModule(url: string): Promise<void> {
-    let p = this.modules.get(url);
-    if (!p) {
-      p = this.ctx.audioWorklet.addModule(url);
-      this.modules.set(url, p);
-      p.catch(() => this.modules.delete(url));
+    let loading = this.modules.get(url);
+    if (!loading) {
+      loading = this.ctx.audioWorklet.addModule(url);
+      this.modules.set(url, loading);
+      loading.catch(() => this.modules.delete(url));
     }
-    return p;
+    return loading;
   }
 
   /** Resolves once every worklet processor has handled all messages sent so far (export barrier). */
   async syncWorklets(timeoutMs = 2000): Promise<boolean> {
-    const all = Promise.all([...this.ports].map((p) => p.sync())).then(() => true);
-    const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs));
-    return Promise.race([all, timeout]);
+    const allSynced = Promise.all([...this.ports].map((port) => port.sync())).then(() => true);
+    const timedOut = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), timeoutMs));
+    return Promise.race([allSynced, timedOut]);
   }
 
   /** Plugin definitions changed (hot reload, plugin added/removed): rebuild the affected instances. */
   pluginsChanged(ids: readonly string[]): void {
     if (!this.project || ids.length === 0) return;
-    const set = new Set(ids);
-    for (const strip of this.strips.values()) if (set.has(strip.pluginId)) strip.reload(this.project);
-    this.mixer.pluginsChanged(set, this.project);
+    const changed = new Set(ids);
+    for (const strip of this.strips.values()) if (changed.has(strip.pluginId)) strip.reload(this.project);
+    this.mixer.pluginsChanged(changed, this.project);
   }
 
   /**
@@ -421,7 +422,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   async resume(): Promise<void> {
-    if (this.ctx instanceof AudioContext && this.ctx.state !== 'running') await this.ctx.resume();
+    if (isRealtimeContext(this.ctx) && this.ctx.state !== 'running') await this.ctx.resume();
   }
 
   /** Resolves when the master chain and every plugin instance have loaded (not the audio clips' samples). */
@@ -436,17 +437,11 @@ export class Engine implements EngineApi, EngineCore {
    * what the project already records, so it is cheap. The export's tail probe waits for it after `pluginsReady`.
    */
   async sampleLengthsReady(): Promise<void> {
-    const p = this.project;
-    if (!p) return;
-    const ids = new Set<SampleId>();
-    const add = (inst: PluginInstance) => {
-      for (const id of Object.values(inst.samples ?? {})) if (id) ids.add(id);
-    };
-    for (const ch of Object.values(p.channels)) if (ch.kind === 'instrument') add(ch.plugin);
-    for (const ins of Object.values(p.mixer.inserts)) for (const slot of ins.fx) add(slot.plugin);
+    const project = this.project;
+    if (!project) return;
     await Promise.all(
-      [...ids].map((id) => {
-        const ref = p.samples[id];
+      [...pluginSampleIds(project)].map((id) => {
+        const ref = project.samples[id];
         return ref ? this.samples.learnDuration(ref, this.ctx).catch(() => null) : null;
       }),
     );
@@ -461,92 +456,7 @@ export class Engine implements EngineApi, EngineCore {
   // ---- Document mirroring ----
 
   applyDocChange(change: DocChange): void {
-    const prev = change.origin === 'load' ? null : this.project;
-    this.reconcile(prev, change.next);
-  }
-
-  private reconcile(prev: Project | null, next: Project): void {
-    if (prev === next) return;
-    this.reconciling++;
-    this.shiftsMoved = false;
-    try {
-      this.reconcileInto(prev, next);
-    } finally {
-      this.reconciling--;
-    }
-    if (this.realign) {
-      this.realign = false;
-      if (this.applyAlignment()) this.shiftsMoved = true;
-    }
-    // Scheduling changes were re-planned at the end of reconcileInto; a moved shift needs a re-plan of its own.
-    if (this.shiftsMoved && this.transport.playing) this.updateModel();
-    this.shiftsMoved = false;
-  }
-
-  private reconcileInto(prev: Project | null, next: Project): void {
-    this.project = next;
-    if (!prev || prev.transport.bpm !== next.transport.bpm) this.transportInfo.setBpm(next.transport.bpm);
-
-    // Inserts first (channels connect to them), removals last.
-    const removedInserts = this.mixer.reconcile(prev, next);
-
-    if (!prev || prev.channels !== next.channels || prev.samples !== next.samples) {
-      const muted = effectivelyMuted(next.channels);
-      for (const id of next.channelOrder) {
-        const ch = next.channels[id];
-        if (!ch || ch.kind === 'automation') continue;
-        const strip = this.strips.get(id);
-        if (!strip) this.strips.set(id, new ChannelStrip(this, ch, next));
-        else {
-          const prevCh = prev?.channels[id];
-          if (prevCh !== ch) {
-            const was = strip.shift;
-            strip.update(ch, next);
-            if (strip.shift !== was) this.shiftsMoved = true;
-          } else if (prev && prev.samples !== next.samples) strip.samplesChanged(next);
-        }
-        this.strips.get(id)?.setMuted(muted.has(id));
-      }
-      for (const [id, strip] of this.strips) {
-        const kind = next.channels[id]?.kind;
-        if (kind !== 'instrument' && kind !== 'audioClip') {
-          strip.dispose();
-          this.strips.delete(id);
-        }
-      }
-    }
-    // Insert removals last; anything still routed to a removed insert falls back to the master.
-    this.mixer.removeStrips(removedInserts);
-    // First automation on a plugin that ran without AudioParams: it gets them (a new instance).
-    if (prev && prev.channels !== next.channels && automatedOwners(prev.channels) !== automatedOwners(next.channels)) {
-      for (const strip of this.strips.values()) strip.automationChanged(next);
-      this.mixer.automationChanged(next);
-    }
-
-    if (!prev || prev.channels !== next.channels || prev.channelOrder !== next.channelOrder) this.noteFeed.setProject(next);
-    const muteKey = [...effectivelyMuted(next.channels)].sort().join(',');
-    const audioKey = !prev || prev.channels !== next.channels ? audioKeyOf(next) : this.audioKey;
-    const schedulingChanged =
-      !prev ||
-      prev.patterns !== next.patterns ||
-      prev.playlist !== next.playlist ||
-      prev.transport !== next.transport ||
-      prev.channelOrder !== next.channelOrder ||
-      muteKey !== this.muteKey ||
-      audioKey !== this.audioKey;
-    this.muteKey = muteKey;
-    this.audioKey = audioKey;
-    if (
-      !prev ||
-      prev.playlist !== next.playlist ||
-      prev.channels !== next.channels ||
-      prev.transport !== next.transport ||
-      prev.samples !== next.samples
-    )
-      this.residency.setProject(next);
-    // Automation first: a re-planning transport then schedules segments with the new curves.
-    this.automation.update(next, this.view);
-    if (schedulingChanged) this.updateModel();
+    this.mirror.applyDocChange(change);
   }
 
   /** True while a time-stretched copy of the channel's sample is being computed. */
@@ -558,48 +468,33 @@ export class Engine implements EngineApi, EngineCore {
     this.emit();
   }
 
+  /** Where a channel routed to `id` is held back (seconds): see MixerGraph.shiftSeconds. */
+  channelShift(id: InsertId): number {
+    return this.mixer.shiftSeconds(id);
+  }
+
+  /** The mixer recomputed its delay compensation (it may do so while the engine is still being built). */
+  private alignChannels(): void {
+    if (!this.built || this.disposed) return;
+    this.mirror.alignChannels();
+  }
+
+  // ---- What the transport plays ----
+
   setTransportView(view: TransportView): void {
-    if (
-      view.mode === this.view.mode &&
-      view.patternId === this.view.patternId &&
-      view.loop?.start === this.view.loop?.start &&
-      view.loop?.end === this.view.loop?.end
-    )
-      return;
+    if (sameView(view, this.view)) return;
     this.view = view;
     if (this.project) this.automation.update(this.project, view);
     this.updateModel();
   }
 
-  private model(): { source: EventSource; timeline: Timeline } | null {
-    const p = this.project;
-    if (!p) return null;
-    const launch = this.launcher ? { launch: { runs: this.launcher.runs } } : {};
-    if (this.soloLauncher) {
-      // The launcher on its own: no song, the project's tempo, until something stops it.
-      const tempo = tempoMapOf(p, 'pattern');
-      return {
-        source: { project: p, clips: [], ...launch },
-        timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER },
-      };
-    }
-    const m = this.songModel(p);
-    return { source: { ...m.source, ...launch }, timeline: m.timeline };
-  }
-
-  private songModel(p: Project): { source: EventSource; timeline: Timeline } {
-    const tempo = tempoMapOf(p, this.view.mode);
-    if (this.view.mode === 'song') {
-      // Song mode loops the loop region, or the whole song (FL's default); while recording audio
-      // without a loop region it plays on past the end.
-      const { source, length } = songModeSource(p);
-      const songEnd = Math.max(length, ticksPerBar(p.transport.timeSig));
-      const region = this.view.loop && this.view.loop.end > this.view.loop.start ? this.view.loop : null;
-      if (!region && this.openEnded) return { source, timeline: { tempo, loop: null, endTick: Number.MAX_SAFE_INTEGER } };
-      return { source, timeline: { tempo, loop: region ?? { start: 0, end: songEnd }, endTick: songEnd } };
-    }
-    const { source, length } = patternModeSource(p, this.view.patternId ?? p.patternOrder[0] ?? null);
-    return { source, timeline: { tempo, loop: { start: 0, end: length }, endTick: length } };
+  /** What the transport plays and its timeline, or null before a project is loaded. */
+  private model(): TransportModel | null {
+    const project = this.project;
+    if (!project) return null;
+    const launch = this.launcherLink.eventSourceExtras();
+    if (this.launcherLink.isAlone) return launcherOnlyModel(project, launch);
+    return planTransportModel(project, this.view, this.openEnded, launch);
   }
 
   /** The tempo map playback uses now (song mode follows tempo automation). */
@@ -607,106 +502,43 @@ export class Engine implements EngineApi, EngineCore {
     return this.project ? tempoMapOf(this.project, this.view.mode) : constantTempo(this.transportInfo.bpm);
   }
 
+  /** Plans what the transport plays again (the project, the view or the launcher's runs changed). */
   private updateModel(): void {
-    const m = this.model();
-    if (m) this.transport.setModel(m.source, m.timeline);
+    const model = this.model();
+    if (model) this.transport.setModel(model.source, model.timeline);
     this.updateResidency(true);
+  }
+
+  setSongOpenEnded(on: boolean): void {
+    if (on === this.openEnded) return;
+    this.openEnded = on;
+    this.updateModel();
   }
 
   // ---- The clip launcher ----
 
   /** Hands over what decides what the launcher plays (null lets go). The engine reads its runs on every scheduler tick. */
   setLauncher(driver: LaunchDriver | null): void {
-    this.launcher = driver;
-    this.launchSeen = driver ? driver.runs : null;
-    if (!driver) this.soloLauncher = false;
-    this.updateModel();
+    this.launcherLink.setDriver(driver);
   }
 
-  /**
-   * Where the transport is on the launcher axis: what is heard now, the earliest tick a launch can still be
-   * scheduled at (after the time the first notes need to reach the audio thread) and the earliest boundary one
-   * may still take, late (the grace rule: `LAUNCH_GRACE_SEC`). Not playing: all zero.
-   */
   launcherClock(): LaunchClock {
-    if (!this.transport.playing) return { playing: false, heardU: 0, earliestU: 0 };
-    const now = this.ctx.currentTime;
-    return {
-      playing: true,
-      heardU: this.transport.uAtTime(this.heardTime()),
-      earliestU: this.transport.uAtTime(now + Math.max(0.015, this.startLead())),
-      lateU: this.transport.uAtTime(now - LAUNCH_GRACE_SEC),
-    };
+    return this.launcherLink.clock();
   }
 
-  /**
-   * The launcher's runs changed (a press): plays them. While nothing plays, the transport starts for the launcher
-   * alone, from tick 0 with the first run starting right there.
-   */
   launcherChanged(): void {
-    const d = this.launcher;
-    if (!d || !this.project) return;
-    if (!this.transport.playing) {
-      if (d.runs.length === 0) return;
-      this.soloLauncher = true;
-      this.launchSeen = d.runs;
-      void this.resume();
-      this.warmLaunchAudio(d.runs);
-      this.updateModel();
-      this.maxPumpGap = 0;
-      this.transport.start(0, this.ctx.currentTime + this.startLead());
-      this.startClock();
-      this.emit();
-      return;
-    }
-    this.syncLauncher();
-  }
-
-  /** Follow actions, ended runs; new runs are planned. Called on every scheduler tick. */
-  private syncLauncher(): void {
-    const d = this.launcher;
-    if (!d || !this.transport.playing) return;
-    const clock = this.launcherClock();
-    d.advance(clock);
-    if (d.runs !== this.launchSeen) {
-      this.launchSeen = d.runs;
-      this.warmLaunchAudio(d.runs);
-      this.updateModel();
-    }
-    // The launcher alone stops with its last run.
-    if (this.soloLauncher && d.runs.length > 0 && d.idleAt(clock.heardU)) this.stop();
-  }
-
-  /**
-   * Audio runs: their samples are decoded before the first pass (the playlist's residency does not know them), and on
-   * a 'stretch' channel the stretched copy the playlist would play for the first pass is made too, under the tempo the
-   * pass starts at (later passes under another tempo make theirs when they come up).
-   */
-  private warmLaunchAudio(runs: readonly LaunchRun[]): void {
-    const p = this.project;
-    const alive = new Set<string>();
-    for (const r of runs) {
-      if (r.content.kind !== 'audio' || r.passLength <= 0) continue;
-      const strip = this.strips.get(r.content.channelId);
-      if (!strip || !p) continue;
-      alive.add(r.id);
-      const clip = passClip(r, r.startU, r.passLength);
-      const tempo = this.transport.playing
-        ? this.transport.launchTempo(r.startU, r.startU + r.passLength)
-        : constantTempo(Math.round(tempoMapOf(p, 'pattern').bpm * 1e6) / 1e6);
-      strip.warm({ clip, tempo });
-    }
-    this.residency.endLaunch(alive);
+    this.launcherLink.runsChanged();
   }
 
   /**
    * Resolves when what the launcher's runs play is ready: samples decoded and stretched copies made. Presses never wait for
    * it (a pass whose copy is late plays the plain sample first); tests and renders do, to hear what a settled launcher plays.
    */
-  async launchReady(): Promise<void> {
-    if (this.launcher) this.warmLaunchAudio(this.launcher.runs);
-    await this.residency.settled();
+  launchReady(): Promise<void> {
+    return this.launcherLink.ready();
   }
+
+  // ---- Sample residency ----
 
   /**
    * Tells the residency where the song is (what to keep decoded): the heard position while song
@@ -716,14 +548,14 @@ export class Engine implements EngineApi, EngineCore {
   private updateResidency(force = false): void {
     if (this.offline || this.disposed) return;
     const playingSong = this.transport.playing && this.view.mode === 'song';
-    if (playingSong) this.songPos = this.transport.positionAt(this.heardTime());
+    if (playingSong) this.songPosition = this.transport.positionAt(this.heardTime());
     const loop = this.view.mode === 'song' && !this.openEnded ? this.transport.currentTimeline.loop : null;
-    this.residency.setPosition(this.songPos, loop, playingSong);
+    this.residency.setPosition(this.songPosition, loop, playingSong);
     // Finished voices let go of their buffers (twice a second is plenty).
     const now = this.ctx.currentTime;
-    if (force || now - this.lastSweep > 0.5) {
-      this.lastSweep = now;
-      for (const s of this.strips.values()) s.sweep();
+    if (force || now - this.lastSweepTime > VOICE_SWEEP_INTERVAL_SEC) {
+      this.lastSweepTime = now;
+      for (const strip of this.strips.values()) strip.sweep();
     }
   }
 
@@ -733,11 +565,11 @@ export class Engine implements EngineApi, EngineCore {
    */
   async prepareOffline(horizon: number): Promise<void> {
     // Finished voices let go of their buffers (so what the render has passed can be evicted).
-    for (const s of this.strips.values()) s.sweep();
+    for (const strip of this.strips.values()) strip.sweep();
     if (this.view.mode !== 'song') return;
-    const a = this.transport.tickAt(this.ctx.currentTime).tick;
-    const b = this.transport.tickAt(horizon).tick;
-    await this.residency.ensure(a, b);
+    const fromTick = this.transport.tickAt(this.ctx.currentTime).tick;
+    const toTick = this.transport.tickAt(horizon).tick;
+    await this.residency.ensure(fromTick, toTick);
   }
 
   /** Offline renders: like prepareOffline, for song ticks [fromTick, toTick] (before the transport starts). */
@@ -773,62 +605,40 @@ export class Engine implements EngineApi, EngineCore {
     if (!this.project) return;
     void this.resume();
     // The launcher alone gives way to the song (its runs go on, over the song).
-    this.soloLauncher = false;
+    this.launcherLink.songStarted();
     this.updateModel();
     // Playing again while playing is a seek: what was scheduled is cancelled or released first.
-    const lateBefore = this.transport.lateEvents;
-    const at = this.ctx.currentTime + this.startLead();
+    const lateEventsBefore = this.transport.lateEvents;
+    const startAt = this.ctx.currentTime + this.outputClock.startLead();
     if (this.view.mode === 'song') {
-      this.songPos = fromTick;
+      this.songPosition = fromTick;
       this.residency.setPosition(fromTick, this.transport.currentTimeline.loop, true);
     }
-    if (this.transport.playing) this.transport.seek(fromTick, at);
-    else {
-      this.maxPumpGap = 0;
-      // Count-in (record mode): clicks first, then playback.
-      const countIn =
-        this.metronome && this.session.countInBars > 0
-          ? this.metronome.countIn(
-              at,
-              this.session.countInBars,
-              this.tempoMap().bpmAt(fromTick),
-              this.project.transport.timeSig,
-            )
-          : 0;
-      this.transport.start(fromTick, at + countIn);
+    if (this.transport.playing) {
+      this.transport.seek(fromTick, startAt);
+    } else {
+      this.pumpMonitor.resetGap();
+      this.transport.start(fromTick, startAt + this.countInSeconds(fromTick, startAt, this.project));
     }
     // The first notes went out late (a busy main thread): leave more room next time.
-    if (this.transport.lateEvents > lateBefore) this.startPad = Math.min(MAX_START_PAD, this.startPad + 0.01);
+    if (this.transport.lateEvents > lateEventsBefore) this.outputClock.learnFromLateStart();
     this.startClock();
     this.emit();
   }
 
-  /**
-   * Seconds between pressing play (or seeking) and the first beat. The first notes reach the audio thread by message,
-   * which handles them within about one audio callback (`baseLatency`) plus a render quantum; anything earlier is
-   * wasted waiting. Measured with the output probe in test/browser/latency.test.ts: 14 / 21 / 38 ms for the small,
-   * medium and large buffer, where the fixed 50 ms it replaced added a third to a half of the response. `startPad`
-   * grows by 10 ms (to 30) every time notes still went out late, and stays.
-   */
-  private startLead(): number {
-    const ctx = this.ctx;
-    const base = typeof AudioContext !== 'undefined' && ctx instanceof AudioContext ? ctx.baseLatency : 0.01;
-    return Math.min(0.05, Math.max(0.012, 0.006 + 1.5 * base + this.startPad));
+  /** Count-in (record mode): the metronome clicks first, then playback; returns how long that takes (seconds). */
+  private countInSeconds(fromTick: Tick, startAt: number, project: Project): number {
+    if (!this.metronome || this.session.countInBars <= 0) return 0;
+    return this.metronome.countIn(startAt, this.session.countInBars, this.tempoMap().bpmAt(fromTick), project.transport.timeSig);
   }
-
-  /** Extra start lead learned from late starts (seconds). */
-  private startPad = 0;
 
   stop(): void {
     this.transport.stop(0);
-    this.soloLauncher = false;
-    this.launcher?.reset?.();
-    this.launchSeen = this.launcher ? this.launcher.runs : null;
-    this.residency.endLaunch(new Set());
+    this.launcherLink.stopped();
     this.stopClock();
     // Stopped: the residency lets its pins go, and the voices' buffers once their release is over.
     this.updateResidency(true);
-    if (!this.offline) setTimeout(() => this.updateResidency(true), 300);
+    if (!this.offline) setTimeout(() => this.updateResidency(true), SWEEP_AFTER_STOP_MS);
     this.emit();
   }
 
@@ -846,15 +656,15 @@ export class Engine implements EngineApi, EngineCore {
   panic(): void {
     this.stop();
     const now = this.ctx.currentTime;
-    for (const s of this.strips.values()) s.allNotesOff(now, true);
+    for (const strip of this.strips.values()) strip.allNotesOff(now, true);
     for (const port of this.ports) port.reset();
     // Graph effects can't be flushed: duck the output while their tails ring out.
-    const g = this.masterOut.gain;
-    g.cancelScheduledValues(now);
-    g.setValueAtTime(g.value, now);
-    g.linearRampToValueAtTime(0, now + 0.01);
-    g.setValueAtTime(0, now + 0.6);
-    g.linearRampToValueAtTime(1, now + 0.65);
+    const gain = this.masterOut.gain;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + PANIC_DUCK_SEC);
+    gain.setValueAtTime(0, now + PANIC_SILENT_UNTIL_SEC);
+    gain.linearRampToValueAtTime(1, now + PANIC_FULL_AT_SEC);
   }
 
   /** Offline rendering: start the transport on the virtual clock (call pumpOffline per chunk). */
@@ -864,7 +674,7 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   pumpOffline(horizon: number): void {
-    this.syncLauncher();
+    this.launcherLink.sync();
     this.transport.pump(horizon);
   }
 
@@ -887,240 +697,129 @@ export class Engine implements EngineApi, EngineCore {
    * t + graphLatency).
    */
   private heardTime(): number {
-    return this.audibleTime() - this.mixer.latency;
+    return this.outputClock.audibleTime() - this.mixer.latency;
   }
 
-  /** The heard time, smoothed so the playhead moves evenly (and never back): see audible-clock.ts. */
-  private readonly audible = new AudibleClock();
+  tickAt(contextTime: number): { tick: number; iter: number } {
+    // What is heard at t was scheduled at t − latency (delay compensation holds the music back).
+    return this.transport.tickAt(contextTime - this.mixer.latency);
+  }
+
+  contextTimeAt(performanceMs: number): number {
+    return this.outputClock.contextTimeAt(performanceMs);
+  }
 
   /**
-   * Context time currently coming out of the speakers: the output's last timestamp, carried on by
-   * the wall clock for at most `MAX_EXTRAPOLATION` (when the audio thread falls behind, its clock
-   * stalls; running on past it and snapping back made the playhead jump back and forth), then smoothed
-   * and kept from going back (`AudibleClock`).
+   * The context time of the song's next beat as it will be heard, or null while it does not play (or the beat is
+   * too close to catch). The song's own audio is heard `audibleTime` minus the mixer's latency after it was scheduled,
+   * and a source started at context time t is heard at t: so the beat is at `audibleTime + ticks until it`.
    */
-  private audibleTime(): number {
-    const ctx = this.ctx;
-    if (typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
-      // Everything that reads it within a frame (playhead, step lights, automation, tempo readouts: several per
-      // frame) gets one answer: a clock read allocates a timestamp object, and readers must agree on the time.
-      const nowMs = performance.now();
-      if (nowMs - this.audibleAt < AUDIBLE_CACHE_MS && nowMs >= this.audibleAt) return this.audibleValue;
-      const ts = ctx.getOutputTimestamp();
-      let t: number;
-      if (ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.performanceTime > 0) {
-        const ahead = Math.max(0, Math.min(MAX_EXTRAPOLATION, (performance.now() - ts.performanceTime) / 1000));
-        t = ts.contextTime + ahead;
-      } else t = ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency;
-      this.audibleAt = nowMs;
-      return (this.audibleValue = this.audible.step(t, nowMs));
-    }
-    return ctx.currentTime;
+  private nextBeatTime(): number | null {
+    if (!this.transport.playing) return null;
+    const { tick } = this.transport.tickAt(this.heardTime());
+    const tempo = this.tempoMap();
+    const nextTick = (Math.floor(tick / PPQ) + 1) * PPQ;
+    const wait = (nextTick - tick) * tempo.secondsPerTick(tick);
+    if (!Number.isFinite(wait) || wait < 0) return null;
+    let at = this.outputClock.audibleTime() + wait;
+    // Too late to catch this beat: the one after.
+    if (at < this.ctx.currentTime + MIN_BEAT_LEAD_SEC) at += PPQ * tempo.secondsPerTick(nextTick);
+    return at;
   }
 
-  /** The last answer of audibleTime() and the `performance.now()` it was read at. */
-  private audibleAt = Number.NEGATIVE_INFINITY;
-  private audibleValue = 0;
+  // ---- The scheduler clock ----
 
   private startClock(): void {
     if (this.offline) return;
-    this.lastPumpAt = 0;
-    this.keepUpFrom = null;
-    this.keepUp = undefined;
-    if (!this.clock) {
-      this.clock = new Worker(new URL('./sched/clock.worker.ts', import.meta.url), { type: 'module' });
-      this.clock.onmessage = () => this.tick();
-    }
-    this.clock.postMessage({ cmd: 'start', interval: 25 });
+    this.pumpMonitor.clockStarted();
+    this.schedulerClock.start();
   }
 
   private stopClock(): void {
-    this.clock?.postMessage({ cmd: 'stop' });
+    this.schedulerClock.stop();
   }
 
+  /** One beat of the scheduler clock: plans what plays in the next few tenths of a second. */
   private tick(): void {
     const wasPlaying = this.transport.playing;
-    const now = performance.now();
-    if (wasPlaying && this.lastPumpAt > 0) this.maxPumpGap = Math.max(this.maxPumpGap, now - this.lastPumpAt);
-    this.lastPumpAt = now;
-    if (wasPlaying) this.measureKeepUp(now);
-    this.syncLauncher();
+    this.pumpMonitor.pumped(performance.now(), wasPlaying);
+    this.launcherLink.sync();
     this.transport.pump();
     this.updateResidency();
-    // Raise the lookahead when notes arrive late (main-thread jank).
-    if (this.transport.lateEvents > this.lastLate) {
-      this.lastLate = this.transport.lateEvents;
-      this.transport.lookahead = Math.min(0.25, this.transport.lookahead * 1.5);
-    }
+    this.raiseLookaheadIfLate();
     if (wasPlaying && !this.transport.playing) {
       this.stopClock();
       this.emit();
     }
   }
 
-  /** The audio clock against the wall clock, per second of playback (`stats().keepUp`). */
-  private keepUpFrom: { wall: number; ctx: number } | null = null;
-  private keepUp: number | undefined;
-
-  private measureKeepUp(now: number): void {
-    const t = this.ctx.currentTime;
-    const from = this.keepUpFrom;
-    if (!from) {
-      this.keepUpFrom = { wall: now, ctx: t };
-      return;
-    }
-    const wall = (now - from.wall) / 1000;
-    if (wall < 1) return;
-    this.keepUp = Math.min(1, (t - from.ctx) / wall);
-    this.keepUpFrom = { wall: now, ctx: t };
+  /** Raises the lookahead when notes arrive late (main-thread jank). */
+  private raiseLookaheadIfLate(): void {
+    if (this.transport.lateEvents <= this.lateEventsSeen) return;
+    this.lateEventsSeen = this.transport.lateEvents;
+    this.transport.lookahead = Math.min(MAX_LOOKAHEAD_SEC, this.transport.lookahead * LOOKAHEAD_GROWTH);
   }
 
-  // ---- Previews ----
+  // ---- Previews and live notes ----
 
-  previewNoteOn(channelId: ChannelId, key: number, velocity = 0.8): number {
-    void this.resume();
-    const noteId = ++this.previewSeq;
-    const time = this.ctx.currentTime;
-    this.previewOn.set(noteId, time);
-    this.noteFeed.emit(channelId, { kind: 'on', time, noteId, key, velocity });
-    this.strips.get(channelId)?.noteOn({ time, noteId, key, velocity });
-    return noteId;
+  previewNoteOn(channelId: ChannelId, key: number, velocity?: number): number {
+    return this.notePreview.noteOn(channelId, key, velocity);
   }
 
   previewNoteOff(channelId: ChannelId, noteId: number): void {
-    // A quick tap: `currentTime` only moves once per audio callback (21 ms with the large buffer), so the release
-    // could carry the very time of the press and cancel the note (a release at or before its start). Hold it back
-    // until the sound has started: a callback and a bit after the press.
-    const on = this.previewOn.get(noteId);
-    this.previewOn.delete(noteId);
-    const now = this.ctx.currentTime;
-    const time = on === undefined ? now : Math.max(now, on + this.previewHold());
-    this.noteFeed.emit(channelId, { kind: 'off', time, noteId, key: 0, velocity: 0.5 });
-    this.strips.get(channelId)?.noteOff({ time, noteId, key: 0 });
-  }
-
-  /** Press time of each live note until its release. */
-  private readonly previewOn = new Map<number, number>();
-
-  private previewHold(): number {
-    const ctx = this.ctx;
-    const base = typeof AudioContext !== 'undefined' && ctx instanceof AudioContext ? ctx.baseLatency : 0.01;
-    return Math.max(0.01, 2.5 * base);
+    this.notePreview.noteOff(channelId, noteId);
   }
 
   previewControl(channelId: ChannelId, cc: number, value: number): void {
-    this.strips.get(channelId)?.controlChange(cc, value, this.ctx.currentTime);
+    this.notePreview.controlChange(channelId, cc, value);
   }
 
   previewPitchBend(channelId: ChannelId, cents: number): void {
-    this.strips.get(channelId)?.setBend(cents, this.ctx.currentTime);
+    this.notePreview.pitchBend(channelId, cents);
   }
 
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
-    void this.resume();
-    void this.samples.load(ref, this.ctx).then((buffer) => {
-      if (buffer) this.playPreview(buffer, SampleCache.keyOf(ref.source, this.ctx.sampleRate));
-    });
+    this.samplePreview.playSample(ref);
   }
 
-  async record(
-    stream: MediaStream,
-    opts: RecordOptions & { playAlong: boolean; fromTick?: Tick },
-  ): Promise<RecordingHandle> {
-    const ctx = this.ctx;
-    if (typeof AudioContext === 'undefined' || !(ctx instanceof AudioContext))
-      throw new Error('Recording needs the realtime engine.');
-    await this.resume();
-    this.stop();
-    // Count in at the tempo where playback starts (tempo automation can change it later).
-    const bpm = this.project ? this.tempoMap().bpmAt(opts.fromTick ?? 0) : opts.bpm;
-    const handle = await startRecording(
-      ctx,
-      (url) => this.loadModule(url),
-      stream,
-      { ...opts, bpm: opts.playAlong ? bpm : opts.bpm },
-      this.previewBus,
-    );
-    if (opts.playAlong && this.project) {
-      this.updateModel();
-      this.transport.start(opts.fromTick ?? 0, handle.barOneTime);
-      this.startClock();
-      this.emit();
-      handle.done.then(
-        () => this.stop(),
-        () => this.stop(),
-      );
-    }
-    return handle;
+  previewAudio(bytes: ArrayBuffer, opts: PreviewOptions = {}): Promise<boolean> {
+    return this.samplePreview.playFile(bytes, opts);
   }
 
-  async openAudioInput(
-    stream: MediaStream,
-    opts: { channels: 1 | 2; label?: string; latency?: number },
-  ): Promise<AudioInput> {
-    const ctx = this.ctx;
-    if (typeof AudioContext === 'undefined' || !(ctx instanceof AudioContext))
-      throw new Error('Recording needs the realtime engine.');
-    await this.resume();
-    const input = await openAudioInput(
-      ctx,
-      {
-        loadModule: (url) => this.loadModule(url),
-        insertInput: (id) => this.insertInput(id),
-        // Output latency plus the master limiter's look-ahead (music and clicks pass through it).
-        outputLatency: () => ctx.baseLatency + (ctx.outputLatency || 0) + Math.round(0.0013 * ctx.sampleRate) / ctx.sampleRate,
-      },
-      stream,
-      opts,
-    );
-    const close = input.close.bind(input);
-    input.close = () => {
-      this.inputs.delete(input);
-      close();
-    };
-    this.inputs.add(input);
-    return input;
+  stopPreview(): void {
+    this.samplePreview.stop();
+  }
+
+  setPreviewVolume(gain: number): void {
+    this.samplePreview.setVolume(gain);
   }
 
   playTestClicks(count: number, interval: number): number[] {
-    const ctx = this.ctx;
-    if (!this.testClick) {
-      const n = Math.round(0.004 * ctx.sampleRate);
-      const b = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: ctx.sampleRate });
-      const d = b.getChannelData(0);
-      // A sharp, loud-ish tick: easy to find in a recording.
-      for (let i = 0; i < n; i++) d[i] = 0.8 * Math.sin((2 * Math.PI * 2000 * i) / ctx.sampleRate) * Math.exp(-i / (0.001 * ctx.sampleRate));
-      this.testClick = b;
-    }
-    const t0 = ctx.currentTime + 0.3;
-    const times: number[] = [];
-    for (let i = 0; i < count; i++) {
-      const at = t0 + i * interval;
-      const src = new AudioBufferSourceNode(ctx, { buffer: this.testClick });
-      src.connect(this.monitorBus);
-      src.onended = () => src.disconnect();
-      src.start(at);
-      times.push(at);
-    }
-    return times;
+    return this.testClicks.play(count, interval);
   }
 
-  setSongOpenEnded(on: boolean): void {
-    if (on === this.openEnded) return;
-    this.openEnded = on;
-    this.updateModel();
+  // ---- Recording ----
+
+  record(stream: MediaStream, opts: RecordAlongOptions): Promise<RecordingHandle> {
+    return this.liveCapture.record(stream, opts);
   }
+
+  openAudioInput(stream: MediaStream, opts: { channels: 1 | 2; label?: string; latency?: number }): Promise<AudioInput> {
+    return this.liveCapture.openInput(stream, opts);
+  }
+
+  // ---- Samples ----
 
   waveform(ref: Pick<SampleRef, 'source'>): Waveform | null {
-    const w = this.samples.waveform(ref, this.ctx.sampleRate);
-    if (w) return w;
+    const cached = this.samples.waveform(ref, this.ctx.sampleRate);
+    if (cached) return cached;
     const key = SampleCache.keyOf(ref.source, this.ctx.sampleRate);
-    if (!this.waveformsLoading.has(key)) {
-      this.waveformsLoading.add(key);
+    if (!this.waveformKeysLoading.has(key)) {
+      this.waveformKeysLoading.add(key);
       // A sample that can't be decoded stays in the set: it isn't tried again on every redraw.
       void this.samples.loadWaveform(ref, this.ctx).then((done) => {
         if (!done) return;
-        this.waveformsLoading.delete(key);
+        this.waveformKeysLoading.delete(key);
         this.emit();
       });
     }
@@ -1134,129 +833,31 @@ export class Engine implements EngineApi, EngineCore {
     return { sampleRate: buffer.sampleRate, channels, duration: buffer.duration };
   }
 
-  async previewAudio(bytes: ArrayBuffer, opts: PreviewOptions = {}): Promise<boolean> {
-    void this.resume();
-    const token = ++this.previewToken;
-    // Decoded once per file content (the shared cache keeps it, within its budget): clicking the
-    // same file again in the browser plays at once.
-    const key = `p:${await sha256Hex(new Uint8Array(bytes))}:${this.ctx.sampleRate}`;
-    let buffer = await this.samples.derive(key, () => decodeAudio(this.ctx, bytes).catch(() => null));
-    if (!buffer) return false;
-    // A tempo match that keeps the pitch: stretched once per file and ratio (kept in the cache like the decode).
-    const stretch = opts.stretch;
-    let playKey = key;
-    if (stretch !== undefined && Number.isFinite(stretch) && Math.abs(stretch - 1) > 0.002 && stretch > 0.25 && stretch < 4) {
-      const source = buffer;
-      playKey = `${key}|pst:${stretch.toFixed(4)}`;
-      const stretched = await this.samples.derive(playKey, async () => {
-        const channels = await copyChannels(source);
-        return bufferFromPcm16(await runStretch({ channels, scale: stretch, sampleRate: source.sampleRate }, -1));
-      });
-      if (stretched) buffer = stretched;
-      else playKey = key;
-    }
-    // A newer preview (or a stop) was requested while this one decoded.
-    if (token === this.previewToken) this.playPreview(buffer, playKey, opts);
-    return true;
-  }
-
-  stopPreview(): void {
-    this.previewToken++;
-    try {
-      this.previewSource?.stop();
-    } catch {
-      /* already stopped */
-    }
-    this.previewSource = null;
-    this.previewRelease?.();
-    this.previewRelease = null;
-  }
-
-  setPreviewVolume(gain: number): void {
-    const g = Number.isFinite(gain) ? Math.min(2, Math.max(0, gain)) : 0.8;
-    this.previewBus.gain.setTargetAtTime(g, this.ctx.currentTime, 0.01);
-  }
-
-  /**
-   * The context time of the song's next beat as it will be heard, or null while it does not play (or the beat is
-   * too close to catch). The song's own audio is heard `audibleTime` minus the mixer's latency after it was scheduled,
-   * and a source started at context time t is heard at t: so the beat is at `audibleTime + ticks until it`.
-   */
-  private nextBeatTime(): number | null {
-    if (!this.transport.playing) return null;
-    const heard = this.heardTime();
-    const { tick } = this.transport.tickAt(heard);
-    const tempo = this.tempoMap();
-    const nextTick = (Math.floor(tick / PPQ) + 1) * PPQ;
-    const wait = (nextTick - tick) * tempo.secondsPerTick(tick);
-    if (!Number.isFinite(wait) || wait < 0) return null;
-    let at = this.audibleTime() + wait;
-    // Too late to catch this beat: the one after.
-    if (at < this.ctx.currentTime + 0.02) at += PPQ * tempo.secondsPerTick(nextTick);
-    return at;
-  }
-
-  /** Plays a buffer on the preview bus; its cache entry stays pinned while it sounds. */
-  private playPreview(buffer: AudioBuffer, key: string, opts: PreviewOptions = {}): void {
-    this.stopPreview();
-    const rate = opts.rate !== undefined && Number.isFinite(opts.rate) ? Math.min(8, Math.max(0.125, opts.rate)) : 1;
-    const src = new AudioBufferSourceNode(this.ctx, { buffer, playbackRate: rate, loop: opts.loop === true });
-    const release = this.samples.pin(key);
-    src.connect(this.previewBus);
-    src.onended = () => {
-      src.disconnect();
-      release();
-    };
-    const at = opts.onBeat ? this.nextBeatTime() : null;
-    src.start(at ?? 0);
-    this.previewSource = src;
-    this.previewRelease = release;
-  }
-
-  // ---- Meters ----
+  // ---- Meters and taps ----
 
   readMeters(order: readonly InsertId[], out: Float32Array): void {
     this.mixer.readMeters(order, out);
   }
 
-  /** Live meters (the metering suite): one worklet node each, taken away when closed. */
-  private readonly liveMeters = new Set<MeterNode>();
-
   openMeter(source: InsertId, opts: { full?: boolean } = {}): MeterHandle | null {
-    if (this.offline || this.disposed || !canMeter()) return null;
-    const from = this.mixer.outputNode(source);
-    if (!from) return null;
-    const meter = new MeterNode(this.ctx, (url) => this.loadModule(url), from, opts, (m) => this.liveMeters.delete(m));
-    this.liveMeters.add(meter);
-    return meter;
+    return this.liveMeters.openOn(source, opts);
   }
 
   /** Meters that are open (a closed Meters window leaves none). */
   get meterCount(): number {
-    return this.liveMeters.size;
+    return this.liveMeters.count;
   }
 
-  // ---- Timeline, automation, session ----
-
-  tickAt(contextTime: number): { tick: number; iter: number } {
-    // What is heard at t was scheduled at t − latency (delay compensation holds the music back).
-    return this.transport.tickAt(contextTime - this.mixer.latency);
+  outputTap(): AudioTap {
+    if (this.offline) return INACTIVE_TAP;
+    return (this.outputTapCache ??= new TapImpl(this.ctx, this.masterOut, OUTPUT_TAP_OPTIONS));
   }
 
-  contextTimeAt(performanceMs: number): number {
-    const ctx = this.ctx;
-    if (typeof AudioContext !== 'undefined' && ctx instanceof AudioContext) {
-      const ts = ctx.getOutputTimestamp();
-      if (ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.performanceTime > 0)
-        return ts.contextTime + (performanceMs - ts.performanceTime) / 1000;
-      return ctx.currentTime - (ctx.outputLatency || 0) - ctx.baseLatency + (performanceMs - performance.now()) / 1000;
-    }
-    return ctx.currentTime;
-  }
+  // ---- Automation, session and status ----
 
   readAutomation(keys: readonly string[], out: Float64Array): void {
-    const t = this.heardTime();
-    for (let i = 0; i < keys.length && i < out.length; i++) out[i] = this.automation.readValue(keys[i] as string, t);
+    const time = this.heardTime();
+    for (let i = 0; i < keys.length && i < out.length; i++) out[i] = this.automation.readValue(keys[i] as string, time);
   }
 
   touch(key: string, on: boolean): void {
@@ -1281,40 +882,32 @@ export class Engine implements EngineApi, EngineCore {
     return this.mixer.latency;
   }
 
-  private outTap: TapImpl | null = null;
-  outputTap(): AudioTap {
-    if (this.offline) return INACTIVE_TAP;
-    return (this.outTap ??= new TapImpl(this.ctx, this.masterOut, { fftSize: 4096, smoothing: 0.8 }));
-  }
-
-  // ---- Status ----
-
-  private host: DeckHost | null = null;
   /** Where the DJ decks join the output (see DeckHost); null for an offline engine. */
   deckHost(): DeckHost | null {
-    if (this.offline || typeof AudioContext === 'undefined' || !(this.ctx instanceof AudioContext)) return null;
-    return (this.host ??= {
+    if (this.offline || !isRealtimeContext(this.ctx)) return null;
+    return (this.deckHostCache ??= {
       ctx: this.ctx,
       output: this.masterOut,
       loadModule: (url) => this.loadModule(url),
-      heardTime: () => this.audibleTime(),
+      heardTime: () => this.outputClock.audibleTime(),
     });
   }
 
   stats(): EngineStats {
     const ctx = this.ctx;
-    const realtime = typeof AudioContext !== 'undefined' && ctx instanceof AudioContext;
+    const realtime = isRealtimeContext(ctx);
+    const keepUp = this.pumpMonitor.keepUp;
     return {
       state: this.state,
       sampleRate: ctx.sampleRate,
       baseLatency: realtime ? ctx.baseLatency : 0,
       outputLatency: realtime ? ctx.outputLatency || 0 : 0,
       lookahead: this.transport.lookahead,
-      startLead: this.startLead(),
+      startLead: this.outputClock.startLead(),
       lateEvents: this.transport.lateEvents,
-      maxPumpGapMs: Math.round(this.maxPumpGap),
+      maxPumpGapMs: Math.round(this.pumpMonitor.maxGapMs),
       faults: this.faults,
-      ...(this.keepUp !== undefined ? { keepUp: this.keepUp } : {}),
+      ...(keepUp !== undefined ? { keepUp } : {}),
     };
   }
 
@@ -1323,16 +916,16 @@ export class Engine implements EngineApi, EngineCore {
    * the effect tails along the deepest route path (capped at 30 s), plus the mixer's latency.
    */
   tailSeconds(): number {
-    let tail = 0.5;
-    for (const s of this.strips.values()) tail = Math.max(tail, s.tailTime);
-    return Math.min(30, tail + this.mixer.tailSeconds()) + this.mixer.latency;
+    let tail = MIN_TAIL_SEC;
+    for (const strip of this.strips.values()) tail = Math.max(tail, strip.tailTime);
+    return Math.min(MAX_TAIL_SEC, tail + this.mixer.tailSeconds()) + this.mixer.latency;
   }
 
   /** Seconds of the first bar (export/test helper; later bars can differ with tempo automation). */
   barSeconds(): number {
-    const p = this.project;
-    if (!p) return 0;
-    return this.tempoMap().tickToSeconds(ticksPerBar(p.transport.timeSig));
+    const project = this.project;
+    if (!project) return 0;
+    return this.tempoMap().tickToSeconds(ticksPerBar(project.transport.timeSig));
   }
 
   subscribe(fn: () => void): () => void {
@@ -1341,37 +934,53 @@ export class Engine implements EngineApi, EngineCore {
   }
 
   private emit(): void {
-    for (const fn of this.listeners) fn();
+    for (const listener of this.listeners) listener();
   }
 
+  // ---- Shutdown ----
+
   async dispose(): Promise<void> {
-    // A running engine that is replaced (a new buffer size, a rebooted output) fades out first instead of clicking.
-    if (!this.offline && typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state === 'running') {
-      const g = this.masterOut.gain;
-      const now = this.ctx.currentTime;
-      g.cancelScheduledValues(now);
-      g.setValueAtTime(g.value, now);
-      g.linearRampToValueAtTime(0, now + DISPOSE_FADE);
-      if (typeof document === 'undefined' || !document.hidden) await new Promise((r) => setTimeout(r, DISPOSE_FADE * 1000 + 3));
-    }
+    await this.fadeOutIfRunning();
     this.disposed = true;
     this.transport.stop();
     this.automation.dispose();
     this.metronome?.dispose();
-    this.clock?.terminate();
-    this.clock = null;
-    for (const s of this.strips.values()) s.dispose();
+    this.schedulerClock.dispose();
+    for (const strip of this.strips.values()) strip.dispose();
     this.strips.clear();
     this.residency.dispose();
     this.mixer.dispose();
-    for (const p of [...this.ports]) p.dispose();
-    for (const input of [...this.inputs]) input.close();
+    for (const port of [...this.ports]) port.dispose();
+    this.liveCapture.closeAll();
     this.limiter?.port.postMessage({ t: 'dispose' });
-    for (const m of [...this.liveMeters]) m.close();
-    this.outTap?.dispose();
+    this.liveMeters.closeAll();
+    this.outputTapCache?.dispose();
     this.listeners.clear();
-    if (typeof AudioContext !== 'undefined' && this.ctx instanceof AudioContext && this.ctx.state !== 'closed') {
-      await this.ctx.close();
-    }
+    if (isRealtimeContext(this.ctx) && this.ctx.state !== 'closed') await this.ctx.close();
   }
+
+  /** A running engine that is replaced (a new buffer size, a rebooted output) fades out first instead of clicking. */
+  private async fadeOutIfRunning(): Promise<void> {
+    const ctx = this.ctx;
+    if (this.offline || !isRealtimeContext(ctx) || ctx.state !== 'running') return;
+    const gain = this.masterOut.gain;
+    const now = ctx.currentTime;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(gain.value, now);
+    gain.linearRampToValueAtTime(0, now + DISPOSE_FADE_SEC);
+    // A hidden tab's timers are throttled: don't wait for them (the context is closed right after anyway).
+    if (typeof document !== 'undefined' && document.hidden) return;
+    await new Promise((resolve) => setTimeout(resolve, DISPOSE_FADE_SEC * 1000 + DISPOSE_FADE_SLACK_MS));
+  }
+}
+
+/** Every sample a plugin slot (an instrument's or an effect's) refers to. */
+function pluginSampleIds(project: Project): Set<SampleId> {
+  const ids = new Set<SampleId>();
+  const add = (plugin: PluginInstance) => {
+    for (const id of Object.values(plugin.samples ?? {})) if (id) ids.add(id);
+  };
+  for (const channel of Object.values(project.channels)) if (channel.kind === 'instrument') add(channel.plugin);
+  for (const insert of Object.values(project.mixer.inserts)) for (const slot of insert.fx) add(slot.plugin);
+  return ids;
 }

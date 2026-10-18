@@ -14,14 +14,7 @@ function useParamMenu(param: string | undefined) {
   };
 }
 
-export function Toggle({
-  spec,
-  value,
-  label,
-  onCommit,
-  param,
-  hint,
-}: {
+interface ToggleProps {
   spec: BoolSpec;
   value: boolean;
   label?: string;
@@ -30,7 +23,10 @@ export function Toggle({
   param?: string;
   /** What it does, added to its hint ("Sync: On — Locks the LFO to the song's tempo"). */
   hint?: string;
-}) {
+}
+
+/** An on/off switch with a lit LED; clicking flips it. */
+export function Toggle({ spec, value, label, onCommit, param, hint }: ToggleProps) {
   const onContextMenu = useParamMenu(param);
   const state = `${label ?? spec.label ?? ''}: ${value ? 'On' : 'Off'}`;
   return (
@@ -49,14 +45,7 @@ export function Toggle({
   );
 }
 
-export function Select({
-  spec,
-  value,
-  label,
-  onCommit,
-  param,
-  hint,
-}: {
+interface SelectProps {
   spec: EnumSpec;
   value: string;
   label?: string;
@@ -65,7 +54,10 @@ export function Select({
   param?: string;
   /** What it chooses, added to its hint with the current choice ("Shape: Sine — How the LFO moves"). */
   hint?: string;
-}) {
+}
+
+/** A drop-down listing an enum param's options (by their labels). */
+export function Select({ spec, value, label, onCommit, param, hint }: SelectProps) {
   const labels = spec.labels as Record<string, string | undefined> | undefined;
   const onContextMenu = useParamMenu(param);
   const name = label ?? spec.label;

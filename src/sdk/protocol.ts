@@ -8,10 +8,15 @@
  * is the release velocity. For a control change, `key` is the controller and `velocity` the value.
  */
 
+/** Numbers per packed event. */
 export const EV_STRIDE = 7;
+/** Event type: a note starts (key, velocity, pan and fine pitch are set). */
 export const EV_NOTE_ON = 1;
+/** Event type: a note ends (velocity is the release velocity). */
 export const EV_NOTE_OFF = 2;
+/** Event type: release everything (queued later events are dropped). */
 export const EV_ALL_OFF = 3;
+/** Event type: silence everything at once. */
 export const EV_ALL_OFF_HARD = 4;
 /** Control change: key = controller number, velocity = value 0–1. */
 export const EV_CC = 5;
@@ -44,6 +49,7 @@ export const liteName = (id: string): string => `${id}~lite`;
 /** Name of the a-rate AudioParam (cents) that carries an instrument's channel pitch. */
 export const PITCH_PARAM = '__pitch';
 
+/** A message from the main thread to the processor. */
 export type ToProcessor =
   | { t: 'ev'; data: Float64Array }
   | { t: 'sync'; id: number }
@@ -53,6 +59,7 @@ export type ToProcessor =
   | { t: 'reset' }
   | { t: 'dispose' };
 
+/** A message from the processor to the main thread. */
 export type FromProcessor =
   | { t: 'ready' }
   | { t: 'sync'; id: number }
@@ -60,6 +67,7 @@ export type FromProcessor =
   | { t: 'nan' }
   | { t: 'user'; msg: unknown };
 
+/** What the host passes a processor when it creates it (`processorOptions`). */
 export interface ProcessorInit {
   kind: 'instrument' | 'effect';
   state: unknown;

@@ -38,6 +38,7 @@ export interface MeterHandle {
   close(): void;
 }
 
+/** Where the audio context is: not started, running, shut down, or taken over by the system (a call, another app). */
 export type EngineState = 'suspended' | 'running' | 'closed' | 'interrupted';
 
 /** A decoded sample's audio (at the engine's sample rate). Read-only: it is the engine's own copy. */
@@ -48,6 +49,7 @@ export interface SampleData {
   duration: number;
 }
 
+/** What the transport plays: a pattern on loop (pattern mode) or the song (song mode), with the loop region it wraps in. */
 export interface TransportView {
   mode: 'pattern' | 'song';
   patternId: PatternId | null;
@@ -62,6 +64,7 @@ export interface EngineSession {
   countInBars: number;
 }
 
+/** Health figures of the running engine, for the diagnostics display. */
 export interface EngineStats {
   state: EngineState;
   sampleRate: number;
@@ -99,6 +102,7 @@ export interface SampleBytesProvider {
   getBlob?(ref: SampleRef): Promise<Blob | null>;
 }
 
+/** What an engine is made with: where plugins and sample bytes come from, and how it reports plugin events. */
 export interface EngineOptions {
   plugins: PluginResolver;
   /** Bytes of embedded samples (used when no `sampleCache` is given: the engine then makes its own). */
@@ -146,6 +150,7 @@ export interface PreviewOptions {
   loop?: boolean;
 }
 
+/** Everything the app asks of an audio engine: transport, previews, recording, meters and timeline readouts. */
 export interface EngineApi {
   readonly sampleRate: number;
   readonly state: EngineState;

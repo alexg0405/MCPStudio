@@ -1,5 +1,4 @@
-import { GraphVoices, type InstrumentInstance, type NoteOn } from '@agstudio/sdk';
-import { envelopeBreakpoints, clipEnvelopeAt } from '@core/audio/envelope';
+import { GraphVoices, type InstrumentInstance, type NoteOff, type NoteOn } from '@agstudio/sdk';
 import {
   sourceRateAt,
   sourceSecondsAt,
@@ -9,41 +8,34 @@ import {
 } from '@core/audio/playback';
 import type { AudioClip } from '@core/model/types';
 import type { TempoMap } from '@core/time/ppq';
+import {
+  previewGainSchedule,
+  releaseGain,
+  RELEASE_SEC,
+  scheduleClipGain,
+  snapToWholeFrame,
+  type GainSchedule,
+} from './clip-voice-schedule';
 import type { AudioOn } from './sched/transport';
 
-/** Ramp from silence when a clip starts inside its sound on a non-zero envelope (no fade-in). */
-const ANTI_CLICK = 0.002;
-/** Fade when a clip is cut short (stop, loop wrap, seek) or ends without a fade-out. */
-const RELEASE = 0.004;
-/** Lead time of a start or switch once a buffer became ready (late sample, stretched copy). */
-const SWAP_LEAD = 0.03;
+/** Lead time of a start or switch once a buffer became ready (late sample, stretched copy), in seconds. */
+const SWAP_LEAD_SEC = 0.03;
+/** A voice that is replaced by a restarted one is still read this long after the swap (its crossfade), in seconds. */
+const SWAP_OVERLAP_SEC = 0.1;
 /** At most this many tempo changes are scheduled per clip start (a long clip under a tempo ramp). */
 const MAX_RATE_EVENTS = 4096;
-
-/** A gain schedule as written: [time, value] points joined by linear ramps (held after the last one). */
-type Schedule = Array<[number, number]>;
-
-function valueAt(s: Schedule, time: number): number {
-  let prev = s[0];
-  if (!prev || time <= prev[0]) return prev?.[1] ?? 0;
-  for (let i = 1; i < s.length; i++) {
-    const p = s[i] as [number, number];
-    if (time <= p[0]) return prev[1] + ((p[1] - prev[1]) * (time - prev[0])) / (p[0] - prev[0] || 1);
-    prev = p;
-  }
-  return prev[1];
-}
-
-/**
- * Fades a gain out over RELEASE from `rt`. cancelAndHoldAtTime alone isn't enough: when nothing is
- * scheduled after `rt` (the last ramp ended long ago) Chrome inserts no hold point, and the release
- * ramp would then run from that old ramp's end, fading the whole clip. So the held value is set too.
- */
-function releaseGain(g: AudioParam, s: Schedule, rt: number): void {
-  g.cancelAndHoldAtTime(rt);
-  g.setValueAtTime(valueAt(s, rt), rt);
-  g.linearRampToValueAtTime(0, rt + RELEASE);
-}
+/** A finished voice's bookkeeping is kept this long before `sweep` forgets it (seconds). */
+const FORGET_FINISHED_AFTER_SEC = 1;
+/** A buffer is released this long after its voice has finished (seconds). */
+const HOLD_RELEASE_GRACE_SEC = 0.05;
+/** A buffer stays held a little past its voice's end (seconds), so the release ramp is covered. */
+const HOLD_PAD_SEC = 0.01;
+/** A source node is stopped this long after its release ramp (seconds): once the ramp has reached silence. */
+const STOP_AFTER_RELEASE_SEC = 0.001;
+/** At most this many clip voices sound at once on one channel. */
+const MAX_VOICES = 16;
+/** Seconds of tail an audio clip channel adds after its last clip (the release ramp). */
+const TAIL_SEC = 0.05;
 
 /** The "instrument" of an audio clip channel. */
 export interface ClipPlayer extends InstrumentInstance {
@@ -78,11 +70,13 @@ export interface ClipSources {
   hold(key: string): () => void;
 }
 
+/** Where a clip voice is in getting its sound. */
 type VoiceState = 'waiting' | 'fallback' | 'ok';
 
-interface Live {
+/** A clip that has been asked to start and may still need to (re)start when its buffers arrive. */
+interface LiveClip {
   /** The start of this voice (time and tick it was started at). */
-  e: AudioOn;
+  start: AudioOn;
   scale: number;
   /** waiting: no sample yet (it starts in time once it arrives); fallback: the plain sample until the stretched copy is ready. */
   state: VoiceState;
@@ -90,10 +84,26 @@ interface Live {
   end: number;
 }
 
-interface Hold {
+/** A buffer a voice reads, kept in memory until the voice has finished. */
+interface BufferHold {
   release(): void;
   /** Context time after which the buffer is no longer read. */
   until: number;
+}
+
+/** The buffer a clip voice plays and how it relates to the sample. */
+interface ClipSource {
+  buffer: AudioBuffer;
+  /** The cache key of the buffer (held while the voice reads it). */
+  key: string;
+  /** Playing speed of the buffer against the sample: the stretch scale for a stretched copy, else 1. */
+  factor: number;
+  /** Seconds into the buffer where the voice starts. */
+  offset: number;
+  /** Seconds of the sample where the sound ends. */
+  soundEndSec: number;
+  /** The plain sample plays until the stretched copy is ready. */
+  isFallback: boolean;
 }
 
 /**
@@ -107,235 +117,268 @@ interface Hold {
  * Every voice pins the buffer it reads until it has finished, so eviction never takes audio that is
  * playing.
  */
-export function createClipPlayer(ctx: BaseAudioContext, opts: ClipSources): ClipPlayer {
-  const out = new GainNode(ctx);
-  const voices = new GraphVoices(ctx, out, { max: 16 });
-  const live = new Map<number, Live>();
-  const holds = new Map<number, Hold[]>();
+class AudioClipPlayer implements ClipPlayer {
+  readonly output: GainNode;
+  readonly tailTime = TAIL_SEC;
+  private readonly voices: GraphVoices;
+  private readonly live = new Map<number, LiveClip>();
+  private readonly holds = new Map<number, BufferHold[]>();
   /** Previews waiting for the sample (the key is held down while it decodes). */
-  const pendingPreviews = new Map<number, NoteOn>();
-  let disposed = false;
+  private readonly pendingPreviews = new Map<number, NoteOn>();
+  private disposed = false;
 
-  const stopAt = (node: AudioScheduledSourceNode, t: number) => {
-    try {
-      node.stop(t);
-    } catch {
-      /* already stopped */
-    }
-  };
-
-  const hold = (noteId: number, key: string, until: number) => {
-    let list = holds.get(noteId);
-    if (!list) holds.set(noteId, (list = []));
-    // A restarted voice (swap) replaces the old one, which is read until its crossfade has ended.
-    for (const h of list) h.until = Math.min(h.until, ctx.currentTime + SWAP_LEAD + 0.1);
-    list.push({ release: opts.hold(key), until });
-  };
-
-  const endHolds = (noteId: number, at: number) => {
-    for (const h of holds.get(noteId) ?? []) h.until = Math.min(h.until, at);
-  };
-
-  function sweep(): void {
-    const now = ctx.currentTime;
-    for (const [id, v] of live) if (v.end < now - 1) live.delete(id);
-    for (const [id, list] of holds) {
-      const keep = list.filter((h) => {
-        if (h.until >= now - 0.05) return true;
-        h.release();
-        return false;
-      });
-      if (keep.length === 0) holds.delete(id);
-      else holds.set(id, keep);
-    }
+  constructor(
+    private readonly ctx: BaseAudioContext,
+    private readonly sources: ClipSources,
+  ) {
+    this.output = new GainNode(ctx);
+    this.voices = new GraphVoices(ctx, this.output, { max: MAX_VOICES });
   }
 
-  function startClip(e: AudioOn): void {
-    if (disposed) return;
-    const mode = opts.mode();
+  // ---- Playlist clips ----
+
+  startClip(e: AudioOn): void {
+    if (this.disposed) return;
+    const mode = this.sources.mode();
     const { clip, tempo } = e;
-    const now = ctx.currentTime;
-    sweep();
+    const now = this.ctx.currentTime;
+    this.sweep();
     // Late events start further into the clip so they stay in time.
-    const t = Math.max(e.time, now);
-    const tick = t > e.time ? tempo.secondsToTick(tempo.tickToSeconds(e.tick) + (t - e.time)) : e.tick;
-    const clipEnd = clip.start + clip.length;
-    if (tick >= clipEnd) return;
-    const secAt = tempo.tickToSeconds(tick);
-    const timeOf = (tk: number) => t + tempo.tickToSeconds(tk) - secAt;
+    const time = Math.max(e.time, now);
+    const tick = time > e.time ? tempo.secondsToTick(tempo.tickToSeconds(e.tick) + (time - e.time)) : e.tick;
+    const clipEndTick = clip.start + clip.length;
+    if (tick >= clipEndTick) return;
+    const startSec = tempo.tickToSeconds(tick);
+    const timeOfTick = (tk: number) => time + tempo.tickToSeconds(tk) - startSec;
     const scale = mode.follow === 'stretch' ? stretchScale(mode, tempo, clip.start) : 1;
-    const copy = scale === 1 ? null : opts.stretched(clip, scale, tempo);
-    const base = copy ? null : opts.base(clip);
+    const copy = scale === 1 ? null : this.sources.stretched(clip, scale, tempo);
+    const base = copy ? null : this.sources.base(clip);
+    const started = { ...e, time, tick };
     if (!copy && !base) {
       // Not decoded yet: wait for it (it starts at the song's position then).
-      live.set(e.noteId, { e: { ...e, time: t, tick }, scale, state: 'waiting', end: timeOf(clipEnd) });
-      opts.request(clip);
+      this.live.set(e.noteId, { start: started, scale, state: 'waiting', end: timeOfTick(clipEndTick) });
+      this.sources.request(clip);
       return;
     }
-    // Where the sound ends: the sample's end, or the end of what the stretched copy covers (its
-    // range is clamped to the sample; otherwise it reaches past the clip, which ends first).
-    const duration = copy ? copy.from + copy.buffer.duration / scale : base!.buffer.duration;
-    const srcSec = Math.max(0, sourceSecondsAt(clip, mode, tempo, tick));
-    if (srcSec >= duration) return;
-    const fallback = scale !== 1 && !copy;
-    const buffer = copy ? copy.buffer : base!.buffer;
-    const factor = copy ? scale : 1;
-    // Seconds into the buffer the voice starts at (a stretched copy begins at `copy.from` of the sample).
-    const offset = copy ? Math.max(0, srcSec - copy.from) * scale : srcSec;
-    const rateAt = (tk: number) => factor * sourceRateAt(mode, tempo, tk);
-
-    // At speed 1 the buffer is started on a whole frame at a whole frame (≤ half a frame, 10 µs, off),
-    // so it is copied sample for sample: a fractional start makes the browser interpolate the whole
-    // clip, which dulls the highs (up to −6 dB at 16 kHz). A stretched copy plays at 1 within the
-    // scale's rounding (1e-5: under 2 ms over six minutes).
-    let rate = rateAt(tick);
-    let startAt = t;
-    let startOffset = offset;
+    const sourceSec = Math.max(0, sourceSecondsAt(clip, mode, tempo, tick));
+    const source = chooseSource(copy, base, scale, sourceSec);
+    if (!source) return;
+    const rateAtTick = (tk: number) => source.factor * sourceRateAt(mode, tempo, tk);
     const steady = mode.follow === 'off' || tempo.constant;
-    if (steady && Math.abs(rate - 1) < 1e-5 && buffer.sampleRate === ctx.sampleRate) {
-      const sr = ctx.sampleRate;
-      const frame = Math.max(Math.ceil(now * sr - 1e-6), Math.round(t * sr));
-      rate = 1;
-      startAt = frame / sr;
-      startOffset = Math.max(0, Math.round((offset + (startAt - t)) * sr) / sr);
-    }
-    const node = new AudioBufferSourceNode(ctx, { buffer, playbackRate: rate });
+    const bufferStart = snapToWholeFrame(
+      rateAtTick(tick),
+      time,
+      source.offset,
+      now,
+      steady,
+      source.buffer.sampleRate,
+      this.ctx.sampleRate,
+    );
+    const node = new AudioBufferSourceNode(this.ctx, { buffer: source.buffer, playbackRate: bufferStart.rate });
     if (mode.follow !== 'off' && !tempo.constant) {
-      let n = 0;
-      for (let tk = tempo.nextChange(tick); tk < clipEnd && n < MAX_RATE_EVENTS; tk = tempo.nextChange(tk), n++)
-        node.playbackRate.setValueAtTime(rateAt(tk), timeOf(tk));
+      this.scheduleRateChanges(node, tempo, tick, clipEndTick, rateAtTick, timeOfTick);
     }
-
-    // The clip's gain and fades, from where this voice starts.
-    const vca = new GainNode(ctx, { gain: 0 });
-    const g = vca.gain;
     const clipSec = tempo.tickToSeconds(clip.start);
-    const dur = tempo.tickToSeconds(clipEnd) - clipSec;
-    const x0 = secAt - clipSec;
-    const points = envelopeBreakpoints(clip, dur, x0);
-    const v0 = points[0]?.[1] ?? 0;
-    // Starting inside the sound on a non-zero envelope would click: ramp in from silence. At the
-    // very beginning of the sound it starts there anyway (and a frozen or consolidated render must
-    // keep its attack), so it starts at the envelope's value.
-    const ramp = v0 > 0 && (x0 > 1e-9 || srcSec > 1e-9);
-    const sched: Schedule = [[t, ramp ? 0 : v0]];
-    g.setValueAtTime(sched[0]![1], t);
-    let lastX = x0;
-    if (ramp) {
-      lastX = Math.min(dur, x0 + ANTI_CLICK);
-      sched.push([t + (lastX - x0), clipEnvelopeAt(clip, lastX, dur)]);
-    }
-    for (const [x, v] of points) if (x > lastX) sched.push([t + (x - x0), v]);
-    for (let i = 1; i < sched.length; i++) g.linearRampToValueAtTime(sched[i]![1], sched[i]![0]);
-
-    node.connect(vca);
-    node.start(startAt, startOffset);
-    const soundEnd = tickAtSourceSeconds(clip, mode, tempo, duration);
-    const end = timeOf(Math.min(clipEnd, soundEnd));
-    voices.add(e.noteId, {
-      start: t,
-      sources: [node],
-      out: vca,
-      end: end + RELEASE,
-      release: (rt) => {
-        releaseGain(g, sched, rt);
-        stopAt(node, rt + RELEASE + 0.001);
-        return rt + RELEASE + 0.001;
-      },
-    });
-    hold(e.noteId, copy ? copy.key : base!.key, end + RELEASE + 0.01);
-    live.set(e.noteId, { e: { ...e, time: t, tick }, scale, state: fallback ? 'fallback' : 'ok', end });
-    if (fallback) opts.request(clip);
+    const clipSeconds = tempo.tickToSeconds(clipEndTick) - clipSec;
+    const voiceGain = new GainNode(this.ctx, { gain: 0 });
+    const schedule = scheduleClipGain(voiceGain.gain, clip, clipSeconds, startSec - clipSec, sourceSec, time);
+    node.connect(voiceGain);
+    node.start(bufferStart.startAt, bufferStart.startOffset);
+    const soundEndTick = tickAtSourceSeconds(clip, mode, tempo, source.soundEndSec);
+    const end = timeOfTick(Math.min(clipEndTick, soundEndTick));
+    this.addVoice(e.noteId, time, node, voiceGain, schedule, end + RELEASE_SEC, { stopSource: true });
+    this.hold(e.noteId, source.key, end + RELEASE_SEC + HOLD_PAD_SEC);
+    this.live.set(e.noteId, { start: started, scale, state: source.isFallback ? 'fallback' : 'ok', end });
+    if (source.isFallback) this.sources.request(clip);
   }
 
+  /** Follows the tempo: the playback rate changes at every tempo change of the clip (up to MAX_RATE_EVENTS). */
+  private scheduleRateChanges(
+    node: AudioBufferSourceNode,
+    tempo: TempoMap,
+    fromTick: number,
+    clipEndTick: number,
+    rateAtTick: (tick: number) => number,
+    timeOfTick: (tick: number) => number,
+  ): void {
+    let events = 0;
+    for (let tk = tempo.nextChange(fromTick); tk < clipEndTick && events < MAX_RATE_EVENTS; tk = tempo.nextChange(tk), events++) {
+      node.playbackRate.setValueAtTime(rateAtTick(tk), timeOfTick(tk));
+    }
+  }
+
+  /** Hands a started source and its gain to the voice pool, with the release that fades it out. */
+  private addVoice(
+    noteId: number,
+    startTime: number,
+    node: AudioBufferSourceNode,
+    gainNode: GainNode,
+    schedule: GainSchedule,
+    endTime: number,
+    options: { stopSource: boolean },
+  ): void {
+    this.voices.add(noteId, {
+      start: startTime,
+      sources: [node],
+      out: gainNode,
+      end: endTime,
+      release: (releaseTime) => {
+        releaseGain(gainNode.gain, schedule, releaseTime);
+        if (!options.stopSource) return releaseTime + RELEASE_SEC + STOP_AFTER_RELEASE_SEC;
+        stopAt(node, releaseTime + RELEASE_SEC + STOP_AFTER_RELEASE_SEC);
+        return releaseTime + RELEASE_SEC + STOP_AFTER_RELEASE_SEC;
+      },
+    });
+  }
+
+  // ---- Previews ----
+
   /** Previews (and transports without clip info): the sample from `offset`, at the channel's pitch. */
-  function preview(e: NoteOn): void {
-    if (disposed) return;
-    const base = opts.base();
+  noteOn(e: NoteOn): void {
+    if (this.disposed) return;
+    const base = this.sources.base();
     if (!base) {
-      pendingPreviews.set(e.noteId, e);
-      opts.request();
+      this.pendingPreviews.set(e.noteId, e);
+      this.sources.request();
       return;
     }
     const { time, noteId, offset } = e;
-    const mode = opts.mode();
+    const mode = this.sources.mode();
     const buffer = base.buffer;
-    const t = Math.max(time, ctx.currentTime);
-    const off = Math.max(0, (offset ?? 0) + (t - time) * mode.pitch);
-    if (off >= buffer.duration) return;
-    const node = new AudioBufferSourceNode(ctx, { buffer, playbackRate: mode.pitch });
-    const vca = new GainNode(ctx, { gain: 0 });
-    node.connect(vca);
-    const sched: Schedule = [
-      [t, 0],
-      [t + ANTI_CLICK, 1],
-    ];
-    vca.gain.setValueAtTime(0, t);
-    vca.gain.linearRampToValueAtTime(1, t + ANTI_CLICK);
-    node.start(t, off);
-    const end = t + (buffer.duration - off) / mode.pitch;
-    voices.add(noteId, {
-      start: t,
-      sources: [node],
-      out: vca,
-      end,
-      release: (rt) => {
-        releaseGain(vca.gain, sched, rt);
-        return rt + RELEASE + 0.001;
-      },
-    });
-    hold(noteId, base.key, end + 0.01);
+    const startTime = Math.max(time, this.ctx.currentTime);
+    const startOffset = Math.max(0, (offset ?? 0) + (startTime - time) * mode.pitch);
+    if (startOffset >= buffer.duration) return;
+    const node = new AudioBufferSourceNode(this.ctx, { buffer, playbackRate: mode.pitch });
+    const voiceGain = new GainNode(this.ctx, { gain: 0 });
+    node.connect(voiceGain);
+    const schedule = previewGainSchedule(startTime);
+    voiceGain.gain.setValueAtTime(0, startTime);
+    voiceGain.gain.linearRampToValueAtTime(1, schedule[1]![0]);
+    node.start(startTime, startOffset);
+    const end = startTime + (buffer.duration - startOffset) / mode.pitch;
+    this.addVoice(noteId, startTime, node, voiceGain, schedule, end, { stopSource: false });
+    this.hold(noteId, base.key, end + HOLD_PAD_SEC);
   }
 
-  function refresh(): void {
-    if (disposed) return;
-    const at = ctx.currentTime + SWAP_LEAD;
-    for (const v of [...live.values()]) {
-      if (v.state === 'ok' || at >= v.end) continue;
-      const copy = v.scale !== 1 ? opts.stretched(v.e.clip, v.scale, v.e.tempo) : null;
-      if (v.state === 'waiting' && !copy && !opts.base(v.e.clip)) continue;
-      if (v.state === 'fallback' && !copy) continue;
-      const { tempo } = v.e;
-      const tick = tempo.secondsToTick(tempo.tickToSeconds(v.e.tick) + (at - v.e.time));
-      // Same note id: the voice replaces the old one, which fades out as it fades in.
-      startClip({ ...v.e, time: at, tick });
-    }
-    if (pendingPreviews.size > 0 && opts.base()) {
-      const t = ctx.currentTime;
-      for (const [id, e] of [...pendingPreviews]) {
-        pendingPreviews.delete(id);
-        preview({ ...e, time: t, offset: (e.offset ?? 0) + (t - e.time) * opts.mode().pitch });
-      }
+  noteOff({ noteId, time }: NoteOff): void {
+    this.live.delete(noteId);
+    this.pendingPreviews.delete(noteId);
+    this.voices.release(noteId, time);
+    this.endHolds(noteId, Math.max(time, this.ctx.currentTime) + RELEASE_SEC + HOLD_PAD_SEC);
+  }
+
+  allNotesOff(time: number, hard?: boolean): void {
+    this.live.clear();
+    this.pendingPreviews.clear();
+    this.voices.releaseAll(time, hard);
+    for (const noteId of this.holds.keys()) {
+      this.endHolds(noteId, Math.max(time, this.ctx.currentTime) + RELEASE_SEC + HOLD_PAD_SEC);
     }
   }
 
-  return {
-    output: out,
-    tailTime: 0.05,
-    startClip,
-    refresh,
-    sweep,
-    noteOn: preview,
-    noteOff: ({ noteId, time }) => {
-      live.delete(noteId);
-      pendingPreviews.delete(noteId);
-      voices.release(noteId, time);
-      endHolds(noteId, Math.max(time, ctx.currentTime) + RELEASE + 0.01);
-    },
-    allNotesOff: (time, hard) => {
-      live.clear();
-      pendingPreviews.clear();
-      voices.releaseAll(time, hard);
-      for (const id of holds.keys()) endHolds(id, Math.max(time, ctx.currentTime) + RELEASE + 0.01);
-    },
-    dispose: () => {
-      disposed = true;
-      live.clear();
-      pendingPreviews.clear();
-      voices.disposeAll();
-      out.disconnect();
-      for (const list of holds.values()) for (const h of list) h.release();
-      holds.clear();
-    },
-  };
+  // ---- Buffers arriving ----
+
+  refresh(): void {
+    if (this.disposed) return;
+    const at = this.ctx.currentTime + SWAP_LEAD_SEC;
+    for (const clip of [...this.live.values()]) this.restartIfReady(clip, at);
+    this.startPendingPreviews();
+  }
+
+  /** A waiting clip starts, or one playing the plain sample switches to its stretched copy, once that buffer is there. */
+  private restartIfReady(clip: LiveClip, at: number): void {
+    if (clip.state === 'ok' || at >= clip.end) return;
+    const { tempo } = clip.start;
+    const copy = clip.scale !== 1 ? this.sources.stretched(clip.start.clip, clip.scale, tempo) : null;
+    if (clip.state === 'waiting' && !copy && !this.sources.base(clip.start.clip)) return;
+    if (clip.state === 'fallback' && !copy) return;
+    const tick = tempo.secondsToTick(tempo.tickToSeconds(clip.start.tick) + (at - clip.start.time));
+    // Same note id: the voice replaces the old one, which fades out as it fades in.
+    this.startClip({ ...clip.start, time: at, tick });
+  }
+
+  /** Previews that waited for the sample start where they would be by now. */
+  private startPendingPreviews(): void {
+    if (this.pendingPreviews.size === 0 || !this.sources.base()) return;
+    const now = this.ctx.currentTime;
+    for (const [id, e] of [...this.pendingPreviews]) {
+      this.pendingPreviews.delete(id);
+      this.noteOn({ ...e, time: now, offset: (e.offset ?? 0) + (now - e.time) * this.sources.mode().pitch });
+    }
+  }
+
+  // ---- Memory ----
+
+  /** Lets go of finished voices' bookkeeping and of the buffers nothing reads any more. */
+  sweep(): void {
+    const now = this.ctx.currentTime;
+    for (const [id, clip] of this.live) if (clip.end < now - FORGET_FINISHED_AFTER_SEC) this.live.delete(id);
+    for (const [id, list] of this.holds) {
+      const kept = list.filter((hold) => {
+        if (hold.until >= now - HOLD_RELEASE_GRACE_SEC) return true;
+        hold.release();
+        return false;
+      });
+      if (kept.length === 0) this.holds.delete(id);
+      else this.holds.set(id, kept);
+    }
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.live.clear();
+    this.pendingPreviews.clear();
+    this.voices.disposeAll();
+    this.output.disconnect();
+    for (const list of this.holds.values()) for (const hold of list) hold.release();
+    this.holds.clear();
+  }
+
+  /** Keeps the buffer in memory for a voice until `until` (context time). */
+  private hold(noteId: number, key: string, until: number): void {
+    let list = this.holds.get(noteId);
+    if (!list) this.holds.set(noteId, (list = []));
+    // A restarted voice (swap) replaces the old one, which is read until its crossfade has ended.
+    for (const old of list) old.until = Math.min(old.until, this.ctx.currentTime + SWAP_LEAD_SEC + SWAP_OVERLAP_SEC);
+    list.push({ release: this.sources.hold(key), until });
+  }
+
+  private endHolds(noteId: number, at: number): void {
+    for (const hold of this.holds.get(noteId) ?? []) hold.until = Math.min(hold.until, at);
+  }
+}
+
+function stopAt(node: AudioScheduledSourceNode, time: number): void {
+  try {
+    node.stop(time);
+  } catch {
+    /* already stopped */
+  }
+}
+
+/**
+ * Picks what a voice plays: the stretched copy when there is one, else the plain sample (which stands in until the
+ * copy is ready, when the clip follows the tempo by stretching). Null when the clip starts after the sound has ended.
+ */
+function chooseSource(
+  copy: { buffer: AudioBuffer; key: string; from: number } | null,
+  base: { buffer: AudioBuffer; key: string } | null,
+  scale: number,
+  sourceSec: number,
+): ClipSource | null {
+  // Where the sound ends: the sample's end, or the end of what the stretched copy covers (its
+  // range is clamped to the sample; otherwise it reaches past the clip, which ends first).
+  const soundEndSec = copy ? copy.from + copy.buffer.duration / scale : base!.buffer.duration;
+  if (sourceSec >= soundEndSec) return null;
+  if (copy) {
+    // Seconds into the buffer the voice starts at (a stretched copy begins at `copy.from` of the sample).
+    const offset = Math.max(0, sourceSec - copy.from) * scale;
+    return { buffer: copy.buffer, key: copy.key, factor: scale, offset, soundEndSec, isFallback: false };
+  }
+  return { buffer: base!.buffer, key: base!.key, factor: 1, offset: sourceSec, soundEndSec, isFallback: scale !== 1 };
+}
+
+/** Creates the player of an audio clip channel (see AudioClipPlayer). */
+export function createClipPlayer(ctx: BaseAudioContext, sources: ClipSources): ClipPlayer {
+  return new AudioClipPlayer(ctx, sources);
 }

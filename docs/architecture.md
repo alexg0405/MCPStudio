@@ -907,7 +907,7 @@ The edit works on the clip's sample, not on its reverse or on a stretched copy (
   the AI conversation, the request in flight): `send.ts` (a request and its backend), `turn.ts` (apply an answer, look
   things up, listen to the mix and ask again), `take-recorder.ts` (mic recording and import), `mix-listening.ts`,
   `follow-up-steps.ts`, `plugin-building.ts`, `external-apply.ts` (AI apps over MCP), `offline-beat.ts`.
-- **Applying** (`app/assistant/apply.ts`): one history transaction writes a pattern and its channels, reusing the
+- **Applying** (`app/assistant/apply.ts`, split into `beat-writer/`: plan, channel matching, sounds, write): one history transaction writes a pattern and its channels, reusing the
   project's channels that already play the same kit sound (or its 808), so beats share channels like FL patterns do.
   Mix and sound settings only go to channels the assistant created. Follow-ups rewrite the same pattern.
 - **Performance**: the engine records the mic on its own clock (`engine/recorder.ts`: an AudioWorklet writing into a
@@ -1410,7 +1410,7 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
   created earlier in the same answer. Plugin settings are coerced to each param's spec (option ids or
   labels, on/off, "50" for a 0–1 % param, clamped ranges); levels are dB. An action that can't apply is
   skipped with a warning (shown in the chat and sent back with the next turn); the rest still apply.
-- **Context** (`app/ai/context.ts`) each turn: song, channels with non-default plugin settings and
+- **Context** (`app/ai/context/`, one module per part of the text) each turn: song, channels with non-default plugin settings and
   routing, mixer tracks with levels, routes, effects (settings, bypass, sidechains), patterns (notes of
   the current one), playlist clips and the selection. The **plugin catalog** (`app/ai/catalog.ts`:
   every param with type, range, unit, default, plus presets) is sent at the start of a conversation
@@ -1463,7 +1463,7 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
   - `marker`;
   - `edit_audio_clip`, and audio-channel pitch, reverse and tempo-follow through `edit_channel`;
   - `build_plugin` (below).
-- **Driving the whole app** (`ops/session.ts`, `ops/windows.ts`, `ops/query.ts`, `read.ts`):
+- **Driving the whole app** (`ops/session/`, `ops/windows.ts`, `ops/query.ts`, `read/`):
   - `settings` (preferences, audio, export defaults, the editors' tool and grid), `select` (channel, mixer track,
     pattern, clips, notes, the loop region), `save_preset` and `open` with `action` (close, focus, maximize,
     restore any window or the browser panel). They change stores that are not the document: no undo step. They
@@ -1471,7 +1471,7 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
     is why a dry run leaves them out.
   - Extensions of existing ops: `song` title/author, `edit_channel` sample/root_key/position, `edit_insert`
     position, `add_pattern` from (copy) and split_by_channel, `edit_pattern` position.
-  - **Read tools** (`app/ai/read.ts`, `readTools`: name, description, JSON schema, `run(s, args)`): get_project,
+  - **Read tools** (`app/ai/read/`, `readTools` in `read/index.ts`: name, description, JSON schema, `run(s, args)`): get_project,
     get_transport, get_selection, get_pattern_notes, get_channel, get_mixer, get_clips, get_automation,
     get_settings, get_windows, get_plugins. Compact JSON in the units the actions take (dB, 1-based bars, 1/16
     steps, MIDI keys); a bad argument returns `{ error }`. The MCP server lists the same array.
@@ -1514,7 +1514,7 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
 
 Select clips, loop some bars, pick a marker's section or some notes, and tell the AI what to change there: only that
 part changes, as one undo step.
-- **Focus** (`app/ai/focus.ts`): `AiFocus` is a range, a section (marker id), clips or notes, each with its
+- **Focus** (`app/ai/focus/`): `AiFocus` is a range, a section (marker id), clips or notes, each with its
   `projectId`. It is captured when the musician asks (`app/ai/focus-capture.ts`: the playlist's selected clips, else
   its loop region, which becomes a section when it matches one exactly; a marker; notes) and resolved again on every
   turn (`resolveFocus`): a section follows its marker (a deleted marker leaves its bars as a range), deleted clips and
@@ -3329,7 +3329,7 @@ sounds, a role mix and genre loudness.
   volume by 808 −3 dB, bass −4, lead/keys/pad −8, pluck/bell/strings −9 (lo-fi keys −3, pad −6), all
   measured within 1 dB. Drum channels: `drumVolume(sound, kit)` (stock-kit levels, kick −4 dB, plus a
   per-genre-kit correction because the kits' density differs at matched peaks).
-- **Beat writer** (`app/assistant/apply.ts`): tracks reuse the conversation's or the named pattern's
+- **Beat writer** (`app/assistant/apply.ts`, `beat-writer/`): tracks reuse the conversation's or the named pattern's
   channels, then a channel of the same name (a Drop's "Lead" plays the Verse's), then the project's kit
   channel for that drum (the style's piece first) or its 808. A kit channel at its defaults that plays
   in no other pattern switches to the style's kit (the unused stock sample is dropped), gets velTone .5
@@ -3374,7 +3374,7 @@ sounds, a role mix and genre loudness.
   overrides it per style). `mix/recipe-parts.ts` holds what `recipes.ts` and the chains share (plugin ids, `FxRecipe`,
   `eqBands`) so the two files don't import each other.
 
-### Auto-level (`app/mix/auto-level.ts`, `level-step.ts`)
+### Auto-level (`app/mix/auto-level.ts`, `mix/leveling/`, `level-step.ts`)
 
 - `levelMoves` (pure): every bus to its style offset from the kick (`LEVEL_TARGETS`; the first bus
   present stands in for a missing kick), moves clamped −12…+6 dB, then one trim so the buses sum to
@@ -3556,7 +3556,7 @@ presets are measured on the benchmark's 3–4 note chords. Unison stays at 5 or 
   transition traits, mix tables, prompt and templates have unit tests (`core/beat/edm.test.ts`, `core/arrange/edm.test.ts`,
   `app/mix/edm-mix.test.ts`, `app/ai/edm-prompt.test.ts`); the v3 acceptance test runs over all 17 `STYLES`.
 
-## Loudness stage (`plugins/builtin/maximizer`, `sdk/dsp/lookahead-limiter.ts`, `app/mix/auto-level.ts`)
+## Loudness stage (`plugins/builtin/maximizer`, `sdk/dsp/lookahead-limiter.ts`, `app/mix/auto-level.ts`, `mix/leveling/loudness-stage.ts`)
 
 Why: the Limiter alone cannot make a dance mix as loud as a loud reference. The master is peak-limited: a kick peak 13 dB over the
 mix's loudness makes it turn the whole mix down for 80 ms or more after every kick, so from about +10 dB of input a dB more gets
@@ -3785,7 +3785,7 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   - Edits are serialized (a promise chain) and wait up to 15 s for a running Studio request (`phase` idle).
 - **Other tools.** Reads: `get_guide` (`STUDIO_PROMPT` with a preface about tools instead of JSON answers),
   `get_project` (`projectContext`, plus `focusContext` for bars), `list_plugins` (`pluginCatalog`), and every read
-  tool the Studio chat has (`ai/read.ts` `readTools`, built into the MCP tool list from the same objects:
+  tool the Studio chat has (`ai/read/` `readTools`, built into the MCP tool list from the same objects:
   `get_pattern_notes`, `get_channel`, `get_mixer`, `get_clips`, `get_automation`, `get_selection`, `get_transport`,
   `get_settings`, `get_windows`, `get_plugins`; its `get_project` JSON overview is `get_project_summary` here, the
   name `get_project` being the full text), returning their JSON as text and data, a bad argument as an `isError` result. `list_commands`/`run_command` use `aiCommands` and `commandCatalog` (a

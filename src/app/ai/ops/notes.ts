@@ -181,6 +181,7 @@ export const notes: OpModule = {
           {
             notes,
             grid: PPQ / 4,
+            bpm: d.transport.bpm,
             bar: c.bar(),
             length: lengthOf(pat as Pattern, d.transport.timeSig),
             key: d.transport.key ?? null,

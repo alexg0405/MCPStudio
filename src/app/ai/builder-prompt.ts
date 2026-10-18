@@ -21,18 +21,29 @@ const template = (name: string, files: Record<string, string>) =>
     .map(([path, text]) => `<file path="${path}">\n${text.trim()}\n</file>`)
     .join('\n')}\n</template>`;
 
+/** Guide sections the builder never needs: working on plugin files on disk, and note scripts (the builder makes only instruments and effects). */
+const SECTIONS_LEFT_OUT = new Set(['## Hot reload', '## Testing', '## Note scripts', '### The contract', '### A complete example']);
+
 /**
- * The guide as the builder needs it: the sections about working on plugin files on disk (hot reload, tests) and lazy
- * editors (a dynamic import, which built plugins may not use) are left out, which keeps the prompt under the AI
- * server's 60 000-character limit.
+ * The guide as the builder needs it, which keeps the prompt under the AI server's 60 000-character limit. Left out:
+ * the sections in SECTIONS_LEFT_OUT (a `###` inside a left-out `##` goes too, unless it is listed as kept: the
+ * `@agstudio/sdk/notes` reference is useful to instruments), and lines showing lazy editors (a dynamic import, which
+ * built plugins may not use).
  */
 export function guideForBuilder(guide: string): string {
-  const skip = new Set(['## Hot reload', '## Testing']);
+  const keptInsideLeftOut = new Set(['### `@agstudio/sdk/notes`']);
   const out: string[] = [];
-  let skipping = false;
+  let sectionLeftOut = false;
+  let leavingOut = false;
   for (const line of guide.split('\n')) {
-    if (line.startsWith('## ')) skipping = skip.has(line.trim());
-    if (skipping || line.includes('lazyUi(')) continue;
+    const heading = line.trim();
+    if (line.startsWith('## ')) {
+      sectionLeftOut = SECTIONS_LEFT_OUT.has(heading);
+      leavingOut = sectionLeftOut;
+    } else if (line.startsWith('### ')) {
+      leavingOut = SECTIONS_LEFT_OUT.has(heading) || (sectionLeftOut && !keptInsideLeftOut.has(heading));
+    }
+    if (leavingOut || line.includes('lazyUi(')) continue;
     out.push(line);
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n');

@@ -472,6 +472,8 @@ export interface NoteScriptContext<P extends ParamSpecs = ParamSpecs> {
   readonly ppq: number;
   /** The piano roll's snap in ticks. */
   readonly grid: number;
+  /** The song's tempo in beats per minute (to turn milliseconds into ticks: `ms / 1000 * bpm / 60 * ppq`). */
+  readonly bpm: number;
   /** Ticks per bar. */
   readonly bar: number;
   /** Length of the pattern in ticks. */

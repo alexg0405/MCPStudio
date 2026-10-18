@@ -166,12 +166,20 @@ export function register(services: Services): void {
   const hasKey = (s: Services) => !!s.doc.getState().project.transport.key;
   commands.register({
     id: 'pianoRoll.scaleSnap',
-    title: 'Snap drawn notes to the scale',
+    title: 'Scale lock',
     category: 'Piano roll',
-    hint: 'Notes you draw, paint or move stay on the song key’s scale',
+    hint: 'Notes you draw, paint or drag snap to the song key’s scale, so a melody cannot leave the key',
     enabled: hasKey,
     checked: (s) => s.editor.getState().pianoRoll.scaleSnap,
     run: (s) => s.editor.getState().setPianoRoll({ scaleSnap: !s.editor.getState().pianoRoll.scaleSnap }),
+  });
+  commands.register({
+    id: 'pianoRoll.chordHighlight',
+    title: 'Highlight the chord tones',
+    category: 'Piano roll',
+    hint: 'Tints the rows of the chord track’s notes behind the notes and names each chord at the top',
+    checked: (s) => s.editor.getState().pianoRoll.chordHighlight,
+    run: (s) => s.editor.getState().setPianoRoll({ chordHighlight: !s.editor.getState().pianoRoll.chordHighlight }),
   });
   commands.register({
     id: 'pianoRoll.scaleHighlight',

@@ -107,11 +107,13 @@ describe('BUILDER_PROMPT', () => {
     expect(BUILDER_PROMPT.length).toBeLessThan(60_000);
   });
 
-  it('leaves the on-disk sections and lazy editors out of the builder’s guide, and keeps the rest', () => {
+  it('leaves the on-disk sections, note scripts and lazy editors out of the builder’s guide, and keeps the rest', () => {
     expect(BUILDER_PROMPT).not.toContain('## Hot reload');
     expect(BUILDER_PROMPT).not.toContain('## Testing');
     expect(BUILDER_PROMPT).not.toContain('lazyUi(');
-    for (const h of ['## Custom editors', '## Note scripts', '## Presets and versions', '### Rules for audio-thread code'])
+    expect(BUILDER_PROMPT).not.toContain('## Note scripts');
+    expect(BUILDER_PROMPT).not.toContain('### The contract');
+    for (const h of ['## Custom editors', '### `@agstudio/sdk/notes`', '## Presets and versions', '### Rules for audio-thread code'])
       expect(BUILDER_PROMPT).toContain(h);
   });
 });

@@ -126,7 +126,8 @@ export function keyMenu(s: Services): MenuEntry[] {
     },
     { kind: 'separator' },
     command(s, 'pianoRoll.scaleHighlight', 'Highlight the scale’s rows'),
-    command(s, 'pianoRoll.scaleSnap', 'Snap drawn notes to the scale'),
+    command(s, 'pianoRoll.scaleSnap', 'Scale lock'),
+    command(s, 'pianoRoll.chordHighlight', 'Highlight the chord tones'),
   ];
 }
 

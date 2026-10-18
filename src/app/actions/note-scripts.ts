@@ -20,6 +20,9 @@ import { PPQ, ticksPerBar } from '@core/time/ppq';
 import { gridTicks } from '@core/time/snap';
 import type { Services } from '../services';
 
+/** The tempo a script sees when its caller gives none. */
+const DEFAULT_SCRIPT_BPM = 120;
+
 /** A script returning more notes than this is treated as broken. */
 export const MAX_SCRIPT_NOTES = 50_000;
 
@@ -31,6 +34,8 @@ export class NoteScriptError extends Error {
 export interface ScriptInput {
   notes: readonly Note[];
   grid: number;
+  /** The song's tempo (default 120 when a caller does not know it). */
+  bpm?: number;
   bar: number;
   length: number;
   key: SongKey | null;
@@ -70,6 +75,7 @@ export function scriptTargetFor(s: Services, where: ScriptWhere): ScriptTarget |
     notes: selected.length > 0 ? selected : all,
     fromSelection: selected.length > 0,
     grid: Math.max(1, Math.round(where.grid ?? PPQ / 4)),
+    bpm: project.transport.bpm,
     bar: ticksPerBar(timeSig),
     length: patternLength(pattern, timeSig),
     key: key ?? null,
@@ -165,6 +171,7 @@ export function runNoteScript(
     values: Object.freeze({ ...resolved }),
     ppq: PPQ,
     grid: Math.max(1, input.grid),
+    bpm: input.bpm ?? DEFAULT_SCRIPT_BPM,
     bar: input.bar,
     length: input.length,
     key: input.key ? Object.freeze({ root: input.key.root, scale: input.key.scale }) : null,

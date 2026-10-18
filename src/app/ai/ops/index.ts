@@ -12,6 +12,7 @@ import { clips } from './clips';
 import { decks } from './decks';
 import { dj } from './dj';
 import { filters } from './filters';
+import { harmony } from './harmony';
 import { launcher } from './launcher';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
@@ -36,6 +37,7 @@ export const MODULES: readonly OpModule[] = [
   mixer,
   patterns,
   notes,
+  harmony,
   automation,
   playlist,
   clips,

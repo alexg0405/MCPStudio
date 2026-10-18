@@ -9,10 +9,12 @@
  * held, or on an empty spot without dragging, it opens the context menu instead (`onMenu`).
  */
 import type { Services } from '@app/services';
+import { chordPitchClasses, formatChord } from '@core/harmony/chord';
 import type { Gesture } from '@core/history/history';
 import { newId } from '@core/model/ids';
 import type { ChannelId, Note, NoteId, Pattern, PatternId, Project, SongKey, Tick } from '@core/model/types';
 import { addNotes, editNotes, removeNotes, sliceNote } from '@core/ops/notes';
+import { patternChords, projectUsesFlats } from '@core/query/chords';
 import { noteAt, notesInRect } from '@core/query/notes-hit';
 import { notesSorted, patternLength } from '@core/query/queries';
 import { patternTickAt } from '@core/query/playlist';
@@ -35,6 +37,7 @@ import {
   drawRuler,
   keyForRow,
   rowForKey,
+  type ChordBand,
   type ScaleRows,
 } from './render';
 import { drawKey, movedKeys, stampKeys, stampName } from './stamp';
@@ -187,6 +190,8 @@ export class PianoRollController {
       s.doc.subscribe((next, prev) => {
         if (next.project.patterns !== prev.project.patterns || next.project.channels !== prev.project.channels) all();
         if (next.project.transport !== prev.project.transport) all();
+        // The chord track and where the pattern plays decide the chord tint behind the notes.
+        if (next.project.chords !== prev.project.chords || next.project.playlist !== prev.project.playlist) this.invalidate('grid');
       }),
       s.editor.subscribe((next, prev) => {
         if (next.noteSelection !== prev.noteSelection) this.invalidate('notes', 'lane');
@@ -194,6 +199,7 @@ export class PianoRollController {
         if (next.pianoRoll.velocityLane !== prev.pianoRoll.velocityLane || next.pianoRoll.lane !== prev.pianoRoll.lane)
           all();
         if (next.pianoRoll.scaleHighlight !== prev.pianoRoll.scaleHighlight) this.invalidate('grid', 'keys');
+        if (next.pianoRoll.chordHighlight !== prev.pianoRoll.chordHighlight) this.invalidate('grid');
         if (next.pianoRoll.tool !== prev.pianoRoll.tool || next.pianoRoll.chord !== prev.pianoRoll.chord) {
           this.stampHover = null;
           this.invalidate('overlay');
@@ -344,6 +350,17 @@ export class PianoRollController {
     return this.scaleCache.rows;
   }
 
+  /** The chord track as this pattern plays it, for the tint behind the notes; null when it is off or there are no chords. */
+  private chordBands(c: Ctx): ChordBand[] | null {
+    if (!this.s.editor.getState().pianoRoll.chordHighlight || !c.patternId || !c.project.chords) return null;
+    const flats = projectUsesFlats(c.project);
+    return patternChords(c.project, c.patternId).map((entry) => {
+      const mask: boolean[] = new Array<boolean>(12).fill(false);
+      for (const pc of chordPitchClasses(entry.chord)) mask[pc] = true;
+      return { tick: entry.tick, length: entry.length, mask, root: entry.chord.root, name: formatChord(entry.chord, flats) };
+    });
+  }
+
   // ---------------------------------------------------------------- layout & drawing
 
   invalidate(...layers: Layer[]): void {
@@ -415,7 +432,7 @@ export class PianoRollController {
   // a closure per frame). They read the state they draw when they run, which is only when the layer is stale.
   private readonly drawGridLayer = (g: CanvasRenderingContext2D, wide: Viewport): void => {
     const c = this.ctx();
-    drawGrid(g, wide, readTheme(), c.project.transport.timeSig, this.patternEnd(c), this.scaleRows(c));
+    drawGrid(g, wide, readTheme(), c.project.transport.timeSig, this.patternEnd(c), this.scaleRows(c), this.chordBands(c));
   };
 
   private readonly drawNotesLayer = (ctx: CanvasRenderingContext2D, wide: Viewport): void => {

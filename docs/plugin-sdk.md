@@ -655,6 +655,7 @@ defineNoteScript({ id, name, version, category?, description?, params, run(ctx) 
 | `values` | the dialog's values, typed from `params` |
 | `ppq` | ticks per beat (960); a 1/16 step is 240 ticks |
 | `grid` | the piano roll's snap in ticks (1 when snapping is off) |
+| `bpm` | the song's tempo in beats per minute (milliseconds to ticks: `ms / 1000 * bpm / 60 * ppq`) |
 | `bar`, `length` | ticks per bar, and the pattern's length |
 | `key` | the song key `{ root, scale }` (root 0 = C, scale ids from `SCALES`), or null |
 | `rand()` | seeded random numbers in [0, 1): the same notes give the same result. It is seeded from the script id, the notes and your `seed` param (if you declare one), not from other params, so turning a knob doesn't reshuffle everything; give users a `seed` param to re-roll |

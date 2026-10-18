@@ -17,6 +17,7 @@ function ctx(
     values: Object.freeze({ ...defaultValues(def.params), ...values }) as NoteScriptContext['values'],
     ppq: PPQ,
     grid: 240,
+    bpm: 120,
     bar: 3840,
     length: 3840 * 2,
     key,
@@ -90,6 +91,11 @@ describe('built-in note tools', () => {
 
   it('strum, arpeggiate and flip', () => {
     expect(run('strum', chord, { time: 0.25 }).map((x) => x.tick)).toEqual([0, 120, 240]);
+    // 125 ms at 120 BPM is a quarter of a beat (240 ticks); it replaces the beats value, and down reverses the order.
+    expect(run('strum', chord, { time: 1, ms: 125 }).map((x) => x.tick)).toEqual([0, 120, 240]);
+    const down = run('strum', chord, { ms: 125, direction: 'down' });
+    const byTime = [...down].sort((a, b) => a.tick - b.tick).map((x) => x.key);
+    expect(byTime).toEqual([67, 64, 60]);
     const arp = run('arpeggiate', chord, { rate: '1/8', octaves: 2 });
     expect(arp).toHaveLength(4);
     expect(arp.map((x) => x.key)).toEqual([60, 64, 67, 72]);

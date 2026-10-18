@@ -19,6 +19,45 @@ export interface ScaleRows {
   root: number;
 }
 
+/** A chord of the chord track as the grid shows it: where it sounds, its notes as pitch classes, and its name. */
+export interface ChordBand {
+  tick: Tick;
+  length: Tick;
+  /** Index = pitch class (key % 12): true for the chord's notes. */
+  mask: readonly boolean[];
+  /** Pitch class of the root (the bass for a slash chord). */
+  root: number;
+  name: string;
+}
+
+/** Rows of the chord's notes tinted over the chord's stretch, the root a little stronger, and its name at the top. */
+export function drawChordBands(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, bands: readonly ChordBand[]): void {
+  const [r0, r1] = vp.visibleRows();
+  const [t0, t1] = vp.visibleTicks();
+  ctx.font = `600 10px ${theme.font}`;
+  ctx.textBaseline = 'top';
+  for (const band of bands) {
+    if (band.tick > t1 || band.tick + band.length < t0) continue;
+    const x0 = vp.tickToPx(band.tick);
+    const x1 = vp.tickToPx(band.tick + band.length);
+    for (let row = r0; row <= r1; row++) {
+      const pc = keyForRow(row) % 12;
+      if (!band.mask[pc]) continue;
+      const y = vp.snap(vp.rowToY(row));
+      const bottom = vp.snap(vp.rowToY(row) + vp.rowHeight);
+      ctx.fillStyle = alpha(theme.accent, pc === band.root ? 0.26 : 0.14);
+      ctx.fillRect(x0, y, x1 - x0, bottom - y - 1);
+    }
+    // The chord's edge and name, so the notes can be placed against the harmony.
+    ctx.fillStyle = alpha(theme.accent, 0.5);
+    ctx.fillRect(x0, 0, 1, vp.height);
+    if (x1 - x0 > 24) {
+      ctx.fillStyle = theme.accentLight;
+      ctx.fillText(band.name, x0 + 4, 3);
+    }
+  }
+}
+
 /**
  * Background rows, grid lines and the area past the pattern end. With a song key, rows in the
  * scale are light, rows outside it dark and the tonic's rows tinted (instead of black/white keys).
@@ -30,6 +69,7 @@ export function drawGrid(
   ts: TimeSignature,
   patternEnd: Tick,
   scale: ScaleRows | null = null,
+  chords: readonly ChordBand[] | null = null,
 ): void {
   const { width, height } = vp;
   ctx.fillStyle = theme.bg;
@@ -52,6 +92,8 @@ export function drawGrid(
     ctx.fillStyle = key % 12 === 0 ? theme.beat : theme.lineFaint;
     ctx.fillRect(0, bottom - 1, width, 1);
   }
+
+  if (chords && chords.length > 0) drawChordBands(ctx, vp, theme, chords);
 
   const bar = ticksPerBar(ts);
   const beat = ticksPerBeat(ts);

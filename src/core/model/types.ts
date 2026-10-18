@@ -24,6 +24,7 @@ export type SlotId = Id<'fx'>;
 export type SampleId = Id<'smp'>;
 export type LinkId = Id<'lnk'>;
 export type MarkerId = Id<'mk'>;
+export type ChordId = Id<'cd'>;
 export type LaunchTrackId = Id<'lt'>;
 export type SceneId = Id<'sc'>;
 
@@ -63,6 +64,27 @@ export interface Project {
    * document. Added in v3 (optional).
    */
   launcher?: Launcher;
+  /**
+   * The chord track: chord symbols over song time (a lane above the playlist, shown behind the piano roll), the
+   * harmony basslines, chord parts and melodies are written against. Absent until a chord is added; chords never
+   * overlap (`core/ops/chords.ts`). Added in v3 (optional).
+   */
+  chords?: Record<ChordId, ChordEvent>;
+}
+
+/** One chord on the chord track: held from `tick` for `length` ticks (a gap before the next one means no chord). */
+export interface ChordEvent {
+  id: ChordId;
+  tick: Tick;
+  length: Tick;
+  /** Pitch class of the root, 0 (C) – 11 (B). */
+  root: number;
+  /** A quality id from `core/harmony/chord` ("maj", "min", "m7", "sus4", "add9"…). */
+  quality: string;
+  /** Pitch class of the bass for a slash chord (F/C); absent = the root. */
+  bass?: number;
+  /** 0–1, set when the chord was detected from notes or audio; a hand edit clears it. */
+  confidence?: number;
 }
 
 /** How a launcher slot reacts to its pad or button. */

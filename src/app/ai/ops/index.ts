@@ -15,6 +15,7 @@ import { filters } from './filters';
 import { launcher } from './launcher';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
+import { meters } from './meters';
 import { mix } from './mix';
 import { mixer } from './mixer';
 import { notes } from './notes';
@@ -44,6 +45,7 @@ export const MODULES: readonly OpModule[] = [
   beat,
   mix,
   reference,
+  meters,
   dj,
   decks,
   launcher,

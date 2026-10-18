@@ -23,6 +23,7 @@ export const OPEN_WINDOWS = [
   'dj-decks',
   'launcher',
   'reference',
+  'meters',
   'pitch-editor',
   'samples',
   'browser',

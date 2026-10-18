@@ -31,6 +31,7 @@ import { TICKS_PER_STEP, ticksPerBar } from '@core/time/ppq';
 import { chainChoices, findChainChoice, type ChainChoice } from '../chains';
 import { isAtPreset, presetChoices } from '../presets';
 import { pitchReport } from '../pitch/report';
+import { loudnessFacts } from '../metering/facts';
 import { referenceReport } from '../reference/summary';
 import { listSamples, SAMPLE_SORTS } from '../samples/listing';
 import { SAMPLE_CATEGORIES } from '@core/samples/types';
@@ -719,6 +720,13 @@ const get_reference = tool(
   (s) => referenceReport(project(s)),
 );
 
+const get_loudness = tool(
+  'get_loudness',
+  'Loudness and stereo of the master: the live readings of the Meters (momentary, short-term and integrated loudness in LUFS since the song started playing, loudness range, true peak, stereo correlation and mono loss; the first call opens a meter, so play the song and read again), the loudness target the song aims for (reference song, style or streaming), and the last loudness report (integrated LUFS, range, true peak and bar positions, what streaming services do). The loudness_report action makes a new report offline.',
+  {},
+  (s) => loudnessFacts(s),
+);
+
 const get_takes = tool(
   'get_takes',
   'Audio recordings that have takes (loop passes): for each take group its comp track and take tracks (1-based playlist tracks), the takes (1-based, in recording order, with their clip ids, bar and length), what the comp plays where (take number per range of bars), its crossfade and which take the musician is listening to on its own (listening_to_take; the comp.listenTake command starts that); also the punch range and recording settings. The comp action takes these numbers.',
@@ -850,6 +858,7 @@ export const readTools: readonly ReadTool[] = [
   get_plugins,
   get_chains,
   get_reference,
+  get_loudness,
   get_pitch,
   get_launcher,
   list_samples,

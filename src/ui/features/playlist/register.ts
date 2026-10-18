@@ -1,11 +1,12 @@
 import type { Services } from '@app/services';
-import type { PlaylistTool } from '@app/stores/editor';
-import { addMenuItems, cmd, registerMenu, sep } from '../../shell/menus';
+import { registerMenu } from '../../shell/menus';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
+import { registerPlaylistEditCommands } from './edit-commands';
+import { registerFollowCommands } from './follow-commands';
 import { Playlist } from './Playlist';
-import { playlistCommands as pl } from './commands';
 
+/** The playlist: its window, the Playlist toggle and menu, follow playhead, and its tools and clip editing commands. */
 export function register(services: Services): void {
   // Markers, audio clip edits and recording add their entries to it.
   registerMenu({ id: 'playlist', label: 'Playlist', order: 44 });
@@ -29,117 +30,6 @@ export function register(services: Services): void {
     chords: ['F5', 'Alt+1'],
     menuOrder: 10,
   });
-
-  const { commands, keymap } = services;
-  // Follow playhead (FL's auto-scroll), for the playlist and the piano roll alike.
-  commands.register<boolean | undefined>({
-    id: 'view.followPlayhead',
-    title: 'Follow playhead',
-    category: 'View',
-    hint: 'While playing, the playlist and piano roll scroll along so the playhead stays in view (scrolling by hand pauses it until the playhead is back on screen)',
-    argsHint: 'true to turn it on, false to turn it off (leave out to switch it)',
-    checked: (s) => s.prefs.getState().followPlayhead,
-    run: (s, on) =>
-      s.prefs.getState().set({ followPlayhead: typeof on === 'boolean' ? on : !s.prefs.getState().followPlayhead }),
-  });
-  commands.register<boolean | undefined>({
-    id: 'view.followSmooth',
-    title: 'Smooth follow (scroll with the song)',
-    category: 'View',
-    hint: 'On: while following, the view scrolls along with the song and the playhead stays near the middle-left. Off: it turns a page when the playhead reaches the right edge',
-    argsHint: 'true for smooth scrolling, false for page turns (leave out to switch it)',
-    checked: (s) => s.prefs.getState().followStyle === 'smooth',
-    run: (s, on) => {
-      const smooth = typeof on === 'boolean' ? on : s.prefs.getState().followStyle !== 'smooth';
-      s.prefs.getState().set({ followStyle: smooth ? 'smooth' : 'page' });
-    },
-  });
-  addMenuItems('view', [cmd('view.followPlayhead', 58), cmd('view.followSmooth', 59)]);
-  addMenuItems('playlist', [cmd('view.followPlayhead', 1), sep(2)]);
-
-  const focus = { focus: ['playlist'] as const };
-  const hasSel = (s: Services) => s.editor.getState().clipSelection.length > 0;
-  for (const [tool, chord, hint] of [
-    ['draw', 'P', 'Click an empty spot to pick something to place there, drag a clip to move it'],
-    ['paint', 'B', 'Drag across a track to paint copies of the current pattern'],
-    ['delete', 'D', 'Click or drag over clips to delete them'],
-    ['slice', 'C', 'Click a clip to cut it in two'],
-    ['select', 'E', 'Drag a box around clips to select them'],
-    ['comp', 'T', 'Drag across a take to use that part of it in the comp (the comp track plays it)'],
-  ] as [PlaylistTool, string, string][]) {
-    commands.register({
-      id: `playlist.tool.${tool}`,
-      title: `Playlist ${tool} tool`,
-      category: 'Playlist',
-      hint,
-      run: (s) => s.editor.getState().setPlaylist({ tool }),
-      checked: (s) => s.editor.getState().playlist.tool === tool,
-    });
-    keymap.add([{ chord, command: `playlist.tool.${tool}`, when: focus }]);
-  }
-  commands.register({
-    id: 'playlist.selectAll',
-    title: 'Select all clips',
-    category: 'Playlist',
-    hint: 'Select every clip in the playlist',
-    run: pl.selectAll,
-  });
-  commands.register({
-    id: 'playlist.deselect',
-    title: 'Deselect clips',
-    category: 'Playlist',
-    hint: 'Clear the clip selection',
-    run: pl.deselect,
-  });
-  commands.register({
-    id: 'playlist.delete',
-    title: 'Delete clips',
-    category: 'Playlist',
-    hint: 'Delete the selected clips',
-    enabled: hasSel,
-    run: pl.deleteSelection,
-  });
-  commands.register({
-    id: 'playlist.copy',
-    title: 'Copy clips',
-    category: 'Playlist',
-    hint: 'Copy the selected clips',
-    enabled: hasSel,
-    run: pl.copy,
-  });
-  commands.register({
-    id: 'playlist.cut',
-    title: 'Cut clips',
-    category: 'Playlist',
-    hint: 'Cut the selected clips',
-    enabled: hasSel,
-    run: pl.cut,
-  });
-  commands.register({
-    id: 'playlist.paste',
-    title: 'Paste clips',
-    category: 'Playlist',
-    hint: 'Paste the copied clips after the selection (or at the song position)',
-    enabled: (s) => !!s.editor.getState().clipClipboard?.length,
-    run: pl.paste,
-  });
-  commands.register({
-    id: 'playlist.duplicate',
-    title: 'Duplicate clips',
-    category: 'Playlist',
-    hint: 'Copy the selected clips right after themselves',
-    enabled: hasSel,
-    run: pl.duplicate,
-  });
-  keymap.add([
-    { chord: 'Mod+A', command: 'playlist.selectAll', when: focus },
-    { chord: 'Escape', command: 'playlist.deselect', when: focus },
-    { chord: 'Delete', command: 'playlist.delete', when: focus },
-    { chord: 'Backspace', command: 'playlist.delete', when: focus },
-    { chord: 'Mod+C', command: 'playlist.copy', when: focus },
-    { chord: 'Mod+X', command: 'playlist.cut', when: focus },
-    { chord: 'Mod+V', command: 'playlist.paste', when: focus },
-    { chord: 'Mod+B', command: 'playlist.duplicate', when: focus },
-    { chord: 'Mod+D', command: 'playlist.duplicate', when: focus },
-  ]);
+  registerFollowCommands(services);
+  registerPlaylistEditCommands(services);
 }

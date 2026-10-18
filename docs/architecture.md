@@ -3191,9 +3191,9 @@ presets are measured on the benchmark's 3–4 note chords. Unison stays at 5 or 
   levels) set `KIT_LOUDNESS`: festival kick +2.2 dB, bass-music kick +1.5, drum & bass kick +0.7 and so on.
 - **Eight bars per style** (`test/browser/edm-pack.test.ts`: the generator's beat, mix set up, auto-level, rendered):
   none silent, true peak −1.05 dBTP in all eight, and each within 0.5 dB of its target (measured / target LUFS, with the
-  loudness stage the leveling used): big room −8.38 / −8.5 (Maximizer), progressive −10.42 / −10 (Limiter +8.2 dB), future bass
-  −8.92 / −9 (Maximizer), dubstep −8.56 / −8.5 (Maximizer), melodic dubstep −9.63 / −9.5 (Limiter +8.8 dB), tech house −9.74 / −10,
-  trance −8.86 / −9, drum & bass −9.25 / −9 (Maximizer +10 dB). Before the Maximizer these were 0.5 to 1.5 dB short (the Limiter
+  loudness stage the leveling used, as measured on the merged state with the Vocals bus): big room −8.32 / −8.5 (Maximizer), progressive −10.42 / −10 (Limiter +8.2 dB), future bass
+  −8.92 / −9 (Maximizer), dubstep −8.56 / −8.5 (Maximizer), melodic dubstep −9.63 / −9.5 (Limiter +8.8 dB), tech house −9.75 / −10,
+  trance −8.84 / −9, drum & bass −9.27 / −9 (Maximizer +10 dB). Before the Maximizer these were 0.5 to 1.5 dB short (the Limiter
   alone reached −9.2 to −9.8 at +15 dB, dubstep −8.6 at +14).
 - **Node**: every style's usual song applied through `arrange` flows (`src/app/edm-shapes.test.ts`); the generator,
   transition traits, mix tables, prompt and templates have unit tests (`core/beat/edm.test.ts`, `core/arrange/edm.test.ts`,
@@ -3277,8 +3277,8 @@ Distortion in dB (lower is cleaner), kick punch and weight in dB; "—" = the Li
 Reading: at −9.5 the Maximizer is as clean or cleaner overall and keeps the kick's weight (up to +1 dB better) and punch (within 0.7 dB
 of the Limiter's); its cost is the highs: 0.5 to 5 dB more distortion above 3 kHz than a slow limiter. At −8.5 and louder only it gets
 there, and the hard clipper at the same loudness is 6 to 20 dB more distorted. End to end (auto-level, real engine, measured / target):
-big room −8.32 / −8.5, dubstep −8.56 / −8.5, drum & bass −9.25 / −9, future bass −8.95 / −9, trance −8.86 / −9, house −9.63 / −9.5, tech house
-−9.74 / −10, the reference test −8.49 / −8.4, all at −1.05 dBTP.
+big room −8.32 / −8.5, dubstep −8.56 / −8.5, drum & bass −9.26 / −9, future bass −8.92 / −9, trance −8.84 / −9, house −9.68 / −9.5, tech house
+−9.75 / −10, the reference test −8.49 / −8.4, all at −1.05 dBTP.
 
 ### CPU (`npm run bench:plugins`, % of one core at 48 kHz; a busy machine, best of 5)
 

@@ -121,6 +121,6 @@ describe.concurrent('loudness stage', () => {
         }
       }
     },
-    1_800_000,
+    900_000, // the four styles render side by side (about 280 s together when the machine is shared); a timeout is for a hang
   );
 });

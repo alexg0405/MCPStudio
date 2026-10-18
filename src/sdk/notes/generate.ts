@@ -14,6 +14,7 @@ import { byTime, clamp, clampNote, noteEnd, overlapGroups, withoutId, type Rand 
  * - random: a random note each step (never the same twice in a row).
  */
 export type ArpPattern = 'up' | 'down' | 'up-down' | 'down-up' | 'converge' | 'diverge' | 'as-played' | 'random';
+/** Every arpeggio pattern, for menus. */
 export const ARP_PATTERNS: readonly ArpPattern[] = [
   'up',
   'down',
@@ -25,6 +26,7 @@ export const ARP_PATTERNS: readonly ArpPattern[] = [
   'random',
 ];
 
+/** Settings for `arpeggiate`. */
 export interface ArpeggiateOptions {
   /** Ticks between the arpeggio's notes (240 = 1/16). */
   rate: number;
@@ -142,6 +144,7 @@ export function arpeggiate(notes: readonly ScriptNote[], opts: ArpeggiateOptions
 // ---------------------------------------------------------------------------------------------
 // Randomize existing notes
 
+/** Settings for `randomize`. */
 export interface RandomizeOptions {
   rand: Rand;
   /** Largest pitch change in semitones, either way (0 = keep pitches). */
@@ -175,6 +178,7 @@ export function randomize(notes: readonly ScriptNote[], opts: RandomizeOptions):
 // ---------------------------------------------------------------------------------------------
 // Generate new notes
 
+/** Settings for `generate`. */
 export interface GenerateOptions {
   rand: Rand;
   /** Tick range to fill: [start, end). */

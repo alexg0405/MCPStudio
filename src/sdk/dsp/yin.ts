@@ -1,6 +1,7 @@
 // Real-time YIN pitch detector. Allocation-free after construction; usable on any thread.
 import { Svf } from './svf';
 
+/** Settings for a `Yin` pitch detector. */
 export interface YinOptions {
   /** Lowest fundamental to look for, Hz (default 60). */
   minHz?: number;

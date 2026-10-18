@@ -2,6 +2,7 @@
 import type { ScriptNote } from '../types';
 import { bend, clamp, span } from './util';
 
+/** Settings for `scaleVelocities`. */
 export interface ScaleVelocityOptions {
   /** Multiplies every velocity (1 = unchanged). */
   factor?: number;
@@ -35,6 +36,7 @@ export function fitVelocities(notes: readonly ScriptNote[], range: { min: number
   }));
 }
 
+/** Settings for `rampVelocities`. */
 export interface RampOptions {
   /** Level at the first note's start… */
   from: number;

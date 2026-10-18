@@ -32,6 +32,7 @@ export function testTransport(
   return t;
 }
 
+/** Options for `testHost`. */
 export interface TestHostOptions {
   sampleRate?: number;
   state?: unknown;

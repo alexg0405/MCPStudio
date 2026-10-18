@@ -32,6 +32,7 @@ const SLEEP_SECONDS = 1;
 /** Capacity the event queue starts with (it grows if a burst exceeds it). */
 const EVENT_QUEUE_CAPACITY = 1024;
 
+/** Runs one kernel for the processor: queued events, glides of event params, sleep when idle, and the NaN and exception guards. */
 export class KernelRunner {
   readonly queue = new EventQueue(EVENT_QUEUE_CAPACITY);
   alive = true;

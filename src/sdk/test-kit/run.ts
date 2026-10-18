@@ -5,6 +5,7 @@ import { DEFAULT_BLOCK_FRAMES, DEFAULT_SAMPLE_RATE } from './defaults';
 import { testHost, testTransport, type TestHostOptions, type TestSignal, type TestTransport } from './host';
 import { paramBlock, type TestParams } from './params';
 
+/** Options for `runEffect` and `runInstrument`: params (constant or automated), block size, transport, sidechain and notes. */
 export interface RunOptions<P extends ParamSpecs> extends TestHostOptions {
   params?: TestParams<P>;
   /** Frames per process() call (default 128). */
@@ -137,6 +138,7 @@ export function runInstrument<P extends ParamSpecs>(
   return out;
 }
 
+/** A call to make at an exact frame of `renderInstrument` (a note on, a controller move). */
 export interface KernelEvent {
   /** Frame (from the start of the render) at which `run` is called, before that frame renders. */
   frame: number;

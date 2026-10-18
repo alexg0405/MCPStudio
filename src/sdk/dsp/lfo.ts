@@ -1,5 +1,6 @@
 // Low-frequency oscillator, free-running or locked to the song. Allocation-free; usable on any thread.
 
+/** The shape of an LFO's cycle. */
 export type LfoShape = 'sine' | 'triangle' | 'saw' | 'ramp' | 'square' | 'random' | 'smooth';
 
 /** A repeatable value in −1…1 for cycle `n` (random shapes stay the same on every playback). */

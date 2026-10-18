@@ -16,6 +16,7 @@ export function polyBlep(t: number, dt: number): number {
   return 0;
 }
 
+/** The waveform of a `BlepOscillator`. */
 export type BlepWave = 'sine' | 'saw' | 'square' | 'pulse' | 'triangle';
 
 /**

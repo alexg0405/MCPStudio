@@ -7,6 +7,7 @@
  * - enum: the option string. bool: boolean.
  */
 
+/** The unit a float or int param is shown in (`%` means a 0-1 value shown as a percentage). */
 export type Unit = '' | 'Hz' | 'dB' | 'ms' | 's' | '%' | 'st' | 'ct' | 'x' | 'beats';
 
 interface Common<T> {
@@ -20,6 +21,7 @@ interface Common<T> {
   automatable?: boolean;
 }
 
+/** A continuous param: a number between `min` and `max`. */
 export interface FloatSpec extends Common<number> {
   type: 'float';
   min: number;
@@ -31,6 +33,7 @@ export interface FloatSpec extends Common<number> {
   smoothing?: number;
 }
 
+/** A whole-number param between `min` and `max`. */
 export interface IntSpec extends Common<number> {
   type: 'int';
   min: number;
@@ -38,6 +41,7 @@ export interface IntSpec extends Common<number> {
   unit?: Unit;
 }
 
+/** A param that picks one of a list of options (stored as the option string). */
 export interface EnumSpec<O extends string = string> extends Common<O> {
   type: 'enum';
   options: readonly O[];
@@ -45,14 +49,20 @@ export interface EnumSpec<O extends string = string> extends Common<O> {
   labels?: Partial<Record<O, string>>;
 }
 
+/** An on/off param. */
 export interface BoolSpec extends Common<boolean> {
   type: 'bool';
 }
 
+/** Any one param declaration. */
 export type ParamSpec = FloatSpec | IntSpec | EnumSpec | BoolSpec;
+/** A plugin's params by id. */
 export type ParamSpecs = Record<string, ParamSpec>;
+/** The stored value of a param: a number, an option string or a boolean. */
 export type ParamValue = number | boolean | string;
+/** The value type of one spec: the option union for an enum, boolean for a bool, number otherwise. */
 export type ValueOf<S> = S extends EnumSpec<infer O> ? O : S extends BoolSpec ? boolean : number;
+/** The values of every param of a plugin, by id. */
 export type ParamValues<P extends ParamSpecs> = { [K in keyof P]: ValueOf<P[K]> };
 
 /** Shorthand constructors: `p.float(20, 20000, 1000, { scale: 'log', unit: 'Hz' })`. */
@@ -110,6 +120,7 @@ export function resolveValues<P extends ParamSpecs>(
   return out as ParamValues<P>;
 }
 
+/** Every param at its default value. */
 export function defaultValues(specs: ParamSpecs): Record<string, ParamValue> {
   const out: Record<string, ParamValue> = {};
   for (const [key, spec] of Object.entries(specs)) out[key] = spec.default;
@@ -169,6 +180,7 @@ export function encode(spec: ParamSpec, value: ParamValue): number {
   }
 }
 
+/** Inverse of `encode`: an AudioParam number back to the stored value. */
 export function decode(spec: ParamSpec, n: number): ParamValue {
   switch (spec.type) {
     case 'enum':

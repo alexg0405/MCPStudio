@@ -4,6 +4,7 @@
  * started yet, and cleanup.
  */
 
+/** One voice a graph instrument has scheduled: its source nodes, its output node and how to release it. */
 export interface GraphVoice {
   /** Scheduled start time (AudioContext seconds). */
   start: number;
@@ -63,6 +64,7 @@ interface Live extends GraphVoice {
 
 const FADE = 0.005;
 
+/** Keeps track of the voices of a main-thread instrument: polyphony limit, click-free stealing and cleanup. */
 export class GraphVoices {
   private readonly voices = new Map<number, Live>();
   private readonly max: number;

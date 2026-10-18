@@ -36,6 +36,7 @@ export function peakOverview(
   return peaks;
 }
 
+/** How to find slices: how sensitive, how short, how many. */
 export interface SliceOptions {
   /** 0–1: higher finds quieter and softer hits (more slices). */
   sensitivity: number;

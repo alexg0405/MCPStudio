@@ -5,6 +5,7 @@ import { useKnobGestures } from './knob-gestures';
 import { ParamFollowContext, ParamMenuContext, useParamStatus } from './param-menu';
 import styles from './controls.module.css';
 
+/** What a `Knob` takes: the param's spec and value, how it looks, and the edit callbacks. */
 export interface KnobProps {
   spec: ParamSpec;
   value: ParamValue;

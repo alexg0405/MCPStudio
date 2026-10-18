@@ -56,6 +56,7 @@ export function limit(notes: readonly ScriptNote[], range: { low: number; high: 
   });
 }
 
+/** Settings for `chordify`. */
 export interface ChordifyOptions {
   /** A chord id from `CHORDS`, or 'diatonic' to build the chord from the scale of `key`. */
   chord: string;

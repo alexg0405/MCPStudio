@@ -19,6 +19,7 @@ interface Drag {
   position: number;
 }
 
+/** What the knob's gestures need: the param, where the knob is and how to report edits. */
 export interface KnobGestureOptions {
   spec: ParamSpec;
   /** The knob's current position, 0-1. */

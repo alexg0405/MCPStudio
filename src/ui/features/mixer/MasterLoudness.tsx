@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { MASTER } from '@core/model/types';
-import { R } from '@engine/meter/layout';
+import { R } from '@app/metering/layout';
 import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';

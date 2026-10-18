@@ -3,7 +3,7 @@
  * the low, mid and high band. Both read the shared memory of the meter and draw straight to a canvas.
  */
 import type { MeterHandle } from '@engine/api';
-import { R, SCOPE_FRAMES } from '@engine/meter/layout';
+import { R, SCOPE_FRAMES } from '@app/metering/layout';
 import { alpha, type TimelineTheme } from '../../timeline/canvas';
 import { correlationText, widthText } from './meters-model';
 

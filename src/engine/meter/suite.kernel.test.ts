@@ -123,10 +123,10 @@ describe('loudness (EBU Tech 3341)', () => {
 
   it('a reset restarts the integrated loudness and the maximums (the next audio is a new measurement)', () => {
     const { k, v } = made();
-    let at = feed(k, tone(-14), 10);
+    const at = feed(k, tone(-14), 10);
     expect(v.readings[R.integrated]).toBeCloseTo(-14, 1);
     v.readings[R.resetSeq] = 1;
-    at = feed(k, tone(-30), 10, at);
+    feed(k, tone(-30), 10, at);
     expect(v.readings[R.integrated]).toBeCloseTo(-30, 1);
     expect(v.readings[R.maxMomentary]).toBeCloseTo(-30, 1);
     expect(v.readings[R.truePeakL]).toBeLessThan(-29);

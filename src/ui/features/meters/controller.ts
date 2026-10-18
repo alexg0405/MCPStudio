@@ -8,7 +8,7 @@ import { referenceCurve, tiltDb } from '@core/metering/octave';
 import { againstTarget } from '@core/metering/targets';
 import type { Project } from '@core/model/types';
 import type { MeterHandle } from '@engine/api';
-import { R } from '@engine/meter/layout';
+import { R } from '@app/metering/layout';
 import type { Services } from '@app/services';
 import type { ResolvedTarget } from '@app/metering/targets';
 import { onFrame } from '../../frame-loop';

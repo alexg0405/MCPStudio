@@ -38,9 +38,13 @@ export function MetersWindow() {
   const controller = useRef<MetersController | null>(null);
   const [showReference, setShowReference] = useState(true);
   const showReferenceNow = useRef(showReference);
-  showReferenceNow.current = showReference;
   const source = order.includes(settings.source) ? settings.source : MASTER;
   const insertNames = useMemo(() => names.split('\u0001'), [names]);
+
+  // Before the effect that makes the controller, so a new controller starts with the current choice.
+  useEffect(() => {
+    showReferenceNow.current = showReference;
+  }, [showReference]);
 
   useEffect(() => {
     const root = rootRef.current;

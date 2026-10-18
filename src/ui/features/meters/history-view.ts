@@ -4,7 +4,7 @@
  * squeezing older time together once more than a minute has passed.
  */
 import type { MeterHandle } from '@engine/api';
-import { HISTORY_CAPACITY, R } from '@engine/meter/layout';
+import { HISTORY_CAPACITY, R } from '@app/metering/layout';
 import { alpha, type TimelineTheme } from '../../timeline/canvas';
 import { lufsText } from './meters-model';
 

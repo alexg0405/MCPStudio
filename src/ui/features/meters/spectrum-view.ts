@@ -5,7 +5,7 @@
  */
 import { BandMap, octaveEdges, powerToDb, tiltDb } from '@core/metering/octave';
 import type { MeterHandle } from '@engine/api';
-import { R, SPECTRUM_SIZE } from '@engine/meter/layout';
+import { R, SPECTRUM_SIZE } from '@app/metering/layout';
 import { alpha, type TimelineTheme } from '../../timeline/canvas';
 
 export const SPECTRUM_LOW_HZ = 20;

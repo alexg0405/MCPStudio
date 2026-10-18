@@ -1,14 +1,13 @@
 /**
- * Host side of the plugin SDK: param handles bound to document values, sample slots, transport
- * info. One HostImpl per plugin instance.
+ * Host side of the plugin SDK: param handles bound to document values, sample slots (host-samples.ts), transport
+ * info and the worklet (host-worklet-node.ts). One HostImpl per plugin instance.
  */
 import { targetKey } from '@core/model/targets';
 import { lowestNoteKey } from '@core/query/queries';
-import type { PluginInstance, PluginOwner, Project, SampleId } from '@core/model/types';
+import type { PluginInstance, PluginOwner, Project } from '@core/model/types';
 import {
   encode,
   isAutomatable,
-  messageParamNames,
   resolveValues,
   type ChannelInfo,
   type JsonValue,
@@ -26,15 +25,18 @@ import {
   type WorkletOptions,
   type WorkletPort,
 } from '@agstudio/sdk';
-import { liteName, PITCH_PARAM, type ProcessorInit } from '@agstudio/sdk/protocol';
+import { PITCH_PARAM } from '@agstudio/sdk/protocol';
 import { Emitter } from './emitter';
+import { HostSampleSlots } from './host-samples';
+import { createPluginNode } from './host-worklet-node';
 import type { NoteFeedHub } from './note-feed';
 import { ParamHandleImpl } from './param-handle';
 import type { ParamRegistry } from './param-lane';
-import { SampleCache } from './samples';
+import type { SampleCache } from './samples';
 import { NO_TAP, TapImpl } from './tap';
 import { WorkletPortImpl } from './worklet-port';
 
+/** What a plugin host needs from the engine for one plugin instance. */
 export interface HostDeps {
   ctx: BaseAudioContext;
   def: PluginDef;
@@ -70,13 +72,8 @@ export interface HostDeps {
   lite?(): boolean;
 }
 
-/** Stable per-instance seed so kernels' random numbers repeat across renders. */
-function seedFor(owner: PluginOwner, pluginId: string): number {
-  const key = `${pluginId}:${owner.kind === 'channel' ? owner.channelId : owner.slotId}`;
-  let h = 2166136261;
-  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
+/** The root key a channel without one reports (middle C). */
+const DEFAULT_ROOT_KEY = 60;
 
 /** Applies migrate() when the saved version is older than the definition. */
 export function migrated(def: PluginDef, data: PluginInstance): { params: Record<string, unknown>; state: unknown } {
@@ -96,78 +93,81 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   readonly notes: NoteFeed | null;
   readonly offline: boolean;
   private readonly abort = new AbortController();
-  private readonly unregister: (() => void)[] = [];
+  private readonly unregisterLanes: (() => void)[] = [];
   private stateValue: unknown;
-  private slots: Record<string, SampleId>;
   private project: Project;
-  private sampleChanges = new Map<string, Emitter<[AudioBuffer | null]>>();
+  private readonly sampleSlots: HostSampleSlots;
   private rootKeyValue: number;
-  private rootKeyChanges = new Emitter<[number]>();
+  private readonly rootKeyChanges = new Emitter<[number]>();
   /** Set by the owner once the instance exists, so state changes reach it. */
   onState?: (state: unknown) => void;
+  /** The worklet ports this instance made (ports the plugin forgot to dispose are disposed with it). */
+  private readonly myPorts = new Set<WorkletPortImpl>();
+  private readonly taps = new Set<TapImpl>();
+  /** True while this instance's worklet is the kernel's lite processor (see HostDeps.lite). */
+  lite = false;
+  /** Seconds this instance sits behind the song's clock (see `AutomatableParam.shift`). */
+  private shiftSec = 0;
 
   constructor(private readonly deps: HostDeps) {
     this.audioContext = deps.ctx;
     this.offline = deps.offline;
     this.transport = deps.transport;
     this.project = deps.project;
-    const m = migrated(deps.def, deps.data);
-    const values = resolveValues(deps.def.params as ParamSpecs, m.params);
-    for (const [key, spec] of Object.entries(deps.def.params as ParamSpecs)) {
+    const migratedData = migrated(deps.def, deps.data);
+    this.createParams(resolveValues(deps.def.params as ParamSpecs, migratedData.params));
+    this.sidechain = deps.def.kind === 'effect' && deps.def.sidechain ? new GainNode(deps.ctx) : null;
+    this.notes = this.createNoteFeed();
+    this.stateValue = migratedData.state;
+    this.sampleSlots = new HostSampleSlots(deps.ctx, deps.samples, deps.data, deps.project);
+    this.samples = this.sampleSlots.api;
+    this.rootKeyValue = deps.rootKey ?? DEFAULT_ROOT_KEY;
+    this.channel = deps.rootKey === null ? null : this.createChannelInfo();
+  }
+
+  /** One handle per param of the definition; the automatable ones register where automation and controllers find them. */
+  private createParams(values: Record<string, unknown>): void {
+    const { def, ctx, owner, registry } = this.deps;
+    for (const [key, spec] of Object.entries(def.params as ParamSpecs)) {
       const handle = new ParamHandleImpl(
-        deps.ctx,
-        targetKey({ kind: 'plugin', owner: deps.owner, paramId: key }),
+        ctx,
+        targetKey({ kind: 'plugin', owner, paramId: key }),
         spec,
         values[key] as ParamValue,
       );
       this.params[key] = handle;
-      if (isAutomatable(spec)) this.unregister.push(deps.registry.register(handle.lane));
+      if (isAutomatable(spec)) this.unregisterLanes.push(registry.register(handle.lane));
     }
-    this.sidechain = deps.def.kind === 'effect' && deps.def.sidechain ? new GainNode(deps.ctx) : null;
-    const feed = deps.def.kind === 'effect' && deps.def.notes ? deps.noteFeed : undefined;
+  }
+
+  /** The notes of the instrument channels, for effects that follow a melody (null for the others). */
+  private createNoteFeed(): NoteFeed | null {
+    const { def, noteFeed } = this.deps;
+    const feed = def.kind === 'effect' && def.notes ? noteFeed : undefined;
+    if (!feed) return null;
     // The effect's own delay compensation applies to the notes as it does to its audio.
-    this.notes = feed
-      ? {
-          listen: (position, fn) => feed.listen(position, (e) => fn({ ...e, time: e.time + this.shiftSec })),
-          channelName: (position) => feed.channelName(position),
-        }
-      : null;
-    this.stateValue = m.state;
-    this.slots = { ...(deps.data.samples ?? {}) };
-    this.pinSlots();
-    this.rootKeyValue = deps.rootKey ?? 60;
-    const readRootKey = () => this.rootKeyValue;
-    const project = () => this.project;
+    return {
+      listen: (position, fn) => feed.listen(position, (note) => fn({ ...note, time: note.time + this.shiftSec })),
+      channelName: (position) => feed.channelName(position),
+    };
+  }
+
+  /** What an instrument knows about the channel it plays on. */
+  private createChannelInfo(): ChannelInfo {
+    const deps = this.deps;
     const pitch = deps.pitch ?? silentSignal(deps.ctx);
-    this.channel =
-      deps.rootKey === null
-        ? null
-        : {
-            get rootKey() {
-              return readRootKey();
-            },
-            onRootKeyChange: (cb) => this.rootKeyChanges.on(cb),
-            pitch,
-            pitchAt: (time: number) => deps.pitch?.pitchAt(time) ?? 0,
-            get lowestKey() {
-              return deps.owner.kind === 'channel' ? lowestNoteKey(project(), deps.owner.channelId) : null;
-            },
-          };
-    this.samples = {
-      get: (slot) => this.sampleFor(slot),
-      load: (slot) => this.loadSample(slot),
-      onChange: (slot, cb) => this.sampleEmitter(slot).on(cb),
-      name: (slot) => {
-        const id = this.slots[slot];
-        return id ? (this.project.samples[id]?.name ?? null) : null;
+    // The getters read the host's current values, so a plugin that holds on to the object follows edits.
+    const readRootKey = () => this.rootKeyValue;
+    const readProject = () => this.project;
+    return {
+      get rootKey() {
+        return readRootKey();
       },
-      durationSec: (slot) => {
-        const ref = this.refFor(slot);
-        return ref ? this.deps.samples.knownDuration(ref, this.deps.ctx.sampleRate) : null;
-      },
-      needsDecode: (slot) => {
-        const ref = this.refFor(slot);
-        return !!ref && ref.source.kind === 'embedded' && !this.deps.samples.has(SampleCache.keyOf(ref.source, this.deps.ctx.sampleRate));
+      onRootKeyChange: (callback) => this.rootKeyChanges.on(callback),
+      pitch,
+      pitchAt: (time: number) => deps.pitch?.pitchAt(time) ?? 0,
+      get lowestKey() {
+        return deps.owner.kind === 'channel' ? lowestNoteKey(readProject(),deps.owner.channelId) : null;
       },
     };
   }
@@ -184,9 +184,6 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     this.deps.requestState(next as JsonValue);
   }
 
-  private readonly myPorts = new Set<WorkletPortImpl>();
-  private readonly taps = new Set<TapImpl>();
-
   tap(node: AudioNode, options?: TapOptions): PluginTap {
     const report = this.deps.reportTap;
     if (this.offline || !report || this.abort.signal.aborted) return NO_TAP;
@@ -195,12 +192,6 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     report(tap, true);
     return tap;
   }
-
-  /** True while this instance's worklet is the kernel's lite processor (see HostDeps.lite). */
-  lite = false;
-
-  /** Seconds this instance sits behind the song's clock (see `AutomatableParam.shift`). */
-  private shiftSec = 0;
 
   get shift(): number {
     return this.shiftSec;
@@ -213,84 +204,58 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   setShift(seconds: number): void {
     if (seconds === this.shiftSec) return;
     this.shiftSec = seconds;
-    for (const h of Object.values(this.params)) h.lane.shift = seconds;
-    for (const p of this.myPorts) p.shift = seconds;
+    for (const handle of Object.values(this.params)) handle.lane.shift = seconds;
+    for (const port of this.myPorts) port.shift = seconds;
   }
 
-  async worklet(opts: WorkletOptions = {}): Promise<WorkletPort> {
+  async worklet(options: WorkletOptions = {}): Promise<WorkletPort> {
     const { def, ctx } = this.deps;
     if (!def.processor) throw new Error(`Plugin "${def.id}" has no processor module`);
     await this.deps.loadModule(def.processor);
     if (this.abort.signal.aborted) throw new Error('disposed');
-    const numberOfInputs = opts.numberOfInputs ?? (def.kind === 'effect' ? 1 : 0);
-    const nodeOptions = {
-      numberOfInputs,
-      numberOfOutputs: 1,
-      outputChannelCount: opts.outputChannelCount ?? [2],
-      channelCount: 2,
-      channelCountMode: 'explicit' as const,
-    };
-    const specs = def.params as ParamSpecs;
-    const seed = seedFor(this.deps.owner, def.id);
-    let node: AudioWorkletNode | null = null;
-    let messageNames: string[] = [];
-    // Nothing automates this instance: the lite processor, where every param is an event (a kernel
-    // registered by registerKernel has one; a processor registered otherwise, or under another name,
-    // doesn't and runs as it is).
-    if (!opts.name && this.deps.lite?.()) {
-      const all: Record<string, number> = {};
-      for (const [key, handle] of Object.entries(this.params)) all[key] = encode(handle.spec, handle.value);
-      try {
-        node = new AudioWorkletNode(ctx, liteName(def.id), {
-          ...nodeOptions,
-          processorOptions: { kind: def.kind, state: this.stateValue, seed, params: all } satisfies ProcessorInit,
-        });
-        messageNames = Object.keys(this.params);
-        this.lite = true;
-      } catch {
-        node = null;
-      }
-    }
-    if (!node) {
-      // Params automation can drive are AudioParams; the rest (enums, switches…) travel as events.
-      const parameterData: Record<string, number> = {};
-      const messageData: Record<string, number> = {};
-      for (const [key, handle] of Object.entries(this.params))
-        (isAutomatable(handle.spec) ? parameterData : messageData)[key] = encode(handle.spec, handle.value);
-      node = new AudioWorkletNode(ctx, opts.name ?? def.id, {
-        ...nodeOptions,
-        parameterData,
-        processorOptions: { kind: def.kind, state: this.stateValue, seed, params: messageData } satisfies ProcessorInit,
-      });
-      for (const [key, handle] of Object.entries(this.params)) {
-        const param = node.parameters.get(key);
-        if (param) handle.bind(param);
-      }
-      messageNames = messageParamNames(specs);
-    }
-    const unsubs = messageNames.map((key, index) => {
-      const handle = this.params[key];
-      return handle
-        ? handle.onChange((value, time) => port.param(index, encode(handle.spec, value as ParamValue), time))
-        : () => {};
+    const { node, messageNames, isLite } = createPluginNode({
+      ctx,
+      def,
+      owner: this.deps.owner,
+      params: this.params,
+      state: this.stateValue,
+      options,
+      mayBeLite: this.deps.lite?.() === true,
     });
+    if (isLite) this.lite = true;
     // Instrument kernels read the channel pitch (cents) from a reserved param.
     const pitchParam = node.parameters.get(PITCH_PARAM);
     if (pitchParam && this.channel) this.channel.pitch.connect(pitchParam);
+    const stopListening = this.forwardParamChanges(messageNames, (index, value, time) => port.param(index, value, time));
     const port = new WorkletPortImpl(
       node,
       ctx.sampleRate,
       (err) => this.deps.reportFault(err),
-      (p) => {
-        this.deps.ports.delete(p);
-        this.myPorts.delete(p);
-        for (const off of unsubs) off();
+      (closed) => {
+        this.deps.ports.delete(closed);
+        this.myPorts.delete(closed);
+        stopListening();
       },
     );
     port.shift = this.shiftSec;
     this.deps.ports.add(port);
     this.myPorts.add(port);
     return port;
+  }
+
+  /** Sends every later change of the params that travel as events to the processor; returns the way to stop. */
+  private forwardParamChanges(
+    messageNames: readonly string[],
+    send: (index: number, encoded: number, time: number) => void,
+  ): () => void {
+    const unsubscribers = messageNames.map((key, index) => {
+      const handle = this.params[key];
+      if (!handle) return () => {};
+      return handle.onChange((value, time) => send(index, encode(handle.spec, value as ParamValue), time));
+    });
+    return () => {
+      for (const unsubscribe of unsubscribers) unsubscribe();
+    };
   }
 
   /** Pushes new document data (params, state, samples) into the running instance. */
@@ -303,16 +268,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
       this.stateValue = nextState;
       this.onState?.(nextState);
     }
-    const nextSlots = data.samples ?? {};
-    const all = new Set([...Object.keys(this.slots), ...Object.keys(nextSlots)]);
-    const prevSlots = this.slots;
-    this.slots = { ...nextSlots };
-    this.pinSlots();
-    for (const slot of all) {
-      if (prevSlots[slot] !== nextSlots[slot]) {
-        void this.loadSample(slot).then((b) => this.sampleChanges.get(slot)?.emit(b));
-      }
-    }
+    this.sampleSlots.apply(data, project);
   }
 
   setRootKey(rootKey: number): void {
@@ -323,56 +279,18 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
 
   dispose(): void {
     this.abort.abort();
-    for (const release of this.slotPins) release();
-    this.slotPins = [];
+    this.sampleSlots.dispose();
     // Ports the plugin forgot to dispose.
-    for (const p of [...this.myPorts]) p.dispose();
-    for (const t of this.taps) {
-      t.dispose();
-      this.deps.reportTap?.(t, false);
+    for (const port of [...this.myPorts]) port.dispose();
+    for (const tap of this.taps) {
+      tap.dispose();
+      this.deps.reportTap?.(tap, false);
     }
     this.taps.clear();
-    for (const off of this.unregister) off();
-    for (const h of Object.values(this.params)) h.dispose();
+    for (const unregister of this.unregisterLanes) unregister();
+    for (const handle of Object.values(this.params)) handle.dispose();
     this.sidechain?.disconnect();
-    for (const e of this.sampleChanges.values()) e.clear();
     this.rootKeyChanges.clear();
-  }
-
-  private sampleEmitter(slot: string) {
-    let e = this.sampleChanges.get(slot);
-    if (!e) {
-      e = new Emitter();
-      this.sampleChanges.set(slot, e);
-    }
-    return e;
-  }
-
-  /** Samples in the plugin's slots stay in memory while it lives (plugins keep their buffers). */
-  private slotPins: Array<() => void> = [];
-  private pinSlots(): void {
-    const old = this.slotPins;
-    this.slotPins = [];
-    for (const id of Object.values(this.slots)) {
-      const ref = id ? this.project.samples[id] : undefined;
-      if (ref) this.slotPins.push(this.deps.samples.pin(SampleCache.keyOf(ref.source, this.deps.ctx.sampleRate)));
-    }
-    for (const release of old) release();
-  }
-
-  private refFor(slot: string) {
-    const id = this.slots[slot];
-    return id ? this.project.samples[id] : undefined;
-  }
-
-  private sampleFor(slot: string): AudioBuffer | null {
-    const ref = this.refFor(slot);
-    return ref ? this.deps.samples.getSync(ref, this.deps.ctx.sampleRate) : null;
-  }
-
-  private async loadSample(slot: string): Promise<AudioBuffer | null> {
-    const ref = this.refFor(slot);
-    return ref ? this.deps.samples.load(ref, this.deps.ctx) : null;
   }
 }
 

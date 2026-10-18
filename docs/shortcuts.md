@@ -10,6 +10,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Add marker at the song position | `⌥T` / `Alt+T` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
+| Clip launcher | `⌥L` / `Alt+L` |
 | DJ decks | `⌥D` / `Alt+D` |
 | DJ mix | `⌥J` / `Alt+J` |
 | Export audio… | `⌘R` / `Ctrl+R` |
@@ -69,6 +70,17 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Deck loop | `Z`, `M` |
 | Deck play or pause | `Q`, `U` |
 | Deck sync | `E`, `O` |
+
+## When the launcher window is focused
+
+| Action | Keys |
+|---|---|
+| Clear the highlighted slot | `Del`, `⌫` |
+| Launch scene (number key) | `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `0` |
+| Launch the highlighted slot | `↵` |
+| Move the clip launcher cursor | `←`, `→`, `↑`, `↓` |
+| Stop all launcher slots | `Esc` |
+| Stop the highlighted track | `.` |
 
 ## When the mixer window is focused
 

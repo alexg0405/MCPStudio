@@ -9,6 +9,7 @@ import type { Waveform } from './waveform';
 import type { RecordOptions, Recording, RecordingHandle } from './recorder';
 import type { AudioCapture, AudioInput, CapturedAudio } from './audio-input';
 import type { SampleCache } from './samples';
+import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
 
 export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio };
 
@@ -214,6 +215,16 @@ export interface EngineApi {
    * output device choice and the safety limiter apply to them too.
    */
   deckHost?(): DeckHost | null;
+  /**
+   * The clip launcher (see core/launcher): the engine plays the runs of the driver on top of the song, in time with
+   * the transport, and asks it to `advance` on every scheduler tick. Optional: engines without a transport (fakes)
+   * leave these out.
+   */
+  setLauncher?(driver: LaunchDriver | null): void;
+  /** Where the transport is on the launcher axis (all zero while nothing plays). */
+  launcherClock?(): LaunchClock;
+  /** The driver's runs changed: play them (starts the transport for the launcher alone when nothing plays). */
+  launcherChanged?(): void;
   /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;
   dispose(): Promise<void>;

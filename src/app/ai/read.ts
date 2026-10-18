@@ -21,6 +21,7 @@ import type {
   Project,
 } from '@core/model/types';
 import { MASTER } from '@core/model/types';
+import { filledSlots, slotLabel, slotLoops, slotMode } from '@core/launcher/grid';
 import { compSegmentsOf } from '@core/ops/comp';
 import { songLength } from '@core/query/playlist';
 import { takeGroups } from '@core/query/takes';
@@ -768,6 +769,42 @@ const get_pitch = tool(
   (s, a) => pitchReport(s, a),
 );
 
+const get_launcher = tool(
+  'get_launcher',
+  'The clip launcher (Performance mode): its grid of slots (tracks across, scenes down) with, per slot, what it plays (a pattern or an audio clip channel), name, launch mode, loop, quantize (null = the grid’s), follow action and what it is doing now (idle, queued, playing, stopping); the scenes and tracks with their names and the playlist track a launcher track takes over; the default quantize and whether a performance is being recorded. Positions are 1-based, what launcher_slot and launcher_play take.',
+  {},
+  (s) => {
+    const p = project(s);
+    const l = p.launcher;
+    if (!l) return { empty: true, note: 'The clip launcher has no slots yet: launcher_slot puts a pattern or audio in one.', recording: s.launcher.store.getState().recording };
+    const heard = s.launcher.runs.length ? s.launcher.clock().heardU : 0;
+    return {
+      quantize: l.quantize,
+      recording: s.launcher.store.getState().recording,
+      playing: s.launcher.runs.some((r) => r.startU <= heard && (r.endU === null || r.endU > heard)),
+      tracks: l.trackOrder.map((id, i) => {
+        const t = l.tracks[id]!;
+        const lane = t.laneId ? p.playlist.laneOrder.indexOf(t.laneId) + 1 : 0;
+        return { track: i + 1, name: t.name, playlist_track: lane > 0 ? lane : null };
+      }),
+      scenes: l.sceneOrder.map((id, i) => ({ scene: i + 1, name: l.scenes[id]!.name })),
+      slots: filledSlots(l).map((f) => ({
+        track: f.track + 1,
+        scene: f.scene + 1,
+        name: slotLabel(p, f.slot),
+        ...(f.slot.content.kind === 'pattern'
+          ? { pattern: p.patterns[f.slot.content.patternId]?.name ?? null, pattern_id: f.slot.content.patternId }
+          : { audio: p.channels[f.slot.content.channelId]?.name ?? null, audio_id: f.slot.content.channelId, bars: bars(p, f.slot.content.length) }),
+        mode: slotMode(f.slot),
+        loop: slotLoops(f.slot),
+        quantize: f.slot.quantize ?? null,
+        follow: f.slot.follow ?? null,
+        state: s.launcher.stateOf(f.trackId, f.sceneId, heard).state,
+      })),
+    };
+  },
+);
+
 /** Every read tool, in the order they are listed to the model. */
 export const readTools: readonly ReadTool[] = [
   get_project,
@@ -785,6 +822,7 @@ export const readTools: readonly ReadTool[] = [
   get_chains,
   get_reference,
   get_pitch,
+  get_launcher,
 ];
 
 /** Runs a read tool by name; an unknown name or a bad argument comes back as `{ error }`. */

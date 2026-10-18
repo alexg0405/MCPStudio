@@ -1,3 +1,4 @@
+import { pruneLauncher } from './launcher';
 import type { Draft } from 'immer';
 import type { ParamValue } from '@agstudio/sdk/params';
 import { clipChannelId } from '../model/clips';
@@ -39,6 +40,7 @@ export function removeChannel(d: Draft<Project>, id: ChannelId): void {
   // Frozen copies of it stay as ordinary audio.
   for (const ch of Object.values(d.channels)) if (ch.kind === 'audioClip' && ch.frozenFrom === id) delete ch.frozenFrom;
   dropControllers(d, (t) => targetUsesChannel(t, id));
+  pruneLauncher(d);
 }
 
 /** Removes the controller links whose target matches. */

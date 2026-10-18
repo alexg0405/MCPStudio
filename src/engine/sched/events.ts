@@ -2,7 +2,8 @@
  * Turns the project into note events for a tick range. Pure; shares semantics with the UI through
  * core/query (pattern length, sorted notes, effective mute).
  */
-import type { ChannelId, NoteId, PatternId, Project, Tick } from '@core/model/types';
+import type { AudioClip, ChannelId, NoteId, PatternId, Project, Tick } from '@core/model/types';
+import type { LaunchRun } from '@core/launcher/run';
 import { effectivelyMuted, lowerBound, notesSorted, patternLength } from '@core/query/queries';
 import { audibleClips, songLength } from '@core/query/playlist';
 import type { TempoMap } from '@core/time/ppq';
@@ -52,12 +53,19 @@ export interface NoteEvent {
   release?: number;
   /** Seconds into the sound to start at (audio clips, or starting playback inside one). */
   offsetSec?: number;
+  /**
+   * Set on events the clip launcher made: their times are on the launcher axis `u` (see core/launcher/run.ts),
+   * not song ticks. Audio events carry the clip they play (a pass of the slot's audio, starting at `start`).
+   */
+  launch?: { runId: string; clip?: AudioClip };
 }
 
 export interface EventSource {
   project: Project;
   clips: readonly PlayClip[];
   audio?: readonly AudioPlayClip[];
+  /** What the clip launcher plays on top of the song (see `launch.ts`). */
+  launch?: { runs: readonly LaunchRun[] };
 }
 
 /** Song mode: every audible playlist clip; the song is as long as its last clip (whole bars). */

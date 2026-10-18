@@ -4,7 +4,7 @@
  * sends only what changed, and everything again when a controller connects.
  */
 import { ccBytes, noteOnBytes } from '@core/midi-map/message';
-import { AUTO_LOOP_BEATS, targetInfo } from '@core/midi-map/targets';
+import { AUTO_LOOP_BEATS, isLaunchTarget, targetInfo } from '@core/midi-map/targets';
 import type { ControllerMapping, LedBinding } from '@core/midi-map/types';
 import { DECK_IDS, HOT_CUES, type DecksState } from '../decks-api';
 import { loopBeats } from './dispatch';
@@ -33,12 +33,13 @@ export function ledStates(state: DecksState): Map<string, boolean> {
 
 /** The LEDs of a mapping: the explicit ones, plus (if on) one at each LED-capable button's own note. */
 export function ledBindings(mapping: ControllerMapping): LedBinding[] {
-  const out = [...mapping.leds];
+  // The clip launcher's pads have their own lights (app/launcher/leds.ts): they are not on/off deck lights.
+  const out = mapping.leds.filter((l) => !isLaunchTarget(l.state));
   if (!mapping.ledFromButtons) return out;
   const explicit = new Set(mapping.leds.map((l) => l.state));
   const seen = new Set<string>();
   for (const b of mapping.bindings) {
-    if (b.input.type !== 'note' || explicit.has(b.target) || !targetInfo(b.target)?.led) continue;
+    if (b.input.type !== 'note' || explicit.has(b.target) || isLaunchTarget(b.target) || !targetInfo(b.target)?.led) continue;
     const key = `${b.target}:${b.input.channel}:${b.input.note}`;
     if (seen.has(key)) continue;
     seen.add(key);

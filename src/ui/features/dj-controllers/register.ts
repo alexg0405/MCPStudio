@@ -90,6 +90,7 @@ export function register(services: Services): void {
       ['Learn controls', 'Click a control in the list (or on a deck), then move or press it on your controller: its type is detected'],
       ['Learn / + Shift / Clear', 'Link one control, link what it does while Shift is held, or remove its links'],
       ['A link (the grey pill)', 'Click it to reverse a fader, change a jog wheel’s speed, or remove it'],
+      ['Clip launcher section', 'Pad controllers (Launchpad and similar): their pads launch the clip launcher’s slots and light up with the slot’s state; click a slot in the clip launcher while learning to link it'],
       ['Test tab', 'Every message your controller sends, and what it did: the quickest way to check a controller'],
       ['Ready-made map…', 'Pick a map for your controller if it was not recognised by its name; Export and Import share your own'],
     ],

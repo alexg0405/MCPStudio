@@ -7,12 +7,16 @@
  * cancels it), planning restarts 10 ms from now with the new model, and sounding notes whose
  * source was deleted are released.
  */
-import type { AudioClip, ChannelId, Clip, Tick } from '@core/model/types';
+import type { AudioClip, ChannelId, Clip, LaneId, Tick } from '@core/model/types';
 import { followsTempo, playbackKey, playbackMode } from '@core/audio/playback';
-import type { TempoMap } from '@core/time/ppq';
+import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { NoteOff, NoteOn } from '@agstudio/sdk';
 import { plan, segmentEndTime, tickAtTime, tickNumberAt, timeInSegment, type Cursor, type Segment, type Timeline } from './core';
 import { collectAudio, collectNotes, type EventSource, type NoteEvent } from './events';
+import { collectLaunchAudio, collectLaunchNotes, laneOverridden, overrideStartAfter } from './launch';
+
+/** A planned segment with the launcher axis position of its start (`u`: see core/launcher/run.ts). */
+export type USegment = Segment & { u0: number };
 
 /** An audio clip starting to play: its note-on plus where it starts in the song and the tempo it plays at. */
 export interface AudioOn extends NoteOn {
@@ -68,6 +72,12 @@ interface Scheduled {
   /** Audio events: how the channel played it (see playbackKey) and whether its speed follows the tempo. */
   audioKey?: string;
   follows?: boolean;
+  /** Launcher notes: their end is a position on the launcher axis, not a song tick. */
+  launch?: boolean;
+  endU?: number;
+  /** Song notes: where they started on the launcher axis, and the playlist track they belong to (a launcher track may take it over). */
+  startU?: number;
+  laneId?: LaneId;
 }
 
 const SAFETY = 0.01;
@@ -75,7 +85,9 @@ const SAFETY = 0.01;
 export class Transport {
   private playingFlag = false;
   private cursor: Cursor | null = null;
-  private segs: Segment[] = [];
+  private segs: USegment[] = [];
+  /** The launcher axis position of the planning cursor. */
+  private uFrontier = 0;
   /** Every dispatched note until it has both started and been released. */
   private notes = new Map<number, Scheduled>();
   private noteSeq = 0;
@@ -123,6 +135,7 @@ export class Transport {
     this.endTime = null;
     this.scanOngoing = true;
     this.cursor = { tick: fromTick, time: at, iter: 0 };
+    this.uFrontier = fromTick;
     for (const o of this.observers) o.started?.(fromTick, at);
     this.pump();
   }
@@ -143,6 +156,10 @@ export class Transport {
         n.offSent = true;
       } else if (!n.offSent) this.release(n, at);
     }
+    // The launcher axis keeps counting through a seek, lined up with the new position's bars.
+    const bar = this.source.project ? ticksPerBar(this.source.project.transport.timeSig) : 0;
+    const u = this.uAtTime(at);
+    this.uFrontier = bar > 0 ? u + ((((tick - u) % bar) + bar) % bar) : u;
     this.notes.clear();
     this.segs = [];
     this.endTime = null;
@@ -174,7 +191,9 @@ export class Transport {
     }
     const p = plan(this.cursor, horizon, this.timeline);
     const L = this.timeline.loop;
-    for (const seg of p.segs) {
+    for (const plain of p.segs) {
+      const seg: USegment = { ...plain, u0: this.uFrontier };
+      this.uFrontier += seg.tick1 - seg.tick0;
       const wrapped = !!L && seg.iter > 0 && seg.tick0 === L.start;
       for (const o of this.observers) o.segment?.(seg, wrapped);
       this.process(seg);
@@ -202,6 +221,7 @@ export class Transport {
     if (!this.playingFlag || !this.cursor) return;
     const safe = this.clock.currentTime + SAFETY;
     const pos = tickAtTime(this.segs, safe) ?? { tick: this.cursor.tick, iter: this.cursor.iter };
+    const uPos = this.uAtTime(safe);
 
     for (const n of [...this.notes.values()]) {
       if (n.startTime >= safe) {
@@ -221,6 +241,7 @@ export class Transport {
       tick = L.start + ((((tick - L.start) % (L.end - L.start)) + (L.end - L.start)) % (L.end - L.start));
     }
     this.cursor = { tick, time: safe, iter: pos.iter };
+    this.uFrontier = uPos;
     this.endTime = null;
 
     // Sounding notes: release ones whose source disappeared, follow length changes.
@@ -230,6 +251,25 @@ export class Transport {
       const ev = n.ev;
       const channel = project.channels[ev.channelId];
       let end: number | null = null;
+      if (ev.launch) {
+        // A launcher note goes on while its run does (a cut run ends its notes at the cut).
+        const run = this.source.launch?.runs.find((r) => r.id === ev.launch?.runId);
+        const runEnd = run ? (run.endU ?? Infinity) : -1;
+        let keep = !!run && !!channel;
+        if (keep && ev.kind === 'audio') {
+          keep = channel?.kind === 'audioClip' && playbackKey(channel) === n.audioKey && !(tempoChanged && n.follows) && run?.content.kind === 'audio' && run.content.channelId === ev.channelId;
+        } else if (keep && ev.patternId && ev.noteId) {
+          keep = !!project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId];
+        }
+        if (!keep) this.release(n, safe);
+        else {
+          const note =
+            ev.kind === 'note' && ev.patternId && ev.noteId ? project.patterns[ev.patternId]?.notes[ev.channelId]?.[ev.noteId] : undefined;
+          n.endU = Math.min(note ? ev.start + note.length : ev.end, runEnd);
+          if (n.endU <= uPos) this.release(n, safe);
+        }
+        continue;
+      }
       if (ev.kind === 'audio') {
         const clip = project.playlist.clips[ev.clipId as keyof typeof project.playlist.clips];
         // An edited clip (moved, trimmed…) restarts from the new model; an untouched one keeps playing,
@@ -301,12 +341,32 @@ export class Transport {
     return this.segs[0]?.tick0 ?? this.cursor?.tick ?? this.stoppedTick;
   }
 
+  /**
+   * The position on the launcher axis (see core/launcher/run.ts) at audio-clock `time`, extrapolated at the planned
+   * tempo before and after what is planned. 0 while stopped.
+   */
+  uAtTime(time: number): number {
+    if (!this.playingFlag) return 0;
+    const segs = this.segs;
+    for (let i = segs.length - 1; i >= 0; i--) {
+      const s = segs[i] as USegment;
+      if (time >= s.time0) {
+        if (time <= segmentEndTime(s)) return s.u0 + (time - s.time0) / s.spt;
+        return s.u0 + (s.tick1 - s.tick0) + (time - segmentEndTime(s)) / s.spt;
+      }
+    }
+    const first = segs[0];
+    if (first) return first.u0 - (first.time0 - time) / first.spt;
+    const c = this.cursor;
+    return c ? this.uFrontier + (time - c.time) / this.timeline.tempo.secondsPerTick(c.tick) : this.uFrontier;
+  }
+
   /** The loop iteration heard at `time` (UI uses it for the current step light). */
   iterationAt(time: number): number {
     return tickAtTime(this.segs, time)?.iter ?? 0;
   }
 
-  private process(seg: Segment): void {
+  private process(seg: USegment): void {
     const now = this.clock.currentTime;
     const events: NoteEvent[] = [];
     collectNotes(this.source, seg.tick0, seg.tick1, events);
@@ -320,22 +380,65 @@ export class Transport {
     if (scan) {
       sounding = new Set();
       for (const n of this.notes.values())
-        if (n.ev.kind === 'audio' && !n.offSent && n.iter === seg.iter) sounding.add(n.ev.clipId);
+        if (n.ev.kind === 'audio' && !n.offSent && n.iter === seg.iter && !n.launch) sounding.add(n.ev.clipId);
     }
     collectAudio(this.source, seg.tick0, seg.tick1, events, scan ? seg.tick0 : null, tempo, sounding);
+    const u1 = seg.u0 + (seg.tick1 - seg.tick0);
+    const runs = this.source.launch?.runs;
+    const lauEvents: NoteEvent[] = [];
+    if (runs && runs.length > 0) {
+      // A launcher track takes over its playlist track from where its slot starts.
+      const clipsById = this.source.project?.playlist.clips;
+      if (clipsById) {
+        let kept = 0;
+        for (const ev of events) {
+          const lane = clipsById[ev.clipId as keyof typeof clipsById]?.laneId;
+          if (lane && laneOverridden(runs, lane, seg.u0 + (ev.start - seg.tick0))) continue;
+          events[kept++] = ev;
+        }
+        events.length = kept;
+      }
+      collectLaunchNotes(this.source.project, runs, seg.u0, u1, lauEvents);
+      let launchSounding: Set<string> | undefined;
+      if (scan) {
+        launchSounding = new Set();
+        for (const n of this.notes.values()) if (n.launch && n.ev.kind === 'audio' && !n.offSent) launchSounding.add(n.ev.clipId);
+      }
+      collectLaunchAudio(this.source.project, runs, seg.u0, u1, lauEvents, scan ? seg.u0 : null, launchSounding);
+    }
     this.scanOngoing = false;
     const clips = this.source.project?.playlist.clips;
-    for (const ev of events) {
-      const time = timeInSegment(seg, ev.start, tempo);
+    const dispatch = (ev: NoteEvent, launch: boolean) => {
+      const time = launch ? seg.time0 + (ev.start - seg.u0) * seg.spt : timeInSegment(seg, ev.start, tempo);
       if (time < now) this.lateEvents++;
       const noteId = ++this.noteSeq;
-      const n: Scheduled = { ev, noteId, startTime: time, iter: seg.iter, endTick: ev.end, offSent: false };
+      const n: Scheduled = {
+        ev,
+        noteId,
+        startTime: time,
+        iter: seg.iter,
+        endTick: ev.end,
+        offSent: false,
+        ...(launch ? { launch: true, endU: ev.end } : { startU: seg.u0 + (ev.start - seg.tick0) }),
+      };
       let audioClip: AudioClip | null = null;
-      if (ev.kind === 'audio' && clips) {
+      let evTempo = tempo;
+      const evTick = ev.start;
+      if (ev.kind === 'audio' && launch && ev.launch?.clip) {
+        // A pass of a slot's audio: its clip starts on the launcher axis, which runs at the tempo of this segment.
+        audioClip = ev.launch.clip;
+        n.clip = audioClip;
+        evTempo = constantTempo(Math.round((60 / (seg.spt * PPQ)) * 1e6) / 1e6);
+      } else if (!launch && clips) {
         const clip = clips[ev.clipId as keyof typeof clips];
+        if (clip) {
+          n.laneId = clip.laneId;
+          if (ev.kind === 'audio') n.clip = clip;
+          if (ev.kind === 'audio' && clip.kind === 'audio') audioClip = clip;
+        }
+      }
+      if (ev.kind === 'audio') {
         const channel = this.source.project.channels[ev.channelId];
-        if (clip) n.clip = clip;
-        if (clip?.kind === 'audio') audioClip = clip;
         if (channel?.kind === 'audioClip') {
           n.audioKey = playbackKey(channel);
           n.follows = followsTempo(playbackMode(channel));
@@ -351,14 +454,30 @@ export class Transport {
         ...(ev.fine !== undefined ? { fine: ev.fine } : {}),
         ...(ev.offsetSec !== undefined ? { offset: ev.offsetSec } : {}),
       };
-      if (audioClip && this.sink.audioOn) this.sink.audioOn(ev.channelId, { ...on, clip: audioClip, tick: ev.start, tempo });
+      if (audioClip && this.sink.audioOn) this.sink.audioOn(ev.channelId, { ...on, clip: audioClip, tick: evTick, tempo: evTempo });
       else this.sink.noteOn(ev.channelId, on);
-    }
+    };
+    for (const ev of events) dispatch(ev, false);
+    for (const ev of lauEvents) dispatch(ev, true);
     const atLoopEnd = !!L && seg.tick1 >= L.end - 1e-9;
     const atSongEnd = !L && seg.tick1 >= this.timeline.endTick - 1e-9;
     const segEnd = segmentEndTime(seg);
     for (const n of this.notes.values()) {
       if (n.offSent) continue;
+      if (n.launch) {
+        // Launcher notes end at their position on the launcher axis (a loop wrap does not end them).
+        const endU = n.endU as number;
+        if (endU < u1) this.release(n, Math.max(n.startTime, seg.time0 + (endU - seg.u0) * seg.spt));
+        continue;
+      }
+      // A launcher track taking over the note's playlist track cuts it where its slot starts.
+      if (runs && runs.length > 0 && n.laneId && n.startU !== undefined) {
+        const cutU = overrideStartAfter(runs, n.laneId, n.startU);
+        if (cutU !== null && cutU < u1) {
+          this.release(n, Math.max(n.startTime, seg.time0 + (cutU - seg.u0) * seg.spt));
+          continue;
+        }
+      }
       if (n.iter < seg.iter) this.release(n, seg.time0);
       else if (n.iter === seg.iter && n.endTick < seg.tick1) {
         this.release(n, Math.max(n.startTime, timeInSegment(seg, n.endTick, tempo)));

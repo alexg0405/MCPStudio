@@ -62,10 +62,11 @@ describe('presets', () => {
     expect(presetForDevice('DJControl Inpulse 300')?.id).toBe('hercules-inpulse-300');
     expect(presetForDevice('Hercules DJControl Inpulse 200 MIDI 1')?.id).toBe('hercules-inpulse-200');
     expect(presetForDevice('MIXTRACK PRO FX')?.id).toBe('numark-mixtrack-pro-fx');
-    expect(presetForDevice('Launchpad Mini')).toBeNull();
+    expect(presetForDevice('Korg nanoKONTROL2')).toBeNull();
   });
   it('only use real targets, with controls of the right kind, and name their source', () => {
-    for (const p of CONTROLLER_PRESETS) {
+    // The pad grids of the clip launcher have their own source and tests (launcher-controllers.test.ts).
+    for (const p of CONTROLLER_PRESETS.filter((x) => !x.mapping().pads)) {
       const m = p.mapping();
       expect(m.preset).toBe(p.id);
       expect(p.source).toMatch(/Mixxx/);

@@ -4,9 +4,9 @@
  * Events arrive in FL's saving order and many only make sense in the context set by an earlier one: a
  * "channel name" belongs to the channel opened by the last "new channel", a plugin name to that channel or,
  * once the channel has its own, to a mixer slot. `FlpEventReader` keeps that context and has one small
- * method per kind of event; `scanEvents` splits the byte stream into events and feeds them in.
+ * method per kind of event; `scanEvents` (flp-scan.ts) splits the byte stream into events and feeds them in.
  */
-import { type FlpView, cleanText, colorOf, flpVersionAtLeast, isUnicodeVersion, latin1, utf16le } from './flp-bytes';
+import { type FlpView, cleanText, colorOf, isUnicodeVersion, latin1, utf16le } from './flp-bytes';
 import {
   FLP_AUTOMATION_HEADER,
   FLP_AUTOMATION_LINK_FIELD,

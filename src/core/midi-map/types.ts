@@ -48,6 +48,23 @@ export interface LedBinding {
   out: OutputSpec;
 }
 
+/**
+ * The value a pad's light is sent for each state of the clip launcher slot under it (a note's velocity: on many
+ * pad controllers it picks the colour). Absent = brightness steps (`DEFAULT_PAD_PALETTE`).
+ */
+export interface PadPalette {
+  /** No slot under the pad. */
+  empty: number;
+  /** A slot that is not playing. */
+  loaded: number;
+  /** Launched, waiting for the boundary (or stopping). */
+  queued: number;
+  /** Playing. */
+  playing: number;
+}
+
+export const DEFAULT_PAD_PALETTE: PadPalette = { empty: 0, loaded: 24, queued: 72, playing: 127 };
+
 export interface ControllerMapping {
   version: 1;
   /** What the musician sees (a device name or "My controller"). */
@@ -64,6 +81,8 @@ export interface ControllerMapping {
   ledFromButtons: boolean;
   /** Faders and knobs wait until the hardware reaches the software value. */
   softTakeover: boolean;
+  /** How the clip launcher's pads are lit (default `DEFAULT_PAD_PALETTE`). */
+  pads?: PadPalette;
 }
 
 export const emptyMapping = (name: string): ControllerMapping => ({
@@ -152,6 +171,16 @@ function sanitizeOutput(raw: unknown): OutputSpec | null {
   return { type: o.type, channel, number, ...(on !== null ? { on } : {}), ...(off !== null ? { off } : {}) };
 }
 
+function sanitizePads(raw: unknown): PadPalette | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const empty = int(o.empty, 0, 127);
+  const loaded = int(o.loaded, 0, 127);
+  const queued = int(o.queued, 0, 127);
+  const playing = int(o.playing, 0, 127);
+  return empty === null || loaded === null || queued === null || playing === null ? null : { empty, loaded, queued, playing };
+}
+
 /**
  * Reads a mapping from untrusted JSON (a file the musician imported, or something saved by an older
  * version). Unknown targets and malformed entries are dropped; the count of dropped ones is returned.
@@ -194,6 +223,7 @@ export function sanitizeMapping(raw: unknown, fallbackName = 'Imported controlle
     if (x && out && isTargetId(x.state)) leds.push({ state: x.state, out });
     else dropped++;
   }
+  const pads = sanitizePads(o.pads);
   const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim().slice(0, 80) : fallbackName;
   return {
     dropped,
@@ -206,6 +236,7 @@ export function sanitizeMapping(raw: unknown, fallbackName = 'Imported controlle
       leds,
       ledFromButtons: o.ledFromButtons !== false,
       softTakeover: o.softTakeover !== false,
+      ...(pads ? { pads } : {}),
     },
   };
 }

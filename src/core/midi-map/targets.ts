@@ -99,6 +99,76 @@ const GLOBAL: readonly TargetInfo[] = [
   { id: 'app.stop', fn: 'app.stop', label: 'Project stop', group: 'App', kind: 'button', hint: 'Stops the project’s transport (not a deck)' },
 ];
 
+// ---- The clip launcher's pads, scene buttons and stop buttons (the first 8 tracks and scenes) ----
+
+export const LAUNCH_PAD_SIZE = 8;
+
+/** What a launcher target id means (1-based positions), or null for any other id. */
+export type LaunchTarget =
+  | { kind: 'slot'; track: number; scene: number }
+  | { kind: 'scene'; scene: number }
+  | { kind: 'stop'; track: number }
+  | { kind: 'stopAll' };
+
+const LAUNCH_RE = /^launch\.(slot):([1-8]):([1-8])$|^launch\.(scene|stop):([1-8])$|^launch\.(stopAll)$/;
+
+export function parseLaunchTarget(id: string): LaunchTarget | null {
+  const m = LAUNCH_RE.exec(id);
+  if (!m) return null;
+  if (m[1]) return { kind: 'slot', track: Number(m[2]), scene: Number(m[3]) };
+  if (m[4] === 'scene') return { kind: 'scene', scene: Number(m[5]) };
+  if (m[4] === 'stop') return { kind: 'stop', track: Number(m[5]) };
+  return { kind: 'stopAll' };
+}
+
+export const isLaunchTarget = (id: string): boolean => LAUNCH_RE.test(id);
+
+/** The id of the pad for a track and a scene (1-based). */
+export const launchSlotId = (track: number, scene: number) => `launch.slot:${track}:${scene}`;
+
+function launchTargets(): TargetInfo[] {
+  const out: TargetInfo[] = [];
+  for (let s = 1; s <= LAUNCH_PAD_SIZE; s++)
+    out.push({
+      id: `launch.scene:${s}`,
+      fn: `launch.scene:${s}`,
+      label: `Launcher: scene ${s}`,
+      group: 'Scene buttons',
+      kind: 'button',
+      hint: `Launches every slot of scene ${s} together in the clip launcher`,
+      led: true,
+    });
+  for (let t = 1; t <= LAUNCH_PAD_SIZE; t++)
+    out.push({
+      id: `launch.stop:${t}`,
+      fn: `launch.stop:${t}`,
+      label: `Launcher: stop track ${t}`,
+      group: 'Stop buttons',
+      kind: 'button',
+      hint: `Stops what track ${t} of the clip launcher plays, at the next boundary`,
+    });
+  out.push({
+    id: 'launch.stopAll',
+    fn: 'launch.stopAll',
+    label: 'Launcher: stop all',
+    group: 'Stop buttons',
+    kind: 'button',
+    hint: 'Stops everything the clip launcher plays, at the next boundary',
+  });
+  for (let t = 1; t <= LAUNCH_PAD_SIZE; t++)
+    for (let s = 1; s <= LAUNCH_PAD_SIZE; s++)
+      out.push({
+        id: launchSlotId(t, s),
+        fn: launchSlotId(t, s),
+        label: `Launcher: track ${t}, scene ${s}`,
+        group: `Pads: track ${t}`,
+        kind: 'button',
+        hint: `Presses the slot at track ${t}, scene ${s} of the clip launcher (its mode decides what a press does); the pad lights up with the slot’s state`,
+        led: true,
+      });
+  return out;
+}
+
 const all: TargetInfo[] = [];
 for (const deck of DECK_LETTERS)
   for (const d of deckFnDefs())
@@ -113,6 +183,8 @@ for (const deck of DECK_LETTERS)
       ...(d.led ? { led: true } : {}),
     });
 all.push(...GLOBAL);
+const LAUNCH: readonly TargetInfo[] = launchTargets();
+all.push(...LAUNCH);
 const byId = new Map(all.map((t) => [t.id, t]));
 
 /** Every target, decks A–D first, then the global ones. */
@@ -137,10 +209,15 @@ export function globalTargets(): readonly TargetInfo[] {
   return GLOBAL;
 }
 
+/** The clip launcher's targets (scene buttons, stop buttons, pads). */
+export function launcherTargets(): readonly TargetInfo[] {
+  return LAUNCH;
+}
+
 /** "A.hotcue:3" → { deck: 'A', fn: 'hotcue', arg: 3 }. */
 export function parseTarget(id: string): { deck?: DeckLetter; fn: string; arg?: number } | null {
   const t = byId.get(id);
-  if (!t) return null;
+  if (!t || isLaunchTarget(id)) return null;
   const [name, arg] = t.fn.split(':');
   return { ...(t.deck ? { deck: t.deck } : {}), fn: name!, ...(arg !== undefined ? { arg: Number(arg) } : {}) };
 }

@@ -14,7 +14,7 @@ import { LearnDetector } from '@core/midi-map/learn';
 import { describeMidi, parseMidi, type MidiMessage } from '@core/midi-map/message';
 import { presetById, presetForDevice } from '@core/midi-map/presets';
 import { SoftTakeover } from '@core/midi-map/soft-takeover';
-import { parseTarget, targetInfo, type TargetKind } from '@core/midi-map/targets';
+import { parseLaunchTarget, parseTarget, targetInfo, type TargetKind } from '@core/midi-map/targets';
 import {
   describeInput,
   emptyMapping,
@@ -26,6 +26,7 @@ import {
   type ControllerMapping,
   type InputSpec,
 } from '@core/midi-map/types';
+import { LauncherLeds, type PadSource } from '../../launcher/leds';
 import type { DecksApi } from '../decks-api';
 import { ABS_CONTROLS } from './abs';
 import { BrowseCursor, type BrowseSong } from './browse';
@@ -80,12 +81,27 @@ export interface LogEntry {
   did: string;
 }
 
+/** What a controller drives in the clip launcher, and what its lights read (`app/launcher/session.ts` implements it). */
+export interface LauncherControl extends PadSource {
+  /** 0-based grid positions; `down` false is the pad being let go (gate slots stop). */
+  pressAt(track: number, scene: number, down?: boolean): void;
+  launchSceneAt(scene: number): void;
+  stopTrackAt(track: number): void;
+  stopAll(): void;
+  subscribe(fn: () => void): () => void;
+}
+
+/** How often pad lights are compared with the launcher's state (it changes at bar lines, with nothing to tell us). */
+const PAD_LIGHT_MS = 80;
+
 export interface ControllersOptions {
   requestAccess?: () => Promise<MIDIAccess>;
   /** The live decks (see `decks-source.ts`). */
   getDecks: () => Promise<ResolvedDecks | null>;
   storage?: ControllerStorage;
   runCommand(id: string): void;
+  /** The clip launcher the pads drive (null: not available). */
+  launcher?: () => LauncherControl | null;
   /** The music library for the browse encoder. */
   songs?: () => readonly BrowseSong[];
   toast?(message: string, kind?: 'error'): void;
@@ -141,6 +157,9 @@ export class DjControllers {
   private readonly interpreters = new Map<string, MappingInterpreter>();
   private readonly takeovers = new Map<string, SoftTakeover>();
   private readonly leds = new Map<string, LedFeedback>();
+  private readonly padLeds = new Map<string, LauncherLeds>();
+  private padUnsub: (() => void) | null = null;
+  private padTimer: ReturnType<typeof setInterval> | null = null;
   private readonly dispatcher: DjDispatcher;
   private decks: DecksApi | null = null;
   private decksUnsub: (() => void) | null = null;
@@ -205,6 +224,7 @@ export class DjControllers {
     this.store.setState({ access: 'ready' });
     this.refreshDevices();
     void this.persist(true);
+    this.watchLauncher();
     await this.ensureDecks();
   }
 
@@ -214,6 +234,12 @@ export class DjControllers {
     this.cancelLearn();
     for (const led of this.leds.values()) led.clear();
     this.leds.clear();
+    for (const led of this.padLeds.values()) led.clear();
+    this.padLeds.clear();
+    this.padUnsub?.();
+    this.padUnsub = null;
+    if (this.padTimer) clearInterval(this.padTimer);
+    this.padTimer = null;
     for (const { input, listener } of this.ports.values()) input.removeEventListener('midimessage', listener);
     this.ports.clear();
     this.interpreters.clear();
@@ -329,6 +355,15 @@ export class DjControllers {
         });
         led.setMapping(this.mappingFor(name));
         this.leds.set(name, led);
+        const pads = new LauncherLeds((bytes) => {
+          try {
+            out.send(bytes);
+          } catch {
+            // The device went away between messages.
+          }
+        });
+        pads.setMapping(this.mappingFor(name));
+        this.padLeds.set(name, pads);
       }
       if (!devices.some((d) => d.name === name)) devices.push({ name, hasOutput: !!out, preset: presetForDevice(name)?.id ?? null });
       this.ensureMapping(name);
@@ -340,6 +375,7 @@ export class DjControllers {
       this.interpreters.delete(id);
     }
     for (const name of [...this.leds.keys()]) if (!devices.some((d) => d.name === name)) this.leds.delete(name);
+    for (const name of [...this.padLeds.keys()]) if (!devices.some((d) => d.name === name)) this.padLeds.delete(name);
     const selected = this.store.getState().selected;
     this.store.setState({ devices, selected: selected && devices.some((d) => d.name === selected) ? selected : (devices[0]?.name ?? null) });
     this.syncLeds();
@@ -360,12 +396,53 @@ export class DjControllers {
 
   /** Sends every LED of every device again (a device connected, the decks came up). */
   syncLeds(): void {
+    // A pad light that was just made has sent nothing yet; the others only send what changed.
+    this.updatePadLeds();
     if (!this.decks) return;
     const state = this.decks.store.getState();
     for (const led of this.leds.values()) {
       led.reset();
       led.update(state);
     }
+  }
+
+  // ---- the clip launcher's pads ---------------------------------------------------------
+
+  /** Pad lights follow the launcher: at once when something is pressed, and now and then for what the clock decides. */
+  private watchLauncher(): void {
+    const launcher = this.opts.launcher?.();
+    if (!launcher || this.padUnsub) return;
+    this.padUnsub = launcher.subscribe(() => this.updatePadLeds());
+    this.padTimer = setInterval(() => this.updatePadLeds(), PAD_LIGHT_MS);
+  }
+
+  private updatePadLeds(): void {
+    const launcher = this.opts.launcher?.();
+    if (!launcher) return;
+    for (const led of this.padLeds.values()) if (led.active) led.update(launcher);
+  }
+
+  /** A pad, a scene button or a stop button of the launcher was pressed or let go; returns what it did, or null. */
+  private applyLaunch(ev: ControlEvent): string | null {
+    const t = parseLaunchTarget(ev.target);
+    const launcher = this.opts.launcher?.();
+    if (!t || ev.kind !== 'button' || !launcher) return null;
+    switch (t.kind) {
+      case 'slot':
+        launcher.pressAt(t.track - 1, t.scene - 1, ev.down);
+        break;
+      case 'scene':
+        if (ev.down) launcher.launchSceneAt(t.scene - 1);
+        break;
+      case 'stop':
+        if (ev.down) launcher.stopTrackAt(t.track - 1);
+        break;
+      case 'stopAll':
+        if (ev.down) launcher.stopAll();
+        break;
+    }
+    this.updatePadLeds();
+    return ev.down ? (targetInfo(ev.target)?.label ?? ev.target) : null;
   }
 
   select(name: string | null): void {
@@ -389,18 +466,31 @@ export class DjControllers {
       interp = new MappingInterpreter(this.mappingFor(deviceName));
       this.interpreters.set(inputId, interp);
     }
-    const events = interp.process(msg);
-    if (!this.decks) {
-      this.log(deviceName, data, events.length ? 'The decks are not ready yet' : 'Not mapped');
+    const all = interp.process(msg);
+    // The clip launcher's pads do not need the decks.
+    const did: string[] = [];
+    const events: ControlEvent[] = [];
+    for (const ev of all) {
+      if (parseLaunchTarget(ev.target)) {
+        const what = this.applyLaunch(ev);
+        if (what) did.push(what);
+      } else events.push(ev);
+    }
+    if (!this.decks && events.length) {
+      this.log(deviceName, data, 'The decks are not ready yet');
       if (this.store.getState().access === 'ready') void this.ensureDecks();
       return;
     }
-    const did: string[] = [];
+    if (!this.decks && !all.length) {
+      this.log(deviceName, data, 'Not mapped');
+      if (this.store.getState().access === 'ready') void this.ensureDecks();
+      return;
+    }
     for (const ev of events) {
       const what = this.apply(deviceName, ev);
       if (what) did.push(what);
     }
-    this.log(deviceName, data, did.length ? did.join(', ') : events.length ? 'Waiting for the knob to meet the screen value' : 'Not mapped');
+    this.log(deviceName, data, did.length ? did.join(', ') : all.length ? (events.length ? 'Waiting for the knob to meet the screen value' : 'Released') : 'Not mapped');
   }
 
   /** Applies one event (soft takeover for faders and knobs); returns what it did, or null. */
@@ -471,6 +561,11 @@ export class DjControllers {
     if (led) {
       led.setMapping(m);
       if (this.decks) led.update(this.decks.store.getState());
+    }
+    const pads = this.padLeds.get(name);
+    if (pads) {
+      pads.setMapping(m);
+      this.updatePadLeds();
     }
   }
 

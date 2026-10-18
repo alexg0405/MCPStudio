@@ -24,6 +24,7 @@ export function djControllers(services: Services): DjControllers {
     c = new DjControllers({
       getDecks: () => resolveDecks(services),
       runCommand: (id) => void services.commands.run(id),
+      launcher: () => services.launcher,
       songs: () => library.getState().songs,
       toast: (message, kind) => services.session.getState().toast(message, kind),
       claim: (isClaimed) => {

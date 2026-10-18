@@ -88,6 +88,26 @@ export class LauncherSession {
     return state === 'playing' ? 'playing' : state === 'queued' || state === 'stopping' ? 'queued' : 'loaded';
   }
 
+  /** A scene button's light: playing when its row plays, queued when a slot of it waits, loaded when it has slots. */
+  sceneState(scene: number, heardU = this.clock().heardU): PadState {
+    const l = this.project.launcher;
+    const id = l?.sceneOrder[scene];
+    if (!l || !id) return 'empty';
+    let any = false;
+    let queued = false;
+    let playing = 0;
+    let total = 0;
+    for (const t of l.trackOrder) {
+      if (!l.tracks[t]?.slots[id]) continue;
+      any = true;
+      total++;
+      const st = this.seq.stateOf(t, id, heardU).state;
+      if (st === 'queued') queued = true;
+      if (st === 'playing') playing++;
+    }
+    return !any ? 'empty' : queued ? 'queued' : playing === total ? 'playing' : 'loaded';
+  }
+
   /** Called when what the launcher does changed (a press, the transport stopped). */
   subscribe(fn: () => void): () => void {
     this.listeners.add(fn);

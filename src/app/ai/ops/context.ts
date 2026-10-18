@@ -90,8 +90,8 @@ export function newAnswerState(): AnswerState {
 }
 
 export interface OpContext {
-  readonly s: Services;
-  readonly d: Draft<Project>;
+  readonly services: Services;
+  readonly draft: Draft<Project>;
   /** The draft, typed as a project (for read-only helpers). */
   readonly project: Project;
   /** The project before this answer (committed state; safe for memoized queries). */
@@ -279,8 +279,8 @@ export function createOpContext(
   };
 
   const partial: Omit<OpContext, 'focus'> = {
-    s,
-    d,
+    services: s,
+    draft: d,
     project,
     base,
     answer,

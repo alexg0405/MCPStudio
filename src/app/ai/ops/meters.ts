@@ -27,11 +27,11 @@ export const meters: OpModule = {
 - Out-of-phase bass or a low correlation: suggest the Stereo effect's mono bass or a polarity flip, not a different mix.`,
   },
   handlers: {
-    loudness_report: (a, c) => {
-      const from = num(a.from_bar);
-      const to = num(a.to_bar);
-      const bar = c.bar();
-      c.state.after.push({
+    loudness_report: (action, context) => {
+      const from = num(action.from_bar);
+      const to = num(action.to_bar);
+      const bar = context.bar();
+      context.state.after.push({
         kind: 'loudness_report',
         ...(from !== undefined ? { fromTick: (Math.max(1, Math.round(from)) - 1) * bar } : {}),
         ...(to !== undefined ? { toTick: Math.max(1, Math.round(to)) * bar } : {}),

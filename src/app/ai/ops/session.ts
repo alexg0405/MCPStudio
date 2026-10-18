@@ -207,12 +207,12 @@ export const SESSION_OP_NAMES: readonly string[] = session.schemas.map((o) => o.
 
 type Lines = { ui: string[]; warn: (m: string) => void };
 
-function applySettings(s: Services, a: AiAction, c: OpContext, out: Lines): void {
+function applySettings(services: Services, action: AiAction, context: OpContext, out: Lines): void {
   const prefs: Partial<PrefsState> = {};
   const text: string[] = [];
   const on = (v: boolean) => (v ? 'on' : 'off');
   const flag = (key: string, pref: keyof PrefsState, label: string) => {
-    const v = bool(a[key]);
+    const v = bool(action[key]);
     if (v === undefined) return;
     (prefs as Record<string, unknown>)[pref] = v;
     text.push(`${label} ${on(v)}`);
@@ -225,19 +225,19 @@ function applySettings(s: Services, a: AiAction, c: OpContext, out: Lines): void
   flag('typing_piano', 'typingPiano', 'typing piano');
   flag('midi_input', 'midiInput', 'MIDI input');
   flag('monitor', 'audioMonitor', 'input monitoring');
-  const countIn = num(a.count_in_bars);
+  const countIn = num(action.count_in_bars);
   if (countIn !== undefined) {
     prefs.countInBars = Math.max(0, Math.min(4, Math.round(countIn)));
     text.push(`count-in ${prefs.countInBars} bar${prefs.countInBars === 1 ? '' : 's'}`);
   }
-  const rm = (['overdub', 'replace'] as const).find((x) => x === str(a.record_mode));
-  if (a.record_mode !== undefined && !rm) out.warn('record_mode must be overdub or replace');
+  const rm = (['overdub', 'replace'] as const).find((x) => x === str(action.record_mode));
+  if (action.record_mode !== undefined && !rm) out.warn('record_mode must be overdub or replace');
   if (rm) {
     prefs.recordMode = rm;
     text.push(`record mode ${rm}`);
   }
-  const grid = str(a.record_quantize);
-  if (a.record_quantize !== undefined) {
+  const grid = str(action.record_quantize);
+  if (action.record_quantize !== undefined) {
     const key = Object.keys(RECORD_GRIDS).find((k) => k === grid);
     if (key === undefined) out.warn(`record_quantize must be one of ${Object.keys(RECORD_GRIDS).join(', ')}`);
     else {
@@ -245,63 +245,63 @@ function applySettings(s: Services, a: AiAction, c: OpContext, out: Lines): void
       text.push(`record quantize ${key}`);
     }
   }
-  const oct = num(a.piano_octave);
+  const oct = num(action.piano_octave);
   if (oct !== undefined) {
     prefs.pianoOctave = Math.max(0, Math.min(9, Math.round(oct)));
     text.push(`typing keyboard octave ${prefs.pianoOctave}`);
   }
-  const buf = AUDIO_BUFFERS.find((x) => x === str(a.audio_buffer));
-  if (a.audio_buffer !== undefined && !buf) out.warn('audio_buffer must be auto, small, medium or large');
+  const buf = AUDIO_BUFFERS.find((x) => x === str(action.audio_buffer));
+  if (action.audio_buffer !== undefined && !buf) out.warn('audio_buffer must be auto, small, medium or large');
   if (buf) {
     prefs.audioBuffer = buf;
     if (buf === 'auto') prefs.autoBufferSize = 'small';
     else prefs.audioBufferPicked = true;
     text.push(`audio buffer ${buf}`);
   }
-  const mem = num(a.sample_memory_mb);
+  const mem = num(action.sample_memory_mb);
   if (mem !== undefined) {
     prefs.sampleMemoryMb = Math.max(256, Math.min(16384, Math.round(mem)));
     text.push(`sample memory ${prefs.sampleMemoryMb} MB`);
   }
-  const scope = SCOPES.find((x) => x === str(a.scope));
-  if (a.scope !== undefined && !scope) out.warn('scope must be scope, spectrum or off');
+  const scope = SCOPES.find((x) => x === str(action.scope));
+  if (action.scope !== undefined && !scope) out.warn('scope must be scope, spectrum or off');
   if (scope) {
     prefs.scopeMode = scope;
     text.push(`toolbar display ${scope}`);
   }
-  const ch = (['mono', 'stereo'] as const).find((x) => x === str(a.input_channels));
-  if (a.input_channels !== undefined && !ch) out.warn('input_channels must be mono or stereo');
-  if (ch) {
-    prefs.audioInputChannels = ch;
-    text.push(`input ${ch}`);
+  const channel = (['mono', 'stereo'] as const).find((x) => x === str(action.input_channels));
+  if (action.input_channels !== undefined && !channel) out.warn('input_channels must be mono or stereo');
+  if (channel) {
+    prefs.audioInputChannels = channel;
+    text.push(`input ${channel}`);
   }
-  if (a.input_track !== undefined) {
+  if (action.input_track !== undefined) {
     try {
-      const id = c.insert(a.input_track);
+      const id = context.insert(action.input_track);
       prefs.audioInputTrack = id === 'master' ? '' : id;
-      text.push(`input track ${c.project.mixer.inserts[id]?.name ?? id}`);
+      text.push(`input track ${context.project.mixer.inserts[id]?.name ?? id}`);
     } catch (e) {
       out.warn(e instanceof ActionError ? e.message : String(e));
     }
   }
-  const lat = num(a.latency_offset_ms);
+  const lat = num(action.latency_offset_ms);
   if (lat !== undefined) {
     prefs.recordLatencyOffsetMs = Math.max(-200, Math.min(200, lat));
     text.push(`latency correction ${r2(prefs.recordLatencyOffsetMs)} ms`);
   }
-  if (isObj(a.export)) {
-    const e = exportPatch(a.export, out.warn);
+  if (isObj(action.export)) {
+    const e = exportPatch(action.export, out.warn);
     Object.assign(prefs, e.patch);
     if (e.text.length) text.push(`export ${e.text.join(', ')}`);
   }
-  if (Object.keys(prefs).length) s.prefs.getState().set(prefs);
+  if (Object.keys(prefs).length) services.prefs.getState().set(prefs);
 
-  const editor = s.editor.getState();
+  const editor = services.editor.getState();
   for (const [key, tools, set] of [
     ['piano_roll', PIANO_ROLL_TOOLS, editor.setPianoRoll],
     ['playlist', PLAYLIST_TOOLS, editor.setPlaylist],
   ] as const) {
-    const e = a[key];
+    const e = action[key];
     if (!isObj(e)) continue;
     const patch: Record<string, unknown> = {};
     const tool = (tools as readonly string[]).find((x) => x === str(e.tool));
@@ -320,11 +320,11 @@ function applySettings(s: Services, a: AiAction, c: OpContext, out: Lines): void
     }
   }
   if (text.length) out.ui.push(`Settings: ${text.join(', ')}`);
-  else if (!isObj(a.export)) out.warn('nothing to change (give a setting)');
+  else if (!isObj(action.export)) out.warn('nothing to change (give a setting)');
 }
 
 /** Clips by ids, or on a track and/or touching bars. */
-function pickClips(c: OpContext, p: Project, spec: Record<string, unknown>, warn: (m: string) => void): ClipId[] {
+function pickClips(context: OpContext, p: Project, spec: Record<string, unknown>, warn: (m: string) => void): ClipId[] {
   if (Array.isArray(spec.ids) && spec.ids.length) {
     const ids = spec.ids.map(str).filter((x): x is string => !!x) as ClipId[];
     const found = ids.filter((id) => p.playlist.clips[id]);
@@ -333,24 +333,24 @@ function pickClips(c: OpContext, p: Project, spec: Record<string, unknown>, warn
     return found;
   }
   const bar = ticksPerBar(p.transport.timeSig);
-  const track = spec.track !== undefined ? c.lane(spec.track) : undefined;
+  const track = spec.track !== undefined ? context.lane(spec.track) : undefined;
   const from = num(spec.from_bar);
   const to = num(spec.to_bar);
   if (!track && from === undefined && to === undefined && spec.all !== true) fail('say which clips: ids, a track, bars, or all');
-  const a = from !== undefined ? (Math.max(1, Math.round(from)) - 1) * bar : 0;
-  const b = to !== undefined ? Math.max(1, Math.round(to)) * bar : Number.POSITIVE_INFINITY;
+  const fromTick = from !== undefined ? (Math.max(1, Math.round(from)) - 1) * bar : 0;
+  const toTick = to !== undefined ? Math.max(1, Math.round(to)) * bar : Number.POSITIVE_INFINITY;
   return (Object.values(p.playlist.clips) as Clip[])
-    .filter((x) => (!track || x.laneId === track) && x.start < b && x.start + x.length > a)
+    .filter((x) => (!track || x.laneId === track) && x.start < toTick && x.start + x.length > fromTick)
     .sort((x, y) => x.start - y.start || x.id.localeCompare(y.id))
     .map((x) => x.id);
 }
 
-function applySelect(s: Services, a: AiAction, c: OpContext, out: Lines): void {
-  const p = c.project;
+function applySelect(services: Services, action: AiAction, context: OpContext, out: Lines): void {
+  const p = context.project;
   const parts: string[] = [];
-  const view = s.view.getState();
-  const editor = s.editor.getState();
-  const session = s.session.getState();
+  const view = services.view.getState();
+  const editor = services.editor.getState();
+  const session = services.session.getState();
   const step = <T,>(f: () => T): T | undefined => {
     try {
       return f();
@@ -362,46 +362,46 @@ function applySelect(s: Services, a: AiAction, c: OpContext, out: Lines): void {
       throw e;
     }
   };
-  if (a.channel !== undefined) {
-    const id = step(() => c.channel(a.channel));
+  if (action.channel !== undefined) {
+    const id = step(() => context.channel(action.channel));
     if (id) {
       session.selectChannel(id);
       parts.push(`channel “${p.channels[id]!.name}”`);
     }
   }
-  if (a.insert !== undefined) {
-    const id = step(() => c.insert(a.insert));
+  if (action.insert !== undefined) {
+    const id = step(() => context.insert(action.insert));
     if (id) {
       session.selectInsert(id === 'master' ? null : id);
       parts.push(`mixer track “${p.mixer.inserts[id]?.name ?? id}”`);
     }
   }
-  if (a.pattern !== undefined) {
-    const id = step(() => c.pattern(a.pattern));
+  if (action.pattern !== undefined) {
+    const id = step(() => context.pattern(action.pattern));
     if (id) {
       view.setCurrentPattern(id);
       parts.push(`pattern “${p.patterns[id]!.name}”`);
     }
   }
-  if (isObj(a.clips)) {
-    const ids = step(() => pickClips(c, p, a.clips as Record<string, unknown>, out.warn));
+  if (isObj(action.clips)) {
+    const ids = step(() => pickClips(context, p, action.clips as Record<string, unknown>, out.warn));
     if (ids) {
       editor.selectClips(ids);
       parts.push(`${ids.length} clip${ids.length === 1 ? '' : 's'}`);
     }
   }
-  if (isObj(a.notes)) {
-    const spec = a.notes;
+  if (isObj(action.notes)) {
+    const spec = action.notes;
     step(() => {
-      const pid: PatternId =
-        spec.pattern !== undefined ? c.pattern(spec.pattern) : (s.view.getState().currentPatternId ?? c.pattern('current'));
-      const cid: ChannelId =
+      const patternId: PatternId =
+        spec.pattern !== undefined ? context.pattern(spec.pattern) : (services.view.getState().currentPatternId ?? context.pattern('current'));
+      const channelId: ChannelId =
         spec.channel !== undefined
-          ? c.channel(spec.channel)
-          : (s.session.getState().selectedChannelId ?? fail('which channel? (the notes belong to a channel)'));
-      const pat = p.patterns[pid]!;
-      const ch = p.channels[cid]!;
-      if (ch.kind !== 'instrument') fail(`“${ch.name}” has no notes`);
+          ? context.channel(spec.channel)
+          : (services.session.getState().selectedChannelId ?? fail('which channel? (the notes belong to a channel)'));
+      const pat = p.patterns[patternId]!;
+      const channel = p.channels[channelId]!;
+      if (channel.kind !== 'instrument') fail(`“${channel.name}” has no notes`);
       const bar = ticksPerBar(p.transport.timeSig);
       const from = num(spec.from_bar);
       const to = num(spec.to_bar);
@@ -409,18 +409,18 @@ function applySelect(s: Services, a: AiAction, c: OpContext, out: Lines): void {
       const hi = to !== undefined ? Math.max(1, Math.round(to)) * bar : Number.POSITIVE_INFINITY;
       const k0 = num(spec.from_key) ?? 0;
       const k1 = num(spec.to_key) ?? 127;
-      const ids = Object.values(pat.notes[cid] ?? {})
+      const ids = Object.values(pat.notes[channelId] ?? {})
         .filter((n) => n.tick >= lo && n.tick < hi && n.key >= Math.min(k0, k1) && n.key <= Math.max(k0, k1))
         .sort((x, y) => x.tick - y.tick || x.key - y.key)
         .map((n) => n.id as NoteId);
-      view.setCurrentPattern(pid);
-      session.selectChannel(cid);
+      view.setCurrentPattern(patternId);
+      session.selectChannel(channelId);
       editor.selectNotes(ids);
-      parts.push(`${ids.length} note${ids.length === 1 ? '' : 's'} of “${ch.name}” in “${pat.name}”`);
+      parts.push(`${ids.length} note${ids.length === 1 ? '' : 's'} of “${channel.name}” in “${pat.name}”`);
     });
   }
-  if (isObj(a.loop)) {
-    const spec = a.loop;
+  if (isObj(action.loop)) {
+    const spec = action.loop;
     step(() => {
       const bar = ticksPerBar(p.transport.timeSig);
       const section = str(spec.section);
@@ -445,8 +445,8 @@ function applySelect(s: Services, a: AiAction, c: OpContext, out: Lines): void {
       parts.push(`loop bars ${r2(start / bar + 1)}–${r2(end / bar)}`);
     });
   }
-  const clear = str(a.clear);
-  if (a.clear !== undefined && !['clips', 'notes', 'loop', 'all'].includes(clear ?? '')) out.warn('clear must be clips, notes, loop or all');
+  const clear = str(action.clear);
+  if (action.clear !== undefined && !['clips', 'notes', 'loop', 'all'].includes(clear ?? '')) out.warn('clear must be clips, notes, loop or all');
   if (clear === 'clips' || clear === 'all') {
     editor.selectClips([]);
     parts.push('no clips');
@@ -460,47 +460,47 @@ function applySelect(s: Services, a: AiAction, c: OpContext, out: Lines): void {
     parts.push('no loop');
   }
   if (parts.length) out.ui.push(`Selected ${parts.join(', ')}`);
-  else if (a.clear === undefined) out.warn('select what? (channel, insert, pattern, clips, notes, loop or clear)');
+  else if (action.clear === undefined) out.warn('select what? (channel, insert, pattern, clips, notes, loop or clear)');
 }
 
-function applySavePreset(s: Services, a: AiAction, c: OpContext, out: Lines): void {
-  const name = str(a.name) ?? fail('the preset needs a name');
+function applySavePreset(services: Services, action: AiAction, context: OpContext, out: Lines): void {
+  const name = str(action.name) ?? fail('the preset needs a name');
   let owner: PluginOwner;
   let inst;
-  if (a.effect !== undefined) {
-    const e = c.effect(a.effect);
+  if (action.effect !== undefined) {
+    const e = context.effect(action.effect);
     owner = { kind: 'fx', insertId: e.insertId, slotId: e.slotId };
-    inst = c.project.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin;
+    inst = context.project.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin;
   } else {
-    const ch = c.project.channels[c.channel(a.channel)]!;
-    if (ch.kind !== 'instrument') return fail(`“${ch.name}” has no instrument to save`);
-    owner = { kind: 'channel', channelId: ch.id };
-    inst = ch.plugin;
+    const channel = context.project.channels[context.channel(action.channel)]!;
+    if (channel.kind !== 'instrument') return fail(`“${channel.name}” has no instrument to save`);
+    owner = { kind: 'channel', channelId: channel.id };
+    inst = channel.plugin;
   }
-  const def = s.plugins.get(inst.pluginId) ?? fail(`the plugin ${inst.pluginId} isn't installed`);
-  const saved = s.presets.save({
+  const def = services.plugins.get(inst.pluginId) ?? fail(`the plugin ${inst.pluginId} isn't installed`);
+  const saved = services.presets.save({
     pluginId: def.id,
     version: def.version,
     name,
     params: structuredClone({ ...inst.params }),
     ...(inst.state !== undefined ? { state: structuredClone(inst.state) as never } : {}),
   });
-  s.presets.noteLoaded(owner, saved.name);
+  services.presets.noteLoaded(owner, saved.name);
   out.ui.push(`Saved ${def.name} preset “${saved.name}”`);
 }
 
 /** Runs the answer's settings, selection and preset actions (after its edits are committed). */
-export function sessionAfter(s: Services, answer: AiAnswer, state: AnswerState): void {
+export function sessionAfter(services: Services, answer: AiAnswer, state: AnswerState): void {
   const wanted = answer.actions.filter((a) => SESSION_OP_NAMES.includes(a.op));
   if (!wanted.length) return;
-  const c = createOpContext(s, s.doc.getState().project as unknown as Draft<Project>, answer, { previousBeat: null }, state);
-  for (const a of wanted) {
-    const label = a.op.replace(/_/g, ' ');
+  const context = createOpContext(services, services.doc.getState().project as unknown as Draft<Project>, answer, { previousBeat: null }, state);
+  for (const action of wanted) {
+    const label = action.op.replace(/_/g, ' ');
     const out: Lines = { ui: state.ui, warn: (m) => state.warnings.push(`${label}: ${m}`) };
     try {
-      if (a.op === 'settings') applySettings(s, a, c, out);
-      else if (a.op === 'select') applySelect(s, a, c, out);
-      else if (a.op === 'save_preset') applySavePreset(s, a, c, out);
+      if (action.op === 'settings') applySettings(services, action, context, out);
+      else if (action.op === 'select') applySelect(services, action, context, out);
+      else if (action.op === 'save_preset') applySavePreset(services, action, context, out);
     } catch (e) {
       if (e instanceof ActionError) out.warn(e.message);
       else throw e;

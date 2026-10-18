@@ -16,9 +16,9 @@ const STYLE = {
   description: 'The song’s style (leave it out to have it guessed from the tempo, swing and drums).',
 };
 
-const styleOf = (raw: unknown, c: OpContext): Style => {
+const styleOf = (raw: unknown, context: OpContext): Style => {
   const s = str(raw)?.toLowerCase();
-  return isStyle(s) ? s : inferStyle(c.project as Project);
+  return isStyle(s) ? s : inferStyle(context.project as Project);
 };
 
 export const mix: OpModule = {
@@ -58,30 +58,30 @@ export const mix: OpModule = {
 - Never put a hard-clip Saturator (mode clip) or heavy drive on the master: clipping the whole mix sounds like static and breaking up. On the master use tape at 2–3 dB drive at most, and leave loudness to the Limiter and Maximizer (level_mix sets them; don't add your own clipper or a Maximizer).`,
   },
   handlers: {
-    setup_mix: (a, c) => {
-      const style = styleOf(a.style, c);
-      const beats = beatAnswerState(c.state);
-      const mode = a.mode === 'rebuild' || a.mode === 'fill-gaps' ? a.mode : beats.count > 0 ? 'rebuild' : 'fill-gaps';
-      const res = setupMix(c.d, c.s, {
+    setup_mix: (action, context) => {
+      const style = styleOf(action.style, context);
+      const beats = beatAnswerState(context.state);
+      const mode = action.mode === 'rebuild' || action.mode === 'fill-gaps' ? action.mode : beats.count > 0 ? 'rebuild' : 'fill-gaps';
+      const res = setupMix(context.draft, context.services, {
         style,
         mode,
-        roles: mixRoles(c.project),
-        pinned: c.state.pinnedInserts,
+        roles: mixRoles(context.project),
+        pinned: context.state.pinnedInserts,
         pinnedChannels: beats.levels,
       });
-      if (a.level === true) c.state.after.push({ kind: 'level_mix', style });
+      if (action.level === true) context.state.after.push({ kind: 'level_mix', style });
       return res.changes.length ? res.changes.join('; ') : 'The mix was already set up';
     },
-    level_mix: (a, c) => {
-      const style = styleOf(a.style, c);
-      const bar = c.bar();
-      const fromBar = num(a.from_bar);
-      const bars = num(a.bars);
+    level_mix: (action, context) => {
+      const style = styleOf(action.style, context);
+      const bar = context.bar();
+      const fromBar = num(action.from_bar);
+      const bars = num(action.bars);
       // In a part of the song: that part.
-      const part = c.focus.range();
+      const part = context.focus.range();
       const fromTick = fromBar !== undefined ? (Math.max(1, Math.round(fromBar)) - 1) * bar : part?.from;
       const length = bars !== undefined ? Math.round(bars) : part ? Math.round((part.to - part.from) / bar) : undefined;
-      c.state.after.push({
+      context.state.after.push({
         kind: 'level_mix',
         style,
         ...(fromTick !== undefined ? { fromTick } : {}),
@@ -90,14 +90,14 @@ export const mix: OpModule = {
       return null;
     },
   },
-  beforeCommit(c) {
+  beforeCommit(context) {
     // One leveling per answer (the last request, whoever made it), leaving the AI's own faders alone.
-    const items = c.state.after.filter((x): x is Extract<AfterEdit, { kind: 'level_mix' }> => x.kind === 'level_mix');
-    for (const it of items.slice(0, -1)) c.state.after.splice(c.state.after.indexOf(it), 1);
+    const items = context.state.after.filter((x): x is Extract<AfterEdit, { kind: 'level_mix' }> => x.kind === 'level_mix');
+    for (const it of items.slice(0, -1)) context.state.after.splice(context.state.after.indexOf(it), 1);
     const last = items.at(-1);
     // A loudness asked for (match_reference) outlives the arranger's own leveling request.
     const asked = items.find((x) => x.targetLufs !== undefined)?.targetLufs;
     if (last && asked !== undefined) last.targetLufs = asked;
-    if (last) pinnedFor.set(last, new Set(c.state.pinnedInserts));
+    if (last) pinnedFor.set(last, new Set(context.state.pinnedInserts));
   },
 };

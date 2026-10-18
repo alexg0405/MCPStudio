@@ -54,12 +54,12 @@ export const WINDOW_ACTIONS: readonly WindowAction[] = ['open', 'close', 'focus'
  * type's registry). The browser panel is shown or hidden. Returns what it did, or null when there was nothing to do.
  */
 export function applyWindowAction(
-  s: Services,
+  services: Services,
   action: Exclude<WindowAction, 'open'>,
   type: OpenWindow,
   target: { channelId?: ChannelId; insertId?: InsertId; slotId?: SlotId },
 ): string | null {
-  const view = s.view.getState();
+  const view = services.view.getState();
   if (type === 'browser') {
     if (action === 'close') view.setBrowser({ visible: false });
     else view.setBrowser({ visible: true });

@@ -19,47 +19,47 @@ export const song: OpModule = {
     }),
   ],
   handlers: {
-    song: (a, c) => {
-      const { d } = c;
+    song: (action, context) => {
+      const { draft } = context;
       const out: string[] = [];
-      const bpm = num(a.bpm);
+      const bpm = num(action.bpm);
       if (bpm !== undefined) {
-        setBpm(d, bpm);
-        out.push(`tempo ${d.transport.bpm} BPM`);
+        setBpm(draft, bpm);
+        out.push(`tempo ${draft.transport.bpm} BPM`);
       }
-      const swing = num(a.swing);
+      const swing = num(action.swing);
       if (swing !== undefined) {
-        setSwing(d, swing > 1 && swing <= 100 ? swing / 100 : swing);
-        out.push(`swing ${Math.round(d.transport.swing * 100)}%`);
+        setSwing(draft, swing > 1 && swing <= 100 ? swing / 100 : swing);
+        out.push(`swing ${Math.round(draft.transport.swing * 100)}%`);
       }
-      const keyText = str(a.key);
+      const keyText = str(action.key);
       if (keyText) {
         const key = parseKey(keyText);
-        if (key === undefined) c.warn(`can't read the key "${keyText}"`);
+        if (key === undefined) context.warn(`can't read the key "${keyText}"`);
         else {
-          setSongKey(d, key);
+          setSongKey(draft, key);
           out.push(key ? `key ${keyText}` : 'no key');
         }
       }
-      const sig = str(a.time_signature);
+      const sig = str(action.time_signature);
       if (sig) {
         const m = /^(\d+)\s*\/\s*(\d+)$/.exec(sig);
         const n = m ? Number(m[1]) : 0;
         const den = m ? Number(m[2]) : 0;
         if (n >= 1 && n <= 32 && [1, 2, 4, 8, 16, 32].includes(den)) {
-          d.transport.timeSig = { num: n, den };
+          draft.transport.timeSig = { num: n, den };
           out.push(`time signature ${n}/${den}`);
-        } else c.warn(`can't use the time signature "${sig}"`);
+        } else context.warn(`can't use the time signature "${sig}"`);
       }
-      const title = str(a.title);
+      const title = str(action.title);
       if (title) {
-        d.meta.title = title.slice(0, 120);
-        out.push(`title “${d.meta.title}”`);
+        draft.meta.title = title.slice(0, 120);
+        out.push(`title “${draft.meta.title}”`);
       }
-      if (typeof a.author === 'string') {
-        const author = a.author.trim().slice(0, 120);
-        if (author) d.meta.author = author;
-        else delete d.meta.author;
+      if (typeof action.author === 'string') {
+        const author = action.author.trim().slice(0, 120);
+        if (author) draft.meta.author = author;
+        else delete draft.meta.author;
         out.push(author ? `author ${author}` : 'no author');
       }
       return out.length ? `Song: ${out.join(', ')}` : null;

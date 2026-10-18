@@ -85,12 +85,12 @@ const SECTION = {
 
 const STYLE = { type: 'string', enum: [...STYLES], description: 'Genre (default: read from the tempo and the beats).' };
 
-const lineup = (r: RunResult, c: OpContext): string | null => {
-  for (const w of r.warnings) c.warn(w);
-  if (r.touched) c.touch(r.touched.from, r.touched.to, r.clipIds);
-  if (r.touched || r.clipIds.length) c.state.after.push({ kind: 'mode', mode: 'song' });
+const lineup = (r: RunResult, context: OpContext): string | null => {
+  for (const w of r.warnings) context.warn(w);
+  if (r.touched) context.touch(r.touched.from, r.touched.to, r.clipIds);
+  if (r.touched || r.clipIds.length) context.state.after.push({ kind: 'mode', mode: 'song' });
   // The summary first, then the details.
-  for (const line of r.changes) c.note(line);
+  for (const line of r.changes) context.note(line);
   return null;
 };
 
@@ -105,18 +105,18 @@ function guarded<T>(fn: () => T): T {
 }
 
 /** A part name or a channel, as given ("hats", "808", "Bell", ch_…). */
-function part(raw: unknown, c: OpContext, where: string): string {
+function part(raw: unknown, context: OpContext, where: string): string {
   const text = str(raw) ?? fail(`${where}: a part to leave out has no name`);
   const named = partName(text);
   if (named) return named;
   try {
-    return c.channel(text);
+    return context.channel(text);
   } catch {
     return fail(`${where}: "${text}" is neither a part (kick, snare, hats, drums, 808, bass, chords, lead…) nor a channel`);
   }
 }
 
-const styleOf = (a: Record<string, unknown>, p: Project): Style => (isStyle(a.style) ? a.style : inferStyle(p));
+const styleOf = (action: Record<string, unknown>, project: Project): Style => (isStyle(action.style) ? action.style : inferStyle(project));
 
 export const arrange: OpModule = {
   schemas: [
@@ -192,13 +192,13 @@ export const arrange: OpModule = {
   ],
   prompt: { id: 'song-craft', order: 20, text: SONG_CRAFT },
   handlers: {
-    arrange: (a, c) => {
-      const { d } = c;
-      const bar = c.bar();
-      const raw = Array.isArray(a.sections) ? a.sections.filter(isObj) : [];
+    arrange: (action, context) => {
+      const { draft } = context;
+      const bar = context.bar();
+      const raw = Array.isArray(action.sections) ? action.sections.filter(isObj) : [];
       if (!raw.length) fail('it needs its sections');
       if (raw.length > MAX_SECTIONS) fail(`an arrangement holds up to ${MAX_SECTIONS} sections`);
-      const style = styleOf(a, c.project);
+      const style = styleOf(action, context.project);
       // Every reference first: nothing changes when one is wrong.
       const sections: SectionSpec[] = raw.map((x, i) => {
         const name = (str(x.name) ?? `Section ${i + 1}`).slice(0, 40);
@@ -208,12 +208,12 @@ export const arrange: OpModule = {
         if (!playRaw.length) fail(`“${name}” plays nothing (give it a beat in play)`);
         const play = playRaw.map((r) => {
           try {
-            return c.pattern(r);
+            return context.pattern(r);
           } catch (e) {
             return fail(`“${name}”: ${(e as Error).message}`);
           }
         }) as PatternId[];
-        const without = (Array.isArray(x.without) ? x.without : []).map((w) => part(w, c, `“${name}”`));
+        const without = (Array.isArray(x.without) ? x.without : []).map((w) => part(w, context, `“${name}”`));
         const energy = Math.max(1, Math.min(5, Math.round(num(x.energy) ?? defaultEnergy(style, role))));
         const vary = (VARY_MODES as readonly string[]).includes(String(x.vary)) ? (x.vary as VaryMode) : 'auto';
         const transitionIn = (TRANSITION_CHOICES as readonly string[]).includes(String(x.transition_in))
@@ -224,30 +224,30 @@ export const arrange: OpModule = {
       });
       const total = sections.reduce((n, x) => n + x.bars, 0);
       if (total > MAX_BARS) fail(`an arrangement holds up to ${MAX_BARS} bars (these sections add up to ${total})`);
-      const replace = bool(a.replace) ?? true;
-      const focus = c.focus.range();
-      const fromBar = num(a.from_bar);
+      const replace = bool(action.replace) ?? true;
+      const focus = context.focus.range();
+      const fromBar = num(action.from_bar);
       const from = fromBar !== undefined ? Math.max(0, Math.round(fromBar - 1)) * bar : focus?.from;
-      const fx = a.fx === 'light' || a.fx === 'none' ? a.fx : 'auto';
-      const mix = a.mix === 'keep' ? 'keep' : 'auto';
-      const ending = a.outro === 'fade' || a.outro === 'stop' ? a.outro : 'auto';
+      const fx = action.fx === 'light' || action.fx === 'none' ? action.fx : 'auto';
+      const mix = action.mix === 'keep' ? 'keep' : 'auto';
+      const ending = action.outro === 'fade' || action.outro === 'stop' ? action.outro : 'auto';
       // Working on a part: a beat that also plays elsewhere stays as it is (taking its crash off the first beat would
       // change the rest of the song); the part's copy of it plays without crash hits, and the arranger's own crashes mark the sections.
       const protect = new Set<PatternId>();
       if (focus) {
-        for (const clip of Object.values(c.base.playlist.clips)) {
+        for (const clip of Object.values(context.base.playlist.clips)) {
           if (clip.kind !== 'pattern' || (clip.start >= focus.from && clip.start + clip.length <= focus.to)) continue;
-          protect.add(c.base.patterns[clip.patternId]?.derived?.from ?? clip.patternId);
+          protect.add(context.base.patterns[clip.patternId]?.derived?.from ?? clip.patternId);
         }
         for (const x of sections)
-          if (x.play.some((pid) => protect.has(c.base.patterns[pid]?.derived?.from ?? pid)) && !x.without.includes('crash'))
+          if (x.play.some((pid) => protect.has(context.base.patterns[pid]?.derived?.from ?? pid)) && !x.without.includes('crash'))
             x.without = [...x.without, 'crash'];
       }
       const res = guarded(() =>
         arrangeInDraft(
-          d,
-          c.s,
-          c.base,
+          draft,
+          context.services,
+          context.base,
           {
             ...(from !== undefined ? { from } : {}),
             ...(protect.size ? { protect } : {}),
@@ -258,118 +258,118 @@ export const arrange: OpModule = {
             mix,
             ending,
             // Levels the AI set in this answer (faders, beat tracks) stay as it set them.
-            pinned: { inserts: c.state.pinnedInserts, channels: beatAnswerState(c.state).levels },
+            pinned: { inserts: context.state.pinnedInserts, channels: beatAnswerState(context.state).levels },
           },
-          (f, t, what) => c.focus.span(f, t, what),
+          (f, t, what) => context.focus.span(f, t, what),
         ),
       );
-      if (mix === 'auto') c.state.after.push({ kind: 'level_mix', style: res.style, fromTick: res.plan.from, bars: total });
-      return lineup(res, c);
+      if (mix === 'auto') context.state.after.push({ kind: 'level_mix', style: res.style, fromTick: res.plan.from, bars: total });
+      return lineup(res, context);
     },
 
-    develop: (a, c) => {
-      const bar = c.bar();
-      const focus = c.focus.range();
-      const fromBar = num(a.from_bar);
-      const toBar = num(a.to_bar);
+    develop: (action, context) => {
+      const bar = context.bar();
+      const focus = context.focus.range();
+      const fromBar = num(action.from_bar);
+      const toBar = num(action.to_bar);
       const res = guarded(() =>
         developInDraft(
-          c.d,
-          c.s,
-          c.base,
+          context.draft,
+          context.services,
+          context.base,
           {
             ...(fromBar !== undefined ? { from: Math.max(0, Math.round(fromBar - 1)) * bar } : focus ? { from: focus.from } : {}),
             ...(toBar !== undefined ? { to: Math.max(1, Math.round(toBar)) * bar } : focus ? { to: focus.to } : {}),
-            fills: bool(a.fills) ?? true,
-            transitions: bool(a.transitions) ?? true,
-            fx: bool(a.fx) ?? true,
-            cleanup: bool(a.cleanup) ?? true,
-            style: styleOf(a, c.project),
+            fills: bool(action.fills) ?? true,
+            transitions: bool(action.transitions) ?? true,
+            fx: bool(action.fx) ?? true,
+            cleanup: bool(action.cleanup) ?? true,
+            style: styleOf(action, context.project),
           },
-          (f, t, what) => c.focus.span(f, t, what),
+          (f, t, what) => context.focus.span(f, t, what),
         ),
       );
-      return lineup(res, c);
+      return lineup(res, context);
     },
 
-    transition: (a, c) => {
-      const bar = c.bar();
-      const at = num(a.bar) ?? fail('which bar does it lead into?');
-      const kind = (TRANSITION_KINDS as readonly string[]).includes(String(a.kind ?? 'auto')) ? ((a.kind ?? 'auto') as TransitionKind) : fail(`unknown transition "${String(a.kind)}"`);
+    transition: (action, context) => {
+      const bar = context.bar();
+      const at = num(action.bar) ?? fail('which bar does it lead into?');
+      const kind = (TRANSITION_KINDS as readonly string[]).includes(String(action.kind ?? 'auto')) ? ((action.kind ?? 'auto') as TransitionKind) : fail(`unknown transition "${String(action.kind)}"`);
       const res = guarded(() =>
         transitionInDraft(
-          c.d,
-          c.s,
-          c.base,
+          context.draft,
+          context.services,
+          context.base,
           {
             at: Math.max(0, Math.round(at - 1)) * bar,
             kind,
-            ...(num(a.bars) !== undefined ? { bars: num(a.bars)! } : {}),
-            ...(num(a.beats) !== undefined ? { beats: num(a.beats)! } : {}),
-            style: styleOf(a, c.project),
+            ...(num(action.bars) !== undefined ? { bars: num(action.bars)! } : {}),
+            ...(num(action.beats) !== undefined ? { beats: num(action.beats)! } : {}),
+            style: styleOf(action, context.project),
           },
-          (f, t, what) => c.focus.span(f, t, what),
+          (f, t, what) => context.focus.span(f, t, what),
         ),
       );
       for (const w of res.warnings) fail(w);
-      return lineup(res, c);
+      return lineup(res, context);
     },
 
-    vary: (a, c) => {
-      const kind = (VARY_KINDS as readonly string[]).includes(String(a.kind)) ? (a.kind as VaryKind) : fail(`unknown variation "${String(a.kind)}"`);
-      const pattern = a.pattern !== undefined ? c.focus.writable(c.pattern(a.pattern)) : undefined;
-      const focus = c.focus.range();
-      const bars = (t: number) => Math.round(t / c.bar());
-      const lane = a.track !== undefined ? c.lane(a.track) : undefined;
-      const parts = Array.isArray(a.channels) ? a.channels.map((x) => part(x, c, 'without')) : undefined;
+    vary: (action, context) => {
+      const kind = (VARY_KINDS as readonly string[]).includes(String(action.kind)) ? (action.kind as VaryKind) : fail(`unknown variation "${String(action.kind)}"`);
+      const pattern = action.pattern !== undefined ? context.focus.writable(context.pattern(action.pattern)) : undefined;
+      const focus = context.focus.range();
+      const bars = (t: number) => Math.round(t / context.bar());
+      const lane = action.track !== undefined ? context.lane(action.track) : undefined;
+      const parts = Array.isArray(action.channels) ? action.channels.map((x) => part(x, context, 'without')) : undefined;
       // In a part of the song, it goes at the part's end (or over the part).
       const range =
-        num(a.bar) !== undefined || num(a.from_bar) !== undefined || pattern || !focus
+        num(action.bar) !== undefined || num(action.from_bar) !== undefined || pattern || !focus
           ? {}
           : kind === 'thin' || kind === 'double_hats' || kind === 'without'
             ? { fromBar: bars(focus.from) + 1, toBar: bars(focus.to) }
             : { bar: bars(focus.to) };
       const res = guarded(() =>
         varyInDraft(
-          c.d,
-          c.s,
-          c.base,
+          context.draft,
+          context.services,
+          context.base,
           {
             kind,
-            ...(num(a.bar) !== undefined ? { bar: Math.round(num(a.bar)!) } : {}),
-            ...(num(a.from_bar) !== undefined ? { fromBar: Math.round(num(a.from_bar)!) } : {}),
-            ...(num(a.to_bar) !== undefined ? { toBar: Math.round(num(a.to_bar)!) } : {}),
+            ...(num(action.bar) !== undefined ? { bar: Math.round(num(action.bar)!) } : {}),
+            ...(num(action.from_bar) !== undefined ? { fromBar: Math.round(num(action.from_bar)!) } : {}),
+            ...(num(action.to_bar) !== undefined ? { toBar: Math.round(num(action.to_bar)!) } : {}),
             ...range,
             ...(pattern ? { pattern } : {}),
             ...(lane ? { lane } : {}),
             ...(parts ? { parts } : {}),
-            ...(num(a.beats) !== undefined ? { beats: num(a.beats)! } : {}),
-            ...(num(a.level) !== undefined ? { level: num(a.level)! } : {}),
-            style: styleOf(a, c.project),
+            ...(num(action.beats) !== undefined ? { beats: num(action.beats)! } : {}),
+            ...(num(action.level) !== undefined ? { level: num(action.level)! } : {}),
+            style: styleOf(action, context.project),
           },
-          (f, t, what) => c.focus.span(f, t, what),
+          (f, t, what) => context.focus.span(f, t, what),
         ),
       );
-      if (res.variant) c.remember(a.ref, { kind: 'pattern', id: res.variant });
-      return lineup(res, c);
+      if (res.variant) context.remember(action.ref, { kind: 'pattern', id: res.variant });
+      return lineup(res, context);
     },
   },
   // Variants follow their source: an answer that changed a source rebuilds its unmodified variants.
-  beforeCommit: (c) => {
-    const d = c.d;
+  beforeCommit: (context) => {
+    const draft = context.draft;
     const sources = new Set<PatternId>();
-    for (const pid of d.patternOrder) {
-      const from = d.patterns[pid]?.derived?.from;
-      if (!from || sources.has(from) || !d.patterns[from]) continue;
-      const before = c.base.patterns[from];
-      if (!before || notesHash(before.notes) !== notesHash(d.patterns[from]!.notes as Project['patterns'][PatternId]['notes'])) sources.add(from);
+    for (const patternId of draft.patternOrder) {
+      const from = draft.patterns[patternId]?.derived?.from;
+      if (!from || sources.has(from) || !draft.patterns[from]) continue;
+      const before = context.base.patterns[from];
+      if (!before || notesHash(before.notes) !== notesHash(draft.patterns[from]!.notes as Project['patterns'][PatternId]['notes'])) sources.add(from);
     }
     if (!sources.size) return;
-    const p = c.project;
-    const r = refreshVariants(d, variantEnvFor(p, inferStyle(p)), sources);
+    const project = context.project;
+    const r = refreshVariants(draft, variantEnvFor(project, inferStyle(project)), sources);
     if (r.rebuilt.length)
-      c.note(
-        `Rebuilt ${r.rebuilt.length} variation${r.rebuilt.length === 1 ? '' : 's'} of ${[...sources].map((x) => `“${p.patterns[x]?.name ?? '?'}”`).join(', ')} to follow the new notes${
+      context.note(
+        `Rebuilt ${r.rebuilt.length} variation${r.rebuilt.length === 1 ? '' : 's'} of ${[...sources].map((x) => `“${project.patterns[x]?.name ?? '?'}”`).join(', ')} to follow the new notes${
           r.handEdited.length ? ` (${r.handEdited.length} edited by hand stay as they are)` : ''
         }`,
       );

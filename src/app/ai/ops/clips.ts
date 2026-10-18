@@ -9,10 +9,10 @@ import * as S from '../schema/parts';
 import { fail, type OpModule } from './context';
 import { bool, lower, num, str } from './values';
 
-const clipName = (p: Project, clip: Clip): string =>
+const clipName = (project: Project, clip: Clip): string =>
   clip.kind === 'pattern'
-    ? `“${p.patterns[clip.patternId]?.name ?? 'pattern'}”`
-    : `${clip.kind} “${p.channels[clip.channelId]?.name ?? '?'}”`;
+    ? `“${project.patterns[clip.patternId]?.name ?? 'pattern'}”`
+    : `${clip.kind} “${project.channels[clip.channelId]?.name ?? '?'}”`;
 
 export const clips: OpModule = {
   schemas: [
@@ -62,27 +62,27 @@ export const clips: OpModule = {
     text: `Playlist editing: bars are 1-based and the ranges in the project are inclusive ("bars 81–112" is 32 bars); a run like “Drop” ×8 is that many clips back to back. place_pattern skips clips that would play a pattern on top of itself (it would play twice as loud); replace: true clears the track there first. The clip action changes one clip, by id or by track + bar: mute, move, shorten, split, make_unique (to change one spot of a repeated pattern without touching the others), remove. Name tracks with the track action. When the project's song check reports stacked copies or repeated automation, fix them with tidy.`,
   },
   handlers: {
-    clip: (a, c) => {
-      const { d } = c;
-      const clip = c.clip(a);
-      const what = clipName(c.project, clip);
-      const ts = d.transport.timeSig;
-      const barT = c.bar();
-      const at = `track ${d.playlist.laneOrder.indexOf(clip.laneId) + 1}, bar ${barOf(clip.start, ts)}`;
-      switch (str(a.action)) {
+    clip: (action, context) => {
+      const { draft } = context;
+      const clip = context.clip(action);
+      const what = clipName(context.project, clip);
+      const timeSig = draft.transport.timeSig;
+      const barT = context.bar();
+      const at = `track ${draft.playlist.laneOrder.indexOf(clip.laneId) + 1}, bar ${barOf(clip.start, timeSig)}`;
+      switch (str(action.action)) {
         case 'edit': {
-          c.focus.clip(clip.id, 'clip');
+          context.focus.clip(clip.id, 'clip');
           const out: string[] = [];
-          const mute = bool(a.mute);
-          const toTrack = a.to_track !== undefined ? c.lane(a.to_track) : undefined;
-          const toBar = num(a.to_bar);
-          const bars = num(a.bars);
+          const mute = bool(action.mute);
+          const toTrack = action.to_track !== undefined ? context.lane(action.to_track) : undefined;
+          const toBar = num(action.to_bar);
+          const bars = num(action.bars);
           const start = toBar !== undefined ? Math.max(0, Math.round((toBar - 1) * barT)) : clip.start;
           const length = bars !== undefined && bars > 0 ? Math.max(1, Math.round(bars * barT)) : clip.length;
-          if (toBar !== undefined || bars !== undefined) c.focus.span(start, start + length, 'clip');
-          if (toTrack && (d.playlist.lanes[toTrack]?.takes || (clip.kind === 'audio' && clip.take)))
+          if (toBar !== undefined || bars !== undefined) context.focus.span(start, start + length, 'clip');
+          if (toTrack && (draft.playlist.lanes[toTrack]?.takes || (clip.kind === 'audio' && clip.take)))
             fail('the tracks of a recording (its comp and takes) keep only that recording: its clips cannot change track and no other clip goes there');
-          editClips(d, [
+          editClips(draft, [
             {
               id: clip.id,
               ...(mute !== undefined ? { muted: mute } : {}),
@@ -90,76 +90,76 @@ export const clips: OpModule = {
               ...(toBar !== undefined ? { start } : {}),
               ...(bars !== undefined && bars > 0 ? { length } : {}),
             },
-          ], { tempo: tempoMapOf(c.base, 'song') });
+          ], { tempo: tempoMapOf(context.base, 'song') });
           if (mute !== undefined) out.push(mute ? 'muted' : 'unmuted');
-          if (toTrack) out.push(`to track ${d.playlist.laneOrder.indexOf(toTrack) + 1}`);
-          if (toBar !== undefined) out.push(`starts at bar ${barOf(start, ts)}`);
+          if (toTrack) out.push(`to track ${draft.playlist.laneOrder.indexOf(toTrack) + 1}`);
+          if (toBar !== undefined) out.push(`starts at bar ${barOf(start, timeSig)}`);
           if (bars !== undefined && bars > 0) out.push(`${Math.round((length / barT) * 100) / 100} bars long`);
-          c.touch(Math.min(clip.start, start), Math.max(clip.start + clip.length, start + length), [clip.id]);
+          context.touch(Math.min(clip.start, start), Math.max(clip.start + clip.length, start + length), [clip.id]);
           return out.length ? `${what} (${at}): ${out.join(', ')}` : null;
         }
         case 'split': {
-          c.focus.clip(clip.id, 'clip');
-          const where = num(a.at_bar) ?? fail('split needs at_bar');
+          context.focus.clip(clip.id, 'clip');
+          const where = num(action.at_bar) ?? fail('split needs at_bar');
           const tick = Math.round((where - 1) * barT);
           if (tick <= clip.start || tick >= clip.start + clip.length)
-            fail(`bar ${where} isn't inside that clip (it plays from bar ${barOf(clip.start, ts)} to ${barOf(clip.start + clip.length, ts)})`);
+            fail(`bar ${where} isn't inside that clip (it plays from bar ${barOf(clip.start, timeSig)} to ${barOf(clip.start + clip.length, timeSig)})`);
           const right = newId.clip();
-          splitClip(d, clip.id, tick, tempoMapOf(c.base, 'song'), right);
-          c.touch(clip.start, clip.start + clip.length, [clip.id, right]);
-          return `Split ${what} (${at}) at bar ${barOf(tick, ts)}`;
+          splitClip(draft, clip.id, tick, tempoMapOf(context.base, 'song'), right);
+          context.touch(clip.start, clip.start + clip.length, [clip.id, right]);
+          return `Split ${what} (${at}) at bar ${barOf(tick, timeSig)}`;
         }
         case 'make_unique': {
           if (clip.kind !== 'pattern') return fail('only pattern clips can get their own copy');
-          c.focus.clip(clip.id, 'clip');
-          const source = d.patterns[clip.patternId]!;
-          let name = str(a.name) ?? `${source.name} (bar ${barOf(clip.start, ts)})`;
-          const names = new Set(Object.values(d.patterns).map((x) => lower(x.name)));
-          for (let n = 2; names.has(lower(name)); n++) name = `${str(a.name) ?? source.name} ${n}`;
+          context.focus.clip(clip.id, 'clip');
+          const source = draft.patterns[clip.patternId]!;
+          let name = str(action.name) ?? `${source.name} (bar ${barOf(clip.start, timeSig)})`;
+          const names = new Set(Object.values(draft.patterns).map((x) => lower(x.name)));
+          for (let n = 2; names.has(lower(name)); n++) name = `${str(action.name) ?? source.name} ${n}`;
           const copy = newId.pattern() as PatternId;
-          makeClipUnique(d, clip.id, copy, name);
-          c.remember(a.ref, { kind: 'pattern', id: copy });
-          c.touch(clip.start, clip.start + clip.length, [clip.id]);
+          makeClipUnique(draft, clip.id, copy, name);
+          context.remember(action.ref, { kind: 'pattern', id: copy });
+          context.touch(clip.start, clip.start + clip.length, [clip.id]);
           return `${what} (${at}) now plays its own copy, “${name}”`;
         }
         case 'remove':
-          c.focus.clip(clip.id, 'clip');
-          removeClips(d, [clip.id]);
-          c.touch(clip.start, clip.start + clip.length);
+          context.focus.clip(clip.id, 'clip');
+          removeClips(draft, [clip.id]);
+          context.touch(clip.start, clip.start + clip.length);
           return `Removed ${what} (${at})`;
         default:
-          return fail(`unknown clip action "${String(a.action)}"`);
+          return fail(`unknown clip action "${String(action.action)}"`);
       }
     },
 
-    track: (a, c) => {
-      const laneId = c.lane(a.track);
+    track: (action, context) => {
+      const laneId = context.lane(action.track);
       const out: string[] = [];
-      const name = str(a.name);
-      const color = str(a.color);
-      const mute = bool(a.mute);
-      const solo = bool(a.solo);
-      setLaneProps(c.d, laneId, {
+      const name = str(action.name);
+      const color = str(action.color);
+      const mute = bool(action.mute);
+      const solo = bool(action.solo);
+      setLaneProps(context.draft, laneId, {
         ...(name ? { name } : {}),
         ...(color && /^#[0-9a-f]{6}$/i.test(color) ? { color } : {}),
         ...(mute !== undefined ? { muted: mute } : {}),
         ...(solo !== undefined ? { solo } : {}),
       });
-      if (name) out.push(`named “${c.d.playlist.lanes[laneId]!.name}”`);
+      if (name) out.push(`named “${context.draft.playlist.lanes[laneId]!.name}”`);
       if (mute !== undefined) out.push(mute ? 'muted' : 'unmuted');
       if (solo !== undefined) out.push(solo ? 'solo' : 'unsolo');
-      return out.length ? `Track ${c.d.playlist.laneOrder.indexOf(laneId) + 1}: ${out.join(', ')}` : null;
+      return out.length ? `Track ${context.draft.playlist.laneOrder.indexOf(laneId) + 1}: ${out.join(', ')}` : null;
     },
 
-    tidy: (a, c) => {
+    tidy: (action, context) => {
       // In a part of the song, only its stacked copies (the rest of the clean-up is song-wide).
-      const part = c.focus.range();
+      const part = context.focus.range();
       // (Passes without a focus; with selected notes the playlist stays as it is.)
-      if (!part) c.focus.span(0, Infinity, 'tidy');
-      const report = tidySong(c.d, {
-        stacked: bool(a.stacked) ?? true,
-        automation: part ? false : (bool(a.automation) ?? true),
-        names: part ? false : (bool(a.names) ?? true),
+      if (!part) context.focus.span(0, Infinity, 'tidy');
+      const report = tidySong(context.draft, {
+        stacked: bool(action.stacked) ?? true,
+        automation: part ? false : (bool(action.automation) ?? true),
+        names: part ? false : (bool(action.names) ?? true),
         ...(part ? { range: part } : {}),
       });
       const out = [

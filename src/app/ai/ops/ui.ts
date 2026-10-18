@@ -70,81 +70,81 @@ export const ui: OpModule = {
 };
 
 /** Turns the answer's UI actions into after-edit requests (after its edits are committed). */
-export function uiAfter(s: Services, answer: AiAnswer, state: AnswerState): void {
+export function uiAfter(services: Services, answer: AiAnswer, state: AnswerState): void {
   const { refs, warnings, after } = state;
-  for (const a of answer.actions) {
-    if (a.op === 'transport') {
-      const mode = a.mode === 'pattern' || a.mode === 'song' ? a.mode : undefined;
-      if (typeof a.metronome === 'boolean') after.push({ kind: 'metronome', on: a.metronome });
-      if (a.action === 'stop') after.push({ kind: 'stop' });
-      else if (a.action === 'play' || a.action === 'record') {
-        const fromBar = num(a.from_bar);
+  for (const action of answer.actions) {
+    if (action.op === 'transport') {
+      const mode = action.mode === 'pattern' || action.mode === 'song' ? action.mode : undefined;
+      if (typeof action.metronome === 'boolean') after.push({ kind: 'metronome', on: action.metronome });
+      if (action.action === 'stop') after.push({ kind: 'stop' });
+      else if (action.action === 'play' || action.action === 'record') {
+        const fromBar = num(action.from_bar);
         const tick =
           fromBar !== undefined
-            ? Math.max(0, (fromBar - 1) * ticksPerBar(s.doc.getState().project.transport.timeSig))
+            ? Math.max(0, (fromBar - 1) * ticksPerBar(services.doc.getState().project.transport.timeSig))
             : undefined;
         after.push({
           kind: 'play',
           ...(tick !== undefined ? { fromTick: tick } : {}),
           ...(mode ? { mode } : {}),
-          ...(a.action === 'record' ? { record: true } : {}),
+          ...(action.action === 'record' ? { record: true } : {}),
         });
       } else if (mode) after.push({ kind: 'mode', mode });
-    } else if (a.op === 'audition') {
-      const p = s.doc.getState().project;
-      const chRef = str(a.channel) ?? '';
+    } else if (action.op === 'audition') {
+      const project = services.doc.getState().project;
+      const chRef = str(action.channel) ?? '';
       const r = refs.get(lower(chRef.startsWith('@') ? chRef : `@${chRef}`));
       const channelId =
         r?.kind === 'channel'
           ? r.id
-          : Object.values(p.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id;
-      const phrase = a.phrase === 'riff' || a.phrase === 'bass' || a.phrase === 'hits' ? a.phrase : 'chord';
-      if (!channelId || p.channels[channelId]?.kind === 'automation') warnings.push(`audition: there is no channel "${chRef}"`);
+          : Object.values(project.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id;
+      const phrase = action.phrase === 'riff' || action.phrase === 'bass' || action.phrase === 'hits' ? action.phrase : 'chord';
+      if (!channelId || project.channels[channelId]?.kind === 'automation') warnings.push(`audition: there is no channel "${chRef}"`);
       else if (!after.some((x) => x.kind === 'audition')) after.push({ kind: 'audition', channelId, phrase });
-    } else if (a.op === 'analyze_mix') {
+    } else if (action.op === 'analyze_mix') {
       if (!after.some((x) => x.kind === 'analyze_mix')) after.push({ kind: 'analyze_mix' });
-    } else if (a.op === 'build_plugin') {
-      const name = str(a.name);
-      const kind = a.kind === 'instrument' || a.kind === 'effect' ? a.kind : null;
+    } else if (action.op === 'build_plugin') {
+      const name = str(action.name);
+      const kind = action.kind === 'instrument' || action.kind === 'effect' ? action.kind : null;
       if (!name || !kind) warnings.push('build plugin: it needs a name and a kind (instrument or effect)');
-      else after.push({ kind: 'build_plugin', spec: { name, kind, description: str(a.description) ?? name } });
-    } else if (a.op === 'command') {
-      const id = str(a.id) ?? '';
-      const def = s.commands.get(id);
+      else after.push({ kind: 'build_plugin', spec: { name, kind, description: str(action.description) ?? name } });
+    } else if (action.op === 'command') {
+      const id = str(action.id) ?? '';
+      const def = services.commands.get(id);
       if (!def || def.ai === false) warnings.push(`command: there is no command "${id}"`);
       else
         after.push({
           kind: 'command',
           id,
-          ...(a.args !== undefined && a.args !== null ? { args: a.args } : {}),
+          ...(action.args !== undefined && action.args !== null ? { args: action.args } : {}),
           gesture: !!def.gesture,
         });
-    } else if (a.op === 'open') {
-      const w = a.window;
-      const action = WINDOW_ACTIONS.find((x) => x === a.action) ?? 'open';
+    } else if (action.op === 'open') {
+      const w = action.window;
+      const subAction = WINDOW_ACTIONS.find((x) => x === action.action) ?? 'open';
       if (!isOpenWindow(w)) {
         warnings.push(`open: there is no window "${String(w)}" (windows: ${OPEN_WINDOWS.join(', ')})`);
         continue;
       }
-      const p = s.doc.getState().project;
-      const chRef = str(a.channel);
+      const project = services.doc.getState().project;
+      const chRef = str(action.channel);
       const channelId = chRef
-        ? (Object.values(p.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id ??
+        ? (Object.values(project.channels).find((c) => c.id === chRef || lower(c.name) === lower(chRef))?.id ??
           (refs.get(lower(chRef))?.kind === 'channel' ? (refs.get(lower(chRef)) as { id: ChannelId }).id : undefined))
         : undefined;
-      const fxRef = str(a.effect);
+      const fxRef = str(action.effect);
       const fx = fxRef ? refs.get(lower(fxRef)) : undefined;
       let slot: { insertId: InsertId; slotId: SlotId } | undefined =
         fx?.kind === 'effect' ? { insertId: fx.insertId, slotId: fx.slotId } : undefined;
       if (!slot && fxRef)
-        for (const id of p.mixer.order)
-          if (p.mixer.inserts[id]?.fx.some((f) => f.id === fxRef)) slot = { insertId: id, slotId: fxRef as SlotId };
+        for (const id of project.mixer.order)
+          if (project.mixer.inserts[id]?.fx.some((f) => f.id === fxRef)) slot = { insertId: id, slotId: fxRef as SlotId };
       if (w === 'plugin' && !channelId && !slot) {
         warnings.push('open: a plugin window needs its channel or effect');
         continue;
       }
-      if (w === 'browser' || action !== 'open') {
-        const done = applyWindowAction(s, action === 'open' ? 'focus' : action, w, {
+      if (w === 'browser' || subAction !== 'open') {
+        const done = applyWindowAction(services, subAction === 'open' ? 'focus' : subAction, w, {
           ...(channelId ? { channelId } : {}),
           ...(slot ? { slotId: slot.slotId } : {}),
         });

@@ -25,9 +25,9 @@ const analyzing = (state: AnswerState): boolean => state.bag.get('reference') ==
 const plainRef = (r: ReferenceTrack | undefined): ReferenceTrack | null => (r ? (isDraft(r) ? (current(r) as ReferenceTrack) : r) : null);
 
 /** The song file a set_reference names: a library song, or a sample the project already has. */
-function sourceOf(a: Record<string, unknown>, c: OpContext): { ref: SampleRef; title: string } | 'file' {
-  const song = str(a.song);
-  const sample = str(a.sample);
+function sourceOf(action: Record<string, unknown>, context: OpContext): { ref: SampleRef; title: string } | 'file' {
+  const song = str(action.song);
+  const sample = str(action.sample);
   if (song) {
     const { found } = findSongs([song]);
     const hit = found[0];
@@ -35,18 +35,18 @@ function sourceOf(a: Record<string, unknown>, c: OpContext): { ref: SampleRef; t
     return { ref: hit.ref, title: hit.label };
   }
   if (sample) {
-    const own = Object.values(c.project.samples).filter((x) => x.source.kind === 'embedded');
+    const own = Object.values(context.project.samples).filter((x) => x.source.kind === 'embedded');
     const t = sample.toLowerCase();
     const hit = own.find((x) => x.id === sample) ?? own.find((x) => x.name.toLowerCase() === t) ?? (own.filter((x) => x.name.toLowerCase().includes(t)).length === 1 ? own.find((x) => x.name.toLowerCase().includes(t)) : undefined);
     if (!hit) return fail(`there is no song file called "${sample}" among this project's samples`);
     return { ref: hit as SampleRef, title: hit.name };
   }
-  if (a.choose_file === true) return 'file';
+  if (action.choose_file === true) return 'file';
   return fail('say where the reference comes from: song (a title from the music library), sample (a sample of the project), or choose_file (the musician picks a file)');
 }
 
-const optionsOf = (a: Record<string, unknown>): ReferenceMatchOptions => {
-  const given = { tempo: bool(a.tempo), key: bool(a.key), arrangement: bool(a.arrangement), loudness: bool(a.loudness), tone: bool(a.tone) };
+const optionsOf = (action: Record<string, unknown>): ReferenceMatchOptions => {
+  const given = { tempo: bool(action.tempo), key: bool(action.key), arrangement: bool(action.arrangement), loudness: bool(action.loudness), tone: bool(action.tone) };
   const any = Object.values(given).some((v) => v !== undefined);
   // Nothing named: everything ("make it sound like my reference").
   const pick = (v: boolean | undefined) => (any ? v === true : true);
@@ -88,43 +88,43 @@ export const reference: OpModule = {
 - match_reference arrangement needs patterns to arrange (a beat first for a new song) and replaces the song's arrangement (one undo step). It does not rebuild the mixer; leveling uses the master's Limiter, so set up the mix first when it has none.`,
   },
   handlers: {
-    set_reference: (a, c) => {
-      if (a.clear === true) return clearReferenceInDraft(c.d) ? 'Cleared the reference' : 'There was no reference to clear';
-      const src = sourceOf(a, c);
+    set_reference: (action, context) => {
+      if (action.clear === true) return clearReferenceInDraft(context.draft) ? 'Cleared the reference' : 'There was no reference to clear';
+      const src = sourceOf(action, context);
       if (src === 'file') {
-        c.state.after.push({ kind: 'command', id: 'reference.chooseFile', gesture: true });
+        context.state.after.push({ kind: 'command', id: 'reference.chooseFile', gesture: true });
         return null;
       }
       const hash = sampleHash(src.ref);
       if (!hash) return fail('the reference must be a song file the musician added, not a built-in sound');
       const cached = peekReference(hash);
       if (cached) {
-        const stored = setReferenceInDraft(c.d, { ...cached, title: src.title }, src.ref);
+        const stored = setReferenceInDraft(context.draft, { ...cached, title: src.title }, src.ref);
         return `Reference set: “${src.title}” (${referenceFacts(stored).slice(0, 4).join(', ')})`;
       }
-      c.state.bag.set('reference', true);
-      c.state.after.push({ kind: 'set_reference', ref: src.ref, title: src.title });
+      context.state.bag.set('reference', true);
+      context.state.after.push({ kind: 'set_reference', ref: src.ref, title: src.title });
       return `The reference “${src.title}” is analyzed after this answer`;
     },
-    match_reference: (a, c) => {
-      const o = optionsOf(a);
-      const ref = plainRef(c.d.reference);
-      if (!ref && !analyzing(c.state))
+    match_reference: (action, context) => {
+      const o = optionsOf(action);
+      const ref = plainRef(context.draft.reference);
+      if (!ref && !analyzing(context.state))
         return fail('there is no reference song yet: set_reference first (a song of the music library or a sample), or choose_file to ask the musician for one');
-      if (o.arrangement && c.focus.range()) fail('arranging like the reference reshapes the whole song: ask without a part of the song selected');
+      if (o.arrangement && context.focus.range()) fail('arranging like the reference reshapes the whole song: ask without a part of the song selected');
       if (!ref) {
-        c.state.after.push({ kind: 'match_reference', options: o });
+        context.state.after.push({ kind: 'match_reference', options: o });
         return 'Matching the reference once it is analyzed';
       }
-      const res = matchInDraft(c.d, c.s, c.base, ref, { tempo: o.tempo, key: o.key, arrangement: o.arrangement }, (f, t, what) => c.focus.span(f, t, what));
-      for (const w of res.warnings) c.warn(w);
+      const res = matchInDraft(context.draft, context.services, context.base, ref, { tempo: o.tempo, key: o.key, arrangement: o.arrangement }, (f, t, what) => context.focus.span(f, t, what));
+      for (const w of res.warnings) context.warn(w);
       if (res.touched) {
-        c.touch(res.touched.from, res.touched.to, res.clipIds);
-        c.state.after.push({ kind: 'mode', mode: 'song' });
+        context.touch(res.touched.from, res.touched.to, res.clipIds);
+        context.state.after.push({ kind: 'mode', mode: 'song' });
       }
-      for (const line of res.changes) c.note(line);
-      if (o.loudness) c.state.after.push({ kind: 'level_mix', style: inferStyle(c.project), targetLufs: loudnessTarget(ref) });
-      if (o.tone) c.state.after.push({ kind: 'reference_tone' });
+      for (const line of res.changes) context.note(line);
+      if (o.loudness) context.state.after.push({ kind: 'level_mix', style: inferStyle(context.project), targetLufs: loudnessTarget(ref) });
+      if (o.tone) context.state.after.push({ kind: 'reference_tone' });
       return res.changes.length || res.warnings.length ? null : 'The song already matches the reference';
     },
   },

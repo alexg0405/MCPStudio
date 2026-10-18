@@ -84,14 +84,14 @@ export function ownUnitOf(res: ResolvedTarget, target: ParamTarget, n: number): 
 }
 
 /** The name an automation channel's target has, as get_automation reports it ("drives"). */
-export function automationDrives(s: Services, p: Project, ch: AutomationChannel): string {
-  if (!ch.target) return 'nothing yet';
-  return targetName(p, ch.target, pluginInfoOf(s)) ?? 'a control that no longer exists';
+export function automationDrives(services: Services, p: Project, channel: AutomationChannel): string {
+  if (!channel.target) return 'nothing yet';
+  return targetName(p, channel.target, pluginInfoOf(services)) ?? 'a control that no longer exists';
 }
 
 /** The control an automation target names (kind plus the ids it needs), as the model addresses it. */
-export function paramTargetOf(c: OpContext, raw: unknown): ParamTarget {
-  const { d, s } = c;
+export function paramTargetOf(context: OpContext, raw: unknown): ParamTarget {
+  const { draft, services } = context;
   const t = isObj(raw) ? raw : fail('what should the automation move?');
   const kind = str(t.kind);
   let target: ParamTarget;
@@ -101,19 +101,19 @@ export function paramTargetOf(c: OpContext, raw: unknown): ParamTarget {
     case 'channel_pitch':
       target = {
         kind: 'channel',
-        channelId: c.channel(t.channel),
+        channelId: context.channel(t.channel),
         param: kind === 'channel_volume' ? 'volume' : kind === 'channel_pan' ? 'pan' : 'pitch',
       };
       break;
     case 'track_volume':
     case 'track_pan':
-      target = { kind: 'insert', insertId: c.insert(t.insert), param: kind === 'track_volume' ? 'volume' : 'pan' };
+      target = { kind: 'insert', insertId: context.insert(t.insert), param: kind === 'track_volume' ? 'volume' : 'pan' };
       break;
     case 'send':
-      target = { kind: 'route', insertId: c.insert(t.insert), to: c.insert(t.to) };
+      target = { kind: 'route', insertId: context.insert(t.insert), to: context.insert(t.to) };
       break;
     case 'effect_mix': {
-      const e = c.effect(t.effect);
+      const e = context.effect(t.effect);
       target = { kind: 'slot', insertId: e.insertId, slotId: e.slotId, param: 'mix' };
       break;
     }
@@ -122,17 +122,17 @@ export function paramTargetOf(c: OpContext, raw: unknown): ParamTarget {
       let owner: PluginOwner;
       let pluginId: string;
       if (t.effect !== undefined) {
-        const e = c.effect(t.effect);
+        const e = context.effect(t.effect);
         owner = { kind: 'fx', insertId: e.insertId, slotId: e.slotId };
-        pluginId = d.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin.pluginId;
+        pluginId = draft.mixer.inserts[e.insertId]!.fx.find((f) => f.id === e.slotId)!.plugin.pluginId;
       } else {
-        const cid = c.channel(t.channel);
-        const ch = d.channels[cid]!;
-        if (ch.kind !== 'instrument') fail(`“${ch.name}” has no instrument settings`);
-        owner = { kind: 'channel', channelId: cid };
-        pluginId = (ch as { plugin: { pluginId: string } }).plugin.pluginId;
+        const channelId = context.channel(t.channel);
+        const channel = draft.channels[channelId]!;
+        if (channel.kind !== 'instrument') fail(`“${channel.name}” has no instrument settings`);
+        owner = { kind: 'channel', channelId: channelId };
+        pluginId = (channel as { plugin: { pluginId: string } }).plugin.pluginId;
       }
-      const def = s.plugins.get(pluginId) ?? fail(`the plugin ${pluginId} isn't installed`);
+      const def = services.plugins.get(pluginId) ?? fail(`the plugin ${pluginId} isn't installed`);
       const paramId = findParamId(def.params as ParamSpecs, name) ?? fail(`${def.name} has no setting "${name}"`);
       target = { kind: 'plugin', owner, paramId };
       break;
@@ -148,27 +148,27 @@ export function paramTargetOf(c: OpContext, raw: unknown): ParamTarget {
 
 const EDIT_MODES = ['set_points', 'move', 'scale', 'remove', 'tension'] as const;
 
-const pluginInfoOf = (s: Services) => (id: string) => {
-  const def = s.plugins.get(id);
+const pluginInfoOf = (services: Services) => (id: string) => {
+  const def = services.plugins.get(id);
   return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
 };
 
 /** The automation channel an edit names: by id, exact name or @ref, or by what it drives (as get_automation reports it). */
-function automationChannelOf(c: OpContext, a: AiAction): AutomationChannel {
-  const { d, s, project } = c;
-  if (a.channel !== undefined) {
-    const id = c.channel(a.channel);
-    const ch = d.channels[id];
-    if (ch?.kind !== 'automation') fail(`“${ch?.name ?? id}” is not an automation channel`);
+function automationChannelOf(context: OpContext, action: AiAction): AutomationChannel {
+  const { draft, services, project } = context;
+  if (action.channel !== undefined) {
+    const id = context.channel(action.channel);
+    const channel = draft.channels[id];
+    if (channel?.kind !== 'automation') fail(`“${channel?.name ?? id}” is not an automation channel`);
     return project.channels[id] as AutomationChannel;
   }
   const drives =
-    str(a.drives) ?? fail('which automation? give its channel, or what it drives (as get_automation reports it)');
+    str(action.drives) ?? fail('which automation? give its channel, or what it drives (as get_automation reports it)');
   const hits = project.channelOrder
     .map((id) => project.channels[id]!)
     .filter(
       (ch): ch is AutomationChannel =>
-        ch.kind === 'automation' && lower(automationDrives(s, project, ch)) === lower(drives),
+        ch.kind === 'automation' && lower(automationDrives(services, project, ch)) === lower(drives),
     );
   if (hits.length === 0) fail(`nothing drives “${drives}”`);
   if (hits.length > 1)
@@ -199,36 +199,36 @@ function pointFrom(pt: Record<string, unknown>, tick: Tick, value: number): Auto
  * the curve now runs past their end, and the part's focus guard sees each song stretch that changes,
  * including the held value a clip leaves behind when the curve's value at its end moves.
  */
-function editAutomation(a: AiAction, c: OpContext): string {
-  const { d, s, project } = c;
+function editAutomation(action: AiAction, context: OpContext): string {
+  const { draft, services, project } = context;
   const mode =
-    EDIT_MODES.find((m) => m === str(a.mode)) ??
-    fail(`unknown mode "${String(a.mode)}" (set_points, move, scale, remove or tension)`);
-  const ch = automationChannelOf(c, a);
-  const id = ch.id;
-  const barT = c.bar();
-  const from = Math.max(0, num(a.from) ?? 0);
-  const to = num(a.to);
+    EDIT_MODES.find((m) => m === str(action.mode)) ??
+    fail(`unknown mode "${String(action.mode)}" (set_points, move, scale, remove or tension)`);
+  const channel = automationChannelOf(context, action);
+  const id = channel.id;
+  const barT = context.bar();
+  const from = Math.max(0, num(action.from) ?? 0);
+  const to = num(action.to);
   if (to !== undefined && to <= from) fail(`the range ends at bar ${r2(to)}, before it starts (bar ${r2(from)})`);
   const lo = Math.round(from * barT);
   const hi = to === undefined ? Infinity : Math.round(to * barT);
   const inRange = (p: AutoPoint) => p.tick >= lo && p.tick < hi;
   const rangeText =
     to === undefined ? (from === 0 ? 'the whole curve' : `bar ${r2(from)} on`) : `bars ${r2(from)}–${r2(to)}`;
-  const info = pluginInfoOf(s);
-  const name = (ch.target && targetName(project, ch.target, info)) || ch.name;
+  const info = pluginInfoOf(services);
+  const name = (channel.target && targetName(project, channel.target, info)) || channel.name;
   const count = (n: number) => `${n} point${n === 1 ? '' : 's'}`;
 
   // Values need the control; it must still exist.
-  const ctl = ch.target
-    ? resolveTarget(project, ch.target, (x) => s.plugins.get(x)?.params as ParamSpecs | undefined, ch.range)
+  const ctl = channel.target
+    ? resolveTarget(project, channel.target, (x) => services.plugins.get(x)?.params as ParamSpecs | undefined, channel.range)
     : null;
   const control = () =>
-    ch.target && ctl
-      ? { res: ctl, target: ch.target }
-      : fail(`${name} can't be edited: ${ch.target ? 'the control it drives no longer exists' : 'it drives nothing'}`);
+    channel.target && ctl
+      ? { res: ctl, target: channel.target }
+      : fail(`${name} can't be edited: ${channel.target ? 'the control it drives no longer exists' : 'it drives nothing'}`);
 
-  const old: AutoPoint[] = ch.points.map((p) => ({ ...p }));
+  const old: AutoPoint[] = channel.points.map((p) => ({ ...p }));
   const edited = old.filter(inRange);
   const untouched = old.filter((p) => !inRange(p));
   if (mode !== 'set_points' && edited.length === 0) fail(`no points in ${rangeText}`);
@@ -240,22 +240,22 @@ function editAutomation(a: AiAction, c: OpContext): string {
   switch (mode) {
     case 'set_points': {
       const { res, target } = control();
-      const raw = Array.isArray(a.points) ? a.points.filter(isObj) : [];
+      const raw = Array.isArray(action.points) ? action.points.filter(isObj) : [];
       if (raw.length === 0) fail('set_points needs points: a bar and a value (in the control’s unit) for each');
       const fresh: AutoPoint[] = [];
       for (const pt of raw) {
         const value = normalizedOf(res, target, pt.value);
         const at = num(pt.bar);
         if (value === null || at === undefined) {
-          c.warn(`automation point ${JSON.stringify(pt)} skipped`);
+          context.warn(`automation point ${JSON.stringify(pt)} skipped`);
           continue;
         }
         if (at < from || (to !== undefined && at >= to)) {
-          c.warn(`automation point at bar ${r2(at)} is outside ${rangeText}, skipped`);
+          context.warn(`automation point at bar ${r2(at)} is outside ${rangeText}, skipped`);
           continue;
         }
         if (value < 0 || value > 1)
-          c.warn(`${JSON.stringify(pt.value)} is past the range of ${name}; kept at its edge`);
+          context.warn(`${JSON.stringify(pt.value)} is past the range of ${name}; kept at its edge`);
         fresh.push(pointFrom(pt, Math.max(0, Math.round(at * barT)), value));
       }
       if (fresh.length === 0) fail(`none of the points is in ${rangeText}`);
@@ -265,7 +265,7 @@ function editAutomation(a: AiAction, c: OpContext): string {
       break;
     }
     case 'move': {
-      const by = num(a.by) ?? fail('move needs by: how many bars to shift the points (negative = earlier)');
+      const by = num(action.by) ?? fail('move needs by: how many bars to shift the points (negative = earlier)');
       const shift = Math.round(by * barT);
       let early = 0;
       touchedNew = edited.map((p) => {
@@ -273,7 +273,7 @@ function editAutomation(a: AiAction, c: OpContext): string {
         if (tick < 0) early++;
         return { ...p, tick: Math.max(0, tick) };
       });
-      if (early) c.warn(`${count(early)} would move before the start of the curve; kept at bar 0`);
+      if (early) context.warn(`${count(early)} would move before the start of the curve; kept at bar 0`);
       next = [...untouched, ...touchedNew];
       line = `moved ${count(edited.length)} by ${by > 0 ? '+' : ''}${r2(by)} bar${Math.abs(by) === 1 ? '' : 's'}`;
       break;
@@ -281,7 +281,7 @@ function editAutomation(a: AiAction, c: OpContext): string {
     case 'scale': {
       const { res, target } = control();
       const factor =
-        num(a.factor) ??
+        num(action.factor) ??
         fail('scale needs factor: 0 or more (2 doubles how far the points sit from their middle, 0.5 halves it)');
       if (factor < 0)
         fail('scale needs factor: 0 or more (2 doubles how far the points sit from their middle, 0.5 halves it)');
@@ -296,7 +296,7 @@ function editAutomation(a: AiAction, c: OpContext): string {
         if (value < 0 || value > 1) past++;
         return { ...p, value: Math.min(1, Math.max(0, value)) };
       });
-      if (past) c.warn(`${count(past)} went past the range of ${name}; kept at its edge`);
+      if (past) context.warn(`${count(past)} went past the range of ${name}; kept at its edge`);
       next = [...untouched, ...touchedNew];
       line = `scaled ${count(edited.length)} around their middle (×${r2(factor)})`;
       break;
@@ -311,7 +311,7 @@ function editAutomation(a: AiAction, c: OpContext): string {
     }
     case 'tension': {
       const t =
-        num(a.tension) ?? fail('tension needs tension: −1…1 (negative starts the move slowly, positive starts fast)');
+        num(action.tension) ?? fail('tension needs tension: −1…1 (negative starts the move slowly, positive starts fast)');
       const bend = Math.min(1, Math.max(-1, t));
       touchedNew = edited.map((p) => ({ ...p, tension: bend }));
       next = [...untouched, ...touchedNew];
@@ -359,23 +359,23 @@ function editAutomation(a: AiAction, c: OpContext): string {
     const A = Math.max(lowT, clip.offset);
     const B = Math.min(highT, newEnd);
     if (A < B) {
-      c.focus.span(songOf(A), songOf(B), 'edit_automation');
+      context.focus.span(songOf(A), songOf(B), 'edit_automation');
       touchedSpans.push({ from: songOf(A), to: songOf(B), clip });
     }
     if (length > clip.length && !(A <= contentEnd && B >= newEnd)) {
-      c.focus.span(songOf(contentEnd), songOf(newEnd), 'edit_automation');
+      context.focus.span(songOf(contentEnd), songOf(newEnd), 'edit_automation');
       touchedSpans.push({ from: songOf(contentEnd), to: songOf(newEnd), clip });
     }
     // The value the clip leaves behind holds on after it, until something else plays: a change there reaches the rest of the song.
     const heldBefore = curveAt(old, contentEnd);
     const heldAfter = curveAt(after, newEnd);
     if (heldBefore !== null && heldAfter !== null && Math.abs(heldBefore - heldAfter) > 1e-6)
-      c.focus.span(songOf(newEnd), Infinity, 'edit_automation');
+      context.focus.span(songOf(newEnd), Infinity, 'edit_automation');
   }
 
-  setAutomationPoints(d, id, next);
-  for (const { clip, length } of grow) (d.playlist.clips[clip.id] as Draft<AutomationClip>).length = length;
-  for (const t of touchedSpans) c.touch(t.from, t.to, [t.clip.id]);
+  setAutomationPoints(draft, id, next);
+  for (const { clip, length } of grow) (draft.playlist.clips[clip.id] as Draft<AutomationClip>).length = length;
+  for (const t of touchedSpans) context.touch(t.from, t.to, [t.clip.id]);
   return `${name}: ${line}`;
 }
 
@@ -434,17 +434,17 @@ export const automation: OpModule = {
     ),
   ],
   handlers: {
-    edit_automation: (a, c) => editAutomation(a, c),
-    automate: (a, c) => {
-      const { d, s, project } = c;
-      const target = paramTargetOf(c, a.target);
-      const specsOf = (id: string) => s.plugins.get(id)?.params as ParamSpecs | undefined;
-      const lfo = isObj(a.lfo) ? a.lfo : null;
-      const rawPoints = Array.isArray(a.points) ? a.points.filter(isObj) : [];
+    edit_automation: (action, context) => editAutomation(action, context),
+    automate: (action, context) => {
+      const { draft, services, project } = context;
+      const target = paramTargetOf(context, action.target);
+      const specsOf = (id: string) => services.plugins.get(id)?.params as ParamSpecs | undefined;
+      const lfo = isObj(action.lfo) ? action.lfo : null;
+      const rawPoints = Array.isArray(action.points) ? action.points.filter(isObj) : [];
       // Tempo clips span 60–180 BPM unless the ramp goes further.
       let range: { min: number; max: number } | undefined;
       if (target.kind === 'tempo') {
-        const bpms = [d.transport.bpm, ...rawPoints.map((pt) => num(pt.value)).filter((v) => v !== undefined)];
+        const bpms = [draft.transport.bpm, ...rawPoints.map((pt) => num(pt.value)).filter((v) => v !== undefined)];
         if (lfo && num(lfo.center) !== undefined) bpms.push(num(lfo.center)!);
         const lo = Math.min(...(bpms as number[]));
         const hi = Math.max(...(bpms as number[]));
@@ -457,18 +457,18 @@ export const automation: OpModule = {
       if (!isAutomatable(res.spec)) fail(`${res.spec.label ?? 'that setting'} can't be automated`);
       // A value in the control's own unit → 0–1 on the clip.
       const norm = (raw: unknown): number | null => normalizedOf(res, target, raw);
-      const barT = c.bar();
+      const barT = context.bar();
       // In a part of the song, the clip defaults to the part.
-      const part = c.focus.range();
+      const part = context.focus.range();
       const start = Math.max(
         0,
-        Math.round(num(a.from_bar) !== undefined || !part ? ((num(a.from_bar) ?? 1) - 1) * barT : part.from),
+        Math.round(num(action.from_bar) !== undefined || !part ? ((num(action.from_bar) ?? 1) - 1) * barT : part.from),
       );
       const length = Math.max(
         1,
-        Math.round(num(a.bars) !== undefined || !part ? (num(a.bars) ?? 4) * barT : Math.max(barT, part.to - start)),
+        Math.round(num(action.bars) !== undefined || !part ? (num(action.bars) ?? 4) * barT : Math.max(barT, part.to - start)),
       );
-      c.focus.span(start, start + length, 'automate');
+      context.focus.span(start, start + length, 'automate');
       let points: AutoPoint[];
       let shapeText: string;
       if (lfo) {
@@ -490,7 +490,7 @@ export const automation: OpModule = {
           const value = norm(pt.value);
           const at = num(pt.bar);
           if (value === null || at === undefined) {
-            c.warn(`automation point ${JSON.stringify(pt)} skipped`);
+            context.warn(`automation point ${JSON.stringify(pt)} skipped`);
             continue;
           }
           const shape = (['curve', 'hold', 'stairs', 'smooth'] as const).find((x) => x === str(pt.shape));
@@ -509,15 +509,15 @@ export const automation: OpModule = {
         const fmt = (pt: AutoPoint) => formatAutomationValue(res, target, pt.value);
         shapeText = `${fmt(points[0]!)} → ${fmt(points[points.length - 1]!)}`;
       }
-      const closed = c.focus.closeAutomation(target, res, start, length, points);
-      if (closed) c.note(closed);
+      const closed = context.focus.closeAutomation(target, res, start, length, points);
+      if (closed) context.note(closed);
       const pluginInfo = (id: string) => {
-        const def = s.plugins.get(id);
+        const def = services.plugins.get(id);
         return def ? { name: def.name, params: def.params as ParamSpecs } : undefined;
       };
       const name = targetName(project, target, pluginInfo) ?? 'Automation';
-      const automationCount = Object.values(d.channels).filter((ch) => ch?.kind === 'automation').length;
-      const made = createAutomationClip(d, {
+      const automationCount = Object.values(draft.channels).filter((ch) => ch?.kind === 'automation').length;
+      const made = createAutomationClip(draft, {
         target,
         name,
         color: paletteColor(automationCount * 3 + 5),
@@ -526,8 +526,8 @@ export const automation: OpModule = {
         points,
         ...(range ? { range } : {}),
       });
-      c.touch(start, start + length, [made.clipId]);
-      c.remember(a.ref, { kind: 'channel', id: made.channelId });
+      context.touch(start, start + length, [made.clipId]);
+      context.remember(action.ref, { kind: 'channel', id: made.channelId });
       return `Automation “${name}”, bars ${r2(start / barT + 1)}–${r2((start + length) / barT + 1)}: ${shapeText}`;
     },
   },

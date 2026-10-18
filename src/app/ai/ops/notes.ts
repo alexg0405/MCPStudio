@@ -13,11 +13,11 @@ import { fail, type OpModule } from './context';
 import { coerceParam, findParamId, isObj, lower, num, str } from './values';
 
 /** Pattern length on a draft (the memoized query would keep a stale answer for the same draft object). */
-const lengthOf = (pat: Pattern, ts: TimeSignature) => patternLength({ ...pat }, ts);
+const lengthOf = (pat: Pattern, timeSig: TimeSignature) => patternLength({ ...pat }, timeSig);
 
 /** A channel's notes on a draft, sorted by start then key. */
-const notesOf = (pat: Pattern, cid: string): Note[] =>
-  Object.values(pat.notes[cid as keyof Pattern['notes']] ?? {}).sort((a, b) => a.tick - b.tick || a.key - b.key);
+const notesOf = (pat: Pattern, channelId: string): Note[] =>
+  Object.values(pat.notes[channelId as keyof Pattern['notes']] ?? {}).sort((a, b) => a.tick - b.tick || a.key - b.key);
 
 export const notes: OpModule = {
   schemas: [
@@ -87,14 +87,14 @@ export const notes: OpModule = {
     text: 'Writing notes directly ("write_notes"): steps from 0 within the pattern, keys as MIDI numbers (C4 = 60), lengths in steps. Drum channels take no key.',
   },
   handlers: {
-    write_notes: (a, c) => {
-      const { d } = c;
-      const pid = c.focus.writable(c.pattern(a.pattern));
-      const cid = c.channel(a.channel);
-      const ch = d.channels[cid]!;
-      if (ch.kind !== 'instrument') fail(`“${ch.name}” doesn't play notes`);
-      const root = ch.kind === 'instrument' ? ch.rootKey : 60;
-      const raw = Array.isArray(a.notes) ? a.notes : [];
+    write_notes: (action, context) => {
+      const { draft } = context;
+      const patternId = context.focus.writable(context.pattern(action.pattern));
+      const channelId = context.channel(action.channel);
+      const channel = draft.channels[channelId]!;
+      if (channel.kind !== 'instrument') fail(`“${channel.name}” doesn't play notes`);
+      const root = channel.kind === 'instrument' ? channel.rootKey : 60;
+      const raw = Array.isArray(action.notes) ? action.notes : [];
       const notes: Note[] = [];
       for (const n of raw) {
         if (!isObj(n)) continue;
@@ -111,60 +111,60 @@ export const notes: OpModule = {
           velocity: Math.max(0, Math.min(1, vel !== undefined && vel > 1 ? vel / 127 : (vel ?? 0.8))),
         });
       }
-      const pat = d.patterns[pid]!;
-      if (a.replace !== false) {
+      const pat = draft.patterns[patternId]!;
+      if (action.replace !== false) {
         // Selected notes (a notes focus): only those are replaced.
-        const only = c.focus.notes(pid, cid);
-        if (only) for (const id of only) delete pat.notes[cid]?.[id];
-        else delete pat.notes[cid];
+        const only = context.focus.notes(patternId, channelId);
+        if (only) for (const id of only) delete pat.notes[channelId]?.[id];
+        else delete pat.notes[channelId];
       }
-      addNotes(d, pid, cid, notes.slice(0, 1024));
+      addNotes(draft, patternId, channelId, notes.slice(0, 1024));
       // Grow an explicit pattern length to fit the notes.
       const end = Math.max(0, ...notes.map((n) => n.tick + n.length));
-      if (pat.length !== undefined && end > pat.length) pat.length = Math.ceil(end / c.bar()) * c.bar();
-      return `Wrote ${notes.length} note${notes.length === 1 ? '' : 's'} for “${ch.name}” in “${pat.name}”`;
+      if (pat.length !== undefined && end > pat.length) pat.length = Math.ceil(end / context.bar()) * context.bar();
+      return `Wrote ${notes.length} note${notes.length === 1 ? '' : 's'} for “${channel.name}” in “${pat.name}”`;
     },
 
-    clear_notes: (a, c) => {
-      const { d } = c;
-      const pid = c.focus.writable(c.pattern(a.pattern));
-      const pat = d.patterns[pid]!;
-      if (a.channel !== undefined) {
-        const cid = c.channel(a.channel);
-        const only = c.focus.notes(pid, cid);
+    clear_notes: (action, context) => {
+      const { draft } = context;
+      const patternId = context.focus.writable(context.pattern(action.pattern));
+      const pat = draft.patterns[patternId]!;
+      if (action.channel !== undefined) {
+        const channelId = context.channel(action.channel);
+        const only = context.focus.notes(patternId, channelId);
         // Selected notes (a notes focus): only those go.
-        if (only && only.size === 0) fail(`none of “${d.channels[cid]!.name}”’s notes in “${pat.name}” are selected`);
-        if (only) for (const id of only) delete pat.notes[cid]?.[id];
-        else delete pat.notes[cid];
-        return `Cleared “${d.channels[cid]!.name}” in “${pat.name}”`;
+        if (only && only.size === 0) fail(`none of “${draft.channels[channelId]!.name}”’s notes in “${pat.name}” are selected`);
+        if (only) for (const id of only) delete pat.notes[channelId]?.[id];
+        else delete pat.notes[channelId];
+        return `Cleared “${draft.channels[channelId]!.name}” in “${pat.name}”`;
       }
-      c.focus.wholePattern(pid, null, 'clear notes');
+      context.focus.wholePattern(patternId, null, 'clear notes');
       pat.notes = {} as never;
       return `Cleared “${pat.name}”`;
     },
 
-    note_tool: (a, c) => {
-      const { d, s } = c;
-      const id = str(a.tool) ?? fail('which tool?');
+    note_tool: (action, context) => {
+      const { draft, services } = context;
+      const id = str(action.tool) ?? fail('which tool?');
       const def =
-        s.plugins.script(id) ??
-        s.plugins.scripts().find((e) => lower(e.def.name) === lower(id) || lower(e.def.id) === lower(id))?.def;
+        services.plugins.script(id) ??
+        services.plugins.scripts().find((e) => lower(e.def.name) === lower(id) || lower(e.def.id) === lower(id))?.def;
       if (!def) fail(`there is no piano-roll tool "${id}"`);
-      const pid = c.focus.writable(c.pattern(a.pattern));
-      const cid = c.channel(a.channel);
-      const ch = d.channels[cid]!;
-      if (ch.kind !== 'instrument') fail(`“${ch.name}” has no notes`);
-      const pat = d.patterns[pid]!;
+      const patternId = context.focus.writable(context.pattern(action.pattern));
+      const channelId = context.channel(action.channel);
+      const channel = draft.channels[channelId]!;
+      if (channel.kind !== 'instrument') fail(`“${channel.name}” has no notes`);
+      const pat = draft.patterns[patternId]!;
       const values: Record<string, ParamValue> = {};
       const set: string[] = [];
-      if (Array.isArray(a.params)) {
+      if (Array.isArray(action.params)) {
         const specs = def!.params as ParamSpecs;
-        for (const e of a.params) {
+        for (const e of action.params) {
           if (!isObj(e) || typeof e.name !== 'string') continue;
           const pidm = findParamId(specs, e.name);
           const v = pidm ? coerceParam(specs[pidm] as ParamSpec, e.value) : null;
           if (!pidm || v === null) {
-            c.warn(`${def!.name}: can't set "${e.name}" to ${JSON.stringify(e.value)}`);
+            context.warn(`${def!.name}: can't set "${e.name}" to ${JSON.stringify(e.value)}`);
             continue;
           }
           values[pidm] = v;
@@ -172,8 +172,8 @@ export const notes: OpModule = {
         }
       }
       // On the draft: notes written earlier in this answer are shaped too. Selected notes only, in a notes focus.
-      const only = c.focus.notes(pid, cid);
-      const notes = notesOf(pat as Pattern, cid).filter((n) => !only || only.has(n.id));
+      const only = context.focus.notes(patternId, channelId);
+      const notes = notesOf(pat as Pattern, channelId).filter((n) => !only || only.has(n.id));
       let out;
       try {
         out = runNoteScript(
@@ -181,10 +181,10 @@ export const notes: OpModule = {
           {
             notes,
             grid: PPQ / 4,
-            bpm: d.transport.bpm,
-            bar: c.bar(),
-            length: lengthOf(pat as Pattern, d.transport.timeSig),
-            key: d.transport.key ?? null,
+            bpm: draft.transport.bpm,
+            bar: context.bar(),
+            length: lengthOf(pat as Pattern, draft.transport.timeSig),
+            key: draft.transport.key ?? null,
           },
           values,
         );
@@ -192,47 +192,47 @@ export const notes: OpModule = {
         fail(err instanceof NoteScriptError ? err.message : String(err));
       }
       if (notes.length === 0 && out!.length === 0)
-        fail(`“${ch.name}” has no notes in “${pat.name}” for ${def!.name} to work on`);
+        fail(`“${channel.name}” has no notes in “${pat.name}” for ${def!.name} to work on`);
       const plan = planNoteReplacement(notes, out!, () => newId.note());
-      applyNoteReplacement(d, pid, cid, plan);
-      return `${def!.name} on “${ch.name}” in “${pat.name}”${set.length ? ` (${set.join(', ')})` : ''}`;
+      applyNoteReplacement(draft, patternId, channelId, plan);
+      return `${def!.name} on “${channel.name}” in “${pat.name}”${set.length ? ` (${set.join(', ')})` : ''}`;
     },
 
-    steps: (a, c) => {
-      const { d } = c;
-      const pid = c.focus.writable(c.pattern(a.pattern));
-      const cid = c.channel(a.channel);
-      const ch = d.channels[cid]!;
-      if (ch.kind !== 'instrument') fail(`“${ch.name}” has no steps`);
-      c.focus.wholePattern(pid, cid, 'steps');
-      const rootKey = ch.kind === 'instrument' ? ch.rootKey : 60;
-      const where = `“${ch.name}” in “${d.patterns[pid]!.name}”`;
-      const by = Math.round(num(a.by) ?? 1);
-      switch (str(a.action)) {
+    steps: (action, context) => {
+      const { draft } = context;
+      const patternId = context.focus.writable(context.pattern(action.pattern));
+      const channelId = context.channel(action.channel);
+      const channel = draft.channels[channelId]!;
+      if (channel.kind !== 'instrument') fail(`“${channel.name}” has no steps`);
+      context.focus.wholePattern(patternId, channelId, 'steps');
+      const rootKey = channel.kind === 'instrument' ? channel.rootKey : 60;
+      const where = `“${channel.name}” in “${draft.patterns[patternId]!.name}”`;
+      const by = Math.round(num(action.by) ?? 1);
+      switch (str(action.action)) {
         case 'fill': {
-          const every = Math.max(1, Math.min(64, Math.round(num(a.every) ?? 4)));
-          fillSteps(d, pid, cid, every, { rootKey });
+          const every = Math.max(1, Math.min(64, Math.round(num(action.every) ?? 4)));
+          fillSteps(draft, patternId, channelId, every, { rootKey });
           return `Filled every ${every} steps of ${where}`;
         }
         case 'rotate':
-          rotateSteps(d, pid, cid, by);
+          rotateSteps(draft, patternId, channelId, by);
           return `Rotated ${where} by ${by} steps`;
         case 'shift':
-          shiftSteps(d, pid, cid, by);
+          shiftSteps(draft, patternId, channelId, by);
           return `Shifted ${where} by ${by} steps`;
         case 'reverse':
-          reverseSteps(d, pid, cid);
+          reverseSteps(draft, patternId, channelId);
           return `Reversed ${where}`;
         case 'randomize': {
-          const density = Math.min(1, Math.max(0, num(a.density) ?? 0.4));
-          randomizeSteps(d, pid, cid, { rootKey, rand: Math.random, density });
+          const density = Math.min(1, Math.max(0, num(action.density) ?? 0.4));
+          randomizeSteps(draft, patternId, channelId, { rootKey, rand: Math.random, density });
           return `Randomized ${where} (${Math.round(density * 100)}% of the steps)`;
         }
         case 'clear':
-          clearSteps(d, pid, cid);
+          clearSteps(draft, patternId, channelId);
           return `Cleared the steps of ${where}`;
         default:
-          return fail(`unknown step action "${String(a.action)}"`);
+          return fail(`unknown step action "${String(action.action)}"`);
       }
     },
   },

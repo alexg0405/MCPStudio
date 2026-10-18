@@ -46,58 +46,58 @@ export const pitch: OpModule = {
     text: `Pitch correction: the pitch action tunes a recorded vocal (an audio clip of one voice or melody line). Look first with get_pitch (the notes it found: number, bar, pitch, how far off, drift, vibrato). "Tune it to the key" is snap_to_key (strength 100 = robotic hard tune, 40–70 keeps a natural feel); "less wobble" is flatten_drift; "remove the vibrato" is vibrato with amount 0; one note too sharp is shift on that note's number. The corrected audio is rendered in the background, so say it will be ready in a moment; Undo restores the earlier sound. It only works on forwards audio (not Reverse).`,
   },
   handlers: {
-    pitch: (a, c) => {
-      const found = c.clip(a);
+    pitch: (action, context) => {
+      const found = context.clip(action);
       if (found.kind !== 'audio') return fail('only audio clips (a recorded vocal) can be pitch-corrected');
       const clip = found as AudioClip;
       const id = clip.id as ClipId;
-      const problem = pitchProblem(c.base, id);
+      const problem = pitchProblem(context.base, id);
       if (problem) return fail(problem);
-      c.focus.clip(id, 'pitch');
-      const channel = c.project.channels[clip.channelId];
+      context.focus.clip(id, 'pitch');
+      const channel = context.project.channels[clip.channelId];
       const name = channel ? `“${channel.name}”` : 'the clip';
-      const action = str(a.action);
-      if (action === 'clear') {
-        setPitchEdit(c.d, id, null);
-        c.touch(clip.start, clip.start + clip.length, [id]);
+      const subAction = str(action.action);
+      if (subAction === 'clear') {
+        setPitchEdit(context.draft, id, null);
+        context.touch(clip.start, clip.start + clip.length, [id]);
         return `Removed the pitch correction from ${name}`;
       }
-      const keyText = str(a.key);
+      const keyText = str(action.key);
       const key = keyText ? parseKey(keyText) : undefined;
       if (keyText && !key) return fail(`unreadable key "${keyText}" (say e.g. "A minor")`);
       const parsed = parsePitchAction(
         {
-          action,
+          action: subAction,
           key,
-          strength: a.strength,
-          amount: a.amount,
-          semitones: a.semitones,
-          to_midi: a.to_midi,
-          ms: a.ms,
-          notes: a.notes,
+          strength: action.strength,
+          amount: action.amount,
+          semitones: action.semitones,
+          to_midi: action.to_midi,
+          ms: action.ms,
+          notes: action.notes,
         },
-        c.base.transport.key,
+        context.base.transport.key,
       );
       if ('error' in parsed) return fail(parsed.error);
 
-      const own = (c.d.playlist.clips[id] as AudioClip | undefined)?.pitchEdit;
-      const edit: PitchEdit | null = own ? plain(own as PitchEdit) : pitchEditOf(c.base, id);
-      const fromBar = num(a.from_bar);
+      const own = (context.draft.playlist.clips[id] as AudioClip | undefined)?.pitchEdit;
+      const edit: PitchEdit | null = own ? plain(own as PitchEdit) : pitchEditOf(context.base, id);
+      const fromBar = num(action.from_bar);
       if (!edit) {
         // Not analysed yet: the app listens to the clip, then makes the same change (its own undo step).
-        c.state.after.push({
+        context.state.after.push({
           kind: 'command',
           id: 'pitchEditor.apply',
           args: {
             clip: id,
-            action,
+            action: subAction,
             ...(keyText ? { key: keyText } : {}),
-            ...(a.strength !== undefined ? { strength: a.strength } : {}),
-            ...(a.amount !== undefined ? { amount: a.amount } : {}),
-            ...(a.semitones !== undefined ? { semitones: a.semitones } : {}),
-            ...(a.to_midi !== undefined ? { to_midi: a.to_midi } : {}),
-            ...(a.ms !== undefined ? { ms: a.ms } : {}),
-            ...(Array.isArray(a.notes) ? { notes: a.notes } : {}),
+            ...(action.strength !== undefined ? { strength: action.strength } : {}),
+            ...(action.amount !== undefined ? { amount: action.amount } : {}),
+            ...(action.semitones !== undefined ? { semitones: action.semitones } : {}),
+            ...(action.to_midi !== undefined ? { to_midi: action.to_midi } : {}),
+            ...(action.ms !== undefined ? { ms: action.ms } : {}),
+            ...(Array.isArray(action.notes) ? { notes: action.notes } : {}),
           },
           gesture: false,
         });
@@ -105,10 +105,10 @@ export const pitch: OpModule = {
       }
       let which: Set<number> | 'all' = parsed.notes;
       if (fromBar !== undefined) {
-        const toBar = num(a.to_bar) ?? fromBar;
-        const p: Project = c.base;
-        const barTicks = c.bar();
-        const tempo = tempoMapOf(p, 'song');
+        const toBar = num(action.to_bar) ?? fromBar;
+        const project: Project = context.base;
+        const barTicks = context.bar();
+        const tempo = tempoMapOf(project, 'song');
         const mode = channel?.kind === 'audioClip' ? playbackMode(channel) : playbackMode({});
         const inRange = new Set<number>();
         edit.notes.forEach((n, i) => {
@@ -124,8 +124,8 @@ export const pitch: OpModule = {
         which = new Set([...which].filter((i) => i < edit.notes.length));
       }
       const next = applyPitchAction(edit, parsed.action, which);
-      setPitchEdit(c.d, id, next);
-      c.touch(clip.start, clip.start + clip.length, [id]);
+      setPitchEdit(context.draft, id, next);
+      context.touch(clip.start, clip.start + clip.length, [id]);
       return `${name}: ${parsed.label.replace(/^./, (m) => m.toLowerCase())}`;
     },
   },

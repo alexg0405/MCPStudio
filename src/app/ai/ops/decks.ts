@@ -114,27 +114,27 @@ const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x
 export function decksAfter(_s: Services, answer: AiAnswer, state: AnswerState): void {
   const { warnings, after } = state;
   const actions: DeckAction[] = [];
-  for (const a of answer.actions) {
-    if (!a.op.startsWith('deck_')) continue;
-    if (a.op === 'deck_crossfade') {
-      const to = a.to === 'A' ? -1 : a.to === 'B' ? 1 : a.to === 'center' ? 0 : num(a.to);
+  for (const action of answer.actions) {
+    if (!action.op.startsWith('deck_')) continue;
+    if (action.op === 'deck_crossfade') {
+      const to = action.to === 'A' ? -1 : action.to === 'B' ? 1 : action.to === 'center' ? 0 : num(action.to);
       if (to === undefined) warnings.push('deck crossfade: to must be A, B, center or a number from −1 to 1');
-      else actions.push({ do: 'crossfade', to: clamp(to, -1, 1), beats: clamp(num(a.beats) ?? 0, 0, 256) });
+      else actions.push({ do: 'crossfade', to: clamp(to, -1, 1), beats: clamp(num(action.beats) ?? 0, 0, 256) });
       continue;
     }
-    if (a.op === 'deck_record') {
-      if (a.action === 'start' || a.action === 'stop') actions.push({ do: 'record', on: a.action === 'start' });
+    if (action.op === 'deck_record') {
+      if (action.action === 'start' || action.action === 'stop') actions.push({ do: 'record', on: action.action === 'start' });
       else warnings.push('deck record: action must be start or stop');
       continue;
     }
-    const deck = deckOf(a.deck);
+    const deck = deckOf(action.deck);
     if (!deck) {
-      warnings.push(`${a.op.replace(/_/g, ' ')}: there is no deck “${String(a.deck)}” (A, B, C or D)`);
+      warnings.push(`${action.op.replace(/_/g, ' ')}: there is no deck “${String(action.deck)}” (A, B, C or D)`);
       continue;
     }
-    switch (a.op) {
+    switch (action.op) {
       case 'deck_load': {
-        const name = str(a.song);
+        const name = str(action.song);
         if (!name) {
           warnings.push('deck load: which song?');
           break;
@@ -149,40 +149,40 @@ export function decksAfter(_s: Services, answer: AiAnswer, state: AnswerState): 
         break;
       }
       case 'deck_play':
-        if (a.action === 'play' || a.action === 'pause') actions.push({ do: 'play', deck, on: a.action === 'play' });
+        if (action.action === 'play' || action.action === 'pause') actions.push({ do: 'play', deck, on: action.action === 'play' });
         else warnings.push('deck play: action must be play or pause');
         break;
       case 'deck_sync':
-        actions.push({ do: 'sync', deck, on: bool(a.on) ?? true });
+        actions.push({ do: 'sync', deck, on: bool(action.on) ?? true });
         break;
       case 'deck_set': {
         const set: Extract<DeckAction, { do: 'set' }> = { do: 'set', deck };
         const eq: NonNullable<typeof set.eq> = {};
-        const low = num(a.eq_low_db);
-        const mid = num(a.eq_mid_db);
-        const high = num(a.eq_high_db);
+        const low = num(action.eq_low_db);
+        const mid = num(action.eq_mid_db);
+        const high = num(action.eq_high_db);
         if (low !== undefined) eq.low = clamp(low, -26, 6);
         if (mid !== undefined) eq.mid = clamp(mid, -26, 6);
         if (high !== undefined) eq.high = clamp(high, -26, 6);
         if (Object.keys(eq).length) set.eq = eq;
-        const filter = num(a.filter);
+        const filter = num(action.filter);
         if (filter !== undefined) set.filter = clamp(filter, -1, 1);
-        const volume = num(a.volume);
+        const volume = num(action.volume);
         if (volume !== undefined) set.volume = clamp(volume, 0, 1.25);
-        const trim = num(a.trim_db);
+        const trim = num(action.trim_db);
         if (trim !== undefined) set.trimDb = clamp(trim, -12, 12);
-        const kl = bool(a.key_lock);
+        const kl = bool(action.key_lock);
         if (kl !== undefined) set.keyLock = kl;
-        const pitch = num(a.pitch_percent);
+        const pitch = num(action.pitch_percent);
         if (pitch !== undefined) set.pitch = clamp(pitch / 100, -0.5, 0.5);
-        const cue = bool(a.cue);
+        const cue = bool(action.cue);
         if (cue !== undefined) set.cue = cue;
         if (Object.keys(set).length === 2) warnings.push('deck set: nothing to set (give eq_*_db, filter, volume, trim_db, key_lock, pitch_percent or cue)');
         else actions.push(set);
         break;
       }
       case 'deck_loop': {
-        const b = typeof a.beats === 'string' && lower(a.beats) === 'off' ? null : num(a.beats);
+        const b = typeof action.beats === 'string' && lower(action.beats) === 'off' ? null : num(action.beats);
         if (b === undefined) warnings.push('deck loop: beats must be a number or "off"');
         else actions.push({ do: 'loop', deck, beats: b === null || b <= 0 ? null : clamp(b, 1 / 32, 32) });
         break;
@@ -193,94 +193,94 @@ export function decksAfter(_s: Services, answer: AiAnswer, state: AnswerState): 
 }
 
 /** One plain line for what an action does (for the chat). */
-export function describeDeckAction(a: DeckAction): string {
-  switch (a.do) {
+export function describeDeckAction(action: DeckAction): string {
+  switch (action.do) {
     case 'load':
-      return `Deck ${a.deck}: loading “${a.song.label}”`;
+      return `Deck ${action.deck}: loading “${action.song.label}”`;
     case 'play':
-      return `Deck ${a.deck}: ${a.on ? 'play' : 'pause'}`;
+      return `Deck ${action.deck}: ${action.on ? 'play' : 'pause'}`;
     case 'sync':
-      return `Deck ${a.deck}: ${a.on ? 'sync to the other deck' : 'sync off'}`;
+      return `Deck ${action.deck}: ${action.on ? 'sync to the other deck' : 'sync off'}`;
     case 'set': {
       const parts: string[] = [];
-      if (a.eq) for (const [k, v] of Object.entries(a.eq)) parts.push(`${k} ${v} dB`);
-      if (a.filter !== undefined) parts.push(`filter ${a.filter}`);
-      if (a.volume !== undefined) parts.push(`volume ${a.volume}`);
-      if (a.trimDb !== undefined) parts.push(`trim ${a.trimDb} dB`);
-      if (a.keyLock !== undefined) parts.push(`key lock ${a.keyLock ? 'on' : 'off'}`);
-      if (a.pitch !== undefined) parts.push(`pitch ${Math.round(a.pitch * 1000) / 10}%`);
-      if (a.cue !== undefined) parts.push(`headphone cue ${a.cue ? 'on' : 'off'}`);
-      return `Deck ${a.deck}: ${parts.join(', ')}`;
+      if (action.eq) for (const [k, v] of Object.entries(action.eq)) parts.push(`${k} ${v} dB`);
+      if (action.filter !== undefined) parts.push(`filter ${action.filter}`);
+      if (action.volume !== undefined) parts.push(`volume ${action.volume}`);
+      if (action.trimDb !== undefined) parts.push(`trim ${action.trimDb} dB`);
+      if (action.keyLock !== undefined) parts.push(`key lock ${action.keyLock ? 'on' : 'off'}`);
+      if (action.pitch !== undefined) parts.push(`pitch ${Math.round(action.pitch * 1000) / 10}%`);
+      if (action.cue !== undefined) parts.push(`headphone cue ${action.cue ? 'on' : 'off'}`);
+      return `Deck ${action.deck}: ${parts.join(', ')}`;
     }
     case 'crossfade':
-      return `Crossfader to ${a.to <= -0.99 ? 'A' : a.to >= 0.99 ? 'B' : a.to.toFixed(2)}${a.beats > 0 ? ` over ${a.beats} beats` : ''}`;
+      return `Crossfader to ${action.to <= -0.99 ? 'A' : action.to >= 0.99 ? 'B' : action.to.toFixed(2)}${action.beats > 0 ? ` over ${action.beats} beats` : ''}`;
     case 'loop':
-      return a.beats === null ? `Deck ${a.deck}: loop off` : `Deck ${a.deck}: loop ${a.beats} beats`;
+      return action.beats === null ? `Deck ${action.deck}: loop off` : `Deck ${action.deck}: loop ${action.beats} beats`;
     case 'record':
-      return a.on ? 'Recording the decks' : 'Stopped recording';
+      return action.on ? 'Recording the decks' : 'Stopped recording';
   }
 }
 
 /** Runs deck actions in order; resolves with what went wrong (one line each). */
-export async function runDeckActions(s: Services, actions: readonly DeckAction[]): Promise<string[]> {
+export async function runDeckActions(services: Services, actions: readonly DeckAction[]): Promise<string[]> {
   const problems: string[] = [];
   let api: DecksApi;
   try {
-    api = await s.decks();
+    api = await services.decks();
   } catch (e) {
     return [`The decks couldn’t start: ${e instanceof Error ? e.message : String(e)}`];
   }
-  for (const a of actions) {
+  for (const action of actions) {
     try {
-      switch (a.do) {
+      switch (action.do) {
         case 'load':
-          await api.load(a.deck, a.song.ref, a.song.title, a.song.artist);
+          await api.load(action.deck, action.song.ref, action.song.title, action.song.artist);
           break;
         case 'play':
-          if (a.on) api.play(a.deck);
-          else api.pause(a.deck);
+          if (action.on) api.play(action.deck);
+          else api.pause(action.deck);
           break;
         case 'sync':
-          api.sync(a.deck, a.on);
+          api.sync(action.deck, action.on);
           break;
         case 'set':
-          if (a.keyLock !== undefined) api.setKeyLock(a.deck, a.keyLock);
-          if (a.pitch !== undefined) {
-            const range = Math.abs(a.pitch) <= 0.08 ? 0.08 : Math.abs(a.pitch) <= 0.16 ? 0.16 : 0.5;
-            if (api.store.getState().decks[a.deck].pitchRange < range) api.setPitchRange(a.deck, range);
-            api.setPitch(a.deck, a.pitch);
+          if (action.keyLock !== undefined) api.setKeyLock(action.deck, action.keyLock);
+          if (action.pitch !== undefined) {
+            const range = Math.abs(action.pitch) <= 0.08 ? 0.08 : Math.abs(action.pitch) <= 0.16 ? 0.16 : 0.5;
+            if (api.store.getState().decks[action.deck].pitchRange < range) api.setPitchRange(action.deck, range);
+            api.setPitch(action.deck, action.pitch);
           }
-          if (a.eq?.low !== undefined) api.setEq(a.deck, 'low', a.eq.low);
-          if (a.eq?.mid !== undefined) api.setEq(a.deck, 'mid', a.eq.mid);
-          if (a.eq?.high !== undefined) api.setEq(a.deck, 'high', a.eq.high);
-          if (a.filter !== undefined) api.setFilter(a.deck, a.filter);
-          if (a.volume !== undefined) api.setVolume(a.deck, a.volume);
-          if (a.trimDb !== undefined) api.setTrim(a.deck, a.trimDb);
-          if (a.cue !== undefined) api.setCueListen(a.deck, a.cue);
+          if (action.eq?.low !== undefined) api.setEq(action.deck, 'low', action.eq.low);
+          if (action.eq?.mid !== undefined) api.setEq(action.deck, 'mid', action.eq.mid);
+          if (action.eq?.high !== undefined) api.setEq(action.deck, 'high', action.eq.high);
+          if (action.filter !== undefined) api.setFilter(action.deck, action.filter);
+          if (action.volume !== undefined) api.setVolume(action.deck, action.volume);
+          if (action.trimDb !== undefined) api.setTrim(action.deck, action.trimDb);
+          if (action.cue !== undefined) api.setCueListen(action.deck, action.cue);
           break;
         case 'crossfade':
-          if (a.beats > 0 && api.crossfade) api.crossfade(a.to, a.beats);
-          else api.setCrossfader(a.to);
+          if (action.beats > 0 && api.crossfade) api.crossfade(action.to, action.beats);
+          else api.setCrossfader(action.to);
           break;
         case 'loop':
-          if (a.beats === null) api.exitLoop(a.deck);
-          else api.autoLoop(a.deck, a.beats);
+          if (action.beats === null) api.exitLoop(action.deck);
+          else api.autoLoop(action.deck, action.beats);
           break;
         case 'record':
-          if (a.on) await api.startRecording();
+          if (action.on) await api.startRecording();
           else await api.stopRecording();
           break;
       }
     } catch (e) {
-      problems.push(`${describeDeckAction(a)}: ${e instanceof Error ? e.message : String(e)}`);
+      problems.push(`${describeDeckAction(action)}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   return problems;
 }
 
 /** The decks for the Studio's context: what is on each deck and where the crossfader is. */
-export function deckLines(s: Services): string[] {
-  const api = s.decks.peek();
+export function deckLines(services: Services): string[] {
+  const api = services.decks.peek();
   if (!api) return [];
   const st = api.store.getState();
   const loaded = DECK_IDS.filter((id) => st.decks[id].song);

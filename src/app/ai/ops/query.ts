@@ -40,17 +40,17 @@ export const query: OpModule = {
 };
 
 /** Runs the answer's look-ups (after its edits), for the next turn. */
-export function queryAfter(s: Services, answer: AiAnswer, state: AnswerState): void {
+export function queryAfter(services: Services, answer: AiAnswer, state: AnswerState): void {
   let n = 0;
-  for (const a of answer.actions) {
-    if (a.op !== 'query') continue;
-    const tool = str(a.tool) ?? '';
+  for (const action of answer.actions) {
+    if (action.op !== 'query') continue;
+    const tool = str(action.tool) ?? '';
     if (++n > MAX_QUERIES) {
       state.warnings.push(`query: only ${MAX_QUERIES} look-ups at a time`);
       break;
     }
     let args: Record<string, unknown> = {};
-    const text = str(a.args_json);
+    const text = str(action.args_json);
     if (text) {
       try {
         const parsed: unknown = JSON.parse(text);
@@ -65,6 +65,6 @@ export function queryAfter(s: Services, answer: AiAnswer, state: AnswerState): v
       state.warnings.push(`query: there is no read tool "${tool}"`);
       continue;
     }
-    state.queries.push({ tool, args, result: runReadTool(s, tool, args) });
+    state.queries.push({ tool, args, result: runReadTool(services, tool, args) });
   }
 }

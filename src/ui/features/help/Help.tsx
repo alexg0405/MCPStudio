@@ -71,6 +71,7 @@ function Welcome() {
   const services = useServices();
   const chord = useChord();
   const ref = useRef<HTMLDivElement>(null);
+  const installed = useStore(services.pwa.store, (p) => p.installed);
   const close = () => {
     helpStore.setState({ welcome: false });
     services.prefs.getState().set({ welcomeSeen: true });
@@ -143,6 +144,22 @@ function Welcome() {
             </>
           )}
         </p>
+        {!installed && (
+          <p className={styles.installLine}>
+            Want AGstudio in its own window, with a dock icon?{' '}
+            <button
+              className={styles.inlineLink}
+              onClick={() => {
+                close();
+                services.commands.run('app.install');
+              }}
+              data-hint="Install AGstudio as an app: its own window, starts offline, opens project files (Help → Install AGstudio as an app)"
+            >
+              Install it as an app
+            </button>
+            .
+          </p>
+        )}
         {(
           [
             ['beats', 'Or start from a ready beat:'],

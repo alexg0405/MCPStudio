@@ -1,4 +1,5 @@
 import type { Services } from '@app/services';
+import { devServerMissing } from '@app/local-server';
 import { claudeCodeCommand } from '@app/mcp/setup';
 import { showDialog } from '../../controls/Dialog';
 import { addMenuItems, cmd } from '../../shell/menus';
@@ -55,7 +56,7 @@ export function register(services: Services): void {
       await s.mcp.refresh();
       const token = s.mcp.store.getState().token;
       const toast = s.session.getState().toast;
-      if (!token) return toast('Other apps can only connect while AGstudio runs from its dev server (the agstudio command).', 'error');
+      if (!token) return toast(devServerMissing('Connecting other apps'), 'error');
       try {
         await navigator.clipboard.writeText(claudeCodeCommand(window.location.origin, token));
         toast('Copied. Paste it into a terminal to connect Claude Code.');

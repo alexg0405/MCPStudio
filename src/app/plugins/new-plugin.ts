@@ -3,7 +3,9 @@
  * plugins/<name>, where discovery and hot reload pick it up) and "Edit code", which opens a file in
  * your code editor (Vite's /__open-in-editor). Both need `npm run dev`.
  */
-export type NewPluginKind = 'instrument' | 'effect' | 'note-script';
+import { devServerMissing } from '../local-server';
+
+export type NewPluginKind ='instrument' | 'effect' | 'note-script';
 export type NewPluginStyle = 'graph' | 'worklet' | 'faust';
 
 export interface NewPluginSpec {
@@ -37,14 +39,14 @@ export async function createPlugin(
       body: JSON.stringify({ id, name: spec.name.trim() || id, kind: spec.kind, style: spec.style }),
     });
   } catch {
-    return { error: 'Creating plugins needs the AGstudio dev server: run `npm run dev`.' };
+    return { error: devServerMissing('Creating plugins') };
   }
   const data = (await res.json().catch(() => ({}))) as { folder?: string; main?: string; error?: string };
   if (!res.ok || !data.folder || !data.main)
     return {
       error:
         res.status === 404
-          ? 'Creating plugins needs the AGstudio dev server: run `npm run dev`.'
+          ? devServerMissing('Creating plugins')
           : (data.error ?? `The server couldn’t create it (${res.status}).`),
     };
   return { id, folder: data.folder, main: data.main };

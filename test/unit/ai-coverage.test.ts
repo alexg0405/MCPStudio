@@ -35,6 +35,7 @@ const NOT_FOR_AI: Readonly<Record<string, string>> = {
   'launcher.launchCursor': 'launches the slot under the clip launcher window’s keyboard highlight: Studio launches by track and scene number (launcher_play)',
   'launcher.sceneKey': 'the number keys of the clip launcher window: Studio launches scenes with launcher_play',
   'launcher.stopCursorTrack': 'stops the track under the clip launcher window’s keyboard highlight: Studio stops tracks by number (launcher_play)',
+  'app.install': 'opens the browser’s own install prompt, which only a click of the musician can confirm, and changes the computer, not the project',
   'launcher.clearCursor': 'clears the slot under the clip launcher window’s keyboard highlight: Studio clears slots by track and scene number (launcher_slot)',
   'launcher.fromSelection': 'acts on the clips selected in the playlist window: Studio puts a clip in a slot by its track and bar (launcher_slot)',
 };

@@ -294,6 +294,19 @@
   color: var(--ag-accent-ink);
 }
 
+/* "Install it as an app" in the welcome text: a link that reads as one. */
+.inlineLink {
+  composes: link;
+  color: var(--ag-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.installLine {
+  composes: tips;
+  margin-top: 6px;
+}
+
 /*
  * Lessons: a card bottom left (never blocking clicks elsewhere) and a pulsing outline. It stays up
  * over live canvases, so it is near-opaque glass without a backdrop blur.

@@ -1,5 +1,6 @@
 import type { PerformanceRole } from '@core/beat/local';
 import { BEAT_JSON_SCHEMA, validateBeatSpec, type BeatSpec } from '@core/beat/spec';
+import { AI_SERVER_MISSING, AI_SERVER_MISSING_SHORT } from '../local-server';
 
 /**
  * The AI studio's conversation with its AI. The dev server does the talking (tools/ai): through the
@@ -256,7 +257,7 @@ async function postTurn(
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    throw new AiError("Couldn't reach the AGstudio server. Is `npm run dev` running?", 'network');
+    throw new AiError(AI_SERVER_MISSING, 'network');
   }
   if (!res.ok) throw await errorFrom(res);
   return (await res.json()) as { session: string; beat: unknown };
@@ -324,7 +325,7 @@ export class ClaudeBeatChat {
   }
 }
 
-const UNREACHABLE: AiBackendStatus = { ok: false, reason: "The AGstudio server can't be reached." };
+const UNREACHABLE: AiBackendStatus = { ok: false, reason: AI_SERVER_MISSING_SHORT };
 
 /** Which ways to reach an AI work right now. Never throws. */
 export async function fetchAiStatus(fetchImpl: typeof fetch = (...args) => fetch(...args)): Promise<AiStatus> {

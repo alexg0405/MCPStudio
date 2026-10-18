@@ -192,8 +192,12 @@ export function exportChainFile(chain: ChainPreset): void {
 /** Asks for a .agchain file and adds it to your chains; null when cancelled or unreadable (the toast says why). */
 export async function importChainFile(s: Services): Promise<UserChain | null> {
   const file = await uploadFile('.agchain,application/json');
-  if (!file) return null;
-  const read = readChainFile(await file.text(), s.plugins);
+  return file ? importChainText(s, await file.text()) : null;
+}
+
+/** Adds the chain in a .agchain file's text to your chains (a file opened with the installed app arrives this way). */
+export function importChainText(s: Services, text: string): UserChain | null {
+  const read = readChainFile(text, s.plugins);
   if ('error' in read) {
     s.session.getState().toast(read.error, 'error');
     return null;

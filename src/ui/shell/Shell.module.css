@@ -45,6 +45,25 @@
   z-index: 100000;
 }
 
+/*
+ * The installed app can put its window controls into the toolbar (manifest display_override:
+ * window-controls-overlay, switched on from the window's title-bar menu). The toolbar then keeps clear of them, and
+ * the empty parts of it move the window; everything that does something (every control carries a data-hint) stays clickable.
+ */
+@media (display-mode: window-controls-overlay) {
+  .toolbar {
+    padding-left: env(titlebar-area-x, 0px);
+    padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 8px);
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .toolbar :is(button, input, select, textarea, a, canvas, [role], [tabindex], [data-hint], [draggable='true']) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
 /* A short centered divider on the right of a group. */
 .divider {
   background-image: linear-gradient(var(--ag-border-soft), var(--ag-border-soft));

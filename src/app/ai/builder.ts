@@ -5,6 +5,7 @@
  * goes back to Claude, at most three times. The musician installs the result with one click.
  */
 import { AiError, ClaudeChat, type AiBackend } from '../assistant/claude';
+import { devServerMissing } from '../local-server';
 import { BUILDER_PROMPT, BUILDER_SCHEMA, readBuilderAnswer, type BuiltPluginFiles } from './builder-prompt';
 
 export const MAX_FIX_ROUNDS = 3;
@@ -47,8 +48,10 @@ async function post<T>(fetchImpl: typeof fetch, path: string, body: unknown, sig
     });
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    throw new AiError("Couldn't reach the AGstudio server. Is `npm run dev` running?", 'network');
+    throw new AiError(devServerMissing('The plugin builder'), 'network');
   }
+  // The production server (`agstudio --app`, the installed app) has no plugin builder behind /api/plugins.
+  if (res.status === 404) throw new AiError(devServerMissing('The plugin builder'), 'network');
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) throw new DraftRejected(data.error ?? `The server refused the draft (${res.status}).`);
   return data;

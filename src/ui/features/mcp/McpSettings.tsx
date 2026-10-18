@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
+import { devServerMissing } from '@app/local-server';
 import { clientLabel } from '@app/mcp/common';
 import { claudeCodeCommand, claudeDesktopConfig, maskToken, statusLine, urlClientConfig } from '@app/mcp/setup';
 import { showDialog } from '../../controls/Dialog';
@@ -53,7 +54,7 @@ export function McpSettings() {
   };
 
   const line = !available
-    ? 'AI apps reach AGstudio through its dev server. Start AGstudio with the agstudio command (npm run dev), then open this window again.'
+    ? devServerMissing('Connecting AI apps') + ' Then open this window again.'
     : !enabled
       ? 'Switched off: AI apps are turned away until you switch it on.'
       : statusLine(status, (name) => clientLabel({ name }));

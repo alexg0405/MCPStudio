@@ -1,0 +1,67 @@
+/* A small floating note, bottom left (toasts are bottom right). */
+.prompt {
+  position: fixed;
+  left: 16px;
+  bottom: 40px;
+  z-index: 200000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-glass);
+  -webkit-backdrop-filter: var(--ag-blur);
+  backdrop-filter: var(--ag-blur);
+  box-shadow:
+    inset 3px 0 0 var(--ag-accent),
+    var(--ag-elev-2);
+  color: var(--ag-text);
+  animation: ag-toast-in 180ms var(--ag-ease);
+}
+
+.text {
+  font-weight: 500;
+}
+
+.reload,
+.later {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.reload {
+  background: var(--ag-metal);
+  color: var(--ag-on-accent);
+  font-weight: 600;
+}
+
+.reload:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.reload:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.later {
+  background: transparent;
+  color: var(--ag-text-dim);
+}
+
+.later:hover {
+  color: var(--ag-text);
+  background: var(--ag-hover);
+}
+
+@keyframes ag-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

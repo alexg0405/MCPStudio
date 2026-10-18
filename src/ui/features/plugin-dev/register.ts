@@ -1,6 +1,7 @@
 import type { Services } from '@app/services';
 import { addInstrumentChannel } from '@app/actions/channels';
 import { addEffectToSelectedInsert } from '@app/actions/mixer';
+import { devServerMissing } from '@app/local-server';
 import { createPlugin, openInEditor, pluginSourceFile, type NewPluginKind, type NewPluginStyle } from '@app/plugins/new-plugin';
 import { showFormDialog } from '../../controls/FormDialog';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
@@ -115,7 +116,7 @@ export function register(services: Services): void {
       const file = entry && entry.source === 'user' ? pluginSourceFile(entry.path) : null;
       if (!file) return s.session.getState().toast('Only your own plugins (in plugins/) have code to edit here.', 'error');
       if (!(await openInEditor(file)))
-        s.session.getState().toast(`Couldn’t open an editor: open ${file} yourself (the dev server needs to be running).`, 'error');
+        s.session.getState().toast(`${devServerMissing('Opening your code editor')} Or open ${file} yourself.`, 'error');
     },
   });
   addMenuItems('add', [sep(80), cmd('plugins.new', 81)]);

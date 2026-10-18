@@ -486,8 +486,12 @@ export function exportPresetFile(def: PluginDef, name: string, instance: Pick<Pl
 /** Asks for a .agpreset file and adds it to your presets; null when cancelled. */
 export async function importPresetFile(s: Services): Promise<UserPreset | null> {
   const file = await uploadFile('.agpreset,application/json');
-  if (!file) return null;
-  const read = readPresetFile(await file.text(), s.plugins);
+  return file ? importPresetText(s, await file.text()) : null;
+}
+
+/** Adds the preset in a .agpreset file's text to your presets (a file opened with the installed app arrives this way). */
+export function importPresetText(s: Services, text: string): UserPreset | null {
+  const read = readPresetFile(text, s.plugins);
   if ('error' in read) {
     s.session.getState().toast(read.error, 'error');
     return null;

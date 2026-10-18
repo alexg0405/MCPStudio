@@ -7,6 +7,7 @@
 /** Camelot wheel position: 1–12 plus A (minor) or B (major), e.g. "8A" = A minor. */
 export type Camelot = `${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12}${'A' | 'B'}`;
 
+/** A song's key. */
 export interface TrackKey {
   /** Pitch class of the tonic, 0 = C … 11 = B. */
   root: number;
@@ -16,6 +17,7 @@ export interface TrackKey {
   confidence: number;
 }
 
+/** A song's beat grid: tempo, where the bars start, and (for a drifting tempo) the tracked beats. */
 export interface BeatGrid {
   /** Beats per minute (octave-corrected, to 0.01). */
   bpm: number;
@@ -42,6 +44,7 @@ export interface Section {
   kind: 'intro' | 'build' | 'drop' | 'break' | 'verse' | 'outro' | 'body';
 }
 
+/** Everything the analysis found out about a song (stored per content hash). */
 export interface TrackAnalysis {
   /** The analysis code's version: a newer version re-analyzes. */
   version: number;
@@ -61,4 +64,5 @@ export interface TrackAnalysis {
   mixOut: number;
 }
 
+/** The version of the analysis code: a stored analysis made by an older version is made again. */
 export const ANALYSIS_VERSION = 1;

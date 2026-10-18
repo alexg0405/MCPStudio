@@ -6,6 +6,7 @@
  */
 import { mulberry32 } from '../voice/test-signals';
 
+/** Where drum hits fall in a bar. */
 export interface DrumPattern {
   /** Hit positions in beats within one bar (0 ≤ x < beatsPerBar). */
   kick: readonly number[];
@@ -15,6 +16,7 @@ export interface DrumPattern {
   swing?: number;
 }
 
+/** One part of a test song (a number of bars with some instruments on). */
 export interface SongPart {
   bars: number;
   kick?: boolean;
@@ -28,6 +30,7 @@ export interface SongPart {
   crash?: boolean;
 }
 
+/** A chord of a test song. */
 export interface Chord {
   /** MIDI note of the chord's root (the bass plays it an octave or two down). */
   root: number;
@@ -35,6 +38,7 @@ export interface Chord {
   notes: readonly number[];
 }
 
+/** Everything a test song is made from. */
 export interface TestSongSpec {
   sampleRate: number;
   bpm: number;
@@ -58,6 +62,7 @@ export interface TestSongSpec {
   seed?: number;
 }
 
+/** A rendered test song and the truth about it (where its beats and parts are). */
 export interface TestSong {
   mono: Float32Array;
   sampleRate: number;
@@ -71,7 +76,9 @@ export interface TestSong {
 
 /** Common chords as MIDI roots around C4. */
 export const MAJOR = [0, 4, 7] as const;
+/** The notes of a minor triad above its root (semitones). */
 export const MINOR = [0, 3, 7] as const;
+/** A chord from its root and notes. */
 export const chord = (root: number, notes: readonly number[]): Chord => ({ root, notes });
 
 function oneShot(kind: 'kick' | 'snare' | 'hat' | 'crash', sr: number, seed: number): Float32Array {

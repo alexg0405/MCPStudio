@@ -12,6 +12,7 @@ export interface BlockPins {
   last: number;
 }
 
+/** Where the deck is in its song and what it must keep loaded: the input of `planWindow`. */
 export interface WindowInput {
   /** Blocks in the song. */
   blocks: number;
@@ -29,6 +30,7 @@ export interface WindowInput {
 
 /** Blocks right at the play position that are loaded before anything else (the next ~4 s). */
 export const URGENT_AHEAD = 3;
+/** Blocks right behind the play position (a nudge back, a scratch) that are loaded before anything else. */
 export const URGENT_BEHIND = 1;
 
 /**

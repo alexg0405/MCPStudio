@@ -10,6 +10,7 @@
 import { RealFFT, hannWindow, magnitudeSpectrum, nextPowerOfTwo } from '../voice/fft';
 import { GrowF32, SlidingBuffer } from './sliding';
 
+/** What the beat tracker reads from a song: onset strength overall and in four frequency bands, and the power of each frame. */
 export interface OnsetFeatures {
   /** Frames per second (sampleRate / hop). Frame f is centred on sample f·hop. */
   frameRate: number;
@@ -227,6 +228,7 @@ export class OnsetStream {
   }
 }
 
+/** Computes the onset features of a song held in memory. */
 export function onsetFeatures(
   mono: Float32Array,
   sampleRate: number,

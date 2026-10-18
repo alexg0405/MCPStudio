@@ -6,6 +6,7 @@
 import { REL_ENCODINGS, type RelEncoding } from './relative';
 import { isTargetId } from './targets';
 
+/** One physical control of a device: a note, a CC, a 14-bit CC pair, pitch bend, or an endless dial. */
 export type InputSpec =
   | { type: 'note'; channel: number; note: number }
   | { type: 'cc'; channel: number; cc: number }
@@ -14,8 +15,10 @@ export type InputSpec =
   | { type: 'rel'; channel: number; cc: number; encoding: RelEncoding }
   | { type: 'bend'; channel: number };
 
+/** The kinds of input. */
 export type InputType = InputSpec['type'];
 
+/** A link from one input to one target (in a layer, optionally reversed or scaled). */
 export interface Binding {
   input: InputSpec;
   target: string;
@@ -27,6 +30,7 @@ export interface Binding {
   scale?: number;
 }
 
+/** A button that, while held, switches the other controls to their shifted layer. */
 export interface ShiftKey {
   id: string;
   input: InputSpec;
@@ -42,6 +46,7 @@ export interface OutputSpec {
   off?: number;
 }
 
+/** A light that shows the state of a target. */
 export interface LedBinding {
   /** The target whose state it shows ("A.play" lit while deck A plays). */
   state: string;
@@ -63,8 +68,10 @@ export interface PadPalette {
   playing: number;
 }
 
+/** The velocities pad lights use for an empty, loaded, queued and playing slot. */
 export const DEFAULT_PAD_PALETTE: PadPalette = { empty: 0, loaded: 24, queued: 72, playing: 127 };
 
+/** Everything that connects one device to the decks: its links, shift keys, lights and options. */
 export interface ControllerMapping {
   version: 1;
   /** What the musician sees (a device name or "My controller"). */
@@ -85,6 +92,7 @@ export interface ControllerMapping {
   pads?: PadPalette;
 }
 
+/** A mapping with no links (to learn from scratch). */
 export const emptyMapping = (name: string): ControllerMapping => ({
   version: 1,
   name,
@@ -130,6 +138,7 @@ export function inputKey(i: InputSpec): string {
 const int = (v: unknown, lo: number, hi: number): number | null =>
   typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi ? v : null;
 
+/** Checks an input read from a file or storage; null when it is not valid. */
 export function sanitizeInput(raw: unknown): InputSpec | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -241,10 +250,12 @@ export function sanitizeMapping(raw: unknown, fallbackName = 'Imported controlle
   };
 }
 
+/** A mapping as the text of a map file (to share or keep). */
 export function mappingToJson(m: ControllerMapping): string {
   return JSON.stringify({ format: 'agstudio-controller-mapping', ...m }, null, 2);
 }
 
+/** Reads a map file; null when it is not a controller map, else the mapping and how many entries were not understood. */
 export function mappingFromJson(text: string): { mapping: ControllerMapping; dropped: number } | null {
   try {
     return sanitizeMapping(JSON.parse(text));

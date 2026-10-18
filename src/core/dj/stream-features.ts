@@ -50,6 +50,7 @@ export class AnalysisFront {
   }
 }
 
+/** The loudness (root mean square) of the analysis signal, measured as it streams by. */
 export interface Levels {
   /** Root mean square of the mono analysis signal, and of it at half the rate (the chroma's own). */
   onsetRms: number;

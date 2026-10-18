@@ -17,6 +17,7 @@
 import { fitFixedGrid, fitLine, gridResiduals, mean, median, slip, STRONG_BEAT_SHARE, type GridFit } from './beat-fit';
 import type { OnsetFeatures } from './onset';
 
+/** The tracked beats of a song: tempo, a fixed grid, the tracked beats themselves, and how sure the tracker is. */
 export interface BeatTrack {
   bpm: number;
   /** Seconds per beat of the fixed grid (60 / bpm before rounding). */

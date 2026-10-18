@@ -6,9 +6,13 @@ import type { EnergyShape } from './order';
 import type { Camelot, TrackAnalysis } from './types';
 import type { HarmonicMove } from './wheel';
 
+/** Keep the songs as listed, or let the planner order them. */
 export type MixOrder = 'keep' | 'auto';
+/** How long and how smooth the transitions should be ("auto" lets the planner choose per pair). */
 export type MixTransitionStyle = 'auto' | 'smooth' | 'quick' | 'cut';
+/** How two songs change over: a bass swap, a filter sweep out, an echo out, or a cut. */
 export type TransitionRecipe = 'bass-swap' | 'filter' | 'echo' | 'cut';
+/** Every recipe, for pickers. */
 export const TRANSITION_RECIPES: readonly TransitionRecipe[] = ['bass-swap', 'filter', 'echo', 'cut'];
 /** The overlap lengths (bars) the transition list offers; 0 is a cut. */
 export const TRANSITION_LENGTHS: readonly number[] = [0, 4, 8, 16, 32];
@@ -114,7 +118,9 @@ export interface PlannedTransition {
   why: string;
 }
 
+/** The deck controls a transition automates. */
 export type DeckControl = 'volume' | 'low-cut' | 'high-cut' | 'filter' | 'echo';
+/** What a transition curve is for (it names the curve in the channel list). */
 export type DjPurpose = 'fade-in' | 'fade-out' | 'bass-in' | 'bass-out' | 'filter-out' | 'echo-out';
 
 /**

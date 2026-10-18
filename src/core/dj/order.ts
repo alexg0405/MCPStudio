@@ -7,9 +7,12 @@
 import type { TrackAnalysis } from './types';
 import { HARMONIC_COST, harmonicMove, tempoCost, tempoMatch, trackEnergy } from './wheel';
 
+/** The shape of energy a mix should follow from its first song to its last. */
 export type EnergyShape = 'build' | 'party' | 'chill' | 'peak-time';
+/** Every energy shape, for pickers. */
 export const ENERGY_SHAPES: readonly EnergyShape[] = ['build', 'party', 'chill', 'peak-time'];
 
+/** A song to order: its analysis, and whether it keeps its place. */
 export interface OrderItem {
   analysis: TrackAnalysis;
   /** Keeps its position in the input order. */

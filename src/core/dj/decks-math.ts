@@ -8,6 +8,7 @@
  */
 
 export type CrossfaderCurve = 'smooth' | 'sharp';
+/** Which side of the crossfader a deck sits on, or "thru" for a deck the crossfader does not touch. */
 export type CrossSide = 'A' | 'B' | 'thru';
 
 /**
@@ -61,11 +62,14 @@ export function faderGain(v: number): number {
   return x * x;
 }
 
+/** The linear gain of a level in dB. */
 export const dbToGain = (db: number): number => Math.pow(10, db / 20);
 
 /** Trim knob range in dB. */
 export const TRIM_MIN_DB = -12;
+/** The highest trim (dB). */
 export const TRIM_MAX_DB = 12;
+/** Keeps a trim within its range (a value that is not a number reads as 0 dB). */
 export const clampTrim = (db: number): number => clamp(Number.isFinite(db) ? db : 0, TRIM_MIN_DB, TRIM_MAX_DB);
 
 /**
@@ -95,6 +99,7 @@ export const crossfadeAt = (from: number, to: number, t: number): number => from
 // EQ and filter
 
 export const EQ_MIN_DB = -26;
+/** The highest an EQ band can be turned up (dB). */
 export const EQ_MAX_DB = 6;
 /**
  * The three bands: a low shelf, a mid bell and a high shelf. The shelves' corners sit where a DJ mixer's do (the
@@ -106,6 +111,7 @@ export const EQ_BANDS = {
   mid: { type: 'peaking', hz: 1000, q: 0.6 },
   high: { type: 'highshelf', hz: 7000, q: 0.707 },
 } as const;
+/** Keeps an EQ knob within its range (a value that is not a number reads as 0 dB). */
 export const clampEq = (db: number): number => clamp(Number.isFinite(db) ? db : 0, EQ_MIN_DB, EQ_MAX_DB);
 
 /** Below this the filter knob counts as centered (off). */
@@ -129,8 +135,10 @@ export function filterCutoffs(v: number, sampleRate: number): { lowpassHz: numbe
 // Pitch and tempo
 
 export const PITCH_RANGES = [0.08, 0.16, 0.5] as const;
+/** One of the pitch fader's ranges (a fraction: 0.08 is ±8 %). */
 export type PitchRange = (typeof PITCH_RANGES)[number];
 
+/** Keeps a pitch within ± the fader's range (a value that is not a number reads as 0). */
 export const clampPitch = (pitch: number, range: number): number => clamp(Number.isFinite(pitch) ? pitch : 0, -range, range);
 
 /** The smallest pitch range that holds `pitch`, or null when even ±50 % doesn't. */
@@ -163,6 +171,7 @@ export function octaveMultiple(masterBpm: number, baseBpm: number): 0.5 | 1 | 2 
   return best;
 }
 
+/** How a deck matches a master's tempo: the pitch and the tempo multiple to use. */
 export interface SyncPlan {
   /** Pitch that makes the song's (multiplied) tempo equal the master's. */
   pitch: number;
@@ -245,10 +254,14 @@ export function snapToGrid(sec: number, grid: DeckGrid | null, unitBeats = 1, mo
   return grid.firstDownbeat + k * unit;
 }
 
+/** The loop sizes (beats) the auto loop buttons offer. */
 export const AUTO_LOOP_BEATS = [0.25, 0.5, 1, 2, 4, 8, 16, 32] as const;
+/** The shortest loop (beats): a thirty-second of a beat. */
 export const MIN_LOOP_BEATS = 1 / 32;
+/** The longest loop (beats). */
 export const MAX_LOOP_BEATS = 32;
 
+/** A loop as seconds of the song: where it starts and where it ends. */
 export interface LoopSpan {
   startSec: number;
   endSec: number;

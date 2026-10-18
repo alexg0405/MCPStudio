@@ -47,6 +47,9 @@ export function describeMidi(data: ArrayLike<number>): string {
   }
 }
 
+/** The bytes of a MIDI note-on message. */
 export const noteOnBytes = (channel: number, note: number, velocity: number): number[] => [0x90 | (channel & 15), note & 127, velocity & 127];
+/** The bytes of a MIDI note-off message. */
 export const noteOffBytes = (channel: number, note: number): number[] => [0x80 | (channel & 15), note & 127, 0];
+/** The bytes of a MIDI control change message. */
 export const ccBytes = (channel: number, cc: number, value: number): number[] => [0xb0 | (channel & 15), cc & 127, value & 127];

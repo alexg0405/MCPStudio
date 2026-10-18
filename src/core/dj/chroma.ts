@@ -13,6 +13,7 @@ import { RealFFT, hannWindow, magnitudeSpectrum, nextPowerOfTwo } from '../voice
 import { Decimator } from '../voice/filters';
 import { BlockedF32, BlockedU8, GrowF32, SlidingBuffer } from './sliding';
 
+/** The harmony of a song over time: 12 pitch-class strengths per frame, for the treble and the bass. */
 export interface Chromagram {
   /** Frames per second; frame f is centred on f / frameRate seconds. */
   frameRate: number;
@@ -100,6 +101,7 @@ export class ChromaLevel {
   }
 }
 
+/** Builds a chromagram from a song fed in pieces (a long song is never in memory at once). */
 export class ChromaStream {
   private readonly dec1: Decimator | null;
   private readonly dec4: Decimator;
@@ -277,6 +279,7 @@ export class ChromaStream {
   }
 }
 
+/** The chromagram of a song held in memory. */
 export function chromagram(mono: Float32Array, sampleRate: number, progress?: (fraction: number) => void): Chromagram {
   const level = new ChromaLevel(sampleRate);
   level.push(mono);

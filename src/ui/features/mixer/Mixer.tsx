@@ -16,8 +16,10 @@ import { useGestureEdit } from '../../edit';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
 import { Icon } from '../../controls/Icon';
+import { openWindow } from '../../workspace/registry';
 import { Fader } from './Fader';
 import { FxRack } from './FxRack';
+import { MasterLoudness } from './MasterLoudness';
 import { MeterBank } from './meters';
 import { describeRoutes, insertName, LOOP_HINT, routeLine } from './routing';
 import styles from './Mixer.module.css';
@@ -330,10 +332,16 @@ const Strip = memo(function Strip({ id, index, last, selected, meters }: StripPr
         aria-pressed={!muted}
       />
       <div className={styles.meterFader}>
-        <canvas ref={canvasRef} className={styles.meter} aria-hidden="true" />
+        <canvas
+          ref={canvasRef}
+          className={styles.meter}
+          aria-hidden="true"
+          {...(isMaster ? { onClick: () => openWindow(services, 'meters'), 'data-hint': 'The master level. Click it to open the Meters window (loudness, true peak, stereo, spectrum)' } : {})}
+        />
         <StripFader id={id} label={label} name={name} />
       </div>
       <StripDb id={id} />
+      {isMaster && <MasterLoudness />}
       <span
         className={`${styles.routeLine} ${selected ? styles.routeLineSelected : ''}`}
         data-hint={isMaster ? 'The Master plays everything to your speakers' : `${name} goes to ${routesText}`}

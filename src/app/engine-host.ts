@@ -8,6 +8,7 @@ import type {
   EngineSession,
   EngineState,
   EngineStats,
+  MeterHandle,
   PreviewOptions,
   RecordOptions,
   RecordingHandle,
@@ -17,6 +18,7 @@ import type {
 } from '@engine/api';
 import type { AudioTap } from '@agstudio/sdk';
 import { INACTIVE_TAP } from '@engine/tap';
+import { MeterLease } from './meter-lease';
 
 /** How long a reboot waits for the new engine's sounds before playing anyway (ms). */
 const READY_WAIT_MS = 5000;
@@ -633,6 +635,17 @@ export class EngineHost implements EngineApi {
   outputTap(): AudioTap {
     return this.outView;
   }
+  /** Leases of the open meters (they follow the engine through reboots; see MeterLease). */
+  private readonly leases = new Set<MeterLease>();
+  openMeter(source: InsertId, opts: { full?: boolean } = {}): MeterHandle {
+    const lease = new MeterLease(() => this.inner, source, opts, (l) => this.leases.delete(l));
+    this.leases.add(lease);
+    return lease;
+  }
+  /** Meters that are open right now (a closed Meters window and mixer leave none). */
+  get openMeters(): number {
+    return this.leases.size;
+  }
   isStretching(channelId: ChannelId): boolean {
     return this.inner.isStretching(channelId);
   }
@@ -654,6 +667,7 @@ export class EngineHost implements EngineApi {
     this.warming = false;
     this.idle = false;
     this.detach();
+    for (const l of [...this.leases]) l.close();
     await this.inner.dispose();
   }
 

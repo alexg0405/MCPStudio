@@ -39,6 +39,7 @@ import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { SampleBrowser, type SampleBrowserOptions } from './samples/browser';
 import { TapRegistry } from './taps';
+import { MeterService } from './metering/service';
 import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
 import { createDecksFactory, type DecksAccess } from './dj/decks-factory';
 import { LauncherSession } from './launcher/session';
@@ -76,6 +77,11 @@ export interface Services {
   readonly sampleCache: SampleCache;
   /** Live audio of running plugin instances for their editors (`host.tap()`; `view(owner)`). */
   readonly taps: TapRegistry;
+  /**
+   * The metering suite: live loudness, true peak, stereo and spectrum of the master or an insert (leases that open a
+   * meter only while something looks), the Meters window's settings and the loudness report.
+   */
+  readonly meters: MeterService;
   /** Record mode and the recorders features register (notes, automation, audio). */
   readonly recording: RecordController;
   /** The audio input recording uses: device, mono/stereo, meter, monitoring, latency. */
@@ -273,6 +279,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let assistant: AssistantFacade | null = null;
   let mcp: McpLink | null = null;
   let pwa: Pwa | null = null;
+  let meters: MeterService | null = null;
   const services: Services = {
     platform,
     commands,
@@ -310,6 +317,9 @@ export function createServices(opts: ServiceOptions = {}): Services {
     },
     get pwa() {
       return (pwa ??= new Pwa());
+    },
+    get meters() {
+      return (meters ??= new MeterService(services));
     },
     presets,
     trackAnalyzer,

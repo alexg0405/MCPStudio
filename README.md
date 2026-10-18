@@ -102,6 +102,15 @@ the development server on 5390, with hot reload, and has nothing to do with the 
   their notes, and a report says what didn't come across (File → Find missing samples… fills in samples later).
 - **Visualizer**: a scope in the toolbar (click it for the spectrum) and a Visualizer window (⌥V) with the
   spectrum, left/right waveforms and peaks of what you hear; live gain-reduction and pitch meters in plugin windows.
+- **Meters** (View → Meters, ⌥⇧M, or click the master meter): the master or any insert, measured live the way streaming
+  services and broadcasters do: momentary, short-term and integrated loudness (LUFS, BS.1770-4 / EBU R128), loudness
+  range, 4× true peak with hold, a target line (your style's, your reference song's, or −14 / −16 / −23 LUFS) and a
+  loudness history; stereo correlation, a goniometer, width per band and an out-of-phase bass warning; a 1/6-octave
+  spectrum with peak hold and a spectrogram (with your reference song's tone drawn over it). **Loudness report…**
+  renders the song offline and tells you the LUFS, range, true peak and bar of the loudest moments, and what Spotify,
+  YouTube and Apple Music will do to it. The mixer's master strip shows the short-term loudness and true peak. The meter
+  only exists on the audio thread while a Meters window or the mixer is open. Studio can read it (`get_loudness`) and run
+  the report (`loudness_report`).
 - **Presets**: every plugin window has a preset bar (◀ name ▶): load factory presets, save your own, rename,
   delete, reset, randomize ("vary a little" to "everything"), export and import `.agpreset` files. The browser's
   Presets section lists yours and searches every preset; click one to add it.

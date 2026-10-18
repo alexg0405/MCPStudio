@@ -64,7 +64,7 @@ let cached: TimelineTheme | null = null;
 
 // ---------------------------------------------------------------- colour maths
 
-type RGBA = readonly [number, number, number, number];
+export type RGBA = readonly [number, number, number, number];
 
 const parsed = new Map<string, RGBA>();
 let probe: CanvasRenderingContext2D | null | undefined;

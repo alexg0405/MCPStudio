@@ -47,7 +47,9 @@ export type AfterEdit =
   /** Match the reference once it is set (the answer set it too, and it was still being analyzed). */
   | { kind: 'match_reference'; options: ReferenceMatchOptions }
   /** Listen to the mix and compare its tonal balance with the reference's (its own step, after the edit). */
-  | { kind: 'reference_tone' };
+  | { kind: 'reference_tone' }
+  /** Render the song (or a range, in ticks) offline and measure its loudness (its own step, after the edit). */
+  | { kind: 'loudness_report'; fromTick?: Tick; toTick?: Tick };
 
 /** What `match_reference` was asked to match. */
 export interface ReferenceMatchOptions {

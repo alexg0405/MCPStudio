@@ -253,6 +253,36 @@
   white-space: nowrap;
 }
 
+.masterLoudness {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  margin-top: 2px;
+  padding: 2px 4px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-lcd);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-accent-ink);
+  font-family: var(--ag-font-mono);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.masterLoudness small {
+  color: var(--ag-text-faint);
+  font-size: 8px;
+}
+
+.masterLoudness [data-state='warn'] {
+  color: var(--ag-warn, #e0a030);
+}
+
+.masterLoudness [data-state='hot'] {
+  color: var(--ag-danger, #e5534b);
+}
+
 .addInsert {
   flex: none;
   align-self: flex-start;

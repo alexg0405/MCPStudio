@@ -6,6 +6,7 @@
 import type { AfterEdit } from '../ai/apply';
 import { djMixStep } from '../dj/step';
 import { filterStep } from '../filters/step';
+import { loudnessReportStep } from '../metering/step';
 import { levelMixStep } from '../mix/level-step';
 import { matchReferenceStep, referenceToneStep, setReferenceStep } from '../reference/step';
 import { samplesStep } from '../samples/step';
@@ -38,6 +39,7 @@ STEPS.set('set_reference', setReferenceStep);
 STEPS.set('match_reference', matchReferenceStep);
 STEPS.set('reference_tone', referenceToneStep);
 STEPS.set('samples', samplesStep);
+STEPS.set('loudness_report', loudnessReportStep);
 
 /** Adds (or replaces) the step for a kind of after-edit request; returns a function that removes it. */
 export function registerAfterStep(kind: AfterEdit['kind'], run: AfterStep): () => void {

@@ -1,0 +1,300 @@
+/* Meters window: loudness, stereo and spectrum of the master. */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  container-type: inline-size;
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size);
+}
+
+.root [hidden] {
+  display: none !important;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-3);
+  flex: none;
+  min-height: 36px;
+  padding: 4px var(--ag-space-3);
+  background: var(--ag-surface-2);
+  border-bottom: 1px solid var(--ag-line-faint);
+  flex-wrap: wrap;
+}
+
+.field,
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field select {
+  height: 24px;
+  max-width: 190px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+.label {
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.button {
+  height: 24px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--ag-dur) var(--ag-ease);
+}
+
+.button:hover {
+  background: var(--ag-hover);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--ag-space-3);
+  padding: var(--ag-space-3);
+  /* Never squeezed below its content: the window scrolls instead of the panels overlapping. */
+  flex: 1 0 auto;
+}
+
+/* Narrow windows stack the three panels. */
+@container (max-width: 640px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-2);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Loudness and Stereo share the left column; Spectrum takes the right one over both rows. */
+.panel:nth-child(3) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+@container (max-width: 640px) {
+  .panel:nth-child(3) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+.heading {
+  margin: 0;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.subheading {
+  margin: var(--ag-space-2) 0 4px;
+  font-size: var(--ag-font-size-sm);
+  font-weight: 600;
+}
+
+.readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: var(--ag-space-2);
+}
+
+.readout {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-lcd);
+  box-shadow: var(--ag-inset);
+}
+
+.readoutLabel,
+.readoutUnit {
+  color: var(--ag-text-faint);
+  font-size: 10px;
+}
+
+.readoutValue {
+  color: var(--ag-accent-ink);
+  font-family: var(--ag-font-mono);
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* How a reading stands: on target, near it, off it; a true peak that is fine, close to clipping, or over. */
+.root [data-state='ok'] {
+  color: var(--ag-ok, #4caf72);
+}
+
+.root [data-state='near'],
+.root [data-state='warn'] {
+  color: var(--ag-warn, #e0a030);
+}
+
+.root [data-state='off'],
+.root [data-state='hot'] {
+  color: var(--ag-danger, #e5534b);
+}
+
+.moreReadouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ag-space-3);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.moreReadouts b {
+  font-family: var(--ag-font-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.target {
+  margin: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.canvasBox {
+  position: relative;
+  flex: 1;
+  min-height: 140px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-grid-bg);
+  box-shadow: var(--ag-inset);
+  overflow: hidden;
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.idle {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--ag-space-3);
+  color: var(--ag-text-dim);
+  text-align: center;
+  pointer-events: none;
+}
+
+.stereo {
+  display: flex;
+  gap: var(--ag-space-3);
+  align-items: stretch;
+  min-height: 150px;
+}
+
+.gonioBox {
+  position: relative;
+  flex: none;
+  width: 150px;
+  height: 150px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-grid-bg);
+  box-shadow: var(--ag-inset);
+}
+
+.barsBox {
+  position: relative;
+  flex: 1;
+  min-width: 160px;
+  min-height: 96px;
+}
+
+.warning {
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  color: var(--ag-danger, #e5534b);
+  font-size: var(--ag-font-size-sm);
+}
+
+.note {
+  margin: 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.report {
+  flex: none;
+  padding: var(--ag-space-3);
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
+}
+
+.reportBar {
+  display: flex;
+  align-items: center;
+  gap: var(--ag-space-2);
+  margin-bottom: var(--ag-space-2);
+}
+
+.reportTable {
+  border-collapse: collapse;
+  font-size: var(--ag-font-size-sm);
+}
+
+.reportTable th {
+  padding: 2px 16px 2px 0;
+  color: var(--ag-text-dim);
+  font-weight: 500;
+  text-align: left;
+}
+
+.reportTable td {
+  font-family: var(--ag-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.reportList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--ag-font-size-sm);
+}
+
+.stale {
+  opacity: 0.5;
+}

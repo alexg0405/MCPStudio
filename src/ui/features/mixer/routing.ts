@@ -22,12 +22,12 @@ import type { MenuEntry } from '../../controls/ContextMenu';
 const USUAL_SIDECHAIN_EFFECTS = ['agstudio.ducker', 'agstudio.compressor'];
 
 /** Installed effects with a sidechain input, the usual ones first. */
-function sidechainEffects(s: Services) {
+function sidechainEffects(services: Services) {
   const rank = (id: string) => {
     const i = USUAL_SIDECHAIN_EFFECTS.indexOf(id);
     return i < 0 ? USUAL_SIDECHAIN_EFFECTS.length : i;
   };
-  return s.plugins
+  return services.plugins
     .list('effect')
     .map((e) => e.def)
     .filter((def) => def.kind === 'effect' && def.sidechain)
@@ -37,9 +37,9 @@ function sidechainEffects(s: Services) {
 export const LOOP_HINT = 'Not possible: it would create a feedback loop (audio coming back into itself)';
 
 /** The insert routing edits start from: the one selected in the mixer, else the master. */
-export function routingSource(s: Services): InsertId {
-  const selected = s.session.getState().selectedInsertId;
-  return selected && s.doc.getState().project.mixer.inserts[selected] ? selected : MASTER;
+export function routingSource(services: Services): InsertId {
+  const selected = services.session.getState().selectedInsertId;
+  return selected && services.doc.getState().project.mixer.inserts[selected] ? selected : MASTER;
 }
 
 /** What people call an insert: its name ("Kick", "Reverb bus", "Insert 3"), "Master" for the master. */
@@ -75,10 +75,10 @@ export interface SidechainSlot {
 }
 
 /** The insert's slots whose effects listen to a sidechain. */
-export function sidechainSlots(s: Services, project: Project, insertId: InsertId): SidechainSlot[] {
+export function sidechainSlots(services: Services, project: Project, insertId: InsertId): SidechainSlot[] {
   const out: SidechainSlot[] = [];
   project.mixer.inserts[insertId]?.fx.forEach((slot, index) => {
-    const def = s.plugins.get(slot.plugin.pluginId);
+    const def = services.plugins.get(slot.plugin.pluginId);
     if (def?.kind === 'effect' && def.sidechain)
       out.push({ slotId: slot.id, index, name: def.name, source: slot.sidechain });
   });
@@ -86,13 +86,13 @@ export function sidechainSlots(s: Services, project: Project, insertId: InsertId
 }
 
 /** Strip menu: send, route or sidechain the selected insert to this one; this one's own routing. */
-export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Services): MenuEntry[] {
-  const project = s.doc.getState().project;
+export function stripRoutingItems({ insertId }: { insertId: InsertId }, services: Services): MenuEntry[] {
+  const project = services.doc.getState().project;
   const { inserts } = project.mixer;
   const here = inserts[insertId];
   if (!here) return [];
   const items: MenuEntry[] = [];
-  const source = routingSource(s);
+  const source = routingSource(services);
   const thisName = insertName(project, insertId);
   if (source !== insertId && source !== MASTER && inserts[source]) {
     const from = insertName(project, source);
@@ -111,7 +111,7 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
           : route
             ? `“${from}” sends to “${thisName}” at ${formatGain(route.level)}. Click to stop sending`
             : `Also send “${from}” to “${thisName}” (it keeps its other routes)`,
-        onSelect: () => toggleRoute(s, source, insertId),
+        onSelect: () => toggleRoute(services, source, insertId),
       },
       {
         label: 'Route only to this track',
@@ -121,7 +121,7 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
           : only
             ? `“${from}” already goes only to “${thisName}”`
             : `“${from}” stops going anywhere else and plays only through “${thisName}”`,
-        onSelect: () => routeOnly(s, source, insertId),
+        onSelect: () => routeOnly(services, source, insertId),
       },
     );
     if (route)
@@ -131,7 +131,7 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
         hint: route.pre
           ? `The send ignores “${from}”’s fader and pan. Click to send after them (post)`
           : `Take the send before “${from}”’s fader and pan, so the fader doesn’t change it`,
-        onSelect: () => setRoutePre(s, source, insertId, !route.pre),
+        onSelect: () => setRoutePre(services, source, insertId, !route.pre),
       });
     const scLoops = wouldCycle(inserts, source, insertId);
     items.push({
@@ -141,7 +141,7 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
       hint: scLoops
         ? LOOP_HINT
         : `Let an effect on “${thisName}” react to “${from}” (e.g. duck a bass whenever the kick hits)`,
-      items: () => sidechainTargets(s, project, source, insertId),
+      items: () => sidechainTargets(services, project, source, insertId),
     });
   }
   if (insertId !== MASTER) {
@@ -154,7 +154,7 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
         hint: onlyMaster
           ? `“${thisName}” already goes only to the Master`
           : `Remove “${thisName}”’s other sends and play it straight through the Master`,
-        onSelect: () => routeOnly(s, insertId, MASTER),
+        onSelect: () => routeOnly(services, insertId, MASTER),
       },
       {
         label: 'Remove all sends',
@@ -163,7 +163,7 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
           here.routes.length === 0
             ? `“${thisName}” has no sends (it is silent)`
             : `Remove every route from “${thisName}”, including the one to the Master: it goes silent`,
-        onSelect: () => removeAllRoutes(s, insertId),
+        onSelect: () => removeAllRoutes(services, insertId),
       },
     );
   }
@@ -171,9 +171,9 @@ export function stripRoutingItems({ insertId }: { insertId: InsertId }, s: Servi
 }
 
 /** Which of `target`'s effects `source` should key; or effects to add keyed by it. */
-function sidechainTargets(s: Services, project: Project, source: InsertId, target: InsertId): MenuEntry[] {
+function sidechainTargets(services: Services, project: Project, source: InsertId, target: InsertId): MenuEntry[] {
   const from = insertName(project, source);
-  const slots = sidechainSlots(s, project, target);
+  const slots = sidechainSlots(services, project, target);
   if (slots.length > 0)
     return slots.map((slot) => ({
       label: `${slot.index + 1}. ${slot.name}`,
@@ -182,14 +182,14 @@ function sidechainTargets(s: Services, project: Project, source: InsertId, targe
         slot.source === source
           ? `${slot.name} listens to “${from}”. Click to make it listen to its own input again`
           : `${slot.name} (slot ${slot.index + 1}) reacts to “${from}” instead of its own input`,
-      onSelect: () => setSidechain(s, target, slot.slotId, slot.source === source ? null : source),
+      onSelect: () => setSidechain(services, target, slot.slotId, slot.source === source ? null : source),
     }));
   const out: MenuEntry[] = [{ kind: 'label', label: 'No effect here listens to a sidechain yet' }];
-  for (const def of sidechainEffects(s))
+  for (const def of sidechainEffects(services))
     out.push({
       label: `Add a ${def.name} that reacts to “${from}”`,
       hint: `Adds ${def.name} to “${insertName(project, target)}” with “${from}” as its sidechain${def.description ? `: ${def.description}` : ''}`,
-      onSelect: () => addSidechainEffect(s, target, def.id, source),
+      onSelect: () => addSidechainEffect(services, target, def.id, source),
     });
   return out;
 }
@@ -197,12 +197,12 @@ function sidechainTargets(s: Services, project: Project, source: InsertId, targe
 /** Slot menu: "Sidechain from ▸" for effects that listen to one. */
 export function slotRoutingItems(
   { insertId, slotId }: { insertId: InsertId; slotId: SlotId },
-  s: Services,
+  services: Services,
 ): MenuEntry[] {
-  const project = s.doc.getState().project;
+  const project = services.doc.getState().project;
   const { inserts, order } = project.mixer;
   const slot = inserts[insertId]?.fx.find((x) => x.id === slotId);
-  const def = slot ? s.plugins.get(slot.plugin.pluginId) : undefined;
+  const def = slot ? services.plugins.get(slot.plugin.pluginId) : undefined;
   if (!slot || def?.kind !== 'effect' || !def.sidechain) return [];
   const thisName = insertName(project, insertId);
   const sources: MenuEntry[] = [
@@ -210,7 +210,7 @@ export function slotRoutingItems(
       label: 'None (its own input)',
       checked: slot.sidechain === null,
       hint: `${def.name} reacts to the audio of “${thisName}” itself`,
-      onSelect: () => setSidechain(s, insertId, slotId, null),
+      onSelect: () => setSidechain(services, insertId, slotId, null),
     },
     { kind: 'separator' },
   ];
@@ -223,7 +223,7 @@ export function slotRoutingItems(
       checked: slot.sidechain === id,
       disabled: loops,
       hint: loops ? LOOP_HINT : `${def.name} reacts to “${name}” (e.g. a kick ducking this track)`,
-      onSelect: () => setSidechain(s, insertId, slotId, id),
+      onSelect: () => setSidechain(services, insertId, slotId, id),
     });
   }
   return [

@@ -13,10 +13,10 @@ const format = (pos: unknown) => formatGain(faderToGain(Number(pos)));
 
 /** Toolbar knob for the master insert's volume (same document value as the master fader). */
 export function MasterVolume() {
-  const volume = useDoc((pr) => pr.mixer.inserts[MASTER]?.volume ?? 1);
+  const volume = useDoc((project) => project.mixer.inserts[MASTER]?.volume ?? 1);
   const edit = useGestureEdit<number>(
     'Master volume',
-    (d, pos) => setInsertProp(d, MASTER, 'volume', faderToGain(pos)),
+    (draft, pos) => setInsertProp(draft, MASTER, 'volume', faderToGain(pos)),
     `insvol:${MASTER}`,
   );
   return (

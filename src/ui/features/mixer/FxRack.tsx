@@ -37,11 +37,11 @@ const SlotRow = memo(function SlotRow({
 }) {
   const services = useServices();
   const def = usePluginDef(slot.plugin.pluginId);
-  const mix = useGestureEdit<number>('Effect mix', (d, v) => setFxSlotMix(d, insertId, slot.id, v), `fxmix:${slot.id}`);
+  const mix = useGestureEdit<number>('Effect mix', (draft, value) => setFxSlotMix(draft, insertId, slot.id, value), `fxmix:${slot.id}`);
   const name = def?.name ?? slot.plugin.pluginId;
   const listens = def?.kind === 'effect' && !!def.sidechain;
-  const keyName = useDoc((pr) =>
-    slot.sidechain && pr.mixer.inserts[slot.sidechain] ? insertName(pr, slot.sidechain) : null,
+  const keyName = useDoc((project) =>
+    slot.sidechain && project.mixer.inserts[slot.sidechain] ? insertName(project, slot.sidechain) : null,
   );
 
   const menu = (e: ReactMouseEvent) => {
@@ -150,9 +150,9 @@ const EmptySlot = memo(function EmptySlot({
 export function FxRack({ insertId }: { insertId: InsertId }) {
   // The slot list and the name, not the whole insert: dragging the track's fader changes the insert object on
   // every move, and nothing in the rack depends on its volume.
-  const fx = useDoc((pr) => pr.mixer.inserts[insertId]?.fx);
-  const insertNameNow = useDoc((pr) => pr.mixer.inserts[insertId]?.name);
-  const label = useDoc((pr) => insertLabel(pr, insertId));
+  const fx = useDoc((project) => project.mixer.inserts[insertId]?.fx);
+  const insertNameNow = useDoc((project) => project.mixer.inserts[insertId]?.name);
+  const label = useDoc((project) => insertLabel(project, insertId));
   const latency = useGraphLatency();
   if (!fx || insertNameNow === undefined) return null;
   const insert = { name: insertNameNow };

@@ -11,8 +11,8 @@ import { lazyWindow, whenIdle } from '../../workspace/lazy';
  * A command the AI asked for that opens a file dialog: browsers allow that only right after a
  * click, so the musician confirms here (the click is the gesture the dialog needs).
  */
-async function confirmCommand(s: Services, id: string, args: unknown): Promise<void> {
-  const def = s.commands.get(id);
+async function confirmCommand(services: Services, id: string, args: unknown): Promise<void> {
+  const def = services.commands.get(id);
   if (!def) return;
   const title = def.title.replace(/…$/, '');
   const choice = await showDialog({
@@ -25,7 +25,7 @@ async function confirmCommand(s: Services, id: string, args: unknown): Promise<v
     ],
     cancelId: 'cancel',
   });
-  if (choice === 'run') s.commands.run(id, args);
+  if (choice === 'run') services.commands.run(id, args);
 }
 
 /**

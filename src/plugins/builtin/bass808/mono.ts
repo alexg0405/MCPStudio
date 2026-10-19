@@ -2,7 +2,7 @@
  * The 808's mono voice handling: one sine voice per hit, legato glides inside it, and rescheduling
  * when late events change the performance (see legato.ts for the rules and why).
  */
-import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, type ParamSignal } from '@agstudio/sdk';
+import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, OrderedMix, type ParamSignal } from '@agstudio/sdk';
 import { firstDifference, LegatoTracker, type LegatoAction, type NoteAction, type Phrase } from './legato';
 
 /** Attack ramp of a hit (the sine starts at zero phase, so this only rounds the corner). */
@@ -64,13 +64,15 @@ class BassVoice {
   private readonly envelopeLane: Lane;
   private readonly levelLane: Lane;
   private readonly disconnectTune: () => void;
+  /** Take the voice's sound (and its click) out of the destination's mix. */
+  private readonly detachFromMix: Array<() => void> = [];
   private releaseAt = Infinity;
   private chokeAt = Infinity;
   private chokeLength = 0;
 
   constructor(
     audioContext: BaseAudioContext,
-    destination: AudioNode,
+    destination: OrderedMix,
     tune: ParamSignal,
     attackAction: NoteAction,
     startTime: number,
@@ -89,7 +91,8 @@ class BassVoice {
     this.oscillator = new OscillatorNode(audioContext, { type: 'sine', frequency: frequencyHz, detune: punchCents });
     this.amplitudeGain = new GainNode(audioContext, { gain: 0 });
     this.velocityGain = new GainNode(audioContext, { gain: attackAction.velocity });
-    this.oscillator.connect(this.amplitudeGain).connect(this.velocityGain).connect(destination);
+    this.oscillator.connect(this.amplitudeGain).connect(this.velocityGain);
+    this.detachFromMix.push(destination.attach(this.velocityGain));
     this.disconnectTune = tune.connect(this.oscillator.detune);
     this.frequencyLane = new Lane(this.oscillator.frequency, frequencyHz);
     this.pitchLane = new Lane(this.oscillator.detune, punchCents);
@@ -102,7 +105,8 @@ class BassVoice {
     if (settings.click > 0) {
       this.clickSource = new AudioBufferSourceNode(audioContext, { buffer: clickBuffer });
       this.clickGain = new GainNode(audioContext, { gain: settings.click * attackAction.velocity * CLICK_LEVEL });
-      this.clickSource.connect(this.clickGain).connect(destination);
+      this.clickSource.connect(this.clickGain);
+      this.detachFromMix.push(destination.attach(this.clickGain));
       this.clickSource.start(startTime);
     } else {
       this.clickSource = null;
@@ -151,6 +155,7 @@ class BassVoice {
       }
     }
     this.disconnectTune();
+    for (const detach of this.detachFromMix) detach();
     for (const node of [this.oscillator, this.amplitudeGain, this.velocityGain, this.clickSource, this.clickGain])
       node?.disconnect();
   }
@@ -192,7 +197,12 @@ export class MonoBass {
   /** Voices cut by a hard all-notes-off, fading out. */
   private dying: BassVoice[] = [];
 
-  constructor(private readonly options: MonoBassOptions) {}
+  /** Adds the voices (and their clicks) up in a fixed order, so an offline render repeats bit for bit. */
+  private readonly mix: OrderedMix;
+
+  constructor(private readonly options: MonoBassOptions) {
+    this.mix = new OrderedMix(options.audioContext, options.destination);
+  }
 
   /** Tracked notes and live voices (diagnostics and tests). */
   get stats(): { notes: number; voices: number } {
@@ -222,6 +232,7 @@ export class MonoBass {
 
   dispose(): void {
     for (const v of [...this.voices, ...this.dying]) v.dispose();
+    this.mix.dispose();
     this.voices = [];
     this.dying = [];
     this.tracker.clear();
@@ -302,7 +313,7 @@ export class MonoBass {
     const options = this.options;
     return new BassVoice(
       options.audioContext,
-      options.destination,
+      this.mix,
       options.tune,
       attackAction,
       startTime,

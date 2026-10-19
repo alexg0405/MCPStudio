@@ -16,20 +16,13 @@ import type { PitchEdit, Project } from '@core/model/types';
 import type { TempoMap } from '@core/time/ppq';
 import { noteName } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
-import { alpha, fitCanvas, inkOn, mix, onThemeChange, readTheme, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
 import { clamp, Viewport } from '../../timeline/viewport';
-import {
-  clockText,
-  curveMidi,
-  dragTarget,
-  drawNotes,
-  hitNote,
-  keyForRow,
-  notesInRect,
-  pitchText,
-  rowForKey,
-  type DrawNote,
-} from './model';
+import { curveMidi, dragTarget, drawNotes, hitNote, notesInRect, pitchText, rowForKey, type DrawNote } from './model';
+import { drawContent, drawGrid, drawKeys, drawOverlay, drawRuler, type PitchScene } from './pitch-draw';
+import { KEYS_WIDTH, RULER_HEIGHT, type Drag, type Layer, type PitchTool } from './pitch-types';
+
+export { KEYS_WIDTH, RULER_HEIGHT, type PitchTool };
 
 export interface PitchEditorElements {
   area: HTMLElement;
@@ -42,17 +35,6 @@ export interface PitchEditorElements {
   hscroll: HTMLElement;
   hthumb: HTMLElement;
 }
-
-export const KEYS_WIDTH = 56;
-export const RULER_HEIGHT = 20;
-type Layer = 'grid' | 'content' | 'overlay' | 'keys' | 'ruler';
-export type PitchTool = 'select' | 'split';
-
-type Drag =
-  | { kind: 'move'; y0: number; anchor: number; anchorTarget: number; indices: number[]; delta: number }
-  | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; base: number[] }
-  | { kind: 'pan'; x: number; y: number }
-  | { kind: 'thumb'; x: number; scroll: number };
 
 export class PitchEditorController {
   readonly vp = new Viewport(128, 0.01, 1.5);
@@ -506,13 +488,35 @@ export class PitchEditorController {
     const theme = readTheme();
     const vp = this.vp;
     vp.dpr = window.devicePixelRatio || 1;
-    if (this.dirty.has('grid')) this.drawGrid(fitCanvas(this.els.grid, vp.width, vp.height), theme);
-    if (this.dirty.has('content')) this.drawContent(fitCanvas(this.els.content, vp.width, vp.height), theme);
-    if (this.dirty.has('overlay')) this.drawOverlay(fitCanvas(this.els.overlay, vp.width, vp.height), theme);
-    if (this.dirty.has('keys')) this.drawKeys(fitCanvas(this.els.keys, KEYS_WIDTH, vp.height), theme);
-    if (this.dirty.has('ruler')) this.drawRuler(fitCanvas(this.els.ruler, vp.width, RULER_HEIGHT), theme);
+    const scene = this.scene();
+    if (this.dirty.has('grid')) drawGrid(fitCanvas(this.els.grid, vp.width, vp.height), theme, scene);
+    if (this.dirty.has('content')) drawContent(fitCanvas(this.els.content, vp.width, vp.height), theme, scene);
+    if (this.dirty.has('overlay')) drawOverlay(fitCanvas(this.els.overlay, vp.width, vp.height), theme, scene);
+    if (this.dirty.has('keys')) drawKeys(fitCanvas(this.els.keys, KEYS_WIDTH, vp.height), theme, scene);
+    if (this.dirty.has('ruler')) drawRuler(fitCanvas(this.els.ruler, vp.width, RULER_HEIGHT), theme, scene);
     this.dirty.clear();
     this.updateScrollbar();
+  }
+
+  /** What the layers draw from, as of now (made only when something is dirty, not on idle frames). */
+  private scene(): PitchScene {
+    const st = pitchState.getState();
+    return {
+      vp: this.vp,
+      clip: this.clip,
+      notes: this.notes,
+      sung: this.sung,
+      corrected: this.corrected,
+      selected: new Set(st.selected),
+      keyRoot: st.keyRoot,
+      keyScale: st.keyScale,
+      showScale: this.showScale,
+      tool: this.tool,
+      drag: this.drag,
+      hover: this.hover,
+      pointer: this.pointer,
+      playheadMs: this.lastPlayheadMs,
+    };
   }
 
   private updateScrollbar(): void {
@@ -524,225 +528,6 @@ export class PitchEditorController {
     const left = total > visible ? (this.vp.scrollTick / (total - visible)) * (track - w) : 0;
     this.els.hthumb.style.width = `${w}px`;
     this.els.hthumb.style.transform = `translateX(${clamp(left, 0, track - w)}px)`;
-  }
-
-  private rowY(midi: number): number {
-    return this.vp.rowToY(rowForKey(midi) + 0.5);
-  }
-
-  private drawGrid(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
-    const vp = this.vp;
-    const { width, height } = vp;
-    ctx.fillStyle = theme.bg;
-    ctx.fillRect(0, 0, width, height);
-    const st = pitchState.getState();
-    const mask = this.showScale ? keyMask(st.keyRoot, st.keyScale) : null;
-    const [r0, r1] = vp.visibleRows();
-    for (let row = r0; row <= r1; row++) {
-      const key = keyForRow(row);
-      const y = vp.rowToY(row);
-      const pc = key % 12;
-      if (mask) {
-        ctx.fillStyle = !mask[pc] ? theme.shade : pc === st.keyRoot ? alpha(theme.accent, 0.1) : theme.sheen;
-        ctx.fillRect(0, y, width, vp.rowHeight);
-      } else if ([1, 3, 6, 8, 10].includes(pc)) {
-        ctx.fillStyle = theme.bgAlt;
-        ctx.fillRect(0, y, width, vp.rowHeight);
-      }
-      ctx.fillStyle = pc === 0 ? theme.beat : theme.lineFaint;
-      ctx.fillRect(0, y + vp.rowHeight - 1, width, 1);
-    }
-    // Time lines: a second, with tenths when zoomed in.
-    const [t0, t1] = vp.visibleTicks();
-    const step = vp.pxPerTick * 1000 >= 400 ? 100 : vp.pxPerTick * 1000 >= 60 ? 500 : 1000;
-    ctx.fillStyle = theme.lineFaint;
-    for (let t = Math.floor(t0 / step) * step; t <= t1; t += step) ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
-    ctx.fillStyle = theme.beat;
-    for (let t = Math.floor(t0 / 1000) * 1000; t <= t1; t += 1000) ctx.fillRect(Math.round(vp.tickToX(t)), 0, 1, height);
-    // Outside the analysed stretch.
-    if (this.clip) {
-      const a = vp.tickToX(this.clip.range.from * 1000);
-      const b = vp.tickToX(this.clip.range.to * 1000);
-      ctx.fillStyle = theme.shade;
-      if (a > 0) ctx.fillRect(0, 0, Math.min(a, width), height);
-      if (b < width) ctx.fillRect(Math.max(0, b), 0, width - Math.max(0, b), height);
-    }
-  }
-
-  private line(ctx: CanvasRenderingContext2D, curve: Float32Array, width: number): void {
-    const c = this.clip;
-    if (!c) return;
-    const { t0, hop } = c.analysis;
-    const vp = this.vp;
-    const [ms0, ms1] = vp.visibleTicks();
-    const i0 = Math.max(0, Math.floor((ms0 / 1000 - t0) / hop) - 1);
-    const i1 = Math.min(curve.length - 1, Math.ceil((ms1 / 1000 - t0) / hop) + 1);
-    ctx.lineWidth = width;
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    let pen = false;
-    for (let i = i0; i <= i1; i++) {
-      const m = curve[i] as number;
-      if (Number.isNaN(m)) {
-        pen = false;
-        continue;
-      }
-      const x = vp.tickToX((t0 + i * hop) * 1000);
-      const y = this.rowY(m);
-      if (pen) ctx.lineTo(x, y);
-      else {
-        ctx.moveTo(x, y);
-        pen = true;
-      }
-    }
-    ctx.stroke();
-  }
-
-  private drawContent(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
-    const vp = this.vp;
-    ctx.clearRect(0, 0, vp.width, vp.height);
-    if (!this.clip) return;
-    // The pitch as sung (a thin line), then the blobs, then the corrected line over them.
-    if (this.sung) {
-      ctx.strokeStyle = alpha(theme.textDim, this.corrected ? 0.55 : 0.8);
-      this.line(ctx, this.sung, 1.2);
-    }
-    const sel = new Set(this.selected());
-    const [ms0, ms1] = vp.visibleTicks();
-    const h = Math.max(5, vp.rowHeight * 0.78);
-    for (const n of this.notes) {
-      if (n.toMs < ms0 || n.fromMs > ms1) continue;
-      const x0 = vp.tickToX(n.fromMs);
-      const x1 = Math.max(x0 + 3, vp.tickToX(n.toMs));
-      const yc = this.rowY(n.target);
-      // Where it was sung, as an outline, when it has been moved.
-      if (Math.abs(n.target - n.sung) > 0.02) {
-        const ys = this.rowY(n.sung);
-        ctx.strokeStyle = alpha(theme.textDim, 0.6);
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        roundRectPath(ctx, x0, ys - h / 2, x1 - x0, h, 4);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.strokeStyle = alpha(theme.accent, 0.45);
-        ctx.beginPath();
-        ctx.moveTo((x0 + x1) / 2, ys);
-        ctx.lineTo((x0 + x1) / 2, yc);
-        ctx.stroke();
-      }
-      const fill = n.edited ? theme.accent : mix(theme.note, theme.bg, 0.25);
-      const selected = sel.has(n.index);
-      ctx.beginPath();
-      roundRectPath(ctx, x0, yc - h / 2, x1 - x0, h, 4);
-      ctx.fillStyle = alpha(fill, selected ? 0.95 : 0.78);
-      ctx.fill();
-      ctx.lineWidth = selected ? 2 : 1;
-      ctx.strokeStyle = selected ? theme.noteSelected : alpha(theme.noteBorder, 0.9);
-      ctx.stroke();
-      if (x1 - x0 > 34 && h >= 10) {
-        ctx.fillStyle = inkOn(fill, theme);
-        ctx.font = `600 ${Math.min(11, Math.floor(h - 2))}px ${theme.font}`;
-        ctx.textBaseline = 'middle';
-        ctx.fillText(pitchText(n.target, noteName), x0 + 5, yc + 0.5);
-      }
-    }
-    if (this.corrected) {
-      ctx.strokeStyle = theme.accentLight;
-      this.line(ctx, this.corrected, 1.6);
-    }
-  }
-
-  private drawOverlay(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
-    const vp = this.vp;
-    ctx.clearRect(0, 0, vp.width, vp.height);
-    if (!this.clip) return;
-    const d = this.drag;
-    const info = d?.kind === 'move' ? d.anchor : this.hover;
-    const n = this.notes[info];
-    if (n) {
-      const lines = [
-        `${pitchText(n.target, noteName)}${Math.abs(n.target - n.sung) > 0.02 ? `  (sung ${pitchText(n.sung, noteName)})` : ''}`,
-        `${clockText(n.fromMs / 1000)}–${clockText(n.toMs / 1000)}`,
-      ];
-      if (n.drift > 0.0005) lines.push(`drift flattened ${Math.round(n.drift * 100)} %`);
-      if (Math.abs(n.vibrato - 1) > 0.0005) lines.push(`vibrato ${Math.round(n.vibrato * 100)} %`);
-      ctx.font = `500 11px ${theme.font}`;
-      const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 14;
-      const hh = lines.length * 14 + 8;
-      const x = clamp(vp.tickToX((n.fromMs + n.toMs) / 2) - w / 2, 4, Math.max(4, vp.width - w - 4));
-      const y = clamp(this.rowY(n.target) - vp.rowHeight - hh, 4, Math.max(4, vp.height - hh - 4));
-      ctx.beginPath();
-      roundRectPath(ctx, x, y, w, hh, 5);
-      ctx.fillStyle = theme.glass;
-      ctx.fill();
-      ctx.fillStyle = theme.text;
-      ctx.textBaseline = 'top';
-      lines.forEach((l, i) => ctx.fillText(l, x + 7, y + 5 + i * 14));
-    }
-    if (d?.kind === 'marquee') {
-      ctx.fillStyle = theme.selectTint;
-      ctx.strokeStyle = theme.select;
-      ctx.lineWidth = 1;
-      const x = Math.min(d.x0, d.x1);
-      const y = Math.min(d.y0, d.y1);
-      ctx.fillRect(x, y, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-      ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-    }
-    if (this.tool === 'split' && this.pointer && this.hover >= 0 && !d) {
-      ctx.fillStyle = theme.accent;
-      ctx.fillRect(Math.round(this.pointer.x), 0, 1, vp.height);
-    }
-    if (!Number.isNaN(this.lastPlayheadMs)) {
-      const x = Math.round(vp.tickToX(this.lastPlayheadMs));
-      ctx.fillStyle = theme.playhead;
-      ctx.fillRect(x, 0, 1, vp.height);
-    }
-  }
-
-  private drawKeys(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
-    const vp = this.vp;
-    ctx.clearRect(0, 0, KEYS_WIDTH, vp.height);
-    const st = pitchState.getState();
-    const mask = keyMask(st.keyRoot, st.keyScale);
-    const [r0, r1] = vp.visibleRows();
-    ctx.font = `500 10px ${theme.font}`;
-    ctx.textBaseline = 'middle';
-    for (let row = r0; row <= r1; row++) {
-      const key = keyForRow(row);
-      const pc = key % 12;
-      const black = [1, 3, 6, 8, 10].includes(pc);
-      const y = vp.rowToY(row);
-      ctx.fillStyle = black ? theme.keyBlack : theme.keyWhite;
-      ctx.fillRect(0, y, black ? KEYS_WIDTH * 0.62 : KEYS_WIDTH, vp.rowHeight - 1);
-      if (!black) {
-        ctx.fillStyle = mask[pc] ? alpha(theme.accent, pc === st.keyRoot ? 0.35 : 0.1) : 'transparent';
-        ctx.fillRect(0, y, KEYS_WIDTH, vp.rowHeight - 1);
-      }
-      if (pc === 0 || (vp.rowHeight >= 14 && !black && mask[pc])) {
-        ctx.fillStyle = black ? theme.keyWhite : theme.onLight;
-        ctx.fillText(noteName(key), KEYS_WIDTH - 24, y + vp.rowHeight / 2);
-      }
-    }
-  }
-
-  private drawRuler(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
-    const vp = this.vp;
-    ctx.fillStyle = theme.surface2;
-    ctx.fillRect(0, 0, vp.width, RULER_HEIGHT);
-    const [t0, t1] = vp.visibleTicks();
-    const secondPx = vp.pxPerTick * 1000;
-    const every = secondPx >= 90 ? 1 : secondPx >= 40 ? 2 : secondPx >= 18 ? 5 : secondPx >= 8 ? 10 : 30;
-    ctx.fillStyle = theme.textDim;
-    ctx.font = `500 10px ${theme.font}`;
-    ctx.textBaseline = 'middle';
-    for (let s = Math.floor(t0 / 1000 / every) * every; s * 1000 <= t1; s += every) {
-      const x = Math.round(vp.tickToX(s * 1000));
-      ctx.fillRect(x, RULER_HEIGHT - 5, 1, 5);
-      ctx.fillText(clockText(s), x + 3, RULER_HEIGHT / 2 - 1);
-    }
-    ctx.fillStyle = theme.lineFaint;
-    ctx.fillRect(0, RULER_HEIGHT - 1, vp.width, 1);
   }
 
   /** The note index at a time (ms), or -1. */

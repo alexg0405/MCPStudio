@@ -156,14 +156,17 @@ export function stepTake(
   const hi = Math.max(from, to);
   const have = takeIndexes(spans).filter((t) => coverage(spans, t, lo, hi).length > 0);
   if (have.length === 0) return null;
+  // Going round: the first take when stepping forward, the last when stepping back.
+  const wrapAround = have[dir === 1 ? 0 : have.length - 1] as number;
   const now = takeAt(segments, lo, hi);
-  if (now === null) return have[dir === 1 ? 0 : have.length - 1] as number;
+  if (now === null) return wrapAround;
   const at = have.indexOf(now);
   if (have.length === 1 && at === 0) return null;
   // Not in the list (the playing take has no audio there): the nearest in that direction.
   if (at < 0) {
     const after = have.filter((t) => (dir === 1 ? t > now : t < now));
-    return (dir === 1 ? after[0] : after[after.length - 1]) ?? (have[dir === 1 ? 0 : have.length - 1] as number);
+    const nearest = dir === 1 ? after[0] : after[after.length - 1];
+    return nearest ?? wrapAround;
   }
   return have[(at + dir + have.length) % have.length] as number;
 }
@@ -176,6 +179,7 @@ function halfTicks(tempo: TempoMap, border: Tick, crossfadeSec: number): number 
   return Math.round((b - a) / 2);
 }
 
+/** The part of one take's clip that a segment plays. */
 interface Unit {
   take: number;
   span: CompSpan;
@@ -189,12 +193,12 @@ export interface PlanOptions {
   crossfadeSec?: number;
 }
 
-/**
- * The comp lane's clips for a list of segments. A segment that spans several clips of its take is split
- * at their edges (they are one sound only inside a clip).
- */
-export function planComp(segments: readonly CompSegment[], spans: readonly CompSpan[], opts: PlanOptions): CompClipPlan[] {
-  const x = Math.max(0, Math.min(MAX_CROSSFADE_MS / 1000, opts.crossfadeSec ?? DEFAULT_CROSSFADE_MS / 1000));
+/** What lies between two neighbouring units: nothing touching (FREE), one sound that goes on (SEAM), or a crossfade of this half-width in ticks (0 = a dip). */
+const FREE = -1;
+const SEAM = -2;
+
+/** The parts of the take clips the segments play: a segment that spans several clips of its take is split at their edges. */
+function unitsOf(segments: readonly CompSegment[], spans: readonly CompSpan[]): Unit[] {
   const units: Unit[] = [];
   for (const seg of normalizeSegments(segments)) {
     for (const span of spans) {
@@ -204,8 +208,11 @@ export function planComp(segments: readonly CompSegment[], spans: readonly CompS
       if (to > from) units.push({ take: seg.take, span, from, to });
     }
   }
-  units.sort((a, b) => a.from - b.from);
-  // Overlaps between units of different clips of one take (a damaged group) give way to the earlier one.
+  return units.sort((a, b) => a.from - b.from);
+}
+
+/** Overlaps between units of different clips of one take (a damaged group) give way to the earlier one. */
+function withoutOverlaps(units: readonly Unit[]): Unit[] {
   const clean: Unit[] = [];
   for (const u of units) {
     const last = clean[clean.length - 1];
@@ -214,56 +221,106 @@ export function planComp(segments: readonly CompSegment[], spans: readonly CompS
       clean.push({ ...u, from: last.to });
     } else clean.push(u);
   }
-  const sec = (t: Tick) => opts.tempo.tickToSeconds(t);
-  // Half-width of the crossfade at each border (0 = a dip, FREE = nothing touches, SEAM = one sound goes on).
-  const FREE = -1;
-  const SEAM = -2;
+  return clean;
+}
+
+/**
+ * How each border between neighbouring units is joined: FREE when they do not touch, SEAM when the same take
+ * goes on at the same place in its sample (a clip that was split: nothing to blend), else the crossfade's
+ * half-width in ticks, limited by what each side has (the clip's audio and half of each unit).
+ */
+function joinsOf(units: readonly Unit[], tempo: TempoMap, crossfadeSec: number): number[] {
   const joins: number[] = [];
-  for (let i = 0; i < clean.length - 1; i++) {
-    const a = clean[i] as Unit;
-    const b = clean[i + 1] as Unit;
+  for (let i = 0; i < units.length - 1; i++) {
+    const a = units[i] as Unit;
+    const b = units[i + 1] as Unit;
     if (a.to !== b.from) {
       joins.push(FREE);
       continue;
     }
-    // The same take going on at the same place in its sample (a clip that was split): nothing to blend.
-    if (a.take === b.take && Math.abs(a.span.offsetAt(a.to) - b.span.offsetAt(a.to)) < 1e-4) {
+    if (a.take === b.take && Math.abs(a.span.offsetAt(a.to) - b.span.offsetAt(a.to)) < SEAM_OFFSET_TOLERANCE_SEC) {
       joins.push(SEAM);
       continue;
     }
     const border = a.to;
-    let h = halfTicks(opts.tempo, border, x);
-    h = Math.min(h, end(a.span) - border, border - b.span.start, Math.floor((a.to - a.from) / 2), Math.floor((b.to - b.from) / 2));
+    let h = halfTicks(tempo, border, crossfadeSec);
+    h = Math.min(
+      h,
+      end(a.span) - border,
+      border - b.span.start,
+      Math.floor((a.to - a.from) / 2),
+      Math.floor((b.to - b.from) / 2),
+    );
     joins.push(Math.max(0, h));
   }
-  const edgeFade = (len: Tick, from: Tick) => Math.min(x, (sec(from + len) - sec(from)) / 2);
-  const out: CompClipPlan[] = [];
-  for (let i = 0; i < clean.length; i++) {
-    const u = clean[i] as Unit;
+  return joins;
+}
+
+/** Two clips of one take are one sound when their offsets into the sample agree within this many seconds. */
+const SEAM_OFFSET_TOLERANCE_SEC = 1e-4;
+
+/** A fade, in seconds, is kept to a microsecond. */
+const roundFade = (sec: number) => Math.round(sec * 1e6) / 1e6;
+
+/**
+ * The comp clip for a unit: where it starts and stops (extended by the crossfade half-widths), its sample
+ * offset, gain and fades. `left` and `right` are how its two borders are joined (see `joinsOf`).
+ */
+function clipFor(u: Unit, left: number, right: number, sec: (t: Tick) => number, crossfade: number): CompClipPlan {
+  const start = left > 0 ? u.from - left : u.from;
+  const stop = right > 0 ? u.to + right : u.to;
+  const plan: CompClipPlan = {
+    take: u.take,
+    ref: u.span.ref,
+    start,
+    length: stop - start,
+    offsetSec: Math.max(0, u.span.offsetAt(start)),
+  };
+  if (u.span.gain !== undefined && u.span.gain !== 1) plan.gain = u.span.gain;
+  const edgeFade = Math.min(crossfade, (sec(u.from + (u.to - u.from)) - sec(u.from)) / 2);
+  const fadeIn = fadeInOf(u, left, sec, edgeFade);
+  const fadeOut = fadeOutOf(u, right, sec, edgeFade);
+  if (fadeIn > 0) plan.fadeIn = roundFade(fadeIn);
+  if (fadeOut > 0) plan.fadeOut = roundFade(fadeOut);
+  return plan;
+}
+
+/** The fade-in: the crossfade, a short fade where the comp starts inside a take (or after a gap), or what the take had. */
+function fadeInOf(u: Unit, left: number, sec: (t: Tick) => number, edgeFade: number): number {
+  if (left > 0) return sec(u.from + left) - sec(u.from - left);
+  if (left === 0) return edgeFade;
+  if (left === SEAM) return u.from === u.span.start ? (u.span.fadeIn ?? 0) : 0;
+  if (u.from > u.span.start) return edgeFade;
+  return u.span.fadeIn ?? 0;
+}
+
+/** The fade-out, as `fadeInOf` for the end of the unit. */
+function fadeOutOf(u: Unit, right: number, sec: (t: Tick) => number, edgeFade: number): number {
+  if (right > 0) return sec(u.to + right) - sec(u.to - right);
+  if (right === 0) return edgeFade;
+  if (right === SEAM) return u.to === end(u.span) ? (u.span.fadeOut ?? 0) : 0;
+  if (u.to < end(u.span)) return edgeFade;
+  return u.span.fadeOut ?? 0;
+}
+
+/**
+ * The comp lane's clips for a list of segments. A segment that spans several clips of its take is split
+ * at their edges (they are one sound only inside a clip).
+ */
+export function planComp(
+  segments: readonly CompSegment[],
+  spans: readonly CompSpan[],
+  opts: PlanOptions,
+): CompClipPlan[] {
+  const crossfade = Math.max(0, Math.min(MAX_CROSSFADE_MS / 1000, opts.crossfadeSec ?? DEFAULT_CROSSFADE_MS / 1000));
+  const units = withoutOverlaps(unitsOf(segments, spans));
+  const joins = joinsOf(units, opts.tempo, crossfade);
+  const sec = (t: Tick) => opts.tempo.tickToSeconds(t);
+  return units.map((u, i) => {
     const left = i > 0 ? (joins[i - 1] as number) : FREE;
-    const right = i < clean.length - 1 ? (joins[i] as number) : FREE;
-    const start = left > 0 ? u.from - left : u.from;
-    const stop = right > 0 ? u.to + right : u.to;
-    const plan: CompClipPlan = { take: u.take, ref: u.span.ref, start, length: stop - start, offsetSec: Math.max(0, u.span.offsetAt(start)) };
-    if (u.span.gain !== undefined && u.span.gain !== 1) plan.gain = u.span.gain;
-    // Fade-in: the crossfade, a short fade where the comp starts inside a take (or after a gap), or what the take had.
-    let fadeIn: number;
-    if (left > 0) fadeIn = sec(u.from + left) - sec(u.from - left);
-    else if (left === 0) fadeIn = edgeFade(u.to - u.from, u.from);
-    else if (left === SEAM) fadeIn = u.from === u.span.start ? (u.span.fadeIn ?? 0) : 0;
-    else if (u.from > u.span.start) fadeIn = edgeFade(u.to - u.from, u.from);
-    else fadeIn = u.span.fadeIn ?? 0;
-    let fadeOut: number;
-    if (right > 0) fadeOut = sec(u.to + right) - sec(u.to - right);
-    else if (right === 0) fadeOut = edgeFade(u.to - u.from, u.from);
-    else if (right === SEAM) fadeOut = u.to === end(u.span) ? (u.span.fadeOut ?? 0) : 0;
-    else if (u.to < end(u.span)) fadeOut = edgeFade(u.to - u.from, u.from);
-    else fadeOut = u.span.fadeOut ?? 0;
-    if (fadeIn > 0) plan.fadeIn = Math.round(fadeIn * 1e6) / 1e6;
-    if (fadeOut > 0) plan.fadeOut = Math.round(fadeOut * 1e6) / 1e6;
-    out.push(plan);
-  }
-  return out;
+    const right = i < units.length - 1 ? (joins[i] as number) : FREE;
+    return clipFor(u, left, right, sec, crossfade);
+  });
 }
 
 /**
@@ -277,8 +334,10 @@ export function readComp(clips: ReadonlyArray<{ start: Tick; length: Tick; take:
     const c = sorted[i] as (typeof sorted)[number];
     const prev = sorted[i - 1];
     const next = sorted[i + 1];
-    const from = prev && prev.start + prev.length > c.start ? Math.round((prev.start + prev.length + c.start) / 2) : c.start;
-    const to = next && c.start + c.length > next.start ? Math.round((c.start + c.length + next.start) / 2) : c.start + c.length;
+    const from =
+      prev && prev.start + prev.length > c.start ? Math.round((prev.start + prev.length + c.start) / 2) : c.start;
+    const to =
+      next && c.start + c.length > next.start ? Math.round((c.start + c.length + next.start) / 2) : c.start + c.length;
     if (to > from) segments.push({ take: c.take, from, to });
   }
   return normalizeSegments(segments);
@@ -340,7 +399,8 @@ export function findCompEdits(clips: readonly CompClipLike[], baseline: readonly
     const e: CompEdit = { take: c.take, start: c.start, end: c.start + c.length };
     if (Math.abs((c.gain ?? 1) - (b.gain ?? 1)) > EPS) e.gain = c.gain ?? 1;
     if (c.start === b.start && Math.abs((c.fadeIn ?? 0) - (b.fadeIn ?? 0)) > EPS) e.fadeIn = c.fadeIn ?? 0;
-    if (c.start + c.length === b.start + b.length && Math.abs((c.fadeOut ?? 0) - (b.fadeOut ?? 0)) > EPS) e.fadeOut = c.fadeOut ?? 0;
+    if (c.start + c.length === b.start + b.length && Math.abs((c.fadeOut ?? 0) - (b.fadeOut ?? 0)) > EPS)
+      e.fadeOut = c.fadeOut ?? 0;
     if (e.gain !== undefined || e.fadeIn !== undefined || e.fadeOut !== undefined) out.push(e);
   }
   return out;

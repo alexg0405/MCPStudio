@@ -136,6 +136,12 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
   });
 
   describe('menus and the action search', () => {
+    // A menu left open by an earlier step would turn the next tap on a menu title into a close: start each test clean.
+    beforeEach(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await until(() => !document.querySelector('[role="menu"]'));
+    });
+
     it('a tap opens a menu and a tap on its row runs the command', async () => {
       await fingers.tap(1, centerOf(label('view')));
       await until(() => !!document.querySelector('[role="menu"]'));
@@ -151,9 +157,8 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       await until(() => !!document.querySelector('[role="menu"]'));
       const theme = menuItem('Theme')!;
       await fingers.tap(1, centerOf(theme));
-      await sleep(150);
+      await until(() => !!menuItem('Midnight'));
       const midnight = menuItem('Midnight');
-      expect(midnight).toBeTruthy();
       await fingers.tap(1, centerOf(midnight!));
       await until(() => s.prefs.getState().theme === 'midnight');
       s.prefs.getState().set({ theme: 'marble' });
@@ -173,11 +178,14 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       expect(host.querySelector('button[aria-label^="Search actions"]')).toBeNull();
       s.prefs.getState().set({ touchLayout: 'on' });
       await until(() => !!host.querySelector('button[aria-label^="Search actions"]'));
+      // The touch layout grows the toolbar: let it settle before measuring where to tap.
+      await frames(2);
       const button = host.querySelector<HTMLElement>('button[aria-label^="Search actions"]')!;
       expect(button.getBoundingClientRect().height).toBeGreaterThanOrEqual(40);
       await fingers.tap(1, centerOf(button));
       await until(() => paletteStore.getState().open);
       await until(() => !!document.querySelector('[role="option"]'));
+      await frames(2);
       const rows = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
       expect(rows[0]!.getBoundingClientRect().height).toBeGreaterThanOrEqual(39);
       const metronome = s.prefs.getState().metronome;

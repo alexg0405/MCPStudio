@@ -4,7 +4,7 @@
  * part in context ("bar 32: the hats stop, the 808 slides"). Plain loops only, so it is safe on
  * drafts too.
  */
-import type { ChannelId, Project, Tick } from '../model/types';
+import type { ChannelId, PatternClip, Project, Tick } from '../model/types';
 import { ticksPerBar } from '../time/ppq';
 import { mutedLanes } from './playlist';
 import { patternLength } from './queries';
@@ -32,81 +32,106 @@ function silentChannels(p: Project): Set<ChannelId> {
   return new Set(list.filter((c) => c.muted || (anySolo && !c.solo)).map((c) => c.id));
 }
 
+/** The window of bars being read and what has been found in each. */
+interface Window {
+  /** Index (0-based) of the first bar, and the song ticks [t0, t1) of the whole window. */
+  first: number;
+  t0: Tick;
+  t1: Tick;
+  barTicks: Tick;
+  /** Per bar in the window: notes per channel, audio channels, automation channels. */
+  counts: Map<ChannelId, number>[];
+  audio: Set<ChannelId>[];
+  automation: Set<ChannelId>[];
+}
+
+/** Calls `fn` with the index (in the window) of every bar the span [a, b) touches. */
+function eachBar(w: Window, a: Tick, b: Tick, fn: (i: number) => void): void {
+  const bars = w.counts.length;
+  const i0 = Math.max(0, Math.floor((Math.max(a, w.t0) - w.t0) / w.barTicks));
+  const i1 = Math.min(bars, Math.ceil((Math.min(b, w.t1) - w.t0) / w.barTicks));
+  for (let i = i0; i < i1; i++) fn(i);
+}
+
+/** Counts the notes of a pattern clip that start in the window, repeating the pattern as the clip loops it. */
+function countPatternNotes(p: Project, w: Window, clip: PatternClip, silent: ReadonlySet<ChannelId>): void {
+  const pat = p.patterns[clip.patternId];
+  if (!pat) return;
+  // A copy of the pattern: the memoized length would keep a draft proxy.
+  const len = patternLength({ ...pat }, p.transport.timeSig);
+  if (len <= 0) return;
+  // Song tick of content tick 0 in the first repeat that reaches into the clip.
+  const origin = clip.start - clip.offset;
+  const lo = Math.max(clip.start, w.t0);
+  const hi = Math.min(clip.start + clip.length, w.t1);
+  for (const [key, byId] of Object.entries(pat.notes)) {
+    const channelId = key as ChannelId;
+    if (!byId || silent.has(channelId) || !p.channels[channelId]) continue;
+    for (const n of Object.values(byId)) {
+      if (n.muted || n.tick >= len) continue;
+      // Repeats of this note that start inside [lo, hi).
+      let k = Math.ceil((lo - origin - n.tick) / len);
+      for (let at = origin + n.tick + k * len; at < hi; k++, at += len) {
+        if (at < lo) continue;
+        const counts = w.counts[Math.floor((at - w.t0) / w.barTicks)] as Map<ChannelId, number>;
+        counts.set(channelId, (counts.get(channelId) ?? 0) + 1);
+      }
+    }
+  }
+}
+
 /**
  * Activity per bar for every bar that overlaps from–to (whole bars). Muted clips, lanes, channels and
  * notes don't play, so they don't count.
  */
 export function barActivity(p: Project, from: Tick, to: Tick): BarActivity[] {
-  const ts = p.transport.timeSig;
-  const bar = ticksPerBar(ts);
-  const first = Math.max(0, Math.floor(from / bar));
-  const last = Math.max(first + 1, Math.ceil(to / bar));
-  const t0 = first * bar;
-  const t1 = last * bar;
-  const counts = Array.from({ length: last - first }, () => new Map<ChannelId, number>());
-  const audio = Array.from({ length: last - first }, () => new Set<ChannelId>());
-  const automation = Array.from({ length: last - first }, () => new Set<ChannelId>());
+  const barTicks = ticksPerBar(p.transport.timeSig);
+  const first = Math.max(0, Math.floor(from / barTicks));
+  const last = Math.max(first + 1, Math.ceil(to / barTicks));
+  const bars = last - first;
+  const w: Window = {
+    first,
+    t0: first * barTicks,
+    t1: last * barTicks,
+    barTicks,
+    counts: Array.from({ length: bars }, () => new Map<ChannelId, number>()),
+    audio: Array.from({ length: bars }, () => new Set<ChannelId>()),
+    automation: Array.from({ length: bars }, () => new Set<ChannelId>()),
+  };
   const muted = mutedLanes(p.playlist);
   const silent = silentChannels(p);
-  // The bars a span [a, b) touches, inside the window.
-  const each = (a: Tick, b: Tick, fn: (i: number) => void) => {
-    const i0 = Math.max(0, Math.floor((Math.max(a, t0) - t0) / bar));
-    const i1 = Math.min(last - first, Math.ceil((Math.min(b, t1) - t0) / bar));
-    for (let i = i0; i < i1; i++) fn(i);
-  };
-
   for (const c of Object.values(p.playlist.clips)) {
     const end = c.start + c.length;
-    if (c.muted || muted.has(c.laneId) || end <= t0 || c.start >= t1) continue;
+    if (c.muted || muted.has(c.laneId) || end <= w.t0 || c.start >= w.t1) continue;
     if (c.kind === 'audio') {
-      if (!silent.has(c.channelId) && p.channels[c.channelId]) each(c.start, end, (i) => audio[i]!.add(c.channelId));
-      continue;
-    }
-    if (c.kind === 'automation') {
+      if (!silent.has(c.channelId) && p.channels[c.channelId])
+        eachBar(w, c.start, end, (i) => w.audio[i]!.add(c.channelId));
+    } else if (c.kind === 'automation') {
       const ch = p.channels[c.channelId];
-      if (ch?.kind === 'automation' && !ch.muted) each(c.start, end, (i) => automation[i]!.add(c.channelId));
-      continue;
-    }
-    const pat = p.patterns[c.patternId];
-    if (!pat) continue;
-    // A copy of the pattern: the memoized length would keep a draft proxy.
-    const len = patternLength({ ...pat }, ts);
-    if (len <= 0) continue;
-    // Song tick of content tick 0 in the first repeat that reaches into the clip.
-    const origin = c.start - c.offset;
-    const lo = Math.max(c.start, t0);
-    const hi = Math.min(end, t1);
-    for (const [key, byId] of Object.entries(pat.notes)) {
-      const cid = key as ChannelId;
-      if (!byId || silent.has(cid) || !p.channels[cid]) continue;
-      for (const n of Object.values(byId)) {
-        if (n.muted || n.tick >= len) continue;
-        // Repeats of this note that start inside [lo, hi).
-        let k = Math.ceil((lo - origin - n.tick) / len);
-        for (let at = origin + n.tick + k * len; at < hi; k++, at += len) {
-          if (at < lo) continue;
-          const i = Math.floor((at - t0) / bar);
-          const m = counts[i]!;
-          m.set(cid, (m.get(cid) ?? 0) + 1);
-        }
-      }
+      if (ch?.kind === 'automation' && !ch.muted) eachBar(w, c.start, end, (i) => w.automation[i]!.add(c.channelId));
+    } else {
+      countPatternNotes(p, w, c, silent);
     }
   }
+  return summarize(p, w);
+}
 
+/** The window's findings as one `BarActivity` per bar, channels in channel rack order. */
+function summarize(p: Project, w: Window): BarActivity[] {
   const order = new Map(p.channelOrder.map((id, i) => [id, i]));
   const byOrder = (a: ChannelId, b: ChannelId) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9);
-  return counts.map((m, i) => {
+  return w.counts.map((m, i) => {
     const notes = [...m.entries()]
       .sort(([a], [b]) => byOrder(a, b))
       .map(([channelId, count]) => ({ channelId, count }));
     return {
-      bar: first + i + 1,
-      from: t0 + i * bar,
-      to: t0 + (i + 1) * bar,
+      bar: w.first + i + 1,
+      from: w.t0 + i * w.barTicks,
+      to: w.t0 + (i + 1) * w.barTicks,
       notes,
       total: notes.reduce((s, x) => s + x.count, 0),
-      audio: [...audio[i]!].sort(byOrder),
-      automation: [...automation[i]!].sort(byOrder),
+      audio: [...(w.audio[i] as Set<ChannelId>)].sort(byOrder),
+      automation: [...(w.automation[i] as Set<ChannelId>)].sort(byOrder),
     };
   });
 }

@@ -1,0 +1,39 @@
+style trap: 84c0fecd1e929fa3 clips 72 fx 14 crashes 9 auto 12 fills 6
+style drill: 5736378c67315d89 clips 72 fx 14 crashes 9 auto 12 fills 6
+style boombap: 681167344a65bca9 clips 72 fx 13 crashes 9 auto 12 fills 6
+style lofi: 956f28164047061a clips 72 fx 12 crashes 8 auto 12 fills 6
+style house: 005df5584a6eb250 clips 72 fx 13 crashes 6 auto 12 fills 3
+style edm: b86eda1190009e62 clips 72 fx 13 crashes 6 auto 12 fills 3
+style reggaeton: f1e039d5bfc56932 clips 72 fx 13 crashes 9 auto 12 fills 6
+style afro: bfcb390755354efa clips 72 fx 12 crashes 8 auto 12 fills 6
+style pop: 78b1de30d62e1c2b clips 72 fx 12 crashes 8 auto 12 fills 6
+style bigroom: 46548f888a469703 clips 72 fx 13 crashes 6 auto 12 fills 3
+style proghouse: 24e137b53a2e7e44 clips 72 fx 12 crashes 6 auto 12 fills 3
+style futurebass: f58d596f7e42ab1f clips 72 fx 14 crashes 9 auto 12 fills 6
+style dubstep: 7cfa57adc8a02f5f clips 72 fx 14 crashes 9 auto 12 fills 6
+style melodicdub: eae784446b06d149 clips 72 fx 13 crashes 8 auto 12 fills 6
+style techhouse: 1e11fa2109266254 clips 72 fx 12 crashes 6 auto 12 fills 3
+style trance: f63cacc9617a73c1 clips 72 fx 12 crashes 6 auto 12 fills 3
+style dnb: 75e72296336da6e4 clips 72 fx 13 crashes 6 auto 12 fills 3
+fx light: dd8d80ac03133d58 clips 72 fx 10 crashes 9 auto 1 fills 6
+fx none: 61d88de4de5761e0 clips 72 fx 0 crashes 9 auto 0 fills 6
+ending stop: 84c0fecd1e929fa3 clips 72 fx 14 crashes 9 auto 12 fills 6
+ending fade: 005df5584a6eb250 clips 72 fx 13 crashes 6 auto 12 fills 3
+from bar 5: d8dc3b78cc0b4394 clips 72 fx 14 crashes 9 auto 12 fills 6
+vary more: 3f33a820a01451fe clips 72 fx 14 crashes 9 auto 12 fills 6
+vary less: abfd5abecf206b67 clips 72 fx 14 crashes 9 auto 12 fills 6
+vary none: 4d8eb3c7dab52901 clips 72 fx 14 crashes 7 auto 12 fills 3
+fills tom: a03591c5a1228eb0 clips 72 fx 14 crashes 9 auto 12 fills 6
+fills kick on drops: 66277af7ae871af5 clips 72 fx 14 crashes 9 auto 12 fills 6
+fills none: 36145a8fc262429c clips 72 fx 14 crashes 7 auto 12 fills 0
+without: f7dbebf9f58f62dc clips 72 fx 14 crashes 9 auto 12 fills 8
+without everything: eab6078bfbde3268 clips 72 fx 14 crashes 9 auto 12 fills 6
+transition rise: a809f1f8d8d8ea46 clips 72 fx 14 crashes 9 auto 12 fills 6
+transition lift: a225e7d7bc827293 clips 72 fx 11 crashes 9 auto 8 fills 6
+transition same: 0fa445b65a4b748b clips 72 fx 7 crashes 9 auto 8 fills 6
+transition dip: 9f23cd0593407005 clips 72 fx 9 crashes 9 auto 8 fills 6
+transition fall: 09a7477d3cec6e52 clips 72 fx 11 crashes 9 auto 14 fills 6
+transition none: c14fdd09f9f2285b clips 72 fx 7 crashes 7 auto 8 fills 6
+energies: b8715e3ec6e92d68 clips 72 fx 12 crashes 8 auto 9 fills 6
+single section: 241864f0c9cd856d clips 3 fx 1 crashes 1 auto 1 fills 0
+no sections: a997f9390583c070 clips 0 fx 0 crashes 0 auto 0 fills 0

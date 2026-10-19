@@ -1,0 +1,9 @@
+trap: 1597a49fc370a4c6 1944 {"variants":14,"clips":72,"fx":14,"crashes":9,"automation":5,"replaced":0,"movedCrashes":[{"patternId":"pat_n--jr-RlbF","count":1}]}
+trap again: 96e1c1815565e6ab 1906 {"variants":14,"clips":72,"fx":14,"crashes":9,"automation":5,"replaced":100,"movedCrashes":[]}
+house over trap: 33c89bd4725eff65 1870 {"variants":12,"clips":72,"fx":14,"crashes":7,"automation":5,"replaced":100,"movedCrashes":[]}
+quiet: 035e6092ac64fda9 1508 {"variants":8,"clips":72,"fx":0,"crashes":6,"automation":0,"replaced":100,"movedCrashes":[]}
+lighter replace: 3d7fbc5a348fc856 1184 {"variants":12,"clips":48,"fx":7,"crashes":5,"automation":0,"replaced":64,"movedCrashes":[]}
+kept: 9867b93bd82e5131 750 {"variants":9,"clips":24,"fx":6,"crashes":4,"automation":2,"replaced":0,"movedCrashes":[]}
+style lofi: 3e7293837f0d0318 1908 {"variants":14,"clips":72,"fx":12,"crashes":8,"automation":6,"replaced":0,"movedCrashes":[{"patternId":"pat_n--jr-RlbF","count":1}]}
+style edm: 359e79314636f8d4 1890 {"variants":11,"clips":72,"fx":13,"crashes":6,"automation":6,"replaced":0,"movedCrashes":[{"patternId":"pat_n--jr-RlbF","count":1}]}
+style drill: 4d8ba4f1ec63de8a 1944 {"variants":15,"clips":72,"fx":14,"crashes":9,"automation":5,"replaced":0,"movedCrashes":[{"patternId":"pat_n--jr-RlbF","count":1}]}

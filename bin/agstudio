@@ -1,106 +1,21 @@
-#!/usr/bin/env bash
-# One command to start AGstudio: `agstudio` (linked into ~/.local/bin).
-#   agstudio          the dev server on port 5390 (or $PORT): hot reload, your plugins, MCP, the plugin builder, the AI studio.
-#                     Opens it in the browser, or just opens it when it is already running. Ctrl+C stops the server.
-#   agstudio --app    the production build, served on port 5391 (or $APP_PORT): what the installed app is made of. Builds
-#                     it when it is missing or older than the code, then opens the installed app (Chrome's
-#                     "Install AGstudio…"), or the browser tab when it is not installed yet. The AI studio works from
-#                     it; the plugin builder and MCP need the dev server (plain `agstudio`).
-set -euo pipefail
-
-usage() {
-  cat <<'EOF'
-Usage: agstudio [--app]
-  (none)   start the dev server (port 5390, or $PORT) and open it in the browser
-  --app    serve the production build (port 5391, or $APP_PORT) and open the installed AGstudio app
-           (install it first: open the page, then Help > Install AGstudio as an app)
-EOF
-}
-
-mode=dev
-for arg in "$@"; do
-  case "$arg" in
-    --app | app) mode=app ;;
-    -h | --help) usage; exit 0 ;;
-    *) echo "agstudio: unknown option '$arg'" >&2; usage >&2; exit 2 ;;
-  esac
-done
-
-# The repo this script lives in (following the ~/.local/bin link).
-src="${BASH_SOURCE[0]}"
+#!/bin/sh
+# One command to start AGstudio on macOS and Linux: `agstudio` (linked into ~/.local/bin). It only finds Node and
+# runs scripts/agstudio.mjs, where the real work is (see the top of that file for what `agstudio` and `agstudio --app` do).
+# Windows uses bin/agstudio.cmd, which does the same.
+#
+# The repo this script lives in, following the ~/.local/bin link.
+src="$0"
 while [ -L "$src" ]; do
   dir="$(cd -P "$(dirname "$src")" && pwd)"
   src="$(readlink "$src")"
-  [[ "$src" != /* ]] && src="$dir/$src"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
 done
 repo="$(cd -P "$(dirname "$src")/.." && pwd)"
 
-# Node 22 lives in ~/.local/node (not on PATH by default).
-export PATH="$HOME/.local/node/bin:$PATH"
-
-if [ "$mode" = app ]; then
-  port="${APP_PORT:-5391}"
-else
-  port="${PORT:-5390}"
-fi
-url="http://localhost:$port"
-
-open_browser() {
-  if command -v open >/dev/null 2>&1; then open "$url"; else echo "Open $url in Chrome."; fi
-}
-
-# The installed app (a Chrome app: ~/Applications/Chrome Apps.localized/AGstudio.app on macOS) opens in its own window.
-# Not installed: the browser tab, with the way to install it.
-open_app() {
-  local installed="$HOME/Applications/Chrome Apps.localized/AGstudio.app"
-  if [ -d "$installed" ] && command -v open >/dev/null 2>&1; then
-    echo "Opening the installed AGstudio app."
-    open "$installed"
-  else
-    open_browser
-    echo "To install it as an app: Help > Install AGstudio as an app (or the install icon in Chrome's address bar)."
-    echo "The app belongs to $url: keep using port $port for it."
-  fi
-}
-
-open_target() {
-  if [ "$mode" = app ]; then open_app; else open_browser; fi
-}
-
-# Already running: just show it.
-if curl -s -o /dev/null --max-time 1 "$url"; then
-  echo "AGstudio is already running at $url"
-  open_target
-  exit 0
-fi
-
-cd "$repo"
-if [ ! -d node_modules ]; then
-  echo "First run: installing dependencies…"
-  npm ci
-fi
-
-if [ "$mode" = app ]; then
-  # Build when there is no build yet, or when anything it is made from changed since the last one.
-  if [ ! -f dist/sw.js ] || [ -n "$(find src plugins public templates tools index.html vite.config.ts package.json -type f -newer dist/sw.js -print -quit 2>/dev/null)" ]; then
-    echo "Building the app…"
-    npm exec -- vite build
-  fi
-fi
-
-# Open the browser (or the installed app) once the server answers.
-(
-  for _ in $(seq 1 120); do
-    if curl -s -o /dev/null --max-time 1 "$url"; then open_target; exit 0; fi
-    sleep 0.5
-  done
-  echo "AGstudio didn't start within a minute; see the messages above."
-) &
-
-if [ "$mode" = app ]; then
-  echo "Serving the AGstudio app at $url (Ctrl+C to stop)…"
-  APP_PORT="$port" exec npm run preview
-else
-  echo "Starting AGstudio at $url (Ctrl+C to stop)…"
-  PORT="$port" exec npm run dev
-fi
+# Node 22: in ~/.local/node (where it lives on the owner's Mac, not on the PATH), on the PATH, or where Homebrew
+# and the installer from nodejs.org put it.
+for node in "$HOME/.local/node/bin/node" "$(command -v node 2>/dev/null)" /opt/homebrew/bin/node /usr/local/bin/node; do
+  if [ -n "$node" ] && [ -x "$node" ]; then exec "$node" "$repo/scripts/agstudio.mjs" "$@"; fi
+done
+echo "agstudio: Node.js was not found. Install Node 22 or newer from https://nodejs.org, then open a new terminal." >&2
+exit 1

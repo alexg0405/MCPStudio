@@ -1,7 +1,8 @@
 #!/bin/sh
-# AGstudio's MCP server over stdio, for apps that start MCP servers as programs (Claude Desktop).
+# AGstudio's MCP server over stdio, for apps that start MCP servers as programs (Claude Desktop), on macOS and Linux.
 # Finds Node (not on PATH for apps started from the Dock), then runs agstudio-mcp.mjs next to this
 # file, which relays to AGstudio's MCP endpoint. See "Control AGstudio from AI apps (MCP)" in the README.
+# Windows uses bin/agstudio-mcp.cmd.
 src="$0"
 while [ -L "$src" ]; do
   dir="$(cd -P "$(dirname "$src")" && pwd)"

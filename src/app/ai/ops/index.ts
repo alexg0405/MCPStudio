@@ -13,6 +13,7 @@ import { decks } from './decks';
 import { dj } from './dj';
 import { filters } from './filters';
 import { harmony } from './harmony';
+import { harmonyVoicesOps } from './harmony-voices';
 import { launcher } from './launcher';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
@@ -46,6 +47,7 @@ export const MODULES: readonly OpModule[] = [
   clips,
   recording,
   pitch,
+  harmonyVoicesOps,
   arrange,
   beat,
   mix,

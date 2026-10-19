@@ -5,8 +5,9 @@
 import { tempoMapOf } from '../automation/tempo';
 import { clipSampleId, clipSourceRange, playbackMode } from '../audio/playback';
 import { harmonySignature, type SignatureInput } from '../harmony/voices/signature';
-import type { AudioClip, AudioClipChannel, ChannelId, ClipId, HarmonyVoiceRecord, Project, SampleRef } from '../model/types';
+import type { AudioClip, AudioClipChannel, ChannelId, ClipId, GuideNote, HarmonyVoiceRecord, Note, Project, SampleRef } from '../model/types';
 import { chordsBetween } from './chords';
+import { patternLength } from './queries';
 
 /** One harmony voice: its sound (a channel; split clips share it) and the clips that play it. */
 export interface HarmonyVoice {
@@ -97,4 +98,33 @@ export function staleHarmonyVoices(project: Project): HarmonyVoice[] {
     const now = currentHarmonySignature(project, v.record);
     return now !== null && now !== v.record.renderedFor;
   });
+}
+
+/** The most guide notes a channel gives (a rule keeps this many). */
+const MAX_GUIDE_NOTES = 4096;
+
+/**
+ * The notes a channel plays in the song, as a guide melody for "sing these notes": every pattern clip's notes at the place the
+ * clip plays them (looping as the clip does), even when the channel is muted (a guide is often silent), in song order.
+ */
+export function guideNotesOfChannel(project: Project, channelId: ChannelId): GuideNote[] {
+  const out: GuideNote[] = [];
+  for (const clip of Object.values(project.playlist.clips)) {
+    if (clip.kind !== 'pattern' || clip.muted) continue;
+    const pattern = project.patterns[clip.patternId];
+    const notes = pattern?.notes[channelId];
+    if (!pattern || !notes) continue;
+    const span = patternLength(pattern, project.transport.timeSig);
+    if (span <= 0) continue;
+    for (const note of Object.values(notes) as Note[]) {
+      if (note.muted || note.tick >= span) continue;
+      let local = note.tick - (clip.offset % span);
+      while (local < 0) local += span;
+      for (; local < clip.length; local += span) {
+        out.push({ tick: clip.start + local, length: Math.max(1, Math.min(note.length, span - note.tick, clip.length - local)), pitch: note.key });
+      }
+    }
+  }
+  out.sort((a, b) => a.tick - b.tick || a.pitch - b.pitch);
+  return out.slice(0, MAX_GUIDE_NOTES);
 }

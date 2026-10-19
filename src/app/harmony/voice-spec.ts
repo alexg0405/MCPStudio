@@ -82,10 +82,10 @@ function guideNotesOf(v: unknown): GuideNote[] {
 }
 
 /** One voice from loose input: `{ rule, interval?, level, pan, formant }` (see the AI action `make_harmonies`). */
-function parseVoice(raw: unknown, index: number, count: number): VoiceSpec {
+function parseVoice(raw: unknown, index: number, count: number, readers: SpecReaders): VoiceSpec {
   if (typeof raw !== 'object' || raw === null) throw new HarmonySpecError(`Voice ${index + 1} is not understood.`);
   const v = raw as Record<string, unknown>;
-  const rule = parseRule(v, index);
+  const rule = parseRule(v, index, readers);
   const levelDb = number(v.level) ?? number(v.level_db) ?? defaultLevelDb(count);
   const pan = number(v.pan) ?? defaultPan(index, count);
   const formant = number(v.formant) ?? number(v.formant_cents) ?? 0;
@@ -93,7 +93,7 @@ function parseVoice(raw: unknown, index: number, count: number): VoiceSpec {
 }
 
 /** The rule of a loose voice: a named interval, `diatonic` + interval, `chord_above`/`chord_below`, `fixed` + semitones, or `guide` + notes. */
-function parseRule(v: Record<string, unknown>, index: number): HarmonyRule {
+function parseRule(v: Record<string, unknown>, index: number, readers: SpecReaders): HarmonyRule {
   const name = typeof v.rule === 'string' ? v.rule.toLowerCase().trim().replace(/[\s-]+/g, '_') : '';
   const where = `Voice ${index + 1}`;
   const named = NAMED_INTERVALS.find((i) => i.id === name);
@@ -118,18 +118,29 @@ function parseRule(v: Record<string, unknown>, index: number): HarmonyRule {
       return { kind: 'semitones', semitones: Math.max(-12, Math.min(12, semitones)) };
     }
     case 'guide':
-    case 'midi':
-      return { kind: 'midi', notes: guideNotesOf(v.notes) };
+    case 'midi': {
+      const notes = Array.isArray(v.notes) ? guideNotesOf(v.notes) : typeof v.channel === 'string' ? readers.guide(v.channel) : [];
+      if (notes.length === 0) throw new HarmonySpecError(`${where}: a guide melody needs notes (a list of {tick, length, pitch}) or channel (an instrument channel that plays them).`);
+      return { kind: 'midi', notes };
+    }
     default:
       throw new HarmonySpecError(`${where}: unknown rule "${String(v.rule)}" (a named interval like third_above, diatonic, chord_above, chord_below, fixed, guide).`);
   }
 }
 
+/** What reading a request needs from the project: the notes a channel plays (for a guide melody). */
+export interface SpecReaders {
+  /** The notes of the channel named (id or name); empty when there is no such channel or it plays nothing. */
+  guide(channel: string): GuideNote[];
+}
+
+const NO_READERS: SpecReaders = { guide: () => [] };
+
 /** A request from loose input: `{ voices: [...], humanize?: { timing_ms, drift_cents, vibrato }, seed? }`. */
-export function parseVoiceSpec(raw: { voices?: unknown; humanize?: unknown; seed?: unknown }): HarmonySpec {
+export function parseVoiceSpec(raw: { voices?: unknown; humanize?: unknown; seed?: unknown }, readers: SpecReaders = NO_READERS): HarmonySpec {
   if (!Array.isArray(raw.voices) || raw.voices.length === 0) throw new HarmonySpecError('Say which voices to make (1–4), e.g. a third above and a fifth below.');
   if (raw.voices.length > MAX_HARMONY_VOICES) throw new HarmonySpecError(`At most ${MAX_HARMONY_VOICES} voices at a time.`);
-  const voices = raw.voices.map((v, i, all) => parseVoice(v, i, all.length));
+  const voices = raw.voices.map((v, i, all) => parseVoice(v, i, all.length, readers));
   const h = typeof raw.humanize === 'object' && raw.humanize !== null ? (raw.humanize as Record<string, unknown>) : {};
   const humanize = clampHumanize({
     timingMs: number(h.timing_ms) ?? number(h.timingMs) ?? DEFAULT_HUMANIZE.timingMs,

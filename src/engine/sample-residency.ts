@@ -10,13 +10,12 @@
  * Nothing heavy runs in one go on the main thread: decodes are the browser's (off-thread) or a
  * Worker's, stretches run in the Worker pool, reversing and copying go a slice at a time
  * (audio-buffers.ts). What each clip needs is worked out in residency-needs.ts, which buffers to
- * keep in residency-plan.ts.
+ * keep in residency-plan.ts, and how a buffer is made (decode, reverse, stretch) in residency-works.ts.
  */
 import { tempoMapOf } from '@core/automation/tempo';
 import { playbackMode } from '@core/audio/playback';
 import type { AudioClip, ChannelId, ClipId, Project, SampleRef } from '@core/model/types';
 import type { TempoMap } from '@core/time/ppq';
-import { bufferFromPcm16, copyChannels, reverseBuffer, runStretch, STRETCH_WORKERS } from './audio-buffers';
 import {
   baseKeyOf,
   collectNeeds,
@@ -28,6 +27,7 @@ import {
   type StretchedCopy,
 } from './residency-needs';
 import { planResidency } from './residency-plan';
+import { BufferWorks } from './residency-works';
 import { SampleCache } from './samples';
 
 export type { StretchedCopy } from './residency-needs';
@@ -90,26 +90,13 @@ export class SampleResidency {
   private readonly extraKeys = new Set<string>();
   /** Release functions of the cache pins this residency holds, by key. */
   private readonly pins = new Map<string, () => void>();
-  private readonly inflight = new Map<string, Promise<unknown>>();
-  private readonly failed = new Set<string>();
-  /** Decoded length of each sample (seconds), by source key, for estimating sizes. */
-  private readonly durations = new Map<string, number>();
-  /**
-   * Stretched copies kept on disk (true) or to be computed (false); unknown until the job has
-   * looked. Only a copy being computed needs its sample decoded (to compute it, and to play in time
-   * meanwhile): one read back from disk doesn't, so a stretched song needs half the memory.
-   */
-  private readonly onDisk = new Map<string, boolean>();
-  /** Stretched copies being looked for on disk (see `probe`). */
-  private readonly probing = new Set<string>();
-  private stretchesRunning = 0;
+  /** Decodes, reverses and stretches the buffers the plan asks for (and remembers what is running and what failed). */
+  private readonly works: BufferWorks;
   /** The keys the last plan wants, pinned ones first. */
   private wanted: string[] = [];
   private positionSec = 0;
   /** Realtime: pins only while playing (stopped, nothing holds memory others may need, e.g. an export). */
   private playing = true;
-  /** Estimated bytes of loads started and not finished (prefetches wait while they would overflow). */
-  private inflightBytes = 0;
   private loop: LoopSec | null = null;
   private plannedAtSec = Number.NaN;
   private replanQueued = false;
@@ -117,7 +104,18 @@ export class SampleResidency {
   private lastAheadSec = AHEAD_SEC;
   private disposed = false;
 
-  constructor(private readonly deps: ResidencyDeps) {}
+  constructor(private readonly deps: ResidencyDeps) {
+    this.works = new BufferWorks({
+      cache: deps.cache,
+      ctx: deps.ctx,
+      onReady: (channels) => deps.onReady(channels),
+      onStretching: () => deps.onStretching(),
+      queueReplan: () => this.queueReplan(),
+      itemOf: (key) => this.items.get(key),
+      bytesOf: (key) => this.bytesOf(key),
+      isDisposed: () => this.disposed,
+    });
+  }
 
   private get sampleRate(): number {
     return this.deps.ctx.sampleRate;
@@ -141,7 +139,7 @@ export class SampleResidency {
     this.keepItemsOutsideThePlaylist(project, items);
     this.items.clear();
     for (const [key, item] of items) this.items.set(key, item);
-    this.failed.clear();
+    this.works.clearFailures();
     if (!this.deps.offline && prev && prev.samples !== project.samples) this.forgetDroppedSamples(prev, project);
     this.plannedAtSec = Number.NaN;
     this.queueReplan();
@@ -208,7 +206,7 @@ export class SampleResidency {
   async settled(): Promise<void> {
     if (this.replanQueued) this.replan();
     for (let round = 0; round < MAX_WAIT_ROUNDS; round++) {
-      const running = this.wanted.map((key) => this.inflight.get(key)).filter((job): job is Promise<unknown> => !!job);
+      const running = this.wanted.map((key) => this.works.job(key)).filter((job): job is Promise<unknown> => !!job);
       if (running.length === 0) return;
       await Promise.all(running);
       // Finished loads may let the plan start more (stretches waiting for a slot, prefetches for room).
@@ -307,7 +305,7 @@ export class SampleResidency {
       if (item && !this.extraKeys.has(key)) {
         // A playlist clip's buffer: the plan pins it while it is in the window; just hurry it.
         item.channels.add(channelId);
-        this.start(key, 0);
+        this.works.start(key, 0);
         continue;
       }
       if (item) {
@@ -328,7 +326,7 @@ export class SampleResidency {
 
   /** True while a stretched copy for one of the channel's clips is being made. */
   isStretching(channelId: ChannelId): boolean {
-    for (const key of this.inflight.keys()) {
+    for (const key of this.works.runningKeys()) {
       const item = this.items.get(key);
       if (item?.kind === 'stretch' && item.channels.has(channelId)) return true;
     }
@@ -388,10 +386,10 @@ export class SampleResidency {
     for (const need of this.needs) {
       const stretchKey = need.stretchKey;
       // A clip with its stretched copy needs nothing else; until then it plays the plain sample.
-      if (stretchKey && !this.isCached(stretchKey) && !this.onDisk.has(stretchKey)) this.probe(stretchKey);
+      if (stretchKey && !this.isCached(stretchKey) && this.works.isOnDisk(stretchKey) === undefined) this.works.probe(stretchKey);
       const keys: string[] = [];
       if (stretchKey) keys.push(stretchKey);
-      const copyMustBeComputed = !stretchKey || this.onDisk.get(stretchKey) === false || !this.deps.cache.store;
+      const copyMustBeComputed = !stretchKey || this.works.isOnDisk(stretchKey) === false || !this.deps.cache.store;
       if (!this.isCached(stretchKey) && copyMustBeComputed) {
         keys.push(need.baseKey);
         if (need.baseKey !== need.sourceKey && !this.isCached(need.baseKey)) keys.push(need.sourceKey);
@@ -433,29 +431,10 @@ export class SampleResidency {
     const cache = this.deps.cache;
     const room = cache.budgetBytes * PLAN_SHARE;
     this.wanted.forEach((key, priority) => {
-      if (pinned.has(key)) this.start(key, priority);
-      else if (cache.has(key) || this.inflight.has(key)) return;
-      else if (cache.usedBytes + this.inflightBytes + this.bytesOf(key) <= room) this.start(key, priority);
+      if (pinned.has(key)) this.works.start(key, priority);
+      else if (cache.has(key) || this.works.job(key)) return;
+      else if (cache.usedBytes + this.works.inflightBytes + this.bytesOf(key) <= room) this.works.start(key, priority);
     });
-  }
-
-  /** Looks (cheaply) whether a stretched copy is kept on disk; plans again once known. */
-  private probe(key: string): void {
-    const store = this.deps.cache.store;
-    if (!store) {
-      this.onDisk.set(key, false);
-      return;
-    }
-    if (this.probing.has(key)) return;
-    this.probing.add(key);
-    const has = store.has ? store.has(key) : store.get(key).then((bytes) => !!bytes);
-    void has
-      .catch(() => false)
-      .then((found) => {
-        this.probing.delete(key);
-        if (!this.onDisk.has(key)) this.onDisk.set(key, found);
-        this.queueReplan();
-      });
   }
 
   /** The bytes a buffer takes (or will take, estimated from what is known of its sample). */
@@ -465,7 +444,7 @@ export class SampleResidency {
     const item = this.items.get(key);
     if (!item) return 0;
     const channels = item.ref.channels ?? ASSUMED_CHANNELS;
-    const durationSec = this.durations.get(item.sourceKey) ?? item.ref.durationSec ?? ASSUMED_DURATION_SEC;
+    const durationSec = this.works.durationOf(item.sourceKey) ?? item.ref.durationSec ?? ASSUMED_DURATION_SEC;
     const seconds = item.kind === 'stretch' ? (Math.min(durationSec, item.to) - item.from) * item.scale : durationSec;
     return Math.max(0, seconds) * this.sampleRate * channels * BYTES_PER_SAMPLE;
   }
@@ -474,119 +453,18 @@ export class SampleResidency {
   private async waitFor(keysNow: () => readonly string[]): Promise<void> {
     for (let round = 0; round < MAX_WAIT_ROUNDS; round++) {
       if (this.replanQueued) this.replan(this.lastAheadSec);
-      const missing = keysNow().filter((key) => !this.deps.cache.has(key) && !this.failed.has(key) && this.items.has(key));
+      const missing = keysNow().filter((key) => !this.deps.cache.has(key) && !this.works.hasFailed(key) && this.items.has(key));
       if (missing.length === 0) return;
-      for (const key of missing) this.start(key, 0);
-      const running = missing.map((key) => this.inflight.get(key)).filter((job): job is Promise<unknown> => !!job);
+      for (const key of missing) this.works.start(key, 0);
+      const running = missing.map((key) => this.works.job(key)).filter((job): job is Promise<unknown> => !!job);
       if (running.length > 0) {
         await Promise.all(running);
         continue;
       }
       // Waiting for a stretch slot: one of the running jobs frees it.
-      const anyJob = [...this.inflight.values()];
+      const anyJob = this.works.runningJobs();
       if (anyJob.length === 0) return;
       await Promise.race(anyJob);
     }
-  }
-
-  // ---- Making the buffers ----
-
-  /** Starts making a buffer if it is missing and nothing is making it yet. */
-  private start(key: string, priority: number): void {
-    const cache = this.deps.cache;
-    if (cache.has(key) || this.inflight.has(key) || this.failed.has(key)) return;
-    const item = this.items.get(key);
-    if (!item) return;
-    if (item.kind === 'stretch' && this.stretchesRunning >= STRETCH_WORKERS) return;
-    const job = this.makeBuffer(item, priority);
-    const estimatedBytes = this.bytesOf(key);
-    this.inflightBytes += estimatedBytes;
-    const tracked = job.then(
-      (buffer) => {
-        this.inflightBytes -= estimatedBytes;
-        this.inflight.delete(key);
-        if (!buffer) this.failed.add(key);
-        else if (!this.disposed) this.deps.onReady(item.channels);
-        // A finished buffer can free others (a stretched copy releases its source) or a slot.
-        this.queueReplan();
-      },
-      () => {
-        this.inflightBytes -= estimatedBytes;
-        this.inflight.delete(key);
-        this.failed.add(key);
-        this.queueReplan();
-      },
-    );
-    this.inflight.set(key, tracked);
-  }
-
-  private makeBuffer(item: ResidencyItem, priority: number): Promise<AudioBuffer | null> {
-    switch (item.kind) {
-      case 'source':
-        return this.decodeSource(item);
-      case 'reverse':
-        return this.deps.cache.derive(item.key, () => this.reverseOf(item));
-      case 'stretch':
-        return this.makeStretched(item, priority);
-    }
-  }
-
-  private async decodeSource(item: ResidencyItem): Promise<AudioBuffer | null> {
-    const buffer = await this.deps.cache.load(item.ref, this.deps.ctx);
-    if (buffer) this.durations.set(item.key, buffer.duration);
-    return buffer;
-  }
-
-  /** The sample played backwards, made from the decoded sample (decoding it first if it is not in memory). */
-  private async reverseOf(item: ResidencyItem): Promise<AudioBuffer | null> {
-    const cache = this.deps.cache;
-    const source = cache.get(item.sourceKey) ?? (await cache.load(item.ref, this.deps.ctx));
-    return source ? reverseBuffer(source) : null;
-  }
-
-  /** A time-stretched copy: read back from disk when an earlier session made it, else computed in the Worker pool. */
-  private makeStretched(item: ResidencyItem, priority: number): Promise<AudioBuffer | null> {
-    this.stretchesRunning++;
-    this.deps.onStretching();
-    return this.deps.cache
-      .derive(item.key, () => this.stretchedCopy(item, priority))
-      .finally(() => {
-        this.stretchesRunning--;
-        this.deps.onStretching();
-      });
-  }
-
-  private async stretchedCopy(item: ResidencyItem, priority: number): Promise<AudioBuffer | null> {
-    const cache = this.deps.cache;
-    // Made in an earlier session: read it back (16-bit, exactly what was made then).
-    const store = cache.store;
-    const kept = store ? await store.get(item.key).catch(() => null) : null;
-    this.onDisk.set(item.key, !!kept);
-    // To be computed: the plan now wants the sample too (it plays while the copy is made).
-    if (!kept) this.queueReplan();
-    if (kept) {
-      const fromDisk = await bufferFromPcm16(kept);
-      if (fromDisk) return fromDisk;
-    }
-    const base = await this.loadBase(item);
-    if (!base) return null;
-    const sampleRate = base.sampleRate;
-    const channels = await copyChannels(base, item.from * sampleRate, Math.min(base.length, item.to * sampleRate));
-    if ((channels[0]?.length ?? 0) === 0) return null;
-    const pcm = await runStretch({ channels, scale: item.scale, sampleRate }, priority);
-    const stretched = await bufferFromPcm16(pcm);
-    if (stretched && store) void store.put(item.key, pcm).catch(() => {});
-    return stretched;
-  }
-
-  /** The buffer a stretched copy is made from: the decoded sample, or its reversed copy. */
-  private async loadBase(item: ResidencyItem): Promise<AudioBuffer | null> {
-    const cache = this.deps.cache;
-    if (item.baseKey === item.sourceKey) {
-      const source = cache.get(item.sourceKey) ?? (await cache.load(item.ref, this.deps.ctx));
-      if (source) this.durations.set(item.sourceKey, source.duration);
-      return source;
-    }
-    return cache.get(item.baseKey) ?? cache.derive(item.baseKey, () => this.reverseOf(item));
   }
 }

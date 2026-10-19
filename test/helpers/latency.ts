@@ -50,8 +50,8 @@ export class Probe {
       numberOfOutputs: 1,
       outputChannelCount: [2],
     });
-    const priv = engine as unknown as { limiter: AudioNode | null; masterOut: AudioNode };
-    (priv.limiter ?? priv.masterOut).connect(node);
+    const { limiter, masterOut } = engine.output;
+    (limiter ?? masterOut).connect(node);
     node.connect(ctx.destination);
     const probe = new Probe(ctx, node, sab);
     probe.s[THRESHOLD] = threshold;

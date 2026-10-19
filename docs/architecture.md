@@ -32,6 +32,46 @@ Enforcement: ESLint `no-restricted-imports` per folder (see `eslint.config.js`),
 `app` (DOM), `core` (no DOM lib, keeps core pure), `worklet` (`types: ["audioworklet"]`), `node` (build config), `sw` (the service
 worker, WebWorker lib).
 
+### Where big jobs live (the readability passes)
+
+Files stay under about 500 lines and functions under about 40 (`docs/code-style.md`): a big job is a folder or a small
+family of files with one door. These are the splits to know when looking for something (each file's comment says what it
+does):
+
+- **Composition root** (`src/app`): `services.ts` reads as numbered steps; the prefs, engine and selection wiring is in
+  `service-wiring.ts`, created in the same order as before. Long-lived objects are still made only there.
+- **Schema repair** (`core/schema/repair/`): one module per part of the project, behind `index.ts`. **DJ deck control**
+  (`app/dj/deck-control/`): one module per job (loader, cues, loops, jog, tempo, recorder, streams…), behind the deck
+  controller.
+- **AI** (`app/ai`): `context/` (budget and the channel, mixer, pattern and playlist lines), `read/` (read tools in
+  groups: project, music, sound, arrangement, measurement), `ops/` (one module per kind of action; `ops/automation/`
+  and `ops/session/` are folders), `focus/` (the `<focus>` block), `schema/`. The beat writer (`assistant/apply.ts`) keeps its door and has `beat-writer/`
+  behind it (channel matching, sounds, plan, write).
+- **MCP** (`app/mcp`): `tools.ts` builds the tool list from `edit-tools.ts`, `transport-tools.ts`, `history-tools.ts`,
+  `read-tools.ts` and `audio-tools.ts`; shared pieces are in `common.ts` and `tool-deps.ts`.
+- **Mix** (`app/mix`): `auto-level.ts` is the door; targets, level math, the loudness stage, the listening window, the
+  renderer and the loudness edit are in `mix/leveling/`.
+- **Export** (`app/export`): `audio-export.ts` runs prepare, measure, render and write steps over one run object;
+  `zip-stream.ts` is the stem zip writer, `video/` the video export. The dialogs are in `ui/features/export`: sections
+  (`AudioExportSections`, `VideoSections`, `ExportFooter`), the runs in hooks (`use-audio-export.ts`,
+  `use-video-export.ts`), and `register.ts` split into `export-now.ts` (the export-now commands) and `export-args.ts`
+  (reading their arguments).
+- **Pitch editor** (`ui/features/pitch-editor`): `controller.ts` handles pointers and state, `pitch-draw.ts` paints one
+  layer per function (grid, notes, pitch lines, overlay, keys, ruler), `pitch-types.ts` has the shared types,
+  `pitch-commands.ts` the commands and `pitch-menus.ts` the note menus.
+- **Windows** (`ui/features/*`): the channel rack (`ChannelRow`, `StepGrid`, `InsertBox`, `AutomationRow`,
+  `RackHeader`, `RackRows`, `StepLight`, with `step-paint.ts`, `step-graph-draw.ts`, `rack-drop.ts`), the launcher
+  (`LauncherCells`, `slot-drop.ts`, `view-controller.ts`), the sample browser (search, filter and selection bars, the
+  list, the preview footer, `useSampleNavigation.ts`), the Studio chat (`Header`, `Conversation`, `Composer`,
+  `PerformanceStrip`), the visualizer (`controller.ts` has one method per panel, `draw.ts` paints), and the presets
+  bar. The playlist and piano roll controllers are folders (`playlist/control`, `piano-roll/control`), one module per
+  tool or layer.
+- **Shell** (`ui/shell`): `MenuBar.tsx` and `MenuDropdown.tsx` (submenus, dynamic entries, command rows);
+  `HoverTip.tsx` owns the element and `hover-tip.ts` the delays and gaps.
+- **Actions** (`app/actions`): the pitch renderer is `PitchRenderer` in `pitch-render.ts` (with `pitch-clip.ts` for the clip
+  lookup and error type; `pitch.ts` keeps the door); the arranger's `transitionInDraft` is `app/arrange/transition.ts`.
+- **Engine** (`src/engine`): `engine.ts` is the facade; see the list under [Graph](#graph) for what each file does.
+
 ## Data model (`src/core/model`)
 
 - **Ticks**: integers at PPQ 960 (step = 240, beat = 960, bar = 3840 in 4/4). Seconds come only from a `TempoMap`
@@ -93,6 +133,12 @@ effective mute/solo, swing offsets. Engine and UI share these; neither re-implem
 
 ### Pure scheduling core (`engine/sched/core.ts`)
 
+The transport around it (`sched/transport.ts`) is split by job: `plan-state.ts` holds what has been planned (the cursor,
+the segments, the launcher axis position, the stop position), `positions.ts` answers where the transport is from that
+state (tick, tempo and launcher position at a time, with no side effects), and `replan.ts` decides what a live edit does
+to notes that are already sounding. `transport-trace.test.ts` pins what it sends and answers on 60 seeded random
+sessions.
+
 ```ts
 interface Timeline { spt: number; loop: { start: number; end: number } | null; endTick: number } // spt = seconds per tick
 interface Cursor   { tick: number; time: number; iter: number }   // iter++ on each loop wrap
@@ -143,7 +189,11 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
   graph), `channel-strip-sync.ts` and `scheduling-watch.ts` (its steps), `transport-model.ts` (what the transport plays), `launcher-link.ts` (the clip launcher on the transport),
   `scheduler-clock.ts` (the worker timer and the keep-up statistics), `note-preview.ts` and `sample-preview.ts` (live
   notes and the browser's audition), `live-capture.ts` (recording and live inputs), `live-meters.ts`, `test-clicks.ts`,
-  `tempo-info.ts` (the tempo plugins see) and `port-set.ts`.
+  `tempo-info.ts` (the tempo plugins see) and `port-set.ts`. Also `transport-driver.ts` (play, stop, seek, count-in, the
+  scheduler clock's tick, the playhead and heard-time reads, the residency's position, the next beat),
+  `offline-hooks.ts` (what an offline render calls instead of the clock: start, pump, end, prepare) and
+  `output-stage.ts` (the master, preview and monitor buses, the safety limiter, the panic duck, the fade-out when an
+  engine is replaced, the output visualizer tap; reachable as `Engine.output`).
 - `engine/insert-strip.ts` has `InsertStrip` (the master uses it too), `engine/fx-slot-strip.ts` `FxSlotStrip` (with `fx-instance.ts`
   and, for the peak meters, `insert-meters.ts`); `engine/mixer-graph.ts` owns them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
   insert exists and the master otherwise (not created yet, deleted, unknown id), so channels never reconnect when
@@ -2448,6 +2498,10 @@ OfflineAudioContext (2 GB). What it does instead:
   playlist doesn't re-decode to draw. Samples removed from the project are freed (`forgetSample`; undo decodes again).
 
 ### What is in memory (`engine/sample-residency.ts`, `engine/residency-plan.ts`)
+
+`sample-residency.ts` decides what to keep (needs from `residency-needs.ts`, the plan from `residency-plan.ts`, pins,
+the launcher's passes); `residency-works.ts` (`BufferWorks`) does the work of making a buffer (decode, reverse, stretch
+or read the stretched copy back from disk) and tracks what is running and what failed.
 
 - Every playlist audio clip needs its sample decoded, reversed when the channel plays backwards, and in `stretch` mode a
   stretched copy of the part it plays. While song mode plays, the buffers of clips overlapping [playhead − 2 s,

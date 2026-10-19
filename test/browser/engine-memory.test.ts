@@ -87,7 +87,7 @@ describe('engine memory', () => {
       await engine.resume();
       await engine.ready();
       const internals = engine as unknown as {
-        transport: { pendingNotes: number; segs: unknown[] };
+        transport: { pendingNotes: number; plannedSegmentCount: number };
         ports: Set<unknown>;
         params: { keys(): IterableIterator<string> };
       };
@@ -115,7 +115,7 @@ describe('engine memory', () => {
       expect(late.max).toBeLessThanOrEqual(early.max + 12);
       expect(late.min).toBeLessThanOrEqual(early.min + 12);
       expect(late.pending).toBeLessThanOrEqual(early.pending + 8);
-      expect(internals.transport.segs.length).toBeLessThan(200);
+      expect(internals.transport.plannedSegmentCount).toBeLessThan(200);
       expect(internals.ports.size).toBe(ports);
       expect([...internals.params.keys()].length).toBe(paramKeys);
       engine.stop();

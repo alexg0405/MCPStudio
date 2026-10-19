@@ -48,7 +48,13 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
   const view = () => s.editor.getState().pianoRoll;
   /** The centre of grid cell (tick, key) on the screen. */
   const at = (tick: number, key: number) => insideOf(grid, tick * PX + 2, (127 - key - TOP_ROW) * ROW_H + ROW_H / 2);
-  const settled = () => sleep(420);
+  /** The saved view as it was when the editor opened (the editor saves its live view 300 ms after the last change). */
+  let baseline = '';
+  /** Waits for the view to be saved after a gesture (a busy machine delays the timer), then a little more for later changes. */
+  const settled = async (): Promise<void> => {
+    await until(() => JSON.stringify(view()) !== baseline, 8000).catch(() => undefined);
+    await sleep(450);
+  };
   const seed = (list: Pick<Note, 'tick' | 'key' | 'length'>[]): Note[] => {
     const made = list.map((n) => ({ id: newId.note(), velocity: 0.8, ...n }));
     s.history.transact('seed', (d) => addNotes(d, pattern, channel, made));
@@ -71,6 +77,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     openWindow(s, 'piano-roll');
     s.view.getState().setMaximized('piano-roll', true);
     await findElements();
+    baseline = JSON.stringify(view());
   }
 
   beforeAll(async () => {

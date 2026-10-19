@@ -49,7 +49,13 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
   /** The tick under a client x. */
   const tickAt = (clientX: number) => view().scrollTick + (clientX - grid.getBoundingClientRect().left) / view().pxPerTick;
   /** The view is saved 300 ms after the last change. */
-  const settled = () => sleep(420);
+  /** The saved view as it was when the editor opened (the editor saves its live view 300 ms after the last change). */
+  let baseline = '';
+  /** Waits for the view to be saved after a gesture (a busy machine delays the timer), then a little more for later changes. */
+  const settled = async (): Promise<void> => {
+    await until(() => JSON.stringify(view()) !== baseline, 8000).catch(() => undefined);
+    await sleep(450);
+  };
   const inGrid = (x: number, y: number) => insideOf(grid, x, y);
   const addPatternClip = (bar: number, laneIndex: number): Clip => {
     const made: Clip = { kind: 'pattern', id: newId.clip(), laneId: lanes[laneIndex] as LaneId, start: (bar - 1) * BAR, length: BAR, patternId: pattern, offset: 0 };
@@ -97,6 +103,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     openWindow(s, 'playlist');
     s.view.getState().setMaximized('playlist', true);
     await findElements();
+    baseline = JSON.stringify(view());
   }
 
   beforeEach(async () => {

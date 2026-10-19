@@ -1,33 +1,33 @@
 import { useEffect, useMemo, useRef, type PointerEvent } from 'react';
-import { themeColors } from '@agstudio/sdk/ui';
-import {
-  drawStroke,
-  frameFromWave,
-  frameToWave,
-  type Frame,
-} from '@agstudio/sdk/dsp/wavetable-frames';
+import { themeColors, type ThemeColors } from '@agstudio/sdk/ui';
+import { drawStroke, frameFromWave, frameToWave, type Frame } from '@agstudio/sdk/dsp/wavetable-frames';
 import styles from './table-editor.module.css';
 
 /** Canvas size in device pixels (drawn at twice its CSS size so lines stay sharp on retina screens). */
 const CANVAS_W = 1120;
 const CANVAS_H = 340;
 const LINE_WIDTH = 3;
+/** Pixels kept free at the top and bottom, so a peak at full scale is not cut off. */
+const VERTICAL_MARGIN = 20;
+/** The drawing may overshoot full scale by this much before it is cut off at the canvas edge. */
+const OVERSHOOT = 1.2;
 
-/** Paints one cycle with the neighbouring frames faintly behind it. */
-function paintWave(canvas: HTMLCanvasElement, wave: Float32Array, ghosts: readonly Float32Array[]): void {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  const colors = themeColors();
+/** The y pixel of a wave value (-1…1; up is louder). */
+function yOf(value: number): number {
+  return CANVAS_H / 2 - (value * (CANVAS_H - VERTICAL_MARGIN)) / 2;
+}
+
+/** The background: the zero line and faint lines at half scale. */
+function paintGrid(ctx: CanvasRenderingContext2D, colors: ThemeColors): void {
   ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.fillStyle = colors.well;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.strokeStyle = colors.line;
   ctx.lineWidth = 1;
   for (const level of [-0.5, 0.5]) {
-    const y = CANVAS_H / 2 - (level * (CANVAS_H - 20)) / 2;
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(CANVAS_W, y);
+    ctx.moveTo(0, yOf(level));
+    ctx.lineTo(CANVAS_W, yOf(level));
     ctx.stroke();
   }
   ctx.strokeStyle = colors.lineStrong;
@@ -35,20 +35,30 @@ function paintWave(canvas: HTMLCanvasElement, wave: Float32Array, ghosts: readon
   ctx.moveTo(0, CANVAS_H / 2);
   ctx.lineTo(CANVAS_W, CANVAS_H / 2);
   ctx.stroke();
-  const trace = (data: Float32Array, color: string, width: number) => {
-    ctx.strokeStyle = color;
-    ctx.lineWidth = width;
-    ctx.beginPath();
-    for (let x = 0; x < CANVAS_W; x++) {
-      const v = data[Math.min(data.length - 1, Math.floor((x / CANVAS_W) * data.length))] as number;
-      const y = CANVAS_H / 2 - (Math.max(-1.2, Math.min(1.2, v)) * (CANVAS_H - 20)) / 2;
-      if (x === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  };
-  for (const ghost of ghosts) trace(ghost, colors.textFaint, 1);
-  trace(wave, colors.accent, LINE_WIDTH);
+}
+
+/** Draws one cycle as a line across the canvas. */
+function traceWave(ctx: CanvasRenderingContext2D, data: Float32Array, color: string, width: number): void {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  for (let x = 0; x < CANVAS_W; x++) {
+    const value = data[Math.min(data.length - 1, Math.floor((x / CANVAS_W) * data.length))] as number;
+    const y = yOf(Math.max(-OVERSHOOT, Math.min(OVERSHOOT, value)));
+    if (x === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+/** Paints one cycle with the neighbouring frames faintly behind it. */
+function paintWave(canvas: HTMLCanvasElement, wave: Float32Array, ghosts: readonly Float32Array[]): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const colors = themeColors();
+  paintGrid(ctx, colors);
+  for (const ghost of ghosts) traceWave(ctx, ghost, colors.textFaint, 1);
+  traceWave(ctx, wave, colors.accent, LINE_WIDTH);
 }
 
 interface WavePadProps {
@@ -86,7 +96,7 @@ export function WavePad({ frames, selected, onCommit, onDropFile }: WavePadProps
     const box = e.currentTarget.getBoundingClientRect();
     return {
       x: (e.clientX - box.left) / box.width,
-      y: -(((e.clientY - box.top) / box.height) * 2 - 1) / ((CANVAS_H - 20) / CANVAS_H),
+      y: -(((e.clientY - box.top) / box.height) * 2 - 1) / ((CANVAS_H - VERTICAL_MARGIN) / CANVAS_H),
     };
   };
 

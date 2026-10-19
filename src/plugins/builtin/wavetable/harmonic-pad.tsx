@@ -14,12 +14,24 @@ const BARS = 48;
 const CANVAS_W = 1120;
 const CANVAS_H = 200;
 const LABEL_H = 22;
+/** Space between neighbouring bars (each bar leaves this much on both sides), pixels. */
+const BAR_GAP = 3;
+/** Space above the tallest bar, pixels. */
+const BAR_TOP_MARGIN = 6;
+/** A bar is at least this tall, so a silent harmonic still shows, pixels. */
+const MIN_BAR_HEIGHT = 2;
+const LABEL_FONT_PX = 20;
+/** Distance from the canvas bottom to a label's baseline, pixels. */
+const LABEL_BASELINE_INSET = 5;
+/** Every this many bars (and the first) get the harmonic's number underneath. */
+const LABEL_EVERY = 8;
 
 /** The strongest of all 256 harmonics: the height a full bar stands for. */
 function strongest(frame: Frame): number {
   return Math.max(1e-9, ...harmonicAmps(frame, FRAME_HARMONICS));
 }
 
+/** Draws one bar per harmonic: as tall as its strength against `fullScale`, with the harmonic's number underneath. */
 function paintBars(canvas: HTMLCanvasElement, frame: Frame, fullScale: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -29,15 +41,16 @@ function paintBars(canvas: HTMLCanvasElement, frame: Frame, fullScale: number): 
   const amps = harmonicAmps(frame, BARS);
   const slot = CANVAS_W / BARS;
   const top = CANVAS_H - LABEL_H;
-  ctx.font = `20px ${colors.font}`;
+  ctx.font = `${LABEL_FONT_PX}px ${colors.font}`;
   ctx.textAlign = 'center';
   amps.forEach((amp, i) => {
-    const h = Math.min(1, amp / fullScale) * (top - 6);
+    const height = Math.min(1, amp / fullScale) * (top - BAR_TOP_MARGIN);
+    const barHeight = Math.max(MIN_BAR_HEIGHT, height);
     ctx.fillStyle = amp > 0 ? colors.accent : colors.line;
-    ctx.fillRect(i * slot + 3, top - Math.max(2, h), slot - 6, Math.max(2, h));
-    if (i === 0 || (i + 1) % 8 === 0) {
+    ctx.fillRect(i * slot + BAR_GAP, top - barHeight, slot - 2 * BAR_GAP, barHeight);
+    if (i === 0 || (i + 1) % LABEL_EVERY === 0) {
       ctx.fillStyle = colors.textDim;
-      ctx.fillText(String(i + 1), i * slot + slot / 2, CANVAS_H - 5);
+      ctx.fillText(String(i + 1), i * slot + slot / 2, CANVAS_H - LABEL_BASELINE_INSET);
     }
   });
 }

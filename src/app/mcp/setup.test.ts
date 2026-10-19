@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { clientLabel } from './common';
-import { claudeCodeCommand, claudeDesktopConfig, endpointOf, maskToken, statusLine, urlClientConfig } from './setup';
+import {
+  claudeCodeCommand,
+  claudeDesktopConfig,
+  claudeDesktopConfigPath,
+  endpointOf,
+  hostPlatformOf,
+  maskToken,
+  statusLine,
+  urlClientConfig,
+} from './setup';
 
 const token = 'agmcp_' + 'a'.repeat(43);
 
@@ -13,11 +22,48 @@ describe('setup lines', () => {
   });
 
   it('runs the stdio helper for Claude Desktop, without the token in the file', () => {
-    const config = JSON.parse(claudeDesktopConfig('http://localhost:5415', '/Users/me/AGstudio/')) as {
+    const config = JSON.parse(claudeDesktopConfig('http://localhost:5415', '/Users/me/AGstudio/', 'darwin')) as {
       mcpServers: { agstudio: { command: string; env: Record<string, string> } };
     };
     expect(config.mcpServers.agstudio).toEqual({ command: '/Users/me/AGstudio/bin/agstudio-mcp', env: { AGSTUDIO_URL: 'http://localhost:5415' } });
-    expect(claudeDesktopConfig('http://localhost:5415', '/x')).not.toContain('agmcp_');
+    expect(claudeDesktopConfig('http://localhost:5415', '/x', 'linux')).not.toContain('agmcp_');
+  });
+
+  describe('on Windows', () => {
+    it('points Claude Desktop at the .cmd launcher, with backslashes, whichever way the folder was written', () => {
+      for (const root of ['C:\\Users\\Ana Smith\\AGstudio', 'C:/Users/Ana Smith/AGstudio/', 'C:\\Users\\Ana Smith\\AGstudio\\']) {
+        const config = JSON.parse(claudeDesktopConfig('http://localhost:5390', root, 'win32')) as {
+          mcpServers: { agstudio: { command: string } };
+        };
+        expect(config.mcpServers.agstudio.command).toBe('C:\\Users\\Ana Smith\\AGstudio\\bin\\agstudio-mcp.cmd');
+      }
+    });
+
+    it('writes the backslashes as valid JSON (doubled) in the text to copy', () => {
+      const text = claudeDesktopConfig('http://localhost:5390', 'C:\\AGstudio', 'win32');
+      expect(text).toContain('"command": "C:\\\\AGstudio\\\\bin\\\\agstudio-mcp.cmd"');
+    });
+
+    it('names the Claude Desktop config file under %APPDATA%', () => {
+      expect(claudeDesktopConfigPath('win32')).toBe('%APPDATA%\\Claude\\claude_desktop_config.json');
+      expect(claudeDesktopConfigPath('darwin')).toBe('~/Library/Application Support/Claude/claude_desktop_config.json');
+    });
+
+    it('gives a Claude Code line that PowerShell, cmd and shells all read the same way: double quotes only, no escapes', () => {
+      const line = claudeCodeCommand('http://localhost:5390', token);
+      expect(line).not.toMatch(/['\\^`$]/);
+      expect(line.match(/"/g)).toHaveLength(2);
+    });
+  });
+
+  it('knows which system AGstudio runs on: what the server said, else what the browser says', () => {
+    expect(hostPlatformOf('win32', 'MacIntel')).toBe('win32');
+    expect(hostPlatformOf('darwin', 'Win32')).toBe('darwin');
+    expect(hostPlatformOf('', 'Win32')).toBe('win32');
+    expect(hostPlatformOf('', 'Windows')).toBe('win32');
+    expect(hostPlatformOf('', 'MacIntel')).toBe('darwin');
+    expect(hostPlatformOf('', 'Linux x86_64')).toBe('linux');
+    expect(hostPlatformOf('', '')).toBe('linux');
   });
 
   it('gives a URL and header for apps that take them', () => {

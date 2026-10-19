@@ -288,8 +288,9 @@ function installAppEndpoints(server: ViteDevServer, context: McpContext, bridge:
         status.tabs = bridge.open().length;
         const info: McpInfo = {
           token: tokens.get(),
-          root: options.root.replace(/\/$/, ''),
+          root: options.root.replace(/[\\/]+$/, ''),
           exportsDir,
+          platform: process.platform,
           status: status.snapshot(),
         };
         return send(res, 200, info);

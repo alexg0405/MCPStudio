@@ -13,19 +13,29 @@ import type { Readable } from 'node:stream';
  * and only audio and video extensions are written, never over an existing file.
  */
 export const defaultExportsDir = (): string => join(homedir(), 'Music', 'AGstudio');
+// (On Windows that is `C:\Users\<you>\Music\AGstudio`; a Music folder that OneDrive moved is not followed: set
+// AGSTUDIO_EXPORTS_DIR to export somewhere else.)
 
 const EXTENSIONS = new Set(['.wav', '.flac', '.mp3', '.zip', '.mp4', '.webm']);
 const MAX_BYTES = 4 * 1024 ** 3;
 
-/** One path segment that is safe to create: no separators, no control characters, not hidden. */
+/** Names Windows reserves for devices (`CON.wav` opens the console, `NUL.wav` discards the data): never created, on any system. */
+const WINDOWS_DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i;
+
+/**
+ * One path segment that is safe to create on every system: no separators, no control characters or characters Windows
+ * forbids, not hidden, no trailing dots or spaces (Windows silently drops them), not a Windows device name.
+ */
 export function cleanName(raw: string, fallback: string): string {
   const s = basename(raw.replace(/\\/g, '/'))
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f<>:"|?*]/g, '_')
     .replace(/^\.+/, '')
     .trim()
-    .slice(0, 120);
-  return s || fallback;
+    .slice(0, 120)
+    .replace(/[. ]+$/, '');
+  if (!s) return fallback;
+  return WINDOWS_DEVICE_NAME.test(s) ? `_${s}` : s;
 }
 
 export class UploadTickets {

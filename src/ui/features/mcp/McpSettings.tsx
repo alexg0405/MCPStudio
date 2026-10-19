@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 import { devServerMissing } from '@app/local-server';
 import { clientLabel } from '@app/mcp/common';
-import { claudeCodeCommand, claudeDesktopConfig, maskToken, statusLine, urlClientConfig } from '@app/mcp/setup';
+import {
+  claudeCodeCommand,
+  claudeDesktopConfig,
+  claudeDesktopConfigPath,
+  hostPlatformOf,
+  maskToken,
+  statusLine,
+  urlClientConfig,
+} from '@app/mcp/setup';
 import { showDialog } from '../../controls/Dialog';
 import { useServices } from '../../services-context';
 import { Row, Section, Switch } from '../settings/parts';
@@ -17,7 +25,7 @@ import styles from './McpSettings.module.css';
 export function McpSettings() {
   const s = useServices();
   const enabled = useStore(s.prefs, (p) => p.mcpEnabled);
-  const { available, token, root, exportsDir, status } = useStore(s.mcp.store, (m) => m);
+  const { available, token, root, exportsDir, platform, status } = useStore(s.mcp.store, (m) => m);
   const [shown, setShown] = useState(false);
 
   // While this window is open, the "calls in the last minute" count keeps up.
@@ -28,6 +36,8 @@ export function McpSettings() {
   }, [s]);
 
   const origin = window.location.origin;
+  const hostPlatform = hostPlatformOf(platform, navigator.platform);
+  const desktopConfig = claudeDesktopConfig(origin, root, hostPlatform);
   const copy = (text: string, what: string) => {
     navigator.clipboard.writeText(text).then(
       () => s.session.getState().toast(`Copied ${what}`),
@@ -109,7 +119,7 @@ export function McpSettings() {
           </Row>
           <Row
             label="Claude Code"
-            hint="Run this once in a terminal. Then start a new Claude Code session and ask it to make a beat."
+            hint={`Run this once in a terminal${hostPlatform === 'win32' ? ' (PowerShell or Command Prompt)' : ''}. Then start a new Claude Code session and ask it to make a beat.`}
           >
             <pre className={styles.code}>{shownCode}</pre>
             <button className={settings.button} onClick={() => copy(code, 'the Claude Code command')} data-hint="Copy the command, with the real token">
@@ -118,12 +128,12 @@ export function McpSettings() {
           </Row>
           <Row
             label="Claude Desktop"
-            hint="Add this to claude_desktop_config.json (Claude → Settings → Developer → Edit Config), then restart Claude Desktop. It starts a small helper that reads the token itself."
+            hint={`Add this to claude_desktop_config.json (Claude → Settings → Developer → Edit Config opens it; usually ${claudeDesktopConfigPath(hostPlatform)}), then restart Claude Desktop. It starts a small helper that reads the token itself.`}
           >
-            <pre className={styles.code}>{claudeDesktopConfig(origin, root)}</pre>
+            <pre className={styles.code}>{desktopConfig}</pre>
             <button
               className={settings.button}
-              onClick={() => copy(claudeDesktopConfig(origin, root), 'the Claude Desktop setup')}
+              onClick={() => copy(desktopConfig, 'the Claude Desktop setup')}
               data-hint="Copy the Claude Desktop setup"
             >
               Copy setup

@@ -3,11 +3,24 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { dirname } from 'node:path';
 
 /**
- * The access token AI apps present to the MCP endpoint. Generated once and kept in a git-ignored
- * file (`.agstudio/mcp-token`, readable by this user only), so setup commands keep working across
- * restarts. Regenerating it disconnects every app that had the old one.
+ * The access token AI apps present to the MCP endpoint. Generated once and kept in a file that version control
+ * ignores (`.agstudio/mcp-token`), so setup commands keep working across restarts. Regenerating it disconnects
+ * every app that had the old one.
+ *
+ * On macOS and Linux the file is readable by this user only (mode 0600). Windows has no such mode bits: the file
+ * is as private as the folder it is in, and a folder under your own user profile (where people keep their
+ * projects) is already closed to other accounts by Windows' default permissions.
  */
 export const newToken = (): string => `agmcp_${randomBytes(32).toString('base64url')}`;
+
+/** Tightens an existing file to owner-only where the system supports it (a file system without permissions is not an error). */
+function keepPrivate(file: string): void {
+  try {
+    if (existsSync(file)) chmodSync(file, 0o600);
+  } catch {
+    /* Windows, or a file system without permissions (FAT, some network and WSL mounts) */
+  }
+}
 
 const VALID = /^agmcp_[A-Za-z0-9_-]{32,}$/;
 
@@ -33,7 +46,7 @@ export class TokenStore {
   private write(token: string): string {
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
     writeFileSync(this.file, `${token}\n`, { mode: 0o600 });
-    if (existsSync(this.file)) chmodSync(this.file, 0o600);
+    keepPrivate(this.file);
     return (this.cached = token);
   }
 }

@@ -48,6 +48,8 @@ export interface McpLinkState {
   /** The AGstudio folder and the export folder, as paths on this computer. */
   root: string;
   exportsDir: string;
+  /** The dev server's operating system (see McpInfo.platform); empty until it answered. */
+  platform: string;
   status: McpStatus;
   /** Clicks AI apps are waiting for. */
   gestures: PendingGesture[];
@@ -88,6 +90,7 @@ export class McpLink {
       token: null,
       root: '',
       exportsDir: '',
+      platform: '',
       status: EMPTY_STATUS,
       gestures: [],
     }));
@@ -168,7 +171,14 @@ export class McpLink {
       const res = await this.fetchImpl('/api/mcp/info', { headers: { 'x-agstudio': '1' } });
       if (!res.ok) return;
       const info = (await res.json()) as McpInfo;
-      this.store.setState({ available: true, token: info.token, root: info.root, exportsDir: info.exportsDir, status: info.status });
+      this.store.setState({
+        available: true,
+        token: info.token,
+        root: info.root,
+        exportsDir: info.exportsDir,
+        platform: info.platform ?? '',
+        status: info.status,
+      });
     } catch {
       /* no dev server behind this page */
     }

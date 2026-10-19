@@ -2,13 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BridgeError, McpBridge, type TabSocket } from '../../tools/mcp/bridge.ts';
 import { checkAccess, isLocalHost, isLocalOrigin, isLoopbackAddress, RateLimit, tokenOf, type Access } from '../../tools/mcp/guard.ts';
 import { StatusTracker } from '../../tools/mcp/status.ts';
 import { TokenStore } from '../../tools/mcp/token.ts';
-import { cleanName, saveUpload, UploadError, UploadTickets } from '../../tools/mcp/uploads.ts';
+import { cleanName, defaultExportsDir, saveUpload, UploadError, UploadTickets } from '../../tools/mcp/uploads.ts';
 import { BRIDGE_EVENTS, type BridgeCall } from '../../src/app/mcp/types.ts';
 
 const TOKEN = 'agmcp_' + 'a'.repeat(43);
@@ -99,7 +99,8 @@ describe('MCP token', () => {
     const a = new TokenStore(file).get();
     expect(a).toMatch(/^agmcp_[A-Za-z0-9_-]{43}$/);
     expect(new TokenStore(file).get()).toBe(a);
-    expect((await stat(file)).mode & 0o077).toBe(0);
+    // Windows has no permission bits to check: the file there is as private as its folder.
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o077).toBe(0);
     expect((await readFile(file, 'utf8')).trim()).toBe(a);
   });
 
@@ -140,6 +141,20 @@ describe('MCP uploads', () => {
     expect(cleanName('..\\..\\a:b?.wav', 'x')).toBe('a_b_.wav');
     expect(cleanName('...', 'fallback')).toBe('fallback');
     expect(cleanName('.hidden.wav', 'x')).toBe('hidden.wav');
+  });
+
+  it('never makes a name Windows would treat as a device or silently change', () => {
+    expect(cleanName('CON.wav', 'x')).toBe('_CON.wav');
+    expect(cleanName('nul', 'x')).toBe('_nul');
+    expect(cleanName('com1.mp3', 'x')).toBe('_com1.mp3');
+    expect(cleanName('console.wav', 'x')).toBe('console.wav');
+    expect(cleanName('Song. ', 'x')).toBe('Song');
+    expect(cleanName('Song.wav.', 'x')).toBe('Song.wav');
+    expect(cleanName('a<b>c|d.wav', 'x')).toBe('a_b_c_d.wav');
+  });
+
+  it('keeps exports in the Music folder of whoever is signed in, on every system', () => {
+    expect(defaultExportsDir()).toBe(join(homedir(), 'Music', 'AGstudio'));
   });
 
   it('writes only audio files', async () => {

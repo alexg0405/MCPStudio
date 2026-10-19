@@ -13,7 +13,7 @@ function setup(tools?: { call: Mock<McpTools['call']> }) {
     on: (event, cb) => void handlers.set(event, cb),
     send: (event, data) => void sent.push({ event, data }),
   };
-  const info = { token: 'agmcp_' + 'x'.repeat(43), root: '/work/AGstudio', exportsDir: '/Users/me/Music/AGstudio', status: { clients: [], callsLastMinute: 0, tabs: 1 } };
+  const info = { token: 'agmcp_' + 'x'.repeat(43), root: '/work/AGstudio', exportsDir: '/Users/me/Music/AGstudio', platform: 'darwin', status: { clients: [], callsLastMinute: 0, tabs: 1 } };
   const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
     if (String(url) === '/api/mcp/info') return new Response(JSON.stringify(info));
     if (String(url) === '/api/mcp/token' && init?.method === 'POST') return new Response(JSON.stringify({ token: 'agmcp_new' }));

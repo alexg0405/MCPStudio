@@ -98,5 +98,7 @@ export interface McpInfo {
   root: string;
   /** Where exported audio goes. */
   exportsDir: string;
+  /** The operating system of the computer the dev server runs on (`win32`, `darwin`, `linux`…): paths and setup lines differ. */
+  platform: string;
   status: McpStatus;
 }

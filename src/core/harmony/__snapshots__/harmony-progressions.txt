@@ -1,0 +1,205 @@
+pop-axis in major 0: Cx1 Gx1 Amx1 Fx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 45da5b53ccb5
+pop-minor-start in major 0: Amx1 Fx1 Cx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 11252a2ea537
+doo-wop in major 0: Cx1 Amx1 Fx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 75b9f11f35c5
+rock-145 in major 0: Cx1 Fx1 Gx1 Fx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 7a2ca2ead6be
+canon in major 0: Cx1 Gx1 Amx1 Emx1 Fx1 Cx1 Fx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 fbf4e7ebb3b5
+royal-road in major 0: Fmaj7x1 G7x1 Em7x1 Amx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 ac8842377009
+ii-v-i in major 0: Dm7x1 G7x1 Cmaj7x1 Cmaj7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 15b1891db387
+turnaround in major 0: Cmaj7x1 Am7x1 Dm7x1 G7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 918186eab6fd
+lofi-maj in major 0: Cmaj7x1 Em7x1 Am7x1 Fmaj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 32d031284f58
+mixolydian in major 0: Cx1 A#x1 Fx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+7680 23040+3840 238a7b4b94d7
+plagal-loop in major 0: Cx1 Fx1 Amx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 ce4c2a452f86
+house-stabs in major 0: Dm7x1 G7x1 Cmaj7x1 Am7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 3c1734f26f8f
+blues-12 in major 0: C7x1 C7x1 C7x1 C7x1 F7x1 F7x1 C7x1 C7x1 G7x1 F7x1 C7x1 G7x1 | 3840+15360 19200+7680 af300986215a
+minor-epic in major 0: Cmx1 Ax1 Ex1 Bx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 b817d9a3f42f
+minor-dark in major 0: Cmx1 Bx1 Ax1 Bx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 1c3089135b2b
+minor-iv in major 0: Cmx1 Fmx1 Bx1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 9b1a35c687a5
+minor-dominant in major 0: Cmx1 Ax1 Fmx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e724da6bfb3b
+andalusian in major 0: Cmx1 Bx1 Ax1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 7d9369f5cfd1
+minor-ii-v-i in major 0: Dm7b5x1 G7x1 Cm7x1 Cm7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 b9eb0861d6ff
+trap-two in major 0: Cmx2 Ax2 | 3840+7680 11520+7680 19200+7680 ae6941245517
+trap-three in major 0: Cmx2 Ax1 Bx1 | 3840+7680 11520+3840 15360+3840 19200+7680 91b58818609d
+trap-phrygian in major 0: Cmx2 C#x2 | 3840+7680 11520+7680 19200+7680 33f78d0edcac
+trap-iv in major 0: Cmx1 Fmx1 Cmx1 Gmx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 f7fcad8ec0f2
+lofi-min in major 0: Cm7x1 Fm7x1 B7x1 Emaj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 787f30f5f1e5
+rnb-minor in major 0: Cm7x1 Amaj7x1 Fm7x1 G7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e724da6bfb3b
+pop-axis in minor 5: Fx1 Cx1 C#mx1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 07db874e16ad
+pop-minor-start in minor 5: C#mx1 A#x1 Fx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 fe31a7fe4372
+doo-wop in minor 5: Fx1 C#mx1 A#x1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 9775f077b587
+rock-145 in minor 5: Fx1 A#x1 Cx1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 19654ef7672b
+canon in minor 5: Fx1 Cx1 C#mx1 G#mx1 A#x1 Fx1 A#x1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 6a9f2c2174cc
+royal-road in minor 5: A#maj7x1 C7x1 G#m7x1 C#mx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 af8f45985fe6
+ii-v-i in minor 5: Gm7x1 C7x1 Fmaj7x1 Fmaj7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 583b82e637b4
+turnaround in minor 5: Fmaj7x1 C#m7x1 Gm7x1 C7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 9936c7f3a23e
+lofi-maj in minor 5: Fmaj7x1 G#m7x1 C#m7x1 A#maj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 4bbca98b8d55
+mixolydian in minor 5: Fx1 Dx1 A#x1 Fx1 | 3840+3840 7680+3840 11520+3840 15360+7680 23040+3840 bae6830948f0
+plagal-loop in minor 5: Fx1 A#x1 C#mx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 ad899f5a06f1
+house-stabs in minor 5: Gm7x1 C7x1 Fmaj7x1 C#m7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 315eead85e25
+blues-12 in minor 5: F7x1 F7x1 F7x1 F7x1 A#7x1 A#7x1 F7x1 F7x1 C7x1 A#7x1 F7x1 C7x1 | 3840+15360 19200+7680 ecd54bc2859b
+minor-epic in minor 5: Fmx1 C#x1 G#x1 D#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e9874f4c2475
+minor-dark in minor 5: Fmx1 D#x1 C#x1 D#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 61399519c67a
+minor-iv in minor 5: Fmx1 A#mx1 D#x1 G#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 404ae07a87ab
+minor-dominant in minor 5: Fmx1 C#x1 A#mx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 203a65b3b43d
+andalusian in minor 5: Fmx1 D#x1 C#x1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 17b8420ada24
+minor-ii-v-i in minor 5: Gm7b5x1 C7x1 Fm7x1 Fm7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 e39b39ac298f
+trap-two in minor 5: Fmx2 C#x2 | 3840+7680 11520+7680 19200+7680 cf77b0bd3174
+trap-three in minor 5: Fmx2 C#x1 D#x1 | 3840+7680 11520+3840 15360+3840 19200+7680 dc81d5bcf247
+trap-phrygian in minor 5: Fmx2 F#x2 | 3840+7680 11520+7680 19200+7680 5f8a3b2ccf40
+trap-iv in minor 5: Fmx1 A#mx1 Fmx1 Cmx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 b22173cec447
+lofi-min in minor 5: Fm7x1 A#m7x1 D#7x1 G#maj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 404ae07a87ab
+rnb-minor in minor 5: Fm7x1 C#maj7x1 A#m7x1 C7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 d2b0a5a156e3
+pop-axis in minor 9: Ax1 Ex1 Fmx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 c2b4b8b549ad
+pop-minor-start in minor 9: Fmx1 Dx1 Ax1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 212d14f4cf93
+doo-wop in minor 9: Ax1 Fmx1 Dx1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 d8a5d24110a5
+rock-145 in minor 9: Ax1 Dx1 Ex1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e331a73c1aed
+canon in minor 9: Ax1 Ex1 Fmx1 Cmx1 Dx1 Ax1 Dx1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 21c7e815dfae
+royal-road in minor 9: Dmaj7x1 E7x1 Cm7x1 Fmx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 40b6e4506aae
+ii-v-i in minor 9: Bm7x1 E7x1 Amaj7x1 Amaj7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 1f09bf78d86f
+turnaround in minor 9: Amaj7x1 Fm7x1 Bm7x1 E7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 ae59b8d987b9
+lofi-maj in minor 9: Amaj7x1 Cm7x1 Fm7x1 Dmaj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 41a701743d43
+mixolydian in minor 9: Ax1 F#x1 Dx1 Ax1 | 3840+3840 7680+3840 11520+3840 15360+7680 23040+3840 460aca4711d8
+plagal-loop in minor 9: Ax1 Dx1 Fmx1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 b027b7e374ba
+house-stabs in minor 9: Bm7x1 E7x1 Amaj7x1 Fm7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 eb43357784d0
+blues-12 in minor 9: A7x1 A7x1 A7x1 A7x1 D7x1 D7x1 A7x1 A7x1 E7x1 D7x1 A7x1 E7x1 | 3840+15360 19200+7680 28d30dda52c1
+minor-epic in minor 9: Amx1 Fx1 Cx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e7716ea9c3b3
+minor-dark in minor 9: Amx1 Gx1 Fx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 8cf3c1a19b75
+minor-iv in minor 9: Amx1 Dmx1 Gx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 d8c57de41865
+minor-dominant in minor 9: Amx1 Fx1 Dmx1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 97580f589aa9
+andalusian in minor 9: Amx1 Gx1 Fx1 Ex1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 4d41af4dcaf7
+minor-ii-v-i in minor 9: Bm7b5x1 E7x1 Am7x1 Am7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 4d655395ebab
+trap-two in minor 9: Amx2 Fx2 | 3840+7680 11520+7680 19200+7680 b3951e96a588
+trap-three in minor 9: Amx2 Fx1 Gx1 | 3840+7680 11520+3840 15360+3840 19200+7680 763ae5d09f51
+trap-phrygian in minor 9: Amx2 A#x2 | 3840+7680 11520+7680 19200+7680 bbff1e6917ee
+trap-iv in minor 9: Amx1 Dmx1 Amx1 Emx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 1e393bf5623e
+lofi-min in minor 9: Am7x1 Dm7x1 G7x1 Cmaj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 d8c57de41865
+rnb-minor in minor 9: Am7x1 Fmaj7x1 Dm7x1 E7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 199977a66d6f
+pop-axis in major 3: D#x1 A#x1 Cmx1 G#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 0837834787df
+pop-minor-start in major 3: Cmx1 G#x1 D#x1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 f8638340b83b
+doo-wop in major 3: D#x1 Cmx1 G#x1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 7581cbcb9e88
+rock-145 in major 3: D#x1 G#x1 A#x1 G#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 3a9a755243bb
+canon in major 3: D#x1 A#x1 Cmx1 Gmx1 G#x1 D#x1 G#x1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 dccef1417612
+royal-road in major 3: G#maj7x1 A#7x1 Gm7x1 Cmx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 9b48850d36bc
+ii-v-i in major 3: Fm7x1 A#7x1 D#maj7x1 D#maj7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 5629a59ea6d0
+turnaround in major 3: D#maj7x1 Cm7x1 Fm7x1 A#7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 576c88be0415
+lofi-maj in major 3: D#maj7x1 Gm7x1 Cm7x1 G#maj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 0e2950fab551
+mixolydian in major 3: D#x1 C#x1 G#x1 D#x1 | 3840+3840 7680+3840 11520+3840 15360+7680 23040+3840 97fb48656553
+plagal-loop in major 3: D#x1 G#x1 Cmx1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 75e55d22ceae
+house-stabs in major 3: Fm7x1 A#7x1 D#maj7x1 Cm7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 fdee9f1b9a50
+blues-12 in major 3: D#7x1 D#7x1 D#7x1 D#7x1 G#7x1 G#7x1 D#7x1 D#7x1 A#7x1 G#7x1 D#7x1 A#7x1 | 3840+15360 19200+7680 8d464f57311c
+minor-epic in major 3: D#mx1 Cx1 Gx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 240c1722650b
+minor-dark in major 3: D#mx1 Dx1 Cx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 643bbfca4a3f
+minor-iv in major 3: D#mx1 G#mx1 Dx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 8e2644d88bd2
+minor-dominant in major 3: D#mx1 Cx1 G#mx1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 bdf08edc0a9c
+andalusian in major 3: D#mx1 Dx1 Cx1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 c4381bedc209
+minor-ii-v-i in major 3: Fm7b5x1 A#7x1 D#m7x1 D#m7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 8a7c1158943b
+trap-two in major 3: D#mx2 Cx2 | 3840+7680 11520+7680 19200+7680 ff145fc3c74d
+trap-three in major 3: D#mx2 Cx1 Dx1 | 3840+7680 11520+3840 15360+3840 19200+7680 b17d0720bc9e
+trap-phrygian in major 3: D#mx2 Ex2 | 3840+7680 11520+7680 19200+7680 54392ffd8c2f
+trap-iv in major 3: D#mx1 G#mx1 D#mx1 A#mx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 09c8513bc3b0
+lofi-min in major 3: D#m7x1 G#m7x1 D7x1 Gmaj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 383499429a80
+rnb-minor in major 3: D#m7x1 Cmaj7x1 G#m7x1 A#7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 bdf08edc0a9c
+pop-axis in dorian 7: Gx1 Dx1 Emx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e84f09796c36
+pop-minor-start in dorian 7: Emx1 Cx1 Gx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 f4051c44d2fa
+doo-wop in dorian 7: Gx1 Emx1 Cx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 d04171b23605
+rock-145 in dorian 7: Gx1 Cx1 Dx1 Cx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 4f7f67399ed8
+canon in dorian 7: Gx1 Dx1 Emx1 A#mx1 Cx1 Gx1 Cx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 fc0f85cc4e87
+royal-road in dorian 7: Cmaj7x1 D7x1 A#m7x1 Emx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 3b432b6d5cea
+ii-v-i in dorian 7: Am7x1 D7x1 Gmaj7x1 Gmaj7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 1fdf9074265c
+turnaround in dorian 7: Gmaj7x1 Em7x1 Am7x1 D7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 ea8e9f503006
+lofi-maj in dorian 7: Gmaj7x1 A#m7x1 Em7x1 Cmaj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 1e07b5101554
+mixolydian in dorian 7: Gx1 Ex1 Cx1 Gx1 | 3840+3840 7680+3840 11520+3840 15360+7680 23040+3840 a3f934d9aaa7
+plagal-loop in dorian 7: Gx1 Cx1 Emx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 24dd63418623
+house-stabs in dorian 7: Am7x1 D7x1 Gmaj7x1 Em7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 6d63180314ea
+blues-12 in dorian 7: G7x1 G7x1 G7x1 G7x1 C7x1 C7x1 G7x1 G7x1 D7x1 C7x1 G7x1 D7x1 | 3840+15360 19200+7680 b00c45e9371a
+minor-epic in dorian 7: Gmx1 Ex1 A#x1 Fx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 aa88efa3b5c0
+minor-dark in dorian 7: Gmx1 Fx1 Ex1 Fx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e9a26f2f1aeb
+minor-iv in dorian 7: Gmx1 Cmx1 Fx1 A#x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 a9aee2a2fa15
+minor-dominant in dorian 7: Gmx1 Ex1 Cmx1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 028fcd4250fa
+andalusian in dorian 7: Gmx1 Fx1 Ex1 Dx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 c68d7ef7d13d
+minor-ii-v-i in dorian 7: Am7b5x1 D7x1 Gm7x1 Gm7x1 | 3840+3840 7680+3840 11520+7680 19200+3840 23040+3840 30db6fc82b64
+trap-two in dorian 7: Gmx2 Ex2 | 3840+7680 11520+7680 19200+7680 de95019a0e62
+trap-three in dorian 7: Gmx2 Ex1 Fx1 | 3840+7680 11520+3840 15360+3840 19200+7680 c0c11f70da3b
+trap-phrygian in dorian 7: Gmx2 G#x2 | 3840+7680 11520+7680 19200+7680 672b3a51a86d
+trap-iv in dorian 7: Gmx1 Cmx1 Gmx1 Dmx1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 7bfbab334f8a
+lofi-min in dorian 7: Gm7x1 Cm7x1 F7x1 A#maj7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 e639f374b2b1
+rnb-minor in dorian 7: Gm7x1 Emaj7x1 Cm7x1 D7x1 | 3840+3840 7680+3840 11520+3840 15360+3840 19200+3840 23040+3840 aa1a1bb58f90
+find major: pop-axis pop-minor-start doo-wop rock-145 canon royal-road ii-v-i turnaround lofi-maj mixolydian plagal-loop house-stabs blues-12
+find minor: minor-epic minor-dark minor-iv minor-dominant andalusian minor-ii-v-i trap-two trap-three trap-phrygian trap-iv lofi-min rnb-minor
+find pop: pop-axis pop-minor-start doo-wop rock-145 canon royal-road mixolydian plagal-loop minor-epic minor-iv minor-dominant
+find rock: pop-axis pop-minor-start doo-wop rock-145 mixolydian blues-12 minor-dark minor-iv andalusian
+find edm: pop-axis pop-minor-start royal-road mixolydian plagal-loop minor-epic minor-dark minor-dominant trap-three
+find house: plagal-loop house-stabs
+find trap: minor-epic minor-dark trap-two trap-three trap-phrygian trap-iv
+find hiphop: turnaround lofi-maj minor-dark trap-two trap-three trap-iv lofi-min
+find lofi: ii-v-i turnaround lofi-maj minor-ii-v-i lofi-min rnb-minor
+find rnb: doo-wop ii-v-i turnaround lofi-maj house-stabs minor-iv minor-ii-v-i trap-iv lofi-min rnb-minor
+find jazz: ii-v-i turnaround house-stabs blues-12 minor-ii-v-i rnb-minor
+find blues: rock-145 blues-12
+find cinematic: canon minor-epic minor-dominant andalusian trap-phrygian
+find flamenco: andalusian
+find text: pop-minor-start minor-iv minor-ii-v-i trap-two trap-iv lofi-min
+next major 0 after nothing 7ths false: I:1:sets the key: starts on home | vi:0.65:an easy start, close to home | IV:0.55:starts away from home, leaves the key open | ii:0.2:starts away from home, leaves the key open | V:0.18:starts on tension | iii:0.13:an easy start, close to home | bVII:0.1:borrowed from the key next door: a rock edge | iv:0.1:borrowed minor four: bittersweet | vii°:0.03:starts on tension
+next major 0 after nothing 7ths true: Imaj7:1:sets the key: starts on home | vi7:0.65:an easy start, close to home | IVmaj7:0.55:starts away from home, leaves the key open | ii7:0.2:starts away from home, leaves the key open | V7:0.18:starts on tension | iii7:0.13:an easy start, close to home | bVII7:0.1:borrowed from the key next door: a rock edge | iv7:0.1:borrowed minor four: bittersweet | viiø7:0.03:starts on tension
+next major 0 after C 7ths false: IV:1:moves away from home | vi:0.83:stays close to home | ii:0.67:moves away from home | V:0.6:jumps to tension | iii:0.4:stays close to home | bVII:0.35:borrowed from the key next door: a rock edge | iv:0.24999999999999997:borrowed minor four: bittersweet | vii°:0.1:jumps to tension
+next major 0 after C 7ths true: IVmaj7:1:moves away from home | vi7:0.83:stays close to home | ii7:0.67:moves away from home | V7:0.6:jumps to tension | iii7:0.4:stays close to home | bVII7:0.35:borrowed from the key next door: a rock edge | iv7:0.24999999999999997:borrowed minor four: bittersweet | viiø7:0.1:jumps to tension | Imaj7:0.07:stays close to home
+next major 0 after G7 7ths false: I:1:resolves the tension: back home | vi:0.75:deceptive: the tension goes to vi instead of home | IV:0.38:steps back from the tension | iii:0.25:resolves the tension: back home | bVII:0.15:borrowed from the key next door: a rock edge | iv:0.15:borrowed minor four: bittersweet | ii:0.1:steps back from the tension | vii°:0.08:keeps the tension up | V:0.03:keeps the tension up
+next major 0 after G7 7ths true: Imaj7:1:resolves the tension: back home | vi7:0.75:deceptive: the tension goes to vi instead of home | IVmaj7:0.38:steps back from the tension | iii7:0.25:resolves the tension: back home | bVII7:0.15:borrowed from the key next door: a rock edge | iv7:0.15:borrowed minor four: bittersweet | ii7:0.1:steps back from the tension | viiø7:0.08:keeps the tension up
+next major 0 after Am 7ths false: IV:1:moves away from home | ii:0.71:moves away from home | I:0.43:stays close to home | V:0.43:jumps to tension | iii:0.29:stays close to home | bVII:0.15:borrowed from the key next door: a rock edge | iv:0.15:borrowed minor four: bittersweet | vii°:0.09:jumps to tension
+next major 0 after Am 7ths true: IVmaj7:1:moves away from home | ii7:0.71:moves away from home | Imaj7:0.43:stays close to home | V7:0.43:jumps to tension | iii7:0.29:stays close to home | bVII7:0.15:borrowed from the key next door: a rock edge | iv7:0.15:borrowed minor four: bittersweet | viiø7:0.09:jumps to tension | vi7:0.03:stays close to home
+next major 0 after C# 7ths false: ii:1:fits the key | I:0.4:fits the key | iii:0.4:fits the key | IV:0.4:fits the key | vi:0.4:fits the key | vii°:0.4:fits the key | V:0.24:fits the key | bVII:0.1:borrowed from the key next door: a rock edge | iv:0.1:borrowed minor four: bittersweet
+next major 0 after C# 7ths true: ii7:1:fits the key | Imaj7:0.4:fits the key | iii7:0.4:fits the key | IVmaj7:0.4:fits the key | vi7:0.4:fits the key | viiø7:0.4:fits the key | V7:0.24:fits the key | bVII7:0.1:borrowed from the key next door: a rock edge | iv7:0.1:borrowed minor four: bittersweet
+next major 0 after Fmaj7 7ths false: I:1:settles back home | V:0.7:builds tension toward home | ii:0.67:stays in the away area | vi:0.5:settles back home | bVII:0.35:borrowed from the key next door: a rock edge | iv:0.24999999999999997:borrowed minor four: bittersweet | vii°:0.2:builds tension toward home | iii:0.13:settles back home | IV:0.03:stays in the away area
+next major 0 after Fmaj7 7ths true: Imaj7:1:settles back home | V7:0.7:builds tension toward home | ii7:0.67:stays in the away area | vi7:0.5:settles back home | bVII7:0.35:borrowed from the key next door: a rock edge | iv7:0.24999999999999997:borrowed minor four: bittersweet | viiø7:0.2:builds tension toward home | iii7:0.13:settles back home
+sevenths major 0: Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5
+next minor 5 after nothing 7ths false: i:1:sets the key: starts on home | VI:0.6:an easy start, close to home | III:0.45:an easy start, close to home | iv:0.4:starts away from home, leaves the key open | VII:0.4:starts on tension | V:0.1:the major V from the harmonic minor: pulls hard back to home | v:0.09:starts on tension | ii°:0.05:starts away from home, leaves the key open
+next minor 5 after nothing 7ths true: i7:1:sets the key: starts on home | VImaj7:0.6:an easy start, close to home | IIImaj7:0.45:an easy start, close to home | iv7:0.4:starts away from home, leaves the key open | VII7:0.4:starts on tension | V7:0.1:the major V from the harmonic minor: pulls hard back to home | v7:0.09:starts on tension | iiø7:0.05:starts away from home, leaves the key open
+next minor 5 after F 7ths false: VI:1:stays close to home | VII:1:jumps to tension | iv:0.83:moves away from home | III:0.67:stays close to home | v:0.4:jumps to tension | V:0.35:the major V from the harmonic minor: pulls hard back to home | ii°:0.2:moves away from home | i:0.07:stays close to home
+next minor 5 after F 7ths true: VImaj7:1:stays close to home | VII7:1:jumps to tension | iv7:0.83:moves away from home | IIImaj7:0.67:stays close to home | v7:0.4:jumps to tension | V7:0.35:the major V from the harmonic minor: pulls hard back to home | iiø7:0.2:moves away from home | i7:0.07:stays close to home
+next minor 5 after C7 7ths false: i:1:resolves the tension: back home | VI:0.63:deceptive: the tension goes to vi instead of home | iv:0.38:steps back from the tension | III:0.25:resolves the tension: back home | V:0.15:the major V from the harmonic minor: pulls hard back to home | VII:0.13:keeps the tension up | ii°:0.08:steps back from the tension | v:0.03:keeps the tension up
+next minor 5 after C7 7ths true: i7:1:resolves the tension: back home | VImaj7:0.63:deceptive: the tension goes to vi instead of home | iv7:0.38:steps back from the tension | IIImaj7:0.25:resolves the tension: back home | VII7:0.13:keeps the tension up | iiø7:0.08:steps back from the tension | v7:0.03:keeps the tension up
+next minor 5 after Dm 7ths false: ii°:1:fits the key | VII:0.63:fits the key | i:0.25:fits the key | III:0.25:fits the key | iv:0.25:fits the key | VI:0.25:fits the key | v:0.15:fits the key | V:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 5 after Dm 7ths true: iiø7:1:fits the key | VII7:0.63:fits the key | i7:0.25:fits the key | IIImaj7:0.25:fits the key | iv7:0.25:fits the key | VImaj7:0.25:fits the key | v7:0.15:fits the key | V7:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 5 after F# 7ths false: ii°:1:fits the key | i:0.4:fits the key | III:0.4:fits the key | iv:0.4:fits the key | VI:0.4:fits the key | VII:0.4:fits the key | v:0.24:fits the key | V:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 5 after F# 7ths true: iiø7:1:fits the key | i7:0.4:fits the key | IIImaj7:0.4:fits the key | iv7:0.4:fits the key | VImaj7:0.4:fits the key | VII7:0.4:fits the key | v7:0.24:fits the key | V7:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 5 after A#maj7 7ths false: VII:1:builds tension toward home | i:0.83:settles back home | v:0.6:builds tension toward home | VI:0.5:settles back home | V:0.35:the major V from the harmonic minor: pulls hard back to home | ii°:0.33:stays in the away area | III:0.27:settles back home | iv:0.03:stays in the away area
+next minor 5 after A#maj7 7ths true: VII7:1:builds tension toward home | i7:0.83:settles back home | v7:0.6:builds tension toward home | VImaj7:0.5:settles back home | V7:0.35:the major V from the harmonic minor: pulls hard back to home | iiø7:0.33:stays in the away area | IIImaj7:0.27:settles back home | iv7:0.03:stays in the away area
+sevenths minor 5: Fm7 Gm7b5 G#maj7 A#m7 Cm7 C#maj7 D#7
+next minor 9 after nothing 7ths false: i:1:sets the key: starts on home | VI:0.6:an easy start, close to home | III:0.45:an easy start, close to home | iv:0.4:starts away from home, leaves the key open | VII:0.4:starts on tension | V:0.1:the major V from the harmonic minor: pulls hard back to home | v:0.09:starts on tension | ii°:0.05:starts away from home, leaves the key open
+next minor 9 after nothing 7ths true: i7:1:sets the key: starts on home | VImaj7:0.6:an easy start, close to home | IIImaj7:0.45:an easy start, close to home | iv7:0.4:starts away from home, leaves the key open | VII7:0.4:starts on tension | V7:0.1:the major V from the harmonic minor: pulls hard back to home | v7:0.09:starts on tension | iiø7:0.05:starts away from home, leaves the key open
+next minor 9 after A 7ths false: VI:1:stays close to home | VII:1:jumps to tension | iv:0.83:moves away from home | III:0.67:stays close to home | v:0.4:jumps to tension | V:0.35:the major V from the harmonic minor: pulls hard back to home | ii°:0.2:moves away from home | i:0.07:stays close to home
+next minor 9 after A 7ths true: VImaj7:1:stays close to home | VII7:1:jumps to tension | iv7:0.83:moves away from home | IIImaj7:0.67:stays close to home | v7:0.4:jumps to tension | V7:0.35:the major V from the harmonic minor: pulls hard back to home | iiø7:0.2:moves away from home | i7:0.07:stays close to home
+next minor 9 after E7 7ths false: i:1:resolves the tension: back home | VI:0.63:deceptive: the tension goes to vi instead of home | iv:0.38:steps back from the tension | III:0.25:resolves the tension: back home | V:0.15:the major V from the harmonic minor: pulls hard back to home | VII:0.13:keeps the tension up | ii°:0.08:steps back from the tension | v:0.03:keeps the tension up
+next minor 9 after E7 7ths true: i7:1:resolves the tension: back home | VImaj7:0.63:deceptive: the tension goes to vi instead of home | iv7:0.38:steps back from the tension | IIImaj7:0.25:resolves the tension: back home | VII7:0.13:keeps the tension up | iiø7:0.08:steps back from the tension | v7:0.03:keeps the tension up
+next minor 9 after F#m 7ths false: ii°:1:fits the key | VII:0.63:fits the key | i:0.25:fits the key | III:0.25:fits the key | iv:0.25:fits the key | VI:0.25:fits the key | v:0.15:fits the key | V:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 9 after F#m 7ths true: iiø7:1:fits the key | VII7:0.63:fits the key | i7:0.25:fits the key | IIImaj7:0.25:fits the key | iv7:0.25:fits the key | VImaj7:0.25:fits the key | v7:0.15:fits the key | V7:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 9 after A# 7ths false: ii°:1:fits the key | i:0.4:fits the key | III:0.4:fits the key | iv:0.4:fits the key | VI:0.4:fits the key | VII:0.4:fits the key | v:0.24:fits the key | V:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 9 after A# 7ths true: iiø7:1:fits the key | i7:0.4:fits the key | IIImaj7:0.4:fits the key | iv7:0.4:fits the key | VImaj7:0.4:fits the key | VII7:0.4:fits the key | v7:0.24:fits the key | V7:0.1:the major V from the harmonic minor: pulls hard back to home
+next minor 9 after Dmaj7 7ths false: VII:1:builds tension toward home | i:0.83:settles back home | v:0.6:builds tension toward home | VI:0.5:settles back home | V:0.35:the major V from the harmonic minor: pulls hard back to home | ii°:0.33:stays in the away area | III:0.27:settles back home | iv:0.03:stays in the away area
+next minor 9 after Dmaj7 7ths true: VII7:1:builds tension toward home | i7:0.83:settles back home | v7:0.6:builds tension toward home | VImaj7:0.5:settles back home | V7:0.35:the major V from the harmonic minor: pulls hard back to home | iiø7:0.33:stays in the away area | IIImaj7:0.27:settles back home | iv7:0.03:stays in the away area
+sevenths minor 9: Am7 Bm7b5 Cmaj7 Dm7 Em7 Fmaj7 G7
+next major 3 after nothing 7ths false: I:1:sets the key: starts on home | vi:0.65:an easy start, close to home | IV:0.55:starts away from home, leaves the key open | ii:0.2:starts away from home, leaves the key open | V:0.18:starts on tension | iii:0.13:an easy start, close to home | bVII:0.1:borrowed from the key next door: a rock edge | iv:0.1:borrowed minor four: bittersweet | vii°:0.03:starts on tension
+next major 3 after nothing 7ths true: Imaj7:1:sets the key: starts on home | vi7:0.65:an easy start, close to home | IVmaj7:0.55:starts away from home, leaves the key open | ii7:0.2:starts away from home, leaves the key open | V7:0.18:starts on tension | iii7:0.13:an easy start, close to home | bVII7:0.1:borrowed from the key next door: a rock edge | iv7:0.1:borrowed minor four: bittersweet | viiø7:0.03:starts on tension
+next major 3 after D# 7ths false: IV:1:moves away from home | vi:0.83:stays close to home | ii:0.67:moves away from home | V:0.6:jumps to tension | iii:0.4:stays close to home | bVII:0.35:borrowed from the key next door: a rock edge | iv:0.24999999999999997:borrowed minor four: bittersweet | vii°:0.1:jumps to tension
+next major 3 after D# 7ths true: IVmaj7:1:moves away from home | vi7:0.83:stays close to home | ii7:0.67:moves away from home | V7:0.6:jumps to tension | iii7:0.4:stays close to home | bVII7:0.35:borrowed from the key next door: a rock edge | iv7:0.24999999999999997:borrowed minor four: bittersweet | viiø7:0.1:jumps to tension | Imaj7:0.07:stays close to home
+next major 3 after A#7 7ths false: I:1:resolves the tension: back home | vi:0.75:deceptive: the tension goes to vi instead of home | IV:0.38:steps back from the tension | iii:0.25:resolves the tension: back home | bVII:0.15:borrowed from the key next door: a rock edge | iv:0.15:borrowed minor four: bittersweet | ii:0.1:steps back from the tension | vii°:0.08:keeps the tension up | V:0.03:keeps the tension up
+next major 3 after A#7 7ths true: Imaj7:1:resolves the tension: back home | vi7:0.75:deceptive: the tension goes to vi instead of home | IVmaj7:0.38:steps back from the tension | iii7:0.25:resolves the tension: back home | bVII7:0.15:borrowed from the key next door: a rock edge | iv7:0.15:borrowed minor four: bittersweet | ii7:0.1:steps back from the tension | viiø7:0.08:keeps the tension up
+next major 3 after Cm 7ths false: IV:1:moves away from home | ii:0.71:moves away from home | I:0.43:stays close to home | V:0.43:jumps to tension | iii:0.29:stays close to home | bVII:0.15:borrowed from the key next door: a rock edge | iv:0.15:borrowed minor four: bittersweet | vii°:0.09:jumps to tension
+next major 3 after Cm 7ths true: IVmaj7:1:moves away from home | ii7:0.71:moves away from home | Imaj7:0.43:stays close to home | V7:0.43:jumps to tension | iii7:0.29:stays close to home | bVII7:0.15:borrowed from the key next door: a rock edge | iv7:0.15:borrowed minor four: bittersweet | viiø7:0.09:jumps to tension | vi7:0.03:stays close to home
+next major 3 after E 7ths false: ii:1:fits the key | I:0.4:fits the key | iii:0.4:fits the key | IV:0.4:fits the key | vi:0.4:fits the key | vii°:0.4:fits the key | V:0.24:fits the key | bVII:0.1:borrowed from the key next door: a rock edge | iv:0.1:borrowed minor four: bittersweet
+next major 3 after E 7ths true: ii7:1:fits the key | Imaj7:0.4:fits the key | iii7:0.4:fits the key | IVmaj7:0.4:fits the key | vi7:0.4:fits the key | viiø7:0.4:fits the key | V7:0.24:fits the key | bVII7:0.1:borrowed from the key next door: a rock edge | iv7:0.1:borrowed minor four: bittersweet
+next major 3 after G#maj7 7ths false: I:1:settles back home | V:0.7:builds tension toward home | ii:0.67:stays in the away area | vi:0.5:settles back home | bVII:0.35:borrowed from the key next door: a rock edge | iv:0.24999999999999997:borrowed minor four: bittersweet | vii°:0.2:builds tension toward home | iii:0.13:settles back home | IV:0.03:stays in the away area
+next major 3 after G#maj7 7ths true: Imaj7:1:settles back home | V7:0.7:builds tension toward home | ii7:0.67:stays in the away area | vi7:0.5:settles back home | bVII7:0.35:borrowed from the key next door: a rock edge | iv7:0.24999999999999997:borrowed minor four: bittersweet | viiø7:0.2:builds tension toward home | iii7:0.13:settles back home
+sevenths major 3: D#maj7 Fm7 Gm7 G#maj7 A#7 Cm7 Dm7b5
+next dorian 7 after nothing 7ths false: i:1:sets the key: starts on home | vi°:0.6:an easy start, close to home | III:0.45:an easy start, close to home | IV:0.4:starts away from home, leaves the key open | VII:0.4:starts on tension | V:0.1:the major V from the harmonic minor: pulls hard back to home | v:0.09:starts on tension | ii:0.05:starts away from home, leaves the key open
+next dorian 7 after nothing 7ths true: i7:1:sets the key: starts on home | viø7:0.6:an easy start, close to home | IIImaj7:0.45:an easy start, close to home | IV7:0.4:starts away from home, leaves the key open | VIImaj7:0.4:starts on tension | V7:0.1:the major V from the harmonic minor: pulls hard back to home | v7:0.09:starts on tension | ii7:0.05:starts away from home, leaves the key open
+next dorian 7 after G 7ths false: vi°:1:stays close to home | VII:1:jumps to tension | IV:0.83:moves away from home | III:0.67:stays close to home | v:0.4:jumps to tension | V:0.35:the major V from the harmonic minor: pulls hard back to home | ii:0.2:moves away from home | i:0.07:stays close to home
+next dorian 7 after G 7ths true: viø7:1:stays close to home | VIImaj7:1:jumps to tension | IV7:0.83:moves away from home | IIImaj7:0.67:stays close to home | v7:0.4:jumps to tension | V7:0.35:the major V from the harmonic minor: pulls hard back to home | ii7:0.2:moves away from home | i7:0.07:stays close to home
+next dorian 7 after D7 7ths false: i:1:resolves the tension: back home | vi°:0.63:deceptive: the tension goes to vi instead of home | IV:0.38:steps back from the tension | III:0.25:resolves the tension: back home | V:0.15:the major V from the harmonic minor: pulls hard back to home | VII:0.13:keeps the tension up | ii:0.08:steps back from the tension | v:0.03:keeps the tension up
+next dorian 7 after D7 7ths true: i7:1:resolves the tension: back home | viø7:0.63:deceptive: the tension goes to vi instead of home | IV7:0.38:steps back from the tension | IIImaj7:0.25:resolves the tension: back home | VIImaj7:0.13:keeps the tension up | ii7:0.08:steps back from the tension | v7:0.03:keeps the tension up
+next dorian 7 after Em 7ths false: VII:1:jumps to tension | IV:0.83:moves away from home | III:0.67:stays close to home | i:0.5:stays close to home | v:0.5:jumps to tension | ii:0.33:moves away from home | V:0.15:the major V from the harmonic minor: pulls hard back to home | vi°:0.03:stays close to home
+next dorian 7 after Em 7ths true: VIImaj7:1:jumps to tension | IV7:0.83:moves away from home | IIImaj7:0.67:stays close to home | i7:0.5:stays close to home | v7:0.5:jumps to tension | ii7:0.33:moves away from home | V7:0.15:the major V from the harmonic minor: pulls hard back to home | viø7:0.03:stays close to home
+next dorian 7 after G# 7ths false: ii:1:fits the key | i:0.4:fits the key | III:0.4:fits the key | IV:0.4:fits the key | vi°:0.4:fits the key | VII:0.4:fits the key | v:0.24:fits the key | V:0.1:the major V from the harmonic minor: pulls hard back to home
+next dorian 7 after G# 7ths true: ii7:1:fits the key | i7:0.4:fits the key | IIImaj7:0.4:fits the key | IV7:0.4:fits the key | viø7:0.4:fits the key | VIImaj7:0.4:fits the key | v7:0.24:fits the key | V7:0.1:the major V from the harmonic minor: pulls hard back to home
+next dorian 7 after Cmaj7 7ths false: VII:1:builds tension toward home | i:0.83:settles back home | v:0.6:builds tension toward home | vi°:0.5:settles back home | V:0.35:the major V from the harmonic minor: pulls hard back to home | ii:0.33:stays in the away area | III:0.27:settles back home | IV:0.03:stays in the away area
+next dorian 7 after Cmaj7 7ths true: VIImaj7:1:builds tension toward home | i7:0.83:settles back home | v7:0.6:builds tension toward home | viø7:0.5:settles back home | V7:0.35:the major V from the harmonic minor: pulls hard back to home | ii7:0.33:stays in the away area | IIImaj7:0.27:settles back home | IV7:0.03:stays in the away area
+sevenths dorian 7: Gm7 Am7 A#maj7 C7 Dm7 Em7b5 Fmaj7

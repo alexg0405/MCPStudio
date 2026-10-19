@@ -37,15 +37,18 @@ export class Fingers {
 
   /** A finger lifts. */
   async lift(id: number): Promise<void> {
-    if (!this.down.delete(id)) return;
-    await this.send('touchEnd');
+    const at = this.down.get(id);
+    if (!at) return;
+    // For touchEnd the points listed are the ones that lift.
+    await this.send('touchEnd', [[id, at]]);
+    this.down.delete(id);
   }
 
   /** Every finger lifts. */
   async liftAll(): Promise<void> {
     if (this.down.size === 0) return;
-    this.down.clear();
     await this.send('touchEnd');
+    this.down.clear();
   }
 
   /** One finger drags in `steps` moves from where it is to `to`, a frame apart. */
@@ -79,8 +82,8 @@ export class Fingers {
     await this.lift(id);
   }
 
-  private async send(type: 'touchStart' | 'touchMove' | 'touchEnd'): Promise<void> {
-    const touchPoints = [...this.down.entries()].map(([id, p]) => ({ x: p.x, y: p.y, id }));
+  private async send(type: 'touchStart' | 'touchMove' | 'touchEnd', only?: Array<[number, Point]>): Promise<void> {
+    const touchPoints = (only ?? [...this.down.entries()]).map(([id, p]) => ({ x: p.x, y: p.y, id }));
     await cdp().send('Input.dispatchTouchEvent', { type, touchPoints });
   }
 }

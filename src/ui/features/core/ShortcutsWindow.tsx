@@ -4,6 +4,7 @@ import type { Services } from '@app/services';
 import { holdModal } from '../../controls/Dialog';
 import { Icon } from '../../controls/Icon';
 import { useServices } from '../../services-context';
+import { TOUCH_GESTURES } from '../../touch/gestures';
 import { setCustomShortcuts, shortcutRows, type ShortcutRow } from './shortcut-rows';
 import styles from './ShortcutsWindow.module.css';
 
@@ -110,7 +111,30 @@ export function ShortcutsWindow() {
         </tbody>
       </table>
       {rows.length === 0 && <div className={styles.empty}>No command matches “{query}”.</div>}
+      {!query && <TouchGestureList />}
     </div>
+  );
+}
+
+/** What fingers do on a touchscreen (the same list as docs/shortcuts.md): there is no key to show for these. */
+function TouchGestureList() {
+  return (
+    <section aria-label="Touch gestures">
+      <h3 className={styles.touchTitle}>Touch gestures</h3>
+      {TOUCH_GESTURES.map((group) => (
+        <table key={group.where} className={styles.table}>
+          <caption className={styles.touchWhere}>{group.where}</caption>
+          <tbody>
+            {group.gestures.map((g) => (
+              <tr key={g.gesture}>
+                <td className={styles.touchGesture}>{g.gesture}</td>
+                <td>{g.what}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ))}
+    </section>
   );
 }
 

@@ -229,3 +229,8 @@
     min-width: 76px;
   }
 }
+
+/* Touch layout: the PAT / SONG switch is as tall as the buttons beside it. */
+:global(:root[data-touch='on']) .modeSwitch {
+  height: var(--ag-touch-target);
+}

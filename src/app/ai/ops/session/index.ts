@@ -8,6 +8,7 @@ import type { Draft } from 'immer';
 import type { Project } from '@core/model/types';
 import type { Services } from '../../../services';
 import { PIANO_ROLL_TOOLS, PLAYLIST_TOOLS } from '../../../stores/editor';
+import { KEYS_VELOCITIES, TOUCH_LAYOUT_CHOICES } from '../../../stores/prefs';
 import type { AiAnswer } from '../../schema';
 import * as S from '../../schema/parts';
 import { ActionError, createOpContext, type AnswerState, type OpModule } from '../context';
@@ -52,6 +53,16 @@ export const session: OpModule = {
         record_audio: S.bool('Record audio from the input.'),
         follow_playhead: S.bool('Scroll with the playhead.'),
         tooltips: S.bool('Hover hints.'),
+        touch_layout: {
+          type: 'string',
+          enum: [...TOUCH_LAYOUT_CHOICES],
+          description: 'Bigger buttons and handles for fingers: auto follows the device (on for tablets), on, off.',
+        },
+        keys_velocity: {
+          type: 'string',
+          enum: [...KEYS_VELOCITIES],
+          description: 'How hard the on-screen Keys play: from where a finger lands (position), or soft, medium, loud.',
+        },
         typing_piano: S.bool('Computer keys play notes.'),
         piano_octave: S.int('Typing keyboard octave (0–9; 5 = middle C).'),
         midi_input: S.bool('MIDI keyboards.'),

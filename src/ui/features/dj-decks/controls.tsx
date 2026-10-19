@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import { emitHint } from '@agstudio/sdk/ui';
+import { emitHint, TouchAssist } from '@agstudio/sdk/ui';
 import { djControllers } from '@app/dj/controllers';
 import type { DeckId } from '@app/dj/decks-api';
 import { isTargetId } from '@core/midi-map/targets';
@@ -63,14 +63,24 @@ export interface SliderProps {
  * (Shift for fine steps), scroll over it, or double-click to put it back. Controlled: the decks own the value.
  */
 export function Slider({ value, min, max, reset, vertical, label, hint, format, onChange, marks, className, target }: SliderProps) {
-  const drag = useRef<{ at: number; from: number; fine: boolean; start: number; extent: number } | null>(null);
+  const drag = useRef<{ pointerId: number; at: number; from: number; fine: boolean; start: number; extent: number } | null>(null);
+  // A finger's fine modes: a second finger, or a first rest.
+  const element = useRef<HTMLDivElement | null>(null);
+  const assist = useRef<TouchAssist | null>(null);
+  assist.current ??= new TouchAssist({
+    onFineChange: () => element.current?.toggleAttribute('data-fine', assist.current?.isFine ?? false),
+  });
   const frac = (v: number) => (v - min) / (max - min);
   const set = (f: number) => onChange(min + Math.min(1, Math.max(0, f)) * (max - min));
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
+    // A second finger on the slider is the fine mode (the assist hears it), not a new drag.
+    if (drag.current && e.pointerType === 'touch' && e.pointerId !== drag.current.pointerId) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
+    element.current = e.currentTarget;
+    assist.current?.start(e);
     const r = e.currentTarget.getBoundingClientRect();
     const extent = Math.max(20, vertical ? r.height : r.width);
     const pos = vertical ? e.clientY : e.clientX;
@@ -79,16 +89,19 @@ export function Slider({ value, min, max, reset, vertical, label, hint, format, 
     const onCap = Math.abs(rel - frac(value)) < 14 / extent;
     const from = onCap ? frac(value) : Math.min(1, Math.max(0, rel));
     if (!onCap) set(from);
-    drag.current = { at: from, from, fine: e.shiftKey, start: pos, extent };
+    drag.current = { pointerId: e.pointerId, at: from, from, fine: e.shiftKey, start: pos, extent };
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    if (!d) return;
+    if (!d || e.pointerId !== d.pointerId) return;
     const pos = vertical ? e.clientY : e.clientX;
-    if (e.shiftKey !== d.fine) {
+    const phase = assist.current?.move(e) ?? 'dragging';
+    if (phase === 'resting') return;
+    const wantsFine = e.shiftKey || (assist.current?.isFine ?? false);
+    if (phase === 'started' || wantsFine !== d.fine) {
       d.start = pos;
       d.from = d.at;
-      d.fine = e.shiftKey;
+      d.fine = wantsFine;
     }
     const delta = ((vertical ? d.start - pos : pos - d.start) / d.extent) * (d.fine ? 0.1 : 1);
     const next = Math.min(1, Math.max(0, d.from + delta));
@@ -98,9 +111,10 @@ export function Slider({ value, min, max, reset, vertical, label, hint, format, 
     emitHint(e.currentTarget, `${label}: ${format(min + next * (max - min))}`);
   };
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!drag.current) return;
+    if (!drag.current || e.pointerId !== drag.current.pointerId) return;
     drag.current = null;
     e.currentTarget.releasePointerCapture(e.pointerId);
+    assist.current?.end();
   };
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const step = 0.02 * (e.shiftKey ? 0.25 : 1) * (e.deltaY < 0 ? 1 : -1);
@@ -128,7 +142,8 @@ export function Slider({ value, min, max, reset, vertical, label, hint, format, 
       aria-valuenow={value}
       aria-valuetext={format(value)}
       data-dj-target={target}
-      data-hint={`${label}: ${format(value)}. ${hint} Drag (Shift = fine), scroll, or double-click to reset`}
+      data-hint={`${label}: ${format(value)}. ${hint} Drag (Shift or a second finger = fine), scroll, or double-click to reset`}
+      data-touch-own=""
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -188,6 +203,7 @@ export function PadButton({
       aria-disabled={idle || undefined}
       data-dj-target={target}
       data-hint={hint}
+      data-touch-own={onPointerDown ? '' : undefined}
       disabled={disabled && !learning}
       style={style}
       onPointerDown={(e) => {

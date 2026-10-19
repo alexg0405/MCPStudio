@@ -86,7 +86,8 @@ function useAutomationFollow(
 
 /**
  * Rotary knob: a stone body with the value as an accent arc around it (from the middle when
- * `bipolar`). Drag vertically (Shift = fine), double-click to reset, wheel to nudge.
+ * `bipolar`). Drag vertically (Shift = fine; with a finger a second finger, or resting first, makes it fine, and resting
+ * without a drag opens the menu), double-click or double-tap to reset, wheel to nudge.
  * Controlled: the host owns the value. Memoized: a host that passes stable handlers (useGestureEdit does) and
  * stable `format`/`spec` does not re-render the knob when only something else on it changed.
  */
@@ -138,6 +139,7 @@ export const Knob = memo(function Knob({
     onChange,
     onEnd,
     commit,
+    ...(param && openMenu ? { onLongPress: (at: { clientX: number; clientY: number }) => openMenu(param, at) } : {}),
   });
   const pointer = pointerEnds(position, metrics);
 
@@ -152,6 +154,7 @@ export const Knob = memo(function Knob({
       aria-valuenow={position}
       aria-valuetext={format(value)}
       data-hint={text}
+      data-touch-own=""
       onPointerDown={gestures.onPointerDown}
       onPointerMove={gestures.onPointerMove}
       onPointerUp={gestures.onPointerUp}

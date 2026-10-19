@@ -67,6 +67,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
         aria-valuemax={deck.song?.durationSec ?? 0}
         aria-valuenow={0}
         data-hint={`Whole song: click or drag to jump to a place in deck ${id}`}
+        data-touch-own=""
         onPointerDown={overview.onPointerDown}
         onPointerMove={overview.onPointerMove}
         onPointerUp={overview.onPointerUp}

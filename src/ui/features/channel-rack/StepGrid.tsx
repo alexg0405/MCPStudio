@@ -35,7 +35,7 @@ const StepButtons = memo(function StepButtons({ on }: { on: string }) {
           className={`${styles.step} ${Math.floor(i / 4) % 2 ? styles.stepB : ''} ${bit === '1' ? styles.stepOn : ''}`}
           style={{ left: stepX(i) }}
           data-step={i}
-          data-hint={`Step ${i + 1}. Click or drag to paint, right-click to erase`}
+          data-hint={`Step ${i + 1}. Click or drag to paint (tap a lit step to turn it off), right-click to erase`}
           aria-pressed={bit === '1'}
           aria-label={`Step ${i + 1}`}
         />
@@ -70,6 +70,7 @@ export function StepGrid({ channelId, rootKey }: { channelId: ChannelId; rootKey
     <div
       className={styles.steps}
       data-steps
+      data-touch-own=""
       style={{ width: stepX(stepCount - 1) + STEP_W }}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => {
@@ -82,6 +83,13 @@ export function StepGrid({ channelId, rootKey }: { channelId: ChannelId; rootKey
       onPointerOver={(e) => {
         const step = stepUnder(e);
         if (step) paintEnter(channelId, step.index, e.buttons);
+      }}
+      onPointerMove={(e) => {
+        // A finger stays on the step it landed on (touch pointers are captured by it), so no pointerover reaches the
+        // steps it passes: find the one under it, in this row.
+        if (e.pointerType !== 'touch') return;
+        const under = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-step]');
+        if (under && under.closest('[data-steps]') === e.currentTarget) paintEnter(channelId, Number(under.dataset.step), e.buttons);
       }}
     >
       <StepButtons on={stepBits(view)} />

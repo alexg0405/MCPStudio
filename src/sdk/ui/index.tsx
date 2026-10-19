@@ -4,6 +4,7 @@ export { Toggle, Select } from './controls';
 export { ParamKnob, ParamToggle, ParamSelect, Section, formatPan } from './param-controls';
 export { lazyUi } from './lazy';
 export { emitHint, HINT_EVENT } from './hint';
+export { TouchAssist, type DragPhase, type TouchAssistHooks } from './touch-assist';
 export { FrameContext, useFrame, type FrameScheduler } from './frame';
 export { themeColors, type ThemeColors } from './theme';
 export {

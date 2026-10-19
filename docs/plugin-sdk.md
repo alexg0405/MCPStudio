@@ -530,6 +530,13 @@ with the generated panel underneath. `plugins/example-supersaw` is a complete ex
 `Knob`, `Toggle` and `Select` take an optional `hint` that the hint bar shows after the value
 ("Cutoff: 1.20 kHz — Where the filter starts working").
 
+Knobs work with fingers as they are: a vertical drag turns them, a second finger put down anywhere makes the drag fine,
+a finger that rests before dragging drags finely, and one that rests and lifts opens the param menu (a long press is the
+touch right-click). For your own draggable controls, `TouchAssist` from `@agstudio/sdk/ui` gives you the same dead zone and
+fine modes: create one, call `start(event)` on pointerdown, `move(event)` on pointermove (it says `resting`, `started` or
+`dragging`), read `isFine` next to Shift, and `end()` on pointerup (it returns where to open the menu after a rest).
+Give a control that takes its own long press the attribute `data-touch-own` and `touch-action: none`.
+
 The param-bound controls do all of that in one line each: `<ParamKnob ui={props} param="cutoff" />`
 (knob, label, value with units, the param's `hint`, undo, the param menu), `ParamToggle`,
 `ParamSelect` and `Section` (a titled box like the generated panel's; its `hint` covers its empty

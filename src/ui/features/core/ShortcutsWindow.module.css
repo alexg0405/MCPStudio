@@ -200,3 +200,27 @@
   color: var(--ag-text-dim);
   text-align: center;
 }
+
+/* The touch gestures under the keys. */
+.touchTitle {
+  margin: 18px 0 2px;
+  color: var(--ag-text);
+  font-size: var(--ag-font-size);
+  font-weight: 600;
+}
+
+.touchWhere {
+  padding: 8px 6px 2px;
+  color: var(--ag-text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.touchGesture {
+  width: 38%;
+  color: var(--ag-text);
+  font-weight: 500;
+}

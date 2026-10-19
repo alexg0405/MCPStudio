@@ -74,6 +74,7 @@ function ComputerKeyboard() {
 function Interface() {
   const s = useServices();
   const tooltips = useStore(s.prefs, (p) => p.tooltips);
+  const touchLayout = useStore(s.prefs, (p) => p.touchLayout);
   const theme = findTheme(useStore(s.prefs, (p) => p.theme)) ?? 'marble';
   const accent = useStore(s.prefs, (p) => effectiveAccent(p.theme, p.accent, p.accentPicked));
   return (
@@ -110,6 +111,22 @@ function Interface() {
       </Row>
       <Row label="Tooltips" hint="The bar at the bottom of the screen explains whatever you point at either way.">
         <Switch checked={tooltips} onChange={() => s.commands.run('options.tooltips')} label="Explain controls in a bubble" />
+      </Row>
+      <Row
+        label="Touch layout"
+        hint="Bigger buttons, handles and step squares for fingers. Auto turns it on for tablets; on a laptop with a touchscreen, choose On."
+      >
+        <select
+          className={styles.select}
+          value={touchLayout}
+          onChange={(e) => s.commands.run('options.touchLayout', e.target.value)}
+          aria-label="Touch layout"
+          data-hint="Touch layout: Auto follows the device, On gives fingers bigger targets, Off keeps the compact mouse layout"
+        >
+          <option value="auto">Auto (follow the device)</option>
+          <option value="on">On</option>
+          <option value="off">Off</option>
+        </select>
       </Row>
       <Row label="Getting started" hint="Open the welcome screen, the guided tour or the list of keyboard shortcuts again.">
         <button className={styles.button} onClick={() => s.commands.run('help.welcome')}>

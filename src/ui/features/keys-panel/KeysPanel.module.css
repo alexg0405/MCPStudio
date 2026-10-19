@@ -1,0 +1,226 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: var(--ag-space-2);
+  gap: var(--ag-space-2);
+  background: var(--ag-surface-1);
+  user-select: none;
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ag-space-3);
+}
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+}
+
+.tab {
+  height: 22px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ag-radius-sm);
+  background: transparent;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.tabOn,
+.tabOn:hover {
+  background: var(--ag-active);
+  box-shadow: inset 0 0 0 1px var(--ag-active-border);
+  color: var(--ag-accent-ink);
+}
+
+.octaves {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.step {
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  cursor: pointer;
+}
+
+.step:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.octaveLabel {
+  min-width: 40px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.velocity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.velocity select {
+  height: 22px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+}
+
+/* The keybed: a dark well the keys sit in. Keys are placed by percentage, so the piano fills any window. */
+.piano {
+  position: relative;
+  flex: 1;
+  min-height: 80px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-well);
+  box-shadow: var(--ag-inset);
+  touch-action: none;
+}
+
+.white,
+.black {
+  position: absolute;
+  top: 3px;
+}
+
+.white {
+  bottom: 3px;
+  border-radius: 0 0 5px 5px;
+  background: linear-gradient(var(--ag-key-white) 70%, color-mix(in srgb, var(--ag-key-white) 88%, var(--ag-key-black)));
+  box-shadow:
+    inset 0 -3px 0 color-mix(in srgb, var(--ag-key-white) 80%, var(--ag-key-black)),
+    inset 0 0 0 1px color-mix(in srgb, var(--ag-border) 50%, transparent);
+}
+
+.black {
+  height: 62%;
+  z-index: 1;
+  border-radius: 0 0 4px 4px;
+  background: linear-gradient(
+    var(--ag-key-black) 0%,
+    color-mix(in srgb, var(--ag-key-black) 82%, var(--ag-key-white)) 88%,
+    var(--ag-key-black) 100%
+  );
+  box-shadow:
+    inset 0 -2px 0 color-mix(in srgb, var(--ag-key-black) 70%, var(--ag-key-white)),
+    2px 3px 4px color-mix(in srgb, var(--ag-border) 55%, transparent);
+}
+
+.white.on {
+  background: linear-gradient(var(--ag-accent-light), var(--ag-accent));
+  box-shadow:
+    inset 0 -2px 0 var(--ag-accent-dim),
+    0 0 8px var(--ag-accent-glow);
+}
+
+.black.on {
+  background: linear-gradient(var(--ag-accent-strong), var(--ag-accent-deep));
+  box-shadow: 0 0 8px var(--ag-accent-glow);
+}
+
+.cLabel {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  color: color-mix(in srgb, var(--ag-on-light) 55%, transparent);
+  font-size: 9px;
+  font-weight: 500;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* The pad grid fills the window as a square-ish 4 x 4. */
+.pads {
+  flex: 1;
+  min-height: 120px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(4, 1fr);
+  gap: 6px;
+  touch-action: none;
+}
+
+.pad {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1), inset 0 0 0 1px var(--ag-line-faint);
+  color: var(--ag-text-dim);
+  cursor: pointer;
+  transition: background 60ms;
+}
+
+.padOn {
+  background: linear-gradient(var(--ag-accent-light), var(--ag-accent));
+  box-shadow: inset 0 -2px 0 var(--ag-accent-dim), 0 0 10px var(--ag-accent-glow);
+  color: var(--ag-on-light);
+}
+
+.padNumber {
+  font-size: var(--ag-font-size-title);
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.padNote {
+  font-size: var(--ag-font-size-sm);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/* Touch layout: tabs and buttons a finger can hit. */
+:global(:root[data-touch='on']) .tab,
+:global(:root[data-touch='on']) .step,
+:global(:root[data-touch='on']) .velocity select {
+  height: 34px;
+}
+
+:global(:root[data-touch='on']) .tab {
+  padding: 0 18px;
+}
+
+:global(:root[data-touch='on']) .step {
+  width: 40px;
+}

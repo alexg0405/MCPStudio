@@ -15,6 +15,7 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Right-click a name', 'Piano roll, rename, color, clone, delete'],
         ['Steps ▾', 'Fill every 2/4/8, rotate, shift, randomize, clear'],
         ['+ at the bottom', 'Add a sound or an instrument'],
+        ['Touch: drag a finger along a row', 'Turn steps on; tap a lit step to turn it off'],
       ],
     },
     'piano-roll': {
@@ -31,6 +32,9 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Key ▾', 'The song key: highlight and snap to its scale'],
         ['Lanes below', 'Velocity, pan, release, fine pitch per note'],
         [`Scroll / ${mod}+scroll`, 'Scroll / zoom'],
+        ['Touch: one finger', 'Does what the tool does with a mouse'],
+        ['Touch: two fingers', 'Pan; pinch sideways to zoom time, up and down for taller keys'],
+        ['Touch: hold one finger', 'The right-click menu of the note or the empty spot'],
       ],
     },
     playlist: {
@@ -56,6 +60,10 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Automation clips', 'Double-click the curve for a point; drag points; right-click for shapes'],
         [`Hold ${alt} while dragging`, 'Ignore the grid'],
         [`${mod}+scroll / ${alt}+scroll`, 'Zoom in time / make tracks taller'],
+        ['Touch: one finger', 'Does what the tool does with a mouse'],
+        ['Touch: two fingers', 'Pan; pinch sideways to zoom time, up and down for taller tracks'],
+        ['Touch: hold one finger', 'The menu of the clip, the empty spot, the track or the marker (a right-click would delete)'],
+        ['Touch: two quick taps', 'A double-click: open a pattern, rename, add an automation point'],
       ],
     },
     mixer: {
@@ -69,6 +77,8 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Chains (in the browser)', 'A whole row of effects, like a vocal chain, on the selected track in one click'],
         ['Right-click an effect', 'Open, replace, move, sidechain from…, remove'],
         ['Green light', 'Mute the track (right-click: solo)'],
+        ['Touch: drag a fader or knob', 'A second finger anywhere makes it fine; hold first and the drag is fine too'],
+        ['Touch: hold a fader or knob, then lift', 'Its menu (automation, link to a controller)'],
       ],
     },
     plugin: {
@@ -98,6 +108,17 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Click a change', 'Go back to just after it'],
         ['Click a dimmed change', 'Redo up to it'],
         [`${mod}+Z / ${mod}+Shift+Z`, 'Undo / redo one step'],
+      ],
+    },
+    keys: {
+      intro: 'A piano and sixteen drum pads for fingers: every finger plays its own note, so chords and rolls work.',
+      moves: [
+        ['Touch several keys or pads', 'Each finger plays one note'],
+        ['Slide a finger along the piano', 'Play each key it reaches'],
+        ['Where a finger lands', 'Sets how hard it plays: lower on a key, or the middle of a pad, is louder'],
+        ['Velocity box', 'Use one fixed level instead (soft, medium or loud)'],
+        ['Piano / Pads tabs', 'Switch between the piano and the drum pads (keys 36–51, the Drum Pads instrument)'],
+        ['− and + buttons', 'Move the piano down or up an octave'],
       ],
     },
     'piano-keyboard': {

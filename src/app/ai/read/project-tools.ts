@@ -191,6 +191,8 @@ export const getSettings = tool(
       record_audio: prefs.recordAudio,
       follow_playhead: prefs.followPlayhead,
       tooltips: prefs.tooltips,
+      touch_layout: prefs.touchLayout,
+      keys_velocity: prefs.keysVelocity,
       typing_piano: prefs.typingPiano,
       piano_octave: prefs.pianoOctave,
       midi_input: prefs.midiInput,

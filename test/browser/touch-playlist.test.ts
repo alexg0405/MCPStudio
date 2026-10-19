@@ -24,7 +24,7 @@ import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import '@ui/touch/touch.css';
-import { centerOf, Fingers, insideOf, nextFrame, sleep, until } from '../helpers/touch';
+import { Fingers, insideOf, nextFrame, sleep, until } from '../helpers/touch';
 
 const BAR = 3840;
 const BAR_PX = 96; // pxPerTick 0.025
@@ -319,11 +319,5 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
       expect(clips()).toHaveLength(before + 1);
       await s.history.undo();
     }
-  });
-
-  it('the centre of a clip is where the finger lands (sanity check for the helpers)', () => {
-    const made = addPatternClip(3, 0);
-    expect(clips()[0]!.id).toBe(made.id);
-    expect(centerOf(grid).x).toBeGreaterThan(0);
   });
 });

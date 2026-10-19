@@ -2,7 +2,12 @@
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
 import type { Services } from '../../../services';
 import { PIANO_ROLL_TOOLS, PLAYLIST_TOOLS } from '../../../stores/editor';
-import type { AudioBufferChoice, PrefsState } from '../../../stores/prefs';
+import {
+  KEYS_VELOCITIES,
+  TOUCH_LAYOUT_CHOICES,
+  type AudioBufferChoice,
+  type PrefsState,
+} from '../../../stores/prefs';
 import type { AiAction } from '../../schema';
 import { ActionError, type OpContext } from '../context';
 import { bool, isObj, num, r2, str } from '../values';
@@ -149,6 +154,22 @@ function applyRecordSettings({ action, out, prefs, text }: SettingsEdit): void {
   }
 }
 
+/** The touch layout and the on-screen Keys panel's velocity. */
+function applyTouchSettings({ action, out, prefs, text }: SettingsEdit): void {
+  const layout = TOUCH_LAYOUT_CHOICES.find((candidate) => candidate === str(action.touch_layout));
+  if (action.touch_layout !== undefined && !layout) out.warn('touch_layout must be auto, on or off');
+  if (layout) {
+    prefs.touchLayout = layout;
+    text.push(`touch layout ${layout}`);
+  }
+  const velocity = KEYS_VELOCITIES.find((candidate) => candidate === str(action.keys_velocity));
+  if (action.keys_velocity !== undefined && !velocity) out.warn(`keys_velocity must be one of ${KEYS_VELOCITIES.join(', ')}`);
+  if (velocity) {
+    prefs.keysVelocity = velocity;
+    text.push(`keys velocity ${velocity}`);
+  }
+}
+
 /** The typing keyboard, audio buffer, sample memory, toolbar display, audio input and latency correction. */
 function applyAudioSettings({ action, context, out, prefs, text }: SettingsEdit): void {
   const octave = num(action.piano_octave);
@@ -249,6 +270,7 @@ export function applySettings(services: Services, action: AiAction, context: OpC
   applySwitches(edit);
   applyRecordSettings(edit);
   applyAudioSettings(edit);
+  applyTouchSettings(edit);
   applyExportSettings(edit);
   if (Object.keys(edit.prefs).length) services.prefs.getState().set(edit.prefs);
   applyEditorSettings(services, edit);

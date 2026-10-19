@@ -7,6 +7,7 @@ import { collectActions } from './collect';
 import { paletteRows } from './palette-rows';
 import { pushRecent } from './search';
 import { Icon } from '../../controls/Icon';
+import { isTouchLayout } from '../../touch/layout';
 import styles from './Palette.module.css';
 
 /** Open/closed, outside React so the command and the overlay share it. */
@@ -20,6 +21,10 @@ export function togglePalette(query = ''): void {
 
 /** Row height in px (the CSS fixes it), and the list's padding: only the rows near the viewport are in the DOM. */
 const ROW_H = 32;
+/** In the touch layout the rows are this tall (px; the CSS says so too): a fingertip needs more than a mouse pointer. */
+const TOUCH_ROW_H = 40;
+/** The height of a row now. */
+const rowHeight = (): number => (isTouchLayout() ? TOUCH_ROW_H : ROW_H);
 const LIST_PAD = 6;
 /** Rows drawn below the first visible one: the list is at most ~560 px tall, so this always covers it. */
 const WINDOW_ROWS = 20;
@@ -58,9 +63,10 @@ function useActiveRowInView(listRef: RefObject<HTMLDivElement | null>, active: n
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const top = LIST_PAD + active * ROW_H;
+    const rowH = rowHeight();
+    const top = LIST_PAD + active * rowH;
     if (top < list.scrollTop) list.scrollTop = top - LIST_PAD;
-    else if (top + ROW_H + LIST_PAD > list.scrollTop + list.clientHeight) list.scrollTop = top + ROW_H + LIST_PAD - list.clientHeight;
+    else if (top + rowH + LIST_PAD > list.scrollTop + list.clientHeight) list.scrollTop = top + rowH + LIST_PAD - list.clientHeight;
   }, [listRef, active]);
 }
 
@@ -153,12 +159,12 @@ function Palette() {
           className={styles.list}
           role="listbox"
           onScroll={(ev) => {
-            const first = Math.max(0, Math.floor((ev.currentTarget.scrollTop - LIST_PAD) / ROW_H));
+            const first = Math.max(0, Math.floor((ev.currentTarget.scrollTop - LIST_PAD) / rowHeight()));
             if (first !== scrollRow) setScrollRow(first);
           }}
         >
           {rows.length === 0 && <div className={styles.empty}>Type to search every menu and command.</div>}
-          <div style={{ paddingTop: from * ROW_H, paddingBottom: (rows.length - to) * ROW_H }}>
+          <div style={{ paddingTop: from * rowHeight(), paddingBottom: (rows.length - to) * rowHeight() }}>
             {rows.slice(from, to).map((e, k) => (
               <Row key={e.key} entry={e} index={from + k} isActive={from + k === active} hover={setActive} run={runStable} />
             ))}

@@ -19,6 +19,7 @@ import { FOCUS_PROMPT } from './focus-guard';
 import { meters } from './meters';
 import { mix } from './mix';
 import { mixer } from './mixer';
+import { mixerState } from './mixer-state';
 import { notes } from './notes';
 import { patterns } from './patterns';
 import { pitch } from './pitch';
@@ -36,6 +37,7 @@ export const MODULES: readonly OpModule[] = [
   song,
   channels,
   mixer,
+  mixerState,
   patterns,
   notes,
   harmony,

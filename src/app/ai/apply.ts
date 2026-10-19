@@ -15,6 +15,7 @@ import { recordingAfter } from './ops/recording';
 import { sessionAfter } from './ops/session';
 import { decksAfter } from './ops/decks';
 import { launcherAfter } from './ops/launcher';
+import { mixerStateAfter } from './ops/mixer-state';
 import { uiAfter } from './ops/ui';
 import type { AiAnswer } from './schema';
 
@@ -68,6 +69,7 @@ export function applyAnswer(services: Services, answer: AiAnswer, context: Apply
   recordingAfter(services, answer, state);
   decksAfter(services, answer, state);
   launcherAfter(services, answer, state);
+  mixerStateAfter(services, answer, state);
 
   const project = services.doc.getState().project;
   if (state.selectPattern && project.patterns[state.selectPattern])

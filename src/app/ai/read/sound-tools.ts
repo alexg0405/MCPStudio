@@ -1,6 +1,7 @@
 /** Read tools for sound sources and processing: the mixer, one channel, the installed plugins and the effect chains. */
 import type { ParamSpec, ParamSpecs, PluginDef } from '@agstudio/sdk';
 import { MASTER, type Channel, type InsertId, type Project } from '@core/model/types';
+import { groupOfInsert } from '@core/query/mix-groups';
 import { chainChoices, findChainChoice, type ChainChoice } from '../../chains';
 import { presetChoices } from '../../presets';
 import type { Services } from '../../services';
@@ -22,6 +23,8 @@ function describeInsert(services: Services, project: Project, id: InsertId, incl
     pan: round2(insert.pan),
     muted: insert.muted,
     solo: insert.solo,
+    ...(insert.soloSafe ? { solo_safe: true } : {}),
+    ...(groupOfInsert(project.mixer, id) ? { group: groupOfInsert(project.mixer, id)!.name } : {}),
     routes: insert.routes.map((route) => ({
       to: mixerNumber(project, route.to),
       name: mixerTrackName(project, route.to),

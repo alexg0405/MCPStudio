@@ -27,6 +27,7 @@ export const OPEN_WINDOWS = [
   'pitch-editor',
   'samples',
   'chords',
+  'mix-snapshots',
   'browser',
 ] as const;
 export type OpenWindow = (typeof OPEN_WINDOWS)[number];

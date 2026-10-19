@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { produce } from 'immer';
+import { produce, produceWithPatches } from 'immer';
 import { createEmptyProject } from '../model/defaults';
 import { MAX_INSERT_VOLUME } from '../model/fader';
 import { seededBytes, setIdSource } from '../model/ids';
-import { targetKey } from '../model/targets';
+import { parseTargetKey, targetKey } from '../model/targets';
+import { targetsChangedBy } from '../automation/changes';
 import { MASTER, type GroupId, type InsertId, type Project } from '../model/types';
 import { resolveTarget } from '../automation/targets';
 import { effectivelyMutedInserts } from '../query/mixer';
@@ -228,6 +229,14 @@ describe('VCA', () => {
     const set = produce(p, (d) => setTargetValue(d, { kind: 'vca', groupId: id }, 0.4));
     expect(set.mixer.groups![0]!.vca).toBe(0.4);
     expect(targetKey({ kind: 'vca', groupId: id })).toBe(`vca:${id}`);
+  });
+
+  it('its target key round-trips and a moved VCA is reported as a moved target', () => {
+    const { p, id } = withVca(1);
+    expect(parseTargetKey(targetKey({ kind: 'vca', groupId: id }))).toEqual({ kind: 'vca', groupId: id });
+    expect(parseTargetKey('vca:a:b')).toBeNull();
+    const [next, patches] = produceWithPatches(p, (d) => void setVcaLevel(d, id, 0.5));
+    expect(targetsChangedBy(p, next, patches)).toEqual([{ kind: 'vca', groupId: id }]);
   });
 
   it('has no automation target when the group has no VCA', () => {

@@ -21,7 +21,7 @@ import {
   type SlotId,
 } from '@core/model/types';
 import { setChannelProp } from '@core/ops/channels';
-import { addFxSlot, addInsert, moveFxSlot, setInsertProp } from '@core/ops/mixer';
+import { addFxSlot, addInsert, moveFxSlot, setInsertProp, setSoloSafe } from '@core/ops/mixer';
 import { setRoute, setSlotSidechain } from '@core/ops/routing';
 import { findEmptyInsert } from '@core/query/mixer';
 import { defaultValues, type ParamValue } from '@agstudio/sdk';
@@ -132,6 +132,8 @@ function claimBuses(context: SetupContext, wanted: ReadonlySet<BusRole>): Claime
       addInsert(draft, makeInsert(id, name));
     }
     setInsertProp(draft, id, 'color', recipe.color);
+    // A solo should not silence the reverb or delay return (its tails and the tracks that feed it keep playing).
+    if (role === 'reverb' || role === 'delay') setSoloSafe(draft, id, true);
     buses[role] = id;
     fresh.add(role);
   }

@@ -14,6 +14,7 @@ import {
   setFxSlotEnabled,
   setFxSlotMix,
   setInsertProp,
+  setSoloSafe,
 } from '@core/ops/mixer';
 import { removeRoute, routeOnlyTo, setRoute, setSlotSidechain } from '@core/ops/routing';
 import { insertLabel } from '@core/query/mixer';
@@ -43,6 +44,7 @@ export const mixer: OpModule = {
         pan: S.num('−1 … 1.'),
         mute: S.bool('Mute it.'),
         solo: S.bool('Solo it (FL-style: its sources keep playing).'),
+        solo_safe: S.bool('true: a solo elsewhere does not silence it (a reverb return, a bus); false: it follows solo like any track.'),
         color: S.str('Hex color.'),
         position: S.int('Move it to this mixer number (1 or more; Master stays first).'),
       },
@@ -186,6 +188,11 @@ export const mixer: OpModule = {
       if (solo !== undefined) {
         setInsertProp(draft, id, 'solo', solo);
         out.push(solo ? 'solo' : 'unsolo');
+      }
+      const soloSafe = bool(action.solo_safe);
+      if (soloSafe !== undefined) {
+        setSoloSafe(draft, id, soloSafe);
+        out.push(soloSafe ? 'solo-safe' : 'not solo-safe');
       }
       const color = str(action.color);
       if (color) setInsertProp(draft, id, 'color', color);

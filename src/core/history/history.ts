@@ -137,6 +137,7 @@ export class History {
    * Applies a recipe as one undo entry. Returns false when the recipe changed nothing.
    * `amend`: fold the edit into that entry (keeping its id and label) while it is still the newest
    * one; a follow-up that finishes later (e.g. leveling the mix after an AI answer) then undoes with it.
+   * `glideSec`: told to the engine with the change (a snapshot recall glides the mixer instead of stepping it).
    */
   transact(label: string, recipe: Recipe, opts: { mergeKey?: string; amend?: number; glideSec?: number } = {}): boolean {
     this.gestureActive?.commit();

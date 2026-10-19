@@ -234,5 +234,13 @@ function keepSelectionsValid(s: Services): void {
   history.onChange(({ next }) => {
     const insertId = s.session.getState().selectedInsertId;
     if (insertId && !next.mixer.inserts[insertId]) s.session.getState().selectInsert(null);
+    const marked = s.session.getState().markedInsertIds;
+    if (marked.some((id) => !next.mixer.inserts[id])) s.session.getState().markInserts(marked.filter((id) => next.mixer.inserts[id]));
+    // A/B compare forgets a snapshot that was deleted (or undone away).
+    const { a, b, side } = s.session.getState().snapshotCompare;
+    const exists = (id: typeof a) => !!id && !!next.mixSnapshots?.some((snapshot) => snapshot.id === id);
+    if ((a && !exists(a)) || (b && !exists(b))) {
+      s.session.getState().setSnapshotCompare({ a: exists(a) ? a : null, b: exists(b) ? b : null, side: exists(a) && exists(b) ? side : null });
+    }
   });
 }

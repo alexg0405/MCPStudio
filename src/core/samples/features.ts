@@ -15,6 +15,57 @@ const BODY_SEC = 0.45;
 /** Longest stretch the envelope is measured over (s). */
 export const ENVELOPE_SEC = 4;
 
+/** Anything shorter than this (frames) is too short to measure. */
+const MIN_FRAMES = 32;
+/** A peak under this is silence. */
+const SILENT_PEAK = 1e-6;
+/** The envelope's blocks are 5 ms (at least 8 frames). */
+const ENVELOPE_BLOCK_SEC = 0.005;
+const MIN_ENVELOPE_BLOCK = 8;
+/** The sound begins where the envelope first reaches 3 % of its peak (−30 dB)… */
+const ONSET_LEVEL = 0.03;
+/** …and the onset is walked back to the foot of the attack, down to 0.3 % (−50 dB). */
+const ATTACK_FOOT_LEVEL = 0.003;
+/** The decay times are where the level last exceeds −20, −40 and −60 dB under the peak. */
+const T20_LEVEL = 0.1;
+const T40_LEVEL = 0.01;
+const T60_LEVEL = 0.001;
+/** Sustain is the loudest level 0.3 to 0.5 s after the peak. */
+const SUSTAIN_FROM_SEC = 0.3;
+const SUSTAIN_TO_SEC = 0.5;
+/** The end level is the loudest block in the last 50 ms. */
+const END_SEC = 0.05;
+/** Loudness counts the blocks within 40 dB of the peak. */
+const LOUDNESS_GATE = 0.01;
+/** The spectrum starts this many frames before the onset block (the attack's own foot). */
+const SPECTRUM_LEAD_FRAMES = 64;
+/** Most frames of the body's spectrum that are added (the first is also kept alone for the attack centroid). */
+const MAX_SPECTRUM_FRAMES = 16;
+/** Flatness is measured between these frequencies (Hz). */
+const FLATNESS_LOW_HZ = 300;
+const FLATNESS_HIGH_HZ = 16000;
+/** The rolloff is the frequency under which this share of the energy lies. */
+const ROLLOFF_SHARE = 0.85;
+/** Bursts are counted over the first 50 ms in 1 ms blocks. */
+const BURST_WINDOW_SEC = 0.05;
+const BURST_BLOCK_SEC = 0.001;
+const MIN_BURST_BLOCK = 4;
+/** A burst is a peak 4 dB over the valley before it, after a 4 dB drop. */
+const BURST_STEP_DB = 4;
+/** The pitch is tracked over this much of the sound after its onset (s), and needs more than 40 ms. */
+const PITCH_SPAN_SEC = 0.7;
+const MIN_PITCH_SPAN_SEC = 0.04;
+/** The pitch tracker's range (Hz) and frame hop (s) for sounds. */
+const PITCH_MIN_HZ = 28;
+const PITCH_MAX_HZ = 1600;
+const PITCH_HOP_SEC = 0.01;
+/** A frame is voiced at this YIN confidence. */
+const VOICED_CONFIDENCE = 0.75;
+/** The body of a pitched sound starts after the first 30 ms (kicks glide through them). */
+const BODY_START_SEC = 0.03;
+/** At least this many voiced frames are needed for a pitch. */
+const MIN_VOICED_FRAMES = 3;
+
 export interface SoundFeatures {
   durationSec: number;
   /** Linear peak. */
@@ -85,14 +136,21 @@ export function peakEnvelope(x: Float32Array, block: number): Float32Array {
     raw[b] = m;
   }
   const out = new Float32Array(n);
-  for (let b = 0; b < n; b++) out[b] = Math.max(raw[b] as number, b > 0 ? (raw[b - 1] as number) : 0, b > 1 ? (raw[b - 2] as number) : 0, b > 2 ? (raw[b - 3] as number) : 0);
+  for (let b = 0; b < n; b++) {
+    const here = raw[b] as number;
+    const one = b > 0 ? (raw[b - 1] as number) : 0;
+    const two = b > 1 ? (raw[b - 2] as number) : 0;
+    const three = b > 2 ? (raw[b - 3] as number) : 0;
+    out[b] = Math.max(here, one, two, three);
+  }
   return out;
 }
 
-const median = (a: number[]): number => {
-  if (a.length === 0) return 0;
-  const s = [...a].sort((p, q) => p - q);
-  return s[s.length >> 1] as number;
+/** The middle value of a list (the upper one of the two middle values for an even count); 0 for an empty list. */
+const median = (values: number[]): number => {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((p, q) => p - q);
+  return sorted[sorted.length >> 1] as number;
 };
 
 /** The silence an empty file has: every measurement at its neutral value. */
@@ -138,199 +196,273 @@ function withoutDc(x: Float32Array, sr: number): Float32Array {
   return out;
 }
 
-/** Measures a mono signal (`x` may be longer than needed: only the start is read). */
-export function extractFeatures(xFull: Float32Array, sampleRate: number, durationSec = xFull.length / sampleRate): SoundFeatures {
-  const sr = sampleRate;
-  const x = withoutDc(xFull.length > ENVELOPE_SEC * sr ? xFull.subarray(0, Math.round(ENVELOPE_SEC * sr)) : xFull, sr);
-  const f = silentFeatures(durationSec);
-  if (x.length < 32) return f;
+/** The envelope measurements the other steps build on. */
+interface EnvelopeInfo {
+  env: Float32Array;
+  /** Frames per envelope block. */
+  block: number;
+  blockSec: number;
+  /** Index of the loudest block. */
+  peakBlock: number;
+  peak: number;
+}
 
-  // Level and envelope (5 ms blocks).
-  const block = Math.max(8, Math.round(sr * 0.005));
+/**
+ * Measures a mono signal (`x` may be longer than needed: only the start is read). Each step fills in
+ * its own part of the result; a silent signal gets the neutral values `silentFeatures` has.
+ */
+export function extractFeatures(
+  xFull: Float32Array,
+  sampleRate: number,
+  durationSec = xFull.length / sampleRate,
+): SoundFeatures {
+  const sr = sampleRate;
+  const span = xFull.length > ENVELOPE_SEC * sr ? xFull.subarray(0, Math.round(ENVELOPE_SEC * sr)) : xFull;
+  const x = withoutDc(span, sr);
+  const f = silentFeatures(durationSec);
+  if (x.length < MIN_FRAMES) return f;
+
+  const envelope = measureEnvelope(x, sr, f);
+  if (!envelope) return f;
+  measureLoudness(x, envelope, f);
+  const onsetSample = Math.max(0, Math.round(f.onsetSec * sr) - SPECTRUM_LEAD_FRAMES);
+  measureSpectrum(x, sr, onsetSample, f);
+  f.bursts = countBursts(x, sr, f.onsetSec);
+  measurePitch(x, sr, onsetSample, f);
+  return f;
+}
+
+/** The level over time: peak, onset, attack, decay times, sustain and end level (5 ms blocks). Null for silence. */
+function measureEnvelope(x: Float32Array, sr: number, f: SoundFeatures): EnvelopeInfo | null {
+  const block = Math.max(MIN_ENVELOPE_BLOCK, Math.round(sr * ENVELOPE_BLOCK_SEC));
   const blockSec = block / sr;
   const env = peakEnvelope(x, block);
-  let pk = 0;
-  for (let b = 1; b < env.length; b++) if ((env[b] as number) > (env[pk] as number)) pk = b;
-  const peak = env[pk] as number;
-  if (!(peak > 1e-6)) return f;
+  let peakBlock = 0;
+  for (let b = 1; b < env.length; b++) if ((env[b] as number) > (env[peakBlock] as number)) peakBlock = b;
+  const peak = env[peakBlock] as number;
+  if (!(peak > SILENT_PEAK)) return null;
   f.peak = peak;
   f.peakDb = db(peak);
-  let onset = 0;
-  while (onset < pk && (env[onset] as number) < peak * 0.03) onset++;
-  // Back to the foot of the attack (the level stops falling), so the onset isn't late on a slow rise.
-  while (onset > 0 && (env[onset - 1] as number) < (env[onset] as number) && (env[onset - 1] as number) > peak * 0.003) onset--;
+  const onset = onsetBlock(env, peakBlock, peak);
   f.onsetSec = onset * blockSec;
-  f.attackSec = Math.max(0, (pk - onset) * blockSec);
-  const last = (frac: number): number => {
-    const thr = peak * frac;
-    for (let b = env.length - 1; b > pk; b--) if ((env[b] as number) >= thr) return (b - pk) * blockSec;
+  f.attackSec = Math.max(0, (peakBlock - onset) * blockSec);
+  const decayTime = (share: number): number => {
+    const threshold = peak * share;
+    for (let b = env.length - 1; b > peakBlock; b--) {
+      if ((env[b] as number) >= threshold) return (b - peakBlock) * blockSec;
+    }
     return 0;
   };
-  f.t20 = last(0.1);
-  f.t40 = last(0.01);
-  f.t60 = last(0.001);
+  f.t20 = decayTime(T20_LEVEL);
+  f.t40 = decayTime(T40_LEVEL);
+  f.t60 = decayTime(T60_LEVEL);
   f.len40 = f.attackSec + f.t40;
+  f.sustain = sustainShare(env, peakBlock, peak, blockSec);
+  f.endDb = db(endLevel(env, blockSec) / peak);
+  return { env, block, blockSec, peakBlock, peak };
+}
+
+/** The block where the sound begins: first over 3 % of the peak, then back to the foot of its attack. */
+function onsetBlock(env: Float32Array, peakBlock: number, peak: number): number {
+  let onset = 0;
+  while (onset < peakBlock && (env[onset] as number) < peak * ONSET_LEVEL) onset++;
+  // Back to the foot of the attack (the level stops falling), so the onset isn't late on a slow rise.
+  while (
+    onset > 0 &&
+    (env[onset - 1] as number) < (env[onset] as number) &&
+    (env[onset - 1] as number) > peak * ATTACK_FOOT_LEVEL
+  ) {
+    onset--;
+  }
+  return onset;
+}
+
+/** The loudest level 0.3–0.5 s after the peak, relative to the peak (0..1). */
+function sustainShare(env: Float32Array, peakBlock: number, peak: number, blockSec: number): number {
   let sustain = 0;
-  for (let b = pk + Math.round(0.3 / blockSec); b <= pk + Math.round(0.5 / blockSec) && b < env.length; b++) sustain = Math.max(sustain, (env[b] as number) / peak);
-  f.sustain = Math.min(1, sustain);
-  const endBlocks = Math.max(1, Math.round(0.05 / blockSec));
+  const from = peakBlock + Math.round(SUSTAIN_FROM_SEC / blockSec);
+  const to = peakBlock + Math.round(SUSTAIN_TO_SEC / blockSec);
+  for (let b = from; b <= to && b < env.length; b++) sustain = Math.max(sustain, (env[b] as number) / peak);
+  return Math.min(1, sustain);
+}
+
+/** The loudest level in the last 50 ms of the envelope. */
+function endLevel(env: Float32Array, blockSec: number): number {
+  const endBlocks = Math.max(1, Math.round(END_SEC / blockSec));
   let end = 0;
   for (let b = Math.max(0, env.length - endBlocks); b < env.length; b++) end = Math.max(end, env[b] as number);
-  f.endDb = db(end / peak);
+  return end;
+}
 
-  // Loudness over the audible blocks.
-  {
-    let sum = 0;
-    let count = 0;
-    const thr = peak * 0.01;
-    for (let b = 0; b < env.length; b++) {
-      if ((env[b] as number) < thr) continue;
-      const a = b * block;
-      const e = Math.min(x.length, a + block);
-      for (let i = a; i < e; i++) sum += (x[i] as number) * (x[i] as number);
-      count += e - a;
-    }
-    f.loudnessDb = count > 0 ? 10 * Math.log10(Math.max(1e-18, sum / count)) : -180;
+/** RMS over the audible blocks (within 40 dB of the peak), dBFS. */
+function measureLoudness(x: Float32Array, e: EnvelopeInfo, f: SoundFeatures): void {
+  let sum = 0;
+  let count = 0;
+  const threshold = e.peak * LOUDNESS_GATE;
+  for (let b = 0; b < e.env.length; b++) {
+    if ((e.env[b] as number) < threshold) continue;
+    const from = b * e.block;
+    const to = Math.min(x.length, from + e.block);
+    for (let i = from; i < to; i++) sum += (x[i] as number) * (x[i] as number);
+    count += to - from;
   }
+  f.loudnessDb = count > 0 ? 10 * Math.log10(Math.max(1e-18, sum / count)) : -180;
+}
 
-  const onsetSample = Math.max(0, Math.round(f.onsetSec * sr) - 64);
+/** The energy of overlapping frames over the body of the sound, added, and the first frame alone (the attack). */
+function bodySpectrum(x: Float32Array, sr: number, onsetSample: number): { power: Float64Array; attack: Float64Array } {
+  const fft = new RealFFT(FFT_SIZE);
+  const win = hannWindow(FFT_SIZE);
+  const bins = fft.bins;
+  const power = new Float64Array(bins);
+  const frame = new Float64Array(bins);
+  const attack = new Float64Array(bins);
+  const frames = Math.max(2, Math.min(MAX_SPECTRUM_FRAMES, Math.ceil((BODY_SEC * sr) / FFT_HOP)));
+  for (let k = 0; k < frames; k++) {
+    const start = onsetSample + k * FFT_HOP;
+    if (start >= x.length) break;
+    magnitudeSpectrum(fft, x, start, win, frame, true);
+    for (let i = 0; i < bins; i++) power[i] = (power[i] as number) + (frame[i] as number);
+    if (k === 0) attack.set(frame);
+  }
+  return { power, attack };
+}
 
-  // Spectrum over the body: the powers of overlapping frames added.
-  {
-    const fft = new RealFFT(FFT_SIZE);
-    const win = hannWindow(FFT_SIZE);
-    const bins = fft.bins;
-    const binHz = sr / FFT_SIZE;
-    const power = new Float64Array(bins);
-    const frame = new Float64Array(bins);
-    const frames = Math.max(2, Math.min(16, Math.ceil((BODY_SEC * sr) / FFT_HOP)));
-    const attack = new Float64Array(bins);
-    for (let k = 0; k < frames; k++) {
-      const start = onsetSample + k * FFT_HOP;
-      if (start >= x.length) break;
-      magnitudeSpectrum(fft, x, start, win, frame, true);
-      for (let i = 0; i < bins; i++) power[i] = (power[i] as number) + (frame[i] as number);
-      if (k === 0) attack.set(frame);
-    }
-    const total = (a: Float64Array) => {
-      let s = 0;
-      for (let i = 1; i < bins; i++) s += a[i] as number;
-      return s;
-    };
-    const edges = BAND_EDGES.map((hz) => Math.round(hz / binHz));
-    const bandSum = [0, 0, 0, 0, 0, 0];
+/** Energy shares of the six bands, the power-weighted centroid and the total energy; null when there is none. */
+function bandShares(power: Float64Array, binHz: number): { bands: number[]; centroid: number; total: number } | null {
+  const edges = BAND_EDGES.map((hz) => Math.round(hz / binHz));
+  const bandSum = [0, 0, 0, 0, 0, 0];
+  let weighted = 0;
+  let sum = 0;
+  for (let i = 1; i < power.length; i++) {
+    const p = power[i] as number;
+    let band = 0;
+    while (band < edges.length && i >= (edges[band] as number)) band++;
+    bandSum[band] = (bandSum[band] as number) + p;
+    weighted += p * i * binHz;
+    sum += p;
+  }
+  if (!(sum > 0)) return null;
+  return { bands: bandSum.map((s) => s / sum), centroid: weighted / sum, total: sum };
+}
+
+/** The frequency under which 85 % of the energy lies. */
+function rolloffHz(power: Float64Array, binHz: number, total: number): number {
+  let acc = 0;
+  for (let i = 1; i < power.length; i++) {
+    acc += power[i] as number;
+    if (acc >= ROLLOFF_SHARE * total) return i * binHz;
+  }
+  return 0;
+}
+
+/** Spectral flatness between 300 Hz and 16 kHz: geometric over arithmetic mean of the power (1 = white noise). */
+function flatnessOf(power: Float64Array, binHz: number, total: number): number {
+  const bins = power.length;
+  const lo = Math.max(1, Math.round(FLATNESS_LOW_HZ / binHz));
+  const hi = Math.min(bins - 1, Math.round(FLATNESS_HIGH_HZ / binHz));
+  let logSum = 0;
+  let linear = 0;
+  const floor = (total / bins) * 1e-6 + 1e-30;
+  for (let i = lo; i <= hi; i++) {
+    const p = (power[i] as number) + floor;
+    logSum += Math.log(p);
+    linear += p;
+  }
+  const n = Math.max(1, hi - lo + 1);
+  return Math.min(1, Math.exp(logSum / n) / (linear / n));
+}
+
+/** Spectrum over the body (bands, centroid, rolloff, flatness) and the centroid of the attack alone. */
+function measureSpectrum(x: Float32Array, sr: number, onsetSample: number, f: SoundFeatures): void {
+  const binHz = sr / FFT_SIZE;
+  const { power, attack } = bodySpectrum(x, sr, onsetSample);
+  const shares = bandShares(power, binHz);
+  if (shares) {
+    f.bands = shares.bands;
+    f.centroid = shares.centroid;
+    f.rolloff = rolloffHz(power, binHz, shares.total);
+    f.flatness = flatnessOf(power, binHz, shares.total);
+  }
+  let attackTotal = 0;
+  for (let i = 1; i < attack.length; i++) attackTotal += attack[i] as number;
+  if (attackTotal > 0) {
     let weighted = 0;
+    for (let i = 1; i < attack.length; i++) weighted += (attack[i] as number) * i * binHz;
+    f.attackCentroid = weighted / attackTotal;
+  }
+}
+
+/** The level in dB of consecutive 1 ms blocks from just before the onset, as long as the signal lasts. */
+function burstLevels(x: Float32Array, sr: number, onsetSec: number): number[] {
+  const block = Math.max(MIN_BURST_BLOCK, Math.round(sr * BURST_BLOCK_SEC));
+  const count = Math.round(BURST_WINDOW_SEC / (block / sr));
+  const start = Math.max(0, Math.round(onsetSec * sr) - block);
+  const levels: number[] = [];
+  for (let k = 0; k < count; k++) {
     let sum = 0;
-    for (let i = 1; i < bins; i++) {
-      const p = power[i] as number;
-      let band = 0;
-      while (band < edges.length && i >= (edges[band] as number)) band++;
-      bandSum[band] = (bandSum[band] as number) + p;
-      weighted += p * i * binHz;
-      sum += p;
-    }
-    if (sum > 0) {
-      f.bands = bandSum.map((s) => s / sum);
-      f.centroid = weighted / sum;
-      let acc = 0;
-      for (let i = 1; i < bins; i++) {
-        acc += power[i] as number;
-        if (acc >= 0.85 * sum) {
-          f.rolloff = i * binHz;
-          break;
-        }
-      }
-      // Flatness between 300 Hz and 16 kHz.
-      const lo = Math.max(1, Math.round(300 / binHz));
-      const hi = Math.min(bins - 1, Math.round(16000 / binHz));
-      let logSum = 0;
-      let lin = 0;
-      const floor = (sum / bins) * 1e-6 + 1e-30;
-      for (let i = lo; i <= hi; i++) {
-        const p = (power[i] as number) + floor;
-        logSum += Math.log(p);
-        lin += p;
-      }
-      const n = Math.max(1, hi - lo + 1);
-      f.flatness = Math.min(1, Math.exp(logSum / n) / (lin / n));
-    }
-    const at = total(attack);
-    if (at > 0) {
-      let w = 0;
-      for (let i = 1; i < bins; i++) w += (attack[i] as number) * i * binHz;
-      f.attackCentroid = w / at;
-    }
+    const from = start + k * block;
+    if (from + block > x.length) break;
+    for (let i = from; i < from + block; i++) sum += (x[i] as number) * (x[i] as number);
+    levels.push(db(Math.sqrt(sum / block)));
   }
+  return levels;
+}
 
-  // Bursts: separate attacks in the first 50 ms (1 ms RMS blocks).
-  {
-    const b1 = Math.max(4, Math.round(sr * 0.001));
-    const count = Math.round(0.05 / (b1 / sr));
-    const start = Math.max(0, Math.round(f.onsetSec * sr) - b1);
-    const level: number[] = [];
-    for (let k = 0; k < count; k++) {
-      let s = 0;
-      const a = start + k * b1;
-      if (a + b1 > x.length) break;
-      for (let i = a; i < a + b1; i++) s += (x[i] as number) * (x[i] as number);
-      level.push(db(Math.sqrt(s / b1)));
-    }
-    // Smooth over 3 blocks, then count peaks that stand 4 dB over the valley before them after a 4 dB drop.
-    const sm = level.map((_, i) => Math.max(level[i - 1] ?? -180, level[i] as number, level[i + 1] ?? -180));
-    let bursts = sm.length > 0 ? 1 : 0;
-    let top = sm[0] ?? 0;
-    let bottom = top;
-    let rising = true;
-    for (let i = 1; i < sm.length; i++) {
-      const v = sm[i] as number;
-      if (rising) {
-        top = Math.max(top, v);
-        if (top - v >= 4) {
-          rising = false;
-          bottom = v;
-        }
-      } else {
-        bottom = Math.min(bottom, v);
-        if (v - bottom >= 4) {
-          bursts++;
-          rising = true;
-          top = v;
-        }
+/** Separate attacks in the first 50 ms (1 ms RMS blocks): a clap has 3–4, a single hit 1. */
+function countBursts(x: Float32Array, sr: number, onsetSec: number): number {
+  const level = burstLevels(x, sr, onsetSec);
+  // Smooth over 3 blocks, then count peaks that stand 4 dB over the valley before them after a 4 dB drop.
+  const smooth = level.map((_, i) => Math.max(level[i - 1] ?? -180, level[i] as number, level[i + 1] ?? -180));
+  let bursts = smooth.length > 0 ? 1 : 0;
+  let top = smooth[0] ?? 0;
+  let bottom = top;
+  let isRising = true;
+  for (let i = 1; i < smooth.length; i++) {
+    const v = smooth[i] as number;
+    if (isRising) {
+      top = Math.max(top, v);
+      if (top - v >= BURST_STEP_DB) {
+        isRising = false;
+        bottom = v;
+      }
+    } else {
+      bottom = Math.min(bottom, v);
+      if (v - bottom >= BURST_STEP_DB) {
+        bursts++;
+        isRising = true;
+        top = v;
       }
     }
-    f.bursts = bursts;
   }
+  return bursts;
+}
 
-  // Pitch of the body.
-  {
-    const segEnd = Math.min(x.length, onsetSample + Math.round(0.7 * sr));
-    const seg = x.subarray(onsetSample, segEnd);
-    if (seg.length > sr * 0.04) {
-      const hop = Math.round(sr * 0.01);
-      const t = trackPitch(seg, sr, { minHz: 28, maxHz: 1600, hop });
-      const voiced: number[] = [];
-      const voicedTime: number[] = [];
-      let audible = 0;
-      for (let i = 0; i < t.f0.length; i++) {
-        if ((t.confidence[i] as number) > 0) audible++;
-        if ((t.f0[i] as number) > 0 && (t.confidence[i] as number) >= 0.75) {
-          voiced.push(12 * Math.log2((t.f0[i] as number) / 440) + 69);
-          voicedTime.push(t.times[i] as number);
-        }
-      }
-      f.voiced = audible > 0 ? voiced.length / audible : 0;
-      if (voiced.length >= 3) {
-        // The body: after the first 30 ms (kicks glide through them) when enough frames remain.
-        let body = voiced.filter((_, i) => (voicedTime[i] as number) >= 0.03);
-        if (body.length < 3) body = voiced;
-        const m = median(body);
-        f.f0 = 440 * Math.pow(2, (m - 69) / 12);
-        const dev = body.map((v) => Math.abs(v - m));
-        f.pitchSpread = median(dev);
-        const first = voiced.slice(0, Math.min(3, voiced.length));
-        f.pitchDrop = median(first) - m;
-      }
+/** Pitch of the body (YIN): median pitch, share of audible frames that are pitched, the glide down and the spread. */
+function measurePitch(x: Float32Array, sr: number, onsetSample: number, f: SoundFeatures): void {
+  const segmentEnd = Math.min(x.length, onsetSample + Math.round(PITCH_SPAN_SEC * sr));
+  const segment = x.subarray(onsetSample, segmentEnd);
+  if (segment.length <= sr * MIN_PITCH_SPAN_SEC) return;
+  const hop = Math.round(sr * PITCH_HOP_SEC);
+  const track = trackPitch(segment, sr, { minHz: PITCH_MIN_HZ, maxHz: PITCH_MAX_HZ, hop });
+  const voiced: number[] = [];
+  const voicedTime: number[] = [];
+  let audible = 0;
+  for (let i = 0; i < track.f0.length; i++) {
+    if ((track.confidence[i] as number) > 0) audible++;
+    if ((track.f0[i] as number) > 0 && (track.confidence[i] as number) >= VOICED_CONFIDENCE) {
+      voiced.push(12 * Math.log2((track.f0[i] as number) / 440) + 69);
+      voicedTime.push(track.times[i] as number);
     }
   }
-  return f;
+  f.voiced = audible > 0 ? voiced.length / audible : 0;
+  if (voiced.length < MIN_VOICED_FRAMES) return;
+  // The body: after the first 30 ms (kicks glide through them) when enough frames remain.
+  let body = voiced.filter((_, i) => (voicedTime[i] as number) >= BODY_START_SEC);
+  if (body.length < MIN_VOICED_FRAMES) body = voiced;
+  const middle = median(body);
+  f.f0 = 440 * Math.pow(2, (middle - 69) / 12);
+  f.pitchSpread = median(body.map((v) => Math.abs(v - middle)));
+  const firstFrames = voiced.slice(0, Math.min(3, voiced.length));
+  f.pitchDrop = median(firstFrames) - middle;
 }

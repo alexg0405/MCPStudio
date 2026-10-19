@@ -2,7 +2,7 @@
  * The small differences between harmony voices: each voice gets its own seeded take, so a stack of voices does not sound like
  * one voice played several times (identical copies phase and thin out), and making a voice again gives the same take.
  */
-import { hashString, jitter, mulberry32 } from '../../arrange/random';
+import { jitter, mulberry32 } from '../../arrange/random';
 import type { HarmonyHumanize } from '../../model/types';
 
 /** Defaults: noticeable as a group, never as a mistake. */
@@ -31,9 +31,9 @@ export function clampHumanize(h: HarmonyHumanize): HarmonyHumanize {
   };
 }
 
-/** The seed of voice number `voice` of a group made with `seed`. */
-export function voiceSeed(group: string, voice: number, seed: number): number {
-  return (hashString(group) ^ Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(voice + 1, 0x85ebca6b)) >>> 0;
+/** The seed of voice number `voice` of a run made with `seed` (each voice gets its own take; the same seed gives the same takes). */
+export function voiceSeed(voice: number, seed: number): number {
+  return (Math.imul(seed + 1, 0x9e3779b1) ^ Math.imul(voice + 1, 0x85ebca6b)) >>> 0;
 }
 
 /** The humanize numbers for `count` notes of one voice. Deterministic in the seed. */

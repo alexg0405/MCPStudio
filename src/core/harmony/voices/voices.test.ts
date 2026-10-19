@@ -150,7 +150,7 @@ describe('humanize', () => {
   const settings = { timingMs: 15, driftCents: 8, vibrato: 0.3 };
 
   it('stays within its bounds and is the same for the same seed', () => {
-    const seed = voiceSeed('group', 1, 7);
+    const seed = voiceSeed(1, 7);
     const a = humanizeNotes(200, settings, seed);
     const b = humanizeNotes(200, settings, seed);
     expect(a).toEqual(b);
@@ -160,7 +160,7 @@ describe('humanize', () => {
       expect(Math.abs(n.vibratoScale - 1)).toBeLessThanOrEqual(0.3);
     }
     expect(Math.max(...a.map((n) => n.delaySec))).toBeGreaterThan(0.01);
-    expect(humanizeNotes(5, settings, voiceSeed('group', 2, 7))).not.toEqual(a.slice(0, 5));
+    expect(humanizeNotes(5, settings, voiceSeed(2, 7))).not.toEqual(a.slice(0, 5));
   });
 
   it('with nothing set, nothing changes', () => {

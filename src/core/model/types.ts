@@ -17,3 +17,4 @@ export * from './types/samples';
 export * from './types/launcher';
 export * from './types/reference';
 export * from './types/dj';
+export * from './types/harmony';

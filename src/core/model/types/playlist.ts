@@ -1,3 +1,4 @@
+import type { HarmonyVoiceRecord } from './harmony';
 import type { ChannelId, ClipId, LaneId, MarkerId, PatternId, SampleId, Tick } from './ids';
 
 /** The song's arrangement: tracks (lanes) of clips, and the markers on the ruler. */
@@ -74,6 +75,9 @@ export interface AudioClip extends ClipBase {
   pitchEdit?: PitchEdit;
   /** Set when the clip is one take of a recording, or a piece of its comp (takes and comping). */
   take?: TakeTag;
+  // ---- Harmony voices (optional; one block, added with "Make harmonies…") ----
+  /** Set when this clip is a harmony voice made from a lead clip: how it was made, so it can be made again ("Update harmonies"). */
+  harmony?: HarmonyVoiceRecord;
 }
 
 /**

@@ -135,6 +135,8 @@ export interface PitchRenderInput {
   /** Seconds into the sample where `channels` begin. */
   start: number;
   edit: PitchEdit;
+  /** Moves the formants by this factor while the pitch follows the edit (default 1: they stay; harmony voices use it). */
+  formantRatio?: number;
   onProgress?: (fraction: number) => void;
 }
 
@@ -159,7 +161,10 @@ export function renderPitchEdit(input: PitchRenderInput): Float32Array[] {
     channels,
     sampleRate,
     { f0: voice.f0, shift, hop, t0: 0 },
-    input.onProgress ? { onProgress: input.onProgress } : {},
+    {
+      ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+      ...(input.formantRatio !== undefined ? { formantRatio: input.formantRatio } : {}),
+    },
   );
 }
 

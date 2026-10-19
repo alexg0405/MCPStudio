@@ -40,6 +40,11 @@ export interface PsolaOptions {
   onProgress?: (fraction: number) => void;
   /** Largest shift either way, cents (default 1200). */
   maxCents?: number;
+  /**
+   * Moves the formants by this factor (default 1 = they stay): each grain is read this much faster, so its spectral envelope
+   * (the vowel) scales while the pitch still follows the track. Harmony voices use it to sound like another singer.
+   */
+  formantRatio?: number;
 }
 
 /** Spacing of the marks that carry unvoiced sound, seconds. */
@@ -294,7 +299,7 @@ class GrainAccumulator {
    * Adds the grain around analysis mark `mark` to the output at synthesis time `ts`: a raised-cosine
    * window `hl` samples to the left and `hr` to the right, reading the input with cubic interpolation.
    */
-  addGrain(ts: number, mark: number, hl: number, hr: number): void {
+  addGrain(ts: number, mark: number, hl: number, hr: number, formantRatio: number): void {
     const { wet, windowSum, mask, channels } = this;
     const n0 = Math.max(this.from, Math.ceil(ts - hl));
     const n1 = Math.min(this.to - 1, Math.floor(ts + hr));
@@ -303,7 +308,8 @@ class GrainAccumulator {
       const w = d < 0 ? 0.5 + 0.5 * Math.cos((Math.PI * d) / hl) : 0.5 + 0.5 * Math.cos((Math.PI * d) / hr);
       const slot = n & mask;
       windowSum[slot] = (windowSum[slot] as number) + w;
-      const pos = mark + d;
+      // With a ratio of 1 this is `mark + d` exactly, so plain pitch shifts stay bit-identical.
+      const pos = mark + d * formantRatio;
       for (let c = 0; c < wet.length; c++) {
         const buf = wet[c] as Float64Array;
         buf[slot] = (buf[slot] as number) + w * cubicAt(channels[c] as Float32Array, pos);
@@ -361,7 +367,8 @@ export function psolaShift(
   // Windows reach at most 1.5 periods each side at the largest shift.
   const reach = Math.ceil(2 * longestPeriod(marks)) + 4;
   const grains = new GrainAccumulator(channels, out, from, to, reach, marks[0] as number);
-  synthesize(marks, track, { from, to, reach, sampleRate, maxCents: opts.maxCents ?? 1200 }, grains, opts.onProgress);
+  const formantRatio = opts.formantRatio ?? 1;
+  synthesize(marks, track, { from, to, reach, sampleRate, maxCents: opts.maxCents ?? 1200, formantRatio }, grains, opts.onProgress);
   grains.finalize(to);
   opts.onProgress?.(1);
   return out;
@@ -374,6 +381,7 @@ interface SynthesisRange {
   reach: number;
   sampleRate: number;
   maxCents: number;
+  formantRatio: number;
 }
 
 /**
@@ -387,7 +395,7 @@ function synthesize(
   grains: GrainAccumulator,
   onProgress: PsolaOptions['onProgress'],
 ): void {
-  const { from, to, reach, sampleRate, maxCents } = range;
+  const { from, to, reach, sampleRate, maxCents, formantRatio } = range;
   const count = marks.length;
   let k = 0;
   while (k + 1 < count && (marks[k] as number) < from) k++;
@@ -407,7 +415,7 @@ function synthesize(
     // Longer windows keep a fall of an octave from leaving gaps between grains.
     const hl = Math.max(left, GRAIN_OVERLAP * step);
     const hr = Math.max(right, GRAIN_OVERLAP * step);
-    grains.addGrain(ts, mark, hl, hr);
+    grains.addGrain(ts, mark, hl, hr, formantRatio);
     ts += step;
     grains.finalize(Math.floor(ts - 2 * reach));
     if (onProgress && ts - reported > reportEvery) {

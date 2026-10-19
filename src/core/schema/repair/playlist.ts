@@ -1,5 +1,6 @@
 /** Repair of the playlist: its tracks (lanes), clips and markers. Takes and comping are in `takes.ts`. */
 import { sanitizePitchEdit } from '../../audio/pitch-edit';
+import { sanitizeHarmonyRecord } from '../../harmony/voices/rules';
 import { type RepairLog, CLIP, LANE, MARKER, countOf } from './log';
 import { TICK_MAX } from './limits';
 import { FieldRepairs } from './fields';
@@ -96,6 +97,19 @@ function repairAudioClipFields(clip: JsonObject, fixes: FieldRepairs, samples: J
   fixes.clampIfSet('fadeIn', 0, CLIP_FADE_MAX_SEC, 0);
   fixes.clampIfSet('fadeOut', 0, CLIP_FADE_MAX_SEC, 0);
   if (isSet(clip, 'pitchEdit')) fixes.noteChange(repairPitchEdit(clip, samples));
+  // Harmony voices: a record that is not usable is dropped (the clip stays as plain audio).
+  if (isSet(clip, 'harmony')) fixes.noteChange(repairHarmony(clip));
+}
+
+/** A harmony record is cleaned (silently: its values are only held to their limits), or removed when it is not usable. True when removed. */
+function repairHarmony(clip: JsonObject): boolean {
+  const record = sanitizeHarmonyRecord(clip.harmony);
+  if (!record) {
+    delete clip.harmony;
+    return true;
+  }
+  clip.harmony = record as unknown as JsonObject;
+  return false;
 }
 
 /**

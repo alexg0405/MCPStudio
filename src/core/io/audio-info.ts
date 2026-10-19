@@ -14,6 +14,10 @@
 
 export type AudioFormat = 'wav' | 'aiff' | 'flac' | 'mp3' | 'aac' | 'm4a' | 'ogg';
 
+/**
+ * What the headers of an audio file say: its format, length in seconds, sample rate (Hz) and channels, and whether the
+ * length is exact.
+ */
 export interface AudioInfo {
   format: AudioFormat;
   durationSec: number;
@@ -33,6 +37,10 @@ function viewOf(b: Uint8Array): DataView {
   return new DataView(b.buffer, b.byteOffset, b.byteLength);
 }
 
+/**
+ * Reads an audio file's `AudioInfo` from its header bytes without decoding it; null when the format is not recognised
+ * or the header is unreadable.
+ */
 export function readAudioInfo(bytes: Uint8Array): AudioInfo | null {
   try {
     if (bytes.length < 12) return null;

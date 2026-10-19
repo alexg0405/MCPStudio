@@ -5,6 +5,7 @@
  */
 import { PPQ } from '../time/ppq';
 
+/** One note read from a MIDI file, in the app's ticks (PPQ 960) and ranges. */
 export interface MidiNote {
   /** Start in ticks at PPQ 960. */
   tick: number;
@@ -16,6 +17,7 @@ export interface MidiNote {
   channel: number;
 }
 
+/** One track read from a MIDI file: its name, its notes and the instrument (program) each MIDI channel asked for. */
 export interface MidiTrack {
   name: string;
   notes: MidiNote[];
@@ -23,6 +25,10 @@ export interface MidiTrack {
   programs: Partial<Record<number, number>>;
 }
 
+/**
+ * A MIDI file read into plain data: its format, its own resolution, its tracks and its tempo and time signature
+ * settings.
+ */
 export interface MidiFileData {
   format: number;
   /** The file's own ticks per quarter note (SMPTE files are converted assuming 120 BPM). */
@@ -297,6 +303,7 @@ function readChannelMessage(
 // ---------------------------------------------------------------------------------------------
 // Writing
 
+/** One track to write into a MIDI file: its name, MIDI channel, optional instrument (program) and notes. */
 export interface MidiWriteTrack {
   name: string;
   channel: number;

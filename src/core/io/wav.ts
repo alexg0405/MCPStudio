@@ -7,8 +7,10 @@ import { WAVE_FORMAT_IEEE_FLOAT, WAVE_FORMAT_PCM } from './wav-format';
 export { decodePcm } from './wav-decode';
 export type { DecodedPcm } from './wav-format';
 
+/** The bit depths the WAV encoder can write: 16 or 24 (whole-number samples) or 32 (floating point). */
 export type WavBitDepth = 16 | 24 | 32;
 
+/** How to write a WAV file: the bit depth, and whether and how to dither 16-bit output. */
 export interface EncodeWavOptions {
   /** 16/24 = integer PCM, 32 = IEEE float. */
   bitDepth: WavBitDepth;

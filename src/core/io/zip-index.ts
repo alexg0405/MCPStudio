@@ -9,6 +9,7 @@ import { inflateSync, strFromU8 } from 'fflate';
 /** Reads `length` bytes at `offset` (fewer at the end of the file). */
 export type RangeReader = (offset: number, length: number) => Promise<Uint8Array>;
 
+/** One file in a zip's central directory: its name, how it is stored, its sizes, CRC-32 and where its data starts. */
 export interface ZipEntry {
   name: string;
   /** 0 = stored, 8 = deflated. */
@@ -20,6 +21,7 @@ export interface ZipEntry {
   headerOffset: number;
 }
 
+/** Thrown when a file is not a zip this reader can open (no directory, or a damaged one). */
 export class ZipFormatError extends Error {}
 
 const EOCD = 0x06054b50;

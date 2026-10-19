@@ -25,6 +25,7 @@ export interface MuxChunk {
   data: Uint8Array;
 }
 
+/** The video track of a WebM: its codec, size in pixels, frame rate and codec private data when the codec needs it. */
 export interface WebmVideoTrack {
   codec: 'V_VP9' | 'V_AV1' | 'V_VP8';
   width: number;
@@ -34,6 +35,7 @@ export interface WebmVideoTrack {
   codecPrivate?: Uint8Array | undefined;
 }
 
+/** The audio track of a WebM (Opus): channels, sample rate (Hz), the encoder's OpusHead and the pre-skip to drop. */
 export interface WebmAudioTrack {
   codec: 'A_OPUS';
   channels: number;
@@ -44,6 +46,7 @@ export interface WebmAudioTrack {
   preSkip: number;
 }
 
+/** What the WebM muxer is told up front: the tracks, how long a cluster runs and an optional title. */
 export interface WebmOptions {
   video: WebmVideoTrack;
   audio?: WebmAudioTrack | undefined;
@@ -104,6 +107,7 @@ const ID = {
   CueClusterPosition: 0xf1,
 } as const;
 
+/** The element ids of the WebM format the muxer writes, exported so tests can read the output back. */
 export const WEBM_IDS = ID;
 
 /** UTF-8 bytes of a string (core has no TextEncoder: it is DOM-free). */
@@ -282,6 +286,10 @@ interface Cue {
   position: number;
 }
 
+/**
+ * Writes a WebM file for one video track and optionally one audio track, a cluster at a time, so a long video never
+ * sits in memory.
+ */
 export class WebmMuxer {
   private pos = 0;
   private segmentStart = 0;

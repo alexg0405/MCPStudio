@@ -37,6 +37,10 @@ import { PcmQuantizer, quantizePcm } from './wav';
 /** The bit depths FLAC export offers. */
 export type FlacBitDepth = 16 | 24;
 
+/**
+ * How to write a FLAC file: the bit depth, whether to dither 16-bit output, and the frame size and how hard to search
+ * for predictors.
+ */
 export interface EncodeFlacOptions {
   bitDepth: FlacBitDepth;
   /** TPDF dither before quantizing (16-bit only), the same noise as the WAV encoder. */

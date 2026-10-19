@@ -11,8 +11,13 @@
  *   20 int16 × frames × channels (little endian, planar)
  */
 const MAGIC = 0x31504741; // 'AGP1' little endian
+/** Bytes of the header in front of the samples in a derived-audio file. */
 export const PCM16_HEADER = 20;
 
+/**
+ * What the header of a derived-audio file says: channels, sample rate (Hz), frames per channel and the gain (sample =
+ * int16 / 32767 × gain).
+ */
 export interface Pcm16Info {
   channels: number;
   sampleRate: number;

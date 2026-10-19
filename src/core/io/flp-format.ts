@@ -112,6 +112,7 @@ export const FLP_PLAYLIST_ITEM = {
 
 /** Mixer params: 12-byte records. */
 export const FLP_MIXER_PARAM_SIZE = 12;
+/** Byte offsets of the fields in a mixer param record (each record is `FLP_MIXER_PARAM_SIZE` bytes). */
 export const FLP_MIXER_PARAM_FIELD = {
   paramId: 4, // u8, see FLP_MIXER_PARAM
   insertAndSlot: 6, // u16: insert in bits 6–12, slot in bits 0–5
@@ -120,6 +121,7 @@ export const FLP_MIXER_PARAM_FIELD = {
 
 /** Automation links: 20-byte records. */
 export const FLP_AUTOMATION_LINK_SIZE = 20;
+/** Byte offsets of the fields in an automation link record (each record is `FLP_AUTOMATION_LINK_SIZE` bytes). */
 export const FLP_AUTOMATION_LINK_FIELD = {
   channel: 2, // u8, the automation channel's iid
   param: 8, // u16
@@ -128,8 +130,11 @@ export const FLP_AUTOMATION_LINK_FIELD = {
 
 /** ChannelID.Automation: 21-byte header (point count at 17), then 24-byte points. */
 export const FLP_AUTOMATION_HEADER = 21;
+/** Byte offset of the point count inside an automation channel's header. */
 export const FLP_AUTOMATION_POINT_COUNT_OFFSET = 17;
+/** Bytes of one automation point record. */
 export const FLP_AUTOMATION_POINT_SIZE = 24;
+/** Byte offsets of the fields in an automation point record (each record is `FLP_AUTOMATION_POINT_SIZE` bytes). */
 export const FLP_AUTOMATION_POINT_FIELD = {
   deltaBeats: 0, // f64, distance from the previous point
   value: 8, // f64, 0–1
@@ -176,6 +181,7 @@ export interface FlpVst {
   vendor?: string;
 }
 
+/** One point of an FL automation clip's curve, as read from the file. */
 export interface FlpAutomationPoint {
   /** Quarter notes from the start of the clip. */
   beats: number;
@@ -184,6 +190,10 @@ export interface FlpAutomationPoint {
   tension: number;
 }
 
+/**
+ * One FL channel (a generator or an audio clip) as read from the file: its settings are in FL's own scales, and fields
+ * the file did not have are absent.
+ */
 export interface FlpChannel {
   /** The channel's FL index (ChannelID.New); notes and playlist items refer to it. */
   iid: number;
@@ -213,6 +223,7 @@ export interface FlpChannel {
   automation?: FlpAutomationPoint[];
 }
 
+/** One note of an FL pattern as read from the file, in FL's own units (ticks at the file's PPQ, keys with 60 = C5). */
 export interface FlpNote {
   /** Ticks at the file's PPQ. */
   position: number;
@@ -234,6 +245,7 @@ export interface FlpNote {
   modY: number;
 }
 
+/** One FL pattern as read from the file: its number, name, colour and notes. */
 export interface FlpPattern {
   /** FL pattern number (PatternID.New); playlist items refer to it. */
   iid: number;
@@ -242,6 +254,7 @@ export interface FlpPattern {
   notes: FlpNote[];
 }
 
+/** One item on FL's playlist: a pattern or a channel's clip placed on a track. */
 export interface FlpPlaylistItem {
   /** Ticks at the file's PPQ. */
   position: number;
@@ -257,6 +270,7 @@ export interface FlpPlaylistItem {
   endOffset: number | null;
 }
 
+/** One playlist track of an FL arrangement: its position, name and colour, and whether it is enabled. */
 export interface FlpTrack {
   index: number;
   name?: string;
@@ -264,6 +278,7 @@ export interface FlpTrack {
   enabled: boolean;
 }
 
+/** One playlist marker of an FL arrangement, with its position in ticks at the file's PPQ. */
 export interface FlpMarker {
   /** Ticks at the file's PPQ. */
   position: number;
@@ -274,6 +289,7 @@ export interface FlpMarker {
   denominator?: number;
 }
 
+/** One FL arrangement: its playlist items, tracks and markers. */
 export interface FlpArrangement {
   index: number;
   name?: string;
@@ -282,6 +298,7 @@ export interface FlpArrangement {
   markers: FlpMarker[];
 }
 
+/** One effect slot of an FL mixer insert, as read from the file. */
 export interface FlpSlot {
   /** Slot number within the insert (SlotID.Index). */
   index: number;
@@ -293,6 +310,7 @@ export interface FlpSlot {
   mix?: number;
 }
 
+/** One FL mixer insert as read from the file: its name, colour, routing, levels and effect slots. */
 export interface FlpInsert {
   /** 0 = master. */
   index: number;
@@ -310,6 +328,7 @@ export interface FlpInsert {
   slots: FlpSlot[];
 }
 
+/** A link from an FL automation channel to the control it drives, by FL's own parameter and destination numbers. */
 export interface FlpAutomationLink {
   /** The automation channel's iid. */
   channel: number;

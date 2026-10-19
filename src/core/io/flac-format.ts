@@ -30,7 +30,9 @@ export const MD5_BYTES = 16;
 export const FRAME_SYNC_CODE = 0b11111111111110;
 /** "Block size" header codes (§9.1.1) that this code writes or needs to name. */
 export const BLOCK_SIZE_CODE_4096 = 12; // 256 << (12 − 8)
+/** Frame header block size code meaning "the block size minus one follows the header in 8 bits". */
 export const BLOCK_SIZE_CODE_8_BIT = 6; // the size − 1 follows the header in 8 bits
+/** Frame header block size code meaning "the block size minus one follows the header in 16 bits". */
 export const BLOCK_SIZE_CODE_16_BIT = 7; // the size − 1 follows the header in 16 bits
 /** "Sample rate" header codes (§9.1.2) for the rates that have one; others use 0 (read from STREAMINFO). */
 export const SAMPLE_RATE_CODES: Record<number, number> = {
@@ -48,20 +50,27 @@ export const SAMPLE_RATE_CODES: Record<number, number> = {
 };
 /** "Sample size" header codes (§9.1.4) for the two depths the encoder writes. */
 export const SAMPLE_SIZE_CODE_16_BIT = 4;
+/** Frame header sample size code for 24-bit audio. */
 export const SAMPLE_SIZE_CODE_24_BIT = 6;
 
 /** "Channel assignment" header codes (§9.1.3): 0–7 are that many + 1 independent channels. */
 export const CHANNELS_LEFT_SIDE = 8;
+/** Channel assignment code: two channels stored as side and right. */
 export const CHANNELS_SIDE_RIGHT = 9;
+/** Channel assignment code: two channels stored as mid and side. */
 export const CHANNELS_MID_SIDE = 10;
+/** Channel assignment code: two independent channels (left and right stored as they are). */
 export const CHANNELS_INDEPENDENT_STEREO = 1;
 
 // --- Subframes (RFC 9639 §9.2) ------------------------------------------------------------------
 
 /** Subframe type numbers (§9.2.1). FIXED is 8 + order (0–4); LPC is 32 + order − 1 (1–32). */
 export const SUBFRAME_TYPE_CONSTANT = 0;
+/** Subframe type number for samples stored unpredicted, as they are. */
 export const SUBFRAME_TYPE_VERBATIM = 1;
+/** Base of the subframe type numbers of fixed predictors: this plus the order (0 to 4). */
 export const SUBFRAME_TYPE_FIXED_BASE = 8;
+/** Base of the subframe type numbers of LPC predictors: this plus the order minus 1 (orders 1 to 32). */
 export const SUBFRAME_TYPE_LPC_BASE = 32;
 
 /** The first byte of a subframe: a zero padding bit, the 6-bit type, and "no wasted bits" (a zero bit). */

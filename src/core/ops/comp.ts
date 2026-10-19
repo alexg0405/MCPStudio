@@ -269,6 +269,10 @@ function dropLane(d: Draft<Project>, id: LaneId): boolean {
   return true;
 }
 
+/**
+ * One recorded take for `addTakeGroup`: where its clip goes on the playlist (ticks) and where it starts in the
+ * recording (seconds).
+ */
 export interface NewTake {
   start: Tick;
   length: Tick;

@@ -25,6 +25,7 @@ import { removeChannel } from './channels';
 import { removeInsert } from './mixer';
 import { splitClip } from './playlist';
 
+/** What cutting clips at the edges of a part left behind, so the cut can be undone or kept. */
 export interface CutResult {
   /** The clips as they were before the cut (whole). */
   originals: Clip[];

@@ -8,6 +8,10 @@ import type { AutomationChannel, ChannelId, LaneId, Project, Tick } from '../mod
 import { automationKey, stackedCopies } from '../query/arrangement';
 import { removeChannel } from './channels';
 
+/**
+ * What `tidySong` did, for telling the user: how many stacked copies and automation channels went, and which tracks
+ * were named.
+ */
 export interface TidyReport {
   /** Stacked copies removed. */
   stacked: number;
@@ -19,6 +23,10 @@ export interface TidyReport {
 
 const DEFAULT_LANE_NAME = /^Track \d+$/;
 
+/**
+ * Cleans up the song: removes stacked copies, merges duplicate automation channels and names default-named tracks.
+ * Each step runs unless its option is false; `range` (song ticks) limits the stacked-copy removal to copies that touch it.
+ */
 export function tidySong(
   d: Draft<Project>,
   opts: { stacked?: boolean; automation?: boolean; names?: boolean; range?: { from: Tick; to: Tick } } = {},

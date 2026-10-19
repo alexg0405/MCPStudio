@@ -19,6 +19,7 @@ export interface NoteLike {
   muted?: boolean;
 }
 
+/** The edit that swaps a set of notes for new ones: which input notes to remove and which notes to write. */
 export interface NoteReplacement {
   /** Input notes the result leaves out. */
   remove: NoteId[];

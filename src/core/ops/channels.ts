@@ -18,6 +18,7 @@ import {
 
 // Pure draft mutators. Call them inside history.transact()/gesture() recipes.
 
+/** Adds a channel to the project and the channel order, at `index` (clamped to the list) or at the end. */
 export function addChannel(d: Draft<Project>, channel: Channel, index?: number): void {
   d.channels[channel.id] = channel as Draft<Channel>;
   const at = index === undefined ? d.channelOrder.length : Math.max(0, Math.min(index, d.channelOrder.length));
@@ -50,6 +51,7 @@ export function dropControllers(d: Draft<Project>, matches: (t: ParamTarget) => 
   }
 }
 
+/** Moves a channel to a new position in the channel order (clamped to the list). */
 export function moveChannel(d: Draft<Project>, id: ChannelId, toIndex: number): void {
   const from = d.channelOrder.indexOf(id);
   if (from < 0) return;
@@ -57,6 +59,7 @@ export function moveChannel(d: Draft<Project>, id: ChannelId, toIndex: number): 
   d.channelOrder.splice(Math.max(0, Math.min(toIndex, d.channelOrder.length)), 0, id);
 }
 
+/** The simple settings of a channel that `setChannelProp` can change. */
 export type ChannelProp = 'name' | 'color' | 'volume' | 'pan' | 'muted' | 'solo' | 'output' | 'rootKey';
 type ChannelPropValue = {
   name: string;
@@ -69,6 +72,11 @@ type ChannelPropValue = {
   rootKey: number;
 };
 
+/**
+ * Sets one simple property of a channel, clamped to its range (volume 0..1.25, pan -1..1, root key 0..127, name at most
+ * 64 characters). A property the channel's kind does not have (volume on an automation channel, root key on anything
+ * but an instrument) is ignored.
+ */
 export function setChannelProp<K extends ChannelProp>(
   d: Draft<Project>,
   id: ChannelId,
@@ -129,22 +137,29 @@ function pluginOf(d: Draft<Project>, owner: PluginOwner) {
   return d.mixer.inserts[owner.insertId]?.fx.find((s) => s.id === owner.slotId)?.plugin;
 }
 
+/**
+ * Sets one parameter value of the plugin on an instrument channel or an effect slot; does nothing when the owner has no
+ * plugin.
+ */
 export function setPluginParam(d: Draft<Project>, owner: PluginOwner, paramId: string, value: ParamValue): void {
   const plugin = pluginOf(d, owner);
   if (plugin) plugin.params[paramId] = value;
 }
 
+/** Sets several parameter values of a plugin at once, leaving the others as they are. */
 export function setPluginParams(d: Draft<Project>, owner: PluginOwner, values: Record<string, ParamValue>): void {
   const plugin = pluginOf(d, owner);
   if (!plugin) return;
   for (const [k, v] of Object.entries(values)) plugin.params[k] = v;
 }
 
+/** Replaces the plugin's saved state (its own JSON, for what is not a plain parameter). */
 export function setPluginState(d: Draft<Project>, owner: PluginOwner, state: Json): void {
   const plugin = pluginOf(d, owner);
   if (plugin) plugin.state = state as Draft<Json>;
 }
 
+/** Points one of the plugin's sample slots at a sample, or empties the slot with null. */
 export function setPluginSample(d: Draft<Project>, owner: PluginOwner, slot: string, sampleId: SampleId | null): void {
   const plugin = pluginOf(d, owner);
   if (!plugin) return;
@@ -155,6 +170,7 @@ export function setPluginSample(d: Draft<Project>, owner: PluginOwner, slot: str
   plugin.samples = { ...(plugin.samples ?? {}), [slot]: sampleId };
 }
 
+/** Registers a sample in the project's sample list (replacing one with the same id). */
 export function addSample(d: Draft<Project>, sample: SampleRef): void {
   d.samples[sample.id] = sample as Draft<SampleRef>;
 }

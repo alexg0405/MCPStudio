@@ -16,11 +16,16 @@ function notesOf(d: Draft<Project>, patternId: PatternId, channelId: ChannelId, 
   return notes;
 }
 
+/**
+ * Adds a note to a pattern's notes for a channel (made if the channel has none yet), rounded and clamped into the
+ * model's ranges. Does nothing when the pattern does not exist.
+ */
 export function addNote(d: Draft<Project>, patternId: PatternId, channelId: ChannelId, note: Note): void {
   const notes = notesOf(d, patternId, channelId, true);
   if (notes) notes[note.id] = sanitizeNote(note);
 }
 
+/** Removes one note; when it was the channel's last note in the pattern, the channel's note list goes too. */
 export function removeNote(d: Draft<Project>, patternId: PatternId, channelId: ChannelId, noteId: NoteId): void {
   const pattern = d.patterns[patternId];
   const notes = pattern?.notes[channelId];
@@ -29,6 +34,10 @@ export function removeNote(d: Draft<Project>, patternId: PatternId, channelId: C
   if (Object.keys(notes).length === 0) delete pattern.notes[channelId];
 }
 
+/**
+ * Changes fields of an existing note (the id stays); the result is rounded and clamped like a new note. Does nothing
+ * when the note does not exist.
+ */
 export function updateNote(
   d: Draft<Project>,
   patternId: PatternId,
@@ -92,20 +101,26 @@ export function setStep(
   }
 }
 
+/** Sets how many 1/16 steps a pattern shows in the step sequencer, rounded to a whole number between 1 and 512. */
 export function setStepCount(d: Draft<Project>, patternId: PatternId, steps: number): void {
   const pattern = d.patterns[patternId];
   if (pattern) pattern.stepCount = Math.max(1, Math.min(512, Math.round(steps)));
 }
 
+/** Renames a pattern (trimmed, at most 64 characters; a blank name is ignored). */
 export function renamePattern(d: Draft<Project>, patternId: PatternId, name: string): void {
   const pattern = d.patterns[patternId];
   if (pattern && name.trim()) pattern.name = name.trim().slice(0, 64);
 }
 
+/**
+ * Sets the song tempo in beats per minute, clamped to 10 to 522 and rounded to 0.001; a non-finite value is ignored.
+ */
 export function setBpm(d: Draft<Project>, bpm: number): void {
   if (Number.isFinite(bpm)) d.transport.bpm = Math.round(Math.min(522, Math.max(10, bpm)) * 1000) / 1000;
 }
 
+/** Sets the song's swing, clamped to 0..1 (0 = straight); a non-finite value is ignored. */
 export function setSwing(d: Draft<Project>, swing: number): void {
   if (Number.isFinite(swing)) d.transport.swing = Math.min(1, Math.max(0, swing));
 }
@@ -176,6 +191,7 @@ export function sameNote(a: Note, b: Note): boolean {
 
 // ---- Multi-note edits (piano roll) ----
 
+/** Changes to one note for a multi-note edit; only the fields that are present change. */
 export interface NoteEdit {
   id: NoteId;
   tick?: Tick;
@@ -272,10 +288,12 @@ export function writeNotes(
   }
 }
 
+/** Adds several notes to one channel of a pattern. */
 export function addNotes(d: Draft<Project>, patternId: PatternId, channelId: ChannelId, notes: readonly Note[]): void {
   for (const n of notes) addNote(d, patternId, channelId, n);
 }
 
+/** Removes several notes from one channel of a pattern. */
 export function removeNotes(
   d: Draft<Project>,
   patternId: PatternId,

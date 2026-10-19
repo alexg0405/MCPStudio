@@ -24,6 +24,7 @@ import type {
 
 // ---- Patterns ----
 
+/** Adds a pattern to the project and the pattern order, at `index` (clamped to the list) or at the end. */
 export function addPattern(d: Draft<Project>, pattern: Pattern, index?: number): void {
   d.patterns[pattern.id] = pattern as Draft<Pattern>;
   const at = index === undefined ? d.patternOrder.length : Math.max(0, Math.min(index, d.patternOrder.length));
@@ -62,6 +63,7 @@ export function removePattern(d: Draft<Project>, id: PatternId): void {
   pruneLauncher(d);
 }
 
+/** Changes a pattern's name (trimmed, at most 64 characters; a blank name is ignored) and colour. */
 export function setPatternProps(d: Draft<Project>, id: PatternId, patch: { name?: string; color?: string }): void {
   const p = d.patterns[id];
   if (!p) return;
@@ -69,6 +71,7 @@ export function setPatternProps(d: Draft<Project>, id: PatternId, patch: { name?
   if (patch.color !== undefined) p.color = patch.color;
 }
 
+/** Moves a pattern to a new position in the pattern order (clamped to the list). */
 export function movePattern(d: Draft<Project>, id: PatternId, toIndex: number): void {
   const from = d.patternOrder.indexOf(id);
   if (from < 0) return;
@@ -78,12 +81,14 @@ export function movePattern(d: Draft<Project>, id: PatternId, toIndex: number): 
 
 // ---- Lanes ----
 
+/** Adds a playlist track (lane) at `index` or at the end. */
 export function addLane(d: Draft<Project>, lane: Lane, index?: number): void {
   d.playlist.lanes[lane.id] = lane as Draft<Lane>;
   const at = index === undefined ? d.playlist.laneOrder.length : index;
   d.playlist.laneOrder.splice(at, 0, lane.id);
 }
 
+/** Changes a playlist track's name (trimmed, at most 64 characters; a blank name is ignored), colour, mute and solo. */
 export function setLaneProps(
   d: Draft<Project>,
   id: LaneId,
@@ -156,10 +161,12 @@ export function addClips(d: Draft<Project>, clips: readonly Clip[], opts: { toTa
   }
 }
 
+/** Removes clips from the playlist; ids that are already gone are ignored. */
 export function removeClips(d: Draft<Project>, ids: readonly ClipId[]): void {
   for (const id of ids) delete d.playlist.clips[id];
 }
 
+/** Changes to one playlist clip for a multi-clip edit; only the fields that are present change. */
 export interface ClipEdit {
   id: ClipId;
   start?: Tick;
@@ -233,6 +240,10 @@ export function makeClipUnique(d: Draft<Project>, clipId: ClipId, copyId: Patter
   clip.patternId = copyId;
 }
 
+/**
+ * A copy of the clip with its start rounded to whole ticks (not before 0) and its length rounded to whole ticks (at
+ * least 1).
+ */
 export function sanitizeClip<C extends Clip>(c: C): C {
   return { ...c, start: Math.max(0, Math.round(c.start)), length: Math.max(1, Math.round(c.length)) };
 }

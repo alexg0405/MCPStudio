@@ -8,6 +8,9 @@
  */
 import type { FollowAction, LaneId, LaunchContent, LaunchTrackId, SceneId, Tick } from '../model/types';
 
+/**
+ * One launch of a slot: what it plays, when it starts and ends on the launcher axis `u` (ticks), and its stop request.
+ */
 export interface LaunchRun {
   id: string;
   trackId: LaunchTrackId;
@@ -66,6 +69,9 @@ export interface LaunchDriver {
   reset?(): void;
 }
 
+/**
+ * What a pad shows: nothing in it, ready, waiting for its quantize boundary, playing, or waiting for a requested stop.
+ */
 export type SlotPlayState = 'empty' | 'idle' | 'queued' | 'playing' | 'stopping';
 
 /** What the launcher is doing with one slot at `heardU`. */

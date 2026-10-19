@@ -18,6 +18,7 @@ import { addChannel } from '../ops/channels';
 import { addPattern } from '../ops/playlist';
 import { ensureCapacity, patternContent, setSlotContent } from '../ops/launcher';
 
+/** The project `launcherFixture` builds, with the ids of the channels, patterns, tracks and scenes the tests need. */
 export interface LauncherFixture {
   project: Project;
   channelId: ChannelId;

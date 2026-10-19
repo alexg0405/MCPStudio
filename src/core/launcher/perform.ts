@@ -11,6 +11,7 @@ import { constantTempo, type TempoMap } from '../time/ppq';
 import type { AudioClip, Clip, ClipId, LaneId, LaunchTrackId, PatternClip, Project, Tick } from '../model/types';
 import type { PerformanceEntry, PerformanceTake } from './sequencer';
 
+/** What writing a performance take to the playlist changed: the new clips and the playlist tracks they went on. */
 export interface WrittenPerformance {
   clips: ClipId[];
   /** Playlist tracks the clips went on (new ones included). */

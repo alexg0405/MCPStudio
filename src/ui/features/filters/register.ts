@@ -11,6 +11,21 @@ import { FilterOverlay } from './FilterDialog';
 import { filterStore } from './filter-store';
 import { currentTarget, filterHint, filterMenu, removeFilterMenu, runFilter, runRemoveFilter } from './run';
 
+/** Whether the song has any clip (a filter needs something to work on). */
+const hasSong = (s: Services) => Object.keys(s.doc.getState().project.playlist.clips).length > 0;
+
+/** The filtered-audio channels of the selected clips (what Remove filter acts on). */
+const selectedFilters = (s: Services) => {
+  const p = s.doc.getState().project;
+  const ids = new Set(
+    s.editor
+      .getState()
+      .clipSelection.map((id) => filterChannelOf(p, p.playlist.clips[id])?.id)
+      .filter((x): x is ChannelId => !!x),
+  );
+  return [...ids];
+};
+
 /**
  * Sound filters (Nightcore, slowed + reverb, telephone, lo-fi…) on a part of the song: a
  * "Filter … ▸" submenu on clips, markers, the ruler and empty playlist spots, Playlist › Apply a
@@ -18,19 +33,14 @@ import { currentTarget, filterHint, filterMenu, removeFilterMenu, runFilter, run
  * The work is in app/filters; the Studio has the matching `filter` action.
  */
 export function register(services: Services): void {
-  const { commands } = services;
-  const hasSong = (s: Services) => Object.keys(s.doc.getState().project.playlist.clips).length > 0;
-  const selectedFilters = (s: Services) => {
-    const p = s.doc.getState().project;
-    const ids = new Set(
-      s.editor
-        .getState()
-        .clipSelection.map((id) => filterChannelOf(p, p.playlist.clips[id])?.id)
-        .filter((x): x is ChannelId => !!x),
-    );
-    return [...ids];
-  };
+  registerFilterCommands(services);
+  registerChooser();
+  registerFilterMenus();
+  registerFilterSearch();
+}
 
+/** Choose a filter, apply one, and remove a filter. */
+function registerFilterCommands({ commands }: Services): void {
   commands.register<{ filter?: string } | undefined>({
     id: 'filters.choose',
     title: 'Apply a filter…',
@@ -68,10 +78,16 @@ export function register(services: Services): void {
       for (const id of selectedFilters(s)) runRemoveFilter(s, id);
     },
   });
+}
+
+/** The Playlist menu entries and the chooser dialog. */
+function registerChooser(): void {
   addMenuItems('playlist', [cmd('filters.choose', 33), cmd('filters.remove', 34)]);
   addOverlay('filters', FilterOverlay);
+}
 
-  // Right-click menus: each names the part it filters.
+/** Right-click menus on clips, markers, the ruler and empty spots: each names the part it filters. */
+function registerFilterMenus(): void {
   addContextMenuItems('playlist.clip', ({ clip }, s) => {
     const p = s.doc.getState().project;
     const sel = s.editor.getState().clipSelection;
@@ -92,8 +108,10 @@ export function register(services: Services): void {
     const inLoop = loop && loop.end > loop.start && tick >= loop.start && tick < loop.end;
     return filterMenu(s, inLoop ? rangeTarget(p, loop.start, loop.end) : spotTarget(p, tick));
   });
+}
 
-  // Action search: "Filter: Nightcore" on the usual target.
+/** Action search: "Filter: Nightcore" on the usual target. */
+function registerFilterSearch(): void {
   addActionProvider('filters', (s) => {
     const target = currentTarget(s);
     const where = target ? targetLabel(s.doc.getState().project, target) : 'the song';

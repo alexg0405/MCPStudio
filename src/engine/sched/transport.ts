@@ -138,6 +138,11 @@ export class Transport {
     return this.notes.size;
   }
 
+  /** Number of planned segments kept for the playhead (diagnostics/tests: it must not grow while playing). */
+  get plannedSegmentCount(): number {
+    return this.plan.segs.length;
+  }
+
   start(fromTick: Tick, at: number = this.clock.currentTime + DEFAULT_START_DELAY_SEC): void {
     this.reset();
     this.plan.playing = true;

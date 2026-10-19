@@ -254,6 +254,8 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "record",
   "comp",
   "pitch",
+  "make_harmonies",
+  "update_harmonies",
   "arrange",
   "develop",
   "transition",
@@ -294,6 +296,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"8b5f366d"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"a22a9794"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"27a5ea8b"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"119f7f74"`;

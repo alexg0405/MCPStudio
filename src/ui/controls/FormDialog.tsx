@@ -85,6 +85,102 @@ function NumberField({
   );
 }
 
+/** Sets one field of the form. */
+type SetField = (key: string, value: ParamValue) => void;
+
+/** A text field, one line or several. */
+function TextRow({ field, value, set }: { field: Extract<FormField, { kind: 'text' }>; value: ParamValue | undefined; set: SetField }) {
+  const text = String(value ?? '');
+  return (
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>{field.label}</span>
+      {field.multiline ? (
+        <textarea className={styles.input} rows={4} value={text} placeholder={field.placeholder} onChange={(e) => set(field.key, e.target.value)} />
+      ) : (
+        <input className={styles.input} value={text} placeholder={field.placeholder} onChange={(e) => set(field.key, e.target.value)} />
+      )}
+    </label>
+  );
+}
+
+/** A typed number with its unit and allowed range. */
+function NumberRow({ field, value, set }: { field: Extract<FormField, { kind: 'number' }>; value: ParamValue | undefined; set: SetField }) {
+  return (
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>{field.label}</span>
+      <NumberField field={field} value={Number(value ?? field.min)} onChange={(v) => set(field.key, v)} />
+      {field.unit && <span className={styles.fieldValue}>{field.unit}</span>}
+      <span className={styles.fieldRange}>
+        {field.min}–{field.max}
+      </span>
+    </label>
+  );
+}
+
+/** A choice from a list of options. */
+function ChoiceRow({ field, value, set }: { field: Extract<FormField, { kind: 'choice' }>; value: ParamValue | undefined; set: SetField }) {
+  return (
+    <label className={styles.field}>
+      <span className={styles.fieldLabel}>{field.label}</span>
+      <select className={styles.input} value={String(value ?? '')} onChange={(e) => set(field.key, e.target.value)}>
+        {field.options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/** A plugin-style parameter: a switch, a menu or a knob, with the parameter's hint as its tooltip. */
+function ParamRow({ field, value: given, set }: { field: Extract<FormField, { kind: 'param' }>; value: ParamValue | undefined; set: SetField }) {
+  const spec = field.spec;
+  const value = given ?? spec.default;
+  const label = spec.label ?? field.key;
+  // The param's hint shows in the hint bar and as a tooltip.
+  const hint = spec.hint ? { 'data-hint': `${label}: ${spec.hint}`, title: spec.hint } : {};
+  if (spec.type === 'bool') {
+    return (
+      <div className={styles.field} {...hint}>
+        <Toggle spec={spec} value={Boolean(value)} label={label} onCommit={(v) => set(field.key, v)} />
+      </div>
+    );
+  }
+  if (spec.type === 'enum') {
+    return (
+      <label className={styles.field} {...hint}>
+        <span className={styles.fieldLabel}>{label}</span>
+        <Select spec={spec} value={String(value)} label={label} onCommit={(v) => set(field.key, v)} />
+      </label>
+    );
+  }
+  return (
+    <div className={styles.field} {...hint}>
+      <span className={styles.fieldLabel}>{label}</span>
+      <Knob spec={spec} value={value} label={label} size={30} onChange={(v) => set(field.key, v)} />
+      <span className={styles.fieldValue}>{formatValue(spec, value)}</span>
+    </div>
+  );
+}
+
+/** One field of the form, by its kind. */
+function FieldRow({ field, values, set }: { field: FormField; values: FormValues; set: SetField }) {
+  switch (field.kind) {
+    case 'info':
+      return <p className={styles.detail}>{field.text}</p>;
+    case 'text':
+      return <TextRow field={field} value={values[field.key]} set={set} />;
+    case 'number':
+      return <NumberRow field={field} value={values[field.key]} set={set} />;
+    case 'choice':
+      return <ChoiceRow field={field} value={values[field.key]} set={set} />;
+    case 'param':
+      return <ParamRow field={field} value={values[field.key]} set={set} />;
+  }
+}
+
+/** The form dialog itself: the title, a message, the fields, and Cancel and OK. Enter confirms and Esc cancels. */
 function Form({ open }: { open: Open }) {
   const { options } = open;
   const [values, setValues] = useState<FormValues>(options.values);
@@ -126,89 +222,9 @@ function Form({ open }: { open: Open }) {
         <h2 className={styles.title}>{options.title}</h2>
         {options.message && <p className={styles.message}>{options.message}</p>}
         <div className={styles.fields}>
-          {options.fields.map((f, i) => {
-            if (f.kind === 'info')
-              return (
-                <p key={i} className={styles.detail}>
-                  {f.text}
-                </p>
-              );
-            if (f.kind === 'text')
-              return (
-                <label key={f.key} className={styles.field}>
-                  <span className={styles.fieldLabel}>{f.label}</span>
-                  {f.multiline ? (
-                    <textarea
-                      className={styles.input}
-                      rows={4}
-                      value={String(values[f.key] ?? '')}
-                      placeholder={f.placeholder}
-                      onChange={(e) => set(f.key, e.target.value)}
-                    />
-                  ) : (
-                    <input
-                      className={styles.input}
-                      value={String(values[f.key] ?? '')}
-                      placeholder={f.placeholder}
-                      onChange={(e) => set(f.key, e.target.value)}
-                    />
-                  )}
-                </label>
-              );
-            if (f.kind === 'number')
-              return (
-                <label key={f.key} className={styles.field}>
-                  <span className={styles.fieldLabel}>{f.label}</span>
-                  <NumberField field={f} value={Number(values[f.key] ?? f.min)} onChange={(v) => set(f.key, v)} />
-                  {f.unit && <span className={styles.fieldValue}>{f.unit}</span>}
-                  <span className={styles.fieldRange}>
-                    {f.min}–{f.max}
-                  </span>
-                </label>
-              );
-            if (f.kind === 'choice')
-              return (
-                <label key={f.key} className={styles.field}>
-                  <span className={styles.fieldLabel}>{f.label}</span>
-                  <select
-                    className={styles.input}
-                    value={String(values[f.key] ?? '')}
-                    onChange={(e) => set(f.key, e.target.value)}
-                  >
-                    {f.options.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              );
-            const spec = f.spec;
-            const value = values[f.key] ?? spec.default;
-            const label = spec.label ?? f.key;
-            // The param's hint shows in the hint bar and as a tooltip.
-            const hint = spec.hint ? { 'data-hint': `${label}: ${spec.hint}`, title: spec.hint } : {};
-            if (spec.type === 'bool')
-              return (
-                <div key={f.key} className={styles.field} {...hint}>
-                  <Toggle spec={spec} value={Boolean(value)} label={label} onCommit={(v) => set(f.key, v)} />
-                </div>
-              );
-            if (spec.type === 'enum')
-              return (
-                <label key={f.key} className={styles.field} {...hint}>
-                  <span className={styles.fieldLabel}>{label}</span>
-                  <Select spec={spec} value={String(value)} label={label} onCommit={(v) => set(f.key, v)} />
-                </label>
-              );
-            return (
-              <div key={f.key} className={styles.field} {...hint}>
-                <span className={styles.fieldLabel}>{label}</span>
-                <Knob spec={spec} value={value} label={label} size={30} onChange={(v) => set(f.key, v)} />
-                <span className={styles.fieldValue}>{formatValue(spec, value)}</span>
-              </div>
-            );
-          })}
+          {options.fields.map((f, i) => (
+            <FieldRow key={f.kind === 'info' ? i : f.key} field={f} values={values} set={set} />
+          ))}
         </div>
         <div className={styles.buttons}>
           <button className={styles.button} onClick={() => finish(open, null)}>

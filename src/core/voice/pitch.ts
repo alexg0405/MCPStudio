@@ -34,6 +34,8 @@ export const YIN_THRESHOLD = 0.15;
 export const YIN_MAX_APERIODICITY = 0.35;
 /** Frames quieter than this (dB below the loudest frame) are unvoiced. */
 const SILENCE_DB = 50;
+/** A frame whose integration window holds less energy than this (sum of squares) is silent and is not analysed. */
+const SILENT_ENERGY_SUM = 1e-20;
 /** Absolute silence floor (RMS). */
 const SILENCE_RMS = 1e-5;
 /** Lowest rate the tracker decimates to. */
@@ -112,14 +114,24 @@ export class Yin {
    * whose mean square is below `silence` are unvoiced without running YIN.
    */
   estimate(x: Float32Array, start: number, silence = 0): void {
+    const e0 = this.loadFrame(x, start);
+    this.energy = e0 / this.window;
+    this.f0 = 0;
+    this.aperiodicity = 1;
+    if (!(this.energy > silence) || !(e0 > SILENT_ENERGY_SUM)) return;
+    this.correlate();
+    this.normalizedDifference(e0);
+    this.interpolate(this.choosePeriod());
+  }
+
+  /** Copies the frame's span into `b` (and its integration window into `a`); returns the window's energy sum. */
+  private loadFrame(x: Float32Array, start: number): number {
     const W = this.window;
-    const tauMax = this.tauMax;
-    const span = this.span;
     const a = this.a;
     const b = this.b;
     const n = x.length;
     let e0 = 0;
-    for (let j = 0; j < span; j++) {
+    for (let j = 0; j < this.span; j++) {
       const i = start + j;
       const v = i >= 0 && i < n ? (x[i] as number) : 0;
       b[j] = v;
@@ -128,21 +140,20 @@ export class Yin {
         e0 += v * v;
       }
     }
-    this.energy = e0 / W;
-    this.f0 = 0;
-    this.aperiodicity = 1;
-    if (!(this.energy > silence) || !(e0 > 1e-20)) return;
-    a.fill(0, W);
-    b.fill(0, span);
+    return e0;
+  }
 
-    // r(τ) = Σ_{j<W} a[j]·b[j+τ] = IFFT(conj(A)·B)
+  /** r(τ) = Σ_{j<W} a[j]·b[j+τ] = IFFT(conj(A)·B), into `r`. */
+  private correlate(): void {
+    this.a.fill(0, this.window);
+    this.b.fill(0, this.span);
     const fft = this.fft;
-    fft.forward(a, this.ar, this.ai);
-    fft.forward(b, this.br, this.bi);
     const ar = this.ar;
     const ai = this.ai;
     const br = this.br;
     const bi = this.bi;
+    fft.forward(this.a, ar, ai);
+    fft.forward(this.b, br, bi);
     for (let k = 0; k < fft.bins; k++) {
       const xr = ar[k] as number;
       const xi = ai[k] as number;
@@ -151,12 +162,13 @@ export class Yin {
       ar[k] = xr * yr + xi * yi;
       ai[k] = xr * yi - xi * yr;
     }
-    const r = this.r;
-    fft.inverse(ar, ai, r);
+    fft.inverse(ar, ai, this.r);
+  }
 
-    // d(τ) = e(0) + e(τ) − 2r(τ) with e(τ) = Σ_{j=τ}^{τ+W−1} b[j]², then the CMND.
-    const d = this.d;
-    const cmnd = this.cmnd;
+  /** d(τ) = e(0) + e(τ) − 2r(τ) with e(τ) = Σ_{j=τ}^{τ+W−1} b[j]², then the CMND (cumulative mean normalized difference). */
+  private normalizedDifference(e0: number): void {
+    const { b, r, d, cmnd, tauMax } = this;
+    const W = this.window;
     d[0] = 0;
     cmnd[0] = 1;
     let et = e0;
@@ -170,26 +182,29 @@ export class Yin {
       sum += v;
       cmnd[tau] = sum > 0 ? (v * tau) / sum : 1;
     }
+  }
 
-    // Absolute threshold: first dip below it, then down to its local minimum; else the global minimum.
-    const tauMin = this.tauMin;
-    let best = -1;
+  /** Absolute threshold: the first dip below it, then down to its local minimum; else the global minimum. */
+  private choosePeriod(): number {
+    const { cmnd, tauMin, tauMax } = this;
     for (let tau = tauMin; tau <= tauMax; tau++) {
       if ((cmnd[tau] as number) < YIN_THRESHOLD) {
         while (tau + 1 <= tauMax && (cmnd[tau + 1] as number) < (cmnd[tau] as number)) tau++;
-        best = tau;
-        break;
+        return tau;
       }
     }
-    if (best < 0) {
-      best = tauMin;
-      for (let tau = tauMin + 1; tau <= tauMax; tau++) if ((cmnd[tau] as number) < (cmnd[best] as number)) best = tau;
-    }
+    let best = tauMin;
+    for (let tau = tauMin + 1; tau <= tauMax; tau++) if ((cmnd[tau] as number) < (cmnd[best] as number)) best = tau;
+    return best;
+  }
+
+  /** Parabolic interpolation around the period `best`; sets the aperiodicity and (when it is a real, clear period) f0. */
+  private interpolate(best: number): void {
+    const { cmnd, d, tauMin, tauMax } = this;
     let ap = cmnd[best] as number;
     // A minimum on the search boundary is not a real period (the dip continues outside the range).
     const onEdge =
       (best === tauMin && (cmnd[best - 1] as number) < ap) || (best === tauMax && (cmnd[best - 1] as number) > ap);
-    // Parabolic interpolation of d(τ) around the minimum.
     let period = best;
     if (best > 1 && best < tauMax) {
       const y0 = d[best - 1] as number;

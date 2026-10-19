@@ -1,16 +1,10 @@
 import { CommandRegistry } from '@core/commands/registry';
 import { Keymap, type Platform } from '@core/commands/keymap';
 import type { History } from '@core/history/history';
-import type { ClipId, PluginOwner, Project } from '@core/model/types';
-import { setPluginState } from '@core/ops/channels';
-import { heardProject } from '@core/query/hear';
-import { isTakeClip } from '@core/query/takes';
-import type { JsonValue } from '@agstudio/sdk';
+import type { ClipId, Project } from '@core/model/types';
 import type { EngineApi, EngineOptions } from '@engine/api';
 import { Engine } from '@engine/engine';
-import { SampleCache } from '@engine/samples';
-import { isOpfsAvailable } from '@platform/opfs';
-import { createOpfsDerivedStore } from '@platform/derived-store';
+import type { SampleCache } from '@engine/samples';
 import { createDefaultProject } from './default-project';
 import { EngineHost } from './engine-host';
 import { registerBuiltinPlugins } from './plugins/discover';
@@ -23,7 +17,7 @@ import { createDoc, type DocStore } from './stores/doc';
 import { createSessionStore, type SessionStore } from './stores/session';
 import { createViewStore, type ViewStore } from './stores/view';
 import { watchPlaybackHealth } from './playback-health';
-import { AUDIO_BUFFER_HINT, createPrefsStore, effectiveBuffer, type PrefsState, type PrefsStore } from './stores/prefs';
+import { AUDIO_BUFFER_HINT, createPrefsStore, effectiveBuffer, type PrefsStore } from './stores/prefs';
 import { createEditorStore, type EditorStore, type PianoRollViewState, type PlaylistViewState } from './stores/editor';
 import { ControllerRouter } from './controllers';
 import { LiveInput } from './live-input';
@@ -35,7 +29,6 @@ import { ProjectFiles } from './project-files';
 import { AssistantFacade } from './assistant/facade';
 import { McpLink } from './mcp/bridge';
 import { Pwa } from './pwa/pwa';
-import { opfsSampleProvider } from './persistence/project-io';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
 import { SampleBrowser, type SampleBrowserOptions } from './samples/browser';
 import { TapRegistry } from './taps';
@@ -43,6 +36,16 @@ import { MeterService } from './metering/service';
 import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
 import { createDecksFactory, type DecksAccess } from './dj/decks-factory';
 import { LauncherSession } from './launcher/session';
+import {
+  connectAudioRecording,
+  connectEngine,
+  createEngineOptions,
+  createSampleCache,
+  followCustomKeys,
+  followMetronomeSettings,
+  followOutputDevice,
+  rebootEngineOnBufferChange,
+} from './service-wiring';
 
 /**
  * The composition root. Built once at startup, outside React (StrictMode runs effects twice, so
@@ -123,12 +126,14 @@ export interface Services {
   subscribe(fn: () => void): () => void;
 }
 
+/** Mac (Cmd shortcuts) or anything else (Ctrl), from what the browser says it runs on. */
 export function detectPlatform(): Platform {
   const nav = globalThis.navigator as (Navigator & { userAgentData?: { platform?: string } }) | undefined;
   const name = nav?.userAgentData?.platform ?? nav?.platform ?? '';
   return /mac|iphone|ipad/i.test(name) ? 'mac' : 'other';
 }
 
+/** What tests and the app's entry point can change about the services; the defaults are the real thing. */
 export interface ServiceOptions {
   platform?: Platform;
   /**
@@ -154,7 +159,13 @@ export interface ServiceOptions {
   sampleBrowser?: SampleBrowserOptions;
 }
 
+/**
+ * Builds the app's services in the order they depend on each other. The steps below are numbered; the order matters
+ * for subscriptions (a store hears its subscribers in the order they subscribed) and for the engine, which is created
+ * before anything that talks to it.
+ */
 export function createServices(opts: ServiceOptions = {}): Services {
+  // 1. Commands, keys and the project (documents, view and session state, prefs).
   const platform = opts.platform ?? detectPlatform();
   const commands = new CommandRegistry<Services>();
   const keymap = new Keymap(platform);
@@ -165,29 +176,9 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const session = createSessionStore();
   session.getState().selectChannel(doc.getState().project.channelOrder[0] ?? null);
   const prefs = createPrefsStore();
-  // Your own shortcuts (Help → Keyboard shortcuts), kept in prefs.
-  let appliedKeys: PrefsState['customKeys'] | null = null;
-  const applyKeys = () => {
-    const keys = prefs.getState().customKeys;
-    if (keys === appliedKeys) return;
-    appliedKeys = keys;
-    keymap.setUserBindings(keys);
-  };
-  prefs.subscribe(applyKeys);
-  applyKeys();
-  // The chosen output device (the engine host remembers it across reboots).
-  let appliedOutput = '';
-  const applyOutput = () => {
-    const id = prefs.getState().outputDevice;
-    if (id === appliedOutput) return;
-    appliedOutput = id;
-    void engineRef?.setOutputDevice(id).then((ok) => {
-      if (!ok && id && prefs.getState().outputDevice === id)
-        session
-          .getState()
-          .toast('Your chosen sound output isn’t available, so the system default plays (Options → Settings…).', 'error');
-    });
-  };
+  followCustomKeys(prefs, keymap);
+
+  // 2. Editing state and the live note inputs. They reach the engine through `engineRef`, which is set in step 4.
   const editor = createEditorStore(opts.pianoRoll, opts.playlist);
   let engineRef: EngineApi | null = null;
   const live = new LiveInput(
@@ -198,48 +189,22 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const scoreLog = new ScoreLog(live);
   const taps = new TapRegistry();
 
-  // Embedded samples come from the app's sample store (OPFS, or memory when that is unavailable).
-  // AIFF isn't transcoded here (that would run on the main thread): the engine's decoder parses it in a Worker.
-  // Time-stretched clip copies are kept in OPFS, so each is made once per file and tempo.
-  const sampleCache = new SampleCache(opfsSampleProvider({ transcode: false }), {
-    ...(isOpfsAvailable() ? { store: createOpfsDerivedStore() } : {}),
-  });
-  const applyBudget = () => {
-    const mb = prefs.getState().sampleMemoryMb;
-    sampleCache.budgetBytes = Math.min(16384, Math.max(256, Number.isFinite(mb) ? mb : 1536)) * 1024 * 1024;
-  };
-  prefs.subscribe(applyBudget);
-  applyBudget();
-  const engineOptions: EngineOptions = {
-    plugins,
-    sampleCache,
-    onPluginStateRequest: (owner: PluginOwner, state: JsonValue) =>
-      history.transact('Plugin state', (d) => setPluginState(d, owner, state)),
-    onPluginFault: (_owner, pluginId, error) => {
-      const message = error === 'missing' ? `Plugin "${pluginId}" is not installed` : `Plugin "${pluginId}" failed`;
-      console.error(message, error);
-      session.getState().toast(message, 'error');
-    },
-    onPluginTap: (owner, tap, live) => taps.report(owner, tap, live),
-  };
+  // 3. The sample cache and the engine options that use it.
+  const sampleCache = createSampleCache(prefs);
+  const engineOptions = createEngineOptions({ plugins, sampleCache, history, session, taps });
+
+  // 4. The engine, and everything that follows the prefs into it (output device, buffer size, health checks).
   const makeEngine =
     opts.createEngine ?? ((o: EngineOptions) => Engine.realtime(o, AUDIO_BUFFER_HINT[effectiveBuffer(prefs.getState())]));
   const engine = new EngineHost(() => makeEngine(engineOptions), { deferred: !!opts.deferEngine });
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
-  prefs.subscribe(applyOutput);
-  applyOutput();
-  // A new buffer size needs a new AudioContext: reboot the engine (playback carries on from where it was). The size
-  // is the chosen one, or what Auto has settled on (it moves up when playback can't keep up).
-  let appliedBuffer = effectiveBuffer(prefs.getState());
-  prefs.subscribe((p) => {
-    const size = effectiveBuffer(p);
-    if (size === appliedBuffer) return;
-    appliedBuffer = size;
-    void engine.reboot();
-  });
+  followOutputDevice(prefs, session, engine);
+  rebootEngineOnBufferChange(prefs, engine);
   watchPlaybackHealth(engine, prefs, session);
   watchAutoBuffer(engine, prefs, session, () => midi.enabled);
+
+  // 5. Recording, the audio input, and the services built on the engine.
   const recording = new RecordController(engine, (kind) =>
     kind === 'audio' ? prefs.getState().recordAudio : prefs.getState().recordNotes,
   );
@@ -249,14 +214,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     doc,
     ...(opts.openAudioStream ? { openStream: opts.openAudioStream } : {}),
   });
-  // The engine plays the metronome and count-in from the prefs (count-in only while record is armed).
-  const syncSession = () => {
-    const pr = prefs.getState();
-    engine.setSession({ metronome: pr.metronome, countInBars: recording.armed ? pr.countInBars : 0 });
-  };
-  prefs.subscribe(syncSession);
-  recording.store.subscribe(syncSession);
-  syncSession();
+  followMetronomeSettings(prefs, engine, recording);
   // Before connectEngine: a drag's first edit lets automation go of the control before the engine hears it.
   const automation = new AutomationService({ history, doc, engine, recording, view, editor, plugins, session });
 
@@ -273,6 +231,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
     toast: (message, kind) => session.getState().toast(message, kind),
     onRecorded: (clips) => editor.getState().selectClips(clips as ClipId[]),
   });
+
+  // 6. The services object. The ones that need the whole object (or are rarely used) are made on first use.
   let files: ProjectFiles | null = null;
   let audioRecorder: AudioRecorder | null = null;
   let controllers: ControllerRouter | null = null;
@@ -354,6 +314,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
     session.getState().toast(`${id} failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
   };
 
+  // 7. Connections that need the finished services object.
   connectEngine(services);
   recording.register(new NoteRecorder(services));
   audioRecorder = new AudioRecorder(services, audioInput);
@@ -361,101 +322,4 @@ export function createServices(opts: ServiceOptions = {}): Services {
   connectAudioRecording(services);
   void services.controllers; // listens to live controllers from the start
   return services;
-}
-
-/**
- * Arming record mode with audio on: song mode (audio goes into the playlist), playback that runs on
- * past the song's end (no wrapping while you record), and the input opened ahead of the take.
- */
-function connectAudioRecording(s: Services): void {
-  let wasArmed = false;
-  const sync = () => {
-    const armed = s.recording.armed && s.prefs.getState().recordAudio;
-    s.engine.setSongOpenEnded(armed);
-    if (!armed || wasArmed) {
-      wasArmed = armed;
-      return;
-    }
-    wasArmed = true;
-    if (s.view.getState().mode !== 'song') {
-      s.view.getState().setMode('song');
-      s.session.getState().toast('Audio records into the playlist, so AGstudio switched to Song mode.');
-    }
-    void s.audioInput.open().then((input) => {
-      if (!input) s.session.getState().toast(s.audioInput.store.getState().error ?? 'The audio input could not be opened.', 'error');
-    });
-  };
-  s.recording.store.subscribe(sync);
-  s.prefs.subscribe((next, prev) => {
-    if (next.recordAudio !== prev.recordAudio) sync();
-  });
-}
-
-/** Keeps the engine in sync with the document and the transport view. */
-function connectEngine(s: Services): void {
-  const { engine, history, view, doc } = s;
-  const project = doc.getState().project;
-  // Listening differently without touching the document: one take on its own (comping), or a clip's original recording
-  // instead of its pitch-corrected render (the Pitch editor's A/B). Both are session state in the editor store; the
-  // engine plays a copy of the project (`heardProject`) and every change of the document passes through the same filter.
-  const listening = () => {
-    const e = s.editor.getState();
-    return { audition: e.auditionTake, original: e.pitchOriginal };
-  };
-  const altered = () => {
-    const l = listening();
-    return l.audition !== null || l.original.length > 0;
-  };
-  engine.applyDocChange({ next: heardProject(project, listening()), prev: project, patches: null, origin: 'load' });
-  history.onChange((change) => engine.applyDocChange(altered() ? { ...change, next: heardProject(change.next, listening()) } : change));
-  s.editor.subscribe((next, prev) => {
-    if (next.auditionTake === prev.auditionTake && next.pitchOriginal === prev.pitchOriginal) return;
-    const now = doc.getState().project;
-    engine.applyDocChange({ next: heardProject(now, listening()), prev: now, patches: null, origin: 'edit' });
-  });
-  // The listened-to take or clip is gone (deleted, undone away, another project): back to the normal sound.
-  history.onChange(({ next }) => {
-    const e = s.editor.getState();
-    if (e.auditionTake && !isTakeClip(next, e.auditionTake)) e.setAuditionTake(null);
-    for (const id of e.pitchOriginal) if (next.playlist.clips[id]?.kind !== 'audio') e.setPitchOriginal(id, false);
-  });
-
-  const pushView = () => {
-    const v = view.getState();
-    engine.setTransportView({ mode: v.mode, patternId: v.currentPatternId, loop: v.loop });
-  };
-  pushView();
-  view.subscribe((next, prev) => {
-    if (next.mode !== prev.mode || next.currentPatternId !== prev.currentPatternId || next.loop !== prev.loop)
-      pushView();
-  });
-
-  // A note selection belongs to one channel in one pattern.
-  s.session.subscribe((next, prev) => {
-    if (next.selectedChannelId !== prev.selectedChannelId) s.editor.getState().selectNotes([]);
-  });
-  // Drop selected clips that no longer exist (undo, delete).
-  history.onChange(({ next }) => {
-    const sel = s.editor.getState().clipSelection;
-    if (sel.some((id) => !next.playlist.clips[id]))
-      s.editor.getState().selectClips(sel.filter((id) => next.playlist.clips[id]));
-  });
-  view.subscribe((next, prev) => {
-    if (next.currentPatternId !== prev.currentPatternId) s.editor.getState().selectNotes([]);
-  });
-
-  // Keep the current pattern and selected channel valid as the document changes.
-  history.onChange(({ next }) => {
-    const v = view.getState();
-    if (!v.currentPatternId || !next.patterns[v.currentPatternId]) v.setCurrentPattern(next.patternOrder[0] ?? null);
-    const sel = s.session.getState().selectedChannelId;
-    if (sel && !next.channels[sel]) s.session.getState().selectChannel(next.channelOrder[0] ?? null);
-  });
-
-  // M5 mixer: when the selected insert is deleted (or undone away), select the master again
-  // (null = master, see SessionState.selectedInsertId).
-  history.onChange(({ next }) => {
-    const ins = s.session.getState().selectedInsertId;
-    if (ins && !next.mixer.inserts[ins]) s.session.getState().selectInsert(null);
-  });
 }

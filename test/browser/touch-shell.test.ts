@@ -129,9 +129,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
     it('two quick taps on the title bar maximize the window (a double-click)', async () => {
       const bar = windowEl('channel-rack').querySelector<HTMLElement>('[class*="titleBar"]')!;
       const at = insideOf(bar, 100, 10);
-      await fingers.tap(1, at);
-      await sleep(60);
-      await fingers.tap(1, at);
+      await fingers.doubleTap(1, at);
       await until(() => !!s.view.getState().windows['channel-rack']!.maximized);
       s.view.getState().setMaximized('channel-rack', false);
     });
@@ -197,8 +195,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       expect(tip.hidden).toBe(true);
       const wasPlaying = s.engine.playing;
       await fingers.press(1, centerOf(play));
-      await sleep(650);
-      expect(tip.hidden).toBe(false);
+      await until(() => tip.hidden === false);
       expect(tip.textContent!.length).toBeGreaterThan(5);
       await fingers.lift(1);
       await sleep(150);
@@ -212,8 +209,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       const play = host.querySelector<HTMLElement>('button[aria-label="Play / stop"]')!;
       const tip = host.querySelector<HTMLElement>('[role="tooltip"]')!;
       await fingers.press(1, centerOf(play));
-      await sleep(650);
-      expect(tip.hidden).toBe(false);
+      await until(() => tip.hidden === false);
       await fingers.lift(1);
       s.prefs.getState().set({ tooltips: true });
     });

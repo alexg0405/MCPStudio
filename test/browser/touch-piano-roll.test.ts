@@ -132,8 +132,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     expect(notes()[0]!.tick).toBe(480);
     expect(notes()[0]!.key).toBe(72);
     const note = notes()[0]!;
-    await fingers.press(1, at(500, 72));
-    await fingers.drag(1, at(980, 74));
+    await fingers.pressAndDrag(1, at(500, 72), at(980, 74));
     await fingers.lift(1);
     await frames(2);
     expect(notes()).toHaveLength(1);
@@ -143,9 +142,8 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
 
   it('a second finger drops the note the first was drawing: two fingers pan and write nothing', async () => {
     const before = s.history.status().cursor;
-    await fingers.press(1, at(480, 72));
-    await fingers.drag(1, at(560, 72), 2);
-    await fingers.press(2, at(1200, 72));
+    // The second finger lands right after the first has begun drawing (all sent before any is waited for: see Fingers).
+    await Promise.all([fingers.press(1, at(480, 72)), fingers.move({ 1: at(560, 72) }), fingers.press(2, at(1200, 72))]);
     await fingers.dragTogether({ id: 1, to: at(480, 72) }, { id: 2, to: at(1200, 72) }, 2);
     await fingers.liftAll();
     await frames(2);
@@ -154,8 +152,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
   });
 
   it('two fingers pan the roll sideways and up and down', async () => {
-    await fingers.press(1, at(2000, 76));
-    await fingers.press(2, at(2600, 76));
+    await fingers.pressTogether({ 1: at(2000, 76), 2: at(2600, 76) });
     // 120 px left and 60 px up: the view moves 120 px on in time and 3 keys down the keyboard.
     await fingers.dragTogether({ id: 1, to: { x: at(2000, 76).x - 120, y: at(2000, 76).y - 60 } }, { id: 2, to: { x: at(2600, 76).x - 120, y: at(2600, 76).y - 60 } });
     await fingers.liftAll();
@@ -168,8 +165,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     const centre = at(3000, 76);
     const tickAtCentre = () => view().scrollTick + (centre.x - grid.getBoundingClientRect().left) / view().pxPerTick;
     const before = { zoom: view().pxPerTick, tick: tickAtCentre() };
-    await fingers.press(1, { x: centre.x - 60, y: centre.y });
-    await fingers.press(2, { x: centre.x + 60, y: centre.y });
+    await fingers.pressTogether({ 1: { x: centre.x - 60, y: centre.y }, 2: { x: centre.x + 60, y: centre.y } });
     await fingers.dragTogether({ id: 1, to: { x: centre.x - 180, y: centre.y } }, { id: 2, to: { x: centre.x + 180, y: centre.y } });
     await fingers.liftAll();
     await settled();
@@ -178,8 +174,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     expect(tickAtCentre()).toBeCloseTo(before.tick, -2);
 
     const rowHeight = view().rowHeight;
-    await fingers.press(1, { x: centre.x, y: centre.y - 40 });
-    await fingers.press(2, { x: centre.x, y: centre.y + 40 });
+    await fingers.pressTogether({ 1: { x: centre.x, y: centre.y - 40 }, 2: { x: centre.x, y: centre.y + 40 } });
     await fingers.dragTogether({ id: 1, to: { x: centre.x, y: centre.y - 90 } }, { id: 2, to: { x: centre.x, y: centre.y + 90 } });
     await fingers.liftAll();
     await settled();
@@ -216,8 +211,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     ]);
     const lane = laneHost.getBoundingClientRect();
     const y = lane.top + lane.height * 0.2;
-    await fingers.press(1, { x: lane.left + 1 * PX * 0 + 4, y });
-    await fingers.drag(1, { x: lane.left + 480 * PX + 20, y });
+    await fingers.pressAndDrag(1, { x: lane.left + 1 * PX * 0 + 4, y }, { x: lane.left + 480 * PX + 20, y });
     await fingers.lift(1);
     await frames(2);
     expect(notes().every((n) => n.velocity > 0.7)).toBe(true);
@@ -227,8 +221,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
   it('two fingers on the event lane only move and zoom time (its height is its value)', async () => {
     const lane = laneHost.getBoundingClientRect();
     const y = lane.top + lane.height / 2;
-    await fingers.press(1, { x: lane.left + 300, y });
-    await fingers.press(2, { x: lane.left + 400, y });
+    await fingers.pressTogether({ 1: { x: lane.left + 300, y }, 2: { x: lane.left + 400, y } });
     await fingers.dragTogether({ id: 1, to: { x: lane.left + 180, y: y - 10 } }, { id: 2, to: { x: lane.left + 280, y: y - 10 } });
     await fingers.liftAll();
     await settled();

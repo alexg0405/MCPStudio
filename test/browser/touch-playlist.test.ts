@@ -133,8 +133,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
 
   it('one finger drags with the current tool: the draw tool places a clip, as a mouse does', async () => {
     const before = clips().length;
-    await fingers.press(1, inGrid(2.1 * BAR_PX, LANE_H * 1.5));
-    await fingers.drag(1, inGrid(3.2 * BAR_PX, LANE_H * 1.5));
+    await fingers.pressAndDrag(1, inGrid(2.1 * BAR_PX, LANE_H * 1.5), inGrid(3.2 * BAR_PX, LANE_H * 1.5));
     await fingers.lift(1);
     await frames(2);
     expect(clips()).toHaveLength(before + 1);
@@ -145,8 +144,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
 
   it('one finger moves a clip (the draw tool grabs what is under it)', async () => {
     const made = addPatternClip(2, 0);
-    await fingers.press(1, inGrid(1.5 * BAR_PX, LANE_H / 2));
-    await fingers.drag(1, inGrid(3.5 * BAR_PX, LANE_H / 2));
+    await fingers.pressAndDrag(1, inGrid(1.5 * BAR_PX, LANE_H / 2), inGrid(3.5 * BAR_PX, LANE_H / 2));
     await fingers.lift(1);
     await frames(2);
     expect(clips().find((c) => c.id === made.id)!.start).toBe(BAR * 3);
@@ -154,10 +152,9 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
 
   it('two fingers pan: the song follows the fingers, and the tool never sees them', async () => {
     const before = clips().length;
-    await fingers.press(1, inGrid(500, 100));
-    // The second finger lands a moment later: the first has begun a draw, which must be dropped.
-    await fingers.drag(1, inGrid(504, 100), 2);
-    await fingers.press(2, inGrid(620, 100));
+    // The second finger lands right after the first has begun a draw, which must be dropped. All three events are sent
+    // before any is waited for, so a busy machine cannot stretch the gap past the long-press time.
+    await Promise.all([fingers.press(1, inGrid(500, 100)), fingers.move({ 1: inGrid(504, 100) }), fingers.press(2, inGrid(620, 100))]);
     await fingers.dragTogether({ id: 1, to: inGrid(504 - 192, 130) }, { id: 2, to: inGrid(620 - 192, 130) });
     await fingers.liftAll();
     await settled();
@@ -170,8 +167,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
   it('two fingers pan the tracks up and down too', async () => {
     await reopenWithView({ laneHeight: 120 });
     // Fingers moving up 120 px bring the next tracks into view: one track of 120 px.
-    await fingers.press(1, inGrid(300, 220));
-    await fingers.press(2, inGrid(420, 220));
+    await fingers.pressTogether({ 1: inGrid(300, 220), 2: inGrid(420, 220) });
     await fingers.dragTogether({ id: 1, to: inGrid(300, 100) }, { id: 2, to: inGrid(420, 100) });
     await fingers.liftAll();
     await settled();
@@ -181,8 +177,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
   it('a pinch zooms the time axis around the point between the fingers', async () => {
     const centerX = grid.getBoundingClientRect().left + 400;
     const before = { zoom: view().pxPerTick, tick: tickAt(centerX) };
-    await fingers.press(1, { x: centerX - 50, y: inGrid(0, 100).y });
-    await fingers.press(2, { x: centerX + 50, y: inGrid(0, 100).y });
+    await fingers.pressTogether({ 1: { x: centerX - 50, y: inGrid(0, 100).y }, 2: { x: centerX + 50, y: inGrid(0, 100).y } });
     await fingers.dragTogether({ id: 1, to: { x: centerX - 150, y: inGrid(0, 100).y } }, { id: 2, to: { x: centerX + 150, y: inGrid(0, 100).y } });
     await fingers.liftAll();
     await settled();
@@ -196,8 +191,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     const centerX = grid.getBoundingClientRect().left + 400;
     const y = inGrid(0, 150).y;
     const zoom = view().pxPerTick;
-    await fingers.press(1, { x: centerX - 150, y });
-    await fingers.press(2, { x: centerX + 150, y });
+    await fingers.pressTogether({ 1: { x: centerX - 150, y }, 2: { x: centerX + 150, y } });
     await fingers.dragTogether({ id: 1, to: { x: centerX - 50, y } }, { id: 2, to: { x: centerX + 50, y } });
     await fingers.liftAll();
     await settled();
@@ -205,8 +199,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
 
     const height = view().laneHeight;
     const x = centerX;
-    await fingers.press(1, { x, y: y - 40 });
-    await fingers.press(2, { x, y: y + 40 });
+    await fingers.pressTogether({ 1: { x, y: y - 40 }, 2: { x, y: y + 40 } });
     await fingers.dragTogether({ id: 1, to: { x, y: y - 80 } }, { id: 2, to: { x, y: y + 80 } });
     await fingers.liftAll();
     await settled();
@@ -216,8 +209,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
   it('two fingers on the ruler and on the track headers pan and zoom too', async () => {
     const rulerBox = ruler.getBoundingClientRect();
     const y = rulerBox.top + 10;
-    await fingers.press(1, { x: rulerBox.left + 500, y });
-    await fingers.press(2, { x: rulerBox.left + 600, y });
+    await fingers.pressTogether({ 1: { x: rulerBox.left + 500, y }, 2: { x: rulerBox.left + 600, y } });
     await fingers.dragTogether({ id: 1, to: { x: rulerBox.left + 404, y } }, { id: 2, to: { x: rulerBox.left + 504, y } });
     await fingers.liftAll();
     await settled();
@@ -268,8 +260,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
   });
 
   it('a finger that moves before half a second is a drag, not a long press', async () => {
-    await fingers.press(1, inGrid(2.1 * BAR_PX, LANE_H * 1.5));
-    await fingers.drag(1, inGrid(3.1 * BAR_PX, LANE_H * 1.5));
+    await fingers.pressAndDrag(1, inGrid(2.1 * BAR_PX, LANE_H * 1.5), inGrid(3.1 * BAR_PX, LANE_H * 1.5));
     await sleep(650);
     expect(document.querySelector('[role="menu"]')).toBeNull();
     await fingers.lift(1);
@@ -282,9 +273,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     s.view.getState().hideWindow('channel-rack');
     s.view.getState().setCurrentPattern(s.doc.getState().project.patternOrder[1] ?? pattern);
     const spot = inGrid(2.5 * BAR_PX, LANE_H / 2);
-    await fingers.tap(1, spot);
-    await sleep(60);
-    await fingers.tap(1, spot);
+    await fingers.doubleTap(1, spot);
     await until(() => Object.values(s.view.getState().windows).some((w) => w.type === 'channel-rack' && w.visible));
     expect(s.view.getState().currentPatternId).toBe((made as Extract<Clip, { kind: 'pattern' }>).patternId);
   });
@@ -302,8 +291,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
 
   it('the playlist stays where it is while the page itself is not scrolled or zoomed by a pinch', async () => {
     const zoom = visualViewport?.scale ?? 1;
-    await fingers.press(1, inGrid(300, 100));
-    await fingers.press(2, inGrid(400, 100));
+    await fingers.pressTogether({ 1: inGrid(300, 100), 2: inGrid(400, 100) });
     await fingers.dragTogether({ id: 1, to: inGrid(200, 100) }, { id: 2, to: inGrid(500, 100) });
     await fingers.liftAll();
     expect(visualViewport?.scale ?? 1).toBe(zoom);

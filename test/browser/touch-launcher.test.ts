@@ -89,8 +89,7 @@ describe('clip launcher with touch', { timeout: 60_000 }, () => {
     const second = cell(1, 1);
     expect(first.dataset.state).toBe('idle');
     expect(second.dataset.state).toBe('idle');
-    await fingers.press(1, centerOf(first));
-    await fingers.press(2, centerOf(second));
+    await fingers.pressTogether({ 1: centerOf(first), 2: centerOf(second) });
     await fingers.liftAll();
     await until(() => s.launcher.runs.length >= before + 2);
     for (const slot of [first, second]) await until(() => ['queued', 'playing'].includes(slot.dataset.state ?? ''));

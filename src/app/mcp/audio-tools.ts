@@ -24,10 +24,11 @@ import {
   videoSettingsFrom,
   type VideoExportSettings,
 } from '../export/video/video-export';
-import { VIDEO_FORMATS, VIDEO_SIZES, VIDEO_STYLES } from '@core/video/formats';
+import { VIDEO_FORMATS, VIDEO_SIZES, VIDEO_STYLES, type VideoSize } from '@core/video/formats';
 import { planExport, planSeconds, type ExportRange } from '../export/plan';
 import type { Services } from '../services';
 import { barsArg, fail, ok, str, toBase64, type ToolFn } from './common';
+import type { ToolResult } from './types';
 
 const PREVIEW_RATE = 32000;
 /** An export is held in memory until it is uploaded: longer songs go through the Export dialog. */
@@ -95,8 +96,52 @@ export function uploadViaServer(fetchImpl: typeof fetch = (...a) => fetch(...a))
   };
 }
 
-export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
-  const analyze_mix: ToolFn = async (s, args) => {
+/** The words of a failure: an error's message, or whatever was thrown. */
+const reasonOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** The range a render tool covers: the bars asked for, else the whole song, else the current pattern (when the playlist is empty). */
+function exportRange(project: Project, bars: { from: number; to: number } | undefined): ExportRange {
+  if (bars) return ticksOf(project, bars);
+  return songLength(project) > 0 ? 'song' : 'pattern';
+}
+
+/** What an export tool settles before it renders. */
+interface ExportJob {
+  project: Project;
+  range: ExportRange;
+  seconds: number;
+  /** The dev server's ticket for uploading the file. */
+  ticket: string;
+}
+
+const isRefusal = (x: ExportJob | ToolResult): x is ToolResult => 'content' in x;
+
+/**
+ * The checks both export tools make first: the dev server must be there to write the file, the bars must make
+ * sense, something must play in the range, and the file must be small enough to hold in memory. A refusal comes
+ * back as the tool's result.
+ */
+function planExportJob(
+  s: Services,
+  args: Record<string, unknown>,
+  ctx: { ticket?: string | undefined },
+  limit: { maxSeconds: number; tooLong(seconds: number): string },
+): ExportJob | ToolResult {
+  if (!ctx.ticket) return fail('Exporting needs the AGstudio dev server (it writes the file).');
+  const bars = barsArg(args.bars);
+  if (typeof bars === 'string') return fail(bars);
+  const project = s.doc.getState().project;
+  const range = exportRange(project, bars);
+  const plan = planExport(project, s.view.getState(), range);
+  if ('error' in plan) return fail(plan.error);
+  const seconds = planSeconds(project, plan);
+  if (seconds > limit.maxSeconds) return fail(limit.tooLong(seconds));
+  return { project, range, seconds, ticket: ctx.ticket };
+}
+
+const analyzeMixTool =
+  (deps: AudioDeps): ToolFn =>
+  async (s, args) => {
     const bars = barsArg(args.bars);
     if (typeof bars === 'string') return fail(bars);
     const project = s.doc.getState().project;
@@ -107,11 +152,13 @@ export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
         { what: report.what, seconds: report.seconds, findings: report.notes },
       );
     } catch (e) {
-      return fail(`Could not listen to the mix: ${e instanceof Error ? e.message : String(e)}`);
+      return fail(`Could not listen to the mix: ${reasonOf(e)}`);
     }
   };
 
-  const render_preview: ToolFn = async (s, args) => {
+const renderPreviewTool =
+  (deps: AudioDeps): ToolFn =>
+  async (s, args) => {
     const bars = barsArg(args.bars);
     if (typeof bars === 'string') return fail(bars);
     const max = typeof args.max_seconds === 'number' ? Math.min(30, Math.max(1, args.max_seconds)) : 15;
@@ -125,33 +172,37 @@ export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
         structuredContent: { what: out.what, seconds: out.seconds, mimeType: 'audio/wav', bytes: out.wav.length },
       };
     } catch (e) {
-      return fail(`Could not render a preview: ${e instanceof Error ? e.message : String(e)}`);
+      return fail(`Could not render a preview: ${reasonOf(e)}`);
     }
   };
 
-  const export_audio: ToolFn = async (s, args, ctx) => {
-    if (!ctx.ticket) return fail('Exporting needs the AGstudio dev server (it writes the file).');
-    const bars = barsArg(args.bars);
-    if (typeof bars === 'string') return fail(bars);
-    const project = s.doc.getState().project;
-    const range: ExportRange = bars ? ticksOf(project, bars) : songLength(project) > 0 ? 'song' : 'pattern';
-    const plan = planExport(project, s.view.getState(), range);
-    if ('error' in plan) return fail(plan.error);
-    const seconds = planSeconds(project, plan);
-    if (seconds > MAX_EXPORT_SECONDS)
-      return fail(`That is ${Math.round(seconds / 60)} minutes of audio: too long to export from here. Use File → Export audio in AGstudio, or export a part with "bars".`);
-    const base = exportSettingsFrom(s.prefs.getState(), range);
-    const format = args.format === 'wav' || args.format === 'flac' || args.format === 'mp3' ? args.format : base.codec;
-    const stems = args.stems === true;
-    const settings: AudioExportSettings = {
-      ...base,
-      range,
-      codec: format,
-      stems,
-      masterChain: true,
-      stemsTo: 'folder',
-      normalize: typeof args.normalize === 'boolean' ? args.normalize : base.normalize,
-    };
+/** The export's settings: the remembered ones, with what the AI asked for on top. */
+function audioSettingsFrom(s: Services, range: ExportRange, args: Record<string, unknown>): AudioExportSettings {
+  const base = exportSettingsFrom(s.prefs.getState(), range);
+  const codec = args.format === 'wav' || args.format === 'flac' || args.format === 'mp3' ? args.format : base.codec;
+  return {
+    ...base,
+    range,
+    codec,
+    stems: args.stems === true,
+    masterChain: true,
+    stemsTo: 'folder',
+    normalize: typeof args.normalize === 'boolean' ? args.normalize : base.normalize,
+  };
+}
+
+const exportAudioTool =
+  (deps: AudioDeps): ToolFn =>
+  async (s, args, ctx) => {
+    const job = planExportJob(s, args, ctx, {
+      maxSeconds: MAX_EXPORT_SECONDS,
+      tooLong: (seconds) =>
+        `That is ${Math.round(seconds / 60)} minutes of audio: too long to export from here. Use File → Export audio in AGstudio, or export a part with "bars".`,
+    });
+    if (isRefusal(job)) return job;
+    const { range, seconds, ticket } = job;
+    const settings = audioSettingsFrom(s, range, args);
+    const stems = settings.stems;
     const name = str(args.file_name) ?? s.files.store.getState().name;
     const files = new Map<string, Uint8Array>();
     const target: ExportTarget = { kind: 'memory', files, name: exportFileName(name, settings.codec) };
@@ -159,7 +210,7 @@ export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
       await deps.exportAudio(s, settings, target);
       const paths: string[] = [];
       for (const [file, bytes] of files)
-        paths.push(await deps.upload(ctx.ticket, { name: file, ...(stems ? { folder: `${name} (stems)` } : {}), bytes }));
+        paths.push(await deps.upload(ticket, { name: file, ...(stems ? { folder: `${name} (stems)` } : {}), bytes }));
       if (paths.length === 0) return fail('Nothing was rendered.');
       const where = stems ? paths[0]!.replace(/[/\\][^/\\]*$/, '') : paths[0]!;
       return ok(
@@ -170,34 +221,49 @@ export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
       );
     } catch (e) {
       if (e instanceof ExportError) return fail(e.message);
-      return fail(`The export failed: ${e instanceof Error ? e.message : String(e)}`);
+      return fail(`The export failed: ${reasonOf(e)}`);
     }
   };
 
-  const export_video: ToolFn = async (s, args, ctx) => {
-    if (!ctx.ticket) return fail('Exporting needs the AGstudio dev server (it writes the file).');
-    const bars = barsArg(args.bars);
-    if (typeof bars === 'string') return fail(bars);
-    const project = s.doc.getState().project;
-    const range: ExportRange = bars ? ticksOf(project, bars) : songLength(project) > 0 ? 'song' : 'pattern';
-    const plan = planExport(project, s.view.getState(), range);
-    if ('error' in plan) return fail(plan.error);
-    const seconds = planSeconds(project, plan);
-    if (seconds > MAX_VIDEO_SECONDS)
-      return fail(`That is ${Math.round(seconds / 60)} minutes of music: too long to make a video from here (the file is held in memory). Use File → Export as video in AGstudio, or make a part with "bars".`);
-    const pick = <T extends string>(v: unknown, all: readonly T[], fallback: T): T => (all as readonly string[]).includes(v as string) ? (v as T) : fallback;
-    const base = videoSettingsFrom(s.prefs.getState(), range, {
-      title: str(args.title) ?? (project.meta.title?.trim() || s.files.store.getState().name.replace(/\.agproj$/i, '') || 'Untitled'),
-      artist: str(args.artist) ?? project.meta.author?.trim() ?? '',
+/** A value from a list of allowed ones, or the fallback. */
+function pickOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return (allowed as readonly string[]).includes(value as string) ? (value as T) : fallback;
+}
+
+/** The video's settings: the remembered ones (and the song's name and author for the text), with what the AI asked for on top. */
+function videoSettingsFromArgs(s: Services, project: Project, range: ExportRange, args: Record<string, unknown>): VideoExportSettings {
+  const base = videoSettingsFrom(s.prefs.getState(), range, {
+    title: str(args.title) ?? (project.meta.title?.trim() || s.files.store.getState().name.replace(/\.agproj$/i, '') || 'Untitled'),
+    artist: str(args.artist) ?? project.meta.author?.trim() ?? '',
+  });
+  return {
+    ...base,
+    style: pickOf(args.style, VIDEO_STYLES, base.style),
+    size: pickOf(args.size, VIDEO_SIZES, base.size),
+    fps: args.fps === 30 || args.fps === 60 ? args.fps : base.fps,
+    format: pickOf(args.format, VIDEO_FORMATS, base.format),
+    normalize: typeof args.normalize === 'boolean' ? args.normalize : base.normalize,
+  };
+}
+
+/** The shape of the picture in plain words. */
+function shapeWord(size: VideoSize): string {
+  if (size === 'vertical') return 'vertical';
+  if (size === 'square') return 'square';
+  return 'widescreen';
+}
+
+const exportVideoTool =
+  (deps: AudioDeps): ToolFn =>
+  async (s, args, ctx) => {
+    const job = planExportJob(s, args, ctx, {
+      maxSeconds: MAX_VIDEO_SECONDS,
+      tooLong: (seconds) =>
+        `That is ${Math.round(seconds / 60)} minutes of music: too long to make a video from here (the file is held in memory). Use File → Export as video in AGstudio, or make a part with "bars".`,
     });
-    const settings: VideoExportSettings = {
-      ...base,
-      style: pick(args.style, VIDEO_STYLES, base.style),
-      size: pick(args.size, VIDEO_SIZES, base.size),
-      fps: args.fps === 30 || args.fps === 60 ? args.fps : base.fps,
-      format: pick(args.format, VIDEO_FORMATS, base.format),
-      normalize: typeof args.normalize === 'boolean' ? args.normalize : base.normalize,
-    };
+    if (isRefusal(job)) return job;
+    const { project, range, ticket } = job;
+    const settings = videoSettingsFromArgs(s, project, range, args);
     const name = str(args.file_name) ?? s.files.store.getState().name;
     const files = new Map<string, Uint8Array>();
     const target: ExportTarget = { kind: 'memory', files, name: videoFileName(name, settings.format) };
@@ -205,18 +271,25 @@ export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
       const res = await deps.exportVideo(s, settings, target);
       const bytes = files.get(target.name);
       if (!bytes) return fail('Nothing was rendered.');
-      const path = await deps.upload(ctx.ticket, { name: target.name, bytes });
+      const path = await deps.upload(ticket, { name: target.name, bytes });
       return ok(
-        `Made a ${settings.size === 'vertical' ? 'vertical' : settings.size === 'square' ? 'square' : 'widescreen'} ${settings.style} video of ${Math.round(res.seconds)} s (${Math.round(bytes.length / 1e5) / 10} MB, ${settings.format}) at ${path}.`,
+        `Made a ${shapeWord(settings.size)} ${settings.style} video of ${Math.round(res.seconds)} s (${Math.round(bytes.length / 1e5) / 10} MB, ${settings.format}) at ${path}.`,
         { files: [path], seconds: Math.round(res.seconds * 10) / 10, bytes: bytes.length, format: settings.format, style: settings.style, size: settings.size, fps: settings.fps },
       );
     } catch (e) {
       if (e instanceof ExportError) return fail(e.message);
-      return fail(`The video export failed: ${e instanceof Error ? e.message : String(e)}`);
+      return fail(`The video export failed: ${reasonOf(e)}`);
     }
   };
 
-  return { analyze_mix, render_preview, export_audio, export_video };
+/** The four tools that render: a mix analysis, a WAV preview, an audio export and a video export. */
+export function audioTools(deps: AudioDeps): Record<string, ToolFn> {
+  return {
+    analyze_mix: analyzeMixTool(deps),
+    render_preview: renderPreviewTool(deps),
+    export_audio: exportAudioTool(deps),
+    export_video: exportVideoTool(deps),
+  };
 }
 
 export const defaultAudioDeps = (): AudioDeps => ({

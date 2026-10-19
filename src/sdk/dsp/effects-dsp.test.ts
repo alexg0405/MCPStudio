@@ -197,6 +197,46 @@ describe('Yin', () => {
     expect(v.confidence).toBeGreaterThan(0.8);
   });
 
+  it('refinedFrequency is within 0.4 cent over 150-700 Hz where frequency is off by up to several (a voice with strong upper harmonics)', () => {
+    // Harmonics under a 900 Hz formant, at pitches that put the lag at different fractions of a sample.
+    const voice = (freq: number) => (i: number) => {
+      let v = 0;
+      for (let k = 1; k * freq < 5000; k++) v += (1 / (1 + ((k * freq - 900) / 130) ** 2) + 0.02) * Math.cos((2 * Math.PI * k * freq * i) / SR) / k;
+      return 0.15 * v;
+    };
+    let worstPlain = 0;
+    for (const base of [150, 220, 294, 392, 523, 700]) {
+      for (const detune of [1, 1.0013, 1.0029]) {
+        const freq = base * detune;
+        const yin = new Yin(SR, { minHz: 80, maxHz: 800 });
+        const signal = voice(freq);
+        for (let i = 0; i < SR / 2; i++) {
+          yin.push(signal(i));
+          if (i % 256 !== 255 || i < SR / 4 || yin.detect() === 0) continue;
+          const plainCents = 1200 * Math.log2(yin.frequency / freq);
+          const refinedCents = 1200 * Math.log2(yin.refinedFrequency() / freq);
+          worstPlain = Math.max(worstPlain, Math.abs(plainCents));
+          expect(Math.abs(refinedCents), `${freq.toFixed(1)} Hz`).toBeLessThan(0.4);
+        }
+      }
+    }
+    // The test only means something where the plain estimate is the one that is off.
+    expect(worstPlain).toBeGreaterThan(1);
+  });
+
+  it('refinedFrequency gives back frequency when nothing was found, and does not move it', () => {
+    const yin = new Yin(SR);
+    for (let i = 0; i < 4096; i++) yin.push(0);
+    expect(yin.detect()).toBe(0);
+    expect(yin.refinedFrequency()).toBe(0);
+    const signal = sine(220, SR);
+    for (let i = 0; i < 8192; i++) yin.push(signal(i));
+    const found = yin.detect();
+    expect(found).toBeGreaterThan(0);
+    yin.refinedFrequency();
+    expect(yin.frequency).toBe(found);
+  });
+
   it('reports no pitch for noise and silence', () => {
     let s = 12345;
     const noise = () => {

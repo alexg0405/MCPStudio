@@ -1019,6 +1019,32 @@ Hard tune robot, Minor pentatonic snap, Deep voice hard tune, Hard trap tune, Na
 **default patch, Gentle correction, Pop tune and Robot** differ only from the first such return on (0.48, 0.48, 1.74 and 1.31 s
 into the melody; chunk levels within 0.35 dB), so their goldens were regenerated on purpose (`TUNE_GOLDEN_RECORD=1`).
 
+**High notes and the rest decision.** The detector's estimate (`Yin.frequency`, a parabola through the difference function
+at whole lags) is a few tenths of a cent off at 150 Hz but 1–2 cents at 300 Hz and 3–6 at 700 Hz for a voice with strong upper
+harmonics (the error grows with the pitch and with the fractional part of the lag). A held note at D4 or above therefore
+asked for a correction of 1.4 cents or more and never counted as in tune (`REST_CENTS` is 1): at 392 and 523 Hz the head
+never went home at all (8 s measured), at 294 Hz it took 0.76 s against 0.17 s at 262 Hz. `Yin.refinedFrequency()` fits again
+through three points a quarter lag apart on the same window, reading the signal between samples (Catmull-Rom): under 0.4 cent
+over 150–700 Hz on harmonic and formant voices. Tune asks for it only when the plain correction is under 8 cents
+(`REFINE_WITHIN_CENTS`) and uses it only to decide on rest (`isInTuneByCloserEstimate`: the closer estimate says under a cent and the
+glided correction has caught up with its goal, so a glide from one note to the next is never taken for a settled voice).
+The correction itself still comes from the plain estimate, so a played preset sounds as it did. Measured as above (a note
+23 cents sharp for 2.5 s, then exactly in tune; seconds until the head is back at its centre; before → after):
+
+| note | after a 0.4 s gap | voice goes on |
+|---|---|---|
+| 110 Hz | 0.108 → 0.108 | 0.975 → 0.975 |
+| 164.81 Hz | 0.052 → 0.052 | 0.911 → 0.911 |
+| 220 Hz | 0.052 → 0.052 | 0.399 → 0.377 |
+| 261.63 Hz | 0.052 → 0.052 | 0.169 → 0.169 |
+| 293.66 Hz | 0.196 → 0.135 | 0.756 → 0.572 |
+| 392 Hz | never (8 s) → 0.113 | never → 0.415 |
+| 523.25 Hz | never → 0.052 | never → 0.172 |
+
+Of the ten golden renders (default patch and nine presets) eight still match their stored values; **default patch and Gentle correction**
+differ from about 0.8 s on, where the melody holds E4 (330 Hz) and the head now goes home (the stored values were regenerated on purpose).
+CPU (bench, % of one core, best of 9, a busy machine): default patch 0.51–0.52 before, 0.52–0.54 after.
+
 Measured (Node, 48 kHz, voice with a 900 Hz formant at 196 Hz moved +500…+900 cents): pitch error ≤ 2 cents either way; the
 formant (energy centroid) moves 31–64 % with the plain shifter and 1–5 % with Keep formants. CPU (% of one core, best of 7,
 this machine): default patch 0.38–0.40 (the same before and after the change), guide notes 0.44, drift + vibrato 0.46, keep

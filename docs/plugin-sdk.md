@@ -222,7 +222,7 @@ For effects:
 |---|---|
 | `Oversampler(2 \| 4)`, `Halfband`, `halfbandCoefficients` | run a nonlinearity at 2× or 4×: `os.up(x)` fills `os.buffer[0..factor)`, shape those samples in place, `os.down()` returns one. Polyphase IIR halfbands (100 dB of image and alias rejection, flat to ~22 kHz at 48 kHz, no latency) |
 | `LinkwitzRiley` | 24 dB/oct crossover: `split(x)` → `.low`, `.high`, which sum to an allpass (flat). For three bands split the high band again and pass the low band through the upper crossover's `allpass()` |
-| `Yin` | monophonic pitch detection: `push(x)` every sample, `detect()` now and then → Hz (0 = no pitch), `.confidence` |
+| `Yin` | monophonic pitch detection: `push(x)` every sample, `detect()` now and then → Hz (0 = no pitch), `.confidence`; `refinedFrequency()` after a `detect()` that found a pitch gives a closer estimate (under 0.4 cent at 150-700 Hz, where `frequency` can be 1-6 cents off) for the cost of a few differences: use it only where a cent matters |
 | `TruePeak` | 4× interpolated peak between samples (`process(x)`, `LATENCY` = 8 frames; `sample(x)` gives the plain sample peak with the same timing) |
 | `LookaheadLimiter` | the Limiter's core, one stereo frame at a time: `step(l, r, ceiling, truePeak)` → `outL`/`outR`, delayed by `latency` (look-ahead + 14 frames) and never above the ceiling; set `releaseCoef`, read `minGain` for a meter. The Maximizer builds on it |
 | `LoudnessMeter`, `KWeighting`, `loudnessOf` | BS.1770 / EBU R128 loudness: `.momentary` (400 ms), `.shortTerm` (3 s), `.integrated` (gated) in LUFS |

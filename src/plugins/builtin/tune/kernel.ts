@@ -22,6 +22,14 @@ const MIN_CONFIDENCE = 0.6;
 /** Corrections smaller than this (cents) let the shifter rest (output = the delayed input). */
 const REST_CENTS = 1;
 /**
+ * The pitch detector reads a steady voice a cent or two off at 300 Hz and up (more the higher it is), which on its own
+ * kept a held note from ever counting as "in tune". When the plain estimate puts the voice between REST_CENTS and this
+ * many cents from a note (a bit more than that error at 800 Hz), the detector's closer estimate is asked for too, and the
+ * rest decision uses it. Under REST_CENTS the shifter rests anyway; further out the correction is real, and the closer
+ * estimate is not worth its cost.
+ */
+const REFINE_WITHIN_CENTS = 8;
+/**
  * How fast a resting read head drifts back to its centre, frames per frame (≈ 6 cents): only what is left after the jumps
  * below (less than half a period, or less than one frame), so the drift is short and stays far under a vibrato.
  */
@@ -125,6 +133,11 @@ export class TuneKernel extends EffectKernel<Params> {
   private targetNote = -1;
   /** The correction being applied, cents (glides towards `goalCents`). */
   private correctionCents = 0;
+  /**
+   * What `goalCents` would be if it came from the detector's closer estimate. It is never applied to the sound; it only
+   * tells whether the voice is in tune, see `isInTuneByCloserEstimate`.
+   */
+  private restGoalCents = 0;
   /** `headDriftPerFrame` is the read-speed change for `driftComputedForCents` (the cents it was computed from). */
   private driftComputedForCents = Number.NaN;
   private headDriftPerFrame = 0;
@@ -196,6 +209,7 @@ export class TuneKernel extends EffectKernel<Params> {
     this.targetNote = -1;
     this.correctionCents = 0;
     this.goalCents = 0;
+    this.restGoalCents = 0;
     this.readHead = this.latency;
     this.spliceFrame = -1;
     this.heldCount = 0;
@@ -310,10 +324,11 @@ export class TuneKernel extends EffectKernel<Params> {
         this.headDriftPerFrame = 1 - pow2(this.correctionCents / 1200);
       }
       const driftPerFrame = this.headDriftPerFrame;
-      if (Math.abs(this.correctionCents) < REST_CENTS) {
+      const isNearRest = Math.abs(this.correctionCents) < REST_CENTS || this.isInTuneByCloserEstimate();
+      if (isNearRest) {
         if (this.restFrames < this.restHoldFrames) this.restFrames++;
       } else this.restFrames = 0;
-      if (this.spliceFrame < 0 && Math.abs(this.correctionCents) < REST_CENTS) {
+      if (this.spliceFrame < 0 && isNearRest) {
         // Nothing to correct: back to the centreDelay (where the output is the delayed input).
         const offset = this.readHead - centreDelay;
         if (offset > REST_RATE || offset < -REST_RATE) this.rest(offset);
@@ -465,6 +480,18 @@ export class TuneKernel extends EffectKernel<Params> {
     this.readHead += off > 0 ? -REST_RATE : REST_RATE;
   }
 
+  /**
+   * True when the correction being applied is a cent or more, but only because the plain estimate reads the voice off: the
+   * closer estimate says it is in tune. The correction must also have caught up with its goal (so what it holds, less the
+   * plain estimate's error, is what the closer estimate would have asked for): the moment a new note's estimate comes in
+   * this stops, so a glide from one note to the next is never mistaken for a voice that has settled.
+   */
+  private isInTuneByCloserEstimate(): boolean {
+    if (!(Math.abs(this.restGoalCents) < REST_CENTS)) return false;
+    const correctionWithCloserEstimate = this.correctionCents - this.goalCents + this.restGoalCents;
+    return Math.abs(correctionWithCloserEstimate) < REST_CENTS;
+  }
+
   /** How far the read head is from its centre (frames; 0 = the output is the delayed input). For tests and meters. */
   get headOffset(): number {
     return this.readHead - this.latency;
@@ -484,6 +511,7 @@ export class TuneKernel extends EffectKernel<Params> {
   /** Stops pulling: no correction is wanted until a pitch with a note to pull to is found again. */
   private dropCorrection(): void {
     this.goalCents = 0;
+    this.restGoalCents = 0;
     this.isVoiced = false;
     this.needsDriftRestart = true;
     this.vibratoLevel = 0;
@@ -522,6 +550,11 @@ export class TuneKernel extends EffectKernel<Params> {
     const maxShiftCents = 100 * MAX_SHIFT_SEMITONES;
     this.goalCents = 100 * clamp(shiftSemitones, -MAX_SHIFT_SEMITONES, MAX_SHIFT_SEMITONES);
     if (humanize > 0) this.addNaturalDrift(pitchMidi, previousNote, humanize, maxShiftCents);
+    this.restGoalCents = this.goalCents;
+    if (Math.abs(this.goalCents) < REFINE_WITHIN_CENTS) {
+      // Positive when the plain estimate reads the voice sharper than the closer one does (the goal moves the other way).
+      this.restGoalCents += 1200 * Math.log2(pitchHz / detector.refinedFrequency());
+    }
     this.vibratoLevel = this.targetNote === previousNote ? Math.min(1, this.vibratoLevel + this.vibratoFadeStep) : 0;
     readings.pitch = pitchHz;
     readings.target = this.targetNote;

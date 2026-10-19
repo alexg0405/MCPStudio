@@ -313,8 +313,9 @@ describe('TuneKernel: the return to rest after a correction ends', () => {
     return { seconds: back, step, inputStep };
   }
 
-  it('after a gap the head is back at its centre within 0.2 s of the next note (it took 1.1-2.5 s)', () => {
-    for (const hz of [110, 164.81, 220, 261.63]) {
+  it('after a gap the head is back at its centre within 0.2 s of the next note, at high notes too (it took 1.1-2.5 s; above ~294 Hz it never came back)', () => {
+    // 293.66, 392 and 523.25 Hz are D4, G4 and C5: the detector reads each of them 1-2 cents high, which used to keep the correction active.
+    for (const hz of [110, 164.81, 220, 261.63, 293.66, 392, 523.25]) {
       const r = rest(hz, { gap: 0.4 });
       expect(r.seconds, `${hz} Hz`).toBeLessThan(0.2);
     }
@@ -326,6 +327,9 @@ describe('TuneKernel: the return to rest after a correction ends', () => {
       [164.81, 1.2],
       [220, 0.7],
       [261.63, 0.4],
+      [293.66, 0.65],
+      [392, 0.5],
+      [523.25, 0.25],
     ] as const) {
       const r = rest(hz);
       expect(r.seconds, `${hz} Hz`).toBeLessThan(limit);
@@ -385,7 +389,7 @@ describe('TuneKernel: audio-thread rules', () => {
       ['template string', /`/],
       ['copying call', /\.(map|filter|slice|concat|forEach|reduce|splice|from)\(/],
     ];
-    for (const method of ['process', 'grains', 'retarget', 'nearestHeld', 'noteOn', 'noteOff', 'allNotesOff', 'startSplice', 'rest', 'stopGrains']) {
+    for (const method of ['process', 'grains', 'retarget', 'nearestHeld', 'noteOn', 'noteOff', 'allNotesOff', 'startSplice', 'rest', 'stopGrains', 'isInTuneByCloserEstimate']) {
       const text = body(method);
       for (const [what, re] of forbidden) expect(re.test(text), `${method}() has a ${what}`).toBe(false);
     }

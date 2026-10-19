@@ -7,14 +7,25 @@
 //      UI-timing tests failed under that load; one phase at a time keeps every test on a machine its own size.
 // The tests only run when the static checks passed; unit and audio both run even if the other failed, so one run
 // shows every failure. Exit code 1 when anything failed.
+//
+// The tools are started with this Node and their own JavaScript files (scripts/lib/tools.mjs), not through `npm run`:
+// on Windows `npm` and `.bin/*` are .cmd files that Node cannot start without a shell. The typecheck and lint command
+// lines still come from package.json's scripts, so `npm run lint` and this stay the same thing.
 import { spawn } from 'node:child_process';
+import { binPath, nodeArgumentsForScript, packageScripts, repoRoot } from './lib/tools.mjs';
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const scripts = packageScripts();
 
-function run(label, args, { stream = false } = {}) {
+/** Runs a tool's JavaScript file with Node, collecting its output (or letting it print, with `stream`). */
+function run(label, nodeArguments, { stream = false } = {}) {
   const started = Date.now();
   return new Promise((resolve) => {
-    const child = spawn(npm, args, { stdio: stream ? 'inherit' : ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, nodeArguments, {
+      cwd: repoRoot,
+      stdio: stream ? 'inherit' : ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    child.on('error', (error) => resolve({ label, code: 1, out: String(error), seconds: 0 }));
     let out = '';
     child.stdout?.on('data', (d) => (out += d));
     child.stderr?.on('data', (d) => (out += d));
@@ -26,8 +37,8 @@ const t0 = Date.now();
 const phases = [];
 
 const statics = await Promise.all([
-  run('tsc -b', ['run', '--silent', 'typecheck']),
-  run('eslint', ['run', '--silent', 'lint']),
+  run('tsc -b', nodeArgumentsForScript(scripts.typecheck)),
+  run('eslint', nodeArgumentsForScript(scripts.lint)),
 ]);
 for (const r of statics) {
   phases.push(r);
@@ -35,8 +46,9 @@ for (const r of statics) {
 }
 
 if (statics.every((r) => r.code === 0)) {
-  phases.push(await run('vitest unit', ['exec', '--', 'vitest', 'run', '--project', 'unit'], { stream: true }));
-  phases.push(await run('vitest audio', ['exec', '--', 'vitest', 'run', '--project', 'audio'], { stream: true }));
+  const vitest = binPath('vitest');
+  phases.push(await run('vitest unit', [vitest, 'run', '--project', 'unit'], { stream: true }));
+  phases.push(await run('vitest audio', [vitest, 'run', '--project', 'audio'], { stream: true }));
 } else {
   console.error('\nSkipping the tests: fix the type or lint errors above first.');
 }

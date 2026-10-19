@@ -15,7 +15,7 @@
     "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/.eslintcache",
     "test": "vitest run --project unit",
     "test:audio": "vitest run --project audio",
-    "test:perf": "VITE_PERF_STRICT=1 vitest run --tags-filter perf",
+    "test:perf": "node scripts/test-perf.mjs",
     "test:watch": "vitest --project unit",
     "check": "node scripts/check.mjs",
     "format": "prettier --write .",

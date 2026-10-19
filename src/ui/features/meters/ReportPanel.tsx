@@ -1,5 +1,6 @@
 import { useStore } from 'zustand';
-import { momentLabel } from '@core/metering/report';
+import { momentLabel, type LoudnessReport } from '@core/metering/report';
+import type { TimeSignature } from '@core/model/types';
 import { useDoc, useServices } from '../../services-context';
 import { lufsText, peakDbText } from './meters-model';
 import styles from './Meters.module.css';
@@ -47,42 +48,7 @@ export function ReportPanel({ onClose }: { onClose: () => void }) {
       {!report && !working && <p className={styles.note}>Nothing measured yet.</p>}
       {report && (
         <div className={working ? styles.stale : undefined}>
-          <table className={styles.reportTable}>
-            <tbody>
-              <tr data-hint="Gated loudness of the whole part (LUFS, BS.1770-4)">
-                <th>Integrated loudness</th>
-                <td>{lufsText(report.integrated)} LUFS</td>
-              </tr>
-              <tr data-hint="Loudness range (LU, EBU Tech 3342): the spread between the quiet and loud parts">
-                <th>Loudness range</th>
-                <td>{report.range.toFixed(1)} LU</td>
-              </tr>
-              <tr data-hint="The highest level between the samples (dBTP) and the bar where it happens">
-                <th>True peak</th>
-                <td>
-                  {peakDbText(report.truePeakDb)} dBTP at {momentLabel(report.truePeakAt, timeSig)}
-                </td>
-              </tr>
-              <tr data-hint="The loudest 0.4 seconds and the bar where it ends">
-                <th>Loudest momentary</th>
-                <td>
-                  {lufsText(report.maxMomentary)} LUFS at {momentLabel(report.maxMomentaryAt, timeSig)}
-                </td>
-              </tr>
-              <tr data-hint="The loudest 3 seconds and the bar where they end">
-                <th>Loudest short-term</th>
-                <td>
-                  {lufsText(report.maxShortTerm)} LUFS at {momentLabel(report.maxShortTermAt, timeSig)}
-                </td>
-              </tr>
-              <tr data-hint="Correlation of the whole part (+1 mono, −1 out of phase) and what it loses when summed to mono (dB)">
-                <th>Stereo</th>
-                <td>
-                  correlation {report.correlation.toFixed(2)}, {peakDbText(report.monoLossDb)} dB in mono
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <ReportTable report={report} timeSig={timeSig} />
           <h4 className={styles.subheading}>What streaming services do</h4>
           <ul className={styles.reportList}>
             {report.services.map((s) => (
@@ -99,5 +65,47 @@ export function ReportPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </section>
+  );
+}
+
+/** The measured numbers: loudness, range, true peak, loudest moments and stereo, each with a hint that says what it is. */
+function ReportTable({ report, timeSig }: { report: LoudnessReport; timeSig: TimeSignature }) {
+  return (
+    <table className={styles.reportTable}>
+      <tbody>
+        <tr data-hint="Gated loudness of the whole part (LUFS, BS.1770-4)">
+          <th>Integrated loudness</th>
+          <td>{lufsText(report.integrated)} LUFS</td>
+        </tr>
+        <tr data-hint="Loudness range (LU, EBU Tech 3342): the spread between the quiet and loud parts">
+          <th>Loudness range</th>
+          <td>{report.range.toFixed(1)} LU</td>
+        </tr>
+        <tr data-hint="The highest level between the samples (dBTP) and the bar where it happens">
+          <th>True peak</th>
+          <td>
+            {peakDbText(report.truePeakDb)} dBTP at {momentLabel(report.truePeakAt, timeSig)}
+          </td>
+        </tr>
+        <tr data-hint="The loudest 0.4 seconds and the bar where it ends">
+          <th>Loudest momentary</th>
+          <td>
+            {lufsText(report.maxMomentary)} LUFS at {momentLabel(report.maxMomentaryAt, timeSig)}
+          </td>
+        </tr>
+        <tr data-hint="The loudest 3 seconds and the bar where they end">
+          <th>Loudest short-term</th>
+          <td>
+            {lufsText(report.maxShortTerm)} LUFS at {momentLabel(report.maxShortTermAt, timeSig)}
+          </td>
+        </tr>
+        <tr data-hint="Correlation of the whole part (+1 mono, −1 out of phase) and what it loses when summed to mono (dB)">
+          <th>Stereo</th>
+          <td>
+            correlation {report.correlation.toFixed(2)}, {peakDbText(report.monoLossDb)} dB in mono
+          </td>
+        </tr>
+      </tbody>
+    </table>
   );
 }

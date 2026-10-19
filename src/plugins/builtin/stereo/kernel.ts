@@ -1,13 +1,13 @@
 import { at, DelayLine, EffectKernel, LinkwitzRiley, type ParamBlock } from '@agstudio/sdk/worklet';
 import { MONO_OFF_HZ, type stereoParams } from './params';
 
-type P = typeof stereoParams;
+type Params = typeof stereoParams;
 
 /** Params that cost a filter design are read every CONTROL frames. */
-const CONTROL = 16;
+const CONTROL_FRAMES = 16;
 /** Time constants (seconds) for switching "mono bass" on/off and for moving the widener delay. */
-const SWITCH_TIME = 0.01;
-const HAAS_TIME = 0.02;
+const MONO_SWITCH_SEC = 0.01;
+const HAAS_GLIDE_SEC = 0.02;
 const MAX_HAAS_MS = 30;
 
 /**
@@ -16,86 +16,87 @@ const MAX_HAAS_MS = 30;
  * matching allpass so both stay in phase), width (side × width), a Haas widener (the right side
  * delayed by a few ms) and balance. At its defaults it returns the input unchanged.
  */
-export class StereoKernel extends EffectKernel<P> {
-  private readonly side = new LinkwitzRiley().set(100, this.sampleRate);
-  private readonly mid = new LinkwitzRiley().set(100, this.sampleRate);
-  private readonly line = new DelayLine(Math.ceil(((MAX_HAAS_MS + 2) * this.sampleRate) / 1000));
-  private readonly switchCoef = 1 - Math.exp(-1 / (SWITCH_TIME * this.sampleRate));
-  private readonly haasCoef = 1 - Math.exp(-1 / (HAAS_TIME * this.sampleRate));
+export class StereoKernel extends EffectKernel<Params> {
+  private readonly sideFilter = new LinkwitzRiley().set(100, this.sampleRate);
+  private readonly midFilter = new LinkwitzRiley().set(100, this.sampleRate);
+  private readonly haasLine = new DelayLine(Math.ceil(((MAX_HAAS_MS + 2) * this.sampleRate) / 1000));
+  private readonly switchSmoothing = 1 - Math.exp(-1 / (MONO_SWITCH_SEC * this.sampleRate));
+  private readonly haasSmoothing = 1 - Math.exp(-1 / (HAAS_GLIDE_SEC * this.sampleRate));
   /** 0–1: how much of the mono-bass path is heard (glides when it is switched on or off). */
-  private mono = 0;
+  private monoAmount = 0;
   /** The widener's delay in frames (glides to the param). */
-  private haas = 0;
+  private haasFrames = 0;
   private countdown = 0;
-  private monoTarget = 0;
+  private monoAmountTarget = 0;
   /** The first block starts at the settings instead of gliding to them. */
-  private primed = false;
+  private isPrimed = false;
 
   override reset(): void {
-    this.side.reset();
-    this.mid.reset();
-    this.line.clear();
+    this.sideFilter.reset();
+    this.midFilter.reset();
+    this.haasLine.clear();
     this.countdown = 0;
-    this.primed = false;
+    this.isPrimed = false;
   }
 
-  process(input: Float32Array[], output: Float32Array[], n: number, p: ParamBlock<P>): void {
-    const inL = input[0] as Float32Array;
-    const inR = (input[1] ?? inL) as Float32Array;
-    const outL = output[0] as Float32Array;
-    const outR = (output[1] ?? outL) as Float32Array;
-    const flip = Math.round(p.flip[0] as number);
-    const fl = flip === 1 || flip === 3 ? -1 : 1;
-    const fr = flip >= 2 ? -1 : 1;
+  process(input: Float32Array[], output: Float32Array[], frameCount: number, params: ParamBlock<Params>): void {
+    const inLeft = input[0] as Float32Array;
+    const inRight = (input[1] ?? inLeft) as Float32Array;
+    const outLeft = output[0] as Float32Array;
+    const outRight = (output[1] ?? outLeft) as Float32Array;
+    const flipChoice = Math.round(params.flip[0] as number);
+    const flipLeft = flipChoice === 1 || flipChoice === 3 ? -1 : 1;
+    const flipRight = flipChoice >= 2 ? -1 : 1;
     const msToFrames = this.sampleRate / 1000;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < frameCount; i++) {
       if (this.countdown <= 0) {
-        this.countdown = CONTROL;
-        const freq = at(p.monoBelow, i);
-        this.monoTarget = freq > MONO_OFF_HZ ? 1 : 0;
-        if (this.monoTarget > 0) {
-          this.side.set(freq, this.sampleRate);
-          this.mid.set(freq, this.sampleRate);
+        this.countdown = CONTROL_FRAMES;
+        const crossoverHz = at(params.monoBelow, i);
+        this.monoAmountTarget = crossoverHz > MONO_OFF_HZ ? 1 : 0;
+        if (this.monoAmountTarget > 0) {
+          this.sideFilter.set(crossoverHz, this.sampleRate);
+          this.midFilter.set(crossoverHz, this.sampleRate);
         }
       }
       this.countdown--;
-      if (!this.primed) {
-        this.primed = true;
-        this.mono = this.monoTarget;
-        this.haas = at(p.haas, i) * msToFrames;
+      if (!this.isPrimed) {
+        this.isPrimed = true;
+        this.monoAmount = this.monoAmountTarget;
+        this.haasFrames = at(params.haas, i) * msToFrames;
       }
-      const l = fl * (inL[i] as number);
-      const r = fr * (inR[i] as number);
-      const width = at(p.width, i);
+      const leftSample = flipLeft * (inLeft[i] as number);
+      const rightSample = flipRight * (inRight[i] as number);
+      const width = at(params.width, i);
       // The filters always run, so switching mono bass on doesn't start them cold.
-      const m = 0.5 * (l + r);
-      const s = 0.5 * (l - r);
-      this.side.split(s);
-      const mAligned = this.mid.allpass(m);
-      let mono = this.mono + (this.monoTarget - this.mono) * this.switchCoef;
-      if (Math.abs(mono - this.monoTarget) < 1e-6) mono = this.monoTarget;
-      this.mono = mono;
+      const mid = 0.5 * (leftSample + rightSample);
+      const side = 0.5 * (leftSample - rightSample);
+      this.sideFilter.split(side);
+      const alignedMid = this.midFilter.allpass(mid);
+      let monoNow = this.monoAmount + (this.monoAmountTarget - this.monoAmount) * this.switchSmoothing;
+      if (Math.abs(monoNow - this.monoAmountTarget) < 1e-6) monoNow = this.monoAmountTarget;
+      this.monoAmount = monoNow;
       let left: number;
       let right: number;
-      if (mono === 0 && width === 1) {
-        left = l;
-        right = r;
+      if (monoNow === 0 && width === 1) {
+        left = leftSample;
+        right = rightSample;
       } else {
-        const m2 = m + mono * (mAligned - m);
-        const s2 = width * (s + mono * (this.side.high - s));
-        left = m2 + s2;
-        right = m2 - s2;
+        const midOut = mid + monoNow * (alignedMid - mid);
+        const sideOut = width * (side + monoNow * (this.sideFilter.high - side));
+        left = midOut + sideOut;
+        right = midOut - sideOut;
       }
       // Haas widener: the right side a few ms late.
-      const target = at(p.haas, i) * msToFrames;
-      let d = this.haas + (target - this.haas) * this.haasCoef;
-      if (Math.abs(d - target) < 1e-4) d = target;
-      this.haas = d;
-      this.line.write(right);
-      if (d > 0) right = d >= 1 ? this.line.readCubic(d) : this.line.read(d);
-      const balance = at(p.balance, i);
-      outL[i] = balance > 0 ? left * (1 - balance) : left;
-      outR[i] = balance < 0 ? right * (1 + balance) : right;
+      const haasTarget = at(params.haas, i) * msToFrames;
+      let delayFrames = this.haasFrames + (haasTarget - this.haasFrames) * this.haasSmoothing;
+      if (Math.abs(delayFrames - haasTarget) < 1e-4) delayFrames = haasTarget;
+      this.haasFrames = delayFrames;
+      this.haasLine.write(right);
+      if (delayFrames > 0)
+        right = delayFrames >= 1 ? this.haasLine.readCubic(delayFrames) : this.haasLine.read(delayFrames);
+      const balance = at(params.balance, i);
+      outLeft[i] = balance > 0 ? left * (1 - balance) : left;
+      outRight[i] = balance < 0 ? right * (1 + balance) : right;
     }
   }
 }

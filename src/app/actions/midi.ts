@@ -15,6 +15,7 @@ import {
   type AutomationClip,
   type ChannelId,
   type InstrumentChannel,
+  type LyricWord,
   type LaneId,
   type Note,
   type PatternClip,
@@ -24,6 +25,8 @@ import {
 import { addChannel, addSample } from '@core/ops/channels';
 import { addNotes, setBpm } from '@core/ops/notes';
 import { addClips, addPattern } from '@core/ops/playlist';
+import { lyricsToMidiEvents } from '@core/lyrics/lrc';
+import { lyricsSorted, patternLyrics } from '@core/query/lyrics';
 import { songLength } from '@core/query/playlist';
 import { patternLength } from '@core/query/queries';
 import { ticksPerBar } from '@core/time/ppq';
@@ -396,6 +399,15 @@ function trackFor(
   return { name: ch.name, channel, notes };
 }
 
+/** The lyrics a MIDI export carries: all of them for the song, the words of the current pattern's stretch (in its ticks) for a pattern. */
+function exportedLyrics(s: Services, scope: 'song' | 'pattern'): LyricWord[] {
+  const p = s.doc.getState().project;
+  if (scope === 'song') return [...lyricsSorted(p)];
+  const patternId = s.view.getState().currentPatternId;
+  if (!patternId) return [];
+  return patternLyrics(p, patternId).map((entry) => ({ ...entry.word, tick: entry.tick, length: entry.length }));
+}
+
 /** The song (as it plays, swing included) or the current pattern as a MIDI file. */
 export function exportMidi(s: Services, scope: 'song' | 'pattern'): { bytes: Uint8Array; name: string } {
   const p = s.doc.getState().project;
@@ -434,7 +446,8 @@ export function exportMidi(s: Services, scope: 'song' | 'pattern'): { bytes: Uin
   }
   const bpm = tempoMapOf(p, scope === 'song' ? 'song' : 'pattern').bpm;
   void patternLength;
-  return { bytes: writeMidi({ name, bpm, timeSig: p.transport.timeSig, tracks }), name };
+  const lyrics = lyricsToMidiEvents(exportedLyrics(s, scope));
+  return { bytes: writeMidi({ name, bpm, timeSig: p.transport.timeSig, tracks, lyrics }), name };
 }
 
 /** Saves exported MIDI bytes (save picker where available, else a download). */

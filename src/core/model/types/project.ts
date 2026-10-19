@@ -1,7 +1,7 @@
 import type { DjMixState } from './dj';
 import type { Launcher } from './launcher';
 import type { ReferenceTrack } from './reference';
-import type { ChannelId, ChordId, LinkId, PatternId, SampleId, Tick } from './ids';
+import type { ChannelId, ChordId, LinkId, LyricId, PatternId, SampleId, Tick } from './ids';
 import type { Channel } from './channels';
 import type { Pattern } from './patterns';
 import type { Playlist } from './playlist';
@@ -54,6 +54,31 @@ export interface Project {
    * overlap (`core/ops/chords.ts`). Added in v3 (optional).
    */
   chords?: Record<ChordId, ChordEvent>;
+  // ---- Lyrics (the lyrics lane; `core/ops/lyrics.ts`, `core/lyrics`) ----
+  /**
+   * The lyrics: words and syllables placed in song time, shown on a lane above the playlist, under the notes of the
+   * piano roll and the note blobs of the pitch editor, and followed like karaoke in the Lyrics window. Absent until a
+   * word is added; words never overlap (`core/ops/lyrics.ts`). Added with the lyrics lane (optional, no version bump).
+   */
+  lyrics?: Record<LyricId, LyricWord>;
+  // ---- end of lyrics ----
+}
+
+/**
+ * One word or syllable of the lyrics, sung from `tick` for `length` ticks. Words of one line share `line` (a line
+ * ends where the next word in time has another number); a syllable that goes on in the next word has `continues`
+ * ("beau-ti-ful" is three words, the first two with `continues: true`).
+ */
+export interface LyricWord {
+  id: LyricId;
+  tick: Tick;
+  length: Tick;
+  /** What is sung, without hyphens or spaces (1–80 characters). */
+  text: string;
+  /** The line this word belongs to (a whole number, 0 or more). */
+  line: number;
+  /** True when the word continues in the next one (a hyphen is drawn after it, and the two read as one word). */
+  continues?: true;
 }
 
 /** One chord on the chord track: held from `tick` for `length` ticks (a gap before the next one means no chord). */

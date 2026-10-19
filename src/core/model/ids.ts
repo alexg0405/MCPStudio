@@ -1,4 +1,4 @@
-import type { ChannelId, ChordId, ClipId, GroupId, InsertId, LaneId, LaunchTrackId, LinkId, MarkerId, NoteId, PatternId, SampleId, SceneId, SlotId, SnapshotId } from './types';
+import type { ChannelId, ChordId, ClipId, GroupId, InsertId, LaneId, LaunchTrackId, LinkId, LyricId, MarkerId, NoteId, PatternId, SampleId, SceneId, SlotId, SnapshotId } from './types';
 
 /**
  * Ids are a short prefix plus 10 random base64url characters (60 bits). The random source is
@@ -65,6 +65,7 @@ export const newId = {
   group: () => randomId('grp') as GroupId,
   snapshot: () => randomId('snap') as SnapshotId,
   chord: () => randomId('cd') as ChordId,
+  lyric: () => randomId('ly') as LyricId,
   launchTrack: () => randomId('lt') as LaunchTrackId,
   scene: () => randomId('sc') as SceneId,
   project: () => randomId('prj'),

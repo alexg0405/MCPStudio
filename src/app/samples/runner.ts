@@ -77,110 +77,138 @@ interface Slot {
 /** Workers are stopped this long after the last job (they hold the analyzer's code and buffers). */
 const IDLE_MS = 5000;
 
-/** `size` Workers taking files in order. */
-export function workerPoolRunner(size: number, decode: DecodeForAnalysis = browserDecode): AnalysisRunner {
-  if (typeof Worker === 'undefined') return inlineRunner(decode);
-  const slots: Slot[] = [];
-  const queue: Job[] = [];
-  let seq = 0;
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+/** Up to `size` Workers taking queued files in order, made when needed and stopped when idle. */
+class WorkerPool implements AnalysisRunner {
+  private readonly slots: Slot[] = [];
+  private readonly queue: Job[] = [];
+  /** The id of the next message to a Worker (a reply names the message it answers). */
+  private seq = 0;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const stopAll = () => {
-    for (const s of slots.splice(0)) {
-      s.worker.terminate();
-      s.job?.resolve(null);
+  constructor(
+    private readonly size: number,
+    private readonly decode: DecodeForAnalysis,
+  ) {}
+
+  run(file: Blob, path: string): Promise<SampleAnalysis | null> {
+    return new Promise((resolve) => {
+      this.queue.push({ file, path, resolve });
+      this.pump();
+    });
+  }
+
+  dispose(): void {
+    this.clearIdleTimer();
+    for (const job of this.queue.splice(0)) job.resolve(null);
+    this.stopAll();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+  }
+
+  /** Stops every Worker; the files they were running count as not analyzed. */
+  private stopAll(): void {
+    for (const slot of this.slots.splice(0)) {
+      slot.worker.terminate();
+      slot.job?.resolve(null);
     }
-  };
+  }
 
-  const spawn = (): Slot | null => {
+  /** A new Worker slot, or null where Workers cannot be made. */
+  private spawn(): Slot | null {
     try {
       const slot: Slot = { worker: new Worker(new URL('./analysis.worker.ts', import.meta.url), { type: 'module' }), job: null, reply: null };
       slot.worker.onmessage = (e: MessageEvent<WorkerReply>) => slot.reply?.(e.data);
-      slot.worker.onerror = () => {
-        // The job it was running is lost (null: not analyzed); a new Worker takes the next one.
-        slot.worker.terminate();
-        const i = slots.indexOf(slot);
-        if (i >= 0) slots.splice(i, 1);
-        slot.job?.resolve(null);
-        pump();
-      };
+      slot.worker.onerror = () => this.lose(slot);
       return slot;
     } catch {
       return null;
     }
-  };
+  }
 
-  const finish = (slot: Slot, result: SampleAnalysis | null) => {
+  /** The Worker failed: the job it was running is lost (null: not analyzed) and a new Worker takes the next one. */
+  private lose(slot: Slot): void {
+    slot.worker.terminate();
+    const index = this.slots.indexOf(slot);
+    if (index >= 0) this.slots.splice(index, 1);
+    slot.job?.resolve(null);
+    this.pump();
+  }
+
+  /** The Worker is done with its job: hand back the result and give it the next file. */
+  private finish(slot: Slot, result: SampleAnalysis | null): void {
     const job = slot.job;
     slot.job = null;
     slot.reply = null;
     job?.resolve(result);
-    pump();
-  };
+    this.pump();
+  }
 
-  const start = (slot: Slot, job: Job) => {
+  /** Sends the file to the Worker; a format only the browser can decode goes through `decodeThenAnalyze`. */
+  private start(slot: Slot, job: Job): void {
     slot.job = job;
-    const id = ++seq;
+    const id = ++this.seq;
     slot.reply = (r) => {
       if (r.id !== id) return;
-      if (r.ok) return finish(slot, r.analysis);
-      if (r.reason !== 'needs-decode') return finish(slot, null);
-      // The browser decodes it (off this thread); the Worker analyzes the audio.
-      void job.file
-        .arrayBuffer()
-        .then((bytes) => decode(bytes))
-        .then((audio) => {
-          if (!audio) return finish(slot, null);
-          const next = ++seq;
-          slot.reply = (r2) => {
-            if (r2.id !== next) return;
-            finish(slot, r2.ok ? r2.analysis : null);
-          };
-          const msg: WorkerRequest = { id: next, kind: 'audio', channels: audio.channels, sampleRate: audio.sampleRate, durationSec: audio.durationSec, path: job.path };
-          slot.worker.postMessage(msg, audio.channels.map((c) => c.buffer as ArrayBuffer));
-        })
-        .catch(() => finish(slot, null));
+      if (r.ok) return this.finish(slot, r.analysis);
+      if (r.reason !== 'needs-decode') return this.finish(slot, null);
+      this.decodeThenAnalyze(slot, job);
     };
     const msg: WorkerRequest = { id, kind: 'file', file: job.file, path: job.path };
     slot.worker.postMessage(msg);
-  };
+  }
 
-  function pump(): void {
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = null;
-    while (queue.length > 0) {
-      let slot = slots.find((s) => s.job === null);
-      if (!slot && slots.length < size) {
-        const made = spawn();
+  /** The browser decodes the file (off this thread); the Worker analyzes the audio. */
+  private decodeThenAnalyze(slot: Slot, job: Job): void {
+    void job.file
+      .arrayBuffer()
+      .then((bytes) => this.decode(bytes))
+      .then((audio) => {
+        if (!audio) return this.finish(slot, null);
+        const next = ++this.seq;
+        slot.reply = (r2) => {
+          if (r2.id !== next) return;
+          this.finish(slot, r2.ok ? r2.analysis : null);
+        };
+        const msg: WorkerRequest = { id: next, kind: 'audio', channels: audio.channels, sampleRate: audio.sampleRate, durationSec: audio.durationSec, path: job.path };
+        slot.worker.postMessage(msg, audio.channels.map((c) => c.buffer as ArrayBuffer));
+      })
+      .catch(() => this.finish(slot, null));
+  }
+
+  /** Hands queued files to idle Workers (making Workers up to the pool size), and stops the Workers once they have all been idle a while. */
+  private pump(): void {
+    this.clearIdleTimer();
+    while (this.queue.length > 0) {
+      let slot = this.slots.find((s) => s.job === null);
+      if (!slot && this.slots.length < this.size) {
+        const made = this.spawn();
         if (!made) {
-          // No Worker could be made: this thread does the rest.
-          const inline = inlineRunner(decode);
-          for (const j of queue.splice(0)) void inline.run(j.file, j.path).then(j.resolve, () => j.resolve(null));
+          this.analyzeQueueHere();
           return;
         }
-        slots.push(made);
+        this.slots.push(made);
         slot = made;
       }
       if (!slot) return;
-      start(slot, queue.shift() as Job);
+      this.start(slot, this.queue.shift() as Job);
     }
-    if (slots.every((s) => s.job === null) && slots.length > 0) idleTimer = setTimeout(stopAll, IDLE_MS);
+    if (this.slots.length > 0 && this.slots.every((s) => s.job === null)) this.idleTimer = setTimeout(() => this.stopAll(), IDLE_MS);
   }
 
-  return {
-    run(file, path) {
-      return new Promise((resolve) => {
-        queue.push({ file, path, resolve });
-        pump();
-      });
-    },
-    dispose() {
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = null;
-      for (const j of queue.splice(0)) j.resolve(null);
-      stopAll();
-    },
-  };
+  /** No Worker could be made: this thread does the rest. */
+  private analyzeQueueHere(): void {
+    const inline = inlineRunner(this.decode);
+    for (const job of this.queue.splice(0)) void inline.run(job.file, job.path).then(job.resolve, () => job.resolve(null));
+  }
+}
+
+/** `size` Workers taking files in order. */
+export function workerPoolRunner(size: number, decode: DecodeForAnalysis = browserDecode): AnalysisRunner {
+  if (typeof Worker === 'undefined') return inlineRunner(decode);
+  return new WorkerPool(size, decode);
 }
 
 /** Workers for the analysis: most of the cores but never all of them, at least one. */

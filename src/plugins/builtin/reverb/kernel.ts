@@ -1,624 +1,686 @@
 import { EffectKernel, flush, type ParamBlock } from '@agstudio/sdk/worklet';
 import type { reverbParams } from './params';
+import {
+  CONTROL_FRAMES,
+  DIFFUSER_GAINS,
+  DIFFUSER_MS,
+  DIFFUSERS_PER_SIDE,
+  DRIFT_DEPTH_MS,
+  DRIFT_RATES_HZ,
+  ENERGY_POINTS,
+  HIGH_BAND_DAMPING,
+  HIGH_BAND_HZ,
+  HIGH_BAND_LEVEL,
+  IDLE_GATE_SEC,
+  LINE_COUNT,
+  LINE_MS,
+  LINEAR_READ_ABOVE_STEP,
+  LN_1000,
+  LONGEST_LINE_MS,
+  LOOP_ALLPASS_GAIN,
+  LOOP_ALLPASS_MS,
+  LOW_BAND_HZ,
+  LOW_BAND_RATIO,
+  MAX_GLIDE_STEP,
+  MAX_PRE_DELAY_SEC,
+  MIN_SIZE_SCALE,
+  PARAM_SMOOTH_SEC,
+  powerOfTwoAtLeast,
+  shelfInto,
+  shelfPower,
+  SILENT_LEVEL,
+  SIZE_SMOOTH_SEC,
+  TAIL_FLOOR,
+} from './tuning.kernel';
 
-type P = typeof reverbParams;
+type Params = typeof reverbParams;
 
-/** Delay lines in the feedback network. */
-const N = 8;
-/** Line lengths at Size 100 %, ms: spread over about 1.7 octaves, no two in a simple ratio. */
-const LINE_MS = [29.3, 34.1, 41.3, 47.9, 56.3, 66.7, 79.1, 93.7] as const;
-const LONGEST_MS = 93.7;
-/** Size 0 % scales the lines by this (a small room). */
-const MIN_SCALE = 0.45;
-/** Lines whose length drifts slowly (breaks up metallic ringing), their rates (Hz) and depth (ms). */
-const MOD_LINES = [0, 1, 2, 3, 4, 5, 6, 7] as const;
-const MOD_RATES = [0.31, 0.83, 0.47, 1.07, 0.59, 0.37, 0.97, 0.71] as const;
-const MOD_MS = 0.5;
-/** An allpass inside each line's loop (ms, gain): many more echoes and modes for the same lines. */
-const LOOP_AP_MS = [7.3, 5.9, 9.1, 4.7, 8.3, 6.7, 3.9, 10.3] as const;
-const LOOP_G = 0.5;
-/** Input diffusion: four Schroeder allpasses a side (lengths in ms, L then R) and their gains. */
-const DIFFUSER_MS = [4.77, 3.59, 12.73, 9.3, 4.31, 3.97, 11.83, 10.13] as const;
-const DIFFUSER_G = [0.75, 0.75, 0.625, 0.625] as const;
-/** Longest pre-delay (the param's max), seconds. */
-const MAX_PRE_DELAY = 0.2;
-/** Line lengths, modulation and coefficients are updated every CONTROL frames (delays ramp in between). */
-const CONTROL = 32;
-/** Smoothing time constants of Decay/Damping and of Size, seconds. */
-const SMOOTH = 0.05;
-const SIZE_SMOOTH = 0.1;
-/** Fastest a line's length may glide, frames per frame (a Size change bends the tail's pitch, never clicks). */
-const MAX_STEP = 0.25;
-/** Lines gliding faster than this (frames per frame) read with linear interpolation. */
-const GLIDE = 0.01;
-/**
- * Three decay bands, like the convolution engine's impulse response, set by two first-order shelves
- * per line: the lows (below LOW_HZ) ring LOW_RATIO times longer than Decay, the highs (above
- * HIGH_HZ) die in Decay · (1 − HIGH_DAMP · Damping) and start at HIGH_LEVEL · (1 − 0.5 · Damping).
- * Tuned so each band's energy lands within about 2 dB of the convolution engine's at every Damping
- * (the shelves compound on every trip round, so the values differ from the IR generator's).
- */
-const LOW_HZ = 250;
-const HIGH_HZ = 8000;
-const LOW_RATIO = 1.2;
-const HIGH_DAMP = 0.6;
-const HIGH_LEVEL = 0.85;
-/** Frequencies sampled to estimate the tail's energy (for a loudness that doesn't depend on Decay). */
-const ENERGY_POINTS = 24;
-/** Input below this (about −120 dBFS) is silence; a tail below TAIL_FLOOR (−100 dBFS) is over. */
-const SILENT = 1e-6;
-const TAIL_FLOOR = 1e-5;
-/** Seconds of silence in and below-floor tail out before the network is cleared and goes idle. */
-const GATE_SECONDS = 0.5;
-const LN_1000 = Math.log(1000);
 const HALF_PI = Math.PI / 2;
-
-const pow2Above = (n: number) => {
-  let size = 4;
-  while (size < n) size <<= 1;
-  return size;
-};
+/** Coefficients each line keeps in `shelfCoefficients`: low shelf b0, b1 and high shelf b0, b1. */
+const COEFFICIENTS_PER_LINE = 4;
+/** Where the input shelf's two coefficients are kept: in the slots after the lines'. */
+const INPUT_SHELF_AT = COEFFICIENTS_PER_LINE * LINE_COUNT;
 
 /**
  * Algorithmic stereo reverb: pre-delay → four allpass diffusers a side → an 8-line feedback delay
  * network mixed by a (fast Walsh–) Hadamard matrix. Each line has a one-pole low-pass (damping) and
  * a gain that makes it lose 60 dB in Decay seconds for its own length (Jot), so the RT60 holds at
- * any Size. Four lines drift slowly in length against ringing. Left and right are two orthogonal
+ * any Size. Every line drifts slowly in length against ringing. Left and right are two orthogonal
  * sums of the lines (decorrelated); the wet level is normalized by the tail's energy so Decay
  * changes the length, not the loudness. Cost doesn't depend on Decay; all buffers are sized at
  * construction for the largest Size and pre-delay.
+ *
+ * The audio is handled in chunks of at most CONTROL_FRAMES frames, stage by stage over the whole chunk
+ * (`processChunk`), which keeps each stage's loop short and tight.
  */
-export class ReverbKernel extends EffectKernel<P> {
-  private readonly sr = this.sampleRate;
-  // Delay lines: one buffer, N lines of `lineSize` frames, one shared write position.
-  private readonly lineSize = pow2Above(Math.ceil(((LONGEST_MS + 2 * MOD_MS) / 1000) * this.sr) + 8);
+export class ReverbKernel extends EffectKernel<Params> {
+  // Delay lines: one buffer, LINE_COUNT lines of `lineSize` frames, one shared write position.
+  private readonly lineSize = powerOfTwoAtLeast(
+    Math.ceil(((LONGEST_LINE_MS + 2 * DRIFT_DEPTH_MS) / 1000) * this.sampleRate) + 8,
+  );
   private readonly lineMask = this.lineSize - 1;
-  private readonly lines = new Float32Array(N * this.lineSize);
-  private lineW = 0;
+  private readonly lineBuffer = new Float32Array(LINE_COUNT * this.lineSize);
+  private lineWritePosition = 0;
   // Pre-delay: two channels.
-  private readonly preSize = pow2Above(Math.ceil(MAX_PRE_DELAY * this.sr) + 4);
-  private readonly preMask = this.preSize - 1;
-  private readonly pre = new Float32Array(2 * this.preSize);
-  private preW = 0;
-  // Diffusers: 8 allpasses (4 a side), each a ring of exactly its length read and written at `diffAt`.
-  private readonly diff = DIFFUSER_MS.map((ms) => new Float32Array(Math.max(1, Math.round((ms / 1000) * this.sr))));
-  private readonly diffAt = new Int32Array(8);
+  private readonly preDelaySize = powerOfTwoAtLeast(Math.ceil(MAX_PRE_DELAY_SEC * this.sampleRate) + 4);
+  private readonly preDelayMask = this.preDelaySize - 1;
+  private readonly preDelayBuffer = new Float32Array(2 * this.preDelaySize);
+  private preDelayWritePosition = 0;
+  // Diffusers: 8 allpasses (4 a side), each a ring of exactly its length read and written at its position.
+  private readonly diffuserRings = DIFFUSER_MS.map(
+    (ms) => new Float32Array(Math.max(1, Math.round((ms / 1000) * this.sampleRate))),
+  );
+  private readonly diffuserPositions = new Int32Array(DIFFUSER_MS.length);
   // The lines' own allpasses, rings like the diffusers'.
-  private readonly loop = LOOP_AP_MS.map((ms) => new Float32Array(Math.max(1, Math.round((ms / 1000) * this.sr))));
-  private readonly loopAt = new Int32Array(N);
+  private readonly loopRings = LOOP_ALLPASS_MS.map(
+    (ms) => new Float32Array(Math.max(1, Math.round((ms / 1000) * this.sampleRate))),
+  );
+  private readonly loopPositions = new Int32Array(LINE_COUNT);
 
   /** Current delay of each line (frames, fractional) and its per-frame step toward the next target. */
-  private readonly delay = new Float64Array(N);
-  private readonly step = new Float64Array(N);
-  private readonly goal = new Float64Array(N);
+  private readonly lineDelay = new Float64Array(LINE_COUNT);
+  private readonly delayStep = new Float64Array(LINE_COUNT);
+  private readonly delayGoal = new Float64Array(LINE_COUNT);
   /** Each line's delay split for the allpass interpolation: whole frames and the allpass coefficient. */
-  private readonly whole = new Int32Array(N);
-  private readonly coef = new Float64Array(N);
-  /** Length of each line without modulation (frames), for the coefficients. */
-  private readonly nominal = new Float64Array(N);
+  private readonly delayWhole = new Int32Array(LINE_COUNT);
+  private readonly delayAllpassCoefficient = new Float64Array(LINE_COUNT);
+  /** Length of each line without drift (frames), for the coefficients. */
+  private readonly nominalDelay = new Float64Array(LINE_COUNT);
   /** Each line's feedback gain, the value it ramps to by the next control update, and its step. */
-  private readonly gain = new Float64Array(N);
-  private readonly gainTo = new Float64Array(N);
-  private readonly gainStep = new Float64Array(N);
+  private readonly lineGain = new Float64Array(LINE_COUNT);
+  private readonly lineGainTarget = new Float64Array(LINE_COUNT);
+  private readonly lineGainStep = new Float64Array(LINE_COUNT);
   /**
    * Each line's two first-order shelves (transposed direct form II, one state each): a low shelf
-   * (lows decay slower) and a high shelf (Damping), as [low b0, low b1, high b0, high b1].
+   * (lows decay slower) and a high shelf (Damping), as [low b0, low b1, high b0, high b1], and after
+   * the lines the input's shelf (INPUT_SHELF_AT).
    */
-  private readonly shelf = new Float64Array(4 * N + 2);
-  private readonly zLow = new Float64Array(N);
-  private readonly zHigh = new Float64Array(N);
-  /** The input's high shelf (the highs start quieter), its coefficients and its L/R states. */
-  private inB0 = 1;
-  private inB1 = 0;
-  private readonly zIn = new Float64Array(2);
+  private readonly shelfCoefficients = new Float64Array(INPUT_SHELF_AT + 2);
+  private readonly lowShelfState = new Float64Array(LINE_COUNT);
+  private readonly highShelfState = new Float64Array(LINE_COUNT);
+  /** The input's high shelf (the highs start quieter): its coefficients and its left/right states. */
+  private inputShelfB0 = 1;
+  private inputShelfB1 = 0;
+  private readonly inputShelfState = new Float64Array(2);
   /** Each line's fractional-delay allpass state (its last output). */
-  private readonly ap = new Float64Array(N);
-  private readonly phase = new Float64Array(MOD_LINES.length);
+  private readonly interpolatorState = new Float64Array(LINE_COUNT);
+  /** Where each line is in its slow drift (0–1 of a cycle). */
+  private readonly driftPhase = new Float64Array(LINE_COUNT);
   /** Bilinear-transform corner frequencies of the shelves, and their (shared) feedback coefficients. */
-  private readonly omegaLow = Math.tan((Math.PI * Math.min(LOW_HZ, 0.2 * this.sr)) / this.sr);
-  private readonly omegaHigh = Math.tan((Math.PI * Math.min(HIGH_HZ, 0.4 * this.sr)) / this.sr);
-  private readonly aLow = (this.omegaLow - 1) / (this.omegaLow + 1);
-  private readonly aHigh = (this.omegaHigh - 1) / (this.omegaHigh + 1);
+  private readonly lowShelfOmega = Math.tan((Math.PI * Math.min(LOW_BAND_HZ, 0.2 * this.sampleRate)) / this.sampleRate);
+  private readonly highShelfOmega = Math.tan(
+    (Math.PI * Math.min(HIGH_BAND_HZ, 0.4 * this.sampleRate)) / this.sampleRate,
+  );
+  private readonly lowShelfFeedback = (this.lowShelfOmega - 1) / (this.lowShelfOmega + 1);
+  private readonly highShelfFeedback = (this.highShelfOmega - 1) / (this.highShelfOmega + 1);
   // Frequencies for the energy estimate: dense at the lows (ω = π·u², u evenly spaced), where the
   // longest-ringing part of the tail is, with the matching weights.
-  private readonly cosW = Float64Array.from({ length: ENERGY_POINTS }, (_, k) =>
+  private readonly energyCosines = Float64Array.from({ length: ENERGY_POINTS }, (_, k) =>
     Math.cos(Math.PI * ((k + 0.5) / ENERGY_POINTS) ** 2),
   );
-  private readonly weightW = Float64Array.from({ length: ENERGY_POINTS }, (_, k) => (2 * (k + 0.5)) / ENERGY_POINTS);
-  private readonly modDepth = (MOD_MS / 1000) * this.sr;
-  private readonly kSmooth = 1 - Math.exp(-CONTROL / (SMOOTH * this.sr));
-  private readonly kSize = 1 - Math.exp(-CONTROL / (SIZE_SMOOTH * this.sr));
-  private readonly gateFrames = Math.round(GATE_SECONDS * this.sr);
+  private readonly energyWeights = Float64Array.from(
+    { length: ENERGY_POINTS },
+    (_, k) => (2 * (k + 0.5)) / ENERGY_POINTS,
+  );
+  private readonly driftDepthFrames = (DRIFT_DEPTH_MS / 1000) * this.sampleRate;
+  /** How far one control update moves a smoothed value towards its target (one-pole smoothing). */
+  private readonly paramSmoothing = 1 - Math.exp(-CONTROL_FRAMES / (PARAM_SMOOTH_SEC * this.sampleRate));
+  private readonly sizeSmoothing = 1 - Math.exp(-CONTROL_FRAMES / (SIZE_SMOOTH_SEC * this.sampleRate));
+  private readonly idleGateFrames = Math.round(IDLE_GATE_SEC * this.sampleRate);
 
   /** Smoothed Decay (s), Damping and Size (0–1), and the values they glide to. */
   private decay = 2.2;
   private damping = 0.5;
   private size = 0.6;
-  private decayTo = 2.2;
-  private dampingTo = 0.5;
-  private sizeTo = 0.6;
+  private decayTarget = 2.2;
+  private dampingTarget = 0.5;
+  private sizeTarget = 0.6;
   /** Coefficients need recomputing (a smoothed value is still moving). */
-  private settling = true;
+  private isSettling = true;
   /** The next block snaps to its params instead of gliding (first block, after a reset). */
-  private fresh = true;
+  private shouldSnapToParams = true;
   /**
    * Level of the sound fed into the network (ramped like the gains): it sets the tail's energy, so a
    * Decay change alters the length of new tails, not the level of the one ringing.
    */
-  private inScale = 1;
-  private inScaleTo = 1;
-  private inScaleStep = 0;
+  private inputScale = 1;
+  private inputScaleTarget = 1;
+  private inputScaleStep = 0;
+  /** Frames left until the next control update. */
   private countdown = 0;
   /** Mix → dry/wet gains (cached: recomputed only when the mix changes). */
-  private mixFor = -1;
+  private cachedMix = -1;
   private dryGain = 1;
   private wetGain = 0;
-  /** Frames of silence in and a finished tail out; at gateFrames the network is cleared and idles. */
-  private quiet = 0;
-  private idle = true;
+  /** Frames of silence in and a finished tail out; at idleGateFrames the network is cleared and idles. */
+  private quietFrames = 0;
+  private isIdle = true;
   /** This block's input and wet peaks (|L| + |R|), for the idle gate. */
-  private peakIn = 0;
-  private peakWet = 0;
+  private inputPeak = 0;
+  private wetPeak = 0;
   /** Scratch for one chunk: what each side feeds the network, and each line's output. */
-  private readonly sendL = new Float64Array(CONTROL);
-  private readonly sendR = new Float64Array(CONTROL);
-  private readonly Y = new Float64Array(N * CONTROL);
+  private readonly sendLeft = new Float64Array(CONTROL_FRAMES);
+  private readonly sendRight = new Float64Array(CONTROL_FRAMES);
+  private readonly lineOutputs = new Float64Array(LINE_COUNT * CONTROL_FRAMES);
 
   override reset(): void {
-    this.clear();
-    this.phase.fill(0);
-    this.fresh = true;
-    this.idle = true;
-    this.quiet = 0;
+    this.clearNetwork();
+    this.driftPhase.fill(0);
+    this.shouldSnapToParams = true;
+    this.isIdle = true;
+    this.quietFrames = 0;
     this.countdown = 0;
   }
 
-  process(input: Float32Array[], output: Float32Array[], n: number, p: ParamBlock<P>): void {
-    const inL = input[0] as Float32Array;
-    const inR = (input[1] ?? input[0]) as Float32Array;
-    const outL = output[0] as Float32Array;
-    const outR = (output[1] ?? output[0]) as Float32Array;
-    if (p.mix.length === 1) this.setMix(p.mix[0] as number);
+  process(input: Float32Array[], output: Float32Array[], frameCount: number, params: ParamBlock<Params>): void {
+    const inLeft = input[0] as Float32Array;
+    const inRight = (input[1] ?? input[0]) as Float32Array;
+    const outLeft = output[0] as Float32Array;
+    const outRight = (output[1] ?? output[0]) as Float32Array;
+    if (params.mix.length === 1) this.setMix(params.mix[0] as number);
 
     // Idle (nothing in the network): stay idle while silence comes in.
-    if (this.idle) {
-      let peakIn = 0;
-      for (let i = 0; i < n; i++) {
-        const a = Math.abs(inL[i] as number) + Math.abs(inR[i] as number);
-        if (a > peakIn) peakIn = a;
-      }
-      if (peakIn < SILENT) {
-        for (let i = 0; i < n; i++) {
-          if (p.mix.length > 1) this.setMix(p.mix[i] as number);
-          outL[i] = this.dryGain * (inL[i] as number);
-          outR[i] = this.dryGain * (inR[i] as number);
-        }
+    if (this.isIdle) {
+      if (peakLevel(inLeft, inRight, frameCount) < SILENT_LEVEL) {
+        this.passDryThrough(inLeft, inRight, outLeft, outRight, frameCount, params);
         return;
       }
-      this.idle = false;
-      this.quiet = 0;
+      this.isIdle = false;
+      this.quietFrames = 0;
     }
 
-    this.targets(p.decay[0] as number, p.damping[0] as number, p.size[0] as number);
-    this.peakIn = 0;
-    this.peakWet = 0;
-    let i = 0;
-    while (i < n) {
+    this.setTargets(params.decay[0] as number, params.damping[0] as number, params.size[0] as number);
+    this.inputPeak = 0;
+    this.wetPeak = 0;
+    let done = 0;
+    while (done < frameCount) {
       if (this.countdown <= 0) {
-        this.countdown = CONTROL;
-        this.control();
+        this.countdown = CONTROL_FRAMES;
+        this.controlUpdate();
       }
-      const m = Math.min(n - i, this.countdown);
-      this.countdown -= m;
-      this.chunk(inL, inR, outL, outR, i, m, p);
-      i += m;
+      const chunkLength = Math.min(frameCount - done, this.countdown);
+      this.countdown -= chunkLength;
+      this.processChunk(inLeft, inRight, outLeft, outRight, done, chunkLength, params);
+      done += chunkLength;
     }
-    // Flush denormals and NaN out of the filter states.
-    const zIn = this.zIn;
-    for (let c = 0; c < 2; c++) zIn[c] = flush(zIn[c] as number);
-    for (let k = 0; k < N; k++) {
-      this.zLow[k] = flush(this.zLow[k] as number);
-      this.zHigh[k] = flush(this.zHigh[k] as number);
-      this.ap[k] = flush(this.ap[k] as number);
-    }
+    this.flushFilterStates();
+    this.goIdleWhenTailIsOver(frameCount);
+  }
 
-    // Silence in and a tail under −100 dBFS for a while: clear the network and idle.
-    if (this.peakIn < SILENT && this.peakWet < TAIL_FLOOR) {
-      this.quiet += n;
-      if (this.quiet >= this.gateFrames) {
-        this.clear();
-        this.idle = true;
-        // With nothing in the network, the next sound starts at the current settings (no glide).
-        this.fresh = true;
-      }
-    } else this.quiet = 0;
+  /** With nothing in the network and silence coming in, the output is just the dry signal. */
+  private passDryThrough(
+    inLeft: Float32Array,
+    inRight: Float32Array,
+    outLeft: Float32Array,
+    outRight: Float32Array,
+    frameCount: number,
+    params: ParamBlock<Params>,
+  ): void {
+    for (let i = 0; i < frameCount; i++) {
+      if (params.mix.length > 1) this.setMix(params.mix[i] as number);
+      outLeft[i] = this.dryGain * (inLeft[i] as number);
+      outRight[i] = this.dryGain * (inRight[i] as number);
+    }
+  }
+
+  /** Flushes denormals and NaN out of the filter states. */
+  private flushFilterStates(): void {
+    const inputShelfState = this.inputShelfState;
+    for (let side = 0; side < 2; side++) inputShelfState[side] = flush(inputShelfState[side] as number);
+    for (let line = 0; line < LINE_COUNT; line++) {
+      this.lowShelfState[line] = flush(this.lowShelfState[line] as number);
+      this.highShelfState[line] = flush(this.highShelfState[line] as number);
+      this.interpolatorState[line] = flush(this.interpolatorState[line] as number);
+    }
+  }
+
+  /** Silence in and a tail under −100 dBFS for a while: clears the network and idles. */
+  private goIdleWhenTailIsOver(frameCount: number): void {
+    if (this.inputPeak >= SILENT_LEVEL || this.wetPeak >= TAIL_FLOOR) {
+      this.quietFrames = 0;
+      return;
+    }
+    this.quietFrames += frameCount;
+    if (this.quietFrames < this.idleGateFrames) return;
+    this.clearNetwork();
+    this.isIdle = true;
+    // With nothing in the network, the next sound starts at the current settings (no glide).
+    this.shouldSnapToParams = true;
   }
 
   /**
-   * `m` frames (at most CONTROL, so fewer than the shortest line: every read in the chunk sees
+   * `count` frames (at most CONTROL_FRAMES, so fewer than the shortest line: every read in the chunk sees
    * frames written before it) from frame `from`, stage by stage over the whole chunk.
+   *
+   * The five stages are blocks of this one method, not methods of their own: measured, five calls per 32-frame
+   * chunk cost about 4 % of this effect's CPU (each call reloads the stage's state from fields).
    */
-  private chunk(
-    inL: Float32Array,
-    inR: Float32Array,
-    outL: Float32Array,
-    outR: Float32Array,
+  private processChunk(
+    inLeft: Float32Array,
+    inRight: Float32Array,
+    outLeft: Float32Array,
+    outRight: Float32Array,
     from: number,
-    m: number,
-    p: ParamBlock<P>,
+    count: number,
+    params: ParamBlock<Params>,
   ): void {
-    const sL = this.sendL;
-    const sR = this.sendR;
-
-    // 1. Pre-delay (linear interpolation: smooth when automated) and the input's high shelf.
-    const pre = this.pre;
-    const preMask = this.preMask;
-    const preSize = this.preSize;
-    const preConst = p.preDelay.length === 1;
-    let preFrames = this.preFrames(p.preDelay[preConst ? 0 : from] as number);
-    let preW = this.preW;
-    const inB0 = this.inB0;
-    const inB1 = this.inB1;
-    const aHigh = this.aHigh;
-    let zl = this.zIn[0] as number;
-    let zr = this.zIn[1] as number;
-    let peakIn = this.peakIn;
-    for (let j = 0; j < m; j++) {
-      const xl = inL[from + j] as number;
-      const xr = inR[from + j] as number;
-      const ax = Math.abs(xl) + Math.abs(xr);
-      if (ax > peakIn) peakIn = ax;
-      preW = (preW + 1) & preMask;
-      pre[preW] = xl;
-      pre[preSize + preW] = xr;
-      if (!preConst) preFrames = this.preFrames(p.preDelay[from + j] as number);
-      const pk = preFrames | 0;
-      const pf = preFrames - pk;
-      const pa = (preW - pk) & preMask;
-      const pb = (preW - pk - 1) & preMask;
-      const l0 = pre[pa] as number;
-      const r0 = pre[preSize + pa] as number;
-      const l = l0 + ((pre[pb] as number) - l0) * pf;
-      const r = r0 + ((pre[preSize + pb] as number) - r0) * pf;
-      const yl = inB0 * l + zl;
-      zl = inB1 * l - aHigh * yl;
-      const yr = inB0 * r + zr;
-      zr = inB1 * r - aHigh * yr;
-      sL[j] = yl;
-      sR[j] = yr;
-    }
-    this.preW = preW;
-    this.zIn[0] = zl;
-    this.zIn[1] = zr;
-    this.peakIn = peakIn;
-
-    // 2. Input diffusion, four allpasses a side: v = x − g·w, y = w + g·v (w: the delayed state).
-    for (let d = 0; d < 8; d++) {
-      const buf = this.diff[d] as Float32Array;
-      const len = buf.length;
-      const g = DIFFUSER_G[d & 3] as number;
-      const s = d < 4 ? sL : sR;
-      let at = this.diffAt[d] as number;
-      for (let j = 0; j < m; j++) {
-        const w = buf[at] as number;
-        const v = (s[j] as number) - g * w;
-        buf[at] = v;
-        s[j] = w + g * v;
-        if (++at === len) at = 0;
+    const preDelaySec = params.preDelay;
+    const mix = params.mix;
+    const firstWrite = this.lineWritePosition + 1;
+    // Plain locals for the numbers the sample loops use: an imported name costs a property lookup per use
+    // when the code runs through the test runner's module wrappers (the speed tests do).
+    const lineCount = LINE_COUNT;
+    const lineStride = CONTROL_FRAMES;
+    const loopAllpassGain = LOOP_ALLPASS_GAIN;
+    const linearReadAboveStep = LINEAR_READ_ABOVE_STEP;
+    // Stage 1: pre-delay (linear interpolation: smooth when automated) and the input's high shelf.
+    {
+      const sendLeft = this.sendLeft;
+      const sendRight = this.sendRight;
+      const buffer = this.preDelayBuffer;
+      const mask = this.preDelayMask;
+      const size = this.preDelaySize;
+      const isPreDelayConstant = preDelaySec.length === 1;
+      let delayFrames = this.preDelayFrames(preDelaySec[isPreDelayConstant ? 0 : from] as number);
+      let writePosition = this.preDelayWritePosition;
+      const shelfB0 = this.inputShelfB0;
+      const shelfB1 = this.inputShelfB1;
+      const shelfFeedback = this.highShelfFeedback;
+      let stateLeft = this.inputShelfState[0] as number;
+      let stateRight = this.inputShelfState[1] as number;
+      let peak = this.inputPeak;
+      for (let j = 0; j < count; j++) {
+        const left = inLeft[from + j] as number;
+        const right = inRight[from + j] as number;
+        const level = Math.abs(left) + Math.abs(right);
+        if (level > peak) peak = level;
+        writePosition = (writePosition + 1) & mask;
+        buffer[writePosition] = left;
+        buffer[size + writePosition] = right;
+        if (!isPreDelayConstant) delayFrames = this.preDelayFrames(preDelaySec[from + j] as number);
+        // Read between two frames: the whole frames back, and the fraction towards the one before.
+        const wholeFrames = delayFrames | 0;
+        const fraction = delayFrames - wholeFrames;
+        const nearer = (writePosition - wholeFrames) & mask;
+        const farther = (writePosition - wholeFrames - 1) & mask;
+        const nearLeft = buffer[nearer] as number;
+        const nearRight = buffer[size + nearer] as number;
+        const delayedLeft = nearLeft + ((buffer[farther] as number) - nearLeft) * fraction;
+        const delayedRight = nearRight + ((buffer[size + farther] as number) - nearRight) * fraction;
+        const shelvedLeft = shelfB0 * delayedLeft + stateLeft;
+        stateLeft = shelfB1 * delayedLeft - shelfFeedback * shelvedLeft;
+        const shelvedRight = shelfB0 * delayedRight + stateRight;
+        stateRight = shelfB1 * delayedRight - shelfFeedback * shelvedRight;
+        sendLeft[j] = shelvedLeft;
+        sendRight[j] = shelvedRight;
       }
-      this.diffAt[d] = at;
+      this.preDelayWritePosition = writePosition;
+      this.inputShelfState[0] = stateLeft;
+      this.inputShelfState[1] = stateRight;
+      this.inputPeak = peak;
     }
-
-    // 3. The level fed into the network.
-    let scale = this.inScale;
-    const scaleStep = this.inScaleStep;
-    for (let j = 0; j < m; j++) {
-      scale += scaleStep;
-      sL[j] = (sL[j] as number) * scale;
-      sR[j] = (sR[j] as number) * scale;
+    // Stage 2: input diffusion, four allpasses a side: v = x − g·w, y = w + g·v (w: the delayed state).
+    {
+      for (let diffuser = 0; diffuser < DIFFUSER_MS.length; diffuser++) {
+        const ring = this.diffuserRings[diffuser] as Float32Array;
+        const ringLength = ring.length;
+        const gain = DIFFUSER_GAINS[diffuser % DIFFUSERS_PER_SIDE] as number;
+        const send = diffuser < DIFFUSERS_PER_SIDE ? this.sendLeft : this.sendRight;
+        let position = this.diffuserPositions[diffuser] as number;
+        for (let j = 0; j < count; j++) {
+          const delayed = ring[position] as number;
+          const v = (send[j] as number) - gain * delayed;
+          ring[position] = v;
+          send[j] = delayed + gain * v;
+          if (++position === ringLength) position = 0;
+        }
+        this.diffuserPositions[diffuser] = position;
+      }
     }
-    this.inScale = scale;
-
-    // 4. Each line: read `delay` frames back, two shelves (the decay bands), its own allpass, its
+    // Stage 3: the level fed into the network.
+    {
+      const sendLeft = this.sendLeft;
+      const sendRight = this.sendRight;
+      let scale = this.inputScale;
+      const scaleStep = this.inputScaleStep;
+      for (let j = 0; j < count; j++) {
+        scale += scaleStep;
+        sendLeft[j] = (sendLeft[j] as number) * scale;
+        sendRight[j] = (sendRight[j] as number) * scale;
+      }
+      this.inputScale = scale;
+    }
+    // Stage 4: each line: read `delay` frames back, two shelves (the decay bands), its own allpass, its
     // gain. Fractional delays are allpass-interpolated (flat: no highs lost however often the tail
     // goes round), except while a line glides fast after a Size change: the allpass's switching
     // whole part would chirp there, and linear interpolation's slight dulling lasts only as long as
-    // the glide.
-    const lines = this.lines;
-    const lineMask = this.lineMask;
-    const base0 = this.lineW + 1;
-    const Y = this.Y;
-    const aLow = this.aLow;
-    const shelf = this.shelf;
-    for (let k = 0; k < N; k++) {
-      const off = k * this.lineSize;
-      const y0 = k * CONTROL;
-      const st = this.step[k] as number;
-      const lin = st > GLIDE || st < -GLIDE;
-      let d = this.delay[k] as number;
-      let w = this.whole[k] as number;
-      let e = this.coef[k] as number;
-      let a = this.ap[k] as number;
-      let z1 = this.zLow[k] as number;
-      let z2 = this.zHigh[k] as number;
-      let g = this.gain[k] as number;
-      const gs = this.gainStep[k] as number;
-      const lb0 = shelf[4 * k] as number;
-      const lb1 = shelf[4 * k + 1] as number;
-      const hb0 = shelf[4 * k + 2] as number;
-      const hb1 = shelf[4 * k + 3] as number;
-      const ring = this.loop[k] as Float32Array;
-      const len = ring.length;
-      let at = this.loopAt[k] as number;
-      for (let j = 0; j < m; j++) {
-        const base = base0 + j;
-        if (st !== 0) {
-          d += st;
-          w = (d - 0.5) | 0;
-          const f = d - w;
-          e = (1 - f) / (1 + f);
+    // the glide. `firstWrite` is where the chunk's first frame will be written in the line buffer.
+    {
+      const buffer = this.lineBuffer;
+      const mask = this.lineMask;
+      const outputs = this.lineOutputs;
+      const lowFeedback = this.lowShelfFeedback;
+      const highFeedback = this.highShelfFeedback;
+      const coefficients = this.shelfCoefficients;
+      for (let line = 0; line < lineCount; line++) {
+        const lineOffset = line * this.lineSize;
+        const outputOffset = line * lineStride;
+        const step = this.delayStep[line] as number;
+        const readsLinearly = step > linearReadAboveStep || step < -linearReadAboveStep;
+        let delay = this.lineDelay[line] as number;
+        let whole = this.delayWhole[line] as number;
+        let allpassCoefficient = this.delayAllpassCoefficient[line] as number;
+        let interpolated = this.interpolatorState[line] as number;
+        let lowState = this.lowShelfState[line] as number;
+        let highState = this.highShelfState[line] as number;
+        let gain = this.lineGain[line] as number;
+        const gainStep = this.lineGainStep[line] as number;
+        const lowB0 = coefficients[COEFFICIENTS_PER_LINE * line] as number;
+        const lowB1 = coefficients[COEFFICIENTS_PER_LINE * line + 1] as number;
+        const highB0 = coefficients[COEFFICIENTS_PER_LINE * line + 2] as number;
+        const highB1 = coefficients[COEFFICIENTS_PER_LINE * line + 3] as number;
+        const loopRing = this.loopRings[line] as Float32Array;
+        const loopLength = loopRing.length;
+        let loopPosition = this.loopPositions[line] as number;
+        for (let j = 0; j < count; j++) {
+          const writeAt = firstWrite + j;
+          if (step !== 0) {
+            delay += step;
+            whole = (delay - 0.5) | 0;
+            const fraction = delay - whole;
+            allpassCoefficient = (1 - fraction) / (1 + fraction);
+          }
+          if (readsLinearly) {
+            const wholeFrames = delay | 0;
+            const nearer = buffer[lineOffset + ((writeAt - wholeFrames) & mask)] as number;
+            const farther = buffer[lineOffset + ((writeAt - wholeFrames - 1) & mask)] as number;
+            interpolated = nearer + (farther - nearer) * (delay - wholeFrames);
+          } else {
+            const nearer = buffer[lineOffset + ((writeAt - whole) & mask)] as number;
+            const farther = buffer[lineOffset + ((writeAt - whole - 1) & mask)] as number;
+            interpolated = allpassCoefficient * (nearer - interpolated) + farther;
+          }
+          const lowShelved = lowB0 * interpolated + lowState;
+          lowState = lowB1 * interpolated - lowFeedback * lowShelved;
+          let shelved = highB0 * lowShelved + highState;
+          highState = highB1 * lowShelved - highFeedback * shelved;
+          // The loop allpass: v = x − g·w, y = w + g·v.
+          const loopDelayed = loopRing[loopPosition] as number;
+          shelved -= loopAllpassGain * loopDelayed;
+          loopRing[loopPosition] = shelved;
+          shelved = loopDelayed + loopAllpassGain * shelved;
+          if (++loopPosition === loopLength) loopPosition = 0;
+          gain += gainStep;
+          outputs[outputOffset + j] = gain * shelved;
         }
-        if (lin) {
-          const wl = d | 0;
-          const x0 = lines[off + ((base - wl) & lineMask)] as number;
-          a = x0 + ((lines[off + ((base - wl - 1) & lineMask)] as number) - x0) * (d - wl);
-        } else {
-          const x0 = lines[off + ((base - w) & lineMask)] as number;
-          a = e * (x0 - a) + (lines[off + ((base - w - 1) & lineMask)] as number);
+        this.lineDelay[line] = delay;
+        this.delayWhole[line] = whole;
+        this.delayAllpassCoefficient[line] = allpassCoefficient;
+        this.interpolatorState[line] = interpolated;
+        this.lowShelfState[line] = lowState;
+        this.highShelfState[line] = highState;
+        this.lineGain[line] = gain;
+        this.loopPositions[line] = loopPosition;
+      }
+    }
+    // Stage 5: mix the lines with a fast Walsh–Hadamard transform (orthogonal after the 1/√8) and
+    // write them back with the input: left into the even lines, right into the odd ones, negated in
+    // lines 4–7 so the first echoes of a side don't all reach an output with the same sign (that would
+    // boost the lows of every hit). Left and right are two orthogonal sums of the lines (decorrelated).
+    // Also writes the output: the dry input plus the wet sums.
+    {
+      const buffer = this.lineBuffer;
+      const mask = this.lineMask;
+      const sendLeft = this.sendLeft;
+      const sendRight = this.sendRight;
+      const outputs = this.lineOutputs;
+      const size = this.lineSize;
+      const norm = 1 / Math.sqrt(8);
+      const isMixConstant = mix.length === 1;
+      let dry = this.dryGain;
+      let wet = this.wetGain;
+      let peak = this.wetPeak;
+      for (let j = 0; j < count; j++) {
+        const y0 = outputs[j] as number;
+        const y1 = outputs[lineStride + j] as number;
+        const y2 = outputs[2 * lineStride + j] as number;
+        const y3 = outputs[3 * lineStride + j] as number;
+        const y4 = outputs[4 * lineStride + j] as number;
+        const y5 = outputs[5 * lineStride + j] as number;
+        const y6 = outputs[6 * lineStride + j] as number;
+        const y7 = outputs[7 * lineStride + j] as number;
+        const wetLeft = y0 - y1 + y2 - y3 + y4 - y5 + y6 - y7;
+        const wetRight = y0 + y1 - y2 - y3 + y4 + y5 - y6 - y7;
+        // Walsh–Hadamard butterflies: pairs, then fours, then the eight.
+        const t0 = y0 + y1;
+        const t1 = y0 - y1;
+        const t2 = y2 + y3;
+        const t3 = y2 - y3;
+        const t4 = y4 + y5;
+        const t5 = y4 - y5;
+        const t6 = y6 + y7;
+        const t7 = y6 - y7;
+        const u0 = t0 + t2;
+        const u1 = t1 + t3;
+        const u2 = t0 - t2;
+        const u3 = t1 - t3;
+        const u4 = t4 + t6;
+        const u5 = t5 + t7;
+        const u6 = t4 - t6;
+        const u7 = t5 - t7;
+        const left = sendLeft[j] as number;
+        const right = sendRight[j] as number;
+        const writeAt = (firstWrite + j) & mask;
+        buffer[writeAt] = (u0 + u4) * norm + left;
+        buffer[size + writeAt] = (u1 + u5) * norm + right;
+        buffer[2 * size + writeAt] = (u2 + u6) * norm + left;
+        buffer[3 * size + writeAt] = (u3 + u7) * norm + right;
+        buffer[4 * size + writeAt] = (u0 - u4) * norm - left;
+        buffer[5 * size + writeAt] = (u1 - u5) * norm - right;
+        buffer[6 * size + writeAt] = (u2 - u6) * norm - left;
+        buffer[7 * size + writeAt] = (u3 - u7) * norm - right;
+        const wetLevel = Math.abs(wetLeft) + Math.abs(wetRight);
+        if (wetLevel > peak) peak = wetLevel;
+        if (!isMixConstant) {
+          this.setMix(mix[from + j] as number);
+          dry = this.dryGain;
+          wet = this.wetGain;
         }
-        const u = lb0 * a + z1;
-        z1 = lb1 * a - aLow * u;
-        let v = hb0 * u + z2;
-        z2 = hb1 * u - aHigh * v;
-        const t = ring[at] as number;
-        v -= LOOP_G * t;
-        ring[at] = v;
-        v = t + LOOP_G * v;
-        if (++at === len) at = 0;
-        g += gs;
-        Y[y0 + j] = g * v;
+        outLeft[from + j] = dry * (inLeft[from + j] as number) + wet * wetLeft;
+        outRight[from + j] = dry * (inRight[from + j] as number) + wet * wetRight;
       }
-      this.delay[k] = d;
-      this.whole[k] = w;
-      this.coef[k] = e;
-      this.ap[k] = a;
-      this.zLow[k] = z1;
-      this.zHigh[k] = z2;
-      this.gain[k] = g;
-      this.loopAt[k] = at;
+      this.wetPeak = peak;
     }
-
-    // 5. Mix the lines with a fast Walsh–Hadamard transform (orthogonal after the 1/√8) and write
-    // them back with the input: left into the even lines, right into the odd ones, negated in lines
-    // 4–7 so the first echoes of a side don't all reach an output with the same sign (that would
-    // boost the lows of every hit). Left and right are two orthogonal sums of the lines
-    // (decorrelated).
-    const size = this.lineSize;
-    const norm = 1 / Math.sqrt(8);
-    const mixConst = p.mix.length === 1;
-    let dry = this.dryGain;
-    let wet = this.wetGain;
-    let peakWet = this.peakWet;
-    for (let j = 0; j < m; j++) {
-      const y0 = Y[j] as number;
-      const y1 = Y[CONTROL + j] as number;
-      const y2 = Y[2 * CONTROL + j] as number;
-      const y3 = Y[3 * CONTROL + j] as number;
-      const y4 = Y[4 * CONTROL + j] as number;
-      const y5 = Y[5 * CONTROL + j] as number;
-      const y6 = Y[6 * CONTROL + j] as number;
-      const y7 = Y[7 * CONTROL + j] as number;
-      const wetL = y0 - y1 + y2 - y3 + y4 - y5 + y6 - y7;
-      const wetR = y0 + y1 - y2 - y3 + y4 + y5 - y6 - y7;
-      const t0 = y0 + y1;
-      const t1 = y0 - y1;
-      const t2 = y2 + y3;
-      const t3 = y2 - y3;
-      const t4 = y4 + y5;
-      const t5 = y4 - y5;
-      const t6 = y6 + y7;
-      const t7 = y6 - y7;
-      const u0 = t0 + t2;
-      const u1 = t1 + t3;
-      const u2 = t0 - t2;
-      const u3 = t1 - t3;
-      const u4 = t4 + t6;
-      const u5 = t5 + t7;
-      const u6 = t4 - t6;
-      const u7 = t5 - t7;
-      const l = sL[j] as number;
-      const r = sR[j] as number;
-      const at = (base0 + j) & lineMask;
-      lines[at] = (u0 + u4) * norm + l;
-      lines[size + at] = (u1 + u5) * norm + r;
-      lines[2 * size + at] = (u2 + u6) * norm + l;
-      lines[3 * size + at] = (u3 + u7) * norm + r;
-      lines[4 * size + at] = (u0 - u4) * norm - l;
-      lines[5 * size + at] = (u1 - u5) * norm - r;
-      lines[6 * size + at] = (u2 - u6) * norm - l;
-      lines[7 * size + at] = (u3 - u7) * norm - r;
-      const aw = Math.abs(wetL) + Math.abs(wetR);
-      if (aw > peakWet) peakWet = aw;
-      if (!mixConst) {
-        this.setMix(p.mix[from + j] as number);
-        dry = this.dryGain;
-        wet = this.wetGain;
-      }
-      outL[from + j] = dry * (inL[from + j] as number) + wet * wetL;
-      outR[from + j] = dry * (inR[from + j] as number) + wet * wetR;
-    }
-    this.peakWet = peakWet;
-    this.lineW = (base0 + m - 1) & lineMask;
+    this.lineWritePosition = (firstWrite + count - 1) & this.lineMask;
   }
 
-  private clear(): void {
-    this.lines.fill(0);
-    this.pre.fill(0);
-    for (let k = 0; k < N; k++) {
-      (this.diff[k] as Float32Array).fill(0);
-      (this.loop[k] as Float32Array).fill(0);
-    }
-    this.zLow.fill(0);
-    this.zHigh.fill(0);
-    this.zIn.fill(0);
-    this.ap.fill(0);
+  private clearNetwork(): void {
+    this.lineBuffer.fill(0);
+    this.preDelayBuffer.fill(0);
+    for (const ring of this.diffuserRings) ring.fill(0);
+    for (const ring of this.loopRings) ring.fill(0);
+    this.lowShelfState.fill(0);
+    this.highShelfState.fill(0);
+    this.inputShelfState.fill(0);
+    this.interpolatorState.fill(0);
   }
 
   /** The block's Decay, Damping and Size: glide there (or snap on the first block). */
-  private targets(decay: number, damping: number, size: number): void {
-    const d = Math.min(20, Math.max(0.05, decay));
-    const dm = Math.min(1, Math.max(0, damping));
-    const s = Math.min(1, Math.max(0, size));
-    if (d !== this.decayTo || dm !== this.dampingTo || s !== this.sizeTo) {
-      this.decayTo = d;
-      this.dampingTo = dm;
-      this.sizeTo = s;
-      this.settling = true;
+  private setTargets(decay: number, damping: number, size: number): void {
+    const decayClamped = Math.min(20, Math.max(0.05, decay));
+    const dampingClamped = Math.min(1, Math.max(0, damping));
+    const sizeClamped = Math.min(1, Math.max(0, size));
+    if (decayClamped !== this.decayTarget || dampingClamped !== this.dampingTarget || sizeClamped !== this.sizeTarget) {
+      this.decayTarget = decayClamped;
+      this.dampingTarget = dampingClamped;
+      this.sizeTarget = sizeClamped;
+      this.isSettling = true;
     }
-    if (this.fresh) {
-      this.fresh = false;
-      this.decay = d;
-      this.damping = dm;
-      this.size = s;
-      this.settling = true;
-      this.control();
+    if (this.shouldSnapToParams) {
+      this.shouldSnapToParams = false;
+      this.decay = decayClamped;
+      this.damping = dampingClamped;
+      this.size = sizeClamped;
+      this.isSettling = true;
+      this.controlUpdate();
       // Start every line at its length (no glide from the constructor's defaults).
-      this.delay.set(this.goal);
-      this.step.fill(0);
-      this.gain.set(this.gainTo);
-      this.gainStep.fill(0);
-      this.inScale = this.inScaleTo;
-      this.inScaleStep = 0;
-      for (let k = 0; k < N; k++) this.split(k);
-      this.countdown = CONTROL;
+      this.lineDelay.set(this.delayGoal);
+      this.delayStep.fill(0);
+      this.lineGain.set(this.lineGainTarget);
+      this.lineGainStep.fill(0);
+      this.inputScale = this.inputScaleTarget;
+      this.inputScaleStep = 0;
+      for (let line = 0; line < LINE_COUNT; line++) this.splitDelay(line);
+      this.countdown = CONTROL_FRAMES;
     }
   }
 
-  /** Control-rate update: smoothing, line lengths and modulation, coefficients while settling. */
-  private control(): void {
-    if (this.settling) {
-      this.decay += (this.decayTo - this.decay) * this.kSmooth;
-      this.damping += (this.dampingTo - this.damping) * this.kSmooth;
-      this.size += (this.sizeTo - this.size) * this.kSize;
-      const done =
-        Math.abs(this.decay - this.decayTo) < 1e-4 * this.decayTo &&
-        Math.abs(this.damping - this.dampingTo) < 1e-4 &&
-        Math.abs(this.size - this.sizeTo) < 1e-5;
-      if (done) {
-        this.decay = this.decayTo;
-        this.damping = this.dampingTo;
-        this.size = this.sizeTo;
-      }
-      this.coefficients();
-      this.settling = !done;
+  /** Control-rate update: smoothing, line lengths and drift, coefficients while settling. */
+  private controlUpdate(): void {
+    if (this.isSettling) this.smoothParams();
+    // Gains and the input level ramp to their new values over the next CONTROL_FRAMES frames.
+    for (let line = 0; line < LINE_COUNT; line++) {
+      this.lineGainStep[line] =
+        ((this.lineGainTarget[line] as number) - (this.lineGain[line] as number)) / CONTROL_FRAMES;
     }
-    // Gains and the input level ramp to their new values over the next CONTROL frames.
-    for (let k = 0; k < N; k++) {
-      this.gainStep[k] = ((this.gainTo[k] as number) - (this.gain[k] as number)) / CONTROL;
+    this.inputScaleStep = (this.inputScaleTarget - this.inputScale) / CONTROL_FRAMES;
+    this.aimLineDelays();
+  }
+
+  /** Moves Decay, Damping and Size a step towards their targets and recomputes the coefficients from them. */
+  private smoothParams(): void {
+    this.decay += (this.decayTarget - this.decay) * this.paramSmoothing;
+    this.damping += (this.dampingTarget - this.damping) * this.paramSmoothing;
+    this.size += (this.sizeTarget - this.size) * this.sizeSmoothing;
+    const isDone =
+      Math.abs(this.decay - this.decayTarget) < 1e-4 * this.decayTarget &&
+      Math.abs(this.damping - this.dampingTarget) < 1e-4 &&
+      Math.abs(this.size - this.sizeTarget) < 1e-5;
+    if (isDone) {
+      this.decay = this.decayTarget;
+      this.damping = this.dampingTarget;
+      this.size = this.sizeTarget;
     }
-    this.inScaleStep = (this.inScaleTo - this.inScale) / CONTROL;
-    const goal = this.goal;
-    const delay = this.delay;
-    const step = this.step;
+    this.computeCoefficients();
+    this.isSettling = !isDone;
+  }
+
+  /** Sets each line's delay goal (its length plus drift) and the per-frame step that reaches it by the next update. */
+  private aimLineDelays(): void {
+    const goal = this.delayGoal;
+    const delay = this.lineDelay;
+    const step = this.delayStep;
     // Reading a line before writing it adds a frame to its loop.
-    for (let k = 0; k < N; k++) goal[k] = (this.nominal[k] as number) - 1;
-    const dt = CONTROL / this.sr;
-    for (let m = 0; m < MOD_LINES.length; m++) {
-      const ph = (this.phase[m] as number) + (MOD_RATES[m] as number) * dt;
-      this.phase[m] = ph >= 1 ? ph - 1 : ph;
-      const k = MOD_LINES[m] as number;
-      goal[k] = (goal[k] as number) + this.modDepth * Math.sin(2 * Math.PI * (ph + m / MOD_LINES.length));
+    for (let line = 0; line < LINE_COUNT; line++) goal[line] = (this.nominalDelay[line] as number) - 1;
+    const updateSec = CONTROL_FRAMES / this.sampleRate;
+    for (let line = 0; line < LINE_COUNT; line++) {
+      const phase = (this.driftPhase[line] as number) + (DRIFT_RATES_HZ[line] as number) * updateSec;
+      this.driftPhase[line] = phase >= 1 ? phase - 1 : phase;
+      // Each line's drift starts at a different point of the cycle.
+      goal[line] = (goal[line] as number) + this.driftDepthFrames * Math.sin(2 * Math.PI * (phase + line / LINE_COUNT));
     }
-    for (let k = 0; k < N; k++) {
-      const to = goal[k] as number;
-      const s = (to - (delay[k] as number)) / CONTROL;
-      if (Math.abs(s) < 1e-9) {
+    for (let line = 0; line < LINE_COUNT; line++) {
+      const target = goal[line] as number;
+      const perFrame = (target - (delay[line] as number)) / CONTROL_FRAMES;
+      if (Math.abs(perFrame) < 1e-9) {
         // Arrived: the line holds still (and skips its per-frame coefficient update).
-        if (step[k] !== 0 || delay[k] !== to) {
-          step[k] = 0;
-          delay[k] = to;
-          this.split(k);
+        if (step[line] !== 0 || delay[line] !== target) {
+          step[line] = 0;
+          delay[line] = target;
+          this.splitDelay(line);
         }
-      } else step[k] = s > MAX_STEP ? MAX_STEP : s < -MAX_STEP ? -MAX_STEP : s;
+      } else step[line] = clampStep(perFrame);
     }
   }
 
-  /** whole/coef for line k's current delay (lines that don't move keep theirs). */
-  private split(k: number): void {
-    const d = this.delay[k] as number;
-    const di = (d - 0.5) | 0;
-    const f = d - di;
-    this.whole[k] = di;
-    this.coef[k] = (1 - f) / (1 + f);
+  /** whole/coefficient for a line's current delay (lines that don't move keep theirs). */
+  private splitDelay(line: number): void {
+    const delay = this.lineDelay[line] as number;
+    const whole = (delay - 0.5) | 0;
+    const fraction = delay - whole;
+    this.delayWhole[line] = whole;
+    this.delayAllpassCoefficient[line] = (1 - fraction) / (1 + fraction);
   }
 
   /** Line lengths, per-line gains and shelves, and the input level for the smoothed params. */
-  private coefficients(): void {
-    const sr = this.sr;
-    const scale = MIN_SCALE + (1 - MIN_SCALE) * this.size;
-    const rt = this.decay;
-    const rtLow = rt * LOW_RATIO;
-    const rtHigh = rt * (1 - HIGH_DAMP * this.damping);
-    const highLevel = HIGH_LEVEL * (1 - 0.5 * this.damping);
-    const sh = this.shelf;
+  private computeCoefficients(): void {
+    const sampleRate = this.sampleRate;
+    const sizeScale = MIN_SIZE_SCALE + (1 - MIN_SIZE_SCALE) * this.size;
+    const decaySec = this.decay;
+    const lowDecaySec = decaySec * LOW_BAND_RATIO;
+    const highDecaySec = decaySec * (1 - HIGH_BAND_DAMPING * this.damping);
+    const highLevel = HIGH_BAND_LEVEL * (1 - 0.5 * this.damping);
+    const shelves = this.shelfCoefficients;
     // The input shelf goes through the scratch slots past the lines' coefficients.
-    shelfInto(sh, 4 * N, 1, highLevel, this.omegaHigh);
-    const inB0 = sh[4 * N] as number;
-    const inB1 = sh[4 * N + 1] as number;
-    this.inB0 = inB0;
-    this.inB1 = inB1;
+    shelfInto(shelves, INPUT_SHELF_AT, 1, highLevel, this.highShelfOmega);
+    const inputB0 = shelves[INPUT_SHELF_AT] as number;
+    const inputB1 = shelves[INPUT_SHELF_AT + 1] as number;
+    this.inputShelfB0 = inputB0;
+    this.inputShelfB1 = inputB1;
     let energy = 0;
-    for (let k = 0; k < N; k++) {
-      this.nominal[k] = ((LINE_MS[k] as number) / 1000) * scale * sr;
+    for (let line = 0; line < LINE_COUNT; line++) {
+      this.nominalDelay[line] = ((LINE_MS[line] as number) / 1000) * sizeScale * sampleRate;
       // A round trip also goes through the line's allpass (its delay on average).
-      const len = (this.nominal[k] as number) + (this.loop[k] as Float32Array).length;
+      const roundTripFrames = (this.nominalDelay[line] as number) + (this.loopRings[line] as Float32Array).length;
       // e^(−ln(1000)·len/(RT60·sr)) per round trip: 60 dB down after RT60 seconds.
-      const g = Math.exp((-LN_1000 * len) / (rt * sr));
-      this.gainTo[k] = g;
-      shelfInto(sh, 4 * k, Math.exp((-LN_1000 * len) / (rtLow * sr)) / g, 1, this.omegaLow);
-      shelfInto(sh, 4 * k + 2, 1, Math.exp((-LN_1000 * len) / (rtHigh * sr)) / g, this.omegaHigh);
-      const l0 = sh[4 * k] as number;
-      const l1 = sh[4 * k + 1] as number;
-      const h0 = sh[4 * k + 2] as number;
-      const h1 = sh[4 * k + 3] as number;
+      const gain = Math.exp((-LN_1000 * roundTripFrames) / (decaySec * sampleRate));
+      this.lineGainTarget[line] = gain;
+      const at = COEFFICIENTS_PER_LINE * line;
+      const lowShelfDc = Math.exp((-LN_1000 * roundTripFrames) / (lowDecaySec * sampleRate)) / gain;
+      shelfInto(shelves, at, lowShelfDc, 1, this.lowShelfOmega);
+      const highShelfNyquist = Math.exp((-LN_1000 * roundTripFrames) / (highDecaySec * sampleRate)) / gain;
+      shelfInto(shelves, at + 2, 1, highShelfNyquist, this.highShelfOmega);
+      const lowB0 = shelves[at] as number;
+      const lowB1 = shelves[at + 1] as number;
+      const highB0 = shelves[at + 2] as number;
+      const highB1 = shelves[at + 3] as number;
       // Energy that comes out of this line for a unit impulse into the reverb: Σ G^2k over the round trips.
-      for (let j = 0; j < ENERGY_POINTS; j++) {
-        const c = this.cosW[j] as number;
-        const G2 = g * g * shelfPower(l0, l1, this.aLow, c) * shelfPower(h0, h1, this.aHigh, c);
-        energy += ((this.weightW[j] as number) * shelfPower(inB0, inB1, this.aHigh, c) * G2) / (1 - G2);
+      for (let point = 0; point < ENERGY_POINTS; point++) {
+        const cosine = this.energyCosines[point] as number;
+        const loopGainSquared =
+          gain *
+          gain *
+          shelfPower(lowB0, lowB1, this.lowShelfFeedback, cosine) *
+          shelfPower(highB0, highB1, this.highShelfFeedback, cosine);
+        energy +=
+          ((this.energyWeights[point] as number) *
+            shelfPower(inputB0, inputB1, this.highShelfFeedback, cosine) *
+            loopGainSquared) /
+          (1 - loopGainSquared);
       }
     }
     // The output sums add 8 lines: their 1/√8 is folded in here.
-    energy *= 8 / (N * ENERGY_POINTS);
+    energy *= 8 / (LINE_COUNT * ENERGY_POINTS);
     // ×1.05: measured, the estimate leaves the tail about 0.4 dB short of unit energy.
-    this.inScaleTo = energy > 0 ? 1.05 / Math.sqrt(energy) : 0;
+    this.inputScaleTarget = energy > 0 ? 1.05 / Math.sqrt(energy) : 0;
   }
 
-  private setMix(m: number): void {
-    if (m === this.mixFor) return;
-    this.mixFor = m;
-    this.dryGain = Math.cos(m * HALF_PI);
-    this.wetGain = Math.sin(m * HALF_PI);
+  private setMix(mix: number): void {
+    if (mix === this.cachedMix) return;
+    this.cachedMix = mix;
+    this.dryGain = Math.cos(mix * HALF_PI);
+    this.wetGain = Math.sin(mix * HALF_PI);
   }
 
-  private preFrames(seconds: number): number {
-    const f = seconds * this.sr;
-    const max = this.preSize - 4;
-    return f > 0 ? (f < max ? f : max) : 0;
+  /** The pre-delay in frames, limited to what the buffer holds. */
+  private preDelayFrames(seconds: number): number {
+    const frames = seconds * this.sampleRate;
+    const max = this.preDelaySize - 4;
+    return frames > 0 ? (frames < max ? frames : max) : 0;
   }
 }
 
-/**
- * Writes the feed-forward coefficients b0, b1 (at `at`, `at + 1`) of a first-order shelf with gain
- * `dc` at DC and `nyquist` at Nyquist, corner `omega` = tan(π·f/sr): the bilinear transform of
- * (nyquist·s + dc·Ω)/(s + Ω). Its feedback coefficient is (Ω − 1)/(Ω + 1).
- */
-function shelfInto(out: Float64Array, at: number, dc: number, nyquist: number, omega: number): void {
-  out[at] = (nyquist + dc * omega) / (1 + omega);
-  out[at + 1] = (dc * omega - nyquist) / (1 + omega);
+/** The largest |left| + |right| over the first `count` frames. */
+function peakLevel(left: Float32Array, right: Float32Array, count: number): number {
+  let peak = 0;
+  for (let i = 0; i < count; i++) {
+    const level = Math.abs(left[i] as number) + Math.abs(right[i] as number);
+    if (level > peak) peak = level;
+  }
+  return peak;
 }
 
-/** |H(e^jω)|² of a first-order section (b0 + b1·z⁻¹)/(1 + a1·z⁻¹), given cos ω. */
-function shelfPower(b0: number, b1: number, a1: number, cos: number): number {
-  return (b0 * b0 + b1 * b1 + 2 * b0 * b1 * cos) / (1 + a1 * a1 + 2 * a1 * cos);
+/** Limits a per-frame delay step to ±MAX_GLIDE_STEP. */
+function clampStep(step: number): number {
+  return step > MAX_GLIDE_STEP ? MAX_GLIDE_STEP : step < -MAX_GLIDE_STEP ? -MAX_GLIDE_STEP : step;
 }

@@ -108,8 +108,7 @@ export interface TurnCommand {
 export function chooseTurn(req: BeatRequest, bin: string, host: Host, readText?: ReadText): TurnCommand {
   const argvArgs = cliArgs(req);
   const plan = planSpawn(bin, argvArgs, host, readText);
-  if (fitsCommandLine(plan, host))
-    return { transport: 'argv', args: argvArgs, input: req.text };
+  if (fitsCommandLine(plan, host)) return { transport: 'argv', args: argvArgs, input: req.text };
   return { transport: 'stdin', args: streamArgs(req), input: streamInput(req) };
 }
 

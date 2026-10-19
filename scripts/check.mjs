@@ -54,6 +54,7 @@ if (statics.every((r) => r.code === 0)) {
 }
 
 console.log('\ncheck:');
-for (const r of phases) console.log(`  ${r.code === 0 ? 'ok    ' : 'FAILED'} ${r.label.padEnd(13)} ${r.seconds.toFixed(1)} s`);
+for (const r of phases)
+  console.log(`  ${r.code === 0 ? 'ok    ' : 'FAILED'} ${r.label.padEnd(13)} ${r.seconds.toFixed(1)} s`);
 console.log(`  total ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 process.exit(phases.some((r) => r.code !== 0) || phases.length < 4 ? 1 : 0);

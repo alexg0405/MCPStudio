@@ -19,7 +19,12 @@ const windows = (env: Record<string, string> = {}): Host => ({
   nodePath: 'C:\\Program Files\\nodejs\\node.exe',
 });
 
-const mac: Host = { platform: 'darwin', env: { PATH: '/usr/bin:/opt/tools/bin' }, homeDir: '/Users/ana', nodePath: '/usr/local/bin/node' };
+const mac: Host = {
+  platform: 'darwin',
+  env: { PATH: '/usr/bin:/opt/tools/bin' },
+  homeDir: '/Users/ana',
+  nodePath: '/usr/local/bin/node',
+};
 const linux: Host = { platform: 'linux', env: { PATH: '/usr/bin' }, homeDir: '/home/ana', nodePath: '/usr/bin/node' };
 
 describe('the PATH', () => {
@@ -157,7 +162,11 @@ describe('starting a command', () => {
 
   it('runs a Windows .exe directly, with no shell', () => {
     const plan = planSpawn('C:\\Users\\ana\\.local\\bin\\claude.exe', ['auth', 'status'], windows());
-    expect(plan).toMatchObject({ command: 'C:\\Users\\ana\\.local\\bin\\claude.exe', args: ['auth', 'status'], throughCmd: false });
+    expect(plan).toMatchObject({
+      command: 'C:\\Users\\ana\\.local\\bin\\claude.exe',
+      args: ['auth', 'status'],
+      throughCmd: false,
+    });
   });
 
   it('reads the target of an npm .cmd shim and runs a script with this server\u2019s own Node', () => {
@@ -186,7 +195,12 @@ describe('starting a command', () => {
   });
 
   it('sends any other batch file through cmd.exe with every argument quoted', () => {
-    const plan = planSpawn('C:\\tools\\my tool.cmd', ['-p', 'say "hi" & more', ''], windows(), () => '@echo off\r\nfoo\r\n');
+    const plan = planSpawn(
+      'C:\\tools\\my tool.cmd',
+      ['-p', 'say "hi" & more', ''],
+      windows(),
+      () => '@echo off\r\nfoo\r\n',
+    );
     expect(plan.command).toBe('C:\\Windows\\System32\\cmd.exe');
     expect(plan.throughCmd).toBe(true);
     expect(plan.windowsVerbatimArguments).toBe(true);

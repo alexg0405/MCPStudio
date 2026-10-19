@@ -86,14 +86,21 @@ function openBrowser() {
 
 /** The installed app opens in its own window. Not installed (or not findable): the browser tab, with the way to install. */
 function openInstalledApp() {
-  const installed = installedAppPath({ platform: process.platform, env: process.env, homeDir: homedir(), exists: existsSync });
+  const installed = installedAppPath({
+    platform: process.platform,
+    env: process.env,
+    homeDir: homedir(),
+    exists: existsSync,
+  });
   if (installed) {
     console.log('Opening the installed AGstudio app.');
     openWithSystem(installed);
     return;
   }
   openBrowser();
-  console.log("To install it as an app: Help > Install AGstudio as an app (or the install icon in Chrome's or Edge's address bar).");
+  console.log(
+    "To install it as an app: Help > Install AGstudio as an app (or the install icon in Chrome's or Edge's address bar).",
+  );
   console.log(`The app belongs to ${url}: keep using port ${port} for it.`);
 }
 
@@ -111,7 +118,12 @@ function runNodeScript(script, args, env = process.env) {
 /** `npm ci` (the first run). npm's own script is run with this Node, so no shell and no `npm.cmd` is involved. */
 async function installDependencies() {
   console.log('First run: installing dependencies…');
-  const cli = npmCliPath({ platform: process.platform, execPath: process.execPath, env: process.env, exists: existsSync });
+  const cli = npmCliPath({
+    platform: process.platform,
+    execPath: process.execPath,
+    env: process.env,
+    exists: existsSync,
+  });
   if (cli) return runNodeScript(cli, ['ci']);
   // npm's script was not found next to Node: ask the PATH for `npm` (on Windows a .cmd file, which needs the shell).
   return new Promise((resolve) => {
@@ -154,7 +166,9 @@ async function main() {
   if (mode === 'app') env.APP_PORT = port;
   else env.PORT = port;
   console.log(
-    mode === 'app' ? `Serving the AGstudio app at ${url} (Ctrl+C to stop)…` : `Starting AGstudio at ${url} (Ctrl+C to stop)…`,
+    mode === 'app'
+      ? `Serving the AGstudio app at ${url} (Ctrl+C to stop)…`
+      : `Starting AGstudio at ${url} (Ctrl+C to stop)…`,
   );
 
   const server = spawn(process.execPath, [viteCli, ...serverArgs], { cwd: repo, env, stdio: 'inherit' });

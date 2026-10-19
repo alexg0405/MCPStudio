@@ -100,7 +100,10 @@ const UNIX_ARGUMENT_LIMIT_BYTES = 100_000;
 const UNIX_TOTAL_LIMIT_BYTES = 500_000;
 
 /** True when this command can safely be started with these arguments on this system (a longer one risks E2BIG or a failed start). */
-export function fitsCommandLine(plan: Pick<SpawnPlan, 'command' | 'args' | 'throughCmd'>, host: Pick<Host, 'platform'>): boolean {
+export function fitsCommandLine(
+  plan: Pick<SpawnPlan, 'command' | 'args' | 'throughCmd'>,
+  host: Pick<Host, 'platform'>,
+): boolean {
   const parts = [plan.command, ...plan.args];
   if (host.platform === 'win32') {
     // Windows counts UTF-16 characters of the one command line string, with two quotes and a space per argument.

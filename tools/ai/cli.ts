@@ -38,12 +38,19 @@ function stopCommand(child: ReturnType<typeof spawn>, plan: SpawnPlan, signal: '
   // Already finished (the grace timer fires after a clean stop): its process id may belong to something else by now.
   if (child.exitCode !== null || child.signalCode !== null) return;
   if (plan.throughCmd && child.pid !== undefined) {
-    spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true }).on('error', () => {});
+    spawn('taskkill', ['/pid', String(child.pid), '/t', '/f'], { stdio: 'ignore', windowsHide: true }).on(
+      'error',
+      () => {},
+    );
     return;
   }
   child.kill(signal);
 }
 
+/**
+ * Runs a command line tool once: `input` goes to its stdin, what it prints is collected, and it is stopped on `signal`
+ * or after `timeoutMs`. How the program is started on this system is `planSpawn`'s business (no shell on Windows).
+ */
 export function run(
   bin: string,
   args: string[],

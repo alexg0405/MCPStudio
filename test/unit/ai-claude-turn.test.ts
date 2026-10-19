@@ -21,7 +21,11 @@ const REAL_SIZE_REQUEST: BeatRequest = {
   session: null,
   // The server accepts up to 60 000 characters of system prompt; the beat schema is about 76 KB.
   system: `${'You are the beat assistant. '.repeat(2100)}`.slice(0, 59_000),
-  schema: { type: 'object', additionalProperties: false, properties: { notes: { type: 'string', description: 'x'.repeat(76_000) } } },
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: { notes: { type: 'string', description: 'x'.repeat(76_000) } },
+  },
   text: '<request>dark trap</request>',
 };
 
@@ -42,13 +46,20 @@ describe('choosing how to send a turn', () => {
     expect(turn.args.join(' ').length).toBeLessThan(500);
     expect(turn.args).not.toContain('--system-prompt');
     expect(turn.args).not.toContain('--json-schema');
-    expect(turn.args).toEqual(expect.arrayContaining(['--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose']));
+    expect(turn.args).toEqual(
+      expect.arrayContaining(['--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose']),
+    );
   });
 
   it('Windows: even a short turn is sent as arguments only when it fits in cmd.exe\u2019s limit too', () => {
     const exe = chooseTurn(SMALL_REQUEST, 'C:\\Users\\ana\\.local\\bin\\claude.exe', windows);
     expect(exe.transport).toBe('argv');
-    const shimThatNeedsCmd = chooseTurn({ ...SMALL_REQUEST, system: 'x'.repeat(9_000) }, 'C:\\npm\\claude.cmd', windows, () => null);
+    const shimThatNeedsCmd = chooseTurn(
+      { ...SMALL_REQUEST, system: 'x'.repeat(9_000) },
+      'C:\\npm\\claude.cmd',
+      windows,
+      () => null,
+    );
     expect(shimThatNeedsCmd.transport).toBe('stdin');
   });
 
@@ -69,7 +80,10 @@ describe('the stdin transport', () => {
   it('carries the system prompt and the schema in the initialize message, then the request as one user message', () => {
     const lines = streamInput(REAL_SIZE_REQUEST).trimEnd().split('\n');
     expect(lines).toHaveLength(2);
-    const init = JSON.parse(lines[0] as string) as { type: string; request: { subtype: string; systemPrompt: string[]; jsonSchema: unknown } };
+    const init = JSON.parse(lines[0] as string) as {
+      type: string;
+      request: { subtype: string; systemPrompt: string[]; jsonSchema: unknown };
+    };
     expect(init.type).toBe('control_request');
     expect(init.request.subtype).toBe('initialize');
     expect(init.request.systemPrompt).toEqual([REAL_SIZE_REQUEST.system]);

@@ -295,7 +295,7 @@ use seeded RNGs (`Rng`, kit sounds seeded from their name, plugin noise from the
 ready before the chunk that plays it (`prepareOffline`); and **nothing sums three or more signals through a plain
 fan-in**. Chrome adds the inputs of a node in an order that changes from run to run, and float addition is not
 associative, so a node with three audible inputs (overlapping drum voices, channels into an insert, inserts into the
-master, the oscillators of a synth voice) renders differently by one float step each time. `OrderedMix`
+master, the oscillators of a synth voice, the overlapping hits and clicks of the 808) renders differently by one float step each time. `OrderedMix`
 (`src/sdk/ordered-mix.ts`) is the fix: on an offline context it puts the sources on a ladder of unity-gain stages with at
 most two inputs each (two inputs add the same either way), in the order they were attached; on a live context it connects
 directly, so playback costs nothing extra. `GraphVoices` uses it for its voices, `InsertBus` for `chIn` and `routeIn`

@@ -2,7 +2,7 @@
  * The 808's mono voice handling: one sine voice per hit, legato glides inside it, and rescheduling
  * when late events change the performance (see legato.ts for the rules and why).
  */
-import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, type ParamSignal } from '@agstudio/sdk';
+import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, OrderedMix, type ParamSignal } from '@agstudio/sdk';
 import { firstDifference, LegatoTracker, type LegatoAction, type NoteAction, type Phrase } from './legato';
 
 /** Attack ramp of a hit (the sine starts at zero phase, so this only rounds the corner). */
@@ -64,13 +64,15 @@ class Voice {
   private readonly env: Lane;
   private readonly level: Lane;
   private readonly untune: () => void;
+  /** Take the voice's sound (and its click) out of the destination's mix. */
+  private readonly detach: Array<() => void> = [];
   private releaseAt = Infinity;
   private chokeAt = Infinity;
   private chokeLength = 0;
 
   constructor(
     ac: BaseAudioContext,
-    destination: AudioNode,
+    destination: OrderedMix,
     tune: ParamSignal,
     a: NoteAction,
     t: number,
@@ -89,7 +91,8 @@ class Voice {
     this.osc = new OscillatorNode(ac, { type: 'sine', frequency: f, detune: punch });
     this.amp = new GainNode(ac, { gain: 0 });
     this.vel = new GainNode(ac, { gain: a.velocity });
-    this.osc.connect(this.amp).connect(this.vel).connect(destination);
+    this.osc.connect(this.amp).connect(this.vel);
+    this.detach.push(destination.attach(this.vel));
     this.untune = tune.connect(this.osc.detune);
     this.freq = new Lane(this.osc.frequency, f);
     this.pitch = new Lane(this.osc.detune, punch);
@@ -102,7 +105,8 @@ class Voice {
     if (s.click > 0) {
       this.click = new AudioBufferSourceNode(ac, { buffer: clickBuffer });
       this.clickGain = new GainNode(ac, { gain: s.click * a.velocity * CLICK_LEVEL });
-      this.click.connect(this.clickGain).connect(destination);
+      this.click.connect(this.clickGain);
+      this.detach.push(destination.attach(this.clickGain));
       this.click.start(t);
     } else {
       this.click = null;
@@ -151,6 +155,7 @@ class Voice {
       }
     }
     this.untune();
+    for (const detach of this.detach) detach();
     for (const n of [this.osc, this.amp, this.vel, this.click, this.clickGain]) n?.disconnect();
   }
 
@@ -191,7 +196,12 @@ export class MonoBass {
   /** Voices cut by a hard all-notes-off, fading out. */
   private dying: Voice[] = [];
 
-  constructor(private readonly o: MonoBassOptions) {}
+  /** Adds the voices (and their clicks) up in a fixed order, so an offline render repeats bit for bit. */
+  private readonly mix: OrderedMix;
+
+  constructor(private readonly o: MonoBassOptions) {
+    this.mix = new OrderedMix(o.audioContext, o.destination);
+  }
 
   /** Tracked notes and live voices (diagnostics and tests). */
   get stats(): { notes: number; voices: number } {
@@ -221,6 +231,7 @@ export class MonoBass {
 
   dispose(): void {
     for (const v of [...this.voices, ...this.dying]) v.dispose();
+    this.mix.dispose();
     this.voices = [];
     this.dying = [];
     this.tracker.clear();
@@ -299,7 +310,7 @@ export class MonoBass {
     const t = this.contextTime(a.time, now);
     if (previous && previous.stopAt > t) previous.choke(t, CHOKE);
     const o = this.o;
-    return new Voice(o.audioContext, o.destination, o.tune, a, t, o.settings(t), o.click);
+    return new Voice(o.audioContext, this.mix, o.tune, a, t, o.settings(t), o.click);
   }
 
   /** Takes a voice out of the performance from `at` on: unplayed voices go at once, others fade. */

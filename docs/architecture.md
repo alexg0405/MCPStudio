@@ -68,6 +68,8 @@ does):
   tool or layer.
 - **Shell** (`ui/shell`): `MenuBar.tsx` and `MenuDropdown.tsx` (submenus, dynamic entries, command rows);
   `HoverTip.tsx` owns the element and `hover-tip.ts` the delays and gaps.
+- **Actions** (`app/actions`): the pitch renderer is `PitchRenderer` in `pitch-render.ts` (with `pitch-clip.ts` for the clip
+  lookup and error type; `pitch.ts` keeps the door); the arranger's `transitionInDraft` is `app/arrange/transition.ts`.
 - **Engine** (`src/engine`): `engine.ts` is the facade; see the list under [Graph](#graph) for what each file does.
 
 ## Data model (`src/core/model`)

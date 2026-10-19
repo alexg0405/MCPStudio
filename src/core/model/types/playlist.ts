@@ -72,8 +72,48 @@ export interface AudioClip extends ClipBase {
    * sample stays as it was. Absent = untouched. (See core/audio/pitch-edit.ts.)
    */
   pitchEdit?: PitchEdit;
+  // ---- Vocal cleanup (one block: noise reduction, breath control and click removal; see core/audio/cleanup) ----
+  /**
+   * The Clean up vocal window's settings for this clip. A render of them (written through the sample store) is what the
+   * pitch edit, and without one the clip, plays; the channel's own sample stays as it was. Absent = untouched.
+   */
+  cleanup?: VocalCleanup;
+  // ---- end of vocal cleanup ----
   /** Set when the clip is one take of a recording, or a piece of its comp (takes and comping). */
   take?: TakeTag;
+}
+
+/** A breath found in a clip's sample (seconds on the sample's own timeline). */
+export interface BreathSpan {
+  from: number;
+  to: number;
+  /** The musician left this one as it was (a marker they switched off). */
+  off?: true;
+}
+
+/** What the Clean up vocal window sets for one clip (any section absent = off). */
+export interface VocalCleanup {
+  /** Noise reduction: how far the noise goes down (dB) and how firmly a sound must rise above it to be kept (0–1). */
+  noise?: {
+    amountDb: number;
+    sensitivity: number;
+    /** The quiet stretch of the sample (seconds) the noise was learned from; absent = the render finds the quietest half second. */
+    from?: number;
+    to?: number;
+  };
+  /** Breath control: how far breaths go down (dB; 60 removes them), how many are found (0–1) and the ones found. */
+  breaths?: {
+    reduceDb: number;
+    sensitivity: number;
+    /** Absent until the render has looked; then the breaths it found (the musician can switch each off). */
+    spans?: BreathSpan[];
+  };
+  /** Mouth-click removal: 0–1, how small a click still counts. */
+  clicks?: { sensitivity: number };
+  /** The sample (in `Project.samples`) holding the render of these settings; absent while it is not made yet. */
+  renderedSampleId?: SampleId;
+  /** The `cleanupSignature` of the settings `renderedSampleId` was made from (it is out of date when they differ). */
+  renderedFor?: string;
 }
 
 /**

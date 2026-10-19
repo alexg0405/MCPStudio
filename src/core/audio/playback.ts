@@ -65,12 +65,50 @@ export function playbackKey(ch: ModeFields & Pick<AudioClipChannel, 'sampleId'>)
 }
 
 /**
- * The sample a clip plays: the render of its pitch correction (`pitchEdit.renderedSampleId`, see
- * pitch-edit.ts) when it has one, else the channel's own. Both share one timeline (the render is
- * as long as the original), so trims, fades and tempo follow work on either.
+ * The clip edit chain. A clip's sound goes through stages in a fixed order, each an optional field of the clip whose
+ * render (a whole new sample on the same timeline as the recording, written through the sample store) replaces
+ * the channel's own sample as the next stage's input:
+ *
+ *     channel sample → cleanup (`clip.cleanup`) → pitch edit (`clip.pitchEdit`) → the clip's gain and fades
+ *
+ * Every stage keeps the recording's length and timeline, so trims, fades, splits and tempo follow work on any of them.
+ * `clipSourceSampleId(channel, clip, 'pitch')` is the sample the pitch stage reads; `clipSampleId` the one the clip plays.
+ * A stage added later goes in `STAGES` at its place in the order; nothing else here changes.
  */
-export function clipSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: Pick<AudioClip, 'pitchEdit'> | undefined): SampleId {
-  return clip?.pitchEdit?.renderedSampleId ?? channel.sampleId;
+type ClipStageFields = Pick<AudioClip, 'pitchEdit' | 'cleanup'>;
+
+/** The stages in the order they run, each with the render it leaves (absent while it has none). */
+const STAGES: readonly { id: ClipStage; render: (clip: ClipStageFields) => SampleId | undefined }[] = [
+  { id: 'cleanup', render: (clip) => clip.cleanup?.renderedSampleId },
+  { id: 'pitch', render: (clip) => clip.pitchEdit?.renderedSampleId },
+];
+
+/** A stage of the clip edit chain. */
+export type ClipStage = 'cleanup' | 'pitch';
+
+/** The sample that `stage` reads: the render of the last stage before it that has one, else the channel's own. */
+export function clipSourceSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: ClipStageFields | undefined, stage: ClipStage): SampleId {
+  let source = channel.sampleId;
+  for (const s of STAGES) {
+    if (s.id === stage) break;
+    const render = clip ? s.render(clip) : undefined;
+    if (render) source = render;
+  }
+  return source;
+}
+
+/**
+ * The sample a clip plays: the render of the last stage of its edit chain that has one (pitch correction after
+ * cleanup), else the channel's own. All share one timeline (a render is as long as the original), so trims, fades
+ * and tempo follow work on any of them.
+ */
+export function clipSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: ClipStageFields | undefined): SampleId {
+  let played = channel.sampleId;
+  for (const s of STAGES) {
+    const render = clip ? s.render(clip) : undefined;
+    if (render) played = render;
+  }
+  return played;
 }
 
 /** Source seconds per tick in the tempo-locked modes. */

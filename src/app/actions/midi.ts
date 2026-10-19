@@ -5,6 +5,7 @@
  * changes become a tempo automation clip. Export: the song (what plays, swing included) or the
  * current pattern, one track per channel; kit channels go out as GM drums.
  */
+import type { Draft } from 'immer';
 import { tempoMapOf } from '@core/automation/tempo';
 import { parseMidi, writeMidi, MidiError, type MidiFileData, type MidiNote, type MidiWriteTrack } from '@core/io/midi';
 import { makePattern, paletteColor } from '@core/model/defaults';
@@ -14,6 +15,7 @@ import {
   type AutomationClip,
   type ChannelId,
   type InstrumentChannel,
+  type LaneId,
   type Note,
   type PatternClip,
   type PatternId,
@@ -28,7 +30,7 @@ import { ticksPerBar } from '@core/time/ppq';
 import { collectNotes, songModeSource, type NoteEvent } from '@engine/sched/events';
 import { downloadBytes, pickSaveMidiFile, uploadFile } from '@platform/fs-access';
 import { defaultValues, type PluginDef } from '@agstudio/sdk';
-import { BASS808_ID, SYNTH } from '../assistant/palette';
+import { SYNTH } from '../assistant/palette';
 import { instrumentChannelFor, kitSampleRef, SAMPLER_ID } from '../default-project';
 import type { Services } from '../services';
 
@@ -97,6 +99,12 @@ function gmInstrument(program: number | undefined): [string, Record<string, numb
   return ['agstudio.3xosc', SYNTH.lead ?? null, 'Lead'];
 }
 
+/** The shortest note an import makes, in ticks: zero-length MIDI notes would be silent and unselectable. */
+const MIN_NOTE_TICKS = 10;
+/** A pattern's step grid covers its bars at 16 steps a bar, within these limits. */
+const MIN_STEP_COUNT = 16;
+const MAX_STEP_COUNT = 512;
+
 export interface MidiImportOptions {
   /** One pattern per track (true) or everything in one pattern. */
   split: boolean;
@@ -162,6 +170,158 @@ function partsOf(data: MidiFileData, fileName: string): { parts: Part[]; skipped
   return { parts, skipped };
 }
 
+/** A part and the channel that plays it. `make` (and `sample` for a kit sound) are set only when the channel is new. */
+interface PlannedPart {
+  part: Part;
+  channelId: ChannelId;
+  make?: InstrumentChannel;
+  sample?: ReturnType<typeof kitSampleRef>;
+}
+
+/** The project's own sampler channel that plays this kit sound, if it has one. */
+function findKitChannel(project: Project, kit: string): ChannelId | undefined {
+  return project.channelOrder.find((id) => {
+    const ch = project.channels[id];
+    if (ch?.kind !== 'instrument' || ch.plugin.pluginId !== SAMPLER_ID) return false;
+    const ref = ch.plugin.samples?.main ? project.samples[ch.plugin.samples.main] : undefined;
+    return ref?.source.kind === 'builtin' && ref.source.generator === kit;
+  });
+}
+
+/**
+ * Picks a channel for every part: drum parts reuse the project's kit channels (or get a new sampler
+ * channel), everything else gets a new instrument by GM family. A part whose plugin is missing is dropped.
+ */
+function planChannels(s: Services, project: Project, parts: readonly Part[]): PlannedPart[] {
+  const sampler = s.plugins.get(SAMPLER_ID);
+  const planned: PlannedPart[] = [];
+  let nextChannelIndex = project.channelOrder.length;
+  for (const part of parts) {
+    if (part.drum) {
+      const existing = findKitChannel(project, part.drum);
+      if (existing) {
+        planned.push({ part, channelId: existing });
+        continue;
+      }
+      if (!sampler) continue;
+      const sample = kitSampleRef(part.drum);
+      const channel = instrumentChannelFor(sampler, sample.name, nextChannelIndex++, { main: sample.id });
+      planned.push({ part, channelId: channel.id, make: channel, sample });
+      continue;
+    }
+    const [pluginId, settings, kind] = gmInstrument(part.program);
+    const def: PluginDef | undefined = s.plugins.get(pluginId) ?? s.plugins.get('agstudio.3xosc');
+    if (!def) continue;
+    const channel = instrumentChannelFor(def, part.name || kind, nextChannelIndex++);
+    if (settings && def.id === 'agstudio.3xosc') channel.plugin.params = { ...defaultValues(def.params), ...settings };
+    planned.push({ part, channelId: channel.id, make: channel });
+  }
+  return planned;
+}
+
+/** Groups the parts by the MIDI track they came from (one group per pattern), or all into one group. */
+function groupForPatterns(planned: readonly PlannedPart[], split: boolean): Map<number, PlannedPart[]> {
+  const groups = new Map<number, PlannedPart[]>();
+  for (const item of planned) {
+    const key = split ? item.part.track : 0;
+    const list = groups.get(key) ?? [];
+    list.push(item);
+    groups.set(key, list);
+  }
+  return groups;
+}
+
+/** Adds the channels (and their kit samples) the plan says are new. */
+function addPlannedChannels(d: Draft<Project>, planned: readonly PlannedPart[], result: MidiImportResult): void {
+  for (const item of planned) {
+    if (!item.make) continue;
+    if (item.sample && !d.samples[item.sample.id]) addSample(d, item.sample);
+    addChannel(d, item.make);
+    result.channels.push(item.channelId);
+  }
+}
+
+/** Takes over the file's tempo and time signature. */
+function applyFileTempo(d: Draft<Project>, data: MidiFileData): void {
+  const firstBpm = data.tempos[0]?.bpm;
+  if (firstBpm) setBpm(d, firstBpm);
+  if (data.timeSig) d.transport.timeSig = { ...data.timeSig };
+}
+
+/**
+ * Adds one pattern holding every part of the group, sized to whole bars. Drum notes play the channel's
+ * own root key (a kit channel holds one sound). Returns the new pattern's id and length in ticks.
+ */
+function addPatternFor(d: Draft<Project>, group: readonly PlannedPart[], name: string, bar: number, result: MidiImportResult): { id: PatternId; length: number } {
+  const id = newId.pattern();
+  addPattern(d, makePattern(name, paletteColor(d.patternOrder.length), id));
+  let end = 0;
+  for (const item of group) {
+    const ch = d.channels[item.channelId];
+    if (!ch || ch.kind !== 'instrument') continue;
+    const notes: Note[] = item.part.notes.map((n) => ({
+      id: newId.note(),
+      tick: n.tick,
+      length: Math.max(MIN_NOTE_TICKS, n.length),
+      key: item.part.drum ? ch.rootKey : n.key,
+      velocity: n.velocity,
+    }));
+    for (const n of notes) end = Math.max(end, n.tick + n.length);
+    addNotes(d, id, item.channelId, notes);
+    result.notes += notes.length;
+  }
+  const pattern = d.patterns[id]!;
+  const length = Math.max(bar, Math.ceil(end / bar) * bar);
+  pattern.length = length;
+  pattern.stepCount = Math.min(MAX_STEP_COUNT, Math.max(MIN_STEP_COUNT, Math.round((length / bar) * 16)));
+  return { id, length };
+}
+
+/** Puts a pattern on the playlist from the song's start. */
+function placePattern(d: Draft<Project>, patternId: PatternId, length: number, laneId: LaneId): void {
+  const clip: PatternClip = {
+    kind: 'pattern',
+    id: newId.clip(),
+    laneId,
+    start: 0,
+    length,
+    patternId,
+    offset: 0,
+  };
+  addClips(d, [clip]);
+}
+
+/** Tempo changes during the song become a tempo automation clip (hold steps between changes). */
+function addTempoClip(d: Draft<Project>, data: MidiFileData, patternIds: readonly PatternId[], bar: number, laneId: LaneId | undefined): void {
+  const bpms = data.tempos.map((t) => t.bpm);
+  const min = Math.max(10, Math.floor(Math.min(...bpms) - 1));
+  const max = Math.min(522, Math.ceil(Math.max(...bpms) + 1));
+  const span = Math.max(1, max - min);
+  const channel: AutomationChannel = {
+    kind: 'automation',
+    id: newId.channel(),
+    name: 'Tempo',
+    color: '#4fa6a6',
+    muted: false,
+    solo: false,
+    target: { kind: 'tempo' },
+    range: { min, max },
+    points: data.tempos.map((t) => ({ tick: t.tick, value: (t.bpm - min) / span, shape: 'hold' as const })),
+  };
+  addChannel(d, channel);
+  if (!laneId) return;
+  const clip: AutomationClip = {
+    kind: 'automation',
+    id: newId.clip(),
+    laneId,
+    start: 0,
+    length: Math.max(...patternIds.map((p) => d.patterns[p]?.length ?? bar)),
+    channelId: channel.id,
+    offset: 0,
+  };
+  addClips(d, [clip]);
+}
+
 /** Imports a parsed MIDI file as one undo step. */
 export function importMidi(
   s: Services,
@@ -175,141 +335,26 @@ export function importMidi(
   const result: MidiImportResult = { patterns: [], channels: [], notes: 0, skipped };
   if (parts.length === 0) return result;
 
-  // Channels: drum parts reuse the project's kit channels; everything else gets a new channel.
-  const kitChannel = (kit: string): ChannelId | undefined =>
-    project.channelOrder.find((id) => {
-      const ch = project.channels[id];
-      if (ch?.kind !== 'instrument' || ch.plugin.pluginId !== SAMPLER_ID) return false;
-      const ref = ch.plugin.samples?.main ? project.samples[ch.plugin.samples.main] : undefined;
-      return ref?.source.kind === 'builtin' && ref.source.generator === kit;
-    });
-  const sampler = s.plugins.get(SAMPLER_ID);
-  const made: {
-    part: Part;
-    channelId: ChannelId;
-    make?: InstrumentChannel;
-    sample?: ReturnType<typeof kitSampleRef>;
-  }[] = [];
-  let index = project.channelOrder.length;
-  for (const part of parts) {
-    if (part.drum) {
-      const existing = kitChannel(part.drum);
-      if (existing) {
-        made.push({ part, channelId: existing });
-        continue;
-      }
-      if (!sampler) continue;
-      const sample = kitSampleRef(part.drum);
-      const ch = instrumentChannelFor(sampler, sample.name, index++, { main: sample.id });
-      made.push({ part, channelId: ch.id, make: ch, sample });
-      continue;
-    }
-    const [pluginId, settings, kind] = gmInstrument(part.program);
-    const def: PluginDef | undefined = s.plugins.get(pluginId) ?? s.plugins.get('agstudio.3xosc');
-    if (!def) continue;
-    const ch = instrumentChannelFor(def, part.name || kind, index++);
-    if (settings && def.id === 'agstudio.3xosc') ch.plugin.params = { ...defaultValues(def.params), ...settings };
-    made.push({ part, channelId: ch.id, make: ch });
-  }
-  void BASS808_ID;
-
+  const planned = planChannels(s, project, parts);
   const bar = ticksPerBar(opts.tempo && data.timeSig ? data.timeSig : project.transport.timeSig);
-  const groups = new Map<number, typeof made>();
-  for (const m of made) {
-    const key = opts.split ? m.part.track : 0;
-    const list = groups.get(key) ?? [];
-    list.push(m);
-    groups.set(key, list);
-  }
+  const groups = groupForPatterns(planned, opts.split);
 
   s.history.transact(`Import MIDI ${base}`, (d) => {
-    if (opts.tempo) {
-      const first = data.tempos[0]?.bpm;
-      if (first) setBpm(d, first);
-      if (data.timeSig) d.transport.timeSig = { ...data.timeSig };
-    }
-    for (const m of made) {
-      if (!m.make) continue;
-      if (m.sample && !d.samples[m.sample.id]) addSample(d, m.sample);
-      addChannel(d, m.make);
-      result.channels.push(m.channelId);
-    }
-    let lane = 0;
+    if (opts.tempo) applyFileTempo(d, data);
+    addPlannedChannels(d, planned, result);
     // Tracks of a recording's takes hold only that recording: patterns go on the others.
     const trackIds = d.playlist.laneOrder.filter((l) => !d.playlist.lanes[l]?.takes);
-    for (const [track, list] of groups) {
-      const id = newId.pattern();
+    let nextLane = 0;
+    for (const [track, group] of groups) {
       const trackName = data.tracks[track]?.name;
       const name = opts.split && groups.size > 1 ? `${base} – ${trackName || `Track ${track + 1}`}` : base;
-      addPattern(d, makePattern(name, paletteColor(d.patternOrder.length), id));
-      let end = 0;
-      for (const m of list) {
-        const ch = d.channels[m.channelId];
-        if (!ch || ch.kind !== 'instrument') continue;
-        const notes: Note[] = m.part.notes.map((n) => ({
-          id: newId.note(),
-          tick: n.tick,
-          length: Math.max(10, n.length),
-          key: m.part.drum ? ch.rootKey : n.key,
-          velocity: n.velocity,
-        }));
-        for (const n of notes) end = Math.max(end, n.tick + n.length);
-        addNotes(d, id, m.channelId, notes);
-        result.notes += notes.length;
-      }
-      const pat = d.patterns[id]!;
-      pat.length = Math.max(bar, Math.ceil(end / bar) * bar);
-      pat.stepCount = Math.min(512, Math.max(16, Math.round((pat.length / bar) * 16)));
-      result.patterns.push(id);
-      if (opts.place) {
-        const laneId = trackIds[lane++];
-        if (laneId) {
-          const clip: PatternClip = {
-            kind: 'pattern',
-            id: newId.clip(),
-            laneId,
-            start: 0,
-            length: pat.length,
-            patternId: id,
-            offset: 0,
-          };
-          addClips(d, [clip]);
-        }
-      }
+      const pattern = addPatternFor(d, group, name, bar, result);
+      result.patterns.push(pattern.id);
+      if (!opts.place) continue;
+      const laneId = trackIds[nextLane++];
+      if (laneId) placePattern(d, pattern.id, pattern.length, laneId);
     }
-    // Tempo changes during the song: a tempo automation clip (hold steps between changes).
-    if (opts.tempo && opts.place && data.tempos.length > 1) {
-      const bpms = data.tempos.map((t) => t.bpm);
-      const min = Math.max(10, Math.floor(Math.min(...bpms) - 1));
-      const max = Math.min(522, Math.ceil(Math.max(...bpms) + 1));
-      const span = Math.max(1, max - min);
-      const ch: AutomationChannel = {
-        kind: 'automation',
-        id: newId.channel(),
-        name: 'Tempo',
-        color: '#4fa6a6',
-        muted: false,
-        solo: false,
-        target: { kind: 'tempo' },
-        range: { min, max },
-        points: data.tempos.map((t) => ({ tick: t.tick, value: (t.bpm - min) / span, shape: 'hold' as const })),
-      };
-      addChannel(d, ch);
-      const songEnd = Math.max(...result.patterns.map((p) => d.patterns[p]?.length ?? bar));
-      const laneId = trackIds[lane];
-      if (laneId) {
-        const clip: AutomationClip = {
-          kind: 'automation',
-          id: newId.clip(),
-          laneId,
-          start: 0,
-          length: songEnd,
-          channelId: ch.id,
-          offset: 0,
-        };
-        addClips(d, [clip]);
-      }
-    }
+    if (opts.tempo && opts.place && data.tempos.length > 1) addTempoClip(d, data, result.patterns, bar, trackIds[nextLane]);
   });
   const first = result.patterns[0];
   if (first) s.view.getState().setCurrentPattern(first);

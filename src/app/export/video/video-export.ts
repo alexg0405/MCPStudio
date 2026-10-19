@@ -28,7 +28,7 @@ import type { Services } from '../../services';
 import { whileBusy } from '../../storage/busy';
 import { sinkFor, type ExportHooks, type ExportTarget } from '../audio-export';
 import { ExportError } from '../export-wav';
-import { planExport, planSeconds, type ExportRange } from '../plan';
+import { planExport, planSeconds, type ExportPlan, type ExportRange } from '../plan';
 import { renderPass } from '../render-pass';
 import { DEFAULT_VIDEO_THEME, type VideoTheme } from './frames';
 import { NO_WEBCODECS, webCodecsAvailable } from './support';
@@ -159,6 +159,168 @@ export function runVideoExport(
   });
 }
 
+/** Everything one video export shares: what to render, how long it is, how it is encoded, and where progress goes. */
+interface VideoRun {
+  s: Services;
+  project: Project;
+  settings: VideoExportSettings;
+  hooks: ExportHooks;
+  plan: ExportPlan;
+  /** The codec, container and picture size the settings ask for. */
+  codec: ReturnType<typeof workerSettings>;
+  sampleRate: number;
+  /** Seconds of music in the range (the file is this long plus the effect tails). */
+  musicalSeconds: number;
+  musicFrames: number;
+  /** Silence after the music for effect tails, in seconds (measured once, shared by both renders). */
+  tail: number;
+  /** Renders in this run: an optional pass that finds the level, then the real one. Progress is spread over them. */
+  steps: number;
+  /** When the export began (`performance.now()` milliseconds), for the result's `took`. */
+  startedMs: number;
+}
+
+/** Checks the browser and the range, stops playback and measures the tail (rejects with a plain message when it can't go on). */
+async function prepareVideoRun(s: Services, project: Project, settings: VideoExportSettings, hooks: ExportHooks): Promise<VideoRun> {
+  if (!webCodecsAvailable()) throw new ExportError(NO_WEBCODECS);
+  const startedMs = performance.now();
+  const plan = planExport(project, s.view.getState(), settings.range);
+  if ('error' in plan) throw new ExportError(plan.error);
+  s.engine.stop();
+  const sampleRate = MUSIC_AUDIO_RATE;
+  const musicalSeconds = planSeconds(project, plan);
+  const codec = workerSettings(settings);
+  const tail = await measureTail(project, { plugins: s.plugins, sampleCache: s.sampleCache }, sampleRate);
+  hooks.signal?.throwIfAborted();
+  return {
+    s,
+    project,
+    settings,
+    hooks,
+    plan,
+    codec,
+    sampleRate,
+    musicalSeconds,
+    musicFrames: Math.ceil(musicalSeconds * sampleRate),
+    tail,
+    steps: settings.normalize ? 2 : 1,
+    startedMs,
+  };
+}
+
+/** Reports progress for render number `step` (0 first) as a share of the whole export. */
+function reportStep(run: VideoRun, step: number, fraction: number, stage: 'render' | 'encode', label: string): void {
+  run.hooks.onProgress?.({ stage, fraction: Math.min(0.99, (step + fraction) / run.steps), label });
+}
+
+/** The beat grid of the range, from the same tempo map the render follows. */
+function beatsOfRange({ project, plan }: VideoRun) {
+  const tempo = tempoMapOf(project, plan.mode);
+  const ts = project.transport.timeSig;
+  const toTick = plan.fromTick + plan.bars * ticksPerBar(ts);
+  return beatGrid(tempo, ts, plan.fromTick, toTick);
+}
+
+/**
+ * Normalize: a first render that only finds the peak. Returns the gain that brings it to the export's level and
+ * the frames kept (the real render keeps exactly as many). Without normalize: no gain, no fixed length.
+ */
+async function findLevel(run: VideoRun): Promise<{ gain: number; length: number | undefined }> {
+  if (!run.settings.normalize) return { gain: 1, length: undefined };
+  let peak = 0;
+  const length = await renderPass(
+    {
+      s: run.s,
+      project: run.project,
+      plan: run.plan,
+      sampleRate: run.sampleRate,
+      tail: run.tail,
+      musicFrames: run.musicFrames,
+      limiter: true,
+      signal: run.hooks.signal,
+      onRender: (f) => reportStep(run, 0, f, 'render', 'the audio (to find its level)'),
+    },
+    async (piece) => {
+      for (const c of piece) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i] as number));
+    },
+  );
+  return { gain: normalizeGain(peak), length };
+}
+
+/** The picture to draw behind everything, decoded (null when none was chosen). */
+async function loadBackgroundImage(settings: VideoExportSettings): Promise<ImageBitmap | null> {
+  if (!settings.image) return null;
+  const image = await createImageBitmap(settings.image).catch(() => null);
+  if (!image) throw new ExportError('That picture could not be read. Choose a JPEG, PNG, WebP or GIF image.');
+  return image;
+}
+
+/** What the Worker needs to draw and encode this video. */
+function sessionConfig(run: VideoRun, beats: ReturnType<typeof beatGrid>): Parameters<typeof openVideoSession>[0] {
+  const { settings, codec } = run;
+  return {
+    format: settings.format,
+    videoCodec: codec.videoCodec,
+    audioCodec: codec.info.audioCodec,
+    width: codec.width,
+    height: codec.height,
+    fps: settings.fps,
+    videoBitrate: codec.videoBitrate,
+    audioBitrate: codec.info.audioBitrate,
+    sampleRate: run.sampleRate,
+    style: settings.style,
+    theme: settings.theme ?? currentVideoTheme(),
+    title: settings.title,
+    artist: settings.artist,
+    beatTimes: beats.times,
+    beatStrong: beats.strong,
+    seconds: run.musicalSeconds,
+    keyframeSeconds: KEYFRAME_SECONDS,
+  };
+}
+
+/** Renders the audio once more, scales it by `gain` and hands it to the Worker, which draws and encodes the pictures. */
+async function renderIntoSession(run: VideoRun, session: VideoSession, gain: number, length: number | undefined): Promise<void> {
+  const step = run.settings.normalize ? 1 : 0;
+  let delivered = 0;
+  let renderFraction = 0;
+  // The render (fast) and the pictures (slower) share the bar: a tenth for the render, the rest for the video.
+  const show = () =>
+    reportStep(
+      run,
+      step,
+      0.1 * renderFraction + 0.9 * Math.min(1, delivered / Math.max(1, run.musicalSeconds * run.sampleRate)),
+      delivered > 0 ? 'encode' : 'render',
+      delivered > 0 ? 'the video' : 'the audio',
+    );
+  await renderPass(
+    {
+      s: run.s,
+      project: run.project,
+      plan: run.plan,
+      sampleRate: run.sampleRate,
+      tail: run.tail,
+      musicFrames: run.musicFrames,
+      limiter: true,
+      length,
+      signal: run.hooks.signal,
+      onRender: (f) => {
+        renderFraction = f;
+        show();
+      },
+    },
+    async (piece) => {
+      // The render's arrays are ours: scaled in place, then handed to the Worker.
+      const own = piece.map((c) => (c.byteOffset === 0 && c.length === c.buffer.byteLength / 4 ? c : c.slice()));
+      if (gain !== 1) for (const c of own) for (let i = 0; i < c.length; i++) c[i] = (c[i] as number) * gain;
+      const frames = own[0]?.length ?? 0;
+      await session.push(own);
+      delivered += frames;
+      show();
+    },
+  );
+}
+
 async function runVideoExportOf(
   s: Services,
   project: Project,
@@ -166,136 +328,31 @@ async function runVideoExportOf(
   target: ExportTarget,
   hooks: ExportHooks,
 ): Promise<VideoExportResult> {
-  if (!webCodecsAvailable()) throw new ExportError(NO_WEBCODECS);
-  const started = performance.now();
-  const plan = planExport(project, s.view.getState(), settings.range);
-  if ('error' in plan) throw new ExportError(plan.error);
-  s.engine.stop();
-  const signal = hooks.signal;
-  const rate = MUSIC_AUDIO_RATE;
-  const musical = planSeconds(project, plan);
-  const musicFrames = Math.ceil(musical * rate);
-  const { info, width, height, videoCodec, videoBitrate: vbr } = workerSettings(settings);
-  const tail = await measureTail(project, { plugins: s.plugins, sampleCache: s.sampleCache }, rate);
-  signal?.throwIfAborted();
-
-  // The beat grid of the range, from the same tempo map the render follows.
-  const tempo = tempoMapOf(project, plan.mode);
-  const ts = project.transport.timeSig;
-  const toTick = plan.fromTick + plan.bars * ticksPerBar(ts);
-  const beats = beatGrid(tempo, ts, plan.fromTick, toTick);
-
-  const steps = settings.normalize ? 2 : 1;
-  const report = (step: number, fraction: number, stage: 'render' | 'encode', label: string) =>
-    hooks.onProgress?.({ stage, fraction: Math.min(0.99, (step + fraction) / steps), label });
-
-  // Normalize: a first render that only finds the peak.
-  let gain = 1;
-  let length: number | undefined;
-  if (settings.normalize) {
-    let peak = 0;
-    length = await renderPass(
-      {
-        s,
-        project,
-        plan,
-        sampleRate: rate,
-        tail,
-        musicFrames,
-        limiter: true,
-        signal,
-        onRender: (f) => report(0, f, 'render', 'the audio (to find its level)'),
-      },
-      async (piece) => {
-        for (const c of piece) for (let i = 0; i < c.length; i++) peak = Math.max(peak, Math.abs(c[i] as number));
-      },
-    );
-    gain = normalizeGain(peak);
-  }
-
-  const image = settings.image ? await createImageBitmap(settings.image).catch(() => null) : null;
-  if (settings.image && !image)
-    throw new ExportError('That picture could not be read. Choose a JPEG, PNG, WebP or GIF image.');
-  const { sink, done } = await sinkFor(target, info.mime);
+  const run = await prepareVideoRun(s, project, settings, hooks);
+  const beats = beatsOfRange(run);
+  const { gain, length } = await findLevel(run);
+  const image = await loadBackgroundImage(settings);
+  const { sink, done } = await sinkFor(target, run.codec.info.mime);
   let session: VideoSession | null = null;
   try {
-    session = await openVideoSession(
-      {
-        format: settings.format,
-        videoCodec,
-        audioCodec: info.audioCodec,
-        width,
-        height,
-        fps: settings.fps,
-        videoBitrate: vbr,
-        audioBitrate: info.audioBitrate,
-        sampleRate: rate,
-        style: settings.style,
-        theme: settings.theme ?? currentVideoTheme(),
-        title: settings.title,
-        artist: settings.artist,
-        beatTimes: beats.times,
-        beatStrong: beats.strong,
-        seconds: musical,
-        keyframeSeconds: KEYFRAME_SECONDS,
-      },
-      sink,
-      image,
-    );
-    const first = settings.normalize ? 1 : 0;
-    let delivered = 0;
-    let renderFraction = 0;
-    // The render (fast) and the pictures (slower) share the bar: a tenth for the render, the rest for the video.
-    const show = () =>
-      report(
-        first,
-        0.1 * renderFraction + 0.9 * Math.min(1, delivered / Math.max(1, musical * rate)),
-        delivered > 0 ? 'encode' : 'render',
-        delivered > 0 ? 'the video' : 'the audio',
-      );
-    const sent = session;
-    await renderPass(
-      {
-        s,
-        project,
-        plan,
-        sampleRate: rate,
-        tail,
-        musicFrames,
-        limiter: true,
-        length,
-        signal,
-        onRender: (f) => {
-          renderFraction = f;
-          show();
-        },
-      },
-      async (piece) => {
-        // The render's arrays are ours: scaled in place, then handed to the Worker.
-        const own = piece.map((c) => (c.byteOffset === 0 && c.length === c.buffer.byteLength / 4 ? c : c.slice()));
-        if (gain !== 1) for (const c of own) for (let i = 0; i < c.length; i++) c[i] = (c[i] as number) * gain;
-        const n = own[0]?.length ?? 0;
-        await sent.push(own);
-        delivered += n;
-        show();
-      },
-    );
-    signal?.throwIfAborted();
+    session = await openVideoSession(sessionConfig(run, beats), sink, image);
+    await renderIntoSession(run, session, gain, length);
+    hooks.signal?.throwIfAborted();
     hooks.onProgress?.({ stage: 'encode', fraction: 0.99, label: 'finishing the file' });
-    const r = await session.finish();
+    const written = await session.finish();
     await done();
     hooks.onProgress?.({ stage: 'encode', fraction: 1 });
     return {
       name: target.name,
-      seconds: r.seconds,
-      frames: r.frames,
-      bytes: r.bytes,
-      took: (performance.now() - started) / 1000,
+      seconds: written.seconds,
+      frames: written.frames,
+      bytes: written.bytes,
+      took: (performance.now() - run.startedMs) / 1000,
     };
   } catch (e) {
     session?.close();
     await sink.abort();
-    if (e instanceof VideoEncodeError && !signal?.aborted) throw new ExportError(e.message);
+    if (e instanceof VideoEncodeError && !hooks.signal?.aborted) throw new ExportError(e.message);
     throw e;
   } finally {
     image?.close();

@@ -71,4 +71,56 @@ describe('sound filters (render faked)', () => {
     expect(project(s)).toBe(other);
     expect(s.history.steps().done).toHaveLength(0);
   });
+
+  /** The song with one earlier edit, so there is an undo step for the Studio's answer to fold the filter into. */
+  async function filterAfterAnEdit(filterId: string) {
+    const { s } = stackedSong();
+    s.history.transact('prior', (d) => {
+      d.meta.title = 'prior';
+    });
+    const before = project(s);
+    const res = await applyFilter(s, filterId, { kind: 'range', from: 4 * BAR, to: 8 * BAR }, { amend: s.history.status().cursor });
+    const p = project(s);
+    return { s, before, p, res, channel: p.channels[res.channelId] as AudioClipChannel, clip: p.playlist.clips[res.clipId]! };
+  }
+
+  it('an effects filter borrows an empty mixer track for its effects and keeps its old name in the record', async () => {
+    const { s, before, p, channel } = await filterAfterAnEdit('lofi');
+    expect(channel.filter?.insert).toMatchObject({ made: false, name: 'Insert 1' });
+    expect(channel.filter?.insert?.slots).toHaveLength(1);
+    expect(Object.keys(p.mixer.inserts)).toHaveLength(Object.keys(before.mixer.inserts).length);
+    expect(p.mixer.inserts[channel.filter!.insert!.id]!.name).toBe('Lo-fi');
+    expect(channel.output).toBe(channel.filter!.insert!.id);
+    expect(removeFilter(s, channel.id).ok).toBe(true);
+    expect(project(s).mixer.inserts[channel.filter!.insert!.id]!.name).toBe('Insert 1');
+  });
+
+  it('Reverse keeps the tempo and plays the part backwards from the part’s own bar, on the track the part was on', async () => {
+    const { before, p, channel, clip } = await filterAfterAnEdit('reverse');
+    expect(channel.reverse).toBe(true);
+    expect(channel.filter?.tempo).toBeUndefined();
+    expect(p.transport).toEqual(before.transport);
+    expect(clip).toMatchObject({ kind: 'audio', start: 4 * BAR, length: 4 * BAR, offsetSec: 0 });
+    expect(p.playlist.laneOrder.indexOf(clip.laneId)).toBe(0);
+    expect(p.playlist.laneOrder).toHaveLength(before.playlist.laneOrder.length);
+  });
+
+  it('a speed filter on a part makes a tempo clip and pitches the audio like a record; the answer’s undo step takes it all', async () => {
+    const { s, p, res, channel } = await filterAfterAnEdit('slowed');
+    expect(channel.pitch).toBeCloseTo(-281.358, 3);
+    expect(channel.filter?.tempo).toMatchObject({ channelId: expect.any(String) });
+    const tempoChannel = p.channels[(channel.filter!.tempo as { channelId: string }).channelId as never];
+    expect(tempoChannel).toMatchObject({ kind: 'automation', target: { kind: 'tempo' } });
+    expect(Object.values(p.playlist.clips).some((c) => c.kind === 'automation' && c.channelId === tempoChannel!.id)).toBe(true);
+    // Folded into the earlier undo step (the Studio answer's), so the history has no extra entry.
+    expect(s.history.steps().done.map((e) => e.label)).toEqual(['prior']);
+    expect([...s.editor.getState().clipSelection]).toEqual([res.clipId]);
+  });
+
+  it('refuses an unknown filter and a part where nothing plays', async () => {
+    const { s } = stackedSong();
+    await expect(applyFilter(s, 'nope', { kind: 'range', from: 0, to: BAR })).rejects.toThrow('There is no filter called “nope”.');
+    await expect(applyFilter(s, 'nightcore', { kind: 'range', from: 500 * BAR, to: 501 * BAR })).rejects.toThrow(/Nothing plays in/);
+    expect(s.history.steps().done).toHaveLength(0);
+  });
 });

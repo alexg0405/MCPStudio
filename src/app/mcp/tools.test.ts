@@ -570,6 +570,52 @@ describe('listening and rendering', () => {
     expect(text(long)).toMatch(/too long/);
   });
 
+  it('the render tools explain a bad bars argument in plain words', async () => {
+    const { call } = setup();
+    const ctx = { ...CLAUDE, ticket: 'tk' } as typeof CLAUDE;
+    for (const tool of ['analyze_mix', 'render_preview', 'export_audio', 'export_video']) {
+      const wrongShape = await call(tool, { bars: 'x' }, ctx);
+      expect(text(wrongShape), tool).toBe('bars must be { from_bar, to_bar }');
+      const backwards = await call(tool, { bars: { from_bar: 4, to_bar: 2 } }, ctx);
+      expect(text(backwards), tool).toBe('to_bar must not be before from_bar');
+      expect(backwards.isError, tool).toBe(true);
+    }
+  });
+
+  it('a failing listen, preview, export or video is reported as an error the AI can read', async () => {
+    const boom = vi.fn(async () => {
+      throw new Error('the engine is busy');
+    });
+    const { call } = setup({
+      analyze: boom as unknown as AudioDeps['analyze'],
+      preview: boom as unknown as AudioDeps['preview'],
+      exportAudio: boom as unknown as AudioDeps['exportAudio'],
+      exportVideo: boom as unknown as AudioDeps['exportVideo'],
+    });
+    const ctx = { ...CLAUDE, ticket: 'tk' } as typeof CLAUDE;
+    const bars = { bars: { from_bar: 1, to_bar: 2 } };
+    expect(text(await call('analyze_mix', bars))).toBe('Could not listen to the mix: the engine is busy');
+    expect(text(await call('render_preview', bars))).toBe('Could not render a preview: the engine is busy');
+    expect(text(await call('export_audio', bars, ctx))).toBe('The export failed: the engine is busy');
+    expect(text(await call('export_video', bars, ctx))).toBe('The video export failed: the engine is busy');
+  });
+
+  it('the export tools say so when nothing was rendered, and pass on an export error’s own message', async () => {
+    const empty = vi.fn(async () => ({ names: [], seconds: 4, name: 'x', frames: 0, bytes: 0, took: 0 }));
+    const { call } = setup({ exportAudio: empty as unknown as AudioDeps['exportAudio'], exportVideo: empty as unknown as AudioDeps['exportVideo'] });
+    const ctx = { ...CLAUDE, ticket: 'tk' } as typeof CLAUDE;
+    const bars = { bars: { from_bar: 1, to_bar: 2 } };
+    expect(text(await call('export_audio', bars, ctx))).toBe('Nothing was rendered.');
+    expect(text(await call('export_video', bars, ctx))).toBe('Nothing was rendered.');
+    const { ExportError } = await import('../export/export-wav');
+    const refused = vi.fn(async () => {
+      throw new ExportError('That picture could not be read.');
+    });
+    const again = setup({ exportAudio: refused as unknown as AudioDeps['exportAudio'], exportVideo: refused as unknown as AudioDeps['exportVideo'] });
+    expect(text(await again.call('export_audio', bars, ctx))).toBe('That picture could not be read.');
+    expect(text(await again.call('export_video', bars, ctx))).toBe('That picture could not be read.');
+  });
+
   it('export_audio puts stems in a folder', async () => {
     const exportAudio = vi.fn(async (_s, _set, target) => {
       if (target.kind === 'memory') {

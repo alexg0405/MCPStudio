@@ -8,17 +8,18 @@
  */
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { tempoMapOf } from '@core/automation/tempo';
-import { audibleTake, planTakes, tickAtFrame, trimToTakes, type CaptureAnchor } from '@core/audio/takes';
+import { audibleTake, planTakes, tickAtFrame, trimToTakes, type CaptureAnchor, type TakePlan } from '@core/audio/takes';
 import { paletteColor } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
-import type { AudioClip, AudioClipChannel, Tick } from '@core/model/types';
+import type { AudioClip, AudioClipChannel, Project, SampleRef, Tick } from '@core/model/types';
 import { addChannel, addSample } from '@core/ops/channels';
 import { addTakeGroup, newTakeGroup } from '@core/ops/comp';
 import { addClips, addLane } from '@core/ops/playlist';
 import { makeLane } from '@core/model/defaults';
 import type { LaneId } from '@core/model/types';
 import { freeLaneRun } from '@core/query/lanes';
-import type { AudioCapture } from '@engine/api';
+import type { TempoMap } from '@core/time/ppq';
+import type { AudioCapture, CapturedAudio } from '@engine/api';
 import type { AudioInputService } from './audio-input';
 import { encodeOffThread } from './export/encode';
 import { importSampleBytes } from './persistence/sample-import';
@@ -39,20 +40,51 @@ export interface LiveTake {
   startFrame: number;
 }
 
+/** The take being recorded: its capture, where playback was along the way, and the loop and punch it started with. */
+interface LiveRecording {
+  capture: AudioCapture;
+  anchors: CaptureAnchor[];
+  startTick: Tick;
+  loop: { start: Tick; end: Tick } | null;
+  punch: { start: Tick; end: Tick } | null;
+  latency: number;
+  lane: number;
+  timer: ReturnType<typeof setInterval>;
+}
+
+/** What is kept of a capture: its takes (one per loop pass) and the audio they play. */
+interface KeptTakes {
+  takes: TakePlan[];
+  channels: Float32Array[];
+  frames: number;
+}
+
+/** A recording ready to go into the project. */
+interface Recorded {
+  name: string;
+  channel: AudioClipChannel;
+  sample: SampleRef;
+  takes: TakePlan[];
+  /** Seconds of audio kept, to a tenth. */
+  seconds: number;
+  /** A note for the toast when the browser dropped frames (empty when none were lost). */
+  lost: string;
+}
+
+/** The punch recording keeps this much audio either side of what the takes play, in seconds (room to drag a clip's edge). */
+const PUNCH_HANDLE_SECONDS = 1;
+
+/** " (100 ms were lost: the app was busy)" when the capture dropped frames, else nothing. */
+function lostNote(audio: CapturedAudio): string {
+  if (audio.dropped <= 0) return '';
+  return ` (${Math.round((audio.dropped / audio.sampleRate) * 1000)} ms were lost: the app was busy)`;
+}
+
 export class AudioRecorder implements Recorder {
   readonly id = 'audio';
   readonly kind = 'audio' as const;
   readonly live: StoreApi<{ take: LiveTake | null }> = createStore<{ take: LiveTake | null }>(() => ({ take: null }));
-  private take: {
-    capture: AudioCapture;
-    anchors: CaptureAnchor[];
-    startTick: Tick;
-    loop: { start: Tick; end: Tick } | null;
-    punch: { start: Tick; end: Tick } | null;
-    latency: number;
-    lane: number;
-    timer: ReturnType<typeof setInterval>;
-  } | null = null;
+  private take: LiveRecording | null = null;
   private pending: Promise<void> = Promise.resolve();
   /** Takes saved this session (for the channel names). */
   private count = 0;
@@ -160,20 +192,39 @@ export class AudioRecorder implements Recorder {
     return this.pending;
   }
 
-  private async save(
-    t: NonNullable<AudioRecorder['take']>,
-    endTick: number | undefined,
-    tempo: ReturnType<typeof tempoMapOf>,
-  ): Promise<void> {
-    const s = this.s;
-    let audio;
+  /** Writes a finished take into the project: one clip, or a take group when the loop made several passes. */
+  private async save(t: LiveRecording, endTick: number | undefined, tempo: TempoMap): Promise<void> {
+    const audio = await this.stopCapture(t);
+    if (!audio) return;
+    const kept = this.keepTakes(t, audio, endTick, tempo);
+    if (!kept) return;
+    // The project as it was when Stop was pressed: the new tracks are chosen against it.
+    const project = this.s.doc.getState().project;
+    const name = this.nextName();
+    const sample = await this.storeSample(name, kept.channels, audio.sampleRate, kept.frames);
+    if (!sample) return;
+    const channel = this.audioChannelFor(project, name, sample);
+    const recorded: Recorded = { name, channel, sample, takes: kept.takes, seconds: Math.round((kept.frames / audio.sampleRate) * 10) / 10, lost: lostNote(audio) };
+    if (kept.takes.length > 1) this.commitTakeGroup(project, t, recorded, tempo);
+    else this.commitSingleTake(project, t, recorded);
+  }
+
+  /** Ends the capture, keeping what is still on its way through the input. Null when it failed (nothing is kept). */
+  private async stopCapture(t: LiveRecording): Promise<CapturedAudio | null> {
     try {
-      audio = await t.capture.stop(Math.min(0.5, t.latency + 0.05));
+      return await t.capture.stop(Math.min(0.5, t.latency + 0.05));
     } catch {
-      return;
+      return null;
     }
-    let frames = audio.channels[0]?.length ?? 0;
-    let takes = planTakes({
+  }
+
+  /**
+   * Splits the capture into takes (one per loop pass). A punch recording keeps only what the takes play (and a second
+   * either side), not the bars before the punch-in. Null, with a toast, when nothing was recorded.
+   */
+  private keepTakes(t: LiveRecording, audio: CapturedAudio, endTick: number | undefined, tempo: TempoMap): KeptTakes | null {
+    const frames = audio.channels[0]?.length ?? 0;
+    const takes = planTakes({
       anchors: t.anchors,
       sampleRate: audio.sampleRate,
       frames,
@@ -184,29 +235,29 @@ export class AudioRecorder implements Recorder {
       ...(endTick !== undefined ? { endTick } : {}),
     });
     if (takes.length === 0) {
-      s.session.getState().toast(t.punch ? 'Nothing was recorded: playback did not reach the punch range.' : 'Nothing was recorded: the take was too short.');
-      return;
+      this.s.session.getState().toast(t.punch ? 'Nothing was recorded: playback did not reach the punch range.' : 'Nothing was recorded: the take was too short.');
+      return null;
     }
-    // A punch recording keeps only what the takes play (and a second either side), not the bars before the punch-in.
-    let channels = audio.channels;
-    if (t.punch) {
-      const kept = trimToTakes(takes, tempo, audio.sampleRate, frames, 1);
-      channels = audio.channels.map((c) => c.subarray(kept.from, kept.to));
-      takes = kept.takes;
-      frames = kept.to - kept.from;
-    }
-    const project = s.doc.getState().project;
-    const name = this.nextName();
-    let ref;
+    if (!t.punch) return { takes, channels: audio.channels, frames };
+    const kept = trimToTakes(takes, tempo, audio.sampleRate, frames, PUNCH_HANDLE_SECONDS);
+    return { takes: kept.takes, channels: audio.channels.map((c) => c.subarray(kept.from, kept.to)), frames: kept.to - kept.from };
+  }
+
+  /** Stores the recording as a 24-bit FLAC sample. Null, with a toast, when it could not be stored. */
+  private async storeSample(name: string, channels: Float32Array[], sampleRate: number, frames: number): Promise<SampleRef | null> {
     try {
-      const bytes = await encodeOffThread(channels, audio.sampleRate, { codec: 'flac', bits: 24, kbps: 0 });
-      ref = await importSampleBytes(bytes, `${name}.flac`);
+      const bytes = await encodeOffThread(channels, sampleRate, { codec: 'flac', bits: 24, kbps: 0 });
+      const ref = await importSampleBytes(bytes, `${name}.flac`);
+      return { ...ref, durationSec: frames / sampleRate, sampleRate, channels: channels.length };
     } catch (e) {
-      s.session.getState().toast(`The recording couldn't be saved: ${e instanceof Error ? e.message : String(e)}`, 'error');
-      return;
+      this.s.session.getState().toast(`The recording couldn't be saved: ${e instanceof Error ? e.message : String(e)}`, 'error');
+      return null;
     }
-    const sample = { ...ref, durationSec: frames / audio.sampleRate, sampleRate: audio.sampleRate, channels: channels.length };
-    const channel: AudioClipChannel = {
+  }
+
+  /** The audio channel that plays the recording, on the input's own track. */
+  private audioChannelFor(project: Project, name: string, sample: SampleRef): AudioClipChannel {
+    return {
       kind: 'audioClip',
       id: newId.channel(),
       name,
@@ -219,60 +270,64 @@ export class AudioRecorder implements Recorder {
       output: this.inputs.track(),
       sampleId: sample.id,
     };
-    const from = Math.min(...takes.map((k) => k.start));
-    const to = Math.max(...takes.map((k) => k.start + k.length));
-    const seconds = Math.round((frames / audio.sampleRate) * 10) / 10;
-    const lost = audio.dropped > 0 ? ` (${Math.round((audio.dropped / audio.sampleRate) * 1000)} ms were lost: the app was busy)` : '';
-    if (takes.length > 1) {
-      // Several takes: a comp lane that plays the newest full one, with the take lanes (muted) folded under it.
-      const group = newTakeGroup();
-      const first = freeLaneRun(project, from, to, takes.length + 1, Math.max(0, t.lane));
-      let made: { takes: string[]; comp: string[] } = { takes: [], comp: [] };
-      s.history.transact(`Record ${takes.length} takes`, (d) => {
-        addSample(d, sample);
-        addChannel(d, channel);
-        made = addTakeGroup(d, {
-          group,
-          name,
-          channelId: channel.id,
-          takes: takes.map((k) => ({ start: k.start, length: k.length, offsetSec: k.offsetSec })),
-          audible: audibleTake(takes),
-          first,
-          tempo,
-          crossfadeMs: s.prefs.getState().compCrossfadeMs,
-        });
+  }
+
+  /** Several takes: a comp lane that plays the newest full one, with the take lanes (muted) folded under it. */
+  private commitTakeGroup(project: Project, t: LiveRecording, r: Recorded, tempo: TempoMap): void {
+    const s = this.s;
+    const from = Math.min(...r.takes.map((k) => k.start));
+    const to = Math.max(...r.takes.map((k) => k.start + k.length));
+    const group = newTakeGroup();
+    const first = freeLaneRun(project, from, to, r.takes.length + 1, Math.max(0, t.lane));
+    let made: { takes: string[]; comp: string[] } = { takes: [], comp: [] };
+    s.history.transact(`Record ${r.takes.length} takes`, (d) => {
+      addSample(d, r.sample);
+      addChannel(d, r.channel);
+      made = addTakeGroup(d, {
+        group,
+        name: r.name,
+        channelId: r.channel.id,
+        takes: r.takes.map((k) => ({ start: k.start, length: k.length, offsetSec: k.offsetSec })),
+        audible: audibleTake(r.takes),
+        first,
+        tempo,
+        crossfadeMs: s.prefs.getState().compCrossfadeMs,
       });
-      s.editor.getState().setTakesOpen(group, true);
-      s.editor.getState().selectClips(made.comp as never);
-      s.session
-        .getState()
-        .toast(
-          `Recorded ${takes.length} takes on tracks ${first + 1}–${first + takes.length + 1}: the comp track plays the newest full take. Drag across another take with the Comp tool (or Alt-drag) to use that part${lost}.`,
-        );
-      return;
-    }
-    const first = freeLaneRun(project, from, to, 1, Math.max(0, t.lane));
+    });
+    s.editor.getState().setTakesOpen(group, true);
+    s.editor.getState().selectClips(made.comp as never);
+    s.session
+      .getState()
+      .toast(
+        `Recorded ${r.takes.length} takes on tracks ${first + 1}–${first + r.takes.length + 1}: the comp track plays the newest full take. Drag across another take with the Comp tool (or Alt-drag) to use that part${r.lost}.`,
+      );
+  }
+
+  /** One take: an audio clip on the first track that is free for it (a new track when none is). */
+  private commitSingleTake(project: Project, t: LiveRecording, r: Recorded): void {
+    const s = this.s;
+    const take = r.takes[0]!;
+    const first = freeLaneRun(project, take.start, take.start + take.length, 1, Math.max(0, t.lane));
     const lanes = project.playlist.laneOrder;
     const newLane = first >= lanes.length ? makeLane(`Track ${lanes.length + 1}`) : null;
     const laneId = (lanes[first] ?? newLane!.id) as LaneId;
-    const k = takes[0]!;
     const clip: AudioClip = {
       kind: 'audio',
       id: newId.clip(),
       laneId,
-      start: k.start,
-      length: k.length,
-      channelId: channel.id,
-      offsetSec: k.offsetSec,
+      start: take.start,
+      length: take.length,
+      channelId: r.channel.id,
+      offsetSec: take.offsetSec,
     };
     s.history.transact('Record audio', (d) => {
-      addSample(d, sample);
-      addChannel(d, channel);
+      addSample(d, r.sample);
+      addChannel(d, r.channel);
       if (newLane) addLane(d, newLane);
       addClips(d, [clip]);
     });
     s.editor.getState().selectClips([clip.id]);
-    s.session.getState().toast(`Recorded “${name}” (${seconds} s) on Track ${first + 1}${lost}.`);
+    s.session.getState().toast(`Recorded “${r.name}” (${r.seconds} s) on Track ${first + 1}${r.lost}.`);
   }
 
   private nextName(): string {

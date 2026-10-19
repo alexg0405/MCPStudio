@@ -1,7 +1,7 @@
 /**
  * Pitch correction of audio clips as user actions (the Pitch editor window, the AI and MCP share
  * these): analysis of a clip's sung line (cached, in a Worker), edits that are one undo step each,
- * and the renderer that keeps the corrected audio up to date.
+ * and the renderer that keeps the corrected audio up to date (`pitch-render.ts`, re-exported here).
  *
  * The corrected audio is a new sample: TD-PSOLA in a Worker over the stretch of the clip's sample
  * that the edits touch, spliced into a copy of the whole sample (so trims, fades and tempo follow
@@ -16,58 +16,37 @@ import { clipSourceRange, playbackMode } from '@core/audio/playback';
 import {
   applyPitchAction,
   DEFAULT_TRANSITION_MS,
-  editSignature,
-  isNeutralEdit,
   mapNotes,
   mergeNotes as mergeEditNotes,
   monoMix,
   nearestAllowed,
   noteTarget,
   pitchEditFrom,
-  renderRange,
   snapToKey,
   splitNote as splitEditNote,
   tidyNote,
   withTarget,
   type PitchAction,
 } from '@core/audio/pitch-edit';
-import type { AudioClip, AudioClipChannel, ClipId, PitchEdit, Project, SampleRef } from '@core/model/types';
-import { setPitchEdit, setPitchRender } from '@core/ops/pitch';
+import type { AudioClip, ClipId, PitchEdit, Project, SampleRef } from '@core/model/types';
+import { setPitchEdit } from '@core/ops/pitch';
 import { scaleMask } from '@agstudio/sdk/notes';
-import { encodeOffThread } from '../export/encode';
-import { importSampleBytes } from '../persistence/sample-import';
 import { pitchAnalysisKey, pitchAnalysisStore } from '../pitch/analysis-store';
-import { analyzeInWorker, PitchJobCancelled, renderInWorker, type RunningPitchJob } from '../pitch/pitch-jobs';
+import { analyzeInWorker } from '../pitch/pitch-jobs';
 import { pitchState, type ClipPitch } from '../pitch/state';
 import type { Services } from '../services';
-import { whileBusy } from '../storage/busy';
+import { audioClipOf, PitchError, pitchProblem } from './pitch-clip';
 
-export class PitchError extends Error {}
+// The renderer and the clip checks live in their own files; the editor, the AI and the MCP tools keep importing them from here.
+export { audioClipOf, PitchError, pitchProblem } from './pitch-clip';
+export { renderNow, RENDER_DELAY_MS, startPitchRenderer } from './pitch-render';
 
 /** Longest sample the editor takes (a 15-minute song is already a lot to correct in one piece). */
 export const PITCH_MAX_SECONDS = 15 * 60;
-/** How long after the last edit the render starts, ms. */
-export const RENDER_DELAY_MS = 450;
 /** Seconds of margin around the clip's part of the sample that the analysis covers. */
 const ANALYSIS_MARGIN = 0.25;
 
-// ---- Which clip, and can it be edited ----
-
-export function audioClipOf(p: Project, id: ClipId): { clip: AudioClip; channel: AudioClipChannel } | null {
-  const clip = p.playlist.clips[id];
-  if (clip?.kind !== 'audio') return null;
-  const channel = p.channels[clip.channelId];
-  return channel?.kind === 'audioClip' ? { clip, channel } : null;
-}
-
-/** Why a clip can't be pitch-edited, in plain words (null when it can). */
-export function pitchProblem(p: Project, id: ClipId): string | null {
-  const found = audioClipOf(p, id);
-  if (!found) return 'That is not an audio clip.';
-  if (found.channel.reverse) return 'Pitch correction needs the sound played forwards: turn off Reverse on this audio first.';
-  if (!p.samples[found.channel.sampleId]) return 'This clip’s audio is missing.';
-  return null;
-}
+// ---- Which clip ----
 
 /** The audio clip the editor should open for: the selected one, or the only audio clip with a pitch edit. */
 export function defaultPitchClip(s: Services): ClipId | null {
@@ -345,158 +324,6 @@ export function resetNotes(s: Services, clip: ClipPitch, which: ReadonlySet<numb
   const p = s.doc.getState().project;
   const edit = mapNotes(editFor(p, clip), which, (n) => tidyNote({ from: n.from, to: n.to, pitch: n.pitch }));
   return commitEdit(s, clip.clipId, edit, which === 'all' ? 'Reset all notes' : 'Reset notes');
-}
-
-// ---- Rendering ----
-
-/** The running renderer (see `startPitchRenderer`). */
-let active: { schedule(id: ClipId, force?: boolean): void } | null = null;
-
-interface RenderRun {
-  signature: string;
-  job: RunningPitchJob<Float32Array[]> | null;
-}
-
-/**
- * Starts watching edits: after an edit (not undo, redo or load) that leaves a clip's render out of
- * date, the corrected audio is made after a short pause and written into the same undo step.
- * Returns the stop function. Created once, at start-up.
- */
-export function startPitchRenderer(s: Services): () => void {
-  const timers = new Map<ClipId, ReturnType<typeof setTimeout>>();
-  const runs = new Map<ClipId, RenderRun>();
-  const cursors = new Map<ClipId, number>();
-
-  const stale = (id: ClipId): { edit: PitchEdit; signature: string } | null => {
-    const found = audioClipOf(s.doc.getState().project, id);
-    const edit = found?.clip.pitchEdit;
-    if (!edit) return null;
-    return { edit, signature: editSignature(edit) };
-  };
-
-  const schedule = (id: ClipId, force = false) => {
-    const t = timers.get(id);
-    if (t) clearTimeout(t);
-    timers.delete(id);
-    const cur = stale(id);
-    const run = runs.get(id);
-    if (!cur) {
-      run?.job?.cancel();
-      runs.delete(id);
-      return;
-    }
-    if (isNeutralEdit(cur.edit)) {
-      // Nothing to correct any more: the clip plays its own audio (setPitchEdit already dropped the render).
-      run?.job?.cancel();
-      runs.delete(id);
-      return;
-    }
-    if (!force && cur.edit.renderedFor === cur.signature && cur.edit.renderedSampleId) return;
-    if (!force && run && run.signature === cur.signature) return;
-    run?.job?.cancel();
-    runs.set(id, { signature: cur.signature, job: null });
-    timers.set(
-      id,
-      setTimeout(() => {
-        timers.delete(id);
-        void render(id, cur.signature);
-      }, RENDER_DELAY_MS),
-    );
-  };
-
-  async function render(id: ClipId, signature: string): Promise<void> {
-    const run = runs.get(id);
-    if (!run || run.signature !== signature) return;
-    const project = s.doc.getState().project;
-    const found = audioClipOf(project, id);
-    const edit = found?.clip.pitchEdit;
-    if (!found || !edit || editSignature(edit) !== signature) return;
-    const { channel } = found;
-    const ref = project.samples[channel.sampleId];
-    const progress = (fraction: number) => pitchState.setState({ rendering: { clipId: id, fraction } });
-    try {
-      progress(0);
-      await whileBusy(
-        async () => {
-          if (!ref) throw new PitchError('This clip’s audio is missing.');
-          const data = await s.engine.sampleData(ref);
-          if (!data) throw new PitchError('This clip’s audio could not be read.');
-          const range = renderRange(edit, data.duration);
-          if (!range) return;
-          const sr = data.sampleRate;
-          const a = Math.max(0, Math.floor(range.from * sr));
-          const b = Math.min(data.channels[0]?.length ?? 0, Math.ceil(range.to * sr));
-          const region = data.channels.map((c) => c.slice(a, b));
-          const job = renderInWorker(
-            region,
-            sr,
-            a / sr,
-            { notes: edit.notes, ...(edit.transition !== undefined ? { transition: edit.transition } : {}) },
-            progress,
-          );
-          run.job = job;
-          const out = await job.result;
-          run.job = null;
-          if (runs.get(id) !== run) return;
-          const full = data.channels.map((c) => Float32Array.from(c));
-          let peak = 0;
-          out.forEach((o, c) => {
-            (full[c] as Float32Array).set(o, a);
-            for (let i = 0; i < o.length; i++) peak = Math.max(peak, Math.abs(o[i] as number));
-          });
-          if (peak > 1) for (const c of full) for (let i = a; i < b; i++) c[i] = (c[i] as number) / peak;
-          progress(0.97);
-          const bytes = await encodeOffThread(full, sr, { codec: 'flac', bits: 24, kbps: 0 });
-          const stored = await importSampleBytes(bytes, `${channel.name} (pitch corrected).flac`);
-          const sample: SampleRef = { ...stored, durationSec: data.duration, sampleRate: sr, channels: full.length };
-          // Still the edit that was rendered? (A newer one has its own render coming.)
-          const now = stale(id);
-          if (!now || now.signature !== signature) return;
-          s.history.transact(
-            'Pitch correction rendered',
-            (d) => setPitchRender(d, id, sample, signature),
-            cursors.has(id) ? { amend: cursors.get(id) as number } : {},
-          );
-        },
-        { project },
-      );
-    } catch (e) {
-      if (!(e instanceof PitchJobCancelled)) {
-        s.session.getState().toast(`Pitch correction could not be rendered: ${e instanceof Error ? e.message : String(e)}`, 'error');
-      }
-    } finally {
-      if (runs.get(id) === run) runs.delete(id);
-      if (pitchState.getState().rendering?.clipId === id) pitchState.setState({ rendering: null });
-    }
-  }
-
-  const unsubscribe = s.history.onChange((change) => {
-    if (change.origin !== 'edit' || !change.patches) return;
-    const touched = new Set<ClipId>();
-    for (const patch of change.patches) {
-      if (patch.path[0] === 'playlist' && patch.path[1] === 'clips' && typeof patch.path[2] === 'string') touched.add(patch.path[2] as ClipId);
-    }
-    for (const id of touched) {
-      const clip = change.next.playlist.clips[id];
-      if (clip?.kind !== 'audio' || !clip.pitchEdit) continue;
-      cursors.set(id, s.history.status().cursor);
-      schedule(id);
-    }
-  });
-  active = { schedule };
-  return () => {
-    unsubscribe();
-    active = null;
-    for (const t of timers.values()) clearTimeout(t);
-    for (const r of runs.values()) r.job?.cancel();
-    timers.clear();
-    runs.clear();
-  };
-}
-
-/** Makes the corrected audio now (the editor's "Render now" button, after a failed render). */
-export function renderNow(clipId: ClipId): void {
-  active?.schedule(clipId, true);
 }
 
 // ---- Actions asked for by name (the AI, MCP and the `pitchEditor.apply` command) ----

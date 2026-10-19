@@ -4,7 +4,7 @@
  * one in place, one transition at a bar, one variation at a spot, refresh variants. Each returns
  * change lines for the chat or a toast, the span it edited and what the arrangement check found.
  */
-import { current, isDraft, type Draft } from 'immer';
+import type { Draft } from 'immer';
 import {
   applyArrangement,
   applyEditsInPlace,
@@ -17,24 +17,13 @@ import {
   refreshVariants,
   rootOf,
 } from '@core/arrange/apply';
-import { existingFx, fillLikeClips, inferSections, layeredFills, loopingPatterns, type InferredSection } from '@core/arrange/infer';
+import { existingFx, fillLikeClips, inferSections, layeredFills, loopingPatterns } from '@core/arrange/infer';
 import { lengthOfPattern } from '@core/arrange/notes';
 import { FILL_ROTATION } from '@core/arrange/phrases';
-import { loopStartCrashes, planArrangement, planDevelop, type ArrangementPlan, type PlannedAutomation, type SongEvent } from '@core/arrange/plan';
-import { CRASH_LANE, FX_LANE } from '@core/arrange/plan';
+import { CRASH_LANE, loopStartCrashes, planArrangement, planDevelop, type ArrangementPlan } from '@core/arrange/plan';
 import type { SectionSpec } from '@core/arrange/sections';
-import {
-  boundaryRecipe,
-  classifyBoundary,
-  riserBars,
-  type AutomationItem,
-  type BoundaryKind,
-  type EndingKind,
-  type FxLevel,
-  type FxPlacement,
-} from '@core/arrange/transitions';
+import type { EndingKind, FxLevel } from '@core/arrange/transitions';
 import { inferStyle, type Style } from '@core/beat/style';
-import { fxBeats } from '@core/model/fx';
 import type { ChannelId, ClipId, InsertId, LaneId, PatternId, Project, Tick, VariantKind, VariantStep } from '@core/model/types';
 import { tidySong } from '@core/ops/tidy';
 import { barSpan } from '@core/time/bars';
@@ -43,15 +32,10 @@ import { setupMix } from '../mix/setup';
 import type { Services } from '../services';
 import { checkArrangement, type Finding } from './check';
 import { applyEnvFor, rolesOf } from './env';
+import { plain } from './plain';
 import { arrangeSummary } from './summary';
 
 const BEAT = 960;
-
-/**
- * The draft as plain data. The arranger's whole-song reads (what plays where, sections, the check)
- * are several times faster on plain objects than through immer's proxies; take a new one after an edit.
- */
-const plain = (d: Draft<Project>): Project => (isDraft(d) ? (current(d) as unknown as Project) : (d as unknown as Project));
 
 /** An input the arranger can't use (the message says why, for the chat or a toast). */
 export class ArrangeInputError extends Error {}
@@ -248,185 +232,7 @@ export function developInDraft(d: Draft<Project>, s: Services, base: Project, in
   };
 }
 
-export const TRANSITION_KINDS = [
-  'auto',
-  'rise',
-  'lift',
-  'same',
-  'dip',
-  'fall',
-  'fill',
-  'gap',
-  'riser',
-  'reverse_crash',
-  'impact',
-  'downlifter',
-  'crash',
-  'filter_open',
-  'filter_close',
-  'reverb_throw',
-] as const;
-export type TransitionKind = (typeof TRANSITION_KINDS)[number];
-
-export interface TransitionInput {
-  /** The downbeat it leads into. */
-  at: Tick;
-  kind: TransitionKind;
-  /** Riser, downlifter and filter lengths. */
-  bars?: number;
-  /** Fill and gap lengths. */
-  beats?: number;
-  style?: Style;
-}
-
-/** The sections on both sides of `at` (one section split there when `at` falls inside it). */
-function sidesAt(sections: readonly InferredSection[], at: Tick): { a: InferredSection | null; b: InferredSection } | null {
-  const bi = sections.findIndex((x) => x.from === at);
-  if (bi >= 0) return { a: bi > 0 ? sections[bi - 1]! : null, b: sections[bi]! };
-  const inside = sections.find((x) => x.from < at && at < x.to);
-  if (!inside) return null;
-  const bars = (t: Tick) => (t - inside.from) / ((inside.to - inside.from) / inside.bars);
-  return {
-    a: { ...inside, to: at, bars: Math.max(1, Math.round(bars(at))) },
-    b: { ...inside, from: at, bars: Math.max(1, inside.bars - Math.round(bars(at))) },
-  };
-}
-
-/** One transition at a bar: a whole recipe (auto or a kind), or one element of one. */
-export function transitionInDraft(d: Draft<Project>, s: Services, base: Project, input: TransitionInput, guard?: SpanGuard): RunResult {
-  const p = d as unknown as Project;
-  const style = input.style ?? inferStyle(p);
-  const bar = ticksPerBar(p.transport.timeSig);
-  const bpb = p.transport.timeSig.num * (4 / p.transport.timeSig.den);
-  const X = Math.max(0, Math.round(input.at / BEAT) * BEAT);
-  const { env, changes: made } = applyEnvFor(d, s, base, style, { create: true });
-  const sections = inferSections(plain(d), env.variant);
-  const sides = sidesAt(sections, X);
-  const ctx = { bpm: p.transport.bpm, beatsPerBar: bpb, barTicks: bar, style, fx: 'auto' as const };
-  let events: Omit<SongEvent, 'section'>[] = [];
-  let fx: FxPlacement[] = [];
-  let crash: number | null = null;
-  let automation: AutomationItem[] = [];
-  let what: string = input.kind.replace(/_/g, ' ');
-  const beats = (n: number) => Math.max(1, Math.min(16, Math.round(input.beats ?? n)));
-  const barsOf = (n: number) => Math.max(1, Math.min(8, Math.round(input.bars ?? n)));
-  if (['auto', 'rise', 'lift', 'same', 'dip', 'fall'].includes(input.kind)) {
-    if (!sides) return { changes: [], warnings: [`there is no section at bar ${X / bar + 1} to lead into`], touched: null, clipIds: [], findings: [] };
-    const kind: BoundaryKind = input.kind === 'auto' ? classifyBoundary(sides.a, sides.b) : (input.kind as BoundaryKind);
-    const r = boundaryRecipe(kind, X, sides.a ? { ...sides.a, fill: 'auto' } : null, sides.b, ctx, { fill: 0 });
-    events = r.end.map((e) => ({ ...e, from: e.from + (sides.a?.from ?? X), to: e.to + (sides.a?.from ?? X) }));
-    fx = r.fx;
-    crash = r.crash;
-    automation = r.automation;
-    what = `a ${kind} into “${sides.b.name}”`;
-  } else {
-    const fillKind: VariantKind = FILL_ROTATION[style][0]!;
-    switch (input.kind) {
-      case 'fill':
-        events = [{ kind: fillKind, from: X - beats(2) * BEAT, to: X, energy: sides?.a?.energy ?? 4, why: 'end' }];
-        break;
-      case 'gap':
-        events = [{ kind: 'gap', from: X - beats(1) * BEAT, to: X, energy: 4, why: 'end' }];
-        break;
-      case 'riser': {
-        const n = barsOf(riserBars(p.transport.bpm, bpb)) * bpb;
-        fx = [{ kind: 'riser', beats: n, start: X - n * BEAT, gainDb: -4 }];
-        break;
-      }
-      case 'reverse_crash':
-        fx = [{ kind: 'reverse-crash', beats: beats(4), start: X - beats(4) * BEAT, gainDb: -3 }];
-        break;
-      case 'impact':
-        fx = [{ kind: 'impact', beats: fxBeats('impact', p.transport.bpm), start: X, gainDb: -2 }];
-        break;
-      case 'downlifter':
-        fx = [{ kind: 'downlifter', beats: barsOf(1) * bpb, start: X, gainDb: -8 }];
-        break;
-      case 'crash':
-        crash = 0.95;
-        break;
-      case 'filter_open':
-      case 'filter_close':
-      case 'reverb_throw': {
-        const len = input.kind === 'reverb_throw' ? BEAT : barsOf(input.kind === 'filter_open' ? 4 : 2) * bar;
-        const start = input.kind === 'filter_open' ? X : X - len;
-        for (const bus of input.kind === 'reverb_throw' ? (['chords'] as const) : (['chords', 'lead'] as const))
-          automation.push(
-            input.kind === 'reverb_throw'
-              ? {
-                  purpose: 'throw',
-                  target: { kind: 'throw' },
-                  start,
-                  length: len,
-                  points: [
-                    { at: 0, value: 'throw' },
-                    { at: len, value: 'throw' },
-                    { at: len, value: 'neutral' },
-                  ],
-                }
-              : input.kind === 'filter_open'
-                ? {
-                    purpose: 'filter-open',
-                    target: { kind: 'eq', bus, band: 'high-cut' },
-                    start,
-                    length: len,
-                    points: [
-                      { at: 0, value: 1200, tension: 0.35 },
-                      { at: len, value: 'neutral' },
-                    ],
-                  }
-                : {
-                    purpose: 'filter-open',
-                    target: { kind: 'eq', bus, band: 'high-cut' },
-                    start,
-                    length: len,
-                    points: [
-                      { at: 0, value: 'neutral', tension: -0.35 },
-                      { at: len, value: 900 },
-                      { at: len, value: 'neutral' },
-                    ],
-                  },
-          );
-        break;
-      }
-    }
-  }
-  const lo = Math.min(X, ...events.map((e) => e.from), ...fx.map((f) => f.start), ...automation.map((a) => a.start));
-  const hi = Math.max(X, ...events.map((e) => e.to), ...automation.map((a) => a.start + a.length));
-  guard?.(Math.max(0, lo), hi, 'transition');
-  const changed = applyEditsInPlace(d, events, env);
-  const after = plain(d);
-  const lanes = laneAllocatorFor(after);
-  const there = existingFx(after, env.variant);
-  const fxClips = placeFx(
-    d,
-    fx
-      .filter((f) => {
-        const at = f.kind === 'riser' || f.kind === 'reverse-crash' ? f.start + f.beats * BEAT : f.start;
-        return f.start >= 0 && !there.some((x) => x.kind === f.kind && Math.abs(x.at - at) <= BEAT);
-      })
-      .map((f) => ({ ...f, length: Math.round(f.beats * BEAT), lane: lanes.place(FX_LANE[f.kind], f.start, f.start + f.beats * BEAT) })),
-    env,
-  );
-  const crashClips =
-    crash !== null && !there.some((x) => x.kind === 'crash' && Math.abs(x.at - X) <= BEAT)
-      ? placeCrashes(d, [{ at: X, velocity: crash, lane: lanes.place(CRASH_LANE, X, X + 4 * bar) }], env)
-      : [];
-  const autoClips = placeAutomation(
-    d,
-    automation.filter((a) => a.start >= 0).map((a): PlannedAutomation => ({ ...a, lane: lanes.place('Automation', a.start, a.start + a.length) })),
-    env,
-    { skipBusy: true },
-  );
-  const n = changed.length + fxClips.length + crashClips.length + autoClips.length;
-  return {
-    changes: n ? [`Added ${what} at bar ${X / bar + 1}`, ...made] : [`${what[0]!.toUpperCase()}${what.slice(1)} at bar ${X / bar + 1}: already there (nothing added)`],
-    warnings: [],
-    touched: { from: Math.max(0, lo), to: hi },
-    clipIds: [...changed, ...fxClips, ...crashClips, ...autoClips],
-    findings: [],
-  };
-}
+export { TRANSITION_KINDS, transitionInDraft, type TransitionInput, type TransitionKind } from './transition';
 
 export const VARY_KINDS = ['fill', 'hat_roll', '808_slide', 'dropout', 'stutter', 'thin', 'double_hats', 'without', 'crash'] as const;
 export type VaryKind = (typeof VARY_KINDS)[number];

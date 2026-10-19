@@ -160,4 +160,82 @@ describe('audio recording', () => {
     await vi.waitFor(() => expect(s.audioInput.store.getState().status).toBe('error'));
     expect(toasts.join(' ')).toMatch(/Microphone access is blocked/);
   });
+
+  /** The toasts the session shows, oldest first. */
+  const toastsOf = (s: ReturnType<typeof setup>['s']) => s.session.getState().toasts.map((x) => x.text);
+
+  it('says so when the take was too short to keep', async () => {
+    const { s, engine, feed, audio } = setup();
+    s.recording.setArmed(true);
+    await vi.waitFor(() => expect(s.audioInput.isOpen).toBe(true));
+    engine.clockTime = 0.5;
+    engine.startTime = 0.5;
+    engine.play();
+    feed(0.05);
+    engine.stop();
+    await s.audioRecorder.saved;
+    expect(audio().clips).toHaveLength(0);
+    expect(toastsOf(s)).toContain('Nothing was recorded: the take was too short.');
+    expect(s.history.steps().done).toHaveLength(0);
+  });
+
+  it('says so when playback never reached the punch range', async () => {
+    const { s, engine, feed, audio } = setup();
+    s.view.getState().setMode('song');
+    s.view.getState().setPunch({ start: 3840 * 40, end: 3840 * 41 });
+    s.recording.setArmed(true);
+    await vi.waitFor(() => expect(s.audioInput.isOpen).toBe(true));
+    engine.clockTime = 0.5;
+    engine.startTime = 0.5;
+    engine.play();
+    feed(2);
+    engine.stop();
+    await s.audioRecorder.saved;
+    expect(audio().clips).toHaveLength(0);
+    expect(toastsOf(s)).toContain('Nothing was recorded: playback did not reach the punch range.');
+  });
+
+  it('tells how much audio the browser lost while it was busy', async () => {
+    const { s, engine, feed } = setup();
+    s.recording.setArmed(true);
+    await vi.waitFor(() => expect(s.audioInput.isOpen).toBe(true));
+    const input = engine.inputs[engine.inputs.length - 1] as FakeAudioInput;
+    const startCapture = input.startCapture.bind(input);
+    input.startCapture = () => {
+      const capture = startCapture();
+      const stop = capture.stop;
+      capture.stop = async (extra) => ({ ...(await stop(extra)), dropped: 4800 });
+      return capture;
+    };
+    engine.clockTime = 0.5;
+    engine.startTime = 0.5;
+    engine.play();
+    feed(2);
+    engine.stop();
+    await s.audioRecorder.saved;
+    expect(toastsOf(s).at(-1)).toBe('Recorded “Recording 1” (2 s) on Track 1 (100 ms were lost: the app was busy).');
+  });
+
+  it('names the next recording after the ones already there, skipping a name that is taken', async () => {
+    const { s, engine, feed, audio } = setup();
+    s.recording.setArmed(true);
+    await vi.waitFor(() => expect(s.audioInput.isOpen).toBe(true));
+    const record = async (startTick: number) => {
+      engine.clockTime = 0.5;
+      engine.startTime = 0.5;
+      engine.startTick = startTick;
+      engine.play();
+      feed(2);
+      engine.stop();
+      await s.audioRecorder.saved;
+    };
+    await record(0);
+    s.history.transact('rename', (d) => {
+      const channel = Object.values(d.channels).find((c) => c.kind === 'audioClip');
+      if (channel) channel.name = 'Recording 2';
+    });
+    await record(3840 * 4);
+    expect(toastsOf(s).at(-1)).toBe('Recorded “Recording 3” (2 s) on Track 1.');
+    expect(audio().clips).toHaveLength(2);
+  });
 });

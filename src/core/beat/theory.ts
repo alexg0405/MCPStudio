@@ -2,7 +2,9 @@
 import type { BeatNote } from './spec';
 import { STEPS_PER_BAR } from './spec';
 
+/** The chord types the offline beat generator writes: major, minor, major 7th, minor 7th and dominant 7th. */
 export type Quality = 'maj' | 'min' | 'maj7' | 'm7' | '7';
+/** The notes of each chord type as semitones above its root. */
 export const CHORD: Record<Quality, readonly number[]> = {
   maj: [0, 4, 7],
   min: [0, 3, 7],

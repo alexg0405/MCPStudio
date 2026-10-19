@@ -28,8 +28,10 @@ export const BEAT_SOUNDS = [
   'bell',
   'strings',
 ] as const;
+/** One of `BEAT_SOUNDS`: a sound a beat track can use. */
 export type BeatSound = (typeof BEAT_SOUNDS)[number];
 
+/** The sounds that are drum-kit pieces; they play at one pitch, so their notes carry no key. */
 export const DRUM_SOUNDS: ReadonlySet<BeatSound> = new Set([
   'kick',
   'snare',
@@ -44,6 +46,7 @@ export const DRUM_SOUNDS: ReadonlySet<BeatSound> = new Set([
   'crash',
 ]);
 
+/** One note of a beat track, placed on the 1/16-step grid of the pattern. */
 export interface BeatNote {
   /** Position in 1/16 steps from the start of the pattern; fractions allowed (0.5 = 1/32). */
   step: number;
@@ -55,6 +58,7 @@ export interface BeatNote {
   vel?: number;
 }
 
+/** One instrument or drum line of a beat: a sound, its notes and its mix settings. */
 export interface BeatTrack {
   name: string;
   sound: BeatSound;
@@ -72,6 +76,10 @@ export interface BeatTrack {
   params?: Record<string, number>;
 }
 
+/**
+ * A whole beat as the assistant writes it: a few tracks over 1 to `MAX_BARS` bars of 4/4, before it becomes channels
+ * and a pattern.
+ */
 export interface BeatSpec {
   /** Short pattern name, e.g. "Dark trap". */
   title: string;
@@ -86,9 +94,13 @@ export interface BeatSpec {
   style?: Style;
 }
 
+/** 1/16 steps in one bar of 4/4. */
 export const STEPS_PER_BAR = 16;
+/** Longest beat the writer accepts, in bars; longer ones are cut to this. */
 export const MAX_BARS = 4;
+/** Most tracks a beat may have; extra tracks are dropped with a warning. */
 export const MAX_TRACKS = 12;
+/** Most notes kept on one track; further notes are ignored. */
 export const MAX_NOTES_PER_TRACK = 256;
 /** Steps snap to 1/6 step (40 ticks): covers 1/32 notes and 1/24 triplet rolls. */
 const STEP_GRID = 6;
@@ -106,6 +118,7 @@ function cleanName(v: unknown, fallback: string): string {
   return s || fallback;
 }
 
+/** Context for `validateBeatSpec`: where to get a style from when the beat names none. */
 export interface BeatCheckOptions {
   /** The style to accent with when the beat doesn't name one. */
   style?: Style;
@@ -113,6 +126,10 @@ export interface BeatCheckOptions {
   project?: { bpm: number; swing: number };
 }
 
+/**
+ * The result of `validateBeatSpec`: the cleaned beat with warnings about what was changed and the style used (null when
+ * there is none), or an error when nothing usable is left.
+ */
 export type BeatCheck = { spec: BeatSpec; warnings: string[]; style: Style | null } | { error: string };
 
 /** Linear gain from dB as the beat writer takes it (−100 dB or less is silence, at most +1.9 dB). */

@@ -52,73 +52,103 @@ export interface TakeInput {
 }
 
 /** The capture frame at which `tick` was heard in a pass, from the pass's nearest anchor. */
-export function frameAtTick(anchors: readonly CaptureAnchor[], tempo: TempoMap, sampleRate: number, tick: number): number {
+export function frameAtTick(
+  anchors: readonly CaptureAnchor[],
+  tempo: TempoMap,
+  sampleRate: number,
+  tick: number,
+): number {
   let best = anchors[0] as CaptureAnchor;
   for (const a of anchors) if (Math.abs(a.tick - tick) < Math.abs(best.tick - tick)) best = a;
   return best.frame + (tempo.tickToSeconds(tick) - tempo.tickToSeconds(best.tick)) * sampleRate;
 }
 
 /** The tick heard at a capture frame in a pass, from the pass's nearest anchor. */
-export function tickAtFrame(anchors: readonly CaptureAnchor[], tempo: TempoMap, sampleRate: number, frame: number): number {
+export function tickAtFrame(
+  anchors: readonly CaptureAnchor[],
+  tempo: TempoMap,
+  sampleRate: number,
+  frame: number,
+): number {
   let best = anchors[0] as CaptureAnchor;
   for (const a of anchors) if (Math.abs(a.frame - frame) < Math.abs(best.frame - frame)) best = a;
   return tempo.secondsToTick(tempo.tickToSeconds(best.tick) + (frame - best.frame) / sampleRate);
 }
 
-/** One take per loop pass (a single one without a loop region), in pass order. */
-export function planTakes(input: TakeInput): TakePlan[] {
-  const { anchors, sampleRate: sr, tempo, loop } = input;
-  if (anchors.length === 0 || input.frames <= 0) return [];
-  const minTicks = input.minTicks ?? 120;
-  const L = loop && loop.end > loop.start ? loop : null;
-  const P = input.punch && input.punch.end > input.punch.start ? input.punch : null;
-  /** What a complete pass covers: the loop region, cut to the punch range. */
-  const region = L ? { start: Math.max(L.start, P?.start ?? 0), end: Math.min(L.end, P?.end ?? Infinity) } : null;
+/** Passes shorter than this many ticks (a 1/32 note) are dropped unless the caller says otherwise. */
+const DEFAULT_MIN_TICKS = 120;
+
+/** The anchors of each loop pass, by pass number. */
+function anchorsByPass(anchors: readonly CaptureAnchor[]): Map<number, CaptureAnchor[]> {
   const byPass = new Map<number, CaptureAnchor[]>();
   for (const a of anchors) {
     const list = byPass.get(a.iter);
     if (list) list.push(a);
     else byPass.set(a.iter, [a]);
   }
+  return byPass;
+}
+
+/** Where a pass starts: the first pass where playback started (jumping into the loop if it started outside), later ones at the loop start. */
+function passStartTick(input: TakeInput, loop: TakeInput['loop'], isFirst: boolean): Tick {
+  if (!isFirst) return loop?.start ?? input.startTick;
+  if (loop && (input.startTick < loop.start || input.startTick >= loop.end)) return loop.start;
+  return input.startTick;
+}
+
+/** Where a pass ends: the loop end for every pass but the last, else where the capture ends (cut to the stop tick and the loop). */
+function passEndTick(
+  input: TakeInput,
+  loop: TakeInput['loop'],
+  isLast: boolean,
+  anchors: readonly CaptureAnchor[],
+): Tick {
+  if (!isLast && loop) return loop.end;
+  const lastFrame = tickAtFrame(anchors, input.tempo, input.sampleRate, input.frames);
+  const end = Math.min(lastFrame, input.endTick ?? Infinity);
+  return loop ? Math.min(end, loop.end) : end;
+}
+
+/** One take per loop pass (a single one without a loop region), in pass order. */
+export function planTakes(input: TakeInput): TakePlan[] {
+  const { anchors, sampleRate, tempo } = input;
+  if (anchors.length === 0 || input.frames <= 0) return [];
+  const minTicks = input.minTicks ?? DEFAULT_MIN_TICKS;
+  const loop = input.loop && input.loop.end > input.loop.start ? input.loop : null;
+  const punch = input.punch && input.punch.end > input.punch.start ? input.punch : null;
+  /** What a complete pass covers: the loop region, cut to the punch range. */
+  const region = loop
+    ? { start: Math.max(loop.start, punch?.start ?? 0), end: Math.min(loop.end, punch?.end ?? Infinity) }
+    : null;
+  const byPass = anchorsByPass(anchors);
   const passes = [...byPass.keys()].sort((a, b) => a - b);
   const first = passes[0] as number;
   const last = passes[passes.length - 1] as number;
   const out: TakePlan[] = [];
   for (const pass of passes) {
     const list = byPass.get(pass) as CaptureAnchor[];
-    // Playback starting outside the loop region jumps into it.
-    let start =
-      pass === first
-        ? L && (input.startTick < L.start || input.startTick >= L.end)
-          ? L.start
-          : input.startTick
-        : (L?.start ?? input.startTick);
-    let end: number;
-    if (pass !== last && L) end = L.end;
-    else {
-      const lastFrame = tickAtFrame(list, tempo, sr, input.frames);
-      end = Math.min(lastFrame, input.endTick ?? Infinity);
-      if (L) end = Math.min(end, L.end);
+    let start = passStartTick(input, loop, pass === first);
+    let end = passEndTick(input, loop, pass === last, list);
+    if (punch) {
+      start = Math.max(start, punch.start);
+      end = Math.min(end, punch.end);
     }
-    if (P) {
-      start = Math.max(start, P.start);
-      end = Math.min(end, P.end);
-    }
-    let frame = frameAtTick(list, tempo, sr, start);
+    let frame = frameAtTick(list, tempo, sampleRate, start);
     if (frame < 0) {
       // The capture began after the pass did (no count-in, slow start): the take starts with it.
-      start = tickAtFrame(list, tempo, sr, 0);
+      start = tickAtFrame(list, tempo, sampleRate, 0);
       frame = 0;
     }
-    const s = Math.round(start);
-    const length = Math.round(end) - s;
+    const roundedStart = Math.round(start);
+    const length = Math.round(end) - roundedStart;
     if (length < minTicks) continue;
     out.push({
       pass: pass - first,
-      start: s,
+      start: roundedStart,
       length,
-      offsetSec: Math.max(0, frame / sr + (tempo.tickToSeconds(s) - tempo.tickToSeconds(start))),
-      complete: !!region && region.end > region.start && s <= region.start && s + length >= region.end,
+      offsetSec: Math.max(0, frame / sampleRate + (tempo.tickToSeconds(roundedStart) - tempo.tickToSeconds(start))),
+      complete:
+        !!region && region.end > region.start && roundedStart <= region.start && roundedStart + length >= region.end,
     });
   }
   return out;

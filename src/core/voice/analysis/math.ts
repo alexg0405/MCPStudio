@@ -3,6 +3,7 @@
 /** The logistic curve: 0.5 at zero, 0 and 1 far to either side. Turns a hard threshold into a soft score. */
 export const sigmoid = (x: number): number => 1 / (1 + Math.exp(-x));
 
+/** Converts decibels to a linear amplitude ratio (0 dB = 1, -6 dB is about 0.5). */
 export const dbToAmp = (db: number): number => Math.pow(10, db / 20);
 
 /** Amplitude to dB, floored so that silence is −240 dB rather than −Infinity. */

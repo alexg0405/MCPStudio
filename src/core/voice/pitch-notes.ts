@@ -23,6 +23,7 @@ export { noteStats, slowLine } from './pitch-notes/note-stats';
 export { segmentNotes } from './pitch-notes/segment';
 export { PITCH_NOTE_THRESHOLDS, framesToCents, type PitchFrames, type PitchNote } from './pitch-notes/shared';
 
+/** The pitch frames of a recording and the notes cut from them. */
 export interface PitchAnalysis extends PitchFrames {
   notes: PitchNote[];
 }
@@ -33,6 +34,7 @@ export interface PitchAnalysis extends PitchFrames {
  */
 export const PITCH_ANALYSIS_VERSION = 2;
 
+/** Settings of the sung-pitch analysis; each field left out takes the default noted on it. */
 export interface AnalyzeOptions {
   /** Where the first sample of the audio is on the recording's timeline, seconds (default 0). */
   start?: number;

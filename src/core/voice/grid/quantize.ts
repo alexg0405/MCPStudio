@@ -1,5 +1,8 @@
 import type { VoiceEvent, VoiceKind } from '../analyze';
 
+/**
+ * The musical grid events are snapped to: tempo, where bar 1 beat 1 falls in the audio (seconds) and its subdivision.
+ */
 export interface Grid {
   bpm: number;
   /** Where bar 1 beat 1 is in the audio (seconds). */
@@ -12,6 +15,7 @@ export interface Grid {
   stepsPerBeat?: number;
 }
 
+/** A voice event placed on the grid: its step, its length in steps and how far off the grid it was played. */
 export interface GridEvent extends VoiceEvent {
   /** Steps from bar 1 beat 1; a multiple of `resolution`. */
   step: number;
@@ -21,6 +25,7 @@ export interface GridEvent extends VoiceEvent {
   offsetMs: number;
 }
 
+/** Settings of quantizing: how fine the grid is and the swing the performance was played with. */
 export interface QuantizeOptions {
   /** Grid unit in steps: 1 (default) or 0.5 (1/32 at 1/16 steps, for hat rolls). */
   resolution?: 0.5 | 1;

@@ -8,6 +8,7 @@
 import { decimate } from './filters';
 import { RealFFT, nextPowerOfTwo } from './fft';
 
+/** Settings of the pitch tracker; each field left out takes the default noted on it. */
 export interface PitchOptions {
   /** Lowest detectable fundamental in Hz (default 40). */
   minHz?: number;
@@ -19,6 +20,7 @@ export interface PitchOptions {
   window?: number;
 }
 
+/** The pitch tracker's result: one entry per analysis frame, in seconds, hertz and 0..1. */
 export interface PitchTrack {
   /** Frame centers in seconds; frame i is at i × hop / sampleRate. */
   times: Float32Array;
@@ -41,10 +43,12 @@ const SILENCE_RMS = 1e-5;
 /** Lowest rate the tracker decimates to. */
 const MIN_ANALYSIS_RATE = 8000;
 
+/** The MIDI note number of a frequency in Hz (69 = A4 = 440 Hz, fractions are cents); NaN for 0 Hz or below. */
 export function hzToMidi(hz: number): number {
   return hz > 0 ? 69 + 12 * Math.log2(hz / 440) : NaN;
 }
 
+/** The frequency in Hz of a MIDI note number (fractions allowed); the reverse of `hzToMidi`. */
 export function midiToHz(m: number): number {
   return 440 * Math.pow(2, (m - 69) / 12);
 }

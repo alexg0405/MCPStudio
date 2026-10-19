@@ -17,6 +17,10 @@ import { decimate } from './filters';
 /** The divisors tried, lowest candidate fundamental first: f / 3, f / 2, f / 1.5. */
 export const OCTAVE_DIVISORS: readonly number[] = [3, 2, 1.5];
 
+/**
+ * The numbers that decide whether the spectrum shows a lower fundamental under a tracked pitch; each field says what it
+ * limits.
+ */
 export const OCTAVE_THRESHOLDS = {
   /** Each line at a new multiple must stand at least this far (amplitude ratio) above the floor between the lines… */
   lineOverFloor: [4, 4] as const,
@@ -103,6 +107,11 @@ export interface SubharmonicEvidence {
   overFloor: [number, number];
 }
 
+/**
+ * Measures the spectrum at the two new multiples of a candidate fundamental `hz / divisor`: how strong each line is and
+ * how far it stands above its floor. Null when the candidate is too low, too narrow to resolve or the spectrum is
+ * silent.
+ */
 export function subharmonicEvidence(
   mag: Float64Array,
   binHz: number,

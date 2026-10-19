@@ -1,13 +1,35 @@
 /** Commands on a recording's whole comp: flatten it, set its crossfade, open or fold its takes. */
-import { flatten, setCrossfade, setTakesOpen } from '@app/actions/comp';
+import { addTakesToCompOf, compTarget, flatten, setCrossfade, setTakesOpen } from '@app/actions/comp';
 import type { Services } from '@app/services';
 import { DEFAULT_CROSSFADE_MS, MAX_CROSSFADE_MS } from '@core/audio/comp';
+import { overlappingGroups } from '@core/query/takes';
 import { crossfadeDialog } from './menus';
 import { GROUP_ARGS, hasTakeGroup, takeTarget, type TakeArgs } from './target';
 
-/** Registers `comp.flatten`, `comp.crossfade` and `comp.toggleTakes`. */
+/** True when the takes the command would act on overlap another recording that has a comp. */
+function canAddTakes(s: Services): boolean {
+  const target = compTarget(s);
+  return !!target && overlappingGroups(s.doc.getState().project, target.group).length > 0;
+}
+
+/** Registers `comp.flatten`, `comp.crossfade`, `comp.toggleTakes` and `comp.addTakes`. */
 export function registerCompCommands(services: Services): void {
   const { commands } = services;
+  commands.register<TakeArgs>({
+    id: 'comp.addTakes',
+    title: 'Add these takes to the comp',
+    category: 'Takes',
+    hint: 'Another recording of the same bars (its takes overlap these in time): its takes join this recording’s comp, so the comp can play the best parts of both; the other comp track goes, and what it played stays where this comp played nothing (undo brings it back)',
+    argsHint: `${GROUP_ARGS} for the recording whose takes are added; into: take group id of the comp that gets them (default: the overlapping recording that overlaps most)`,
+    enabled: canAddTakes,
+    run: (s, args) => {
+      const target = takeTarget(s, args);
+      if (!target) return;
+      const result = addTakesToCompOf(s, target.group.id, typeof args?.into === 'string' ? args.into : undefined);
+      if ('why' in result) s.session.getState().toast(`Nothing added: ${result.why}.`);
+      else s.session.getState().toast(`Added ${result.takes} take${result.takes === 1 ? '' : 's'} to the comp: swipe across them with the Comp tool or use Next take.`);
+    },
+  });
   commands.register<TakeArgs>({
     id: 'comp.flatten',
     title: 'Flatten comp',

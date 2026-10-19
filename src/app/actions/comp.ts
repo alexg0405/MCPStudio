@@ -6,8 +6,8 @@
 import { tempoMapOf } from '@core/automation/tempo';
 import { DEFAULT_CROSSFADE_MS } from '@core/audio/comp';
 import type { AudioClip, Clip, ClipId, Project, Tick } from '@core/model/types';
-import { compSegmentsOf, compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
-import { groupOfClip, isTakeClip, takeGroup, takeGroups, type TakeGroup } from '@core/query/takes';
+import { addTakesToComp, compSegmentsOf, compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
+import { groupName, groupOfClip, isTakeClip, overlappingGroups, takeGroup, takeGroups, type TakeGroup } from '@core/query/takes';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Services } from '../services';
 import { consolidate } from './render-to-audio';
@@ -135,6 +135,44 @@ export async function flatten(s: Services, groupId: string, merge: boolean): Pro
   const cursor = s.history.status().cursor;
   s.history.transact('Flatten comp', (d) => void flattenComp(d, groupId), { amend: cursor });
   return true;
+}
+
+/**
+ * "Add these takes to the comp": the takes of recording `fromGroup` join another recording's comp (`intoGroup`, default:
+ * the one whose time range overlaps most), so the comp can play segments from both. One undo step. Returns what was
+ * added, or null with the reason in `why` when nothing could be (no overlapping recording, or the given one does not
+ * overlap).
+ */
+export function addTakesToCompOf(
+  s: Services,
+  fromGroup: string,
+  intoGroup?: string,
+): { takes: number; into: string } | { why: string } {
+  const p = s.doc.getState().project;
+  const source = takeGroup(p, fromGroup);
+  if (!source) return { why: 'there is no such recording' };
+  const candidates = overlappingGroups(p, source);
+  const target = intoGroup ? candidates.find((g) => g.id === intoGroup) : candidates[0];
+  if (!target) {
+    return {
+      why: intoGroup
+        ? `“${groupName(p, source)}” does not overlap that recording in time (its takes need to cover some of the same bars)`
+        : `no other recording overlaps “${groupName(p, source)}” in time (add takes only to a recording of the same bars)`,
+    };
+  }
+  const tempo = tempoMapOf(p, 'song');
+  const intoName = groupName(p, target);
+  const label = `Add the takes of ${groupName(p, source)} to the comp of ${intoName}`;
+  let takes = 0;
+  let ids: ClipId[] = [];
+  const changed = s.history.transact(label, (d) => {
+    const added = addTakesToComp(d, fromGroup, target.id, tempo);
+    takes = added?.takes ?? 0;
+    ids = added?.comp ?? [];
+  });
+  if (!changed) return { why: 'nothing changed' };
+  s.editor.getState().selectClips(ids);
+  return { takes, into: target.id };
 }
 
 /** Opens or closes the stack of take lanes under the comp lane. */

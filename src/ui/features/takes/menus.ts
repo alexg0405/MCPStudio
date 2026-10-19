@@ -3,7 +3,7 @@ import { compTarget, setCrossfade } from '@app/actions/comp';
 import type { Services } from '@app/services';
 import { MAX_CROSSFADE_MS } from '@core/audio/comp';
 import type { Clip, LaneId } from '@core/model/types';
-import { groupOfLane } from '@core/query/takes';
+import { groupName, groupOfLane, overlappingGroups, takeGroup } from '@core/query/takes';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { showFormDialog } from '../../controls/FormDialog';
 
@@ -33,6 +33,21 @@ function listenEntry(s: Services, clip: Clip & { kind: 'audio' }, isTake: boolea
     hint: 'Hear this one take on its own, without unmuting it (the comp and the other takes go quiet); the project is not changed. Choose it again to go back to the comp',
     onSelect: () => void s.commands.run('comp.listenTake', { clip: clip.id }),
   };
+}
+
+/**
+ * "Add these takes to the comp" for each other recording that overlaps this one in time (usually one): its comp track
+ * gets these takes as more to choose from. Empty when no recording overlaps.
+ */
+function addTakesEntries(s: Services, groupId: string): MenuEntry[] {
+  const project = s.doc.getState().project;
+  const group = takeGroup(project, groupId);
+  if (!group) return [];
+  return overlappingGroups(project, group).map((other) => ({
+    label: `Add these takes to the comp of “${groupName(project, other)}”`,
+    hint: 'These takes join that recording’s comp track, so you can pick the best parts of both; this recording’s own comp track goes (what it played stays where that comp plays nothing). Undo brings it back',
+    onSelect: () => void s.commands.run('comp.addTakes', { group: groupId, into: other.id }),
+  }));
 }
 
 /** The take entries of a clip's menu. */
@@ -65,6 +80,7 @@ export function takeClipMenu(s: Services, clip: Clip): MenuEntry[] {
       hint: 'Swap this part of the comp for the previous take',
       onSelect: () => void s.commands.run('comp.previousTake', { clip: clip.id }),
     },
+    ...addTakesEntries(s, target.group.id),
     {
       label: isOpen ? 'Fold the takes' : 'Open the takes',
       hint: 'Show or hide the take tracks under the comp track',
@@ -89,6 +105,7 @@ export function takeLaneMenu(s: Services, laneId: LaneId): MenuEntry[] {
   if (!group) return [];
   const isOpen = s.editor.getState().openTakes.includes(group.id);
   return [
+    ...addTakesEntries(s, group.id),
     {
       label: isOpen ? 'Fold the takes' : 'Open the takes',
       hint: 'Show or hide the take tracks under the comp track',

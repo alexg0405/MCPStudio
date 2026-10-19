@@ -3176,8 +3176,27 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   clears itself when the take is deleted or undone away. The listened take is outlined and labelled in the playlist; the
   `get_takes` read reports `listening_to_take`, and the command (with an `argsHint`) reaches the AI and MCP through the
   command catalog.
-- Not done: the comp cannot span takes of different recordings; a take clip's own gain or fade changed after the comp was made
-  does not reach comp clips that already exist (measured against the current takes they read as hand edits and are kept).
+- **A comp of several recordings** (`addTakesToComp` in `core/ops/comp.ts`, `comp.addTakes` "Add these takes to the comp" in the
+  clip and track menus and the Playlist menu, the `add_takes` comp action, `overlappingGroups` in `core/query/takes.ts`). When
+  another recording of the same bars exists (its takes' time range overlaps this group's), its takes can join this group: only
+  their tags change (`take.group` = this group, `take.index` continues after this group's last, the tracks' `takes.group`
+  likewise, the tracks move under this comp track and the takes get the palette colour of their new number), and the other
+  group's comp clips and comp track go (or the track becomes an ordinary one when it is the last). Nothing new is stored: a take
+  clip already has its own channel (sample) and trim, and a comp clip is made with the `channelId` and trim of the take clip it
+  plays (`setComp`), so each comp segment plays the audio it came from, whichever recording that is, and old projects (one
+  recording per group) need no repair; `repairTakes` accepts a group whose takes sit on different channels. This comp is
+  unchanged by the merge (hand-made gains and fades kept), and the parts of the other comp that fall where this one plays nothing
+  are added in the gaps (`fillGaps`), so what is heard stays heard. One `transact`: undo returns the project exactly.
+  `get_takes` lists `overlaps_groups`, and after a merge each take's `recording`.
+- **A take clip's own gain or fade** that changes after the comp was made reaches the comp clips that play it:
+  `setAudioClipEdits(d, id, edits, { tempo })` (the playlist's level handles, the clip menu's levels and Normalize, the AI's
+  `edit_audio_clip` pass the tempo) does what `editClips` does for moves: `snapshotComps` before, `refreshComps` after, in the
+  same undo step. The snapshot's hand edits are measured against the comp as it was before the change, so a comp clip whose gain
+  or fade was set by hand keeps it (it wins, as in every rebuild) and every other comp clip of that take follows the take.
+  A comp's outer edges inherit the take's fades (the crossfades at the borders stay the comp's own). A take that the comp does not
+  play changes nothing in the comp (the clips and their ids stay).
+- Not done: merged recordings are all-or-nothing (the takes of one group cannot be split back into two recordings except by undo);
+  the other comp's own hand-made gains and fades are not carried over.
 
 - Record mode records what the chip next to the record button says: recorders have a kind (`notes`, the default, or
   `audio`) and the prefs `recordNotes` / `recordAudio` choose. Browsers ask for microphone permission on the first

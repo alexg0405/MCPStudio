@@ -6,6 +6,7 @@
 import type { Draft } from 'immer';
 import {
   applyCompEdits,
+  fillGaps,
   findCompEdits,
   planComp,
   readComp,
@@ -169,6 +170,73 @@ export function compSetCrossfade(d: Draft<Project>, groupId: string, ms: number,
   setComp(d, groupId, segments, tempo, edits);
 }
 
+/** What `addTakesToComp` did. */
+export interface AddedTakes {
+  /** How many takes of the other recording joined the group. */
+  takes: number;
+  /** The comp lane's new clips. */
+  comp: ClipId[];
+}
+
+/**
+ * "Add these takes to the comp": the takes of another recording (its own take group) of the same part join this group,
+ * so the comp can play segments from any of them. Only their group tag changes, plus a new take number each (after
+ * this group's last, in their own order); every take clip keeps its own sample, trim and track, and a comp clip keeps
+ * the channel of the take clip it plays, so each segment plays the audio it came from. The other recording's take tracks
+ * move under this comp track. Its own comp goes, but where it played something this comp does not, that stays: those
+ * parts join this comp in the gaps. Needs the two recordings' time ranges to overlap (returns null otherwise, and
+ * for the same group or one without a comp track); this group's hand-made gains and fades are kept.
+ */
+export function addTakesToComp(d: Draft<Project>, fromGroup: string, intoGroup: string, tempo: TempoMap): AddedTakes | null {
+  if (fromGroup === intoGroup) return null;
+  const source = groupIn(d, fromGroup);
+  const target = groupIn(d, intoGroup);
+  if (!source || !target?.compLane || source.takes.length === 0) return null;
+  if (!(source.start < target.end && source.end > target.start)) return null;
+  const edits = compEditsOf(d, intoGroup, tempo);
+  const firstNewIndex = (target.takes[target.takes.length - 1]?.index ?? -1) + 1;
+  const ownSegments = compSegmentsOf(target);
+  const otherSegments = compSegmentsOf(source).map((s) => ({ ...s, take: s.take + firstNewIndex }));
+  retagTakes(d, source, intoGroup, firstNewIndex);
+  moveTakeLanesUnder(d, source.takeLanes, target.compLane);
+  releaseCompLane(d, source);
+  const comp = setComp(d, intoGroup, fillGaps(ownSegments, otherSegments), tempo, edits);
+  return { takes: source.takes.length, comp };
+}
+
+/** Puts a group's take clips and take lanes into another group, numbering the takes from `firstIndex`. */
+function retagTakes(d: Draft<Project>, source: TakeGroup, intoGroup: string, firstIndex: number): void {
+  for (const take of source.takes) {
+    const index = take.index + firstIndex;
+    for (const c of take.clips) {
+      const clip = d.playlist.clips[c.id];
+      if (clip?.kind !== 'audio') continue;
+      clip.take = { group: intoGroup, index };
+      // Each take has its own colour, so the comp shows which take plays where.
+      clip.color = paletteColor(index);
+    }
+  }
+  for (const id of source.takeLanes) {
+    const lane = d.playlist.lanes[id];
+    if (lane) lane.takes = { group: intoGroup, role: 'take' };
+  }
+}
+
+/** Moves the tracks `laneIds` (in the order given) to just under `under`, so a group's takes stay together. */
+function moveTakeLanesUnder(d: Draft<Project>, laneIds: readonly LaneId[], under: LaneId): void {
+  const moving = new Set<LaneId>(laneIds);
+  const rest = d.playlist.laneOrder.filter((id) => !moving.has(id));
+  const at = rest.indexOf(under) + 1;
+  d.playlist.laneOrder.splice(0, d.playlist.laneOrder.length, ...rest.slice(0, at), ...laneIds, ...rest.slice(at));
+}
+
+/** A group that has been merged away: its comp clips go, and so does its comp track (or it turns into an ordinary track). */
+function releaseCompLane(d: Draft<Project>, source: TakeGroup): void {
+  for (const c of source.comp) delete d.playlist.clips[c.id];
+  if (!source.compLane) return;
+  if (!dropLane(d, source.compLane)) delete d.playlist.lanes[source.compLane]?.takes;
+}
+
 /**
  * Flatten: the comp becomes ordinary clips on its track and the take lanes (with the takes) go. What plays
  * stays exactly as it is (the takes were muted).
@@ -198,6 +266,10 @@ interface TakeClipState {
   start: Tick;
   length: Tick;
   offsetSec: number;
+  /** The clip's own gain (linear, absent = 1) and fades (seconds, absent = none). */
+  gain: number;
+  fadeIn: number;
+  fadeOut: number;
 }
 
 /** What `refreshComps` needs from before an edit of take clips. */
@@ -209,8 +281,8 @@ export interface CompSnapshot {
 }
 
 /**
- * Before take clips are edited (moved, resized): what their groups' comps play and the hand-made gains and fades
- * on them. Pass the result to `refreshComps` after the edit, in the same `transact`.
+ * Before take clips are edited (moved, resized, or given another gain or fade): what their groups' comps play and the
+ * hand-made gains and fades on them. Pass the result to `refreshComps` after the edit, in the same `transact`.
  */
 export function snapshotComps(d: Draft<Project>, clipIds: Iterable<ClipId>, tempo: TempoMap): CompSnapshot[] {
   const wanted = new Set<string>();
@@ -227,18 +299,38 @@ export function snapshotComps(d: Draft<Project>, clipIds: Iterable<ClipId>, temp
       segments: compSegmentsOf(g),
       edits: compEditsOf(d, groupId, tempo),
       clips: g.takes.flatMap((t) =>
-        t.clips.map((c) => ({ id: c.id, take: t.index, start: c.start, length: c.length, offsetSec: c.offsetSec })),
+        t.clips.map((c) => ({
+          id: c.id,
+          take: t.index,
+          start: c.start,
+          length: c.length,
+          offsetSec: c.offsetSec,
+          gain: c.gain ?? 1,
+          fadeIn: c.fadeIn ?? 0,
+          fadeOut: c.fadeOut ?? 0,
+        })),
       ),
     });
   }
   return out;
 }
 
+/** True when a take clip's own gain or fade is not what the snapshot saw. */
+function isRestyled(now: Draft<AudioClip>, old: TakeClipState): boolean {
+  return (now.gain ?? 1) !== old.gain || (now.fadeIn ?? 0) !== old.fadeIn || (now.fadeOut ?? 0) !== old.fadeOut;
+}
+
+/** True when some segment of the comp plays this take clip's stretch of the timeline. */
+function isPlayed(segments: readonly CompSegment[], clip: TakeClipState): boolean {
+  return segments.some((s) => s.take === clip.take && s.from < clip.start + clip.length && s.to > clip.start);
+}
+
 /**
- * After take clips were moved or resized: the comp follows. What the comp plays of a moved clip moves with it (the
- * same audio stays in the same place), a trimmed clip's comp is cut to what is left, and the comp lane is rebuilt
- * with the hand-made gains and fades kept: one undo step with the edit. Groups whose takes did not change are left
- * alone.
+ * After take clips were moved, resized or restyled: the comp follows. What the comp plays of a moved clip moves with it
+ * (the same audio stays in the same place), a trimmed clip's comp is cut to what is left, and the comp lane is rebuilt
+ * with the hand-made gains and fades kept: one undo step with the edit. A take's own gain or fade that changed reaches
+ * the comp clips that play it (the rebuilt plan reads the take again), except where a comp clip had its own hand-made
+ * value before the edit: that is in `snap.edits` and wins. Groups whose takes did not change are left alone.
  */
 export function refreshComps(d: Draft<Project>, snaps: readonly CompSnapshot[], tempo: TempoMap): void {
   for (const snap of snaps) {
@@ -248,7 +340,10 @@ export function refreshComps(d: Draft<Project>, snaps: readonly CompSnapshot[], 
     for (const old of snap.clips) {
       const now = d.playlist.clips[old.id];
       if (!now || now.kind !== 'audio') continue;
-      if (now.start === old.start && now.length === old.length && now.offsetSec === old.offsetSec) continue;
+      const isMoved = now.start !== old.start || now.length !== old.length || now.offsetSec !== old.offsetSec;
+      // A new gain or fade matters only where the comp plays this take's clip (else the comp is left as it is).
+      if (isRestyled(now, old) && isPlayed(segments, old)) changed = true;
+      if (!isMoved) continue;
       changed = true;
       // A pure move keeps the audio's trim; a trim from the left keeps the audio where it is.
       const moved = Math.abs(now.offsetSec - old.offsetSec) < 1e-9 ? now.start - old.start : 0;

@@ -6,7 +6,7 @@ import { filledSlots, slotLabel, slotLoops, slotMode } from '@core/launcher/grid
 import { sameTarget } from '@core/model/targets';
 import type { AutomationChannel, Clip, ClipId, LaneId, ParamTarget, Project } from '@core/model/types';
 import { compSegmentsOf } from '@core/ops/comp';
-import { takeGroups, type TakeGroup } from '@core/query/takes';
+import { groupName, overlappingGroups, takeGroups, type TakeGroup } from '@core/query/takes';
 import type { Services } from '../../services';
 import { automationDrives, ownUnitOf, paramTargetOf } from '../ops/automation';
 import type { OpContext } from '../ops/context';
@@ -165,10 +165,15 @@ export const getAutomation = tool(
 function describeTakeGroup(services: Services, project: Project, group: TakeGroup, auditionedClipId: ClipId | null) {
   const takeNumber = (takeIndex: number) => group.takes.findIndex((take) => take.index === takeIndex) + 1;
   const auditionedTake = group.takes.find((take) => take.clips.some((clip) => clip.id === auditionedClipId));
-  const compName = group.compLane ? project.playlist.lanes[group.compLane]!.name.replace(/ · comp$/, '') : group.id;
+  const compName = groupName(project, group);
+  // Takes of more than one recording (after "add these takes to the comp") say which recording each came from.
+  const recordings = new Set(group.takes.map((take) => take.clips[0]?.channelId));
+  const channelName = (take: TakeGroup['takes'][number]) => project.channels[take.clips[0]?.channelId as never]?.name;
   return {
     group: group.id,
     name: compName,
+    // Other recordings of the same bars: add_takes can move their takes into this comp (or this one's into theirs).
+    overlaps_groups: overlappingGroups(project, group).map((other) => other.id),
     comp_track: group.compLane ? trackNumberOf(project, group.compLane) : null,
     take_tracks: group.takeLanes.map((laneId) => trackNumberOf(project, laneId)),
     takes_open: services.editor.getState().openTakes.includes(group.id),
@@ -177,6 +182,7 @@ function describeTakeGroup(services: Services, project: Project, group: TakeGrou
     crossfade_ms: group.crossfadeMs,
     takes: group.takes.map((take) => ({
       take: takeNumber(take.index),
+      ...(recordings.size > 1 ? { recording: channelName(take) } : {}),
       clips: take.clips.map((clip) => ({
         id: clip.id,
         track: trackNumberOf(project, clip.laneId),
@@ -194,7 +200,7 @@ function describeTakeGroup(services: Services, project: Project, group: TakeGrou
 
 export const getTakes = tool(
   'get_takes',
-  'Audio recordings that have takes (loop passes): for each take group its comp track and take tracks (1-based playlist tracks), the takes (1-based, in recording order, with their clip ids, bar and length), what the comp plays where (take number per range of bars), its crossfade and which take the musician is listening to on its own (listening_to_take; the comp.listenTake command starts that); also the punch range and recording settings. The comp action takes these numbers.',
+  'Audio recordings that have takes (loop passes): for each take group its comp track and take tracks (1-based playlist tracks), the takes (1-based, in recording order, with their clip ids, bar and length; the recording they came from once takes of several recordings were added to one comp), the groups it overlaps in time (overlaps_groups: the comp action add_takes merges them), what the comp plays where (take number per range of bars), its crossfade and which take the musician is listening to on its own (listening_to_take; the comp.listenTake command starts that); also the punch range and recording settings. The comp action takes these numbers.',
   { group: S.str('Only this take group (its id).') },
   (services, args) => {
     const project = projectOf(services);

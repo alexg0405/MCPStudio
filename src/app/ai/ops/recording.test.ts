@@ -93,6 +93,75 @@ describe('comp action', () => {
   });
 });
 
+/** `withTakes` plus a second recording of the same 4 bars (two takes, on the tracks after the first one's). */
+function withTwoRecordings() {
+  const { s, group } = withTakes();
+  const second = newTakeGroup();
+  s.history.transact('record 2', (d) => {
+    addSample(d, { id: 'smp2' as SampleId, name: 'rec2', source: { kind: 'builtin', generator: 'x', version: 1 } });
+    const ch: AudioClipChannel = {
+      kind: 'audioClip',
+      id: 'ch_rec2' as AudioClipChannel['id'],
+      name: 'Recording 2',
+      color: '#fff',
+      muted: false,
+      solo: false,
+      volume: 1,
+      pan: 0,
+      output: 'master' as never,
+      sampleId: 'smp2' as SampleId,
+    };
+    addChannel(d, ch);
+    addTakeGroup(d, {
+      group: second,
+      name: 'Recording 2',
+      channelId: ch.id,
+      takes: [0, 1].map((i) => ({ start: BAR * 4, length: BAR * 4, offsetSec: 20 + i * 8 })),
+      audible: 1,
+      first: 4,
+      tempo: tempoMapOf(d as never, 'song'),
+    });
+  });
+  return { s, group, second };
+}
+
+describe('comp action: add_takes', () => {
+  it('moves the takes of another recording into a comp, one undo step; the comp can then play them', () => {
+    const { s, group, second } = withTwoRecordings();
+    const before = s.doc.getState().project;
+    const r = run(s, [{ op: 'comp', action: 'add_takes', group: second, into_group: group }]);
+    expect(r.changes[0]).toBe('Added the 2 takes of “Recording 2” to the comp of “Recording 1”');
+    expect(takeGroups(s.doc.getState().project).map((g) => g.takes.length)).toEqual([5]);
+    // Take 4 is the other recording's first take.
+    run(s, [{ op: 'comp', action: 'use_take', take: 4, from_bar: 6, to_bar: 6 }]);
+    const g = takeGroups(s.doc.getState().project)[0]!;
+    expect(g.comp.map((c) => c.channelId)).toEqual(['ch_rec', 'ch_rec2', 'ch_rec']);
+    s.history.undo();
+    s.history.undo();
+    expect(s.doc.getState().project).toEqual(before);
+  });
+
+  it('the default is the recording that overlaps; warnings say why it cannot', () => {
+    const { s, second } = withTwoRecordings();
+    expect(run(s, [{ op: 'comp', action: 'add_takes', group: second }]).changes[0]).toMatch(/^Added the 2 takes of “Recording 2” to the comp of “Recording 1”$/);
+    const lone = withTakes().s;
+    expect(run(lone, [{ op: 'comp', action: 'add_takes' }]).warnings).toEqual(['comp: no other recording overlaps these takes in time (give into_group or into_track)']);
+    expect(run(s, [{ op: 'comp', action: 'add_takes', into_group: 'nope' }]).warnings[0]).toMatch(/there is no take group "nope"/);
+  });
+
+  it('get_takes lists which groups overlap, and which recording each take came from after the merge', () => {
+    const { s, group, second } = withTwoRecordings();
+    const read = () => (runReadTool(s, 'get_takes') as { groups: Array<{ group: string; overlaps_groups: string[]; takes: Array<{ recording?: string }> }> }).groups;
+    expect(read().map((g) => [g.group, g.overlaps_groups])).toEqual([
+      [group, [second]],
+      [second, [group]],
+    ]);
+    run(s, [{ op: 'comp', action: 'add_takes', group: second }]);
+    expect(read()).toHaveLength(1);
+    expect(read()[0]!.takes.map((t) => t.recording)).toEqual(['Recording 1', 'Recording 1', 'Recording 1', 'Recording 2', 'Recording 2']);
+  });
+});
+
 describe('get_takes', () => {
   it('lists the takes, the comp, the punch range and the recording settings in the units the actions take', () => {
     const { s, group } = withTakes();

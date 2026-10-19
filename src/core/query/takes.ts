@@ -102,6 +102,23 @@ export function takeGroup(project: Project, id: string): TakeGroup | null {
   return takeGroups(project).find((g) => g.id === id) ?? null;
 }
 
+/**
+ * The other recordings' take groups whose time range overlaps this one's (they have a comp lane and takes): the ones
+ * "Add these takes to the comp" can merge with, the most overlapping first.
+ */
+export function overlappingGroups(project: Project, group: TakeGroup): TakeGroup[] {
+  const overlapOf = (other: TakeGroup) => Math.min(group.end, other.end) - Math.max(group.start, other.start);
+  return takeGroups(project)
+    .filter((other) => other.id !== group.id && other.compLane !== null && other.takes.length > 0 && overlapOf(other) > 0)
+    .sort((a, b) => overlapOf(b) - overlapOf(a));
+}
+
+/** A recording's name as its tracks show it: the comp track's name without " · comp" (the group's id when it has none). */
+export function groupName(project: Project, group: TakeGroup): string {
+  const lane = group.compLane ? project.playlist.lanes[group.compLane] : undefined;
+  return lane ? lane.name.replace(/ · comp$/, '') : group.id;
+}
+
 /** The group a lane belongs to (as its comp lane or one of its take lanes). */
 export function groupOfLane(project: Project, laneId: LaneId): TakeGroup | null {
   const t = project.playlist.lanes[laneId]?.takes;

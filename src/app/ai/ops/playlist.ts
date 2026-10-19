@@ -140,7 +140,7 @@ export const playlist: OpModule = {
         ...(gain !== undefined ? { gain: gain <= -60 ? 0 : dbToGain(Math.min(12, gain)) } : {}),
         ...(fadeIn !== undefined ? { fadeIn } : {}),
         ...(fadeOut !== undefined ? { fadeOut } : {}),
-      });
+      }, { tempo: tempoMapOf(context.base, 'song') });
       const after = draft.playlist.clips[id] as Draft<AudioClip>;
       const name = draft.channels[after.channelId]?.name ?? 'audio';
       const out = [

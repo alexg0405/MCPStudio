@@ -4,7 +4,8 @@ import { MASTER, type InsertId, type Tick } from '@core/model/types';
 import { ticksPerBar } from '@core/time/ppq';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
-import { AudioInputOverlay, audioInputDialog, runCalibration } from './AudioInputDialog';
+import { AudioInputOverlay } from './AudioInputDialog';
+import { audioInputDialog, runCalibration } from './audio-input-store';
 
 export const order = 12;
 

@@ -1,0 +1,14 @@
+up 300: 3defade7c927
+down 500: b5b3d5040bca
+octave down: 1ffabfb4e854
+octave up: 61cb325cfa1d
+ramp: f3ff0f301641
+late part only: 53cf05639f68
+clamped: 17a7ac347aa2
+no shift: ec3d83a8143f
+glide voice: eb1042263a14
+unvoiced gaps: f401493fe805
+stereo: 21343c39bd97 6693f95c2b4a
+noisy: e813958e4e3b
+no pitch: b500298a073f
+empty: e3b0c44298fc

@@ -9,9 +9,15 @@ import type { ReferenceSection, ReferenceTrack } from '../model/types';
 
 /** What the arranger takes: up to this many sections and bars, each section 1–64 bars. */
 export const MAX_SECTIONS = 24;
+/** The most bars the arranger takes from a reference. */
 export const MAX_BARS = 512;
+/** The most bars one section may have. */
 export const MAX_SECTION_BARS = 64;
 
+/**
+ * One section planned from the reference: its name, role, length in bars, energy and where it lies in the reference
+ * (seconds).
+ */
 export interface PlannedSection {
   name: string;
   role: SectionRole;
@@ -25,6 +31,7 @@ export interface PlannedSection {
   toSec: number;
 }
 
+/** The sections planned from a reference, and plain notes about anything that was merged, split or cut. */
 export interface SectionPlan {
   sections: PlannedSection[];
   /** Plain words about anything that was merged, split or cut. */

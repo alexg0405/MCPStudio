@@ -9,6 +9,10 @@ import { ticksPerBar } from '../time/ppq';
 import { mutedLanes } from './playlist';
 import { patternLength } from './queries';
 
+/**
+ * What plays in one bar of the song: its notes per channel, audio and automation clips, with the bar's span in song
+ * ticks.
+ */
 export interface BarActivity {
   /** 1-based bar number. */
   bar: number;

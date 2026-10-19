@@ -26,6 +26,7 @@ export const FINGERPRINT = [
   { name: 'stutter', weight: 0.5 },
 ] as const;
 
+/** The fingerprint of a sound: its measurements scaled to 0..1, in the order of `FINGERPRINT`. */
 export function fingerprint(f: SoundFeatures, _kind: SampleKind): number[] {
   const pitched = clamp01((f.voiced - 0.3) / 0.5);
   // Flatness says something only where there is energy above the bass.

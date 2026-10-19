@@ -55,6 +55,10 @@ const MIN_VOICED_SHARE = 0.6;
 /** Categories whose sound has a note (a noisy hit's WAV note is ignored). */
 const NOTE_CATEGORIES = new Set(['tonal', '808', 'kick', 'tom', 'vocal', 'perc']);
 
+/**
+ * What the sample analyzer is told about a file besides its audio: its path (for name hints), its real length when only
+ * the start was read, and the note it says it is tuned to.
+ */
 export interface AnalyzeOptions {
   /** The file's path in its folder: its name and folders hint the category, tempo and key. */
   path?: string;

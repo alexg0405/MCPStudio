@@ -83,6 +83,7 @@ const KIND_NAME: Record<ReferenceSection['kind'], string> = {
   outro: 'Outro',
   body: 'Main part',
 };
+/** The name of a reference section kind for people ("Drop", "Main part"). */
 export const sectionKindName = (k: ReferenceSection['kind']): string => KIND_NAME[k];
 
 /** "Intro 16 · Drop 32 · Break 16 · Drop 32" (bars). */

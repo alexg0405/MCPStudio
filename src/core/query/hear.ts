@@ -8,6 +8,10 @@ import { produce } from 'immer';
 import type { ClipId, Project } from '../model/types';
 import { auditionProject } from './takes';
 
+/**
+ * What the engine plays differently while the musician only listens another way: the take heard alone and the clips
+ * that play their original recording.
+ */
 export interface Listening {
   /** The take clip heard on its own, or null. */
   audition: ClipId | null;

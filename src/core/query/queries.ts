@@ -34,6 +34,7 @@ export const sortedNotes = memo1((notes: Readonly<Record<NoteId, Note>>): readon
   Object.values(notes).sort((a, b) => a.tick - b.tick || a.key - b.key),
 );
 
+/** The notes of a channel sorted by start (then key), or an empty list when there are none. */
 export function notesSorted(notes: Readonly<Record<NoteId, Note>> | undefined): readonly Note[] {
   return notes ? sortedNotes(notes) : EMPTY_NOTES;
 }
@@ -110,6 +111,10 @@ export function patternLength(pattern: Pattern, ts: TimeSignature): Tick {
   return len;
 }
 
+/**
+ * How a pattern's notes look in the step sequencer: whether they are plain steps, and the velocity and note of each
+ * step.
+ */
 export interface StepView {
   /** True when every note is a plain step (renders as the step grid); false = show a mini piano roll. */
   isSteps: boolean;
@@ -164,6 +169,7 @@ export const effectivelyMuted = memo1((channels: Readonly<Record<ChannelId, Chan
   return out;
 });
 
+/** The project's instrument channels in channel order. */
 export function instrumentChannels(project: Project): InstrumentChannel[] {
   const out: InstrumentChannel[] = [];
   for (const id of project.channelOrder) {
@@ -187,6 +193,7 @@ export function lowestNoteKey(project: Project, channelId: ChannelId): number | 
   return lowest;
 }
 
+/** How many bars are needed to hold some ticks (rounded up) in a time signature. */
 export function barCount(ticks: Tick, ts: TimeSignature): number {
   return Math.ceil(ticks / ticksPerBar(ts));
 }

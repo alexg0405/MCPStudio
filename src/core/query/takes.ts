@@ -8,6 +8,10 @@ import { playbackMode, sourceSecondsAt } from '../audio/playback';
 import type { AudioClip, Clip, ClipId, LaneId, Playlist, Project, Tick } from '../model/types';
 import type { TempoMap } from '../time/ppq';
 
+/**
+ * The takes of one recording and where they live: the comp lane and its clips, the take lanes and each take's clips,
+ * the crossfade and the extent in song ticks.
+ */
 export interface TakeGroup {
   id: string;
   /** The track that plays the comp (null if it was deleted: the group is then repaired away). */
@@ -93,6 +97,7 @@ export function takeGroups(project: Project): readonly TakeGroup[] {
   return v;
 }
 
+/** The take group with this id, or null when there is none. */
 export function takeGroup(project: Project, id: string): TakeGroup | null {
   return takeGroups(project).find((g) => g.id === id) ?? null;
 }

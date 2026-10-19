@@ -57,6 +57,7 @@ export function toNoteMap(set: NoteSet): Pattern['notes'] {
   return out;
 }
 
+/** A deep copy of a `NoteSet`, so a variant can be edited without touching the notes it was built from. */
 export function cloneSet(set: NoteSet): NoteSet {
   const out: NoteSet = new Map();
   for (const [cid, list] of set) out.set(cid, list.map((n) => ({ ...n })));

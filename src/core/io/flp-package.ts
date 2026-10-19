@@ -11,12 +11,14 @@ const AUDIO = /\.(wav|wave|aif|aiff|aifc|flac|mp3|ogg|opus|m4a)$/i;
 const MAX_ENTRY = 512 * 1024 * 1024;
 const MAX_TOTAL = 1536 * 1024 * 1024;
 
+/** One audio file of an FL zipped loop package: its path inside the zip and its bytes. */
 export interface FlpPackageFile {
   /** Path inside the zip. */
   path: string;
   bytes: Uint8Array;
 }
 
+/** An opened FL zipped loop package: the .flp (name and bytes) and the audio files that came with it. */
 export interface FlpPackage {
   /** The .flp's name inside the zip (without folders). */
   flpName: string;

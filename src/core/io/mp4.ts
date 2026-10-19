@@ -16,8 +16,13 @@
  */
 import type { MuxChunk, MuxWriter } from './webm';
 
+/**
+ * Thrown when the MP4 muxer is given something it cannot store, such as video frames that arrive out of order or an
+ * audio configuration that is too long.
+ */
 export class Mp4Error extends Error {}
 
+/** The video track of an MP4: its size in pixels, frame rate and the encoder's `avcC` description. */
 export interface Mp4VideoTrack {
   width: number;
   height: number;
@@ -26,6 +31,10 @@ export interface Mp4VideoTrack {
   avcC: Uint8Array;
 }
 
+/**
+ * The audio track of an MP4: its channels, sample rate (Hz), the encoder's AudioSpecificConfig and the encoder priming
+ * to cut.
+ */
 export interface Mp4AudioTrack {
   channels: number;
   sampleRate: number;
@@ -35,6 +44,10 @@ export interface Mp4AudioTrack {
   priming: number;
 }
 
+/**
+ * What the MP4 muxer is told up front: the tracks, how long the file can be (it reserves space for the index from this)
+ * and how its samples are grouped.
+ */
 export interface Mp4Options {
   video: Mp4VideoTrack;
   audio?: Mp4AudioTrack | undefined;
@@ -404,6 +417,10 @@ interface Group {
   audioBytes: number;
 }
 
+/**
+ * Writes an MP4 file for one H.264 video track and optionally one AAC track, a chunk at a time, with the index at the
+ * front so it can start playing before it has all arrived.
+ */
 export class Mp4Muxer {
   private pos = 0;
   private readonly reserved: number;

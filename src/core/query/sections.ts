@@ -3,6 +3,7 @@ import type { MarkerId, Project, Tick } from '../model/types';
 import { ticksPerBar } from '../time/ppq';
 import { songLength } from './playlist';
 
+/** A song section: the marker it starts at, its name and its span in song ticks. */
 export interface Section {
   markerId: MarkerId;
   name: string;

@@ -49,6 +49,7 @@ export const VARIANT_KINDS = [
   'without',
   'clear-drums',
 ] as const;
+/** One of `VARIANT_KINDS`. */
 export type VariantKind = (typeof VARIANT_KINDS)[number];
 
 /** One change a variant makes to its source, over a span of the pattern. */

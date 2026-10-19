@@ -6,6 +6,7 @@
 import type { Tick, TimeSignature } from '../model/types';
 import { ticksPerBar, ticksPerBeat, type TempoMap } from '../time/ppq';
 
+/** The beats of an exported range: when each falls and which ones start a bar. */
 export interface BeatGrid {
   /** Seconds from the start of the export, ascending. */
   times: Float64Array;
@@ -31,6 +32,10 @@ export function beatGrid(tempo: TempoMap, ts: TimeSignature, fromTick: Tick, toT
   return { times, strong };
 }
 
+/**
+ * How the picture should throb at one moment: the strength of the latest beat's pulse and where in that beat the moment
+ * lies.
+ */
 export interface Pulse {
   /** 0…1: 1 on a beat (bar starts a bit more than the others), dying away until the next. */
   amount: number;
@@ -57,6 +62,7 @@ export function lastAtOrBefore(times: Float64Array, t: number): number {
 
 /** Strength of a bar's first beat and of the others. */
 export const STRONG_PULSE = 1;
+/** Pulse strength (0..1) of a beat that does not start a bar; a bar's first beat is 1. */
 export const WEAK_PULSE = 0.62;
 /** The pulse falls to 1/e of itself after this share of a beat... times DECAY, so it is ≈ 5 % by the next beat. */
 const DECAY = 3;

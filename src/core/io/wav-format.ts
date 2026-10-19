@@ -14,6 +14,7 @@ export interface DecodedPcm {
 
 /** `wFormatTag` values of the WAV `fmt ` chunk (Microsoft's registry). */
 export const WAVE_FORMAT_PCM = 1;
+/** The WAV format tag for 32-bit floating-point samples. */
 export const WAVE_FORMAT_IEEE_FLOAT = 3;
 /** The real format is then in the first two bytes of the extensible format's sub-format GUID. */
 export const WAVE_FORMAT_EXTENSIBLE = 0xfffe;

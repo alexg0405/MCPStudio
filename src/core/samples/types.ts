@@ -18,11 +18,13 @@ export const SAMPLE_CATEGORIES = [
   'vocal',
   'tonal',
 ] as const;
+/** One of `SAMPLE_CATEGORIES`. */
 export type SampleCategory = (typeof SAMPLE_CATEGORIES)[number];
 
 /** One-shot (a single hit or note), loop (rhythmic, repeating), long (a song or recording: not analyzed in depth). */
 export type SampleKind = 'one-shot' | 'loop' | 'long';
 
+/** The name of each category as the browser shows it. */
 export const CATEGORY_LABELS: Readonly<Record<SampleCategory, string>> = {
   kick: 'Kick',
   snare: 'Snare',
@@ -41,6 +43,10 @@ export const CATEGORY_LABELS: Readonly<Record<SampleCategory, string>> = {
 /** What loops are mostly made of. */
 export type LoopKind = 'drums' | 'bass' | 'melodic';
 
+/**
+ * What the analyzer found out about one audio file: its kind, length, category and how sure it is, tempo or key when
+ * they apply, loudness, brightness and a fingerprint.
+ */
 export interface SampleAnalysis {
   /** `SAMPLE_ANALYSIS_VERSION` when it was made. */
   v: number;

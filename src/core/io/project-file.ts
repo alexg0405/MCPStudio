@@ -18,11 +18,16 @@ import { readZipEntry, readZipIndex, type RangeReader, type ZipEntry } from './z
 
 /** Version of the zip layout (not the project schema, which is project.schemaVersion). */
 export const PROJECT_FILE_FORMAT = 1;
+/** The file name ending of AGstudio project files. */
 export const PROJECT_FILE_EXTENSION = '.agproj';
+/** The media type of AGstudio project files. */
 export const PROJECT_FILE_MIME = 'application/x-agstudio-project';
 /** A project file stays under this (fflate writes no zip64, so offsets and sizes are 32 bits). */
 export const ZIP_MAX_BYTES = 0xffff_0000;
 
+/**
+ * What a project file's `meta.json` says: the zip layout version, the app version that saved it and when (ISO 8601).
+ */
 export interface ProjectFileMeta {
   format: number;
   appVersion: string;
@@ -36,6 +41,10 @@ export interface EmbeddedSample {
   bytes: Uint8Array;
 }
 
+/**
+ * Everything a project file is written from: the project, the editor view state, the samples to embed (by SHA-256 hash)
+ * and the app version.
+ */
 export interface WriteProjectFileInput {
   project: Project;
   /** Any JSON-serializable value. */
@@ -46,6 +55,10 @@ export interface WriteProjectFileInput {
   now?: Date;
 }
 
+/**
+ * What opening a project file gives back: the project (migrated and repaired), the editor view state, the file's meta,
+ * the embedded samples and notes about anything that had to be fixed.
+ */
 export interface ProjectFileContents {
   /** Migrated to the current schema and repaired. */
   project: Project;
@@ -60,6 +73,7 @@ export interface ProjectFileContents {
   migratedFrom: number;
 }
 
+/** Why a project file could not be opened, for telling the user apart from other errors. */
 export type ProjectFileErrorCode =
   | 'not-a-project-file'
   | 'damaged'
@@ -111,6 +125,10 @@ export interface ProjectFileParts {
   mtime: Date;
 }
 
+/**
+ * The files a project zip is made of (meta, project, view and one per sample), compressed and ready to zip, without
+ * zipping them.
+ */
 export function projectFileParts(input: WriteProjectFileInput): ProjectFileParts {
   const now = input.now ?? new Date();
   const meta: ProjectFileMeta = {
@@ -236,6 +254,10 @@ export interface LazySample {
   read(): Promise<Uint8Array>;
 }
 
+/**
+ * Like `ProjectFileContents`, but with the samples left in the file to be read one at a time instead of all held in
+ * memory.
+ */
 export type ProjectFileIndex = Omit<ProjectFileContents, 'samples'> & {
   /** Embedded samples by hash, read one at a time (a big project never sits in memory whole). */
   samples: Map<string, LazySample>;

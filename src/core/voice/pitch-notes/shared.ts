@@ -12,6 +12,7 @@ export interface PitchFrames {
   conf: Float32Array;
 }
 
+/** One sung note: when it starts and ends (seconds), its pitch and how much its pitch drifts and vibrates. */
 export interface PitchNote {
   /** Seconds on the recording's timeline. */
   from: number;
@@ -26,6 +27,7 @@ export interface PitchNote {
   vibratoRate: number;
 }
 
+/** The limits that cut a pitch track into notes and decide what counts as vibrato; each field says what it limits. */
 export const PITCH_NOTE_THRESHOLDS = {
   /** A note ends when the pitch is this far (cents) from its centre and settles elsewhere. */
   splitCents: 65,

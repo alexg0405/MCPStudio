@@ -28,6 +28,7 @@ export interface FlpPluginInfo {
   name: string;
 }
 
+/** The result of looking up one FL sample: the reference to store in the project and whether its audio was found. */
 export interface FlpResolvedSample {
   /** The sample to reference. A missing file still gets a ref (named after it, with no audio). */
   ref: SampleRef;
@@ -35,6 +36,10 @@ export interface FlpResolvedSample {
   found: boolean;
 }
 
+/**
+ * What the FL Studio import needs from the caller: the file's name, how to look up built-in plugins, the resolved
+ * samples and whether they came in a package.
+ */
 export interface FlpImportOptions {
   /** The imported file's name (the project title when FL's is empty). */
   fileName: string;
@@ -90,6 +95,7 @@ export interface FlpImportReport {
   warnings: string[];
 }
 
+/** What the FL Studio import produces: the project, a report of what happened and where to start looking at it. */
 export interface FlpImportResult {
   project: Project;
   report: FlpImportReport;

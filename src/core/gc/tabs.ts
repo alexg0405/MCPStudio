@@ -19,8 +19,10 @@ export interface TabRecord {
   busy: boolean;
 }
 
+/** The version of the record a tab publishes; records of another version are ignored. */
 export const TAB_RECORD_VERSION = 1;
 
+/** True when `x` is a well-formed `TabRecord` of the current version. */
 export function isTabRecord(x: unknown): x is TabRecord {
   const r = x as Partial<TabRecord> | null;
   return (
@@ -35,6 +37,9 @@ export function isTabRecord(x: unknown): x is TabRecord {
   );
 }
 
+/**
+ * Tab records sorted by whether the tab is still alive, plus tabs that are alive but have published nothing readable.
+ */
 export interface TabClassification {
   /** Records of tabs whose life lock is held. */
   live: TabRecord[];
@@ -64,6 +69,10 @@ export function classifyTabs(
   return { live, dead, unknown };
 }
 
+/**
+ * Whether a clean-up may run now, or the reason it must wait: another tab is starting up, busy with an export or
+ * import, or playing.
+ */
 export type Readiness = { ok: true } | { ok: false; reason: 'tab-starting' | 'busy' | 'playing' };
 
 /**

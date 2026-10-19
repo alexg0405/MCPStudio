@@ -11,8 +11,13 @@ enablePatches();
  */
 
 export type Recipe = (draft: Draft<Project>) => void;
+/** What caused a document change: an edit, a gesture (a drag), an undo, a redo or a load. */
 export type Origin = 'edit' | 'gesture' | 'undo' | 'redo' | 'load';
 
+/**
+ * One change of the project document, sent to the listeners: the new and old project, the patches between them and what
+ * caused it.
+ */
 export interface DocChange {
   next: Project;
   prev: Project;
@@ -32,6 +37,7 @@ export interface DocContainer {
   set(project: Project): void;
 }
 
+/** What the undo and redo buttons and the save state need to know. */
 export interface HistoryStatus {
   canUndo: boolean;
   canRedo: boolean;
@@ -43,6 +49,7 @@ export interface HistoryStatus {
   dirty: boolean;
 }
 
+/** A drag in progress, kept as one undo step: update it while the pointer moves, then commit it or cancel it. */
 export interface Gesture {
   /** Applies a recipe on top of the gesture's current state and notifies listeners immediately. */
   update(recipe: Recipe): void;
@@ -95,6 +102,10 @@ function compact(patches: Patch[], inverse: Patch[]): { patches: Patch[]; invers
   return { patches: fwd, inverse: inv };
 }
 
+/**
+ * The one place the project document is changed: every edit is an undoable step, and loading a project clears the
+ * history.
+ */
 export class History {
   private undoStack: Entry[] = [];
   private redoStack: Entry[] = [];

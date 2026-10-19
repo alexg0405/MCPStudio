@@ -13,6 +13,7 @@ export function ramp(x: number, a: number, b: number): number {
   return u < 0 ? 0 : u > 1 ? 1 : u;
 }
 
+/** How well a sound fits each category, 0..1 per category. */
 export type CategoryScores = Record<SampleCategory, number>;
 
 /** Every number the rules use, in one place. */
@@ -195,6 +196,10 @@ export function categoryScores(f: SoundFeatures): CategoryScores {
   return s;
 }
 
+/**
+ * The classifier's verdict on a one-shot: the best category (null when none fits), how sure it is (0..1) and the score
+ * of every category.
+ */
 export interface Classification {
   category: SampleCategory | null;
   /** 0..1 */

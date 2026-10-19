@@ -11,6 +11,7 @@ import { naiveVoicing, voiceChords } from './voicing';
 
 const BAR = 3840;
 
+/** The project `makeHarmonySong` builds, with the pattern and the ids of its chords, bass, kick and lead channels. */
 export interface HarmonySong {
   project: Project;
   patternId: PatternId;

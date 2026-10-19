@@ -5,6 +5,7 @@ import type { AudioStretch, ChannelId, ClipId, Project } from '../model/types';
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/** The per-clip audio settings `setAudioClipEdits` can change; only the fields that are present change. */
 export interface AudioClipEdits {
   /** Linear gain 0–4 (1 = as recorded). */
   gain?: number;
@@ -31,6 +32,7 @@ export function setAudioClipEdits(d: Draft<Project>, id: ClipId, edits: AudioCli
   }
 }
 
+/** The per-channel audio settings that `setAudioChannelEdits` can change; only the fields that are present change. */
 export interface AudioChannelEdits {
   /** Cents −2400…2400. */
   pitch?: number;

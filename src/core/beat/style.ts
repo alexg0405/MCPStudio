@@ -5,6 +5,7 @@
 import type { ChannelId, Project } from '../model/types';
 import { TICKS_PER_STEP } from '../time/ppq';
 
+/** Every musical style the beat writer, arranger and mix setup know. */
 export const STYLES = [
   'trap',
   'drill',
@@ -25,8 +26,10 @@ export const STYLES = [
   'trance',
   'dnb',
 ] as const;
+/** One of `STYLES`. */
 export type Style = (typeof STYLES)[number];
 
+/** The name of each style as the UI and the AI show it. */
 export const STYLE_LABELS: Record<Style, string> = {
   trap: 'Trap',
   drill: 'Drill',
@@ -47,6 +50,7 @@ export const STYLE_LABELS: Record<Style, string> = {
   dnb: 'Drum & bass',
 };
 
+/** How a style feels: its swing and the velocities (0..1) its notes get when the writer gives none. */
 export interface Groove {
   /** Global swing 0..1 that suits the style (the second 1/16 of each 8th plays late by swing × half a step). */
   swing: number;
@@ -116,6 +120,7 @@ export const TEMPO: Record<Style, { min: number; max: number; default: number }>
   dnb: { min: 172, max: 176, default: 174 },
 };
 
+/** How often a style changes things up, in bars. */
 export interface Phrasing {
   /** A small change (hat roll, 808 slide, open hat) every this many bars. */
   small: 4 | 8;
@@ -123,6 +128,7 @@ export interface Phrasing {
   fill: 8 | 16;
 }
 
+/** The phrase lengths of each style: a small change and a fill come this many bars apart. */
 export const PHRASE: Record<Style, Phrasing> = {
   trap: { small: 4, fill: 8 },
   drill: { small: 4, fill: 8 },
@@ -150,6 +156,7 @@ export const FOUR_FLOOR: ReadonlySet<Style> = new Set<Style>(['house', 'edm', 'b
 /** Half-time styles: the snare lands on beat 3, so a bar feels twice as long as the tempo says. */
 export const HALF_TIME: ReadonlySet<Style> = new Set<Style>(['trap', 'drill', 'futurebass', 'dubstep', 'melodicdub']);
 
+/** True when `v` is one of the known styles; used to check loose input (the AI, saved settings). */
 export const isStyle = (v: unknown): v is Style => typeof v === 'string' && (STYLES as readonly string[]).includes(v);
 
 /** Kicks on all four beats of most bars: house-style "four on the floor". */

@@ -22,10 +22,12 @@ export interface ByteReader {
   read(offset: number, length: number): Promise<Uint8Array>;
 }
 
+/** A `ByteReader` over bytes already in memory (for tests and small files). */
 export function byteReaderOf(bytes: Uint8Array): ByteReader {
   return { size: bytes.length, read: (o, n) => Promise.resolve(bytes.subarray(o, Math.min(bytes.length, o + n))) };
 }
 
+/** The audio formats that can be read in pieces. */
 export type SegmentFormat = 'wav' | 'mp3';
 
 const tag = (b: Uint8Array, o: number) => String.fromCharCode(b[o] ?? 0, b[o + 1] ?? 0, b[o + 2] ?? 0, b[o + 3] ?? 0);
@@ -42,6 +44,10 @@ export function sniffSegmentFormat(head: Uint8Array): SegmentFormat | null {
 // ---------------------------------------------------------------------------------------------
 // WAV
 
+/**
+ * Where the audio of a WAV file lies: its sample rate and channels, where the first frame is and how many there are,
+ * and the header a piece is put behind to be decoded.
+ */
 export interface WavLayout {
   sampleRate: number;
   channels: number;
@@ -117,6 +123,10 @@ export async function readWavFrames(r: ByteReader, w: WavLayout, start: number, 
 // ---------------------------------------------------------------------------------------------
 // MP3
 
+/**
+ * Where the frames of an MP3 file lie: its sample rate and channels, the byte offset of each frame, the samples a
+ * decoder drops at the start and the length it ends up with.
+ */
 export interface Mp3Layout {
   sampleRate: number;
   channels: number;

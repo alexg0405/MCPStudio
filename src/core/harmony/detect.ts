@@ -6,6 +6,7 @@
  */
 import { chordPitchClasses, mod12, QUALITIES, sameChord, type ChordSymbol } from './chord';
 
+/** A chord found in some notes, with how sure the reading is (0..1). */
 export interface Detected {
   chord: ChordSymbol;
   /** 0–1: how well the notes fit and how far ahead of the next different reading this one is. */
@@ -38,6 +39,7 @@ const CANDIDATES = QUALITIES.filter((q) => !q.noDetect);
 /** Pitch-class set of a candidate as a 12-bit mask (readings with the same notes have the same mask). */
 const maskOf = (c: ChordSymbol): number => chordPitchClasses(c).reduce((m, pc) => m | (1 << pc), 0);
 
+/** Settings of chord detection: how loud a pitch class must be, next to the loudest one, to count at all. */
 export interface DetectOptions {
   /** Weights below this share of the loudest pitch class are treated as absent (default 0.08; use more for audio). */
   floor?: number;
@@ -169,6 +171,10 @@ export interface DetectedSpan {
   confidence: number;
 }
 
+/**
+ * How to cut a stretch of notes into windows and read a chord from each: the range and bar length (ticks), the window
+ * size and the confidence needed to keep a reading.
+ */
 export interface DetectSpansOptions {
   /** Where to start, in ticks (default: the bar the first note is in). */
   from?: number;

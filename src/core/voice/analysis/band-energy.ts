@@ -7,8 +7,11 @@ export const HIGH_BAND_HZ = 3000;
 
 /** Index of each band in the arrays the envelope code passes around. */
 export const FULL_BAND = 0;
+/** Index of the low band (under `LOW_BAND_HZ`). */
 export const LOW_BAND = 1;
+/** Index of the high band (over `HIGH_BAND_HZ`). */
 export const HIGH_BAND = 2;
+/** How many bands there are: full, low and high. */
 export const BAND_COUNT = 3;
 
 /** Filter state smaller than this is flushed to zero: denormal floats make the filter loop slow. */

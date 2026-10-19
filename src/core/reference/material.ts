@@ -12,6 +12,10 @@ import type { PatternClip, PatternId, Project } from '../model/types';
 import { mutedLanes } from '../query/playlist';
 import type { PlannedSection } from './plan';
 
+/**
+ * A group of the project's patterns the arrangement can use: where it comes from, the section role it suits, its energy
+ * (1 to 5) and which patterns play.
+ */
 export interface Material {
   /** Where it comes from, for the chat ("Verse of your song", "3 patterns"). */
   from: string;
@@ -79,6 +83,7 @@ export function pickMaterial(section: Pick<PlannedSection, 'role' | 'energy'>, m
   return best;
 }
 
+/** A planned section with the project's patterns chosen for it and a note on where they came from. */
 export interface AssignedSection extends PlannedSection {
   play: PatternId[];
   /** Where the patterns came from. */

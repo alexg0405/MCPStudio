@@ -7,12 +7,17 @@
 import { chordPitchClasses, mod12, type ChordSymbol } from './chord';
 import { scalePitchClasses, type KeyLike } from './scale';
 
+/** A melody note to be fitted: where it starts and how long it lasts (ticks) and its MIDI key. */
 export interface MelodyNote {
   tick: number;
   length: number;
   key: number;
 }
 
+/**
+ * How to fit a melody: the chord sounding at each tick, the key, how many wrong notes to fix and the beat length
+ * (ticks).
+ */
 export interface FitOptions {
   /** The chord sounding at a tick (null: none). */
   chordAt: (tick: number) => ChordSymbol | null;
@@ -25,6 +30,7 @@ export interface FitOptions {
   beatsPerBar?: number;
 }
 
+/** The outcome of fitting a melody: the new key of every note, how many moved and how many were off. */
 export interface FitResult {
   /** The new key of each input note, same order (equal to the old key when it stays). */
   keys: number[];
@@ -57,6 +63,10 @@ function nearestIn(key: number, set: ReadonlySet<number>, lean: number): number 
   return key;
 }
 
+/**
+ * Moves the notes that are off the chords or the key to the nearest fitting note, fixing only as many as `strength`
+ * asks for (the smallest moves first); the input notes are not changed.
+ */
 export function fitMelody(notes: readonly MelodyNote[], opts: FitOptions): FitResult {
   const scale = opts.key ? new Set(scalePitchClasses(opts.key)) : null;
   const order = notes.map((_, i) => i).sort((a, b) => (notes[a] as MelodyNote).tick - (notes[b] as MelodyNote).tick);

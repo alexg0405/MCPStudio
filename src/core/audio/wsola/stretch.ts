@@ -4,6 +4,10 @@ import { COARSE_RATE_HZ, createSimilaritySearch, decimateMix, type SimilaritySea
 import { TimeMap } from './time-map';
 import { placeZones } from './zones';
 
+/**
+ * Settings of a time stretch: the sample rate in Hz, the frame length and search tolerance (milliseconds) and whether
+ * attacks are kept whole.
+ */
 export interface StretchOptions {
   sampleRate: number;
   /** Frame length (default 40 ms). */

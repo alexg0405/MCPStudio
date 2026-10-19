@@ -10,12 +10,14 @@ import type { ClipId, PatternClip, PatternId, Project, Tick } from '../model/typ
 import type { TempoMap } from '../time/ppq';
 import { clonePattern, splitClip } from './playlist';
 
+/** Which part of the song a fork moves to the copy: a span of ticks, or an exact set of clips. */
 export type ForkPart =
   /** A span of the song (exclusive end): straddling clips are split at its edges, the clips inside it (and `also`) move. */
   | { from: Tick; to: Tick; also?: ReadonlySet<ClipId> }
   /** Exactly these clips move to the copy; nothing is split. */
   | { clips: ReadonlySet<ClipId> };
 
+/** What a fork changed: the clips that now play the copy and the clips that were split to make a clean edge. */
 export interface ForkResult {
   /** Clips that play the copy now. */
   moved: ClipId[];

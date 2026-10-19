@@ -1,5 +1,8 @@
 import type { VoiceEvent } from '../analyze';
 
+/**
+ * The tempo range, in beats per minute, the tempo guess searches; each field left out takes the default noted on it.
+ */
 export interface BpmOptions {
   /** Default 70. */
   min?: number;

@@ -26,6 +26,10 @@ export type SpecsResolver = (pluginId: string) => ParamSpecs | undefined;
 /** Default tempo range of a tempo automation clip (BPM). */
 export const TEMPO_RANGE = { min: 60, max: 180 } as const;
 
+/**
+ * An automation target ready for use: its key, its parameter spec, its current value in the document and the
+ * conversions between that value and the 0..1 of a curve.
+ */
 export interface ResolvedTarget {
   key: string;
   spec: ParamSpec;

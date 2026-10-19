@@ -18,6 +18,7 @@ export const MAX_NEW_PART_BARS = 64;
 
 /** Where the hand sits: the middle of the chord notes (MIDI keys). */
 export const REGISTER_CENTER = { low: 52, mid: 60, high: 72 } as const;
+/** Where on the keyboard a chord part sits: low, middle or high; see `REGISTER_CENTER`. */
 export type Register = keyof typeof REGISTER_CENTER;
 
 /** Ticks per beat for the project's time signature (a beat is the note value of the bottom number). */
@@ -53,6 +54,10 @@ export interface PartPlan<NoteKind> {
   chordCount: number;
 }
 
+/**
+ * How to write a chord part from the chord track: length in bars, spread, register, rhythm, an optional bass note and
+ * the first inversion.
+ */
 export interface ChordPartOptions {
   bars?: number;
   spread?: Spread;
@@ -130,6 +135,7 @@ export function findKickPattern(project: Project, patternId: PatternId, roles: R
   return null;
 }
 
+/** How to write a bass part from the chord track: length in bars, style, lowest key and optional seed and velocity. */
 export interface BassPartOptions {
   bars?: number;
   style: BassStyle;
@@ -168,6 +174,7 @@ export function planBassPart(
   return { notes, length, chordCount: chords.length };
 }
 
+/** How to fit a melody to the chords: how many of the wrong notes to fix (0..1). */
 export interface MelodyFitOptions {
   /** 0–1: how many of the notes that are off get fixed (smallest moves first). */
   strength: number;

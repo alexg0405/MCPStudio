@@ -5,6 +5,7 @@
  */
 import { mod12, QUALITIES, type ChordSymbol } from './chord';
 
+/** A song key as harmony needs it: the tonic's pitch class (0 to 11) and a scale id. */
 export interface KeyLike {
   /** Pitch class of the tonic. */
   root: number;

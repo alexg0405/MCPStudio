@@ -8,12 +8,15 @@
 import { newId } from './ids';
 import type { SampleRef } from './types';
 
+/** The kinds of transition sound the arranger can place. */
 export const FX_KINDS = ['riser', 'downlifter', 'reverse-crash', 'whoosh', 'impact', 'sub-drop'] as const;
+/** One of `FX_KINDS`. */
 export type FxKind = (typeof FX_KINDS)[number];
 
 /** Bump (and keep the old generator) if a published sound ever changes. */
 export const FX_VERSION = 1;
 
+/** The name of each transition sound kind as the UI shows it. */
 export const FX_LABELS: Record<FxKind, string> = {
   riser: 'Riser',
   downlifter: 'Downlifter',
@@ -26,6 +29,7 @@ export const FX_LABELS: Record<FxKind, string> = {
 /** Hits that ring for a set time rather than a number of bars (seconds). */
 export const FX_SECONDS: Partial<Record<FxKind, number>> = { impact: 3.5, 'sub-drop': 2.5 };
 
+/** The parts of a transition sample's name: its kind, its length in beats and the tempo it was built at. */
 export interface FxName {
   kind: FxKind;
   /** Length in beats (quarter notes). */

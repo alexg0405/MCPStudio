@@ -10,6 +10,10 @@ import type { AutoPoint, AutomationChannel, ChannelId, ClipId, ParamTarget, Proj
 import { clipsSorted, mutedLanes } from '../query/playlist';
 import { curveAt } from './curve';
 
+/**
+ * The stretch of the song one automation clip drives its target: the clip, its channel, where it starts and ends (song
+ * ticks), its content offset and its curve points.
+ */
 export interface AutoSpan {
   clipId: ClipId;
   channelId: ChannelId;
@@ -21,6 +25,7 @@ export interface AutoSpan {
   range?: { min: number; max: number };
 }
 
+/** All the spans that drive one target, sorted by where they start. */
 export interface TargetAutomation {
   key: string;
   target: ParamTarget;
@@ -28,6 +33,7 @@ export interface TargetAutomation {
   spans: readonly AutoSpan[];
 }
 
+/** Every automated target of a project, by target key. */
 export interface AutomationModel {
   readonly targets: ReadonlyMap<string, TargetAutomation>;
 }

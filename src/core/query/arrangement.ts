@@ -6,6 +6,10 @@
 import type { AutomationChannel, Clip, ClipId, LaneId, PatternClip, PatternId, Project, Tick } from '../model/types';
 import { patternLength } from './queries';
 
+/**
+ * A run of repeated clips on one track: where it lies (song ticks), how many clips, how long each is and which ones,
+ * and how many extra copies are stacked on it.
+ */
 export interface ClipRun {
   laneId: LaneId;
   kind: Clip['kind'];
@@ -109,6 +113,7 @@ export function patternSpans(p: Project): Map<PatternId, { from: Tick; to: Tick 
   return out;
 }
 
+/** A clip that sits exactly on another one, with the span it covers (song ticks). */
 export interface StackedCopy {
   /** The extra clip. */
   clipId: ClipId;
@@ -151,6 +156,7 @@ export function stackedCopies(p: Project, among?: ReadonlySet<ClipId>): StackedC
   return out.sort((a, b) => a.from - b.from || (a.clipId < b.clipId ? -1 : 1));
 }
 
+/** A problem in the arrangement worth telling the musician about; each kind carries what the report needs. */
 export type SongIssue =
   /** The same clips play several times at once over from–to. */
   | { kind: 'stacked'; from: Tick; to: Tick; times: number; lanes: LaneId[] }

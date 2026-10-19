@@ -6,6 +6,7 @@
  */
 import type { ParamValue } from '@agstudio/sdk/params';
 
+/** The two families of sound filters: ones that change speed and pitch, and ones that change the tone. */
 export type FilterGroup = 'speed' | 'tone';
 
 /** One effect of a filter's chain: a built-in effect id and the params that differ from its defaults. */
@@ -16,6 +17,10 @@ export interface FilterFx {
   mix?: number;
 }
 
+/**
+ * One sound filter: its name and a plain description, its speed, whether it plays backwards, the effects it plays
+ * through and other names people call it.
+ */
 export interface FilterPreset {
   id: string;
   name: string;
@@ -63,6 +68,7 @@ function band(low: number, high: number, bump?: { freq: number; gain: number }):
   };
 }
 
+/** Every sound filter the app offers; add a row here and the menus, chooser, action search and Studio pick it up. */
 export const FILTERS: readonly FilterPreset[] = [
   // ---- Speed and pitch: the part plays faster or slower, its pitch follows (like a record).
   {

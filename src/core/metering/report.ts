@@ -12,6 +12,10 @@ export interface Moment {
   tick: number;
 }
 
+/**
+ * What an offline listen measured for the song or a range of it: loudness, loudness range, peaks, the loudest moments
+ * and where they are.
+ */
 export interface LoudnessReport {
   projectId: string;
   /** "the whole song", "bars 17–24", "your pattern on a loop". */

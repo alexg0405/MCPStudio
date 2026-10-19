@@ -36,6 +36,10 @@ export interface SectionCaps {
   slide: boolean;
 }
 
+/**
+ * What the phrase rules need to know about one section: its length, energy, style and the musician's choices (vary,
+ * fill), what it can play, and where it sits in the song.
+ */
 export interface PhraseInput {
   bars: number;
   barTicks: Tick;

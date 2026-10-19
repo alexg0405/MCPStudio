@@ -7,6 +7,10 @@
  */
 import { RealFFT, hannWindow, magnitudeSpectrum } from '../voice/fft';
 
+/**
+ * Settings of the spectrum bars; each one left out takes the default noted in `SpectrumAnalyzer`'s constructor
+ * (4096-sample window, 40 Hz to 16 kHz, -8 dBFS at the top of a bar, 62 dB range).
+ */
 export interface SpectrumOptions {
   fftSize?: number;
   /** Lowest and highest band edge, Hz. */
@@ -24,6 +28,10 @@ export function bandEdges(bands: number, lo: number, hi: number): Float64Array {
   return e;
 }
 
+/**
+ * Turns a window of rendered audio into smoothed spectrum bars (0..1) for one video frame; frames must be asked in
+ * order, because the smoothing remembers the previous bars.
+ */
 export class SpectrumAnalyzer {
   readonly bands: number;
   readonly fftSize: number;

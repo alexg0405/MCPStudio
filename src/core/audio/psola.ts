@@ -34,6 +34,7 @@ export interface PsolaTrack {
   t0: number;
 }
 
+/** Settings of a pitch shift: an optional progress callback (0..1) and the largest shift either way in cents. */
 export interface PsolaOptions {
   /** Called now and then with 0..1 (a long render shows progress). */
   onProgress?: (fraction: number) => void;

@@ -7,6 +7,7 @@ import { ANALYSIS_VERSION } from '../dj/types';
 import type { ReferenceSection, ReferenceTrack } from '../model/types';
 import { TONE_BANDS } from './bands';
 
+/** A section of a hand-made reference: its kind, length in bars, energy (0..1) and optionally its own tonal balance. */
 export interface FakeReferenceSection {
   kind: ReferenceSection['kind'];
   bars: number;
@@ -15,6 +16,10 @@ export interface FakeReferenceSection {
   bands?: number[];
 }
 
+/**
+ * What `fakeReference` takes to make a reference track: title, tempo, key, loudness, sections, tonal balance and so on;
+ * everything left out has a default.
+ */
 export interface FakeReference {
   title?: string;
   bpm?: number | null;
@@ -38,6 +43,7 @@ export const DROP_SONG: FakeReferenceSection[] = [
   { kind: 'drop', bars: 32, energy: 1 },
 ];
 
+/** A reference track built from numbers alone, for tests and demos (128 BPM and a drop song unless told otherwise). */
 export function fakeReference(f: FakeReference = {}): ReferenceTrack {
   const bpm = f.bpm === undefined ? 128 : f.bpm;
   const barSec = bpm ? 240 / bpm : 2;

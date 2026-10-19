@@ -73,6 +73,10 @@ const CRC_TABLE = (() => {
   return t;
 })();
 
+/**
+ * The CRC-16 of some bytes as LAME computes it, continuing from `crc` (0 to start), for the music CRC in the info
+ * frame.
+ */
 export function crc16(bytes: Uint8Array, crc = 0): number {
   for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ (CRC_TABLE[(crc ^ (bytes[i] as number)) & 0xff] as number);
   return crc & 0xffff;
@@ -96,6 +100,10 @@ function frameHeader(kbps: number, sampleRate: number, mono: boolean, from?: Uin
   return h;
 }
 
+/**
+ * What goes into the Info frame an MP3 starts with: the stream's bit rate, sample rate and channels, what it holds and
+ * how much encoder delay and padding to declare.
+ */
 export interface InfoFrameOptions {
   kbps: number;
   sampleRate: number;
@@ -163,6 +171,10 @@ export function buildInfoFrame(o: InfoFrameOptions): Uint8Array {
   return out;
 }
 
+/**
+ * An Info or Xing frame read back from an MP3: the stream's settings, how many frames and bytes it declares and the
+ * LAME details when present.
+ */
 export interface InfoFrame {
   kbps: number;
   sampleRate: number;

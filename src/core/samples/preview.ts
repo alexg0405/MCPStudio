@@ -6,12 +6,17 @@
 import { semitonesToKey } from './query';
 import type { SampleAnalysis } from './types';
 
+/**
+ * The browser's choices for auditioning: whether to match the project's tempo, whether to stretch or resample to do it,
+ * and whether to move a tonal sound into the song's key.
+ */
 export interface PreviewSettings {
   syncTempo: boolean;
   syncMode: 'stretch' | 'resample';
   inKey: boolean;
 }
 
+/** How a sound will be auditioned: the options for the engine and short notes saying what was done to it. */
 export interface PreviewPlan {
   /** The engine's `PreviewOptions`. */
   opts: { rate?: number; stretch?: number; onBeat?: boolean; loop?: boolean };
@@ -29,6 +34,10 @@ function nearestTempo(loop: number, project: number): number {
   return best;
 }
 
+/**
+ * Works out how to audition a sound at the project's tempo and key from its analysis and the settings (null analysis:
+ * play it as it is).
+ */
 export function previewPlan(a: SampleAnalysis | null, settings: PreviewSettings, project: { bpm: number; key?: { root: number } }): PreviewPlan {
   const opts: PreviewPlan['opts'] = {};
   const notes: string[] = [];

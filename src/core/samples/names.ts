@@ -6,6 +6,10 @@
 import { PITCH_NAMES } from '../dj/key';
 import type { SampleCategory } from './types';
 
+/**
+ * What a file's name or folder says about it: a category, loop or one-shot, a tempo and a key. Each field is present
+ * only when the name says it.
+ */
 export interface NameHint {
   /** A category the file name names. */
   category?: SampleCategory;

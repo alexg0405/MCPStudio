@@ -5,9 +5,15 @@
 import type { AutoPoint, Tick } from '../model/types';
 import { curveAt } from './curve';
 
+/** The wave shapes the LFO generator can draw. */
 export type LfoShape = 'sine' | 'triangle' | 'saw' | 'square' | 'random';
+/** Every `LfoShape`, for lists and for checking loose input. */
 export const LFO_SHAPES: readonly LfoShape[] = ['sine', 'triangle', 'saw', 'square', 'random'];
 
+/**
+ * What an LFO curve is made from: its shape, cycle length (ticks), size and middle (0..1 of the target's range),
+ * starting point in the cycle and a seed for the random shape.
+ */
 export interface LfoOptions {
   shape: LfoShape;
   /** Ticks per cycle (e.g. 960 = one beat). */

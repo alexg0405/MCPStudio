@@ -8,6 +8,7 @@ import { TICKS_PER_STEP, ticksPerBar, ticksPerBeat } from './ppq';
 export type Snap =
   'auto' | 'none' | 'bar' | 'beat' | 'beat/2' | 'beat/3' | 'step' | 'beat/6' | 'step/2' | 'step/3' | 'step/4';
 
+/** The snap choices with their labels, in the order a menu lists them: Main (auto), none, then finest to coarsest. */
 export const SNAP_OPTIONS: { value: Snap; label: string }[] = [
   { value: 'auto', label: 'Main (auto)' },
   { value: 'none', label: '(none)' },
@@ -58,10 +59,17 @@ export function gridTicks(snap: Snap, ts: TimeSignature, pxPerTick = 0.1): Tick 
   }
 }
 
+/**
+ * A tick moved to the nearest line of a grid of `grid` ticks (a grid of 1 tick or less just rounds to a whole tick).
+ */
 export function snapRound(tick: number, grid: Tick): Tick {
   return grid <= 1 ? Math.round(tick) : Math.round(tick / grid) * grid;
 }
 
+/**
+ * A tick moved back to the line of a grid of `grid` ticks at or before it (a grid of 1 tick or less just rounds down to
+ * a whole tick).
+ */
 export function snapFloor(tick: number, grid: Tick): Tick {
   return grid <= 1 ? Math.floor(tick) : Math.floor(tick / grid) * grid;
 }

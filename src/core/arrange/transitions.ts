@@ -32,6 +32,10 @@ import { isPeak, type FillChoice, type SectionRole, type TransitionChoice } from
 
 const BEAT = 960;
 
+/**
+ * How a section change feels, from the energy change across it (rise, lift, same, dip, fall), plus the start of the
+ * song (intro), the way into the outro and no transition at all.
+ */
 export type BoundaryKind = 'intro' | 'rise' | 'lift' | 'same' | 'dip' | 'fall' | 'outro' | 'none';
 
 /** What a boundary needs to know about the sections on either side. */
@@ -42,6 +46,10 @@ export interface BoundarySide {
   transitionIn?: TransitionChoice;
 }
 
+/**
+ * The kind of the change from section A to section B (A is null at the start of the song): B's own transition choice
+ * wins, then the outro and build-into-peak rules, then the energy change.
+ */
 export function classifyBoundary(a: BoundarySide | null, b: BoundarySide): BoundaryKind {
   if (!a) return 'intro';
   if (b.transitionIn && b.transitionIn !== 'auto') return b.transitionIn;
@@ -78,6 +86,10 @@ export interface TransitionTraits {
 
 const DEFAULT_TRAITS: TransitionTraits = { bigGapAt: 3, snareBuildBars: 4, riserDb: -4 };
 
+/**
+ * How each style bends the standard transition recipe; a style that is not listed (or a trait it leaves out) uses the
+ * defaults.
+ */
 export const TRAITS: Partial<Record<Style, Partial<TransitionTraits>>> = {
   edm: { riserDb: -3 },
   bigroom: { snareBuildBars: 8, riserDb: -2 },
@@ -90,6 +102,7 @@ export const TRAITS: Partial<Record<Style, Partial<TransitionTraits>>> = {
   dnb: { bigGapAt: 2, snareBuildBars: 4 },
 };
 
+/** The transition traits of a style: the defaults with that style's changes on top. */
 export const traitsOf = (style: Style): TransitionTraits => ({ ...DEFAULT_TRAITS, ...TRAITS[style] });
 
 /** The pre-drop gap of a rise: drums and 808 out for 1 beat, or 2 beats plus a full stop at Δ ≥ 3 (a style may start the big one earlier). */
@@ -100,6 +113,7 @@ export function gapBeats(kind: BoundaryKind, delta: number, style?: Style): { ga
     : { gap: 1, stop: 0 };
 }
 
+/** The crash hit's velocity (0..1) at the start of the section after each kind of boundary; null means no crash. */
 export const CRASH_VELOCITY: Record<BoundaryKind, number | null> = {
   rise: 1,
   lift: 0.9,
@@ -149,6 +163,10 @@ export interface FxPlacement {
 export type AutomationTarget =
   { kind: 'eq'; bus: 'chords' | 'lead'; band: 'low-cut' | 'high-cut' } | { kind: 'throw' } | { kind: 'master' };
 
+/**
+ * Why an automation curve is there: a filter sweep up to a drop, a filter opening after a drop, the intro opening, a
+ * reverb throw or the final fade.
+ */
 export type AutomationPurpose = 'sweep-up' | 'filter-open' | 'intro-open' | 'throw' | 'fade';
 
 /** One curve, values in the control's own unit; 'neutral' is the control's own setting, 'peak'/'throw' are resolved against it. */
@@ -160,6 +178,10 @@ export interface AutomationItem {
   points: { at: Tick; value: number | 'neutral' | 'throw'; tension?: number }[];
 }
 
+/**
+ * What `boundaryRecipe` needs besides the two sections: the tempo, the bar length (beats and ticks), the style and how
+ * much FX to use.
+ */
 export interface BoundaryContext {
   bpm: number;
   beatsPerBar: number;
@@ -168,6 +190,10 @@ export interface BoundaryContext {
   fx: FxLevel;
 }
 
+/**
+ * Everything a section change adds: the changes at the end of the section before it, the transition sounds, a crash
+ * velocity (null for none) and the automation curves. Ticks are song ticks unless noted.
+ */
 export interface BoundaryRecipe {
   kind: BoundaryKind;
   /** X: where B starts. */
@@ -379,6 +405,7 @@ function throwAt(start: Tick): AutomationItem {
   };
 }
 
+/** How the song ends: a master fade over its last bars, or a stop on one last hit. */
 export type EndingKind = 'fade' | 'stop';
 const STOP_STYLES: ReadonlySet<Style> = new Set<Style>([
   'trap',
@@ -392,6 +419,10 @@ const STOP_STYLES: ReadonlySet<Style> = new Set<Style>([
 /** The ending a style gets by default. */
 export const defaultEnding = (style: Style): EndingKind => (STOP_STYLES.has(style) ? 'stop' : 'fade');
 
+/**
+ * Everything the ending adds, like a `BoundaryRecipe` for the song's end: changes in the last bars, sounds, a crash and
+ * automation.
+ */
 export interface EndingRecipe {
   kind: EndingKind;
   /** Changes at the end of the last section (section-relative). */

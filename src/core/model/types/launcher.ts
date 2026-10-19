@@ -2,14 +2,17 @@ import type { ChannelId, LaneId, LaunchTrackId, PatternId, SceneId, Tick } from 
 
 /** How a launcher slot reacts to its pad or button. */
 export const LAUNCH_MODES = ['trigger', 'toggle', 'gate', 'retrigger'] as const;
+/** One of `LAUNCH_MODES`: how a press on the slot's pad behaves. */
 export type LaunchMode = (typeof LAUNCH_MODES)[number];
 
 /** When a launch or stop happens: at once, or at the next beat, bar, 2 bars or 4 bars. */
 export const LAUNCH_QUANTIZES = ['none', 'beat', 'bar', '2bars', '4bars'] as const;
+/** One of `LAUNCH_QUANTIZES`: the boundary a launch or stop waits for. */
 export type LaunchQuantize = (typeof LAUNCH_QUANTIZES)[number];
 
 /** What a slot does after it has played for `bars` bars. */
 export const FOLLOW_KINDS = ['next', 'random', 'stop'] as const;
+/** One of `FOLLOW_KINDS`: which slot a follow action hands over to. */
 export type FollowKind = (typeof FOLLOW_KINDS)[number];
 
 /** A slot's follow action: what happens, and after how many bars. */

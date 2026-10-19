@@ -9,6 +9,7 @@ import { isBassRole, isMusicRole, type Role } from '../arrange/roles';
 import { keyName, keyScores } from '../dj/key';
 import type { ChannelId, PatternId, Project } from '../model/types';
 
+/** A key: its tonic as a pitch class (0 = C) and whether it is major or minor. */
 export interface KeyInfo {
   root: number;
   mode: 'major' | 'minor';
@@ -16,6 +17,7 @@ export interface KeyInfo {
 
 /** Scales that sound minor (the third is flat). */
 const MINOR_SCALES = /minor|aeolian|dorian|phrygian|locrian|blues/i;
+/** Whether a scale id sounds major or minor: scales with a flat third count as minor. */
 export const modeOfScale = (scale: string): 'major' | 'minor' => (MINOR_SCALES.test(scale) ? 'minor' : 'major');
 
 const mod12 = (x: number) => ((Math.round(x) % 12) + 12) % 12;
@@ -50,6 +52,10 @@ export function projectKey(p: Project, roles: ReadonlyMap<ChannelId, Role>): (Ke
   return { root: best % 12, mode: best >= 12 ? 'minor' : 'major', from: 'notes' };
 }
 
+/**
+ * The move that takes the song to the reference's key: how many semitones (-6 to 5), the key it ends up in and whether
+ * it got there through the relative key.
+ */
 export interface KeyMove {
   /** −6…+5: how far the pitched notes move. */
   semitones: number;
@@ -72,6 +78,7 @@ export function keyMove(from: KeyInfo, ref: KeyInfo): KeyMove {
   return { semitones, to: { root: mod12(from.root + semitones), mode: from.mode }, relative };
 }
 
+/** A key written for people, like "A minor". */
 export const keyText = (k: KeyInfo): string => keyName(k);
 
 /**

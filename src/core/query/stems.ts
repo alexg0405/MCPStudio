@@ -16,6 +16,7 @@ import { audibleClips } from './playlist';
 import { effectivelyMuted } from './queries';
 import { playableEdges } from './routing';
 
+/** The range a stem export covers: the whole song or one pattern, with its span in ticks. */
 export interface StemRange {
   mode: 'song' | 'pattern';
   patternId: PatternId | null;
@@ -23,6 +24,7 @@ export interface StemRange {
   toTick: Tick;
 }
 
+/** One stem to export: the mixer track it is for, a file name for it and the channels heard in it. */
 export interface StemPlan {
   /** The mixer track whose sound it is (MASTER: channels that play straight into the master). */
   insertId: InsertId;

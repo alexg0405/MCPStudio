@@ -23,6 +23,7 @@ export interface FolderRecord {
   files: Record<string, [number, number, SampleAnalysis]>;
 }
 
+/** A folder record with no files yet, at the current analysis version. */
 export const emptyRecord = (): FolderRecord => ({ version: SAMPLE_ANALYSIS_VERSION, files: {} });
 
 /** A record read back from storage, or an empty one when it is missing, damaged, or from another version. */

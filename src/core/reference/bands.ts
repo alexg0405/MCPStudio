@@ -9,6 +9,7 @@
  */
 import type { ReferenceSection, ReferenceTrack } from '../model/types';
 
+/** One of the eight tonal bands: its id, how it is written and spoken about, and what in the mix changes it. */
 export interface ToneBand {
   id: string;
   /** "Bass (60–150 Hz)". */
@@ -21,6 +22,7 @@ export interface ToneBand {
   where: string;
 }
 
+/** The eight tonal bands, from the sub-bass up to the air, in order. */
 export const TONE_BANDS: readonly ToneBand[] = [
   { id: 'sub', label: 'Sub-bass (below 60 Hz)', range: 'below 60 Hz', name: 'the sub-bass', where: 'the 808 or sub and a low shelf at 60 Hz' },
   { id: 'bass', label: 'Bass (60–150 Hz)', range: '60–150 Hz', name: 'the low end', where: 'the kick and bass levels or an EQ band around 100 Hz' },
@@ -79,6 +81,10 @@ export function mainTone(ref: Pick<ReferenceTrack, 'bands' | 'sections'>): numbe
   return mixShares(loud.map((s) => ({ bands: s.bands, weight: Math.max(0.1, s.endSec - s.startSec) })));
 }
 
+/**
+ * How one band differs between the mix and the reference: each one's level and the difference (dB) after the overall
+ * offset is taken out.
+ */
 export interface ToneDifference {
   band: ToneBand;
   index: number;
@@ -88,6 +94,10 @@ export interface ToneDifference {
   diffDb: number;
 }
 
+/**
+ * The comparison of two tonal balances: every band, the bands that are too far off, and the overall offset and
+ * threshold used (dB).
+ */
 export interface ToneComparison {
   /** Every band, in order. */
   bands: ToneDifference[];
@@ -98,6 +108,7 @@ export interface ToneComparison {
   thresholdDb: number;
 }
 
+/** How far a band must differ from the reference, in dB, before it is called off. */
 export const TONE_THRESHOLD_DB = 3;
 
 const median = (v: readonly number[]) => {

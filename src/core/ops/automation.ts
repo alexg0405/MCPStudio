@@ -46,6 +46,10 @@ export function firstFreeLane(p: Project, start: Tick, end: Tick): LaneId | null
   return p.playlist.laneOrder.find((id) => !busy.has(id) && !p.playlist.lanes[id]?.takes) ?? null;
 }
 
+/**
+ * What makes a new automation clip: the control it drives, its name, colour and place on the playlist, and optionally
+ * its curve.
+ */
 export interface CreateAutomationOptions {
   target: ParamTarget;
   /** Plain name, e.g. "Cutoff · 3xOsc" (see automationName). */

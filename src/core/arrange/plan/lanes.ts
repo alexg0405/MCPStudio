@@ -10,7 +10,9 @@ export const FX_LANE: Record<FxPlacement['kind'], string> = {
   impact: 'FX hits',
   'sub-drop': 'FX sub',
 };
+/** The name of the playlist track group crash hits are placed on. */
 export const CRASH_LANE = 'Crashes';
+/** The name of the playlist track group automation clips are placed on. */
 export const AUTOMATION_LANE = 'Automation';
 
 /** The most lanes tried per group before giving up and using "<group> 99". */

@@ -10,6 +10,10 @@ const S = [
 const K = new Uint32Array(64);
 for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 2 ** 32) >>> 0;
 
+/**
+ * An MD5 hash (RFC 1321) computed piece by piece: call `update` with each chunk of bytes, then `digest` for the 16-byte
+ * result.
+ */
 export class Md5 {
   private readonly h = new Uint32Array([0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476]);
   private readonly block = new Uint8Array(64);

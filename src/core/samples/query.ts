@@ -22,6 +22,10 @@ export interface SampleRow {
   lastUsed: number;
 }
 
+/**
+ * What the sample browser shows: a text search plus filters by category, loop or one-shot, tempo range, key,
+ * favourites, recent use, your tags and folder.
+ */
 export interface SampleFilter {
   /** Words that must all appear in the name, path, tags, key or tempo ("kick punchy", "128", "a minor"). */
   text: string;
@@ -41,9 +45,12 @@ export interface SampleFilter {
   under: string | null;
 }
 
+/** A filter that lets every sample through. */
 export const NO_FILTER: SampleFilter = { text: '', categories: [], kind: 'any', bpm: null, halfDouble: false, keys: [], favorites: false, recent: false, tags: [], under: null };
 
+/** The ways the sample list can be ordered. */
 export type SampleSort = 'name' | 'bpm' | 'key' | 'length' | 'recent' | 'category' | 'loudness';
+/** The name of each sort order for the sort menu. */
 export const SORT_LABELS: Readonly<Record<SampleSort, string>> = {
   name: 'Name',
   bpm: 'Tempo',
@@ -54,6 +61,7 @@ export const SORT_LABELS: Readonly<Record<SampleSort, string>> = {
   loudness: 'Loudness',
 };
 
+/** The note name of a pitch class (0 = C), for showing a key; any whole number is folded into 0 to 11. */
 export const keyLabel = (root: number): string => PITCH_NAMES[((root % 12) + 12) % 12] as string;
 
 /** "A minor", "C♯" (a one-shot's note), or null. */

@@ -19,13 +19,18 @@ import type {
 } from '../model/types';
 import { LAUNCH_MODES, LAUNCH_QUANTIZES } from '../model/types';
 
+/** When a launch or stop happens for a grid that has not chosen otherwise: on the next bar line. */
 export const DEFAULT_LAUNCH_QUANTIZE: LaunchQuantize = 'bar';
 /** The grid made the first time a slot is filled: 8 tracks × 8 scenes, like a pad controller. */
 export const DEFAULT_TRACKS = 8;
+/** Number of scenes (rows) in a freshly made grid. */
 export const DEFAULT_SCENES = 8;
+/** Most tracks (columns) a launcher grid can grow to; `ensureCapacity` stops here. */
 export const MAX_TRACKS = 32;
+/** Most scenes (rows) a launcher grid can grow to; `ensureCapacity` stops here. */
 export const MAX_SCENES = 64;
 
+/** The words the UI and the AI show for each launch quantize. */
 export const QUANTIZE_LABELS: Readonly<Record<LaunchQuantize, string>> = {
   none: 'Immediately',
   beat: '1 beat',
@@ -34,6 +39,7 @@ export const QUANTIZE_LABELS: Readonly<Record<LaunchQuantize, string>> = {
   '4bars': '4 bars',
 };
 
+/** The short name of each slot mode, for menus and the slot's settings. */
 export const MODE_LABELS: Readonly<Record<LaunchMode, string>> = {
   trigger: 'Trigger',
   toggle: 'Toggle',
@@ -41,6 +47,7 @@ export const MODE_LABELS: Readonly<Record<LaunchMode, string>> = {
   retrigger: 'Retrigger',
 };
 
+/** One plain sentence per slot mode saying what a press (or letting go) of the pad does, for tooltips. */
 export const MODE_HINTS: Readonly<Record<LaunchMode, string>> = {
   trigger: 'A press starts it (a press while it plays does nothing); it plays until something else replaces it',
   toggle: 'A press starts it, the next press stops it',
@@ -64,11 +71,16 @@ export function quantizeTicks(q: LaunchQuantize, ts: TimeSignature): Tick {
   }
 }
 
+/** True when `v` is one of the known launch quantize values; used to check loose input (files, AI arguments). */
 export const isLaunchQuantize = (v: unknown): v is LaunchQuantize => (LAUNCH_QUANTIZES as readonly unknown[]).includes(v);
+/** True when `v` is one of the known slot modes; used to check loose input (files, AI arguments). */
 export const isLaunchMode = (v: unknown): v is LaunchMode => (LAUNCH_MODES as readonly unknown[]).includes(v);
 
+/** The slot's mode with the stored default applied: a slot with no `mode` is 'trigger'. */
 export const slotMode = (s: LaunchSlot): LaunchMode => s.mode ?? 'trigger';
+/** Whether the slot repeats until stopped; only an explicit `loop: false` makes it play once. */
 export const slotLoops = (s: LaunchSlot): boolean => s.loop !== false;
+/** The quantize a slot launches with: its own when set, else the grid's. */
 export const slotQuantize = (l: Launcher, s: LaunchSlot): LaunchQuantize => s.quantize ?? l.quantize;
 
 /** The slot at 0-based (track, scene) positions of the grid. */
@@ -79,6 +91,7 @@ export function slotAt(l: Launcher | undefined, trackIndex: number, sceneIndex: 
   return t && sc ? t.slots[sc] : undefined;
 }
 
+/** The slot for a track and scene id (not a position), or undefined when the grid, track or slot does not exist. */
 export function slotOf(l: Launcher | undefined, trackId: LaunchTrackId, sceneId: SceneId): LaunchSlot | undefined {
   return l?.tracks[trackId]?.slots[sceneId];
 }
@@ -112,10 +125,15 @@ export function slotColor(p: Project, s: LaunchSlot, track?: LaunchTrack): strin
 /** "track 2, scene 3" (1-based) for messages. */
 export const positionName = (trackIndex: number, sceneIndex: number) => `track ${trackIndex + 1}, scene ${sceneIndex + 1}`;
 
+/**
+ * A grid with no tracks and no scenes, as a plain value (unlike `ensureLauncher`, which edits a project and adds the
+ * default 8 × 8).
+ */
 export function emptyLauncher(): Launcher {
   return { quantize: DEFAULT_LAUNCH_QUANTIZE, tracks: {}, trackOrder: [], scenes: {}, sceneOrder: [] };
 }
 
+/** A slot that holds something, with the ids and 0-based grid positions that locate it. */
 export interface FilledSlot {
   trackId: LaunchTrackId;
   sceneId: SceneId;

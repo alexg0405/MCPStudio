@@ -9,8 +9,10 @@ import { STEPS_PER_BAR } from './spec';
 import type { Style } from './style';
 import { bassKey, chords, voice, type Progression } from './theory';
 
+/** The styles of the EDM pack, which have their own drum grids and parts in this file. */
 export type EdmStyle =
   'bigroom' | 'proghouse' | 'futurebass' | 'dubstep' | 'melodicdub' | 'techhouse' | 'trance' | 'dnb';
+/** The `EdmStyle` values as a set, for checking a `Style` at run time. */
 export const EDM_STYLES: ReadonlySet<Style> = new Set<Style>([
   'bigroom',
   'proghouse',
@@ -21,6 +23,7 @@ export const EDM_STYLES: ReadonlySet<Style> = new Set<Style>([
   'trance',
   'dnb',
 ] satisfies EdmStyle[]);
+/** True when a style belongs to the EDM pack (so the generator uses this file's drums and parts). */
 export const isEdmStyle = (s: Style): s is EdmStyle => EDM_STYLES.has(s);
 
 /** Drum grids (see `DRUMS` in local/drums.ts): one bar, 16 steps; X = accent, x = hit, o = ghost. */
@@ -204,6 +207,10 @@ const PROGS: Record<EdmStyle, Record<'minor' | 'major', Progression>> = {
   },
 };
 
+/**
+ * What the EDM generator knows about the beat while it writes the bass, chords and lead: length, key and the kick
+ * pattern.
+ */
 export interface EdmContext {
   bars: number;
   /** Pitch class 0–11 of the key's root and whether it's minor. */

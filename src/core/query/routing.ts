@@ -4,6 +4,10 @@
  */
 import { MASTER, type Insert, type InsertId, type Mixer, type SlotId } from '../model/types';
 
+/**
+ * One connection in the mixer's routing graph: from one insert to another, either a route or a sidechain (with the
+ * listening slot).
+ */
 export interface RoutingEdge {
   from: InsertId;
   to: InsertId;

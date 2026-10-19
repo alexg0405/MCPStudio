@@ -2,6 +2,7 @@
 
 export type VoiceKind = 'kick' | 'snare' | 'hat' | 'tonal';
 
+/** Measurements of one detected sound, used to decide whether it is a kick, snare, hat or tone. */
 export interface VoiceFeatures {
   /** Spectral centroid in Hz (power-weighted) over the first 60 ms. */
   centroid: number;
@@ -15,6 +16,10 @@ export interface VoiceFeatures {
   periodicity: number;
 }
 
+/**
+ * One sound found in a voice recording: when it starts, how long and how strong it is, what kind it was judged to be
+ * and, for a tone, its pitch.
+ */
 export interface VoiceEvent {
   /** Seconds from the start of the audio (the onset). */
   time: number;
@@ -35,6 +40,7 @@ export interface VoiceEvent {
 /** Which kinds of sound the analysis may report. */
 export type VoiceMode = 'auto' | 'drums' | 'tonal';
 
+/** Settings of the voice-event analysis; each field left out takes the default noted on it. */
 export interface AnalyzeOptions {
   /** 0..1, default 0.5. Higher finds quieter and softer onsets (and more false ones). */
   sensitivity?: number;

@@ -5,15 +5,21 @@
 import { chordPitchClasses, mod12, type ChordSymbol } from './chord';
 import { scalePitchClasses, type KeyLike } from './scale';
 
+/**
+ * The ways a bassline can follow the chords: roots, root and fifth, a walking line, or an 808 that follows the kick.
+ */
 export type BassStyle = 'roots' | 'root-fifth' | 'walking' | '808';
+/** Every `BassStyle`, for lists and for checking loose input. */
 export const BASS_STYLES: readonly BassStyle[] = ['roots', 'root-fifth', 'walking', '808'];
 
+/** A chord the bassline plays under: where it starts and how long it lasts (ticks from the start of the pattern). */
 export interface BassChord {
   tick: number;
   length: number;
   chord: ChordSymbol;
 }
 
+/** One note of a bassline, in ticks from the start of the pattern; the velocity is 0..1. */
 export interface BassNote {
   tick: number;
   length: number;
@@ -21,6 +27,10 @@ export interface BassNote {
   velocity: number;
 }
 
+/**
+ * How to write a bassline: its style, the bar and beat length (ticks), and the optional range, kick pattern, key and
+ * seed.
+ */
 export interface BassOptions {
   style: BassStyle;
   /** Ticks per bar and per beat. */

@@ -22,11 +22,13 @@ export function addMarker(
   return id;
 }
 
+/** Moves a marker to a song tick (rounded, not before 0). */
 export function moveMarker(d: Draft<Project>, id: MarkerId, tick: Tick): void {
   const m = d.playlist.markers[id];
   if (m) m.tick = Math.max(0, Math.round(tick));
 }
 
+/** Renames a marker (trimmed, at most 64 characters; a blank name becomes "Marker"). */
 export function renameMarker(d: Draft<Project>, id: MarkerId, name: string): void {
   const m = d.playlist.markers[id];
   if (m) m.name = cleanName(name);
@@ -40,6 +42,7 @@ export function recolorMarker(d: Draft<Project>, id: MarkerId, color: string | n
   else delete m.color;
 }
 
+/** Removes a marker. */
 export function removeMarker(d: Draft<Project>, id: MarkerId): void {
   delete d.playlist.markers[id];
 }

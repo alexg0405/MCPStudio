@@ -23,6 +23,7 @@ export function setRoute(
   return true;
 }
 
+/** Removes the route from one insert to another; does nothing when there is none. */
 export function removeRoute(d: Draft<Project>, from: InsertId, to: InsertId): void {
   const src = d.mixer.inserts[from];
   if (!src) return;
@@ -48,6 +49,10 @@ export function clearRoutes(d: Draft<Project>, id: InsertId): void {
   d.mixer.inserts[id]?.routes.splice(0);
 }
 
+/**
+ * Sets the level of an existing route (clamped to the range of an insert's volume); does nothing when there is no such
+ * route.
+ */
 export function setRouteLevel(d: Draft<Project>, from: InsertId, to: InsertId, level: number): void {
   const r = d.mixer.inserts[from]?.routes.find((x) => x.to === to);
   if (r) r.level = clampLevel(level);

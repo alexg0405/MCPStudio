@@ -42,6 +42,7 @@ export function setIdSource(next: RandomBytes): RandomBytes {
   return prev;
 }
 
+/** A new id: the prefix, an underscore and 10 random base64url characters. */
 export function randomId(prefix: string): string {
   const bytes = source(10);
   let s = prefix + '_';
@@ -49,6 +50,7 @@ export function randomId(prefix: string): string {
   return s;
 }
 
+/** Makers of a fresh, correctly typed id for each kind of thing in a project (each adds its own short prefix). */
 export const newId = {
   channel: () => randomId('ch') as ChannelId,
   pattern: () => randomId('pat') as PatternId,

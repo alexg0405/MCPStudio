@@ -6,14 +6,18 @@
 
 /** What the picture shows. */
 export type VideoStyle = 'bars' | 'wave' | 'circle' | 'minimal';
+/** Every `VideoStyle`, for lists and for checking loose input. */
 export const VIDEO_STYLES: readonly VideoStyle[] = ['bars', 'wave', 'circle', 'minimal'];
 
 /** The shape of the picture: widescreen, tall (shorts, reels, TikTok) or square. */
 export type VideoSize = '1080p' | 'vertical' | 'square';
+/** Every `VideoSize`, for lists and for checking loose input. */
 export const VIDEO_SIZES: readonly VideoSize[] = ['1080p', 'vertical', 'square'];
 
+/** The frame rates the video export offers, in frames per second. */
 export const VIDEO_FPS: readonly (30 | 60)[] = [30, 60];
 
+/** A picture size in pixels. */
 export interface VideoDimensions {
   width: number;
   height: number;
@@ -35,8 +39,13 @@ export function videoDimensions(size: VideoSize, scale = 1): VideoDimensions {
 
 /** A file format: a container with a video and an audio codec. */
 export type VideoFormat = 'mp4-h264' | 'webm-vp9' | 'webm-av1';
+/** Every `VideoFormat`, for lists and for checking loose input. */
 export const VIDEO_FORMATS: readonly VideoFormat[] = ['mp4-h264', 'webm-vp9', 'webm-av1'];
 
+/**
+ * Everything the export needs to know about one file format: names for the dialog, the codec strings WebCodecs wants
+ * and the bit rates (bits per second).
+ */
 export interface VideoFormatInfo {
   container: 'mp4' | 'webm';
   ext: 'mp4' | 'webm';
@@ -55,6 +64,7 @@ export interface VideoFormatInfo {
   audioBitrate: number;
 }
 
+/** The `VideoFormatInfo` of each file format. */
 export const VIDEO_FORMAT_INFO: Readonly<Record<VideoFormat, VideoFormatInfo>> = {
   'mp4-h264': {
     container: 'mp4',

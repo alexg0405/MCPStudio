@@ -38,6 +38,7 @@ import {
 const BAR = 3840;
 const STEP = 240;
 
+/** The ids of the parts of the stacked test song: its channels, patterns, tracks and mixer inserts by name. */
 export interface StackedSong {
   channels: Record<string, ChannelId>;
   patterns: Record<string, PatternId>;

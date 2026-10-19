@@ -37,12 +37,14 @@ export interface PerformanceEntry {
   color: string;
 }
 
+/** One recorded jam: the launcher-axis span it covers (ticks) and every run that played inside it. */
 export interface PerformanceTake {
   startU: number;
   endU: number;
   entries: PerformanceEntry[];
 }
 
+/** What the sequencer needs from outside, so it stays pure and testable. */
 export interface SequencerDeps {
   project(): Project;
   /** 0 ≤ x < 1 (default Math.random); tests pass a seeded one. */
@@ -54,6 +56,10 @@ export interface SequencerDeps {
 /** Ended runs kept for recording (oldest dropped). */
 const HISTORY_MAX = 4096;
 
+/**
+ * The `LaunchDriver` the engine uses: it holds the runs, turns launches, stops and releases into quantized runs,
+ * carries out follow actions and records performances.
+ */
 export class LaunchSequencer implements LaunchDriver {
   runs: readonly LaunchRun[] = [];
   /** Ended runs (pruned from `runs`), oldest first. */

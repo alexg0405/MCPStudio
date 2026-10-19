@@ -7,6 +7,7 @@
 import type { SampleCategory } from './types';
 import type { SampleRow } from './query';
 
+/** The number of pads in the Drum Pads instrument (16). */
 export const PAD_COUNT = 16;
 
 /** The pads each category prefers, best first. */
@@ -25,6 +26,10 @@ export const PAD_PREFERENCE: Readonly<Record<SampleCategory, readonly number[]>>
   tonal: [13, 15, 16],
 };
 
+/**
+ * The result of planning a kit: the sound for each of the 16 pads and the files that were left out, each with the
+ * reason.
+ */
 export interface KitPlan {
   /** Entry on each pad 1…16 (index 0 is pad 1), or null for a pad left with its built-in sound. */
   pads: (SampleRow | null)[];

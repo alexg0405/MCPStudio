@@ -66,6 +66,10 @@ const BODY_START_SEC = 0.03;
 /** At least this many voiced frames are needed for a pitch. */
 const MIN_VOICED_FRAMES = 3;
 
+/**
+ * The measurements of one sound that the classifier and the fingerprint read: level, envelope times in seconds,
+ * spectrum bands, pitch and transients.
+ */
 export interface SoundFeatures {
   durationSec: number;
   /** Linear peak. */

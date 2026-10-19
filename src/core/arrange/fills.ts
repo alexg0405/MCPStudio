@@ -30,6 +30,10 @@ export interface VariantEnv {
   scale?: { root: number; intervals: readonly number[] } | null;
 }
 
+/**
+ * What every variant generator gets along with its notes: the project's channels, a seeded random source and the
+ * pattern's length (ticks).
+ */
 export interface StepContext {
   env: VariantEnv;
   rand: () => number;

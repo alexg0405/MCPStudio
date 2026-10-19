@@ -9,6 +9,7 @@
 
 export type Platform = 'mac' | 'other';
 
+/** The parts of a keyboard event the keymap reads, so it works without the DOM. */
 export interface KeyEventLike {
   key: string;
   code: string;
@@ -18,6 +19,7 @@ export interface KeyEventLike {
   metaKey: boolean;
 }
 
+/** A key chord bound to a command, with the argument to pass and when the binding is active. */
 export interface Binding {
   chord: string;
   command: string;
@@ -32,6 +34,10 @@ export interface Binding {
   };
 }
 
+/**
+ * What the keymap needs to know about the moment of a key press: which window has focus and whether a text field is
+ * being typed in.
+ */
 export interface MatchContext {
   focus: string | null;
   inInput: boolean;
@@ -235,6 +241,10 @@ interface Entry {
   seq: number;
 }
 
+/**
+ * The list of key bindings: it finds the command for a pressed chord, applies the musician's own shortcuts over the
+ * built-in ones and tells listeners when bindings change.
+ */
 export class Keymap {
   private readonly entries: Entry[] = [];
   private readonly listeners = new Set<() => void>();

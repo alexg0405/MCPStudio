@@ -70,6 +70,10 @@ export function ensureCapacity(d: Draft<Project>, tracks: number, scenes: number
   return l;
 }
 
+/**
+ * Adds a track (column) at the end of the grid, making the grid first if there is none; returns its id. A blank or
+ * missing name keeps the default "Track N".
+ */
 export function addLaunchTrack(d: Draft<Project>, name?: string): LaunchTrackId {
   const l = ensureLauncher(d);
   const t = newTrack(l.trackOrder.length);
@@ -79,6 +83,10 @@ export function addLaunchTrack(d: Draft<Project>, name?: string): LaunchTrackId 
   return t.id;
 }
 
+/**
+ * Adds a scene (row) at the end of the grid, making the grid first if there is none; returns its id. A blank or missing
+ * name keeps the default "Scene N".
+ */
 export function addScene(d: Draft<Project>, name?: string): SceneId {
   const l = ensureLauncher(d);
   const s = newScene(l.sceneOrder.length);
@@ -88,6 +96,7 @@ export function addScene(d: Draft<Project>, name?: string): SceneId {
   return s.id;
 }
 
+/** Removes a track and every slot in it. */
 export function removeLaunchTrack(d: Draft<Project>, id: LaunchTrackId): void {
   const l = d.launcher;
   if (!l?.tracks[id]) return;
@@ -95,6 +104,7 @@ export function removeLaunchTrack(d: Draft<Project>, id: LaunchTrackId): void {
   l.trackOrder.splice(l.trackOrder.indexOf(id), 1);
 }
 
+/** Removes a scene and the slot it has in every track. */
 export function removeScene(d: Draft<Project>, id: SceneId): void {
   const l = d.launcher;
   if (!l?.scenes[id]) return;
@@ -103,11 +113,13 @@ export function removeScene(d: Draft<Project>, id: SceneId): void {
   for (const t of Object.values(l.tracks)) delete t.slots[id];
 }
 
+/** Renames a scene (trimmed, at most 64 characters; a blank name is ignored). */
 export function renameScene(d: Draft<Project>, id: SceneId, name: string): void {
   const s = d.launcher?.scenes[id];
   if (s) s.name = cleanName(name, s.name);
 }
 
+/** Renames a track (trimmed, at most 64 characters; a blank name is ignored). */
 export function renameLaunchTrack(d: Draft<Project>, id: LaunchTrackId, name: string): void {
   const t = d.launcher?.tracks[id];
   if (t) t.name = cleanName(name, t.name);
@@ -121,6 +133,7 @@ export function recolorLaunchTrack(d: Draft<Project>, id: LaunchTrackId, color: 
   else delete t.color;
 }
 
+/** Sets a scene's colour as '#rrggbb', or clears it with null (anything else also clears it). */
 export function recolorScene(d: Draft<Project>, id: SceneId, color: string | null): void {
   const s = d.launcher?.scenes[id];
   if (!s) return;
@@ -136,6 +149,7 @@ export function setTrackLane(d: Draft<Project>, id: LaunchTrackId, laneId: LaneI
   else delete t.laneId;
 }
 
+/** Sets the grid's default quantize for launches and stops; an unknown value is ignored. */
 export function setLauncherQuantize(d: Draft<Project>, q: LaunchQuantize): void {
   if ((LAUNCH_QUANTIZES as readonly string[]).includes(q)) ensureLauncher(d).quantize = q;
 }
@@ -154,11 +168,16 @@ export function setSlotContent(d: Draft<Project>, trackId: LaunchTrackId, sceneI
   return true;
 }
 
+/** Empties a slot (its content and its settings). */
 export function clearSlot(d: Draft<Project>, trackId: LaunchTrackId, sceneId: SceneId): void {
   const t = d.launcher?.tracks[trackId];
   if (t) delete t.slots[sceneId];
 }
 
+/**
+ * The settings of a slot that `patchSlot` can change; null puts a setting back to its default and an absent field is
+ * left alone.
+ */
 export interface SlotPatch {
   name?: string | null;
   color?: string | null;

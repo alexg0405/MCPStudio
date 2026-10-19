@@ -15,11 +15,20 @@ import {
   type Project,
 } from './types';
 
+/** The app version a new project stamps into its metadata (`meta.appVersion`). */
 export const APP_VERSION = '0.1.0';
+/** Tempo of a new project, in beats per minute. */
 export const DEFAULT_BPM = 130;
+/** Volume of a new channel as a linear gain (0..1.25, so 0.78 sits a little below the middle of the fader). */
 export const DEFAULT_CHANNEL_VOLUME = 0.78;
+/**
+ * The MIDI note a new instrument channel treats as its root, for step notes and a sampler's original pitch (60 = FL's
+ * C5).
+ */
 export const DEFAULT_ROOT_KEY = 60;
+/** How many mixer inserts a new project has besides the master. */
 export const DEFAULT_INSERTS = 16;
+/** How many playlist tracks (lanes) a new project has. */
 export const DEFAULT_LANES = 32;
 
 /** FL-ish palette for channels, patterns and clips. */
@@ -36,6 +45,7 @@ export const PALETTE = [
   '#6f7fd1',
 ];
 
+/** The palette colour for a position; wraps around, so any whole number (negative too) gives a colour. */
 export function paletteColor(index: number): string {
   return PALETTE[((index % PALETTE.length) + PALETTE.length) % PALETTE.length] ?? '#5f8fbf';
 }
@@ -50,14 +60,20 @@ export function masterRoutes(id: InsertId): Insert['routes'] {
   return id === MASTER ? [] : [{ to: MASTER, level: 1, pre: false }];
 }
 
+/** A new empty pattern of 16 steps, with a fresh id unless one is given. */
 export function makePattern(name: string, color: string, id: PatternId = newId.pattern()): Pattern {
   return { id, name, color, stepCount: 16, notes: {} };
 }
 
+/** A new unmuted playlist track, with a fresh id unless one is given. */
 export function makeLane(name: string, id: LaneId = newId.lane()): Lane {
   return { id, name, muted: false };
 }
 
+/**
+ * The saved settings of a plugin: which plugin and version, a copy of its parameter values, and optionally its state
+ * and samples.
+ */
 export function makePluginInstance(
   pluginId: string,
   pluginVersion: number,
@@ -67,6 +83,10 @@ export function makePluginInstance(
   return { pluginId, pluginVersion, params: { ...params }, ...extra };
 }
 
+/**
+ * A new unmuted instrument channel at the default volume, centred, routed to the master unless `opts.output` says
+ * otherwise.
+ */
 export function makeInstrumentChannel(
   name: string,
   plugin: PluginInstance,

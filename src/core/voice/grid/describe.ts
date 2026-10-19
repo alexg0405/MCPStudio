@@ -15,6 +15,7 @@ export const VOICE_SUMMARY_LEGEND =
   'tonal NOTE len STEPS (1 step = 1/16) slide→NOTE = the pitch glides there. Notes: C4 = MIDI 60. ' +
   '"-" = empty bar.';
 
+/** How the text description of events is laid out in steps; each field left out takes the default noted on it. */
 export interface DescribeOptions {
   /** Default 16. */
   stepsPerBar?: number;

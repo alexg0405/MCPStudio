@@ -17,6 +17,7 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
+/** The kinds of synthetic mouth sound the test signals can make. */
 export type SynthKind = 'kick' | 'snare' | 'hat' | 'hum';
 
 function whiteNoise(length: number, seed: number): Float32Array {
@@ -86,6 +87,7 @@ export function synthHat(sampleRate: number, seed = 3, durationSec = 0.04): Floa
   return fadeOut(normalize(out), sampleRate, 0.002);
 }
 
+/** How to build a synthetic hum: its pitch and length, an optional glide, legato changes and its attack and release. */
 export interface HumOptions {
   /** Starting pitch in Hz. */
   hz: number;
@@ -203,6 +205,7 @@ export interface ScoreHit {
   seed?: number;
 }
 
+/** A synthetic recording with the sounds placed in it: its samples and the hits that were put in. */
 export interface Score {
   samples: Float32Array;
   hits: ScoreHit[];
@@ -247,6 +250,10 @@ const PATTERN_KINDS: Record<string, SynthKind> = { k: 'kick', s: 'snare', h: 'ha
 /** Default levels: mouth hats and snares are quieter than kicks. */
 const PATTERN_GAINS: Record<SynthKind, number> = { kick: 0.9, snare: 0.7, hat: 0.45, hum: 0.8 };
 
+/**
+ * How to build a drum pattern as a `Pattern`: tempo, where it starts, the step string, and optional timing error and
+ * noise.
+ */
 export interface PatternOptions {
   sampleRate: number;
   bpm: number;
@@ -264,6 +271,7 @@ export interface PatternOptions {
   tailSec?: number;
 }
 
+/** A synthetic drum pattern: a `Score` plus the step each hit was meant for and the length of a step in seconds. */
 export interface Pattern extends Score {
   /** The step each hit was meant for (same order as `hits`). */
   steps: number[];

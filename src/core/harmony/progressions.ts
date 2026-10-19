@@ -5,6 +5,7 @@
 import { mod12, sameChord, type ChordSymbol } from './chord';
 import { degreeOf, diatonicChord, harmonicScale, keyMode, romanOf, type KeyLike } from './scale';
 
+/** The feelings a chord progression can be asked for. */
 export type Mood =
   | 'happy'
   | 'uplifting'
@@ -20,6 +21,7 @@ export type Mood =
   | 'smooth'
   | 'driving';
 
+/** Every `Mood`, for lists and for checking loose input. */
 export const MOODS: readonly Mood[] = [
   'happy',
   'uplifting',
@@ -36,6 +38,7 @@ export const MOODS: readonly Mood[] = [
   'driving',
 ];
 
+/** The genres progressions are tagged with. */
 export const GENRES = [
   'pop',
   'rock',
@@ -50,8 +53,13 @@ export const GENRES = [
   'cinematic',
   'flamenco',
 ] as const;
+/** One of `GENRES`. */
 export type Genre = (typeof GENRES)[number];
 
+/**
+ * A stock chord progression: Roman-numeral chords for a major or minor key, how long each lasts, the moods and genres
+ * it suits and a plain line about it.
+ */
 export interface Progression {
   id: string;
   name: string;
@@ -67,6 +75,7 @@ export interface Progression {
   note: string;
 }
 
+/** The stock chord progressions the app offers, tagged by mood and genre. */
 export const PROGRESSIONS: readonly Progression[] = [
   {
     id: 'pop-axis',
@@ -301,6 +310,7 @@ export const PROGRESSIONS: readonly Progression[] = [
 
 const BY_ID = new Map(PROGRESSIONS.map((progression) => [progression.id, progression]));
 
+/** The stock progression with this id, or undefined when there is none. */
 export const getProgression = (id: string): Progression | undefined => BY_ID.get(id);
 
 /** Progressions that match: the key's mode, a mood and/or a genre, and words in the name or note. Best matches first. */
@@ -409,6 +419,10 @@ export function withSeventh(chord: ChordSymbol, key: KeyLike): ChordSymbol {
   return { root: chord.root, quality: chord.quality === 'maj' ? 'maj7' : chord.quality === 'min' ? 'm7' : 'dim7' };
 }
 
+/**
+ * A progression turned into an actual chord in a key: where it starts (song ticks), how long it lasts (ticks) and the
+ * chord.
+ */
 export interface BuiltChord {
   /** Song tick the chord starts at. */
   tick: number;
@@ -459,6 +473,10 @@ export function layoutProgression(
 // ---------------------------------------------------------------------------------------------
 // What comes next
 
+/**
+ * What a chord does in a key: home (tonic), away from home (subdominant), tension that wants to resolve (dominant), or
+ * none of these.
+ */
 export type ChordFunction = 'tonic' | 'subdominant' | 'dominant' | 'other';
 
 /** The role of a degree: tonic (home: I, iii, vi), subdominant (away: ii, IV), dominant (tension: V, vii°). */
@@ -506,6 +524,10 @@ const OPENERS: Record<'major' | 'minor', number[]> = {
   minor: [4.0, 0.2, 1.8, 1.6, 0.6, 2.4, 1.6],
 };
 
+/**
+ * A suggestion for the chord that could follow: the chord, its Roman numeral, its function, how good a fit it is (0..1)
+ * and a plain reason.
+ */
 export interface NextChord {
   chord: ChordSymbol;
   /** Roman numeral in the key ("V", "vi"). */

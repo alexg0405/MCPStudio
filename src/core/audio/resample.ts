@@ -17,6 +17,10 @@ function blackmanHarris(x: number): number {
   return 0.35875 - 0.48829 * Math.cos(t) + 0.14128 * Math.cos(2 * t) - 0.01168 * Math.cos(3 * t);
 }
 
+/**
+ * Converts audio from one sample rate to another (both in Hz) by windowed-sinc interpolation; each output frame depends
+ * only on the source around its own position, so pieces can be converted one at a time with no seam.
+ */
 export class Resampler {
   /** Source frames per output frame. */
   readonly step: number;

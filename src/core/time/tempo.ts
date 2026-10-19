@@ -9,6 +9,7 @@ import type { Tick } from '../model/types';
 /** The tempo of a map with no usable breakpoints. */
 const DEFAULT_BPM = 120;
 
+/** One step of a tempo map: from this tick on the tempo is this many beats per minute. */
 export interface TempoStep {
   /** From this tick on… */
   tick: Tick;

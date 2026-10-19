@@ -10,6 +10,10 @@ export const GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 /** A hash still in use is marked "seen" again once its mark is this old (not on every pass). */
 export const SEEN_REFRESH_MS = 12 * 60 * 60 * 1000;
 
+/**
+ * What a clean-up knows about one stored audio file: its hash and extension, and its size and last write time when the
+ * store can say.
+ */
 export interface BlobStat {
   hash: string;
   ext: string;
@@ -19,6 +23,10 @@ export interface BlobStat {
   modifiedAt?: number;
 }
 
+/**
+ * The facts a clean-up decides from: the stored files, every hash anything refers to, when each hash was last seen
+ * (ms), the time now (ms) and an optional grace period (ms).
+ */
 export interface PlanInput {
   blobs: readonly BlobStat[];
   /** Every hash anything refers to. */
@@ -29,6 +37,10 @@ export interface PlanInput {
   graceMs?: number;
 }
 
+/**
+ * What a clean-up should do: which files to remove, which are waiting out their grace period, how many are in use, and
+ * the new "last seen" marks to store.
+ */
 export interface CollectionPlan {
   /** Blobs nothing refers to and that are past the grace period. */
   remove: BlobStat[];
@@ -48,6 +60,10 @@ export function lastActivity(blob: BlobStat, seen: number | undefined): number |
   return blob.modifiedAt === undefined ? seen : Math.max(seen, blob.modifiedAt);
 }
 
+/**
+ * Decides what a clean-up may remove: only files nothing refers to and that have been neither written nor seen in use
+ * during the grace period.
+ */
 export function planCollection(input: PlanInput): CollectionPlan {
   const { now, referenced, lastSeen } = input;
   const grace = input.graceMs ?? GRACE_MS;

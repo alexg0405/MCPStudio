@@ -104,6 +104,7 @@ const GLOBAL: readonly TargetInfo[] = [
 
 // ---- The clip launcher's pads, scene buttons, stop buttons and page buttons (8 tracks and 8 scenes at a time) ----
 
+/** How many tracks and how many scenes of the clip launcher a controller's pads cover at one time (8 × 8). */
 export const LAUNCH_PAD_SIZE = 8;
 
 /** The page buttons: move the 8 × 8 pads one page (8 tracks or 8 scenes) over a bigger grid. */

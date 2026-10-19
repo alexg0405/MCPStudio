@@ -23,6 +23,7 @@ export const STREAMING_TARGETS: readonly LoudnessTarget[] = [
   { id: 'broadcast', label: 'Broadcast (−23 LUFS)', lufs: -23, truePeak: -1, hint: 'EBU R128 television and radio: −23 LUFS, true peak at most −1 dBTP' },
 ];
 
+/** A streaming service and the loudness it plays songs at (LUFS), and whether it also turns quieter songs up. */
 export interface Service {
   id: string;
   name: string;
@@ -32,6 +33,7 @@ export interface Service {
   raises: boolean;
 }
 
+/** The services the loudness advice covers, with their published reference levels. */
 export const SERVICES: readonly Service[] = [
   { id: 'spotify', name: 'Spotify', lufs: -14, raises: true },
   { id: 'youtube', name: 'YouTube', lufs: -14, raises: false },
@@ -41,6 +43,10 @@ export const SERVICES: readonly Service[] = [
   { id: 'ebu', name: 'Broadcast (EBU R128)', lufs: -23, raises: true },
 ];
 
+/**
+ * What one service would do to a song: its reference level (LUFS), the gain it applies (dB) and a plain sentence about
+ * it.
+ */
 export interface ServiceAdvice {
   service: string;
   /** Its reference level (LUFS). */

@@ -16,8 +16,11 @@ export const hasOwn = (object: JsonObject, key: string): boolean => Object.hasOw
 /** True when the object has `key` and its value is not `undefined` (an optional field that is set). */
 export const isSet = (object: JsonObject, key: string): boolean => hasOwn(object, key) && object[key] !== undefined;
 
+/** True for a number that is not NaN or infinite. */
 export const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+/** True for a string. */
 export const isString = (value: unknown): value is string => typeof value === 'string';
+/** True for true or false. */
 export const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
 
 /** A non-empty string, which is what every record id must be. */

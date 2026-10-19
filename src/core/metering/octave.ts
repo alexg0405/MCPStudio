@@ -11,6 +11,7 @@
 /** Hann window: the power of a sine summed over its bins is this many times its peak bin. */
 const HANN_POWER_BINS = 1.5;
 
+/** A set of frequency bands: how many, and the centre and edges of each in Hz. */
 export interface BandSet {
   count: number;
   /** Centre frequency and edges (Hz) of each band. */

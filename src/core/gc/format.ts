@@ -6,4 +6,8 @@ export function formatSize(bytes: number): string {
   return `${(b / 1024 ** 3).toFixed(1)} GB`;
 }
 
+/**
+ * A count with its noun in plain words: "1 file", "3 files" (give the plural form when it is not the singular plus
+ * "s").
+ */
 export const plural = (n: number, one: string, many: string = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

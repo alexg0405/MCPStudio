@@ -46,6 +46,10 @@ function trimOverlaps(chordsByTick: JsonObject[]): number {
   return trimmed;
 }
 
+/**
+ * Repairs the chord track in place: forgets a chord track that is not an object, drops chords that are not valid and
+ * clears bad optional fields on the rest, logging what it did.
+ */
 export function repairChords(project: JsonObject, log: RepairLog): void {
   if (!isSet(project, 'chords')) return;
   if (!isObject(project.chords)) {

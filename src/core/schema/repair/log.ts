@@ -18,16 +18,27 @@ export const withPrefix = (prefix: string, [singular, plural]: Noun): Noun => [
   `${prefix} ${plural}`,
 ];
 
+/** How repair messages name a sample entry. */
 export const SAMPLE = noun('sample entry', 'sample entries');
+/** How repair messages name a mixer insert ("mixer track"). */
 export const INSERT = noun('mixer track');
+/** How repair messages name a channel. */
 export const CHANNEL = noun('channel');
+/** How repair messages name a pattern. */
 export const PATTERN = noun('pattern');
+/** How repair messages name a note. */
 export const NOTE = noun('note');
+/** How repair messages name a playlist track (lane). */
 export const LANE = noun('playlist track');
+/** How repair messages name a playlist clip. */
 export const CLIP = noun('playlist clip');
+/** How repair messages name an effect slot. */
 export const SLOT = noun('effect slot');
+/** How repair messages name a mixer route. */
 export const ROUTE = noun('mixer route');
+/** How repair messages name a controller link. */
 export const LINK = noun('controller link');
+/** How repair messages name a playlist marker. */
 export const MARKER = noun('playlist marker');
 
 /** Collects fixes; counted fixes become one message per kind (in first-seen order). */

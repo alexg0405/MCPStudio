@@ -2,16 +2,23 @@ import type { Tick, TimeSignature } from '../model/types';
 
 /** Ticks per quarter note. FL's maximum resolution; 1/16 = 240, 1/16 triplet = 160, 1/32 = 120. */
 export const PPQ = 960;
+/** Ticks in one 1/16 step (240). */
 export const TICKS_PER_STEP = PPQ / 4;
 
+/**
+ * Ticks in one beat of a time signature: the beat is the note the signature's denominator names (960 in 4/4, 480 in
+ * 6/8).
+ */
 export function ticksPerBeat(ts: TimeSignature): Tick {
   return (PPQ * 4) / ts.den;
 }
 
+/** Ticks in one bar of a time signature. */
 export function ticksPerBar(ts: TimeSignature): Tick {
   return ts.num * ticksPerBeat(ts);
 }
 
+/** Number of 1/16 steps in one bar of a time signature (16 in 4/4). */
 export function stepsPerBar(ts: TimeSignature): number {
   return ticksPerBar(ts) / TICKS_PER_STEP;
 }
@@ -40,6 +47,7 @@ export interface TempoMap {
   readonly constant: boolean;
 }
 
+/** A tempo map for a song that stays at one tempo, in beats per minute. */
 export function constantTempo(bpm: number): TempoMap {
   const spt = 60 / (bpm * PPQ);
   return {

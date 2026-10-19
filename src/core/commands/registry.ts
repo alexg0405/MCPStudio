@@ -32,6 +32,10 @@ export interface CommandDef<Ctx, A = void> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCommand<Ctx> = CommandDef<Ctx, any>;
 
+/**
+ * The commands of the app by id: features register them, and menus, buttons, shortcuts and the AI run them with the
+ * app's context.
+ */
 export class CommandRegistry<Ctx> {
   private readonly defs = new Map<string, AnyCommand<Ctx>>();
   private readonly listeners = new Set<() => void>();

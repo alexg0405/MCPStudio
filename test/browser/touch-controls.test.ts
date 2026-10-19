@@ -189,8 +189,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       await mount(createElement(KnobHarness));
       const knob = find('[role="slider"]');
       const at = centerOf(knob);
-      await fingers.press(1, at);
-      await fingers.drag(1, { x: at.x, y: at.y - 60 });
+      await fingers.pressAndDrag(1, at, { x: at.x, y: at.y - 60 });
       await fingers.lift(1);
       await nextFrame();
       const last = log.values[log.values.length - 1]!;
@@ -204,8 +203,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
     it('does not change while the finger only trembles (a dead zone), and the drag starts where it leaves it', async () => {
       await mount(createElement(KnobHarness));
       const at = centerOf(find('[role="slider"]'));
-      await fingers.press(1, at);
-      await fingers.drag(1, { x: at.x + 2, y: at.y - 4 }, 3);
+      await fingers.pressAndDrag(1, at, { x: at.x + 2, y: at.y - 4 }, 3);
       await fingers.lift(1);
       expect(log.values).toEqual([]);
     });
@@ -214,21 +212,18 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       await mount(createElement(KnobHarness));
       const knob = find('[role="slider"]');
       const at = centerOf(knob);
-      await fingers.press(1, at);
-      await fingers.drag(1, { x: at.x, y: at.y - 30 });
+      await fingers.pressAndDrag(1, at, { x: at.x, y: at.y - 30 });
       const coarse = log.values[log.values.length - 1]!;
       // Another finger puts itself down on the empty page.
       await fingers.press(2, { x: at.x + 200, y: at.y + 150 });
-      await sleep(30);
-      expect(knob.hasAttribute('data-fine')).toBe(true);
+      await until(() => knob.hasAttribute('data-fine'));
       await fingers.drag(1, { x: at.x, y: at.y - 90 });
       const fine = log.values[log.values.length - 1]!;
       // 60 more px at a tenth of the speed: 0.03, where it would have been 0.3.
       expect(fine - coarse).toBeGreaterThan(0.02);
       expect(fine - coarse).toBeLessThan(0.05);
       await fingers.lift(2);
-      await sleep(30);
-      expect(knob.hasAttribute('data-fine')).toBe(false);
+      await until(() => !knob.hasAttribute('data-fine'));
       await fingers.lift(1);
     });
 
@@ -237,8 +232,8 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       const knob = find('[role="slider"]');
       const at = centerOf(knob);
       await fingers.press(1, at);
-      await sleep(600);
-      expect(knob.hasAttribute('data-fine')).toBe(true);
+      // The rest is noticed 500 ms after the touch (a busy machine can be late): wait for it, then drag.
+      await until(() => knob.hasAttribute('data-fine'));
       await fingers.drag(1, { x: at.x, y: at.y - 60 });
       await fingers.lift(1);
       const last = log.values[log.values.length - 1]!;
@@ -250,11 +245,12 @@ describe('controls with touch', { timeout: 60_000 }, () => {
 
     it('a finger that rests and lifts without moving opens the knob’s menu (a right-click) and changes nothing', async () => {
       await mount(createElement(KnobHarness));
-      const at = centerOf(find('[role="slider"]'));
+      const knob = find('[role="slider"]');
+      const at = centerOf(knob);
       await fingers.press(1, at);
-      await sleep(600);
+      await until(() => knob.hasAttribute('data-fine'));
       await fingers.lift(1);
-      await nextFrame();
+      await until(() => log.menus.length === 1);
       expect(log.menus).toHaveLength(1);
       expect(log.menus[0]!.param).toBe('amount');
       expect(Math.abs(log.menus[0]!.x - at.x)).toBeLessThan(3);
@@ -265,14 +261,11 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       await mount(createElement(KnobHarness));
       const knob = find('[role="slider"]');
       const at = centerOf(knob);
-      await fingers.press(1, at);
-      await fingers.drag(1, { x: at.x, y: at.y - 60 });
+      await fingers.pressAndDrag(1, at, { x: at.x, y: at.y - 60 });
       await fingers.lift(1);
       expect(log.values[log.values.length - 1]).toBeGreaterThan(0.7);
       await sleep(400);
-      await fingers.tap(1, at);
-      await sleep(60);
-      await fingers.tap(1, at);
+      await fingers.doubleTap(1, at);
       await until(() => log.values[log.values.length - 1] === 0.5);
     });
 
@@ -284,8 +277,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       const [first, second] = [...host.querySelectorAll<HTMLElement>('[role="slider"]')];
       const a = centerOf(first!);
       const b = centerOf(second!);
-      await fingers.press(1, a);
-      await fingers.press(2, b);
+      await fingers.pressTogether({ 1: a, 2: b });
       await fingers.dragTogether({ id: 1, to: { x: a.x, y: a.y - 50 } }, { id: 2, to: { x: b.x, y: b.y + 50 } });
       await fingers.liftAll();
       await nextFrame();
@@ -315,8 +307,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       await mount(createElement(FaderHarness));
       const fader = find('[role="slider"]');
       const at = centerOf(fader);
-      await fingers.press(1, at);
-      await fingers.drag(1, { x: at.x, y: at.y + 50 });
+      await fingers.pressAndDrag(1, at, { x: at.x, y: at.y + 50 });
       const down = log.values[log.values.length - 1]!;
       expect(down).toBeLessThan(1);
       await fingers.press(2, { x: at.x + 150, y: at.y });
@@ -332,10 +323,11 @@ describe('controls with touch', { timeout: 60_000 }, () => {
 
     it('a rest without a drag opens its menu', async () => {
       await mount(createElement(FaderHarness));
-      const at = centerOf(find('[role="slider"]'));
-      await fingers.press(1, at);
-      await sleep(600);
+      const fader = find('[role="slider"]');
+      await fingers.press(1, centerOf(fader));
+      await until(() => fader.hasAttribute('data-fine'));
       await fingers.lift(1);
+      await until(() => log.menus.length === 1);
       expect(log.menus.map((m) => m.param)).toEqual(['level']);
     });
   });
@@ -346,8 +338,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       const slider = find('[role="slider"]');
       const box = slider.getBoundingClientRect();
       const cap = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
-      await fingers.press(1, cap);
-      await fingers.drag(1, { x: cap.x, y: cap.y - 40 });
+      await fingers.pressAndDrag(1, cap, { x: cap.x, y: cap.y - 40 });
       const coarse = log.values[log.values.length - 1]!;
       expect(coarse).toBeGreaterThan(0.6);
       await fingers.press(2, { x: cap.x + 150, y: cap.y });
@@ -366,8 +357,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       const target = host.querySelector<HTMLElement>('[data-touch-own]')!;
       expect(number).toBeTruthy();
       const at = centerOf(target);
-      await fingers.press(1, at);
-      await fingers.drag(1, { x: at.x, y: at.y - 40 });
+      await fingers.pressAndDrag(1, at, { x: at.x, y: at.y - 40 });
       await fingers.lift(1);
       const last = log.values[log.values.length - 1]!;
       // 40 px less the dead zone, at 0.5 per pixel.
@@ -429,8 +419,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       const knob = find('[role="slider"]');
       const box = knob.getBoundingClientRect();
       const beside = { x: box.right + 6, y: box.top + box.height / 2 };
-      await fingers.press(1, beside);
-      await fingers.drag(1, { x: beside.x, y: beside.y - 50 });
+      await fingers.pressAndDrag(1, beside, { x: beside.x, y: beside.y - 50 });
       await fingers.lift(1);
       expect(log.begins).toBe(1);
       expect(log.values.length).toBeGreaterThan(0);

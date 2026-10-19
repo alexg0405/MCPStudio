@@ -36,6 +36,7 @@ import {
   type SongEvent,
 } from './types';
 
+/** What `planDevelop` should add to existing sections, and over which range of the song (ticks, [from, to)). */
 export interface DevelopOptions {
   style: Style;
   /** Phrase rules inside sections (fills, small changes). */
@@ -55,6 +56,10 @@ export interface Existing {
   fills: { from: Tick; to: Tick }[];
 }
 
+/**
+ * What `planDevelop` decided: the changes, sounds, crashes and automation to add, how many were left out because
+ * something similar already plays, and counts for the summary.
+ */
 export interface DevelopPlan {
   sections: readonly DevelopSection[];
   boundaries: BoundaryRecipe[];

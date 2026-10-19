@@ -5,9 +5,12 @@
  */
 import type { PatternId, Tick } from '../model/types';
 
+/** The parts of a song a section can be. */
 export const SECTION_ROLES = ['intro', 'verse', 'pre', 'build', 'drop', 'hook', 'chorus', 'break', 'bridge', 'outro'] as const;
+/** One of `SECTION_ROLES`. */
 export type SectionRole = (typeof SECTION_ROLES)[number];
 
+/** The energy (1 quiet to 5 full) the arranger gives each kind of section when nothing says otherwise. */
 export const DEFAULT_ENERGY: Record<SectionRole, number> = {
   intro: 1,
   verse: 3,
@@ -38,6 +41,7 @@ export const SECTION_BARS: Record<SectionRole, readonly [number, number]> = {
 /** The loudest parts of a song: a build leads into them. */
 export const isPeak = (r: SectionRole): boolean => r === 'drop' || r === 'hook' || r === 'chorus';
 
+/** True when `v` is one of the section roles; used to check loose input (the AI, saved settings). */
 export const isSectionRole = (v: unknown): v is SectionRole =>
   typeof v === 'string' && (SECTION_ROLES as readonly string[]).includes(v);
 
@@ -59,14 +63,17 @@ export function roleFromName(name: string): SectionRole | undefined {
 
 /** How much the phrase rules vary a section: auto, more (a change every 2 bars), less (fills only), none. */
 export type VaryMode = 'auto' | 'more' | 'less' | 'none';
+/** Every `VaryMode`, for lists and for checking loose input. */
 export const VARY_MODES: readonly VaryMode[] = ['auto', 'more', 'less', 'none'];
 
 /** The fill a section's phrases use (auto rotates by style). */
 export type FillChoice = 'auto' | 'snare' | 'tom' | 'hat' | 'kick' | 'none';
+/** Every `FillChoice`, for lists and for checking loose input. */
 export const FILL_CHOICES: readonly FillChoice[] = ['auto', 'snare', 'tom', 'hat', 'kick', 'none'];
 
 /** How a section is entered (auto classifies the energy change; none: no transition at all). */
 export type TransitionChoice = 'auto' | 'rise' | 'lift' | 'same' | 'dip' | 'fall' | 'none';
+/** Every `TransitionChoice`, for lists and for checking loose input. */
 export const TRANSITION_CHOICES: readonly TransitionChoice[] = ['auto', 'rise', 'lift', 'same', 'dip', 'fall', 'none'];
 
 /** A section as described (by the AI, or inferred from a song). */

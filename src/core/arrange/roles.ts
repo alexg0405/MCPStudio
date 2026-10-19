@@ -5,6 +5,10 @@
  */
 import type { ChannelId, InstrumentChannel, Project } from '../model/types';
 
+/**
+ * Every job a channel can have in the song, from the drum pieces through bass and music parts to FX; 'other' is the
+ * fallback.
+ */
 export const ROLES = [
   'kick',
   'snare',
@@ -29,10 +33,13 @@ export const ROLES = [
   'fx',
   'other',
 ] as const;
+/** One of `ROLES`. */
 export type Role = (typeof ROLES)[number];
 
+/** The family a role belongs to; the arranger and the mix setup treat a whole group alike. */
 export type RoleGroup = 'drums' | 'bass' | 'music' | 'fx' | 'other';
 
+/** The group of every role. */
 export const ROLE_GROUP: Record<Role, RoleGroup> = {
   kick: 'drums',
   snare: 'drums',
@@ -175,9 +182,13 @@ export function noteRole(channel: Role, key: number): Role {
   return channel === 'kit' ? gmDrumRole(key) : channel;
 }
 
+/** True for any drum role, including a kit channel that plays a whole drum kit. */
 export const isDrumRole = (r: Role): boolean => ROLE_GROUP[r] === 'drums';
+/** True for the bass roles: '808' and 'bass'. */
 export const isBassRole = (r: Role): boolean => ROLE_GROUP[r] === 'bass';
+/** True for the melodic and harmonic roles (chords, pads, keys, leads and so on). */
 export const isMusicRole = (r: Role): boolean => ROLE_GROUP[r] === 'music';
+/** True for the closed and open hat roles. */
 export const isHatRole = (r: Role): boolean => r === 'hat' || r === 'open-hat';
 
 /**

@@ -16,6 +16,10 @@ import type { SectionCaps } from './phrases';
 import { isBassRole, isDrumRole, isMusicRole, noteRole } from './roles';
 import { roleFromName, type SectionRole } from './sections';
 
+/**
+ * A section read from an existing song: its name and part, where it runs (song ticks), its length in bars, its energy
+ * (1 to 5), the marker it starts at (null when inferred without one) and what its patterns can play.
+ */
 export interface InferredSection {
   name: string;
   role: SectionRole;
@@ -235,6 +239,10 @@ export interface FillClip {
   to: Tick;
 }
 
+/**
+ * The pattern clips that act as fills sitting on their own track on top of the groove (see `FillClip`), so a plan does
+ * not add a second fill there.
+ */
 export function fillLikeClips(p: Project, env: VariantEnv): FillClip[] {
   const bar = ticksPerBar(p.transport.timeSig);
   const out: FillClip[] = [];
@@ -297,6 +305,7 @@ export function loopingPatterns(p: Project): Set<PatternId> {
   return out;
 }
 
+/** The kinds of transition sound already in a song: the arranger's FX kinds, or a crash cymbal. */
 export type ExistingFxKind = FxKind | 'crash';
 
 const FX_WORDS: [RegExp, FxKind][] = [

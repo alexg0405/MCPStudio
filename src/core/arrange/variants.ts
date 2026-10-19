@@ -40,6 +40,7 @@ export function variantEnv(
   return { roles, channels, style: opts.style, scale: opts.scale ?? null };
 }
 
+/** The short word for each variant step, for the names of variant patterns ("Drop · fill + slide"). */
 export const KIND_LABEL: Record<VariantKind, string> = {
   'snare-fill': 'fill',
   'tom-fill': 'tom fill',
@@ -96,6 +97,7 @@ const RANK: Record<VariantKind, number> = {
   dropout: 10,
 };
 
+/** The variant steps that are fills: they replace the drums over their span (a snare build counts as one). */
 export const FILL_KINDS: ReadonlySet<VariantKind> = new Set(['snare-fill', 'tom-fill', 'hat-fill', 'kick-fill', 'snare-build']);
 
 /** The step with its fields in a fixed order and no empty ones (equal steps print equal). */

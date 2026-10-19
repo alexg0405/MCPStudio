@@ -15,6 +15,10 @@ export interface ArrangeRequest {
   ending: 'auto' | EndingKind;
 }
 
+/**
+ * What planning needs to know about the project besides the sections: its channels (for variants) and how long a crash
+ * rings.
+ */
 export interface PlanEnv {
   variant: VariantEnv;
   /** How long a crash hit rings (seconds), for its lane. */
@@ -36,12 +40,14 @@ export interface PlannedFx extends FxPlacement {
   lane: string;
 }
 
+/** A crash hit the plan places: its song tick, velocity (0..1) and the track it goes on. */
 export interface PlannedCrash {
   at: Tick;
   velocity: number;
   lane: string;
 }
 
+/** An automation curve the plan places, with the track it goes on. */
 export interface PlannedAutomation extends AutomationItem {
   lane: string;
 }

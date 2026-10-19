@@ -6,6 +6,13 @@
 
 /* ---- Strips ---- */
 
+.mixerMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .strips {
   flex: 1;
   min-width: 0;
@@ -575,4 +582,127 @@
   font-size: 10px;
   font-weight: 400;
   letter-spacing: 0;
+}
+
+/* ---- Groups, VCA strips and picking tracks ---- */
+
+/* The coloured band on top of a grouped strip: it bleeds over the strip's padding to its edges. */
+.groupSlot,
+.groupBand {
+  flex: none;
+  width: calc(100% + 8px);
+  height: 11px;
+  margin: -6px -4px -2px;
+}
+
+.groupBand {
+  --group-color: var(--ag-accent);
+  padding: 0 3px;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--ag-radius) var(--ag-radius) 0 0;
+  background: var(--group-color);
+  color: color-mix(in srgb, var(--group-color) 15%, black);
+  font: inherit;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.groupBand:hover {
+  filter: brightness(1.1);
+}
+
+/* Picked with Shift or Ctrl (for Group and Link selected). */
+.stripMarked {
+  box-shadow:
+    inset 0 2px 0 var(--ins-color),
+    inset 0 0 0 2px color-mix(in srgb, var(--ag-accent) 70%, transparent),
+    var(--ag-elev-1);
+}
+
+.vcaStrip {
+  --group-color: var(--ag-accent);
+  justify-content: flex-start;
+  cursor: default;
+  box-shadow:
+    inset 0 3px 0 var(--group-color),
+    inset 0 0 0 1px var(--ag-line-faint),
+    var(--ag-elev-1);
+}
+
+.vcaStrip .meterFader {
+  justify-content: center;
+}
+
+.soloSafeBadge {
+  margin-left: 3px;
+  padding: 0 3px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text-dim);
+  font-family: var(--ag-font);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 11px;
+  vertical-align: 1px;
+}
+
+/* ---- The mixer's toolbar: snapshots, A/B, group and link ---- */
+
+.toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px var(--ag-space-2) 0;
+}
+
+.toolButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+  cursor: pointer;
+  transition:
+    color var(--ag-dur) var(--ag-ease),
+    border-color var(--ag-dur) var(--ag-ease);
+}
+
+.toolButton:hover:not(:disabled) {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}
+
+.toolButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.toolButtonOn {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent-ink);
+}
+
+.toolNote {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

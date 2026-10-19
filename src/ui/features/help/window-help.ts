@@ -69,6 +69,13 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Chains (in the browser)', 'A whole row of effects, like a vocal chain, on the selected track in one click'],
         ['Right-click an effect', 'Open, replace, move, sidechain from…, remove'],
         ['Green light', 'Mute the track (right-click: solo)'],
+        [`Shift+click or ${mod}+click a strip`, 'Pick several tracks; then Group or Link selected in the toolbar (or right-click)'],
+        ['Group, Link selected', 'Make picked tracks move together: faders, pans, mutes and solos, with a coloured band'],
+        ['Coloured band on a strip', 'Click: pick the group; right-click: rename, colour, what is linked, add a VCA'],
+        ['VCA strip', 'One fader that turns a whole group up or down in dB without moving the tracks’ faders'],
+        ['Snapshots, Save', 'Keep the mix (levels, mutes, sends, effect settings) and recall it later in one undo step'],
+        ['A and B in Snapshots, then A/B', 'Switch between two saved mixes while the song plays (no clicks)'],
+        ['Right-click a track, Solo-safe', 'A solo elsewhere will not silence it (a reverb return)'],
       ],
     },
     plugin: {

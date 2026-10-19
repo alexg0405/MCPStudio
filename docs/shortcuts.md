@@ -7,6 +7,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 
 | Action | Keys |
 |---|---|
+| A/B compare mixer snapshots | `⌥⇧A` / `Alt+Shift+A` |
 | Add marker at the song position | `⌥T` / `Alt+T` |
 | Browser | `⌥F8` / `Alt+F8`, `⌥5` / `Alt+5` |
 | Channel rack | `F6`, `⌥2` / `Alt+2` |
@@ -21,6 +22,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Layout: Mix | `⌥⇧3` / `Alt+Shift+3` |
 | Meters | `⌥⇧M` / `Alt+Shift+M` |
 | Metronome | `⌥M` / `Alt+M` |
+| Mix snapshots | `⌥⇧S` / `Alt+Shift+S` |
 | Mixer | `F9`, `⌥4` / `Alt+4` |
 | New pattern | `F4` |
 | New project | `⌘N` / `Ctrl+N`, `⌥N` / `Alt+N` |
@@ -93,6 +95,8 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 
 | Action | Keys |
 |---|---|
+| Link selected mixer tracks | `⌘⇧G` / `Ctrl+Shift+G` |
+| Mixer group from picked tracks | `⌘G` / `Ctrl+G` |
 | Route channel to mixer insert | `⌘L` / `Ctrl+L` |
 
 ## When the piano-roll window is focused

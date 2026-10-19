@@ -69,7 +69,8 @@ worker, WebWorker lib).
   (exactly one compact entry) / `cancel()` (Escape).
 - Geometry drags (note/clip move/resize/marquee) preview on an overlay and commit once on pointer-up.
 - Dirty = history cursor ≠ cursor at last save. Cap ≈ 500 entries. Entries may carry selection before/after.
-- `DocChange { next, prev, patches | null, origin }` feeds the engine (`origin`: edit | gesture | undo | redo | load).
+- `DocChange { next, prev, patches | null, origin, glideSec? }` feeds the engine (`origin`: edit | gesture | undo | redo | load;
+  `glideSec` is set by `transact(…, { glideSec })` for a snapshot recall: the mixer glides over that long instead of stepping).
 
 ### Derived data (`src/core/query`)
 
@@ -1279,7 +1280,8 @@ FL's rule, `soloState(inserts)` in `core/query/mixer.ts` (memoized; `effectively
 non-master insert soloed, the soloed inserts, everything routed into them (recursively: their sources play fully),
 everything they route to (recursively, so they still reach the master) and the master stay audible; every other
 insert is gated. Routes count, sidechains don't (see the tap order above). Channels routed straight to the master are
-never silenced by an insert solo. The mixer dims strips a solo silences.
+never silenced by an insert solo. The mixer dims strips a solo silences. A solo-safe insert (see "Mixer snapshots and
+groups") is never gated by a solo, and what it routes to stays audible with it.
 
 ### Effects
 
@@ -1328,6 +1330,86 @@ Measured with offline renders (`test/browser/routing.test.ts`, `mixer.test.ts` k
 - A −6 dB send adds exactly the expected energy: alone the target hears the source at the send level (energy × level²);
   in parallel the sum is 1 + level, sample for sample (≤ 1e-6).
 - Disabled `<button>`s still receive `pointerover`, so the hint bar shows why a menu choice is disabled.
+
+## Mixer snapshots and groups
+
+Snapshots save the mixer's values and recall them later; groups link tracks and give them a VCA. Both are optional
+fields of the project (absent until used, so older projects and the fixtures stay as they were, and no schema bump:
+`Mixer.groups`, `Project.mixSnapshots`, `Insert.soloSafe`), validated by repair (`core/schema/repair/groups.ts`,
+`snapshots.ts`, `mixer.ts`): unreadable parts are dropped or put back to safe values, a group keeps only real tracks (the
+master never, each track in one group) and goes when it has none, and a snapshot may outlive the tracks it remembers.
+
+### Snapshots (`core/snapshots`, `core/ops/snapshots.ts`, `app/actions/mix-snapshots.ts`)
+
+- **What is kept** (`MixSnapshot`): per track (the master too) its name, fader, pan, mute, solo, send levels by target and,
+  per effect slot, the plugin id, bypass, dry/wet and the **values** of its parameters; the VCA levels; and, only when
+  saved "with routing", who sends to whom (and whether before the fader) and each effect's sidechain source. No notes,
+  patterns, clips, plugin `state` or samples: a snapshot of a 30-track mix is a few kilobytes, and recalling one can never
+  change what is played. At most 64 per project.
+- **Recall** (`recallSnapshot(draft, snapshot)`) writes exact values straight to the tracks, never through a group's
+  links, inside one `history.transact`, so it is **one undo step** and undo restores every value exactly. Routing (when the
+  snapshot has it) is applied removals first, then additions checked for loops, so a recall never makes audio loop. A track
+  made after the snapshot is left alone; one deleted since is skipped; parameters are only restored while the slot still
+  holds the effect that was saved. Recalling a state the mix already has changes nothing (no undo step).
+- **Glide.** Recall passes `glideSec` (30 ms) to `transact`, which puts it on the `DocChange`; the engine's project mirror
+  hands it to `MixerGraph.reconcile`, and faders, pans, the mute gate and send levels move with a time constant of a
+  quarter of it (`AutoLane.setBase(…, glideTau)`) instead of the usual 4 ms, so switching while the song plays does not
+  click. Ordinary edits carry no `glideSec`. Effect parameters are not glided here: they move the way plugin params do.
+- **A/B.** The pair and the side are session state (`session.snapshotCompare`). `toggleCompare` recalls the other snapshot
+  as a gesture-free `transact` with a merge key, so quick back-and-forth is one undo step. It is bound to Alt+Shift+A and
+  to the A/B button of the mixer and of the Mix snapshots window; a deleted snapshot leaves the pair.
+- **Diff** (`core/snapshots/diff.ts`): "what is different" as sentences with units, in mixer order ("Kick: fader −14.0 dB →
+  −1.9 dB", "Kick · EQ: Gain −9.0 dB → +3.0 dB", "VCA of Drums: …"), against the mix as it is (`diffAgainstCurrent`: what a
+  recall would change) or between two snapshots. Tracks and effects present on one side only are named once.
+
+### Groups and VCAs (`core/ops/groups.ts`, `core/ops/linked-edits.ts`, `core/query/mix-groups.ts`, `engine/vca-stage.ts`)
+
+- **Group** (`MixGroup`): name, colour, members, `links` (faders, pans, mutes, solos), a `mode` (`relative`: the others keep
+  their distance, as a gain ratio for faders and an offset for pans; `absolute`: they all take the moved value) and
+  optionally `vca`, a linear gain. Make one from the picked tracks (Shift- or Ctrl-click strips, session state
+  `markedInsertIds`) with Group, or "Link selected", which joins them to the group one of them is already in.
+- **Linking is done by the editing code, not by `setInsertProp`**, which stays a single-track write (snapshot recall, the AI
+  and controller links write exact values to exactly the track they name). `planLinkedEdit(project, id, 'volume' | 'pan')`
+  reads the track and its mates when a drag begins and returns an absolute recipe, so running it again with the same value
+  gives the same result and dragging back restores everyone even where a mate hit the end of its travel (`useLinkedInsertEdit`
+  in the mixer). A fader that starts at silence has no ratio, so its mates stay. `setMutedLinked` and `toggleSoloLinked`
+  do the same for the switches (soloing a group solos all of it). All of it is one undo step per drag or click.
+- **VCA.** The level multiplies the members' levels in dB and moves no fader. In the engine each member strip gets one
+  `GainNode` between the fader and its post-fader tap (`VcaStage`): the strip's sound, post-fader sends and meter are scaled;
+  pre-fader sends and the sidechain tap are not. It adds no latency and costs one gain; a strip whose group has no VCA has no
+  node, so projects without VCAs render exactly as before (and a group whose VCA is at 0 dB renders bit for bit like no
+  group). A node, once made, stays at unity when the VCA goes (so taking it away never clicks). Each member has its own
+  `AutoLane` registered under `vca:<groupId>` (the automation target `{ kind: 'vca', groupId }`, on the fader taper like a
+  track's volume; labelled "VCA · name"), because members sit different delay-compensation times behind the song's clock:
+  the automation driver already handles several lanes under one key, and each gets its own shift. Realtime and offline
+  use the same lanes. Where several members sum, `OrderedMix` is untouched: the VCA adds no new summing point, so two
+  offline renders stay bit-identical (`test/browser/mixer-groups.test.ts`).
+- **Solo-safe** (`Insert.soloSafe`, right-click a strip): `soloState` keeps a solo-safe insert audible while another is
+  soloed, with what it routes to (so it still reaches the master); its sources are not brought back. A mute still wins.
+
+### UI (`ui/features/mixer`)
+
+The mixer has a toolbar (Snapshots, Save, A/B, Group, Link selected), a coloured band on grouped strips (click: pick the
+group; right-click: its menu), a VCA strip per group with a VCA (right after the Master, a fader like the others: drag,
+wheel, double-click for 0 dB, right-click for automation), Shift/Ctrl-click to pick tracks (with an "Pick this track too"
+menu entry for touch) and "Solo-safe" in the strip menu. The Mix snapshots window (View menu, Alt+Shift+S) lists the
+snapshots: click a name to recall it, A and B to set the pair, Diff for what is different, ⋯ (or right-click) for update,
+rename and delete; it says what to do when empty. Every control has a `data-hint` with units; nothing is hover-only.
+
+### AI and MCP
+
+`mixer_snapshot` (save, recall, compare, update, rename, delete, diff) and `mixer_group` (create, edit, remove, vca_level)
+run inside the answer's one undo step; `edit_insert` takes `solo_safe`; automation targets take `kind: "vca"` with a
+`group`. Reads: `get_mix_snapshots` (with `diff`), `get_mix_groups`; `get_mixer` names a track's group and solo-safe flag.
+`compare` also sets the A/B pair for the musician's switch after the edit (`mixerStateAfter`). MCP gets all of these through
+the same op and read-tool lists.
+
+### Limits
+
+Linking applies to the mixer's own controls (faders, pans, strip buttons): a MIDI controller link or automation recording
+moves the one track it names; use the VCA (a link target and automation target) to move a group from a controller. The A/B
+glide covers faders, pans, mutes and sends; effect parameters and bypass jump the way they always do. A track is in at
+most one group. Snapshots do not keep effect plugin `state` (only parameter values) or the order of effect slots.
 
 ## Composition tools and note scripts (M11)
 
@@ -3398,6 +3480,7 @@ sounds, a role mix and genre loudness.
   4.5 kHz, b8, Reverb −14 and Delay −18 dB; FX; EQ'd Reverb (Plate/Room/Hall by style) and Delay
   (dotted ping-pong or eighth echo) returns; master EQ Pro, tape Saturator, Limiter last (−1 dB, true
   peak; an existing Limiter is kept and moved last). Faders 0/−2/−2/−6/−3/−6 dB.
+  The Reverb and Delay returns it makes are solo-safe (a solo elsewhere keeps their tails playing).
 - `rebuild` routes every channel by role and sets every bus fader; `fill-gaps` only routes channels on
   the master and only sets new buses' faders. Channels still at the default volume get their role's
   level. Pinned faders stay. Running it twice changes nothing.

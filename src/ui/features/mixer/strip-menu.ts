@@ -6,6 +6,7 @@ import { addMixerInsert, deleteInsert, moveInsertBy, routeChannel } from '@app/a
 import type { Services } from '@app/services';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { extraMenuItems } from '../../context-menus';
+import { stripGroupEntries } from './group-menu';
 
 /** What the right-click menu of a strip needs to know about it. */
 export interface StripMenuInput {
@@ -64,6 +65,7 @@ export function stripMenuEntries(input: StripMenuInput): MenuEntry[] {
   }
   entries.push({ label: 'Insert new track after', onSelect: () => addMixerInsert(services, index) });
   entries.push(...extraMenuItems('mixer.strip', { insertId: id }, services));
+  if (!isMaster) entries.push({ kind: 'separator' }, ...stripGroupEntries(services, id));
   if (!isMaster) {
     entries.push({ kind: 'separator' }, { label: 'Delete', danger: true, onSelect: () => deleteInsert(services, id) });
   }

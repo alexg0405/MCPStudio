@@ -7,7 +7,6 @@ import { targetKey } from '@core/model/targets';
 import { formatGain } from '@core/model/fader';
 import { ROUTE_LEVEL_SPEC } from '@core/model/target-specs';
 import { MASTER, type InsertId } from '@core/model/types';
-import { setInsertProp } from '@core/ops/mixer';
 import { setRouteLevel } from '@core/ops/routing';
 import { canRoute } from '@core/query/routing';
 import { p } from '@agstudio/sdk/params';
@@ -17,6 +16,7 @@ import { Icon } from '../../controls/Icon';
 import { useGestureEdit } from '../../edit';
 import { useDoc, useServices, useSession } from '../../services-context';
 import { Fader } from './Fader';
+import { useLinkedInsertEdit } from './linked-edit';
 import { insertName, LOOP_HINT } from './routing';
 import styles from './Mixer.module.css';
 
@@ -34,11 +34,8 @@ const formatSend = (value: unknown) => formatGain(Number(value));
 /** The pan knob of a strip. */
 export const StripPan = memo(function StripPan({ id, label, name }: { id: InsertId; label: string; name: string }) {
   const value = useDoc((project) => project.mixer.inserts[id]?.pan ?? 0);
-  const pan = useGestureEdit<number>(
-    `${label} pan`,
-    (draft, newPan) => setInsertProp(draft, id, 'pan', newPan),
-    `inspan:${id}`,
-  );
+  // A grouped track's pan moves its group mates too (when the group links pans).
+  const pan = useLinkedInsertEdit(`${label} pan`, id, 'pan', `inspan:${id}`);
   return (
     <Knob
       spec={PAN}
@@ -56,11 +53,8 @@ export const StripPan = memo(function StripPan({ id, label, name }: { id: Insert
 /** The volume fader of a strip. */
 export const StripFader = memo(function StripFader({ id, label, name }: { id: InsertId; label: string; name: string }) {
   const value = useDoc((project) => project.mixer.inserts[id]?.volume ?? 1);
-  const volume = useGestureEdit<number>(
-    `${label} volume`,
-    (draft, newVolume) => setInsertProp(draft, id, 'volume', newVolume),
-    `insvol:${id}`,
-  );
+  // A grouped track's fader moves its group mates too (when the group links faders).
+  const volume = useLinkedInsertEdit(`${label} volume`, id, 'volume', `insvol:${id}`);
   return (
     <Fader
       value={value}

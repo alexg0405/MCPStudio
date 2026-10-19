@@ -1,12 +1,15 @@
 import { memo, useCallback, useState, type MouseEvent as ReactMouseEvent } from 'react';
 import { MASTER, type InsertId, type Project } from '@core/model/types';
-import { setInsertProp, toggleSoloInsert } from '@core/ops/mixer';
+import { setMutedLinked, toggleSoloLinked } from '@core/ops/linked-edits';
+import { setInsertProp } from '@core/ops/mixer';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { showContextMenu } from '../../controls/ContextMenu';
-import { useDoc, useServices } from '../../services-context';
+import { useDoc, useServices, useSession } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
+import { GroupBand } from './GroupBand';
 import { MasterLoudness } from './MasterLoudness';
 import type { MeterBank } from './meters';
+import { RenameInput } from './RenameInput';
 import { describeRoutes, insertName, routeLine } from './routing';
 import { stripMenuEntries } from './strip-menu';
 import { StripBadges, StripDb, StripFader, StripPan, StripRoute } from './strip-controls';
@@ -39,27 +42,6 @@ function stripHint(strip: {
   return `${name}${nameNote}: ${playsNote}${goesNote}${silentNote}. Click to select it (its effects show on the right), right-click for routing`;
 }
 
-/** The name field while renaming: Enter or leaving it keeps the name, Escape puts the old one back. */
-function RenameInput({ initialName, onDone }: { initialName: string; onDone(newName: string): void }) {
-  return (
-    <input
-      className={styles.rename}
-      autoFocus
-      defaultValue={initialName}
-      onFocus={(event) => event.currentTarget.select()}
-      onBlur={(event) => onDone(event.currentTarget.value)}
-      onKeyDown={(event) => {
-        event.stopPropagation();
-        if (event.key === 'Enter') event.currentTarget.blur();
-        if (event.key === 'Escape') {
-          event.currentTarget.value = initialName;
-          event.currentTarget.blur();
-        }
-      }}
-    />
-  );
-}
-
 /** What a strip needs from the mixer: which insert, where it stands, whether it is selected, and the meters. */
 export interface StripProps {
   id: InsertId;
@@ -80,6 +62,8 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
   const color = useDoc((project) => project.mixer.inserts[id]?.color);
   const isMuted = useDoc((project) => !!project.mixer.inserts[id]?.muted);
   const isSoloed = useDoc((project) => !!project.mixer.inserts[id]?.solo);
+  const isSoloSafe = useDoc((project) => !!project.mixer.inserts[id]?.soloSafe);
+  const isMarked = useSession((session) => session.markedInsertIds.includes(id));
   const routed = useDoc((project) => routedChannels(project, id));
   const [isRenaming, setIsRenaming] = useState(false);
   const isMaster = id === MASTER;
@@ -99,12 +83,12 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
 
   const toggleMute = () =>
     services.history.transact(`${isMuted ? 'Unmute' : 'Mute'} ${label}`, (draft) =>
-      setInsertProp(draft, id, 'muted', !isMuted),
+      setMutedLinked(draft, id, !isMuted),
     );
   const toggleSolo = (event: ReactMouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!isMaster) services.history.transact(`Solo ${label}`, (draft) => toggleSoloInsert(draft, id));
+    if (!isMaster) services.history.transact(`Solo ${label}`, (draft) => toggleSoloLinked(draft, id));
   };
   const openMenu = (event: ReactMouseEvent) => {
     event.preventDefault();
@@ -123,6 +107,7 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
     styles.strip,
     isMaster && styles.master,
     isSelected && styles.stripSelected,
+    isMarked && styles.stripMarked,
     isSilenced && styles.stripSilenced,
   ];
   return (
@@ -130,14 +115,26 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
       className={classNames.filter(Boolean).join(' ')}
       style={color ? { ['--ins-color' as string]: color } : undefined}
       onPointerDown={(event) => {
-        if (event.button === 0) services.session.getState().selectInsert(id);
+        if (event.button !== 0) return;
+        // Shift or Ctrl on the strip's own area picks several tracks (for Group and Link); on a control it keeps its own meaning.
+        const isOnControl = event.target instanceof Element && !!event.target.closest('button, input, canvas, [role]');
+        const isPicking = (event.shiftKey || event.ctrlKey || event.metaKey) && !isOnControl;
+        if (isPicking) services.session.getState().toggleMarkedInsert(id);
+        // Working a control of a picked strip keeps the picks (a plain click on the strip clears them).
+        else if (!(isMarked && isOnControl)) services.session.getState().selectInsert(id);
       }}
       onContextMenu={openMenu}
       data-hint={stripHint({ name, label, routed, routesText, isMaster, isSilenced })}
     >
+      <GroupBand id={id} />
       <span className={styles.stripNumber}>
         {isMaster ? 'M' : index}
         <StripBadges id={id} name={name} />
+        {isSoloSafe && (
+          <span className={styles.soloSafeBadge} data-hint={`${name} is solo-safe: a solo elsewhere does not silence it`}>
+            SAFE
+          </span>
+        )}
       </span>
       {isRenaming ? (
         <RenameInput initialName={ownName} onDone={finishRename} />

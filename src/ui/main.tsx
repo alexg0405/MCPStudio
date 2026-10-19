@@ -13,12 +13,14 @@ import { ServicesProvider } from './services-context';
 import { registerFeatures } from './features';
 import { offerRecovery } from './features/files/recovery';
 import { installKeyboard } from './keyboard';
+import { installTouch } from './touch';
 import { applyDefaultLayout } from './workspace/layouts';
 import { App } from './shell/App';
 import { startPrefetching } from './workspace/lazy';
 import './theme/tokens.css';
 import './theme/themes.css';
 import './theme/base.css';
+import './touch/touch.css';
 
 /** React commit counter (dev): idle playback should not re-render anything. `ms` adds up the render time of the commits. */
 const reactPerf = { commits: 0, ms: 0 };
@@ -47,6 +49,7 @@ mark('services');
 registerFeatures(services);
 mark('features');
 installKeyboard(services);
+installTouch(services);
 installAudioUnlock(services.engine);
 if (restored) {
   const { name, fileKey, dirty } = restored.file;

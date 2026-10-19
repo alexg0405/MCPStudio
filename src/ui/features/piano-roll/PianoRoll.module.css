@@ -301,3 +301,13 @@
   letter-spacing: 0;
   white-space: nowrap;
 }
+
+/* Touch layout: toolbar buttons a finger can hit. */
+:global(:root[data-touch='on']) .tool {
+  height: 32px;
+  padding: 0 12px;
+}
+
+:global(:root[data-touch='on']) .tools .tool {
+  height: 30px;
+}

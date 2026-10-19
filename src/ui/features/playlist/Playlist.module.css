@@ -299,3 +299,9 @@
   font-size: var(--ag-font-size-sm);
   z-index: 3;
 }
+
+/* Touch layout: toolbar buttons a finger can hit. */
+:global(:root[data-touch='on']) .tool {
+  height: 32px;
+  padding: 0 12px;
+}

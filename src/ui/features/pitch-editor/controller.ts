@@ -17,6 +17,10 @@ import type { TempoMap } from '@core/time/ppq';
 import { noteName } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
 import { fitCanvas, onThemeChange, readTheme } from '../../timeline/canvas';
+import { CleanupList } from '../../timeline/listeners';
+import { applyTwoFingers } from '../../timeline/touch-view';
+import type { TwoFingerFrame } from '../../touch/recognizer';
+import { attachTouchSurface } from '../../touch/surface';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { curveMidi, dragTarget, drawNotes, hitNote, notesInRect, pitchText, rowForKey, type DrawNote } from './model';
 import { drawContent, drawGrid, drawKeys, drawOverlay, drawRuler, type PitchScene } from './pitch-draw';
@@ -99,6 +103,7 @@ export class PitchEditorController {
     on(this.els.hscroll, 'pointerdown', (e) => this.onTrackDown(e));
     on(this.els.hscroll, 'pointermove', (e) => this.onPointerMove(e));
     on(this.els.hscroll, 'pointerup', (e) => this.onPointerUp(e));
+    this.listenToTouch();
     this.unsubs.push(
       pitchState.subscribe(() => this.onData()),
       this.s.doc.subscribe(() => this.onData()),
@@ -402,6 +407,34 @@ export class PitchEditorController {
     const hit = hitNote(this.notes, ms, this.pitchAt(y));
     if (hit >= 0 && !this.selected().includes(hit)) this.setSelected([hit]);
     this.onMenu?.(hit, ms, e);
+  }
+
+  /** Touch: one finger is the tool, two fingers pan and pinch, a resting finger opens the note menu (see `ui/touch/surface.ts`). */
+  private listenToTouch(): void {
+    const cleanups = new CleanupList();
+    this.unsubs.push(() => cleanups.runAll());
+    const twoFinger = (frame: TwoFingerFrame): void => this.panAndZoom(frame);
+    attachTouchSurface(
+      this.els.stage,
+      { cancelDrag: () => this.cancelDrag(), twoFinger, longPress: (x, y) => this.openMenuAt(x, y) },
+      cleanups,
+    );
+    attachTouchSurface(this.els.ruler, { cancelDrag: () => this.cancelDrag(), twoFinger }, cleanups);
+  }
+
+  private panAndZoom(frame: TwoFingerFrame): void {
+    const r = this.els.stage.getBoundingClientRect();
+    applyTwoFingers(this.vp, frame, r.left, r.top, this.maxMs(), { min: 8, max: 40 });
+    this.mark('grid', 'content', 'overlay', 'keys', 'ruler');
+  }
+
+  private openMenuAt(clientX: number, clientY: number): void {
+    const at = { clientX, clientY };
+    const { x, y } = this.local(at);
+    const ms = this.vp.xToTick(x);
+    const hit = hitNote(this.notes, ms, this.pitchAt(y));
+    if (hit >= 0 && !this.selected().includes(hit)) this.setSelected([hit]);
+    this.onMenu?.(hit, ms, at);
   }
 
   private onWheel(e: WheelEvent): void {

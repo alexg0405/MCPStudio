@@ -1,0 +1,54 @@
+/*
+ * Touch: what the page-wide touch rules need from CSS.
+ *
+ * The first block is always on and changes nothing for a mouse: controls that take drags tell the browser not to scroll or
+ * zoom under the finger (without it the browser would take the drag and cancel the pointer). The second block is the
+ * "Touch layout" (`<html data-touch="on">`, see `layout.ts`): bigger hit areas for fingers. Where a control's look should
+ * not change, its hit area grows with an invisible `::after`; where a row or button is mostly padding, it just gets taller.
+ * Rules that belong to one feature's classes sit in that feature's own CSS module, under `:global(:root[data-touch='on'])`.
+ */
+
+[role='slider'],
+[data-touch-own],
+[data-step] {
+  touch-action: none;
+}
+
+:root {
+  /* The smallest button or handle a finger can hit reliably (px). */
+  --ag-touch-target: 40px;
+}
+
+/* The toolbar grows to hold finger-sized buttons. */
+:root[data-touch='on'] {
+  --ag-toolbar-h: 58px;
+}
+
+/* Menu rows (the menu bar's and the context menus'). */
+:root[data-touch='on'] [role='menuitem'] {
+  min-height: var(--ag-touch-target);
+}
+
+/* Text fields and drop-downs. */
+:root[data-touch='on'] select,
+:root[data-touch='on'] input:not([type='checkbox'], [type='radio'], [type='range']) {
+  min-height: 34px;
+}
+
+/*
+ * Knobs and faders keep their look; their hit area grows to the touch size around them (an invisible ::after, so a finger
+ * that lands near a small knob still turns it). `inset` percentages are of the knob's own box: (touch size - box) / 2 on each side.
+ * Every slider the app has is already `position: relative`, which the ::after needs.
+ */
+:root[data-touch='on'] [role='slider']::after {
+  content: '';
+  position: absolute;
+  inset: calc(max(0px, (var(--ag-touch-target) - 100%) / 2) * -1);
+}
+
+/* Step squares of the channel rack are drawn small; a finger gets the full row. */
+:root[data-touch='on'] [data-step]::after {
+  content: '';
+  position: absolute;
+  inset: -8px -2px;
+}

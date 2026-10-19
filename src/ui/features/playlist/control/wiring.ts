@@ -10,6 +10,7 @@ import { onDragOver, onDrop } from './drop';
 import { onHeaderDouble, onHeaderDown } from './header-pointer';
 import { renameMarker } from './marker-rename';
 import { cancelDrag, onPointerDown, onPointerLeave, onPointerMove, onPointerUp } from './pointer';
+import { listenToTouch } from './touch';
 import { onRulerDouble, onRulerDown, onRulerMove, onRulerUp, setMarkerHot } from './ruler-pointer';
 import { measureLayout, onThumbDown, onWheel } from './viewport-control';
 
@@ -99,6 +100,8 @@ export function listenToElements(ctx: PlaylistContext, cleanups: CleanupList): v
     () => ctx.state.drag !== null,
     () => cancelDrag(ctx),
   );
+  // Registered last, but it listens while capturing, so it sees touches before the listeners above.
+  listenToTouch(ctx, cleanups);
 }
 
 /** Forgets the clip under the pointer when the editor closes (other windows read it for their shortcuts). */

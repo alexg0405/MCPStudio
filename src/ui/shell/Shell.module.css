@@ -537,3 +537,21 @@
     opacity: 0;
   }
 }
+
+/* ---- Touch layout: a finger needs about 40 px (see ui/touch/touch.css) ---- */
+
+:global(:root[data-touch='on']) .toolButton {
+  height: var(--ag-touch-target);
+  min-width: var(--ag-touch-target);
+}
+
+:global(:root[data-touch='on']) .menuLabel {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+:global(:root[data-touch='on']) .menuItem {
+  min-height: var(--ag-touch-target);
+}

@@ -136,7 +136,9 @@ function leadIdOf(project: Project, clipId: ClipId): ClipId {
 
 /** The voices an update remakes: those of the lead asked for (or all), and only the out-of-date ones unless forced. */
 function voicesToUpdate(project: Project, opts: UpdateOptions): HarmonyVoice[] {
-  const voices = opts.clip ? voicesOfLead(project, leadIdOf(project, opts.clip)) : harmonyVoices(project);
+  // A voice whose lead is gone has nothing to be made from again: it stays as it is.
+  const all = opts.clip ? voicesOfLead(project, leadIdOf(project, opts.clip)) : harmonyVoices(project);
+  const voices = all.filter((v) => currentHarmonySignature(project, v.record) !== null);
   if (opts.force) return voices;
   const stale = new Set(staleHarmonyVoices(project).map((v) => v.channelId));
   return voices.filter((v) => stale.has(v.channelId));

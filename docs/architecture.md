@@ -3002,6 +3002,61 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   loud as the vowel (the de-esser rightly takes that down); the makeup of each chain's Compressor is what calibrates it.
   `npm run bench:plugins -- --chains` measures a chain's CPU, the worklet effects in series (3.5–5.4 % of one core).
 
+### Harmonizer (`plugins/builtin/harmonizer`)
+
+`agstudio.harmonizer` adds up to three pitch-shifted copies of a sung voice, singing along in the key or on a held chord.
+Files: `params.ts`, `kernel.ts` (the effect: pitch tracking, picking each voice's note, mix, dry delay),
+`harmony.kernel.ts` (pure scale and held-note maths), `voice.kernel.ts` (one voice: glide, level, pan, fade),
+`shifter.kernel.ts` (one voice's pitch shifter), `ring.kernel.ts` (the sample ring both read), `harmonizer.worklet.ts`, `index.ts`.
+
+- **Following.** The SDK `Yin` (range Low/Middle/High as in Tune) gives the sung pitch every 256 frames; it is smoothed a little
+  (a jump of over 0.7 semitone is taken whole). **Target = Key and scale**: the pitch is matched to the nearest note of the
+  Key and Scale params (with hysteresis; the song's key is not given to effects, so they are explicit params like Tune's), and
+  voice *n* moves **Interval** scale steps from that note (+2 = a third above, +4 a fifth, +5 a sixth, −7 an octave below; in a
+  pentatonic scale a step is a pentatonic note) plus its fixed **Shift** in semitones (interval 0 + shift 7 = a plain fifth).
+  The voice stays an interval away from the *live* pitch, so it keeps the singer's slides and vibrato; **Snap to key** (0–100 %)
+  takes out that share of the singer's mistuning, so the voices land exactly on scale notes. **Target = Played notes** uses
+  `notes: { param: 'notesFrom' }` (the Tune pattern, `noteOn`/`noteOff`/`allNotesOff` on the kernel): voice 1 sings the held note
+  nearest the sung pitch (with hysteresis), voice 2 the next held note above it, voice 3 the next below; with no note above
+  (below) the chord's lowest (highest) note moves up (down) whole octaves, and any note further than an octave from the singer is
+  folded to within it, so a chord always gives a harmony. Those voices land exactly on the held notes. No note held = no harmony
+  (the voices fade out over 5 ms and stop costing anything).
+- **Voices.** **Voices** (1–3) and, per voice, Interval, Shift, Level (dB), Pan (equal power). A voice moves at most an octave
+  either way. Each voice glides to a new interval in 12 ms. **Humanize** (0–30 ct, default 6) drifts each voice on two slow sine
+  waves (0.35–0.85 Hz and 1.9× that) with phases and rates from the host's seeded `rand()`, so a run is repeatable. **Mix**:
+  0 % = the original only, 50 % (default) = the original at full level with the voices at full level, 100 % = voices only
+  (below 50 % the voices fade in, above it the original fades out).
+- **The shifter.** All voices read one mono sum (the dry path keeps its stereo). Without Keep formants it is Tune's splicer: a
+  read head moving at the pitch ratio, jumping a whole number of detected periods (4 ms crossfade) when it strays from its 12 ms
+  resting delay. **Keep formants** (default on) is pitch-synchronous overlap-add on the same ring: grains of two periods under
+  a Hann window are read at the voice's own speed and laid down one new period apart (period ÷ ratio), taken from the voice's
+  own period grid (up to 8 grains). Unlike Tune, rises divide the overlap by the window sum but falls do not: dividing a sparse
+  sum lifts the gap between two pulses back to full level and puts a pulse at every original period, so the pitch would not move
+  (found while measuring an octave down). Grains read at a fixed delay, so their four cubic weights are worked out once
+  per grain (`SampleRing.readWeighted`), and the splice reads are skipped while the grains supply all of the sound. With nothing
+  voiced the splicer takes over (breaths and consonants are shifted, not dropped).
+- **Latency.** 12 ms (`harmonizerLatencyFrames`, whole frames at every rate, reported through `latency` so the mixer's
+  delay compensation uses it); the dry path is read at the same delay, so Mix 0 is the input delayed by exactly that
+  (an impulse test) and a voice shifted by nothing adds in phase with the dry path.
+- **Audio-thread rules.** `process()` (and every method it calls, audited in `kernel.test.ts`) has no `new`, literal, closure or
+  iterator; `test/unit/process-allocation.test.ts` covers `process()`, a long-run heap test the rest.
+- **Presets.** Thirds above (one voice, +2), Choir stack (+2 left, +4 right, −7 under, humanize 12, snap 30 %), Octave down,
+  Fifth and octave up, Gospel 3-part (−2, +2, +4, humanize 8, snap 50 %). The default patch is two voices, a third and a fifth
+  above, panned left and right, formants kept, in C major.
+- **Measured** (Node, 48 kHz, sung A3 B3 C4 D4 in A minor, `kernel.test.ts` asserts ≤ 8 cents, ≤ 5 for the octave): every
+  voice's pitch is within 1.5 cents of the diatonic interval (third above A→C B→D C→E D→F, fifth above A→E B→F C→G D→A, sixth
+  above, octave up, octave down exactly half the frequency), plain shifter and Keep formants alike (guide-note voices are asserted within 8 cents); a sine reads through the plain shifter only (a pure sine has no vowel to keep). Keep formants lowers the level of a
+  shifted voice with the voice's own spectral tilt (an octave down about −4 dB RMS, an octave up about −6 dB on a 1/k test
+  voice); use the voice's Level. CPU (% of one core at 48 kHz, best of 7, a voiced sung line with vibrato, a machine on which Tune's
+  default patch reads 0.56 % instead of its documented 0.38–0.40): default patch (2 voices, formants) 1.05, 3 voices with
+  formants 1.07–1.26, 3 voices plain 0.89, 1 voice with formants 0.59, guide notes 3 voices 1.10; presets Thirds above 0.62, Choir
+  stack 1.11, Octave down 0.58, Gospel 3-part 1.14. `npm run bench:plugins -- --only harmonizer` (its music-like input is
+  barely voiced) reads 1.08 default, 1.19 worst (Choir stack). The first version (shifter on the SDK `DelayLine`, windows
+  normalised and widened) took 2.5 % for three voices.
+- **Limits.** One singer at a time (a chord or noise gives no notes: the voices go on with their last interval); a voice
+  follows a pitch it measured about 20 ms ago, so a fast vibrato is followed a little late in Played notes mode; the shift is
+  an octave at most; the voices come from the mono sum.
+
 ## Audio recording, editing and export (M15)
 
 ### Playing audio clips (`core/audio/playback.ts`, `envelope.ts`, `engine/clip-player.ts`)
@@ -4252,6 +4307,109 @@ Chords, basslines and melodies are written against one song-wide **chord track**
   is named as the 7th chord on its relative root; a dim triad with a doubled root can read as dim7.
 - Audio detection uses the DJ chromagram of the whole clip (cost grows with its length) and is a guess for dense mixes.
 - The piano roll shows the chords of the pattern's first place in the song only.
+
+## Harmony voices (`core/harmony/voices`, `core/ops/harmony-voices.ts`, `core/query/harmony-voices.ts`, `app/harmony/voice*`, `ui/features/harmony-voices`)
+
+Backing voices from a sung lead: "Make harmonies…" on an audio clip makes 1–4 new audio clips on new tracks right under it,
+each a TD-PSOLA render of the lead's own notes moved to a target pitch (so every voice has the singer's words, timing and
+vowels). The real-time cousin is the Harmonizer effect (above, with the vocal chains).
+
+### What is stored (`AudioClip.harmony`, optional, one commented block; types in `core/model/types/harmony.ts`)
+- A voice is an ordinary audio clip on its own track (lanes inserted under the lead's, or under the whole take group when the
+  lead is on a recording's comp/take tracks), played by its own `AudioClipChannel` (level and pan are the channel's volume and pan, on
+  the lead's mixer track; pitch, tempo follow and source tempo are copied from the lead's channel, so the voice moves with it).
+  Its sample has **the lead's sample's length and timeline** (silent outside the part the lead clip plays, which FLAC stores in
+  almost nothing), so the clip takes the lead's `start`, `length`, `offsetSec`, gain and fades unchanged and later trims and splits
+  keep working. The sample is stored through the sample store (24-bit FLAC, `importSampleBytes` inside `whileBusy(…, { project })`) and
+  listed in `Project.samples`, so storage clean-up keeps it by hash like any sample.
+- `HarmonyVoiceRecord { group, voice, source (the lead clip), rule, formantCents, humanize, seed, renderedFor }`: how the voice was
+  made. `rule` is one of `interval` (diatonic scale steps in the song key: +2 a third above, −4 a fifth below, ±7 an octave),
+  `semitones` (fixed, the lead's tuning kept), `chord` (side above/below, the chord track) or `midi` (a guide melody: `GuideNote`s).
+  `repairProject` cleans it (`sanitizeHarmonyRecord`, `core/harmony/voices/rules.ts`) and drops an unusable record (the clip stays
+  plain audio).
+- `renderedFor` is `harmonySignature(...)`: a hash of the lead's played sound (the sample or its pitch-correction render, by
+  content, plus pitch and follow mode), the part of it the lead clip plays, the rule and settings, and, for the rules that read them,
+  the song key and the chords under the lead (and the tempo that places notes among them). `staleHarmonyVoices(project)` lists the
+  voices whose current signature differs: that is "out of date".
+
+### Planning (`core/harmony/voices/targets.ts`, pure)
+- `planTargets(leadNotes, rules, { key, chordTonesAt })` gives, per voice and lead note, the pitch to sing (null = silent). Lead notes
+  carry the pitch **as the song hears it** (the clip channel's pitch and tempo-follow speed added) and their song ticks; the app turns
+  the pitch analysis' note times into ticks with `tickAtSourceSeconds`.
+- Diatonic: the scale note `steps` steps from the lead's nearest scale note (ties down), exactly on the scale, so a lead 15 cents sharp
+  gets a harmony in tune with the key. Fixed: lead + semitones. Guide melody: the guide note sounding at the lead note's start tick (the
+  highest if several), moved by octaves to the one nearest the lead, silent where none sounds.
+- Chord: the chord at the note's start tick (`chordAt`; its tones plus the slash bass). The voices of a side are placed from the
+  lead outwards, each on a chord tone beyond the one before it (so they never cross or share a note), choosing the tone nearest to
+  what that voice sang on the last note with a mild pull toward the lead, and leaving room for the voices still to place; a voice
+  with no tone left in reach doubles the one before it. Where the chord track has no chord a chord voice sings a diatonic third (a
+  plain 4/3 semitones without a key). Every interval stays within an octave of the lead (the shifter's range).
+- A diatonic rule without a song key, or an empty guide melody, is a `HarmonyPlanError` in plain words.
+
+### Humanize and the render (`humanize.ts`, `render.ts`, `arrange.ts`, pure and deterministic)
+- Per voice a seeded stream (`mulberry32`, `voiceSeed(voice, seed)`; the same seed gives the same takes) gives each note a timing delay
+  (uniform in ±`timingMs`, 0–40), a pitch drift (±`driftCents`, 0–40) and a vibrato scale (1 ± `vibrato`, 0–1) applied to the lead's own
+  vibrato. Defaults 12 ms, 6 cents, 0.3.
+- `renderHarmonyVoice` turns the plan into a `PitchEdit` (shift = target − sung + drift, vibrato scale; every note shifts at least
+  0.05 cent so a unison also goes through the same path) and runs `renderPitchEdit` (the pitch editor's own tracker, octave repair,
+  shift curve and PSOLA). **Formant offset**: `PsolaOptions.formantRatio` reads each grain faster or slower by that factor (the grain's
+  spectral envelope scales, the pitch follows the track), within ±300 cents; 1 is the old code bit for bit (the PSOLA characterization
+  tests are unchanged).
+- `arrangeVoice` then keeps each note with 100 ms before (a consonant) and 150 ms after, moves it by its delay, mutes notes the voice
+  does not sing, and leaves the stretches between notes (breaths, noise, the lead's other consonants) out, so four voices do not stack
+  the lead's breaths. Notes that meet are crossfaded over 12 ms with a partition of unity (a held tone keeps its level), free edges
+  fade over 20 ms. Unvoiced sound inside a note is shifted along with it; sound outside any note is dropped.
+
+### The app (`app/harmony/voices.ts`, `voice-lead.ts`, `voice-render.ts`, `voice-jobs.ts` + `voice.worker.ts`)
+- `makeHarmonies(services, clipId, spec)`: `prepareLead` reads the sound the clip plays (a pitch-correction render when it has one),
+  analyses the part it plays plus 0.5 s each side in a Worker (`analyzeInWorker`, the pitch editor's analysis; reverse is refused),
+  `planVoices` plans every voice together, each voice renders in its own Worker (inline in Node) and is stored; then **one**
+  `history.transact` adds the lanes, samples, channels and clips (`addHarmonyVoices`): one undo step, and undo removes it all.
+  Signatures are computed from the project as it was when the run started, so a change during the render shows up as out of date.
+- `updateHarmonies(services, { clip?, force? })` remakes the stale voices (or all with `force`; of one lead when `clip` is a lead or a
+  harmony clip) from the lead as it is now, planning a run's voices together so chord voices keep their order, and replaces each voice
+  channel's sample (`setHarmonyRender`, which also drops the old `SampleRef` once nothing plays it) in one undo step. Tracks, clips,
+  levels and pans are not touched; the seed is kept, so a voice whose inputs did not change comes out the same bits. Split clips of a
+  voice share its channel and are updated together; a voice whose lead is gone is left alone. One run at a time.
+- Preview (`voice-preview.ts`): the first 20 s of the lead's part, voices rendered as above, mixed with `previewMix` at the settings'
+  level and equal-power pan, as two 24-bit WAV files (lead alone, lead with voices, both turned down by the same amount when the stack
+  would pass 0.95), played on the audition bus (`engine.previewAudio`). Nothing in the project changes.
+- Measured (Node, M-series Mac under other agents' load, 60 s mono lead at 48 kHz with 80 vibrato notes): analysis 343 ms, planning
+  1.4 ms, one voice 0.69 s (0.67 s with a formant offset).
+
+### UI, commands, AI and MCP
+- Right-click an audio clip › **Make harmonies…** (and **Update harmonies**, with a count of voices out of date, on a lead or a voice),
+  Playlist menu, the action search (Mod+K) and the commands `harmonies.make` / `harmonies.update` (both have `argsHint`s, so they are in the
+  AI and MCP command catalog).
+- The dialog (`ui/features/harmony-voices`, an overlay like the filters' dialog): starting sets (Thirds, Chord stack, Choir), up to four
+  voices each with a rule menu (named intervals, chord tone above/below, fixed interval in semitones, guide melody = the notes of an
+  instrument channel), level (dB), pan (−100…100), vowel (cents), humanize (timing ms, pitch drift cents, vibrato %), warnings written
+  in plain words (no song key, empty chord track), **A · Lead alone / B · With harmonies / Stop** preview buttons and Make. One seed
+  per dialog, so what is previewed is what is made. Every control has a `data-hint` with its units.
+- AI and MCP: actions `make_harmonies { clip | track+bar, voices: [{ rule, interval?, level, pan, formant, channel? }], humanize?, seed? }`
+  and `update_harmonies { clip?, force? }` (`app/ai/ops/harmony-voices.ts`) check the request (the key, the rules, the clip) and queue
+  the app commands as after-steps, since rendering takes a few seconds. `rule` is a named interval (`third_above`…), `diatonic` +
+  `interval` ("5th below"), `chord_above`, `chord_below`, `fixed` + semitones or `guide` + `channel`. The prompt section says to set the
+  key first and that the AI cannot hear the result.
+
+### Tests
+Node: `core/harmony/voices/voices.test.ts` (a synthetic lead in A minor: a third above lands on the scale degree within 10 cents
+note by note when its output is analysed; planned thirds, sixths, octaves; fixed intervals; guide melodies with silence and octave
+folding; chord voices are chord tones, never cross, move smoothly, fall back to a third; humanize stays inside its bounds and moves
+note starts within them; the render is bit-identical; breaths and silent notes are left out; the formant peak moves by the setting;
+the crossfade keeps level; the signature follows chords, key, sound and settings), `app/harmony/voices.test.ts` (one undo step, lanes under
+the lead, hashes kept, bit-identical samples from the same seed, no key, update only the stale voice and undo it, request parsing),
+`voice-preview.test.ts`, `ui/features/harmony-voices/dialog-model.test.ts`, `app/ai/ops/harmony-voices.test.ts`; browser:
+`test/browser/harmony-voices.test.ts` (the engine plays a voice clip a third above the lead).
+
+### Limits
+- One clear voice, like the pitch editor: chords and noisy takes give no notes. A note the analysis misses is dropped from the voice (it is
+  not sung unison). TD-PSOLA is at its best within about ±5 semitones; a sixth or an octave sounds rougher.
+- The voices follow the lead's notes: a lead moved in time does not move its voices (they are ordinary clips; move them together).
+  Update remakes the sound, not the geometry.
+- A lead on a resample-follow channel is planned at the pitch the tempo it was made at gives; changing the song tempo later is not read
+  as a change by the signature of a diatonic rule.
+- Voices of a run missing from the project (a deleted track) are not planned: the chord voices left take the nearer ranks.
 
 ## Metering (`engine/meter`, `core/metering`, `app/metering`, `ui/features/meters`)
 

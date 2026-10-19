@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { produce, produceWithPatches } from 'immer';
+import { enablePatches, produce, produceWithPatches } from 'immer';
 import { createEmptyProject } from '../model/defaults';
 import { MAX_INSERT_VOLUME } from '../model/fader';
 import { seededBytes, setIdSource } from '../model/ids';
@@ -23,6 +23,8 @@ import {
 import { linkedValue, planLinkedEdit, setMutedLinked, toggleSoloLinked } from './linked-edits';
 import { removeInsert, setInsertProp, setSoloSafe } from './mixer';
 import { setTargetValue } from './targets';
+
+enablePatches();
 
 beforeEach(() => setIdSource(seededBytes(11)));
 

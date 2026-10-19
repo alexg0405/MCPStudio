@@ -148,7 +148,7 @@ function registerSnapshotAndGroupCommands(services: Services): void {
   services.keymap.add([
     { chord: 'Mod+G', command: 'mixer.groupSelected', when: { focus: ['mixer'] } },
     { chord: 'Mod+Shift+G', command: 'mixer.linkSelected', when: { focus: ['mixer'] } },
-    { chord: 'Alt+Shift+A', command: 'mixer.snapshotCompare' },
+    { chord: 'Alt+Shift+B', command: 'mixer.snapshotCompare' },
   ]);
   addMenuItems('add', [cmd('mixer.snapshotSave', 51), cmd('mixer.groupSelected', 52), cmd('mixer.linkSelected', 53)]);
   addMenuItems('view', [cmd('mixer.snapshotCompare', 42)]);

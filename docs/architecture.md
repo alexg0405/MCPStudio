@@ -1356,7 +1356,7 @@ master never, each track in one group) and goes when it has none, and a snapshot
   quarter of it (`AutoLane.setBase(…, glideTau)`) instead of the usual 4 ms, so switching while the song plays does not
   click. Ordinary edits carry no `glideSec`. Effect parameters are not glided here: they move the way plugin params do.
 - **A/B.** The pair and the side are session state (`session.snapshotCompare`). `toggleCompare` recalls the other snapshot
-  as a gesture-free `transact` with a merge key, so quick back-and-forth is one undo step. It is bound to Alt+Shift+A and
+  as a gesture-free `transact` with a merge key, so quick back-and-forth is one undo step. It is bound to Alt+Shift+B and
   to the A/B button of the mixer and of the Mix snapshots window; a deleted snapshot leaves the pair.
 - **Diff** (`core/snapshots/diff.ts`): "what is different" as sentences with units, in mixer order ("Kick: fader −14.0 dB →
   −1.9 dB", "Kick · EQ: Gain −9.0 dB → +3.0 dB", "VCA of Drums: …"), against the mix as it is (`diffAgainstCurrent`: what a

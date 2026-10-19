@@ -317,7 +317,7 @@ describe('808 Bass', () => {
     const b = await render(notes, defaults);
     expectFinite(a);
     expect(peakOf(a)).toBeGreaterThan(0.05);
-    expect(diff(a, b)).toBeLessThan(1e-6);
+    expect(diff(a, b), 'two renders of the same project').toBe(0);
     // Smaller chunks deliver note-offs before later note-ons (and compute note times with
     // different rounding); the result must not depend on it.
     for (const chunk of [128 * 16, 128 * 37]) expect(diff(a, await render(notes, defaults, chunk))).toBeLessThan(1e-6);

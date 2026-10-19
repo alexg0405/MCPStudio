@@ -1,3 +1,5 @@
+import { OrderedMix } from './ordered-mix';
+
 /**
  * Voice bookkeeping for main-thread ("graph") instruments built from native Web Audio nodes.
  * Handles polyphony limits, voice stealing without clicks, cancelling notes that have not
@@ -56,6 +58,8 @@ export function sumSignals(
 interface Live extends GraphVoice {
   noteId: number;
   kill: GainNode;
+  /** Takes the voice's kill gain out of the destination's mix. */
+  detach: () => void;
   /** When the voice is (or will be) silent; Infinity while held. */
   until: number;
   released: boolean;
@@ -67,6 +71,8 @@ const FADE = 0.005;
 /** Keeps track of the voices of a main-thread instrument: polyphony limit, click-free stealing and cleanup. */
 export class GraphVoices {
   private readonly voices = new Map<number, Live>();
+  /** Adds the voices up in the same order every time (see OrderedMix), so offline renders repeat bit for bit. */
+  private readonly mix: OrderedMix;
   private readonly max: number;
   private gcTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -76,6 +82,7 @@ export class GraphVoices {
     opts: { max?: number } = {},
   ) {
     this.max = opts.max ?? 16;
+    this.mix = new OrderedMix(ac, destination);
   }
 
   get size(): number {
@@ -86,11 +93,12 @@ export class GraphVoices {
   add(noteId: number, voice: GraphVoice): void {
     this.gc(this.ac.currentTime);
     const kill = new GainNode(this.ac, { gain: 1 });
-    voice.out.connect(kill).connect(this.destination);
+    voice.out.connect(kill);
     const live: Live = {
       ...voice,
       noteId,
       kill,
+      detach: this.mix.attach(kill),
       until: voice.end ?? Infinity,
       released: false,
       disposed: false,
@@ -142,6 +150,7 @@ export class GraphVoices {
 
   disposeAll(): void {
     for (const v of [...this.voices.values()]) this.dispose(v, true);
+    this.mix.dispose();
     if (this.gcTimer !== null) clearTimeout(this.gcTimer);
     this.gcTimer = null;
   }
@@ -211,6 +220,7 @@ export class GraphVoices {
     for (const n of v.nodes ?? []) n.disconnect();
     for (const s of v.sources) s.disconnect();
     v.out.disconnect();
+    v.detach();
     v.kill.disconnect();
   }
 }

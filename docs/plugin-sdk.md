@@ -113,7 +113,10 @@ schedule at `e.time` and never "now". `NoteOn.fine` is the note's fine pitch in 
 voice's detune) and `NoteOff.release` its release velocity (0–1). A note-off whose time is at or before its note-on means the
 note was cancelled (for example, the user deleted it before it played). `GraphVoices.release()`
 handles that for you. `GraphVoices` also limits polyphony, steals voices without clicks and cleans
-up finished voices.
+up finished voices, and adds the voices up in a fixed order so an export of the same project is identical every time.
+If your plugin adds three or more signals of its own (the oscillators of a voice, parallel delay lines), connect them
+with `new OrderedMix(ac, targetNode)` and `mix.attach(source)` instead of `source.connect(targetNode)`: Chrome sums a
+node's inputs in a different order from run to run, which changes the last bit of an offline render. Two inputs are safe.
 
 `allNotesOff(time, hard)` happens on stop (release) and on panic or plugin swap (`hard`: silence quickly).
 An instrument may also implement `controlChange(cc, value, time)` (MIDI mod wheel and other

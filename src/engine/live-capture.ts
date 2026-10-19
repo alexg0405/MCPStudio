@@ -1,4 +1,5 @@
 import type { InsertId, Tick } from '@core/model/types';
+import type { OrderedMix } from '@agstudio/sdk';
 import { openAudioInput, type AudioInput } from './audio-input';
 import { LIMITER_LOOKAHEAD_SEC } from './limiter-id';
 import { isRealtimeContext } from './realtime-context';
@@ -13,7 +14,7 @@ export interface LiveCaptureHost {
   resume(): Promise<void>;
   loadModule(url: string): Promise<void>;
   /** Where a track connects (monitoring a live input through a mixer track). */
-  insertInput(id: InsertId): AudioNode;
+  insertInput(id: InsertId): OrderedMix;
   /** Stops playback (recording starts from a standstill). */
   stop(): void;
   /** Whether a project is loaded (without one there is nothing to play along with). */

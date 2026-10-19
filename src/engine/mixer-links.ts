@@ -2,6 +2,7 @@ import { MAX_INSERT_VOLUME } from '@core/model/fader';
 import { ROUTE_LEVEL_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
 import type { InsertId, Route } from '@core/model/types';
+import { OrderedMix } from '@agstudio/sdk';
 import { disconnectFrom } from './audio-graph';
 import type { EngineCore } from './engine-core';
 import type { InsertTaps } from './insert-strip';
@@ -20,6 +21,10 @@ function clampLevel(level: number): number {
 export class InsertBus implements InsertTaps {
   readonly chIn: GainNode;
   readonly routeIn: GainNode;
+  /** Everything that feeds `chIn` (channels, and the bus's own link while its insert is gone) connects through this. */
+  readonly chMix: OrderedMix;
+  /** Everything that feeds `routeIn` (routes from other inserts, and the bus's own channels) connects through this. */
+  readonly routeMix: OrderedMix;
   readonly scTap: GainNode;
   readonly preTap: GainNode;
   readonly postTap: GainNode;
@@ -29,6 +34,8 @@ export class InsertBus implements InsertTaps {
   constructor(ctx: BaseAudioContext, offline: boolean) {
     this.chIn = new GainNode(ctx);
     this.routeIn = new GainNode(ctx);
+    this.chMix = new OrderedMix(ctx, this.chIn);
+    this.routeMix = new OrderedMix(ctx, this.routeIn);
     this.scTap = new GainNode(ctx);
     this.preTap = new GainNode(ctx);
     this.postTap = new GainNode(ctx);
@@ -37,6 +44,8 @@ export class InsertBus implements InsertTaps {
 
   dispose(): void {
     this.chLink.dispose();
+    this.chMix.dispose();
+    this.routeMix.dispose();
     for (const node of [this.chIn, this.routeIn, this.scTap, this.preTap, this.postTap]) node.disconnect();
   }
 }

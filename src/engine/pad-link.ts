@@ -1,3 +1,4 @@
+import type { OrderedMix } from '@agstudio/sdk';
 import { disconnectFrom, frameDelay } from './audio-graph';
 
 /** Crossfade when a padded link changes its delay or target while audio runs (seconds). */
@@ -7,10 +8,12 @@ const LINK_DROP_DELAY_MS = 60;
 
 /** One way through a link: an optional delay line, then a gain, then the target. */
 interface Path {
-  to: AudioNode;
+  to: OrderedMix;
   frames: number;
   delay: DelayNode | null;
   gain: GainNode;
+  /** Takes the path's gain out of the target's mix. */
+  detach: () => void;
 }
 
 /**
@@ -35,13 +38,13 @@ export class PadLink {
     return this.path?.frames ?? 0;
   }
 
-  /** The node the current path ends in, or null when the link goes nowhere. */
-  get target(): AudioNode | null {
+  /** The mix the current path ends in, or null when the link goes nowhere. */
+  get target(): OrderedMix | null {
     return this.path?.to ?? null;
   }
 
   /** Points the link at `to` with a delay of `frames` (null: nowhere). Nothing happens if it already does. */
-  set(to: AudioNode | null, frames: number): void {
+  set(to: OrderedMix | null, frames: number): void {
     const old = this.path;
     if (old?.to === to && (to === null || old?.frames === frames)) return;
     // Crossfade only while audio runs and there is something to fade from.
@@ -77,7 +80,7 @@ export class PadLink {
     this.fading.set(old, timer);
   }
 
-  private build(to: AudioNode, frames: number, gainValue: number): Path {
+  private build(to: OrderedMix, frames: number, gainValue: number): Path {
     const gain = new GainNode(this.ctx, { gain: gainValue });
     let delay: DelayNode | null = null;
     if (frames > 0) {
@@ -86,8 +89,7 @@ export class PadLink {
     } else {
       this.from.connect(gain);
     }
-    gain.connect(to);
-    return { to, frames, delay, gain };
+    return { to, frames, delay, gain, detach: to.attach(gain) };
   }
 
   private drop(path: Path): void {
@@ -97,6 +99,7 @@ export class PadLink {
     } else {
       disconnectFrom(this.from, path.gain);
     }
+    path.detach();
     path.gain.disconnect();
   }
 }

@@ -1,4 +1,4 @@
-import { dbToGain, defineInstrument, GraphVoices, mtof, p } from '@agstudio/sdk';
+import { dbToGain, defineInstrument, GraphVoices, mtof, OrderedMix, p } from '@agstudio/sdk';
 
 const WAVES = ['sine', 'triangle', 'sawtooth', 'square'] as const;
 const waveLabels = { sine: 'Sine', triangle: 'Triangle', sawtooth: 'Saw', square: 'Square' };
@@ -105,14 +105,21 @@ export default defineInstrument({
         const filter = new BiquadFilterNode(ac, { type: 'lowpass', frequency: 0, Q: 0 });
         const vca = new GainNode(ac, { gain: 0 });
         sum.connect(filter).connect(vca);
-        const cleanup: Array<() => void> = [signals.cutoff.connect(filter.frequency), signals.q.connect(filter.Q)];
+        // The three oscillators add up in a fixed order, so an offline render repeats bit for bit.
+        const oscillatorMix = new OrderedMix(ac, sum);
+        const cleanup: Array<() => void> = [
+          () => oscillatorMix.dispose(),
+          signals.cutoff.connect(filter.frequency),
+          signals.q.connect(filter.Q),
+        ];
         const sources: AudioScheduledSourceNode[] = [];
         const nodes: AudioNode[] = [sum, filter];
 
         for (const n of [1, 2, 3] as const) {
           const o = new OscillatorNode(ac, { type: P[`osc${n}Wave`].valueAt(t), frequency: freq, detune: fine ?? 0 });
           const g = new GainNode(ac, { gain: 0 });
-          o.connect(g).connect(sum);
+          o.connect(g);
+          cleanup.push(oscillatorMix.attach(g));
           cleanup.push(signals.level[n - 1]!.connect(g.gain));
           cleanup.push(signals.coarse[n - 1]!.connect(o.detune));
           cleanup.push(signals.fine[n - 1]!.connect(o.detune));

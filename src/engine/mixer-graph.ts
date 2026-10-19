@@ -27,6 +27,7 @@
  *   only; it is recomputed whenever a slot's latency becomes known or changes (load, enable, bypass,
  *   replace, fault) and on every routing edit, and `onAlign` tells the engine.
  */
+import type { OrderedMix } from '@agstudio/sdk';
 import { makeInsert } from '@core/model/defaults';
 import { MASTER, type InsertId, type Mixer, type Project, type Route } from '@core/model/types';
 import { effectivelyMutedInserts } from '@core/query/mixer';
@@ -102,8 +103,8 @@ export class MixerGraph {
   }
 
   /** Where a channel routed to `id` connects (unknown inserts play through the master). */
-  insertInput(id: InsertId): AudioNode {
-    return this.bus(id).chIn;
+  insertInput(id: InsertId): OrderedMix {
+    return this.bus(id).chMix;
   }
 
   /** After the fader of an insert (the master's is what leaves the mixer): where a meter listens. Null for an unknown insert. */
@@ -225,7 +226,7 @@ export class MixerGraph {
       bus = new InsertBus(this.core.ctx, this.core.offline);
       this.buses.set(id, bus);
       // Until its insert exists (it may never), the bus plays through the master.
-      if (id !== MASTER) bus.chLink.set(this.bus(MASTER).chIn, 0);
+      if (id !== MASTER) bus.chLink.set(this.bus(MASTER).chMix, 0);
     }
     return bus;
   }
@@ -296,15 +297,15 @@ export class MixerGraph {
     );
     const changed = this.pdc !== null && this.pdc.total !== pdc.total;
     this.pdc = pdc;
-    const masterIn = this.bus(MASTER).chIn;
+    const masterIn = this.bus(MASTER).chMix;
     // Channels are not padded: the engine schedules them later by the insert's arrival (`shiftSeconds`).
     for (const [id, bus] of this.buses) {
-      if (this.strips.has(id)) bus.chLink.set(bus.routeIn, 0);
+      if (this.strips.has(id)) bus.chLink.set(bus.routeMix, 0);
       else if (id !== MASTER) bus.chLink.set(masterIn, 0);
     }
     const sampleRate = this.core.ctx.sampleRate;
     for (const link of this.routes.values()) {
-      link.pad.set(this.bus(link.to).routeIn, pdc.routePad(link.from, link.to));
+      link.pad.set(this.bus(link.to).routeMix, pdc.routePad(link.from, link.to));
       link.setShift(pdc.out(link.from) / sampleRate);
     }
     for (const [id, strip] of this.strips) strip.setAlignment(pdc.arrival(id));

@@ -28,6 +28,8 @@ export class ChannelStrip {
   private readonly vol: GainNode;
   private readonly panner: StereoPannerNode;
   readonly out: GainNode;
+  /** Takes `out` off the mix of the insert it plays into. */
+  private detachFromInsert: () => void;
   private readonly volLane: AutoLane;
   private readonly panLane: AutoLane;
   /** Instrument channels only. */
@@ -70,7 +72,7 @@ export class ChannelStrip {
     for (const lane of [this.volLane, this.panLane, this.pitch?.lane])
       if (lane) this.unregister.push(core.params.register(lane));
     this.input.connect(this.vol).connect(this.panner).connect(this.out);
-    this.out.connect(core.insertInput(channel.output));
+    this.detachFromInsert = core.insertInput(channel.output).attach(this.out);
     this.setShift(core.channelShift(channel.output));
     this.load(channel, project);
   }
@@ -149,8 +151,8 @@ export class ChannelStrip {
     if (next.kind === 'instrument' && (prev.kind !== 'instrument' || prev.pitch !== next.pitch))
       this.pitch?.lane.setBase(next.pitch ?? 0, t);
     if (prev.output !== next.output) {
-      this.out.disconnect();
-      this.out.connect(this.core.insertInput(next.output));
+      this.detachFromInsert();
+      this.detachFromInsert = this.core.insertInput(next.output).attach(this.out);
       this.setShift(this.core.channelShift(next.output));
     }
     if (prev.kind !== next.kind) {
@@ -263,6 +265,7 @@ export class ChannelStrip {
     this.volLane.dispose();
     this.panLane.dispose();
     this.pitch?.dispose();
+    this.detachFromInsert();
     this.out.disconnect();
     this.panner.disconnect();
     this.vol.disconnect();

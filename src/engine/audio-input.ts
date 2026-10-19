@@ -5,6 +5,7 @@
  * 50 ms into chunks, so a take is limited only by memory.
  */
 import type { InsertId } from '@core/model/types';
+import type { OrderedMix } from '@agstudio/sdk';
 import inputRecorderUrl from './input-recorder.worklet.ts?worker&url';
 import { IN_MODE, IN_STATE, INPUT_RECORDER_ID, LEVEL_BLOCKS } from './input-recorder-id';
 
@@ -66,7 +67,7 @@ export interface AudioInput {
 /** What an audio input needs from the engine. */
 export interface AudioInputDeps {
   loadModule(url: string): Promise<void>;
-  insertInput(id: InsertId): AudioNode;
+  insertInput(id: InsertId): OrderedMix;
   /** Output side of the round trip (seconds): output latency and the limiter. */
   outputLatency(): number;
 }
@@ -280,7 +281,8 @@ class LiveAudioInput implements AudioInput {
   /** A silent path to the destination keeps the recorder running. */
   private readonly sink: GainNode;
   private readonly monitor: GainNode;
-  private monitorTo: AudioNode | null = null;
+  /** Takes the monitor out of the track's mix (null while monitoring is off). */
+  private stopMonitoring: (() => void) | null = null;
   private capture: RingCapture | null = null;
   private isClosed = false;
   /** The input's own latency as the browser reports it (seconds). */
@@ -332,15 +334,16 @@ class LiveAudioInput implements AudioInput {
 
   setMonitor(track: InsertId | null, gain = 1): void {
     if (this.isClosed) return;
-    if (this.monitorTo) {
+    if (this.stopMonitoring) {
       this.source.disconnect(this.monitor);
+      this.stopMonitoring();
       this.monitor.disconnect();
-      this.monitorTo = null;
+      this.stopMonitoring = null;
     }
     if (track === null) return;
     this.monitor.gain.value = gain;
-    this.monitorTo = this.deps.insertInput(track);
-    this.source.connect(this.monitor).connect(this.monitorTo);
+    this.source.connect(this.monitor);
+    this.stopMonitoring = this.deps.insertInput(track).attach(this.monitor);
   }
 
   startCapture(): AudioCapture {

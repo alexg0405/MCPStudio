@@ -261,7 +261,7 @@ describe.concurrent('built-in effects', () => {
       expect(peak(a)).toBeGreaterThan(0.01);
       expect(peak(a)).toBeLessThanOrEqual(CEILING + 1e-6);
       expect(maxDiff(a, dry)).toBeGreaterThan(1e-3);
-      expect(maxDiff(a, b)).toBeLessThan(1e-6);
+      expect(maxDiff(a, b), 'two renders of the same project').toBe(0);
     });
   }
 

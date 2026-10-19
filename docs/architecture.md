@@ -288,6 +288,21 @@ sizes 128, 128·37, 128·256 must land on exact frames): port messages during su
 first quantum; suspend rounding direction (always schedule through next boundary + 50 ms); stale `.value` after resume
 (never set `.value` during export, only `setValueAtTime` well past the boundary). Plan B: send the whole song's events in
 one message + `sync()` before `startRendering()`. Determinism: render twice, compare PCM hashes (plugins use seeded RNG).
+
+**Render determinism.** Two offline renders of one project (same sample rate and chunk size, cold or warm sample cache)
+are bit-identical (`test/browser/render-determinism.test.ts`). Three things guarantee it: generators and noisy kernels
+use seeded RNGs (`Rng`, kit sounds seeded from their name, plugin noise from the channel's id); every sample is made
+ready before the chunk that plays it (`prepareOffline`); and **nothing sums three or more signals through a plain
+fan-in**. Chrome adds the inputs of a node in an order that changes from run to run, and float addition is not
+associative, so a node with three audible inputs (overlapping drum voices, channels into an insert, inserts into the
+master, the oscillators of a synth voice) renders differently by one float step each time. `OrderedMix`
+(`src/sdk/ordered-mix.ts`) is the fix: on an offline context it puts the sources on a ladder of unity-gain stages with at
+most two inputs each (two inputs add the same either way), in the order they were attached; on a live context it connects
+directly, so playback costs nothing extra. `GraphVoices` uses it for its voices, `InsertBus` for `chIn` and `routeIn`
+(`engine.insertInput(id)` returns the mix: attach to it, never connect to the bus node), and a plugin that sums its own
+voices or oscillators should too. Left alone on purpose: inputs that are silent except one or two (the master's preview
+and monitor buses, a slot's bypass/dry/wet gates), since adding exact zeros is order-free. Different chunk sizes can still
+differ by a last bit, because which mix slot a voice takes depends on when finished voices were cleaned up.
 WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the file first (user activation lasts ~5 s).
 
 As built (M6, `app/export`; WAV, FLAC, MP3 and stems since M15, see

@@ -1,5 +1,5 @@
 import type { InsertId, PluginOwner } from '@core/model/types';
-import type { AudioTap, JsonValue, TransportInfo } from '@agstudio/sdk';
+import type { AudioTap, JsonValue, OrderedMix, TransportInfo } from '@agstudio/sdk';
 import type { PluginResolver } from './api';
 import type { NoteFeedHub } from './note-feed';
 import type { ParamRegistry } from './param-lane';
@@ -18,7 +18,7 @@ export interface EngineCore {
   readonly offline: boolean;
   /** Automatable params by target key (automation, controller links, knobs that follow automation). */
   readonly params: ParamRegistry;
-  insertInput(id: InsertId): AudioNode;
+  insertInput(id: InsertId): OrderedMix;
   /**
    * Seconds a channel routed to insert `id` is held back for delay compensation: the song's events for it (notes,
    * clip starts, automation) are scheduled this much later, so the audio needs no delay line and live notes are not

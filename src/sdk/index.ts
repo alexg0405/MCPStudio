@@ -31,6 +31,7 @@ export {
   type SyncOption,
 } from './dsp/tempo';
 export { GraphVoices, sumSignals, type GraphVoice } from './graph-voices';
+export { OrderedMix, type OrderedMixOptions } from './ordered-mix';
 export { ParamLane } from './param-lane';
 export { defineWorkletInstrument, defineWorkletEffect } from './worklet-defs';
 // Instrument building blocks (M13).

@@ -11,7 +11,7 @@ import type { ChannelId, InsertId, PluginInstance, PluginOwner, Project, SampleI
 import { tempoMapOf } from '@core/automation/tempo';
 import { PPQ, constantTempo, ticksPerBar, type TempoMap } from '@core/time/ppq';
 import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
-import type { AudioTap, JsonValue, ParamSpecs } from '@agstudio/sdk';
+import type { AudioTap, JsonValue, OrderedMix, ParamSpecs } from '@agstudio/sdk';
 import type {
   DeckHost,
   EngineApi,
@@ -581,7 +581,7 @@ export class Engine implements EngineApi, EngineCore {
   // ---- EngineCore ----
 
   /** Where a channel routed to `id` connects (unknown inserts play through the master). */
-  insertInput(id: InsertId): AudioNode {
+  insertInput(id: InsertId): OrderedMix {
     return this.mixer.insertInput(id);
   }
 

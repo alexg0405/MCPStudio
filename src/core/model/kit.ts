@@ -16,8 +16,10 @@ export type KitSound =
 
 /** Genre kits (the stock kit is the default one). */
 export const KIT_STYLES = ['trap', 'house', 'lofi', 'boombap', 'edm', 'bass', 'dnb'] as const;
+/** One of `KIT_STYLES`: the genre a kit piece belongs to. */
 export type KitStyle = (typeof KIT_STYLES)[number];
 
+/** One drum of a kit: the generator that makes its sound and the names the UI shows for it. */
 export interface KitPiece {
   generator: string;
   name: string;
@@ -29,8 +31,13 @@ export interface KitPiece {
   kit?: KitStyle;
 }
 
+/**
+ * The version of the generated kit sounds stored with their samples; bump it (and keep the old generator) if a sound
+ * ever changes.
+ */
 export const KIT_VERSION = 1;
 
+/** The stock drum kit, one piece per drum the beat writer knows. */
 export const KIT: readonly KitPiece[] = [
   { generator: 'kit/kick', name: 'Kick', short: 'Kick', sound: 'kick' },
   { generator: 'kit/snare', name: 'Snare', short: 'Snare', sound: 'snare' },

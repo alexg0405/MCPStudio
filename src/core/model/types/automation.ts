@@ -15,6 +15,7 @@ export type ParamTarget =
 
 /** How the curve gets from a point to the next one. */
 export type AutoShape = 'curve' | 'hold' | 'stairs' | 'smooth';
+/** Every `AutoShape`, for lists and for checking loose input. */
 export const AUTO_SHAPES: readonly AutoShape[] = ['curve', 'hold', 'stairs', 'smooth'];
 
 /** One point of an automation curve. */

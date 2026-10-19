@@ -100,6 +100,7 @@ export interface SoundFilter {
 
 /** How an audio clip channel follows the song tempo (see `AudioClipChannel.stretch`). */
 export type AudioStretch = 'off' | 'resample' | 'stretch';
+/** Every `AudioStretch`, for lists and for checking loose input. */
 export const AUDIO_STRETCH: readonly AudioStretch[] = ['off', 'resample', 'stretch'];
 
 /** An automation clip's curve (FL keeps it as a channel); its playlist clips play it. */

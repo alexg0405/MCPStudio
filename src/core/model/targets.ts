@@ -23,6 +23,7 @@ export function targetKey(t: ParamTarget): string {
   }
 }
 
+/** True when two targets point at the same control (they have the same `targetKey`). */
 export function sameTarget(a: ParamTarget, b: ParamTarget): boolean {
   return targetKey(a) === targetKey(b);
 }

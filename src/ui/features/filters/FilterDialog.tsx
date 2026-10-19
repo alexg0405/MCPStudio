@@ -86,31 +86,15 @@ function FilterDialog({ start }: { start: string | undefined }) {
                 ))}
               </select>
             </label>
-            {GROUPS.map((g) => (
-              <fieldset key={g.id} className={styles.group}>
-                <legend>{g.label}</legend>
-                <div className={styles.list} role="radiogroup">
-                  {FILTERS.filter((f) => f.group === g.id).map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={f.id === chosen}
-                      className={`${styles.item} ${f.id === chosen ? styles.on : ''}`}
-                      data-hint={`${f.name}: ${f.description}`}
-                      onClick={() => setChosen(f.id)}
-                      onDoubleClick={() => {
-                        setChosen(f.id);
-                        close();
-                        void runFilter(s, f.id, target);
-                      }}
-                    >
-                      {f.name}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
-            ))}
+            <FilterPicker
+              chosen={chosen}
+              onChoose={setChosen}
+              onApplyNow={(id) => {
+                setChosen(id);
+                close();
+                void runFilter(s, id, target);
+              }}
+            />
             <p className={dialog.message}>
               <strong>{filter.name}</strong>: {filter.description}.
             </p>
@@ -135,5 +119,34 @@ function FilterDialog({ start }: { start: string | undefined }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The filters in their groups: click one to choose it, double-click to apply it at once. */
+function FilterPicker({ chosen, onChoose, onApplyNow }: { chosen: string; onChoose(id: string): void; onApplyNow(id: string): void }) {
+  return (
+    <>
+      {GROUPS.map((g) => (
+        <fieldset key={g.id} className={styles.group}>
+          <legend>{g.label}</legend>
+          <div className={styles.list} role="radiogroup">
+            {FILTERS.filter((f) => f.group === g.id).map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                role="radio"
+                aria-checked={f.id === chosen}
+                className={`${styles.item} ${f.id === chosen ? styles.on : ''}`}
+                data-hint={`${f.name}: ${f.description}`}
+                onClick={() => onChoose(f.id)}
+                onDoubleClick={() => onApplyNow(f.id)}
+              >
+                {f.name}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      ))}
+    </>
   );
 }

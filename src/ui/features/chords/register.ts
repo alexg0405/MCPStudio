@@ -33,6 +33,14 @@ function laneShown(s: Services): boolean {
  * `voice_chords`, `bassline` and `fit_melody` actions and the `get_chords` read.
  */
 export function register(services: Services): void {
+  registerChordsWindow(services);
+  registerChordCommands(services);
+  registerChordMenus();
+  registerChordsHelp();
+}
+
+/** The Chords window and the command that opens it. */
+function registerChordsWindow(services: Services): void {
   registerWindowType({
     type: 'chords',
     title: () => 'Chords',
@@ -48,8 +56,10 @@ export function register(services: Services): void {
     chords: ['Alt+Shift+H'],
     menuOrder: 60,
   });
+}
 
-  const { commands } = services;
+/** Chord lane, typing, detecting, progressions, clearing, and writing chords, a bassline and a melody that fit. */
+function registerChordCommands({ commands }: Services): void {
   commands.register({
     id: 'chords.showLane',
     title: 'Show the chord lane',
@@ -142,7 +152,10 @@ export function register(services: Services): void {
     enabled: hasChords,
     run: (s, strength) => report(s, fitMelodyToChords(s, Math.max(0, Math.min(100, strength ?? 100)) / 100)),
   });
+}
 
+/** Playlist and Edit menu entries, the piano roll right-click entries and the action search. */
+function registerChordMenus(): void {
   addMenuItems('playlist', [
     sep(39),
     cmd('chords.showLane', 40),
@@ -170,6 +183,10 @@ export function register(services: Services): void {
       run: () => openWindow(s, 'chords'),
     },
   ]);
+}
+
+/** What the window help panel says. */
+function registerChordsHelp(): void {
   setWindowHelp('chords', {
     intro: 'The song’s harmony. Put chords on the chord track, then write chords, a bassline and a melody that all fit it.',
     moves: [

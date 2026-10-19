@@ -45,14 +45,46 @@ async function arrange(s: Services, run: (m: Arranger) => CommandResult): Promis
 const where = (s: Services, range: { from: Tick; to: Tick } | null) =>
   range ? barSpan(range.from, range.to, s.doc.getState().project.transport.timeSig) : 'the whole song';
 
+/** Whether the song has any clip (a fill or transition needs something to build on). */
+const hasSong = (s: Services) => Object.keys(s.doc.getState().project.playlist.clips).length > 0;
+
+/** Ticks in one bar of the song. */
+const barTicks = (s: Services) => ticksPerBar(s.doc.getState().project.transport.timeSig);
+
+/** A fill at the end of the bar at `tick`, a transition into the nearest bar line. */
+function fillAndTransitionHere(s: Services, tick: Tick): MenuEntry[] {
+  const bar = barTicks(s);
+  const fillBar = Math.floor(tick / bar);
+  const transitionBar = Math.round(tick / bar);
+  return [
+    {
+      label: `Add a fill here (end of bar ${fillBar + 1})`,
+      hint: 'A 2-beat fill that replaces the drums at the end of this bar',
+      onSelect: () => void arrange(s, (m) => m.addFillAt(s, tick)),
+    },
+    {
+      label: `Add a transition here (into bar ${transitionBar + 1})`,
+      hint: 'The transition the sections on either side call for',
+      onSelect: () => void arrange(s, (m) => m.addTransitionAt(s, transitionBar * bar)),
+    },
+  ];
+}
+
 /**
  * The arranger without the AI (Playlist menu, marker and ruler right-click): develop a part with
  * fills and transitions, add a fill or a transition at a spot, refresh variations after editing a
  * source pattern. Each is one undo step and says what it did in a toast.
  */
 export function register(services: Services): void {
-  const { commands } = services;
-  const hasSong = (s: Services) => Object.keys(s.doc.getState().project.playlist.clips).length > 0;
+  registerArrangeCommands(services);
+  registerArrangeMenus();
+  registerMarkerMenu();
+  registerSpotMenus();
+  registerClipMenu();
+}
+
+/** The arranger commands: develop a part, add a fill, add a transition, refresh variations; each is one undo step. */
+function registerArrangeCommands({ commands }: Services): void {
   commands.register<{ from?: number; to?: number } | undefined>({
     id: 'arrange.develop',
     title: 'Develop this part (fills, transitions)',
@@ -95,6 +127,10 @@ export function register(services: Services): void {
     enabled: (s) => Object.values(s.doc.getState().project.patterns).some((x) => x.derived),
     run: (s) => arrange(s, (m) => m.refreshVariations(s)),
   });
+}
+
+/** The Playlist menu entries for the arranger commands. */
+function registerArrangeMenus(): void {
   addMenuItems('playlist', [
     sep(55),
     cmd('arrange.develop', 56),
@@ -102,8 +138,10 @@ export function register(services: Services): void {
     cmd('arrange.addTransition', 58),
     cmd('arrange.refresh', 59),
   ]);
+}
 
-  const bar = () => ticksPerBar(services.doc.getState().project.transport.timeSig);
+/** Right-click a marker: develop its section, add a transition into it. */
+function registerMarkerMenu(): void {
   addContextMenuItems('playlist.marker', ({ markerId }: { markerId: MarkerId }, s): MenuEntry[] => {
     const p = s.doc.getState().project;
     const sec = songSections(p).find((x) => x.markerId === markerId);
@@ -126,28 +164,15 @@ export function register(services: Services): void {
       },
     ];
   });
-  /** A fill at the end of the bar at `tick`, a transition into the nearest bar line. */
-  const atSpot = (s: Services, tick: Tick): MenuEntry[] => {
-    const b = Math.floor(tick / bar());
-    const into = Math.round(tick / bar());
-    return [
-      {
-        label: `Add a fill here (end of bar ${b + 1})`,
-        hint: 'A 2-beat fill that replaces the drums at the end of this bar',
-        onSelect: () => void arrange(s, (m) => m.addFillAt(s, tick)),
-      },
-      {
-        label: `Add a transition here (into bar ${into + 1})`,
-        hint: 'The transition the sections on either side call for',
-        onSelect: () => void arrange(s, (m) => m.addTransitionAt(s, into * bar())),
-      },
-    ];
-  };
-  addContextMenuItems('playlist.empty', ({ tick }, s) => (hasSong(s) ? atSpot(s, tick) : []));
+}
+
+/** Right-click empty playlist space or the ruler: a fill or transition at that spot, and develop the part. */
+function registerSpotMenus(): void {
+  addContextMenuItems('playlist.empty', ({ tick }, s) => (hasSong(s) ? fillAndTransitionHere(s, tick) : []));
   addContextMenuItems('playlist.ruler', ({ tick }: { tick: Tick }, s): MenuEntry[] => {
     const range = developRange(s);
     return [
-      ...atSpot(s, tick),
+      ...fillAndTransitionHere(s, tick),
       {
         label: `Develop ${where(s, range)} (fills, transitions)`,
         hint: 'Fills every 8 bars, changes every 4 and transitions between sections, one undo step',
@@ -155,6 +180,10 @@ export function register(services: Services): void {
       },
     ];
   });
+}
+
+/** Right-click a pattern clip: a fill at its end, a transition after it. */
+function registerClipMenu(): void {
   addContextMenuItems('playlist.clip', ({ clip }, s): MenuEntry[] => {
     if (clip.kind !== 'pattern') return [];
     const end = clip.start + clip.length;

@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 import { useStore } from 'zustand';
+import type { Services } from '@app/services';
 import { startFromTemplate, TEMPLATES } from '@app/template-list';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
@@ -85,23 +86,7 @@ function Welcome() {
     openWindow(services, 'assistant');
   };
 
-  useEffect(() => {
-    const release = holdModal();
-    ref.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' && e.key !== 'Enter') return;
-      if (e.key === 'Enter' && document.activeElement instanceof HTMLButtonElement) return;
-      e.preventDefault();
-      e.stopPropagation();
-      helpStore.setState({ welcome: false });
-      services.prefs.getState().set({ welcomeSeen: true });
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      release();
-    };
-  }, [services]);
+  useWelcomeKeys(ref, services);
 
   const search = chord('help.palette');
   const undo = chord('edit.undo');
@@ -112,23 +97,7 @@ function Welcome() {
           Welcome to AG<b>studio</b>
         </h2>
         <p className={styles.lead}>Make beats and songs right in your browser. Here is how it fits together:</p>
-        <div className={styles.parts}>
-          {PARTS.map((p) => {
-            const c = chord(p.command);
-            return (
-              <div key={p.title} className={styles.part}>
-                <Icon name={p.icon} size={20} className={styles.partIcon} />
-                <div>
-                  <div className={styles.partTitle}>
-                    {p.title}
-                    {c && <kbd>{c}</kbd>}
-                  </div>
-                  <div className={styles.partText}>{p.text}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <WelcomeParts chord={chord} />
         <p className={styles.tips}>
           Point at anything to see what it does.
           {search && (
@@ -160,29 +129,7 @@ function Welcome() {
             .
           </p>
         )}
-        {(
-          [
-            ['beats', 'Or start from a ready beat:'],
-            ['dance', 'Dance and bass music:'],
-          ] as const
-        ).map(([group, label]) => (
-          <div key={group} className={styles.templates}>
-            <span className={styles.templatesLabel}>{label}</span>
-            {TEMPLATES.filter((t) => t.group === group).map((t) => (
-              <button
-                key={t.id}
-                className={styles.chip}
-                data-hint={t.description}
-                onClick={() => {
-                  close();
-                  void startFromTemplate(services, t.id);
-                }}
-              >
-                {t.name}
-              </button>
-            ))}
-          </div>
-        ))}
+        <TemplateChips services={services} close={close} />
         <div className={styles.buttons}>
           <button
             className={styles.button}
@@ -294,4 +241,79 @@ function Tour({ index }: { index: number }) {
       </div>
     </div>
   );
+}
+
+/** The parts of the app, each with its icon, a line about it and its shortcut. */
+function WelcomeParts({ chord }: { chord: (command: string) => string | null }) {
+  return (
+    <div className={styles.parts}>
+      {PARTS.map((p) => {
+        const c = chord(p.command);
+        return (
+          <div key={p.title} className={styles.part}>
+            <Icon name={p.icon} size={20} className={styles.partIcon} />
+            <div>
+              <div className={styles.partTitle}>
+                {p.title}
+                {c && <kbd>{c}</kbd>}
+              </div>
+              <div className={styles.partText}>{p.text}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Ready-made beats to start from, in groups: each chip starts a new project from that template. */
+function TemplateChips({ services, close }: { services: Services; close: () => void }) {
+  return (
+    <>
+      {(
+        [
+          ['beats', 'Or start from a ready beat:'],
+          ['dance', 'Dance and bass music:'],
+        ] as const
+      ).map(([group, label]) => (
+        <div key={group} className={styles.templates}>
+          <span className={styles.templatesLabel}>{label}</span>
+          {TEMPLATES.filter((t) => t.group === group).map((t) => (
+            <button
+              key={t.id}
+              className={styles.chip}
+              data-hint={t.description}
+              onClick={() => {
+                close();
+                void startFromTemplate(services, t.id);
+              }}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** While the welcome shows it has the keyboard: Esc or Enter (when no button has the focus) closes it. */
+function useWelcomeKeys(ref: RefObject<HTMLDivElement | null>, services: Services): void {
+  useEffect(() => {
+    const release = holdModal();
+    ref.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Enter') return;
+      if (e.key === 'Enter' && document.activeElement instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      e.stopPropagation();
+      helpStore.setState({ welcome: false });
+      services.prefs.getState().set({ welcomeSeen: true });
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      release();
+    };
+  }, [ref, services]);
 }

@@ -18,20 +18,31 @@ interface Place {
   scene: number;
 }
 
+/** Reads `{ track, scene }` from a command's arguments: both whole numbers from 1, or null. */
 const placeOf = (args: unknown): Place | null => {
   const a = args as Partial<Place> | undefined;
   return a && Number.isInteger(a.track) && Number.isInteger(a.scene) && (a.track as number) >= 1 && (a.scene as number) >= 1
     ? { track: a.track as number, scene: a.scene as number }
     : null;
 };
-
 /**
  * The clip launcher (Performance mode): a grid of slots that point at patterns and audio clips, launched live in
  * time with the song, with a record that writes the jam to the playlist. The model is `project.launcher`; the live
  * state is `services.launcher`.
  */
 export function register(services: Services): void {
-  const { commands, keymap } = services;
+  registerLauncherWindow(services);
+  registerLaunchCommands(services);
+  registerGridCommands(services);
+  registerWindowKeyCommands(services);
+  registerPadPageCommands(services);
+  registerWindowKeyBindings(services);
+  registerMenusAndSearch();
+  registerHelp();
+}
+
+/** The window type and the command that opens it. */
+function registerLauncherWindow(services: Services): void {
   registerWindowType({
     type: 'launcher',
     title: () => 'Clip launcher',
@@ -47,7 +58,10 @@ export function register(services: Services): void {
     chords: ['Alt+Shift+L'],
     menuOrder: 61,
   });
+}
 
+/** Commands that launch and stop slots, tracks and scenes, and record the performance. */
+function registerLaunchCommands({ commands }: Services): void {
   commands.register<Place | undefined>({
     id: 'launcher.launch',
     title: 'Launch a clip launcher slot',
@@ -101,6 +115,10 @@ export function register(services: Services): void {
     run: (s) => s.launcher.toggleRecording(),
     checked: (s) => s.launcher.store.getState().recording,
   });
+}
+
+/** Commands that change the grid: quantize, scenes, tracks, and filling slots from clips or patterns. */
+function registerGridCommands({ commands }: Services): void {
   commands.register<{ quantize?: string } | string | undefined>({
     id: 'launcher.setQuantize',
     title: 'Launcher quantize',
@@ -153,8 +171,10 @@ export function register(services: Services): void {
       s.session.getState().toast(`Put ${n} pattern${n === 1 ? '' : 's'} in the clip launcher.`);
     },
   });
+}
 
-  // The window's keyboard (a window with the focus): arrows move, Enter launches, numbers launch scenes.
+/** The window's keyboard (a window with the focus): arrows move, Enter launches, numbers launch scenes. */
+function registerWindowKeyCommands({ commands }: Services): void {
   commands.register<{ dx: number; dy: number }>({
     id: 'launcher.cursor',
     title: 'Move the clip launcher cursor',
@@ -212,22 +232,34 @@ export function register(services: Services): void {
       if (t && sc) clearSlotAt(s, t, sc);
     },
   });
-  // The pad page: which 8 × 8 part of a bigger grid the controller pads press and light (a Launchpad's arrow buttons do the same).
-  for (const [dir, word] of [
-    ['left', 'tracks before these'],
-    ['right', 'tracks after these'],
-    ['up', 'scenes above these'],
-    ['down', 'scenes below these'],
-  ] as const)
+}
+
+/** The four page moves: what the hint says lies that way, and which end of the grid the page is already at. */
+const PAD_PAGE_MOVES = [
+  { direction: 'left', lies: 'tracks before these', edge: 'first track' },
+  { direction: 'right', lies: 'tracks after these', edge: 'last track' },
+  { direction: 'up', lies: 'scenes above these', edge: 'first scene' },
+  { direction: 'down', lies: 'scenes below these', edge: 'last scene' },
+] as const;
+
+/** The pad page: which 8 × 8 part of a bigger grid the controller pads press and light (a Launchpad's arrow buttons do the same). */
+function registerPadPageCommands({ commands }: Services): void {
+  for (const { direction, lies, edge } of PAD_PAGE_MOVES) {
+    const capitalized = direction[0]!.toUpperCase() + direction.slice(1);
     commands.register({
-      id: `launcher.page${dir[0]!.toUpperCase()}${dir.slice(1)}`,
-      title: `Controller pads: page ${dir}`,
+      id: `launcher.page${capitalized}`,
+      title: `Controller pads: page ${direction}`,
       category: 'Launcher',
-      hint: `Move the controller pads one page ${dir} over the clip launcher’s grid (${word}): a grid bigger than 8 × 8 is reached a page at a time and the pad lights follow`,
+      hint: `Move the controller pads one page ${direction} over the clip launcher’s grid (${lies}): a grid bigger than 8 × 8 is reached a page at a time and the pad lights follow`,
       run: (s) => {
-        if (!s.launcher.movePage(dir)) s.session.getState().toast(`The pads are already at the ${dir === 'left' ? 'first track' : dir === 'right' ? 'last track' : dir === 'up' ? 'first scene' : 'last scene'} page.`);
+        if (!s.launcher.movePage(direction)) s.session.getState().toast(`The pads are already at the ${edge} page.`);
       },
     });
+  }
+}
+
+/** The keys that work while the clip launcher window has the focus. */
+function registerWindowKeyBindings({ keymap }: Services): void {
   const focus = { focus: ['launcher'] } as const;
   keymap.add([
     { chord: 'ArrowLeft', command: 'launcher.cursor', args: { dx: -1, dy: 0 }, repeat: true, when: focus },
@@ -245,7 +277,10 @@ export function register(services: Services): void {
     { chord: 'Backspace', command: 'launcher.clearCursor', when: focus },
     ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((n) => ({ chord: String(n), command: 'launcher.sceneKey', args: { scene: n === 0 ? 10 : n }, when: focus })),
   ]);
+}
 
+/** The View menu items, the playlist clip's right-click entry and the action search entries. */
+function registerMenusAndSearch(): void {
   addMenuItems('view', [cmd('launcher.fromSelection', 62), cmd('launcher.fromPatterns', 63), cmd('launcher.recordPerformance', 64), sep(65)]);
   addContextMenuItems('playlist.clip', ({ clip }, s) => (clip.kind === 'automation' ? [] : [sendToLauncherEntry(s, clip.id)]));
   addActionProvider('launcher', (s) => [
@@ -270,6 +305,10 @@ export function register(services: Services): void {
       run: () => void s.commands.run('launcher.fromSelection'),
     },
   ]);
+}
+
+/** What the window's help panel says. */
+function registerHelp(): void {
   setWindowHelp('launcher', {
     intro: 'Perform with your patterns and audio clips. Each column is a track that plays one slot at a time; press a slot or a scene and it starts in time with the song.',
     moves: [

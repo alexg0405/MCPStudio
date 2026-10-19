@@ -25,7 +25,18 @@ function targetMarker(s: Services, ref: unknown) {
   return [...sorted].reverse().find((m) => m.tick <= at) ?? sorted[0] ?? null;
 }
 
+/** Whether the project has any marker (the marker commands are enabled only then). */
+const has = (s: Services) => Object.keys(s.doc.getState().project.playlist.markers).length > 0;
+
+/** Whether a playlist window is open and showing, so a new marker can be named in place on its ruler. */
 const visible = (s: Services) => !!Object.values(s.view.getState().windows).find((w) => w.type === 'playlist' && w.visible);
+
+/** Where a new marker goes: an explicit tick, a bar (1 = the start), or else the song position. */
+function markerTickFor(s: Services, where: { tick?: number; bar?: number }): number {
+  if (typeof where.tick === 'number') return where.tick;
+  if (typeof where.bar === 'number') return Math.max(0, (where.bar - 1) * ticksPerBar(s.doc.getState().project.transport.timeSig));
+  return songPosition(s);
+}
 
 /**
  * Playlist markers: named song positions on the ruler (FL's Alt+T). Commands for adding, renaming,
@@ -33,9 +44,13 @@ const visible = (s: Services) => !!Object.values(s.view.getState().windows).find
  * marker in the action search ("Jump to marker: Drop").
  */
 export function register(services: Services): void {
-  const { commands, keymap } = services;
-  const has = (s: Services) => Object.keys(s.doc.getState().project.playlist.markers).length > 0;
+  registerMarkerCommands(services);
+  registerMarkerMenus(services);
+  registerMarkerSearch();
+}
 
+/** Add, rename, delete, jump and loop commands, and the Alt+T key. */
+function registerMarkerCommands({ commands, keymap }: Services): void {
   commands.register<{ name?: string; tick?: number; bar?: number } | string>({
     id: 'playlist.addMarker',
     title: 'Add marker at the song position',
@@ -44,13 +59,7 @@ export function register(services: Services): void {
     argsHint: "optional: a name, or { name, bar } (bar 1 = the start) or { name, tick }",
     run: (s, args) => {
       const a = typeof args === 'string' ? { name: args } : (args ?? {});
-      const ts = s.doc.getState().project.transport.timeSig;
-      const tick =
-        typeof a.tick === 'number'
-          ? a.tick
-          : typeof a.bar === 'number'
-            ? Math.max(0, (a.bar - 1) * ticksPerBar(ts))
-            : songPosition(s);
+      const tick = markerTickFor(s, a);
       const id = addMarkerAt(s, tick, a.name);
       // Typed in place, like FL; a name given with the command needs no prompt.
       if (!a.name && visible(s)) markerRename.setState({ id });
@@ -138,7 +147,10 @@ export function register(services: Services): void {
     },
   });
   keymap.add([{ chord: 'Alt+T', command: 'playlist.addMarker' }]);
+}
 
+/** The Playlist menu's Markers submenu and entries, read fresh each time the menu opens. */
+function registerMarkerMenus(services: Services): void {
   const markerEntries = (): DynamicMenuEntry[] => {
     const list = markersSorted(services.doc.getState().project);
     if (list.length === 0)
@@ -163,7 +175,10 @@ export function register(services: Services): void {
     sep(19),
   ]);
   addMenuItems('patterns', [sep(70), cmd('playlist.addMarker', 71)]);
+}
 
+/** One action per marker in the action search: jump to it, loop from it. */
+function registerMarkerSearch(): void {
   addActionProvider('markers', (s) =>
     markersSorted(s.doc.getState().project).flatMap((m) => [
       {

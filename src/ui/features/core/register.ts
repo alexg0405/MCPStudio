@@ -12,14 +12,24 @@ import { applyLayout, LAYOUTS } from '../../workspace/layouts';
 export const order = 0;
 
 export function register(services: Services): void {
+  registerMenuBar();
+  registerEditCommands(services);
+  registerViewCommands(services);
+  registerHelpCommands(services);
+  registerShellSlots();
+}
+
+/** The top-level menus; other features add entries to them. */
+function registerMenuBar(): void {
   registerMenu({ id: 'file', label: 'File', order: 10 });
   registerMenu({ id: 'edit', label: 'Edit', order: 20 });
   registerMenu({ id: 'add', label: 'Add', order: 30 });
   registerMenu({ id: 'view', label: 'View', order: 50 });
   registerMenu({ id: 'help', label: 'Help', order: 90 });
+}
 
-  const { commands, keymap } = services;
-
+/** Undo and redo: commands, keys and the Edit menu entries. */
+function registerEditCommands({ commands, keymap }: Services): void {
   commands.register({
     id: 'edit.undo',
     title: 'Undo',
@@ -45,7 +55,10 @@ export function register(services: Services): void {
 
   // File menu items come from the files and export features.
   addMenuItems('edit', [cmd('edit.undo', 10), cmd('edit.redo', 20)]);
+}
 
+/** The browser panel and the window layouts: commands, keys and View menu entries. */
+function registerViewCommands({ commands, keymap }: Services): void {
   commands.register({
     id: 'view.browser',
     title: 'Browser',
@@ -75,7 +88,10 @@ export function register(services: Services): void {
     { chord: 'Alt+Shift+2', command: 'view.layout.compose' },
     { chord: 'Alt+Shift+3', command: 'view.layout.mix' },
   ]);
+}
 
+/** Keyboard shortcuts window, About, their keys and Help menu entries. */
+function registerHelpCommands({ commands, keymap }: Services): void {
   registerWindowType({
     type: 'shortcuts',
     title: () => 'Keyboard shortcuts',
@@ -100,7 +116,10 @@ export function register(services: Services): void {
   });
   keymap.add([{ chord: 'F1', command: 'help.shortcuts' }]);
   addMenuItems('help', [cmd('help.shortcuts', 10), sep(20), cmd('help.about', 30)]);
+}
 
+/** The toolbar buttons and the browser panel sections every project has. */
+function registerShellSlots(): void {
   addToolbarSlot({ id: 'window-buttons', area: 'right', order: 10, component: () => createElement(WindowButtons) });
   addToolbarSlot({ id: 'undo-redo', area: 'right', order: 20, component: () => createElement(UndoRedo) });
 

@@ -1,5 +1,6 @@
 import type { Services } from '@app/services';
 import { describeMarker, findMarker, songPosition } from '@app/actions/markers';
+import type { MarkerId } from '@core/model/types';
 import { markersSorted } from '@core/ops/markers';
 import { songSections } from '@core/query/sections';
 import { barSpan } from '@core/time/bars';
@@ -21,11 +22,36 @@ export const order = 99;
  * the Playlist and Edit menus and the action search ("Ask AI about: Verse").
  */
 export function register(services: Services): void {
-  const { commands, keymap } = services;
   addOverlay('ask-ai', AskCardOverlay);
   registerAskMenus();
   trackPointer();
+  registerAskCommands(services);
+  registerSectionMenus(services);
+}
 
+/** Whether the project has any marker (asking about a section needs one). */
+const hasMarkers = (s: Services) => Object.keys(s.doc.getState().project.playlist.markers).length > 0;
+
+/** The marker `ai.askSection` was asked about: the one named, else the section at the song position (else the first). */
+function sectionToAskAbout(s: Services, ref: unknown): MarkerId | undefined {
+  if (ref !== undefined && ref !== null && ref !== '') return findMarker(s, ref as string | number)?.id;
+  const sections = songSections(s.doc.getState().project);
+  const at = songPosition(s);
+  return (sections.find((x) => x.from <= at && at < x.to) ?? sections[0])?.markerId;
+}
+
+/** Tells the musician why no section could be picked: the name matched nothing, or there are no markers yet. */
+function toastNoSection(s: Services, ref: unknown): void {
+  const hasSections = songSections(s.doc.getState().project).length > 0;
+  if (hasSections) {
+    s.session.getState().toast(`There is no marker “${String(ref)}”.`, 'error');
+    return;
+  }
+  s.session.getState().toast('Add a marker first (right-click the playlist ruler, or Alt+T): its section is what you ask about.', 'info');
+}
+
+/** Ask about the selection or a section, and go back to asking about the whole song. */
+function registerAskCommands({ commands, keymap }: Services): void {
   commands.register({
     id: 'ai.askSelection',
     title: 'Ask Studio about the selection…',
@@ -40,7 +66,6 @@ export function register(services: Services): void {
     { chord: 'Alt+Shift+A', command: 'ai.askSelection', when: { focus: ['piano-roll'] } },
   ]);
 
-  const hasMarkers = (s: Services) => Object.keys(s.doc.getState().project.playlist.markers).length > 0;
   commands.register<string | number | { marker?: string | number } | undefined>({
     id: 'ai.askSection',
     title: 'Ask Studio about a section…',
@@ -51,23 +76,8 @@ export function register(services: Services): void {
     enabled: hasMarkers,
     run: (s, args) => {
       const ref = typeof args === 'object' && args !== null ? args.marker : args;
-      const sections = songSections(s.doc.getState().project);
-      const at = songPosition(s);
-      const id =
-        ref !== undefined && ref !== null && ref !== ''
-          ? findMarker(s, ref)?.id
-          : (sections.find((x) => x.from <= at && at < x.to) ?? sections[0])?.markerId;
-      if (!id) {
-        s.session
-          .getState()
-          .toast(
-            sections.length
-              ? `There is no marker “${String(ref)}”.`
-              : 'Add a marker first (right-click the playlist ruler, or Alt+T): its section is what you ask about.',
-            sections.length ? 'error' : 'info',
-          );
-        return;
-      }
+      const id = sectionToAskAbout(s, ref);
+      if (!id) return toastNoSection(s, ref);
       askAboutMarker(s, id);
     },
   });
@@ -86,19 +96,22 @@ export function register(services: Services): void {
       s.session.getState().toast('Studio is about the whole song again.');
     },
   });
+}
 
-  // One entry per marker in the Playlist menu and the action search.
-  const sectionEntries = (): DynamicMenuEntry[] => {
-    const p = services.doc.getState().project;
-    const list = songSections(p);
-    if (list.length === 0)
-      return [{ label: 'No markers yet: right-click the ruler or press Alt+T', disabled: true, run: () => {} }];
-    return list.map((x) => ({
-      label: `${x.name} (${barSpan(x.from, x.to, p.transport.timeSig)})`,
-      hint: `Loop “${x.name}” and tell Studio what to change in it`,
-      run: () => void askAboutMarker(services, x.markerId),
-    }));
-  };
+/** One entry per marker in the Playlist menu's section list. */
+function sectionEntries(services: Services): DynamicMenuEntry[] {
+  const project = services.doc.getState().project;
+  const sections = songSections(project);
+  if (sections.length === 0) return [{ label: 'No markers yet: right-click the ruler or press Alt+T', disabled: true, run: () => {} }];
+  return sections.map((x) => ({
+    label: `${x.name} (${barSpan(x.from, x.to, project.transport.timeSig)})`,
+    hint: `Loop “${x.name}” and tell Studio what to change in it`,
+    run: () => void askAboutMarker(services, x.markerId),
+  }));
+}
+
+/** The Playlist and Edit menu entries, and one action search entry per marker. */
+function registerSectionMenus(services: Services): void {
   addMenuItems('playlist', [
     cmd('ai.askSelection', 20, 'Ask Studio about the selection…'),
     {
@@ -106,7 +119,7 @@ export function register(services: Services): void {
       id: 'ask-ai-sections',
       label: 'Ask Studio about a section',
       order: 21,
-      items: () => [{ kind: 'dynamic', id: 'ask-ai-section-list', order: 0, entries: sectionEntries }],
+      items: () => [{ kind: 'dynamic', id: 'ask-ai-section-list', order: 0, entries: () => sectionEntries(services) }],
     },
     cmd('ai.clearFocus', 22),
     sep(29),

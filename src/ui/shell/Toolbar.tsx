@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { formatChord } from '@core/commands/keymap';
 import { useServices, useSession } from '../services-context';
@@ -13,6 +14,7 @@ import { useCommandState } from './command-state';
 import { Icon, type IconName } from '../controls/Icon';
 import { MenuBar } from './MenuBar';
 import { getToolbarSlots, subscribeToolbar } from './toolbar-slots';
+import { keptSlotIds, MORE_BUTTON_W, SLOT_GAP, slotPriority } from './toolbar-overflow';
 import styles from './Shell.module.css';
 
 
@@ -97,8 +99,30 @@ function ToolbarSlots({ area }: { area: 'transport' }) {
   );
 }
 
-const MORE_BUTTON_W = 34;
-const SLOT_GAP = 4;
+/** While the "More" panel is open, Escape or a click on the app itself (not on a menu opened from inside the panel) closes it. */
+function useCloseOnOutsideClick(isOpen: boolean, panelRef: RefObject<HTMLElement | null>, buttonRef: RefObject<HTMLElement | null>, close: () => void): void {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      // Menus opened from inside the panel render elsewhere; only close for clicks on the app itself.
+      if ((target as Element).closest?.('[role="menu"], [role="listbox"], [role="dialog"]')) return;
+      close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+    // `close` only sets state, so it is safe to leave out.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, panelRef, buttonRef]);
+}
 
 /**
  * Everything right of the transport (the Studio button, pattern picker, meters and the window, undo and audio
@@ -135,27 +159,11 @@ function OverflowSlots() {
     const c = getToolbarSlots('center');
     const r = getToolbarSlots('right');
     const width = (id: string) => widths.current.get(id) ?? 0;
-    // The Studio button first, then the right-hand buttons (the audio chip, which goes away at the first click,
-    // last of them), then the other center slots.
-    const priority = [...c.slice(0, 1), ...r.filter((x) => x.order > 0), ...r.filter((x) => x.order <= 0), ...c.slice(1)];
-    const total = (list: { id: string }[]) =>
-      list.reduce((sum, slot) => (width(slot.id) ? sum + width(slot.id) + SLOT_GAP : sum), 0);
+    const priority = slotPriority(c, r);
     const first = c[0] ? width(c[0].id) : 0;
     // The group stays wide enough to show the Studio button next to the "More" button.
     group.style.minWidth = first ? `${Math.ceil(first + SLOT_GAP + MORE_BUTTON_W + pad)}px` : '';
-    const keep = new Set<string>();
-    if (total(priority) <= avail + SLOT_GAP) priority.forEach((slot) => keep.add(slot.id));
-    else {
-      let used = MORE_BUTTON_W;
-      priority.forEach((slot, i) => {
-        const w = width(slot.id);
-        if (!w) return keep.add(slot.id); // an empty slot takes no room
-        if (i === 0 || used + w + SLOT_GAP <= avail) {
-          used += w + SLOT_GAP;
-          keep.add(slot.id);
-        }
-      });
-    }
+    const keep = keptSlotIds(priority, width, avail);
     const ids = [...c, ...r].map((x) => x.id).join(',');
     // Same answer as before: no re-render (a slot resizing would otherwise loop through the observer below).
     setMeasured((was) =>
@@ -203,25 +211,7 @@ function OverflowSlots() {
     setOpen((o) => !o);
   };
 
-  useEffect(() => {
-    if (!showPanel) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (panelRef.current?.contains(t) || moreRef.current?.contains(t)) return;
-      // Menus opened from inside the panel render elsewhere; only close for clicks on the app itself.
-      if ((t as Element).closest?.('[role="menu"], [role="listbox"], [role="dialog"]')) return;
-      setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true);
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [showPanel]);
+  useCloseOnOutsideClick(showPanel, panelRef, moreRef, () => setOpen(false));
 
   return (
     <div ref={groupRef} className={`${styles.toolbarGroup} ${styles.toolbarGroupFill}`}>

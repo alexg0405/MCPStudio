@@ -1,103 +1,21 @@
 import type { Services } from '@app/services';
-import {
-  MP3_BITRATES,
-  chooseExportTarget,
-  exportSettingsFrom,
-  runExport,
-  type AudioExportSettings,
-} from '@app/export/audio-export';
-import type { AudioCodec } from '@app/export/encode';
-import type { ExportRange } from '@app/export/plan';
-import type { PrefsState } from '@app/stores/prefs';
-import {
-  chooseVideoTarget,
-  setVideoThemeProvider,
-  videoPrefsPatch,
-  videoSettingsFrom,
-  runVideoExport,
-  type VideoExportSettings,
-} from '@app/export/video/video-export';
-import { VIDEO_FORMATS, VIDEO_SIZES, VIDEO_STYLES } from '@core/video/formats';
+import { setVideoThemeProvider } from '@app/export/video/video-export';
 import { songSections } from '@core/query/sections';
-import { songLength } from '@core/query/playlist';
 import { barSpan } from '@core/time/bars';
-import { ticksPerBar } from '@core/time/ppq';
 import type { Tick } from '@core/model/types';
 import { addContextMenuItems } from '../../context-menus';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
 import { ExportOverlay } from './ExportDialog';
+import { exportAudioNow, exportMp3, exportVideoNow } from './export-now';
 import { openExport } from './export-store';
 import { videoThemeOf } from './video-preview';
 import { readTheme } from '../../timeline/canvas';
+import type { ExportArgs, Mp3Args, VideoArgs } from './export-args';
 
-/** What `file.exportAudioNow` accepts (every field optional; the rest comes from the last export). */
-interface ExportArgs {
-  range?: ExportRange;
-  format?: AudioCodec;
-  bits?: number;
-  kbps?: number;
-  sampleRate?: number;
-  normalize?: boolean;
-  stems?: boolean;
-  masterChain?: boolean;
-  zip?: boolean;
-}
-
-/** Settings for an export the AI (or a script) asked for: its args over the remembered ones. */
-function settingsFromArgs(s: Services, raw: unknown): AudioExportSettings {
-  const a = (raw && typeof raw === 'object' ? raw : {}) as ExportArgs;
-  const range: ExportRange = a.range === 'pattern' || a.range === 'loop' ? a.range : 'song';
-  const base = exportSettingsFrom(s.prefs.getState(), range);
-  const codec: AudioCodec = a.format === 'flac' || a.format === 'mp3' || a.format === 'wav' ? a.format : base.codec;
-  const bits = Number(a.bits);
-  return {
-    ...base,
-    codec,
-    wavBits: bits === 16 || bits === 24 || bits === 32 ? bits : base.wavBits,
-    flacBits: bits === 16 || bits === 24 ? bits : base.flacBits,
-    mp3Kbps: (MP3_BITRATES as readonly number[]).includes(Number(a.kbps)) ? Number(a.kbps) : base.mp3Kbps,
-    sampleRate: [44100, 48000, 96000].includes(Number(a.sampleRate)) ? Number(a.sampleRate) : base.sampleRate,
-    normalize: a.normalize ?? base.normalize,
-    stems: a.stems ?? base.stems,
-    masterChain: a.masterChain ?? base.masterChain,
-    stemsTo: a.zip === undefined ? base.stemsTo : a.zip ? 'zip' : 'folder',
-  };
-}
-
-/** What `file.exportMp3` accepts: nothing for the whole song, or the bars to export. */
-interface Mp3Args {
-  fromBar?: number;
-  toBar?: number;
-}
-
-/**
- * Export as MP3: the remembered MP3 quality, the mix through the master, no stems; asks where to
- * save, then renders with a toast for the start and the end. `from`/`to`: just that part of the song.
- */
-async function exportMp3(s: Services, args?: Mp3Args | { from: Tick; to: Tick; label?: string }): Promise<void> {
-  const p = s.doc.getState().project;
-  const bar = ticksPerBar(p.transport.timeSig);
-  let span: { from: Tick; to: Tick } | null = null;
-  if (args && 'from' in args) span = { from: args.from, to: args.to };
-  else if (args && Number.isFinite(Number(args.fromBar)) && Number.isFinite(Number(args.toBar)))
-    span = { from: (Math.round(Number(args.fromBar)) - 1) * bar, to: Math.round(Number(args.toBar)) * bar };
-  const range: ExportRange = span ?? (songLength(p) > 0 ? 'song' : 'pattern');
-  const settings: AudioExportSettings = { ...exportSettingsFrom(s.prefs.getState(), range), codec: 'mp3', stems: false, masterChain: true };
-  const base = s.files.store.getState().name;
-  const part = span ? ` (${barSpan(span.from, span.to, p.transport.timeSig)})` : '';
-  const target = await chooseExportTarget(`${base}${part}`, settings);
-  if (!target) return;
-  const toast = s.session.getState().toast;
-  toast(`Exporting “${target.name}”…`);
-  try {
-    await runExport(s, settings, target);
-    toast(`Exported “${target.name}”`);
-  } catch (e) {
-    toast(e instanceof Error ? e.message : String(e), 'error');
-  }
-}
+/** Whether no project operation (open, save, new) is running, so an export can start. */
+const idle = (s: Services) => s.files.store.getState().busy === null;
 
 /** "Export bars 5–8 as MP3" for a part of the song (a section, the loop, a clip's bars). */
 function partItem(s: Services, from: Tick, to: Tick, what?: string): MenuEntry {
@@ -107,48 +25,6 @@ function partItem(s: Services, from: Tick, to: Tick, what?: string): MenuEntry {
     hint: `Render ${what ? `${what} (${bars})` : bars} with every track playing there to an MP3 (asks where to save)`,
     disabled: s.files.store.getState().busy !== null,
     onSelect: () => void exportMp3(s, { from, to }),
-  };
-}
-
-/** What `file.exportVideoNow` accepts (every field optional; the rest comes from the last video export). */
-interface VideoArgs {
-  range?: 'song' | 'pattern' | 'loop';
-  fromBar?: number;
-  toBar?: number;
-  style?: string;
-  size?: string;
-  fps?: number;
-  format?: string;
-  title?: string;
-  artist?: string;
-  normalize?: boolean;
-}
-
-/** Settings for a video the AI (or a script) asked for: its args over the remembered ones. */
-function videoSettingsFromArgs(s: Services, raw: unknown): VideoExportSettings {
-  const a = (raw && typeof raw === 'object' ? raw : {}) as VideoArgs;
-  const p = s.doc.getState().project;
-  const bar = ticksPerBar(p.transport.timeSig);
-  let range: ExportRange =
-    a.range === 'pattern' || a.range === 'loop' ? a.range : songLength(p) > 0 || a.range === 'song' ? 'song' : 'pattern';
-  if (Number.isFinite(Number(a.fromBar)) && Number.isFinite(Number(a.toBar)))
-    range = { from: (Math.round(Number(a.fromBar)) - 1) * bar, to: Math.round(Number(a.toBar)) * bar };
-  const text = {
-    title:
-      (typeof a.title === 'string' && a.title.trim()) ||
-      p.meta.title?.trim() ||
-      s.files.store.getState().name.replace(/\.agproj$/i, '') ||
-      'Untitled',
-    artist: typeof a.artist === 'string' ? a.artist.trim() : (p.meta.author?.trim() ?? ''),
-  };
-  const base = videoSettingsFrom(s.prefs.getState(), range, text);
-  return {
-    ...base,
-    style: (VIDEO_STYLES as readonly string[]).includes(a.style ?? '') ? (a.style as VideoExportSettings['style']) : base.style,
-    size: (VIDEO_SIZES as readonly string[]).includes(a.size ?? '') ? (a.size as VideoExportSettings['size']) : base.size,
-    fps: a.fps === 30 || a.fps === 60 ? a.fps : base.fps,
-    format: (VIDEO_FORMATS as readonly string[]).includes(a.format ?? '') ? (a.format as VideoExportSettings['format']) : base.format,
-    normalize: a.normalize ?? base.normalize,
   };
 }
 
@@ -163,25 +39,16 @@ function partVideoItem(s: Services, from: Tick, to: Tick, what?: string): MenuEn
   };
 }
 
-/** Remembers what was used, so the dialog opens with it next time. */
-function remember(s: Services, x: AudioExportSettings): void {
-  const patch: Partial<PrefsState> = {
-    exportCodec: x.codec,
-    exportFlacBits: x.flacBits,
-    exportMp3Kbps: x.mp3Kbps,
-    exportSampleRate: x.sampleRate,
-    exportNormalize: x.normalize,
-    exportStems: x.stems,
-    exportMasterChain: x.masterChain,
-    exportStemsTo: x.stemsTo,
-    exportFormat: x.wavBits === 16 ? 'pcm16' : x.wavBits === 32 ? 'float32' : 'pcm24',
-  };
-  s.prefs.getState().set(patch);
+/** File > Export audio (Mod+R), Export stems, an export that runs right away (for the AI) and the right-click entries that export a part as MP3 or video. */
+export function register(services: Services): void {
+  registerExportCommands(services);
+  registerExportKeysAndMenus(services);
+  registerPartMenus();
+  addOverlay('export-wav', ExportOverlay);
 }
 
-/** File > Export audio (Mod+R), Export stems, and an export that runs right away (for the AI). */
-export function register(services: Services): void {
-  const idle = (s: Services) => s.files.store.getState().busy === null;
+/** The export commands: the dialog (audio, video, stems), and the ones that run right away. */
+function registerExportCommands(services: Services): void {
   services.commands.register({
     id: 'file.exportWav',
     title: 'Export audio…',
@@ -219,21 +86,7 @@ export function register(services: Services): void {
       "optional object: { range: 'song' | 'pattern' | 'loop', format: 'wav' | 'flac' | 'mp3', bits: 16 | 24 | 32, kbps: 128 | 192 | 256 | 320, sampleRate: 44100 | 48000 | 96000, normalize: boolean, stems: boolean, masterChain: boolean, zip: boolean }",
     palette: false,
     enabled: idle,
-    run: async (s, args) => {
-      const settings = settingsFromArgs(s, args);
-      remember(s, settings);
-      const target = await chooseExportTarget(s.files.store.getState().name, settings);
-      if (!target) return;
-      s.session.getState().toast(settings.stems ? 'Exporting stems…' : `Exporting ${settings.codec.toUpperCase()}…`);
-      try {
-        const res = await runExport(s, settings, target);
-        s.session
-          .getState()
-          .toast(res.names.length > 1 ? `Exported ${res.names.length} stems to “${target.name}”` : `Exported “${target.name}”`);
-      } catch (e) {
-        s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
-      }
-    },
+    run: (s, args) => exportAudioNow(s, args),
   });
   services.commands.register<VideoArgs>({
     id: 'file.exportVideoNow',
@@ -245,20 +98,7 @@ export function register(services: Services): void {
       "optional object: { range: 'song' | 'pattern' | 'loop', fromBar, toBar (1-based, both included; export just those bars), style: 'bars' | 'wave' | 'circle' | 'minimal', size: '1080p' | 'vertical' | 'square', fps: 30 | 60, format: 'mp4-h264' | 'webm-vp9' | 'webm-av1', title, artist, normalize: boolean }",
     palette: false,
     enabled: idle,
-    run: async (s, args) => {
-      const settings = videoSettingsFromArgs(s, args);
-      const target = await chooseVideoTarget(settings.title, settings.format);
-      if (!target) return;
-      s.prefs.getState().set(videoPrefsPatch(settings));
-      const toast = s.session.getState().toast;
-      toast(`Making the video “${target.name}”…`);
-      try {
-        const res = await runVideoExport(s, settings, target);
-        toast(`Exported “${target.name}” (${Math.round(res.seconds)} s, made in ${Math.round(res.took)} s)`);
-      } catch (e) {
-        toast(e instanceof Error ? e.message : String(e), 'error');
-      }
-    },
+    run: (s, args) => exportVideoNow(s, args),
   });
   services.commands.register<Mp3Args>({
     id: 'file.exportMp3',
@@ -270,6 +110,10 @@ export function register(services: Services): void {
     enabled: idle,
     run: (s, args) => exportMp3(s, args),
   });
+}
+
+/** The Mod+R key, the File menu entries and the video theme provider. */
+function registerExportKeysAndMenus(services: Services): void {
   services.keymap.add([{ chord: 'Mod+R', command: 'file.exportWav' }]);
   addMenuItems('file', [
     sep(60),
@@ -279,6 +123,10 @@ export function register(services: Services): void {
     cmd('file.exportVideo', 72),
   ]);
   setVideoThemeProvider(() => videoThemeOf(readTheme()));
+}
+
+/** Right-click a section, the loop or a clip: export just that part as an MP3 or a video. */
+function registerPartMenus(): void {
   // Right-click: just this part as an MP3.
   addContextMenuItems('playlist.marker', ({ markerId }, s) => {
     const sec = songSections(s.doc.getState().project).find((x) => x.markerId === markerId);
@@ -294,5 +142,4 @@ export function register(services: Services): void {
     partItem(s, clip.start, clip.start + clip.length),
     partVideoItem(s, clip.start, clip.start + clip.length),
   ]);
-  addOverlay('export-wav', ExportOverlay);
 }

@@ -28,6 +28,46 @@ export interface DragNumberProps {
   label?: string;
 }
 
+/**
+ * The text box a DragNumber turns into when clicked: Enter or leaving it hands back the typed text, Esc hands back null
+ * (cancel). A press anywhere else leaves the box too, even where the press keeps the focus (toolbars and canvases prevent
+ * the default focus change).
+ */
+function TypedNumberInput({ className, label, text, hint, onFinish }: { className?: string | undefined; label?: string | undefined; text: string; hint: string; onFinish(typed: string | null): void }) {
+  // Set by Esc so the blur that follows doesn't commit.
+  const cancelled = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const el = input.current;
+      if (el && e.target instanceof Node && !el.contains(e.target)) el.blur();
+    };
+    window.addEventListener('pointerdown', onDown, true);
+    return () => window.removeEventListener('pointerdown', onDown, true);
+  }, []);
+  return (
+    <input
+      ref={input}
+      className={`${styles.input} ${className ?? ''}`}
+      autoFocus
+      inputMode="decimal"
+      aria-label={label}
+      defaultValue={text}
+      data-hint={hint}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={(e) => onFinish(cancelled.current ? null : e.currentTarget.value)}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') e.currentTarget.blur();
+        else if (e.key === 'Escape') {
+          cancelled.current = true;
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 /** How far (px) the pointer may move before a press counts as a drag rather than a click. */
 const CLICK_SLOP = 2;
 
@@ -56,9 +96,6 @@ export function DragNumber({
 }: DragNumberProps) {
   const drag = useRef<{ y: number; v: number; moved: boolean } | null>(null);
   const [editing, setEditing] = useState(false);
-  // Set by Esc so the blur that follows doesn't commit.
-  const cancelled = useRef(false);
-  const input = useRef<HTMLInputElement>(null);
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
 
   const commitTyped = (text: string) => {
@@ -98,46 +135,19 @@ export function DragNumber({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
     if (d?.moved) onEnd?.();
     // A click without a drag: type a value.
-    else if (d && e.type === 'pointerup') {
-      cancelled.current = false;
-      setEditing(true);
-    }
+    else if (d && e.type === 'pointerup') setEditing(true);
   };
-
-  // A press anywhere else leaves the box (and sets the value), even where the press keeps the focus
-  // (toolbars and canvases prevent the default focus change).
-  useEffect(() => {
-    if (!editing) return;
-    const onDown = (e: PointerEvent) => {
-      const el = input.current;
-      if (el && e.target instanceof Node && !el.contains(e.target)) el.blur();
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    return () => window.removeEventListener('pointerdown', onDown, true);
-  }, [editing]);
 
   if (editing) {
     return (
-      <input
-        ref={input}
-        className={`${styles.input} ${className ?? ''}`}
-        autoFocus
-        inputMode="decimal"
-        aria-label={label}
-        defaultValue={editText(value)}
-        data-hint={editHint}
-        onFocus={(e) => e.currentTarget.select()}
-        onBlur={(e) => {
+      <TypedNumberInput
+        className={className}
+        label={label}
+        text={editText(value)}
+        hint={editHint}
+        onFinish={(text) => {
           setEditing(false);
-          if (!cancelled.current) commitTyped(e.currentTarget.value);
-        }}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Enter') e.currentTarget.blur();
-          else if (e.key === 'Escape') {
-            cancelled.current = true;
-            e.currentTarget.blur();
-          }
+          if (text !== null) commitTyped(text);
         }}
       />
     );
@@ -150,10 +160,7 @@ export function DragNumber({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onDoubleClick={() => {
-        cancelled.current = false;
-        setEditing(true);
-      }}
+      onDoubleClick={() => setEditing(true)}
       onWheel={(e) => onCommit(clamp(value + (e.deltaY < 0 ? step : -step) * (e.shiftKey ? 0.1 : 1)))}
       data-hint={hint}
     >

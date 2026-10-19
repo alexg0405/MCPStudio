@@ -39,6 +39,14 @@ export interface BandRow {
 /** A band's dB share as a bar length, 0–1 (−45 dB and below is empty). */
 export const bandFill = (db: number): number => Math.max(0, Math.min(1, (db + 45) / 45));
 
+/** A band's difference to the reference as text ("+2.3 dB", "−1.0 dB", "0.0 dB"), or empty before the mix was listened to. */
+export function diffText(diffDb: number | null): string {
+  if (diffDb === null) return '';
+  const plusOrMinus = diffDb > 0 ? '+' : diffDb < 0 ? '−' : '';
+  return `${plusOrMinus}${Math.abs(diffDb).toFixed(1)} dB`;
+}
+
+/** The reference's tonal balance as bar rows, with the mix's next to it once it has been listened to. */
 export function bandRows(ref: ReferenceTrack, comparison: ToneComparison | null): BandRow[] {
   const tone = mainTone(ref);
   return TONE_BANDS.map((b, i) => {

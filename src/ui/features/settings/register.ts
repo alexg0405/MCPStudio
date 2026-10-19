@@ -7,9 +7,25 @@ import { setWindowHelp } from '../../workspace/window-help';
 import { lazyWindow } from '../../workspace/lazy';
 import { cleanUpUnusedAudio } from './storage-flow';
 
+/** What to tell the musician when no output matches the name they gave: which exist, or why none are listed. */
+function noSuchOutputMessage(query: string, otherNames: string[], isListComplete: boolean): string {
+  if (otherNames.length) return `No output is called “${query}”. There are: ${otherNames.join(', ')}.`;
+  if (isListComplete) return 'Only the system default output is connected.';
+  return 'The browser lists other outputs only after Options → Settings… → “Show all my devices”.';
+}
+
 /** Settings: the sound output, MIDI, the typing keyboard, recording and help options in one window. */
 export function register(services: Services): void {
-  const { commands } = services;
+  registerSettingsWindow();
+  registerSettingsCommands(services);
+  followLook(services);
+  registerLookCommands(services);
+  registerSettingsMenu(services);
+  registerSettingsHelp();
+}
+
+/** The window type. */
+function registerSettingsWindow(): void {
   registerWindowType({
     type: 'settings',
     title: () => 'Settings',
@@ -17,6 +33,10 @@ export function register(services: Services): void {
     defaultRect: (ws) => ({ x: Math.max(0, ws.w / 2 - 240), y: 40, w: 480, h: Math.min(600, ws.h - 80) }),
     minSize: { w: 340, h: 220 },
   });
+}
+
+/** The settings window, storage clean-up and the sound output device. */
+function registerSettingsCommands({ commands }: Services): void {
   commands.register({
     id: 'options.settings',
     title: 'Settings…',
@@ -51,28 +71,25 @@ export function register(services: Services): void {
       if (!canChooseOutput()) return toast('This browser always plays through the system output.', 'error');
       const { outputs, complete } = await listOutputs();
       const out = findOutput(outputs, String(query ?? 'default'));
-      if (!out) {
-        const names = outputs.slice(1).map((o) => o.label);
-        return toast(
-          names.length
-            ? `No output is called “${String(query)}”. There are: ${names.join(', ')}.`
-            : complete
-              ? 'Only the system default output is connected.'
-              : 'The browser lists other outputs only after Options → Settings… → “Show all my devices”.',
-          'error',
-        );
-      }
+      if (!out) return toast(noSuchOutputMessage(String(query), outputs.slice(1).map((o) => o.label), complete), 'error');
       s.prefs.getState().set({ outputDevice: out.id });
       toast(`Playing through ${out.label}`);
     },
   });
-  // The look: theme and accent color (kept in prefs, applied to <html>).
+}
+
+/** The look: theme and accent color are kept in prefs and applied to <html>, now and whenever they change. */
+function followLook(services: Services): void {
   const look = () => {
     const p = services.prefs.getState();
     applyTheme(p.theme, p.accent, p.accentPicked);
   };
   services.prefs.subscribe(look);
   look();
+}
+
+/** Theme and accent color, by name (for menus, the action search and the AI). */
+function registerLookCommands({ commands }: Services): void {
   commands.register<string>({
     id: 'options.theme',
     title: 'Theme',
@@ -99,6 +116,10 @@ export function register(services: Services): void {
       s.prefs.getState().set({ accent, accentPicked: true });
     },
   });
+}
+
+/** The F10 key and the Options menu entries, with the theme and accent lists read fresh each time the menu opens. */
+function registerSettingsMenu(services: Services): void {
   services.keymap.add([{ chord: 'F10', command: 'options.settings' }]);
   addMenuItems('options', [
     cmd('options.settings', 0),
@@ -134,6 +155,10 @@ export function register(services: Services): void {
     },
     sep(0.5),
   ]);
+}
+
+/** What the window help panel says. */
+function registerSettingsHelp(): void {
   setWindowHelp('settings', {
     intro: 'Settings for this browser: where the sound plays, MIDI keyboards, the typing piano, recording and help.',
     moves: [

@@ -1,58 +1,15 @@
 import type { Services } from '@app/services';
-import {
-  analyzeClip,
-  applyPitchActionToClip,
-  audioClipOf,
-  clearClipPitch,
-  defaultPitchClip,
-  editFor,
-  hearOriginal,
-  loadPitchClip,
-  parsePitchAction,
-  pitchProblem,
-  snapClip,
-  startPitchRenderer,
-} from '@app/actions/pitch';
-import { playFrom } from '@app/actions/transport';
+import { startPitchRenderer } from '@app/actions/pitch';
 import { pitchState } from '@app/pitch/state';
-import { tempoMapOf } from '@core/automation/tempo';
-import { isNeutralEdit } from '@core/audio/pitch-edit';
-import { playbackMode, tickAtSourceSeconds } from '@core/audio/playback';
-import type { ClipId } from '@core/model/types';
-import { parseKey as parseKeyText } from '@app/ai/ops/values';
-import { PITCH_NAMES, isScaleId } from '@agstudio/sdk/notes';
 import { addContextMenuItems } from '../../context-menus';
 import { addMenuItems, cmd } from '../../shell/menus';
 import { lazyWindow } from '../../workspace/lazy';
-import { openWindow, registerWindowType } from '../../workspace/registry';
+import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { setWindowHelp } from '../../workspace/window-help';
+import { PITCH_EDITOR_WINDOW, registerPitchCommands } from './pitch-commands';
 
-const WINDOW = 'pitch-editor';
-
-/** The clip a command acts on: `{ clip }` / an id in its arguments, else the selected audio clip, else the one being edited. */
-function targetClip(s: Services, args: unknown): ClipId | null {
-  const p = s.doc.getState().project;
-  const given = typeof args === 'string' ? args : args && typeof args === 'object' ? (args as { clip?: unknown }).clip : undefined;
-  if (typeof given === 'string' && p.playlist.clips[given as ClipId]?.kind === 'audio') return given as ClipId;
-  const picked = defaultPitchClip(s);
-  if (picked) return picked;
-  const open = pitchState.getState().clipId;
-  return open && audioClipOf(p, open) ? open : null;
-}
-
-const NO_CLIP = 'Select an audio clip on the playlist first (right-click it, then Pitch editor).';
-
-/** A key from a command's arguments: "A minor", or { root: 'A' | 0–11, scale }; null for none or unreadable. */
-function keyArg(v: unknown): { root: number; scale: string } | null {
-  if (!v) return null;
-  if (typeof v === 'string') return parseKeyText(v) ?? null;
-  if (typeof v !== 'object') return null;
-  const o = v as { root?: unknown; scale?: unknown };
-  const root = typeof o.root === 'number' ? o.root : typeof o.root === 'string' ? PITCH_NAMES.findIndex((n) => n.toLowerCase() === (o.root as string).toLowerCase()) : -1;
-  if (!Number.isFinite(root) || root < 0 || root > 11) return null;
-  return { root: Math.round(root), scale: typeof o.scale === 'string' && isScaleId(o.scale) ? o.scale : 'major' };
-}
+const WINDOW = PITCH_EDITOR_WINDOW;
 
 /**
  * The Pitch editor: a piano grid of the notes found in a recorded clip, with the sung pitch line.
@@ -92,136 +49,7 @@ export function register(services: Services): void {
     ],
   });
 
-  const { commands, keymap } = services;
-  commands.register<{ clip?: string } | string>({
-    id: 'pitchEditor.openClip',
-    title: 'Pitch editor for the selected audio clip',
-    category: 'Audio clip',
-    hint: 'Opens the Pitch editor on the selected audio clip: find its sung notes and correct them (also Alt + double-click on a clip)',
-    argsHint: 'optional { clip: id } or the clip id (default: the selected audio clip)',
-    run: (s, args) => {
-      const id = targetClip(s, args);
-      if (!id) {
-        s.session.getState().toast(NO_CLIP);
-        return;
-      }
-      const problem = pitchProblem(s.doc.getState().project, id);
-      if (problem) {
-        s.session.getState().toast(problem);
-        return;
-      }
-      void loadPitchClip(s, id);
-      openWindow(s, WINDOW);
-    },
-  });
-  commands.register({
-    id: 'pitchEditor.play',
-    title: 'Play the clip being pitch-edited',
-    category: 'Audio clip',
-    hint: 'Plays the song from the selected note of the Pitch editor (or the start of its clip), so you hear the correction',
-    run: (s) => {
-      const st = pitchState.getState();
-      const p = s.doc.getState().project;
-      const found = st.clipId ? audioClipOf(p, st.clipId) : null;
-      if (!found || !st.clip) {
-        s.session.getState().toast(NO_CLIP);
-        return;
-      }
-      const edit = editFor(p, st.clip);
-      const first = st.selected.length ? edit.notes[Math.min(...st.selected)] : undefined;
-      const tempo = tempoMapOf(p, 'song');
-      const tick = first ? tickAtSourceSeconds(found.clip, playbackMode(found.channel), tempo, first.from) : found.clip.start;
-      playFrom(s, Math.min(found.clip.start + found.clip.length - 1, Math.max(found.clip.start, tick)));
-    },
-  });
-  commands.register<{ clip?: string; key?: string | { root?: number | string; scale?: string }; strength?: number }>({
-    id: 'pitchEditor.snapToKey',
-    title: 'Snap the pitch of an audio clip to the key',
-    category: 'Audio clip',
-    hint: 'Pulls every sung note of the selected audio clip to the nearest note of the song key (or a key you give), by a strength in %',
-    argsHint: "optional { clip: id, key: 'A minor' | { root: 'A', scale: 'minor' } (default: the song key), strength: 0-100 (default 100) }",
-    run: async (s, args) => {
-      const id = targetClip(s, args);
-      if (!id) {
-        s.session.getState().toast(NO_CLIP);
-        return;
-      }
-      const p = s.doc.getState().project;
-      const key = keyArg(args && typeof args === 'object' ? args.key : undefined) ?? (p.transport.key ? { root: p.transport.key.root, scale: p.transport.key.scale } : null);
-      if (!key) {
-        s.session.getState().toast('Set the song key first (piano roll, Key button), or say which key to use.');
-        return;
-      }
-      const pct = args && typeof args === 'object' && typeof args.strength === 'number' ? args.strength : 100;
-      try {
-        const clip = await analyzeClip(s, id);
-        snapClip(s, clip, key, Math.max(0, Math.min(1, pct / 100)));
-      } catch (e) {
-        s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
-      }
-    },
-  });
-  commands.register<{ clip?: string; action?: string; key?: unknown; strength?: number; amount?: number; semitones?: number; to_midi?: number; ms?: number; notes?: number[] }>({
-    id: 'pitchEditor.apply',
-    title: 'Pitch correction of an audio clip: apply an action',
-    category: 'Audio clip',
-    hint: 'Changes the sung notes of an audio clip: snap to key, flatten drift, set vibrato, move notes, glide time, reset (one undo step)',
-    argsHint:
-      "{ action: 'snap_to_key' | 'flatten_drift' | 'vibrato' | 'shift' | 'transition' | 'reset', clip?: id (default: the selected audio clip), key?: 'A minor' (snap_to_key; default the song key), strength?: 0-100 % (snap_to_key, default 100), amount?: % (flatten_drift 0-100, default 100; vibrato 0-200, 100 = as sung, 0 = none), semitones?: n or to_midi?: MIDI note (shift), ms?: 0-300 (transition), notes?: [1-based note numbers, see get_pitch] (default: all notes) }",
-    run: async (s, args) => {
-      const id = targetClip(s, args);
-      if (!id) {
-        s.session.getState().toast(NO_CLIP);
-        return;
-      }
-      const parsed = parsePitchAction({ ...args, key: keyArg(args?.key) }, s.doc.getState().project.transport.key);
-      if ('error' in parsed) {
-        s.session.getState().toast(parsed.error, 'error');
-        return;
-      }
-      try {
-        await applyPitchActionToClip(s, id, parsed.action, parsed.notes, parsed.label);
-      } catch (e) {
-        s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
-      }
-    },
-  });
-  commands.register<{ clip?: string; original?: boolean }>({
-    id: 'pitchEditor.toggleOriginal',
-    title: 'Pitch editor: hear the original or the corrected sound (A/B)',
-    category: 'Audio clip',
-    hint: 'Switches an audio clip between its corrected sound and its own recording so you can compare (B in the Pitch editor). Only what you hear changes: nothing in the project does, and it goes back to corrected when the clip is closed',
-    argsHint: 'optional { clip: id (default: the clip in the Pitch editor, else the selected audio clip), original: true to hear the original, false for the corrected sound (default: switch) }',
-    run: (s, args) => {
-      // The clip in the editor first (that is the one being compared), then the usual choice.
-      const open = pitchState.getState().clipId;
-      const given = args && typeof args === 'object' && typeof args.clip === 'string';
-      const id = !given && open && audioClipOf(s.doc.getState().project, open) ? open : targetClip(s, args);
-      if (!id) {
-        s.session.getState().toast(NO_CLIP);
-        return;
-      }
-      const edit = audioClipOf(s.doc.getState().project, id)?.clip.pitchEdit;
-      if (!edit || isNeutralEdit(edit)) {
-        s.session.getState().toast('This clip has no correction yet: change a note first, then compare.');
-        return;
-      }
-      const original = hearOriginal(s, id, typeof args?.original === 'boolean' ? args.original : undefined);
-      s.session.getState().setHint(original ? 'Hearing the original recording (press B for the corrected sound)' : 'Hearing the corrected sound (press B for the original)');
-    },
-  });
-  keymap.add([{ chord: 'B', command: 'pitchEditor.toggleOriginal', when: { focus: [WINDOW] } }]);
-  commands.register<{ clip?: string }>({
-    id: 'pitchEditor.clear',
-    title: 'Remove pitch correction from an audio clip',
-    category: 'Audio clip',
-    hint: 'The selected audio clip plays its own recording again (one undo step)',
-    argsHint: 'optional { clip: id } (default: the selected audio clip)',
-    run: (s, args) => {
-      const id = targetClip(s, args);
-      if (!id || !clearClipPitch(s, id)) s.session.getState().toast('That clip has no pitch correction.');
-    },
-  });
+  registerPitchCommands(services);
 
   // Right-click an audio clip, the Playlist menu, and Alt + double-click (the playlist calls the command).
   addContextMenuItems('playlist.clip', ({ clip }, s) =>

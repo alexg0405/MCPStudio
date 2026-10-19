@@ -1,136 +1,19 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
-import { canChooseOutput, listOutputs, onDevicesChange, revealDevices, type AudioOutput } from '@app/audio-devices';
-import type { AudioBufferChoice } from '@app/stores/prefs';
-import { formatChord } from '@core/commands/keymap';
 import { useServices } from '../../services-context';
 import { ACCENTS, effectiveAccent, findTheme, THEMES } from '../../theme/apply';
 import { McpSettings } from '../mcp/McpSettings';
-import { testSoundWav } from './test-sound';
 import { Row, Section, Switch } from './parts';
 import { StorageSection } from './StorageSection';
 import styles from './Settings.module.css';
+import { RecordingSection } from './RecordingSection';
+import { SoundOutputSection } from './SoundOutputSection';
 
-const QUANTIZE: readonly (readonly [label: string, ticks: number])[] = [
-  ['Off (as played)', 0],
-  ['1/4 note', 960],
-  ['1/8 note', 480],
-  ['1/16 note', 240],
-  ['1/32 note', 120],
-  ['1/8 triplet', 320],
-  ['1/16 triplet', 160],
-];
-const COUNT_IN = [0, 1, 2, 4];
-
-/** Where the sound plays: the output device, a test sound, and the rate and delay the browser reports. */
-function SoundOutput() {
-  const s = useServices();
-  const chosen = useStore(s.prefs, (p) => p.outputDevice);
-  const buffer = useStore(s.prefs, (p) => p.audioBuffer);
-  const autoSize = useStore(s.prefs, (p) => p.autoBufferSize);
-  const [list, setList] = useState<{ outputs: AudioOutput[]; complete: boolean } | null>(null);
-  const refresh = useCallback(() => void listOutputs().then(setList), []);
-  useEffect(() => {
-    refresh();
-    return onDevicesChange(refresh);
-  }, [refresh]);
-  const subscribe = useCallback(
-    (fn: () => void) => {
-      const id = window.setInterval(fn, 1000);
-      const off = s.engine.subscribe(fn);
-      return () => {
-        window.clearInterval(id);
-        off();
-      };
-    },
-    [s],
-  );
-  const info = useSyncExternalStore(subscribe, () => {
-    const st = s.engine.stats();
-    const rate = `${(st.sampleRate / 1000).toFixed(st.sampleRate % 1000 ? 1 : 0)} kHz`;
-    if (st.state !== 'running') return `${rate} · sound starts after your first click or key press`;
-    return `${rate} · about ${Math.round((st.baseLatency + st.outputLatency) * 1000)} ms from AGstudio to your ears`;
-  });
-
-  const supported = canChooseOutput();
-  const outputs = list?.outputs ?? [{ id: '', label: 'System default' }];
-  // A saved device that isn't plugged in stays listed, so the choice doesn't change behind your back.
-  const missing = !!chosen && !!list && !outputs.some((o) => o.id === chosen);
-  const showAll = async () => {
-    if (await revealDevices()) refresh();
-    else s.session.getState().toast('The browser didn’t allow it, so only the system default is listed.', 'error');
-  };
-  const test = () => {
-    void s.engine.resume().then(() => s.engine.previewAudio(testSoundWav(s.engine.sampleRate).slice().buffer));
-  };
-
-  return (
-    <Section title="Sound output" intro="Where AGstudio plays: your speakers, headphones or audio interface.">
-      <Row
-        label="Play through"
-        hint={
-          !supported
-            ? 'This browser always plays through the system output; choose it in your computer’s sound settings (Chrome and Edge can choose here).'
-            : missing
-              ? 'That device isn’t connected right now, so the system default plays. Plug it in, or pick another one.'
-              : null
-        }
-      >
-        <select
-          className={styles.select}
-          value={chosen}
-          disabled={!supported}
-          onChange={(e) => s.prefs.getState().set({ outputDevice: e.target.value })}
-          data-hint="The device AGstudio plays through (remembered in this browser)"
-        >
-          {outputs.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
-          ))}
-          {missing && <option value={chosen}>The device you chose before (not connected)</option>}
-        </select>
-        <button className={styles.button} onClick={test} data-hint="A chime in the left speaker, then the right">
-          ▶ Test sound
-        </button>
-      </Row>
-      {supported && list && !list.complete && (
-        <Row
-          label=""
-          hint="Browsers list your other speakers and headphones only after a site may use the microphone. AGstudio turns it off again right away and records nothing."
-        >
-          <button className={styles.button} onClick={() => void showAll()}>
-            Show all my devices…
-          </button>
-        </Row>
-      )}
-      <Row
-        label="Audio buffer"
-        hint={`Auto starts small, so keys and Play answer fastest, and moves to a bigger buffer by itself if a busy song crackles (it remembers what works on this computer${buffer === 'auto' ? `; now ${autoSize}` : ''}). Large plays the busiest songs without dropouts. Changing it restarts the sound for a moment.`}
-      >
-        <select
-          className={styles.select}
-          value={buffer}
-          onChange={(e) => {
-            const choice = e.target.value as AudioBufferChoice;
-            // A picked size is kept; choosing Auto starts again from the smallest.
-            s.prefs
-              .getState()
-              .set(choice === 'auto' ? { audioBuffer: choice, autoBufferSize: 'small' } : { audioBuffer: choice, audioBufferPicked: true });
-          }}
-          data-hint="How much audio the browser prepares ahead: Auto picks the smallest that plays without crackles; large is smoothest, small answers fastest (about 21, 10 or 5 ms)"
-        >
-          <option value="auto">Auto: fastest that plays smoothly (recommended)</option>
-          <option value="large">Large: smoothest playback</option>
-          <option value="medium">Medium</option>
-          <option value="small">Small: fastest response for playing live</option>
-        </select>
-      </Row>
-      <Row label="Status" hint="Bluetooth headphones add a lot of delay; wired ones are best for recording and playing live.">
-        <span className={styles.value}>{info}</span>
-      </Row>
-    </Section>
-  );
+/** What the MIDI input row says: how to turn it on, that nothing is connected yet, or how to link a knob. */
+function midiHint(isEnabled: boolean, deviceCount: number): string {
+  if (!isEnabled) return 'Turn this on to play the selected sound from a MIDI keyboard. Chrome asks once for permission.';
+  if (deviceCount === 0) return 'Nothing connected yet. Plug a keyboard in; it shows up here by itself.';
+  return 'To move a knob from your controller: right-click the knob → Link to controller…, then turn a knob on the controller.';
 }
 
 /** MIDI keyboards and controllers: on or off, and what's connected. */
@@ -143,13 +26,7 @@ function Midi() {
     <Section title="MIDI keyboards and controllers">
       <Row
         label="MIDI input"
-        hint={
-          !enabled
-            ? 'Turn this on to play the selected sound from a MIDI keyboard. Chrome asks once for permission.'
-            : names.length === 0
-              ? 'Nothing connected yet. Plug a keyboard in; it shows up here by itself.'
-              : 'To move a knob from your controller: right-click the knob → Link to controller…, then turn a knob on the controller.'
-        }
+        hint={midiHint(enabled, names.length)}
       >
         <Switch checked={enabled} onChange={() => s.commands.run('options.midiInput')} label="Listen to MIDI devices" />
       </Row>
@@ -189,94 +66,6 @@ function ComputerKeyboard() {
         <button className={styles.small} onClick={() => s.commands.run('options.octaveUp')} aria-label="Octave up">
           +
         </button>
-      </Row>
-    </Section>
-  );
-}
-
-function Recording() {
-  const s = useServices();
-  const metronome = useStore(s.prefs, (p) => p.metronome);
-  const countIn = useStore(s.prefs, (p) => p.countInBars);
-  const quantize = useStore(s.prefs, (p) => p.recordQuantize);
-  const mode = useStore(s.prefs, (p) => p.recordMode);
-  const notes = useStore(s.prefs, (p) => p.recordNotes);
-  const audio = useStore(s.prefs, (p) => p.recordAudio);
-  const device = useStore(s.prefs, (p) => p.audioInputDevice);
-  const channels = useStore(s.prefs, (p) => p.audioInputChannels);
-  const latency = useStore(s.prefs, (p) => p.recordLatencyMs);
-  const offset = useStore(s.prefs, (p) => p.recordLatencyOffsetMs);
-  const record = formatChord(s.keymap.chordsFor('transport.record')[0] ?? 'R', s.platform);
-  return (
-    <Section
-      title="Recording"
-      intro={`Press ${record} (or the record button) to arm recording, then play: notes go into the pattern, audio onto the playlist.`}
-    >
-      <Row label="Records" hint="What record mode captures when you play.">
-        <Switch checked={notes} onChange={() => s.commands.run('transport.recordNotes')} label="Notes and knob moves" />
-        <Switch checked={audio} onChange={() => s.commands.run('transport.recordAudio')} label="Audio from the input" />
-      </Row>
-      <Row
-        label="Audio input"
-        hint="The microphone or audio interface you record from, its level, and monitoring (use headphones when monitoring)."
-      >
-        <span className={styles.value}>
-          {device ? 'Chosen device' : 'System default'} · {channels === 'stereo' ? 'stereo' : 'mono'}
-        </span>
-        <button className={styles.button} onClick={() => s.commands.run('options.audioInput')}>
-          Audio input…
-        </button>
-      </Row>
-      <Row
-        label="Delay"
-        hint="Recordings are moved back by the time sound takes to go out and come back in, so they land on the beat."
-      >
-        <span className={styles.value}>
-          {latency >= 0 ? `${Math.round(latency)} ms measured` : 'the browser’s estimate'}
-          {offset ? ` ${offset > 0 ? '+' : '−'} ${Math.abs(offset)} ms` : ''}
-        </span>
-        <button className={styles.button} onClick={() => s.commands.run('audio.calibrateLatency')}>
-          Calibrate…
-        </button>
-      </Row>
-      <Row label="Metronome" hint="A click on every beat while playing (never in exports).">
-        <Switch checked={metronome} onChange={() => s.commands.run('transport.metronome')} label="Click while playing" />
-      </Row>
-      <Row label="Count-in" hint="Clicks before recording starts, so you come in on time.">
-        <select
-          className={styles.select}
-          value={countIn}
-          onChange={(e) => s.commands.run('transport.countIn', Number(e.target.value))}
-        >
-          {COUNT_IN.map((bars) => (
-            <option key={bars} value={bars}>
-              {bars ? `${bars} bar${bars > 1 ? 's' : ''}` : 'Off'}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="Snap notes to" hint="Recorded notes start exactly on this grid (Off keeps your timing).">
-        <select
-          className={styles.select}
-          value={quantize}
-          onChange={(e) => s.commands.run('transport.recordQuantize', Number(e.target.value))}
-        >
-          {QUANTIZE.map(([label, ticks]) => (
-            <option key={ticks} value={ticks}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row label="Over old notes" hint="Add to the notes already there, or replace what the recording passes over.">
-        <select
-          className={styles.select}
-          value={mode}
-          onChange={(e) => s.commands.run('transport.recordMode', e.target.value)}
-        >
-          <option value="overdub">Keep them (overdub)</option>
-          <option value="replace">Replace them</option>
-        </select>
       </Row>
     </Section>
   );
@@ -341,10 +130,10 @@ function Interface() {
 export function SettingsWindow() {
   return (
     <div className={styles.wrap}>
-      <SoundOutput />
+      <SoundOutputSection />
       <Midi />
       <ComputerKeyboard />
-      <Recording />
+      <RecordingSection />
       <Interface />
       <McpSettings />
       <StorageSection />

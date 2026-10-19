@@ -7,12 +7,23 @@ import { registerWindowToggle } from '../../workspace/window-commands';
 import { setWindowHelp } from '../../workspace/window-help';
 import { lazyWindow } from '../../workspace/lazy';
 
+/** Whether the project has a reference song (the commands that use it are enabled only then). */
+const hasReference = (s: Services) => !!s.doc.getState().project.reference;
+
 /**
  * Reference track matching: drop a song you own, see its tempo, key, parts, loudness and tone next to your
  * song's, and shape yours after it with one click each. Only measurements are used (see app/reference).
  * Studio has the same through `set_reference`, `match_reference` and `get_reference`.
  */
 export function register(services: Services): void {
+  registerReferenceWindow(services);
+  registerReferenceCommands(services);
+  registerReferenceMenus();
+  registerReferenceHelp();
+}
+
+/** The Reference window and the command that opens it. */
+function registerReferenceWindow(services: Services): void {
   registerWindowType({
     type: 'reference',
     title: () => 'Reference',
@@ -28,9 +39,10 @@ export function register(services: Services): void {
     chords: ['Alt+Shift+R'],
     menuOrder: 59,
   });
+}
 
-  const { commands } = services;
-  const hasReference = (s: Services) => !!s.doc.getState().project.reference;
+/** Choose, clear and the matches: tempo and key, arrangement, loudness and the tonal difference. */
+function registerReferenceCommands({ commands }: Services): void {
   commands.register({
     id: 'reference.chooseFile',
     title: 'Choose a reference song…',
@@ -92,6 +104,10 @@ export function register(services: Services): void {
       await toneDifferenceFromUi(s);
     },
   });
+}
+
+/** The Playlist and File menu entries and the action search entry. */
+function registerReferenceMenus(): void {
   addMenuItems('playlist', [
     sep(60),
     cmd('reference.matchTempoKey', 61),
@@ -110,6 +126,10 @@ export function register(services: Services): void {
       run: () => openWindow(s, 'reference'),
     },
   ]);
+}
+
+/** What the window help panel says. */
+function registerReferenceHelp(): void {
   setWindowHelp('reference', {
     intro: 'A song you own as a guide. It is measured, never copied: Studio and the buttons below use its tempo, key, parts, loudness and tone to shape your own song.',
     moves: [

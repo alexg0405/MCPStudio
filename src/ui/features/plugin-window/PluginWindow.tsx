@@ -1,11 +1,11 @@
 import { createElement, useCallback, useEffect, useMemo, type ComponentType } from 'react';
 import { KIT } from '@core/model/kit';
-import type { ChannelId, InsertId, PluginOwner, SlotId } from '@core/model/types';
+import type { ChannelId, InsertId, PluginInstance, PluginOwner, SlotId } from '@core/model/types';
 import { addSample, setChannelProp, setPluginSample } from '@core/ops/channels';
 import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
 import { keyName, parseKeyName } from '@core/time/ppq';
-import { resolveValues, type ParamSpecs, type ParamValue, type PluginUIProps } from '@agstudio/sdk';
+import { resolveValues, type ParamSpecs, type ParamValue, type PluginDef, type PluginUIProps } from '@agstudio/sdk';
 import {
   FrameContext,
   ParamFollowContext,
@@ -16,6 +16,7 @@ import {
 import { targetKey } from '@core/model/targets';
 import { followersOf } from '../../HostParamMenus';
 import { kitSampleRef } from '@app/default-project';
+import type { TapRegistry } from '@app/taps';
 import { useDoc, useServices } from '../../services-context';
 import { usePluginDef, usePluginEditing } from '../../plugin-hooks';
 import { DragNumber } from '../../controls/DragNumber';
@@ -159,19 +160,10 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
 
   if (!instance) return null;
   if (!def) {
-    return (
-      <div className={styles.missing}>
-        <strong>Plugin “{instance.pluginId}” isn’t installed.</strong>
-        <p>
-          Its settings are kept with the project and come back as soon as the plugin is available again.
-          {owner.kind === 'fx' && ' Until then the effect slot passes audio through unchanged.'}
-        </p>
-      </div>
-    );
+    return <MissingPlugin pluginId={instance.pluginId} isEffect={owner.kind === 'fx'} />;
   }
 
   const values = resolveValues(def.params as ParamSpecs, instance.params) as Record<string, ParamValue>;
-  const Custom = def.ui;
   const openParamMenu = (param: string, at: { clientX: number; clientY: number }) => {
     const spec = (def.params as ParamSpecs)[param];
     if (!spec) return;
@@ -215,33 +207,74 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
 
   return (
     <div className={styles.window}>
-      <div className={styles.header}>
-        <span className={styles.pluginName} data-hint={def.description ?? def.name}>
-          {def.name}
-        </span>
-        {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
-        <PresetBar owner={owner} def={def} instance={instance} />
-        {services.plugins.entry(def.id)?.source === 'user' && (
-          <button
-            type="button"
-            tabIndex={-1}
-            className={styles.editCode}
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={() => services.commands.run('plugins.editCode', def.id)}
-            data-hint="Open this plugin’s code in your code editor: every save hot-reloads it, settings stay"
-          >
-            {'</>'} Edit code
-          </button>
-        )}
-        {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
-        {def.samplePickers !== false &&
-          def.sampleSlots?.map((slot) => <SampleSlot key={slot} owner={owner} slot={slot} />)}
-      </div>
-      <div className={styles.body}>
-        <ParamMenuContext.Provider value={openParamMenu}>
-          <ParamFollowContext.Provider value={follow}>
-            <ParamStatusContext.Provider value={status}>
-              <FrameContext.Provider value={onFrame}>
+      <PluginHeader owner={owner} def={def} instance={instance} />
+      <PluginBody def={def} values={values} edit={edit} uiProps={uiProps} tap={tap} openParamMenu={openParamMenu} follow={follow} status={status} />
+    </div>
+  );
+}
+
+/** What the window says when the plugin of this slot or channel is not installed: its settings are kept. */
+function MissingPlugin({ pluginId, isEffect }: { pluginId: string; isEffect: boolean }) {
+  return (
+    <div className={styles.missing}>
+      <strong>Plugin “{pluginId}” isn’t installed.</strong>
+      <p>
+        Its settings are kept with the project and come back as soon as the plugin is available again.
+        {isEffect && ' Until then the effect slot passes audio through unchanged.'}
+      </p>
+    </div>
+  );
+}
+
+/** The window's header: the plugin's name, the bypass switch (effects), the preset bar, Edit code (your plugins), the root key (instruments) and sample slots. */
+function PluginHeader({ owner, def, instance }: { owner: PluginOwner; def: PluginDef; instance: PluginInstance }) {
+  const services = useServices();
+  return (
+    <div className={styles.header}>
+      <span className={styles.pluginName} data-hint={def.description ?? def.name}>
+        {def.name}
+      </span>
+      {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
+      <PresetBar owner={owner} def={def} instance={instance} />
+      {services.plugins.entry(def.id)?.source === 'user' && (
+        <button
+          type="button"
+          tabIndex={-1}
+          className={styles.editCode}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => services.commands.run('plugins.editCode', def.id)}
+          data-hint="Open this plugin’s code in your code editor: every save hot-reloads it, settings stay"
+        >
+          {'</>'} Edit code
+        </button>
+      )}
+      {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
+      {def.samplePickers !== false &&
+        def.sampleSlots?.map((slot) => <SampleSlot key={slot} owner={owner} slot={slot} />)}
+    </div>
+  );
+}
+
+interface PluginBodyProps {
+  def: PluginDef;
+  values: Record<string, ParamValue>;
+  edit: ReturnType<typeof usePluginEditing>;
+  uiProps: PluginUIProps;
+  tap: ReturnType<TapRegistry['view']>;
+  openParamMenu: (param: string, at: { clientX: number; clientY: number }) => void;
+  follow: (param: string, paint: (v: ParamValue | null) => void) => () => void;
+  status: (param: string, cb: (s: ParamStatus | null) => void) => () => void;
+}
+
+/** The plugin's editor: its own UI (or the automatic panel and meters), in the contexts its controls use, with a crash fallback. */
+function PluginBody({ def, values, edit, uiProps, tap, openParamMenu, follow, status }: PluginBodyProps) {
+  const Custom = def.ui;
+  return (
+    <div className={styles.body}>
+      <ParamMenuContext.Provider value={openParamMenu}>
+        <ParamFollowContext.Provider value={follow}>
+          <ParamStatusContext.Provider value={status}>
+            <FrameContext.Provider value={onFrame}>
               <ErrorBoundary
                 resetKey={def}
                 fallback={(error) => (
@@ -261,11 +294,10 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
                   </>
                 )}
               </ErrorBoundary>
-              </FrameContext.Provider>
-            </ParamStatusContext.Provider>
-          </ParamFollowContext.Provider>
-        </ParamMenuContext.Provider>
-      </div>
+            </FrameContext.Provider>
+          </ParamStatusContext.Provider>
+        </ParamFollowContext.Provider>
+      </ParamMenuContext.Provider>
     </div>
   );
 }

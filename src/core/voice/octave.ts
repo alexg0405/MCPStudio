@@ -103,7 +103,12 @@ export interface SubharmonicEvidence {
   overFloor: [number, number];
 }
 
-export function subharmonicEvidence(mag: Float64Array, binHz: number, hz: number, divisor: number): SubharmonicEvidence | null {
+export function subharmonicEvidence(
+  mag: Float64Array,
+  binHz: number,
+  hz: number,
+  divisor: number,
+): SubharmonicEvidence | null {
   const T = OCTAVE_THRESHOLDS;
   const g = hz / divisor;
   if (g < T.minHz) return null;
@@ -152,30 +157,31 @@ function medianOf(values: number[]): number {
   return values.length % 2 ? (values[m] as number) : 0.5 * ((values[m - 1] as number) + (values[m] as number));
 }
 
-/**
- * Moves the voiced frames of `f0` (Hz, one per `hopSamples` samples of `mono`, frame i centred at i × hop) down by
- * the divisor their sound calls for (in place), where the spectrum shows a lower fundamental's lines. Returns how
- * many frames moved.
- */
-export function repairOctaveSlips(mono: Float32Array, sampleRate: number, f0: Float32Array, hopSamples: number): number {
+/** The frames within half a step of window `p`'s centre (a and b inclusive; b < a when none). */
+function framesOfStep(p: number, stepSec: number, frameSec: number, n: number): { a: number; b: number } {
+  const a = Math.max(0, Math.ceil(((p - 0.5) * stepSec) / frameSec));
+  const b = Math.min(n - 1, Math.floor(((p + 0.5) * stepSec) / frameSec - 1e-9));
+  return { a, b };
+}
+
+/** The window size (samples at the analysis rate) for a step at `hz`: the short one when the lowest candidate is high enough. */
+const windowSizeFor = (hz: number): 512 | 1024 => (hz / 3 >= OCTAVE_THRESHOLDS.shortWindowFromHz ? 512 : 1024);
+
+/** What each step of the track was judged to be: its median pitch and the divisor its sound calls for (0 = not judged, 1 = no repair). */
+function judgeSteps(
+  probe: OctaveProbe,
+  f0: Float32Array,
+  steps: number,
+  stepSec: number,
+  frameSec: number,
+): { divisor: Float32Array; stepHz: Float32Array } {
   const T = OCTAVE_THRESHOLDS;
   const n = f0.length;
-  // Anything high enough to hide a lower fundamental?
-  let any = false;
-  for (let i = 0; i < n && !any; i++) any = (f0[i] as number) >= 2 * T.minHz;
-  if (!any) return 0;
-  const probe = new OctaveProbe(mono, sampleRate);
-  const rate = probe.rate;
-  const frameSec = hopSamples / sampleRate;
-  const stepSec = T.step / rate;
-  const steps = Math.floor((n * frameSec) / stepSec) + 1;
   const divisor = new Float32Array(steps).fill(0); // 0 = not judged
   const stepHz = new Float32Array(steps);
   const values: number[] = [];
   for (let p = 0; p < steps; p++) {
-    // Frames within half a step of the window's centre.
-    const a = Math.max(0, Math.ceil(((p - 0.5) * stepSec) / frameSec));
-    const b = Math.min(n - 1, Math.floor(((p + 0.5) * stepSec) / frameSec - 1e-9));
+    const { a, b } = framesOfStep(p, stepSec, frameSec, n);
     values.length = 0;
     for (let i = a; i <= b; i++) if ((f0[i] as number) > 0) values.push(f0[i] as number);
     if (values.length < T.minFrames) continue;
@@ -185,8 +191,7 @@ export function repairOctaveSlips(mono: Float32Array, sampleRate: number, f0: Fl
       divisor[p] = 1;
       continue;
     }
-    const size = hz / 3 >= T.shortWindowFromHz ? 512 : 1024;
-    const { mag, binHz } = probe.spectrum(p * T.step, size);
+    const { mag, binHz } = probe.spectrum(p * T.step, windowSizeFor(hz));
     let d = 1;
     for (const c of OCTAVE_DIVISORS) {
       if (hasSubharmonic(mag, binHz, hz, c)) {
@@ -196,6 +201,31 @@ export function repairOctaveSlips(mono: Float32Array, sampleRate: number, f0: Fl
     }
     divisor[p] = d;
   }
+  return { divisor, stepHz };
+}
+
+/**
+ * Moves the voiced frames of `f0` (Hz, one per `hopSamples` samples of `mono`, frame i centred at i × hop) down by
+ * the divisor their sound calls for (in place), where the spectrum shows a lower fundamental's lines. Returns how
+ * many frames moved.
+ */
+export function repairOctaveSlips(
+  mono: Float32Array,
+  sampleRate: number,
+  f0: Float32Array,
+  hopSamples: number,
+): number {
+  const T = OCTAVE_THRESHOLDS;
+  const n = f0.length;
+  // Anything high enough to hide a lower fundamental?
+  let any = false;
+  for (let i = 0; i < n && !any; i++) any = (f0[i] as number) >= 2 * T.minHz;
+  if (!any) return 0;
+  const probe = new OctaveProbe(mono, sampleRate);
+  const frameSec = hopSamples / sampleRate;
+  const stepSec = T.step / probe.rate;
+  const steps = Math.floor((n * frameSec) / stepSec) + 1;
+  const { divisor, stepHz } = judgeSteps(probe, f0, steps, stepSec, frameSec);
   // A step's answer stands when a neighbouring step agrees (or none was judged next to it): one odd window is noise.
   let moved = 0;
   for (let p = 0; p < steps; p++) {
@@ -204,8 +234,7 @@ export function repairOctaveSlips(mono: Float32Array, sampleRate: number, f0: Fl
     const left = p > 0 ? (divisor[p - 1] as number) : 0;
     const right = p + 1 < steps ? (divisor[p + 1] as number) : 0;
     if (!(left === d || right === d || (left === 0 && right === 0))) continue;
-    const a = Math.max(0, Math.ceil(((p - 0.5) * stepSec) / frameSec));
-    const b = Math.min(n - 1, Math.floor(((p + 0.5) * stepSec) / frameSec - 1e-9));
+    const { a, b } = framesOfStep(p, stepSec, frameSec, n);
     const hz = stepHz[p] as number;
     for (let i = a; i <= b; i++) {
       // Only frames at the pitch that was judged: a step that straddles a note change moves the frames it heard.

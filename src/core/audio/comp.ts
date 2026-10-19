@@ -14,6 +14,7 @@ import type { TempoMap } from '../time/ppq';
 
 /** The default crossfade at a comp's borders. */
 export const DEFAULT_CROSSFADE_MS = 10;
+/** The longest crossfade at a comp's borders, in milliseconds. */
 export const MAX_CROSSFADE_MS = 500;
 
 /** One take's clip: where it plays and how to find its audio. */
@@ -187,6 +188,7 @@ interface Unit {
   to: Tick;
 }
 
+/** What `planComp` needs besides the segments: the tempo map and the crossfade length. */
 export interface PlanOptions {
   tempo: TempoMap;
   /** Seconds (default 10 ms). */

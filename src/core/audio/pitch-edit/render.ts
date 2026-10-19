@@ -124,6 +124,10 @@ function boxFilter(x: Float64Array, half: number): Float64Array {
 
 // ---- The render ----
 
+/**
+ * What a pitch-correction render needs: the audio (planar channels), its sample rate in Hz and its start in the sample
+ * (seconds), the edit to apply and an optional progress callback (0..1).
+ */
 export interface PitchRenderInput {
   /** The audio to correct: a stretch of the sample (planar). */
   channels: readonly Float32Array[];

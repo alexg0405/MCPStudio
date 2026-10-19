@@ -18,8 +18,16 @@
 import type { AudioClip, AudioClipChannel, SampleId, Tick } from '../model/types';
 import { PPQ, type TempoMap } from '../time/ppq';
 
+/**
+ * How an audio clip channel follows the song tempo: not at all, by resampling (pitch follows the tempo) or by
+ * time-stretching (pitch stays).
+ */
 export type FollowMode = 'off' | 'resample' | 'stretch';
 
+/**
+ * How an audio clip channel plays: its tempo-follow mode, its pitch shift (in cents and as a factor), the source tempo
+ * it follows and whether it plays backwards.
+ */
 export interface PlaybackMode {
   /** What actually happens: a channel asking to follow the tempo without a source BPM plays 'off'. */
   follow: FollowMode;

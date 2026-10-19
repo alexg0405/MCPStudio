@@ -6,6 +6,10 @@
  */
 import { RealFFT, hannWindow, magnitudeSpectrum, nextPowerOfTwo } from '../voice/fft';
 
+/**
+ * Settings of transient detection: the range to search (seconds), how sensitive it is and the shortest gap between hits
+ * (seconds).
+ */
 export interface TransientOptions {
   /** Seconds into the audio to look between (default: all of it). */
   from?: number;

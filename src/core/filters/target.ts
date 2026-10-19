@@ -8,6 +8,10 @@ import { sectionAt, songSections } from '../query/sections';
 import { barSpan } from '../time/bars';
 import { TICKS_PER_STEP, ticksPerBar } from '../time/ppq';
 
+/**
+ * What a sound filter applies to: some clips, a span of the song on every track or the whole song (spans are in song
+ * ticks).
+ */
 export type FilterTarget =
   | { kind: 'clips'; clipIds: ClipId[]; from: Tick; to: Tick }
   /** A span of the song on every track; `name` is the section's ("Chorus") when it is one. */
@@ -90,6 +94,9 @@ export function targetLabel(p: Project, t: FilterTarget): string {
   return t.name ? `“${t.name}” (${span})` : span;
 }
 
+/**
+ * The part of the song a filter works on: the span to render and replace (ticks, [from, to)) and which clips it takes.
+ */
 export interface FilterPart {
   /** The span that is rendered and replaced, [from, to). */
   from: Tick;

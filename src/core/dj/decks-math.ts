@@ -98,6 +98,7 @@ export const crossfadeAt = (from: number, to: number, t: number): number => from
 // ---------------------------------------------------------------------------------------------
 // EQ and filter
 
+/** The lowest an EQ knob goes, in dB. */
 export const EQ_MIN_DB = -26;
 /** The highest an EQ band can be turned up (dB). */
 export const EQ_MAX_DB = 6;
@@ -134,6 +135,9 @@ export function filterCutoffs(v: number, sampleRate: number): { lowpassHz: numbe
 // ---------------------------------------------------------------------------------------------
 // Pitch and tempo
 
+/**
+ * The ranges of the pitch fader as fractions of the tempo: 0.08, 0.16 and 0.5 are plus or minus 8, 16 and 50 percent.
+ */
 export const PITCH_RANGES = [0.08, 0.16, 0.5] as const;
 /** One of the pitch fader's ranges (a fraction: 0.08 is ±8 %). */
 export type PitchRange = (typeof PITCH_RANGES)[number];
@@ -317,6 +321,10 @@ export function wrapIntoLoop(positionSec: number, loop: LoopSpan): number {
 // ---------------------------------------------------------------------------------------------
 // Cue (CDJ)
 
+/**
+ * What the cue button needs to know: whether the deck is playing, its position and cue point (seconds) and its beat
+ * grid.
+ */
 export interface CueInput {
   playing: boolean;
   positionSec: number;

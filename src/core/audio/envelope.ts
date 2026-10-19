@@ -8,12 +8,14 @@
  */
 import type { AudioClip } from '../model/types';
 
+/** The three level settings of an audio clip that make its envelope: gain and the two fades. */
 export type ClipLevels = Pick<AudioClip, 'gain' | 'fadeIn' | 'fadeOut'>;
 
 /** Linear ramps per fade when the engine plays it. */
 export const FADE_SEGMENTS = 16;
 /** Peak a normalized clip reaches. */
 export const NORMALIZE_DB = -0.3;
+/** The highest linear gain a clip may have (4 is about +12 dB). */
 export const MAX_CLIP_GAIN = 4;
 
 /** Equal-power fade-in shape over x in 0..1 (−3 dB at the middle). */
@@ -23,6 +25,7 @@ export function fadeShape(x: number): number {
   return Math.sin((x * Math.PI) / 2);
 }
 
+/** The clip's gain as a linear factor: 1 when unset or not a number, otherwise kept between 0 and `MAX_CLIP_GAIN`. */
 export const clipGain = (c: ClipLevels): number =>
   c.gain !== undefined && Number.isFinite(c.gain) ? Math.max(0, Math.min(MAX_CLIP_GAIN, c.gain)) : 1;
 
@@ -60,6 +63,7 @@ export function envelopeBreakpoints(c: ClipLevels, duration: number, from = 0): 
 
 /** Linear gain → dB (−Infinity for 0). */
 export const gainToDb = (g: number): number => (g > 0 ? 20 * Math.log10(g) : -Infinity);
+/** Decibels → linear gain (0 dB is 1, -6 dB is about 0.5); the reverse of `gainToDb`. */
 export const dbToGain = (db: number): number => Math.pow(10, db / 20);
 
 /** "+3.5 dB", "−inf dB". */

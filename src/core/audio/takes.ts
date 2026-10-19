@@ -13,6 +13,7 @@
 import type { Tick } from '../model/types';
 import type { TempoMap } from '../time/ppq';
 
+/** A pairing of a frame of a recording with the song tick that was heard when it was played, noted while recording. */
 export interface CaptureAnchor {
   /** Frames into the capture. */
   frame: number;
@@ -22,6 +23,10 @@ export interface CaptureAnchor {
   iter: number;
 }
 
+/**
+ * One take planned from a loop pass: where its clip goes on the playlist (ticks), how far into the recording it starts
+ * (seconds) and whether it covers the whole loop.
+ */
 export interface TakePlan {
   /** 0 = the first pass. */
   pass: number;
@@ -33,6 +38,10 @@ export interface TakePlan {
   complete: boolean;
 }
 
+/**
+ * What planning takes needs: the recording's anchors, sample rate (Hz) and length (frames), the tempo map, the loop and
+ * punch ranges and where playback started and stopped (ticks).
+ */
 export interface TakeInput {
   anchors: readonly CaptureAnchor[];
   sampleRate: number;

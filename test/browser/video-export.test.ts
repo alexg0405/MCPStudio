@@ -352,6 +352,16 @@ describe('video export', () => {
       }
     });
 
+    it('says so, and writes nothing, when the background picture cannot be read', async () => {
+      const s = make(song(1));
+      const files = new Map<string, Uint8Array>();
+      const image = new Blob(['not a picture'], { type: 'image/png' });
+      await expect(runVideoExport(s, settings({ image }), { kind: 'memory', files, name: 'v' })).rejects.toThrow(
+        /could not be read/,
+      );
+      expect(files.size).toBe(0);
+    });
+
     it('exports just a part of the song, normalizes, and can be cancelled', async () => {
       const s = make(song(3));
       const whole = await exportTo(s, { scale: 0.25 });

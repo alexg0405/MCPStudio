@@ -33,7 +33,7 @@ function stack(pcs: readonly number[], from: number): number[] {
   const out = [from];
   for (let i = 1; i < pcs.length; i++) {
     const prev = out[i - 1] as number;
-    let k = prev + ((((pcs[i] as number) - prev) % 12) + 12) % 12;
+    let k = prev + (((((pcs[i] as number) - prev) % 12) + 12) % 12);
     // A pitch class equal to the one below goes an octave up.
     if (k <= prev) k += 12;
     out.push(k);
@@ -62,7 +62,10 @@ export interface Candidate {
  * Every voicing of a chord whose notes are centred near `center`: each inversion at each height that fits. A chord with a
  * slash bass is only voiced with that note lowest (unless the bass is added separately).
  */
-export function voicingCandidates(c: ChordSymbol, opts: Pick<VoicingOptions, 'center' | 'spread' | 'bass'> = {}): Candidate[] {
+export function voicingCandidates(
+  c: ChordSymbol,
+  opts: Pick<VoicingOptions, 'center' | 'spread' | 'bass'> = {},
+): Candidate[] {
   const center = opts.center ?? 60;
   const spread = opts.spread ?? 'close';
   const tones = tonesOf(c);
@@ -121,17 +124,36 @@ export function bassKeyFor(c: ChordSymbol, low = 36): number {
  */
 export function voiceChords(chords: readonly ChordSymbol[], opts: VoicingOptions = {}): number[][] {
   const center = opts.center ?? 60;
-  const sets = chords.map((c, i) => {
-    let cands = voicingCandidates(c, { center, spread: opts.spread ?? 'close', bass: opts.bass === true });
-    if (i === 0 && typeof opts.inversion === 'number') {
-      const want = cands.filter((x) => x.inversion === opts.inversion);
-      if (want.length) cands = want;
-    }
-    if (cands.length === 0) cands = [{ keys: [center + mod12(c.root - center)], inversion: 0 }];
-    return cands;
+  const sets = chords.map((c, i) => candidatesFor(c, i, opts, center));
+  if (sets.length === 0) return [];
+  const result = cheapestPath(sets, center);
+  if (!opts.bass) return result;
+  return result.map((keys, i) => {
+    const b = bassKeyFor(chords[i] as ChordSymbol, opts.bassLow ?? 36);
+    return [b, ...keys.filter((k) => k !== b)];
   });
-  // cost[i][j]: cheapest way to end chord i on candidate j; a small pull toward the centre breaks ties.
-  const pull = (keys: number[]) => Math.abs(mean(keys) - center) * 0.15;
+}
+
+/** The voicings to choose from for chord `index`: the first chord may be pinned to an inversion; a chord with none gets its root alone. */
+function candidatesFor(c: ChordSymbol, index: number, opts: VoicingOptions, center: number): Candidate[] {
+  let cands = voicingCandidates(c, { center, spread: opts.spread ?? 'close', bass: opts.bass === true });
+  if (index === 0 && typeof opts.inversion === 'number') {
+    const want = cands.filter((x) => x.inversion === opts.inversion);
+    if (want.length) cands = want;
+  }
+  if (cands.length === 0) cands = [{ keys: [center + mod12(c.root - center)], inversion: 0 }];
+  return cands;
+}
+
+/** Each step away from the centre of the hand costs this much, so ties go to the voicing nearest it. */
+const CENTRE_PULL = 0.15;
+
+/**
+ * The voicings (one per chord) that move the least in total, by dynamic programming: `cost[i][j]` is the
+ * cheapest way to end chord i on candidate j, `from[i][j]` which candidate of chord i − 1 it came from.
+ */
+function cheapestPath(sets: readonly Candidate[][], center: number): number[][] {
+  const pull = (keys: number[]) => Math.abs(mean(keys) - center) * CENTRE_PULL;
   const cost: number[][] = [];
   const from: number[][] = [];
   sets.forEach((cands, i) => {
@@ -160,8 +182,8 @@ export function voiceChords(chords: readonly ChordSymbol[], opts: VoicingOptions
     cost.push(row);
     from.push(back);
   });
+  // Trace the cheapest ending back to the first chord.
   const result: number[][] = [];
-  if (sets.length === 0) return result;
   let j = 0;
   const last = cost[cost.length - 1] as number[];
   for (let k = 1; k < last.length; k++) if ((last[k] as number) < (last[j] as number)) j = k;
@@ -169,11 +191,6 @@ export function voiceChords(chords: readonly ChordSymbol[], opts: VoicingOptions
     result[i] = [...((sets[i] as Candidate[])[j] as Candidate).keys];
     j = (from[i] as number[])[j] as number;
   }
-  if (opts.bass)
-    return result.map((keys, i) => {
-      const b = bassKeyFor(chords[i] as ChordSymbol, opts.bassLow ?? 36);
-      return [b, ...keys.filter((k) => k !== b)];
-    });
   return result;
 }
 
@@ -210,14 +227,24 @@ export function compNotes(
   chords.forEach((c, i) => {
     const keys = voicings[i];
     if (!keys) return;
-    const step = rhythm === 'hold' ? c.length : rhythm === 'beats' ? opts.beat : opts.beat / 2;
+    const step = strikeLength(rhythm, c.length, opts.beat);
     const offset = rhythm === 'offbeats' ? opts.beat / 2 : 0;
     const every = rhythm === 'offbeats' ? opts.beat : step;
+    // A held chord keeps its whole length; struck ones are shortened by the gate so each has a gap before the next.
+    const gateOf = rhythm === 'hold' ? 1 : gate;
     for (let t = offset; t < c.length - 1; t += every) {
-      const len = Math.max(1, Math.min(rhythm === 'hold' ? c.length : step, c.length - t));
-      for (const key of keys)
-        out.push({ tick: Math.round(c.tick + t), length: Math.max(1, Math.round(len * (rhythm === 'hold' ? 1 : gate))), key, velocity });
+      const len = Math.max(1, Math.min(step, c.length - t));
+      for (const key of keys) {
+        out.push({ tick: Math.round(c.tick + t), length: Math.max(1, Math.round(len * gateOf)), key, velocity });
+      }
     }
   });
   return out;
+}
+
+/** How long one strike of a chord lasts: the whole chord when held, a beat on the beats, an eighth otherwise. */
+function strikeLength(rhythm: CompRhythm, chordLength: number, beat: number): number {
+  if (rhythm === 'hold') return chordLength;
+  if (rhythm === 'beats') return beat;
+  return beat / 2;
 }

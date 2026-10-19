@@ -165,39 +165,39 @@ export type SongIssue =
 
 const DEFAULT_LANE_NAME = /^Track \d+$/;
 
-/** Things in the arrangement that make it sound worse or are hard to work with. */
-export function songCheck(p: Project): SongIssue[] {
-  const issues: SongIssue[] = [];
-  // Stacked: group the copies into spans of the song.
+/** Stacked copies grouped into spans of the song: one issue per run of clips that are stacked the same number of times. */
+function stackedIssues(p: Project): SongIssue[] {
   const copies = stackedCopies(p);
-  if (copies.length) {
-    const clips = p.playlist.clips;
-    const spans: { from: Tick; to: Tick; times: number; lanes: Set<LaneId> }[] = [];
-    const perKeep = new Map<ClipId, number>();
-    for (const c of copies) perKeep.set(c.of, (perKeep.get(c.of) ?? 1) + 1);
-    const items = [...perKeep.entries()]
-      .map(([keep, times]) => ({ clip: clips[keep]!, times }))
-      .sort((a, b) => a.clip.start - b.clip.start);
-    for (const { clip, times } of items) {
-      const lanes = new Set<LaneId>([clip.laneId]);
-      for (const c of copies) if (c.of === clip.id) lanes.add(clips[c.clipId]!.laneId);
-      const last = spans[spans.length - 1];
-      if (last && clip.start <= last.to && last.times === times) {
-        last.to = Math.max(last.to, clip.start + clip.length);
-        for (const l of lanes) last.lanes.add(l);
-      } else spans.push({ from: clip.start, to: clip.start + clip.length, times, lanes });
-    }
-    const order = new Map(p.playlist.laneOrder.map((id, i) => [id, i]));
-    for (const s of spans)
-      issues.push({
-        kind: 'stacked',
-        from: s.from,
-        to: s.to,
-        times: s.times,
-        lanes: [...s.lanes].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
-      });
+  if (!copies.length) return [];
+  const clips = p.playlist.clips;
+  const spans: { from: Tick; to: Tick; times: number; lanes: Set<LaneId> }[] = [];
+  const perKeep = new Map<ClipId, number>();
+  for (const c of copies) perKeep.set(c.of, (perKeep.get(c.of) ?? 1) + 1);
+  const items = [...perKeep.entries()]
+    .map(([keep, times]) => ({ clip: clips[keep]!, times }))
+    .sort((a, b) => a.clip.start - b.clip.start);
+  for (const { clip, times } of items) {
+    const lanes = new Set<LaneId>([clip.laneId]);
+    for (const c of copies) if (c.of === clip.id) lanes.add(clips[c.clipId]!.laneId);
+    const last = spans[spans.length - 1];
+    if (last && clip.start <= last.to && last.times === times) {
+      last.to = Math.max(last.to, clip.start + clip.length);
+      for (const l of lanes) last.lanes.add(l);
+    } else spans.push({ from: clip.start, to: clip.start + clip.length, times, lanes });
   }
-  // Doubled: same pattern overlapping itself in time, not an exact copy.
+  const order = new Map(p.playlist.laneOrder.map((id, i) => [id, i]));
+  return spans.map((s) => ({
+    kind: 'stacked',
+    from: s.from,
+    to: s.to,
+    times: s.times,
+    lanes: [...s.lanes].sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)),
+  }));
+}
+
+/** Doubled: the same pattern overlapping itself in time, not an exact copy. */
+function doubledIssues(p: Project): SongIssue[] {
+  const issues: SongIssue[] = [];
   const byPattern = new Map<PatternId, PatternClip[]>();
   for (const c of Object.values(p.playlist.clips)) {
     if (c.kind !== 'pattern' || c.muted) continue;
@@ -205,26 +205,58 @@ export function songCheck(p: Project): SongIssue[] {
     list.push(c);
     byPattern.set(c.patternId, list);
   }
-  for (const [pid, list] of byPattern) {
+  for (const [patternId, list] of byPattern) {
     list.sort(byStart);
-    for (let i = 0; i < list.length; i++)
+    for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length && list[j]!.start < list[i]!.start + list[i]!.length; j++) {
         const a = list[i]!;
         const b = list[j]!;
         if (a.start === b.start && a.length === b.length && a.offset === b.offset) continue;
-        issues.push({ kind: 'doubled', patternId: pid, from: b.start, to: Math.min(a.start + a.length, b.start + b.length) });
+        issues.push({
+          kind: 'doubled',
+          patternId,
+          from: b.start,
+          to: Math.min(a.start + a.length, b.start + b.length),
+        });
       }
+    }
   }
-  // Repeats: more than 4 identical clips back to back.
-  for (const laneId of p.playlist.laneOrder)
-    for (const r of laneRuns(p, laneId))
-      if (r.kind === 'pattern' && r.count > 4)
-        issues.push({ kind: 'repeats', laneId, patternId: r.source as PatternId, from: r.from, to: r.to, count: r.count });
-  // Unnamed tracks.
+  return issues;
+}
+
+/** A pattern clip back to back more than this many times is a repeat worth varying. */
+const MAX_PLAIN_REPEATS = 4;
+
+/** Repeats: more than 4 identical clips back to back. */
+function repeatIssues(p: Project): SongIssue[] {
+  const issues: SongIssue[] = [];
+  for (const laneId of p.playlist.laneOrder) {
+    for (const r of laneRuns(p, laneId)) {
+      if (r.kind !== 'pattern' || r.count <= MAX_PLAIN_REPEATS) continue;
+      issues.push({
+        kind: 'repeats',
+        laneId,
+        patternId: r.source as PatternId,
+        from: r.from,
+        to: r.to,
+        count: r.count,
+      });
+    }
+  }
+  return issues;
+}
+
+/** One issue when tracks that hold clips still have their default "Track N" name. */
+function unnamedLaneIssues(p: Project): SongIssue[] {
   const used = new Set(Object.values(p.playlist.clips).map((c) => c.laneId));
-  const unnamed = p.playlist.laneOrder.filter((id) => used.has(id) && DEFAULT_LANE_NAME.test(p.playlist.lanes[id]?.name ?? '')).length;
-  if (unnamed) issues.push({ kind: 'unnamedLanes', count: unnamed });
-  // Automation channels that are the same curve on the same control.
+  const unnamed = p.playlist.laneOrder.filter(
+    (id) => used.has(id) && DEFAULT_LANE_NAME.test(p.playlist.lanes[id]?.name ?? ''),
+  ).length;
+  return unnamed ? [{ kind: 'unnamedLanes', count: unnamed }] : [];
+}
+
+/** Automation channels that are the same curve on the same control. */
+function duplicateAutomationIssues(p: Project): SongIssue[] {
   const seen = new Map<string, { name: string; count: number }>();
   for (const ch of Object.values(p.channels)) {
     if (ch.kind !== 'automation') continue;
@@ -233,8 +265,20 @@ export function songCheck(p: Project): SongIssue[] {
     s.count++;
     seen.set(key, s);
   }
-  for (const s of seen.values()) if (s.count > 1) issues.push({ kind: 'duplicateAutomation', name: s.name, count: s.count });
-  return issues;
+  return [...seen.values()]
+    .filter((s) => s.count > 1)
+    .map((s): SongIssue => ({ kind: 'duplicateAutomation', name: s.name, count: s.count }));
+}
+
+/** Things in the arrangement that make it sound worse or are hard to work with. */
+export function songCheck(p: Project): SongIssue[] {
+  return [
+    ...stackedIssues(p),
+    ...doubledIssues(p),
+    ...repeatIssues(p),
+    ...unnamedLaneIssues(p),
+    ...duplicateAutomationIssues(p),
+  ];
 }
 
 /** Identifies an automation channel's target and curve (equal keys = interchangeable channels). */

@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`beat generator characterization > reads prompts the same way 1`] = `
+"dark trap 808s at 140 in F minor: {"density":0,"wants808":true,"wantsMelody":false,"noHats":false,"drumsOnly":false,"bpm":140,"style":"trap","key":{"root":5,"minor":true}}
+make it busier, 90s hip hop: {"density":1,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false,"style":"boombap"}
+lofi in Bb major: {"density":0,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false,"style":"lofi","key":{"root":10,"minor":false}}
+in c#: {"density":0,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false,"key":{"root":0,"minor":true}}
+play in a flat minor at 75 beats per minute: {"density":0,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false,"bpm":75,"key":{"root":8,"minor":true}}
+drums only please, no hi-hats: {"density":0,"wants808":false,"wantsMelody":false,"noHats":true,"drumsOnly":true}
+something simple and calm: {"density":-1,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false}
+e minor: {"density":0,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false,"key":{"root":4,"minor":true}}
+a: {"density":0,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false}
+at 300: {"density":0,"wants808":false,"wantsMelody":false,"noHats":false,"drumsOnly":false}
+merged: in D minor, no hats now make it drill at 150 bpm
+merged same style: trap in D minor busier please
+"
+`;

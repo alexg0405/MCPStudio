@@ -1,0 +1,146 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`pitch notes characterization > analyzes synthetic voices the same way 1`] = `
+"44100 Hz hum 0 repair true: [{"from":0.708,"to":1.595,"pitch":55.0003,"drift":0.183,"vibratoDepth":0,"vibratoRate":0}] hop 0.005011337868480726
+44100 Hz hum 0 repair false: [{"from":0.708,"to":1.595,"pitch":55.0003,"drift":0.183,"vibratoDepth":0,"vibratoRate":0}] hop 0.005011337868480726
+44100 Hz hum 1 repair true: [{"from":0.708,"to":0.7882,"pitch":51.0141,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.7882,"to":1.6,"pitch":56.9693,"drift":806.832,"vibratoDepth":0,"vibratoRate":0}] hop 0.005011337868480726
+44100 Hz hum 1 repair false: [{"from":0.708,"to":0.7882,"pitch":51.0141,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.7882,"to":1.6,"pitch":56.9693,"drift":806.832,"vibratoDepth":0,"vibratoRate":0}] hop 0.005011337868480726
+44100 Hz hum 2 repair true: [{"from":0.708,"to":1.1941,"pitch":47.8912,"drift":0.0545,"vibratoDepth":0,"vibratoRate":0},{"from":1.1941,"to":1.6952,"pitch":52.0207,"drift":17.624,"vibratoDepth":0,"vibratoRate":0},{"from":1.6952,"to":2.0861,"pitch":45.0007,"drift":26.2203,"vibratoDepth":0,"vibratoRate":0}] hop 0.005011337868480726
+44100 Hz hum 2 repair false: [{"from":0.708,"to":1.1941,"pitch":47.8912,"drift":0.0545,"vibratoDepth":0,"vibratoRate":0},{"from":1.1941,"to":1.6952,"pitch":52.0207,"drift":17.624,"vibratoDepth":0,"vibratoRate":0},{"from":1.6952,"to":2.0861,"pitch":45.0007,"drift":26.2203,"vibratoDepth":0,"vibratoRate":0}] hop 0.005011337868480726
+22050 Hz hum 0 repair true: [{"from":0.707,"to":1.595,"pitch":55.0025,"drift":0.203,"vibratoDepth":0,"vibratoRate":0}] hop 0.004988662131519274
+22050 Hz hum 0 repair false: [{"from":0.707,"to":1.595,"pitch":55.0025,"drift":0.203,"vibratoDepth":0,"vibratoRate":0}] hop 0.004988662131519274
+22050 Hz hum 1 repair true: [{"from":0.707,"to":0.7918,"pitch":51.0536,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.7918,"to":1.6,"pitch":56.9902,"drift":803.0241,"vibratoDepth":0,"vibratoRate":0}] hop 0.004988662131519274
+22050 Hz hum 1 repair false: [{"from":0.707,"to":0.7918,"pitch":51.0536,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.7918,"to":1.6,"pitch":56.9902,"drift":803.0241,"vibratoDepth":0,"vibratoRate":0}] hop 0.004988662131519274
+22050 Hz hum 2 repair true: [{"from":0.707,"to":1.1959,"pitch":47.8916,"drift":0.2942,"vibratoDepth":0,"vibratoRate":0},{"from":1.1959,"to":1.6948,"pitch":52.0183,"drift":12.9849,"vibratoDepth":0,"vibratoRate":0},{"from":1.6948,"to":2.0889,"pitch":45.0007,"drift":20.0681,"vibratoDepth":0,"vibratoRate":0}] hop 0.004988662131519274
+22050 Hz hum 2 repair false: [{"from":0.707,"to":1.1959,"pitch":47.8916,"drift":0.2942,"vibratoDepth":0,"vibratoRate":0},{"from":1.1959,"to":1.6948,"pitch":52.0183,"drift":12.9849,"vibratoDepth":0,"vibratoRate":0},{"from":1.6948,"to":2.0889,"pitch":45.0007,"drift":20.0681,"vibratoDepth":0,"vibratoRate":0}] hop 0.004988662131519274
+"
+`;
+
+exports[`pitch notes characterization > cleans, segments and measures the same way 1`] = `
+"#1 clean: b8d8cbe436b2
+#1 conf: 0d784ae7de14
+#1 notes: [{"from":0.1125,"to":0.4425,"pitch":57.0074,"drift":37.4378,"vibratoDepth":0,"vibratoRate":0},{"from":0.4425,"to":0.6875,"pitch":54.0149,"drift":34.5985,"vibratoDepth":0,"vibratoRate":0},{"from":0.6875,"to":0.9225,"pitch":56.0009,"drift":19.2283,"vibratoDepth":0,"vibratoRate":0},{"from":0.9225,"to":1.4625,"pitch":58.9938,"drift":18.6067,"vibratoDepth":0,"vibratoRate":0},{"from":1.4625,"to":1.8475,"pitch":60.9918,"drift":15.9727,"vibratoDepth":0,"vibratoRate":0},{"from":1.8475,"to":2.1175,"pitch":65.0608,"drift":45.7303,"vibratoDepth":0,"vibratoRate":0}]
+#1 stats: {"pitch":58.9892,"drift":1091.2204,"vibratoDepth":0,"vibratoRate":0}
+#1 slow: 70a7e9667a98
+#2 clean: 83cf04501331
+#2 conf: 2901a78da92a
+#2 notes: [{"from":0.0975,"to":0.3275,"pitch":61.0112,"drift":10.3108,"vibratoDepth":0,"vibratoRate":0},{"from":0.3275,"to":0.7275,"pitch":64.0022,"drift":6.843,"vibratoDepth":0,"vibratoRate":0},{"from":0.7275,"to":1.4325,"pitch":66.0034,"drift":3.3783,"vibratoDepth":0,"vibratoRate":0},{"from":1.4325,"to":1.6475,"pitch":66.996,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#2 stats: {"pitch":65.9765,"drift":595.4271,"vibratoDepth":0,"vibratoRate":0}
+#2 slow: c03d5d387da3
+#3 clean: fa95895560a5
+#3 conf: 5f1446452054
+#3 notes: [{"from":0.0975,"to":0.4325,"pitch":58.0062,"drift":4.3535,"vibratoDepth":0,"vibratoRate":0},{"from":0.4325,"to":0.8925,"pitch":58.997,"drift":1.848,"vibratoDepth":0,"vibratoRate":0},{"from":0.9375,"to":1.0325,"pitch":57.439,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.0325,"to":1.3675,"pitch":56.9324,"drift":6.0474,"vibratoDepth":0,"vibratoRate":0},{"from":1.3675,"to":1.6975,"pitch":53.0219,"drift":45.0342,"vibratoDepth":0,"vibratoRate":0},{"from":1.6975,"to":1.7625,"pitch":53.6643,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7625,"to":1.8625,"pitch":52.5054,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8625,"to":1.9775,"pitch":53.4414,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#3 stats: {"pitch":57.3766,"drift":602.5043,"vibratoDepth":144.4528,"vibratoRate":4.3321}
+#3 slow: 759f0d407332
+#4 clean: b00aa67f1ae8
+#4 conf: afc540f87879
+#4 notes: [{"from":0.0975,"to":0.3025,"pitch":63.0388,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.3025,"to":0.5925,"pitch":64.0331,"drift":11.5284,"vibratoDepth":0,"vibratoRate":0},{"from":0.5925,"to":0.6775,"pitch":66.4909,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.6775,"to":0.7675,"pitch":65.5464,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.7675,"to":0.8625,"pitch":66.4651,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.8625,"to":0.9525,"pitch":65.4724,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9525,"to":1.1125,"pitch":62.8679,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1125,"to":1.2025,"pitch":63.4749,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2025,"to":1.3275,"pitch":62.6421,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3675,"to":1.4975,"pitch":64.9659,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4975,"to":1.7975,"pitch":63.0085,"drift":20.6058,"vibratoDepth":0,"vibratoRate":0}]
+#4 stats: {"pitch":63.6109,"drift":316.1866,"vibratoDepth":140.6813,"vibratoRate":6.4103}
+#4 slow: 177c16de9d35
+#5 clean: e3bfb06f9db7
+#5 conf: 8784d7e294ac
+#5 notes: [{"from":0.0975,"to":0.1925,"pitch":63.1972,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.1925,"to":0.2925,"pitch":62.6091,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.2925,"to":0.3925,"pitch":64.2514,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.3925,"to":0.4775,"pitch":63.5261,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.4775,"to":0.5925,"pitch":64.3416,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.6325,"to":0.8225,"pitch":62.0617,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.8225,"to":1.2275,"pitch":63.9914,"drift":33.7451,"vibratoDepth":0,"vibratoRate":0},{"from":1.2625,"to":1.4525,"pitch":66.9818,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4525,"to":1.9575,"pitch":68.0676,"drift":4.5353,"vibratoDepth":100.4575,"vibratoRate":5.5556}]
+#5 stats: {"pitch":64.0278,"drift":601.5847,"vibratoDepth":120.1166,"vibratoRate":4.9342}
+#5 slow: 872932cd8d6c
+#6 clean: 8b4e0901ea10
+#6 conf: 7843047f4a34
+#6 notes: [{"from":0.1025,"to":0.5125,"pitch":55.9916,"drift":0.6229,"vibratoDepth":0,"vibratoRate":0},{"from":0.5125,"to":0.9725,"pitch":54.1011,"drift":7.2348,"vibratoDepth":61.3872,"vibratoRate":5.4054},{"from":0.9725,"to":1.1625,"pitch":56.0002,"drift":0,"vibratoDepth":30.5426,"vibratoRate":5.5556},{"from":1.1625,"to":1.4325,"pitch":57.9901,"drift":12.0889,"vibratoDepth":0,"vibratoRate":0},{"from":1.4325,"to":1.6075,"pitch":55.0085,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6475,"to":1.7525,"pitch":51.4613,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7525,"to":1.8375,"pitch":50.5688,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8375,"to":1.9425,"pitch":51.3461,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#6 stats: {"pitch":55.032,"drift":701.311,"vibratoDepth":129.6582,"vibratoRate":4.4}
+#6 slow: 1df82d6e1f74
+#7 clean: 70c67384657f
+#7 conf: a19ef00a98e3
+#7 notes: [{"from":0.1075,"to":0.6375,"pitch":51.0031,"drift":15.0423,"vibratoDepth":0,"vibratoRate":0},{"from":0.6375,"to":0.7275,"pitch":53.4409,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.7275,"to":0.8125,"pitch":52.5288,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.8125,"to":0.9025,"pitch":53.4764,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9025,"to":1.0475,"pitch":52.7495,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.0475,"to":1.2275,"pitch":48.9569,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2275,"to":1.5225,"pitch":51.9944,"drift":38.8448,"vibratoDepth":0,"vibratoRate":0},{"from":1.5225,"to":1.6025,"pitch":55.6337,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6025,"to":1.6975,"pitch":54.4628,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6975,"to":1.8425,"pitch":55.3278,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8425,"to":2.0625,"pitch":56.995,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#7 stats: {"pitch":52.0395,"drift":770.9105,"vibratoDepth":211.4606,"vibratoRate":4.9587}
+#7 slow: f8e8dfa52c66
+#8 clean: dd1cb6168d9d
+#8 conf: c86bdadbdda1
+#8 notes: [{"from":0.0975,"to":0.3475,"pitch":56.9938,"drift":13.2829,"vibratoDepth":0,"vibratoRate":0},{"from":0.3475,"to":0.5475,"pitch":58.9901,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.5475,"to":0.9775,"pitch":60.1486,"drift":3.5575,"vibratoDepth":0,"vibratoRate":0},{"from":0.9775,"to":1.1525,"pitch":55.9961,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1525,"to":1.2425,"pitch":56.5092,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2425,"to":1.3375,"pitch":55.5138,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3375,"to":1.4275,"pitch":56.4891,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4275,"to":1.8375,"pitch":57.9904,"drift":5.4671,"vibratoDepth":0,"vibratoRate":0}]
+#8 stats: {"pitch":57.9899,"drift":403.9824,"vibratoDepth":137.6838,"vibratoRate":5.5046}
+#8 slow: 31e305b071c2
+#9 clean: 824a4dc59317
+#9 conf: c1375e6c9358
+#9 notes: [{"from":0.0975,"to":0.2675,"pitch":59.0027,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.2675,"to":0.9825,"pitch":60.1512,"drift":29.5366,"vibratoDepth":105.5104,"vibratoRate":5.814},{"from":0.9825,"to":1.0625,"pitch":59.4446,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.0625,"to":1.1825,"pitch":60.4,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1825,"to":1.2675,"pitch":64.178,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2675,"to":1.3525,"pitch":63.4653,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3525,"to":1.4425,"pitch":64.4698,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4425,"to":1.5375,"pitch":63.5015,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.5375,"to":2.0325,"pitch":65.9888,"drift":57.8912,"vibratoDepth":0,"vibratoRate":0}]
+#9 stats: {"pitch":60.5315,"drift":660.7192,"vibratoDepth":131.462,"vibratoRate":6.1151}
+#9 slow: c3e498d16183
+#10 clean: cc99bd7a4bac
+#10 conf: cac89102ff15
+#10 notes: [{"from":0.0975,"to":0.5125,"pitch":62.9259,"drift":36.2606,"vibratoDepth":99.6924,"vibratoRate":5.7143},{"from":0.5125,"to":1.0325,"pitch":60.0522,"drift":4.2156,"vibratoDepth":90.3864,"vibratoRate":5.5556},{"from":1.0325,"to":1.4825,"pitch":63.1142,"drift":4.6378,"vibratoDepth":0,"vibratoRate":0},{"from":1.5275,"to":1.6575,"pitch":60.0241,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6575,"to":1.8775,"pitch":63.8919,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8775,"to":2.0275,"pitch":64.8913,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#10 stats: {"pitch":62.7046,"drift":465.4975,"vibratoDepth":254.0854,"vibratoRate":5.2147}
+#10 slow: d71a213065d1
+#11 clean: d35f0bf57c31
+#11 conf: 3931b6fe0eac
+#11 notes: [{"from":0.0975,"to":0.4825,"pitch":60.0062,"drift":1.0789,"vibratoDepth":0,"vibratoRate":0},{"from":0.4825,"to":0.5625,"pitch":61.3164,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.5625,"to":0.6475,"pitch":60.4764,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.6475,"to":0.8225,"pitch":57.9949,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.8525,"to":1.4925,"pitch":61.0132,"drift":18.888,"vibratoDepth":92.6317,"vibratoRate":5.6604},{"from":1.5325,"to":1.7375,"pitch":59.0101,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#11 stats: {"pitch":60.4811,"drift":263.7449,"vibratoDepth":172.0812,"vibratoRate":4.4554}
+#11 slow: d6d96ee8e83a
+#12 clean: 91573a2e4f4a
+#12 conf: 12430aa9d86e
+#12 notes: [{"from":0.1225,"to":0.6825,"pitch":53.7372,"drift":110.3438,"vibratoDepth":62.0586,"vibratoRate":9.434},{"from":0.6825,"to":1.0475,"pitch":56.0004,"drift":3.8479,"vibratoDepth":0,"vibratoRate":0},{"from":1.0475,"to":1.7725,"pitch":53.002,"drift":12.8952,"vibratoDepth":0,"vibratoRate":0},{"from":1.7725,"to":2.2225,"pitch":51.1501,"drift":5.3118,"vibratoDepth":0,"vibratoRate":0}]
+#12 stats: {"pitch":53.0304,"drift":502.4919,"vibratoDepth":0,"vibratoRate":0}
+#12 slow: f7f88e5354ad
+#13 clean: 4eb615bf5cf9
+#13 conf: b05357a09e96
+#13 notes: [{"from":0.0975,"to":0.2425,"pitch":59.1395,"drift":0,"vibratoDepth":36.2069,"vibratoRate":9.0909},{"from":0.2425,"to":0.3775,"pitch":60.9832,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.3775,"to":0.5275,"pitch":61.9889,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.5675,"to":0.9975,"pitch":62.1007,"drift":4.1593,"vibratoDepth":0,"vibratoRate":0},{"from":1.0275,"to":1.4875,"pitch":61.0986,"drift":12.7153,"vibratoDepth":59.6498,"vibratoRate":5.7143},{"from":1.4875,"to":1.5825,"pitch":58.318,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#13 stats: {"pitch":61.2841,"drift":279.2212,"vibratoDepth":142.0741,"vibratoRate":5.6277}
+#13 slow: b6672423abf4
+#14 clean: 89617feed235
+#14 conf: 6315387be3c6
+#14 notes: [{"from":0.0975,"to":0.4275,"pitch":58.1159,"drift":9.4983,"vibratoDepth":0,"vibratoRate":0},{"from":0.4275,"to":0.8175,"pitch":60.0026,"drift":17.5886,"vibratoDepth":0,"vibratoRate":0},{"from":0.8175,"to":0.9075,"pitch":56.5275,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9075,"to":1.0025,"pitch":55.5597,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.0025,"to":1.1075,"pitch":56.3717,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1075,"to":1.1825,"pitch":57.641,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1825,"to":1.2725,"pitch":56.4683,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2725,"to":1.3625,"pitch":57.5591,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3625,"to":1.4575,"pitch":56.4285,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4575,"to":1.5625,"pitch":57.4644,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6025,"to":1.6975,"pitch":59.421,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6975,"to":1.7875,"pitch":58.4971,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7875,"to":1.8775,"pitch":59.4532,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8775,"to":1.9675,"pitch":58.5042,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.9675,"to":2.0425,"pitch":59.5718,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#14 stats: {"pitch":58.3217,"drift":405.7234,"vibratoDepth":171.7146,"vibratoRate":5.4662}
+#14 slow: 1d85f102975d
+#15 clean: f4d0cf3c91b9
+#15 conf: d6461cd47960
+#15 notes: [{"from":0.0975,"to":0.1875,"pitch":56.5884,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.1875,"to":0.2825,"pitch":55.6052,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.2825,"to":0.3925,"pitch":56.3613,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.3925,"to":0.6475,"pitch":54.0026,"drift":14.4827,"vibratoDepth":0,"vibratoRate":0},{"from":0.6475,"to":1.0675,"pitch":57.9922,"drift":35.2334,"vibratoDepth":0,"vibratoRate":0},{"from":1.0675,"to":1.5075,"pitch":56.9968,"drift":13.2653,"vibratoDepth":0,"vibratoRate":0},{"from":1.5075,"to":1.6025,"pitch":55.4721,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6025,"to":1.6975,"pitch":56.5222,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6975,"to":1.7375,"pitch":55.6388,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7675,"to":1.9625,"pitch":56.996,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#15 stats: {"pitch":56.7841,"drift":399.922,"vibratoDepth":0,"vibratoRate":0}
+#15 slow: 168d6b34647b
+#16 clean: 794d9349f580
+#16 conf: 30d6333b0472
+#16 notes: [{"from":0.0975,"to":0.5625,"pitch":58.0625,"drift":17.2121,"vibratoDepth":62.9032,"vibratoRate":5.5556},{"from":0.5625,"to":0.8225,"pitch":57.0038,"drift":4.0859,"vibratoDepth":0,"vibratoRate":0},{"from":0.8225,"to":0.9375,"pitch":58.9871,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9375,"to":1.4575,"pitch":63.0018,"drift":37.9583,"vibratoDepth":59.4287,"vibratoRate":6.8182},{"from":1.4575,"to":1.5475,"pitch":61.4949,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.5475,"to":1.6375,"pitch":60.4932,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6375,"to":1.7275,"pitch":61.4787,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7275,"to":1.8175,"pitch":60.5008,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8175,"to":1.9125,"pitch":61.4858,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.9125,"to":1.9875,"pitch":60.4528,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#16 stats: {"pitch":60.3987,"drift":608.5386,"vibratoDepth":132.724,"vibratoRate":4.5752}
+#16 slow: 36e88acc6ae6
+#17 clean: b590c0ed01fa
+#17 conf: aa35b29ee8e3
+#17 notes: [{"from":0.0975,"to":0.1925,"pitch":59.5261,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.1925,"to":0.2725,"pitch":58.4795,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.2725,"to":0.3725,"pitch":59.4441,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.3725,"to":0.4325,"pitch":58.4244,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.4525,"to":0.9675,"pitch":59.0342,"drift":3.5495,"vibratoDepth":76.0437,"vibratoRate":5.5556},{"from":1.0175,"to":1.3475,"pitch":55.0783,"drift":38.4584,"vibratoDepth":0,"vibratoRate":0},{"from":1.3475,"to":1.5325,"pitch":58.991,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.5325,"to":1.6175,"pitch":62.4485,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6175,"to":1.6975,"pitch":61.5288,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7125,"to":1.8925,"pitch":64.9961,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#17 stats: {"pitch":59.0144,"drift":963.501,"vibratoDepth":224.8155,"vibratoRate":5.2045}
+#17 slow: cda204dc154a
+#18 clean: 045a1e7425e0
+#18 conf: 07ec60b25889
+#18 notes: [{"from":0.0975,"to":0.4525,"pitch":59.0056,"drift":1.5442,"vibratoDepth":0,"vibratoRate":0},{"from":0.4525,"to":0.6425,"pitch":55.9754,"drift":0,"vibratoDepth":59.6432,"vibratoRate":6.8966},{"from":0.6425,"to":0.7825,"pitch":54.8187,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.8275,"to":1.3625,"pitch":53.009,"drift":20.6838,"vibratoDepth":0,"vibratoRate":0},{"from":1.3625,"to":1.4725,"pitch":50.3222,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4725,"to":1.7725,"pitch":53.0097,"drift":0.6723,"vibratoDepth":0,"vibratoRate":0}]
+#18 stats: {"pitch":53.0325,"drift":748.2651,"vibratoDepth":0,"vibratoRate":0}
+#18 slow: 9f2bf5d3e659
+#19 clean: b3540bec312c
+#19 conf: 2c75a99e9f89
+#19 notes: [{"from":0.0975,"to":1.0525,"pitch":53.9993,"drift":23.6994,"vibratoDepth":0,"vibratoRate":0},{"from":1.0525,"to":1.1525,"pitch":52.6367,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1525,"to":1.2425,"pitch":53.4098,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2425,"to":1.3625,"pitch":52.6773,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4075,"to":1.5825,"pitch":50.0113,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.5825,"to":1.6675,"pitch":52.1634,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6675,"to":1.7525,"pitch":51.502,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7525,"to":1.8425,"pitch":52.4702,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8425,"to":2.2725,"pitch":51.9019,"drift":10.9572,"vibratoDepth":0,"vibratoRate":0}]
+#19 stats: {"pitch":53.007,"drift":363.5681,"vibratoDepth":118.9161,"vibratoRate":6.1404}
+#19 slow: e953aa50ded0
+#20 clean: 9c9869b159a3
+#20 conf: 3647ab221f76
+#20 notes: [{"from":0.0975,"to":0.4625,"pitch":61.0285,"drift":4.2648,"vibratoDepth":0,"vibratoRate":0},{"from":0.5075,"to":0.7675,"pitch":63.9928,"drift":17.3881,"vibratoDepth":0,"vibratoRate":0},{"from":0.8025,"to":0.9025,"pitch":63.4552,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9025,"to":0.9875,"pitch":62.5576,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9875,"to":1.0825,"pitch":63.3949,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.0825,"to":1.1725,"pitch":62.5699,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.1725,"to":1.2625,"pitch":63.4222,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2625,"to":1.5075,"pitch":62.2244,"drift":35.276,"vibratoDepth":0,"vibratoRate":0},{"from":1.5075,"to":1.7225,"pitch":57.9777,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7225,"to":1.8275,"pitch":56.5264,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.8275,"to":1.9175,"pitch":57.5165,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.9175,"to":2.0125,"pitch":56.4622,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":2.0125,"to":2.0875,"pitch":57.5996,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#20 stats: {"pitch":61.6806,"drift":702.7208,"vibratoDepth":130.9952,"vibratoRate":5.5738}
+#20 slow: 90369b168c47
+#21 clean: 2f1b55bc4938
+#21 conf: 4163939bdb68
+#21 notes: [{"from":0.0975,"to":0.1925,"pitch":59.5014,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.1925,"to":0.2775,"pitch":58.4335,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.2775,"to":0.3375,"pitch":59.3853,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.3375,"to":0.7025,"pitch":62.8497,"drift":34.2595,"vibratoDepth":109.5109,"vibratoRate":5.7143},{"from":0.7475,"to":1.1475,"pitch":61.0202,"drift":23.9479,"vibratoDepth":0,"vibratoRate":0},{"from":1.1475,"to":1.2275,"pitch":60.437,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2275,"to":1.3175,"pitch":61.5091,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3175,"to":1.4425,"pitch":60.659,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4425,"to":1.6575,"pitch":61.9982,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6875,"to":2.1575,"pitch":59.0024,"drift":30.5243,"vibratoDepth":0,"vibratoRate":0}]
+#21 stats: {"pitch":60.9923,"drift":402.7021,"vibratoDepth":132.119,"vibratoRate":5.0388}
+#21 slow: 1d30a67e8b0e
+#22 clean: b877331812fe
+#22 conf: 13e33cbd4797
+#22 notes: [{"from":0.0975,"to":0.1875,"pitch":59.5792,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.1875,"to":0.2775,"pitch":58.4514,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.2775,"to":0.6275,"pitch":60.9176,"drift":35.2999,"vibratoDepth":0,"vibratoRate":0},{"from":0.6275,"to":0.8225,"pitch":59.0185,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.8225,"to":0.9325,"pitch":55.9999,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":0.9675,"to":1.3225,"pitch":54.9998,"drift":3.1743,"vibratoDepth":0,"vibratoRate":0},{"from":1.3225,"to":1.7975,"pitch":56.0665,"drift":37.643,"vibratoDepth":91.5648,"vibratoRate":5.5556}]
+#22 stats: {"pitch":56.4201,"drift":601.3669,"vibratoDepth":151.7143,"vibratoRate":4.5283}
+#22 slow: 11c3e3adbea4
+#23 clean: 8e7e4b29aa0a
+#23 conf: 950c792bbcd5
+#23 notes: [{"from":0.0975,"to":0.4775,"pitch":52.0047,"drift":10.4192,"vibratoDepth":0,"vibratoRate":0},{"from":0.5175,"to":0.8775,"pitch":51.9964,"drift":7.066,"vibratoDepth":0,"vibratoRate":0},{"from":0.8775,"to":1.1225,"pitch":47.0352,"drift":137.717,"vibratoDepth":0,"vibratoRate":0},{"from":1.1625,"to":1.2475,"pitch":49.4719,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.2475,"to":1.3425,"pitch":48.4933,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3425,"to":1.3825,"pitch":49.3647,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4225,"to":1.9675,"pitch":48.009,"drift":6.9128,"vibratoDepth":88.6404,"vibratoRate":5.5556}]
+#23 stats: {"pitch":49.4845,"drift":495.7835,"vibratoDepth":112.6124,"vibratoRate":5.0847}
+#23 slow: 415b8261ca03
+#24 clean: 165fcf940cc1
+#24 conf: 21bd11ea7d21
+#24 notes: [{"from":0.0975,"to":0.3275,"pitch":62.0071,"drift":11.6249,"vibratoDepth":0,"vibratoRate":0},{"from":0.3275,"to":0.7775,"pitch":58.9937,"drift":2.9781,"vibratoDepth":0,"vibratoRate":0},{"from":0.7775,"to":1.3075,"pitch":58.0053,"drift":1.3596,"vibratoDepth":0,"vibratoRate":0},{"from":1.3075,"to":1.3925,"pitch":59.3837,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3925,"to":1.4875,"pitch":58.6258,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.4875,"to":1.5775,"pitch":59.3793,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.5775,"to":1.6675,"pitch":58.5654,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6675,"to":1.7225,"pitch":59.5202,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.7625,"to":1.9775,"pitch":60.8619,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.9775,"to":2.5325,"pitch":64.9973,"drift":19.1028,"vibratoDepth":0,"vibratoRate":0}]
+#24 stats: {"pitch":59.0904,"drift":700.4378,"vibratoDepth":0,"vibratoRate":0}
+#24 slow: 9828bf673866
+#25 clean: 8f284e6b03ad
+#25 conf: f5fa15e5fbad
+#25 notes: [{"from":0.0975,"to":0.7075,"pitch":62.9941,"drift":23.9321,"vibratoDepth":63.5923,"vibratoRate":6.1224},{"from":0.7075,"to":1.2425,"pitch":62.0004,"drift":0.6707,"vibratoDepth":0,"vibratoRate":0},{"from":1.2425,"to":1.3775,"pitch":58.3412,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.3775,"to":1.5975,"pitch":58.9957,"drift":0,"vibratoDepth":80.1538,"vibratoRate":6.8966},{"from":1.5975,"to":1.6825,"pitch":60.3316,"drift":0,"vibratoDepth":0,"vibratoRate":0},{"from":1.6825,"to":1.7275,"pitch":59.557,"drift":0,"vibratoDepth":0,"vibratoRate":0}]
+#25 stats: {"pitch":62.0055,"drift":435.7322,"vibratoDepth":0,"vibratoRate":0}
+#25 slow: 656e2a75f4bd
+"
+`;

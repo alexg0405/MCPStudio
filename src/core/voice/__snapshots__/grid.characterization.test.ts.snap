@@ -1,0 +1,37 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`step grid characterization > estimates the same tempo for every groove 1`] = `
+"70 bpm, ±0 ms: 69.9 (range 60–200: 69.9)
+70 bpm, ±12 ms: 140.1 (range 60–200: 140.1)
+70 bpm, ±30 ms: 70 (range 60–200: 70)
+84 bpm, ±0 ms: 168.2 (range 60–200: 168.2)
+84 bpm, ±12 ms: 168.6 (range 60–200: 168.6)
+84 bpm, ±30 ms: 84.3 (range 60–200: 84.3)
+90 bpm, ±0 ms: 180 (range 60–200: 180)
+90 bpm, ±12 ms: 89.9 (range 60–200: 89.9)
+90 bpm, ±30 ms: 118.4 (range 60–200: 118.4)
+100 bpm, ±0 ms: 100.1 (range 60–200: 100.1)
+100 bpm, ±12 ms: 100.2 (range 60–200: 100.2)
+100 bpm, ±30 ms: 96.8 (range 60–200: 96.8)
+110 bpm, ±0 ms: 110 (range 60–200: 110)
+110 bpm, ±12 ms: 109.8 (range 60–200: 109.8)
+110 bpm, ±30 ms: 116.4 (range 60–200: 116.4)
+120 bpm, ±0 ms: 119.6 (range 60–200: 119.6)
+120 bpm, ±12 ms: 119.9 (range 60–200: 119.9)
+120 bpm, ±30 ms: 147 (range 60–200: 147)
+128 bpm, ±0 ms: 127.7 (range 60–200: 127.7)
+128 bpm, ±12 ms: 127.9 (range 60–200: 127.9)
+128 bpm, ±30 ms: 170.7 (range 60–200: 170.7)
+140 bpm, ±0 ms: 140 (range 60–200: 140)
+140 bpm, ±12 ms: 139.9 (range 60–200: 139.9)
+140 bpm, ±30 ms: 140 (range 60–200: 140)
+150 bpm, ±0 ms: 150 (range 60–200: 150)
+150 bpm, ±12 ms: 149.5 (range 60–200: 149.5)
+150 bpm, ±30 ms: 121.9 (range 60–200: 121.9)
+174 bpm, ±0 ms: 173.6 (range 60–200: 173.6)
+174 bpm, ±12 ms: 174.2 (range 60–200: 174.2)
+174 bpm, ±30 ms: 117.7 (range 60–200: 117.7)
+two events: null
+none: null
+"
+`;

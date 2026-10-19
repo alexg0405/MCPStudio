@@ -1,0 +1,25 @@
+tone x0.5: 28800 frames 39ee58e9fa98
+tone x0.75: 43200 frames ed3112e51ada
+tone x1: 57600 frames 7e17a62948bd
+tone x1.25: 72000 frames b617eb8187d6
+tone x1.6: 92160 frames 573d2ca144f1
+tone x2: 115200 frames b624216d82a9
+clicks x0.6: 69120 frames 26b8a0df298b
+clicks x0.9: 103680 frames 91345de829ba
+clicks x1.3: 149760 frames 9413e09f3ace
+clicks x2.2: 253440 frames 1fa7a17e328a
+clicks, no transient mode x0.6: 69120 frames ce6413d1af53
+clicks, no transient mode x0.9: 103680 frames 36b53b3dfa4b
+clicks, no transient mode x1.3: 149760 frames a9ce423895b8
+clicks, no transient mode x2.2: 253440 frames 70c5ca604112
+noise bursts x0.8: 57600 frames 5d95230399ac
+noise bursts x1.4: 100800 frames 206fa9206889
+stereo x1.15: 132480 frames de72e37ae75b 136af88b68f7
+three channels x0.85: 97920 frames f004c5c4e655 79a02de4e366 27ed8b83b5f1
+empty x1.5: 0 frames e3b0c44298fc
+very short x2: 200 frames 1a0a64e02fd5
+frame 20 ms, tolerance 6 ms x1.2: 138240 frames 158a00308d90
+frame 80 ms, tolerance 25 ms x1.2: 138240 frames f8734eaa9561
+clicks at 44100 x1.35: 107163 frames caa271ace833
+clicks at 22050 x1.35: 53582 frames c9f9e5de970b
+clicks at 16000 x1.35: 38880 frames 7dea4c640ca2

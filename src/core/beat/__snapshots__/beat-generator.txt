@@ -1,0 +1,107 @@
+style trap: 46d298d7f56a0a47 c43c51640d50ad40 | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+style drill: bc7fe885385c8c69 8b8f87c54963535f | Drill beat | 2 bars 46 notes | Kick/Snare/Hat/808 | Made a 2-bar drill pattern (kick, snare, hat, 808).
+style boombap: 0828046aeb1fdbaf 7e65c70ac94d3126 | Boom bap beat | 2 bars 44 notes | Kick/Snare/Hat/Bass | Made a 2-bar boom bap pattern (kick, snare, hat, bass).
+style lofi: b25f36721d81b6be b0257ad1441c615b | Lofi beat | 4 bars 77 notes | Kick/Snare/Hat/Keys/Bass | Made a 4-bar lofi pattern (kick, snare, hat, keys, bass).
+style house: ebcacc6935801702 838aef4826af8145 | House beat | 1 bars 14 notes | Kick/Clap/Hat/Bass | Made a 1-bar house pattern (kick, clap, hat, bass).
+style edm: acea3ba693a42e8c 1b1578fe06571a9e | Edm beat | 4 bars 100 notes | Kick/Clap/Hat/Open hat/Bass/Pad | Made a 4-bar edm pattern (kick, clap, hat, open hat, bass, pad).
+style reggaeton: a538f304ff58cc17 21be5116bbc3dd81 | Reggaeton beat | 1 bars 21 notes | Kick/Snare/Hat/808 | Made a 1-bar reggaeton pattern (kick, snare, hat, 808).
+style afro: 8095d84e78be02f0 05d40a2a53f2f185 | Afro beat | 1 bars 24 notes | Kick/Rim/Hat/Bass | Made a 1-bar afro pattern (kick, rim, hat, bass).
+style pop: 3b370852fb02f5ab 0c2928cc5f46e054 | Pop beat | 4 bars 90 notes | Kick/Clap/Hat/Bass/Keys | Made a 4-bar pop pattern (kick, clap, hat, bass, keys).
+style bigroom: a2cb009e8d4649e5 8a3635b66d1777b3 | Big room beat | 4 bars 120 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Lead | Made a 4-bar big room pattern (kick, clap, hat, open hat, bass, pad, lead).
+style proghouse: 1d9a2905ac95b60a e50d587277189b98 | Progressive house beat | 4 bars 200 notes | Kick/Clap/Hat/Open hat/Bass/Keys/Pluck | Made a 4-bar progressive house pattern (kick, clap, hat, open hat, bass, keys, pluck).
+style futurebass: 92dcaf5415bf3b29 299009aafd99be1a | Future bass beat | 4 bars 112 notes | Kick/Snare/Clap/Hat/Sub/Chords/Lead | Made a 4-bar future bass pattern (kick, snare, clap, hat, sub, chords, lead).
+style dubstep: c276d4761a1a025a 37b7a857c379bffa | Dubstep and riddim beat | 2 bars 31 notes | Kick/Snare/Hat/Sub/Growl | Made a 2-bar dubstep and riddim pattern (kick, snare, hat, sub, growl).
+style melodicdub: 60f76a588559cd41 458c4257224db22a | Melodic dubstep beat | 4 bars 116 notes | Kick/Snare/Clap/Hat/Sub/Chords/Piano/Lead | Made a 4-bar melodic dubstep pattern (kick, snare, clap, hat, sub, chords, piano, lead).
+style techhouse: 6e31576c6f908e01 9c730fd113a8bd22 | Tech house beat | 2 bars 81 notes | Kick/Clap/Hat/Open hat/Rim/Bass/Stab/Vox | Made a 2-bar tech house pattern (kick, clap, hat, open hat, rim, bass, stab, vox).
+style trance: 27c962588d501827 8bf1f012afaeb72e | Trance beat | 4 bars 164 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Arp | Made a 4-bar trance pattern (kick, clap, hat, open hat, bass, pad, arp).
+style dnb: 8c2f4e81da8088e2 4446a4db866461fb | Drum & bass beat | 2 bars 68 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys).
+style trap busy in A minor: b519d78df160fa01 f7c5ab6a7cfda8aa | Trap beat | 2 bars 43 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+style drill busy in A minor: 0ff9af60c13dd472 582293bb7fea34b3 | Drill beat | 2 bars 47 notes | Kick/Snare/Hat/808 | Made a 2-bar drill pattern (kick, snare, hat, 808).
+style boombap busy in A minor: 1439ef1570ccac6e 67cfc940626141a2 | Boom bap beat | 2 bars 67 notes | Kick/Snare/Hat/Bass | Made a 2-bar boom bap pattern (kick, snare, hat, bass).
+style lofi busy in A minor: 84061d668aff7305 0f9801a282511461 | Lofi beat | 4 bars 101 notes | Kick/Snare/Hat/Keys/Bass | Made a 4-bar lofi pattern (kick, snare, hat, keys, bass).
+style house busy in A minor: 1c2efb6705b368dd 9759e106cb3eb73d | House beat | 1 bars 19 notes | Kick/Clap/Hat/Bass | Made a 1-bar house pattern (kick, clap, hat, bass).
+style edm busy in A minor: 8bf66647b8e86156 0ce7d9d276191fd2 | Edm beat | 4 bars 133 notes | Kick/Clap/Hat/Open hat/Bass/Pad | Made a 4-bar edm pattern (kick, clap, hat, open hat, bass, pad).
+style reggaeton busy in A minor: c01daa0c7dc5ee11 c5349014f646ebe1 | Reggaeton beat | 1 bars 31 notes | Kick/Snare/Hat/808 | Made a 1-bar reggaeton pattern (kick, snare, hat, 808).
+style afro busy in A minor: 4d1a857cf09d34ee 6f6de86bb387082b | Afro beat | 1 bars 35 notes | Kick/Rim/Hat/Bass | Made a 1-bar afro pattern (kick, rim, hat, bass).
+style pop busy in A minor: 7481b80e0f86e2e8 dd6e760f0f28ca83 | Pop beat | 4 bars 124 notes | Kick/Clap/Hat/Bass/Keys | Made a 4-bar pop pattern (kick, clap, hat, bass, keys).
+style bigroom busy in A minor: 094620ddd97710e5 7e4ae839fcca87a8 | Big room beat | 4 bars 153 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Lead | Made a 4-bar big room pattern (kick, clap, hat, open hat, bass, pad, lead).
+style proghouse busy in A minor: 35bc5d6f0fb704ee 05e11dc791959ec2 | Progressive house beat | 4 bars 233 notes | Kick/Clap/Hat/Open hat/Bass/Keys/Pluck | Made a 4-bar progressive house pattern (kick, clap, hat, open hat, bass, keys, pluck).
+style futurebass busy in A minor: 7fe6811b85db8136 8dd81737cb964753 | Future bass beat | 4 bars 145 notes | Kick/Snare/Clap/Hat/Sub/Chords/Lead | Made a 4-bar future bass pattern (kick, snare, clap, hat, sub, chords, lead).
+style dubstep busy in A minor: 59c27733c82f1325 6ca236bc1d467b25 | Dubstep and riddim beat | 2 bars 44 notes | Kick/Snare/Hat/Sub/Growl | Made a 2-bar dubstep and riddim pattern (kick, snare, hat, sub, growl).
+style melodicdub busy in A minor: ef34d0257287ed82 e62eb4edbbb73d4b | Melodic dubstep beat | 4 bars 149 notes | Kick/Snare/Clap/Hat/Sub/Chords/Piano/Lead | Made a 4-bar melodic dubstep pattern (kick, snare, clap, hat, sub, chords, piano, lead).
+style techhouse busy in A minor: 8a1ca117d8af4606 5ccbf15541b2c125 | Tech house beat | 2 bars 105 notes | Kick/Clap/Hat/Open hat/Rim/Bass/Stab/Vox | Made a 2-bar tech house pattern (kick, clap, hat, open hat, rim, bass, stab, vox).
+style trance busy in A minor: bf06d770a6873045 5e40305e84e8aa6b | Trance beat | 4 bars 197 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Arp | Made a 4-bar trance pattern (kick, clap, hat, open hat, bass, pad, arp).
+style dnb busy in A minor: 48e8a79a5447aab8 b2ec51bb80b86a02 | Drum & bass beat | 2 bars 87 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys).
+style trap simple, no hats: 64094263fc736dd8 52add9a55c329f28 | Trap beat | 2 bars 17 notes | Kick/Clap/808 | Made a 2-bar trap pattern (kick, clap, 808).
+style trap 808s in C major: a393edb96ee0e87b 6ec7126e9bcd0599 | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+style trap drums only: c77269f93b1ecd6f 56a7a1f5ac53c7c6 | Trap beat | 2 bars 33 notes | Kick/Clap/Hat | Made a 2-bar trap pattern (kick, clap, hat).
+style trap melody: e3e335a60dc093df 67b0e9ecf060198a | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+style boombap simple, no hats: 62fcdef890a60283 b9376062119b42da | Boom bap beat | 2 bars 22 notes | Kick/Snare/Bass | Made a 2-bar boom bap pattern (kick, snare, bass).
+style boombap 808s in C major: cbc696099b9b725d c62bf3f94be15203 | Boom bap beat | 2 bars 45 notes | Kick/Snare/Hat/808 | Made a 2-bar boom bap pattern (kick, snare, hat, 808).
+style boombap drums only: a45d3e228783a320 0e34b778ca65ed3b | Boom bap beat | 2 bars 37 notes | Kick/Snare/Hat | Made a 2-bar boom bap pattern (kick, snare, hat).
+style boombap melody: 0bd7dbdf1b8d3375 90864f95069b90dd | Boom bap beat | 2 bars 44 notes | Kick/Snare/Hat/Bass | Made a 2-bar boom bap pattern (kick, snare, hat, bass).
+style house simple, no hats: 813072ff6829ec4f 53c7377fe437e1a8 | House beat | 1 bars 10 notes | Kick/Clap/Bass | Made a 1-bar house pattern (kick, clap, bass).
+style house 808s in C major: c8d1c07c9fa42191 0ba135ce360813a8 | House beat | 1 bars 15 notes | Kick/Clap/Hat/808 | Made a 1-bar house pattern (kick, clap, hat, 808).
+style house drums only: 02b3fa5079f6aefd c8969df4cf92f207 | House beat | 1 bars 10 notes | Kick/Clap/Hat | Made a 1-bar house pattern (kick, clap, hat).
+style house melody: 7970b43e057fe640 2d90065ed72ef322 | House beat | 1 bars 14 notes | Kick/Clap/Hat/Bass | Made a 1-bar house pattern (kick, clap, hat, bass).
+style dnb simple, no hats: dd36fbbae81643c4 e034aef258967d4b | Drum & bass beat | 2 bars 48 notes | Kick/Snare/Reese/Pad/Keys | Made a 2-bar drum & bass pattern (kick, snare, reese, pad, keys).
+style dnb 808s in C major: 769e286cfe6b6031 f332cdf6de53d511 | Drum & bass beat | 2 bars 68 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys).
+style dnb drums only: 70e6c167a511e5f0 0648e82ab4561d73 | Drum & bass beat | 2 bars 32 notes | Kick/Snare/Hat/Open hat | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat).
+style dnb melody: e6fab118be01a939 6d0aee9bcb08069c | Drum & bass beat | 2 bars 68 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys).
+style dubstep simple, no hats: 0d64c1338275a2c6 011051eb61dd67ba | Dubstep and riddim beat | 2 bars 19 notes | Kick/Snare/Sub/Growl | Made a 2-bar dubstep and riddim pattern (kick, snare, sub, growl).
+style dubstep 808s in C major: 9286807e8f675b76 745a2193d044391e | Dubstep and riddim beat | 2 bars 31 notes | Kick/Snare/Hat/Sub/Growl | Made a 2-bar dubstep and riddim pattern (kick, snare, hat, sub, growl).
+style dubstep drums only: 08e09a0717ee45da 37244b560e39b660 | Dubstep and riddim beat | 2 bars 18 notes | Kick/Snare/Hat | Made a 2-bar dubstep and riddim pattern (kick, snare, hat).
+style dubstep melody: 33444dcadda18df6 07548554bf42013c | Dubstep and riddim beat | 2 bars 31 notes | Kick/Snare/Hat/Sub/Growl | Made a 2-bar dubstep and riddim pattern (kick, snare, hat, sub, growl).
+style pop simple, no hats: 4a6544ad4d2efa44 bfb9025f8c40d2c3 | Pop beat | 4 bars 58 notes | Kick/Clap/Bass/Keys | Made a 4-bar pop pattern (kick, clap, bass, keys).
+style pop 808s in C major: 8322fb9bbc9f6d44 a329b9c41a0248d9 | Pop beat | 4 bars 91 notes | Kick/Clap/Hat/808/Keys | Made a 4-bar pop pattern (kick, clap, hat, 808, keys).
+style pop drums only: 67f01bb41ab552d2 833f3d3f48bbc968 | Pop beat | 4 bars 53 notes | Kick/Clap/Hat | Made a 4-bar pop pattern (kick, clap, hat).
+style pop melody: f18e26fd399025f5 edadf834b257d706 | Pop beat | 4 bars 90 notes | Kick/Clap/Hat/Bass/Keys | Made a 4-bar pop pattern (kick, clap, hat, bass, keys).
+style lofi simple, no hats: 7ad544032465e3e9 be52842ba85a3121 | Lofi beat | 4 bars 61 notes | Kick/Snare/Keys/Bass | Made a 4-bar lofi pattern (kick, snare, keys, bass).
+style lofi 808s in C major: 63d83891fbf0f6ef e45439dcc7ddb8ad | Lofi beat | 4 bars 91 notes | Kick/Snare/Hat/808/Keys/Bass | Made a 4-bar lofi pattern (kick, snare, hat, 808, keys, bass).
+style lofi drums only: 86aa4db829241888 da1a8103905c914a | Lofi beat | 4 bars 37 notes | Kick/Snare/Hat | Made a 4-bar lofi pattern (kick, snare, hat).
+style lofi melody: 5f4e4e90b425a6ca c4ec0cc3367702bf | Lofi beat | 4 bars 77 notes | Kick/Snare/Hat/Keys/Bass | Made a 4-bar lofi pattern (kick, snare, hat, keys, bass).
+nothing named: a7fa211ab9a4d8f0 50bd4d1d2ae3e190 | Boom bap beat | 2 bars 44 notes | Kick/Snare/Hat/Bass | Made a 2-bar boom bap pattern (kick, snare, hat, bass).
+808 only: 248f886563c3ac86 97d5154a7b8c8740 | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+neuro dnb: 8dfe5630006cfc82 3089ca2251c7f53c | Drum & bass beat | 2 bars 36 notes | Kick/Snare/Hat/Open hat/Reese | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese).
+flat key: d6b5107614ccc2e0 ad0ff321ff03b264 | Lofi beat | 4 bars 77 notes | Kick/Snare/Hat/Keys/Bass | Made a 4-bar lofi pattern (kick, snare, hat, keys, bass).
+tempo out of range: 46d298d7f56a0a47 c43c51640d50ad40 | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+last tempo wins: 0fdee5461c5a24bd 7be7029477e4828e | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+same tempo as project: b00cf58125de8dcb 5f55e778776aa364 | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+empty: a7fa211ab9a4d8f0 50bd4d1d2ae3e190 | Boom bap beat | 2 bars 44 notes | Kick/Snare/Hat/Bass | Made a 2-bar boom bap pattern (kick, snare, hat, bass).
+trap beatboxed: 95caa32027617ba2 f41ae5917cd6e98b | Trap beat | 2 bars 17 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808), following your beatbox for the drums.
+trap beatboxed kicks only: 283b2dd40c1a3ed7 5b96c00845b358d4 | Trap beat | 1 bars 40 notes | Kick/Clap/Hat/808 | Made a 1-bar trap pattern (kick, clap, hat, 808), following your beatbox for the drums.
+trap hummed 808: fe2536ef911c6a18 a2577026528bcfbf | Trap beat | 2 bars 45 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808), following your humming for the 808.
+trap hummed auto: a3bb012860282fdd c1ec5d1ccd75712a | Trap beat | 4 bars 73 notes | Kick/Clap/Hat/808 | Made a 4-bar trap pattern (kick, clap, hat, 808), following your humming for the 808.
+trap hummed melody: f9d5b93c3af857de 3b67fc378d45a77a | Trap beat | 2 bars 51 notes | Kick/Clap/Hat/808/Melody | Made a 2-bar trap pattern (kick, clap, hat, 808, melody), following your humming for the melody.
+drill beatboxed: 32add3749dd0f448 f4b3eb60fbc25628 | Drill beat | 2 bars 17 notes | Kick/Snare/Hat/808 | Made a 2-bar drill pattern (kick, snare, hat, 808), following your beatbox for the drums.
+drill beatboxed kicks only: 64a1057945e88848 ef5eebfbea2f664d | Drill beat | 1 bars 41 notes | Kick/Snare/Hat/808 | Made a 1-bar drill pattern (kick, snare, hat, 808), following your beatbox for the drums.
+drill hummed 808: 52e4ae3faf57eb71 6ba03019745582b3 | Drill beat | 2 bars 47 notes | Kick/Snare/Hat/808 | Made a 2-bar drill pattern (kick, snare, hat, 808), following your humming for the 808.
+drill hummed auto: 24758ae75028edc4 3bbefaf1381806fe | Drill beat | 4 bars 77 notes | Kick/Snare/Hat/808 | Made a 4-bar drill pattern (kick, snare, hat, 808), following your humming for the 808.
+drill hummed melody: 4726435241f1933f c8493a0274e8bd2f | Drill beat | 2 bars 56 notes | Kick/Snare/Hat/808/Melody | Made a 2-bar drill pattern (kick, snare, hat, 808, melody), following your humming for the melody.
+house beatboxed: 58ce49d0a54134ef 2da64d24753a65b4 | House beat | 2 bars 20 notes | Kick/Clap/Hat/Bass | Made a 2-bar house pattern (kick, clap, hat, bass), following your beatbox for the drums.
+house beatboxed kicks only: d5dac0ae77fb591e a131dbf03ce0d629 | House beat | 1 bars 22 notes | Kick/Clap/Hat/Bass | Made a 1-bar house pattern (kick, clap, hat, bass), following your beatbox for the drums.
+house hummed 808: bc128830aec893a7 72375249e15658c5 | House beat | 2 bars 32 notes | Kick/Clap/Hat/808 | Made a 2-bar house pattern (kick, clap, hat, 808), following your humming for the 808.
+house hummed auto: 81249841419076f4 4c2f2b6684db9fa2 | House beat | 4 bars 48 notes | Kick/Clap/Hat/808 | Made a 4-bar house pattern (kick, clap, hat, 808), following your humming for the 808.
+house hummed melody: 9fb265f93cb86d49 aa3cc83a9f26fadf | House beat | 2 bars 38 notes | Kick/Clap/Hat/Bass/Melody | Made a 2-bar house pattern (kick, clap, hat, bass, melody), following your humming for the melody.
+dnb beatboxed: c2800ff32913d3f6 556daaaa9cd2c01f | Drum & bass beat | 2 bars 54 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys), following your beatbox for the drums.
+dnb beatboxed kicks only: 5697ea216dbf9c59 39eb9ea7d76193d8 | Drum & bass beat | 1 bars 51 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys | Made a 1-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys), following your beatbox for the drums.
+dnb hummed 808: 4177e3797f2711b9 407ae49dea87b8fb | Drum & bass beat | 2 bars 44 notes | Kick/Snare/Hat/Open hat/808 | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, 808), following your humming for the 808.
+dnb hummed auto: 0de181d16c70f47d 34d50114cca1d0e8 | Drum & bass beat | 4 bars 72 notes | Kick/Snare/Hat/Open hat/808 | Made a 4-bar drum & bass pattern (kick, snare, hat, open hat, 808), following your humming for the 808.
+dnb hummed melody: e4ca1911150030bc 4adf70121a0623e9 | Drum & bass beat | 2 bars 78 notes | Kick/Snare/Hat/Open hat/Reese/Pad/Keys/Melody | Made a 2-bar drum & bass pattern (kick, snare, hat, open hat, reese, pad, keys, melody), following your humming for the melody.
+lofi beatboxed: b28e2c503fd08c8c f728bfe85b6591b1 | Lofi beat | 2 bars 32 notes | Kick/Snare/Hat/Keys/Bass | Made a 2-bar lofi pattern (kick, snare, hat, keys, bass), following your beatbox for the drums.
+lofi beatboxed kicks only: 96351bc69265f33c 6cb284f399c285b1 | Lofi beat | 1 bars 28 notes | Kick/Snare/Hat/Keys/Bass | Made a 1-bar lofi pattern (kick, snare, hat, keys, bass), following your beatbox for the drums.
+lofi hummed 808: fa986fb79d86447b 1d5ef084980d85cf | Lofi beat | 2 bars 31 notes | Kick/Snare/Hat/808 | Made a 2-bar lofi pattern (kick, snare, hat, 808), following your humming for the 808.
+lofi hummed auto: 15dc62270a16ac1e 49e2f457326eb8b8 | Lofi beat | 4 bars 45 notes | Kick/Snare/Hat/808 | Made a 4-bar lofi pattern (kick, snare, hat, 808), following your humming for the 808.
+lofi hummed melody: 823cf844a50131f9 d9ca082d2cfcebd9 | Lofi beat | 2 bars 49 notes | Kick/Snare/Hat/Keys/Bass/Melody | Made a 2-bar lofi pattern (kick, snare, hat, keys, bass, melody), following your humming for the melody.
+trance beatboxed: f2017007fb35a566 6d2ddbac49fc8a60 | Trance beat | 2 bars 66 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Arp | Made a 2-bar trance pattern (kick, clap, hat, open hat, bass, pad, arp), following your beatbox for the drums.
+trance beatboxed kicks only: 444bbe0a38c52850 48af0c67de89aeeb | Trance beat | 1 bars 49 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Arp | Made a 1-bar trance pattern (kick, clap, hat, open hat, bass, pad, arp), following your beatbox for the drums.
+trance hummed 808: 39459fa043bc5844 d8d3305a744d8eb4 | Trance beat | 2 bars 48 notes | Kick/Clap/Hat/Open hat/808 | Made a 2-bar trance pattern (kick, clap, hat, open hat, 808), following your humming for the 808.
+trance hummed auto: 0a626ae72aaa9ce4 8e17ee04f11b3556 | Trance beat | 4 bars 80 notes | Kick/Clap/Hat/Open hat/808 | Made a 4-bar trance pattern (kick, clap, hat, open hat, 808), following your humming for the 808.
+trance hummed melody: 4ef00c7bf2524d45 b3874410f9d5e883 | Trance beat | 2 bars 92 notes | Kick/Clap/Hat/Open hat/Bass/Pad/Arp/Melody | Made a 2-bar trance pattern (kick, clap, hat, open hat, bass, pad, arp, melody), following your humming for the melody.
+afro beatboxed: 777f135e618d292a 5edb04829faad7c6 | Afro beat | 2 bars 16 notes | Kick/Rim/Hat/Bass | Made a 2-bar afro pattern (kick, rim, hat, bass), following your beatbox for the drums.
+afro beatboxed kicks only: b1782fec59c54814 01208f7c9db3844e | Afro beat | 1 bars 38 notes | Kick/Rim/Hat/Bass | Made a 1-bar afro pattern (kick, rim, hat, bass), following your beatbox for the drums.
+afro hummed 808: 8d73145d73d5e770 bd3e15a29e3b36b2 | Afro beat | 2 bars 51 notes | Kick/Rim/Hat/808 | Made a 2-bar afro pattern (kick, rim, hat, 808), following your humming for the 808.
+afro hummed auto: 700ad31d85b350b7 b750c7ed1d86cebc | Afro beat | 4 bars 85 notes | Kick/Rim/Hat/808 | Made a 4-bar afro pattern (kick, rim, hat, 808), following your humming for the 808.
+afro hummed melody: e0d47f1fd5d965b5 9976f92128c5c5c9 | Afro beat | 2 bars 60 notes | Kick/Rim/Hat/Bass/Melody | Made a 2-bar afro pattern (kick, rim, hat, bass, melody), following your humming for the melody.
+no events: 46d298d7f56a0a47 c43c51640d50ad40 | Trap beat | 2 bars 41 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808).
+mixed events: f58630b512ed8871 8ba29826223d5705 | Trap beat | 2 bars 37 notes | Kick/Clap/Hat/808 | Made a 2-bar trap pattern (kick, clap, hat, 808), following your beatbox for the drums.

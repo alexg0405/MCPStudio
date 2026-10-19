@@ -1,0 +1,98 @@
+roots #1 plain: 11 notes efe81c8262e2
+roots #1 low and quiet: 11 notes ba965970fce8
+roots #1 kicks: 11 notes efe81c8262e2
+roots #1 to bar 9: 11 notes efe81c8262e2
+roots #2 plain: 7 notes 5698553e36ef
+roots #2 low and quiet: 7 notes 024399d2ea96
+roots #2 kicks: 7 notes 5698553e36ef
+roots #2 to bar 9: 7 notes 5698553e36ef
+roots #3 plain: 7 notes 6f8bc8be4d35
+roots #3 low and quiet: 7 notes 0447f6afd118
+roots #3 kicks: 7 notes 6f8bc8be4d35
+roots #3 to bar 9: 7 notes 6f8bc8be4d35
+roots #4 plain: 8 notes 846ce973a501
+roots #4 low and quiet: 8 notes e78c94854a82
+roots #4 kicks: 8 notes 846ce973a501
+roots #4 to bar 9: 8 notes 846ce973a501
+roots #5 plain: 7 notes 6fbb25046afe
+roots #5 low and quiet: 7 notes 168242884736
+roots #5 kicks: 7 notes 6fbb25046afe
+roots #5 to bar 9: 7 notes 6fbb25046afe
+roots #6 plain: 7 notes 71643f32488c
+roots #6 low and quiet: 7 notes 8a7c6a3be72e
+roots #6 kicks: 7 notes 71643f32488c
+roots #6 to bar 9: 7 notes 71643f32488c
+root-fifth #1 plain: 26 notes 4369253ee66c
+root-fifth #1 low and quiet: 26 notes cc76c5997ce2
+root-fifth #1 kicks: 26 notes 4369253ee66c
+root-fifth #1 to bar 9: 26 notes 4369253ee66c
+root-fifth #2 plain: 28 notes ae1ae67d042e
+root-fifth #2 low and quiet: 28 notes 46b21cc11524
+root-fifth #2 kicks: 28 notes ae1ae67d042e
+root-fifth #2 to bar 9: 28 notes ae1ae67d042e
+root-fifth #3 plain: 14 notes 3ccf7d5ad796
+root-fifth #3 low and quiet: 14 notes bf3d2baa7a27
+root-fifth #3 kicks: 14 notes 3ccf7d5ad796
+root-fifth #3 to bar 9: 14 notes 3ccf7d5ad796
+root-fifth #4 plain: 18 notes 190331ef50c5
+root-fifth #4 low and quiet: 18 notes 6a11d1365dc4
+root-fifth #4 kicks: 18 notes 190331ef50c5
+root-fifth #4 to bar 9: 18 notes 190331ef50c5
+root-fifth #5 plain: 28 notes 610602be5201
+root-fifth #5 low and quiet: 28 notes 889b54ee5e08
+root-fifth #5 kicks: 28 notes 610602be5201
+root-fifth #5 to bar 9: 28 notes 610602be5201
+root-fifth #6 plain: 14 notes 20ff59b03229
+root-fifth #6 low and quiet: 14 notes 462cbe763c0c
+root-fifth #6 kicks: 14 notes 20ff59b03229
+root-fifth #6 to bar 9: 14 notes 20ff59b03229
+walking #1 plain: 26 notes 4ec0c030c5fc
+walking #1 low and quiet: 26 notes 99e4781deca5
+walking #1 kicks: 26 notes 4ec0c030c5fc
+walking #1 to bar 9: 26 notes 4ec0c030c5fc
+walking #2 plain: 28 notes b49827461a2d
+walking #2 low and quiet: 28 notes 253e15e9359d
+walking #2 kicks: 28 notes b49827461a2d
+walking #2 to bar 9: 28 notes b49827461a2d
+walking #3 plain: 14 notes acf0be5d2488
+walking #3 low and quiet: 14 notes f80b25e864cb
+walking #3 kicks: 14 notes acf0be5d2488
+walking #3 to bar 9: 14 notes acf0be5d2488
+walking #4 plain: 18 notes 92c22a2c4111
+walking #4 low and quiet: 18 notes c273da1d9f0f
+walking #4 kicks: 18 notes 92c22a2c4111
+walking #4 to bar 9: 18 notes 92c22a2c4111
+walking #5 plain: 28 notes 67a355e57394
+walking #5 low and quiet: 28 notes cfbc2bcc849c
+walking #5 kicks: 28 notes 67a355e57394
+walking #5 to bar 9: 28 notes 67a355e57394
+walking #6 plain: 14 notes 7ab6a7f71781
+walking #6 low and quiet: 14 notes 3d06d272d10b
+walking #6 kicks: 14 notes 7ab6a7f71781
+walking #6 to bar 9: 14 notes 7ab6a7f71781
+808 #1 plain: 24 notes 3196d524f512
+808 #1 low and quiet: 24 notes 589922a8d1a5
+808 #1 kicks: 24 notes 3196d524f512
+808 #1 to bar 9: 24 notes 3196d524f512
+808 #2 plain: 21 notes c06d0fe60022
+808 #2 low and quiet: 21 notes 7682b2ecb421
+808 #2 kicks: 21 notes c06d0fe60022
+808 #2 to bar 9: 21 notes c06d0fe60022
+808 #3 plain: 14 notes 71d9a8385ba4
+808 #3 low and quiet: 14 notes 63b308030936
+808 #3 kicks: 14 notes 71d9a8385ba4
+808 #3 to bar 9: 14 notes 71d9a8385ba4
+808 #4 plain: 17 notes 2203cd0997ed
+808 #4 low and quiet: 17 notes 3c252b4f21a8
+808 #4 kicks: 17 notes 2203cd0997ed
+808 #4 to bar 9: 17 notes 2203cd0997ed
+808 #5 plain: 21 notes 6f651566ea95
+808 #5 low and quiet: 21 notes e28c0ab3f9fb
+808 #5 kicks: 21 notes 6f651566ea95
+808 #5 to bar 9: 21 notes 6f651566ea95
+808 #6 plain: 14 notes d8dad8281ccc
+808 #6 low and quiet: 14 notes 5446eda0f383
+808 #6 kicks: 14 notes d8dad8281ccc
+808 #6 to bar 9: 14 notes d8dad8281ccc
+none: 0
+zero length: 0

@@ -36,7 +36,20 @@ export const MOODS: readonly Mood[] = [
   'driving',
 ];
 
-export const GENRES = ['pop', 'rock', 'edm', 'house', 'trap', 'hiphop', 'lofi', 'rnb', 'jazz', 'blues', 'cinematic', 'flamenco'] as const;
+export const GENRES = [
+  'pop',
+  'rock',
+  'edm',
+  'house',
+  'trap',
+  'hiphop',
+  'lofi',
+  'rnb',
+  'jazz',
+  'blues',
+  'cinematic',
+  'flamenco',
+] as const;
 export type Genre = (typeof GENRES)[number];
 
 export interface Progression {
@@ -55,31 +68,235 @@ export interface Progression {
 }
 
 export const PROGRESSIONS: readonly Progression[] = [
-  { id: 'pop-axis', name: 'I–V–vi–IV', mode: 'major', chords: ['I', 'V', 'vi', 'IV'], moods: ['happy', 'uplifting', 'emotional'], genres: ['pop', 'rock', 'edm'], note: 'The pop workhorse: bright, singable, hundreds of hits.' },
-  { id: 'pop-minor-start', name: 'vi–IV–I–V', mode: 'major', chords: ['vi', 'IV', 'I', 'V'], moods: ['emotional', 'uplifting', 'nostalgic'], genres: ['pop', 'rock', 'edm'], note: 'The same four chords starting on the sad one: wistful, builds toward the chorus.' },
-  { id: 'doo-wop', name: 'I–vi–IV–V', mode: 'major', chords: ['I', 'vi', 'IV', 'V'], moods: ['nostalgic', 'happy', 'smooth'], genres: ['pop', 'rock', 'rnb'], note: 'The 50s progression: warm and nostalgic.' },
-  { id: 'rock-145', name: 'I–IV–V–IV', mode: 'major', chords: ['I', 'IV', 'V', 'IV'], moods: ['happy', 'driving'], genres: ['rock', 'blues', 'pop'], note: 'Three-chord rock and roll: simple, loud, bouncy.' },
-  { id: 'canon', name: 'Canon: I–V–vi–iii–IV–I–IV–V', mode: 'major', chords: ['I', 'V', 'vi', 'iii', 'IV', 'I', 'IV', 'V'], moods: ['epic', 'emotional', 'uplifting'], genres: ['pop', 'cinematic'], note: 'Pachelbel’s eight-chord loop: a slow, steady climb that feels inevitable.' },
-  { id: 'royal-road', name: 'IV–V–iii–vi', mode: 'major', chords: ['IVmaj7', 'V7', 'iii7', 'vi'], moods: ['dreamy', 'emotional', 'uplifting'], genres: ['pop', 'edm'], note: 'The J-pop “royal road”: bittersweet and soaring.' },
-  { id: 'ii-v-i', name: 'ii–V–I', mode: 'major', chords: ['ii7', 'V7', 'Imaj7', 'Imaj7'], moods: ['smooth', 'chill', 'nostalgic'], genres: ['jazz', 'lofi', 'rnb'], note: 'The jazz cadence: tension, release, home.' },
-  { id: 'turnaround', name: 'Imaj7–vi7–ii7–V7', mode: 'major', chords: ['Imaj7', 'vi7', 'ii7', 'V7'], moods: ['smooth', 'chill', 'dreamy'], genres: ['jazz', 'lofi', 'rnb', 'hiphop'], note: 'A jazz turnaround: mellow, circles back on itself.' },
-  { id: 'lofi-maj', name: 'Imaj7–iii7–vi7–IVmaj7', mode: 'major', chords: ['Imaj7', 'iii7', 'vi7', 'IVmaj7'], moods: ['chill', 'dreamy', 'nostalgic'], genres: ['lofi', 'hiphop', 'rnb'], note: 'Soft descending thirds: the lo-fi study-beats loop.' },
-  { id: 'mixolydian', name: 'I–bVII–IV–I', mode: 'major', chords: ['I', 'bVII', 'IV', 'I'], moods: ['driving', 'uplifting', 'happy'], genres: ['rock', 'pop', 'edm'], note: 'A flat seventh gives it a rock edge: anthemic, open.' },
-  { id: 'plagal-loop', name: 'I–IV–vi–V', mode: 'major', chords: ['I', 'IV', 'vi', 'V'], moods: ['happy', 'uplifting', 'dreamy'], genres: ['pop', 'edm', 'house'], note: 'Rises and keeps going: a good festival drop loop.' },
-  { id: 'house-stabs', name: 'ii7–V7–Imaj7–vi7', mode: 'major', chords: ['ii7', 'V7', 'Imaj7', 'vi7'], bars: 1, moods: ['smooth', 'uplifting', 'chill'], genres: ['house', 'jazz', 'rnb'], note: 'Jazzy seventh chords for stabs and pads in house and R&B.' },
-  { id: 'blues-12', name: '12-bar blues', mode: 'major', chords: ['I7', 'I7', 'I7', 'I7', 'IV7', 'IV7', 'I7', 'I7', 'V7', 'IV7', 'I7', 'V7'], moods: ['driving', 'happy', 'tense'], genres: ['blues', 'rock', 'jazz'], note: 'The twelve-bar form: four bars home, two away, back, then the turnaround.' },
-  { id: 'minor-epic', name: 'i–VI–III–VII', mode: 'minor', chords: ['i', 'VI', 'III', 'VII'], moods: ['epic', 'dramatic', 'emotional'], genres: ['edm', 'pop', 'cinematic', 'trap'], note: 'The big minor loop: emotional and cinematic, a staple of dance and pop.' },
-  { id: 'minor-dark', name: 'i–VII–VI–VII', mode: 'minor', chords: ['i', 'VII', 'VI', 'VII'], moods: ['dark', 'driving', 'tense'], genres: ['rock', 'edm', 'trap', 'hiphop'], note: 'Rocking between the flat sixth and seventh: dark and relentless.' },
-  { id: 'minor-iv', name: 'i–iv–VII–III', mode: 'minor', chords: ['i', 'iv', 'VII', 'III'], moods: ['sad', 'emotional', 'dramatic'], genres: ['pop', 'rock', 'rnb'], note: 'A sad loop that never quite settles.' },
-  { id: 'minor-dominant', name: 'i–VI–iv–V', mode: 'minor', chords: ['i', 'VI', 'iv', 'V'], moods: ['dramatic', 'tense', 'epic'], genres: ['cinematic', 'pop', 'edm'], note: 'A major V pulls hard back to i: dramatic, film-score energy.' },
-  { id: 'andalusian', name: 'Andalusian: i–VII–VI–V', mode: 'minor', chords: ['i', 'VII', 'VI', 'V'], moods: ['dramatic', 'dark', 'tense'], genres: ['flamenco', 'cinematic', 'rock'], note: 'A falling line of four chords: flamenco, tension, fate.' },
-  { id: 'minor-ii-v-i', name: 'iiø7–V7–i7', mode: 'minor', chords: ['iiø7', 'V7', 'i7', 'i7'], moods: ['smooth', 'sad', 'tense'], genres: ['jazz', 'lofi', 'rnb'], note: 'The minor jazz cadence: shadowy and smooth.' },
-  { id: 'trap-two', name: 'Trap loop: i–VI', mode: 'minor', chords: ['i', 'VI'], bars: 2, moods: ['dark', 'sad', 'chill'], genres: ['trap', 'hiphop'], note: 'Two chords, two bars each: the minimal trap loop that leaves room for the 808.' },
-  { id: 'trap-three', name: 'Trap loop: i–VI–VII', mode: 'minor', chords: ['i', 'VI', 'VII'], bars: [2, 1, 1], moods: ['dark', 'driving', 'epic'], genres: ['trap', 'hiphop', 'edm'], note: 'Dark and heavy, with a rising lift at the end of the loop.' },
-  { id: 'trap-phrygian', name: 'Trap loop: i–bII', mode: 'minor', chords: ['i', 'bII'], bars: 2, moods: ['dark', 'tense', 'dramatic'], genres: ['trap', 'cinematic'], note: 'A half step up: menacing, used in drill and dark trap.' },
-  { id: 'trap-iv', name: 'Trap loop: i–iv–i–v', mode: 'minor', chords: ['i', 'iv', 'i', 'v'], moods: ['sad', 'chill', 'dark'], genres: ['trap', 'hiphop', 'rnb'], note: 'Slow minor movement: moody and laid back.' },
-  { id: 'lofi-min', name: 'i7–iv7–VII7–IIImaj7', mode: 'minor', chords: ['i7', 'iv7', 'VII7', 'IIImaj7'], moods: ['chill', 'sad', 'nostalgic'], genres: ['lofi', 'hiphop', 'rnb'], note: 'Seventh chords all the way: late-night lo-fi.' },
-  { id: 'rnb-minor', name: 'i7–VImaj7–iv7–V7', mode: 'minor', chords: ['i7', 'VImaj7', 'iv7', 'V7'], moods: ['smooth', 'emotional', 'dreamy'], genres: ['rnb', 'lofi', 'jazz'], note: 'Velvet seventh chords with a dominant to turn around on.' },
+  {
+    id: 'pop-axis',
+    name: 'I–V–vi–IV',
+    mode: 'major',
+    chords: ['I', 'V', 'vi', 'IV'],
+    moods: ['happy', 'uplifting', 'emotional'],
+    genres: ['pop', 'rock', 'edm'],
+    note: 'The pop workhorse: bright, singable, hundreds of hits.',
+  },
+  {
+    id: 'pop-minor-start',
+    name: 'vi–IV–I–V',
+    mode: 'major',
+    chords: ['vi', 'IV', 'I', 'V'],
+    moods: ['emotional', 'uplifting', 'nostalgic'],
+    genres: ['pop', 'rock', 'edm'],
+    note: 'The same four chords starting on the sad one: wistful, builds toward the chorus.',
+  },
+  {
+    id: 'doo-wop',
+    name: 'I–vi–IV–V',
+    mode: 'major',
+    chords: ['I', 'vi', 'IV', 'V'],
+    moods: ['nostalgic', 'happy', 'smooth'],
+    genres: ['pop', 'rock', 'rnb'],
+    note: 'The 50s progression: warm and nostalgic.',
+  },
+  {
+    id: 'rock-145',
+    name: 'I–IV–V–IV',
+    mode: 'major',
+    chords: ['I', 'IV', 'V', 'IV'],
+    moods: ['happy', 'driving'],
+    genres: ['rock', 'blues', 'pop'],
+    note: 'Three-chord rock and roll: simple, loud, bouncy.',
+  },
+  {
+    id: 'canon',
+    name: 'Canon: I–V–vi–iii–IV–I–IV–V',
+    mode: 'major',
+    chords: ['I', 'V', 'vi', 'iii', 'IV', 'I', 'IV', 'V'],
+    moods: ['epic', 'emotional', 'uplifting'],
+    genres: ['pop', 'cinematic'],
+    note: 'Pachelbel’s eight-chord loop: a slow, steady climb that feels inevitable.',
+  },
+  {
+    id: 'royal-road',
+    name: 'IV–V–iii–vi',
+    mode: 'major',
+    chords: ['IVmaj7', 'V7', 'iii7', 'vi'],
+    moods: ['dreamy', 'emotional', 'uplifting'],
+    genres: ['pop', 'edm'],
+    note: 'The J-pop “royal road”: bittersweet and soaring.',
+  },
+  {
+    id: 'ii-v-i',
+    name: 'ii–V–I',
+    mode: 'major',
+    chords: ['ii7', 'V7', 'Imaj7', 'Imaj7'],
+    moods: ['smooth', 'chill', 'nostalgic'],
+    genres: ['jazz', 'lofi', 'rnb'],
+    note: 'The jazz cadence: tension, release, home.',
+  },
+  {
+    id: 'turnaround',
+    name: 'Imaj7–vi7–ii7–V7',
+    mode: 'major',
+    chords: ['Imaj7', 'vi7', 'ii7', 'V7'],
+    moods: ['smooth', 'chill', 'dreamy'],
+    genres: ['jazz', 'lofi', 'rnb', 'hiphop'],
+    note: 'A jazz turnaround: mellow, circles back on itself.',
+  },
+  {
+    id: 'lofi-maj',
+    name: 'Imaj7–iii7–vi7–IVmaj7',
+    mode: 'major',
+    chords: ['Imaj7', 'iii7', 'vi7', 'IVmaj7'],
+    moods: ['chill', 'dreamy', 'nostalgic'],
+    genres: ['lofi', 'hiphop', 'rnb'],
+    note: 'Soft descending thirds: the lo-fi study-beats loop.',
+  },
+  {
+    id: 'mixolydian',
+    name: 'I–bVII–IV–I',
+    mode: 'major',
+    chords: ['I', 'bVII', 'IV', 'I'],
+    moods: ['driving', 'uplifting', 'happy'],
+    genres: ['rock', 'pop', 'edm'],
+    note: 'A flat seventh gives it a rock edge: anthemic, open.',
+  },
+  {
+    id: 'plagal-loop',
+    name: 'I–IV–vi–V',
+    mode: 'major',
+    chords: ['I', 'IV', 'vi', 'V'],
+    moods: ['happy', 'uplifting', 'dreamy'],
+    genres: ['pop', 'edm', 'house'],
+    note: 'Rises and keeps going: a good festival drop loop.',
+  },
+  {
+    id: 'house-stabs',
+    name: 'ii7–V7–Imaj7–vi7',
+    mode: 'major',
+    chords: ['ii7', 'V7', 'Imaj7', 'vi7'],
+    bars: 1,
+    moods: ['smooth', 'uplifting', 'chill'],
+    genres: ['house', 'jazz', 'rnb'],
+    note: 'Jazzy seventh chords for stabs and pads in house and R&B.',
+  },
+  {
+    id: 'blues-12',
+    name: '12-bar blues',
+    mode: 'major',
+    chords: ['I7', 'I7', 'I7', 'I7', 'IV7', 'IV7', 'I7', 'I7', 'V7', 'IV7', 'I7', 'V7'],
+    moods: ['driving', 'happy', 'tense'],
+    genres: ['blues', 'rock', 'jazz'],
+    note: 'The twelve-bar form: four bars home, two away, back, then the turnaround.',
+  },
+  {
+    id: 'minor-epic',
+    name: 'i–VI–III–VII',
+    mode: 'minor',
+    chords: ['i', 'VI', 'III', 'VII'],
+    moods: ['epic', 'dramatic', 'emotional'],
+    genres: ['edm', 'pop', 'cinematic', 'trap'],
+    note: 'The big minor loop: emotional and cinematic, a staple of dance and pop.',
+  },
+  {
+    id: 'minor-dark',
+    name: 'i–VII–VI–VII',
+    mode: 'minor',
+    chords: ['i', 'VII', 'VI', 'VII'],
+    moods: ['dark', 'driving', 'tense'],
+    genres: ['rock', 'edm', 'trap', 'hiphop'],
+    note: 'Rocking between the flat sixth and seventh: dark and relentless.',
+  },
+  {
+    id: 'minor-iv',
+    name: 'i–iv–VII–III',
+    mode: 'minor',
+    chords: ['i', 'iv', 'VII', 'III'],
+    moods: ['sad', 'emotional', 'dramatic'],
+    genres: ['pop', 'rock', 'rnb'],
+    note: 'A sad loop that never quite settles.',
+  },
+  {
+    id: 'minor-dominant',
+    name: 'i–VI–iv–V',
+    mode: 'minor',
+    chords: ['i', 'VI', 'iv', 'V'],
+    moods: ['dramatic', 'tense', 'epic'],
+    genres: ['cinematic', 'pop', 'edm'],
+    note: 'A major V pulls hard back to i: dramatic, film-score energy.',
+  },
+  {
+    id: 'andalusian',
+    name: 'Andalusian: i–VII–VI–V',
+    mode: 'minor',
+    chords: ['i', 'VII', 'VI', 'V'],
+    moods: ['dramatic', 'dark', 'tense'],
+    genres: ['flamenco', 'cinematic', 'rock'],
+    note: 'A falling line of four chords: flamenco, tension, fate.',
+  },
+  {
+    id: 'minor-ii-v-i',
+    name: 'iiø7–V7–i7',
+    mode: 'minor',
+    chords: ['iiø7', 'V7', 'i7', 'i7'],
+    moods: ['smooth', 'sad', 'tense'],
+    genres: ['jazz', 'lofi', 'rnb'],
+    note: 'The minor jazz cadence: shadowy and smooth.',
+  },
+  {
+    id: 'trap-two',
+    name: 'Trap loop: i–VI',
+    mode: 'minor',
+    chords: ['i', 'VI'],
+    bars: 2,
+    moods: ['dark', 'sad', 'chill'],
+    genres: ['trap', 'hiphop'],
+    note: 'Two chords, two bars each: the minimal trap loop that leaves room for the 808.',
+  },
+  {
+    id: 'trap-three',
+    name: 'Trap loop: i–VI–VII',
+    mode: 'minor',
+    chords: ['i', 'VI', 'VII'],
+    bars: [2, 1, 1],
+    moods: ['dark', 'driving', 'epic'],
+    genres: ['trap', 'hiphop', 'edm'],
+    note: 'Dark and heavy, with a rising lift at the end of the loop.',
+  },
+  {
+    id: 'trap-phrygian',
+    name: 'Trap loop: i–bII',
+    mode: 'minor',
+    chords: ['i', 'bII'],
+    bars: 2,
+    moods: ['dark', 'tense', 'dramatic'],
+    genres: ['trap', 'cinematic'],
+    note: 'A half step up: menacing, used in drill and dark trap.',
+  },
+  {
+    id: 'trap-iv',
+    name: 'Trap loop: i–iv–i–v',
+    mode: 'minor',
+    chords: ['i', 'iv', 'i', 'v'],
+    moods: ['sad', 'chill', 'dark'],
+    genres: ['trap', 'hiphop', 'rnb'],
+    note: 'Slow minor movement: moody and laid back.',
+  },
+  {
+    id: 'lofi-min',
+    name: 'i7–iv7–VII7–IIImaj7',
+    mode: 'minor',
+    chords: ['i7', 'iv7', 'VII7', 'IIImaj7'],
+    moods: ['chill', 'sad', 'nostalgic'],
+    genres: ['lofi', 'hiphop', 'rnb'],
+    note: 'Seventh chords all the way: late-night lo-fi.',
+  },
+  {
+    id: 'rnb-minor',
+    name: 'i7–VImaj7–iv7–V7',
+    mode: 'minor',
+    chords: ['i7', 'VImaj7', 'iv7', 'V7'],
+    moods: ['smooth', 'emotional', 'dreamy'],
+    genres: ['rnb', 'lofi', 'jazz'],
+    note: 'Velvet seventh chords with a dominant to turn around on.',
+  },
 ];
 
 const BY_ID = new Map(PROGRESSIONS.map((progression) => [progression.id, progression]));
@@ -87,7 +304,9 @@ const BY_ID = new Map(PROGRESSIONS.map((progression) => [progression.id, progres
 export const getProgression = (id: string): Progression | undefined => BY_ID.get(id);
 
 /** Progressions that match: the key's mode, a mood and/or a genre, and words in the name or note. Best matches first. */
-export function findProgressions(filter: { mode?: 'major' | 'minor'; mood?: string; genre?: string; text?: string } = {}): Progression[] {
+export function findProgressions(
+  filter: { mode?: 'major' | 'minor'; mood?: string; genre?: string; text?: string } = {},
+): Progression[] {
   const text = filter.text?.trim().toLowerCase();
   return PROGRESSIONS.filter(
     (progression) =>
@@ -113,72 +332,52 @@ export function lookupProgression(ref: string): Progression | undefined {
 
 const NUMERALS: Record<string, number> = { i: 0, ii: 1, iii: 2, iv: 3, v: 4, vi: 5, vii: 6 };
 
+/** What can follow a numeral, and the quality it means for an upper-case (major) and a lower-case (minor) numeral. */
+const SUFFIX_QUALITY: Record<string, readonly [forUpper: string, forLower: string]> = {
+  '': ['maj', 'min'],
+  '7': ['7', 'm7'],
+  maj7: ['maj7', 'mMaj7'],
+  M7: ['maj7', 'mMaj7'],
+  Δ7: ['maj7', 'mMaj7'],
+  Δ: ['maj7', 'mMaj7'],
+  '°': ['dim', 'dim'],
+  dim: ['dim', 'dim'],
+  '°7': ['dim7', 'dim7'],
+  dim7: ['dim7', 'dim7'],
+  ø: ['m7b5', 'm7b5'],
+  ø7: ['m7b5', 'm7b5'],
+  m7b5: ['m7b5', 'm7b5'],
+  '9': ['9', 'm9'],
+  maj9: ['maj9', 'maj9'],
+  sus4: ['sus4', 'sus4'],
+  sus: ['sus4', 'sus4'],
+  sus2: ['sus2', 'sus2'],
+  add9: ['add9', 'madd9'],
+  '6': ['6', 'm6'],
+  '5': ['5', '5'],
+  '7sus4': ['7sus4', '7sus4'],
+};
+
+/** −1 for a flat sign, +1 for a sharp, 0 for none. */
+function accidentalShift(sign: string | undefined): number {
+  if (sign === 'b' || sign === '♭') return -1;
+  if (sign === '#' || sign === '♯') return 1;
+  return 0;
+}
+
 /** A Roman-numeral chord in a key: its root and quality, or null when the text is not one. */
 export function parseRoman(text: string, key: KeyLike): ChordSymbol | null {
   const m = /^([b♭#♯]?)(VII|VI|IV|V|III|II|I|vii|vi|iv|v|iii|ii|i)(.*)$/.exec(text.trim());
   if (!m) return null;
-  const upper = (m[2] as string) === (m[2] as string).toUpperCase();
-  const degree = NUMERALS[(m[2] as string).toLowerCase()] as number;
+  const numeral = m[2] as string;
+  const isUpper = numeral === numeral.toUpperCase();
+  const degree = NUMERALS[numeral.toLowerCase()] as number;
   const scale = harmonicScale(key.scale);
-  const shift = m[1] === 'b' || m[1] === '♭' ? -1 : m[1] === '#' || m[1] === '♯' ? 1 : 0;
-  const root = mod12(key.root + (scale[degree] as number) + shift);
+  const root = mod12(key.root + (scale[degree] as number) + accidentalShift(m[1]));
   const tail = (m[3] as string).replace(/\(|\)/g, '');
-  let quality: string;
-  switch (tail) {
-    case '':
-      quality = upper ? 'maj' : 'min';
-      break;
-    case '7':
-      quality = upper ? '7' : 'm7';
-      break;
-    case 'maj7':
-    case 'M7':
-    case 'Δ7':
-    case 'Δ':
-      quality = upper ? 'maj7' : 'mMaj7';
-      break;
-    case '°':
-    case 'dim':
-      quality = 'dim';
-      break;
-    case '°7':
-    case 'dim7':
-      quality = 'dim7';
-      break;
-    case 'ø':
-    case 'ø7':
-    case 'm7b5':
-      quality = 'm7b5';
-      break;
-    case '9':
-      quality = upper ? '9' : 'm9';
-      break;
-    case 'maj9':
-      quality = 'maj9';
-      break;
-    case 'sus4':
-    case 'sus':
-      quality = 'sus4';
-      break;
-    case 'sus2':
-      quality = 'sus2';
-      break;
-    case 'add9':
-      quality = upper ? 'add9' : 'madd9';
-      break;
-    case '6':
-      quality = upper ? '6' : 'm6';
-      break;
-    case '5':
-      quality = '5';
-      break;
-    case '7sus4':
-      quality = '7sus4';
-      break;
-    default:
-      return null;
-  }
-  return { root, quality };
+  const qualities = Object.hasOwn(SUFFIX_QUALITY, tail) ? SUFFIX_QUALITY[tail] : undefined;
+  if (!qualities) return null;
+  return { root, quality: isUpper ? qualities[0] : qualities[1] };
 }
 
 /** A progression's chords in a key, each with its length in bars. */
@@ -200,7 +399,11 @@ export function withSeventh(chord: ChordSymbol, key: KeyLike): ChordSymbol {
   if (d >= 0) {
     const seventh = diatonicChord(key, d, true);
     // Keep the written triad quality when the scale's own third differs (a borrowed chord).
-    if (seventh.root === chord.root && (chord.quality === 'maj') === (seventh.quality === 'maj7' || seventh.quality === '7')) return seventh;
+    if (
+      seventh.root === chord.root &&
+      (chord.quality === 'maj') === (seventh.quality === 'maj7' || seventh.quality === '7')
+    )
+      return seventh;
     if (seventh.root === chord.root && chord.quality === 'dim') return seventh;
   }
   return { root: chord.root, quality: chord.quality === 'maj' ? 'maj7' : chord.quality === 'min' ? 'm7' : 'dim7' };
@@ -235,7 +438,11 @@ export function layoutProgression(
     for (const s of slots) {
       if (bar >= total) break;
       const bars = Math.min(s.bars, total - bar);
-      out.push({ tick: opts.startTick + Math.round(bar * opts.bar), length: Math.round(bars * opts.bar), chord: s.chord });
+      out.push({
+        tick: opts.startTick + Math.round(bar * opts.bar),
+        length: Math.round(bars * opts.bar),
+        chord: s.chord,
+      });
       bar += s.bars;
     }
   }
@@ -323,6 +530,53 @@ const FUNCTION_REASON: Record<string, string> = {
 };
 
 /**
+ * How much each of the key's seven chords likes to come next: the key's table row for the chord just played;
+ * for a chord outside the key, the chord a fifth below the visitor's root (where it wants to go) first and the one a
+ * half step above next; without a previous chord, the ways to open.
+ */
+function followWeights(key: KeyLike, mode: 'major' | 'minor', previous: ChordSymbol | null, from: number): number[] {
+  if (!previous) return OPENERS[mode].slice();
+  if (from >= 0) return (FOLLOW[mode][from] as number[]).slice();
+  const wanted = degreeOf(key, mod12(previous.root - 7));
+  const next = degreeOf(key, mod12(previous.root + 1));
+  return Array.from({ length: 7 }, (_, d) => {
+    if (wanted === d) return 4;
+    return next === d ? 2.5 : 1;
+  });
+}
+
+/** Why a chord is a good way to open a progression. */
+function openingReason(degree: number, fn: ChordFunction): string {
+  if (degree === 0) return 'sets the key: starts on home';
+  if (fn === 'tonic') return 'an easy start, close to home';
+  if (fn === 'subdominant') return 'starts away from home, leaves the key open';
+  return 'starts on tension';
+}
+
+/**
+ * The borrowed chords always on offer: the flat seventh and the minor four in major, the major V in minor. They score
+ * low (a little higher after the chord on degree `from` that likes them: I or IV; `from` is −1 when unknown).
+ */
+function borrowedChords(key: KeyLike, mode: 'major' | 'minor', sevenths: boolean, from: number): NextChord[] {
+  const chords: ChordSymbol[] =
+    mode === 'major'
+      ? [
+          { root: mod12(key.root + 10), quality: sevenths ? '7' : 'maj' },
+          { root: mod12(key.root + 5), quality: sevenths ? 'm7' : 'min' },
+        ]
+      : [{ root: mod12(key.root + 7), quality: sevenths ? '7' : 'maj' }];
+  const reasons =
+    mode === 'major'
+      ? ['borrowed from the key next door: a rock edge', 'borrowed minor four: bittersweet']
+      : ['the major V from the harmonic minor: pulls hard back to home'];
+  return chords.map((chord, i) => {
+    let score = 0.1;
+    if (from >= 0) score = from === 0 || from === 3 ? 0.35 - i * 0.1 : 0.15;
+    return { chord, roman: romanOf(key, chord), function: 'other', score, reason: reasons[i] as string };
+  });
+}
+
+/**
  * Chords that could follow `previous`, ranked by how often that move works in the key (home → away → tension → home).
  * Without a previous chord it suggests ways to open. `sevenths` offers seventh chords. A previous chord outside the key
  * is treated as a visitor that resolves like a dominant, and the key's chords are ranked by how near they are in the circle
@@ -334,17 +588,8 @@ export function suggestNext(
   opts: { sevenths?: boolean; limit?: number; before?: ChordSymbol | null } = {},
 ): NextChord[] {
   const mode = keyMode(key.scale);
-  const table = FOLLOW[mode];
   const from = previous ? degreeOf(key, previous.root) : -1;
-  const weights: number[] = previous
-    ? from >= 0
-      ? (table[from] as number[]).slice()
-      : Array.from({ length: 7 }, (_, d) => {
-          // Outside the key: the chord a fifth below the visitor's root is where it wants to go.
-          const target = mod12(previous.root - 7);
-          return degreeOf(key, target) === d ? 4 : degreeOf(key, mod12(previous.root + 1)) === d ? 2.5 : 1;
-        })
-    : OPENERS[mode].slice();
+  const weights = followWeights(key, mode, previous, from);
   // Do not bounce straight back to the chord before the last one.
   if (opts.before) {
     const b = degreeOf(key, opts.before.root);
@@ -355,18 +600,12 @@ export function suggestNext(
     const chord = diatonicChord(key, d, opts.sevenths === true);
     const fn = functionOfDegree(d);
     const pair = from >= 0 ? `${functionOfDegree(from)}>${fn}` : '';
-    let reason = previous ? (FUNCTION_REASON[pair] ?? 'fits the key') : d === 0 ? 'sets the key: starts on home' : fn === 'tonic' ? 'an easy start, close to home' : fn === 'subdominant' ? 'starts away from home, leaves the key open' : 'starts on tension';
+    let reason = previous ? (FUNCTION_REASON[pair] ?? 'fits the key') : openingReason(d, fn);
     if (from === 4 && d === 5) reason = 'deceptive: the tension goes to vi instead of home';
     if (from === 4 && d === 0 && mode === 'major') reason = 'resolves the tension: back home';
     return { chord, roman: romanOf(key, chord), function: fn, score: Math.round((w / max) * 100) / 100, reason };
   });
-  // Two borrowed chords: the flat seventh in major, the major V in minor.
-  const borrowed: ChordSymbol[] = mode === 'major' ? [{ root: mod12(key.root + 10), quality: opts.sevenths ? '7' : 'maj' }, { root: mod12(key.root + 5), quality: opts.sevenths ? 'm7' : 'min' }] : [{ root: mod12(key.root + 7), quality: opts.sevenths ? '7' : 'maj' }];
-  for (const [i, chord] of borrowed.entries()) {
-    const fn: ChordFunction = 'other';
-    const score = previous && from >= 0 ? (from === 0 || from === 3 ? 0.35 - i * 0.1 : 0.15) : 0.1;
-    out.push({ chord, roman: romanOf(key, chord), function: fn, score, reason: mode === 'major' ? (i === 0 ? 'borrowed from the key next door: a rock edge' : 'borrowed minor four: bittersweet') : 'the major V from the harmonic minor: pulls hard back to home' });
-  }
+  out.push(...borrowedChords(key, mode, opts.sevenths === true, previous !== null && from >= 0 ? from : -1));
   out.sort((a, b) => b.score - a.score);
   // Not the chord just played again.
   const filtered = previous ? out.filter((n) => !sameChord(n.chord, previous)) : out;

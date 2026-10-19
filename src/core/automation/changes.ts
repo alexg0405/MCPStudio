@@ -16,58 +16,90 @@ function changedParams(a: PluginInstance | undefined, b: PluginInstance | undefi
   return [...keys].filter((k) => a.params[k] !== b.params[k]);
 }
 
+/** The moved targets found so far, each once (by its key), and the two versions they are found between. */
+class MovedTargets {
+  private readonly found = new Map<string, ParamTarget>();
+
+  constructor(
+    readonly prev: Project,
+    readonly next: Project,
+  ) {}
+
+  add(target: ParamTarget): void {
+    this.found.set(targetKey(target), target);
+  }
+
+  /** Adds every param of a plugin whose value differs between the two versions. */
+  addPluginParams(owner: PluginOwner): void {
+    for (const paramId of changedParams(pluginInstanceOf(this.prev, owner), pluginInstanceOf(this.next, owner))) {
+      this.add({ kind: 'plugin', owner, paramId });
+    }
+  }
+
+  list(): ParamTarget[] {
+    return [...this.found.values()];
+  }
+}
+
+/** A channel's pitch offset in semitones (only instruments have one). */
+const pitchOf = (channel: Project['channels'][ChannelId]): number =>
+  channel?.kind === 'instrument' ? (channel.pitch ?? 0) : 0;
+
+/** What a patch under `channels/<id>` moved: its volume, pan or pitch, or its plugin's params (`field` narrows it to one). */
+function channelChanges(moved: MovedTargets, channelId: ChannelId, field: string | number | undefined): void {
+  const a = moved.prev.channels[channelId];
+  const b = moved.next.channels[channelId];
+  if (!a || !b || b.kind === 'automation' || a.kind === 'automation') return;
+  for (const param of ['volume', 'pan', 'pitch'] as const) {
+    if (field !== undefined && field !== param) continue;
+    const before = param === 'pitch' ? pitchOf(a) : a[param];
+    const after = param === 'pitch' ? pitchOf(b) : b[param];
+    if (before !== after) moved.add({ kind: 'channel', channelId, param });
+  }
+  if (field === undefined || field === 'plugin') moved.addPluginParams({ kind: 'channel', channelId });
+}
+
+/** What a patch under `mixer/inserts/<id>` moved: its volume or pan, an effect's mix or params, a route's level. */
+function insertChanges(moved: MovedTargets, insertId: InsertId, field: string | number | undefined): void {
+  const a = moved.prev.mixer.inserts[insertId];
+  const b = moved.next.mixer.inserts[insertId];
+  if (!a || !b) return;
+  if ((field === undefined || field === 'volume') && a.volume !== b.volume) {
+    moved.add({ kind: 'insert', insertId, param: 'volume' });
+  }
+  if ((field === undefined || field === 'pan') && a.pan !== b.pan)
+    moved.add({ kind: 'insert', insertId, param: 'pan' });
+  if (field === undefined || field === 'fx') {
+    for (const slot of b.fx) {
+      const old = a.fx.find((s) => s.id === slot.id);
+      if (!old || old === slot) continue;
+      if (old.mix !== slot.mix) moved.add({ kind: 'slot', insertId, slotId: slot.id, param: 'mix' });
+      moved.addPluginParams({ kind: 'fx', insertId, slotId: slot.id });
+    }
+  }
+  if (field === undefined || field === 'routes') {
+    for (const r of b.routes) {
+      const old = a.routes.find((x) => x.to === r.to);
+      if (old && old.level !== r.level) moved.add({ kind: 'route', insertId, to: r.to });
+    }
+  }
+}
+
 /**
  * Targets whose values changed from `prev` to `next`, judged from the patch paths (a whole replaced
  * channel or plugin compares its params). Each target appears once.
  */
 export function targetsChangedBy(prev: Project, next: Project, patches: readonly Patch[] | null): ParamTarget[] {
-  const out = new Map<string, ParamTarget>();
-  const add = (t: ParamTarget) => out.set(targetKey(t), t);
-  const plugin = (owner: PluginOwner) => {
-    for (const paramId of changedParams(pluginInstanceOf(prev, owner), pluginInstanceOf(next, owner)))
-      add({ kind: 'plugin', owner, paramId });
-  };
+  const moved = new MovedTargets(prev, next);
   for (const patch of patches ?? []) {
     const path = patch.path;
     if (path[0] === 'transport' && (path[1] === 'bpm' || path.length === 1)) {
-      if (prev.transport.bpm !== next.transport.bpm) add({ kind: 'tempo' });
+      if (prev.transport.bpm !== next.transport.bpm) moved.add({ kind: 'tempo' });
     } else if (path[0] === 'channels' && typeof path[1] === 'string') {
-      const channelId = path[1] as ChannelId;
-      const a = prev.channels[channelId];
-      const b = next.channels[channelId];
-      if (!a || !b || b.kind === 'automation' || a.kind === 'automation') continue;
-      const field = path[2];
-      for (const param of ['volume', 'pan', 'pitch'] as const) {
-        if (field !== undefined && field !== param) continue;
-        const va = param === 'pitch' ? (a.kind === 'instrument' ? (a.pitch ?? 0) : 0) : a[param];
-        const vb = param === 'pitch' ? (b.kind === 'instrument' ? (b.pitch ?? 0) : 0) : b[param];
-        if (va !== vb) add({ kind: 'channel', channelId, param });
-      }
-      if (field === undefined || field === 'plugin') plugin({ kind: 'channel', channelId });
+      channelChanges(moved, path[1] as ChannelId, path[2]);
     } else if (path[0] === 'mixer' && path[1] === 'inserts' && typeof path[2] === 'string') {
-      const insertId = path[2] as InsertId;
-      const a = prev.mixer.inserts[insertId];
-      const b = next.mixer.inserts[insertId];
-      if (!a || !b) continue;
-      const field = path[3];
-      if ((field === undefined || field === 'volume') && a.volume !== b.volume)
-        add({ kind: 'insert', insertId, param: 'volume' });
-      if ((field === undefined || field === 'pan') && a.pan !== b.pan) add({ kind: 'insert', insertId, param: 'pan' });
-      if (field === undefined || field === 'fx') {
-        for (const slot of b.fx) {
-          const old = a.fx.find((s) => s.id === slot.id);
-          if (!old || old === slot) continue;
-          if (old.mix !== slot.mix) add({ kind: 'slot', insertId, slotId: slot.id, param: 'mix' });
-          plugin({ kind: 'fx', insertId, slotId: slot.id });
-        }
-      }
-      if (field === undefined || field === 'routes') {
-        for (const r of b.routes) {
-          const old = a.routes.find((x) => x.to === r.to);
-          if (old && old.level !== r.level) add({ kind: 'route', insertId, to: r.to });
-        }
-      }
+      insertChanges(moved, path[2] as InsertId, path[3]);
     }
   }
-  return [...out.values()];
+  return moved.list();
 }

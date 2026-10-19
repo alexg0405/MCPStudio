@@ -47,6 +47,17 @@ const UNVOICED_PERIOD = 0.008;
 const MIN_RUN = 3;
 /** Shifts below this many cents leave the sound as it is. */
 const NEGLIGIBLE_CENTS = 0.001;
+/** The shifted range reaches this far (s) beyond the first and last shifted frame, so the edit has no seams. */
+const RANGE_MARGIN_SEC = 0.06;
+/** Fewer marks than this and there is nothing to overlap-add. */
+const MIN_MARKS = 3;
+/** The grain ring is at least this many samples, and holds this many grains of the longest reach. */
+const MIN_RING_SIZE = 1024;
+const RING_GRAINS = 8;
+/** Output samples whose windows add up to less than this are left as the input. */
+const MIN_WINDOW_SUM = 1e-12;
+/** A grain reaches at least this share of a synthesis step to each side, so a fall leaves no gaps. */
+const GRAIN_OVERLAP = 0.75;
 const TWO_PI = Math.PI * 2;
 
 interface Run {
@@ -106,7 +117,13 @@ function shiftAt(track: PsolaTrack, n: number): number {
  * Pitch marks of a mono signal (sample positions, increasing): in voiced runs at the peaks of the
  * fundamental, elsewhere (between `from` and `to`) every 8 ms.
  */
-export function pitchMarks(mono: Float32Array, sampleRate: number, track: PsolaTrack, from = 0, to = mono.length): Float64Array {
+export function pitchMarks(
+  mono: Float32Array,
+  sampleRate: number,
+  track: PsolaTrack,
+  from = 0,
+  to = mono.length,
+): Float64Array {
   const runs = voicedRuns(track, mono.length);
   const marks: number[] = [];
   const step = Math.max(8, Math.round(UNVOICED_PERIOD * sampleRate));
@@ -133,10 +150,17 @@ export function pitchMarks(mono: Float32Array, sampleRate: number, track: PsolaT
   return Float64Array.from(out);
 }
 
-/** Marks inside one voiced run, from the phase of the fundamental. */
-function runPhaseMarks(x: Float32Array, sr: number, track: PsolaTrack, run: Run): number[] {
+/** The lowest pitch (Hz) the phase follows, so a pitch track that dips to 0 inside a run cannot stall it. */
+const MIN_TRACKED_HZ = 20;
+
+/** The pitch track's phase over a run and the running sums of x·cos Φ and x·sin Φ (complex demodulation), with the period (samples) at each sample. */
+function demodulate(
+  x: Float32Array,
+  sr: number,
+  track: PsolaTrack,
+  run: Run,
+): { phase: Float64Array; pc: Float64Array; ps: Float64Array; period: Int32Array } {
   const len = run.b - run.a + 1;
-  // Phase of the pitch track, and the running sums of x·cos Φ and x·sin Φ.
   const phase = new Float64Array(len);
   const pc = new Float64Array(len + 1);
   const ps = new Float64Array(len + 1);
@@ -149,9 +173,16 @@ function runPhaseMarks(x: Float32Array, sr: number, track: PsolaTrack, run: Run)
     const v = x[n] as number;
     pc[k + 1] = (pc[k] as number) + v * Math.cos(phi);
     ps[k + 1] = (ps[k] as number) + v * Math.sin(phi);
-    period[k] = Math.max(2, Math.round(sr / Math.max(20, f)));
-    phi += (TWO_PI * Math.max(20, f)) / sr;
+    period[k] = Math.max(2, Math.round(sr / Math.max(MIN_TRACKED_HZ, f)));
+    phi += (TWO_PI * Math.max(MIN_TRACKED_HZ, f)) / sr;
   }
+  return { phase, pc, ps, period };
+}
+
+/** Marks inside one voiced run, from the phase of the fundamental. */
+function runPhaseMarks(x: Float32Array, sr: number, track: PsolaTrack, run: Run): number[] {
+  const len = run.b - run.a + 1;
+  const { phase, pc, ps, period } = demodulate(x, sr, track, run);
   // The fundamental's phase offset θ over a two-period window; ψ = Φ + θ (unwrapped).
   const marks: number[] = [];
   let prevTheta = 0;
@@ -198,6 +229,115 @@ function cubicAt(x: Float32Array, pos: number): number {
   return y1 + 0.5 * t * (y2 - y0 + t * (2 * y0 - 5 * y1 + 4 * y2 - y3 + t * (3 * (y1 - y2) + y3 - y0)));
 }
 
+/** The sample range [from, to) that has a shift (the first to the last such frame, plus a margin), or null when nothing changes. */
+function changedRange(track: PsolaTrack, length: number, sampleRate: number): { from: number; to: number } | null {
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < track.shift.length; i++) {
+    if (Math.abs(track.shift[i] as number) > NEGLIGIBLE_CENTS) {
+      if (first < 0) first = i;
+      last = i;
+    }
+  }
+  if (first < 0) return null;
+  const margin = Math.round(RANGE_MARGIN_SEC * sampleRate);
+  const from = Math.max(0, Math.round(track.t0 + (first - 1) * track.hop) - margin);
+  const to = Math.min(length, Math.round(track.t0 + (last + 1) * track.hop) + margin);
+  return to > from ? { from, to } : null;
+}
+
+/** The average of the channels over [from, to) (zero elsewhere): the marks are found on this, so stereo images stay together. */
+function mixToMono(channels: readonly Float32Array[], length: number, from: number, to: number): Float32Array {
+  const mono = new Float32Array(length);
+  const inv = 1 / channels.length;
+  for (let c = 0; c < channels.length; c++) {
+    const ch = channels[c] as Float32Array;
+    for (let n = from; n < to; n++) mono[n] = (mono[n] as number) + (ch[n] as number) * inv;
+  }
+  return mono;
+}
+
+/**
+ * Overlap-adds windowed grains into a ring (a few grains long) and writes each output sample once
+ * nothing more can reach it: the wet sound divided by the sum of the windows, blended towards the
+ * dry input where the windows add up to less than 1.
+ */
+class GrainAccumulator {
+  private readonly wet: Float64Array[];
+  private readonly windowSum: Float64Array;
+  private readonly mask: number;
+  /** Output samples before this one are written. */
+  private flushed: number;
+
+  /**
+   * `reach` is how far a grain can stretch to either side; the ring holds eight of them.
+   * `firstMark` is where synthesis starts.
+   */
+  constructor(
+    private readonly channels: readonly Float32Array[],
+    private readonly out: Float32Array[],
+    private readonly from: number,
+    private readonly to: number,
+    reach: number,
+    firstMark: number,
+  ) {
+    let ringSize = MIN_RING_SIZE;
+    while (ringSize < RING_GRAINS * reach) ringSize *= 2;
+    this.mask = ringSize - 1;
+    this.wet = channels.map(() => new Float64Array(ringSize));
+    this.windowSum = new Float64Array(ringSize);
+    this.flushed = Math.max(from, Math.floor(firstMark) - reach);
+  }
+
+  /**
+   * Adds the grain around analysis mark `mark` to the output at synthesis time `ts`: a raised-cosine
+   * window `hl` samples to the left and `hr` to the right, reading the input with cubic interpolation.
+   */
+  addGrain(ts: number, mark: number, hl: number, hr: number): void {
+    const { wet, windowSum, mask, channels } = this;
+    const n0 = Math.max(this.from, Math.ceil(ts - hl));
+    const n1 = Math.min(this.to - 1, Math.floor(ts + hr));
+    for (let n = n0; n <= n1; n++) {
+      const d = n - ts;
+      const w = d < 0 ? 0.5 + 0.5 * Math.cos((Math.PI * d) / hl) : 0.5 + 0.5 * Math.cos((Math.PI * d) / hr);
+      const slot = n & mask;
+      windowSum[slot] = (windowSum[slot] as number) + w;
+      const pos = mark + d;
+      for (let c = 0; c < wet.length; c++) {
+        const buf = wet[c] as Float64Array;
+        buf[slot] = (buf[slot] as number) + w * cubicAt(channels[c] as Float32Array, pos);
+      }
+    }
+  }
+
+  /** Writes every output sample before `upTo` that has not been written yet, and frees its ring slot. */
+  finalize(upTo: number): void {
+    const { wet, windowSum, mask, channels, out } = this;
+    const end = Math.min(upTo, this.to, channels[0]?.length ?? 0);
+    for (; this.flushed < end; this.flushed++) {
+      const n = this.flushed;
+      const slot = n & mask;
+      const w = windowSum[slot] as number;
+      if (n >= 0 && w > MIN_WINDOW_SUM) {
+        const blend = w < 1 ? w : 1;
+        for (let c = 0; c < wet.length; c++) {
+          const dry = (channels[c] as Float32Array)[n] as number;
+          (out[c] as Float32Array)[n] = dry + ((wet[c] as Float64Array)[slot]! / w - dry) * blend;
+        }
+      }
+      windowSum[slot] = 0;
+      for (let c = 0; c < wet.length; c++) (wet[c] as Float64Array)[slot] = 0;
+    }
+  }
+}
+
+/** The longest gap between two neighbouring marks (samples). */
+function longestPeriod(marks: Float64Array): number {
+  let longest = 0;
+  for (let k = 1; k < marks.length; k++) longest = Math.max(longest, (marks[k] as number) - (marks[k - 1] as number));
+  return longest;
+}
+
 /**
  * Shifts the pitch of every channel by the track's per-frame cents. Returns new channels (the
  * input is not touched); the sound outside the stretch that has a non-zero shift is copied
@@ -212,102 +352,66 @@ export function psolaShift(
   const length = channels[0]?.length ?? 0;
   const out = channels.map((c) => Float32Array.from(c));
   if (length === 0 || track.f0.length === 0) return out;
-  const maxCents = opts.maxCents ?? 1200;
+  const range = changedRange(track, length, sampleRate);
+  if (!range) return out;
+  const { from, to } = range;
+  const marks = pitchMarks(mixToMono(channels, length, from, to), sampleRate, track, from, to);
+  if (marks.length < MIN_MARKS) return out;
+  // Windows reach at most 1.5 periods each side at the largest shift.
+  const reach = Math.ceil(2 * longestPeriod(marks)) + 4;
+  const grains = new GrainAccumulator(channels, out, from, to, reach, marks[0] as number);
+  synthesize(marks, track, { from, to, reach, sampleRate, maxCents: opts.maxCents ?? 1200 }, grains, opts.onProgress);
+  grains.finalize(to);
+  opts.onProgress?.(1);
+  return out;
+}
 
-  // Where anything changes: the first to the last frame with a shift (plus a margin).
-  let first = -1;
-  let last = -1;
-  for (let i = 0; i < track.shift.length; i++) {
-    if (Math.abs(track.shift[i] as number) > NEGLIGIBLE_CENTS) {
-      if (first < 0) first = i;
-      last = i;
-    }
-  }
-  if (first < 0) return out;
-  const margin = Math.round(0.06 * sampleRate);
-  const from = Math.max(0, Math.round(track.t0 + (first - 1) * track.hop) - margin);
-  const to = Math.min(length, Math.round(track.t0 + (last + 1) * track.hop) + margin);
-  if (to <= from) return out;
+/** What the synthesis loop needs besides the marks and the track. */
+interface SynthesisRange {
+  from: number;
+  to: number;
+  reach: number;
+  sampleRate: number;
+  maxCents: number;
+}
 
-  const mono = new Float32Array(length);
-  const inv = 1 / channels.length;
-  for (let c = 0; c < channels.length; c++) {
-    const ch = channels[c] as Float32Array;
-    for (let n = from; n < to; n++) mono[n] = (mono[n] as number) + (ch[n] as number) * inv;
-  }
-  const marks = pitchMarks(mono, sampleRate, track, from, to);
-  const M = marks.length;
-  if (M < 3) return out;
-
-  let maxPeriod = 0;
-  for (let k = 1; k < M; k++) maxPeriod = Math.max(maxPeriod, (marks[k] as number) - (marks[k - 1] as number));
-  // Windows reach at most 1.5 periods each side at the largest shift; the ring holds several of them.
-  const reach = Math.ceil(2 * maxPeriod) + 4;
-  let ringSize = 1024;
-  while (ringSize < 8 * reach) ringSize *= 2;
-  const mask = ringSize - 1;
-  const wet = channels.map(() => new Float64Array(ringSize));
-  const wsum = new Float64Array(ringSize);
-
-  let flushed = Math.floor(marks[0] as number) - reach;
-  if (flushed < from) flushed = from;
-  const finalize = (upTo: number) => {
-    const end = Math.min(upTo, to, length);
-    for (; flushed < end; flushed++) {
-      const slot = flushed & mask;
-      const w = wsum[slot] as number;
-      if (flushed >= 0 && w > 1e-12) {
-        const blend = w < 1 ? w : 1;
-        for (let c = 0; c < wet.length; c++) {
-          const dry = (channels[c] as Float32Array)[flushed] as number;
-          (out[c] as Float32Array)[flushed] = dry + ((wet[c] as Float64Array)[slot]! / w - dry) * blend;
-        }
-      }
-      wsum[slot] = 0;
-      for (let c = 0; c < wet.length; c++) (wet[c] as Float64Array)[slot] = 0;
-    }
-  };
-
-  // Walk the synthesis marks.
+/**
+ * Walks the synthesis marks: each lies one analysis period divided by the pitch ratio after the last
+ * and takes the analysis mark nearest to it (a rise repeats some grains and a fall skips some).
+ */
+function synthesize(
+  marks: Float64Array,
+  track: PsolaTrack,
+  range: SynthesisRange,
+  grains: GrainAccumulator,
+  onProgress: PsolaOptions['onProgress'],
+): void {
+  const { from, to, reach, sampleRate, maxCents } = range;
+  const count = marks.length;
   let k = 0;
-  while (k + 1 < M && (marks[k] as number) < from) k++;
+  while (k + 1 < count && (marks[k] as number) < from) k++;
   let ts = marks[k] as number;
-  const end = marks[M - 1] as number;
+  const end = marks[count - 1] as number;
   const reportEvery = Math.max(1, Math.round(sampleRate)); // about once per second of audio
   let reported = 0;
   while (ts <= end) {
     // The analysis mark nearest to ts.
-    while (k + 1 < M && Math.abs((marks[k + 1] as number) - ts) <= Math.abs((marks[k] as number) - ts)) k++;
-    const mk = marks[k] as number;
-    const left = k > 0 ? mk - (marks[k - 1] as number) : (marks[k + 1] as number) - mk;
-    const right = k + 1 < M ? (marks[k + 1] as number) - mk : left;
+    while (k + 1 < count && Math.abs((marks[k + 1] as number) - ts) <= Math.abs((marks[k] as number) - ts)) k++;
+    const mark = marks[k] as number;
+    const left = k > 0 ? mark - (marks[k - 1] as number) : (marks[k + 1] as number) - mark;
+    const right = k + 1 < count ? (marks[k + 1] as number) - mark : left;
     const cents = Math.max(-maxCents, Math.min(maxCents, shiftAt(track, ts)));
     const ratio = Math.pow(2, cents / 1200);
     const step = Math.max(1, right / ratio);
     // Longer windows keep a fall of an octave from leaving gaps between grains.
-    const hl = Math.max(left, 0.75 * step);
-    const hr = Math.max(right, 0.75 * step);
-    const n0 = Math.max(from, Math.ceil(ts - hl));
-    const n1 = Math.min(to - 1, Math.floor(ts + hr));
-    for (let n = n0; n <= n1; n++) {
-      const d = n - ts;
-      const w = d < 0 ? 0.5 + 0.5 * Math.cos((Math.PI * d) / hl) : 0.5 + 0.5 * Math.cos((Math.PI * d) / hr);
-      const slot = n & mask;
-      wsum[slot] = (wsum[slot] as number) + w;
-      const pos = mk + d;
-      for (let c = 0; c < wet.length; c++) {
-        const buf = wet[c] as Float64Array;
-        buf[slot] = (buf[slot] as number) + w * cubicAt(channels[c] as Float32Array, pos);
-      }
-    }
+    const hl = Math.max(left, GRAIN_OVERLAP * step);
+    const hr = Math.max(right, GRAIN_OVERLAP * step);
+    grains.addGrain(ts, mark, hl, hr);
     ts += step;
-    finalize(Math.floor(ts - 2 * reach));
-    if (opts.onProgress && ts - reported > reportEvery) {
+    grains.finalize(Math.floor(ts - 2 * reach));
+    if (onProgress && ts - reported > reportEvery) {
       reported = ts;
-      opts.onProgress(Math.min(1, (ts - from) / (to - from)));
+      onProgress(Math.min(1, (ts - from) / (to - from)));
     }
   }
-  finalize(to);
-  opts.onProgress?.(1);
-  return out;
 }

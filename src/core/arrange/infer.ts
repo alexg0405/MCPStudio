@@ -75,7 +75,12 @@ export function estimateEnergy(p: Project, from: Tick, to: Tick, env: VariantEnv
 }
 
 /** What the clips playing in [from, to) can play, and their shortest drum or bass loop. */
-export function sectionContent(p: Project, from: Tick, to: Tick, env: VariantEnv): { caps: SectionCaps; loopBars: number } {
+export function sectionContent(
+  p: Project,
+  from: Tick,
+  to: Tick,
+  env: VariantEnv,
+): { caps: SectionCaps; loopBars: number } {
   const bar = ticksPerBar(p.transport.timeSig);
   const caps: SectionCaps = { drums: false, hats: false, openHat: false, slide: false };
   let loopBars = 0;
@@ -83,7 +88,10 @@ export function sectionContent(p: Project, from: Tick, to: Tick, env: VariantEnv
   const played = new Map<PatternId, Tick>();
   for (const c of audiblePatternClips(p))
     if (c.start < to && c.start + c.length > from)
-      played.set(c.patternId, (played.get(c.patternId) ?? 0) + Math.min(to, c.start + c.length) - Math.max(from, c.start));
+      played.set(
+        c.patternId,
+        (played.get(c.patternId) ?? 0) + Math.min(to, c.start + c.length) - Math.max(from, c.start),
+      );
   // What each pattern holds, worked out once however many clips play it.
   const held = new Map<PatternId, { drums: boolean; hats: boolean; slide: boolean; bass: boolean }>();
   const holds = (pid: PatternId) => {
@@ -128,6 +136,64 @@ function roleFor(name: string, energy: number, index: number, count: number): Se
   return 'verse';
 }
 
+/** A stretch of the song before it gets its energy and content: a name, its span and the marker that named it. */
+interface SectionSpanDraft {
+  name: string;
+  from: Tick;
+  to: Tick;
+  markerId: MarkerId | null;
+}
+
+/** Parts shorter than this many bars join the one before. */
+const MIN_PART_BARS = 2;
+
+/** One span per marked section (and a "Start" before the first marker when the song starts unmarked). */
+function spansFromMarkers(marks: ReturnType<typeof songSections>): SectionSpanDraft[] {
+  const spans: SectionSpanDraft[] = [];
+  if (marks[0]!.from > 0) spans.push({ name: 'Start', from: 0, to: marks[0]!.from, markerId: null });
+  for (const m of marks) spans.push({ name: m.name, from: m.from, to: m.to, markerId: m.markerId });
+  return spans;
+}
+
+/** The patterns (by source) playing in bar `bar` of the song, as one string; equal strings mean the same music. */
+function playingSignature(
+  p: Project,
+  clips: ReturnType<typeof audiblePatternClips>,
+  bar: number,
+  barTicks: Tick,
+): string {
+  const start = bar * barTicks;
+  const end = start + barTicks;
+  const roots = new Set<string>();
+  for (const c of clips) {
+    if (c.start < end && c.start + c.length > start) roots.add(p.patterns[c.patternId]?.derived?.from ?? c.patternId);
+  }
+  return [...roots].sort().join();
+}
+
+/** Parts where what plays changes, bar by bar; parts shorter than 2 bars join the one before ("Part 1", "Part 2"…). */
+function spansWherePlayChanges(p: Project, songEnd: Tick, barTicks: Tick): SectionSpanDraft[] {
+  const clips = audiblePatternClips(p);
+  const spans: SectionSpanDraft[] = [];
+  const count = Math.ceil(songEnd / barTicks);
+  let start = 0;
+  let current = playingSignature(p, clips, 0, barTicks);
+  for (let b = 1; b <= count; b++) {
+    const next = b < count ? playingSignature(p, clips, b, barTicks) : '\u0000end';
+    if (next === current) continue;
+    spans.push({ name: `Part ${spans.length + 1}`, from: start * barTicks, to: b * barTicks, markerId: null });
+    start = b;
+    current = next;
+  }
+  const merged: SectionSpanDraft[] = [];
+  for (const s of spans) {
+    const last = merged[merged.length - 1];
+    if (last && s.to - s.from < MIN_PART_BARS * barTicks) last.to = s.to;
+    else merged.push({ ...s });
+  }
+  return merged.map((s, i) => ({ ...s, name: `Part ${i + 1}` }));
+}
+
 /**
  * The song's sections within [from, to): its markers, or where the set of patterns playing changes
  * (parts shorter than 2 bars join the one before). Each gets its part, energy and content.
@@ -138,40 +204,8 @@ export function inferSections(p: Project, env: VariantEnv, range?: { from: Tick;
   const from = Math.max(0, range?.from ?? 0);
   const to = Math.min(range?.to ?? end, end);
   if (to <= from) return [];
-  let spans: { name: string; from: Tick; to: Tick; markerId: MarkerId | null }[] = [];
   const marks = songSections(p);
-  if (marks.length) {
-    if (marks[0]!.from > 0) spans.push({ name: 'Start', from: 0, to: marks[0]!.from, markerId: null });
-    for (const m of marks) spans.push({ name: m.name, from: m.from, to: m.to, markerId: m.markerId });
-  } else {
-    // Where what plays changes, bar by bar.
-    const clips = audiblePatternClips(p);
-    const sig = (b: number) => {
-      const t0 = b * bar;
-      const t1 = t0 + bar;
-      const roots = new Set<string>();
-      for (const c of clips) if (c.start < t1 && c.start + c.length > t0) roots.add(p.patterns[c.patternId]?.derived?.from ?? c.patternId);
-      return [...roots].sort().join();
-    };
-    const count = Math.ceil(end / bar);
-    let start = 0;
-    let current = sig(0);
-    for (let b = 1; b <= count; b++) {
-      const s = b < count ? sig(b) : '\u0000end';
-      if (s === current) continue;
-      spans.push({ name: `Part ${spans.length + 1}`, from: start * bar, to: b * bar, markerId: null });
-      start = b;
-      current = s;
-    }
-    // Parts shorter than 2 bars join the one before.
-    const merged: typeof spans = [];
-    for (const s of spans) {
-      const last = merged[merged.length - 1];
-      if (last && s.to - s.from < 2 * bar) last.to = s.to;
-      else merged.push({ ...s });
-    }
-    spans = merged.map((s, i) => ({ ...s, name: `Part ${i + 1}` }));
-  }
+  const spans = marks.length > 0 ? spansFromMarkers(marks) : spansWherePlayChanges(p, end, bar);
   const clipped = spans
     .map((s) => ({ ...s, from: Math.max(s.from, from), to: Math.min(s.to, to) }))
     .filter((s) => s.to > s.from);
@@ -221,7 +255,13 @@ export function fillLikeClips(p: Project, env: VariantEnv): FillClip[] {
     const short = len <= bar || /\b(fill|roll)\b/i.test(pat.name);
     if (total < 4 || drums !== total || !short || late < total * 0.7 || c.length > len) continue;
     const at = c.start + Math.max(0, first - c.offset);
-    out.push({ clipId: c.id, laneId: c.laneId, patternId: c.patternId, from: Math.floor(at / BEAT) * BEAT, to: c.start + c.length });
+    out.push({
+      clipId: c.id,
+      laneId: c.laneId,
+      patternId: c.patternId,
+      from: Math.floor(at / BEAT) * BEAT,
+      to: c.start + c.length,
+    });
   }
   return out;
 }
@@ -291,7 +331,9 @@ export function existingFx(p: Project, env: VariantEnv): { kind: ExistingFxKind;
     const src = p.samples[ch.sampleId]?.source;
     const gen = src?.kind === 'builtin' ? src.generator : '';
     const kind: ExistingFxKind | undefined =
-      parseFxName(gen)?.kind ?? (/crash/i.test(ch.name) && !/rev/i.test(ch.name) ? 'crash' : fxKindFromName(ch.name)) ?? (gen.endsWith('/crash') ? 'crash' : undefined);
+      parseFxName(gen)?.kind ??
+      (/crash/i.test(ch.name) && !/rev/i.test(ch.name) ? 'crash' : fxKindFromName(ch.name)) ??
+      (gen.endsWith('/crash') ? 'crash' : undefined);
     if (!kind) continue;
     out.push({ kind, at: kind !== 'crash' && endsAtX(kind) ? c.start + c.length : c.start });
   }

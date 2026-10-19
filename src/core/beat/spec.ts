@@ -92,6 +92,9 @@ export const MAX_TRACKS = 12;
 export const MAX_NOTES_PER_TRACK = 256;
 /** Steps snap to 1/6 step (40 ticks): covers 1/32 notes and 1/24 triplet rolls. */
 const STEP_GRID = 6;
+/** Most instrument settings kept per track, and what a setting's name may look like. */
+const MAX_PARAMS = 24;
+const PARAM_ID = /^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
@@ -141,53 +144,10 @@ export function validateBeatSpec(raw: unknown, opts: BeatCheckOptions = {}): Bea
       warnings.push(`Skipped a track with unknown sound "${String(t.sound)}".`);
       continue;
     }
-    let name = cleanName(t.name, sound);
-    for (let i = 2; names.has(name.toLowerCase()); i++) name = `${cleanName(t.name, sound)} ${i}`;
-    names.add(name.toLowerCase());
-    const drum = DRUM_SOUNDS.has(sound);
-    const notes: { note: BeatNote; missing: boolean }[] = [];
-    const seen = new Set<string>();
-    for (const n of Array.isArray(t.notes) ? t.notes.slice(0, MAX_NOTES_PER_TRACK) : []) {
-      if (!isObj(n)) continue;
-      const stepRaw = num(n.step);
-      if (stepRaw === undefined) continue;
-      const step = snapStep(stepRaw);
-      if (step < 0 || step >= total) continue;
-      const len = clamp(snapStep(num(n.len) ?? 1) || 1 / STEP_GRID, 1 / STEP_GRID, total - step);
-      const velRaw = num(n.vel);
-      const vel = clamp(velRaw ?? 0.8, 0.05, 1);
-      const note: BeatNote = { step, len, vel };
-      if (!drum) {
-        const key = num(n.key);
-        if (key === undefined) continue;
-        note.key = clamp(Math.round(key), 0, 127);
-      }
-      // A drum hit twice on the same step (or the same pitch twice) is one note.
-      const id = drum ? `${step}` : `${step}:${note.key}`;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      notes.push({ note, missing: velRaw === undefined });
-      if (sound === 'open-hat') explicitLen.set(note, num(n.len) !== undefined);
-    }
-    notes.sort((a, b) => a.note.step - b.note.step || (a.note.key ?? 0) - (b.note.key ?? 0));
+    const name = uniqueTrackName(cleanName(t.name, sound), names);
+    const notes = cleanNotes(t.notes, sound, total, explicitLen);
     const track: BeatTrack = { name, sound, notes: notes.map((x) => x.note) };
-    const volumeDb = num(t.volume_db);
-    const volume = num(t.volume);
-    if (volumeDb !== undefined) track.volume = gainOf(volumeDb);
-    // A negative volume can only be meant as dB, and 2–100 as a percentage.
-    else if (volume !== undefined)
-      track.volume = volume < 0 ? gainOf(volume) : volume > 1.5 && volume <= 100 ? volume / 100 : clamp(volume, 0, 1);
-    const pan = num(t.pan);
-    if (pan !== undefined) track.pan = clamp(pan, -1, 1);
-    if (typeof t.preset === 'string' && t.preset.trim()) track.preset = t.preset.trim().slice(0, 60);
-    if (isObj(t.params)) {
-      const params: Record<string, number> = {};
-      for (const [k, v] of Object.entries(t.params).slice(0, 24)) {
-        const x = num(v);
-        if (x !== undefined && /^[a-zA-Z][a-zA-Z0-9]{0,31}$/.test(k)) params[k] = x;
-      }
-      if (Object.keys(params).length > 0) track.params = params;
-    }
+    applyTrackSettings(track, t);
     tracks.push(track);
     missingVel.push(notes.map((x) => x.missing));
   }
@@ -199,13 +159,7 @@ export function validateBeatSpec(raw: unknown, opts: BeatCheckOptions = {}): Bea
   if (bpm !== undefined) spec.bpm = clamp(Math.round(bpm), 50, 220);
   const swing = num(raw.swing);
   if (swing !== undefined) spec.swing = clamp(swing, 0, 1);
-  if (isStyle(raw.style)) {
-    spec.style = raw.style;
-    // A song without swing yet gets the style's (a beat that names its swing keeps it).
-    if (spec.swing === undefined && !(opts.project?.swing ?? 0) && GROOVE[raw.style].swing > 0)
-      spec.swing = GROOVE[raw.style].swing;
-  } else if (raw.style !== undefined)
-    warnings.push(`Unknown style "${String(raw.style)}" (the styles are ${STYLES.join(', ')}).`);
+  applyStyleField(spec, raw.style, opts, warnings);
   const style =
     spec.style ??
     opts.style ??
@@ -216,6 +170,102 @@ export function validateBeatSpec(raw: unknown, opts: BeatCheckOptions = {}): Bea
     chokeOpenHats(tracks, explicitLen, total);
   }
   return { spec, warnings, style };
+}
+
+/** The name, or "name 2", "name 3"… when another track already has it (case does not matter). The name is then taken. */
+function uniqueTrackName(base: string, taken: Set<string>): string {
+  let name = base;
+  for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${base} ${i}`;
+  taken.add(name.toLowerCase());
+  return name;
+}
+
+/** A cleaned note and whether it came without a velocity. */
+interface CleanNote {
+  note: BeatNote;
+  missing: boolean;
+}
+
+/**
+ * The usable notes of one track, in time order: snapped to the step grid, clamped, a pitch required
+ * for pitched sounds, and a hit twice on the same step (or the same pitch twice) kept once. Open-hat
+ * notes are recorded in `explicitLen` (whether the AI gave their length).
+ */
+function cleanNotes(raw: unknown, sound: BeatSound, total: number, explicitLen: Map<BeatNote, boolean>): CleanNote[] {
+  const isDrum = DRUM_SOUNDS.has(sound);
+  const notes: CleanNote[] = [];
+  const seen = new Set<string>();
+  for (const n of Array.isArray(raw) ? raw.slice(0, MAX_NOTES_PER_TRACK) : []) {
+    if (!isObj(n)) continue;
+    const stepRaw = num(n.step);
+    if (stepRaw === undefined) continue;
+    const step = snapStep(stepRaw);
+    if (step < 0 || step >= total) continue;
+    const len = clamp(snapStep(num(n.len) ?? 1) || 1 / STEP_GRID, 1 / STEP_GRID, total - step);
+    const velRaw = num(n.vel);
+    const vel = clamp(velRaw ?? 0.8, 0.05, 1);
+    const note: BeatNote = { step, len, vel };
+    if (!isDrum) {
+      const key = num(n.key);
+      if (key === undefined) continue;
+      note.key = clamp(Math.round(key), 0, 127);
+    }
+    const id = isDrum ? `${step}` : `${step}:${note.key}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    notes.push({ note, missing: velRaw === undefined });
+    if (sound === 'open-hat') explicitLen.set(note, num(n.len) !== undefined);
+  }
+  return notes.sort((a, b) => a.note.step - b.note.step || (a.note.key ?? 0) - (b.note.key ?? 0));
+}
+
+/** The track's volume as a linear gain: `volume_db`, else `volume` (a negative one can only be dB, 2–100 is a percentage). */
+function volumeOf(t: Record<string, unknown>): number | undefined {
+  const volumeDb = num(t.volume_db);
+  if (volumeDb !== undefined) return gainOf(volumeDb);
+  const volume = num(t.volume);
+  if (volume === undefined) return undefined;
+  if (volume < 0) return gainOf(volume);
+  if (volume > 1.5 && volume <= 100) return volume / 100;
+  return clamp(volume, 0, 1);
+}
+
+/** Instrument settings the AI may send: up to 24, with plain names, numeric values. */
+function cleanParams(raw: Record<string, unknown>): Record<string, number> {
+  const params: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw).slice(0, MAX_PARAMS)) {
+    const x = num(v);
+    if (x !== undefined && PARAM_ID.test(k)) params[k] = x;
+  }
+  return params;
+}
+
+/** Volume, pan, preset and params of a track, where the AI gave usable ones. */
+function applyTrackSettings(track: BeatTrack, t: Record<string, unknown>): void {
+  const volume = volumeOf(t);
+  if (volume !== undefined) track.volume = volume;
+  const pan = num(t.pan);
+  if (pan !== undefined) track.pan = clamp(pan, -1, 1);
+  if (typeof t.preset === 'string' && t.preset.trim()) track.preset = t.preset.trim().slice(0, 60);
+  if (isObj(t.params)) {
+    const params = cleanParams(t.params);
+    if (Object.keys(params).length > 0) track.params = params;
+  }
+}
+
+/**
+ * Takes the beat's style: a known one goes in the spec (a song without swing yet gets the style's, a
+ * beat that names its swing keeps it); an unknown one is a warning.
+ */
+function applyStyleField(spec: BeatSpec, rawStyle: unknown, opts: BeatCheckOptions, warnings: string[]): void {
+  if (isStyle(rawStyle)) {
+    spec.style = rawStyle;
+    if (spec.swing === undefined && !(opts.project?.swing ?? 0) && GROOVE[rawStyle].swing > 0) {
+      spec.swing = GROOVE[rawStyle].swing;
+    }
+  } else if (rawStyle !== undefined) {
+    warnings.push(`Unknown style "${String(rawStyle)}" (the styles are ${STYLES.join(', ')}).`);
+  }
 }
 
 /**
@@ -235,12 +285,14 @@ export const BEAT_JSON_SCHEMA = {
     bpm: { type: 'number', description: 'Tempo (50–220). Omit to keep the project tempo.' },
     swing: {
       type: 'number',
-      description: '0..1: the second 1/16 of every 8th plays late by swing × half a step (0 = straight). Omit to keep it.',
+      description:
+        '0..1: the second 1/16 of every 8th plays late by swing × half a step (0 = straight). Omit to keep it.',
     },
     style: {
       type: 'string',
       enum: [...STYLES],
-      description: 'The style: picks the drum kit, the sounds of new tracks and the accents of notes without a velocity.',
+      description:
+        'The style: picks the drum kit, the sounds of new tracks and the accents of notes without a velocity.',
     },
     bars: { type: 'integer', description: `Pattern length in 4/4 bars, 1 to ${MAX_BARS}.` },
     tracks: {
@@ -254,7 +306,8 @@ export const BEAT_JSON_SCHEMA = {
           sound: { type: 'string', enum: [...BEAT_SOUNDS] },
           volume_db: {
             type: 'number',
-            description: 'Channel volume in dB (−60…+1.9). Omit it: every sound starts at a level that sits in the mix.',
+            description:
+              'Channel volume in dB (−60…+1.9). Omit it: every sound starts at a level that sits in the mix.',
           },
           volume: { type: 'number', description: 'Channel volume as 0..1 instead of dB (prefer volume_db).' },
           pan: { type: 'number', description: '-1 (left) .. 1 (right).' },

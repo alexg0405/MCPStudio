@@ -67,6 +67,48 @@ describe('MIDI import', () => {
   });
 });
 
+describe('MIDI import options', () => {
+  it('puts every part in one pattern and leaves the playlist alone when asked', () => {
+    const s = createTestServices();
+    const res = importMidi(s, parseMidi(file), 'groove.mid', { split: false, tempo: false, place: false });
+    const p = s.doc.getState().project;
+    expect(res.patterns).toHaveLength(1);
+    expect(p.patterns[res.patterns[0]!]!.name).toBe('groove');
+    expect(Object.values(p.playlist.clips)).toHaveLength(0);
+    expect(p.transport.bpm).not.toBeCloseTo(95, 2);
+    expect(s.view.getState().mode).not.toBe('song');
+  });
+
+  it('names split patterns after their tracks and sizes each to whole bars', () => {
+    const s = createTestServices();
+    const res = importMidi(s, parseMidi(file), 'groove.mid', { split: true, tempo: false, place: false });
+    const p = s.doc.getState().project;
+    expect(res.patterns.map((id) => p.patterns[id]!.name)).toEqual(['groove – Drums', 'groove – Bass']);
+    expect(res.patterns.map((id) => p.patterns[id]!.length)).toEqual([3840, 7680]);
+    expect(res.patterns.map((id) => p.patterns[id]!.stepCount)).toEqual([16, 32]);
+  });
+
+  it('skips the lanes of a recording’s takes when placing patterns', () => {
+    const s = createTestServices();
+    const takeLane = s.doc.getState().project.playlist.laneOrder[0]!;
+    s.history.transact('takes', (d) => {
+      d.playlist.lanes[takeLane]!.takes = { group: 'g', role: 'comp' };
+    });
+    importMidi(s, parseMidi(file), 'groove.mid', { split: true, tempo: false, place: true });
+    const clips = Object.values(s.doc.getState().project.playlist.clips);
+    expect(clips).toHaveLength(2);
+    expect(clips.some((c) => c.laneId === takeLane)).toBe(false);
+  });
+
+  it('imports nothing from a file with no notes', () => {
+    const s = createTestServices();
+    const before = s.doc.getState().project;
+    const res = importMidi(s, { format: 1, ppq: 960, tracks: [], tempos: [], timeSig: null }, 'empty.mid', { split: true, tempo: true, place: true });
+    expect(res).toEqual({ patterns: [], channels: [], notes: 0, skipped: 0 });
+    expect(s.doc.getState().project).toBe(before);
+  });
+});
+
 describe('MIDI export', () => {
   it('writes the current pattern with kit channels as GM drums', () => {
     const s = createTestServices();

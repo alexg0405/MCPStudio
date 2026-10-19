@@ -13,7 +13,7 @@ const BUTTERWORTH_Q_DB = -3.0103;
 /** punchTime and decay are the times by which the pitch drop and the level have done ~98% (e^-4). */
 const TIME_TO_TAU = 4;
 
-const params = {
+const bassParams = {
   tune: p.int(-12, 12, 0, { label: 'Tune', unit: 'st', group: 'Pitch', hint: 'Transposes every note' }),
   glide: p.float(0, 0.6, 0.08, {
     label: 'Glide',
@@ -65,14 +65,14 @@ const params = {
 };
 
 /** The click as an AudioBuffer per sample rate (buffers are not tied to a context). */
-const clicks = new Map<number, AudioBuffer>();
+const clickBuffers = new Map<number, AudioBuffer>();
 function clickBuffer(sampleRate: number): AudioBuffer {
-  let buffer = clicks.get(sampleRate);
+  let buffer = clickBuffers.get(sampleRate);
   if (!buffer) {
     const data = clickWave(sampleRate);
     buffer = new AudioBuffer({ length: data.length, numberOfChannels: 1, sampleRate });
     buffer.copyToChannel(data, 0);
-    clicks.set(sampleRate, buffer);
+    clickBuffers.set(sampleRate, buffer);
   }
   return buffer;
 }
@@ -88,7 +88,7 @@ export default defineInstrument({
   version: 1,
   category: 'Synths',
   description: 'Sine bass with pitch punch, long decay and drive; overlapping notes glide (mono, legato).',
-  params,
+  params: bassParams,
   presets: [
     { name: 'Classic 808', params: {} },
     { name: 'Long slide', params: { decay: 5, glide: 0.22, punch: 10, punchTime: 40, drive: 0.35 } },
@@ -99,45 +99,45 @@ export default defineInstrument({
   ],
 
   create(host) {
-    const ac = host.audioContext;
-    const P = host.params;
+    const audioContext = host.audioContext;
+    const boundParams = host.params;
     // voices → drive (gain → tanh shaper → make-up) → tone → level
-    const bus = new GainNode(ac);
-    const pre = new GainNode(ac);
-    const shaper = new WaveShaperNode(ac, { curve: driveCurve(), oversample: '4x' });
-    const makeup = new GainNode(ac);
-    const tone = new BiquadFilterNode(ac, { type: 'lowpass', Q: BUTTERWORTH_Q_DB });
-    const out = new GainNode(ac);
-    bus.connect(pre).connect(shaper).connect(makeup).connect(tone).connect(out);
-    P.drive.bind(pre.gain, (d) => driveGain(d) / CURVE_RANGE);
-    P.drive.bind(makeup.gain, driveMakeup);
-    P.tone.bind(tone.frequency);
-    P.level.bind(out.gain, dbToGain);
+    const bus = new GainNode(audioContext);
+    const driveInput = new GainNode(audioContext);
+    const shaper = new WaveShaperNode(audioContext, { curve: driveCurve(), oversample: '4x' });
+    const makeupGain = new GainNode(audioContext);
+    const toneFilter = new BiquadFilterNode(audioContext, { type: 'lowpass', Q: BUTTERWORTH_Q_DB });
+    const outputGain = new GainNode(audioContext);
+    bus.connect(driveInput).connect(shaper).connect(makeupGain).connect(toneFilter).connect(outputGain);
+    boundParams.drive.bind(driveInput.gain, (d) => driveGain(d) / CURVE_RANGE);
+    boundParams.drive.bind(makeupGain.gain, driveMakeup);
+    boundParams.tone.bind(toneFilter.frequency);
+    boundParams.level.bind(outputGain.gain, dbToGain);
 
     const mono = new MonoBass({
-      audioContext: ac,
+      audioContext,
       destination: bus,
       // The tune knob (semitones) plus the channel's pitch and MIDI pitch bend.
       tune: host.channel
         ? sumSignals(
-            ac,
-            P.tune.signal((st) => st * 100),
+            audioContext,
+            boundParams.tune.signal((st) => st * 100),
             host.channel.pitch,
           )
-        : P.tune.signal((st) => st * 100),
-      lead: SHAPER_LATENCY_FRAMES / ac.sampleRate,
-      click: clickBuffer(ac.sampleRate),
+        : boundParams.tune.signal((st) => st * 100),
+      lead: SHAPER_LATENCY_FRAMES / audioContext.sampleRate,
+      click: clickBuffer(audioContext.sampleRate),
       settings: (t) => ({
-        punch: P.punch.valueAt(t),
-        punchTau: P.punchTime.valueAt(t) / 1000 / TIME_TO_TAU,
-        decayTau: P.decay.valueAt(t) / TIME_TO_TAU,
-        click: P.click.valueAt(t),
-        glide: P.glide.valueAt(t),
+        punch: boundParams.punch.valueAt(t),
+        punchTau: boundParams.punchTime.valueAt(t) / 1000 / TIME_TO_TAU,
+        decayTau: boundParams.decay.valueAt(t) / TIME_TO_TAU,
+        click: boundParams.click.valueAt(t),
+        glide: boundParams.glide.valueAt(t),
       }),
     });
 
     return {
-      output: out,
+      output: outputGain,
       // Held notes decay on their own; after the last note-off only the short release remains.
       tailTime: 0.25,
       noteOn: (e) => mono.noteOn(e),
@@ -145,7 +145,7 @@ export default defineInstrument({
       allNotesOff: (time, hard) => mono.allNotesOff(time, hard),
       dispose() {
         mono.dispose();
-        for (const n of [bus, pre, shaper, makeup, tone, out]) n.disconnect();
+        for (const node of [bus, driveInput, shaper, makeupGain, toneFilter, outputGain]) node.disconnect();
       },
     };
   },

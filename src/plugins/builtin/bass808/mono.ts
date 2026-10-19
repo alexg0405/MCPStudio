@@ -6,25 +6,25 @@ import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, type ParamSi
 import { firstDifference, LegatoTracker, type LegatoAction, type NoteAction, type Phrase } from './legato';
 
 /** Attack ramp of a hit (the sine starts at zero phase, so this only rounds the corner). */
-const ATTACK = 0.0015;
+const ATTACK_SEC = 0.0015;
 /** Release after a note-off: time constant of the fade (about -43 dB after 50 ms). */
-const RELEASE_TAU = 0.01;
+const RELEASE_TAU_SEC = 0.01;
 /** The oscillator stops this long after a release starts (the fade is below -100 dB by then). */
-const RELEASE_STOP = 0.12;
+const RELEASE_STOP_SEC = 0.12;
 /** A new hit fades out what is left of the previous one (its release tail) over this long. */
-const CHOKE = 0.008;
+const CHOKE_SEC = 0.008;
 /** Hard all-notes-off (panic, plugin swap). */
-const KILL = 0.005;
+const KILL_SEC = 0.005;
 /** Shortest pitch slide (glide 0 still slides over 2 ms: inaudible, and the phase stays smooth). */
-const MIN_GLIDE = 0.002;
+const MIN_GLIDE_SEC = 0.002;
 /** Shortest level change when a glide changes the velocity. */
-const MIN_LEVEL_RAMP = 0.02;
+const MIN_LEVEL_RAMP_SEC = 0.02;
 /** Click level at full velocity and click = 100%. */
 const CLICK_LEVEL = 0.5;
 /** A "never" stop time (moves a scheduled stop out of the way when a release is rescheduled). */
 const NEVER = 1e9;
 /** Finished voices are disconnected this long after they stopped. */
-const COLLECT_AFTER = 0.05;
+const COLLECT_AFTER_SEC = 0.05;
 
 /** Settings read when a voice starts (glide when a glide starts). */
 export interface BassSettings {
@@ -45,7 +45,7 @@ export interface BassSettings {
  * notes that slide out of it. Every AudioParam goes through a Lane, so the voice can be rewound to
  * any time that hasn't been played yet and continued differently.
  */
-class Voice {
+class BassVoice {
   /** Performance time of the attack (what the plan compares). */
   readonly attackTime: number;
   /** Context time the voice starts. */
@@ -54,112 +54,113 @@ class Voice {
   ids: readonly number[] = [];
   /** Context time the oscillator stops (Infinity: not scheduled). */
   stopAt = Infinity;
-  private readonly osc: OscillatorNode;
-  private readonly amp: GainNode;
-  private readonly vel: GainNode;
-  private readonly click: AudioBufferSourceNode | null;
+  private readonly oscillator: OscillatorNode;
+  private readonly amplitudeGain: GainNode;
+  private readonly velocityGain: GainNode;
+  private readonly clickSource: AudioBufferSourceNode | null;
   private readonly clickGain: GainNode | null;
-  private readonly freq: Lane;
-  private readonly pitch: Lane;
-  private readonly env: Lane;
-  private readonly level: Lane;
-  private readonly untune: () => void;
+  private readonly frequencyLane: Lane;
+  private readonly pitchLane: Lane;
+  private readonly envelopeLane: Lane;
+  private readonly levelLane: Lane;
+  private readonly disconnectTune: () => void;
   private releaseAt = Infinity;
   private chokeAt = Infinity;
   private chokeLength = 0;
 
   constructor(
-    ac: BaseAudioContext,
+    audioContext: BaseAudioContext,
     destination: AudioNode,
     tune: ParamSignal,
-    a: NoteAction,
-    t: number,
-    s: BassSettings,
+    attackAction: NoteAction,
+    startTime: number,
+    settings: BassSettings,
     clickBuffer: AudioBuffer,
   ) {
-    this.attackTime = a.time;
-    this.start = t;
-    const f = mtof(a.key);
+    this.attackTime = attackAction.time;
+    this.start = startTime;
+    const frequencyHz = mtof(attackAction.key);
     // The punch is the oscillator's own starting detune, not a jump scheduled at t. In the render
     // quantum an oscillator starts in, Chrome feeds it the a-rate automation values of up to 127
     // frames earlier, so a jump at the start time is missed for up to 64 frames (measured: the first
     // half cycle 0.8 ms late when the start falls mid-quantum). Only the decay is scheduled, and
     // starting it a few frames late is inaudible.
-    const punch = s.punch * 100;
-    this.osc = new OscillatorNode(ac, { type: 'sine', frequency: f, detune: punch });
-    this.amp = new GainNode(ac, { gain: 0 });
-    this.vel = new GainNode(ac, { gain: a.velocity });
-    this.osc.connect(this.amp).connect(this.vel).connect(destination);
-    this.untune = tune.connect(this.osc.detune);
-    this.freq = new Lane(this.osc.frequency, f);
-    this.pitch = new Lane(this.osc.detune, punch);
-    this.env = new Lane(this.amp.gain, 0);
-    this.level = new Lane(this.vel.gain, a.velocity);
-    if (punch > 0) this.pitch.targetTo(t, 0, s.punchTau);
-    this.env.jumpRamp(t, 0, 1, t + ATTACK);
-    this.env.targetTo(t + ATTACK, 0, s.decayTau);
-    this.osc.start(t);
-    if (s.click > 0) {
-      this.click = new AudioBufferSourceNode(ac, { buffer: clickBuffer });
-      this.clickGain = new GainNode(ac, { gain: s.click * a.velocity * CLICK_LEVEL });
-      this.click.connect(this.clickGain).connect(destination);
-      this.click.start(t);
+    const punchCents = settings.punch * 100;
+    this.oscillator = new OscillatorNode(audioContext, { type: 'sine', frequency: frequencyHz, detune: punchCents });
+    this.amplitudeGain = new GainNode(audioContext, { gain: 0 });
+    this.velocityGain = new GainNode(audioContext, { gain: attackAction.velocity });
+    this.oscillator.connect(this.amplitudeGain).connect(this.velocityGain).connect(destination);
+    this.disconnectTune = tune.connect(this.oscillator.detune);
+    this.frequencyLane = new Lane(this.oscillator.frequency, frequencyHz);
+    this.pitchLane = new Lane(this.oscillator.detune, punchCents);
+    this.envelopeLane = new Lane(this.amplitudeGain.gain, 0);
+    this.levelLane = new Lane(this.velocityGain.gain, attackAction.velocity);
+    if (punchCents > 0) this.pitchLane.targetTo(startTime, 0, settings.punchTau);
+    this.envelopeLane.jumpRamp(startTime, 0, 1, startTime + ATTACK_SEC);
+    this.envelopeLane.targetTo(startTime + ATTACK_SEC, 0, settings.decayTau);
+    this.oscillator.start(startTime);
+    if (settings.click > 0) {
+      this.clickSource = new AudioBufferSourceNode(audioContext, { buffer: clickBuffer });
+      this.clickGain = new GainNode(audioContext, { gain: settings.click * attackAction.velocity * CLICK_LEVEL });
+      this.clickSource.connect(this.clickGain).connect(destination);
+      this.clickSource.start(startTime);
     } else {
-      this.click = null;
+      this.clickSource = null;
       this.clickGain = null;
     }
   }
 
   /** Slides to `key` from wherever the pitch is at `t`; the level follows the new velocity. */
-  glide(t: number, key: number, velocity: number, time: number): void {
-    const len = Math.max(time, MIN_GLIDE);
-    this.freq.rampTo(t, mtof(key), t + len, true);
-    this.level.rampTo(t, velocity, t + Math.max(len, MIN_LEVEL_RAMP));
+  glide(atTime: number, key: number, velocity: number, glideSec: number): void {
+    const slideSec = Math.max(glideSec, MIN_GLIDE_SEC);
+    this.frequencyLane.rampTo(atTime, mtof(key), atTime + slideSec, true);
+    this.levelLane.rampTo(atTime, velocity, atTime + Math.max(slideSec, MIN_LEVEL_RAMP_SEC));
   }
 
-  release(t: number): void {
-    this.env.targetTo(t, 0, RELEASE_TAU);
-    this.releaseAt = t;
+  release(atTime: number): void {
+    this.envelopeLane.targetTo(atTime, 0, RELEASE_TAU_SEC);
+    this.releaseAt = atTime;
     this.syncStop();
   }
 
   /** Fades out over `length` from `t` (a newer hit, or a hard all-notes-off). */
-  choke(t: number, length: number): void {
-    this.env.rampTo(t, 0, t + length);
-    this.chokeAt = t;
-    this.chokeLength = length;
+  choke(atTime: number, fadeSec: number): void {
+    this.envelopeLane.rampTo(atTime, 0, atTime + fadeSec);
+    this.chokeAt = atTime;
+    this.chokeLength = fadeSec;
     this.syncStop();
   }
 
   /** Forgets everything scheduled from `t` on (the curves running at `t` go on). */
-  rewind(t: number): void {
-    this.freq.rewind(t);
-    this.pitch.rewind(t);
-    this.env.rewind(t);
-    this.level.rewind(t);
-    if (this.releaseAt >= t) this.releaseAt = Infinity;
-    if (this.chokeAt >= t) this.chokeAt = Infinity;
+  rewind(atTime: number): void {
+    this.frequencyLane.rewind(atTime);
+    this.pitchLane.rewind(atTime);
+    this.envelopeLane.rewind(atTime);
+    this.levelLane.rewind(atTime);
+    if (this.releaseAt >= atTime) this.releaseAt = Infinity;
+    if (this.chokeAt >= atTime) this.chokeAt = Infinity;
     this.syncStop();
   }
 
   dispose(): void {
-    for (const src of [this.osc, this.click]) {
+    for (const source of [this.oscillator, this.clickSource]) {
       try {
-        src?.stop();
+        source?.stop();
       } catch {
         /* already stopped */
       }
     }
-    this.untune();
-    for (const n of [this.osc, this.amp, this.vel, this.click, this.clickGain]) n?.disconnect();
+    this.disconnectTune();
+    for (const node of [this.oscillator, this.amplitudeGain, this.velocityGain, this.clickSource, this.clickGain])
+      node?.disconnect();
   }
 
   private syncStop(): void {
-    const end = Math.min(this.releaseAt + RELEASE_STOP, this.chokeAt + this.chokeLength + 0.002);
-    if (end === this.stopAt) return;
-    this.stopAt = end;
+    const stopTime = Math.min(this.releaseAt + RELEASE_STOP_SEC, this.chokeAt + this.chokeLength + 0.002);
+    if (stopTime === this.stopAt) return;
+    this.stopAt = stopTime;
     try {
-      this.osc.stop(Number.isFinite(end) ? end : NEVER);
+      this.oscillator.stop(Number.isFinite(stopTime) ? stopTime : NEVER);
     } catch {
       /* already stopped */
     }
@@ -187,11 +188,11 @@ export interface MonoBassOptions {
  */
 export class MonoBass {
   private readonly tracker = new LegatoTracker();
-  private voices: Voice[] = [];
+  private voices: BassVoice[] = [];
   /** Voices cut by a hard all-notes-off, fading out. */
-  private dying: Voice[] = [];
+  private dying: BassVoice[] = [];
 
-  constructor(private readonly o: MonoBassOptions) {}
+  constructor(private readonly options: MonoBassOptions) {}
 
   /** Tracked notes and live voices (diagnostics and tests). */
   get stats(): { notes: number; voices: number } {
@@ -212,9 +213,9 @@ export class MonoBass {
       if (this.tracker.allNotesOff(this.snap(time), this.performanceNow())) this.sync();
       return;
     }
-    const now = this.o.audioContext.currentTime;
-    const at = this.contextTime(this.snap(time), now);
-    for (const v of this.voices) this.retire(v, at);
+    const now = this.options.audioContext.currentTime;
+    const contextAt = this.contextTime(this.snap(time), now);
+    for (const voice of this.voices) this.retire(voice, contextAt);
     this.voices = [];
     this.tracker.clear();
   }
@@ -232,94 +233,102 @@ export class MonoBass {
    * sample frame, which happens all the time at round tempos, that noise decides which frame a
    * native node starts on. Times within 1e-6 frames of a frame are moved onto it.
    */
-  private snap(t: number): number {
-    const sr = this.o.audioContext.sampleRate;
-    const f = t * sr;
-    const n = Math.round(f);
-    return Math.abs(f - n) < 1e-6 ? n / sr : t;
+  private snap(time: number): number {
+    const sampleRate = this.options.audioContext.sampleRate;
+    const exactFrame = time * sampleRate;
+    const nearestFrame = Math.round(exactFrame);
+    return Math.abs(exactFrame - nearestFrame) < 1e-6 ? nearestFrame / sampleRate : time;
   }
 
   /** The earliest note time that can still be heard ("now" on the note clock, which leads by `lead`). */
   private performanceNow(): number {
-    return this.o.audioContext.currentTime + this.o.lead;
+    return this.options.audioContext.currentTime + this.options.lead;
   }
 
-  private contextTime(t: number, now: number): number {
-    return Math.max(t - this.o.lead, now);
+  private contextTime(noteTime: number, now: number): number {
+    return Math.max(noteTime - this.options.lead, now);
   }
 
   private sync(): void {
-    const now = this.o.audioContext.currentTime;
+    const now = this.options.audioContext.currentTime;
     this.collect(now);
     const phrases = this.tracker.phrases();
     const from = firstDifference(
-      this.voices.flatMap((v) => v.actions),
-      phrases.flatMap((p) => p.actions),
+      this.voices.flatMap((voice) => voice.actions),
+      phrases.flatMap((phrase) => phrase.actions),
     );
     if (from < Infinity) this.reschedule(phrases, from, now);
-    phrases.forEach((p, i) => {
-      const v = this.voices[i];
-      if (v) v.ids = p.ids;
+    phrases.forEach((phrase, i) => {
+      const voice = this.voices[i];
+      if (voice) voice.ids = phrase.ids;
     });
   }
 
   /** Replaces the scheduled performance from performance time `from` on. */
   private reschedule(phrases: readonly Phrase[], from: number, now: number): void {
-    const at = this.contextTime(from, now);
-    const kept: Voice[] = [];
-    for (const v of this.voices) {
-      if (v.attackTime >= from) this.retire(v, at);
+    const contextFrom = this.contextTime(from, now);
+    const kept: BassVoice[] = [];
+    for (const voice of this.voices) {
+      if (voice.attackTime >= from) this.retire(voice, contextFrom);
       else {
-        v.rewind(at);
-        kept.push(v);
+        voice.rewind(contextFrom);
+        kept.push(voice);
       }
     }
-    const next: Voice[] = [];
-    for (const p of phrases) {
-      const attack = p.actions[0] as NoteAction;
+    const next: BassVoice[] = [];
+    for (const phrase of phrases) {
+      const attack = phrase.actions[0] as NoteAction;
       let voice = attack.time < from ? kept[next.length] : undefined;
       if (!voice) voice = this.attack(attack, next[next.length - 1], now);
-      for (const a of p.actions) {
-        if (a.time < from || a === attack) continue;
-        if (a.type === 'release') voice.release(this.contextTime(a.time, now));
+      for (const action of phrase.actions) {
+        if (action.time < from || action === attack) continue;
+        if (action.type === 'release') voice.release(this.contextTime(action.time, now));
         else {
-          const at = this.contextTime(a.time, now);
-          voice.glide(at, a.key, a.velocity, this.o.settings(at).glide);
+          const actionAt = this.contextTime(action.time, now);
+          voice.glide(actionAt, action.key, action.velocity, this.options.settings(actionAt).glide);
         }
       }
-      voice.actions = p.actions;
+      voice.actions = phrase.actions;
       next.push(voice);
     }
     // Kept voices always match the phrases that start before `from`; this only guards the invariant.
-    for (const v of kept) if (!next.includes(v)) this.retire(v, at);
+    for (const voice of kept) if (!next.includes(voice)) this.retire(voice, contextFrom);
     this.voices = next;
   }
 
-  private attack(a: NoteAction, previous: Voice | undefined, now: number): Voice {
-    const t = this.contextTime(a.time, now);
-    if (previous && previous.stopAt > t) previous.choke(t, CHOKE);
-    const o = this.o;
-    return new Voice(o.audioContext, o.destination, o.tune, a, t, o.settings(t), o.click);
+  private attack(attackAction: NoteAction, previous: BassVoice | undefined, now: number): BassVoice {
+    const startTime = this.contextTime(attackAction.time, now);
+    if (previous && previous.stopAt > startTime) previous.choke(startTime, CHOKE_SEC);
+    const options = this.options;
+    return new BassVoice(
+      options.audioContext,
+      options.destination,
+      options.tune,
+      attackAction,
+      startTime,
+      options.settings(startTime),
+      options.click,
+    );
   }
 
   /** Takes a voice out of the performance from `at` on: unplayed voices go at once, others fade. */
-  private retire(v: Voice, at: number): void {
-    if (v.start >= at) {
-      v.dispose();
+  private retire(voice: BassVoice, atTime: number): void {
+    if (voice.start >= atTime) {
+      voice.dispose();
       return;
     }
-    v.rewind(at);
-    v.choke(at, KILL);
-    this.dying.push(v);
+    voice.rewind(atTime);
+    voice.choke(atTime, KILL_SEC);
+    this.dying.push(voice);
   }
 
   /** Disconnects voices that have finished playing, and forgets their notes. */
   private collect(now: number): void {
-    const before = now - COLLECT_AFTER;
-    while (this.voices.length > 0 && (this.voices[0] as Voice).stopAt < before) {
-      const v = this.voices.shift() as Voice;
-      this.tracker.forget(v.ids);
-      v.dispose();
+    const before = now - COLLECT_AFTER_SEC;
+    while (this.voices.length > 0 && (this.voices[0] as BassVoice).stopAt < before) {
+      const voice = this.voices.shift() as BassVoice;
+      this.tracker.forget(voice.ids);
+      voice.dispose();
     }
     this.dying = this.dying.filter((v) => {
       if (v.stopAt >= before) return true;

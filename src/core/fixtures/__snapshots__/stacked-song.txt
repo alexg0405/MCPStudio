@@ -1,0 +1,11 @@
+transport {"bpm":150,"timeSig":{"num":4,"den":4},"swing":0,"key":{"root":5,"scale":"minor"}}
+mixer 24 inserts 8b4b268acf96
+channels 31 247c19987350
+samples 6 dbd32a46da2d
+patterns 16 c0b72d60ffb6
+lanes 18 d558a194f96f
+clips 252 c0d77bcc33a4
+markers 11 102090079b53
+returned 511a0e4953d6
+channel names Kick | Clap | Hat | Snare | Crash | 808 | Pluck | Dark Pad | Saw Layer | Choir | Strings | Organ | Riser | Reverse Crash | Sub Drop | Bell Arp | Perc | Downlifter | Cutoff · Filter (Insert 18) | Cutoff · Filter (Insert 18) | Cutoff · Dark Pad | Cutoff · Dark Pad | Cutoff · Dark Pad | Pitch · Riser | Pitch · Riser | Pitch · Riser | Pitch · Riser | Pitch · Downlifter | Pitch · Downlifter | Pitch · Downlifter | Volume · Master
+pattern names Pattern 1 | ISOxo 808 slam | Build | Drop | Drop 2 | Break | Intro | Choir layer | Strings layer | Organ layer | Riser | Impact | Bell layer | Perc layer | Tom fill | Downlifter

@@ -42,8 +42,15 @@ async function importWithOptions(s: Services, file: File): Promise<void> {
 
 /** MIDI files (import, export, drops), MIDI learn, hum to notes and the on-screen piano. */
 export function register(services: Services): void {
-  const { commands } = services;
+  registerMidiFiles(services);
+  registerHumToNotes(services);
+  registerMidiLearn();
+  registerOnScreenPiano(services);
+  installMidiFileDrop(services);
+}
 
+/** Import and export of MIDI files, and their File menu entries. */
+function registerMidiFiles({ commands }: Services): void {
   commands.register({
     id: 'file.importMidi',
     gesture: true,
@@ -77,8 +84,10 @@ export function register(services: Services): void {
     { kind: 'command', command: 'file.exportMidi', args: 'song', label: 'Export song as MIDI…', order: 66 },
     { kind: 'command', command: 'file.exportMidi', args: 'pattern', label: 'Export pattern as MIDI…', order: 67 },
   ]);
+}
 
-  // Hum (or sing) a melody into the piano roll.
+/** Hum (or sing) a melody into the piano roll: the command and its menu entries. */
+function registerHumToNotes({ commands }: Services): void {
   commands.register({
     id: 'pianoRoll.humToNotes',
     title: 'Hum to notes…',
@@ -122,7 +131,10 @@ export function register(services: Services): void {
     { label: 'Hum to notes…', onSelect: () => void s.commands.run('pianoRoll.humToNotes') },
   ]);
 
-  // MIDI learn on every control with a param menu.
+}
+
+/** MIDI learn on every control with a param menu. */
+function registerMidiLearn(): void {
   addParamMenuItems((info, s) => {
     const links = s.controllers.linksFor(info.target);
     const learn = () => {
@@ -137,8 +149,10 @@ export function register(services: Services): void {
       ...(links.length ? [{ label: 'Unlink controller', onSelect: () => s.controllers.unlink(info.target) }] : []),
     ];
   });
+}
 
-  // The on-screen piano.
+/** The on-screen piano window and the command that toggles it. */
+function registerOnScreenPiano(services: Services): void {
   registerWindowType({
     type: 'piano-keyboard',
     title: () => 'Keyboard',
@@ -154,7 +168,10 @@ export function register(services: Services): void {
     chords: ['Alt+7'],
     menuOrder: 46,
   });
+}
 
+/** A .mid file dropped anywhere imports it (before other drop handlers see it); only in a browser. */
+function installMidiFileDrop(services: Services): void {
   if (typeof window === 'undefined') return;
   // A .mid file dropped anywhere imports it (before other drop handlers see it).
   window.addEventListener(

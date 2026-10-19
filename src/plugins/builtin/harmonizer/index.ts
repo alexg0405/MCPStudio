@@ -56,6 +56,22 @@ export default defineWorkletEffect({
       params: { voices: 1, interval1: -7, semitones1: 0, level1: -2, pan1: 0, humanize: 3, tighten: 0, formant: true, mix: 0.5 },
     },
     {
+      name: 'Fifth and octave up',
+      params: {
+        voices: 2,
+        interval1: 4,
+        level1: -5,
+        pan1: -0.4,
+        interval2: 7,
+        level2: -8,
+        pan2: 0.4,
+        humanize: 6,
+        tighten: 0,
+        formant: true,
+        mix: 0.5,
+      },
+    },
+    {
       name: 'Gospel 3-part',
       params: {
         voices: 3,

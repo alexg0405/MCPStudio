@@ -1,7 +1,6 @@
 import {
   at,
   dbToGain,
-  DelayLine,
   EffectKernel,
   ftom,
   Readings,
@@ -27,6 +26,7 @@ import {
   RANGES,
   type harmonizerParams,
 } from './params';
+import { SampleRing } from './ring.kernel';
 import { HarmonyVoice } from './voice.kernel';
 
 type Params = typeof harmonizerParams;
@@ -66,10 +66,10 @@ const SCALE_MASKS = SCALE_INTERVALS.map(scaleMaskOf);
  */
 export class HarmonizerKernel extends EffectKernel<Params> {
   readonly latency = harmonizerLatencyFrames(this.sampleRate);
-  private readonly dryLeftLine = new DelayLine(this.latency + 8);
-  private readonly dryRightLine = new DelayLine(this.latency + 8);
+  private readonly dryLeftLine = new SampleRing(this.latency + 8);
+  private readonly dryRightLine = new SampleRing(this.latency + 8);
   /** The mono sum every voice reads: it must hold the resting delay, a splice's reach and a period of the lowest pitch. */
-  private readonly voiceLine = new DelayLine(2 * this.latency + 2 * Math.ceil(this.sampleRate / LOWEST_PITCH_HZ) + 64);
+  private readonly voiceLine = new SampleRing(2 * this.latency + 2 * Math.ceil(this.sampleRate / LOWEST_PITCH_HZ) + 64);
   private readonly detectors: Yin[];
   private readonly voices: HarmonyVoice[] = [];
   private readonly meter = new Readings(this.host, ['pitch', 'target'] as const);
@@ -216,8 +216,8 @@ export class HarmonizerKernel extends EffectKernel<Params> {
       const mix = at(params.mix, i);
       const dryShare = Math.min(1, 2 * (1 - mix));
       const wetShare = Math.min(1, 2 * mix);
-      outLeft[i] = dryShare * leftLine.read(this.latency) + wetShare * wetLeft;
-      outRight[i] = dryShare * rightLine.read(this.latency) + wetShare * wetRight;
+      outLeft[i] = dryShare * leftLine.at(this.latency) + wetShare * wetLeft;
+      outRight[i] = dryShare * rightLine.at(this.latency) + wetShare * wetRight;
     }
     this.meter.tick(frameCount);
   }

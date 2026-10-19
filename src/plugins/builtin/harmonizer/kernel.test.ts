@@ -411,7 +411,7 @@ describe('HarmonizerKernel: robustness', () => {
   });
 
   it('every preset sets only real params and runs', () => {
-    expect(harmonizer.presets?.map((preset) => preset.name)).toEqual(['Thirds above', 'Choir stack', 'Octave down', 'Gospel 3-part']);
+    expect(harmonizer.presets?.map((preset) => preset.name)).toEqual(['Thirds above', 'Choir stack', 'Octave down', 'Fifth and octave up', 'Gospel 3-part']);
     for (const preset of harmonizer.presets ?? []) {
       const out = runEffect(HarmonizerKernel, harmonizerParams, voiceAt(220), SR / 2, { params: preset.params as Params })[0];
       expect(out.every(Number.isFinite), preset.name).toBe(true);
@@ -519,7 +519,7 @@ describe('HarmonizerKernel: audio-thread rules', () => {
         ],
       ],
       [voiceSource, ['setPitch', 'setGoalCents', 'setTargetGains', 'render', 'fallSilent']],
-      [shifterSource, ['next', 'startSplice', 'grains', 'spawnGrainsDue', 'freeGrainSlot', 'stopGrains', 'setPitch']],
+      [shifterSource, ['next', 'spliceSound', 'skipSplice', 'startSplice', 'grains', 'spawnGrainsDue', 'startGrain', 'freeGrainSlot', 'stopGrains', 'setPitch']],
     ];
     for (const [text, methods] of checked) {
       for (const method of methods) {

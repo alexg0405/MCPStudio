@@ -1,5 +1,6 @@
 // One harmony voice: a pitch shifter whose pitch glides to the interval it is told to sing, and its level and pan.
-import { pow2, type DelayLine } from '@agstudio/sdk/worklet';
+import { pow2 } from '@agstudio/sdk/worklet';
+import type { SampleRing } from './ring.kernel';
 import { PitchShifter } from './shifter.kernel';
 
 /** Seconds a voice takes to glide to a new interval (fast enough to follow a melody, too slow to click). */
@@ -70,9 +71,11 @@ export class HarmonyVoice {
     this.targetRight = right;
   }
 
-  /** Computes this frame into `left` and `right`. The delay line must already hold the current input frame. */
-  render(line: DelayLine, keepsFormants: boolean): void {
+  /** Computes this frame into `left` and `right`. The ring must already hold the current input frame. */
+  render(ring: SampleRing, keepsFormants: boolean): void {
     const isWanted = this.hasGoal && (this.targetLeft > 0 || this.targetRight > 0);
+    // A voice that is off and has faded out costs nothing (its outputs were zeroed when it stopped).
+    if (!isWanted && !this.isSounding) return;
     const goalLeft = isWanted ? this.targetLeft : 0;
     const goalRight = isWanted ? this.targetRight : 0;
     this.gainLeft += (goalLeft - this.gainLeft) * this.gainCoefficient;
@@ -87,7 +90,7 @@ export class HarmonyVoice {
       this.ratioCents = this.cents;
       this.ratio = pow2(this.cents / 1200);
     }
-    const sound = this.shifter.next(line, this.ratio, keepsFormants);
+    const sound = this.shifter.next(ring, this.ratio, keepsFormants);
     this.left = sound * this.gainLeft;
     this.right = sound * this.gainRight;
   }

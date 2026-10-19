@@ -1,0 +1,205 @@
+# kick @44100
+features {"durationSec":0.16,"peak":0.953729,"peakDb":-0.411499,"loudnessDb":-11.461272,"onsetSec":0,"attackSec":0.005011,"t20":0.110249,"t40":0.15034,"t60":0.15034,"len40":0.155351,"bands":[0.298647,0.701351,0.000001,0,0,0],"centroid":83.84347,"attackCentroid":91.880483,"rolloff":107.666016,"flatness":0.639265,"sustain":0,"bursts":1,"f0":57.930351,"voiced":0.8125,"pitchDrop":6.833142,"pitchSpread":1.274004,"endDb":-19.30868}
+scores {"808":0,"kick":1,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.16,"kind":"one-shot","category":"kick","confidence":1,"loudnessDb":-11.5,"peakDb":-0.4,"brightness":84,"vec":[0.09,0.3,0.7,0,0,0,0,0.32,1,0.05,0,0.16,0],"basis":"signal","midi":33.9,"root":10,"keyConfidence":0.29}
+# snare @44100
+features {"durationSec":0.13,"peak":0.989471,"peakDb":-0.091938,"loudnessDb":-16.445057,"onsetSec":0,"attackSec":0.005011,"t20":0.090204,"t40":0.120272,"t60":0.120272,"len40":0.125283,"bands":[0.000171,0.466199,0.022224,0.26713,0.231436,0.012839],"centroid":2304.78896,"attackCentroid":2312.236437,"rolloff":5038.769531,"flatness":0.239896,"sustain":0,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-14.760325}
+scores {"808":0,"kick":0,"snare":1,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.13,"kind":"one-shot","category":"snare","confidence":1,"loudnessDb":-16.4,"peakDb":-0.1,"brightness":2305,"vec":[0.69,0,0.47,0.02,0.27,0.23,0.01,0.28,0,0.05,0.24,0,0],"basis":"signal"}
+# hat @44100
+features {"durationSec":0.04,"peak":1.000963,"peakDb":0.008363,"loudnessDb":-16.124671,"onsetSec":0,"attackSec":0,"t20":0.035079,"t40":0.035079,"t60":0.035079,"len40":0.035079,"bands":[0,0,0,0.000773,0.229706,0.769521],"centroid":14152.8527,"attackCentroid":14155.551989,"rolloff":19552.148438,"flatness":0.087024,"sustain":0,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":1,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.04,"kind":"one-shot","category":"hat","confidence":1,"loudnessDb":-16.1,"peakDb":0,"brightness":14153,"vec":[1,0,0,0,0,0.23,0.77,0.12,0,0,0.09,0,0],"basis":"signal"}
+# open hat @44100
+features {"durationSec":0.5,"peak":1.001132,"peakDb":0.009827,"loudnessDb":-16.307297,"onsetSec":0,"attackSec":0.015034,"t20":0.33576,"t40":0.481088,"t60":0.481088,"len40":0.496122,"bands":[0,0,0,0.000755,0.245536,0.75371],"centroid":13995.403143,"attackCentroid":13956.210588,"rolloff":19616.748047,"flatness":0.131246,"sustain":0.136894,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-25.870438}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":1,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.5,"kind":"one-shot","category":"open-hat","confidence":1,"loudnessDb":-16.3,"peakDb":0,"brightness":13995,"vec":[1,0,0,0,0,0.25,0.75,0.54,0,0.15,0.13,0,0],"basis":"signal"}
+# 808 @44100
+features {"durationSec":2,"peak":0.894479,"peakDb":-0.968597,"loudnessDb":-10.872137,"onsetSec":0,"attackSec":0.005011,"t20":1.994512,"t40":1.994512,"t60":1.994512,"len40":1.999524,"bands":[0.996108,0.003892,0,0,0,0],"centroid":47.142254,"attackCentroid":53.817531,"rolloff":64.599609,"flatness":0.927983,"sustain":0.692701,"bursts":5,"f0":47.98608,"voiced":0.928571,"pitchDrop":-1.289344,"pitchSpread":0.01029,"endDb":-19.072952}
+scores {"808":1,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":2,"kind":"one-shot","category":"808","confidence":1,"loudnessDb":-10.9,"peakDb":-1,"brightness":47,"vec":[0,1,0,0,0,0,0,0.84,1,0.05,0,0.11,1],"basis":"signal","midi":30.64,"root":7,"keyConfidence":0.92}
+# clap @44100
+features {"durationSec":0.4,"peak":0.476531,"peakDb":-6.438182,"loudnessDb":-21.854417,"onsetSec":0,"attackSec":0.010023,"t20":0.205465,"t40":0.385873,"t60":0.385873,"len40":0.395896,"bands":[0.002802,0.009393,0.030149,0.134193,0.267377,0.556086],"centroid":11129.199132,"attackCentroid":11629.667386,"rolloff":18755.419922,"flatness":0.894104,"sustain":0.031386,"bursts":4,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-34.310948}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0.88462,"cymbal":0,"tom":0,"perc":0.036921,"fx":0,"vocal":0,"tonal":0}
+onsets [0.040091]
+analysis {"v":1,"durationSec":0.4,"kind":"one-shot","category":"open-hat","confidence":0.88,"loudnessDb":-21.9,"peakDb":-6.4,"brightness":11129,"vec":[0.97,0,0.01,0.03,0.13,0.27,0.56,0.49,0,0.1,0.89,0,1],"basis":"signal"}
+# hum @44100
+features {"durationSec":0.9,"peak":1.056894,"peakDb":0.480625,"loudnessDb":-3.188909,"onsetSec":0,"attackSec":0.020045,"t20":0.876984,"t40":0.876984,"t60":0.876984,"len40":0.897029,"bands":[0,0.832454,0.151948,0.015598,0,0],"centroid":259.008719,"attackCentroid":259.114712,"rolloff":387.597656,"flatness":0.000018,"sustain":0.999455,"bursts":1,"f0":196,"voiced":1,"pitchDrop":0.01412,"pitchSpread":0,"endDb":-0.004737}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.065901,"fx":0,"vocal":0,"tonal":1}
+onsets [0.040091]
+analysis {"v":1,"durationSec":0.9,"kind":"one-shot","category":"tonal","confidence":1,"loudnessDb":-3.2,"peakDb":0.5,"brightness":259,"vec":[0.3,0,0.83,0.15,0.02,0,0,0.66,1,0.2,0,0.45,0],"basis":"signal","midi":55,"root":7,"keyConfidence":1}
+# hum glide @44100
+features {"durationSec":0.8,"peak":1.098895,"peakDb":0.819125,"loudnessDb":-3.244314,"onsetSec":0,"attackSec":0.746689,"t20":0.050113,"t40":0.050113,"t60":0.050113,"len40":0.796803,"bands":[0.000007,0.832176,0.1574,0.010418,0,0],"centroid":219.194637,"attackCentroid":253.755033,"rolloff":301.464844,"flatness":0.000039,"sustain":0,"bursts":1,"f0":143.642349,"voiced":1,"pitchDrop":5.080538,"pitchSpread":2.526124,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":1,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets [0.040091,0.235533,0.340771,0.425964,0.506145,0.591338,0.671519,0.756712]
+analysis {"v":1,"durationSec":0.8,"kind":"one-shot","category":"tom","confidence":1,"loudnessDb":-3.2,"peakDb":0.8,"brightness":219,"vec":[0.27,0,0.83,0.16,0.01,0,0,0.64,1,1,0,0.38,0],"basis":"signal","midi":49.62,"root":2,"keyConfidence":0}
+# pad @44100
+features {"durationSec":2.5,"peak":0.926029,"peakDb":-0.667507,"loudnessDb":-9.347083,"onsetSec":0.010023,"attackSec":1.227778,"t20":1.172653,"t40":1.242812,"t60":1.257846,"len40":2.47059,"bands":[0,0.282034,0.683157,0.034343,0.000467,0],"centroid":358.219817,"attackCentroid":357.510173,"rolloff":430.664063,"flatness":0.000018,"sustain":0.963293,"bursts":4,"f0":55.110584,"voiced":0.928571,"pitchDrop":-0.004582,"pitchSpread":0.001662,"endDb":-27.001284}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":1}
+onsets [0.040091]
+analysis {"v":1,"durationSec":2.5,"kind":"one-shot","category":"tonal","confidence":1,"loudnessDb":-9.3,"peakDb":-0.7,"brightness":358,"vec":[0.36,0,0.28,0.68,0.03,0,0,0.88,1,1,0,0.15,1],"basis":"signal","midi":33.03,"root":9,"keyConfidence":0.93}
+# breath @44100
+features {"durationSec":1.4,"peak":0.999766,"peakDb":-0.002029,"loudnessDb":-15.315272,"onsetSec":0.085193,"attackSec":0.621406,"t20":0.551247,"t40":0.646463,"t60":0.686553,"len40":1.267868,"bands":[0.000163,0.015242,0.304245,0.618561,0.060523,0.001266],"centroid":1773.892255,"attackCentroid":1798.000435,"rolloff":2971.582031,"flatness":0.04553,"sustain":0.497313,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-39.671871}
+scores {"808":0,"kick":0,"snare":0.05007,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0.642812,"vocal":0,"tonal":0}
+onsets [0.050113]
+analysis {"v":1,"durationSec":1.4,"kind":"one-shot","category":"fx","confidence":0.64,"loudnessDb":-15.3,"peakDb":0,"brightness":1774,"vec":[0.64,0,0.02,0.3,0.62,0.06,0,0.74,0,1,0.05,0,0],"basis":"signal"}
+# noise @44100
+features {"durationSec":1,"peak":0.452272,"peakDb":-6.89201,"loudnessDb":-11.996848,"onsetSec":0,"attackSec":0.365828,"t20":0.631429,"t40":0.631429,"t60":0.631429,"len40":0.997256,"bands":[0.001736,0.007454,0.032751,0.135582,0.266107,0.556369],"centroid":11133.910997,"attackCentroid":10925.920365,"rolloff":18798.486328,"flatness":0.964368,"sustain":0.994717,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-0.131922}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0.880332,"cymbal":0,"tom":0,"perc":0.00021,"fx":0.131655,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":1,"kind":"one-shot","category":"open-hat","confidence":0.88,"loudnessDb":-12,"peakDb":-6.9,"brightness":11134,"vec":[0.97,0,0.01,0.03,0.14,0.27,0.56,0.69,0,1,0.96,0,0],"basis":"signal"}
+# dc offset kick @44100
+features {"durationSec":0.16,"peak":1.07331,"peakDb":0.614503,"loudnessDb":-11.282722,"onsetSec":0,"attackSec":0,"t20":0.105238,"t40":0.155351,"t60":0.155351,"len40":0.155351,"bands":[0.298488,0.70151,0.000001,0,0,0],"centroid":83.854269,"attackCentroid":91.892812,"rolloff":107.666016,"flatness":0.640659,"sustain":0,"bursts":2,"f0":57.927742,"voiced":0.8125,"pitchDrop":6.877653,"pitchSpread":1.273712,"endDb":-20.335769}
+scores {"808":0,"kick":1,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.16,"kind":"one-shot","category":"kick","confidence":1,"loudnessDb":-11.3,"peakDb":0.6,"brightness":84,"vec":[0.09,0.3,0.7,0,0,0,0,0.32,1,0,0,0.16,0.33],"basis":"signal","midi":33.9,"root":10,"keyConfidence":0.3}
+# silence @44100
+features {"durationSec":1,"peak":0,"peakDb":-180,"loudnessDb":-180,"onsetSec":0,"attackSec":0,"t20":0,"t40":0,"t60":0,"len40":0,"bands":[0,0,0,0,0,0],"centroid":0,"attackCentroid":0,"rolloff":0,"flatness":1,"sustain":0,"bursts":0,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.32,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":1,"kind":"one-shot","category":null,"confidence":0.32,"loudnessDb":-180,"peakDb":-180,"brightness":0,"vec":[0,0,0,0,0,0,0,0,0,0,1,0,0],"basis":"signal"}
+# tiny @44100
+features {"durationSec":0.000363,"peak":0,"peakDb":-180,"loudnessDb":-180,"onsetSec":0,"attackSec":0,"t20":0,"t40":0,"t60":0,"len40":0,"bands":[0,0,0,0,0,0],"centroid":0,"attackCentroid":0,"rolloff":0,"flatness":1,"sustain":0,"bursts":0,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.32,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0,"kind":"one-shot","category":null,"confidence":0.32,"loudnessDb":-180,"peakDb":-180,"brightness":0,"vec":[0,0,0,0,0,0,0,0,0,0,1,0,0],"basis":"signal"}
+# drum loop 120 @44100
+features {"durationSec":4,"peak":0.791577,"peakDb":-2.030139,"loudnessDb":-16.685756,"onsetSec":0,"attackSec":0.506145,"t20":3.277415,"t40":3.292449,"t60":3.29746,"len40":3.798594,"bands":[0.286859,0.673604,0.000001,0.000044,0.009305,0.030186],"centroid":644.592228,"attackCentroid":91.880483,"rolloff":107.666016,"flatness":0.139337,"sustain":0.963878,"bursts":1,"f0":57.930351,"voiced":0.325,"pitchDrop":6.833142,"pitchSpread":1.329013,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0.9,"vocal":0,"tonal":0}
+onsets [0.245556,0.496122,0.746689,0.997256,1.247823,1.49839,1.748957,1.999524,2.250091,2.495646,2.746213,2.99678,3.247347,3.497914,3.748481]
+analysis {"v":1,"durationSec":4,"kind":"loop","category":null,"confidence":0.85,"bpm":120,"bars":2,"loopKind":"drums","loudnessDb":-16.7,"peakDb":-2,"brightness":645,"vec":[0.46,0.29,0.67,0,0,0.01,0.03,0.98,0.05,1,0,0.01,0]}
+# drum loop 90 (named) @44100
+features {"durationSec":5.333333,"peak":0.791577,"peakDb":-2.030139,"loudnessDb":-16.66115,"onsetSec":0,"attackSec":0.671519,"t20":3.026848,"t40":3.046893,"t60":3.046893,"len40":3.718413,"bands":[0.290156,0.681346,0.000001,0.00003,0.006571,0.021897],"centroid":488.991214,"attackCentroid":91.880483,"rolloff":107.666016,"flatness":0.155566,"sustain":0.505807,"bursts":1,"f0":57.930351,"voiced":0.464286,"pitchDrop":6.833142,"pitchSpread":1.329013,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0.9,"vocal":0,"tonal":0}
+onsets [0.330748,0.666508,0.997256,1.333016,1.663764,1.999524,2.330272,2.666032,2.99678,3.33254,3.663288,3.999048,4.329796,4.665556,4.996304]
+analysis {"v":1,"durationSec":5.333,"kind":"loop","category":null,"confidence":0.85,"bpm":90,"bars":2,"loopKind":"drums","loudnessDb":-16.7,"peakDb":-2,"brightness":489,"vec":[0.41,0.29,0.68,0,0,0.01,0.02,0.97,0.33,1,0,0.05,0]}
+# kick (named) @44100
+features {"durationSec":0.16,"peak":0.953729,"peakDb":-0.411499,"loudnessDb":-11.461272,"onsetSec":0,"attackSec":0.005011,"t20":0.110249,"t40":0.15034,"t60":0.15034,"len40":0.155351,"bands":[0.298647,0.701351,0.000001,0,0,0],"centroid":83.84347,"attackCentroid":91.880483,"rolloff":107.666016,"flatness":0.639265,"sustain":0,"bursts":1,"f0":57.930351,"voiced":0.8125,"pitchDrop":6.833142,"pitchSpread":1.274004,"endDb":-19.30868}
+scores {"808":0,"kick":1,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.16,"kind":"one-shot","category":"kick","confidence":1,"loudnessDb":-11.5,"peakDb":-0.4,"brightness":84,"vec":[0.09,0.3,0.7,0,0,0,0,0.32,1,0.05,0,0.16,0],"basis":"both","midi":33.9,"root":10,"keyConfidence":0.29}
+# hat (named shaker) @44100
+features {"durationSec":0.06,"peak":1.000963,"peakDb":0.008357,"loudnessDb":-16.213662,"onsetSec":0,"attackSec":0,"t20":0.050113,"t40":0.055125,"t60":0.055125,"len40":0.055125,"bands":[0,0,0,0.000779,0.236672,0.762549],"centroid":14054.049409,"attackCentroid":14068.600633,"rolloff":19530.615234,"flatness":0.095038,"sustain":0,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":1,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.06,"kind":"one-shot","category":"perc","confidence":0.77,"loudnessDb":-16.2,"peakDb":0,"brightness":14054,"vec":[1,0,0,0,0,0.24,0.76,0.17,0,0,0.1,0,0],"basis":"name"}
+# tuned 808 @44100
+features {"durationSec":1.5,"peak":0.896424,"peakDb":-0.949735,"loudnessDb":-9.637614,"onsetSec":0,"attackSec":0.005011,"t20":1.493379,"t40":1.493379,"t60":1.493379,"len40":1.49839,"bands":[0.972361,0.027638,0,0,0,0],"centroid":53.997157,"attackCentroid":61.332453,"rolloff":64.599609,"flatness":0.850513,"sustain":0.699417,"bursts":6,"f0":54.997337,"voiced":0.942857,"pitchDrop":-1.356948,"pitchSpread":0.00196,"endDb":-14.159981}
+scores {"808":1,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":1.5,"kind":"one-shot","category":"808","confidence":1,"loudnessDb":-9.6,"peakDb":-0.9,"brightness":54,"vec":[0.01,0.97,0.03,0,0,0,0,0.77,1,0.05,0,0.15,1],"basis":"signal","midi":33,"root":9,"keyConfidence":0.95}
+# one-shot named loop @44100
+features {"durationSec":2,"peak":1.050297,"peakDb":0.426246,"loudnessDb":-3.067336,"onsetSec":0,"attackSec":0.145329,"t20":1.854195,"t40":1.854195,"t60":1.854195,"len40":1.999524,"bands":[0,0.830729,0.1504,0.01887,0,0],"centroid":290.65576,"attackCentroid":290.696683,"rolloff":430.664063,"flatness":0.000019,"sustain":1,"bursts":1,"f0":219.985291,"voiced":1,"pitchDrop":0.013772,"pitchSpread":0.000012,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":1}
+onsets [0.040091]
+analysis {"v":1,"durationSec":2,"kind":"loop","category":null,"confidence":0.85,"bpm":120,"bars":1,"loopKind":"drums","loudnessDb":-3.1,"peakDb":0.4,"brightness":291,"vec":[0.32,0,0.83,0.15,0.02,0,0,0.84,1,1,0,0.48,0],"root":9,"mode":"minor","keyConfidence":0.5}
+# kick @48000
+features {"durationSec":0.16,"peak":0.957593,"peakDb":-0.376383,"loudnessDb":-11.425855,"onsetSec":0,"attackSec":0.005,"t20":0.11,"t40":0.15,"t60":0.15,"len40":0.155,"bands":[0.423954,0.576045,0.000001,0,0,0],"centroid":84.632138,"attackCentroid":93.453813,"rolloff":93.75,"flatness":0.705271,"sustain":0,"bursts":2,"f0":57.921661,"voiced":0.8125,"pitchDrop":6.847133,"pitchSpread":1.273964,"endDb":-19.132109}
+scores {"808":0,"kick":1,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.16,"kind":"one-shot","category":"kick","confidence":1,"loudnessDb":-11.4,"peakDb":-0.4,"brightness":85,"vec":[0.09,0.42,0.58,0,0,0,0,0.32,1,0.05,0,0.16,0.33],"basis":"signal","midi":33.9,"root":10,"keyConfidence":0.29}
+# snare @48000
+features {"durationSec":0.13,"peak":1.020907,"peakDb":0.179725,"loudnessDb":-15.771232,"onsetSec":0,"attackSec":0.005,"t20":0.095,"t40":0.12,"t60":0.12,"len40":0.125,"bands":[0.000177,0.448438,0.017706,0.288839,0.230596,0.014244],"centroid":2399.350546,"attackCentroid":2403.544368,"rolloff":5085.9375,"flatness":0.265701,"sustain":0,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-15.52143}
+scores {"808":0,"kick":0,"snare":1,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.13,"kind":"one-shot","category":"snare","confidence":1,"loudnessDb":-15.8,"peakDb":0.2,"brightness":2399,"vec":[0.7,0,0.45,0.02,0.29,0.23,0.01,0.28,0,0.05,0.27,0,0],"basis":"signal"}
+# hat @48000
+features {"durationSec":0.04,"peak":1.001056,"peakDb":0.009171,"loudnessDb":-16.059136,"onsetSec":0,"attackSec":0,"t20":0.035,"t40":0.035,"t60":0.035,"len40":0.035,"bands":[0,0,0,0.000756,0.210184,0.78906],"centroid":15114.854538,"attackCentroid":15117.643136,"rolloff":21234.375,"flatness":0.089486,"sustain":0,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":1,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.04,"kind":"one-shot","category":"hat","confidence":1,"loudnessDb":-16.1,"peakDb":0,"brightness":15115,"vec":[1,0,0,0,0,0.21,0.79,0.12,0,0,0.09,0,0],"basis":"signal"}
+# open hat @48000
+features {"durationSec":0.5,"peak":1.001336,"peakDb":0.011598,"loudnessDb":-16.353053,"onsetSec":0,"attackSec":0.015,"t20":0.345,"t40":0.48,"t60":0.48,"len40":0.495,"bands":[0,0,0,0.00072,0.215006,0.784274],"centroid":14982.631135,"attackCentroid":14935.982742,"rolloff":21257.8125,"flatness":0.134513,"sustain":0.128741,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-25.545663}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":1,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.5,"kind":"one-shot","category":"open-hat","confidence":1,"loudnessDb":-16.4,"peakDb":0,"brightness":14983,"vec":[1,0,0,0,0,0.22,0.78,0.54,0,0.15,0.13,0,0],"basis":"signal"}
+# 808 @48000
+features {"durationSec":2,"peak":0.894411,"peakDb":-0.969261,"loudnessDb":-10.872824,"onsetSec":0,"attackSec":0.005,"t20":1.99,"t40":1.99,"t60":1.99,"len40":1.995,"bands":[0.998535,0.001464,0,0,0,0],"centroid":47.178273,"attackCentroid":55.370169,"rolloff":70.3125,"flatness":0.888088,"sustain":0.692697,"bursts":5,"f0":47.985977,"voiced":0.928571,"pitchDrop":-1.29206,"pitchSpread":0.01029,"endDb":-19.072933}
+scores {"808":1,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":2,"kind":"one-shot","category":"808","confidence":1,"loudnessDb":-10.9,"peakDb":-1,"brightness":47,"vec":[0,1,0,0,0,0,0,0.84,1,0.05,0,0.11,1],"basis":"signal","midi":30.64,"root":7,"keyConfidence":0.92}
+# clap @48000
+features {"durationSec":0.4,"peak":0.482625,"peakDb":-6.327812,"loudnessDb":-21.785597,"onsetSec":0,"attackSec":0.01,"t20":0.205,"t40":0.385,"t60":0.385,"len40":0.395,"bands":[0.002522,0.007292,0.0302,0.1198,0.25147,0.588718],"centroid":12079.013205,"attackCentroid":12289.634216,"rolloff":20414.0625,"flatness":0.907488,"sustain":0.032076,"bursts":4,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-34.124896}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0.957336,"cymbal":0,"tom":0,"perc":0.013653,"fx":0,"vocal":0,"tonal":0}
+onsets [0.04]
+analysis {"v":1,"durationSec":0.4,"kind":"one-shot","category":"open-hat","confidence":0.96,"loudnessDb":-21.8,"peakDb":-6.3,"brightness":12079,"vec":[0.99,0,0.01,0.03,0.12,0.25,0.59,0.49,0,0.1,0.91,0,1],"basis":"signal"}
+# hum @48000
+features {"durationSec":0.9,"peak":1.0563,"peakDb":0.475748,"loudnessDb":-3.192957,"onsetSec":0,"attackSec":0.02,"t20":0.875,"t40":0.875,"t60":0.875,"len40":0.895,"bands":[0.000003,0.832247,0.154951,0.012799,0,0],"centroid":259.009964,"attackCentroid":259.139105,"rolloff":375,"flatness":0.000018,"sustain":0.999548,"bursts":1,"f0":195.992157,"voiced":1,"pitchDrop":0.014331,"pitchSpread":0.000001,"endDb":-0.004239}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.0672,"fx":0,"vocal":0,"tonal":1}
+onsets [0.04]
+analysis {"v":1,"durationSec":0.9,"kind":"one-shot","category":"tonal","confidence":1,"loudnessDb":-3.2,"peakDb":0.5,"brightness":259,"vec":[0.3,0,0.83,0.15,0.01,0,0,0.66,1,0.2,0,0.45,0],"basis":"signal","midi":55,"root":7,"keyConfidence":1}
+# hum glide @48000
+features {"durationSec":0.8,"peak":1.098746,"peakDb":0.817946,"loudnessDb":-3.24506,"onsetSec":0,"attackSec":0.745,"t20":0.05,"t40":0.05,"t60":0.05,"len40":0.795,"bands":[0.000015,0.832165,0.157438,0.010381,0,0],"centroid":222.050644,"attackCentroid":254.14893,"rolloff":304.6875,"flatness":0.000035,"sustain":0,"bursts":1,"f0":143.641434,"voiced":1,"pitchDrop":5.079932,"pitchSpread":2.526282,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":1,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets [0.04,0.14,0.22,0.3,0.38,0.46,0.54,0.625,0.705]
+analysis {"v":1,"durationSec":0.8,"kind":"one-shot","category":"tom","confidence":1,"loudnessDb":-3.2,"peakDb":0.8,"brightness":222,"vec":[0.27,0,0.83,0.16,0.01,0,0,0.64,1,1,0,0.38,0],"basis":"signal","midi":49.62,"root":2,"keyConfidence":0}
+# pad @48000
+features {"durationSec":2.5,"peak":0.92595,"peakDb":-0.668251,"loudnessDb":-9.346809,"onsetSec":0.01,"attackSec":1.23,"t20":1.175,"t40":1.24,"t60":1.255,"len40":2.47,"bands":[0,0.27929,0.692122,0.028122,0.000464,0],"centroid":358.833532,"attackCentroid":353.993074,"rolloff":421.875,"flatness":0.000019,"sustain":0.962741,"bursts":4,"f0":55.11005,"voiced":0.928571,"pitchDrop":-0.005728,"pitchSpread":0.001854,"endDb":-27.003737}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":1}
+onsets [0.04]
+analysis {"v":1,"durationSec":2.5,"kind":"one-shot","category":"tonal","confidence":1,"loudnessDb":-9.3,"peakDb":-0.7,"brightness":359,"vec":[0.36,0,0.28,0.69,0.03,0,0,0.88,1,1,0,0.15,1],"basis":"signal","midi":33.03,"root":9,"keyConfidence":0.93}
+# breath @48000
+features {"durationSec":1.4,"peak":0.998524,"peakDb":-0.012833,"loudnessDb":-15.173492,"onsetSec":0.08,"attackSec":0.57,"t20":0.585,"t40":0.71,"t60":0.745,"len40":1.28,"bands":[0.000241,0.012584,0.308853,0.613982,0.062712,0.001628],"centroid":1780.605754,"attackCentroid":1767.889353,"rolloff":3023.4375,"flatness":0.051351,"sustain":0.682001,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-38.223887}
+scores {"808":0,"kick":0,"snare":0.077023,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0.54,"vocal":0,"tonal":0}
+onsets [0.045]
+analysis {"v":1,"durationSec":1.4,"kind":"one-shot","category":"fx","confidence":0.54,"loudnessDb":-15.2,"peakDb":0,"brightness":1781,"vec":[0.64,0,0.01,0.31,0.61,0.06,0,0.74,0,1,0.05,0,0],"basis":"signal"}
+# noise @48000
+features {"durationSec":1,"peak":0.45169,"peakDb":-6.903198,"loudnessDb":-12.006729,"onsetSec":0,"attackSec":0.335,"t20":0.66,"t40":0.66,"t60":0.66,"len40":0.995,"bands":[0.001775,0.006516,0.032017,0.121297,0.245056,0.593339],"centroid":12117.867236,"attackCentroid":11891.843785,"rolloff":20460.9375,"flatness":0.963535,"sustain":0.98379,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-0.063099}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0.949543,"cymbal":0,"tom":0,"perc":0.000161,"fx":0.07,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":1,"kind":"one-shot","category":"open-hat","confidence":0.95,"loudnessDb":-12,"peakDb":-6.9,"brightness":12118,"vec":[0.99,0,0.01,0.03,0.12,0.25,0.59,0.69,0,1,0.96,0,0],"basis":"signal"}
+# dc offset kick @48000
+features {"durationSec":0.16,"peak":1.070353,"peakDb":0.590537,"loudnessDb":-11.24837,"onsetSec":0,"attackSec":0,"t20":0.105,"t40":0.155,"t60":0.155,"len40":0.155,"bands":[0.42458,0.575419,0.000001,0,0,0],"centroid":84.654532,"attackCentroid":93.503981,"rolloff":93.75,"flatness":0.70034,"sustain":0,"bursts":2,"f0":57.919079,"voiced":0.8125,"pitchDrop":6.879795,"pitchSpread":1.273624,"endDb":-20.096925}
+scores {"808":0,"kick":1,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.16,"kind":"one-shot","category":"kick","confidence":1,"loudnessDb":-11.2,"peakDb":0.6,"brightness":85,"vec":[0.09,0.42,0.58,0,0,0,0,0.32,1,0,0,0.16,0.33],"basis":"signal","midi":33.9,"root":10,"keyConfidence":0.3}
+# silence @48000
+features {"durationSec":1,"peak":0,"peakDb":-180,"loudnessDb":-180,"onsetSec":0,"attackSec":0,"t20":0,"t40":0,"t60":0,"len40":0,"bands":[0,0,0,0,0,0],"centroid":0,"attackCentroid":0,"rolloff":0,"flatness":1,"sustain":0,"bursts":0,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.32,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":1,"kind":"one-shot","category":null,"confidence":0.32,"loudnessDb":-180,"peakDb":-180,"brightness":0,"vec":[0,0,0,0,0,0,0,0,0,0,1,0,0],"basis":"signal"}
+# tiny @48000
+features {"durationSec":0.000333,"peak":0,"peakDb":-180,"loudnessDb":-180,"onsetSec":0,"attackSec":0,"t20":0,"t40":0,"t60":0,"len40":0,"bands":[0,0,0,0,0,0],"centroid":0,"attackCentroid":0,"rolloff":0,"flatness":1,"sustain":0,"bursts":0,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.32,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0,"kind":"one-shot","category":null,"confidence":0.32,"loudnessDb":-180,"peakDb":-180,"brightness":0,"vec":[0,0,0,0,0,0,0,0,0,0,1,0,0],"basis":"signal"}
+# drum loop 120 @48000
+features {"durationSec":4,"peak":0.816726,"peakDb":-1.758475,"loudnessDb":-16.380823,"onsetSec":0,"attackSec":0.505,"t20":3.275,"t40":3.295,"t60":3.295,"len40":3.8,"bands":[0.408221,0.554662,0.000001,0.000038,0.008561,0.028517],"centroid":645.796589,"attackCentroid":93.453813,"rolloff":93.75,"flatness":0.143043,"sustain":0.937982,"bursts":2,"f0":57.921661,"voiced":0.325,"pitchDrop":6.847133,"pitchSpread":1.312983,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0.9,"vocal":0,"tonal":0}
+onsets [0.25,0.5,0.75,1,1.25,1.5,1.75,2,2.25,2.5,2.75,3,3.25,3.5,3.75]
+analysis {"v":1,"durationSec":4,"kind":"loop","category":null,"confidence":0.85,"bpm":120,"bars":2,"loopKind":"drums","loudnessDb":-16.4,"peakDb":-1.8,"brightness":646,"vec":[0.46,0.41,0.55,0,0,0.01,0.03,0.98,0.05,1,0,0.01,0.33]}
+# drum loop 90 (named) @48000
+features {"durationSec":5.333333,"peak":0.816726,"peakDb":-1.758475,"loudnessDb":-16.464183,"onsetSec":0,"attackSec":0.675,"t20":3.025,"t40":3.04,"t60":3.045,"len40":3.715,"bands":[0.40991,0.556957,0.000001,0.000034,0.007544,0.025555],"centroid":586.522459,"attackCentroid":93.453813,"rolloff":93.75,"flatness":0.136953,"sustain":0.490278,"bursts":2,"f0":57.921661,"voiced":0.448276,"pitchDrop":6.847133,"pitchSpread":1.312983,"endDb":-180}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0.9,"vocal":0,"tonal":0}
+onsets [0.33,0.665,1,1.33,1.665,2,2.33,2.665,3,3.33,3.665,4,4.33,4.665,5]
+analysis {"v":1,"durationSec":5.333,"kind":"loop","category":null,"confidence":0.85,"bpm":90,"bars":2,"loopKind":"drums","loudnessDb":-16.5,"peakDb":-1.8,"brightness":587,"vec":[0.44,0.41,0.56,0,0,0.01,0.03,0.97,0.3,1,0,0.05,0.33]}
+# kick (named) @48000
+features {"durationSec":0.16,"peak":0.957593,"peakDb":-0.376383,"loudnessDb":-11.425855,"onsetSec":0,"attackSec":0.005,"t20":0.11,"t40":0.15,"t60":0.15,"len40":0.155,"bands":[0.423954,0.576045,0.000001,0,0,0],"centroid":84.632138,"attackCentroid":93.453813,"rolloff":93.75,"flatness":0.705271,"sustain":0,"bursts":2,"f0":57.921661,"voiced":0.8125,"pitchDrop":6.847133,"pitchSpread":1.273964,"endDb":-19.132109}
+scores {"808":0,"kick":1,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.16,"kind":"one-shot","category":"kick","confidence":1,"loudnessDb":-11.4,"peakDb":-0.4,"brightness":85,"vec":[0.09,0.42,0.58,0,0,0,0,0.32,1,0.05,0,0.16,0.33],"basis":"both","midi":33.9,"root":10,"keyConfidence":0.29}
+# hat (named shaker) @48000
+features {"durationSec":0.06,"peak":1.001056,"peakDb":0.009166,"loudnessDb":-16.137608,"onsetSec":0,"attackSec":0,"t20":0.05,"t40":0.055,"t60":0.055,"len40":0.055,"bands":[0,0,0,0.000806,0.214101,0.785093],"centroid":15015.16936,"attackCentroid":15034.35282,"rolloff":21234.375,"flatness":0.097883,"sustain":0,"bursts":1,"f0":0,"voiced":0,"pitchDrop":0,"pitchSpread":0,"endDb":0}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":1,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":0.06,"kind":"one-shot","category":"perc","confidence":0.77,"loudnessDb":-16.1,"peakDb":0,"brightness":15015,"vec":[1,0,0,0,0,0.21,0.79,0.17,0,0,0.1,0,0],"basis":"name"}
+# tuned 808 @48000
+features {"durationSec":1.5,"peak":0.896349,"peakDb":-0.950452,"loudnessDb":-9.638316,"onsetSec":0,"attackSec":0.005,"t20":1.49,"t40":1.49,"t60":1.49,"len40":1.495,"bands":[0.990394,0.009605,0,0,0,0],"centroid":54.01876,"attackCentroid":62.895558,"rolloff":70.3125,"flatness":0.84204,"sustain":0.699422,"bursts":6,"f0":54.997215,"voiced":0.942857,"pitchDrop":-1.35823,"pitchSpread":0.002033,"endDb":-14.159939}
+scores {"808":1,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":0}
+onsets []
+analysis {"v":1,"durationSec":1.5,"kind":"one-shot","category":"808","confidence":1,"loudnessDb":-9.6,"peakDb":-1,"brightness":54,"vec":[0.01,0.99,0.01,0,0,0,0,0.77,1,0.05,0,0.15,1],"basis":"signal","midi":33,"root":9,"keyConfidence":0.95}
+# one-shot named loop @48000
+features {"durationSec":2,"peak":1.050197,"peakDb":0.425418,"loudnessDb":-3.068087,"onsetSec":0,"attackSec":0.12,"t20":1.875,"t40":1.875,"t60":1.875,"len40":1.995,"bands":[0.000001,0.824224,0.156904,0.018871,0,0],"centroid":290.657243,"attackCentroid":290.720471,"rolloff":421.875,"flatness":0.000019,"sustain":1,"bursts":1,"f0":219.986099,"voiced":1,"pitchDrop":0.013809,"pitchSpread":0.000004,"endDb":-0.000019}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0,"fx":0,"vocal":0,"tonal":1}
+onsets [0.04]
+analysis {"v":1,"durationSec":2,"kind":"loop","category":null,"confidence":0.5,"bpm":88.6,"bars":1,"loopKind":"bass","loudnessDb":-3.1,"peakDb":0.4,"brightness":291,"vec":[0.32,0,0.82,0.16,0.02,0,0,0.84,1,1,0,0.48,0],"root":9,"mode":"major","keyConfidence":0.64}
+# stereo hum and kick
+features {"durationSec":0.7,"peak":0.724557,"peakDb":-2.798546,"loudnessDb":-9.119154,"onsetSec":0,"attackSec":0.025,"t20":0.67,"t40":0.67,"t60":0.67,"len40":0.695,"bands":[0.017176,0.097811,0.854406,0.030412,0.000196,0],"centroid":335.468772,"attackCentroid":266.082002,"rolloff":515.625,"flatness":0.000022,"sustain":0.719543,"bursts":3,"f0":262.009827,"voiced":0.971429,"pitchDrop":-19.020988,"pitchSpread":0.000038,"endDb":-2.859776}
+scores {"808":0,"kick":0,"snare":0,"clap":0,"hat":0,"open-hat":0,"cymbal":0,"tom":0,"perc":0.328,"fx":0,"vocal":0,"tonal":0.986842}
+onsets [0.045]
+analysis {"v":1,"durationSec":0.7,"kind":"one-shot","category":"tonal","confidence":0.99,"loudnessDb":-9.1,"peakDb":-2.8,"brightness":335,"vec":[0.34,0.02,0.1,0.85,0.03,0,0,0.61,1,0.25,0,0.52,0.67],"basis":"signal","midi":60.03,"root":0,"keyConfidence":0.97}

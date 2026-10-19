@@ -938,12 +938,17 @@ The edit works on the clip's sample, not on its reverse or on a stretched copy (
   structured-output schema (`BEAT_JSON_SCHEMA`: `additionalProperties: false` everywhere, ranges in descriptions,
   enforced by `validateBeatSpec`; a beat that fails validation is sent back once for a fix). Three backends:
   - **subscription** (`tools/ai/subscription-backend.ts`): the musician's own Claude Code CLI, signed in with their
-    Claude plan, run in print mode per turn with no tools, resuming its session for follow-ups;
+    Claude plan, run in print mode per turn with no tools, resuming its session for follow-ups. How the system prompt
+    and the schema reach it is `tools/ai/claude-turn.ts`: as `--system-prompt` / `--json-schema` arguments when the
+    command line is safely short for the system (macOS and Linux, always in practice), otherwise through the CLI's
+    stream-json input (an `initialize` control message carrying `systemPrompt` and `jsonSchema`, then one user message),
+    which is what every Windows turn does (see "Windows, macOS and Linux" below);
   - **api** (`tools/ai/api-backend.ts`): the Anthropic SDK with `ANTHROPIC_API_KEY` from `.env.local` (re-read per
     request): streaming, `output_config` effort `medium` + JSON schema, server-side refusal fallback
     (`fallbacks: "default"`) on models that have it, an append-only history (thinking blocks kept);
   - **codex** (`tools/ai/codex-backend.ts`): the musician's ChatGPT plan through their own Codex CLI (found through
-    `AGSTUDIO_CODEX_BIN`, the PATH, the ChatGPT app's `Contents/Resources/codex` and the usual install folders).
+    `AGSTUDIO_CODEX_BIN`, the PATH, the ChatGPT app's `Contents/Resources/codex` and the usual install folders; on Windows the PATH with
+    PATHEXT-style extensions and the npm, pnpm, WinGet and Scoop folders, see `tools/platform/find-cli.ts`).
     Status is `codex login status` (cached 15 s; only a ChatGPT login counts, an API-key login is refused with a
     reason; `~/.codex/auth.json` is never read). A turn is one `codex exec` (a follow-up `codex exec resume
     <thread>`; the thread id comes from the `thread.started` event, one thread per backend) run in an empty temp
@@ -3769,7 +3774,8 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   `Origin` must be such a local page (403, so a web page on another site can't use it); then the bearer token, from
   `Authorization: Bearer …` or `?token=`, compared in constant time (401, `WWW-Authenticate: Bearer`, plain text). Also
   600 requests a minute (429), 8 MB bodies, no CORS headers at all. The token (`agmcp_` + 32 random bytes, base64url) is
-  made once into `.agstudio/mcp-token` (git-ignored, mode 0600, `tools/mcp/token.ts`); Settings can replace it, which
+  made once into `.agstudio/mcp-token` (git-ignored, mode 0600 where the system has modes and nothing more on Windows, where the file is as
+  private as the user-profile folder it sits in; `tools/mcp/token.ts`); Settings can replace it, which
   locks the old one out at once. `AGSTUDIO_MCP_TOKEN_FILE` and `AGSTUDIO_EXPORTS_DIR` move the files (the tests use them).
 - **Tool definitions** (`src/app/mcp/defs.ts`, plain data) are loaded by the dev server through `ssrLoadModule`, so
   `tools/list` is current (new ops show up with the next request) and works before any tab is open. `apply_actions`
@@ -3815,17 +3821,19 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   32 kHz, trims like an export and returns a 16-bit WAV as `audio` content (default 15 s, at most 30 s).
   `export_audio` runs `runExport` into a **memory** target (no picker), then uploads each file to
   `POST /api/mcp/upload/<ticket>`: the ticket is issued by the server for that one authenticated call and revoked
-  when it ends; the server writes into `~/Music/AGstudio/` (stems into a sub-folder), cleans names, accepts only
+  when it ends; the server writes into `<home>/Music/AGstudio/` (`os.homedir()`, so `C:\Users\<you>\Music\AGstudio` on Windows; stems into a
+  sub-folder), cleans names (also Windows device names like `CON` and trailing dots), accepts only
   .wav/.flac/.mp3/.zip, never overwrites ("Song (2).wav"). Capped at 20 minutes of audio (it is held in memory).
   No screenshot tool: there is no cheap way to capture the page without a rendering dependency.
 - **UI.** Settings → "Connect AI apps (MCP)" (`ui/features/mcp/McpSettings.tsx`, on top of `settings/parts.tsx`): the
   switch, a live status line ("Connected: Claude Code · 3 calls in the last minute", pushed by the server on change and
   refreshed while the window is open), the token (masked, Show, Copy, New token…), the Claude Code command, the Claude
-  Desktop config (`bin/agstudio-mcp`), a JSON setup for URL clients, the exports folder. Commands (so the action search
+  Desktop config (`bin/agstudio-mcp`, or `bin\agstudio-mcp.cmd` with backslashes on Windows, from the platform `/api/mcp/info` reports; the
+  config file's usual place is in the row's hint), a JSON setup for URL clients, the exports folder. Commands (so the action search
   and Studio's `command` action find them): `options.mcp` (switch; "Let other apps control AGstudio (MCP)": the audited command wording avoids "AI"), `options.connectAi` (opens Settings),
   `options.copyClaudeCodeSetup` (clipboard and a toast only: the token never goes back to a chat or an app). A toast tells the musician the first time
   an app calls.
-- **`bin/agstudio-mcp`** (a `sh` wrapper that finds Node) runs `bin/agstudio-mcp.mjs`: stdio ↔ HTTP for apps that start
+- **`bin/agstudio-mcp`** (a `sh` wrapper that finds Node; `bin/agstudio-mcp.cmd` on Windows) runs `bin/agstudio-mcp.mjs`: stdio ↔ HTTP for apps that start
   MCP servers as programs. Claude Desktop's config file takes only such servers (remote ones go through Settings →
   Connectors and must be reachable from the internet), so this is its path. One line in, one POST out, concurrent;
   keeps the session id and negotiated version; mirrors `Mcp-Method`/`Mcp-Name` for 2026 requests; reads the token from
@@ -4209,6 +4217,40 @@ patterns and audio clip channels and are launched live, in time with the transpo
   `test/browser/launcher-ui.test.ts`, `test/browser/launcher-drops.test.ts` (playlist hand-off, file drops, pad page), `app/launcher/edit.test.ts`,
   `app/launcher/launcher-controllers.test.ts` (pads, page buttons), `app/ai/ops/launcher.test.ts`.
 
+
+## Windows, macOS and Linux (`tools/platform`, `scripts`, `bin`)
+
+AGstudio is developed on a Mac and must run the same on Windows 10/11 (Chrome or Edge, Node 22 from nodejs.org) and Linux. Nothing
+below was run on Windows in development: it is written to Node's cross-platform APIs and checked by unit tests that pass the
+platform in (`win32`, `darwin`, `linux`); a run on a real Windows machine is still the missing proof.
+
+- **Launchers.** `bin/agstudio` (sh) and `bin/agstudio.cmd` only find Node and run `scripts/agstudio.mjs`, which holds the logic:
+  the dev server on 5390 or, with `--app`, the production build on 5391; "already running" is a `fetch`; the build is made when `dist/sw.js`
+  is older than any input (`isBuildStale`); `npm ci` and Vite run as `node npm-cli.js` / `node vite.js` (no shell, no `.cmd`); the browser
+  or installed app is opened with `open` / `cmd /c start "" <url>` / `xdg-open` (`openCommand`; `AGSTUDIO_NO_OPEN=1` skips it). The pure,
+  platform-taking parts are in `scripts/lib/launcher.mjs` (typed by `launcher.d.mts`); `bin/agstudio-mcp(.cmd)` does the same for the MCP helper.
+  `.gitattributes` keeps text files LF in every checkout (`.cmd` files are CRLF) so snapshot tests and shell scripts keep their bytes.
+- **npm scripts.** Nothing in `package.json` needs a Unix shell: `test:perf` is `scripts/test-perf.mjs` (sets `VITE_PERF_STRICT`), and
+  `scripts/check.mjs` starts tsc, eslint and vitest as `node <their JS file>` (`scripts/lib/tools.mjs`), because Node (18.20+) refuses to
+  start a `.cmd` shim without a shell and a shell would re-parse every argument. The audio tests use the installed Chrome; set
+  `AGSTUDIO_TEST_BROWSER=msedge` to use Edge instead.
+- **Finding and starting the AI CLIs** (`tools/platform`): `find-cli.ts` lists where `claude` / `codex` may be (an override, then the PATH with
+  `.exe`/`.cmd`/`.bat`/`.com` on Windows, `~/.local/bin`, `%APPDATA%\npm`, pnpm, WinGet and Scoop folders; the old Mac list unchanged).
+  `spawn-plan.ts` turns "run this file with these arguments" into a spawn call: a `.exe` runs directly; an npm `.cmd` shim is read and its
+  real target (`.js` through this server's own Node, or an `.exe`) runs directly; any other batch file goes through `cmd.exe /d /s /c` with
+  every argument quoted by `quoteForCmd` (the qntm.org/cmd rules, as the `cross-spawn` package does). `tools/ai/cli.ts` uses it, kills the
+  whole tree with `taskkill` when cmd.exe is in between, and starts everything with `windowsHide`. Environment names are matched
+  case-insensitively on Windows (`envWithout`).
+- **Long prompts.** Windows stops a command line at 32 767 characters (8 191 through cmd.exe) and the Claude turn carries up to 60 000
+  characters of system prompt and about 76 KB of schema. `fitsCommandLine` decides per system (Windows 30 000 / 7 000 characters; Linux
+  100 000 bytes per argument, 500 000 in all); a turn that does not fit takes the stdin transport. Codex always used files.
+- **Paths.** `vite.config.ts` normalizes its root to forward slashes (Vite's aliases, globs and the watcher ignore list want them); Faust ids
+  and the plugin builder's tsconfig paths are forward-slash too; a folder move in the plugin builder retries while Windows reports the folder
+  busy (`renameFolder`). Everything else in `tools/` and `scripts/` uses `path.join`, `fileURLToPath` and `os.homedir()`.
+- **UI.** The keymap formats chords per system (`Ctrl+Shift+Z`, not `⇧⌘Z`); sentences that name keys use `ui/shortcut-label.ts`; the install
+  steps cover Edge; the font stacks include Segoe UI and Consolas; the MCP Settings lines follow the platform the server reports.
+- **Tests that start fake CLIs** use `test/helpers/fake-cli.ts` (a script with a shebang on macOS and Linux, a `.cjs` plus `.cmd` pair on
+  Windows).
 
 ## Installable app (PWA)
 

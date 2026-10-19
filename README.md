@@ -5,29 +5,62 @@ TypeScript plugins you drop into `plugins/`, and they hot-reload while you play.
 
 ## Run it
 
-One command, from any folder:
+AGstudio runs on **macOS, Linux and Windows 10/11**, in Chrome or Edge, with Node 22 or newer. (On Windows, see
+[Windows](#windows) below for the step-by-step.) On macOS and Linux, one command from any folder:
 
 ```bash
 agstudio
 ```
 
 It starts the dev server on http://localhost:5390 and opens it in your browser (if it is already running, it just
-opens it); Ctrl+C stops it. Click anywhere once to enable audio. `bin/agstudio` is the script; link it onto your PATH
-once with `ln -sf "$PWD/bin/agstudio" ~/.local/bin/agstudio` (it installs the dependencies on the first run).
+opens it); Ctrl+C stops it. Click anywhere once to enable audio. `bin/agstudio` is the script (a small wrapper that finds Node and
+runs `scripts/agstudio.mjs`); link it onto your PATH once with `ln -sf "$PWD/bin/agstudio" ~/.local/bin/agstudio` (it installs the
+dependencies on the first run). `AGSTUDIO_NO_OPEN=1 agstudio` starts it without opening a window.
 
-By hand: Node 22 lives in `~/.local/node/bin` on this machine (not on PATH):
+By hand, with Node on your PATH: `npm ci` once, then `npm run dev`. (The owner's Mac keeps Node 22 in `~/.local/node/bin`, which is
+not on PATH there: `export PATH="$HOME/.local/node/bin:$PATH"; npm run dev`.)
 
-```bash
-export PATH="$HOME/.local/node/bin:$PATH"; npm run dev
+## Windows
+
+Needs Windows 10 or 11, Google Chrome or Microsoft Edge, and Node 22 or newer. Nothing else: no WSL, no Visual Studio.
+
+1. **Install Node.** Download the Windows installer (LTS, version 22 or newer) from https://nodejs.org and run it with the
+   defaults (keep "Add to PATH" ticked). Open a **new** PowerShell or Command Prompt window and check `node --version`.
+2. **Get AGstudio.** With Git: `git clone <the AGstudio repository address> AGstudio`, or copy the AGstudio folder to your computer,
+   for example to `C:\Users\you\AGstudio` (a folder inside your user folder is best: see the access token note below).
+3. **Install its parts once**, inside that folder: `cd AGstudio`, then `npm ci`.
+4. **Start it:** `.\bin\agstudio.cmd` in PowerShell (`bin\agstudio.cmd` in Command Prompt), or double-click `bin\agstudio.cmd`
+   in File Explorer. It starts the dev server on http://localhost:5390 and opens it in your browser; Ctrl+C stops it (Command Prompt
+   then asks "Terminate batch job (Y/N)?": answer Y). Windows may ask whether Node.js may use the network: AGstudio only needs
+   this computer, so you can choose "Cancel" or allow it on private networks.
+5. **Click once in the page** to enable audio.
+
+To start it from any folder, put `bin` on your PATH once (then open a new terminal and type `agstudio`; `agstudio --app` works too):
+
+```powershell
+[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';' + (Resolve-Path .\bin), 'User')
 ```
 
-Other scripts: `npm run check` (types, lint, all tests), `npm test` (unit), `npm run test:audio` (headless Chrome),
+(Run it inside the AGstudio folder. Or add the folder by hand: Start → "Edit environment variables for your account" → Path → New.)
+
+For a desktop or Start-menu icon: right-click `bin\agstudio.cmd` → Show more options → Send to → Desktop (create shortcut). To start the app
+version, add ` --app` after the path in the shortcut's Target. Move the shortcut into the Start menu with Win+R → `shell:programs`.
+The best everyday way is the installed app below: run `agstudio --app` once, install it from Chrome or Edge, and pin it to the taskbar.
+
+On Windows, Edge's install is "⋯ → Apps → Install this site as an app". Windows lists the installed app under "Open with" for
+`.agproj`, `.agchain` and `.agpreset` files; choose "Always" to open projects by double-click. Where something on Windows works
+differently, the section it belongs to says so (AI, MCP, exports). Keys are Ctrl and Alt instead of ⌘ and ⌥ everywhere in the app.
+This setup is written for Windows and checked on a Mac with the platform simulated; if something fails on a real Windows
+computer, the first thing to send is the text the terminal prints.
+
+Other scripts (the same in cmd.exe and PowerShell): `npm run check` (types, lint, all tests), `npm test` (unit), `npm run test:audio` (headless Chrome;
+it uses the installed Chrome, or Edge with `AGSTUDIO_TEST_BROWSER=msedge`),
 `npm run test:perf` (speed assertions with their real limits; run it on a quiet machine),
 `npm run build` (production build in `dist/`).
 
 ## Install as an app
 
-AGstudio installs from Chrome as an app: its own window and dock icon, no browser tab, a start that works without any server
+AGstudio installs from Chrome or Edge as an app: its own window and dock or taskbar icon, no browser tab, a start that works without any server
 running, and a double-click on a project (`.agproj`, also `.agchain` and `.agpreset`) opens it.
 
 ```bash
@@ -36,8 +69,8 @@ agstudio --app
 
 builds the production version when it is missing or older than the code, serves it on http://localhost:5391 (`$APP_PORT`) and
 opens it. Then **Help → Install AGstudio as an app** (also in the action search, and on the welcome screen), or the install icon at
-the right end of Chrome's address bar. From then on open AGstudio from the dock or Launchpad; `agstudio --app` opens the installed
-app once it exists. (An installed app belongs to its address, so keep using port 5391 for it. `agstudio` without `--app` is still
+the right end of the address bar. From then on open AGstudio from the dock, Launchpad, Start menu or taskbar; `agstudio --app` opens the
+installed app once it exists (on macOS and Windows; on Linux it opens the browser tab). (An installed app belongs to its address, so keep using port 5391 for it. `agstudio` without `--app` is still
 the development server on 5390, with hot reload, and has nothing to do with the installed app.)
 
 - **Works offline, with no server:** the whole editor, audio, saving and opening projects, export, the offline beat generator,
@@ -81,14 +114,14 @@ the development server on 5390, with hot reload, and has nothing to do with the 
   FL's score log: everything you play is kept for 5 minutes, so Patterns → Dump what I played… turns a riff you
   played without recording into a pattern. Tap tempo (Shift+T or Options → Tap tempo).
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files
-  from Finder). Samples are embedded in saved projects.
+  from Finder or File Explorer). Samples are embedded in saved projects.
 - **DJ auto-mix** (View → DJ mix, ⌥J, or the browser's Music section): add your own songs (MP3, AAC/M4A, WAV,
   FLAC, OGG; streaming services like Spotify can't be mixed, their audio is locked), press **Make the mix** and
   Studio orders them (Camelot keys, tempos, an energy shape: party, build, peak time, chill), beat-matches them
   and builds every transition on the playlist: phrase-aligned 8/16/32-bar blends with a bass swap, filter or
   echo outs, cuts, risers, tempo glides, a marker per song. Tweak one transition, then export the mix. The
   Studio chat does it too ("make a 30-minute party mix", "smoother transition into song 4").
-- **Files**: `.agproj` save/open (File System Access, so Cmd+S overwrites), recent files, reload restore, autosave
+- **Files**: `.agproj` save/open (File System Access, so Ctrl+S / Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
   and shortcuts you can change (Help → Keyboard shortcuts).
 - **Music videos** (File → Export as video…, or right-click a marker, the loop or a clip): the song or a part of it
@@ -161,6 +194,9 @@ trap", and the beat follows your rhythm and contour, in a sensible register and 
 an audio file on the panel) works with a voice memo you made elsewhere. Turn on "Play my beat along" to perform over
 the current pattern (headphones help).
 
+AGstudio sends the prompt to Claude Code through its standard input (not on the command line) whenever the command line would be too long
+for the system; on Windows, whose limit is about 32 000 characters, that is every request.
+
 **Who answers** (the picker in the AI studio's header; "Auto" uses the first one that's set up):
 
 1. **Your Claude subscription** (no API key, nothing billed separately; it counts toward your plan's usage like any
@@ -173,6 +209,17 @@ the current pattern (headphones help).
    ```bash
    ~/.local/bin/claude auth login
    ```
+
+   On Windows, in PowerShell (the installer puts `claude.exe` in `%USERPROFILE%\.local\bin`; `npm i -g @anthropic-ai/claude-code`
+   works too):
+
+   ```powershell
+   irm https://claude.ai/install.ps1 | iex
+   claude auth login
+   ```
+
+   If AGstudio says Claude Code isn't installed although it is, set `AGSTUDIO_CLAUDE_BIN` to its full path in `.env.local`
+   (for example `AGSTUDIO_CLAUDE_BIN=C:\Users\you\.local\bin\claude.exe`).
 
    AGstudio's dev server then runs `claude -p` for each request (isolated with `--safe-mode`, no tools), so the
    page never sees your login. This is for your own use on your machine: don't share the app with others using
@@ -190,7 +237,10 @@ the current pattern (headphones help).
    Codex's tools turned off and your Codex config ignored), so the page never sees your login. Every AI feature
    works through it: the Studio chat, "Check my mix", the follow-up looks and the plugin builder. An API-key login
    of Codex is not used (it would bill the API, not your plan); if `codex` lives somewhere unusual, set
-   `AGSTUDIO_CODEX_BIN=/path/to/codex` in `.env.local`. Same rule as above: for your own use on your machine.
+   `AGSTUDIO_CODEX_BIN=/path/to/codex` in `.env.local`. Same rule as above: for your own use on your machine. On Windows install it with
+   `npm i -g @openai/codex` (then `codex login` in PowerShell); AGstudio finds `codex.cmd` in `%APPDATA%\npm` and `codex.exe` on your
+   PATH. A copy bundled inside a ChatGPT or Codex desktop app on Windows is only found when it is on the PATH or named in
+   `AGSTUDIO_CODEX_BIN` (where those apps keep it is not known here).
 3. **An API key**: copy `.env.example` to `.env.local` and put your key after `ANTHROPIC_API_KEY=` (from
    https://console.anthropic.com/). The dev server adds it to requests; changes apply without a restart.
 4. **The offline generator**: built in, always available, no account needed.
@@ -199,7 +249,7 @@ the current pattern (headphones help).
 the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster) or the ChatGPT model ("Codex default", or type
 the id of another one under "Other model…") in the assistant's header.
 
-Shortcuts: press F1 in the app, or see [docs/shortcuts.md](docs/shortcuts.md). On a Mac, F-keys may need Fn;
+Shortcuts: press F1 in the app, or see [docs/shortcuts.md](docs/shortcuts.md) (⌘ and ⌥ on a Mac are Ctrl and Alt on Windows and Linux). On a Mac, F-keys may need Fn;
 every window also has an Alt+number shortcut and a toolbar button.
 
 ## Control AGstudio from AI apps (MCP)
@@ -224,6 +274,16 @@ needs only Node and reads the token from `.agstudio/mcp-token` itself). Add this
 { "mcpServers": { "agstudio": { "command": "/path/to/AGstudio/bin/agstudio-mcp", "env": { "AGSTUDIO_URL": "http://localhost:5390" } } } }
 ```
 
+On Windows the command is the `.cmd` file, written with doubled backslashes in JSON, and the config file is
+`%APPDATA%\Claude\claude_desktop_config.json` (Edit Config opens the right one; the Microsoft Store version of Claude keeps it elsewhere):
+
+```json
+{ "mcpServers": { "agstudio": { "command": "C:\\Users\\you\\AGstudio\\bin\\agstudio-mcp.cmd", "env": { "AGSTUDIO_URL": "http://localhost:5390" } } } }
+```
+
+The Claude Code line above is the same in PowerShell and Command Prompt. If Claude Desktop cannot start the `.cmd`, use
+`"command": "node"` with `"args": ["C:\\Users\\you\\AGstudio\\bin\\agstudio-mcp.mjs"]` instead.
+
 Apps that take a URL and headers (Cursor, VS Code, `.mcp.json`) use `{"type":"http","url":"http://localhost:5390/mcp",
 "headers":{"Authorization":"Bearer <token>"}}`; the Settings section has a copy button for it.
 
@@ -240,12 +300,13 @@ reaching outside it come back as a question until `approve_outside: true`), `lis
 menu item; file dialogs become a button for you to click: "Claude Code wants to export…"), `play`, `stop`, `seek`,
 `set_loop`, `transport_state`, `undo`, `redo`, `history`, `analyze_mix` (loudness, balance and findings),
 `render_preview` (a short WAV as audio content), `export_audio` (writes WAV, FLAC or MP3, or stems, into
-`~/Music/AGstudio/`, no file dialog) and `export_video` (a music video of up to four minutes, MP4 or WebM, into the
+`~/Music/AGstudio/` (on Windows `C:\Users\you\Music\AGstudio`; set the `AGSTUDIO_EXPORTS_DIR` environment variable to use another folder, for example when OneDrive moved your Music folder), no file dialog) and `export_video` (a music video of up to four minutes, MP4 or WebM, into the
 same folder). The project, the commands, the plugins and the guide are also MCP resources.
 
 **Safety**: the endpoint only answers connections from this computer, only for the `localhost`, `127.0.0.1` or `[::1]`
 Host and Origin (against DNS rebinding), and only with the access token (`Authorization: Bearer …` or `?token=`),
-which is made once into the git-ignored `.agstudio/mcp-token` (mode 0600) and can be replaced in Settings (apps with
+which is made once into the git-ignored `.agstudio/mcp-token` (mode 0600 on macOS and Linux; Windows has no such modes, so the file is as private
+as the folder it is in: keep AGstudio inside your user folder, where other accounts cannot read it) and can be replaced in Settings (apps with
 the old one are locked out). The switch "Let AI apps control AGstudio" in Settings (Options → Let other apps control AGstudio) turns every app away at once.
 
 **Try it by hand** with curl (from the AGstudio folder, with the dev server running and a tab open):
@@ -269,6 +330,8 @@ and opens it in your code editor. Any of your plugins' windows has **Edit code**
 ```bash
 export PATH="$HOME/.local/node/bin:$PATH"; npm run new:plugin -- --kind instrument --style graph --id user.my-synth
 ```
+
+(Drop the `export` part where Node is on your PATH, which includes Windows: `npm run new:plugin -- --kind instrument --style graph --id user.my-synth`.)
 
 (`--kind note-script` makes a piano-roll tool. Or ask the AI studio to write the plugin for you.)
 

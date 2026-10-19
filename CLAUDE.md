@@ -8,11 +8,13 @@ files and functions, comments that say why). The plugin author guide is `docs/pl
 
 ## Commands
 
-Node is at `~/.local/node/bin`, which is not on PATH. Prefix shell commands with
-`export PATH="$HOME/.local/node/bin:$PATH";`.
+On the owner's Mac, Node is at `~/.local/node/bin`, which is not on PATH: prefix shell commands with
+`export PATH="$HOME/.local/node/bin:$PATH";`. That is specific to that machine: on Windows (and anywhere Node is installed the normal
+way) `node` and `npm` are on the PATH already. AGstudio runs on Windows 10/11 too (Chrome or Edge): see "Windows" below.
 
-- `npm run dev`: dev server (port 5390 by default, or `$PORT`). `bin/agstudio` (linked as `agstudio` in ~/.local/bin)
-  starts it and opens the browser, or just opens it when it is already running.
+- `npm run dev`: dev server (port 5390 by default, or `$PORT`). `bin/agstudio` (linked as `agstudio` in ~/.local/bin;
+  `bin\agstudio.cmd` on Windows) starts it and opens the browser, or just opens it when it is already running. Both are thin
+  wrappers that find Node and run `scripts/agstudio.mjs`, where the logic is.
 - `npm run check`: everything CI would run (`scripts/check.mjs`): `tsc -b` (all five tsconfigs, incremental) and `eslint .`
   (cached) side by side, then the unit project, then the audio project, one after the other so the speed tests are not
   starved. A warm run with nothing changed spends seconds on the static checks.
@@ -61,6 +63,14 @@ Cross-layer imports always use aliases (`@core/…`, `@engine/…`, `@app/…`, 
   hash. Keep sample hashes in the project, an autosave or the IndexedDB `kv` store, write blobs only through the sample
   store (`defaultSampleStore()`), and wrap long work that reads a project in `whileBusy(…, { project })`.
 - Assets must be self-hosted: the dev/preview servers send COOP/COEP headers (cross-origin isolation).
+
+## Windows
+
+Keep it working there, from the Mac: no Unix-only shell syntax in `package.json` or scripts (`VAR=value cmd`, `&&` chains, `rm`, `cp`);
+start tools with `process.execPath` and their JS file (`scripts/lib/tools.mjs`), never `npm`/`npx`/`.bin/*` without a shell; build file paths
+with `path.join` / `fileURLToPath` / `os.homedir()`, never a hard-coded `/` or `~`; spawn command line tools through `tools/platform`
+(`planSpawn`, `cliCandidates`); name keys with `ui/shortcut-label.ts` or `formatChord`, never a literal ⌘. New code that depends on
+the system takes the platform as an argument so a unit test can pass `win32`. Details: `docs/architecture.md`, "Windows, macOS and Linux".
 
 ## Adding a feature
 

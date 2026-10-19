@@ -146,7 +146,7 @@ function Welcome() {
         </p>
         {!installed && (
           <p className={styles.installLine}>
-            Want AGstudio in its own window, with a dock icon?{' '}
+            Want AGstudio in its own window, with its own icon in the dock or taskbar?{' '}
             <button
               className={styles.inlineLink}
               onClick={() => {

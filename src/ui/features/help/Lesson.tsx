@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
+import { shortcutLabel } from '../../shortcut-label';
 import { lessonStore, stopLesson } from './lesson-state';
 import { LESSONS } from './lessons';
 import styles from './Help.module.css';
@@ -74,7 +75,7 @@ function LessonCard({ id }: { id: string }) {
         </div>
         {finished ? (
           <p className={styles.lessonText}>
-            <b>Done!</b> {lesson.next}
+            <b>Done!</b> {lesson.next.replace('{search}', shortcutLabel(services, 'help.palette') ?? 'the action search')}
           </p>
         ) : (
           <p className={styles.lessonText}>

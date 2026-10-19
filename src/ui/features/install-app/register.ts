@@ -32,7 +32,7 @@ export function register(services: Services): void {
     enabled: (s) => !s.pwa.store.getState().installed,
     run: async (s) => {
       const result = await s.pwa.install();
-      if (result === 'accepted') s.session.getState().toast('Installing AGstudio: look for it in your dock, Launchpad or Start menu.');
+      if (result === 'accepted') s.session.getState().toast('Installing AGstudio: look for it in your dock, Launchpad, Start menu or taskbar.');
       else if (result === 'manual') {
         await showDialog({
           title: 'Install AGstudio as an app',

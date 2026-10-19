@@ -178,4 +178,4 @@ export class Pwa {
 
 /** The steps for Chrome's own install entry, for when it offers no prompt (already dismissed, or another browser). */
 export const INSTALL_STEPS =
-  'In Chrome, click the install icon at the right end of the address bar (a screen with a down arrow), or open the ⋮ menu and choose “Cast, save and share” → “Install AGstudio…”.';
+  'In Chrome or Edge, click the install icon at the right end of the address bar (a screen with a down arrow), or open the ⋮ menu: in Chrome choose “Cast, save and share” → “Install AGstudio…”, in Edge “Apps” → “Install this site as an app”.';

@@ -25,7 +25,7 @@ export interface Lesson {
   /** Before the first step; false cancels the lesson (e.g. the musician kept their project). */
   start?(s: Services): Promise<boolean>;
   steps: LessonStep[];
-  /** What to try next, shown at the end. */
+  /** What to try next, shown at the end. `{search}` becomes the keys of the action search on this computer. */
   next: string;
 }
 
@@ -282,6 +282,6 @@ export const LESSONS: readonly Lesson[] = [
         done: (s) => s.presets.forPlugin(WAVETABLE).length > memo.presets,
       },
     ],
-    next: 'It’s under Presets in the browser now: click it there to add it to any project. Ask Studio (the gold button in the toolbar) for anything else, or press ⌘K to find any action.',
+    next: 'It’s under Presets in the browser now: click it there to add it to any project. Ask Studio (the gold button in the toolbar) for anything else, or press {search} to find any action.',
   },
 ];

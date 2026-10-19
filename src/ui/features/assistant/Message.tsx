@@ -5,6 +5,7 @@ import type { Services } from '@app/services';
 import { showDialog } from '../../controls/Dialog';
 import { Icon } from '../../controls/Icon';
 import { useHistoryStatus, useServices } from '../../services-context';
+import { shortcutLabel } from '../../shortcut-label';
 import styles from './Assistant.module.css';
 
 /** Change lists this long or shorter show in full; longer ones fold into a one-line summary. */
@@ -39,7 +40,7 @@ async function undoAnswer(services: Services, before: number, later: readonly st
     const choice = await showDialog({
       title: 'Undo this answer?',
       message: `Changes made after it are undone too:\n${shown.map((undoneLabel) => `• ${undoneLabel}`).join('\n')}${later.length > shown.length ? `\n• and ${later.length - shown.length} more` : ''}`,
-      detail: 'Redo (Shift+Cmd+Z) brings them all back.',
+      detail: `Redo (${shortcutLabel(services, 'edit.redo') ?? 'Edit → Redo'}) brings them all back.`,
       buttons: [
         { id: 'cancel', label: 'Cancel' },
         { id: 'undo', label: later.length === 1 ? 'Undo both' : `Undo all ${later.length + 1}`, primary: true },

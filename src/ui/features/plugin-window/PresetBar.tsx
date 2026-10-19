@@ -17,6 +17,7 @@ import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import { showDialog } from '../../controls/Dialog';
 import { showFormDialog } from '../../controls/FormDialog';
 import { useServices } from '../../services-context';
+import { shortcutLabel } from '../../shortcut-label';
 import styles from './PresetBar.module.css';
 
 const currentValues = (def: PluginDef, instance: PluginInstance) =>
@@ -199,7 +200,7 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
       {
         kind: 'submenu',
         label: 'Randomize',
-        hint: 'Happy accidents: new random settings (output levels stay put; undo with ⌘Z)',
+        hint: `Happy accidents: new random settings (output levels stay put; undo with ${shortcutLabel(s, 'edit.undo') ?? 'Edit → Undo'})`,
         items: () => [
           {
             label: 'Vary a little',

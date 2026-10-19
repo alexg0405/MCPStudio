@@ -44,9 +44,33 @@ async function songSettings(s: Services): Promise<void> {
   });
 }
 
-export function register(services: Services): void {
-  const { commands, keymap } = services;
+/** The tick `transport.playFrom` was asked for: a plain tick number, `{ tick }`, or `{ bar }` (bar 1 = the start); NaN when unreadable. */
+function tickToPlayFrom(args: number | { tick?: number; bar?: number } | undefined, ticksInBar: number): number {
+  if (typeof args === 'number') return args;
+  if (args && typeof args.tick === 'number') return args.tick;
+  if (args && typeof args.bar === 'number') return (Math.max(1, args.bar) - 1) * ticksInBar;
+  return NaN;
+}
 
+/** The span `transport.playRange` was asked for: `{ fromBar, toBar }` or `{ from, to }` in ticks; null when unreadable. */
+function spanToLoop(s: Services, args: { from?: number; to?: number; fromBar?: number; toBar?: number } | undefined): { from: number; to: number } | null {
+  if (args && typeof args.fromBar === 'number' && typeof args.toBar === 'number') return barsToRange(s, args.fromBar, args.toBar);
+  if (args && typeof args.from === 'number' && typeof args.to === 'number') return { from: args.from, to: args.to };
+  return null;
+}
+
+/** The transport: play, stop, record settings, the song settings dialog, their keys, menu entries and the toolbar slots. */
+export function register(services: Services): void {
+  registerPlaybackCommands(services);
+  registerRecordCommands(services);
+  registerSongCommands(services);
+  registerKeys(services);
+  registerOptionsMenu(services);
+  registerToolbarSlots();
+}
+
+/** Play, stop, and the commands that start playback from a pattern, a position or a span. */
+function registerPlaybackCommands({ commands }: Services): void {
   commands.register({
     id: 'transport.playPause',
     title: 'Play / stop',
@@ -90,14 +114,7 @@ export function register(services: Services): void {
     palette: false,
     run: (s, args) => {
       const bar = ticksPerBar(s.doc.getState().project.transport.timeSig);
-      const tick =
-        typeof args === 'number'
-          ? args
-          : args && typeof args.tick === 'number'
-            ? args.tick
-            : args && typeof args.bar === 'number'
-              ? (Math.max(1, args.bar) - 1) * bar
-              : NaN;
+      const tick = tickToPlayFrom(args, bar);
       if (Number.isFinite(tick)) playFrom(s, tick);
       else s.session.getState().toast('Say where to play from: a bar or a tick.', 'error');
     },
@@ -110,15 +127,14 @@ export function register(services: Services): void {
     argsHint: '{ from, to } in ticks, or { fromBar, toBar } (bar 1 = the start, both bars included)',
     palette: false,
     run: (s, args) => {
-      const r =
-        args && typeof args.fromBar === 'number' && typeof args.toBar === 'number'
-          ? barsToRange(s, args.fromBar, args.toBar)
-          : args && typeof args.from === 'number' && typeof args.to === 'number'
-            ? { from: args.from, to: args.to }
-            : null;
+      const r = spanToLoop(s, args);
       if (!r || !playRange(s, r.from, r.to)) s.session.getState().toast('Say which span to loop: from and to.', 'error');
     },
   });
+}
+
+/** Recording: arm, metronome, count-in, record quantize and record mode. */
+function registerRecordCommands({ commands }: Services): void {
   commands.register({
     id: 'transport.record',
     title: 'Record',
@@ -159,6 +175,10 @@ export function register(services: Services): void {
     hint: 'Overdub adds to existing notes; replace clears what the recording passes over',
     run: (s, mode) => s.prefs.getState().set({ recordMode: mode === 'replace' ? 'replace' : 'overdub' }),
   });
+}
+
+/** Panic, the song settings dialog and the pattern or song mode switch. */
+function registerSongCommands({ commands }: Services): void {
   commands.register({
     id: 'transport.panic',
     title: 'Stop all sound',
@@ -184,6 +204,10 @@ export function register(services: Services): void {
     checked: (s) => s.view.getState().mode === 'song',
   });
 
+}
+
+/** The transport keys. */
+function registerKeys({ keymap }: Services): void {
   keymap.add([
     { chord: 'Space', command: 'transport.playPause' },
     { chord: 'L', command: 'transport.toggleMode' },
@@ -191,7 +215,60 @@ export function register(services: Services): void {
     { chord: 'Alt+M', command: 'transport.metronome' },
   ]);
 
-  // Transport lives on the toolbar; the Options menu keeps the mode switch reachable from menus.
+}
+
+/** The options of one record setting as menu entries; the chosen one is checked. */
+function choiceEntries<T>(choices: readonly (readonly [string, T])[], current: T, pick: (value: T) => void) {
+  return choices.map(([label, value]) => ({ label, checked: current === value, run: () => pick(value) }));
+}
+
+/** Record quantize grids, in ticks (960 per quarter note). */
+const RECORD_QUANTIZE_CHOICES = [
+  ['Off', 0],
+  ['1/4', 960],
+  ['1/8', 480],
+  ['1/16', 240],
+  ['1/32', 120],
+  ['1/8 triplet', 320],
+  ['1/16 triplet', 160],
+] as const;
+
+/** The count-in lengths offered, in bars. */
+const COUNT_IN_BARS = [0, 1, 2, 4] as const;
+
+/** The Options menu's record settings, read fresh each time the menu opens so the checks are current. */
+function recordSettingEntries(services: Services) {
+  const prefs = services.prefs.getState();
+  const run = (id: string, arg: unknown) => services.commands.run(id, arg);
+  const countInChoices = COUNT_IN_BARS.map((bars) => [bars ? `${bars} bar${bars > 1 ? 's' : ''}` : 'Off', bars] as const);
+  return [
+    {
+      label: 'Count-in',
+      run: () => {},
+      children: choiceEntries(countInChoices, prefs.countInBars, (bars) => run('transport.countIn', bars)),
+    },
+    {
+      label: 'Record quantize',
+      run: () => {},
+      children: choiceEntries(RECORD_QUANTIZE_CHOICES, prefs.recordQuantize, (ticks) => run('transport.recordQuantize', ticks)),
+    },
+    {
+      label: 'Record mode',
+      run: () => {},
+      children: choiceEntries(
+        [
+          ['Overdub (add notes)', 'overdub'],
+          ['Replace (clear as it records)', 'replace'],
+        ] as const,
+        prefs.recordMode,
+        (mode) => run('transport.recordMode', mode),
+      ),
+    },
+  ];
+}
+
+/** Transport lives on the toolbar; the Options menu keeps the mode switch, panic, metronome and record settings reachable from menus. */
+function registerOptionsMenu(services: Services): void {
   addMenuItems('options', [
     sep(1),
     cmd('transport.toggleMode', 2),
@@ -200,59 +277,12 @@ export function register(services: Services): void {
     cmd('transport.panic', 69),
     cmd('transport.metronome', 71),
     cmd('transport.record', 72, 'Record (arm)'),
-    {
-      kind: 'dynamic',
-      id: 'record-settings',
-      order: 73,
-      entries: () => {
-        const pr = services.prefs.getState();
-        const choice = (label: string, checked: boolean, run: () => void) => ({ label, checked, run });
-        return [
-          {
-            label: 'Count-in',
-            run: () => {},
-            children: [0, 1, 2, 4].map((bars) =>
-              choice(bars ? `${bars} bar${bars > 1 ? 's' : ''}` : 'Off', pr.countInBars === bars, () =>
-                services.commands.run('transport.countIn', bars),
-              ),
-            ),
-          },
-          {
-            label: 'Record quantize',
-            run: () => {},
-            children: (
-              [
-                ['Off', 0],
-                ['1/4', 960],
-                ['1/8', 480],
-                ['1/16', 240],
-                ['1/32', 120],
-                ['1/8 triplet', 320],
-                ['1/16 triplet', 160],
-              ] as const
-            ).map(([label, ticks]) =>
-              choice(label, pr.recordQuantize === ticks, () =>
-                services.commands.run('transport.recordQuantize', ticks),
-              ),
-            ),
-          },
-          {
-            label: 'Record mode',
-            run: () => {},
-            children: [
-              choice('Overdub (add notes)', pr.recordMode === 'overdub', () =>
-                services.commands.run('transport.recordMode', 'overdub'),
-              ),
-              choice('Replace (clear as it records)', pr.recordMode === 'replace', () =>
-                services.commands.run('transport.recordMode', 'replace'),
-              ),
-            ],
-          },
-        ];
-      },
-    },
+    { kind: 'dynamic', id: 'record-settings', order: 73, entries: () => recordSettingEntries(services) },
   ]);
+}
 
+/** The transport and audio status on the toolbar. */
+function registerToolbarSlots(): void {
   addToolbarSlot({ id: 'transport', area: 'transport', order: 0, component: () => createElement(TransportBar) });
   addToolbarSlot({
     id: 'audio-enable',

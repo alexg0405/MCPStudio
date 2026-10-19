@@ -70,6 +70,16 @@ describe('choosing how to send a turn', () => {
     expect(turn.input).toBe(REAL_SIZE_REQUEST.text);
   });
 
+  it('AGSTUDIO_CLAUDE_TRANSPORT forces one way or the other', () => {
+    const forced = (transport: string): Host => ({ ...mac, env: { AGSTUDIO_CLAUDE_TRANSPORT: transport } });
+    expect(chooseTurn(SMALL_REQUEST, '/usr/bin/claude', forced('stdin')).transport).toBe('stdin');
+    expect(
+      chooseTurn(REAL_SIZE_REQUEST, 'C:\\claude.exe', { ...windows, env: { AGSTUDIO_CLAUDE_TRANSPORT: 'argv' } })
+        .transport,
+    ).toBe('argv');
+    expect(chooseTurn(REAL_SIZE_REQUEST, '/usr/bin/claude', forced('nonsense')).transport).toBe('argv');
+  });
+
   it('macOS and Linux switch to stdin for a single argument past the Linux limit', () => {
     const huge = { ...REAL_SIZE_REQUEST, system: 'y'.repeat(130_000) };
     expect(chooseTurn(huge, '/usr/bin/claude', mac).transport).toBe('stdin');

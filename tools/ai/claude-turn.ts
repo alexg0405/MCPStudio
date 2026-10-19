@@ -104,11 +104,17 @@ export interface TurnCommand {
   input: string;
 }
 
-/** Picks the transport: the plain one when its command line is safely short on this system, else the stdin one. */
+/**
+ * Picks the transport: the plain one when its command line is safely short on this system, else the stdin one.
+ * `AGSTUDIO_CLAUDE_TRANSPORT=stdin` (or `argv`) in the server's environment forces one: it lets the stdin way, which
+ * every Windows turn takes, be tried on a Mac or Linux machine, and the plain way be tried where it would not be chosen.
+ */
 export function chooseTurn(req: BeatRequest, bin: string, host: Host, readText?: ReadText): TurnCommand {
   const argvArgs = cliArgs(req);
+  const forced = host.env.AGSTUDIO_CLAUDE_TRANSPORT;
   const plan = planSpawn(bin, argvArgs, host, readText);
-  if (fitsCommandLine(plan, host)) return { transport: 'argv', args: argvArgs, input: req.text };
+  const useArgv = forced === 'argv' || (forced !== 'stdin' && fitsCommandLine(plan, host));
+  if (useArgv) return { transport: 'argv', args: argvArgs, input: req.text };
   return { transport: 'stdin', args: streamArgs(req), input: streamInput(req) };
 }
 

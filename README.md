@@ -195,7 +195,8 @@ an audio file on the panel) works with a voice memo you made elsewhere. Turn on 
 the current pattern (headphones help).
 
 AGstudio sends the prompt to Claude Code through its standard input (not on the command line) whenever the command line would be too long
-for the system; on Windows, whose limit is about 32 000 characters, that is every request.
+for the system; on Windows, whose limit is about 32 000 characters, that is every request. (`AGSTUDIO_CLAUDE_TRANSPORT=stdin` or `argv`, set in
+the terminal that starts AGstudio, forces one way: handy to try the Windows way on a Mac.)
 
 **Who answers** (the picker in the AI studio's header; "Auto" uses the first one that's set up):
 

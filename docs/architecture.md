@@ -942,7 +942,7 @@ The edit works on the clip's sample, not on its reverse or on a stretched copy (
     and the schema reach it is `tools/ai/claude-turn.ts`: as `--system-prompt` / `--json-schema` arguments when the
     command line is safely short for the system (macOS and Linux, always in practice), otherwise through the CLI's
     stream-json input (an `initialize` control message carrying `systemPrompt` and `jsonSchema`, then one user message),
-    which is what every Windows turn does (see "Windows, macOS and Linux" below);
+    which is what every Windows turn does (see "Windows, macOS and Linux" below; `AGSTUDIO_CLAUDE_TRANSPORT=stdin|argv` forces one);
   - **api** (`tools/ai/api-backend.ts`): the Anthropic SDK with `ANTHROPIC_API_KEY` from `.env.local` (re-read per
     request): streaming, `output_config` effort `medium` + JSON schema, server-side refusal fallback
     (`fallbacks: "default"`) on models that have it, an append-only history (thinking blocks kept);

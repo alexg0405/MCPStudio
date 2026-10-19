@@ -1,0 +1,8 @@
+44100 Hz edit 0: 2 notes c60007aa60c3 d65dc906f42e
+44100 Hz edit 1: 2 notes 0d930c7a5506 d6f531cd4229
+44100 Hz edit 2: 2 notes 2913cc0c5692 f5ca5afd38cc
+44100 Hz edit 3: 2 notes 31958975fc2d ae798da55fe0
+22050 Hz edit 0: 2 notes 03aca27ba647 ffcda8de1f99
+22050 Hz edit 1: 2 notes 9b38efb6b71f e9cebb9826c5
+22050 Hz edit 2: 2 notes 67017f482021 52638e4ddea4
+22050 Hz edit 3: 2 notes 2511002d8088 dfe8ed1df16f

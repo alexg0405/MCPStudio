@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { firstExecutable, onPath, run, type RunResult } from './cli.ts';
+import { cliCandidates } from '../platform/find-cli.ts';
+import { currentHost, envWithout, type Host } from '../platform/host.ts';
+import { firstExecutable, run as runCli, type RunResult } from './cli.ts';
 import { stripNulls, toStrictSchema } from './strict-schema.ts';
 import { AiServerError, type Backend, type BackendStatus, type BeatReply, type BeatRequest } from './types.ts';
 
@@ -24,35 +26,26 @@ import { AiServerError, type Backend, type BackendStatus, type BeatReply, type B
 const TIMEOUT_MS = 240_000;
 const BASE_DIR = join(tmpdir(), 'agstudio-codex');
 
-/** What to tell the musician when Codex isn't installed. */
-export const INSTALL_HINT =
-  'Install the ChatGPT app (it includes Codex) or the Codex CLI (in Terminal: npm i -g @openai/codex), then run `codex login` and sign in with your ChatGPT account.';
-const signInHint = (bin: string | null) =>
-  `Codex is not signed in: run \`${bin?.startsWith('/Applications/') ? `${bin} login` : 'codex login'}\` in Terminal and sign in with your ChatGPT account.`;
+const OVERRIDE_NOTE = 'If it is installed somewhere unusual, set AGSTUDIO_CODEX_BIN to its full path in .env.local.';
+
+/** What to tell the musician when Codex isn't installed (or can't be found). */
+export function installHint(platform: NodeJS.Platform = process.platform): string {
+  const terminal = platform === 'win32' ? 'PowerShell or Command Prompt' : 'Terminal';
+  const app = platform === 'darwin' ? 'Install the ChatGPT app (it includes Codex) or the Codex CLI' : 'Install the Codex CLI';
+  return `${app} (in ${terminal}: npm i -g @openai/codex), then run \`codex login\` and sign in with your ChatGPT account. ${OVERRIDE_NOTE}`;
+}
+export const INSTALL_HINT = installHint();
+
+/** The sign-in advice; a copy of Codex that is not on the PATH (inside an app) is named by its full path. */
+const signInHint = (bin: string | null) => {
+  const command = bin?.startsWith('/Applications/') ? `${bin} login` : 'codex login';
+  return `Codex is not signed in: run \`${command}\` in a terminal and sign in with your ChatGPT account.`;
+};
 
 /** Variables that would make Codex bill an API key (or send requests elsewhere) instead of using the ChatGPT login. */
 const DROP_ENV = ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CODEX_API_KEY'];
 
-function childEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const k of DROP_ENV) delete env[k];
-  return env;
-}
-
-/** Where the ChatGPT app and the CLI installers put `codex` (the dev server's PATH usually lacks it). */
-function candidates(override: string | undefined): string[] {
-  const home = homedir();
-  return [
-    ...(override ? [override] : []),
-    ...onPath('codex'),
-    '/Applications/ChatGPT.app/Contents/Resources/codex',
-    '/Applications/Codex.app/Contents/Resources/codex',
-    join(home, '.local', 'bin', 'codex'),
-    '/opt/homebrew/bin/codex',
-    '/usr/local/bin/codex',
-    join(home, '.npm-global', 'bin', 'codex'),
-  ];
-}
+const childEnv = (host: Host): NodeJS.ProcessEnv => envWithout(host, DROP_ENV);
 
 /**
  * Features that give the model tools or side effects, off for our turns (`codex features list` shows which are
@@ -283,10 +276,11 @@ interface CodexCheck {
  * Asks `codex login status` whether Codex is signed in, and how. Exit 0 means signed in, and the one line
  * it prints says with what ("Logged in using ChatGPT" or "... an API key").
  */
-async function loginStatus(bin: string, workDir: string): Promise<BackendStatus> {
-  const result = await run(bin, ['login', 'status'], {
+async function loginStatus(bin: string, workDir: string, host: Host): Promise<BackendStatus> {
+  const result = await runCli(bin, ['login', 'status'], {
     cwd: workDir,
-    env: childEnv(),
+    env: childEnv(host),
+    host,
     timeoutMs: QUICK_COMMAND_TIMEOUT_MS,
   });
   const said = `${result.stdout}\n${result.stderr}`;
@@ -296,10 +290,11 @@ async function loginStatus(bin: string, workDir: string): Promise<BackendStatus>
 }
 
 /** The tool features to disable: those of TOOL_FEATURES that this Codex has switched on (all of them when it can't say). */
-async function featuresToDisable(bin: string, workDir: string): Promise<string[]> {
-  const result = await run(bin, ['features', 'list'], {
+async function featuresToDisable(bin: string, workDir: string, host: Host): Promise<string[]> {
+  const result = await runCli(bin, ['features', 'list'], {
     cwd: workDir,
-    env: childEnv(),
+    env: childEnv(host),
+    host,
     timeoutMs: QUICK_COMMAND_TIMEOUT_MS,
   }).catch(() => null);
   const on = result && result.code === 0 ? enabledFeatures(result.stdout) : null;
@@ -323,12 +318,14 @@ async function runTurn(
   disable: readonly string[],
   workDir: string,
   signal: AbortSignal,
+  host: Host,
 ): Promise<RunResult> {
   try {
-    return await run(bin, cliArgs(req, files, disable), {
+    return await runCli(bin, cliArgs(req, files, disable), {
       input: req.text,
       cwd: workDir,
-      env: childEnv(),
+      env: childEnv(host),
+      host,
       signal,
       timeoutMs: TIMEOUT_MS,
     });
@@ -355,8 +352,11 @@ async function answerOf(
   throw isEmptyAnswer ? new AiServerError("ChatGPT's answer was empty.", 'bad_output', 502) : failure(said, model, bin);
 }
 
-/** The ChatGPT backend: one `codex exec` turn per request (see the top of this file). */
-export function codexBackend(override: () => string | undefined): Backend {
+/**
+ * The ChatGPT backend: one `codex exec` turn per request (see the top of this file). `host` is the computer it runs
+ * on (the tests pass a different one to check the Windows paths).
+ */
+export function codexBackend(override: () => string | undefined, host: Host = currentHost()): Backend {
   let cached: (CodexCheck & { at: number }) | null = null;
   const workDir = join(BASE_DIR, 'work');
 
@@ -364,13 +364,13 @@ export function codexBackend(override: () => string | undefined): Backend {
     if (cached && Date.now() - cached.at < STATUS_CACHE_MS) return cached;
     await mkdir(workDir, { recursive: true, mode: PRIVATE_FOLDER_MODE });
     await sweepStale();
-    const bin = await firstExecutable(candidates(override()));
-    let status: BackendStatus = { ok: false, reason: INSTALL_HINT };
+    const bin = await firstExecutable(cliCandidates('codex', host, override()));
+    let status: BackendStatus = { ok: false, reason: installHint(host.platform) };
     let disable = [...TOOL_FEATURES];
     if (bin) {
       try {
-        status = await loginStatus(bin, workDir);
-        if (status.ok) disable = await featuresToDisable(bin, workDir);
+        status = await loginStatus(bin, workDir, host);
+        if (status.ok) disable = await featuresToDisable(bin, workDir, host);
       } catch (e) {
         status = { ok: false, reason: `Codex didn't start: ${e instanceof Error ? e.message : e}` };
       }
@@ -386,7 +386,7 @@ export function codexBackend(override: () => string | undefined): Backend {
 
     async beat(req: BeatRequest, signal: AbortSignal): Promise<BeatReply> {
       const { status, bin, disable } = await check();
-      if (!status.ok || !bin) throw new AiServerError(status.reason ?? INSTALL_HINT, 'not_configured', 503);
+      if (!status.ok || !bin) throw new AiServerError(status.reason ?? installHint(host.platform), 'not_configured', 503);
       const turnDir = join(BASE_DIR, randomUUID());
       const files: TurnFiles = {
         instructions: join(turnDir, 'instructions.md'),
@@ -395,7 +395,7 @@ export function codexBackend(override: () => string | undefined): Backend {
       };
       try {
         await writeTurnFiles(req, files);
-        const result = await runTurn(req, files, bin, disable, workDir, signal);
+        const result = await runTurn(req, files, bin, disable, workDir, signal, host);
         let answerAndEvents: { answer: string; events: TurnEvents };
         try {
           answerAndEvents = await answerOf(result, files, req.model, bin);

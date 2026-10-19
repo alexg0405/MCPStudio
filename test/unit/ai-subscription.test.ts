@@ -1,17 +1,18 @@
 /// <reference types="node" />
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { cliArgs, subscriptionBackend } from '../../tools/ai/subscription-backend.ts';
+import { cliArgs } from '../../tools/ai/claude-turn.ts';
+import { subscriptionBackend } from '../../tools/ai/subscription-backend.ts';
 import type { BeatRequest } from '../../tools/ai/types.ts';
+import { writeFakeCli } from '../helpers/fake-cli.ts';
 
 /**
  * The subscription backend against a stand-in `claude` (a small Node script): the flags it passes,
  * the request on stdin, the scrubbed environment, the auth check and error mapping.
  */
-const FAKE = `#!/usr/bin/env node
-const args = process.argv.slice(2);
+const FAKE = `const args = process.argv.slice(2);
 const mode = process.env.FAKE_CLAUDE_MODE || 'ok';
 if (args[0] === 'auth') {
   if (mode === 'signed-out') { console.log(JSON.stringify({ authMethod: 'none' })); process.exit(1); }
@@ -48,9 +49,7 @@ describe('Claude subscription backend', () => {
   let bin = '';
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'ag-fake-claude-'));
-    bin = join(dir, 'claude');
-    await writeFile(bin, FAKE);
-    await chmod(bin, 0o755);
+    bin = await writeFakeCli(dir, 'claude', FAKE);
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
 

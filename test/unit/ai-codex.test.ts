@@ -1,6 +1,6 @@
 /// <reference types="node" />
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { access, chmod, mkdir, mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -13,14 +13,14 @@ import {
   type TurnFiles,
 } from '../../tools/ai/codex-backend.ts';
 import type { BeatRequest } from '../../tools/ai/types.ts';
+import { writeFakeCli } from '../helpers/fake-cli.ts';
 
 /**
  * The Codex backend against a stand-in `codex` (a small Node script): the exact command line, the request on
  * stdin, the temp files (written, then gone), the scrubbed environment, thread resume, the login check and the
  * error mapping. No real model is ever called.
  */
-const FAKE = `#!/usr/bin/env node
-const fs = require('fs');
+const FAKE = `const fs = require('fs');
 const args = process.argv.slice(2);
 const mode = process.env.FAKE_CODEX_MODE || 'ok';
 if (args[0] === 'login' && args[1] === 'status') {
@@ -114,9 +114,7 @@ describe('Codex backend', () => {
   let bin = '';
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'ag-fake-codex-'));
-    bin = join(dir, 'codex');
-    await writeFile(bin, FAKE);
-    await chmod(bin, 0o755);
+    bin = await writeFakeCli(dir, 'codex', FAKE);
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
 
@@ -172,6 +170,11 @@ describe('Codex backend', () => {
       // `exec resume` takes neither --sandbox nor -C; they must not be passed.
       for (const flag of ['-s', '--sandbox', '-C', '--cd', '--ephemeral']) expect(args).not.toContain(flag);
       expect(cliArgs(req(), FILES, [])).not.toContain('-m');
+    });
+
+    it('writes a Windows file path as a valid TOML string (backslashes escaped)', () => {
+      const files: TurnFiles = { instructions: 'C:\\Users\\ana\\Temp\\t\\instructions.md', schema: 'C:\\s.json', out: 'C:\\o.txt' };
+      expect(cliArgs(req(), files, [])).toContain('model_instructions_file="C:\\\\Users\\\\ana\\\\Temp\\\\t\\\\instructions.md"');
     });
 
     it('never lets a session id look like an option', () => {

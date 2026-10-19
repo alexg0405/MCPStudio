@@ -1,7 +1,10 @@
 import { mkdir } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { firstExecutable, onPath, run as runCli, type RunResult } from './cli.ts';
+import { cliCandidates } from '../platform/find-cli.ts';
+import { currentHost, envWithout, type Host } from '../platform/host.ts';
+import { chooseTurn, answerOf, readResult } from './claude-turn.ts';
+import { firstExecutable, run as runCli, type RunResult } from './cli.ts';
 import { AiServerError, type Backend, type BackendStatus, type BeatReply, type BeatRequest } from './types.ts';
 
 /**
@@ -14,12 +17,22 @@ import { AiServerError, type Backend, type BackendStatus, type BeatReply, type B
  * Each turn: `--safe-mode` (no CLAUDE.md, hooks, plugins, MCP servers or memory; unlike `--bare` it
  * still uses the subscription login), no tools, `dontAsk` permissions, the beat's JSON schema as a
  * structured output, and API credentials removed from the environment so the subscription is used.
+ * How the prompt and the schema reach the CLI (command line or stdin) is in claude-turn.ts.
  */
 
-export const INSTALL_HINT =
-  'Install Claude Code (in Terminal: curl -fsSL https://claude.ai/install.sh | bash), then run `claude auth login` and sign in with your Claude account.';
+const WINDOWS_INSTALL = 'in PowerShell: irm https://claude.ai/install.ps1 | iex';
+const UNIX_INSTALL = 'in Terminal: curl -fsSL https://claude.ai/install.sh | bash';
+const OVERRIDE_NOTE = 'If it is installed somewhere unusual, set AGSTUDIO_CLAUDE_BIN to its full path in .env.local.';
+
+/** What to tell the musician when Claude Code isn't installed (or can't be found). */
+export function installHint(platform: NodeJS.Platform = process.platform): string {
+  const how = platform === 'win32' ? WINDOWS_INSTALL : UNIX_INSTALL;
+  const terminal = platform === 'win32' ? 'PowerShell or Command Prompt' : 'Terminal';
+  return `Install Claude Code (${how}), then run \`claude auth login\` in ${terminal} and sign in with your Claude account. ${OVERRIDE_NOTE}`;
+}
+export const INSTALL_HINT = installHint();
 const SIGN_IN_HINT =
-  'Claude Code is not signed in: run `claude auth login` in Terminal and sign in with your Claude account.';
+  'Claude Code is not signed in: run `claude auth login` in a terminal and sign in with your Claude account.';
 
 /** Variables that outrank the subscription login (or send requests elsewhere). */
 const DROP_ENV = [
@@ -34,67 +47,11 @@ const DROP_ENV = [
   'CLAUDE_CODE_USE_FOUNDRY',
 ];
 
-function childEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const k of DROP_ENV) delete env[k];
-  return env;
+function childEnv(host: Host): NodeJS.ProcessEnv {
+  return envWithout(host, DROP_ENV);
 }
 
-/** Where Claude Code's installers put the `claude` command (the dev server's PATH may lack it). */
-function candidates(override: string | undefined): string[] {
-  const home = homedir();
-  return [
-    ...(override ? [override] : []),
-    join(home, '.local', 'bin', 'claude'),
-    ...onPath('claude'),
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-    join(home, '.npm-global', 'bin', 'claude'),
-  ];
-}
-
-const findClaude = (override: string | undefined) => firstExecutable(candidates(override));
-
-const run = (bin: string, args: string[], opts: { input?: string; cwd: string; signal?: AbortSignal; timeoutMs?: number }) =>
-  runCli(bin, args, { ...opts, env: childEnv() });
-
-/** The fields of `--output-format json`'s result object this backend reads. */
-interface CliResult {
-  type?: string;
-  subtype?: string;
-  is_error?: boolean;
-  result?: string;
-  errors?: string[];
-  session_id?: string;
-  structured_output?: unknown;
-}
-
-/** The CLI flags for one turn (the only part tied to Claude Code's version). The request goes on stdin. */
-export function cliArgs(req: BeatRequest): string[] {
-  const args = [
-    '-p',
-    'Do what the request below asks. Answer only in the required JSON format.',
-    '--safe-mode',
-    '--tools',
-    '',
-    '--permission-mode',
-    'dontAsk',
-    '--output-format',
-    'json',
-    '--model',
-    req.model,
-    '--effort',
-    'medium',
-    '--system-prompt',
-    req.system,
-    '--json-schema',
-    JSON.stringify(req.schema),
-    '--max-turns',
-    '3',
-  ];
-  if (req.session) args.push('--resume', req.session);
-  return args;
-}
+const findClaude = (host: Host, override: string | undefined) => firstExecutable(cliCandidates('claude', host, override));
 
 /** Maps a failed run to a message for the musician. */
 function failure(text: string): AiServerError {
@@ -114,15 +71,21 @@ function failure(text: string): AiServerError {
 /** Login methods that use the musician's Claude plan (an API key would bill the API instead). */
 const SUBSCRIPTION_LOGINS = new Set(['claude.ai', 'oauth_token']);
 
-export function subscriptionBackend(override: () => string | undefined): Backend {
+/**
+ * The Claude subscription backend. `host` is the computer it runs on (the tests pass a different one to check the
+ * Windows paths and the long-prompt transport).
+ */
+export function subscriptionBackend(override: () => string | undefined, host: Host = currentHost()): Backend {
   let cached: { at: number; status: BackendStatus; bin: string | null } | null = null;
   const workDir = join(tmpdir(), 'agstudio-claude');
+  const run = (bin: string, args: string[], opts: { input?: string; cwd: string; signal?: AbortSignal; timeoutMs?: number }) =>
+    runCli(bin, args, { ...opts, env: childEnv(host), host });
 
   async function check(): Promise<{ status: BackendStatus; bin: string | null }> {
     if (cached && Date.now() - cached.at < 15_000) return cached;
     await mkdir(workDir, { recursive: true });
-    const bin = await findClaude(override());
-    let status: BackendStatus = { ok: false, reason: INSTALL_HINT };
+    const bin = await findClaude(host, override());
+    let status: BackendStatus = { ok: false, reason: installHint(host.platform) };
     if (bin) {
       try {
         // Exit 0 = signed in; the JSON says how.
@@ -155,18 +118,17 @@ export function subscriptionBackend(override: () => string | undefined): Backend
 
     async beat(req: BeatRequest, signal: AbortSignal): Promise<BeatReply> {
       const { status, bin } = await check();
-      if (!status.ok || !bin) throw new AiServerError(status.reason ?? INSTALL_HINT, 'not_configured', 503);
+      if (!status.ok || !bin) throw new AiServerError(status.reason ?? installHint(host.platform), 'not_configured', 503);
+      const turn = chooseTurn(req, bin, host);
       let r: RunResult;
       try {
-        r = await run(bin, cliArgs(req), { input: req.text, cwd: workDir, signal });
+        r = await run(bin, turn.args, { input: turn.input, cwd: workDir, signal });
       } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') throw e;
         throw new AiServerError(`Claude Code didn't run: ${e instanceof Error ? e.message : e}`, 'api_error', 502);
       }
-      let result: CliResult;
-      try {
-        result = JSON.parse(r.stdout) as CliResult;
-      } catch {
+      const result = readResult(r.stdout, turn.transport);
+      if (!result) {
         cached = null; // look again next time (signed out, updated, …)
         throw failure((r.stderr || r.stdout).trim().split('\n').slice(-3).join(' '));
       }
@@ -174,9 +136,10 @@ export function subscriptionBackend(override: () => string | undefined): Backend
         cached = null;
         throw failure((result.errors?.join('; ') || result.result || `exit ${r.code}`).trim());
       }
-      if (result.structured_output === undefined)
+      const beat = answerOf(result, turn.transport);
+      if (beat === undefined)
         throw new AiServerError("Claude's answer wasn't a beat in the required format.", 'bad_output', 502);
-      return { session: result.session_id ?? req.session ?? '', beat: result.structured_output, model: req.model };
+      return { session: result.session_id ?? req.session ?? '', beat, model: req.model };
     },
   };
 }

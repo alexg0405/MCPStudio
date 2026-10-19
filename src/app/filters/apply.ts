@@ -9,7 +9,7 @@
  * are (everything after still starts on its bar), the part simply plays faster or slower, so the
  * song gets shorter or longer. Nothing overlaps and no gap opens.
  */
-import { current } from 'immer';
+import { current, produce, type Draft } from 'immer';
 import { tempoMapOf } from '@core/automation/tempo';
 import { naturalLength, playbackMode } from '@core/audio/playback';
 import { findFilter, speedCents, speedOf, type FilterPreset } from '@core/filters/presets';
@@ -36,10 +36,9 @@ import { changePartTempo, cutPart, emptyInsert, filtersOver, removeSoundFilter }
 import { addFxSlot, addInsert } from '@core/ops/mixer';
 import { addClips, addLane } from '@core/ops/playlist';
 import { freeLaneRun, laneFree } from '@core/query/lanes';
-import { ticksPerBar } from '@core/time/ppq';
+import { ticksPerBar, type TempoMap } from '@core/time/ppq';
 import { defaultValues } from '@agstudio/sdk';
-import { produce } from 'immer';
-import { audioChannel, renderRange } from '../actions/render-to-audio';
+import { audioChannel, renderRange, type Rendered } from '../actions/render-to-audio';
 import type { Services } from '../services';
 
 export class FilterError extends Error {}
@@ -73,6 +72,44 @@ export function filterTitle(p: Project, f: FilterPreset, target: FilterTarget): 
   return `${f.name} on ${targetLabel(p, target)}`;
 }
 
+/** What the filter's render step settled, before the change to the song is made. */
+interface FilterChange {
+  preset: FilterPreset;
+  target: FilterTarget;
+  /** The part of the song it covers, and which clips of it. */
+  part: ReturnType<typeof filterPart>;
+  /** The speed the preset plays at (1 for none). */
+  speed: number;
+  /** The rendered audio and the gain that restores its level. */
+  ref: Rendered['ref'];
+  gain: number;
+  /** Seconds of music in the part, before any speed change. */
+  musicalSeconds: number;
+  effects: { plugin: PluginInstance; mix: number }[];
+  /** The song's tempo as it is when the change is made. */
+  tempoNow: TempoMap;
+  color: string;
+  /** The new audio channel's name. */
+  name: string;
+  channelId: ChannelId;
+  clipId: ClipId;
+}
+
+/**
+ * The project with only the part playing (cut at its edges; automation stays, so it sounds the same), or null when
+ * nothing plays there.
+ */
+function soloPart(p: Project, part: FilterChange['part'], tempo: TempoMap): Project | null {
+  let inside = 0;
+  const solo = produce(p, (d) => {
+    const cut = cutPart(d, part.from, part.to, tempo, part.only);
+    inside = cut.inside.length;
+    const keep = new Set(cut.inside);
+    for (const c of Object.values(d.playlist.clips)) if (c.kind !== 'automation' && !keep.has(c.id)) delete d.playlist.clips[c.id];
+  });
+  return inside === 0 ? null : solo;
+}
+
 /**
  * Applies a filter to a target (see core/filters/target.ts). Renders first (it takes a moment), then
  * makes the change as one undo step (`amend`: folded into that undo entry, e.g. the Studio answer's).
@@ -91,120 +128,148 @@ export async function applyFilter(
   const part = filterPart(p, target, speed !== 1);
   const label = targetLabel(p, target);
   const before = tempoMapOf(p, 'song');
-  // Only the part plays in the render (cut at its edges); automation stays, so it sounds the same.
-  let inside = 0;
-  const solo = produce(p, (d) => {
-    const cut = cutPart(d, part.from, part.to, before, part.only);
-    inside = cut.inside.length;
-    const keep = new Set(cut.inside);
-    for (const c of Object.values(d.playlist.clips)) if (c.kind !== 'automation' && !keep.has(c.id)) delete d.playlist.clips[c.id];
-  });
-  if (inside === 0) throw new FilterError(`Nothing plays in ${label} to filter.`);
+  const solo = soloPart(p, part, before);
+  if (!solo) throw new FilterError(`Nothing plays in ${label} to filter.`);
   const name = `${f.name} (${label})`.slice(0, 64);
   const { ref, gain } = await renderRange(s, solo, part.from, part.to, name, opts.signal);
-  const musical = before.tickToSeconds(part.to) - before.tickToSeconds(part.from);
+  const musicalSeconds = before.tickToSeconds(part.to) - before.tickToSeconds(part.from);
   const effects = effectsOf(s, f);
 
   const now = s.doc.getState().project;
   // Another project was opened while it rendered: the render belongs to the old one.
   if (now.projectId !== p.projectId) throw new FilterError('Another project was opened while the filter rendered, so nothing was filtered.');
-  const tempoNow = tempoMapOf(now, 'song');
-  const color = paletteColor(now.channelOrder.length);
-  const channelId = newId.channel();
-  const clipId = newId.clip();
-  s.history.transact(
-    filterTitle(p, f, target),
-    (d) => {
-      addSample(d, ref);
-      const cut = cutPart(d, part.from, part.to, tempoNow, part.only);
-      const lanesUsed = new Set(cut.originals.map((c) => c.laneId));
-      for (const id of cut.inside) delete d.playlist.clips[id];
-      const record: SoundFilter = { preset: f.id, from: part.from, to: part.to, originals: cut.originals, pieces: cut.pieces };
-      if (speed !== 1) {
-        const t = changePartTempo(d, part.from, part.to, speed, tempoNow, {
-          wholeSong: target.kind === 'song',
-          name: f.name,
-          color,
-        });
-        record.tempo = t.tempo;
-        record.originals.push(...t.cut.originals);
-        record.pieces.push(...t.cut.pieces);
-      }
-      let output: InsertId = MASTER;
-      if (effects.length) {
-        const borrowed = emptyInsert(current(d) as Project);
-        const id = borrowed ?? newId.insert();
-        const prevName = borrowed ? (d.mixer.inserts[borrowed]?.name ?? '') : f.name;
-        if (borrowed) d.mixer.inserts[borrowed]!.name = f.name;
-        else addInsert(d, makeInsert(id, f.name));
-        const slots: SlotId[] = [];
-        for (const fx of effects) {
-          const slot = addFxSlot(d, id, fx.plugin);
-          if (!slot) continue;
-          slots.push(slot);
-          const x = d.mixer.inserts[id]!.fx.find((y) => y.id === slot);
-          if (x) x.mix = fx.mix;
-        }
-        record.insert = { id, made: !borrowed, name: prevName, slots };
-        output = id;
-      }
-      const ch: AudioClipChannel = {
-        ...audioChannel(name, color, ref.id, output),
-        id: channelId,
-        ...(speed !== 1 ? { pitch: Math.round(speedCents(speed) * 1000) / 1000 } : {}),
-        ...(f.reverse ? { reverse: true } : {}),
-        filter: record,
-      };
-      addChannel(d, ch);
-      const tempo = tempoMapOf(current(d) as Project, 'song');
-      // The audio takes the part's track first; the tempo clip (if any) goes on a free one after it.
-      const tempoChannel = record.tempo && 'channelId' in record.tempo ? record.tempo.channelId : null;
-      const tempoClip = Object.values(d.playlist.clips).find((c) => c.kind === 'automation' && c.channelId === tempoChannel);
-      const lifted = tempoClip ? ({ ...tempoClip } as Clip) : null;
-      if (lifted) delete d.playlist.clips[lifted.id];
-      const after = current(d) as Project;
-      const dur = ref.durationSec;
-      // Reversed, the tail would come first: the clip starts where the part's (reversed) music does.
-      const offsetSec = f.reverse ? Math.max(0, dur - musical) : 0;
-      const length = naturalLength({ start: part.from, offsetSec }, playbackMode(ch), tempo, dur);
-      const end = part.from + length;
-      // The top-most track the part was on, if it is free now; else the first free one below it.
-      const order = after.playlist.laneOrder;
-      const top = order.findIndex((id) => lanesUsed.has(id));
-      const index = top >= 0 && laneFree(after, top, part.from, end) ? top : freeLaneRun(after, part.from, end, 1, Math.max(0, top));
-      let laneId = order[index] as LaneId | undefined;
-      if (!laneId) {
-        const lane = makeLane(`Track ${order.length + 1}`);
-        addLane(d, lane);
-        laneId = lane.id as LaneId;
-      }
-      const clip: AudioClip = {
-        kind: 'audio',
-        id: clipId,
-        laneId,
-        start: part.from,
-        length,
-        channelId,
-        offsetSec,
-        ...(gain > 1 ? { gain } : {}),
-      };
-      addClips(d, [clip]);
-      if (lifted) {
-        const now = current(d) as Project;
-        const i = freeLaneRun(now, lifted.start, lifted.start + lifted.length);
-        let lane = now.playlist.laneOrder[i] as LaneId | undefined;
-        if (!lane) {
-          const made = makeLane(`Track ${now.playlist.laneOrder.length + 1}`);
-          addLane(d, made);
-          lane = made.id as LaneId;
-        }
-        addClips(d, [{ ...lifted, laneId: lane }]);
-      }
-    },
-    opts.amend !== undefined ? { amend: opts.amend } : {},
-  );
-  s.editor.getState().selectClips([clipId]);
-  return { channelId, clipId, from: part.from, to: part.to, message: `${filterTitle(p, f, target)}: ${f.description}` };
+  const change: FilterChange = {
+    preset: f,
+    target,
+    part,
+    speed,
+    ref,
+    gain,
+    musicalSeconds,
+    effects,
+    tempoNow: tempoMapOf(now, 'song'),
+    color: paletteColor(now.channelOrder.length),
+    name,
+    channelId: newId.channel(),
+    clipId: newId.clip(),
+  };
+  s.history.transact(filterTitle(p, f, target), (d) => makeFilterChange(d, change), opts.amend !== undefined ? { amend: opts.amend } : {});
+  s.editor.getState().selectClips([change.clipId]);
+  return { channelId: change.channelId, clipId: change.clipId, from: part.from, to: part.to, message: `${filterTitle(p, f, target)}: ${f.description}` };
+}
+
+/** Replaces the part's clips with the filtered audio on a mixer track of its own, keeping what is needed to undo it. */
+function makeFilterChange(d: Draft<Project>, c: FilterChange): void {
+  addSample(d, c.ref);
+  const cut = cutPart(d, c.part.from, c.part.to, c.tempoNow, c.part.only);
+  const lanesUsed = new Set(cut.originals.map((clip) => clip.laneId));
+  for (const id of cut.inside) delete d.playlist.clips[id];
+  const record: SoundFilter = { preset: c.preset.id, from: c.part.from, to: c.part.to, originals: cut.originals, pieces: cut.pieces };
+  if (c.speed !== 1) addTempoChange(d, c, record);
+  const output = c.effects.length ? addFilterInsert(d, c, record) : MASTER;
+  const channel = filterChannel(c, output, record);
+  addChannel(d, channel);
+  const tempo = tempoMapOf(current(d) as Project, 'song');
+  const tempoClip = liftTempoClip(d, record);
+  const after = current(d) as Project;
+  const duration = c.ref.durationSec;
+  // Reversed, the tail would come first: the clip starts where the part's (reversed) music does.
+  const offsetSec = c.preset.reverse ? Math.max(0, duration - c.musicalSeconds) : 0;
+  const length = naturalLength({ start: c.part.from, offsetSec }, playbackMode(channel), tempo, duration);
+  const laneId = laneForAudio(d, after, lanesUsed, c.part.from, c.part.from + length);
+  const clip: AudioClip = {
+    kind: 'audio',
+    id: c.clipId,
+    laneId,
+    start: c.part.from,
+    length,
+    channelId: c.channelId,
+    offsetSec,
+    ...(c.gain > 1 ? { gain: c.gain } : {}),
+  };
+  addClips(d, [clip]);
+  if (tempoClip) putTempoClipBack(d, tempoClip);
+}
+
+/** A speed filter changes the tempo of the part (its clips keep their bars); the cut clips go into the record. */
+function addTempoChange(d: Draft<Project>, c: FilterChange, record: SoundFilter): void {
+  const change = changePartTempo(d, c.part.from, c.part.to, c.speed, c.tempoNow, {
+    wholeSong: c.target.kind === 'song',
+    name: c.preset.name,
+    color: c.color,
+  });
+  record.tempo = change.tempo;
+  record.originals.push(...change.cut.originals);
+  record.pieces.push(...change.cut.pieces);
+}
+
+/**
+ * The mixer track that carries the filter's effects: an empty one is borrowed (and renamed), else a new one is
+ * made. The record keeps what is needed to put the name back or remove the track. Returns the track's id.
+ */
+function addFilterInsert(d: Draft<Project>, c: FilterChange, record: SoundFilter): InsertId {
+  const borrowed = emptyInsert(current(d) as Project);
+  const id = borrowed ?? newId.insert();
+  const previousName = borrowed ? (d.mixer.inserts[borrowed]?.name ?? '') : c.preset.name;
+  if (borrowed) d.mixer.inserts[borrowed]!.name = c.preset.name;
+  else addInsert(d, makeInsert(id, c.preset.name));
+  const slots: SlotId[] = [];
+  for (const fx of c.effects) {
+    const slot = addFxSlot(d, id, fx.plugin);
+    if (!slot) continue;
+    slots.push(slot);
+    const added = d.mixer.inserts[id]!.fx.find((y) => y.id === slot);
+    if (added) added.mix = fx.mix;
+  }
+  record.insert = { id, made: !borrowed, name: previousName, slots };
+  return id;
+}
+
+/** The audio channel for the rendered part: the speed's pitch change, the reverse, and the filter record. */
+function filterChannel(c: FilterChange, output: InsertId, record: SoundFilter): AudioClipChannel {
+  return {
+    ...audioChannel(c.name, c.color, c.ref.id, output),
+    id: c.channelId,
+    ...(c.speed !== 1 ? { pitch: Math.round(speedCents(c.speed) * 1000) / 1000 } : {}),
+    ...(c.preset.reverse ? { reverse: true } : {}),
+    filter: record,
+  };
+}
+
+/** Takes the tempo clip a speed filter made (if any) off the playlist for now, so the audio gets the part's track first. */
+function liftTempoClip(d: Draft<Project>, record: SoundFilter): Clip | null {
+  const tempoChannel = record.tempo && 'channelId' in record.tempo ? record.tempo.channelId : null;
+  const tempoClip = Object.values(d.playlist.clips).find((c) => c.kind === 'automation' && c.channelId === tempoChannel);
+  if (!tempoClip) return null;
+  const lifted = { ...tempoClip } as Clip;
+  delete d.playlist.clips[lifted.id];
+  return lifted;
+}
+
+/** Puts the tempo clip back, on the first track that is free for it. */
+function putTempoClipBack(d: Draft<Project>, lifted: Clip): void {
+  const now = current(d) as Project;
+  const index = freeLaneRun(now, lifted.start, lifted.start + lifted.length);
+  const laneId = (now.playlist.laneOrder[index] as LaneId | undefined) ?? addTrack(d, now.playlist.laneOrder.length);
+  addClips(d, [{ ...lifted, laneId }]);
+}
+
+/**
+ * The track for the filtered audio: the top-most one the part was on, if it is free now; else the first free one
+ * below it (a new track when none is).
+ */
+function laneForAudio(d: Draft<Project>, after: Project, lanesUsed: ReadonlySet<LaneId>, from: Tick, end: Tick): LaneId {
+  const order = after.playlist.laneOrder;
+  const top = order.findIndex((id) => lanesUsed.has(id));
+  const index = top >= 0 && laneFree(after, top, from, end) ? top : freeLaneRun(after, from, end, 1, Math.max(0, top));
+  return (order[index] as LaneId | undefined) ?? addTrack(d, order.length);
+}
+
+/** Adds a track named after its place ("Track 12") and returns its id. */
+function addTrack(d: Draft<Project>, existingTracks: number): LaneId {
+  const lane = makeLane(`Track ${existingTracks + 1}`);
+  addLane(d, lane);
+  return lane.id as LaneId;
 }
 
 /**

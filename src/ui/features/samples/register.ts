@@ -12,6 +12,15 @@ import { SampleFoldersSection } from './SampleFolders';
 
 /** Your sample folders: the folder list in the browser panel and the sample browser window (analysis, search, audition). */
 export function register(services: Services): void {
+  registerSamplesWindow(services);
+  registerSampleCommands(services);
+  registerSampleMenus();
+  registerSamplesHelp();
+  startSamples(services);
+}
+
+/** The folder list in the browser panel, the sample browser window and the command that opens it. */
+function registerSamplesWindow(services: Services): void {
   addBrowserSection({
     id: 'sample-folders',
     title: 'Sample folders',
@@ -34,7 +43,10 @@ export function register(services: Services): void {
     chords: ['Alt+B'],
     menuOrder: 58,
   });
-  const { commands } = services;
+}
+
+/** Add a folder, analyze again, stop the preview and make a kit from the selected samples. */
+function registerSampleCommands({ commands }: Services): void {
   commands.register({
     id: 'samples.addFolder',
     title: 'Add a sample folder…',
@@ -72,6 +84,10 @@ export function register(services: Services): void {
       s.session.getState().toast(res.channelId ? `Made a kit: ${res.placed.length} pads` : 'No pad got a sound: select one-shots that have been analyzed.', res.channelId ? 'info' : 'error');
     },
   });
+}
+
+/** The File menu entry and the action search entries. */
+function registerSampleMenus(): void {
   addMenuItems('file', [cmd('samples.addFolder', 73)]);
   addActionProvider('samples', (s) => [
     {
@@ -91,6 +107,10 @@ export function register(services: Services): void {
       run: () => void s.commands.run('samples.open'),
     },
   ]);
+}
+
+/** What the window help panel says. */
+function registerSamplesHelp(): void {
   setWindowHelp('samples', {
     intro: 'Your sample folders, sorted out. Click a sound to hear it, filter by type, tempo or key, and drag what you like into the project.',
     moves: [
@@ -104,6 +124,10 @@ export function register(services: Services): void {
       ['Footer', 'Preview volume, loops to song tempo (stretch keeps the pitch, resample is like a record), notes moved to the song key, play on arrow keys'],
     ],
   });
+}
+
+/** Starts the sample browser model, keeps the audition level at the window's volume, and loads your sample folders. */
+function startSamples(services: Services): void {
   services.sampleBrowser.start();
   // The audition level follows the window's volume (and the saved one when the app opens).
   const syncVolume = () => services.engine.setPreviewVolume(services.sampleBrowser.store.getState().volume);

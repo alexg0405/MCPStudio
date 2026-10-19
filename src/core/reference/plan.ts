@@ -32,7 +32,8 @@ export interface SectionPlan {
 }
 
 /** Energy 0–1 → the arranger's 1–5. */
-export const energyLevel = (e: number): number => Math.max(1, Math.min(5, 1 + Math.round(4 * Math.max(0, Math.min(1, e)))));
+export const energyLevel = (e: number): number =>
+  Math.max(1, Math.min(5, 1 + Math.round(4 * Math.max(0, Math.min(1, e)))));
 
 /** A section kind of the analysis → the arranger's part of a song, keeping the role's usual energy range. */
 export function roleOf(s: Pick<ReferenceSection, 'kind' | 'energy'>): { role: SectionRole; energy: number } {
@@ -80,6 +81,7 @@ export function barsFor(seconds: number, barSeconds: number): number {
   return Math.abs(phrase - exact) <= 1 ? phrase : near;
 }
 
+/** A part of the reference being shaped into a section. */
 interface Part {
   role: SectionRole;
   energy: number;
@@ -89,53 +91,63 @@ interface Part {
   toSec: number;
 }
 
-/**
- * The reference's sections at the project's tempo. `barSeconds` is the length of one bar of the project (so
- * with the tempos matched, a 16-bar intro stays 16 bars; at another tempo the same time becomes the bars that
- * fit). Parts under 2 bars join the one before, a part over 64 bars is split in equal parts, and more than 24
- * sections or 512 bars are reduced (the notes say how).
- */
-export function planReferenceSections(ref: Pick<ReferenceTrack, 'sections'>, barSeconds: number): SectionPlan {
-  const notes: string[] = [];
-  if (!(barSeconds > 0) || !ref.sections.length) return { sections: [], notes: ['The reference has no sections to follow.'] };
-  let parts: Part[] = ref.sections.map((s) => {
-    const r = roleOf(s);
-    return { ...r, refEnergy: s.energy, bars: barsFor(s.endSec - s.startSec, barSeconds), fromSec: s.startSec, toSec: s.endSec };
-  });
-  // Parts under 2 bars join their neighbour (the one before; the first joins the one after).
-  let joined = 0;
-  const merge = (a: Part, b: Part): Part => ({
-    // The longer part keeps its role; energy by length.
+/** Parts under this many bars join a neighbour. */
+const MIN_PART_BARS = 2;
+
+/** "1 section was", "3 sections were". */
+const sectionsWere = (n: number) => `${n} section${n === 1 ? ' was' : 's were'}`;
+
+/** Two neighbouring parts as one: the longer part keeps its role; energy by length. */
+function mergeParts(a: Part, b: Part): Part {
+  return {
     role: a.bars >= b.bars ? a.role : b.role,
     energy: Math.round((a.energy * a.bars + b.energy * b.bars) / (a.bars + b.bars)),
     refEnergy: (a.refEnergy * a.bars + b.refEnergy * b.bars) / (a.bars + b.bars),
     bars: a.bars + b.bars,
     fromSec: a.fromSec,
     toSec: b.toSec,
-  });
-  for (let i = 0; i < parts.length && parts.length > 1; ) {
-    if (parts[i]!.bars >= 2) {
+  };
+}
+
+/** Parts under 2 bars join their neighbour (the one before; the first joins the one after). Returns how many joined. */
+function joinShortParts(parts: Part[]): number {
+  let joined = 0;
+  for (let i = 0; i < parts.length && parts.length > 1;) {
+    if (parts[i]!.bars >= MIN_PART_BARS) {
       i++;
       continue;
     }
     const at = i > 0 ? i - 1 : i;
-    parts.splice(at, 2, merge(parts[at]!, parts[at + 1]!));
+    parts.splice(at, 2, mergeParts(parts[at]!, parts[at + 1]!));
     joined++;
     i = Math.max(0, at);
   }
-  if (joined) notes.push(`${joined} section${joined === 1 ? ' was' : 's were'} too short at this tempo and joined the one next to ${joined === 1 ? 'it' : 'them'}.`);
-  // More than 24 sections: the shortest joins its shorter neighbour.
+  return joined;
+}
+
+/** The neighbour a part joins: the only one at either end, else the shorter of the two (the one before on a tie). */
+function shorterNeighbour(parts: readonly Part[], k: number): number {
+  if (k === 0) return 1;
+  if (k === parts.length - 1) return k - 1;
+  return parts[k - 1]!.bars <= parts[k + 1]!.bars ? k - 1 : k + 1;
+}
+
+/** More than 24 sections: the shortest joins its shorter neighbour, until 24 are left. Returns how many joins. */
+function reduceToMaxSections(parts: Part[]): number {
   let reduced = 0;
   while (parts.length > MAX_SECTIONS) {
-    let k = 0;
-    for (let i = 1; i < parts.length; i++) if (parts[i]!.bars < parts[k]!.bars) k = i;
-    const neighbour = k === 0 ? 1 : k === parts.length - 1 ? k - 1 : parts[k - 1]!.bars <= parts[k + 1]!.bars ? k - 1 : k + 1;
-    const [x, y] = k < neighbour ? [k, neighbour] : [neighbour, k];
-    parts.splice(x, 2, merge(parts[x]!, parts[y]!));
+    let shortest = 0;
+    for (let i = 1; i < parts.length; i++) if (parts[i]!.bars < parts[shortest]!.bars) shortest = i;
+    const neighbour = shorterNeighbour(parts, shortest);
+    const [first, second] = shortest < neighbour ? [shortest, neighbour] : [neighbour, shortest];
+    parts.splice(first, 2, mergeParts(parts[first]!, parts[second]!));
     reduced++;
   }
-  if (reduced) notes.push(`The reference has more than ${MAX_SECTIONS} sections: ${reduced} short ones were joined to their neighbours.`);
-  // Over 64 bars: equal parts.
+  return reduced;
+}
+
+/** A part over 64 bars is split in equal parts. Returns the new parts and how many parts were split. */
+function splitLongParts(parts: readonly Part[]): { parts: Part[]; splits: number } {
   const split: Part[] = [];
   let splits = 0;
   for (const p of parts) {
@@ -143,38 +155,39 @@ export function planReferenceSections(ref: Pick<ReferenceTrack, 'sections'>, bar
       split.push(p);
       continue;
     }
-    const n = Math.ceil(p.bars / MAX_SECTION_BARS);
-    const each = Math.floor(p.bars / n);
+    const count = Math.ceil(p.bars / MAX_SECTION_BARS);
+    const each = Math.floor(p.bars / count);
     splits++;
-    for (let i = 0; i < n; i++) {
-      const bars = i === n - 1 ? p.bars - each * (n - 1) : each;
-      const span = (p.toSec - p.fromSec) / n;
+    for (let i = 0; i < count; i++) {
+      const bars = i === count - 1 ? p.bars - each * (count - 1) : each;
+      const span = (p.toSec - p.fromSec) / count;
       split.push({ ...p, bars, fromSec: p.fromSec + i * span, toSec: p.fromSec + (i + 1) * span });
     }
   }
-  if (splits) notes.push(`${splits} section${splits === 1 ? ' is' : 's are'} longer than ${MAX_SECTION_BARS} bars and ${splits === 1 ? 'was' : 'were'} split in equal parts.`);
-  parts = split;
-  // Over 512 bars: cut the end.
-  const total = parts.reduce((n, p) => n + p.bars, 0);
-  if (total > MAX_BARS) {
-    const kept: Part[] = [];
-    let used = 0;
-    for (const p of parts) {
-      if (used + p.bars > MAX_BARS) {
-        const left = MAX_BARS - used;
-        if (left >= 2) kept.push({ ...p, bars: left });
-        used = MAX_BARS;
-        break;
-      }
-      kept.push(p);
-      used += p.bars;
+  return { parts: split, splits };
+}
+
+/** Over 512 bars: the end is cut (a last part is kept only if at least 2 bars of it fit). Returns the kept parts and the bars used. */
+function cutToMaxBars(parts: readonly Part[]): { parts: Part[]; used: number } {
+  const kept: Part[] = [];
+  let used = 0;
+  for (const p of parts) {
+    if (used + p.bars > MAX_BARS) {
+      const left = MAX_BARS - used;
+      if (left >= MIN_PART_BARS) kept.push({ ...p, bars: left });
+      used = MAX_BARS;
+      break;
     }
-    notes.push(`The arranger holds ${MAX_BARS} bars: the last ${total - used} bars of the reference were left off.`);
-    parts = kept;
+    kept.push(p);
+    used += p.bars;
   }
-  // Names by part, numbered from the second one.
+  return { parts: kept, used };
+}
+
+/** Names by part ("Drop", "Drop 2"…), numbered from the second one of each role. */
+function nameParts(parts: readonly Part[]): PlannedSection[] {
   const seen = new Map<SectionRole, number>();
-  const sections = parts.map((p): PlannedSection => {
+  return parts.map((p): PlannedSection => {
     const n = (seen.get(p.role) ?? 0) + 1;
     seen.set(p.role, n);
     return {
@@ -187,8 +200,58 @@ export function planReferenceSections(ref: Pick<ReferenceTrack, 'sections'>, bar
       toSec: p.toSec,
     };
   });
-  return { sections, notes };
+}
+
+/**
+ * The reference's sections at the project's tempo. `barSeconds` is the length of one bar of the project (so
+ * with the tempos matched, a 16-bar intro stays 16 bars; at another tempo the same time becomes the bars that
+ * fit). Parts under 2 bars join the one before, a part over 64 bars is split in equal parts, and more than 24
+ * sections or 512 bars are reduced (the notes say how).
+ */
+export function planReferenceSections(ref: Pick<ReferenceTrack, 'sections'>, barSeconds: number): SectionPlan {
+  const notes: string[] = [];
+  if (!(barSeconds > 0) || !ref.sections.length)
+    return { sections: [], notes: ['The reference has no sections to follow.'] };
+  let parts: Part[] = ref.sections.map((s) => {
+    const r = roleOf(s);
+    return {
+      ...r,
+      refEnergy: s.energy,
+      bars: barsFor(s.endSec - s.startSec, barSeconds),
+      fromSec: s.startSec,
+      toSec: s.endSec,
+    };
+  });
+  const joined = joinShortParts(parts);
+  if (joined) {
+    notes.push(
+      `${sectionsWere(joined)} too short at this tempo and joined the one next to ${joined === 1 ? 'it' : 'them'}.`,
+    );
+  }
+  const reduced = reduceToMaxSections(parts);
+  if (reduced) {
+    notes.push(
+      `The reference has more than ${MAX_SECTIONS} sections: ${reduced} short ones were joined to their neighbours.`,
+    );
+  }
+  const split = splitLongParts(parts);
+  if (split.splits) {
+    const were = split.splits === 1 ? 'was' : 'were';
+    const is = split.splits === 1 ? ' is' : 's are';
+    notes.push(`${split.splits} section${is} longer than ${MAX_SECTION_BARS} bars and ${were} split in equal parts.`);
+  }
+  parts = split.parts;
+  const total = parts.reduce((n, p) => n + p.bars, 0);
+  if (total > MAX_BARS) {
+    const cut = cutToMaxBars(parts);
+    notes.push(
+      `The arranger holds ${MAX_BARS} bars: the last ${total - cut.used} bars of the reference were left off.`,
+    );
+    parts = cut.parts;
+  }
+  return { sections: nameParts(parts), notes };
 }
 
 /** "Intro 16 · Drop 32 · Break 16 · Drop 2 32". */
-export const planStrip = (sections: readonly Pick<PlannedSection, 'name' | 'bars'>[]): string => sections.map((s) => `${s.name} ${s.bars}`).join(' · ');
+export const planStrip = (sections: readonly Pick<PlannedSection, 'name' | 'bars'>[]): string =>
+  sections.map((s) => `${s.name} ${s.bars}`).join(' · ');

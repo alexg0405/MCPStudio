@@ -21,6 +21,7 @@ import vocoder from '../../src/plugins/builtin/vocoder';
 import tune from '../../src/plugins/builtin/tune';
 import deEsser from '../../src/plugins/builtin/de-esser';
 import doubler from '../../src/plugins/builtin/doubler';
+import harmonizer from '../../src/plugins/builtin/harmonizer';
 import analyzer from '../../src/plugins/builtin/analyzer';
 import { EqProKernel } from '../../src/plugins/builtin/eq-pro/kernel';
 import { LimiterKernel } from '../../src/plugins/builtin/limiter/kernel';
@@ -37,6 +38,7 @@ import { VocoderKernel } from '../../src/plugins/builtin/vocoder/kernel';
 import { TuneKernel } from '../../src/plugins/builtin/tune/kernel';
 import { DeEsserKernel } from '../../src/plugins/builtin/de-esser/kernel';
 import { DoublerKernel } from '../../src/plugins/builtin/doubler/kernel';
+import { HarmonizerKernel } from '../../src/plugins/builtin/harmonizer/kernel';
 import { AnalyzerKernel } from '../../src/plugins/builtin/analyzer/kernel';
 import { DuckerKernel } from '../../src/plugins/builtin/ducker/kernel';
 import ducker from '../../src/plugins/builtin/ducker';
@@ -59,6 +61,7 @@ export const M14_EFFECTS: readonly PluginDef[] = [
   analyzer,
   deEsser,
   doubler,
+  harmonizer,
 ] as PluginDef[];
 
 type KernelCtor = new (host: KernelHost) => EffectKernel;
@@ -82,6 +85,7 @@ export const M14_KERNELS: readonly { def: PluginDef; Kernel: KernelCtor; heavy?:
   { def: ducker as PluginDef, Kernel: DuckerKernel as KernelCtor },
   { def: deEsser, Kernel: DeEsserKernel as KernelCtor },
   { def: doubler, Kernel: DoublerKernel as KernelCtor },
+  { def: harmonizer, Kernel: HarmonizerKernel as KernelCtor, heavy: true },
 ];
 
 /**

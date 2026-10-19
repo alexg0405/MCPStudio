@@ -49,6 +49,9 @@ import { fmParams } from '../../src/plugins/builtin/fm/params';
 import gate from '../../src/plugins/builtin/gate';
 import { GateKernel } from '../../src/plugins/builtin/gate/kernel';
 import { gateParams } from '../../src/plugins/builtin/gate/params';
+import harmonizer from '../../src/plugins/builtin/harmonizer';
+import { HarmonizerKernel } from '../../src/plugins/builtin/harmonizer/kernel';
+import { harmonizerParams } from '../../src/plugins/builtin/harmonizer/params';
 import limiter from '../../src/plugins/builtin/limiter';
 import { LimiterKernel } from '../../src/plugins/builtin/limiter/kernel';
 import { limiterParams } from '../../src/plugins/builtin/limiter/params';
@@ -252,6 +255,7 @@ export const KERNEL_ENTRIES: readonly KernelEntry[] = [
   effect(eqPro, eqProParams, EqProKernel),
   effect(flanger, flangerParams, FlangerKernel),
   effect(gate, gateParams, GateKernel),
+  effect(harmonizer, harmonizerParams, HarmonizerKernel),
   effect(limiter, limiterParams, LimiterKernel),
   effect(lofi, lofiParams, LofiKernel),
   effect(maximizer, maximizerParams, MaximizerKernel),

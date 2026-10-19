@@ -1,259 +1,15 @@
 import type { Services } from '@app/services';
-import {
-  audioChannelOf,
-  audioClipsFor,
-  detectSourceBpm,
-  formatCents,
-  normalizeClips,
-  setClipLevels,
-  setFollowTempo,
-  setPitch,
-  setReverse,
-  setSourceBpm,
-  sliceAtTransients,
-} from '@app/actions/audio-clips';
-import {
-  consolidate,
-  consolidationSet,
-  freezeChannel,
-  frozenCopyOf,
-  unfreezeChannel,
-} from '@app/actions/render-to-audio';
-import { clipGain, dbToGain, formatDb, gainToDb, MAX_CLIP_GAIN } from '@core/audio/envelope';
-import { playbackMode, type FollowMode } from '@core/audio/playback';
-import type { AudioClip, ChannelId, ClipId } from '@core/model/types';
-import type { MenuEntry } from '../../controls/ContextMenu';
-import { showFormDialog } from '../../controls/FormDialog';
+import { audioChannelOf, audioClipsFor, normalizeClips, setClipLevels, setPitch, setReverse, setSourceBpm, sliceAtTransients } from '@app/actions/audio-clips';
+import { frozenCopyOf, unfreezeChannel } from '@app/actions/render-to-audio';
+import { dbToGain, formatDb, MAX_CLIP_GAIN } from '@core/audio/envelope';
+import type { FollowMode } from '@core/audio/playback';
+import type { AudioClip } from '@core/model/types';
 import { addContextMenuItems } from '../../context-menus';
-import { addMenuItems, cmd, sep, type DynamicMenuEntry } from '../../shell/menus';
+import { addMenuItems, cmd, sep } from '../../shell/menus';
+import { audioClipMenu, selectionMenuEntries } from './audio-clip-menu';
+import { clipsOf, firstClip, followTempo, freezeTarget, levelsDialog, num, pitchDialog, runConsolidate, runFreeze, sourceTempoDialog } from './audio-clip-actions';
 
-const FOLLOW: { mode: FollowMode; label: string; hint: string }[] = [
-  { mode: 'off', label: 'Off: plays at its own speed', hint: 'Tempo changes don’t touch it (pitch changes its speed, like a turntable)' },
-  { mode: 'resample', label: 'Resample: speed follows the tempo', hint: 'Faster song = faster and higher, like a turntable; one source beat per song beat' },
-  { mode: 'stretch', label: 'Stretch: tempo follows, pitch stays', hint: 'Time-stretched to the song tempo without changing its pitch (computed in the background)' },
-];
-
-/** `{ clip }` from a command's args, else the selected audio clips. */
-function clipsOf(s: Services, args: unknown): AudioClip[] {
-  const id = args && typeof args === 'object' ? (args as { clip?: unknown }).clip : undefined;
-  return audioClipsFor(s, typeof id === 'string' ? [id as ClipId] : undefined);
-}
-
-function firstClip(s: Services, args: unknown): AudioClip | null {
-  const clips = clipsOf(s, args);
-  if (clips.length === 0) {
-    s.session.getState().toast('Select an audio clip on the playlist first.');
-    return null;
-  }
-  return clips[0] as AudioClip;
-}
-
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() && Number.isFinite(Number(v)) ? Number(v) : null);
-
-async function pitchDialog(s: Services, clip: AudioClip): Promise<void> {
-  const ch = audioChannelOf(s.doc.getState().project, clip);
-  if (!ch) return;
-  const cents = ch.pitch ?? 0;
-  const values = await showFormDialog({
-    title: `Pitch: ${ch.name}`,
-    message:
-      playbackMode(ch).follow === 'stretch'
-        ? 'Shifts the pitch without changing the speed (the clip is time-stretched). Applies to every clip of this sound.'
-        : 'Shifts the pitch by playing faster or slower (like a turntable): +12 semitones is twice as fast. Applies to every clip of this sound; set Follow tempo to Stretch to keep the speed.',
-    fields: [
-      { kind: 'number', key: 'semitones', label: 'Semitones', min: -24, max: 24, step: 1, unit: 'st' },
-      { kind: 'number', key: 'cents', label: 'Fine tune', min: -99, max: 99, step: 1, unit: 'cents (1/100 st)' },
-    ],
-    values: { semitones: Math.trunc(cents / 100), cents: Math.round(cents % 100) },
-    okLabel: 'Apply',
-  });
-  if (values) setPitch(s, ch.id, Number(values.semitones) * 100 + Number(values.cents));
-}
-
-/** Asks for the tempo the audio was recorded at (prefilled with what the audio says). */
-async function sourceTempoDialog(s: Services, channelId: ChannelId, then?: FollowMode): Promise<boolean> {
-  const p = s.doc.getState().project;
-  const ch = p.channels[channelId];
-  if (ch?.kind !== 'audioClip') return false;
-  const detected = await detectSourceBpm(s, channelId);
-  const current = ch.sourceBpm ?? detected ?? p.transport.bpm;
-  const values = await showFormDialog({
-    title: 'Source tempo',
-    message: `The tempo “${ch.name}” was played at, so it can follow the song’s tempo.`,
-    fields: [
-      { kind: 'number', key: 'bpm', label: 'Tempo', min: 20, max: 999, step: 'any', unit: 'BPM' },
-      {
-        kind: 'info',
-        text: detected
-          ? `Detected from the audio: ${detected} BPM. Change it if the beat feels half or double speed.`
-          : 'No clear beat found in the audio: type the tempo it was made at.',
-      },
-    ],
-    values: { bpm: Math.round(current * 100) / 100 },
-    okLabel: then ? 'Follow the tempo' : 'Set',
-  });
-  if (!values) return false;
-  const bpm = Number(values.bpm);
-  if (then) setFollowTempo(s, channelId, then, bpm);
-  else setSourceBpm(s, channelId, bpm);
-  return true;
-}
-
-async function followTempo(s: Services, clip: AudioClip, mode: FollowMode, sourceBpm?: number): Promise<void> {
-  const ch = audioChannelOf(s.doc.getState().project, clip);
-  if (!ch) return;
-  if (mode !== 'off' && !sourceBpm && !ch.sourceBpm) {
-    await sourceTempoDialog(s, ch.id, mode);
-    return;
-  }
-  setFollowTempo(s, ch.id, mode, sourceBpm);
-  if (mode === 'stretch') s.session.getState().setHint('Stretching in the background: it plays in time meanwhile');
-}
-
-async function levelsDialog(s: Services, clip: AudioClip): Promise<void> {
-  const values = await showFormDialog({
-    title: 'Clip gain and fades',
-    message: 'Gain turns this clip up or down; fades bring it in and out smoothly (equal-power curves).',
-    fields: [
-      { kind: 'number', key: 'gain', label: 'Gain', min: -48, max: 12, step: 0.1, unit: 'dB' },
-      { kind: 'number', key: 'fadeIn', label: 'Fade in', min: 0, max: 60000, step: 1, unit: 'ms' },
-      { kind: 'number', key: 'fadeOut', label: 'Fade out', min: 0, max: 60000, step: 1, unit: 'ms' },
-    ],
-    values: {
-      gain: Math.round(Math.max(-48, gainToDb(clipGain(clip))) * 10) / 10,
-      fadeIn: Math.round((clip.fadeIn ?? 0) * 1000),
-      fadeOut: Math.round((clip.fadeOut ?? 0) * 1000),
-    },
-    okLabel: 'Apply',
-  });
-  if (!values) return;
-  setClipLevels(
-    s,
-    [clip],
-    { gain: dbToGain(Number(values.gain)), fadeIn: Number(values.fadeIn) / 1000, fadeOut: Number(values.fadeOut) / 1000 },
-    'Clip gain and fades',
-  );
-}
-
-async function runFreeze(s: Services, channelId: ChannelId): Promise<void> {
-  const ch = s.doc.getState().project.channels[channelId];
-  s.session.getState().toast(`Rendering “${ch?.name ?? 'channel'}”…`);
-  try {
-    await freezeChannel(s, channelId);
-    s.session
-      .getState()
-      .toast(`Froze “${ch?.name}”: it plays from an audio clip now and the original is muted (Unfreeze brings it back).`);
-  } catch (e) {
-    s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
-  }
-}
-
-async function runConsolidate(s: Services): Promise<void> {
-  const clips = consolidationSet(s);
-  if (clips.length === 0) {
-    s.session.getState().toast('Select the clips to consolidate (or set a loop region) first.');
-    return;
-  }
-  s.session.getState().toast(`Rendering ${clips.length} clip${clips.length === 1 ? '' : 's'}…`);
-  try {
-    await consolidate(s, clips);
-    s.session.getState().toast('Consolidated into one audio clip (undo brings the clips back).');
-  } catch (e) {
-    s.session.getState().toast(e instanceof Error ? e.message : String(e), 'error');
-  }
-}
-
-/** The channel freeze acts on: its args (id or name), the selected audio clip's channel, or the selected channel. */
-function freezeTarget(s: Services, args: unknown): ChannelId | null {
-  const p = s.doc.getState().project;
-  if (typeof args === 'string' && args) {
-    if (p.channels[args as ChannelId]) return args as ChannelId;
-    const byName = Object.values(p.channels).find((c) => c.name.toLowerCase() === args.toLowerCase());
-    if (byName) return byName.id;
-  }
-  const clip = audioClipsFor(s)[0];
-  if (clip) return clip.channelId;
-  return s.session.getState().selectedChannelId;
-}
-
-/** The audio entries of a clip's ▾ menu (and of the Playlist menu for the selection). */
-export function audioClipMenu(s: Services, clip: AudioClip): MenuEntry[] {
-  const p = s.doc.getState().project;
-  const ch = audioChannelOf(p, clip);
-  if (!ch) return [];
-  const mode = playbackMode(ch);
-  const frozen = frozenCopyOf(p, ch.id);
-  return [
-    {
-      label: 'Reverse',
-      checked: mode.reverse,
-      hint: 'Plays this sound backwards (every clip of it keeps its part of the audio)',
-      onSelect: () => setReverse(s, ch.id, !mode.reverse),
-    },
-    {
-      label: `Pitch… (${formatCents(mode.cents)})`,
-      hint: 'Shift the pitch in semitones and cents',
-      onSelect: () => void pitchDialog(s, clip),
-    },
-    {
-      kind: 'submenu',
-      label: `Follow tempo (${mode.follow === 'off' ? 'off' : mode.follow})`,
-      hint: 'How it follows the song tempo: not at all, by speeding up (resample), or time-stretched',
-      items: [
-        ...FOLLOW.map((f) => ({
-          label: f.label,
-          hint: f.hint,
-          checked: mode.follow === f.mode,
-          onSelect: () => void followTempo(s, clip, f.mode),
-        })),
-        { kind: 'separator' as const },
-        {
-          label: `Source tempo… (${ch.sourceBpm ? `${Math.round(ch.sourceBpm * 100) / 100} BPM` : 'not set'})`,
-          hint: 'The tempo the audio was played at (detected from it, or typed)',
-          onSelect: () => void sourceTempoDialog(s, ch.id),
-        },
-      ],
-    },
-    {
-      label: 'Gain and fades…',
-      hint: `Exact values: gain now ${formatDb(clipGain(clip))} (or drag the handles along the top of the clip)`,
-      onSelect: () => void levelsDialog(s, clip),
-    },
-    {
-      label: 'Normalize',
-      hint: 'Sets the clip gain so its loudest moment peaks at −0.3 dB',
-      onSelect: () =>
-        void normalizeClips(s, audioClipsFor(s).length > 1 ? audioClipsFor(s) : [clip]).then((n) =>
-          s.session.getState().setHint(n ? 'Normalized to −0.3 dB' : 'Nothing to normalize (silent)'),
-        ),
-    },
-    {
-      label: 'Slice at transients',
-      hint: 'Cuts the clip at every hit (drum hits, plucked notes) so each one is its own clip',
-      onSelect: () =>
-        void sliceAtTransients(s, clip).then((n) =>
-          s.session.getState().toast(n > 1 ? `Sliced into ${n} clips.` : 'No hits found to slice at.'),
-        ),
-    },
-    { kind: 'separator' },
-    {
-      label: s.editor.getState().clipSelection.length > 1 ? 'Consolidate selection' : 'Consolidate this clip',
-      hint: 'Renders the selected clips (effects, automation and all) into one new audio clip that replaces them',
-      onSelect: () => void runConsolidate(s),
-    },
-    frozen?.frozenFrom
-      ? {
-          label: 'Unfreeze',
-          hint: 'Deletes the frozen audio and plays the original channel again',
-          onSelect: () => void unfreezeChannel(s, ch.id),
-        }
-      : {
-          label: 'Freeze channel…',
-          hint: 'Renders this channel to an audio clip and mutes the original (saves processing; Unfreeze undoes it)',
-          onSelect: () => void runFreeze(s, ch.id),
-        },
-  ];
-}
+export { audioClipMenu } from './audio-clip-menu';
 
 /**
  * Audio clip editing: the clip ▾ menu entries (reverse, pitch, follow tempo, gain and fades,
@@ -262,7 +18,13 @@ export function audioClipMenu(s: Services, clip: AudioClip): MenuEntry[] {
  * `{ clip }` argument).
  */
 export function register(services: Services): void {
-  const { commands } = services;
+  registerClipCommands(services);
+  registerRenderCommands(services);
+  registerMenus(services);
+}
+
+/** Reverse, pitch, follow tempo, source tempo, gain, fades, normalize, slice and the gain and fades dialog. */
+function registerClipCommands({ commands }: Services): void {
   const clipArg = 'optional { clip: id } (default: the selected audio clips)';
 
   commands.register<{ clip?: string; reverse?: boolean }>({
@@ -395,6 +157,10 @@ export function register(services: Services): void {
       if (clip) await levelsDialog(s, clip);
     },
   });
+}
+
+/** Consolidate, freeze and unfreeze: commands that render to audio. */
+function registerRenderCommands({ commands }: Services): void {
   commands.register({
     id: 'playlist.consolidate',
     title: 'Consolidate selection into one audio clip',
@@ -425,7 +191,10 @@ export function register(services: Services): void {
       if (!id || !unfreezeChannel(s, id)) s.session.getState().toast('That channel isn’t frozen.');
     },
   });
+}
 
+/** The clip's right-click menu, the channel rack's Freeze entry and the Playlist menu's Audio clip submenu. */
+function registerMenus(services: Services): void {
   addContextMenuItems('playlist.clip', ({ clip }, s) => (clip.kind === 'audio' ? audioClipMenu(s, clip) : []));
   addContextMenuItems('rack.channel', ({ channelId }, s) => {
     const p = s.doc.getState().project;
@@ -442,22 +211,8 @@ export function register(services: Services): void {
           },
         ];
   });
-
-  const selectionEntries = (): DynamicMenuEntry[] => {
-    const clip = audioClipsFor(services)[0];
-    if (!clip) return [{ label: 'Select an audio clip to edit it here', disabled: true, run: () => {} }];
-    const toDynamic = (e: MenuEntry): DynamicMenuEntry | null => {
-      if (e.kind === 'separator' || e.kind === 'label' || e.kind === 'swatches') return null;
-      if (e.kind === 'submenu') {
-        const items = typeof e.items === 'function' ? e.items() : e.items;
-        return { label: e.label, ...(e.hint ? { hint: e.hint } : {}), run: () => {}, children: items.map(toDynamic).filter((x): x is DynamicMenuEntry => !!x) };
-      }
-      return { label: e.label, ...(e.hint ? { hint: e.hint } : {}), ...(e.checked ? { checked: true } : {}), ...(e.disabled ? { disabled: true } : {}), run: e.onSelect };
-    };
-    return audioClipMenu(services, clip).map(toDynamic).filter((x): x is DynamicMenuEntry => !!x);
-  };
   addMenuItems('playlist', [
-    { kind: 'submenu', id: 'audio-clip', label: 'Audio clip', order: 30, items: () => [{ kind: 'dynamic', id: 'audio-clip-edits', order: 0, entries: selectionEntries }] },
+    { kind: 'submenu', id: 'audio-clip', label: 'Audio clip', order: 30, items: () => [{ kind: 'dynamic', id: 'audio-clip-edits', order: 0, entries: () => selectionMenuEntries(services) }] },
     cmd('playlist.consolidate', 31),
     cmd('channels.freeze', 32),
     sep(39),

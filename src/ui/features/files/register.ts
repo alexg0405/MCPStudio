@@ -12,8 +12,25 @@ export const order = 5;
 
 const RECENT_SHOWN = 8;
 
+/** Whether no project operation (open, save, new) is running, so another can start. */
+const idle = (s: Services) => s.files.store.getState().busy === null;
+
+/** The project files: their dialogs, commands, keys and File menu, and (in a browser) the window title, file drops and the unsaved-changes warning. */
 export function register(services: Services): void {
-  const { commands, keymap, files } = services;
+  registerFilesUi(services);
+  registerFileCommands(services);
+  registerFileKeys(services);
+  registerFileMenu(services);
+
+  if (typeof window === 'undefined') return; // Node tests
+  installTitle(services);
+  installFileDrops(services);
+  if (!import.meta.env.DEV) installUnloadGuard(services);
+}
+
+/** What the project files ask the user: save changes first, and the layout a new project gets. */
+function registerFilesUi(services: Services): void {
+  const { files } = services;
 
   files.setUi({
     askUnsaved: (name) =>
@@ -30,8 +47,10 @@ export function register(services: Services): void {
       }),
     defaultLayout: () => applyDefaultLayout(services),
   });
+}
 
-  const idle = (s: Services) => s.files.store.getState().busy === null;
+/** New, open, save, save as, project info, templates and open recent, as commands. */
+function registerFileCommands({ commands }: Services): void {
   commands.register({
     id: 'file.new',
     title: 'New project',
@@ -112,7 +131,10 @@ export function register(services: Services): void {
       void s.files.openRecent(hit.key);
     },
   });
+}
 
+/** The file keys. */
+function registerFileKeys({ keymap }: Services): void {
   keymap.add([
     // Chrome keeps ⌘N/Ctrl+N for a new window (it works in an installed app window), so Alt+N too.
     { chord: 'Mod+N', command: 'file.new' },
@@ -121,7 +143,10 @@ export function register(services: Services): void {
     { chord: 'Mod+S', command: 'file.save', when: { allowInInput: true } },
     { chord: 'Mod+Shift+S', command: 'file.saveAs', when: { allowInInput: true } },
   ]);
+}
 
+/** The File menu, with the template list and the recent projects read fresh each time it opens. */
+function registerFileMenu(services: Services): void {
   const recentEntries = (): DynamicMenuEntry[] => {
     const list = recentFiles().slice(0, RECENT_SHOWN);
     if (list.length === 0) return [{ label: 'No recent projects', disabled: true, run: () => {} }];
@@ -160,12 +185,8 @@ export function register(services: Services): void {
     sep(52),
     cmd('file.projectInfo', 54),
   ]);
-
-  if (typeof window === 'undefined') return; // Node tests
-  installTitle(services);
-  installFileDrops(services);
-  if (!import.meta.env.DEV) installUnloadGuard(services);
 }
+
 
 /** "● Song – AGstudio" while there are unsaved changes. */
 function installTitle(s: Services): void {

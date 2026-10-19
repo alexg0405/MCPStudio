@@ -9,23 +9,17 @@ import {
   type UserTableState,
 } from '@agstudio/sdk/dsp/wavetable-frames';
 import { formatPan, Knob, ParamKnob, ParamSelect, ParamToggle, Section, Select } from '@agstudio/sdk/ui';
-import {
-  FACTORY_TABLES,
-  lfoParam,
-  MOD_SLOTS,
-  modParam,
-  oscParam,
-  TABLE_OPTIONS,
-  type wavetableParams,
-} from './params';
+import { FACTORY_TABLES, lfoParam, MOD_SLOTS, modParam, oscParam, TABLE_OPTIONS, type wavetableParams } from './params';
 import { TableEditor } from './table-editor';
 import { factoryBank, TABLES } from './tables';
 import styles from './ui.module.css';
 
 type Props = PluginUIProps<typeof wavetableParams, UserTableState>;
 
-const SHAPE_W = 96;
-const SHAPE_H = 40;
+const SHAPE_WIDTH = 96;
+const SHAPE_HEIGHT = 40;
+/** Space kept above and below the preview's wave, in pixels. */
+const SHAPE_MARGIN = 3;
 /** Points of the shape preview: a power of two, because a drawn table's cycle goes through an FFT. */
 const POINTS = 128;
 
@@ -33,74 +27,98 @@ const POINTS = 128;
 function ShapePreview({
   table,
   position,
-  off,
+  isOff,
   user,
 }: {
   table: number;
   position: number;
-  off: boolean;
+  isOff: boolean;
   user: readonly Frame[];
 }) {
   const isUser = table >= FACTORY_TABLES;
   const path = useMemo(() => {
-    const pts = new Float32Array(POINTS);
+    const wave = new Float32Array(POINTS);
     if (isUser) {
       const shown = normalizeFrame(frameAt(user, position));
-      frameToWave(shown, pts);
-    } else factoryBank().shape(table, position, pts, 3);
-    let d = '';
+      frameToWave(shown, wave);
+    } else factoryBank().shape(table, position, wave, 3);
+    let pathData = '';
     for (let i = 0; i < POINTS; i++) {
-      const x = (i / (POINTS - 1)) * SHAPE_W;
-      const y = SHAPE_H / 2 - (pts[i] as number) * (SHAPE_H / 2 - 3);
-      d += `${i ? ' L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+      const x = (i / (POINTS - 1)) * SHAPE_WIDTH;
+      const y = SHAPE_HEIGHT / 2 - (wave[i] as number) * (SHAPE_HEIGHT / 2 - SHAPE_MARGIN);
+      pathData += `${i ? ' L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`;
     }
-    return d;
+    return pathData;
   }, [table, position, isUser, user]);
-  const t = isUser ? null : TABLES[table];
+  const factoryTable = isUser ? null : TABLES[table];
   return (
     <svg
-      className={`${styles.shape} ${off ? styles.off : ''}`}
-      width={SHAPE_W}
-      height={SHAPE_H}
-      data-hint={`${t?.label ?? 'My table'} at ${Math.round(position * 100)}%: ${t?.hint ?? 'the table you draw or import below'}`}
+      className={`${styles.shape} ${isOff ? styles.off : ''}`}
+      width={SHAPE_WIDTH}
+      height={SHAPE_HEIGHT}
+      data-hint={`${factoryTable?.label ?? 'My table'} at ${Math.round(position * 100)}%: ${factoryTable?.hint ?? 'the table you draw or import below'}`}
       role="img"
-      aria-label={`Shape preview: ${t?.label ?? 'My table'}`}
+      aria-label={`Shape preview: ${factoryTable?.label ?? 'My table'}`}
     >
-      <line x1={0} y1={SHAPE_H / 2} x2={SHAPE_W} y2={SHAPE_H / 2} className={styles.axis} />
+      <line x1={0} y1={SHAPE_HEIGHT / 2} x2={SHAPE_WIDTH} y2={SHAPE_HEIGHT / 2} className={styles.axis} />
       <path d={path} className={styles.wave} />
     </svg>
   );
 }
 
-/** A small drawing of an ADSR envelope (times on a log scale). */
-function EnvelopeCurve({ a, d, s, r }: { a: number; d: number; s: number; r: number }) {
-  const w = (t: number) => 4 + 30 * Math.max(0, Math.min(1, Math.log(t / 0.001) / Math.log(10 / 0.001)));
-  const H = 34;
-  const x1 = w(a);
-  const x2 = x1 + w(d);
-  const x3 = x2 + 18;
-  const x4 = x3 + w(r);
-  const ys = 2 + (1 - s) * (H - 4);
-  const path = `M 0 ${H - 2} L ${x1} 2 L ${x2} ${ys} L ${x3} ${ys} L ${x4} ${H - 2}`;
+const ENVELOPE_HEIGHT = 34;
+/** The fastest and slowest envelope times (seconds) the drawing spans, on a log scale. */
+const ENVELOPE_MIN_SEC = 0.001;
+const ENVELOPE_MAX_SEC = 10;
+/** Pixels of width a stage gets: a base, plus up to this much more for the slowest times. */
+const STAGE_BASE_WIDTH = 4;
+const STAGE_TIME_WIDTH = 30;
+/** Width of the held (sustain) stretch, in pixels. */
+const SUSTAIN_WIDTH = 18;
+
+/** A small drawing of an ADSR envelope: stage times in seconds (on a log scale), sustain as a level from 0 to 1. */
+function EnvelopeCurve({
+  attack,
+  decay,
+  sustain,
+  release,
+}: {
+  attack: number;
+  decay: number;
+  sustain: number;
+  release: number;
+}) {
+  const stageWidth = (seconds: number) => {
+    const share = Math.log(seconds / ENVELOPE_MIN_SEC) / Math.log(ENVELOPE_MAX_SEC / ENVELOPE_MIN_SEC);
+    return STAGE_BASE_WIDTH + STAGE_TIME_WIDTH * Math.max(0, Math.min(1, share));
+  };
+  const height = ENVELOPE_HEIGHT;
+  const attackEnd = stageWidth(attack);
+  const decayEnd = attackEnd + stageWidth(decay);
+  const sustainEnd = decayEnd + SUSTAIN_WIDTH;
+  const releaseEnd = sustainEnd + stageWidth(release);
+  const sustainY = 2 + (1 - sustain) * (height - 4);
+  const path = `M 0 ${height - 2} L ${attackEnd} 2 L ${decayEnd} ${sustainY} L ${sustainEnd} ${sustainY} L ${releaseEnd} ${height - 2}`;
   return (
-    <svg className={styles.envelope} width={x4 + 2} height={H} aria-hidden>
+    <svg className={styles.envelope} width={releaseEnd + 2} height={height} aria-hidden>
       <path d={path} className={styles.wave} />
     </svg>
   );
 }
 
+/** One oscillator's section: table, position, tuning, level and pan. */
 function Oscillator({ ui, n, user }: { ui: Props; n: number; user: readonly Frame[] }) {
   const id = oscParam(n);
   const table = TABLE_OPTIONS.findIndex(([t]) => t === ui.values[id.table]);
-  const off = Number(ui.values[id.level]) === 0;
+  const isOff = Number(ui.values[id.level]) === 0;
   return (
     <Section
-      title={`Oscillator ${n}${off ? ' (off: turn up its level)' : ''}`}
+      title={`Oscillator ${n}${isOff ? ' (off: turn up its level)' : ''}`}
       hint={`Oscillator ${n}: pick a table, then move the position to morph through its shapes`}
     >
       <div className={styles.oscTop}>
         <ParamSelect ui={ui} param={id.table} label="Table" />
-        <ShapePreview table={Math.max(0, table)} position={Number(ui.values[id.position])} off={off} user={user} />
+        <ShapePreview table={Math.max(0, table)} position={Number(ui.values[id.position])} isOff={isOff} user={user} />
       </div>
       <ParamKnob ui={ui} param={id.position} label="Position" />
       <ParamKnob ui={ui} param={id.coarse} label="Coarse" />
@@ -111,13 +129,14 @@ function Oscillator({ ui, n, user }: { ui: Props; n: number; user: readonly Fram
   );
 }
 
+/** One LFO's section. */
 function Lfo({ ui, n }: { ui: Props; n: number }) {
   const id = lfoParam(n);
-  const synced = Boolean(ui.values[id.sync]);
+  const isSynced = Boolean(ui.values[id.sync]);
   return (
     <Section title={`LFO ${n}`} hint={`LFO ${n}: a slow wobble; send it somewhere in the mod matrix`}>
       <ParamSelect ui={ui} param={id.shape} label="Shape" />
-      {synced ? (
+      {isSynced ? (
         <ParamSelect ui={ui} param={id.length} label="Length" />
       ) : (
         <ParamKnob ui={ui} param={id.rate} label="Speed" />
@@ -130,6 +149,7 @@ function Lfo({ ui, n }: { ui: Props; n: number }) {
   );
 }
 
+/** One row of the mod matrix: source, destination and amount. */
 function ModRow({ ui, n }: { ui: Props; n: number }) {
   const id = modParam(n);
   const spec = (k: string) => ui.specs[k] as ParamSpec;
@@ -138,12 +158,12 @@ function ModRow({ ui, n }: { ui: Props; n: number }) {
   const amountSpec = spec(id.amount);
   const amountValue = Number(ui.values[id.amount]);
   const amount = formatValue(amountSpec, amountValue);
-  const on = ui.values[id.source] !== 'none';
+  const isOn = ui.values[id.source] !== 'none';
   return (
     <div
-      className={`${styles.modRow} ${on ? '' : styles.modOff}`}
+      className={`${styles.modRow} ${isOn ? '' : styles.modOff}`}
       data-hint={
-        on ? `Mod ${n}: ${source} moves ${target} by ${amount}` : `Mod ${n} is off: pick a source to move ${target}`
+        isOn ? `Mod ${n}: ${source} moves ${target} by ${amount}` : `Mod ${n} is off: pick a source to move ${target}`
       }
     >
       <span className={styles.modIndex}>{n}</span>
@@ -184,7 +204,7 @@ function ModRow({ ui, n }: { ui: Props; n: number }) {
 
 /** The Wavetable editor: oscillators, filter, envelopes, LFOs, the mod matrix and the voice settings. */
 export function WavetableUI(ui: Props) {
-  const v = ui.values;
+  const values = ui.values;
   const userFrames = useMemo(() => framesOfState(ui.state), [ui.state]);
   return (
     <div className={styles.root}>
@@ -231,10 +251,10 @@ export function WavetableUI(ui: Props) {
       <div className={styles.row}>
         <Section title="Amp envelope" hint="How each note's volume starts, holds and ends">
           <EnvelopeCurve
-            a={Number(v.ampAttack)}
-            d={Number(v.ampDecay)}
-            s={Number(v.ampSustain)}
-            r={Number(v.ampRelease)}
+            attack={Number(values.ampAttack)}
+            decay={Number(values.ampDecay)}
+            sustain={Number(values.ampSustain)}
+            release={Number(values.ampRelease)}
           />
           <ParamKnob ui={ui} param="ampAttack" label="Attack" />
           <ParamKnob ui={ui} param="ampDecay" label="Decay" />
@@ -247,10 +267,10 @@ export function WavetableUI(ui: Props) {
           hint="A second envelope: moves the filter (Env amount) or anything in the mod matrix"
         >
           <EnvelopeCurve
-            a={Number(v.modAttack)}
-            d={Number(v.modDecay)}
-            s={Number(v.modSustain)}
-            r={Number(v.modRelease)}
+            attack={Number(values.modAttack)}
+            decay={Number(values.modDecay)}
+            sustain={Number(values.modSustain)}
+            release={Number(values.modRelease)}
           />
           <ParamKnob ui={ui} param="modAttack" label="Attack" />
           <ParamKnob ui={ui} param="modDecay" label="Decay" />

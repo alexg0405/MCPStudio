@@ -1,33 +1,35 @@
 import { at, dbToGain, EffectKernel, EnvelopeFollower, Readings, type ParamBlock } from '@agstudio/sdk/worklet';
 import type { multibandParams } from './params';
 
-type P = typeof multibandParams;
+type Params = typeof multibandParams;
 
 /** Soft knee of every band, dB. */
-const KNEE = 6;
+const KNEE_DB = 6;
 /** 20 / ln(10): dB = DB_PER_NEPER · ln(gain). */
 const DB_PER_NEPER = 8.685889638065035;
 /** ln(10) / 20: gain = exp(NEPER_PER_DB · dB). */
 const NEPER_PER_DB = 0.11512925464970229;
 /** Crossovers follow their params every CONTROL frames. */
-const CONTROL = 32;
+const CONTROL_FRAMES = 32;
 /** The band gains are worked out every STEP frames (from the peak since) and ramped in between. */
-const STEP = 4;
+const STEP_FRAMES = 4;
 /** Butterworth: two of these in series make a Linkwitz-Riley section. */
-const K = Math.SQRT2;
+const SVF_K = Math.SQRT2;
+/** Each channel has seven filter stages with two states each. */
+const STATES_PER_CHANNEL = 14;
 
 /**
  * Gain reduction in dB (≥ 0) of the static curve: hard above the threshold, a quadratic soft knee
  * `knee` dB wide around it (Giannoulis, Massberg & Reiss 2012).
  */
-export function gainReduction(levelDb: number, threshold: number, ratio: number, knee: number): number {
-  const over = levelDb - threshold;
+export function gainReduction(levelDb: number, thresholdDb: number, ratio: number, kneeDb: number): number {
+  const overDb = levelDb - thresholdDb;
   const slope = 1 - 1 / Math.max(1, ratio);
-  if (knee > 0 && 2 * Math.abs(over) <= knee) {
-    const x = over + knee / 2;
-    return (slope * x * x) / (2 * knee);
+  if (kneeDb > 0 && 2 * Math.abs(overDb) <= kneeDb) {
+    const intoKneeDb = overDb + kneeDb / 2;
+    return (slope * intoKneeDb * intoKneeDb) / (2 * kneeDb);
   }
-  return over > 0 ? slope * over : 0;
+  return overDb > 0 ? slope * overDb : 0;
 }
 
 /**
@@ -36,59 +38,62 @@ export function gainReduction(levelDb: number, threshold: number, ratio: number,
  * step), with the linear gain ramped across the step.
  */
 class BandCompressor {
-  readonly smooth: EnvelopeFollower;
-  private attack = -1;
-  private release = -1;
-  private threshold = Number.NaN;
+  readonly reductionSmoother: EnvelopeFollower;
+  private attackMs = -1;
+  private releaseMs = -1;
+  private thresholdDb = Number.NaN;
   /** Where the knee starts, as a linear level (below it nothing needs a logarithm). */
-  private kneeStart = 0;
-  private peak = 0;
+  private kneeStartLevel = 0;
+  private peakSinceStep = 0;
   /** The gain this frame, and its change per frame until the next step. */
   gain = 1;
-  private delta = 0;
+  private gainPerFrame = 0;
   /** Gain reduction of the last step, dB. */
-  reduction = 0;
+  reductionDb = 0;
 
   constructor(sampleRate: number) {
-    this.smooth = new EnvelopeFollower(sampleRate / STEP, 10, 150);
+    this.reductionSmoother = new EnvelopeFollower(sampleRate / STEP_FRAMES, 10, 150);
   }
 
   /** Feeds a frame's peak level; returns the band's gain for it. */
   track(level: number): number {
-    if (level > this.peak) this.peak = level;
-    if (this.delta !== 0) this.gain += this.delta;
+    if (level > this.peakSinceStep) this.peakSinceStep = level;
+    if (this.gainPerFrame !== 0) this.gain += this.gainPerFrame;
     return this.gain;
   }
 
   /** Every STEP frames: the next gain from the peak of the last ones. */
-  step(threshold: number, ratio: number, attack: number, release: number, makeup: number): void {
-    if (attack !== this.attack || release !== this.release) {
-      this.attack = attack;
-      this.release = release;
-      this.smooth.setTimes(attack, release);
+  step(thresholdDb: number, ratio: number, attackMs: number, releaseMs: number, makeupDb: number): void {
+    if (attackMs !== this.attackMs || releaseMs !== this.releaseMs) {
+      this.attackMs = attackMs;
+      this.releaseMs = releaseMs;
+      this.reductionSmoother.setTimes(attackMs, releaseMs);
     }
-    if (threshold !== this.threshold) {
-      this.threshold = threshold;
-      this.kneeStart = dbToGain(threshold - KNEE / 2);
+    if (thresholdDb !== this.thresholdDb) {
+      this.thresholdDb = thresholdDb;
+      this.kneeStartLevel = dbToGain(thresholdDb - KNEE_DB / 2);
     }
     // Under the knee there is nothing to compute (no logarithm).
-    const peak = this.peak;
-    this.peak = 0;
-    const target = peak > this.kneeStart ? gainReduction(DB_PER_NEPER * Math.log(peak), threshold, ratio, KNEE) : 0;
-    const gr = this.smooth.process(target);
-    this.reduction = gr;
-    const db = makeup - gr;
-    const next = db === 0 ? 1 : Math.exp(NEPER_PER_DB * db);
-    this.delta = (next - this.gain) / STEP;
-    if (this.delta === 0) this.gain = next;
+    const peakLevel = this.peakSinceStep;
+    this.peakSinceStep = 0;
+    const targetReductionDb =
+      peakLevel > this.kneeStartLevel
+        ? gainReduction(DB_PER_NEPER * Math.log(peakLevel), thresholdDb, ratio, KNEE_DB)
+        : 0;
+    const reductionDb = this.reductionSmoother.process(targetReductionDb);
+    this.reductionDb = reductionDb;
+    const netGainDb = makeupDb - reductionDb;
+    const nextGain = netGainDb === 0 ? 1 : Math.exp(NEPER_PER_DB * netGainDb);
+    this.gainPerFrame = (nextGain - this.gain) / STEP_FRAMES;
+    if (this.gainPerFrame === 0) this.gain = nextGain;
   }
 
   reset(): void {
-    this.smooth.reset();
-    this.reduction = 0;
-    this.peak = 0;
+    this.reductionSmoother.reset();
+    this.reductionDb = 0;
+    this.peakSinceStep = 0;
     this.gain = 1;
-    this.delta = 0;
+    this.gainPerFrame = 0;
   }
 }
 
@@ -101,222 +106,237 @@ class BandCompressor {
  * The crossovers are the SDK LinkwitzRiley's math (Cytomic state-variable filters) written out on
  * flat arrays: seven filter stages per side, cheap enough to leave the CPU to the compressors.
  */
-export class MultibandKernel extends EffectKernel<P> {
+export class MultibandKernel extends EffectKernel<Params> {
   /** Coefficients (a1, a2, a3) of the low and the high crossover. */
-  private readonly coef = new Float64Array(6);
+  private readonly crossoverCoefficients = new Float64Array(6);
   /**
    * Filter states (ic1, ic2) per side: [low xo: first, low stage, high stage; high xo: first, low
    * stage, high stage, allpass] = 7 stages × 2 values, left then right.
    */
-  private readonly state = new Float64Array(28);
-  private readonly cLow = new BandCompressor(this.sampleRate);
-  private readonly cMid = new BandCompressor(this.sampleRate);
-  private readonly cHigh = new BandCompressor(this.sampleRate);
+  private readonly filterStates = new Float64Array(28);
+  private readonly lowCompressor = new BandCompressor(this.sampleRate);
+  private readonly midCompressor = new BandCompressor(this.sampleRate);
+  private readonly highCompressor = new BandCompressor(this.sampleRate);
   private readonly meter = new Readings(this.host, ['lowGr', 'midGr', 'highGr'] as const);
   private countdown = 0;
-  private stepCount = 0;
+  private frameInStep = 0;
   private lowHz = -1;
   private highHz = -1;
-  private outDb = 0;
-  private outGain = 1;
+  private outputDb = 0;
+  private outputGain = 1;
 
   override reset(): void {
-    this.state.fill(0);
-    this.cLow.reset();
-    this.cMid.reset();
-    this.cHigh.reset();
+    this.filterStates.fill(0);
+    this.lowCompressor.reset();
+    this.midCompressor.reset();
+    this.highCompressor.reset();
     this.countdown = 0;
-    this.stepCount = 0;
+    this.frameInStep = 0;
   }
 
-  process(input: Float32Array[], output: Float32Array[], n: number, p: ParamBlock<P>): void {
-    const inL = input[0] as Float32Array;
-    const inR = (input[1] ?? inL) as Float32Array;
-    const outL = output[0] as Float32Array;
-    const outR = (output[1] ?? outL) as Float32Array;
-    const soloLow = (p.lowSolo[0] as number) >= 0.5;
-    const soloMid = (p.midSolo[0] as number) >= 0.5;
-    const soloHigh = (p.highSolo[0] as number) >= 0.5;
-    const anySolo = soloLow || soloMid || soloHigh;
-    const bypassLow = (p.lowBypass[0] as number) >= 0.5;
-    const bypassMid = (p.midBypass[0] as number) >= 0.5;
-    const bypassHigh = (p.highBypass[0] as number) >= 0.5;
-    const cLow = this.cLow;
-    const cMid = this.cMid;
-    const cHigh = this.cHigh;
-    const c = this.coef;
-    const s = this.state;
-    let grLow = 0;
-    let grMid = 0;
-    let grHigh = 0;
-    for (let i = 0; i < n; i++) {
+  process(input: Float32Array[], output: Float32Array[], frameCount: number, params: ParamBlock<Params>): void {
+    const inLeft = input[0] as Float32Array;
+    const inRight = (input[1] ?? inLeft) as Float32Array;
+    const outLeft = output[0] as Float32Array;
+    const outRight = (output[1] ?? outLeft) as Float32Array;
+    const isLowSolo = (params.lowSolo[0] as number) >= 0.5;
+    const isMidSolo = (params.midSolo[0] as number) >= 0.5;
+    const isHighSolo = (params.highSolo[0] as number) >= 0.5;
+    const isAnySolo = isLowSolo || isMidSolo || isHighSolo;
+    const isLowBypassed = (params.lowBypass[0] as number) >= 0.5;
+    const isMidBypassed = (params.midBypass[0] as number) >= 0.5;
+    const isHighBypassed = (params.highBypass[0] as number) >= 0.5;
+    const lowCompressor = this.lowCompressor;
+    const midCompressor = this.midCompressor;
+    const highCompressor = this.highCompressor;
+    const coefficients = this.crossoverCoefficients;
+    const states = this.filterStates;
+    let lowReductionDb = 0;
+    let midReductionDb = 0;
+    let highReductionDb = 0;
+    for (let i = 0; i < frameCount; i++) {
       if (this.countdown <= 0) {
-        this.countdown = CONTROL;
-        this.crossovers(at(p.lowFreq, i), at(p.highFreq, i));
-        const out = at(p.output, i);
-        if (out !== this.outDb) {
-          this.outDb = out;
-          this.outGain = dbToGain(out);
+        this.countdown = CONTROL_FRAMES;
+        this.setCrossovers(at(params.lowFreq, i), at(params.highFreq, i));
+        const outputDb = at(params.output, i);
+        if (outputDb !== this.outputDb) {
+          this.outputDb = outputDb;
+          this.outputGain = dbToGain(outputDb);
         }
       }
       this.countdown--;
-      if (this.stepCount === 0) {
-        if (!bypassLow)
-          cLow.step(
-            at(p.lowThreshold, i),
-            at(p.lowRatio, i),
-            at(p.lowAttack, i),
-            at(p.lowRelease, i),
-            at(p.lowGain, i),
+      if (this.frameInStep === 0) {
+        if (!isLowBypassed)
+          lowCompressor.step(
+            at(params.lowThreshold, i),
+            at(params.lowRatio, i),
+            at(params.lowAttack, i),
+            at(params.lowRelease, i),
+            at(params.lowGain, i),
           );
-        if (!bypassMid)
-          cMid.step(
-            at(p.midThreshold, i),
-            at(p.midRatio, i),
-            at(p.midAttack, i),
-            at(p.midRelease, i),
-            at(p.midGain, i),
+        if (!isMidBypassed)
+          midCompressor.step(
+            at(params.midThreshold, i),
+            at(params.midRatio, i),
+            at(params.midAttack, i),
+            at(params.midRelease, i),
+            at(params.midGain, i),
           );
-        if (!bypassHigh)
-          cHigh.step(
-            at(p.highThreshold, i),
-            at(p.highRatio, i),
-            at(p.highAttack, i),
-            at(p.highRelease, i),
-            at(p.highGain, i),
+        if (!isHighBypassed)
+          highCompressor.step(
+            at(params.highThreshold, i),
+            at(params.highRatio, i),
+            at(params.highAttack, i),
+            at(params.highRelease, i),
+            at(params.highGain, i),
           );
-        if (!bypassLow && cLow.reduction > grLow) grLow = cLow.reduction;
-        if (!bypassMid && cMid.reduction > grMid) grMid = cMid.reduction;
-        if (!bypassHigh && cHigh.reduction > grHigh) grHigh = cHigh.reduction;
+        if (!isLowBypassed && lowCompressor.reductionDb > lowReductionDb) lowReductionDb = lowCompressor.reductionDb;
+        if (!isMidBypassed && midCompressor.reductionDb > midReductionDb) midReductionDb = midCompressor.reductionDb;
+        if (!isHighBypassed && highCompressor.reductionDb > highReductionDb)
+          highReductionDb = highCompressor.reductionDb;
       }
-      this.stepCount = this.stepCount + 1 < STEP ? this.stepCount + 1 : 0;
-      const g = this.outGain;
-      // Left, then right: split, compress, sum.
-      for (let ch = 0; ch < 2; ch++) {
-        const o = ch * 14;
-        const x = (ch === 0 ? inL : inR)[i] as number;
+      this.frameInStep = this.frameInStep + 1 < STEP_FRAMES ? this.frameInStep + 1 : 0;
+      const outputGain = this.outputGain;
+      // Left, then right: split, compress, sum. Each of the seven stages below is one step of a Cytomic
+      // state-variable filter (Andrew Simper, "Linear Trapezoidal Integrated SVF") at Butterworth damping:
+      // ic1 and ic2 are the stage's two states, v1 is its band-pass part and v2 its low-pass output; the
+      // high-pass is the input minus k * v1 minus v2. They are written out one after the other (and not
+      // as a function or a method per stage): measured, a call per stage costs 15 % of this effect's CPU.
+      for (let channel = 0; channel < 2; channel++) {
+        const stateOffset = channel * STATES_PER_CHANNEL;
+        const inputSample = (channel === 0 ? inLeft : inRight)[i] as number;
         // Low crossover: the first stage's low and high outputs, then one more stage each.
-        let a1 = c[0] as number;
-        let a2 = c[1] as number;
-        let a3 = c[2] as number;
-        let ic1 = s[o] as number;
-        let ic2 = s[o + 1] as number;
-        let v3 = x - ic2;
+        let a1 = coefficients[0] as number;
+        let a2 = coefficients[1] as number;
+        let a3 = coefficients[2] as number;
+        let ic1 = states[stateOffset] as number;
+        let ic2 = states[stateOffset + 1] as number;
+        let v3 = inputSample - ic2;
         let v1 = a1 * ic1 + a2 * v3;
         let v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o] = 2 * v1 - ic1;
-        s[o + 1] = 2 * v2 - ic2;
-        const low1 = v2;
-        const high1 = x - K * v1 - v2;
-        ic1 = s[o + 2] as number;
-        ic2 = s[o + 3] as number;
-        v3 = low1 - ic2;
+        states[stateOffset] = 2 * v1 - ic1;
+        states[stateOffset + 1] = 2 * v2 - ic2;
+        const firstLow = v2;
+        const firstHigh = inputSample - SVF_K * v1 - v2;
+        ic1 = states[stateOffset + 2] as number;
+        ic2 = states[stateOffset + 3] as number;
+        v3 = firstLow - ic2;
         v1 = a1 * ic1 + a2 * v3;
         v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o + 2] = 2 * v1 - ic1;
-        s[o + 3] = 2 * v2 - ic2;
-        const lowBand = v2;
-        ic1 = s[o + 4] as number;
-        ic2 = s[o + 5] as number;
-        v3 = high1 - ic2;
+        states[stateOffset + 2] = 2 * v1 - ic1;
+        states[stateOffset + 3] = 2 * v2 - ic2;
+        const lowFiltered = v2;
+        ic1 = states[stateOffset + 4] as number;
+        ic2 = states[stateOffset + 5] as number;
+        v3 = firstHigh - ic2;
         v1 = a1 * ic1 + a2 * v3;
         v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o + 4] = 2 * v1 - ic1;
-        s[o + 5] = 2 * v2 - ic2;
-        const rest = high1 - K * v1 - v2;
+        states[stateOffset + 4] = 2 * v1 - ic1;
+        states[stateOffset + 5] = 2 * v2 - ic2;
+        const rest = firstHigh - SVF_K * v1 - v2;
         // High crossover on the rest, and its allpass on the low band.
-        a1 = c[3] as number;
-        a2 = c[4] as number;
-        a3 = c[5] as number;
-        ic1 = s[o + 6] as number;
-        ic2 = s[o + 7] as number;
+        a1 = coefficients[3] as number;
+        a2 = coefficients[4] as number;
+        a3 = coefficients[5] as number;
+        ic1 = states[stateOffset + 6] as number;
+        ic2 = states[stateOffset + 7] as number;
         v3 = rest - ic2;
         v1 = a1 * ic1 + a2 * v3;
         v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o + 6] = 2 * v1 - ic1;
-        s[o + 7] = 2 * v2 - ic2;
-        const low2 = v2;
-        const high2 = rest - K * v1 - v2;
-        ic1 = s[o + 8] as number;
-        ic2 = s[o + 9] as number;
-        v3 = low2 - ic2;
+        states[stateOffset + 6] = 2 * v1 - ic1;
+        states[stateOffset + 7] = 2 * v2 - ic2;
+        const secondLow = v2;
+        const secondHigh = rest - SVF_K * v1 - v2;
+        ic1 = states[stateOffset + 8] as number;
+        ic2 = states[stateOffset + 9] as number;
+        v3 = secondLow - ic2;
         v1 = a1 * ic1 + a2 * v3;
         v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o + 8] = 2 * v1 - ic1;
-        s[o + 9] = 2 * v2 - ic2;
-        const mid = v2;
-        ic1 = s[o + 10] as number;
-        ic2 = s[o + 11] as number;
-        v3 = high2 - ic2;
+        states[stateOffset + 8] = 2 * v1 - ic1;
+        states[stateOffset + 9] = 2 * v2 - ic2;
+        const midBand = v2;
+        ic1 = states[stateOffset + 10] as number;
+        ic2 = states[stateOffset + 11] as number;
+        v3 = secondHigh - ic2;
         v1 = a1 * ic1 + a2 * v3;
         v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o + 10] = 2 * v1 - ic1;
-        s[o + 11] = 2 * v2 - ic2;
-        const high = high2 - K * v1 - v2;
-        ic1 = s[o + 12] as number;
-        ic2 = s[o + 13] as number;
-        v3 = lowBand - ic2;
+        states[stateOffset + 10] = 2 * v1 - ic1;
+        states[stateOffset + 11] = 2 * v2 - ic2;
+        const highBand = secondHigh - SVF_K * v1 - v2;
+        ic1 = states[stateOffset + 12] as number;
+        ic2 = states[stateOffset + 13] as number;
+        v3 = lowFiltered - ic2;
         v1 = a1 * ic1 + a2 * v3;
         v2 = ic2 + a2 * ic1 + a3 * v3;
-        s[o + 12] = 2 * v1 - ic1;
-        s[o + 13] = 2 * v2 - ic2;
-        const low = lowBand - 2 * K * v1;
-        if (ch === 0) {
-          this.bands[0] = low;
-          this.bands[1] = mid;
-          this.bands[2] = high;
+        states[stateOffset + 12] = 2 * v1 - ic1;
+        states[stateOffset + 13] = 2 * v2 - ic2;
+        const lowAligned = lowFiltered - 2 * SVF_K * v1;
+        if (channel === 0) {
+          this.bandSamples[0] = lowAligned;
+          this.bandSamples[1] = midBand;
+          this.bandSamples[2] = highBand;
         } else {
-          this.bands[3] = low;
-          this.bands[4] = mid;
-          this.bands[5] = high;
+          this.bandSamples[3] = lowAligned;
+          this.bandSamples[4] = midBand;
+          this.bandSamples[5] = highBand;
         }
       }
-      const b = this.bands;
-      let g0 = bypassLow ? 1 : cLow.track(peak(b[0] as number, b[3] as number));
-      let g1 = bypassMid ? 1 : cMid.track(peak(b[1] as number, b[4] as number));
-      let g2 = bypassHigh ? 1 : cHigh.track(peak(b[2] as number, b[5] as number));
-      if (anySolo) {
-        if (!soloLow) g0 = 0;
-        if (!soloMid) g1 = 0;
-        if (!soloHigh) g2 = 0;
+      const bandSamples = this.bandSamples;
+      let lowGain = isLowBypassed ? 1 : lowCompressor.track(louder(bandSamples[0] as number, bandSamples[3] as number));
+      let midGain = isMidBypassed ? 1 : midCompressor.track(louder(bandSamples[1] as number, bandSamples[4] as number));
+      let highGain = isHighBypassed
+        ? 1
+        : highCompressor.track(louder(bandSamples[2] as number, bandSamples[5] as number));
+      if (isAnySolo) {
+        if (!isLowSolo) lowGain = 0;
+        if (!isMidSolo) midGain = 0;
+        if (!isHighSolo) highGain = 0;
       }
-      outL[i] = ((b[0] as number) * g0 + (b[1] as number) * g1 + (b[2] as number) * g2) * g;
-      outR[i] = ((b[3] as number) * g0 + (b[4] as number) * g1 + (b[5] as number) * g2) * g;
+      outLeft[i] =
+        ((bandSamples[0] as number) * lowGain +
+          (bandSamples[1] as number) * midGain +
+          (bandSamples[2] as number) * highGain) *
+        outputGain;
+      outRight[i] =
+        ((bandSamples[3] as number) * lowGain +
+          (bandSamples[4] as number) * midGain +
+          (bandSamples[5] as number) * highGain) *
+        outputGain;
     }
     // Silence must not leave denormals in the filters.
-    for (let k = 0; k < s.length; k++) if (!(Math.abs(s[k] as number) > 1e-20)) s[k] = 0;
-    const v = this.meter.values;
-    v.lowGr = grLow;
-    v.midGr = grMid;
-    v.highGr = grHigh;
-    this.meter.tick(n);
+    for (let k = 0; k < states.length; k++) if (!(Math.abs(states[k] as number) > 1e-20)) states[k] = 0;
+    const readings = this.meter.values;
+    readings.lowGr = lowReductionDb;
+    readings.midGr = midReductionDb;
+    readings.highGr = highReductionDb;
+    this.meter.tick(frameCount);
   }
 
   /** This frame's bands: low, mid, high (left), then the same for the right. */
-  private readonly bands = new Float64Array(6);
+  private readonly bandSamples = new Float64Array(6);
 
   /** Crossover coefficients, recomputed when the frequencies move. */
-  private crossovers(lowHz: number, highHz: number): void {
+  private setCrossovers(lowHz: number, highHz: number): void {
     // The high crossover stays at least an octave above the low one.
-    const hi = Math.max(highHz, 2 * lowHz);
-    if (lowHz === this.lowHz && hi === this.highHz) return;
+    const clampedHighHz = Math.max(highHz, 2 * lowHz);
+    if (lowHz === this.lowHz && clampedHighHz === this.highHz) return;
     this.lowHz = lowHz;
-    this.highHz = hi;
-    design(this.coef, 0, lowHz, this.sampleRate);
-    design(this.coef, 3, hi, this.sampleRate);
+    this.highHz = clampedHighHz;
+    designCrossover(this.crossoverCoefficients, 0, lowHz, this.sampleRate);
+    designCrossover(this.crossoverCoefficients, 3, clampedHighHz, this.sampleRate);
   }
 }
 
 /** Cytomic SVF coefficients (a1, a2, a3) at Butterworth Q for `freq`, into `out` at `o`. */
-function design(out: Float64Array, o: number, freq: number, sampleRate: number): void {
-  const g = Math.tan((Math.PI * Math.min(Math.max(freq, 1), sampleRate * 0.49)) / sampleRate);
-  const a1 = 1 / (1 + g * (g + K));
-  out[o] = a1;
-  out[o + 1] = g * a1;
-  out[o + 2] = g * g * a1;
+function designCrossover(out: Float64Array, offset: number, frequencyHz: number, sampleRate: number): void {
+  const warp = Math.tan((Math.PI * Math.min(Math.max(frequencyHz, 1), sampleRate * 0.49)) / sampleRate);
+  const a1 = 1 / (1 + warp * (warp + SVF_K));
+  out[offset] = a1;
+  out[offset + 1] = warp * a1;
+  out[offset + 2] = warp * warp * a1;
 }
 
-function peak(a: number, b: number): number {
+function louder(a: number, b: number): number {
   const x = a < 0 ? -a : a;
   const y = b < 0 ? -b : b;
   return x > y ? x : y;

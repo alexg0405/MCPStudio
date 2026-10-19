@@ -8,6 +8,10 @@ import { chordPitchClasses, mod12, qualityOf, type ChordSymbol } from './chord';
 /** How the notes of one chord sit: stacked tightly, every second note an octave up, or the second from the top dropped. */
 export type Spread = 'close' | 'open' | 'drop2';
 
+/**
+ * How to lay out chords as a hand on a keyboard: where its middle sits, how the notes are spread, the first inversion
+ * and an optional low bass note.
+ */
 export interface VoicingOptions {
   /** The middle of the hand: MIDI key (default 60). */
   center?: number;
@@ -202,8 +206,10 @@ export function naiveVoicing(c: ChordSymbol, center = 60): number[] {
 
 /** How a held chord is played: held for its whole length, struck on every beat, on the off-beat eighths, or every eighth. */
 export type CompRhythm = 'hold' | 'beats' | 'offbeats' | 'eighths';
+/** Every `CompRhythm`, for lists and for checking loose input. */
 export const COMP_RHYTHMS: readonly CompRhythm[] = ['hold', 'beats', 'offbeats', 'eighths'];
 
+/** One note of a chord part: where it starts and how long it lasts (ticks), its MIDI key and velocity (0..1). */
 export interface CompNote {
   tick: number;
   length: number;

@@ -20,6 +20,10 @@ export interface QualityDef {
   readonly noDetect?: boolean;
 }
 
+/**
+ * Every chord quality the app knows (major, minor, sevenths, suspended, extended and so on), with its notes as
+ * semitones above the root and the spellings that are accepted when typing.
+ */
 export const QUALITIES: readonly QualityDef[] = [
   { id: 'maj', suffix: '', label: 'Major', intervals: [0, 4, 7], aliases: ['M', 'maj', 'major'] },
   { id: 'min', suffix: 'm', label: 'Minor', intervals: [0, 3, 7], aliases: ['min', 'mi', '-', 'minor'] },
@@ -62,10 +66,12 @@ export const QUALITIES: readonly QualityDef[] = [
   { id: 'm9', suffix: 'm9', label: 'Minor 9th', intervals: [0, 3, 7, 10, 14], aliases: ['min9', '-9'] },
 ];
 
+/** The stable id of a chord quality (an `id` from `QUALITIES`), as stored in projects. */
 export type QualityId = string;
 
 const BY_ID = new Map(QUALITIES.map((quality) => [quality.id, quality]));
 
+/** True when `id` is the id of a known chord quality; used to check loose input (files, the AI). */
 export const isQualityId = (id: unknown): id is QualityId => typeof id === 'string' && BY_ID.has(id);
 
 /** The quality with this id (unknown ids read as major). */
@@ -78,6 +84,7 @@ export interface ChordSymbol {
   bass?: number;
 }
 
+/** A number folded onto a pitch class 0 to 11 (rounded first, so it works for negative and fractional keys). */
 export const mod12 = (n: number): number => ((Math.round(n) % 12) + 12) % 12;
 
 const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'] as const;

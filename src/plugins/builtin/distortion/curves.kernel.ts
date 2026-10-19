@@ -15,12 +15,15 @@ export const POINTS = 65537;
 /** Level the drive compensation keeps roughly constant (≈ -12 dBFS). */
 const REFERENCE = 0.25;
 
+/** The transfer function of a curve at signal level `s`: soft is tanh, hard clips at ±1, fold is a sine. */
 export function shape(kind: CurveKind, s: number): number {
   switch (kind) {
     case 'soft':
       return Math.tanh(s);
     case 'hard':
-      return s > 1 ? 1 : s < -1 ? -1 : s;
+      if (s > 1) return 1;
+      if (s < -1) return -1;
+      return s;
     case 'fold':
       // Sine wavefolder: rises to 1 at s = 1, then folds back down (and over) as s grows.
       return Math.sin((Math.PI / 2) * s);

@@ -1,55 +1,11 @@
-import { defineEffect, p } from '@agstudio/sdk';
+import { defineEffect } from '@agstudio/sdk';
+import { createTiming, buildNetwork } from './network';
+import { delayParams } from './params';
 
-const TIMES = ['1/4', '1/8', '1/8d', '1/16', '1/4t', '1/8t'] as const;
-type Time = (typeof TIMES)[number];
-
-/** Length of each note value in beats (quarter notes). */
-const BEATS: Record<Time, number> = { '1/4': 1, '1/8': 0.5, '1/8d': 0.75, '1/16': 0.25, '1/4t': 2 / 3, '1/8t': 1 / 3 };
-
-/** A quarter note at 10 BPM, the slowest tempo. */
-const MAX_DELAY = 6;
-/** Web Audio renders in blocks of this many frames unless the context says otherwise. */
-const DEFAULT_QUANTUM = 128;
-/** Q (in dB, as Web Audio's low/high-pass filters take it) of a peak-free Butterworth response. */
-const BUTTERWORTH_Q_DB = -3.0103;
-
-const params = {
-  time: p.enum(TIMES, '1/8', {
-    label: 'Time',
-    group: 'Delay',
-    labels: {
-      '1/4': '1/4',
-      '1/8': '1/8',
-      '1/8d': '1/8 dotted',
-      '1/16': '1/16',
-      '1/4t': '1/4 triplet',
-      '1/8t': '1/8 triplet',
-    },
-    hint: 'Echo time, synced to the project tempo',
-  }),
-  feedback: p.float(0, 0.95, 0.4, {
-    label: 'Feedback',
-    unit: '%',
-    group: 'Delay',
-    hint: 'How much of each echo feeds the next one',
-  }),
-  pingPong: p.bool(false, { label: 'Ping-pong', group: 'Delay', hint: 'Echoes bounce between left and right' }),
-  mix: p.float(0, 1, 0.3, { label: 'Mix', unit: '%', group: 'Delay' }),
-  lowCut: p.float(20, 2000, 80, {
-    label: 'Low cut',
-    unit: 'Hz',
-    scale: 'log',
-    group: 'Echo tone',
-    hint: 'Removes lows from the echoes (each repeat gets thinner)',
-  }),
-  highCut: p.float(1000, 20000, 9000, {
-    label: 'High cut',
-    unit: 'Hz',
-    scale: 'log',
-    group: 'Echo tone',
-    hint: 'Removes highs from the echoes (each repeat gets darker)',
-  }),
-};
+/** The longest the echoes are reported to ring, seconds (a feedback near 95 % at a slow tempo would be much longer). */
+const MAX_TAIL_SEC = 30;
+/** An echo is inaudible once it falls below this gain (−60 dB). */
+const AUDIBLE_FLOOR = 0.001;
 
 /**
  * Tempo-synced stereo delay with optional ping-pong and low/high cut filters inside the feedback
@@ -68,7 +24,7 @@ export default defineEffect({
   version: 1,
   category: 'Delay',
   description: 'Tempo-synced echo with feedback, ping-pong and tone filters.',
-  params,
+  params: delayParams,
   presets: [
     { name: 'Eighth echo', params: { time: '1/8', feedback: 0.35, mix: 0.3 } },
     { name: 'Dotted ping-pong', params: { time: '1/8d', feedback: 0.45, pingPong: true, mix: 0.3 } },
@@ -78,93 +34,27 @@ export default defineEffect({
   ],
 
   create(host) {
-    const ac = host.audioContext;
-    const P = host.params;
-    const nodes: AudioNode[] = [];
-    const node = <N extends AudioNode>(n: N): N => {
-      nodes.push(n);
-      return n;
-    };
-    const seconds = (bpm = host.transport.bpm) => Math.min(MAX_DELAY, (BEATS[P.time.value] * 60) / Math.max(1, bpm));
-    const quantumSize = (ac as BaseAudioContext & { renderQuantumSize?: number }).renderQuantumSize;
-    const quantum =
-      (typeof quantumSize === 'number' && quantumSize > 0 ? quantumSize : DEFAULT_QUANTUM) / ac.sampleRate;
-    /** A delay time shortened by the quantum its cycle adds. */
-    const inLoop = (bpm?: number) => Math.max(quantum, seconds(bpm) - quantum);
+    const timing = createTiming(host);
+    const network = buildNetwork(host, timing);
+    const params = host.params;
 
-    const input = node(new GainNode(ac));
-    const output = node(new GainNode(ac));
-    const dry = node(new GainNode(ac));
-    const wet = node(new GainNode(ac));
-    // Equal-power dry/wet.
-    P.mix.bind(dry.gain, (m) => Math.cos((m * Math.PI) / 2));
-    P.mix.bind(wet.gain, (m) => Math.sin((m * Math.PI) / 2));
-    input.connect(dry).connect(output);
-    wet.connect(output);
-
-    /** delay → low cut → high cut → (echo out, and × feedback into the next delay). */
-    const line = (time: number) => {
-      const delay = node(new DelayNode(ac, { maxDelayTime: MAX_DELAY, delayTime: time }));
-      const lowCut = node(new BiquadFilterNode(ac, { type: 'highpass', Q: BUTTERWORTH_Q_DB }));
-      const highCut = node(new BiquadFilterNode(ac, { type: 'lowpass', Q: BUTTERWORTH_Q_DB }));
-      const feedback = node(new GainNode(ac));
-      delay.connect(lowCut).connect(highCut).connect(feedback);
-      P.lowCut.bind(lowCut.frequency);
-      P.highCut.bind(highCut.frequency);
-      P.feedback.bind(feedback.gain);
-      return { delay, out: highCut, feedback };
-    };
-
-    // Straight (stereo) echoes.
-    const straightIn = node(new GainNode(ac));
-    const align = node(new DelayNode(ac, { maxDelayTime: 0.1, delayTime: quantum }));
-    const straight = line(inLoop());
-    input.connect(straightIn).connect(align).connect(straight.delay);
-    straight.feedback.connect(straight.delay);
-    straight.out.connect(wet);
-
-    // Ping-pong: the mono sum starts on the left and every repeat crosses over.
-    const pingIn = node(
-      new GainNode(ac, { channelCount: 1, channelCountMode: 'explicit', channelInterpretation: 'speakers' }),
-    );
-    const left = line(seconds());
-    const right = line(inLoop());
-    const merge = node(new ChannelMergerNode(ac, { numberOfInputs: 2 }));
-    input.connect(pingIn).connect(left.delay);
-    left.feedback.connect(right.delay);
-    right.feedback.connect(left.delay);
-    left.out.connect(merge, 0, 0);
-    right.out.connect(merge, 0, 1);
-    merge.connect(wet);
-
-    const pingPong = P.pingPong.value;
-    straightIn.gain.value = pingPong ? 0 : 1;
-    pingIn.gain.value = pingPong ? 1 : 0;
-    P.pingPong.onChange((on, time) => {
-      straightIn.gain.setTargetAtTime(on ? 0 : 1, time, 0.01);
-      pingIn.gain.setTargetAtTime(on ? 1 : 0, time, 0.01);
-    });
-
-    const retime = (time: number, bpm?: number) => {
-      straight.delay.delayTime.setTargetAtTime(inLoop(bpm), time, 0.02);
-      left.delay.delayTime.setTargetAtTime(seconds(bpm), time, 0.02);
-      right.delay.delayTime.setTargetAtTime(inLoop(bpm), time, 0.02);
-    };
-    P.time.onChange((_, time) => retime(time, host.transport.tempoAt(time)));
+    params.time.onChange((_, time) => network.retime(time, host.transport.tempoAt(time)));
     // Tempo automation: follow the tempo from the time it changes (scheduled ahead, like notes).
-    const offTempo = host.transport.onTempo((bpm, time) => retime(Math.max(time, ac.currentTime), bpm));
+    const offTempo = host.transport.onTempo((bpm, time) =>
+      network.retime(Math.max(time, host.audioContext.currentTime), bpm),
+    );
 
     return {
-      input,
-      output,
+      input: network.input,
+      output: network.output,
       get tailTime() {
-        const fb = P.feedback.value;
-        const repeats = fb > 0.001 ? Math.log(0.001) / Math.log(fb) : 0;
-        return Math.min(30, (repeats + 1) * seconds());
+        const feedback = params.feedback.value;
+        const repeats = feedback > AUDIBLE_FLOOR ? Math.log(AUDIBLE_FLOOR) / Math.log(feedback) : 0;
+        return Math.min(MAX_TAIL_SEC, (repeats + 1) * timing.seconds());
       },
       dispose() {
         offTempo();
-        for (const n of nodes) n.disconnect();
+        network.dispose();
       },
     };
   },

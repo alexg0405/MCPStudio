@@ -53,6 +53,7 @@ export interface Phrase {
   readonly ids: readonly number[];
 }
 
+/** Whether two actions are the same event (type, time, note and, for notes, key and velocity). */
 export function sameAction(a: LegatoAction, b: LegatoAction): boolean {
   if (a.type !== b.type || a.time !== b.time || a.id !== b.id) return false;
   if (a.type === 'release' || b.type === 'release') return true;
@@ -74,6 +75,58 @@ export function firstDifference(a: readonly LegatoAction[], b: readonly LegatoAc
   return Infinity;
 }
 
+/**
+ * Builds the phrases of a time-ordered list of notes, one note at a time (see `LegatoTracker.phrases`): a note that
+ * starts together with the current one is hidden behind it, one that starts while the current note is still held
+ * glides, and any other starts a new phrase with an attack.
+ */
+class PhraseBuilder {
+  private readonly phrases: Phrase[] = [];
+  private actions: LegatoAction[] = [];
+  private ids: number[] = [];
+  private current: TrackedNote | null = null;
+
+  add(note: TrackedNote): void {
+    const current = this.current;
+    if (current && note.start - current.start <= OVERLAP_EPS) {
+      // Starts together with the current note: hidden behind it.
+      this.ids.push(note.id);
+      return;
+    }
+    const action = { time: note.start, id: note.id, key: note.key, velocity: note.velocity };
+    if (current && current.end - note.start > OVERLAP_EPS) {
+      this.actions.push({ type: 'glide', ...action });
+    } else {
+      this.closePhrase(note.start);
+      this.actions.push({ type: 'attack', ...action });
+    }
+    this.ids.push(note.id);
+    this.current = note;
+  }
+
+  /** Closes the last phrase and returns them all. */
+  finish(): Phrase[] {
+    this.closePhrase(Infinity);
+    return this.phrases;
+  }
+
+  /**
+   * Ends the open phrase. `nextAttack` is the time of the following attack: a release that touches it within
+   * OVERLAP_EPS is moved onto it so the flattened action list stays time-ordered.
+   */
+  private closePhrase(nextAttack: number): void {
+    const current = this.current;
+    if (!current) return;
+    if (current.end < Infinity) {
+      this.actions.push({ type: 'release', time: Math.min(current.end, nextAttack), id: current.id });
+    }
+    this.phrases.push({ actions: this.actions, ids: this.ids });
+    this.actions = [];
+    this.ids = [];
+  }
+}
+
+/** The tracked notes of the 808, and the mono performance derived from them (see the rules at the top of this file). */
 export class LegatoTracker {
   private notes: TrackedNote[] = [];
   private anon = 0;
@@ -154,36 +207,9 @@ export class LegatoTracker {
   /** The mono performance of every tracked note, phrase by phrase, in time order. */
   phrases(): Phrase[] {
     const sorted = [...this.notes].sort((a, b) => a.start - b.start || a.key - b.key || a.id - b.id);
-    const out: Phrase[] = [];
-    let actions: LegatoAction[] = [];
-    let ids: number[] = [];
-    let cur: TrackedNote | null = null;
-    // Ends the open phrase. `next` is the following attack: a release that touches it within
-    // OVERLAP_EPS is moved onto it so the flattened action list stays time-ordered.
-    const close = (next: number) => {
-      if (!cur) return;
-      if (cur.end < Infinity) actions.push({ type: 'release', time: Math.min(cur.end, next), id: cur.id });
-      out.push({ actions, ids });
-      actions = [];
-      ids = [];
-    };
-    for (const n of sorted) {
-      if (cur && n.start - cur.start <= OVERLAP_EPS) {
-        // Starts together with the current note: hidden behind it.
-        ids.push(n.id);
-        continue;
-      }
-      const note = { time: n.start, id: n.id, key: n.key, velocity: n.velocity };
-      if (cur && cur.end - n.start > OVERLAP_EPS) actions.push({ type: 'glide', ...note });
-      else {
-        close(n.start);
-        actions.push({ type: 'attack', ...note });
-      }
-      ids.push(n.id);
-      cur = n;
-    }
-    close(Infinity);
-    return out;
+    const builder = new PhraseBuilder();
+    for (const note of sorted) builder.add(note);
+    return builder.finish();
   }
 
   private find(id: number): TrackedNote | undefined {

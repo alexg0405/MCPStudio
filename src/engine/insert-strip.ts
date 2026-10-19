@@ -2,12 +2,14 @@
  * A mixer insert (the master uses the same strip). The insert's persistent nodes (its taps, see
  * engine/mixer-graph.ts) belong to the mixer graph; a strip wires its own nodes between them:
  *
- *   routeIn → slot 1 … slot N → scTap → gate (mute/solo) → preTap → StereoPanner → fader → postTap
+ *   routeIn → slot 1 … slot N → scTap → gate (mute/solo) → preTap → StereoPanner → fader → [vca] → postTap
  *                                                                        (meters: ChannelSplitter → 2× AnalyserNode, only while read)
  *
- * Each effect slot is an `FxSlotStrip` (engine/fx-slot-strip.ts). Reordering slots only rewires the chain.
+ * Each effect slot is an `FxSlotStrip` (engine/fx-slot-strip.ts). Reordering slots only rewires the chain. The `[vca]` gain
+ * exists only while the strip's mixer group has a VCA (engine/vca-stage.ts).
  */
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
+import type { GroupId } from '@core/model/types';
 import { INSERT_PAN_SPEC, INSERT_VOLUME_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
 import type { FxSlot, Insert, InsertId, Project, SlotId } from '@core/model/types';
@@ -17,9 +19,14 @@ import { FxSlotStrip } from './fx-slot-strip';
 import { InsertMeters } from './insert-meters';
 import type { MeterScratch } from './meter-peak';
 import { AutoLane } from './param-lane';
+import { VcaStage } from './vca-stage';
 
 /** Time constant for fader/pan/mute moves (matches channel strips). */
 const STRIP_GLIDE_TAU_SEC = 0.004;
+
+/** A glide of `glideSec` seconds as a time constant: the value is within 2% of its target after four of them. */
+const GLIDE_TIME_CONSTANTS = 4;
+const glideTau = (glideSec: number): number => (glideSec > 0 ? glideSec / GLIDE_TIME_CONSTANTS : STRIP_GLIDE_TAU_SEC);
 
 /** The persistent nodes of an insert that its strip connects between (owned by the mixer graph). */
 export interface InsertTaps {
@@ -39,6 +46,7 @@ export class InsertStrip {
   private readonly panner: StereoPannerNode;
   private readonly fader: GainNode;
   private readonly meters: InsertMeters;
+  private readonly vca: VcaStage;
   private readonly slots = new Map<SlotId, FxSlotStrip>();
   /** The slot ids in chain order, as last wired. */
   private chain: readonly SlotId[] = [];
@@ -80,6 +88,7 @@ export class InsertStrip {
     taps.preTap.connect(this.panner);
     this.panner.connect(this.fader);
     this.fader.connect(taps.postTap);
+    this.vca = new VcaStage(core, this.fader, taps.postTap);
     this.wire([]);
     if (project) this.syncSlots(insert.fx, project);
   }
@@ -119,15 +128,18 @@ export class InsertStrip {
     }
     this.volumeLane.shift = at / sampleRate;
     this.panLane.shift = at / sampleRate;
+    this.vca.setShift(at / sampleRate);
   }
 
-  update(next: Insert, project: Project): void {
+  /** `glideSec` > 0 (a snapshot recall): the fader and pan glide over that long instead of the usual few milliseconds. */
+  update(next: Insert, project: Project, glideSec = 0): void {
     const prev = this.insert;
     if (prev === next) return;
     this.insert = next;
     const now = this.core.ctx.currentTime;
-    if (prev.volume !== next.volume) this.volumeLane.setBase(clampOrFallback(next.volume, 0, MAX_INSERT_VOLUME), now);
-    if (prev.pan !== next.pan) this.panLane.setBase(clampOrFallback(next.pan, -1, 1, 0), now);
+    const tau = glideTau(glideSec);
+    if (prev.volume !== next.volume) this.volumeLane.setBase(clampOrFallback(next.volume, 0, MAX_INSERT_VOLUME), now, tau);
+    if (prev.pan !== next.pan) this.panLane.setBase(clampOrFallback(next.pan, -1, 1, 0), now, tau);
     if (prev.fx !== next.fx) this.syncSlots(next.fx, project);
   }
 
@@ -146,10 +158,15 @@ export class InsertStrip {
   }
 
   /** The mute/solo gate (after the effects, so pre-fader sends are muted too; the sidechain tap isn't). */
-  setMuted(muted: boolean): void {
+  setMuted(muted: boolean, glideSec = 0): void {
     if (muted === this.muted) return;
     this.muted = muted;
-    glide(this.gate.gain, muted ? 0 : 1, this.core.ctx, STRIP_GLIDE_TAU_SEC);
+    glide(this.gate.gain, muted ? 0 : 1, this.core.ctx, glideTau(glideSec));
+  }
+
+  /** The strip's group has a VCA at `level` (linear gain), or none (`groupId` null): see engine/vca-stage.ts. */
+  setVca(groupId: GroupId | null, level: number, glideSec = 0): void {
+    this.vca.set(groupId, level, glideTau(glideSec));
   }
 
   /**
@@ -172,6 +189,7 @@ export class InsertStrip {
     for (const unregister of this.unregisterLanes) unregister();
     this.volumeLane.dispose();
     this.panLane.dispose();
+    this.vca.dispose();
     // Only the strip's own connections: the taps' sends belong to the mixer graph.
     this.taps.routeIn.disconnect();
     disconnectFrom(this.taps.scTap, this.gate);

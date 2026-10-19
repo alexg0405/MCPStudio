@@ -1,11 +1,53 @@
+import type { ParamValue } from '@agstudio/sdk/params';
 import type { PluginInstance } from './channels';
-import type { InsertId, SlotId } from './ids';
+import type { GroupId, InsertId, SlotId, SnapshotId } from './ids';
 
 /** The mixer: inserts (tracks) in order, the master first. */
 export interface Mixer {
   inserts: Record<InsertId, Insert>;
   /** order[0] is always MASTER; an insert's number is its index. */
   order: InsertId[];
+  /**
+   * Groups of tracks (linked controls and an optional VCA fader), in the order they were made. A track is in
+   * at most one group and the master in none. Absent until the first group is made. Added in v3 (optional).
+   */
+  groups?: MixGroup[];
+}
+
+/** Which controls of a group's members move together. */
+export interface GroupLinks {
+  /** Moving one member's fader moves the others'. */
+  volume: boolean;
+  /** Moving one member's pan moves the others'. */
+  pan: boolean;
+  /** Muting one member mutes them all. */
+  mute: boolean;
+  /** Soloing one member solos them all. */
+  solo: boolean;
+}
+
+/** How linked faders and pans follow the one that is moved. */
+export type GroupMode = 'relative' | 'absolute';
+
+/**
+ * A mixer group: tracks that move together, and optionally a VCA fader. A VCA scales the members' levels in
+ * decibels without moving their faders (see `docs/architecture.md`, "Mixer snapshots and groups").
+ */
+export interface MixGroup {
+  id: GroupId;
+  name: string;
+  /** The colour of the band over the members' strips (a hex string). */
+  color: string;
+  /** The tracks in the group, in the order they were added. */
+  members: InsertId[];
+  links: GroupLinks;
+  /**
+   * relative: the others keep their distance from the moved one (a gain ratio, a pan offset);
+   * absolute: they all take the moved one's value.
+   */
+  mode: GroupMode;
+  /** The VCA fader: a linear gain (1 = 0 dB) every member's level is multiplied by. Absent = the group has no VCA. */
+  vca?: number;
 }
 
 /** One mixer track: fader, pan, effects and where its output goes. */
@@ -18,6 +60,11 @@ export interface Insert {
   pan: number;
   muted: boolean;
   solo: boolean;
+  /**
+   * Solo-safe: a solo elsewhere does not silence this track (a reverb return, a bus, a click). Absent = false.
+   * Added in v3 (optional).
+   */
+  soloSafe?: boolean;
   /** Ordered effect slots, no gaps. */
   fx: FxSlot[];
   /**
@@ -45,4 +92,53 @@ export interface FxSlot {
   mix: number;
   /** Insert whose output feeds this effect's sidechain input (effects that declare one); null = none. */
   sidechain: InsertId | null;
+}
+
+/**
+ * A saved state of the mixer: the values of faders, pans, mutes, solos, sends and effect settings, nothing else
+ * (no notes, no arrangement, no plugin state), so it stays small. Recalling it writes those values back.
+ */
+export interface MixSnapshot {
+  id: SnapshotId;
+  name: string;
+  /** When it was saved or last updated, in milliseconds since 1970. */
+  savedAt: number;
+  /** The state of every track (the master too) at the time. */
+  inserts: Record<InsertId, SnapshotInsert>;
+  /** The VCA levels (linear gain) of the groups that had one. Absent when none did. */
+  vca?: Record<GroupId, number>;
+  /** Where each track sent its audio and its effects' sidechains. Present only when it was saved with routing. */
+  routing?: Record<InsertId, SnapshotRouting>;
+}
+
+/** One track in a snapshot. */
+export interface SnapshotInsert {
+  /** The track's name then, so a list of differences can still name a track that has been deleted since. */
+  name: string;
+  /** Linear gain. */
+  volume: number;
+  pan: number;
+  muted: boolean;
+  solo: boolean;
+  /** Send levels (linear gain) by the track they go to. */
+  sends: Record<InsertId, number>;
+  /** The effects by slot id. */
+  fx: Record<SlotId, SnapshotSlot>;
+}
+
+/** One effect slot in a snapshot: bypass, dry/wet and the values of its parameters. */
+export interface SnapshotSlot {
+  /** The effect it held; its parameters are only recalled while the slot still holds the same one. */
+  plugin: string;
+  enabled: boolean;
+  mix: number;
+  params: Record<string, ParamValue>;
+}
+
+/** One track's routing in a snapshot (the send levels are in `SnapshotInsert.sends`). */
+export interface SnapshotRouting {
+  /** The tracks it sends to, in order, and whether each send is taken before the fader. */
+  routes: { to: InsertId; pre: boolean }[];
+  /** The source of each effect slot's sidechain (null = the effect's own input). */
+  sidechains: Record<SlotId, InsertId | null>;
 }

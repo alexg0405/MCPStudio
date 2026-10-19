@@ -33,6 +33,10 @@ export function targetName(p: Project, t: ParamTarget, plugins: PluginInfoResolv
       if (!ins?.routes.some((r) => r.to === t.to)) return null;
       return `Send · ${insertLabel(p, t.insertId)} → ${insertLabel(p, t.to)}`;
     }
+    case 'vca': {
+      const group = p.mixer.groups?.find((g) => g.id === t.groupId);
+      return group?.vca === undefined ? null : `VCA · ${group.name}`;
+    }
     case 'plugin': {
       if (t.owner.kind === 'channel') {
         const ch = p.channels[t.owner.channelId];
@@ -66,6 +70,7 @@ export function formatAutomationValue(res: ResolvedTarget, target: ParamTarget, 
     case 'tempo':
       return `${trim(v, 1)} BPM`;
     case 'route':
+    case 'vca':
       return formatGain(v);
     case 'channel':
     case 'insert':

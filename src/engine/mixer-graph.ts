@@ -30,6 +30,7 @@
 import type { OrderedMix } from '@agstudio/sdk';
 import { makeInsert } from '@core/model/defaults';
 import { MASTER, type InsertId, type Mixer, type Project, type Route } from '@core/model/types';
+import { vcaOfInserts } from '@core/query/mix-groups';
 import { effectivelyMutedInserts } from '@core/query/mixer';
 import { playableEdges, type RoutingEdge } from '@core/query/routing';
 import type { EngineCore } from './engine-core';
@@ -119,14 +120,15 @@ export class MixerGraph {
   /**
    * Keyed add/update of inserts (and their effect slots), mutes, routes and sidechains. Strips of
    * removed inserts are returned for removeStrips() once channels are reconciled; their inputs already
-   * fall back to the master.
+   * fall back to the master. `glideSec` > 0 (a snapshot recall) makes faders, pans, mutes and send levels glide
+   * over that long instead of the usual few milliseconds.
    */
-  reconcile(prev: Project | null, next: Project): InsertStrip[] {
+  reconcile(prev: Project | null, next: Project, glideSec = 0): InsertStrip[] {
     let removed: InsertStrip[] = [];
     if (!prev || prev.mixer !== next.mixer) {
       this.batch(() => {
-        removed = this.syncStrips(next);
-        this.rewire(next.mixer);
+        removed = this.syncStrips(next, glideSec);
+        this.rewire(next.mixer, glideSec);
         this.dirty = true;
       });
     }
@@ -134,15 +136,21 @@ export class MixerGraph {
     return removed;
   }
 
-  /** Creates and updates the strips of the document's inserts, sets their mutes; returns the strips of removed inserts. */
-  private syncStrips(next: Project): InsertStrip[] {
+  /** Creates and updates the strips of the document's inserts, sets their mutes and VCAs; returns the strips of removed inserts. */
+  private syncStrips(next: Project, glideSec: number): InsertStrip[] {
     const inserts = next.mixer.inserts;
+    const vcas = vcaOfInserts(next.mixer);
     for (const id of Object.keys(inserts) as InsertId[]) {
       const insert = inserts[id];
       if (!insert) continue;
-      const strip = this.strips.get(id);
-      if (strip) strip.update(insert, next);
-      else this.strips.set(id, new InsertStrip(this.core, insert, next, this.bus(id), () => this.latencyChanged()));
+      let strip = this.strips.get(id);
+      if (strip) strip.update(insert, next, glideSec);
+      else {
+        strip = new InsertStrip(this.core, insert, next, this.bus(id), () => this.latencyChanged());
+        this.strips.set(id, strip);
+      }
+      const vca = vcas.get(id);
+      strip.setVca(vca?.groupId ?? null, vca?.level ?? 1, glideSec);
     }
     if (!inserts[MASTER]) this.master.update(DEFAULT_MASTER, next);
     const removed: InsertStrip[] = [];
@@ -152,7 +160,7 @@ export class MixerGraph {
       removed.push(strip);
     }
     const muted = effectivelyMutedInserts(inserts);
-    for (const [id, strip] of this.strips) strip.setMuted(muted.has(id));
+    for (const [id, strip] of this.strips) strip.setMuted(muted.has(id), glideSec);
     return removed;
   }
 
@@ -250,7 +258,7 @@ export class MixerGraph {
   }
 
   /** Brings routes and sidechain sources in line with the document: removals first, then additions. */
-  private rewire(mixer: Mixer): void {
+  private rewire(mixer: Mixer, glideSec: number): void {
     const edges = playableEdges(mixer);
     const wantedRoutes = new Map<string, { from: InsertId; to: InsertId; route: Route }>();
     const sidechainSources = new Map<string, InsertId>();
@@ -279,7 +287,7 @@ export class MixerGraph {
     //    targets (padded), and the new sidechain sources, once everything stale is gone.
     for (const [key, wanted] of wantedRoutes) {
       const link = this.routes.get(key);
-      if (link) link.update(wanted.route);
+      if (link) link.update(wanted.route, glideSec);
       else this.routes.set(key, new RouteLink(this.core.ctx, this.core, wanted.from, wanted.to, wanted.route, this.bus(wanted.from)));
     }
     this.edges = edges;

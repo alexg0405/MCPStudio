@@ -12,6 +12,7 @@ import {
 } from '../model/types';
 import { targetUsesInsert, targetUsesSlot } from '../model/targets';
 import { dropControllers, retargetChannels } from './channels';
+import { dropFromGroups } from './groups';
 import { dropRoutesTo } from './routing';
 
 // Pure draft mutators for the mixer. Call them inside history.transact()/gesture() recipes.
@@ -62,6 +63,14 @@ export function setInsertProp<K extends InsertProp>(
   }
 }
 
+/** Marks a track solo-safe (a solo elsewhere does not silence it) or not. */
+export function setSoloSafe(d: Draft<Project>, insertId: InsertId, isSafe: boolean): void {
+  const insert = d.mixer.inserts[insertId];
+  if (!insert) return;
+  if (isSafe) insert.soloSafe = true;
+  else delete insert.soloSafe;
+}
+
 /**
  * FL-style exclusive solo among the non-master inserts: soloing an insert silences every other
  * insert (the master keeps playing, so channels routed straight to it stay audible); soloing the
@@ -99,6 +108,7 @@ export function removeInsert(d: Draft<Project>, id: InsertId): void {
   if (i >= 0) d.mixer.order.splice(i, 1);
   retargetChannels(d, id);
   dropRoutesTo(d, id);
+  dropFromGroups(d, id);
   dropControllers(d, (t) => targetUsesInsert(t, id));
 }
 

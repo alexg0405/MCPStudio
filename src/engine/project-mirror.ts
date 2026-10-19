@@ -50,7 +50,7 @@ export class ProjectMirror {
   /** Applies a document change: a load starts from nothing, any other change is applied on top of what is there. */
   applyDocChange(change: DocChange): void {
     const prev = change.origin === 'load' ? null : this.project;
-    this.apply(prev, change.next);
+    this.apply(prev, change.next, change.origin === 'load' ? 0 : (change.glideSec ?? 0));
   }
 
   /**
@@ -77,12 +77,12 @@ export class ProjectMirror {
     return moved;
   }
 
-  private apply(prev: Project | null, next: Project): void {
+  private apply(prev: Project | null, next: Project, glideSec = 0): void {
     if (prev === next) return;
     this.applying++;
     this.shiftsMoved = false;
     try {
-      this.applyChange(prev, next);
+      this.applyChange(prev, next, glideSec);
     } finally {
       this.applying--;
     }
@@ -95,13 +95,13 @@ export class ProjectMirror {
     this.shiftsMoved = false;
   }
 
-  private applyChange(prev: Project | null, next: Project): void {
+  private applyChange(prev: Project | null, next: Project, glideSec: number): void {
     const { mixer, noteFeed, residency, automation } = this.host;
     this.project = next;
     if (!prev || prev.transport.bpm !== next.transport.bpm) this.host.tempo.setBpm(next.transport.bpm);
 
     // Inserts first (channels connect to them), removals last.
-    const removedInserts = mixer.reconcile(prev, next);
+    const removedInserts = mixer.reconcile(prev, next, glideSec);
     const muted = effectivelyMuted(next.channels);
     if (syncChannelStrips(this.host.core, this.host.strips, prev, next, muted)) this.shiftsMoved = true;
     // Anything still routed to a removed insert falls back to the master.

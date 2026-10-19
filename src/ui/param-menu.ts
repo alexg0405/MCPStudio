@@ -13,6 +13,7 @@ import {
   ROUTE_LEVEL_SPEC,
   SLOT_MIX_SPEC,
   TEMPO_SPEC,
+  VCA_SPEC,
 } from '@core/model/target-specs';
 import type { ParamTarget } from '@core/model/types';
 import { fxSlotOf, insertLabel, pluginInstanceOf } from '@core/query/mixer';
@@ -93,6 +94,11 @@ export function paramInfoFor(s: Services, target: ParamTarget): ParamMenuInfo | 
         spec: ROUTE_LEVEL_SPEC,
         label: `${insertLabel(p, target.insertId)} → ${insertLabel(p, target.to)}`,
       };
+    }
+    case 'vca': {
+      const group = p.mixer.groups?.find((g) => g.id === target.groupId);
+      if (group?.vca === undefined) return null;
+      return { target, spec: VCA_SPEC, label: `VCA · ${group.name}` };
     }
     case 'plugin': {
       const inst = pluginInstanceOf(p, target.owner);

@@ -11,4 +11,6 @@ export const INSERT_VOLUME_SPEC = p.float(0, MAX_INSERT_VOLUME, 1, { label: 'Vol
 export const INSERT_PAN_SPEC = p.float(-1, 1, 0, { label: 'Pan' });
 export const SLOT_MIX_SPEC = p.float(0, 1, 1, { label: 'Mix', unit: '%' });
 export const ROUTE_LEVEL_SPEC = p.float(0, MAX_INSERT_VOLUME, 1, { label: 'Send level' });
+/** A group's VCA fader: a linear gain on the fader taper, like a track's volume. */
+export const VCA_SPEC = p.float(0, MAX_INSERT_VOLUME, 1, { label: 'VCA' });
 export const TEMPO_SPEC = p.float(10, 522, DEFAULT_BPM, { label: 'Tempo' });

@@ -1,4 +1,4 @@
-import type { ChannelId, InsertId, LinkId, SlotId, Tick } from './ids';
+import type { ChannelId, GroupId, InsertId, LinkId, SlotId, Tick } from './ids';
 
 /** The owner of a plugin instance: an instrument channel, or an effect slot of a mixer insert. */
 export type PluginOwner =
@@ -10,6 +10,8 @@ export type ParamTarget =
   | { kind: 'insert'; insertId: InsertId; param: 'volume' | 'pan' }
   | { kind: 'slot'; insertId: InsertId; slotId: SlotId; param: 'mix' }
   | { kind: 'route'; insertId: InsertId; to: InsertId }
+  /** The VCA fader of a mixer group (its level scales every member's fader). */
+  | { kind: 'vca'; groupId: GroupId }
   | { kind: 'plugin'; owner: PluginOwner; paramId: string }
   | { kind: 'tempo' };
 

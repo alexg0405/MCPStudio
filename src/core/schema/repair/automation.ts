@@ -16,6 +16,8 @@ export function isParamTarget(value: unknown): boolean {
       return isId(value.insertId) && isId(value.slotId) && value.param === 'mix';
     case 'route':
       return isId(value.insertId) && isId(value.to);
+    case 'vca':
+      return isId(value.groupId);
     case 'plugin':
       return isPluginOwner(value.owner) && isId(value.paramId);
     case 'tempo':

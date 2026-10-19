@@ -6,7 +6,7 @@ import type { Channel } from './channels';
 import type { Pattern } from './patterns';
 import type { Playlist } from './playlist';
 import type { ControllerLink } from './automation';
-import type { Mixer } from './mixer';
+import type { Mixer, MixSnapshot } from './mixer';
 import type { SampleRef } from './samples';
 
 /** The whole project document: what is saved (project.json) and what undo and redo operate on. */
@@ -22,6 +22,11 @@ export interface Project {
   patternOrder: PatternId[];
   playlist: Playlist;
   mixer: Mixer;
+  /**
+   * Saved mixer states (faders, pans, mutes, sends, effect settings) the musician can recall and compare, in the
+   * order they were saved. Never touches notes or the arrangement. Absent until one is saved. Added in v3 (optional).
+   */
+  mixSnapshots?: MixSnapshot[];
   samples: Record<SampleId, SampleRef>;
   /** MIDI controller links ("Link to controller"), keyed by id. */
   controllers: Record<LinkId, ControllerLink>;

@@ -30,6 +30,10 @@ export type LinkId = Id<'lnk'>;
 export type MarkerId = Id<'mk'>;
 /** A chord on the chord track. */
 export type ChordId = Id<'cd'>;
+/** A mixer group: tracks whose faders, pans, mutes and solos move together, and the VCA that scales them. */
+export type GroupId = Id<'grp'>;
+/** A saved state of the mixer (faders, pans, mutes, sends, effect settings) that can be recalled. */
+export type SnapshotId = Id<'snap'>;
 /** A column of the clip launcher. */
 export type LaunchTrackId = Id<'lt'>;
 /** A row of the clip launcher. */

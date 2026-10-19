@@ -13,6 +13,7 @@ import { repairChannels } from './channels';
 import { repairChords } from './chords';
 import { repairControllers } from './controllers';
 import { repairDj } from './dj';
+import { repairGroups } from './groups';
 import { repairLauncher } from './launcher';
 import { RepairLog } from './log';
 import { repairMixer } from './mixer';
@@ -20,6 +21,7 @@ import { repairPatterns } from './patterns';
 import { repairPlaylist } from './playlist';
 import { repairMeta, repairTransport } from './project-details';
 import { repairReference } from './reference';
+import { repairMixSnapshots } from './snapshots';
 import { repairSamples } from './samples';
 
 export { CHANNEL_VOLUME_MAX, INSERT_VOLUME_MAX, BPM_MIN, BPM_MAX } from './limits';
@@ -37,6 +39,8 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairTransport(copy, log);
   repairSamples(copy, log);
   repairMixer(copy, log);
+  repairGroups(copy, log);
+  repairMixSnapshots(copy, log);
   repairChannels(copy, log);
   repairPatterns(copy, log);
   repairPlaylist(copy, log);

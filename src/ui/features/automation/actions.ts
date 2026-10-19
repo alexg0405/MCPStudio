@@ -103,6 +103,9 @@ export function showTarget(s: Services, target: ParamTarget): void {
       s.session.getState().selectInsert(target.insertId);
       openWindow(s, 'mixer');
       return;
+    case 'vca':
+      openWindow(s, 'mixer');
+      return;
     case 'tempo':
       return;
   }

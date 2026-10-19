@@ -32,10 +32,11 @@ export function normalizedOf(resolved: ResolvedTarget, target: ParamTarget, raw:
   switch (target.kind) {
     case 'channel':
     case 'insert':
+    case 'vca':
     case 'route': {
       const value = num(raw);
       if (value === undefined) return null;
-      const isLevel = target.kind === 'route' || target.param === 'volume';
+      const isLevel = target.kind === 'route' || target.kind === 'vca' || target.param === 'volume';
       const inOwnUnit = isLevel ? (value <= SILENCE_DB ? 0 : dbToGain(value)) : value;
       return resolved.toNormalized(inOwnUnit);
     }
@@ -62,7 +63,9 @@ export function ownUnitOf(
 ): number | string | boolean {
   const value = resolved.fromNormalized(normalized);
   const isLevel =
-    target.kind === 'route' || ((target.kind === 'channel' || target.kind === 'insert') && target.param === 'volume');
+    target.kind === 'route' ||
+    target.kind === 'vca' ||
+    ((target.kind === 'channel' || target.kind === 'insert') && target.param === 'volume');
   if (isLevel) return gainAsDb(value);
   if (target.kind === 'plugin') return decode(resolved.spec, value);
   return round3(value);
@@ -115,6 +118,10 @@ export function paramTargetOf(context: OpContext, raw: unknown): ParamTarget {
       return { kind: 'insert', insertId: context.insert(named.insert), param: TRACK_PARAMS[kind] };
     case 'send':
       return { kind: 'route', insertId: context.insert(named.insert), to: context.insert(named.to) };
+    case 'vca': {
+      const group = context.group(named.group);
+      return { kind: 'vca', groupId: group };
+    }
     case 'effect_mix': {
       const effect = context.effect(named.effect);
       return { kind: 'slot', insertId: effect.insertId, slotId: effect.slotId, param: 'mix' };

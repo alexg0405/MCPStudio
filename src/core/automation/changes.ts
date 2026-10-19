@@ -85,6 +85,14 @@ function insertChanges(moved: MovedTargets, insertId: InsertId, field: string | 
   }
 }
 
+/** What a patch under `mixer/groups` moved: the VCA level of a group whose level differs. */
+function groupChanges(moved: MovedTargets): void {
+  for (const group of moved.next.mixer.groups ?? []) {
+    const old = moved.prev.mixer.groups?.find((g) => g.id === group.id);
+    if (old && old.vca !== group.vca && group.vca !== undefined) moved.add({ kind: 'vca', groupId: group.id });
+  }
+}
+
 /**
  * Targets whose values changed from `prev` to `next`, judged from the patch paths (a whole replaced
  * channel or plugin compares its params). Each target appears once.
@@ -99,6 +107,8 @@ export function targetsChangedBy(prev: Project, next: Project, patches: readonly
       channelChanges(moved, path[1] as ChannelId, path[2]);
     } else if (path[0] === 'mixer' && path[1] === 'inserts' && typeof path[2] === 'string') {
       insertChanges(moved, path[2] as InsertId, path[3]);
+    } else if (path[0] === 'mixer' && path[1] === 'groups') {
+      groupChanges(moved);
     }
   }
   return moved.list();

@@ -21,7 +21,7 @@ export interface SoloState {
   /**
    * Inserts a solo leaves playing (every insert while nothing is soloed): the soloed ones, everything
    * routed into them (recursively: their sources play fully), everything they route to (recursively,
-   * so they still reach the master) and the master.
+   * so they still reach the master), the master, and the solo-safe inserts (with what they route to).
    */
   readonly audible: ReadonlySet<InsertId>;
 }
@@ -31,7 +31,8 @@ const mutedCache = new WeakMap<object, ReadonlySet<InsertId>>();
 
 /**
  * FL's solo rule. Routes count; sidechains don't (the sidechain tap sits before the mute, so a
- * soloed track still ducks to a kick that the solo silences). Memoized by the inserts' identity.
+ * soloed track still ducks to a kick that the solo silences). A solo-safe insert is never silenced by a solo.
+ * Memoized by the inserts' identity.
  */
 export function soloState(inserts: Inserts): SoloState {
   const cached = soloCache.get(inserts);
@@ -62,10 +63,14 @@ export function soloState(inserts: Inserts): SoloState {
         stack.push(...next(at));
       }
     };
+    const downstream = (at: InsertId) => (inserts[at]?.routes ?? []).map((r) => r.to).filter((to) => !!inserts[to]);
     for (const id of soloed) {
       walk(id, (at) => into.get(at) ?? []);
-      walk(id, (at) => (inserts[at]?.routes ?? []).map((r) => r.to).filter((to) => !!inserts[to]));
+      walk(id, downstream);
     }
+    // A solo-safe insert plays whatever is soloed; what it routes to plays too, so it still reaches the master.
+    // Its sources are not brought back: they stay silent unless the solo reaches them.
+    for (const ins of list) if (ins.soloSafe) walk(ins.id, downstream);
   }
   const state: SoloState = { active: soloed.size > 0, soloed, audible };
   soloCache.set(inserts, state);

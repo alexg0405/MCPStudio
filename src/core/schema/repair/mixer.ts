@@ -62,6 +62,7 @@ function repairInsertSettings(insert: JsonObject, id: string, index: number, log
   settings.require('muted', isBoolean, false);
   settings.require('solo', isBoolean, false);
   settings.dropIfInvalid('color', isString);
+  settings.dropIfInvalid('soloSafe', isBoolean);
   if (settings.changed) log.count('insert-fields', (n) => `Fixed ${countOf(n, INSERT)} with invalid settings.`);
 
   const levels = new FieldRepairs(insert);

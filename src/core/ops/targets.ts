@@ -3,6 +3,7 @@ import type { ParamValue } from '@agstudio/sdk/params';
 import type { ParamTarget, Project } from '../model/types';
 import { setChannelProp, setPluginParam } from './channels';
 import { setFxSlotMix, setInsertProp } from './mixer';
+import { setVcaLevel } from './groups';
 import { setBpm } from './notes';
 import { setRouteLevel } from './routing';
 
@@ -31,6 +32,9 @@ export function setTargetValue(d: Draft<Project>, t: ParamTarget, value: ParamVa
       return;
     case 'route':
       if (Number.isFinite(n)) setRouteLevel(d, t.insertId, t.to, n);
+      return;
+    case 'vca':
+      if (Number.isFinite(n)) setVcaLevel(d, t.groupId, n);
       return;
     case 'plugin':
       setPluginParam(d, t.owner, t.paramId, value);

@@ -19,6 +19,11 @@ export interface DocChange {
   /** Forward patches prev → next, or null for a full replacement (load). */
   patches: Patch[] | null;
   origin: Origin;
+  /**
+   * The engine should glide the mixer's faders, pans, mutes and send levels over this many seconds instead of
+   * stepping them (a snapshot recall while the song plays: no clicks). Absent for every ordinary edit.
+   */
+  glideSec?: number;
 }
 
 /** Where the document lives (a Zustand store in the app, a plain variable in tests). */
@@ -133,7 +138,7 @@ export class History {
    * `amend`: fold the edit into that entry (keeping its id and label) while it is still the newest
    * one; a follow-up that finishes later (e.g. leveling the mix after an AI answer) then undoes with it.
    */
-  transact(label: string, recipe: Recipe, opts: { mergeKey?: string; amend?: number } = {}): boolean {
+  transact(label: string, recipe: Recipe, opts: { mergeKey?: string; amend?: number; glideSec?: number } = {}): boolean {
     this.gestureActive?.commit();
     const prev = this.container.get();
     const [next, patches, inverse] = produceWithPatches(prev, recipe);
@@ -171,7 +176,7 @@ export class History {
         ...(opts.mergeKey ? { mergeKey: opts.mergeKey } : {}),
       });
     }
-    this.emit({ next, prev, patches, origin: 'edit' });
+    this.emit({ next, prev, patches, origin: 'edit', ...(opts.glideSec ? { glideSec: opts.glideSec } : {}) });
     return true;
   }
 

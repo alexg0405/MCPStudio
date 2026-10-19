@@ -1,4 +1,4 @@
-import type { ChannelId, InsertId, ParamTarget, SlotId } from './types';
+import type { ChannelId, GroupId, InsertId, ParamTarget, SlotId } from './types';
 
 /**
  * A stable string for a target: the key the engine registers automatable params under and the UI
@@ -14,6 +14,8 @@ export function targetKey(t: ParamTarget): string {
       return `slot:${t.insertId}:${t.slotId}:${t.param}`;
     case 'route':
       return `route:${t.insertId}:${t.to}`;
+    case 'vca':
+      return `vca:${t.groupId}`;
     case 'plugin':
       return t.owner.kind === 'channel'
         ? `plug:ch:${t.owner.channelId}:${t.paramId}`
@@ -44,9 +46,15 @@ export function targetUsesInsert(t: ParamTarget, id: InsertId): boolean {
     case 'plugin':
       return t.owner.kind === 'fx' && t.owner.insertId === id;
     case 'channel':
+    case 'vca':
     case 'tempo':
       return false;
   }
+}
+
+/** Whether the target is the VCA fader of the group. */
+export function targetUsesGroup(t: ParamTarget, id: GroupId): boolean {
+  return t.kind === 'vca' && t.groupId === id;
 }
 
 /** Whether the target belongs to the effect slot (its mix or its effect's params). */
@@ -80,6 +88,10 @@ export function parseTargetKey(key: string): ParamTarget | null {
     case 'route': {
       const [insertId, to] = rest;
       return insertId && to ? { kind: 'route', insertId: insertId as InsertId, to: to as InsertId } : null;
+    }
+    case 'vca': {
+      const [groupId] = rest;
+      return groupId && rest.length === 1 ? { kind: 'vca', groupId: groupId as GroupId } : null;
     }
     case 'plug': {
       const [ownerKind, ...ids] = rest;

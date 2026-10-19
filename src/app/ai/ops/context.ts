@@ -12,12 +12,14 @@ import type {
   ChannelId,
   Clip,
   ClipId,
+  GroupId,
   InsertId,
   LaneId,
   PatternId,
   PluginInstance,
   Project,
   SlotId,
+  SnapshotId,
   Tick,
 } from '@core/model/types';
 import { MASTER } from '@core/model/types';
@@ -41,6 +43,7 @@ export const fail = (message: string): never => {
 export type Ref =
   | { kind: 'channel'; id: ChannelId }
   | { kind: 'insert'; id: InsertId }
+  | { kind: 'group'; id: GroupId }
   | { kind: 'effect'; insertId: InsertId; slotId: SlotId }
   | { kind: 'pattern'; id: PatternId };
 
@@ -105,6 +108,10 @@ export interface OpContext {
   channel(raw: unknown): ChannelId;
   insert(raw: unknown): InsertId;
   effect(raw: unknown): { insertId: InsertId; slotId: SlotId };
+  /** A mixer group by id (grp_…), exact name or @ref of one made earlier in the answer. */
+  group(raw: unknown): GroupId;
+  /** A mixer snapshot by id (snap_…) or name (exact, else the only partial match). */
+  snapshot(raw: unknown): SnapshotId;
   /** A pattern by "current", id, name or @ref (then redirected to the part's copy, in a focus). */
   pattern(raw: unknown): PatternId;
   plugin(raw: unknown, kind: PluginDef['kind']): PluginDef;
@@ -185,6 +192,20 @@ export function createOpContext(
       if (slot) return { insertId, slotId: slot.id };
     }
     return fail(`there is no effect "${ref}"`);
+  };
+  const group = (raw: unknown): GroupId => {
+    const ref = str(raw) ?? fail('which mixer group?');
+    const r = fromRef(ref, 'group');
+    if (r) return r.id;
+    const groups = d.mixer.groups ?? [];
+    if (groups.some((g) => g.id === ref)) return ref as GroupId;
+    return (byName(groups as { id: string; name: string }[], ref)?.id as GroupId | undefined) ?? fail(`there is no mixer group "${ref}"`);
+  };
+  const snapshot = (raw: unknown): SnapshotId => {
+    const ref = str(raw) ?? fail('which mixer snapshot?');
+    const snapshots = d.mixSnapshots ?? [];
+    if (snapshots.some((x) => x.id === ref)) return ref as SnapshotId;
+    return (byName(snapshots as { id: string; name: string }[], ref)?.id as SnapshotId | undefined) ?? fail(`there is no mixer snapshot "${ref}"`);
   };
   const findPattern = (raw: unknown): PatternId => {
     const ref = str(raw) ?? fail('which pattern?');
@@ -290,6 +311,8 @@ export function createOpContext(
     channel,
     insert,
     effect,
+    group,
+    snapshot,
     pattern: (raw) => findPattern(raw),
     plugin,
     lane,

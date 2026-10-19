@@ -144,8 +144,8 @@ export class AutoLane implements AutomatableParam {
     };
   }
 
-  /** A document edit at `time`. */
-  setBase(value: number, time: number): void {
+  /** A document edit at `time`. `glideTau` replaces the lane's time constant for this edit (a snapshot recall glides slower). */
+  setBase(value: number, time: number, glideTau: number = this.tau): void {
     this.baseValue = value;
     if (this.drivenFlag) return;
     const t = Math.max(time, this.lastTime());
@@ -159,12 +159,12 @@ export class AutoLane implements AutomatableParam {
     }
     // Live edits queue after anything scheduled (only a release ramp, while not driven).
     const at = t;
-    if (this.discrete || this.tau <= 0) {
+    if (this.discrete || glideTau <= 0) {
       this.push({ kind: 'set', time: at, fromValue: value, value, end: at, tau: 0 });
       for (const b of this.bindings) this.schedule(b, 'set', at, value, 0);
     } else {
-      this.push({ kind: 'target', time: at, fromValue: this.valueAt(at), value, end: at, tau: this.tau });
-      for (const b of this.bindings) this.schedule(b, 'target', at, value, this.tau);
+      this.push({ kind: 'target', time: at, fromValue: this.valueAt(at), value, end: at, tau: glideTau });
+      for (const b of this.bindings) this.schedule(b, 'target', at, value, glideTau);
     }
   }
 

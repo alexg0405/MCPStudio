@@ -12,6 +12,9 @@ import { AutoLane } from './param-lane';
 /** Time constant of send-level moves (seconds; matches faders). */
 const ROUTE_LEVEL_TAU_SEC = 0.004;
 
+/** A glide of N seconds is four time constants long (the value is within 2% of its target by then). */
+const GLIDE_TIME_CONSTANTS = 4;
+
 /** A send level limited to what a fader can reach; a level that is not a number means unity. */
 function clampLevel(level: number): number {
   return Number.isFinite(level) ? Math.min(MAX_INSERT_VOLUME, Math.max(0, level)) : 1;
@@ -83,11 +86,15 @@ export class RouteLink {
     this.lane.shift = seconds;
   }
 
-  update(route: Route): void {
+  /** `glideSec` > 0 (a snapshot recall): the level glides over that long instead of the usual few milliseconds. */
+  update(route: Route, glideSec = 0): void {
     const prev = this.route;
     if (prev === route) return;
     this.route = route;
-    if (prev.level !== route.level) this.lane.setBase(clampLevel(route.level), this.ctx.currentTime);
+    if (prev.level !== route.level) {
+      const tau = glideSec > 0 ? glideSec / GLIDE_TIME_CONSTANTS : ROUTE_LEVEL_TAU_SEC;
+      this.lane.setBase(clampLevel(route.level), this.ctx.currentTime, tau);
+    }
     if (prev.pre !== route.pre) {
       disconnectFrom(this.tap, this.gain);
       this.tap = route.pre ? this.source.preTap : this.source.postTap;

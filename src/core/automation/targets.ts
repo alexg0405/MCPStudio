@@ -14,6 +14,7 @@ import {
   ROUTE_LEVEL_SPEC,
   SLOT_MIX_SPEC,
   TEMPO_SPEC,
+  VCA_SPEC,
 } from '../model/target-specs';
 import { targetKey } from '../model/targets';
 import type { ParamTarget, Project } from '../model/types';
@@ -90,6 +91,10 @@ export function resolveTarget(
     case 'route': {
       const r = p.mixer.inserts[t.insertId]?.routes.find((x) => x.to === t.to);
       return r ? byFader(key, ROUTE_LEVEL_SPEC, r.level) : null;
+    }
+    case 'vca': {
+      const group = p.mixer.groups?.find((g) => g.id === t.groupId);
+      return group?.vca === undefined ? null : byFader(key, VCA_SPEC, group.vca);
     }
     case 'plugin': {
       const inst = pluginInstanceOf(p, t.owner);

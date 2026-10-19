@@ -122,16 +122,16 @@ export class GrainVoice implements Voice {
   }
 
   get grainCount(): number {
-    let n = 0;
-    for (let g = 0; g < GRAINS_PER_VOICE; g++) n += this.isActive[g] as number;
-    return n;
+    let count = 0;
+    for (let grain = 0; grain < GRAINS_PER_VOICE; grain++) count += this.isActive[grain] as number;
+    return count;
   }
 
   /**
    * Starts a grain `delay` frames into the chunk: it takes a free slot, or the slot of the grain that is furthest
    * along. Returns the source position it starts at, as a fraction of the sample (for tests and the editor).
    */
-  spawn(s: GrainSettings, source: GrainSource, offset: number, delay: number, channelCents: number): number {
+  spawn(settings: GrainSettings, source: GrainSource, offset: number, delay: number, channelCents: number): number {
     let slot = -1;
     let furthest = -1;
     let furthestSlot = 0;
@@ -152,29 +152,29 @@ export class GrainVoice implements Voice {
     const rPan = this.random();
     const rReverse = this.random();
 
-    let where = s.position + offset + s.spray * (2 * rPosition - 1);
+    let where = settings.position + offset + settings.spray * (2 * rPosition - 1);
     where -= Math.floor(where);
     const semitones =
-      s.pitchSemis +
-      s.keyTrack * (this.key - NEUTRAL_KEY) +
+      settings.pitchSemis +
+      settings.keyTrack * (this.key - NEUTRAL_KEY) +
       (this.fine + channelCents) / 100 +
-      s.pitchSpray * (2 * rPitch - 1);
+      settings.pitchSpray * (2 * rPitch - 1);
     const speed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, pow2(semitones / 12) * source.rateRatio));
-    const backwards = rReverse < s.reverse;
+    const backwards = rReverse < settings.reverse;
     const start = where * source.length;
     // A backwards grain plays the same stretch of the sample from its far end.
-    let from = backwards ? start + s.sizeFrames * speed : start;
+    let from = backwards ? start + settings.sizeFrames * speed : start;
     from %= source.length;
-    const pan = Math.max(-1, Math.min(1, this.pan + s.spread * (2 * rPan - 1)));
+    const pan = Math.max(-1, Math.min(1, this.pan + settings.spread * (2 * rPan - 1)));
 
     this.isActive[slot] = 1;
     this.delay[slot] = delay;
     this.position[slot] = from;
     this.step[slot] = backwards ? -speed : speed;
     this.fade[slot] = 0;
-    this.fadeStep[slot] = ENV_LAST / s.sizeFrames;
-    this.gainLeft[slot] = Math.sqrt(0.5 * (1 - pan)) * s.grainGain;
-    this.gainRight[slot] = Math.sqrt(0.5 * (1 + pan)) * s.grainGain;
+    this.fadeStep[slot] = ENV_LAST / settings.sizeFrames;
+    this.gainLeft[slot] = Math.sqrt(0.5 * (1 - pan)) * settings.grainGain;
+    this.gainRight[slot] = Math.sqrt(0.5 * (1 + pan)) * settings.grainGain;
     this.pan01[slot] = pan;
     return where;
   }
@@ -184,67 +184,72 @@ export class GrainVoice implements Voice {
    * the source in a loop (past the end it continues at the start), so any position and speed is safe.
    */
   renderGrains(count: number, source: GrainSource, table: Float32Array, left: Float32Array, right: Float32Array): void {
-    const srcL = source.left;
-    const srcR = source.right;
+    const sourceLeft = source.left;
+    const sourceRight = source.right;
     const length = source.length;
-    const mono = source.mono;
-    for (let g = 0; g < GRAINS_PER_VOICE; g++) {
-      if (this.isActive[g] === 0) continue;
-      const wait = this.delay[g] as number;
-      if (wait >= count) {
-        this.delay[g] = wait - count;
+    const isMono = source.mono;
+    for (let grain = 0; grain < GRAINS_PER_VOICE; grain++) {
+      if (this.isActive[grain] === 0) continue;
+      const waitFrames = this.delay[grain] as number;
+      if (waitFrames >= count) {
+        this.delay[grain] = waitFrames - count;
         continue;
       }
-      this.delay[g] = 0;
-      let x = this.position[g] as number;
-      const step = this.step[g] as number;
-      let e = this.fade[g] as number;
-      const eStep = this.fadeStep[g] as number;
-      const gl = this.gainLeft[g] as number;
-      const gr = this.gainRight[g] as number;
-      for (let n = wait | 0; n < count; n++) {
-        if (e >= ENV_LAST) {
-          this.isActive[g] = 0;
+      this.delay[grain] = 0;
+      let sourcePosition = this.position[grain] as number;
+      const step = this.step[grain] as number;
+      let fadePosition = this.fade[grain] as number;
+      const fadeStepPerFrame = this.fadeStep[grain] as number;
+      const leftGain = this.gainLeft[grain] as number;
+      const rightGain = this.gainRight[grain] as number;
+      for (let frame = waitFrames | 0; frame < count; frame++) {
+        if (fadePosition >= ENV_LAST) {
+          this.isActive[grain] = 0;
           break;
         }
-        const ei = e | 0;
-        const w0 = table[ei] as number;
-        const w = w0 + ((table[ei + 1] as number) - w0) * (e - ei);
-        const i = x | 0;
-        const f = x - i;
-        const j = i + 1 >= length ? 0 : i + 1;
-        const a = srcL[i] as number;
-        const l = a + ((srcL[j] as number) - a) * f;
-        let r = l;
-        if (!mono) {
-          const b = srcR[i] as number;
-          r = b + ((srcR[j] as number) - b) * f;
+        const fadeIndex = fadePosition | 0;
+        const weightBelow = table[fadeIndex] as number;
+        const weight = weightBelow + ((table[fadeIndex + 1] as number) - weightBelow) * (fadePosition - fadeIndex);
+        const sourceIndex = sourcePosition | 0;
+        const fraction = sourcePosition - sourceIndex;
+        const nextIndex = sourceIndex + 1 >= length ? 0 : sourceIndex + 1;
+        const leftBelow = sourceLeft[sourceIndex] as number;
+        const leftSample = leftBelow + ((sourceLeft[nextIndex] as number) - leftBelow) * fraction;
+        let rightSample = leftSample;
+        if (!isMono) {
+          const rightBelow = sourceRight[sourceIndex] as number;
+          rightSample = rightBelow + ((sourceRight[nextIndex] as number) - rightBelow) * fraction;
         }
-        left[n] = (left[n] as number) + l * w * gl;
-        right[n] = (right[n] as number) + r * w * gr;
-        x += step;
-        if (x >= length) {
-          x -= length;
-          if (x >= length) x %= length;
-        } else if (x < 0) {
-          x += length;
-          if (x < 0) x = ((x % length) + length) % length;
+        left[frame] = (left[frame] as number) + leftSample * weight * leftGain;
+        right[frame] = (right[frame] as number) + rightSample * weight * rightGain;
+        sourcePosition += step;
+        if (sourcePosition >= length) {
+          sourcePosition -= length;
+          if (sourcePosition >= length) sourcePosition %= length;
+        } else if (sourcePosition < 0) {
+          sourcePosition += length;
+          if (sourcePosition < 0) sourcePosition = ((sourcePosition % length) + length) % length;
         }
-        e += eStep;
+        fadePosition += fadeStepPerFrame;
       }
-      this.position[g] = x;
-      this.fade[g] = e;
+      this.position[grain] = sourcePosition;
+      this.fade[grain] = fadePosition;
     }
   }
 
   /** Sets the filter's design when its kind, cutoff or quality changed (the two sides share one design). */
-  setFilter(s: GrainSettings, sampleRate: number): void {
-    if (s.filterKind === this.filterKind && s.cutoffHz === this.filterCutoff && s.q === this.filterQ) return;
-    this.filterKind = s.filterKind;
-    this.filterCutoff = s.cutoffHz;
-    this.filterQ = s.q;
-    if (s.filterKind === 0) return;
-    this.filterLeft.set(s.filterKind === 1 ? 'lowpass' : 'highpass', s.cutoffHz, s.q, sampleRate);
+  setFilter(settings: GrainSettings, sampleRate: number): void {
+    if (
+      settings.filterKind === this.filterKind &&
+      settings.cutoffHz === this.filterCutoff &&
+      settings.q === this.filterQ
+    )
+      return;
+    this.filterKind = settings.filterKind;
+    this.filterCutoff = settings.cutoffHz;
+    this.filterQ = settings.q;
+    if (settings.filterKind === 0) return;
+    this.filterLeft.set(settings.filterKind === 1 ? 'lowpass' : 'highpass', settings.cutoffHz, settings.q, sampleRate);
     this.filterRight.copyDesign(this.filterLeft);
   }
 

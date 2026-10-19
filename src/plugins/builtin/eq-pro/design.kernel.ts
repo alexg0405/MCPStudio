@@ -45,38 +45,38 @@ export interface Section {
  * frequency (it scales the sharpest section).
  */
 export function bandSections(type: BandType, q: number, out: Section[]): number {
-  let svf: SvfType;
+  let svfType: SvfType;
   let order: 1 | 2 | 4 = 1;
-  let single = true;
+  let isSingleSection = true;
   switch (type) {
     case 'bell':
-      svf = 'bell';
+      svfType = 'bell';
       break;
     case 'lowShelf':
-      svf = 'lowshelf';
+      svfType = 'lowshelf';
       break;
     case 'highShelf':
-      svf = 'highshelf';
+      svfType = 'highshelf';
       break;
     case 'notch':
-      svf = 'notch';
+      svfType = 'notch';
       break;
     default:
-      single = false;
-      svf = type.startsWith('low') ? 'highpass' : 'lowpass';
+      isSingleSection = false;
+      svfType = type.startsWith('low') ? 'highpass' : 'lowpass';
       order = type.endsWith('48') ? 4 : type.endsWith('24') ? 2 : 1;
   }
-  if (single) {
-    const s = out[0] as Section;
-    s.type = svf;
-    s.q = q;
+  if (isSingleSection) {
+    const section = out[0] as Section;
+    section.type = svfType;
+    section.q = q;
     return 1;
   }
-  const qs = BUTTERWORTH[order];
+  const sectionQs = BUTTERWORTH[order];
   for (let i = 0; i < order; i++) {
     const s = out[i] as Section;
-    s.type = svf;
-    s.q = i === order - 1 ? (qs[i] as number) * (q / Math.SQRT1_2) : (qs[i] as number);
+    s.type = svfType;
+    s.q = i === order - 1 ? (sectionQs[i] as number) * (q / Math.SQRT1_2) : (sectionQs[i] as number);
   }
   return order;
 }
@@ -92,31 +92,38 @@ export function clampFreq(freq: number, sampleRate: number): number {
 }
 
 /** |H|² of one analog prototype section at normalized frequency w (s = jw). */
-function sectionPower(type: SvfType, q: number, gainDb: number, w: number): number {
-  const w2 = w * w;
-  const k = 1 / Math.max(q, 1e-3);
+function sectionPower(type: SvfType, q: number, gainDb: number, normalisedFrequency: number): number {
+  const wSquared = normalisedFrequency * normalisedFrequency;
+  const damping = 1 / Math.max(q, 1e-3);
   // |a·s² + b·s + c|² at s = jw is (c − a·w²)² + (b·w)².
-  const mag = (a: number, b: number, c: number) => (c - a * w2) * (c - a * w2) + b * b * w2;
+  const polynomialPower = (a: number, b: number, c: number) =>
+    (c - a * wSquared) * (c - a * wSquared) + b * b * wSquared;
   switch (type) {
     case 'lowpass':
-      return 1 / mag(1, k, 1);
+      return 1 / polynomialPower(1, damping, 1);
     case 'highpass':
-      return (w2 * w2) / mag(1, k, 1);
+      return (wSquared * wSquared) / polynomialPower(1, damping, 1);
     case 'notch':
-      return mag(1, 0, 1) / mag(1, k, 1);
+      return polynomialPower(1, 0, 1) / polynomialPower(1, damping, 1);
     case 'bell': {
-      const A = Math.pow(10, gainDb / 40);
-      return mag(1, k * A, 1) / mag(1, k / A, 1);
+      const amplitude = Math.pow(10, gainDb / 40);
+      return polynomialPower(1, damping * amplitude, 1) / polynomialPower(1, damping / amplitude, 1);
     }
     case 'lowshelf': {
-      const A = Math.pow(10, gainDb / 40);
-      const sa = Math.sqrt(A);
-      return (A * A * mag(1, k * sa, A)) / mag(A, k * sa, 1);
+      const amplitude = Math.pow(10, gainDb / 40);
+      const sqrtAmplitude = Math.sqrt(amplitude);
+      return (
+        (amplitude * amplitude * polynomialPower(1, damping * sqrtAmplitude, amplitude)) /
+        polynomialPower(amplitude, damping * sqrtAmplitude, 1)
+      );
     }
     case 'highshelf': {
-      const A = Math.pow(10, gainDb / 40);
-      const sa = Math.sqrt(A);
-      return (A * A * mag(A, k * sa, 1)) / mag(1, k * sa, A);
+      const amplitude = Math.pow(10, gainDb / 40);
+      const sqrtAmplitude = Math.sqrt(amplitude);
+      return (
+        (amplitude * amplitude * polynomialPower(amplitude, damping * sqrtAmplitude, 1)) /
+        polynomialPower(1, damping * sqrtAmplitude, amplitude)
+      );
     }
     default:
       return 1;
@@ -129,21 +136,22 @@ function sectionPower(type: SvfType, q: number, gainDb: number, w: number): numb
  */
 export function bandResponseDb(
   type: BandType,
-  f0: number,
+  centreHz: number,
   gainDb: number,
   q: number,
   freq: number,
   sampleRate: number,
   sections: Section[],
 ): number {
-  const fc = clampFreq(f0, sampleRate);
-  const f = Math.min(freq, sampleRate * 0.4999);
-  const w = Math.tan((Math.PI * f) / sampleRate) / Math.tan((Math.PI * fc) / sampleRate);
+  const clampedCentreHz = clampFreq(centreHz, sampleRate);
+  const probeHz = Math.min(freq, sampleRate * 0.4999);
+  const normalisedFrequency =
+    Math.tan((Math.PI * probeHz) / sampleRate) / Math.tan((Math.PI * clampedCentreHz) / sampleRate);
   const count = bandSections(type, q, sections);
   let power = 1;
   for (let i = 0; i < count; i++) {
-    const s = sections[i] as Section;
-    power *= sectionPower(s.type, s.q, gainDb, w);
+    const section = sections[i] as Section;
+    power *= sectionPower(section.type, section.q, gainDb, normalisedFrequency);
   }
   return power > 0 ? 10 * Math.log10(power) : -300;
 }

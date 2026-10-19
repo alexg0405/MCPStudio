@@ -13,20 +13,20 @@ import { GRAINS_PER_VOICE, GrainSettings, GrainVoice, STEAL_FRAMES, type GrainSo
 
 const MAX_EVENTS = 128;
 const EVENT_SIZE = 6;
-const EV_ON = 1;
-const EV_OFF = 2;
-const EV_ALL_OFF = 3;
-const EV_ALL_OFF_HARD = 4;
+const EVENT_NOTE_ON = 1;
+const EVENT_NOTE_OFF = 2;
+const EVENT_ALL_OFF = 3;
+const EVENT_ALL_OFF_HARD = 4;
 /** The most frames rendered in one go (a block is normally 128; larger ones are cut into pieces of this size). */
-const MAX_CHUNK = 2048;
+const MAX_CHUNK_FRAMES = 2048;
 /** How often the editor's grain dots are refreshed, per second (the posts go out at 30 a second). */
 const TELEMETRY_HZ = 60;
 /** The wide-open filter settings that skip filtering altogether. */
 const FILTER_OFF = 0;
 /** How much of the full-scale a note at full volume reaches: the grains of a cloud add up, so leave room. */
-const MASTER = 2.5;
+const MASTER_GAIN = 2.5;
 /** How far a random gap between grains may reach (a share of the average gap): never quite 0, so grains don't stack. */
-const MAX_JITTER = 0.95;
+const MAX_JITTER_SHARE = 0.95;
 
 /** A texture from the main thread: `{ type: 'texture', channels: [left, right], sampleRate }`. */
 export interface TextureMessage {
@@ -48,8 +48,8 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
   private sample: GrainSource | null = null;
   private texture: GrainSource | null = null;
   private source: GrainSource | null = null;
-  private readonly bufLeft = new Float32Array(MAX_CHUNK);
-  private readonly bufRight = new Float32Array(MAX_CHUNK);
+  private readonly chunkLeft = new Float32Array(MAX_CHUNK_FRAMES);
+  private readonly chunkRight = new Float32Array(MAX_CHUNK_FRAMES);
   /** Where a free-running (stopped) synced scan is, as a fraction of one pass. */
   private freeScanPhase = 0;
   private notesStarted = 0;
@@ -130,54 +130,55 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
   // --- Notes ------------------------------------------------------------------------------------------
 
   noteOn(key: number, velocity: number, noteId: number, pan: number, fine = 0): void {
-    this.push(EV_ON, noteId, key, velocity, pan, fine);
+    this.push(EVENT_NOTE_ON, noteId, key, velocity, pan, fine);
   }
 
   noteOff(noteId: number, key: number, _release: number): void {
-    this.push(EV_OFF, noteId, key, 0, 0, 0);
+    this.push(EVENT_NOTE_OFF, noteId, key, 0, 0, 0);
   }
 
   override allNotesOff(hard: boolean): void {
-    this.push(hard ? EV_ALL_OFF_HARD : EV_ALL_OFF, 0, 0, 0, 0, 0);
+    this.push(hard ? EVENT_ALL_OFF_HARD : EVENT_ALL_OFF, 0, 0, 0, 0, 0);
   }
 
   override reset(): void {
     this.eventCount = 0;
-    for (let v = 0; v < this.pool.voices.length; v++) this.silence(this.pool.voices[v] as GrainVoice);
+    for (let voiceIndex = 0; voiceIndex < this.pool.voices.length; voiceIndex++)
+      this.silence(this.pool.voices[voiceIndex] as GrainVoice);
   }
 
   private push(type: number, id: number, key: number, velocity: number, pan: number, fine: number): void {
     if (this.eventCount >= MAX_EVENTS) return;
-    const o = this.eventCount++ * EVENT_SIZE;
-    const e = this.events;
-    e[o] = type;
-    e[o + 1] = id;
-    e[o + 2] = key;
-    e[o + 3] = velocity;
-    e[o + 4] = pan;
-    e[o + 5] = fine;
+    const offset = this.eventCount++ * EVENT_SIZE;
+    const events = this.events;
+    events[offset] = type;
+    events[offset + 1] = id;
+    events[offset + 2] = key;
+    events[offset + 3] = velocity;
+    events[offset + 4] = pan;
+    events[offset + 5] = fine;
   }
 
   // --- Audio thread: nothing below allocates (checked by granular-kernel.test.ts) -------------------------
 
-  render(out: Float32Array[], from: number, to: number, p: ParamBlock<GranularParams>): void {
-    if (this.eventCount > 0) this.handleEvents(p, from);
+  render(out: Float32Array[], from: number, to: number, params: ParamBlock<GranularParams>): void {
+    if (this.eventCount > 0) this.handleEvents(params, from);
     const source = this.source;
     if (!source) return;
     const frames = to - from;
-    this.readSettings(p, from);
-    const table = SHAPE_TABLES[Math.round(at(p.shape, from))] ?? (SHAPE_TABLES[0] as Float32Array);
-    const syncPhase = this.syncPhase(p, from, frames);
+    this.readSettings(params, from);
+    const table = SHAPE_TABLES[Math.round(at(params.shape, from))] ?? (SHAPE_TABLES[0] as Float32Array);
+    const syncPhase = this.syncPhase(params, from, frames);
     const left = out[0] as Float32Array;
     const right = (out[1] ?? out[0]) as Float32Array;
     const voices = this.pool.voices;
-    for (let i = 0; i < voices.length; i++) {
-      const voice = voices[i] as GrainVoice;
+    for (let voiceIndex = 0; voiceIndex < voices.length; voiceIndex++) {
+      const voice = voices[voiceIndex] as GrainVoice;
       if (!voice.active) continue;
-      if (voice.fresh) this.setUp(voice, p, from);
-      for (let done = 0; done < frames; done += MAX_CHUNK) {
-        const count = Math.min(MAX_CHUNK, frames - done);
-        this.renderChunk(voice, source, table, syncPhase, p, from, left, right, from + done, count);
+      if (voice.fresh) this.setUp(voice, params, from);
+      for (let done = 0; done < frames; done += MAX_CHUNK_FRAMES) {
+        const count = Math.min(MAX_CHUNK_FRAMES, frames - done);
+        this.renderChunk(voice, source, table, syncPhase, params, from, left, right, from + done, count);
         if (!voice.active) break;
       }
     }
@@ -185,37 +186,37 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
   }
 
   /** Reads the knobs once per render call into the shared settings. */
-  private readSettings(p: ParamBlock<GranularParams>, i: number): void {
-    const s = this.settings;
-    const sr = this.sampleRate;
-    s.position = at(p.position, i);
-    s.spray = at(p.spray, i);
-    const sizeSec = at(p.size, i) / 1000;
-    s.sizeFrames = Math.max(8, sizeSec * sr);
-    s.density = at(p.density, i);
-    s.jitter = at(p.jitter, i);
-    s.reverse = at(p.reverse, i);
-    s.pitchSemis = at(p.pitch, i) + at(p.fine, i) / 100;
-    s.pitchSpray = at(p.pitchSpray, i);
-    s.keyTrack = at(p.keyTrack, i);
-    s.spread = at(p.spread, i);
-    s.interval = sr / s.density;
-    s.grainGain = 1 / Math.sqrt(Math.max(1, s.density * sizeSec));
-    s.filterKind = Math.round(at(p.filterType, i));
-    s.cutoffHz = Math.min(0.45 * sr, at(p.cutoff, i));
-    s.q = 0.6 * Math.pow(30, at(p.resonance, i));
-    s.velocitySense = at(p.velocity, i);
-    s.levelGain = dbToGain(at(p.level, i)) * MASTER;
+  private readSettings(params: ParamBlock<GranularParams>, frame: number): void {
+    const settings = this.settings;
+    const sampleRate = this.sampleRate;
+    settings.position = at(params.position, frame);
+    settings.spray = at(params.spray, frame);
+    const sizeSec = at(params.size, frame) / 1000;
+    settings.sizeFrames = Math.max(8, sizeSec * sampleRate);
+    settings.density = at(params.density, frame);
+    settings.jitter = at(params.jitter, frame);
+    settings.reverse = at(params.reverse, frame);
+    settings.pitchSemis = at(params.pitch, frame) + at(params.fine, frame) / 100;
+    settings.pitchSpray = at(params.pitchSpray, frame);
+    settings.keyTrack = at(params.keyTrack, frame);
+    settings.spread = at(params.spread, frame);
+    settings.interval = sampleRate / settings.density;
+    settings.grainGain = 1 / Math.sqrt(Math.max(1, settings.density * sizeSec));
+    settings.filterKind = Math.round(at(params.filterType, frame));
+    settings.cutoffHz = Math.min(0.45 * sampleRate, at(params.cutoff, frame));
+    settings.q = 0.6 * Math.pow(30, at(params.resonance, frame));
+    settings.velocitySense = at(params.velocity, frame);
+    settings.levelGain = dbToGain(at(params.level, frame)) * MASTER_GAIN;
   }
 
   /**
    * Where the tempo-synced scan is (a fraction of one pass, 0–1): locked to the song while it plays, free-running
    * at the song's tempo while it is stopped (so previewing still moves). 0 when the scan is not synced.
    */
-  private syncPhase(p: ParamBlock<GranularParams>, i: number, frames: number): number {
-    if (at(p.scanSync, i) < 0.5) return 0;
-    const beats = (SCAN_LENGTHS[Math.round(at(p.scanLength, i))] ?? SCAN_LENGTHS[2])[1];
-    if (this.transport.playing) return (this.transport.beatAt(i) / beats) % 1;
+  private syncPhase(params: ParamBlock<GranularParams>, frame: number, frames: number): number {
+    if (at(params.scanSync, frame) < 0.5) return 0;
+    const beats = (SCAN_LENGTHS[Math.round(at(params.scanLength, frame))] ?? SCAN_LENGTHS[2])[1];
+    if (this.transport.playing) return (this.transport.beatAt(frame) / beats) % 1;
     this.freeScanPhase = (this.freeScanPhase + (frames * this.transport.bpm) / 60 / beats / this.sampleRate) % 1;
     return this.freeScanPhase;
   }
@@ -226,24 +227,24 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
     source: GrainSource,
     table: Float32Array,
     syncPhase: number,
-    p: ParamBlock<GranularParams>,
+    params: ParamBlock<GranularParams>,
     blockStart: number,
     left: Float32Array,
     right: Float32Array,
     start: number,
     count: number,
   ): void {
-    const s = this.settings;
-    const frozen = at(p.freeze, blockStart) >= 0.5;
-    const scan = at(p.scan, blockStart);
-    const synced = at(p.scanSync, blockStart) >= 0.5;
+    const settings = this.settings;
+    const isFrozen = at(params.freeze, blockStart) >= 0.5;
+    const scanSpeed = at(params.scan, blockStart);
+    const isSynced = at(params.scanSync, blockStart) >= 0.5;
     let offset: number;
-    if (frozen) offset = voice.heldOffset;
+    if (isFrozen) offset = voice.heldOffset;
     else {
-      if (synced) offset = (scan < 0 ? -1 : 1) * syncPhase;
+      if (isSynced) offset = (scanSpeed < 0 ? -1 : 1) * syncPhase;
       else {
         // 1x moves through the sample at its own speed: one second of sample per second.
-        voice.scanOffset += (scan * count * source.rateRatio) / source.length;
+        voice.scanOffset += (scanSpeed * count * source.rateRatio) / source.length;
         voice.scanOffset -= Math.floor(voice.scanOffset);
         offset = voice.scanOffset;
       }
@@ -254,39 +255,39 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
     if (voice.env.active && voice.fadeLeft >= 0) {
       while (voice.countdown < count) {
         const delay = Math.max(0, voice.countdown);
-        this.lastSpawnPosition = voice.spawn(s, source, offset, delay, channelCents);
+        this.lastSpawnPosition = voice.spawn(settings, source, offset, delay, channelCents);
         this.spawnedTotal++;
-        const gap = 1 + MAX_JITTER * s.jitter * (2 * voice.random() - 1);
-        voice.countdown += s.interval * gap;
+        const gap = 1 + MAX_JITTER_SHARE * settings.jitter * (2 * voice.random() - 1);
+        voice.countdown += settings.interval * gap;
       }
     }
     voice.countdown -= count;
 
-    const bufL = this.bufLeft;
-    const bufR = this.bufRight;
-    bufL.fill(0, 0, count);
-    bufR.fill(0, 0, count);
-    voice.renderGrains(count, source, table, bufL, bufR);
+    const mixLeft = this.chunkLeft;
+    const mixRight = this.chunkRight;
+    mixLeft.fill(0, 0, count);
+    mixRight.fill(0, 0, count);
+    voice.renderGrains(count, source, table, mixLeft, mixRight);
 
-    voice.setFilter(s, this.sampleRate);
-    const filtered = s.filterKind !== FILTER_OFF;
-    const velocityGain = 1 - s.velocitySense + s.velocitySense * voice.velocity;
-    const gain = velocityGain * s.levelGain;
-    for (let n = 0; n < count; n++) {
-      let l = bufL[n] as number;
-      let r = bufR[n] as number;
-      if (filtered) {
-        l = voice.filterLeft.process(l);
-        r = voice.filterRight.process(r);
+    voice.setFilter(settings, this.sampleRate);
+    const isFiltered = settings.filterKind !== FILTER_OFF;
+    const velocityGain = 1 - settings.velocitySense + settings.velocitySense * voice.velocity;
+    const gain = velocityGain * settings.levelGain;
+    for (let frameInChunk = 0; frameInChunk < count; frameInChunk++) {
+      let leftSample = mixLeft[frameInChunk] as number;
+      let rightSample = mixRight[frameInChunk] as number;
+      if (isFiltered) {
+        leftSample = voice.filterLeft.process(leftSample);
+        rightSample = voice.filterRight.process(rightSample);
       }
-      let g = voice.env.next() * gain;
+      let envelopeGain = voice.env.next() * gain;
       if (voice.fadeLeft > 0) {
-        g *= voice.fadeLeft / STEAL_FRAMES;
+        envelopeGain *= voice.fadeLeft / STEAL_FRAMES;
         voice.fadeLeft--;
         if (voice.fadeLeft === 0) voice.fadeLeft = -1;
       }
-      left[start + n] = (left[start + n] as number) + l * g;
-      right[start + n] = (right[start + n] as number) + r * g;
+      left[start + frameInChunk] = (left[start + frameInChunk] as number) + leftSample * envelopeGain;
+      right[start + frameInChunk] = (right[start + frameInChunk] as number) + rightSample * envelopeGain;
     }
     if (!voice.env.active || voice.fadeLeft < 0) this.silence(voice);
   }
@@ -304,15 +305,15 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
     const voices = this.pool.voices;
     let shown = 0;
     let sounding = 0;
-    for (let g = 0; g < GRAINS_PER_VOICE; g++) {
-      for (let v = 0; v < voices.length; v++) {
-        const voice = voices[v] as GrainVoice;
-        if (g === 0 && voice.active) sounding++;
-        if (voice.isActive[g] === 0 || !voice.active || !source) continue;
+    for (let grain = 0; grain < GRAINS_PER_VOICE; grain++) {
+      for (let voiceIndex = 0; voiceIndex < voices.length; voiceIndex++) {
+        const voice = voices[voiceIndex] as GrainVoice;
+        if (grain === 0 && voice.active) sounding++;
+        if (voice.isActive[grain] === 0 || !voice.active || !source) continue;
         if (shown >= TELEMETRY_GRAINS) continue;
-        values[this.positionNames[shown] as string] = (voice.position[g] as number) / source.length;
-        values[this.progressNames[shown] as string] = (voice.fade[g] as number) / 1023;
-        values[this.panNames[shown] as string] = voice.pan01[g] as number;
+        values[this.positionNames[shown] as string] = (voice.position[grain] as number) / source.length;
+        values[this.progressNames[shown] as string] = (voice.fade[grain] as number) / 1023;
+        values[this.panNames[shown] as string] = voice.pan01[grain] as number;
         shown++;
       }
     }
@@ -323,9 +324,14 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
   }
 
   /** A new note's voice, at its first rendered frame (with that block's settings). */
-  private setUp(voice: GrainVoice, p: ParamBlock<GranularParams>, i: number): void {
+  private setUp(voice: GrainVoice, params: ParamBlock<GranularParams>, frame: number): void {
     voice.fresh = false;
-    voice.env.set(at(p.ampAttack, i), at(p.ampDecay, i), at(p.ampSustain, i), at(p.ampRelease, i));
+    voice.env.set(
+      at(params.ampAttack, frame),
+      at(params.ampDecay, frame),
+      at(params.ampSustain, frame),
+      at(params.ampRelease, frame),
+    );
     voice.env.reset();
     voice.env.start();
     voice.resetFilter();
@@ -334,7 +340,7 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
     voice.heldOffset = 0;
     voice.countdown = 0;
     // The seed knob and the count of notes so far choose the cloud: repeatable, but every note differs.
-    voice.seedRandom(Math.imul(at(p.seed, i) + 1, 0x9e3779b1) ^ Math.imul(++this.notesStarted, 0x85ebca6b));
+    voice.seedRandom(Math.imul(at(params.seed, frame) + 1, 0x9e3779b1) ^ Math.imul(++this.notesStarted, 0x85ebca6b));
   }
 
   private silence(voice: GrainVoice): void {
@@ -346,16 +352,23 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
   }
 
   /** Starts and releases voices for the queued note events. */
-  private handleEvents(p: ParamBlock<GranularParams>, i: number): void {
-    const maxVoices = Math.max(1, Math.min(MAX_VOICES, Math.round(at(p.voices, i))));
-    const e = this.events;
-    for (let n = 0; n < this.eventCount; n++) {
-      const o = n * EVENT_SIZE;
-      const type = e[o] as number;
-      if (type === EV_ON)
-        this.start(e[o + 1] as number, e[o + 2] as number, e[o + 3] as number, e[o + 4] as number, e[o + 5] as number, maxVoices);
-      else if (type === EV_OFF) this.stop(e[o + 1] as number);
-      else this.stopAll(type === EV_ALL_OFF_HARD);
+  private handleEvents(params: ParamBlock<GranularParams>, frame: number): void {
+    const maxVoices = Math.max(1, Math.min(MAX_VOICES, Math.round(at(params.voices, frame))));
+    const events = this.events;
+    for (let eventIndex = 0; eventIndex < this.eventCount; eventIndex++) {
+      const offset = eventIndex * EVENT_SIZE;
+      const type = events[offset] as number;
+      if (type === EVENT_NOTE_ON)
+        this.start(
+          events[offset + 1] as number,
+          events[offset + 2] as number,
+          events[offset + 3] as number,
+          events[offset + 4] as number,
+          events[offset + 5] as number,
+          maxVoices,
+        );
+      else if (type === EVENT_NOTE_OFF) this.stop(events[offset + 1] as number);
+      else this.stopAll(type === EVENT_ALL_OFF_HARD);
     }
     this.eventCount = 0;
   }
@@ -376,20 +389,20 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
   }
 
   private fadingCount(): number {
-    let n = 0;
+    let count = 0;
     const voices = this.pool.voices;
-    for (let v = 0; v < voices.length; v++) {
-      const voice = voices[v] as GrainVoice;
-      if (voice.active && voice.fadeLeft !== 0) n++;
+    for (let voiceIndex = 0; voiceIndex < voices.length; voiceIndex++) {
+      const voice = voices[voiceIndex] as GrainVoice;
+      if (voice.active && voice.fadeLeft !== 0) count++;
     }
-    return n;
+    return count;
   }
 
   private oldestSounding(): GrainVoice | null {
     let oldest: GrainVoice | null = null;
     const voices = this.pool.voices;
-    for (let v = 0; v < voices.length; v++) {
-      const voice = voices[v] as GrainVoice;
+    for (let voiceIndex = 0; voiceIndex < voices.length; voiceIndex++) {
+      const voice = voices[voiceIndex] as GrainVoice;
       if (!voice.active || voice.fadeLeft !== 0) continue;
       if (!oldest || voice.age < oldest.age) oldest = voice;
     }
@@ -410,8 +423,8 @@ export class GranularKernel extends InstrumentKernel<GranularParams> {
 
   private stopAll(hard: boolean): void {
     const voices = this.pool.voices;
-    for (let v = 0; v < voices.length; v++) {
-      const voice = voices[v] as GrainVoice;
+    for (let voiceIndex = 0; voiceIndex < voices.length; voiceIndex++) {
+      const voice = voices[voiceIndex] as GrainVoice;
       if (!voice.active) continue;
       if (hard) this.silence(voice);
       else if (voice.fresh) this.silence(voice);

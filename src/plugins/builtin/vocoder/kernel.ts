@@ -1,21 +1,21 @@
 import { at, dbToGain, EffectKernel, Svf, type ParamBlock } from '@agstudio/sdk/worklet';
 import { BAND_COUNTS, type vocoderParams } from './params';
 
-type P = typeof vocoderParams;
+type Params = typeof vocoderParams;
 
 const MAX_BANDS = 32;
 /** Centre of the lowest and highest band. */
-const LOW_HZ = 90;
-const HIGH_HZ = 9000;
+const LOWEST_BAND_HZ = 90;
+const HIGHEST_BAND_HZ = 9000;
 /** The modulator's highs above this pass straight through (sibilance). */
 const SIBILANCE_HZ = 6000;
 /** Noise added to the carrier at 100 %. */
 const NOISE_LEVEL = 0.15;
 /** Brings the band products back to about the level of the input. */
-const MAKEUP = 60;
+const BAND_MAKEUP = 60;
 /** Designs follow their params every CONTROL frames. */
-const CONTROL = 32;
-const COUNTS = BAND_COUNTS.map(Number);
+const CONTROL_FRAMES = 32;
+const BAND_COUNT_VALUES = BAND_COUNTS.map(Number);
 
 /**
  * Channel vocoder. The modulator (a voice: the sidechain, mono) and the carrier (a synth: the
@@ -29,214 +29,216 @@ const COUNTS = BAND_COUNTS.map(Number);
  * variables for the whole chunk, and the summed outputs are accumulated per frame. The arithmetic
  * is that of a frame-by-frame pass, operation for operation.
  */
-export class VocoderKernel extends EffectKernel<P> {
+export class VocoderKernel extends EffectKernel<Params> {
   // Per band: modulator and carrier coefficients (a1, a2, 2g, k of a Cytomic SVF band-pass).
-  private readonly mod = new Float64Array(4 * MAX_BANDS);
-  private readonly car = new Float64Array(4 * MAX_BANDS);
+  private readonly modulatorCoefficients = new Float64Array(4 * MAX_BANDS);
+  private readonly carrierCoefficients = new Float64Array(4 * MAX_BANDS);
   // Per band: two stages × (ic1, ic2) for the modulator and each carrier side.
-  private readonly modState = new Float64Array(4 * MAX_BANDS);
-  private readonly leftState = new Float64Array(4 * MAX_BANDS);
-  private readonly rightState = new Float64Array(4 * MAX_BANDS);
-  private readonly env = new Float64Array(MAX_BANDS);
+  private readonly modulatorState = new Float64Array(4 * MAX_BANDS);
+  private readonly carrierLeftState = new Float64Array(4 * MAX_BANDS);
+  private readonly carrierRightState = new Float64Array(4 * MAX_BANDS);
+  private readonly bandEnvelope = new Float64Array(MAX_BANDS);
   // The designs' cached parts: each band's centre frequency, and tan(πf/sr) of the modulator and carrier bands.
   private readonly bandHz = new Float64Array(MAX_BANDS);
-  private readonly modG = new Float64Array(MAX_BANDS);
-  private readonly carG = new Float64Array(MAX_BANDS);
-  private spacing = 0;
-  private readonly sibilance = new Svf().set('highpass', SIBILANCE_HZ, Math.SQRT1_2, this.sampleRate);
+  private readonly modulatorTan = new Float64Array(MAX_BANDS);
+  private readonly carrierTan = new Float64Array(MAX_BANDS);
+  private bandSpacingOctaves = 0;
+  private readonly sibilanceHighpass = new Svf().set('highpass', SIBILANCE_HZ, Math.SQRT1_2, this.sampleRate);
   // Per frame of the current control chunk: the modulator, the two carriers, the sibilance, and the
   // summed band outputs.
-  private readonly mBuf = new Float64Array(CONTROL);
-  private readonly clBuf = new Float64Array(CONTROL);
-  private readonly crBuf = new Float64Array(CONTROL);
-  private readonly sibBuf = new Float64Array(CONTROL);
-  private readonly accL = new Float64Array(CONTROL);
-  private readonly accR = new Float64Array(CONTROL);
-  private count = 0;
-  private width = -1;
-  private formant = Number.NaN;
-  private attack = -1;
-  private release = -1;
-  private attackCoef = 1;
-  private releaseCoef = 1;
+  private readonly modulatorBuffer = new Float64Array(CONTROL_FRAMES);
+  private readonly carrierLeftBuffer = new Float64Array(CONTROL_FRAMES);
+  private readonly carrierRightBuffer = new Float64Array(CONTROL_FRAMES);
+  private readonly sibilanceBuffer = new Float64Array(CONTROL_FRAMES);
+  private readonly leftSum = new Float64Array(CONTROL_FRAMES);
+  private readonly rightSum = new Float64Array(CONTROL_FRAMES);
+  private bandCount = 0;
+  private bandWidth = -1;
+  private formantSemitones = Number.NaN;
+  private attackMs = -1;
+  private releaseMs = -1;
+  private attackCoefficient = 1;
+  private releaseCoefficient = 1;
   private countdown = 0;
-  private outDb = 0;
-  private outGain = 1;
+  private outputDb = 0;
+  private outputGain = 1;
 
   override reset(): void {
-    this.modState.fill(0);
-    this.leftState.fill(0);
-    this.rightState.fill(0);
-    this.env.fill(0);
-    this.sibilance.reset();
+    this.modulatorState.fill(0);
+    this.carrierLeftState.fill(0);
+    this.carrierRightState.fill(0);
+    this.bandEnvelope.fill(0);
+    this.sibilanceHighpass.reset();
   }
 
   process(
     input: Float32Array[],
     output: Float32Array[],
-    n: number,
-    p: ParamBlock<P>,
+    frameCount: number,
+    params: ParamBlock<Params>,
     sidechain?: Float32Array[],
   ): void {
-    const inL = input[0] as Float32Array;
-    const inR = (input[1] ?? inL) as Float32Array;
+    const inLeft = input[0] as Float32Array;
+    const inRight = (input[1] ?? inLeft) as Float32Array;
     const key = sidechain ?? input;
-    const kL = key[0] as Float32Array;
-    const kR = (key[1] ?? kL) as Float32Array;
-    const outL = output[0] as Float32Array;
-    const outR = (output[1] ?? outL) as Float32Array;
-    const count = COUNTS[Math.round(p.bands[0] as number)] ?? 24;
+    const keyLeft = key[0] as Float32Array;
+    const keyRight = (key[1] ?? keyLeft) as Float32Array;
+    const outLeft = output[0] as Float32Array;
+    const outRight = (output[1] ?? outLeft) as Float32Array;
+    const bandCount = BAND_COUNT_VALUES[Math.round(params.bands[0] as number)] ?? 24;
     // Fewer bands sum quieter: keep the level about the same whatever the count.
-    const makeup = MAKEUP * Math.sqrt(24 / count);
-    const mBuf = this.mBuf;
-    const clBuf = this.clBuf;
-    const crBuf = this.crBuf;
-    const sibBuf = this.sibBuf;
-    const accL = this.accL;
-    const accR = this.accR;
-    for (let i0 = 0; i0 < n;) {
+    const makeupGain = BAND_MAKEUP * Math.sqrt(24 / bandCount);
+    const modulatorBuffer = this.modulatorBuffer;
+    const carrierLeftBuffer = this.carrierLeftBuffer;
+    const carrierRightBuffer = this.carrierRightBuffer;
+    const sibilanceBuffer = this.sibilanceBuffer;
+    const leftSum = this.leftSum;
+    const rightSum = this.rightSum;
+    for (let chunkStart = 0; chunkStart < frameCount;) {
       if (this.countdown <= 0) {
-        this.countdown = CONTROL;
-        this.design(count, at(p.width, i0), at(p.formant, i0));
-        this.ballistics(at(p.attack, i0), at(p.release, i0));
-        const out = at(p.output, i0);
-        if (out !== this.outDb) {
-          this.outDb = out;
-          this.outGain = dbToGain(out);
+        this.countdown = CONTROL_FRAMES;
+        this.design(bandCount, at(params.width, chunkStart), at(params.formant, chunkStart));
+        this.ballistics(at(params.attack, chunkStart), at(params.release, chunkStart));
+        const outputDb = at(params.output, chunkStart);
+        if (outputDb !== this.outputDb) {
+          this.outputDb = outputDb;
+          this.outputGain = dbToGain(outputDb);
         }
       }
       // The designs hold for the rest of the chunk (the countdown), so the chunk is that many frames.
-      const len = Math.min(this.countdown, n - i0);
-      this.countdown -= len;
-      for (let j = 0; j < len; j++) {
-        const i = i0 + j;
-        const m = 0.5 * ((kL[i] as number) + (kR[i] as number));
-        const noise = at(p.noise, i) * NOISE_LEVEL * (2 * this.host.rand() - 1);
-        const xl = inL[i] as number;
-        const xr = inR[i] as number;
-        mBuf[j] = m;
-        clBuf[j] = xl + noise;
-        crBuf[j] = xr + noise;
-        sibBuf[j] = at(p.sibilance, i) * this.sibilance.process(m);
-        accL[j] = 0;
-        accR[j] = 0;
+      const chunkLength = Math.min(this.countdown, frameCount - chunkStart);
+      this.countdown -= chunkLength;
+      for (let j = 0; j < chunkLength; j++) {
+        const i = chunkStart + j;
+        const modulatorSample = 0.5 * ((keyLeft[i] as number) + (keyRight[i] as number));
+        const noise = at(params.noise, i) * NOISE_LEVEL * (2 * this.host.rand() - 1);
+        const inputLeft = inLeft[i] as number;
+        const inputRight = inRight[i] as number;
+        modulatorBuffer[j] = modulatorSample;
+        carrierLeftBuffer[j] = inputLeft + noise;
+        carrierRightBuffer[j] = inputRight + noise;
+        sibilanceBuffer[j] = at(params.sibilance, i) * this.sibilanceHighpass.process(modulatorSample);
+        leftSum[j] = 0;
+        rightSum[j] = 0;
       }
-      const ac = this.attackCoef;
-      const rc = this.releaseCoef;
-      for (let b = 0; b < count; b++) this.band(b, len, ac, rc);
-      const gain = this.outGain;
-      for (let j = 0; j < len; j++) {
-        const i = i0 + j;
-        const xl = inL[i] as number;
-        const xr = inR[i] as number;
-        const mix = at(p.mix, i);
-        const sib = sibBuf[j] as number;
-        outL[i] = gain * (xl + mix * ((accL[j] as number) * makeup + sib - xl));
-        outR[i] = gain * (xr + mix * ((accR[j] as number) * makeup + sib - xr));
+      const attackCoefficient = this.attackCoefficient;
+      const releaseCoefficient = this.releaseCoefficient;
+      for (let bandIndex = 0; bandIndex < bandCount; bandIndex++)
+        this.band(bandIndex, chunkLength, attackCoefficient, releaseCoefficient);
+      const outputGain = this.outputGain;
+      for (let j = 0; j < chunkLength; j++) {
+        const i = chunkStart + j;
+        const xl = inLeft[i] as number;
+        const xr = inRight[i] as number;
+        const mix = at(params.mix, i);
+        const sibilanceSample = sibilanceBuffer[j] as number;
+        outLeft[i] = outputGain * (xl + mix * ((leftSum[j] as number) * makeupGain + sibilanceSample - xl));
+        outRight[i] = outputGain * (xr + mix * ((rightSum[j] as number) * makeupGain + sibilanceSample - xr));
       }
-      i0 += len;
+      chunkStart += chunkLength;
     }
-    this.flushStates(count);
+    this.flushStates(bandCount);
   }
 
   /**
    * One band over the frames of the current chunk: its modulator envelope, and its contribution to
    * the left and right carrier sums (`accL`, `accR`, per frame).
    */
-  private band(b: number, len: number, ac: number, rc: number): void {
-    const o = 4 * b;
-    const mod = this.mod;
-    const car = this.car;
-    const mBuf = this.mBuf;
-    const clBuf = this.clBuf;
-    const crBuf = this.crBuf;
-    const accL = this.accL;
-    const accR = this.accR;
-    const ma1 = mod[o] as number;
-    const ma2 = mod[o + 1] as number;
-    const mg2 = mod[o + 2] as number;
-    const mk = mod[o + 3] as number;
-    const a1 = car[o] as number;
-    const a2 = car[o + 1] as number;
-    const g2 = car[o + 2] as number;
-    const k = car[o + 3] as number;
+  private band(bandIndex: number, chunkLength: number, attackCoefficient: number, releaseCoefficient: number): void {
+    const coefficientOffset = 4 * bandIndex;
+    const modulatorCoefficients = this.modulatorCoefficients;
+    const carrierCoefficients = this.carrierCoefficients;
+    const modulatorBuffer = this.modulatorBuffer;
+    const carrierLeftBuffer = this.carrierLeftBuffer;
+    const carrierRightBuffer = this.carrierRightBuffer;
+    const leftSum = this.leftSum;
+    const rightSum = this.rightSum;
+    const modulatorA1 = modulatorCoefficients[coefficientOffset] as number;
+    const modulatorA2 = modulatorCoefficients[coefficientOffset + 1] as number;
+    const modulator2g = modulatorCoefficients[coefficientOffset + 2] as number;
+    const modulatorK = modulatorCoefficients[coefficientOffset + 3] as number;
+    const carrierA1 = carrierCoefficients[coefficientOffset] as number;
+    const carrierA2 = carrierCoefficients[coefficientOffset + 1] as number;
+    const carrier2g = carrierCoefficients[coefficientOffset + 2] as number;
+    const carrierK = carrierCoefficients[coefficientOffset + 3] as number;
     // Stage 1 (ic1, ic2) and stage 2 (ic1, ic2) of each bank.
-    const ms = this.modState;
-    const ls = this.leftState;
-    const rs = this.rightState;
-    let mA = ms[o] as number;
-    let mB = ms[o + 1] as number;
-    let mC = ms[o + 2] as number;
-    let mD = ms[o + 3] as number;
-    let lA = ls[o] as number;
-    let lB = ls[o + 1] as number;
-    let lC = ls[o + 2] as number;
-    let lD = ls[o + 3] as number;
-    let rA = rs[o] as number;
-    let rB = rs[o + 1] as number;
-    let rC = rs[o + 2] as number;
-    let rD = rs[o + 3] as number;
-    let e = this.env[b] as number;
+    const modulatorStates = this.modulatorState;
+    const leftStates = this.carrierLeftState;
+    const rightStates = this.carrierRightState;
+    let modulatorStage1Ic1 = modulatorStates[coefficientOffset] as number;
+    let modulatorStage1Ic2 = modulatorStates[coefficientOffset + 1] as number;
+    let modulatorStage2Ic1 = modulatorStates[coefficientOffset + 2] as number;
+    let modulatorStage2Ic2 = modulatorStates[coefficientOffset + 3] as number;
+    let leftStage1Ic1 = leftStates[coefficientOffset] as number;
+    let leftStage1Ic2 = leftStates[coefficientOffset + 1] as number;
+    let leftStage2Ic1 = leftStates[coefficientOffset + 2] as number;
+    let leftStage2Ic2 = leftStates[coefficientOffset + 3] as number;
+    let rightStage1Ic1 = rightStates[coefficientOffset] as number;
+    let rightStage1Ic2 = rightStates[coefficientOffset + 1] as number;
+    let rightStage2Ic1 = rightStates[coefficientOffset + 2] as number;
+    let rightStage2Ic2 = rightStates[coefficientOffset + 3] as number;
+    let envelope = this.bandEnvelope[bandIndex] as number;
     // Each stage (trapezoidal SVF, g = tan(πf/sr)): v3 = x − ic2, v1 = a1·ic1 + a2·v3, output k·v1,
     // then ic1 = 2·v1 − ic1 and ic2 = ic2 + 2g·v1 (the same as 2·(ic2 + g·v1) − ic2).
-    for (let j = 0; j < len; j++) {
+    for (let j = 0; j < chunkLength; j++) {
       // Modulator band: two SVF band-pass stages.
-      let v3 = (mBuf[j] as number) - mB;
-      let v1 = ma1 * mA + ma2 * v3;
-      const nA = 2 * v1 - mA;
-      mB += mg2 * v1;
-      mA = nA;
-      let y = mk * v1;
-      v3 = y - mD;
-      v1 = ma1 * mC + ma2 * v3;
-      const nC = 2 * v1 - mC;
-      mD += mg2 * v1;
-      mC = nC;
-      y = mk * v1;
+      let v3 = (modulatorBuffer[j] as number) - modulatorStage1Ic2;
+      let v1 = modulatorA1 * modulatorStage1Ic1 + modulatorA2 * v3;
+      const modulatorStage1Ic1Next = 2 * v1 - modulatorStage1Ic1;
+      modulatorStage1Ic2 += modulator2g * v1;
+      modulatorStage1Ic1 = modulatorStage1Ic1Next;
+      let stageOutput = modulatorK * v1;
+      v3 = stageOutput - modulatorStage2Ic2;
+      v1 = modulatorA1 * modulatorStage2Ic1 + modulatorA2 * v3;
+      const modulatorStage2Ic1Next = 2 * v1 - modulatorStage2Ic1;
+      modulatorStage2Ic2 += modulator2g * v1;
+      modulatorStage2Ic1 = modulatorStage2Ic1Next;
+      stageOutput = modulatorK * v1;
       // Its envelope.
-      const level = y < 0 ? -y : y;
-      const g = e + (level > e ? ac : rc) * (level - e);
-      e = g;
+      const modulatorLevel = stageOutput < 0 ? -stageOutput : stageOutput;
+      const newEnvelope =
+        envelope + (modulatorLevel > envelope ? attackCoefficient : releaseCoefficient) * (modulatorLevel - envelope);
+      envelope = newEnvelope;
       // Carrier band, left.
-      v3 = (clBuf[j] as number) - lB;
-      v1 = a1 * lA + a2 * v3;
-      const lnA = 2 * v1 - lA;
-      lB += g2 * v1;
-      lA = lnA;
-      y = k * v1;
-      v3 = y - lD;
-      v1 = a1 * lC + a2 * v3;
-      const lnC = 2 * v1 - lC;
-      lD += g2 * v1;
-      lC = lnC;
-      accL[j] = (accL[j] as number) + k * v1 * g;
+      v3 = (carrierLeftBuffer[j] as number) - leftStage1Ic2;
+      v1 = carrierA1 * leftStage1Ic1 + carrierA2 * v3;
+      const leftStage1Ic1Next = 2 * v1 - leftStage1Ic1;
+      leftStage1Ic2 += carrier2g * v1;
+      leftStage1Ic1 = leftStage1Ic1Next;
+      stageOutput = carrierK * v1;
+      v3 = stageOutput - leftStage2Ic2;
+      v1 = carrierA1 * leftStage2Ic1 + carrierA2 * v3;
+      const leftStage2Ic1Next = 2 * v1 - leftStage2Ic1;
+      leftStage2Ic2 += carrier2g * v1;
+      leftStage2Ic1 = leftStage2Ic1Next;
+      leftSum[j] = (leftSum[j] as number) + carrierK * v1 * newEnvelope;
       // Carrier band, right.
-      v3 = (crBuf[j] as number) - rB;
-      v1 = a1 * rA + a2 * v3;
-      const rnA = 2 * v1 - rA;
-      rB += g2 * v1;
-      rA = rnA;
-      y = k * v1;
-      v3 = y - rD;
-      v1 = a1 * rC + a2 * v3;
-      const rnC = 2 * v1 - rC;
-      rD += g2 * v1;
-      rC = rnC;
-      accR[j] = (accR[j] as number) + k * v1 * g;
+      v3 = (carrierRightBuffer[j] as number) - rightStage1Ic2;
+      v1 = carrierA1 * rightStage1Ic1 + carrierA2 * v3;
+      const rightStage1Ic1Next = 2 * v1 - rightStage1Ic1;
+      rightStage1Ic2 += carrier2g * v1;
+      rightStage1Ic1 = rightStage1Ic1Next;
+      stageOutput = carrierK * v1;
+      v3 = stageOutput - rightStage2Ic2;
+      v1 = carrierA1 * rightStage2Ic1 + carrierA2 * v3;
+      const rightStage2Ic1Next = 2 * v1 - rightStage2Ic1;
+      rightStage2Ic2 += carrier2g * v1;
+      rightStage2Ic1 = rightStage2Ic1Next;
+      rightSum[j] = (rightSum[j] as number) + carrierK * v1 * newEnvelope;
     }
-    ms[o] = mA;
-    ms[o + 1] = mB;
-    ms[o + 2] = mC;
-    ms[o + 3] = mD;
-    ls[o] = lA;
-    ls[o + 1] = lB;
-    ls[o + 2] = lC;
-    ls[o + 3] = lD;
-    rs[o] = rA;
-    rs[o + 1] = rB;
-    rs[o + 2] = rC;
-    rs[o + 3] = rD;
-    this.env[b] = e;
+    modulatorStates[coefficientOffset] = modulatorStage1Ic1;
+    modulatorStates[coefficientOffset + 1] = modulatorStage1Ic2;
+    modulatorStates[coefficientOffset + 2] = modulatorStage2Ic1;
+    modulatorStates[coefficientOffset + 3] = modulatorStage2Ic2;
+    leftStates[coefficientOffset] = leftStage1Ic1;
+    leftStates[coefficientOffset + 1] = leftStage1Ic2;
+    leftStates[coefficientOffset + 2] = leftStage2Ic1;
+    leftStates[coefficientOffset + 3] = leftStage2Ic2;
+    rightStates[coefficientOffset] = rightStage1Ic1;
+    rightStates[coefficientOffset + 1] = rightStage1Ic2;
+    rightStates[coefficientOffset + 2] = rightStage2Ic1;
+    rightStates[coefficientOffset + 3] = rightStage2Ic2;
+    this.bandEnvelope[bandIndex] = envelope;
   }
 
   /**
@@ -244,54 +246,55 @@ export class VocoderKernel extends EffectKernel<P> {
    * on the band count, its carrier frequency also on the formant, and the filter's g only on the
    * frequency: those are kept, so a width change only redoes the Q-dependent part.
    */
-  private design(count: number, width: number, formant: number): void {
-    if (count === this.count && width === this.width && formant === this.formant) return;
-    const sr = this.sampleRate;
-    const countChanged = count !== this.count;
-    if (countChanged) {
+  private design(bandCount: number, bandWidth: number, formantSemitones: number): void {
+    if (bandCount === this.bandCount && bandWidth === this.bandWidth && formantSemitones === this.formantSemitones)
+      return;
+    const sampleRate = this.sampleRate;
+    const hasNewBandCount = bandCount !== this.bandCount;
+    if (hasNewBandCount) {
       this.reset();
-      this.count = count;
-      this.spacing = Math.log2(HIGH_HZ / LOW_HZ) / (count - 1);
-      for (let b = 0; b < count; b++) {
-        const f = LOW_HZ * Math.pow(2, b * this.spacing);
-        this.modG[b] = Math.tan((Math.PI * Math.min(f, 0.45 * sr)) / sr);
-        this.bandHz[b] = f;
+      this.bandCount = bandCount;
+      this.bandSpacingOctaves = Math.log2(HIGHEST_BAND_HZ / LOWEST_BAND_HZ) / (bandCount - 1);
+      for (let b = 0; b < bandCount; b++) {
+        const centreHz = LOWEST_BAND_HZ * Math.pow(2, b * this.bandSpacingOctaves);
+        this.modulatorTan[b] = Math.tan((Math.PI * Math.min(centreHz, 0.45 * sampleRate)) / sampleRate);
+        this.bandHz[b] = centreHz;
       }
     }
-    if (countChanged || formant !== this.formant) {
-      this.formant = formant;
-      const shift = Math.pow(2, formant / 12);
-      for (let b = 0; b < count; b++) {
-        const f = (this.bandHz[b] as number) * shift;
-        this.carG[b] = Math.tan((Math.PI * Math.min(f, 0.45 * sr)) / sr);
+    if (hasNewBandCount || formantSemitones !== this.formantSemitones) {
+      this.formantSemitones = formantSemitones;
+      const formantRatio = Math.pow(2, formantSemitones / 12);
+      for (let b = 0; b < bandCount; b++) {
+        const centreHz = (this.bandHz[b] as number) * formantRatio;
+        this.carrierTan[b] = Math.tan((Math.PI * Math.min(centreHz, 0.45 * sampleRate)) / sampleRate);
       }
     }
-    this.width = width;
+    this.bandWidth = bandWidth;
     // Two stages that meet their neighbours at −3 dB: each stage is 0.64 × the touching Q.
-    const touching = 1 / (Math.pow(2, this.spacing / 2) - Math.pow(2, -this.spacing / 2));
-    const q = (0.6436 * touching) / width;
-    for (let b = 0; b < count; b++) {
-      coefficients(this.mod, 4 * b, this.modG[b] as number, q);
-      coefficients(this.car, 4 * b, this.carG[b] as number, q);
+    const touchingQ = 1 / (Math.pow(2, this.bandSpacingOctaves / 2) - Math.pow(2, -this.bandSpacingOctaves / 2));
+    const stageQ = (0.6436 * touchingQ) / bandWidth;
+    for (let b = 0; b < bandCount; b++) {
+      bandpassCoefficients(this.modulatorCoefficients, 4 * b, this.modulatorTan[b] as number, stageQ);
+      bandpassCoefficients(this.carrierCoefficients, 4 * b, this.carrierTan[b] as number, stageQ);
     }
   }
 
-  private ballistics(attack: number, release: number): void {
-    if (attack === this.attack && release === this.release) return;
-    this.attack = attack;
-    this.release = release;
-    this.attackCoef = 1 - Math.exp(-1000 / (attack * this.sampleRate));
-    this.releaseCoef = 1 - Math.exp(-1000 / (release * this.sampleRate));
+  private ballistics(attackMs: number, releaseMs: number): void {
+    if (attackMs === this.attackMs && releaseMs === this.releaseMs) return;
+    this.attackMs = attackMs;
+    this.releaseMs = releaseMs;
+    this.attackCoefficient = 1 - Math.exp(-1000 / (attackMs * this.sampleRate));
+    this.releaseCoefficient = 1 - Math.exp(-1000 / (releaseMs * this.sampleRate));
   }
 
   /** Silence must not leave denormals in the filters. */
-  private flushStates(count: number): void {
-    for (let i = 0; i < 4 * count; i++) {
-      if (!(Math.abs(this.modState[i] as number) > 1e-20)) this.modState[i] = 0;
-      if (!(Math.abs(this.leftState[i] as number) > 1e-20)) this.leftState[i] = 0;
-      if (!(Math.abs(this.rightState[i] as number) > 1e-20)) this.rightState[i] = 0;
+  private flushStates(bandCount: number): void {
+    for (let i = 0; i < 4 * bandCount; i++) {
+      if (!(Math.abs(this.modulatorState[i] as number) > 1e-20)) this.modulatorState[i] = 0;
+      if (!(Math.abs(this.carrierLeftState[i] as number) > 1e-20)) this.carrierLeftState[i] = 0;
+      if (!(Math.abs(this.carrierRightState[i] as number) > 1e-20)) this.carrierRightState[i] = 0;
     }
-    for (let b = 0; b < count; b++) if (!((this.env[b] as number) > 1e-20)) this.env[b] = 0;
+    for (let b = 0; b < bandCount; b++) if (!((this.bandEnvelope[b] as number) > 1e-20)) this.bandEnvelope[b] = 0;
   }
 }
 
@@ -299,11 +302,11 @@ export class VocoderKernel extends EffectKernel<P> {
  * Cytomic SVF band-pass coefficients (unity gain at the centre) into `out` at `o`, from g = tan(πf/sr)
  * and the Q: a1, a2 = g·a1, 2g, and k (the damping, 1/Q).
  */
-function coefficients(out: Float64Array, o: number, g: number, q: number): void {
-  const k = 1 / q;
-  const a1 = 1 / (1 + g * (g + k));
-  out[o] = a1;
-  out[o + 1] = g * a1;
-  out[o + 2] = 2 * g;
-  out[o + 3] = k;
+function bandpassCoefficients(out: Float64Array, offset: number, tangent: number, qFactor: number): void {
+  const damping = 1 / qFactor;
+  const a1 = 1 / (1 + tangent * (tangent + damping));
+  out[offset] = a1;
+  out[offset + 1] = tangent * a1;
+  out[offset + 2] = 2 * tangent;
+  out[offset + 3] = damping;
 }

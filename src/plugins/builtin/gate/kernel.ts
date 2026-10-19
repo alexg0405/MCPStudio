@@ -1,7 +1,7 @@
 import { at, dbToGain, EffectKernel, EnvelopeFollower, Ramp, type ParamBlock } from '@agstudio/sdk/worklet';
 import type { gateParams } from './params';
 
-type P = typeof gateParams;
+type Params = typeof gateParams;
 
 /** The key detector: a fast peak follower. */
 const DETECT_ATTACK_MS = 0.05;
@@ -12,7 +12,7 @@ export const HYSTERESIS_DB = 4;
  * The params are read, and the gains and coefficients derived from them recomputed, every CONTROL
  * frames; in between they ramp linearly. Automated params cost an add per frame, not two exp/pow calls.
  */
-const CONTROL = 32;
+const CONTROL_FRAMES = 32;
 
 /**
  * Noise gate keyed by the sidechain (the chosen track, or its own input when none is chosen). It
@@ -20,119 +20,119 @@ const CONTROL = 32;
  * HYSTERESIS_DB below it plus `hold`, then closes. Opening and closing are exponential with the
  * attack and release time constants; closed, the signal is turned down by `range`.
  */
-export class GateKernel extends EffectKernel<P> {
+export class GateKernel extends EffectKernel<Params> {
   private readonly detector = new EnvelopeFollower(this.sampleRate, DETECT_ATTACK_MS, DETECT_RELEASE_MS);
   /** 0 (closed) … 1 (open). */
-  private env = 0;
-  private open = false;
-  private holdLeft = 0;
+  private openness = 0;
+  private isOpen = false;
+  private holdFramesLeft = 0;
   /** The param values last read: a derived value is only re-aimed when its param has changed. */
-  private threshold = Number.NaN;
-  private range = Number.NaN;
-  private attack = Number.NaN;
-  private release = Number.NaN;
-  private readonly openAt = new Ramp();
-  private readonly closeAt = new Ramp();
-  private readonly floor = new Ramp();
-  private readonly attackCoef = new Ramp();
-  private readonly releaseCoef = new Ramp();
+  private thresholdDb = Number.NaN;
+  private rangeDb = Number.NaN;
+  private attackMs = Number.NaN;
+  private releaseMs = Number.NaN;
+  private readonly openLevel = new Ramp();
+  private readonly closeLevel = new Ramp();
+  private readonly closedGain = new Ramp();
+  private readonly attackCoefficient = new Ramp();
+  private readonly releaseCoefficient = new Ramp();
 
   override reset(): void {
     this.detector.reset();
-    this.env = 0;
-    this.open = false;
-    this.holdLeft = 0;
+    this.openness = 0;
+    this.isOpen = false;
+    this.holdFramesLeft = 0;
   }
 
   process(
     input: Float32Array[],
     output: Float32Array[],
-    n: number,
-    p: ParamBlock<P>,
+    frameCount: number,
+    params: ParamBlock<Params>,
     sidechain?: Float32Array[],
   ): void {
     const key = sidechain ?? input;
-    const inL = input[0] as Float32Array;
-    const inR = (input[1] ?? inL) as Float32Array;
-    const kL = key[0] as Float32Array;
-    const kR = (key[1] ?? kL) as Float32Array;
-    const outL = output[0] as Float32Array;
-    const outR = (output[1] ?? outL) as Float32Array;
-    const listen = (p.listen[0] as number) >= 0.5;
+    const inLeft = input[0] as Float32Array;
+    const inRight = (input[1] ?? inLeft) as Float32Array;
+    const keyLeft = key[0] as Float32Array;
+    const keyRight = (key[1] ?? keyLeft) as Float32Array;
+    const outLeft = output[0] as Float32Array;
+    const outRight = (output[1] ?? outLeft) as Float32Array;
+    const isListening = (params.listen[0] as number) >= 0.5;
     const msToFrames = this.sampleRate / 1000;
-    for (let s = 0; s < n; s += CONTROL) {
-      const end = Math.min(n, s + CONTROL);
-      this.aim(p, s, end - s);
-      let openAt = this.openAt.value;
-      let closeAt = this.closeAt.value;
-      let floor = this.floor.value;
-      let attackCoef = this.attackCoef.value;
-      let releaseCoef = this.releaseCoef.value;
-      const dOpenAt = this.openAt.slope;
-      const dCloseAt = this.closeAt.slope;
-      const dFloor = this.floor.slope;
-      const dAttack = this.attackCoef.slope;
-      const dRelease = this.releaseCoef.slope;
-      for (let i = s; i < end; i++) {
-        const a = kL[i] as number;
-        const b = kR[i] as number;
-        if (listen) {
-          outL[i] = a;
-          outR[i] = b;
+    for (let blockStart = 0; blockStart < frameCount; blockStart += CONTROL_FRAMES) {
+      const blockEnd = Math.min(frameCount, blockStart + CONTROL_FRAMES);
+      this.aim(params, blockStart, blockEnd - blockStart);
+      let openLevel = this.openLevel.value;
+      let closeLevel = this.closeLevel.value;
+      let closedGain = this.closedGain.value;
+      let attackCoefficient = this.attackCoefficient.value;
+      let releaseCoefficient = this.releaseCoefficient.value;
+      const openLevelSlope = this.openLevel.slope;
+      const closeLevelSlope = this.closeLevel.slope;
+      const closedGainSlope = this.closedGain.slope;
+      const attackSlope = this.attackCoefficient.slope;
+      const releaseSlope = this.releaseCoefficient.slope;
+      for (let i = blockStart; i < blockEnd; i++) {
+        const keyLeftSample = keyLeft[i] as number;
+        const keyRightSample = keyRight[i] as number;
+        if (isListening) {
+          outLeft[i] = keyLeftSample;
+          outRight[i] = keyRightSample;
           continue;
         }
-        openAt += dOpenAt;
-        closeAt += dCloseAt;
-        floor += dFloor;
-        attackCoef += dAttack;
-        releaseCoef += dRelease;
-        const aa = a < 0 ? -a : a;
-        const ab = b < 0 ? -b : b;
-        const level = this.detector.process(aa > ab ? aa : ab);
-        if (level > openAt || (this.open && level > closeAt)) {
-          this.open = true;
-          this.holdLeft = at(p.hold, i) * msToFrames;
-        } else if (this.holdLeft > 0) this.holdLeft -= 1;
-        else this.open = false;
-        const target = this.open || this.holdLeft > 0 ? 1 : 0;
-        const c = target > this.env ? attackCoef : releaseCoef;
-        let e = target + c * (this.env - target);
-        if (e < 1e-9) e = 0;
-        this.env = e;
-        const g = floor + (1 - floor) * e;
-        outL[i] = (inL[i] as number) * g;
-        outR[i] = (inR[i] as number) * g;
+        openLevel += openLevelSlope;
+        closeLevel += closeLevelSlope;
+        closedGain += closedGainSlope;
+        attackCoefficient += attackSlope;
+        releaseCoefficient += releaseSlope;
+        const leftLevel = keyLeftSample < 0 ? -keyLeftSample : keyLeftSample;
+        const rightLevel = keyRightSample < 0 ? -keyRightSample : keyRightSample;
+        const level = this.detector.process(leftLevel > rightLevel ? leftLevel : rightLevel);
+        if (level > openLevel || (this.isOpen && level > closeLevel)) {
+          this.isOpen = true;
+          this.holdFramesLeft = at(params.hold, i) * msToFrames;
+        } else if (this.holdFramesLeft > 0) this.holdFramesLeft -= 1;
+        else this.isOpen = false;
+        const targetOpenness = this.isOpen || this.holdFramesLeft > 0 ? 1 : 0;
+        const coefficient = targetOpenness > this.openness ? attackCoefficient : releaseCoefficient;
+        let nextOpenness = targetOpenness + coefficient * (this.openness - targetOpenness);
+        if (nextOpenness < 1e-9) nextOpenness = 0;
+        this.openness = nextOpenness;
+        const gain = closedGain + (1 - closedGain) * nextOpenness;
+        outLeft[i] = (inLeft[i] as number) * gain;
+        outRight[i] = (inRight[i] as number) * gain;
       }
-      this.openAt.land();
-      this.closeAt.land();
-      this.floor.land();
-      this.attackCoef.land();
-      this.releaseCoef.land();
+      this.openLevel.land();
+      this.closeLevel.land();
+      this.closedGain.land();
+      this.attackCoefficient.land();
+      this.releaseCoefficient.land();
     }
   }
 
   /** Reads the params at frame `i` and aims each derived value at its new target, if its param changed. */
-  private aim(p: ParamBlock<P>, i: number, frames: number): void {
-    const t = at(p.threshold, i);
-    if (t !== this.threshold) {
-      this.threshold = t;
-      this.openAt.aim(dbToGain(t), frames);
-      this.closeAt.aim(dbToGain(t - HYSTERESIS_DB), frames);
+  private aim(params: ParamBlock<Params>, frame: number, frames: number): void {
+    const thresholdDb = at(params.threshold, frame);
+    if (thresholdDb !== this.thresholdDb) {
+      this.thresholdDb = thresholdDb;
+      this.openLevel.aim(dbToGain(thresholdDb), frames);
+      this.closeLevel.aim(dbToGain(thresholdDb - HYSTERESIS_DB), frames);
     }
-    const r = at(p.range, i);
-    if (r !== this.range) {
-      this.range = r;
-      this.floor.aim(dbToGain(r), frames);
+    const rangeDb = at(params.range, frame);
+    if (rangeDb !== this.rangeDb) {
+      this.rangeDb = rangeDb;
+      this.closedGain.aim(dbToGain(rangeDb), frames);
     }
-    const attack = at(p.attack, i);
-    if (attack !== this.attack) {
-      this.attack = attack;
-      this.attackCoef.aim(coefficient(attack, this.sampleRate), frames);
+    const attack = at(params.attack, frame);
+    if (attack !== this.attackMs) {
+      this.attackMs = attack;
+      this.attackCoefficient.aim(coefficient(attack, this.sampleRate), frames);
     }
-    const release = at(p.release, i);
-    if (release !== this.release) {
-      this.release = release;
-      this.releaseCoef.aim(coefficient(release, this.sampleRate), frames);
+    const release = at(params.release, frame);
+    if (release !== this.releaseMs) {
+      this.releaseMs = release;
+      this.releaseCoefficient.aim(coefficient(release, this.sampleRate), frames);
     }
   }
 }

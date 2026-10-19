@@ -1,5 +1,6 @@
 import {
   at,
+  clamp,
   DelayLine,
   EffectKernel,
   pow2,
@@ -10,10 +11,10 @@ import {
 } from '@agstudio/sdk/worklet';
 import { RANGE_HZ, RANGES, TUNE_SCALES, tuneLatencyFrames, type tuneParams } from './params';
 
-type P = typeof tuneParams;
+type Params = typeof tuneParams;
 
 /** A new pitch estimate every HOP frames. */
-const HOP = 256;
+const HOP_FRAMES = 256;
 /** Keep the current note until another is this much (semitones) nearer: no flicker in between. */
 const HYSTERESIS = 0.2;
 /** Detections less sure than this count as unvoiced. */
@@ -25,7 +26,7 @@ const REST_CENTS = 1;
  * below (less than half a period, or less than one frame), so the drift is short and stays far under a vibrato.
  */
 const REST_RATE = 0.0035;
-/** The drift until a rest has lasted REST_HOLD: what it always was (≈ 3 cents). */
+/** The drift until a rest has lasted REST_HOLD_SEC: what it always was (≈ 3 cents). */
 const REST_RATE_SLOW = 0.002;
 /**
  * After a correction ends the read head is a few milliseconds off its centre. While the voice sounds it jumps back a
@@ -35,59 +36,66 @@ const REST_RATE_SLOW = 0.002;
  */
 const UNPITCHED_HOPS = 8;
 /** The correction must have stayed below REST_CENTS this long (seconds) before the head is brought back (a glide crossing a note is not an end). */
-const REST_HOLD = 0.03;
+const REST_HOLD_SEC = 0.03;
 /** Largest correction applied, semitones. */
-const MAX_SHIFT = 12;
+const MAX_SHIFT_SEMITONES = 12;
 /** Length of a splice's crossfade, seconds. */
-const SPLICE_SECONDS = 0.004;
+const SPLICE_SEC = 0.004;
 /** The period assumed when none was found yet, seconds (a splice then just jumps this far). */
-const FALLBACK_PERIOD = 0.005;
+const FALLBACK_PERIOD_SEC = 0.005;
 
 /** Played notes the kernel keeps track of at once (a chord of more is rare; the oldest goes). */
 const MAX_HELD = 16;
 /** Time constants (seconds) of the slow pitch line and the note average that "keep natural drift" compares. */
-const DRIFT_SLOW_TAU = 0.1;
-const DRIFT_AVG_TAU = 1;
+const DRIFT_SLOW_TAU_SEC = 0.1;
+const DRIFT_AVERAGE_TAU_SEC = 1;
 /** Seconds the added vibrato takes to fade in after a note starts. */
-const VIBRATO_FADE = 0.35;
+const VIBRATO_FADE_SEC = 0.35;
 /** Grains that can sound at once in "keep formants" mode (up to 4 overlap at the largest shift, plus the next). */
 const MAX_GRAINS = 8;
 /** Size of the grain window table (a Hann curve, read with interpolation). */
-const WINDOW_SIZE = 512;
+const GRAIN_WINDOW_SIZE = 512;
 const TWO_PI = Math.PI * 2;
 
 /** One Hann curve over 0..1, shared by every kernel (built once, outside process()). */
-const WINDOW = (() => {
-  const t = new Float32Array(WINDOW_SIZE + 1);
-  for (let i = 0; i <= WINDOW_SIZE; i++) t[i] = 0.5 - 0.5 * Math.cos((TWO_PI * i) / WINDOW_SIZE);
-  return t;
+const GRAIN_WINDOW = (() => {
+  const curve = new Float32Array(GRAIN_WINDOW_SIZE + 1);
+  for (let i = 0; i <= GRAIN_WINDOW_SIZE; i++) curve[i] = 0.5 - 0.5 * Math.cos((TWO_PI * i) / GRAIN_WINDOW_SIZE);
+  return curve;
 })();
 
 /** Pitch-class masks (bit n = n semitones above the root) of every scale, by enum index. */
-const MASKS = TUNE_SCALES.map((s) => s.intervals.reduce<number>((m, i) => m | (1 << i), 0));
+const SCALE_MASKS = TUNE_SCALES.map((scale) =>
+  scale.intervals.reduce<number>((mask, interval) => mask | (1 << interval), 0),
+);
+
+/** Semitones either side of a pitch that the nearest-note search looks through (half an octave). */
+const SEARCH_SEMITONES = 6;
 
 /**
- * The nearest note of a key and scale to a pitch (fractional MIDI note), keeping `current` while
- * it is within HYSTERESIS of being as near (−1 for none).
+ * The nearest note of a key and scale to a pitch (fractional MIDI note), keeping `currentNote` while
+ * it is within HYSTERESIS of being as near (−1 for none). `scaleMask` has bit n set for the note n
+ * semitones above `keyRoot` (a pitch class, 0 = C).
  */
-export function nearestNote(midi: number, root: number, mask: number, current: number): number {
-  let best = -1;
-  let bestDist = Infinity;
-  const centre = Math.round(midi);
-  for (let n = centre - 6; n <= centre + 6; n++) {
-    const pc = (((n - root) % 12) + 12) % 12;
-    if (!(mask & (1 << pc))) continue;
-    const d = Math.abs(midi - n);
-    if (d < bestDist) {
-      bestDist = d;
-      best = n;
+export function nearestNote(pitchMidi: number, keyRoot: number, scaleMask: number, currentNote: number): number {
+  let bestNote = -1;
+  let bestDistance = Infinity;
+  const nearestWhole = Math.round(pitchMidi);
+  for (let note = nearestWhole - SEARCH_SEMITONES; note <= nearestWhole + SEARCH_SEMITONES; note++) {
+    const semitonesAboveRoot = (((note - keyRoot) % 12) + 12) % 12;
+    if (!(scaleMask & (1 << semitonesAboveRoot))) continue;
+    const distance = Math.abs(pitchMidi - note);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestNote = note;
     }
   }
-  if (current >= 0 && best !== current) {
-    const pc = (((current - root) % 12) + 12) % 12;
-    if (mask & (1 << pc) && Math.abs(midi - current) <= bestDist + HYSTERESIS) return current;
+  if (currentNote >= 0 && bestNote !== currentNote) {
+    const semitonesAboveRoot = (((currentNote - keyRoot) % 12) + 12) % 12;
+    const isInScale = scaleMask & (1 << semitonesAboveRoot);
+    if (isInScale && Math.abs(pitchMidi - currentNote) <= bestDistance + HYSTERESIS) return currentNote;
   }
-  return best;
+  return bestNote;
 }
 
 /**
@@ -104,68 +112,69 @@ export function nearestNote(midi: number, root: number, mask: number, current: n
  * voice sounds, straight to the centre once no pitch has been found for ~43 ms, so the output is
  * the delayed input again within milliseconds of a pause and under a second of a held note.
  */
-export class TuneKernel extends EffectKernel<P> {
+export class TuneKernel extends EffectKernel<Params> {
   readonly latency = tuneLatencyFrames(this.sampleRate);
-  private readonly splice = Math.max(16, Math.round(SPLICE_SECONDS * this.sampleRate));
+  private readonly spliceFrames = Math.max(16, Math.round(SPLICE_SEC * this.sampleRate));
   /** How far the head may stray from the centre before splicing. */
-  private readonly reach = this.latency - this.splice - 8;
-  private readonly lines = [new DelayLine(4 * this.latency + 64), new DelayLine(4 * this.latency + 64)];
+  private readonly maxHeadOffset = this.latency - this.spliceFrames - 8;
+  private readonly delayLines = [new DelayLine(4 * this.latency + 64), new DelayLine(4 * this.latency + 64)];
   private readonly detectors: Yin[];
   private readonly meter = new Readings(this.host, ['pitch', 'target', 'cents'] as const);
-  private range = -1;
-  private hop = 0;
-  private target = -1;
-  /** The correction being applied, cents (glides towards `goal`). */
-  private cents = 0;
-  /** `drift` is the read-speed change for `driftCents` (the cents it was computed from). */
-  private driftCents = Number.NaN;
-  private drift = 0;
-  private goal = 0;
-  private speed = -1;
-  private glide = 1;
+  private rangeIndex = -1;
+  private framesSinceDetection = 0;
+  private targetNote = -1;
+  /** The correction being applied, cents (glides towards `goalCents`). */
+  private correctionCents = 0;
+  /** `headDriftPerFrame` is the read-speed change for `driftComputedForCents` (the cents it was computed from). */
+  private driftComputedForCents = Number.NaN;
+  private headDriftPerFrame = 0;
+  private goalCents = 0;
+  /** The Retune speed last seen (ms) and the one-pole coefficient that glides the correction at that speed. */
+  private retuneSpeedMs = -1;
+  private glideCoefficient = 1;
   /** The playing head's delay, frames, and the incoming one's during a splice. */
-  private head: number;
-  private next = 0;
+  private readHead: number;
+  private incomingHead = 0;
   /** Frames into the current splice (−1: none). */
-  private fade = -1;
+  private spliceFrame = -1;
   /** The last period found, frames. */
-  private period: number;
+  private periodFrames: number;
 
   // ---- Played notes (Target = notes) ----
   private readonly heldKeys = new Int16Array(MAX_HELD);
   private readonly heldIds = new Int32Array(MAX_HELD);
-  private held = 0;
+  private heldCount = 0;
 
   // ---- Keep natural drift: the singer's slow line and its long average, in cents ----
-  private slowC = 0;
-  private avgC = 0;
-  private driftFresh = true;
-  private readonly slowA = 1 - Math.exp(-HOP / (DRIFT_SLOW_TAU * this.sampleRate));
-  private readonly avgA = 1 - Math.exp(-HOP / (DRIFT_AVG_TAU * this.sampleRate));
+  private slowLineCents = 0;
+  private averageLineCents = 0;
+  private needsDriftRestart = true;
+  private readonly slowLineSmoothing = 1 - Math.exp(-HOP_FRAMES / (DRIFT_SLOW_TAU_SEC * this.sampleRate));
+  private readonly averageLineSmoothing = 1 - Math.exp(-HOP_FRAMES / (DRIFT_AVERAGE_TAU_SEC * this.sampleRate));
 
   // ---- Added vibrato ----
-  private vibPhase = 0;
-  private vibEnv = 0;
-  private readonly vibFade = HOP / (VIBRATO_FADE * this.sampleRate);
+  private vibratoPhase = 0;
+  private vibratoLevel = 0;
+  private readonly vibratoFadeStep = HOP_FRAMES / (VIBRATO_FADE_SEC * this.sampleRate);
 
   // ---- Keep formants: overlapped grains read at their own speed (pitch-synchronous OLA) ----
   /** Per grain: its delay behind the write head (constant: it plays at speed 1), the offset from its centre, its half width (0 = free). */
-  private readonly gDelay = new Float64Array(MAX_GRAINS);
-  private readonly gAt = new Float64Array(MAX_GRAINS);
-  private readonly gHalf = new Float64Array(MAX_GRAINS);
+  private readonly grainDelay = new Float64Array(MAX_GRAINS);
+  private readonly grainOffset = new Float64Array(MAX_GRAINS);
+  private readonly grainHalfWidth = new Float64Array(MAX_GRAINS);
   /** A frame counter (only counted while the mode is on), and the sequence of grains: next centre and half width, last analysis centre. */
-  private frame = 0;
-  private seq = false;
+  private grainClock = 0;
+  private isGrainSequenceRunning = false;
   private nextCentre = 0;
-  private nextHalf = 0;
+  private nextHalfWidth = 0;
   private lastCentre = 0;
   /** True while the last detection found a pitch with something to pull to. */
-  private voiced = false;
+  private isVoiced = false;
   /** Detections in a row that found no pitch at all (the voice is silent or unpitched). */
-  private unpitched = 0;
-  /** Frames the correction has been under REST_CENTS, and how long it takes to count as over. */
-  private restFor = 0;
-  private readonly restHold = Math.round(REST_HOLD * this.sampleRate);
+  private unpitchedHops = 0;
+  /** Frames the correction has been under REST_CENTS, and how many it takes to count as over. */
+  private restFrames = 0;
+  private readonly restHoldFrames = Math.round(REST_HOLD_SEC * this.sampleRate);
 
   constructor(host: KernelHost) {
     super(host);
@@ -173,8 +182,8 @@ export class TuneKernel extends EffectKernel<P> {
       const [minHz, maxHz] = RANGE_HZ[r];
       return new Yin(this.sampleRate, { minHz, maxHz });
     });
-    this.head = this.latency;
-    this.period = FALLBACK_PERIOD * this.sampleRate;
+    this.readHead = this.latency;
+    this.periodFrames = FALLBACK_PERIOD_SEC * this.sampleRate;
     const v = this.meter.values;
     v.pitch = 0;
     v.target = -1;
@@ -182,168 +191,173 @@ export class TuneKernel extends EffectKernel<P> {
   }
 
   override reset(): void {
-    for (const l of this.lines) l.clear();
+    for (const l of this.delayLines) l.clear();
     for (const d of this.detectors) d.reset();
-    this.target = -1;
-    this.cents = 0;
-    this.goal = 0;
-    this.head = this.latency;
-    this.fade = -1;
-    this.held = 0;
-    this.driftFresh = true;
-    this.vibEnv = 0;
-    this.unpitched = 0;
-    this.restFor = 0;
+    this.targetNote = -1;
+    this.correctionCents = 0;
+    this.goalCents = 0;
+    this.readHead = this.latency;
+    this.spliceFrame = -1;
+    this.heldCount = 0;
+    this.needsDriftRestart = true;
+    this.vibratoLevel = 0;
+    this.unpitchedHops = 0;
+    this.restFrames = 0;
     this.stopGrains();
   }
 
   // ---- Played notes ----
 
   override noteOn(key: number, _velocity: number, noteId: number): void {
-    for (let i = 0; i < this.held; i++) {
+    for (let i = 0; i < this.heldCount; i++) {
       if (this.heldIds[i] === noteId) {
         this.heldKeys[i] = key;
         return;
       }
     }
-    if (this.held === MAX_HELD) {
+    if (this.heldCount === MAX_HELD) {
       // The oldest goes.
       this.heldKeys.copyWithin(0, 1);
       this.heldIds.copyWithin(0, 1);
-      this.held--;
+      this.heldCount--;
     }
-    this.heldKeys[this.held] = key;
-    this.heldIds[this.held] = noteId;
-    this.held++;
+    this.heldKeys[this.heldCount] = key;
+    this.heldIds[this.heldCount] = noteId;
+    this.heldCount++;
   }
 
   override noteOff(noteId: number): void {
-    for (let i = 0; i < this.held; i++) {
+    for (let i = 0; i < this.heldCount; i++) {
       if (this.heldIds[i] !== noteId) continue;
-      this.heldKeys.copyWithin(i, i + 1, this.held);
-      this.heldIds.copyWithin(i, i + 1, this.held);
-      this.held--;
+      this.heldKeys.copyWithin(i, i + 1, this.heldCount);
+      this.heldIds.copyWithin(i, i + 1, this.heldCount);
+      this.heldCount--;
       return;
     }
   }
 
   override allNotesOff(): void {
-    this.held = 0;
+    this.heldCount = 0;
   }
 
   /** The held note nearest to a pitch (fractional MIDI), keeping `current` while it is held and within HYSTERESIS of as near (-1: none held). */
-  private nearestHeld(midi: number, current: number): number {
-    let best = -1;
-    let bestDist = Infinity;
-    let currentHeld = false;
-    for (let i = 0; i < this.held; i++) {
-      const k = this.heldKeys[i] as number;
-      if (k === current) currentHeld = true;
-      const d = Math.abs(midi - k);
-      if (d < bestDist || (d === bestDist && k < best)) {
-        bestDist = d;
-        best = k;
+  private nearestHeld(pitchMidi: number, currentNote: number): number {
+    let bestNote = -1;
+    let bestDistance = Infinity;
+    let isCurrentHeld = false;
+    for (let i = 0; i < this.heldCount; i++) {
+      const heldKey = this.heldKeys[i] as number;
+      if (heldKey === currentNote) isCurrentHeld = true;
+      const distance = Math.abs(pitchMidi - heldKey);
+      if (distance < bestDistance || (distance === bestDistance && heldKey < bestNote)) {
+        bestDistance = distance;
+        bestNote = heldKey;
       }
     }
-    if (currentHeld && best !== current && Math.abs(midi - current) <= bestDist + HYSTERESIS) return current;
-    return best;
+    if (isCurrentHeld && bestNote !== currentNote && Math.abs(pitchMidi - currentNote) <= bestDistance + HYSTERESIS)
+      return currentNote;
+    return bestNote;
   }
 
-  process(input: Float32Array[], output: Float32Array[], n: number, p: ParamBlock<P>): void {
-    const inL = input[0] as Float32Array;
-    const inR = (input[1] ?? inL) as Float32Array;
-    const outL = output[0] as Float32Array;
-    const outR = (output[1] ?? outL) as Float32Array;
-    const range = Math.round(p.range[0] as number);
-    if (range !== this.range) {
-      this.range = range;
-      this.detectors[range]?.reset();
-      this.target = -1;
+  process(input: Float32Array[], output: Float32Array[], frameCount: number, params: ParamBlock<Params>): void {
+    const inLeft = input[0] as Float32Array;
+    const inRight = (input[1] ?? inLeft) as Float32Array;
+    const outLeft = output[0] as Float32Array;
+    const outRight = (output[1] ?? outLeft) as Float32Array;
+    const rangeIndex = Math.round(params.range[0] as number);
+    if (rangeIndex !== this.rangeIndex) {
+      this.rangeIndex = rangeIndex;
+      this.detectors[rangeIndex]?.reset();
+      this.targetNote = -1;
     }
-    const yin = (this.detectors[range] ?? this.detectors[1]) as Yin;
-    const root = Math.round(p.key[0] as number);
-    const mask = MASKS[Math.round(p.scale[0] as number)] ?? 0xfff;
-    const fromNotes = Math.round(p.source[0] as number) === 1;
-    const humanize = p.humanize[0] as number;
-    const vibDepth = p.vibratoDepth[0] as number;
-    const vibInc = (p.vibratoRate[0] as number) / this.sampleRate;
-    const formant = (p.formant[0] as number) > 0.5;
-    if (!formant && this.seq) this.stopGrains();
-    const lineL = this.lines[0] as DelayLine;
-    const lineR = this.lines[1] as DelayLine;
-    const centre = this.latency;
-    for (let i = 0; i < n; i++) {
-      const xl = inL[i] as number;
-      const xr = inR[i] as number;
-      yin.push(0.5 * (xl + xr));
-      if (++this.hop >= HOP) {
-        this.hop = 0;
-        this.retarget(yin, root, mask, fromNotes, humanize);
+    const detector = (this.detectors[rangeIndex] ?? this.detectors[1]) as Yin;
+    const keyRoot = Math.round(params.key[0] as number);
+    const scaleMask = SCALE_MASKS[Math.round(params.scale[0] as number)] ?? 0xfff;
+    const fromNotes = Math.round(params.source[0] as number) === 1;
+    const humanize = params.humanize[0] as number;
+    const vibratoDepthCents = params.vibratoDepth[0] as number;
+    const vibratoStep = (params.vibratoRate[0] as number) / this.sampleRate;
+    const keepsFormants = (params.formant[0] as number) > 0.5;
+    if (!keepsFormants && this.isGrainSequenceRunning) this.stopGrains();
+    const leftLine = this.delayLines[0] as DelayLine;
+    const rightLine = this.delayLines[1] as DelayLine;
+    const centreDelay = this.latency;
+    for (let i = 0; i < frameCount; i++) {
+      const inputLeft = inLeft[i] as number;
+      const inputRight = inRight[i] as number;
+      // 1. Pitch: feed the detector; a new estimate (and target note) every HOP_FRAMES frames.
+      detector.push(0.5 * (inputLeft + inputRight));
+      if (++this.framesSinceDetection >= HOP_FRAMES) {
+        this.framesSinceDetection = 0;
+        this.retarget(detector, keyRoot, scaleMask, fromNotes, humanize);
       }
-      const speed = at(p.speed, i);
-      if (speed !== this.speed) {
-        this.speed = speed;
-        this.glide = speed > 0 ? 1 - Math.exp(-1000 / (speed * this.sampleRate)) : 1;
+      // 2. Correction: glide the correction (in cents) towards its goal, plus the added vibrato.
+      const retuneSpeedMs = at(params.speed, i);
+      if (retuneSpeedMs !== this.retuneSpeedMs) {
+        this.retuneSpeedMs = retuneSpeedMs;
+        this.glideCoefficient = retuneSpeedMs > 0 ? 1 - Math.exp(-1000 / (retuneSpeedMs * this.sampleRate)) : 1;
       }
-      if (vibDepth > 0) {
-        this.vibPhase += vibInc;
-        if (this.vibPhase >= 1) this.vibPhase -= 1;
-        const vib = vibDepth * this.vibEnv * Math.sin(TWO_PI * this.vibPhase);
-        this.cents += (this.goal + vib - this.cents) * this.glide;
-      } else this.cents += (this.goal - this.cents) * this.glide;
-      // A delay that grows by (1 - ratio) per frame plays `ratio` times as fast. The ratio only changes
+      if (vibratoDepthCents > 0) {
+        this.vibratoPhase += vibratoStep;
+        if (this.vibratoPhase >= 1) this.vibratoPhase -= 1;
+        const vibratoCents = vibratoDepthCents * this.vibratoLevel * Math.sin(TWO_PI * this.vibratoPhase);
+        this.correctionCents += (this.goalCents + vibratoCents - this.correctionCents) * this.glideCoefficient;
+      } else this.correctionCents += (this.goalCents - this.correctionCents) * this.glideCoefficient;
+      // 3. Shifter: move the read head. A delay that grows by (1 - ratio) per frame plays `ratio` times as fast. The ratio only changes
       // while the correction glides (or retargets), so it is kept between those.
-      if (this.cents !== this.driftCents) {
-        this.driftCents = this.cents;
-        this.drift = 1 - pow2(this.cents / 1200);
+      if (this.correctionCents !== this.driftComputedForCents) {
+        this.driftComputedForCents = this.correctionCents;
+        this.headDriftPerFrame = 1 - pow2(this.correctionCents / 1200);
       }
-      const drift = this.drift;
-      if (Math.abs(this.cents) < REST_CENTS) {
-        if (this.restFor < this.restHold) this.restFor++;
-      } else this.restFor = 0;
-      if (this.fade < 0 && Math.abs(this.cents) < REST_CENTS) {
-        // Nothing to correct: back to the centre (where the output is the delayed input).
-        const off = this.head - centre;
-        if (off > REST_RATE || off < -REST_RATE) this.rest(off);
-        else this.head = centre;
+      const driftPerFrame = this.headDriftPerFrame;
+      if (Math.abs(this.correctionCents) < REST_CENTS) {
+        if (this.restFrames < this.restHoldFrames) this.restFrames++;
+      } else this.restFrames = 0;
+      if (this.spliceFrame < 0 && Math.abs(this.correctionCents) < REST_CENTS) {
+        // Nothing to correct: back to the centreDelay (where the output is the delayed input).
+        const offset = this.readHead - centreDelay;
+        if (offset > REST_RATE || offset < -REST_RATE) this.rest(offset);
+        else this.readHead = centreDelay;
       } else {
-        this.head += drift;
-        if (this.fade >= 0) this.next += drift;
-        else if (this.head < centre - this.reach || this.head > centre + this.reach) this.startSplice();
+        this.readHead += driftPerFrame;
+        if (this.spliceFrame >= 0) this.incomingHead += driftPerFrame;
+        else if (this.readHead < centreDelay - this.maxHeadOffset || this.readHead > centreDelay + this.maxHeadOffset)
+          this.startSplice();
       }
-      lineL.write(xl);
-      lineR.write(xr);
-      let wl = lineL.readCubic(this.head);
-      let wr = lineR.readCubic(this.head);
-      if (this.fade >= 0) {
-        const t = (this.fade + 1) / this.splice;
-        const g = 0.5 - 0.5 * Math.cos(Math.PI * t);
-        wl += g * (lineL.readCubic(this.next) - wl);
-        wr += g * (lineR.readCubic(this.next) - wr);
-        if (++this.fade >= this.splice) {
-          this.head = this.next;
-          this.fade = -1;
+      // 4. Output: read the shifted sound (crossfading to the incoming head during a splice), then mix with the dry.
+      leftLine.write(inputLeft);
+      rightLine.write(inputRight);
+      let wetLeft = leftLine.readCubic(this.readHead);
+      let wetRight = rightLine.readCubic(this.readHead);
+      if (this.spliceFrame >= 0) {
+        const progress = (this.spliceFrame + 1) / this.spliceFrames;
+        const incomingShare = 0.5 - 0.5 * Math.cos(Math.PI * progress);
+        wetLeft += incomingShare * (leftLine.readCubic(this.incomingHead) - wetLeft);
+        wetRight += incomingShare * (rightLine.readCubic(this.incomingHead) - wetRight);
+        if (++this.spliceFrame >= this.spliceFrames) {
+          this.readHead = this.incomingHead;
+          this.spliceFrame = -1;
         }
       }
-      if (formant) {
-        const c = this.grains(lineL, lineR, 1 - this.drift);
-        if (c > 0) {
-          wl += (this.grainL - wl) * c;
-          wr += (this.grainR - wr) * c;
+      if (keepsFormants) {
+        const grainShare = this.grains(leftLine, rightLine, 1 - this.headDriftPerFrame);
+        if (grainShare > 0) {
+          wetLeft += (this.grainLeft - wetLeft) * grainShare;
+          wetRight += (this.grainRight - wetRight) * grainShare;
         }
       }
-      const dl = lineL.read(centre);
-      const dr = lineR.read(centre);
-      const mix = at(p.mix, i);
-      outL[i] = dl + mix * (wl - dl);
-      outR[i] = dr + mix * (wr - dr);
+      const dryLeft = leftLine.read(centreDelay);
+      const dryRight = rightLine.read(centreDelay);
+      const mix = at(params.mix, i);
+      outLeft[i] = dryLeft + mix * (wetLeft - dryLeft);
+      outRight[i] = dryRight + mix * (wetRight - dryRight);
     }
-    this.meter.tick(n);
+    this.meter.tick(frameCount);
   }
 
   /** Grain mode's wet output for this frame (set by `grains`). */
-  private grainL = 0;
-  private grainR = 0;
+  private grainLeft = 0;
+  private grainRight = 0;
 
   /**
    * Keep formants. Pitch-synchronous overlap-add: a grain is two periods of the voice under a Hann window,
@@ -352,71 +366,73 @@ export class TuneKernel extends EffectKernel<P> {
    * periods and a fall skips some. Returns how much of the wet sound this frame the grains supply (0-1; it
    * ramps in and out with the first and last grain), with the sound in `grainL` / `grainR`.
    */
-  private grains(lineL: DelayLine, lineR: DelayLine, ratio: number): number {
-    const frame = this.frame++;
-    if (this.voiced) {
-      const period = this.period;
-      if (!this.seq) {
-        this.seq = true;
-        this.nextHalf = period;
-        this.nextCentre = frame + period;
+  private grains(leftLine: DelayLine, rightLine: DelayLine, speedRatio: number): number {
+    const clock = this.grainClock++;
+    if (this.isVoiced) {
+      const periodFrames = this.periodFrames;
+      if (!this.isGrainSequenceRunning) {
+        this.isGrainSequenceRunning = true;
+        this.nextHalfWidth = periodFrames;
+        this.nextCentre = clock + periodFrames;
         // The first grain reads exactly the latency behind: no shift, no offset.
         this.lastCentre = this.nextCentre - this.latency;
       }
       // Spawn every grain that is due (one at a time at the usual rates).
-      let guard = 0;
-      while (frame >= this.nextCentre - this.nextHalf && guard++ < 4) {
-        let slot = -1;
-        for (let g = 0; g < MAX_GRAINS; g++) {
-          if (this.gHalf[g] === 0) {
-            slot = g;
+      let spawned = 0;
+      while (clock >= this.nextCentre - this.nextHalfWidth && spawned++ < 4) {
+        let freeSlot = -1;
+        for (let grain = 0; grain < MAX_GRAINS; grain++) {
+          if (this.grainHalfWidth[grain] === 0) {
+            freeSlot = grain;
             break;
           }
         }
-        const centre = this.nextCentre;
-        const half = this.nextHalf;
-        if (slot >= 0) {
-          const k = Math.round((centre - this.latency - this.lastCentre) / period);
-          const source = this.lastCentre + k * period;
-          this.lastCentre = source;
-          this.gDelay[slot] = centre - source;
-          this.gAt[slot] = -half;
-          this.gHalf[slot] = half;
+        const grainCentre = this.nextCentre;
+        const grainHalf = this.nextHalfWidth;
+        if (freeSlot >= 0) {
+          const periodsApart = Math.round((grainCentre - this.latency - this.lastCentre) / periodFrames);
+          const sourceCentre = this.lastCentre + periodsApart * periodFrames;
+          this.lastCentre = sourceCentre;
+          this.grainDelay[freeSlot] = grainCentre - sourceCentre;
+          this.grainOffset[freeSlot] = -grainHalf;
+          this.grainHalfWidth[freeSlot] = grainHalf;
         }
-        const out = period / (ratio > 0.5 ? ratio : 0.5);
-        this.nextCentre = centre + out;
+        const spacing = periodFrames / (speedRatio > 0.5 ? speedRatio : 0.5);
+        this.nextCentre = grainCentre + spacing;
         // Wider windows keep a fall of up to an octave from leaving gaps between grains.
-        this.nextHalf = Math.max(period, 0.75 * out);
+        this.nextHalfWidth = Math.max(periodFrames, 0.75 * spacing);
       }
-    } else if (this.seq) this.seq = false;
-    let sum = 0;
-    let sl = 0;
-    let sr = 0;
-    for (let g = 0; g < MAX_GRAINS; g++) {
-      const half = this.gHalf[g] as number;
-      if (half === 0) continue;
-      const offset = this.gAt[g] as number;
-      const u = ((offset + half) / (2 * half)) * WINDOW_SIZE;
-      const i = u | 0;
-      const w = (WINDOW[i] as number) + ((WINDOW[i + 1] as number) - (WINDOW[i] as number)) * (u - i);
-      const delay = this.gDelay[g] as number;
-      sum += w;
-      sl += w * lineL.readCubic(delay);
-      sr += w * lineR.readCubic(delay);
-      if (offset + 1 >= half) this.gHalf[g] = 0;
-      else this.gAt[g] = offset + 1;
+    } else if (this.isGrainSequenceRunning) this.isGrainSequenceRunning = false;
+    let windowSum = 0;
+    let leftSum = 0;
+    let rightSum = 0;
+    for (let grain = 0; grain < MAX_GRAINS; grain++) {
+      const halfWidth = this.grainHalfWidth[grain] as number;
+      if (halfWidth === 0) continue;
+      const offsetFromCentre = this.grainOffset[grain] as number;
+      const windowPosition = ((offsetFromCentre + halfWidth) / (2 * halfWidth)) * GRAIN_WINDOW_SIZE;
+      const windowIndex = windowPosition | 0;
+      const windowLow = GRAIN_WINDOW[windowIndex] as number;
+      const windowHigh = GRAIN_WINDOW[windowIndex + 1] as number;
+      const weight = windowLow + (windowHigh - windowLow) * (windowPosition - windowIndex);
+      const delayFrames = this.grainDelay[grain] as number;
+      windowSum += weight;
+      leftSum += weight * leftLine.readCubic(delayFrames);
+      rightSum += weight * rightLine.readCubic(delayFrames);
+      if (offsetFromCentre + 1 >= halfWidth) this.grainHalfWidth[grain] = 0;
+      else this.grainOffset[grain] = offsetFromCentre + 1;
     }
-    if (sum < 1e-6) return 0;
-    this.grainL = sl / sum;
-    this.grainR = sr / sum;
-    const c = sum / (0.9 * ratio);
-    return c > 1 ? 1 : c;
+    if (windowSum < 1e-6) return 0;
+    this.grainLeft = leftSum / windowSum;
+    this.grainRight = rightSum / windowSum;
+    const coverage = windowSum / (0.9 * speedRatio);
+    return coverage > 1 ? 1 : coverage;
   }
 
   /** Lets every grain go (the sequence starts afresh at the next voiced note). */
   private stopGrains(): void {
-    this.gHalf.fill(0);
-    this.seq = false;
+    this.grainHalfWidth.fill(0);
+    this.isGrainSequenceRunning = false;
   }
 
   /**
@@ -425,98 +441,105 @@ export class TuneKernel extends EffectKernel<P> {
    * for a while), else drift the last stretch. Never allocates.
    */
   private rest(off: number): void {
-    const period = this.period;
+    const period = this.periodFrames;
     // A glide through a note, or a moment of in-tune pitch, is not the end of a correction: only the slow drift until it has lasted.
-    if (this.restFor < this.restHold) {
-      this.head += off > 0 ? -REST_RATE_SLOW : REST_RATE_SLOW;
+    if (this.restFrames < this.restHoldFrames) {
+      this.readHead += off > 0 ? -REST_RATE_SLOW : REST_RATE_SLOW;
       return;
     }
-    if (this.unpitched >= UNPITCHED_HOPS && (off > 0.5 || off < -0.5)) {
-      this.next = this.latency;
-      this.fade = 0;
+    if (this.unpitchedHops >= UNPITCHED_HOPS && (off > 0.5 || off < -0.5)) {
+      this.incomingHead = this.latency;
+      this.spliceFrame = 0;
       return;
     }
     const jumps = Math.round(off / period);
     if (jumps !== 0) {
-      const next = this.head - jumps * period;
+      const next = this.readHead - jumps * period;
       // Never read closer than the cubic reader allows.
       if (next >= 2) {
-        this.next = next;
-        this.fade = 0;
+        this.incomingHead = next;
+        this.spliceFrame = 0;
         return;
       }
     }
-    this.head += off > 0 ? -REST_RATE : REST_RATE;
+    this.readHead += off > 0 ? -REST_RATE : REST_RATE;
   }
 
   /** How far the read head is from its centre (frames; 0 = the output is the delayed input). For tests and meters. */
   get headOffset(): number {
-    return this.head - this.latency;
+    return this.readHead - this.latency;
   }
 
   /** Hands over to a head a whole number of periods back towards the centre. */
   private startSplice(): void {
-    const period = this.period;
-    const distance = Math.abs(this.head - this.latency) + this.reach;
+    const period = this.periodFrames;
+    const distance = Math.abs(this.readHead - this.latency) + this.maxHeadOffset;
     const jump = period * Math.max(1, Math.round(distance / period));
-    this.next = this.head < this.latency ? this.head + jump : this.head - jump;
+    this.incomingHead = this.readHead < this.latency ? this.readHead + jump : this.readHead - jump;
     // Never read closer than the cubic reader allows.
-    if (this.next < 2) this.next += period * Math.ceil((2 - this.next) / period);
-    this.fade = 0;
+    if (this.incomingHead < 2) this.incomingHead += period * Math.ceil((2 - this.incomingHead) / period);
+    this.spliceFrame = 0;
+  }
+
+  /** Stops pulling: no correction is wanted until a pitch with a note to pull to is found again. */
+  private dropCorrection(): void {
+    this.goalCents = 0;
+    this.isVoiced = false;
+    this.needsDriftRestart = true;
+    this.vibratoLevel = 0;
   }
 
   /** A new pitch estimate: pick the note to pull to, and the correction to get there. */
-  private retarget(yin: Yin, root: number, mask: number, fromNotes: boolean, humanize: number): void {
-    const f = yin.detect();
-    const v = this.meter.values;
-    if (f <= 0 || yin.confidence < MIN_CONFIDENCE) {
-      if (this.unpitched < 1e6) this.unpitched++;
-      this.target = -1;
-      this.goal = 0;
-      this.voiced = false;
-      this.driftFresh = true;
-      this.vibEnv = 0;
-      v.pitch = 0;
-      v.target = -1;
-      v.cents = this.cents;
+  private retarget(detector: Yin, keyRoot: number, scaleMask: number, fromNotes: boolean, humanize: number): void {
+    const pitchHz = detector.detect();
+    const readings = this.meter.values;
+    if (pitchHz <= 0 || detector.confidence < MIN_CONFIDENCE) {
+      if (this.unpitchedHops < 1e6) this.unpitchedHops++;
+      this.targetNote = -1;
+      this.dropCorrection();
+      readings.pitch = 0;
+      readings.target = -1;
+      readings.cents = this.correctionCents;
       return;
     }
-    this.period = this.sampleRate / f;
-    this.unpitched = 0;
-    const midi = 69 + 12 * Math.log2(f / 440);
-    const previous = this.target;
-    this.target = fromNotes ? this.nearestHeld(midi, this.target) : nearestNote(midi, root, mask, this.target);
-    if (this.target < 0) {
+    this.periodFrames = this.sampleRate / pitchHz;
+    this.unpitchedHops = 0;
+    const pitchMidi = 69 + 12 * Math.log2(pitchHz / 440);
+    const previousNote = this.targetNote;
+    this.targetNote = fromNotes
+      ? this.nearestHeld(pitchMidi, this.targetNote)
+      : nearestNote(pitchMidi, keyRoot, scaleMask, this.targetNote);
+    if (this.targetNote < 0) {
       // Target = notes, and none is held: the voice is left as it is.
-      this.goal = 0;
-      this.voiced = false;
-      this.driftFresh = true;
-      this.vibEnv = 0;
-      v.pitch = f;
-      v.target = -1;
-      v.cents = this.cents;
+      this.dropCorrection();
+      readings.pitch = pitchHz;
+      readings.target = -1;
+      readings.cents = this.correctionCents;
       return;
     }
-    this.voiced = true;
-    const shift = this.target - midi;
-    this.goal = 100 * (shift > MAX_SHIFT ? MAX_SHIFT : shift < -MAX_SHIFT ? -MAX_SHIFT : shift);
-    if (humanize > 0) {
-      // Leave a share of the slow wandering (the slow line against the note's own average) in the voice.
-      const c = midi * 100;
-      if (this.target !== previous || this.driftFresh) {
-        this.slowC = c;
-        this.avgC = c;
-        this.driftFresh = false;
-      } else {
-        this.slowC += (c - this.slowC) * this.slowA;
-        this.avgC += (c - this.avgC) * this.avgA;
-      }
-      const g = this.goal + humanize * (this.slowC - this.avgC);
-      this.goal = g > 100 * MAX_SHIFT ? 100 * MAX_SHIFT : g < -100 * MAX_SHIFT ? -100 * MAX_SHIFT : g;
+    this.isVoiced = true;
+    const shiftSemitones = this.targetNote - pitchMidi;
+    const maxShiftCents = 100 * MAX_SHIFT_SEMITONES;
+    this.goalCents = 100 * clamp(shiftSemitones, -MAX_SHIFT_SEMITONES, MAX_SHIFT_SEMITONES);
+    if (humanize > 0) this.addNaturalDrift(pitchMidi, previousNote, humanize, maxShiftCents);
+    this.vibratoLevel = this.targetNote === previousNote ? Math.min(1, this.vibratoLevel + this.vibratoFadeStep) : 0;
+    readings.pitch = pitchHz;
+    readings.target = this.targetNote;
+    readings.cents = this.correctionCents;
+  }
+
+  /** Leaves a share of the slow wandering (the slow line against the note's own average) in the voice. */
+  private addNaturalDrift(pitchMidi: number, previousNote: number, humanize: number, maxShiftCents: number): void {
+    const pitchCents = pitchMidi * 100;
+    if (this.targetNote !== previousNote || this.needsDriftRestart) {
+      this.slowLineCents = pitchCents;
+      this.averageLineCents = pitchCents;
+      this.needsDriftRestart = false;
+    } else {
+      this.slowLineCents += (pitchCents - this.slowLineCents) * this.slowLineSmoothing;
+      this.averageLineCents += (pitchCents - this.averageLineCents) * this.averageLineSmoothing;
     }
-    this.vibEnv = this.target === previous ? Math.min(1, this.vibEnv + this.vibFade) : 0;
-    v.pitch = f;
-    v.target = this.target;
-    v.cents = this.cents;
+    const withDrift = this.goalCents + humanize * (this.slowLineCents - this.averageLineCents);
+    this.goalCents = clamp(withDrift, -maxShiftCents, maxShiftCents);
   }
 }

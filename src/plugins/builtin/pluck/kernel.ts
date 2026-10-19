@@ -216,7 +216,6 @@ export class PluckKernel extends InstrumentKernel<typeof pluckParams> {
     filterPowerCosine: number,
   ): void {
     let actual = 0;
-    let expected = 0;
     const nodeCount = LEVEL_NODES;
     const nodeWeights = this.nodeWeights;
     const chebyshevCoefficients = this.chebyshevCoefficients;
@@ -254,7 +253,7 @@ export class PluckKernel extends InstrumentKernel<typeof pluckParams> {
       coefficientSum += chebyshevCoefficients[d] as number;
       rhoPower *= smoothingDecay;
     }
-    expected = burstLength * expectedLagSum - expectedSumSquares * coefficientSum;
+    const expected = burstLength * expectedLagSum - expectedSumSquares * coefficientSum;
     this.measuredLevel = actual;
     this.expectedLevel = expected;
   }

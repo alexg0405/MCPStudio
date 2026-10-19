@@ -11,6 +11,16 @@ body,
   margin: 0;
 }
 
+/*
+ * On a touchscreen a pinch or a double tap must not zoom the page, and a drag must not pull it about: scrolling lists
+ * (the browser, menus, the mixer) still pan, and canvases and controls that take drags say touch-action: none themselves.
+ */
+html,
+body {
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
+}
+
 body {
   /* A plain page: the marble shows only in the workspace behind the windows, once the app is up. */
   background: var(--ag-bg);

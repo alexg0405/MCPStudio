@@ -170,3 +170,8 @@
     transform: translateY(-6px) scale(0.99);
   }
 }
+
+/* Touch layout: rows a fingertip can hit (Palette.tsx keeps its scroll arithmetic in step: TOUCH_ROW_H). */
+:global(:root[data-touch='on']) .row {
+  height: 40px;
+}

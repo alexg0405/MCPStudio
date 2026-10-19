@@ -6,6 +6,7 @@ import { updateCursor } from './cursor';
 import { onLaneDown, onLaneMove, onLaneUp } from './event-lane';
 import { onKeysDown, onKeysMove, onKeysUp } from './keys-pointer';
 import { cancelDrag, onPointerDown, onPointerLeave, onPointerMove, onPointerUp } from './pointer';
+import { listenToTouch } from './touch';
 import { measureLayout, onThumbDown, onWheel } from './viewport-control';
 
 /** Marks every layer dirty. */
@@ -88,4 +89,6 @@ export function listenToElements(ctx: PianoRollContext, cleanups: CleanupList): 
     () => ctx.state.drag !== null,
     () => cancelDrag(ctx),
   );
+  // Registered last, but it listens while capturing, so it sees touches before the listeners above.
+  listenToTouch(ctx, cleanups);
 }

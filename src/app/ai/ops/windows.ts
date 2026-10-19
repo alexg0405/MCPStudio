@@ -14,6 +14,7 @@ export const OPEN_WINDOWS = [
   'playlist',
   'plugin',
   'piano-keyboard',
+  'keys',
   'history',
   'visualizer',
   'settings',

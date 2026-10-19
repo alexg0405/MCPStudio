@@ -448,3 +448,16 @@
   color: var(--ag-text-dim);
   cursor: pointer;
 }
+
+/* Touch layout: taller rows, and step squares tall enough for a fingertip. */
+:global(:root[data-touch='on']) .row {
+  height: 44px;
+}
+
+:global(:root[data-touch='on']) .steps {
+  height: 34px;
+}
+
+:global(:root[data-touch='on']) .step {
+  height: 34px;
+}

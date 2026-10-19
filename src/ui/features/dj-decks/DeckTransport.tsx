@@ -38,6 +38,7 @@ export function DeckTransport({
         aria-valuemax={1}
         aria-valuenow={0}
         data-hint="Platter: drag to scratch like a record, drag the outer ring to nudge the tempo, scroll to nudge"
+        data-touch-own=""
         onPointerDown={platter.onPointerDown}
         onPointerMove={platter.onPointerMove}
         onPointerUp={platter.onPointerUp}

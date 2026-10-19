@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { TouchAssist } from '@agstudio/sdk/ui';
 import { parseTypedNumber } from './number-text';
 import styles from './DragNumber.module.css';
 
@@ -94,9 +95,14 @@ export function DragNumber({
   editHint = 'Type a value · Enter sets it, Esc cancels',
   label,
 }: DragNumberProps) {
-  const drag = useRef<{ y: number; v: number; moved: boolean } | null>(null);
+  const drag = useRef<{ pointerId: number; y: number; v: number; moved: boolean; fine: boolean } | null>(null);
+  // A finger's dead zone and fine modes (a second finger, or a first rest), as on the knobs.
+  const assist = useRef<TouchAssist | null>(null);
+  assist.current ??= new TouchAssist({ onFineChange: () => {} });
   const [editing, setEditing] = useState(false);
   const clamp = (v: number) => Math.min(max, Math.max(min, v));
+  /** The value the drag last set, so a re-anchor continues from it. */
+  const currentValue = useRef(value);
 
   const commitTyped = (text: string) => {
     const parsed = parse(text);
@@ -114,24 +120,39 @@ export function DragNumber({
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 || editing) return;
+    // A second finger on the number is the fine mode (the assist hears it), not a new drag.
+    if (drag.current && e.pointerType === 'touch' && e.pointerId !== drag.current.pointerId) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { y: e.clientY, v: value, moved: false };
+    assist.current?.start(e);
+    drag.current = { pointerId: e.pointerId, y: e.clientY, v: value, moved: false, fine: e.shiftKey };
   };
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
-    if (!d) return;
+    if (!d || e.pointerId !== d.pointerId) return;
+    const phase = assist.current?.move(e) ?? 'dragging';
+    if (phase === 'resting') return;
+    const wantsFine = e.shiftKey || (assist.current?.isFine ?? false);
+    // A finger's drag starts where it leaves the dead zone; Shift (or a second finger) re-anchors so the number doesn't jump.
+    if (phase === 'started' || wantsFine !== d.fine) {
+      d.y = e.clientY;
+      d.v = d.moved ? currentValue.current : value;
+      d.fine = wantsFine;
+    }
     const dy = d.y - e.clientY;
     if (!d.moved) {
-      if (Math.abs(dy) < CLICK_SLOP) return;
+      if (phase !== 'started' && Math.abs(dy) < CLICK_SLOP) return;
       d.moved = true;
       onBegin?.();
     }
-    onChange(clamp(d.v + dy * perPixel * (e.shiftKey ? 0.1 : 1)));
+    currentValue.current = clamp(d.v + dy * perPixel * (d.fine ? 0.1 : 1));
+    onChange(currentValue.current);
   };
   const onPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     const d = drag.current;
+    if (d && e.pointerId !== d.pointerId) return;
     drag.current = null;
+    assist.current?.end();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
     if (d?.moved) onEnd?.();
     // A click without a drag: type a value.
@@ -160,6 +181,7 @@ export function DragNumber({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      data-touch-own=""
       onDoubleClick={() => setEditing(true)}
       onWheel={(e) => onCommit(clamp(value + (e.deltaY < 0 ? step : -step) * (e.shiftKey ? 0.1 : 1)))}
       data-hint={hint}

@@ -8,6 +8,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createTestServices } from '@app/testing';
 import { formatChord } from '@core/commands/keymap';
 import { registerFeatures } from '@ui/features';
+import { TOUCH_GESTURES } from '@ui/touch/gestures';
 
 const PATH = new URL('../../docs/shortcuts.md', import.meta.url);
 
@@ -51,6 +52,12 @@ function render(): string {
     );
     for (const r of rows.sort((a, b) => a.title.localeCompare(b.title)))
       lines.push(`| ${r.title} | ${r.chords.join(', ')} |`);
+    lines.push('');
+  }
+  lines.push('## Touch gestures', '', 'On a touchscreen (the same list is under the keys in the Shortcuts window).', '');
+  for (const group of TOUCH_GESTURES) {
+    lines.push(`### ${group.where}`, '', '| Gesture | What it does |', '|---|---|');
+    for (const g of group.gestures) lines.push(`| ${g.gesture} | ${g.what} |`);
     lines.push('');
   }
   return lines.join('\n');

@@ -7,6 +7,8 @@
  * `data-hint-tip="off"`, and hints that just repeat the control's own label.
  */
 import { HINT_EVENT } from '@agstudio/sdk/ui';
+import { TOUCH_HINT_EVENT } from '../touch/events';
+import { TOUCH_HINT_MS } from '../touch/global';
 
 /** How long the pointer rests on a control before its tooltip shows (ms). */
 const SHOW_DELAY_MS = 550;
@@ -101,6 +103,16 @@ export function installHoverTip(tip: HTMLElement, liveClass: string, isEnabled: 
     window.clearTimeout(liveTimer);
     show(pressed, text, true);
   };
+  // A finger rested on a control with no menu of its own (touch/global.ts): its hint shows, whatever the Tooltips setting says
+  // (a touchscreen cannot hover, so this is the only way to ask), and goes away on its own or at the next touch.
+  const onTouchHint = (e: Event) => {
+    const el = (e.target as Element | null)?.closest?.('[data-hint]') ?? null;
+    const hint = el?.getAttribute('data-hint')?.trim();
+    if (!el || !hint) return;
+    window.clearTimeout(liveTimer);
+    show(el, hint, false);
+    liveTimer = window.setTimeout(hide, TOUCH_HINT_MS);
+  };
   const onLeave = (e: PointerEvent) => {
     if (!e.relatedTarget) {
       target = null;
@@ -113,6 +125,7 @@ export function installHoverTip(tip: HTMLElement, liveClass: string, isEnabled: 
   document.addEventListener('pointerup', onUp, true);
   document.addEventListener('pointerout', onLeave);
   document.addEventListener(HINT_EVENT, onHint);
+  document.addEventListener(TOUCH_HINT_EVENT, onTouchHint);
   window.addEventListener('keydown', hide, true);
   window.addEventListener('wheel', hide, { capture: true, passive: true });
   window.addEventListener('blur', hide);
@@ -123,6 +136,7 @@ export function installHoverTip(tip: HTMLElement, liveClass: string, isEnabled: 
     document.removeEventListener('pointerup', onUp, true);
     document.removeEventListener('pointerout', onLeave);
     document.removeEventListener(HINT_EVENT, onHint);
+    document.removeEventListener(TOUCH_HINT_EVENT, onTouchHint);
     window.removeEventListener('keydown', hide, true);
     window.removeEventListener('wheel', hide, { capture: true });
     window.removeEventListener('blur', hide);

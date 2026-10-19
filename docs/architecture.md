@@ -463,6 +463,77 @@ Measured with offline renders (`test/browser/mixer.test.ts` keeps checking them)
   through `useThemeVersion()`. No component hard-codes a surface or text color; what is left in CSS is
   shadows, the piano's keys and the metal fader caps.
 
+## Touch (`src/ui/touch`, `sdk/ui/touch-assist.ts`, `features/keys-panel`, `features/touch`)
+
+AGstudio works on touchscreens (tablets, Chromebooks, laptops with a touchscreen) in Chrome. Everything uses Pointer Events
+and reacts to `pointerType: 'touch'` only: a mouse or pen gets exactly the handlers it always had, so the mouse tests did not
+change. Three pieces:
+
+- **Touch surfaces (canvas editors).** `touch/surface.ts` `attachTouchSurface(element, handlers, cleanups)` listens while
+  *capturing*, ahead of the editor's own listeners on the same element, and asks `touch/recognizer.ts` (pure: no DOM, no
+  timers; `recognizer.test.ts`) what the fingers mean. It sets `touch-action: none` and `data-touch-surface` on the element.
+  - One finger: the verdict is `pass` and the editor sees the events as from a mouse (draw, move, select, erase: whatever the
+    tool is). Nothing is delayed.
+  - A second finger: `onMultiTouchStart` drops the first finger's drag through the editor's own `cancelDrag` (the one Esc
+    uses: a gesture is cancelled, nothing is committed), and from then on the events of both fingers are swallowed
+    (`stopImmediatePropagation`) until every finger is up. Two fingers pan; the horizontal separation zooms time, the vertical
+    one the rows (track height, key height), both around the midpoint (`timeline/touch-view.ts` `applyTwoFingers`, the touch twin
+    of `wheel.ts`, used by the playlist, the piano roll and the pitch editor). An axis zooms only once its separation changed by
+    10 px and was at least 36 px wide, so a wobbly pan does not zoom. Fingers arrive one event at a time (one has moved while
+    the other has not, which looks like a pinch), so the surface asks the recognizer for a frame once per animation frame
+    (`flush`), when both have caught up. The frame object is reused: no allocation per move.
+  - A finger that rests (500 ms, within 10 px): `longPress`, the right-click. The editor drops the press (`cancelDrag`) and
+    opens its menu; the lift is swallowed. A real right-click deletes in the playlist and (without Select) in the piano roll, so
+    a long press opens the clip's or note's menu instead (the playlist's ▾ menu, the piano roll's note menu, the empty-spot menu,
+    the track menu on headers, the marker or ruler menu on the ruler).
+  - Two taps within 320 ms and 32 px: a synthetic `dblclick` after the second tap's own pointer events (the order a mouse
+    makes). The browser's own `dblclick` and `contextmenu` that follow a touch are dropped (an echo window of 1 s).
+  - Where it is wired: playlist grid, ruler and headers (`playlist/control/touch.ts`), piano roll grid, ruler and event lane
+    (`piano-roll/control/touch.ts`; the lane only takes the sideways part of a pan or pinch, its height is its value), pitch
+    editor stage and ruler (`pitch-editor/controller.ts`). Automation clips are edited inside the playlist grid, so they follow
+    it (points show on the selected clip; a long press on a point opens its menu).
+- **Page-wide helpers** (`touch/global.ts`, installed once by `main.tsx` through `installTouch(services)`). For everything that is
+  not a surface or a text field: a resting finger sends a `contextmenu` event to the element (menus that listen for it
+  open), else shows the element's `data-hint` (`TOUCH_HINT_EVENT`, shown by `shell/hover-tip.ts` even with tooltips off: a
+  touchscreen cannot hover), and the click that would follow the lift is dropped; two taps send a `dblclick` (knobs reset,
+  window titles maximize). Controls that take a resting finger themselves carry `data-touch-own` (knobs, faders, number boxes,
+  the DJ platter and overview, momentary DJ pads, the step grid, the Keys panel). `base.css` sets `touch-action: pan-x pan-y`
+  on the page (no pinch or double-tap zoom, lists still scroll); sliders, steps and `data-touch-own` say `none`.
+- **Fingers on controls** (`sdk/ui/touch-assist.ts` `TouchAssist`, public so plugin knobs get it). With one finger a control has
+  a dead zone (6 px: a resting finger changes nothing), and two ways to go fine (a tenth as fast): a second finger put down
+  anywhere (until it lifts), or the first finger resting 500 ms before it drags. A rest that lifts without a drag opens the
+  control's menu (automation, controller link, reset). Used by `Knob`, the mixer's `Fader`, `DragNumber` and the DJ `Slider`.
+  Each ignores events of other pointers once a drag runs, so a second finger on the same control cannot take it over.
+  The step grid paints along a finger (`StepGrid` finds the step under the finger with `elementFromPoint`: a touch pointer is
+  captured by the first step, so no `pointerover` reaches the others).
+
+**Touch layout** (`touch/layout.ts`, pref `touchLayout`: `auto` | `on` | `off`, command `options.touchLayout` with an
+`argsHint`, the View menu, Settings → Look, help and interface, AI `settings.touch_layout`). `auto` is on when
+`matchMedia('(pointer: coarse)')` says the main pointer is a finger (a tablet; a touchscreen laptop keeps its trackpad as the
+main pointer, so it is off until chosen). The result is `<html data-touch="on" | "off">`, nothing else: sizes are CSS, in
+`touch/touch.css` (menu rows, text fields, the hit area of every `role="slider"` grown to 40 px with an invisible `::after`,
+step squares) and in each feature's own module under `:global(:root[data-touch='on'])` (toolbar buttons, menu labels, window
+title bars and resize handles, the PAT/SONG switch, editor toolbars, rack rows and steps, the action search rows (the
+palette's scroll arithmetic reads `isTouchLayout()`), the Keys panel). `--ag-touch-target` is 40 px. A toolbar button
+**Search** (touch layout only) opens the action search, whose shortcut needs a keyboard. Limits: step squares are 34 px tall
+but still 17 px wide (the step geometry is shared with the graph and the mini roll; dragging across steps paints them), and
+small buttons inside dense panels (mixer strip buttons, plugin windows) grow only where listed above.
+
+**Keys panel** (window `keys`, command `view.keys`, `Alt+8`; `features/keys-panel`). A piano (three octaves, octave buttons)
+and sixteen drum pads (keys 36 to 51, pad 1 bottom left, the Drum Pads instrument's keys), played with any number of fingers
+(`use-touch-notes.ts`: one note per pointer id; a key held by two fingers stops with the last; a finger sliding across the
+piano plays each key it reaches, the pads only play when touched). Notes go through `services.live.noteOn(key, velocity,
+{ source: 'screen' }, event.timeStamp)`, the same path as the typing piano and MIDI, in the pointerdown handler itself.
+Velocity (`prefs.keysVelocity`, command `keys.velocity`, AI `settings.keys_velocity`): from where the finger lands (lower on a
+key, the middle of a pad: louder; `key-math.ts`, unit tested) or one fixed level (soft, medium, loud).
+
+**Tests.** Unit: `recognizer.test.ts` (thresholds, timing, two-finger maths, reuse of the frame), `layout.test.ts`,
+`keys-panel/key-math.test.ts`. Browser tests use **real touch input** (`test/helpers/touch.ts`: Chrome's DevTools
+`Input.dispatchTouchEvent` through Vitest's `cdp()`, so the page gets genuine touch pointer events with implicit capture
+and touch-action; for `touchEnd` the points listed are the ones that lift): `touch-playlist`, `touch-piano-roll`,
+`touch-controls`, `touch-shell` (windows, menus, search, hints, layout, step painting, Keys), `touch-launcher`. A synthetic
+`new PointerEvent(...)` cannot capture a pointer that does not exist, which is why the older mouse tests stay as they are.
+
 ## Persistence (`src/app/persistence`, `src/platform`)
 
 - `.agproj` = zip (fflate, `core/io/project-file.ts`): `meta.json` (`{ format: 1, appVersion, savedAt }`),

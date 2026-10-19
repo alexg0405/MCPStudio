@@ -53,6 +53,13 @@ export interface PrefsState {
   compCrossfadeMs: number;
   /** Hover a control for a moment to see what it does (the hint bar shows it either way). */
   tooltips: boolean;
+  /**
+   * Bigger buttons and handles for fingers: 'auto' follows the device (on when its main pointer is coarse, as on a tablet),
+   * 'on' and 'off' are the musician's choice (`ui/touch/layout.ts`).
+   */
+  touchLayout: TouchLayoutChoice;
+  /** What the on-screen Keys panel plays at: from where the finger lands on a key or pad, or one fixed velocity. */
+  keysVelocity: KeysVelocity;
   /** The welcome dialog was closed once; it no longer opens by itself. */
   welcomeSeen: boolean;
   /** Most recent first: what the action search ranks higher. */
@@ -89,6 +96,14 @@ export interface PrefsState {
   /** Whether the user chose the accent. Gold is also the untouched default, so only a picked gold shows as gold on the slate themes. */
   accentPicked: boolean;
 }
+
+/** The touch layout setting: follow the device, or always on or off. */
+export const TOUCH_LAYOUT_CHOICES = ['auto', 'on', 'off'] as const;
+export type TouchLayoutChoice = (typeof TOUCH_LAYOUT_CHOICES)[number];
+
+/** How the Keys panel picks a note's velocity. */
+export const KEYS_VELOCITIES = ['position', 'soft', 'medium', 'loud'] as const;
+export type KeysVelocity = (typeof KEYS_VELOCITIES)[number];
 
 export type AudioBufferSize = 'small' | 'medium' | 'large';
 export type AudioBufferChoice = AudioBufferSize | 'auto';
@@ -144,6 +159,8 @@ const DEFAULTS: PrefsState = {
   preRollBars: 1,
   compCrossfadeMs: 10,
   tooltips: true,
+  touchLayout: 'auto',
+  keysVelocity: 'position',
   welcomeSeen: false,
   recentActions: [],
   customKeys: {},
@@ -187,6 +204,8 @@ function load(): PrefsState {
     if (!VIDEO_SIZES.includes(out.exportVideoSize as VideoSize)) out.exportVideoSize = DEFAULTS.exportVideoSize;
     if (!VIDEO_FORMATS.includes(out.exportVideoFormat as VideoFormat)) out.exportVideoFormat = DEFAULTS.exportVideoFormat;
     if (out.exportVideoFps !== 30 && out.exportVideoFps !== 60) out.exportVideoFps = DEFAULTS.exportVideoFps;
+    if (!TOUCH_LAYOUT_CHOICES.includes(out.touchLayout as TouchLayoutChoice)) out.touchLayout = DEFAULTS.touchLayout;
+    if (!KEYS_VELOCITIES.includes(out.keysVelocity as KeysVelocity)) out.keysVelocity = DEFAULTS.keysVelocity;
     if (out.followStyle !== 'smooth' && out.followStyle !== 'page') out.followStyle = DEFAULTS.followStyle;
     return out as unknown as PrefsState;
   } catch {

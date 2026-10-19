@@ -17,6 +17,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | DJ mix | `⌥J` / `Alt+J` |
 | Export audio… | `⌘R` / `Ctrl+R` |
 | Keyboard shortcuts | `F1` |
+| Keys (piano and drum pads) | `⌥8` / `Alt+8` |
 | Layout: Arrange | `⌥⇧1` / `Alt+Shift+1` |
 | Layout: Compose | `⌥⇧2` / `Alt+Shift+2` |
 | Layout: Mix | `⌥⇧3` / `Alt+Shift+3` |
@@ -158,3 +159,37 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Playlist slice tool | `C` |
 | Previous take | `[` |
 | Select all clips | `⌘A` / `Ctrl+A` |
+
+## Touch gestures
+
+On a touchscreen (the same list is under the keys in the Shortcuts window).
+
+### Playlist, piano roll, pitch editor and their rulers
+
+| Gesture | What it does |
+|---|---|
+| One finger drag | What the current tool does with a mouse: draw, move, select, erase |
+| Two fingers drag | Pan the view (the first finger’s drag is dropped, nothing is changed) |
+| Pinch sideways | Zoom time around the point between your fingers |
+| Pinch up and down | Make tracks (playlist) or keys (piano roll) taller or shorter |
+| Hold one finger (half a second) | The right-click menu: a clip’s or note’s menu, or the empty spot’s |
+| Two quick taps | A double-click (open a pattern, rename, add an automation point, reset a handle) |
+
+### Knobs, faders, sliders and number boxes
+
+| Gesture | What it does |
+|---|---|
+| Drag up or down | Change the value |
+| A second finger anywhere while dragging | Fine adjust (a tenth as fast) until it lifts |
+| Hold first, then drag | Fine adjust for that drag |
+| Hold, then lift without dragging | The control’s menu (automation, link to a controller, reset) |
+| Two quick taps | Back to the default value |
+
+### Everywhere else
+
+| Gesture | What it does |
+|---|---|
+| Hold one finger on a control | Its menu if it has one, else what it does (the hint) |
+| Two quick taps on a window’s title | Maximize or restore it |
+| Drag a window’s title or edge | Move or resize it (bigger handles in the touch layout) |
+| Several fingers on the Keys window | One note per finger: chords on the piano, rolls on the pads |

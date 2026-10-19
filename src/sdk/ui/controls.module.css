@@ -324,3 +324,9 @@
   align-items: flex-start;
   gap: 10px 12px;
 }
+
+/* Touch layout: switches a finger can hit. */
+:global(:root[data-touch='on']) .toggle {
+  height: 32px;
+  padding: 0 14px 0 12px;
+}

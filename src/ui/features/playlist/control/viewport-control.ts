@@ -3,7 +3,9 @@ import type { Project, Tick } from '@core/model/types';
 import { scrollAtEdges, type EdgeScrollSpeed } from '../../../timeline/edge-scroll';
 import { startThumbDrag } from '../../../timeline/scrollbar';
 import { clamp } from '../../../timeline/viewport';
+import { applyTwoFingers } from '../../../timeline/touch-view';
 import { applyWheel, type RowHeightRange } from '../../../timeline/wheel';
+import type { TwoFingerFrame } from '../../../touch/recognizer';
 import type { PlaylistContext } from './context';
 import type { PanDrag } from './drag';
 import { currentProject, maxScrollTick, shownLaneOrder } from './lanes';
@@ -62,6 +64,16 @@ export function onWheel(ctx: PlaylistContext, event: WheelEvent): void {
   event.preventDefault();
   const outcome = applyWheel(ctx.vp, event, localPoint(ctx, event), maxScrollTick(currentProject(ctx)), TRACK_HEIGHTS);
   // Zooming keeps following (it glides back to the playhead); scrolling by hand waits a moment (follow.ts).
+  if (outcome === 'zoomed-time') ctx.follow.zoomed();
+  else if (outcome === 'scrolled-sideways') ctx.follow.userScrolled();
+  viewportChanged(ctx);
+}
+
+/** Two fingers moved over the grid, the ruler or the headers: pan, and zoom time (horizontal pinch) and track height (vertical pinch). */
+export function panAndZoom(ctx: PlaylistContext, frame: TwoFingerFrame): void {
+  const rect = ctx.els.gridHost.getBoundingClientRect();
+  const outcome = applyTwoFingers(ctx.vp, frame, rect.left, rect.top, maxScrollTick(currentProject(ctx)), TRACK_HEIGHTS);
+  // The same follow rules as the wheel: zooming keeps following, a sideways scroll by hand makes it wait.
   if (outcome === 'zoomed-time') ctx.follow.zoomed();
   else if (outcome === 'scrolled-sideways') ctx.follow.userScrolled();
   viewportChanged(ctx);

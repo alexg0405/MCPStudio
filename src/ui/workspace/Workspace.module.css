@@ -290,3 +290,72 @@
   color: var(--ag-text-faint);
   font-size: var(--ag-font-size-sm);
 }
+
+/* ---- Touch layout: a title bar a finger can grab, and handles it can hit ---- */
+
+:global(:root[data-touch='on']) .titleBar {
+  min-height: var(--ag-touch-target);
+}
+
+:global(:root[data-touch='on']) .titleButton {
+  width: 36px;
+  height: 36px;
+}
+
+:global(:root[data-touch='on']) .h_n,
+:global(:root[data-touch='on']) .h_s {
+  left: 20px;
+  right: 20px;
+  height: 22px;
+}
+
+:global(:root[data-touch='on']) .h_n {
+  top: -11px;
+}
+
+:global(:root[data-touch='on']) .h_s {
+  bottom: -11px;
+}
+
+:global(:root[data-touch='on']) .h_e,
+:global(:root[data-touch='on']) .h_w {
+  top: 20px;
+  bottom: 20px;
+  width: 22px;
+}
+
+:global(:root[data-touch='on']) .h_e {
+  right: -11px;
+}
+
+:global(:root[data-touch='on']) .h_w {
+  left: -11px;
+}
+
+:global(:root[data-touch='on']) .h_ne,
+:global(:root[data-touch='on']) .h_nw,
+:global(:root[data-touch='on']) .h_se,
+:global(:root[data-touch='on']) .h_sw {
+  width: 32px;
+  height: 32px;
+}
+
+:global(:root[data-touch='on']) .h_ne {
+  top: -14px;
+  right: -14px;
+}
+
+:global(:root[data-touch='on']) .h_sw {
+  bottom: -14px;
+  left: -14px;
+}
+
+:global(:root[data-touch='on']) .h_nw {
+  top: -14px;
+  left: -14px;
+}
+
+:global(:root[data-touch='on']) .h_se {
+  bottom: -14px;
+  right: -14px;
+}

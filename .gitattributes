@@ -1,0 +1,36 @@
+# Keep every text file with LF line endings in every checkout (Windows included): the snapshot and golden-text
+# tests, the shell wrappers in bin/ and the generated files compare bytes, and a CRLF checkout would break them.
+* text=auto eol=lf
+
+# Windows batch files are the one place CRLF is wanted: cmd.exe mis-parses labels and multi-line blocks in LF files.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary files: never rewritten, never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.wav binary
+*.mp3 binary
+*.flac binary
+*.ogg binary
+*.m4a binary
+*.mp4 binary
+*.webm binary
+*.mid binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.wasm binary
+*.zip binary
+*.gz binary
+*.pdf binary
+*.agproj binary
+*.agchain binary
+*.agpreset binary
+*.flp binary

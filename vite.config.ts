@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { defineConfig, loadEnv, type EnvironmentModuleNode, type Plugin } from 'vite';
+import { defineConfig, loadEnv, normalizePath, type EnvironmentModuleNode, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +9,12 @@ import { aiServer } from './tools/ai/server.ts';
 import { mcpServer } from './tools/mcp/server.ts';
 import { pwaPrecache } from './tools/pwa/precache.ts';
 
-const root = fileURLToPath(new URL('.', import.meta.url));
+// Vite, its globs and its aliases use forward slashes on every system; fileURLToPath gives `C:\Users\…\` on Windows.
+// (The folder keeps its trailing slash, so `${root}src/…` below reads the same everywhere.)
+const root = normalizePath(fileURLToPath(new URL('.', import.meta.url)));
+
+/** The browser the audio tests run in: the installed Google Chrome, or another Chromium browser of the same install (`msedge`). */
+const testBrowser = process.env.AGSTUDIO_TEST_BROWSER || 'chrome';
 
 // Cross-origin isolation: lets us use SharedArrayBuffer later (e.g. lock-free meters).
 // Consequence: every asset must be self-hosted.
@@ -163,9 +168,9 @@ export default defineConfig(({ mode }) => ({
           browser: {
             enabled: true,
             headless: true,
-            // Uses the locally installed Google Chrome; no Playwright browser download needed.
+            // Uses the locally installed Google Chrome (or the browser named in AGSTUDIO_TEST_BROWSER, e.g. msedge); no Playwright browser download needed.
             provider: playwright({
-              launchOptions: { channel: 'chrome', args: ['--autoplay-policy=no-user-gesture-required'] },
+              launchOptions: { channel: testBrowser, args: ['--autoplay-policy=no-user-gesture-required'] },
             }),
             instances: [{ browser: 'chromium' }],
             screenshotFailures: false,

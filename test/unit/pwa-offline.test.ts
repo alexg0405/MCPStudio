@@ -85,7 +85,7 @@ beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ag-pwa-e2e-'));
   out = join(dir, 'dist');
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    browser = await chromium.launch({ channel: process.env.AGSTUDIO_TEST_BROWSER || 'chrome', headless: true });
   } catch (e) {
     skipReason = `Chrome is not available: ${e instanceof Error ? e.message.split('\n')[0] : e}`;
     return;

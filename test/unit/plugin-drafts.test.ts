@@ -1,8 +1,8 @@
 /// <reference types="node" />
 import { afterAll, describe, expect, it } from 'vitest';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { checkFiles, draftFolder, scanSource, typeCheck } from '../../tools/ai/drafts.ts';
+import { join, sep } from 'node:path';
+import { checkFiles, draftFolder, renameFolder, scanSource, typeCheck, withForwardSlashes } from '../../tools/ai/drafts.ts';
 
 /** The plugin builder's server-side checks: names, sizes, imports, forbidden APIs, the type check. */
 describe('plugin drafts', () => {
@@ -62,6 +62,45 @@ export { other } from './other';`,
     expect(uses(`localStorage.setItem('a', 'b')`)[0]).toMatch(/storage/);
     expect(uses(`await import('./x')`)[0]).toMatch(/dynamic import/);
     expect(uses(`// we never fetch() anything\nconst label = 'eval(';`)).toEqual([]);
+  });
+
+  describe('on Windows', () => {
+    it('writes relative paths for tsconfig files with forward slashes', () => {
+      expect(withForwardSlashes(['..', '..', '..', 'tsconfig.base.json'].join(sep))).toBe('../../../tsconfig.base.json');
+    });
+
+    const busy = Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+
+    it('tries a rename again while the folder is briefly busy (a file watcher or scanner holds it)', async () => {
+      const calls: string[] = [];
+      const pauses: number[] = [];
+      const move = async (from: string, to: string) => {
+        calls.push(`${from}>${to}`);
+        if (calls.length < 3) throw busy;
+      };
+      await renameFolder('a', 'b', move, async (ms) => void pauses.push(ms));
+      expect(calls).toHaveLength(3);
+      expect(pauses).toEqual([120, 240]);
+    });
+
+    it('gives up after a few tries, and does not retry an error that will not go away', async () => {
+      let tries = 0;
+      const always = async () => {
+        tries++;
+        throw busy;
+      };
+      await expect(renameFolder('a', 'b', always, async () => {})).rejects.toBe(busy);
+      expect(tries).toBe(6);
+      const missing = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      tries = 0;
+      await expect(
+        renameFolder('a', 'b', async () => {
+          tries++;
+          throw missing;
+        }, async () => {}),
+      ).rejects.toBe(missing);
+      expect(tries).toBe(1);
+    });
   });
 
   describe('type check', () => {

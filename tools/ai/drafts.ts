@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import type { Plugin } from 'vite';
 
 /**
@@ -138,11 +138,43 @@ function run(
   });
 }
 
+/** A relative path with forward slashes (tsconfig files read `../` the same on every system; Windows' `relative` gives backslashes). */
+export const withForwardSlashes = (path: string): string => path.split(sep).join('/');
+
+/**
+ * Errors that mean "something has this folder open for a moment" (Windows: the dev server's file watcher or a virus
+ * scanner holds a handle on a folder that was just written). Elsewhere a rename does not hit them.
+ */
+const TRANSIENT_FOLDER_ERRORS = new Set(['EPERM', 'EBUSY', 'EACCES']);
+const RENAME_ATTEMPTS = 6;
+const RENAME_WAIT_MS = 120;
+
+/** Moves a folder, trying again a few times when Windows reports it busy. `move` and `pause` are the system's, or stand-ins in tests. */
+export async function renameFolder(
+  from: string,
+  to: string,
+  move: (from: string, to: string) => Promise<void> = rename,
+  pause: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await move(from, to);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? '';
+      if (!TRANSIENT_FOLDER_ERRORS.has(code) || attempt >= RENAME_ATTEMPTS) throw e;
+      await pause(RENAME_WAIT_MS * attempt);
+    }
+  }
+}
+
+/** Deletes a folder, trying again a few times when Windows reports it busy. */
+const removeFolder = (path: string) => rm(path, { recursive: true, force: true, maxRetries: 4, retryDelay: RENAME_WAIT_MS });
+
 /** Type-checks the draft like the app does: main-thread files with the DOM, worklet files with the AudioWorklet scope. */
 export async function typeCheck(root: string, dir: string): Promise<string[]> {
-  const base = relative(dir, join(root, 'tsconfig.base.json'));
+  const base = withForwardSlashes(relative(dir, join(root, 'tsconfig.base.json')));
   // `import dsp from './x.dsp'` in Faust plugins.
-  const dspModules = relative(dir, join(root, 'src', 'sdk', 'faust', 'modules.d.ts'));
+  const dspModules = withForwardSlashes(relative(dir, join(root, 'src', 'sdk', 'faust', 'modules.d.ts')));
   const configs = {
     '.check-main.json': {
       extends: base,
@@ -201,7 +233,7 @@ async function saveDraft(root: string, body: RequestBody) {
   const folder = draftFolder(body.id);
   const files = checkFiles(body.files);
   const dir = join(pluginFolders(root).drafts, folder);
-  await rm(dir, { recursive: true, force: true });
+  await removeFolder(dir);
   await mkdir(dir, { recursive: true });
   for (const f of files) await writeFile(join(dir, f.path), f.content);
   const problems = files.flatMap(scanSource);
@@ -221,16 +253,16 @@ async function installDraft(root: string, body: RequestBody) {
   if (replaced) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     await mkdir(backup, { recursive: true });
-    await rename(to, join(backup, `${folder}-${stamp}`));
+    await renameFolder(to, join(backup, `${folder}-${stamp}`));
   }
-  await rename(from, to);
+  await renameFolder(from, to);
   return { folder, replaced };
 }
 
 /** POST /discard: deletes the draft. */
 async function discardDraft(root: string, body: RequestBody) {
   const folder = draftFolder(body.id);
-  await rm(join(pluginFolders(root).drafts, folder), { recursive: true, force: true });
+  await removeFolder(join(pluginFolders(root).drafts, folder));
   return { folder };
 }
 

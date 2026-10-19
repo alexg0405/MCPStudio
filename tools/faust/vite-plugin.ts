@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import type { Plugin } from 'vite';
+import { normalizePath, type Plugin } from 'vite';
 import { compileFaust, hasGate } from './compile.ts';
 
 /**
@@ -26,7 +26,7 @@ export function faustPlugin(): Plugin {
       const [path = '', query] = source.split('?');
       if (!WORKLET.test(path)) return null;
       // Our own virtual worklet ids, as file paths (the browser asks by URL, relative to the root).
-      const file = path.startsWith(root) ? path : join(root, path);
+      const file = path.startsWith(root) ? path : normalizePath(join(root, path));
       return query ? `${file}?${query}` : file;
     },
     async load(id) {

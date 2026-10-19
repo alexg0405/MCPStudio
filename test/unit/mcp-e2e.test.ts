@@ -84,7 +84,7 @@ beforeAll(async () => {
   process.env.AGSTUDIO_MCP_TOKEN_FILE = join(dir, 'token');
   process.env.AGSTUDIO_EXPORTS_DIR = join(dir, 'exports');
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
+    browser = await chromium.launch({ channel: process.env.AGSTUDIO_TEST_BROWSER || 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
   } catch (e) {
     skipReason = `Chrome is not available: ${e instanceof Error ? e.message.split('\n')[0] : e}`;
     return;

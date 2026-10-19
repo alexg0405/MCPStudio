@@ -96,7 +96,7 @@ describe('sample preview in the engine', { timeout: 60_000 }, () => {
   });
 
   it('sets the preview level on the preview bus, held to 0..2 (a number that is not one goes back to the default)', async () => {
-    const bus = (engine as unknown as { previewBus: GainNode }).previewBus;
+    const bus = engine!.output.previewBus;
     // A gain with nothing playing through it is not processed, so its value cannot be read: look at what was asked of it.
     const asked: number[] = [];
     const real = bus.gain.setTargetAtTime.bind(bus.gain);

@@ -8,7 +8,7 @@ import { startRecording, type RecordOptions, type RecordingHandle } from './reco
 /** What recording and live inputs need from the engine. */
 export interface LiveCaptureHost {
   readonly ctx: BaseAudioContext;
-  /** The bus whose level the count-in and metronome clicks share with auditions (see Engine.previewBus). */
+  /** The bus whose level the count-in and metronome clicks share with auditions (see OutputStage.previewBus). */
   readonly previewBus: AudioNode;
   /** Starts the context if the browser's autoplay policy left it suspended. */
   resume(): Promise<void>;

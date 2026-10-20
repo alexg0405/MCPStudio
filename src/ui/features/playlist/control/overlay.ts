@@ -3,6 +3,7 @@
  * the pointer lifts, a comp swipe, the rubber band, the slice line, the value being dragged, the take being recorded.
  */
 import { alpha, fitCanvas, readTheme, roundRectPath, type TimelineTheme } from '../../../timeline/canvas';
+import { drawKeyCursor } from '../../../timeline/key-cursor/draw';
 import { drawSelectionBox } from '../../../timeline/selection-box';
 import { drawReadout } from '../automation';
 import { CLIP_RADIUS, clipBox } from '../clip-geometry';
@@ -12,14 +13,15 @@ import type { Clip } from '@core/model/types';
 import type { PlaylistContext } from './context';
 import type { CompDrag } from './drag';
 import { boxOfClip } from './hit-test';
+import { cursorBox } from './key-cursor';
 import { currentProject, laneRow } from './lanes';
 import { drawLiveTake } from './live-take';
 import { takeGroups } from '@core/query/takes';
 
 /** True when the overlay has anything to show now. */
 function hasOverlayContent(ctx: PlaylistContext, isRecording: boolean): boolean {
-  const { drag, hover } = ctx.state;
-  if (isRecording) return true;
+  const { drag, hover, keyboard } = ctx.state;
+  if (isRecording || keyboard.isActive) return true;
   if (!drag) return !!hover;
   if (drag.kind === 'marquee' || drag.kind === 'comp') return true;
   return (drag.kind === 'point' || drag.kind === 'tension') && !!drag.readout;
@@ -47,6 +49,8 @@ export function drawOverlay(ctx: PlaylistContext): void {
     // The value being set, in its units (and where).
     drawReadout(canvas, readTheme(), drag.readout.x, drag.readout.y, drag.readout.text, vp);
   }
+  // The keyboard cursor goes on top of everything, and only while the grid has the keyboard.
+  if (state.keyboard.isActive) drawKeyCursor(canvas, readTheme(), cursorBox(ctx));
 }
 
 /** The clip under the pointer lifts a little: a brighter edge around it. */

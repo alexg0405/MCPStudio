@@ -12,6 +12,7 @@ import type { Services } from '../services';
 import { whileBusy } from '../storage/busy';
 import { channelNameFor, SUGGESTED_INSTRUMENT } from './instruments';
 import { hear, suggest } from './listening';
+import { rememberPlan, rememberSuggestion } from './plan-cache';
 import { prepareSource, timelineOfClip, TranscribeError, type Source } from './source';
 import { storePads, type StoredPad } from './slices';
 
@@ -58,17 +59,20 @@ export async function planClip(s: Services, clipId: ClipId, settings: Transcribe
   const source = await prepareSource(s, project, clipId);
   const heard = await hear(source, settings.mode, settings.sensitivity);
   const transcription = planTranscription(heard, timelineOfClip(project, source.clip, source.channel), settings);
+  rememberPlan(project, clipId, settings, transcription);
   return { clip: clipId, transcription, source };
 }
 
 /** The mode that fits the clip's sound. Throws `TranscribeError`. */
 export async function suggestForClip(s: Services, clipId: ClipId): Promise<ModeSuggestion> {
-  const source = await prepareSource(s, s.doc.getState().project, clipId);
-  return suggest(source);
+  const project = s.doc.getState().project;
+  const suggestion = await suggest(await prepareSource(s, project, clipId));
+  rememberSuggestion(project, clipId, suggestion);
+  return suggestion;
 }
 
 /** The new instrument channel for a conversion: the target's plugin (or the mode's suggestion) with the clip's name. */
-function newChannelFor(s: Services, project: Project, mode: TranscribeMode, target: Extract<TranscribeTarget, { kind: 'new' }>, audioName: string, slots: Record<string, SampleId>): InstrumentChannel {
+export function newChannelFor(s: Services, project: Project, mode: TranscribeMode, target: Extract<TranscribeTarget, { kind: 'new' }>, audioName: string, slots: Record<string, SampleId>): InstrumentChannel {
   const pluginId = target.plugin ?? SUGGESTED_INSTRUMENT[mode].pluginId;
   const def = s.plugins.get(pluginId);
   if (!def) throw new TranscribeError(`The instrument “${pluginId}” is not installed.`);
@@ -77,7 +81,7 @@ function newChannelFor(s: Services, project: Project, mode: TranscribeMode, targ
 }
 
 /** The existing channel a target names, checked. */
-function existingChannel(project: Project, id: ChannelId): InstrumentChannel {
+export function existingChannel(project: Project, id: ChannelId): InstrumentChannel {
   const channel = project.channels[id];
   if (channel?.kind !== 'instrument') throw new TranscribeError('Choose an instrument channel to write the notes to (not audio or automation).');
   return channel;

@@ -3,7 +3,7 @@ import { audioClipProject, TestSamples } from '../../../test/helpers/audio';
 import { BEATS, chordPads, drumLoop, progression, sungMelody, TRANSCRIBE_RATE } from '../../../test/helpers/transcribe-signals';
 import { collectHashes } from '@core/gc/refs';
 import { settingsFor } from '@core/audio/transcribe';
-import type { AudioClip, ClipId, PatternClip, Project } from '@core/model/types';
+import type { AudioClip, AudioClipChannel, ClipId, PatternClip, Project } from '@core/model/types';
 import { createTestServices } from '../testing';
 import { convertToMidi, planClip, TranscribeError } from './convert';
 import { forgetListening } from './listening';
@@ -12,11 +12,11 @@ const SR = TRANSCRIBE_RATE;
 const BAR = 3840;
 
 /** A project with one audio clip (from tick `start`, `bars` long) playing `sound`. */
-function setup(sound: Float32Array, opts: { start?: number; bars?: number; bpm?: number; channel?: Parameters<typeof audioClipProject>[3] } = {}) {
+function setup(sound: Float32Array, opts: { start?: number; bars?: number; bpm?: number; channel?: Partial<AudioClipChannel> } = {}) {
   forgetListening();
   const samples = new TestSamples();
   const ref = samples.add([sound], SR, 'Take');
-  const { project, clipIds } = audioClipProject(ref, [{ start: opts.start ?? 0, length: (opts.bars ?? 4) * BAR }], { bpm: opts.bpm ?? 120, ...(opts.channel ?? {}) });
+  const { project, clipIds } = audioClipProject(ref, [{ start: opts.start ?? 0, length: (opts.bars ?? 4) * BAR }], { bpm: opts.bpm ?? 120, ...(opts.channel ? { channel: opts.channel } : {}) });
   const s = createTestServices();
   s.fakeEngine.sampleAudio.set('Take', { sampleRate: SR, channels: [sound], duration: sound.length / SR });
   s.history.load(project);
@@ -106,7 +106,7 @@ describe('convert to MIDI', () => {
     // A sung note at 1.0 s of a sound recorded at 120 BPM, playing in a 90 BPM song with the tempo followed by stretching:
     // one second of the sound is two beats of the song.
     const { mono } = sungMelody({ steps: [[60, 0.5, 0.5], [64, 0.5]], start: 1 });
-    const { s, clipId } = setup(mono, { bars: 2, bpm: 90, channel: { channel: { stretch: 'stretch', sourceBpm: 120 } } });
+    const { s, clipId } = setup(mono, { bars: 2, bpm: 90, channel: { stretch: 'stretch', sourceBpm: 120 } });
     const plan = await planClip(s, clipId, settingsFor('melody', { quantize: { gridTicks: 0, strength: 1, swing: 'straighten' } }));
     expect(plan.transcription.notes[0]?.tick).toBeGreaterThan(1920 - 90);
     expect(plan.transcription.notes[0]?.tick).toBeLessThan(1920 + 90);
@@ -115,7 +115,7 @@ describe('convert to MIDI', () => {
 
 describe('what cannot be converted', () => {
   it('says why, in plain words', async () => {
-    const { s, clipId } = setup(kit(), { channel: { channel: { reverse: true } } });
+    const { s, clipId } = setup(kit(), { channel: { reverse: true } });
     await expect(convertToMidi(s, { clip: clipId, settings: settingsFor('drums'), target: { kind: 'new' } })).rejects.toThrow(/Reverse/);
     const empty = setup(new Float32Array(SR * 2));
     await expect(convertToMidi(empty.s, { clip: empty.clipId, settings: settingsFor('drums'), target: { kind: 'new' } })).rejects.toThrow(/No drum hits/);

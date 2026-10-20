@@ -2,6 +2,7 @@
 import { SAMPLE_CATEGORIES } from '@core/samples/types';
 import { cleanupReport } from '../../cleanup/report';
 import { alignReport } from '../../align/report';
+import { conversionReport } from '../../transcribe/report';
 import { loudnessFacts } from '../../metering/facts';
 import { pitchReport } from '../../pitch/report';
 import { referenceReport } from '../../reference/summary';
@@ -42,6 +43,26 @@ export const getAlignment = tool(
   'Vocal alignment of recorded audio clips (doubles, backing vocals and ad-libs lined up with a lead, or tightened to the grid): for each aligned clip its id, track and bar, the mode (guide or grid), the guide clip, tightness, pitch alignment % or grid strength, the state (ready, rendering with progress, out of date, problem with the reason), how far the sound was moved (median and largest move in ms) and which sound the musician hears (the A/B switch: hearing). Without clip it lists every aligned clip. The align_clips and tighten_timing actions set it; the aligned audio is made in the background.',
   { clip: S.str('An audio clip id (clip_…); default: every aligned clip.') },
   (services, args) => alignReport(services, args),
+);
+
+export const getMidiConversion = tool(
+  'get_midi_conversion',
+  'The notes "Convert to MIDI" (the audio_to_midi action) would write for an audio clip, before anything is made: per note its number, bar and beat, key (and the note name, or for drums which drum), velocity and length in beats, plus a short summary (how many notes or hits, the range, the swing found), the chords found for mode chords, and which pads would play sounds cut from the recording. The first look at a clip with these settings it listens first (state "analyzing": ask again in a moment). Takes the same settings as the action: mode (melody, drums, chords, bass; auto uses what the sound suggests), quantize, strength, swing, sensitivity…',
+  {
+    clip: S.str('An audio clip id (clip_…; default: the selected audio clip).'),
+    mode: { type: 'string', enum: ['auto', 'melody', 'drums', 'chords', 'bass'], description: 'What to read (default auto).' },
+    quantize: S.str('The grid: "off", "1/32", "1/16t", "1/16" (default), "1/8t", "1/8" or "1/4".'),
+    strength: S.num('Quantize strength 0–100 % (default 100).'),
+    swing: { type: 'string', enum: ['straighten', 'keep'], description: 'straighten (default) or keep the recording’s swing.' },
+    sensitivity: S.num('0–100 % (default 50).'),
+    articulation: { type: 'string', enum: ['natural', 'legato', 'staccato'], description: 'Melody and bass: how notes end.' },
+    legato_gap_ms: S.num('Legato: gaps shorter than this many ms are closed (default 150).'),
+    keep_cents: S.bool('Melody and bass: keep the cents as fine pitch.'),
+    chord_resolution: { type: 'string', enum: ['beat', 'half', 'bar'], description: 'Chords: how often to read a chord.' },
+    chord_rhythm: { type: 'string', enum: ['hold', 'beats', 'offbeats', 'eighths'], description: 'Chords: how they are played.' },
+    chord_bass: S.bool('Chords: add the root as a low note.'),
+  },
+  (services, args) => conversionReport(services, args),
 );
 
 export const listSampleSounds = tool(

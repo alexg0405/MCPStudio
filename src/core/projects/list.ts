@@ -150,7 +150,8 @@ function listCard(card: ProjectCard, input: ProjectListInput, recentByKey: Map<s
     thumbnail: card.thumbnail,
     pinned: card.pinned,
     versionCount: versions?.count ?? 0,
-    hasUnsavedWork: !!autosave && !autosave.clean && autosavedAt > card.lastModifiedAt,
+    // When the autosave is all there is to open, it is unsaved work by definition; beside a file it must be newer.
+    hasUnsavedWork: !!autosave && !autosave.clean && (source === 'autosave' || autosavedAt > card.lastModifiedAt),
     isOpen: input.openProjectId === card.projectId,
   };
 }

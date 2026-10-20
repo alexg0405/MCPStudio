@@ -22,6 +22,11 @@ export interface ReadTool {
   schema: { type: 'object'; additionalProperties: false; properties: Record<string, unknown>; required?: string[] };
   /** Returns plain JSON. A bad argument returns `{ error }`. */
   run(services: Services, args?: ToolArgs): unknown;
+  /**
+   * For a tool that reads what is kept in browser storage: brings its cache up to date. A caller that can wait (an
+   * MCP call) awaits it before `run`; the Studio chat's look-ups cannot wait and use the cache as it is.
+   */
+  prepare?(services: Services): Promise<void>;
 }
 
 /** Rounds to two decimals: the precision musicians read (bars, dB, pan). */

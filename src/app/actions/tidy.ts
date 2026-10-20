@@ -22,6 +22,7 @@ export function tidyPreview(s: Services): string[] {
 
 export function tidyNow(s: Services): TidyReport {
   let report: TidyReport = { stacked: 0, automation: 0, named: [] };
+  s.versions.beforeBigChange('before-tidy');
   s.history.transact('Clean up the song', (d) => {
     report = tidySong(d);
   });

@@ -6,6 +6,7 @@ import { PROJECT_FILE_EXTENSION } from '@core/io/project-file';
 import { showDialog } from '../../controls/Dialog';
 import { addMenuItems, cmd, sep, type DynamicMenuEntry } from '../../shell/menus';
 import { applyDefaultLayout } from '../../workspace/layouts';
+import { openWindow } from '../../workspace/registry';
 
 /** New / Open / Save / Save As / Open Recent, the window title and project files dropped on the app. */
 export const order = 5;
@@ -149,13 +150,21 @@ function registerFileKeys({ keymap }: Services): void {
 function registerFileMenu(services: Services): void {
   const recentEntries = (): DynamicMenuEntry[] => {
     const list = recentFiles().slice(0, RECENT_SHOWN);
-    if (list.length === 0) return [{ label: 'No recent projects', disabled: true, run: () => {} }];
-    return list.map((f) => ({
-      label: f.name.replace(/\.agproj$/i, ''),
-      hint: `Open ${f.name} (last used ${new Date(f.usedAt).toLocaleString()})`,
-      disabled: !idle(services),
-      run: () => void services.files.openRecent(f.key),
-    }));
+    const files: DynamicMenuEntry[] =
+      list.length === 0
+        ? [{ label: 'No recent projects', disabled: true, run: () => {} }]
+        : list.map((f) => ({
+            label: f.name.replace(/\.agproj$/i, ''),
+            hint: `Open ${f.name} (last used ${new Date(f.usedAt).toLocaleString()})`,
+            disabled: !idle(services),
+            run: () => void services.files.openRecent(f.key),
+          }));
+    const all: DynamicMenuEntry = {
+      label: 'All projects…',
+      hint: 'The list of every project with its tempo, key, length and a picture; open one, open a copy or see its versions',
+      run: () => openWindow(services, 'projects'),
+    };
+    return [{ label: 'Open recent', hint: 'The projects you used lately', children: [...files, all], run: () => {} }];
   };
   addMenuItems('file', [
     cmd('file.new', 10),

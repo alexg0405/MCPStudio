@@ -87,6 +87,8 @@ export class VersionService {
   /** Writes happen one at a time, so two save points asked together cannot race each other's "what changed". */
   private queue: Promise<unknown> = Promise.resolve();
   private reportedFailure = false;
+  /** The open project's versions as last read. */
+  private openVersions: VersionRecord[] = [];
   private isStarted = false;
 
   constructor(
@@ -245,6 +247,7 @@ export class VersionService {
     globalThis.addEventListener?.('pagehide', onPageHide);
     const tidy = setTimeout(() => void this.tidyAtStart(), STARTUP_TIDY_DELAY_MS);
     void this.writeCard(this.project, { isOpened: true });
+    void this.refresh();
     return () => {
       this.isStarted = false;
       stops.forEach((stop) => stop());
@@ -317,17 +320,31 @@ export class VersionService {
 
   // ---- What the window shows ----
 
+  /**
+   * The versions of the open project as last read (for read tools, which cannot wait for storage): refreshed on start,
+   * after every change to a version and whenever another project is opened.
+   */
+  openProjectVersions(): readonly VersionRecord[] {
+    return this.openVersions;
+  }
+
   /** The versions of the listed project (default: the open one), and the storage they use. */
   async refresh(): Promise<void> {
     const store = this.store;
     if (!store) return;
-    const { projectId } = this.view.getState();
-    const id = projectId ?? this.project.projectId;
+    const openId = this.project.projectId;
+    const id = this.view.getState().projectId ?? openId;
     try {
-      const [versions, project, all] = await Promise.all([store.list(id), store.usage(id), store.usage()]);
+      const [open, versions, project, all] = await Promise.all([
+        store.list(openId),
+        id === openId ? null : store.list(id),
+        store.usage(id),
+        store.usage(),
+      ]);
+      this.openVersions = open;
       const current = this.view.getState();
       if ((current.projectId ?? this.project.projectId) !== id) return; // the window moved on while we read
-      this.view.setState({ versions, usage: { project, all }, isLoading: false });
+      this.view.setState({ versions: versions ?? open, usage: { project, all }, isLoading: false });
     } catch (error) {
       console.warn('Could not read the versions:', error);
       this.view.setState({ isLoading: false });

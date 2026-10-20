@@ -32,6 +32,8 @@ export function applyAnswer(services: Services, answer: AiAnswer, context: Apply
 
   if (context.dryRun && docActions.length === 0) return { changes: [], warnings: [], beat: null, after: [], edited: false };
   let edited: boolean;
+  // A save point first, so a whole answer can always be taken back, even after the undo history is gone.
+  if (!context.dryRun && docActions.length > 0) services.versions.beforeBigChange('before-ai', label);
   try {
     edited =
       docActions.length > 0 &&

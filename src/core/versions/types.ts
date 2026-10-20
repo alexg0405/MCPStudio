@@ -70,7 +70,7 @@ const REASON_WORDS: Readonly<Record<SavePointReason, string>> = {
   save: 'Saved',
   timer: 'Automatic save point',
   close: 'When the tab closed',
-  'before-ai': 'Before an AI answer',
+  'before-ai': 'Before a Studio answer',
   'before-arrange': 'Before arranging',
   'before-tidy': 'Before cleaning up',
   'before-convert': 'Before converting',
@@ -79,7 +79,7 @@ const REASON_WORDS: Readonly<Record<SavePointReason, string>> = {
   named: 'Saved by you',
 };
 
-/** A plain label for a version: its name, else the reason it was made ("Before an AI answer: add a bass"). */
+/** A plain label for a version: its name, else the reason it was made ("Before a Studio answer: add a bass"). */
 export function versionTitle(record: Pick<VersionRecord, 'name' | 'note' | 'reason'>): string {
   if (record.name) return record.name;
   const words = REASON_WORDS[record.reason];

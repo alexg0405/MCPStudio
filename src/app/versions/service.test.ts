@@ -3,6 +3,8 @@ import { seededBytes, setIdSource } from '@core/model/ids';
 import type { Project } from '@core/model/types';
 import { emptySong, songWithClips, withClip } from '@core/versions/test-songs';
 import { versionTitle } from '@core/versions/types';
+import { applyAnswer } from '../ai/apply';
+import { tidyNow } from '../actions/tidy';
 import { createTestServices } from '../testing';
 import { memoryKv } from '../storage/kv';
 import { BIG_EDIT_MIN_GAP_MS, BIG_EDIT_PATCH_COUNT } from './service';
@@ -110,7 +112,7 @@ describe('save points: when they are made', () => {
     s.versions.beforeBigChange('before-ai', 'add a bass line');
     const [only] = await versions();
     expect(only).toMatchObject({ reason: 'before-ai', note: 'add a bass line' });
-    expect(versionTitle(only!)).toBe('Before an AI answer: add a bass line');
+    expect(versionTitle(only!)).toBe('Before a Studio answer: add a bass line');
     stop();
   });
 
@@ -153,6 +155,31 @@ describe('save points: when they are made', () => {
     advance(BIG_EDIT_MIN_GAP_MS);
     big(5000);
     expect(await versions()).toHaveLength(2);
+    stop();
+  });
+
+  it('makes one before an AI answer is applied, holding the project as it was', async () => {
+    const { s, versions, stop } = rig();
+    applyAnswer(s, { message: 'Make it faster.', actions: [{ op: 'song', bpm: 160 }] }, { previousBeat: null });
+    const [only] = await versions();
+    expect(only).toMatchObject({ reason: 'before-ai', note: 'Make it faster' });
+    expect((await s.versions.store!.read(only!)).project.transport.bpm).toBe(130);
+    expect(s.doc.getState().project.transport.bpm).toBe(160);
+    stop();
+  });
+
+  it('does not make one for a dry run of an answer', async () => {
+    const { s, versions, stop } = rig();
+    applyAnswer(s, { message: 'Faster', actions: [{ op: 'song', bpm: 160 }] }, { previousBeat: null, dryRun: true });
+    expect(await versions()).toHaveLength(0);
+    stop();
+  });
+
+  it('makes one before "clean up the song"', async () => {
+    const { s, versions, stop } = rig();
+    tidyNow(s);
+    const [only] = await versions();
+    expect(only!.reason).toBe('before-tidy');
     stop();
   });
 

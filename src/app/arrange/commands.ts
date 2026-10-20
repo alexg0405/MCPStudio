@@ -46,6 +46,7 @@ export function developSong(s: Services, range?: { from: Tick; to: Tick } | null
   if (songLength(p) === 0)
     return { message: 'The playlist is empty: place your patterns on it first, then develop them.', changed: false, touched: null, error: true };
   const where = range ? barSpan(range.from, range.to, p.transport.timeSig) : 'the song';
+  s.versions.beforeBigChange('before-arrange', `develop ${where}`);
   return run(s, `Develop ${where}`, (d, base) =>
     developInDraft(d, s, base, { ...(range ? { from: range.from, to: range.to } : {}), fills: true, transitions: true, fx: true, cleanup: true }),
   );

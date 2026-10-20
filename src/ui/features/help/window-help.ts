@@ -117,6 +117,28 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         [`${mod}+Z / ${mod}+Shift+Z`, 'Undo / redo one step'],
       ],
     },
+    versions: {
+      intro: 'Save points of your song, newest first. They are made when you save, after minutes of editing, before big changes and when you close the tab.',
+      moves: [
+        ['Save a version…', 'Keep the song as it is now under a name; it is kept forever'],
+        ['Listen', 'Play the first 20 seconds of a version without opening it'],
+        ['Restore', 'Put the song back to that version (one undo step; the song as it is now is kept first)'],
+        ['⋯ → Open as a copy', 'Open the version as a new project and leave the open song alone'],
+        ['⋯ → Keep forever', 'Never tidy that version away'],
+        ['What changed since then', 'List what is different between that version and the song now'],
+      ],
+    },
+    projects: {
+      intro: 'Every project AGstudio remembers, with its tempo, key, length and a picture of the arrangement.',
+      moves: [
+        ['Click the picture or Open', 'Open the project (it asks about unsaved changes first)'],
+        ['Open a copy', 'Open the same song as a new unsaved project; the original is not touched'],
+        ['Versions', 'List the save points of that project'],
+        ['☆ / ★', 'Pin a project to the top of the list'],
+        ['Search box', 'Find by name, key (“A minor”) or tempo (“128 bpm”)'],
+        ['Remove', 'Take it off this list (its file and versions stay)'],
+      ],
+    },
     keys: {
       intro: 'A piano and sixteen drum pads for fingers: every finger plays its own note, so chords and rolls work.',
       moves: [

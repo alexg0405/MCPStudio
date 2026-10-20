@@ -37,6 +37,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Play / stop | `Space` |
 | Playlist | `F5`, `⌥1` / `Alt+1` |
 | Previous pattern | `Num −` |
+| Projects | `⌥⇧O` / `Alt+Shift+O` |
 | Record | `R` |
 | Redo | `⌘⇧Z` / `Ctrl+Shift+Z`, `⌘Y` / `Ctrl+Y` |
 | Reference | `⌥⇧R` / `Alt+Shift+R` |
@@ -51,6 +52,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Typing keyboard octave up | `⌥↑` / `Alt+↑` |
 | Undo | `⌘Z` / `Ctrl+Z` |
 | Undo history | `⌥H` / `Alt+H` |
+| Versions | `⌥⇧V` / `Alt+Shift+V` |
 | Visualizer | `⌥V` / `Alt+V` |
 
 ## When the channel-rack window is focused

@@ -6,7 +6,7 @@
  *
  * The tools live in one module per group: `project-tools` (overview, transport, selection, settings, windows),
  * `music-tools` (notes, chords), `sound-tools` (mixer, channels, plugins, chains), `arrangement-tools`
- * (clips, automation, takes, launcher), `mix-state-tools` (mixer snapshots and groups) and `measurement-tools` (reference, loudness, pitch, vocal cleanup, MIDI conversion, samples).
+ * (clips, automation, takes, launcher), `mix-state-tools` (mixer snapshots and groups), `versions-tools` (save points and your projects) and `measurement-tools` (reference, loudness, pitch, vocal cleanup, MIDI conversion, samples).
  */
 import type { Services } from '../../services';
 import { isObj } from '../ops/values';
@@ -17,6 +17,7 @@ import { getMixGroups, getMixSnapshots } from './mix-state-tools';
 import { getChords, getPatternNotes } from './music-tools';
 import { getProject, getSelection, getSettings, getTransport, getWindows } from './project-tools';
 import { getChains, getChannel, getMixer, getPlugins } from './sound-tools';
+import { getRecentProjects, getVersions } from './versions-tools';
 import type { ReadTool, ToolArgs } from './tool';
 
 export type { ReadTool } from './tool';
@@ -33,6 +34,8 @@ export const readTools: readonly ReadTool[] = [
   getMixer,
   getMixSnapshots,
   getMixGroups,
+  getVersions,
+  getRecentProjects,
   getClips,
   getTakes,
   getAutomation,

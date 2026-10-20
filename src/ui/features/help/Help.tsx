@@ -129,6 +129,20 @@ function Welcome() {
             .
           </p>
         )}
+        <p className={styles.installLine}>
+          Already made something?{' '}
+          <button
+            className={styles.inlineLink}
+            onClick={() => {
+              close();
+              openWindow(services, 'projects');
+            }}
+            data-hint="Open the project list: every project AGstudio remembers, with its tempo, key, length and a picture (File → Projects)"
+          >
+            Open your projects
+          </button>
+          . AGstudio also keeps earlier versions of your song as you work (File → Versions).
+        </p>
         <TemplateChips services={services} close={close} />
         <div className={styles.buttons}>
           <button

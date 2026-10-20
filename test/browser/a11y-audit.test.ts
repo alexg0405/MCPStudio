@@ -47,6 +47,7 @@ import {
   nameProblems,
   rovingProblems,
   structureProblems,
+  toggleStateProblems,
   unreachableProblems,
 } from '../helpers/aria-audit';
 import '@ui/theme/tokens.css';
@@ -81,6 +82,7 @@ function auditRegion(label: string, region: Element): string[] {
     ...nameProblems(region),
     ...ariaProblems(region),
     ...structureProblems(region),
+    ...toggleStateProblems(region),
     ...unreachableProblems(region),
     ...roving.problems,
   ].map((p) => `${label}: ${p}`);
@@ -366,6 +368,7 @@ describe('Accessibility audit (shell)', () => {
     s.history.markSaved();
     await s.files.newProject(createEmptyProject());
     const problems: string[] = [];
+    const pluginStops: string[] = [];
     let opened = 0;
     for (const entry of s.plugins.list()) {
       const def = entry.def;
@@ -389,11 +392,12 @@ describe('Accessibility audit (shell)', () => {
       const tab = await tabThrough(def.name, win);
       totals.tabStops += tab.stops;
       problems.push(...tab.problems);
+      pluginStops.push(`${def.name}:${tab.stops}`);
       s.view.getState().hideWindow(win.dataset.windowId!);
     }
     s.history.markSaved();
     totals.windows += opened;
-    console.info(`A11y audit: ${opened} plugin windows`);
+    console.info(`A11y audit: ${opened} plugin windows (Tab stops: ${pluginStops.join(' ')})`);
     expect(opened).toBeGreaterThan(20);
     expect(problems).toEqual([]);
   }, 300_000);

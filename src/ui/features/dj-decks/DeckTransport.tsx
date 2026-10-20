@@ -7,6 +7,10 @@ import { usePlatterGesture } from './deck-gestures';
 import styles from './DjDecks.module.css';
 import type { DeckView } from './use-decks';
 
+/** How far an arrow key turns the platter, in revolutions (Shift: a smaller turn). */
+const PLATTER_NUDGE = 0.02;
+const PLATTER_FINE_NUDGE = 0.005;
+
 /** The platter, the cue / play / sync / key-lock buttons and the pitch fader of a deck. */
 export function DeckTransport({
   api,
@@ -37,6 +41,7 @@ export function DeckTransport({
         aria-valuemin={0}
         aria-valuemax={1}
         aria-valuenow={0}
+        aria-valuetext="Arrow keys nudge the tempo"
         data-hint="Platter: drag to scratch like a record, drag the outer ring to nudge the tempo, scroll to nudge"
         data-touch-own=""
         onPointerDown={platter.onPointerDown}
@@ -44,18 +49,26 @@ export function DeckTransport({
         onPointerUp={platter.onPointerUp}
         onPointerCancel={platter.onPointerUp}
         onWheel={platter.onWheel}
+        onKeyDown={(e) => {
+          // The arrows nudge the tempo, as the platter's outer ring does: a little faster or a little slower for a moment.
+          if (!hasSong || e.ctrlKey || e.metaKey || e.altKey) return;
+          const direction = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0;
+          if (direction === 0) return;
+          e.preventDefault();
+          api.jog(deckId, direction * (e.shiftKey ? PLATTER_FINE_NUDGE : PLATTER_NUDGE), 'nudge');
+        }}
       >
         <i className={styles.platterMark} />
       </div>
-      <div className={styles.buttons}>
+      <div className={styles.buttons} role="toolbar" aria-label={`Deck ${deckId} transport`}>
         <PadButton
           label={`Deck ${deckId} cue`}
           hint="Cue: paused, sets the cue point here (on the beat) and plays from it while held; playing, goes back to the cue point"
           disabled={!hasSong}
           target={deckTarget(deckId, 'cue')}
           className={styles.cue}
-          onPointerDown={() => api.cueDown(deckId)}
-          onPointerUp={() => api.cueUp(deckId)}
+          onPress={() => api.cueDown(deckId)}
+          onRelease={() => api.cueUp(deckId)}
         >
           CUE
         </PadButton>

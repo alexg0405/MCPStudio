@@ -38,7 +38,7 @@ export function DeckHeader({
   const hasSong = deck.song !== null;
   const openLoadMenu = useLoadMenu(deckId);
   return (
-    <header className={styles.deckHead}>
+    <header className={styles.deckHead} role="toolbar" aria-label={`Deck ${deckId} song`}>
       <span className={styles.letter} data-hint={`Deck ${deckId}`}>
         {deckId}
       </span>

@@ -114,7 +114,7 @@ type ControllerRef = RefObject<PitchEditorController | null>;
 export function PitchToolbar({ controller, tool, setTool }: { controller: ControllerRef; tool: PitchTool; setTool: (t: PitchTool) => void }) {
   const model = useToolbarModel();
   return (
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} role="toolbar" aria-label="Pitch editor tools">
       <PlayButton model={model} />
       <ListenChoice model={model} />
       <ToolChoice tool={tool} setTool={setTool} />
@@ -182,10 +182,11 @@ function ListenChoice({ model }: { model: ToolbarModel }) {
 /** Select or Split: what a click on a note does. */
 function ToolChoice({ tool, setTool }: { tool: PitchTool; setTool: (t: PitchTool) => void }) {
   return (
-    <div className={styles.tools} role="toolbar">
+    <div className={styles.tools} role="group" aria-label="Tool">
       <button
         type="button"
         className={`${styles.tool} ${tool === 'select' ? styles.toolOn : ''}`}
+        aria-pressed={tool === 'select'}
         onPointerDown={keepFocus}
         onClick={() => setTool('select')}
         data-hint="Select: click a note, drag it up or down to retune it (snaps to semitones; hold Alt to move by cents), drag empty space to select several"
@@ -195,6 +196,7 @@ function ToolChoice({ tool, setTool }: { tool: PitchTool; setTool: (t: PitchTool
       <button
         type="button"
         className={`${styles.tool} ${tool === 'split' ? styles.toolOn : ''}`}
+        aria-pressed={tool === 'split'}
         onPointerDown={keepFocus}
         onClick={() => setTool('split')}
         data-hint="Split: click on a note to cut it in two there (or press S over a note). Merge them again with M"
@@ -360,7 +362,7 @@ function MoreButton({ model }: { model: ToolbarModel }) {
     showContextMenu({ x: box.left, y: box.bottom + 2 }, moreMenuEntries({ services, clip, clipId, edit, selected, isReady, which }));
   };
   return (
-    <button type="button" className={styles.tool} disabled={!isReady} onPointerDown={keepFocus} onClick={openMenu} data-hint="More: merge notes, reset notes, render again, remove all correction">
+    <button type="button" className={styles.tool} disabled={!isReady} aria-haspopup="menu" onPointerDown={keepFocus} onClick={openMenu} data-hint="More: merge notes, reset notes, render again, remove all correction">
       More ▾
     </button>
   );
@@ -369,10 +371,10 @@ function MoreButton({ model }: { model: ToolbarModel }) {
 function ZoomButtons({ controller }: { controller: ControllerRef }) {
   return (
     <span className={styles.zoom}>
-      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(1 / ZOOM_STEP)} data-hint="Zoom out (or Ctrl/Cmd + wheel)">
+      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(1 / ZOOM_STEP)} aria-label="Zoom out" data-hint="Zoom out (or Ctrl/Cmd + wheel)">
         −
       </button>
-      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(ZOOM_STEP)} data-hint="Zoom in (or Ctrl/Cmd + wheel)">
+      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(ZOOM_STEP)} aria-label="Zoom in" data-hint="Zoom in (or Ctrl/Cmd + wheel)">
         +
       </button>
       <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.fit()} data-hint="Fit the whole clip in the window">

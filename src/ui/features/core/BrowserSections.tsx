@@ -126,6 +126,7 @@ const PatternItem = memo(function PatternItem({ id }: { id: PatternId }) {
   return (
     <button
       className={`${styles.item} ${on ? styles.itemOn : ''}`}
+      aria-current={on || undefined}
       onClick={() => services.view.getState().setCurrentPattern(id)}
       onContextMenu={(e) => {
         e.preventDefault();

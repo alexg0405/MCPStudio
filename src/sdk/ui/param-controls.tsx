@@ -1,5 +1,5 @@
 // Controls bound to a plugin's params through its editor props: one line per control in a custom UI.
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { formatValue, type EnumSpec, type ParamSpec, type ParamSpecs, type ParamValue } from '../params';
 import type { PluginUIProps } from '../types';
 import { Knob } from './Knob';
@@ -139,9 +139,17 @@ export function Section({
   /** Takes the whole row. */
   wide?: boolean;
 }) {
+  const titleId = useId();
   return (
-    <section className={`${styles.section} ${wide ? styles.sectionWide : ''}`} data-hint={hint}>
-      <h3 className={styles.sectionTitle}>{title}</h3>
+    <section
+      className={`${styles.section} ${wide ? styles.sectionWide : ''}`}
+      role="group"
+      aria-labelledby={titleId}
+      data-hint={hint}
+    >
+      <h3 id={titleId} className={styles.sectionTitle}>
+        {title}
+      </h3>
       <div className={styles.sectionBody}>{children}</div>
     </section>
   );

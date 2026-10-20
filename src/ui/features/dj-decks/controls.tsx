@@ -1,6 +1,6 @@
 import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
-import { emitHint, TouchAssist } from '@agstudio/sdk/ui';
+import { emitHint, isSliderResetKey, sliderKeyTarget, TouchAssist, type SliderSteps } from '@agstudio/sdk/ui';
 import { djControllers } from '@app/dj/controllers';
 import type { DeckId } from '@app/dj/decks-api';
 import { isTargetId } from '@core/midi-map/targets';
@@ -36,6 +36,9 @@ export function MidiTarget({ id, children }: { id: string | undefined; children:
     </div>
   );
 }
+
+/** How far the arrow and Page keys move a deck slider, as a share of its travel. */
+const KEY_STEPS: SliderSteps = { step: 0.02, fineStep: 0.005, bigStep: 0.1 };
 
 /** What a deck slider takes: its range, how to show the value, a reset value and the learn target. */
 export interface SliderProps {
@@ -121,11 +124,15 @@ export function Slider({ value, min, max, reset, vertical, label, hint, format, 
     set(frac(value) + step);
   };
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const k = e.key;
-    const dir = k === 'ArrowUp' || k === 'ArrowRight' ? 1 : k === 'ArrowDown' || k === 'ArrowLeft' ? -1 : 0;
-    if (!dir) return;
+    if (isSliderResetKey(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      onChange(reset);
+      return;
+    }
+    const next = sliderKeyTarget(e, frac(value), KEY_STEPS);
+    if (next === null) return;
     e.preventDefault();
-    set(frac(value) + dir * (e.shiftKey ? 0.005 : 0.02));
+    set(next);
   };
 
   const f = frac(value);
@@ -167,8 +174,8 @@ export function PadButton({
   label,
   hint,
   onClick,
-  onPointerDown,
-  onPointerUp,
+  onPress,
+  onRelease,
   onContextMenu,
   disabled,
   className,
@@ -180,8 +187,9 @@ export function PadButton({
   label: string;
   hint: string;
   onClick?(): void;
-  onPointerDown?(e: ReactPointerEvent<HTMLButtonElement>): void;
-  onPointerUp?(e: ReactPointerEvent<HTMLButtonElement>): void;
+  /** For a pad that acts while it is held (cue): the press starts it and the release ends it, by pointer or by Enter and Space. */
+  onPress?(): void;
+  onRelease?(): void;
   onContextMenu?(e: React.MouseEvent): void;
   disabled?: boolean;
   className?: string;
@@ -202,15 +210,23 @@ export function PadButton({
       aria-disabled={idle || undefined}
       data-dj-target={target}
       data-hint={hint}
-      data-touch-own={onPointerDown ? '' : undefined}
+      data-touch-own={onPress ? '' : undefined}
       disabled={disabled && !learning}
       style={style}
       onPointerDown={(e) => {
         // Keep the keyboard focus on the window, so its shortcuts keep working after a click.
         e.preventDefault();
-        onPointerDown?.(e);
+        onPress?.();
       }}
-      onPointerUp={onPointerUp}
+      onPointerUp={onRelease}
+      onKeyDown={(e) => {
+        if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || !onPress) return;
+        e.preventDefault();
+        onPress();
+      }}
+      onKeyUp={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && onRelease) onRelease();
+      }}
       onClick={onClick}
       onContextMenu={onContextMenu}
     >

@@ -377,6 +377,30 @@ function idProblems(root: Element): string[] {
   return problems;
 }
 
+/** Attributes that tell a screen reader a button is on, selected or open. */
+const STATE_ATTRS = ['aria-pressed', 'aria-checked', 'aria-selected', 'aria-expanded', 'aria-current'];
+
+/** True when a CSS-module class name says "on" (`_toolOn_15pzx_20`, `_active_1a2b3_4`): the look of a lit toggle. */
+function lookslit(className: string): boolean {
+  return className.split(/\s+/).some((token) => /^_?(\w*On|active|selected|checked|armed)_[a-z0-9]{5,6}_\d+$/.test(token));
+}
+
+/**
+ * Buttons that light up when on but tell a screen reader nothing about it (no aria-pressed, aria-checked, aria-selected,
+ * aria-expanded or aria-current). Judged by the CSS class that gives the lit look, so it is a hint to look, not a proof:
+ * a button whose lit look only means "hovered" can be excused by giving it `aria-pressed`, which is also right.
+ */
+export function toggleStateProblems(root: Element): string[] {
+  const problems: string[] = [];
+  for (const el of root.querySelectorAll<HTMLElement>('button, [role="button"], [role="switch"], [role="radio"], [role="tab"]')) {
+    if (!isVisible(el) || isAriaHidden(el)) continue;
+    if (typeof el.className !== 'string' || !lookslit(el.className)) continue;
+    if (STATE_ATTRS.some((attr) => el.hasAttribute(attr))) continue;
+    problems.push(`looks lit but exposes no state: ${describe(el)}`);
+  }
+  return problems;
+}
+
 // ── tab stops and roving groups ────────────────────────────────────────────────────────────────────
 
 /** True when Tab can land on the element: natively focusable, or `tabindex >= 0`, and not disabled. */
@@ -427,8 +451,8 @@ export function unreachableProblems(root: Element): string[] {
     // An option of a list that a combobox drives with aria-activedescendant (the action search).
     const list = el.closest('[role="listbox"]');
     if (list?.id && document.querySelector(`[aria-controls~="${CSS.escape(list.id)}"][aria-activedescendant]`)) continue;
-    // A composite whose own container is the Tab stop.
-    const composite = el.closest('[aria-activedescendant]');
+    // A composite whose own container is the Tab stop and moves the selection with its keys (a list box, a tree, a grid).
+    const composite = el.closest('[role="listbox"], [role="tree"], [role="grid"], [aria-activedescendant]');
     if (composite && isTabStop(composite as HTMLElement)) continue;
     problems.push(`not reachable by keyboard: ${describe(el)}`);
   }
@@ -438,9 +462,35 @@ export function unreachableProblems(root: Element): string[] {
   return problems;
 }
 
-/** True when the focused element shows a focus ring: a 2px outline or a box-shadow. */
-export function hasFocusRing(el: Element): boolean {
+/** True when the focused element shows a focus ring itself: a 2px outline or a box-shadow. */
+function hasOwnFocusRing(el: Element): boolean {
   const cs = getComputedStyle(el);
   const outlined = cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 2 && cs.outlineColor !== 'rgba(0, 0, 0, 0)';
   return outlined || (cs.boxShadow !== 'none' && cs.boxShadow !== '');
+}
+
+/** What one of the element's ancestors looks like, as a string that changes when its focus styling does. */
+function lookOf(el: Element): string {
+  const cs = getComputedStyle(el);
+  return [cs.boxShadow, cs.borderTopColor, cs.outlineStyle, cs.backgroundColor].join('|');
+}
+
+/**
+ * True when focusing the element changes how one of its two nearest ancestors looks (a text box whose frame lights up
+ * with `:focus-within`). Transitions are switched off while measuring, or the "after" would still show the "before".
+ */
+function parentShowsFocus(el: HTMLElement): boolean {
+  const chain = [el.parentElement, el.parentElement?.parentElement].filter((x): x is HTMLElement => !!x);
+  for (const a of chain) a.style.transition = 'none';
+  const focusedLooks = chain.map(lookOf);
+  el.blur();
+  const plainLooks = chain.map(lookOf);
+  el.focus();
+  for (const a of chain) a.style.removeProperty('transition');
+  return focusedLooks.some((look, i) => look !== plainLooks[i]);
+}
+
+/** True when the focused element shows a focus ring: on itself (a 2px outline or a box-shadow) or on the frame around it. */
+export function hasFocusRing(el: Element): boolean {
+  return hasOwnFocusRing(el) || (el instanceof HTMLElement && parentShowsFocus(el));
 }

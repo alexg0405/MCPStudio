@@ -69,7 +69,8 @@ export function AutomationRow({ id }: { id: ChannelId }) {
         onPointerDown={(e) => e.preventDefault()}
         onClick={toggleMute}
         data-hint={`${ch.name}: ${ch.muted ? 'muted' : 'on'}. Click to ${ch.muted ? 'let it move the control again' : 'mute it'}`}
-        aria-label={ch.muted ? 'Unmute' : 'Mute'}
+        aria-label={`Mute ${ch.name}`}
+        aria-pressed={ch.muted}
       />
       <span className={styles.autoSpacer} />
       <button

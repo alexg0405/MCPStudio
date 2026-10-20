@@ -57,7 +57,7 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
 
   const hasChoices = choices.length > 0;
   return (
-    <div className={styles.bar} data-tour="preset-bar">
+    <div className={styles.bar} data-tour="preset-bar" role="toolbar" aria-label="Presets">
       <span className={styles.pill}>
         <button
           type="button"
@@ -80,6 +80,8 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
             e.preventDefault();
             openMenu(e);
           }}
+          aria-haspopup="menu"
+          aria-label={`Preset: ${presetLabel(exact, lastName, isAtDefault)}. Opens the preset menu`}
           data-hint="Presets: load one, save your own, reset or randomize"
         >
           <span className={styles.label}>{presetLabel(exact, lastName, isAtDefault)}</span>

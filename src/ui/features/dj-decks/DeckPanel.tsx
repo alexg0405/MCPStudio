@@ -62,6 +62,7 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
         ref={overviewCanvas}
         className={styles.overview}
         role="slider"
+        tabIndex={0}
         aria-label={`Deck ${id} position`}
         aria-valuemin={0}
         aria-valuemax={deck.song?.durationSec ?? 0}
@@ -71,6 +72,8 @@ export function DeckPanel({ api, id }: { api: DecksApi; id: DeckId }) {
         onPointerDown={overview.onPointerDown}
         onPointerMove={overview.onPointerMove}
         onPointerUp={overview.onPointerUp}
+        onKeyDown={overview.onKeyDown}
+        onFocus={overview.onFocus}
       />
       <div className={styles.clock}>
         <span ref={elapsedTime} className={styles.time} data-hint="Time into the song (minutes:seconds)" />

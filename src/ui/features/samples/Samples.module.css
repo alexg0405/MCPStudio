@@ -67,7 +67,6 @@
 }
 
 .search:focus {
-  outline: none;
   border-color: var(--ag-accent);
 }
 

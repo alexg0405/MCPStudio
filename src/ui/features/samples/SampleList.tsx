@@ -66,14 +66,27 @@ interface SampleRowViewProps {
   onMenu(e: ReactMouseEvent, row: BrowserRow): void;
 }
 
+/** The id of a sound's row, for the list's `aria-activedescendant` (a name with spaces is made safe). */
+const sampleRowId = (rowId: string): string => `ag-sample-${encodeURIComponent(rowId)}`;
+
+/** What a screen reader says for a sound's row: its name, whether it is starred, what kind of sound, tempo and key. */
+function sampleRowName(row: BrowserRow): string {
+  const type = typeText(row);
+  const bpm = bpmText(row.analysis);
+  const key = shownKey(row);
+  return [row.name, row.favorite ? 'starred' : '', type.text, bpm ? `${bpm} BPM` : '', key ? `key ${key}` : ''].filter(Boolean).join(', ');
+}
+
 /** One sound in the list: star, name and folder, type, tempo, key, length and tags. Drag it onto the rack, the playlist or a pad. */
 function SampleRowView({ browser, row, isSelected, isCursor, isPlaying, onChoose, onAddToProject, onMenu }: SampleRowViewProps) {
   const type = typeText(row);
   const className = `${styles.row} ${isSelected ? styles.selected : ''} ${isCursor ? styles.cursor : ''} ${isPlaying ? styles.playing : ''}`;
   return (
     <div
+      id={sampleRowId(row.id)}
       role="option"
       aria-selected={isSelected}
+      aria-label={sampleRowName(row)}
       className={className}
       draggable
       data-sample-row={row.id}
@@ -83,9 +96,11 @@ function SampleRowView({ browser, row, isSelected, isCursor, isPlaying, onChoose
       onContextMenu={(e) => onMenu(e, row)}
       onDragStart={(e) => startAudioFileDrag(e.dataTransfer, row.handle)}
     >
+      {/* The star is a mouse button: the list's own key (F) stars the sound under the cursor, and the option's name says it is starred. */}
       <button
         className={row.favorite ? styles.starOn : styles.star}
-        aria-pressed={row.favorite}
+        tabIndex={-1}
+        aria-hidden
         aria-label={row.favorite ? `Unstar ${row.name}` : `Star ${row.name}`}
         data-hint={row.favorite ? 'A favorite: click to remove the star' : 'Click to star this sound as a favorite'}
         onClick={(e) => {
@@ -149,6 +164,7 @@ export function SampleList({ browser, rows, window: win, listRef, selectedIds, c
         role="listbox"
         aria-label="Samples"
         aria-multiselectable
+        aria-activedescendant={cursorId !== null && rows.slice(win.first, win.last).some((row) => row.id === cursorId) ? sampleRowId(cursorId) : undefined}
         tabIndex={0}
         onScroll={win.onScroll}
         onKeyDown={onKeyDown}

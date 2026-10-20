@@ -84,6 +84,7 @@ function Interface() {
           className={styles.select}
           value={theme}
           onChange={(e) => s.commands.run('options.theme', e.target.value)}
+          aria-label="Theme"
           data-hint="How AGstudio looks (remembered in this browser)"
         >
           {THEMES.map((t) => (

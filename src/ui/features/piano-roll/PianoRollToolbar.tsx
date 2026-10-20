@@ -41,11 +41,12 @@ function ToolButtons() {
   const tool = useStore(services.editor, (s) => s.pianoRoll.tool);
   const set = services.editor.getState().setPianoRoll;
   return (
-  <div className={styles.tools} role="toolbar">
+  <div className={styles.tools} role="group" aria-label="Drawing tool">
     {TOOLS.map((t) => (
       <button
         key={t.tool}
         className={`${styles.tool} ${tool === t.tool ? styles.toolOn : ''}`}
+        aria-pressed={tool === t.tool}
         onPointerDown={keepFocus}
         onClick={() => set({ tool: t.tool })}
         data-hint={`${t.hint} (${t.key})`}
@@ -65,6 +66,7 @@ function ToolsMenuButton() {
     className={styles.tool}
     onPointerDown={keepFocus}
     onClick={(e) => menuBelow(e, toolsMenu(services))}
+    aria-haspopup="menu"
     data-hint="Tools: Quantize, Make legato, Humanize, Strum, Arpeggiate, Chop and more. They change the selected notes, or every note when none are selected"
   >
     Tools ▾
@@ -108,12 +110,14 @@ function KeyAndScaleButtons() {
       className={`${styles.tool} ${styles.keyButton} ${songKey ? styles.keySet : ''}`}
       onPointerDown={keepFocus}
       onClick={(e) => menuBelow(e, keyMenu(services))}
+      aria-haspopup="menu"
       data-hint={`Song key: ${keyName}. Click to choose a root and a scale; tools that work "in key" and the scale highlight use it`}
     >
       Key: {keyName} ▾
     </button>
     <button
       className={`${styles.tool} ${songKey && pr.scaleHighlight ? styles.toolOn : ''}`}
+      aria-pressed={!!songKey && pr.scaleHighlight}
       disabled={!songKey}
       onPointerDown={keepFocus}
       onClick={() => set({ scaleHighlight: !pr.scaleHighlight })}
@@ -127,6 +131,7 @@ function KeyAndScaleButtons() {
     </button>
     <button
       className={`${styles.tool} ${songKey && pr.scaleSnap ? styles.toolOn : ''}`}
+      aria-pressed={!!songKey && pr.scaleSnap}
       disabled={!songKey}
       onPointerDown={keepFocus}
       onClick={() => set({ scaleSnap: !pr.scaleSnap })}
@@ -140,6 +145,7 @@ function KeyAndScaleButtons() {
     </button>
     <button
       className={`${styles.tool} ${pr.chordHighlight ? styles.toolOn : ''}`}
+      aria-pressed={pr.chordHighlight}
       onPointerDown={keepFocus}
       onClick={() => set({ chordHighlight: !pr.chordHighlight })}
       data-hint={`Chord tones ${pr.chordHighlight ? 'on' : 'off'}: tints the rows of the chord track’s notes behind the notes, with each chord’s name at the top (add chords in the Chords window or the lane above the playlist)`}
@@ -197,6 +203,7 @@ function GhostNotesButton() {
   return (
   <button
     className={`${styles.tool} ${ghosts ? styles.toolOn : ''}`}
+    aria-pressed={ghosts}
     onPointerDown={keepFocus}
     onClick={() => set({ ghosts: !ghosts })}
     data-hint="Ghost notes: show the other channels’ notes faintly behind this one"
@@ -243,6 +250,7 @@ function ZoomButtons({ controller }: { controller: React.RefObject<PianoRollCont
     <button
       onPointerDown={keepFocus}
       onClick={() => controller.current?.zoomBy(1 / 1.4)}
+      aria-label="Zoom out"
       data-hint="Zoom out (or Ctrl/Cmd + wheel, or pinch)"
     >
       −
@@ -250,6 +258,7 @@ function ZoomButtons({ controller }: { controller: React.RefObject<PianoRollCont
     <button
       onPointerDown={keepFocus}
       onClick={() => controller.current?.zoomBy(1.4)}
+      aria-label="Zoom in"
       data-hint="Zoom in (or Ctrl/Cmd + wheel, or pinch)"
     >
       +
@@ -280,7 +289,7 @@ export function Toolbar({ controller }: { controller: React.RefObject<PianoRollC
   const services = useServices();
   const count = useStore(services.editor, (s) => s.noteSelection.length);
   return (
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} role="toolbar" aria-label="Piano roll tools">
       <PlayPatternButton className={`${styles.tool} ${styles.playButton}`} onClassName={styles.toolOn} />
       <ToolButtons />
       <ToolsMenuButton />

@@ -24,7 +24,7 @@ const MAX_PREVIEW_VOLUME = 1.5;
 export function SamplePreviewFooter({ services, browser, prefs, playingId, statusText, visibleCount, rowCount }: SamplePreviewFooterProps) {
   const { volume, syncTempo, syncMode, inKey, autoPreview } = prefs;
   return (
-    <div className={styles.footer}>
+    <div className={styles.footer} role="toolbar" aria-label="Preview">
       <span className={styles.label}>Preview</span>
       <input
         className={styles.volume}

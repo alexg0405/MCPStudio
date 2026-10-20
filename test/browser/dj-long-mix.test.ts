@@ -159,7 +159,7 @@ describe('a DJ mix of long songs', () => {
     for (const s of services) await s.engine.dispose();
   });
 
-  it('plays and exports six long songs, beat-matched, within the memory budget', async () => {
+  it('plays and exports six long songs, beat-matched, within the memory budget', { tags: ['realtime'], timeout: 300_000 }, async () => {
     // Stretched copies made by earlier runs are kept in OPFS: start without them, so they are made here.
     await (await navigator.storage.getDirectory()).removeEntry('derived', { recursive: true }).catch(() => {});
     const mix = await buildMix(6, 60, 126, 8);
@@ -225,7 +225,7 @@ describe('a DJ mix of long songs', () => {
       }
     }
     expect(checked).toBeGreaterThan(200);
-  }, 300_000);
+  });
 
   it.skipIf(!import.meta.env.VITE_LONG_EXPORT)(
     'measures a 64-minute mix export (sixteen 4.5-minute songs)',

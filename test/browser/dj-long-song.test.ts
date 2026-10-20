@@ -112,7 +112,7 @@ describe('a song read by parts is the song decoded whole', () => {
     source.dispose();
   }, 120_000);
 
-  it('costs little to keep a window filled: a block of 1.4 s takes milliseconds (MP3 decode and resample; WAV and resample)', async () => {
+  it('costs little to keep a window filled: a block of 1.4 s takes milliseconds (MP3 decode and resample; WAV and resample)', { tags: ['perf'], timeout: 120_000 }, async () => {
     const mp3 = await openSegmentSource({ reader: blobReader(new Blob([mp3Of(chirp(60)) as BlobPart])), sampleRate: SR });
     const wav = await openSegmentSource({ reader: blobReader(virtualWav(60)), sampleRate: SR });
     const l = new Float32Array(65536);
@@ -131,7 +131,7 @@ describe('a song read by parts is the song decoded whole', () => {
       expect(ms).toBeLessThan(120);
       src.dispose();
     }
-  }, 120_000);
+  });
 
   it('refuses what it cannot read by parts (the caller decodes those whole)', async () => {
     const odd = new Uint8Array(4096);
@@ -246,7 +246,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sleep = wait;
 const MB = 1024 * 1024;
 
-describe('decks: a 2-hour song', () => {
+describe('decks: a 2-hour song', { tags: ['perf'] }, () => {
   it('loads, plays from anywhere (cue points, far jumps) and stays under 200 MB', async () => {
     const before = await memory();
     const rig = longRig(4);
@@ -346,7 +346,7 @@ function crossingsPerSecond(x: Float32Array, rate: number, from: number, to: num
   return (n * rate) / (to - from);
 }
 
-describe('decks: a long song in the real engine', () => {
+describe('decks: a long song in the real engine', { tags: ['realtime'] }, () => {
   let s: Services | null = null;
   afterAll(async () => {
     (await s?.decks())?.dispose();

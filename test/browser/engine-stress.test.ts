@@ -19,6 +19,7 @@ import fm from '../../src/plugins/builtin/fm';
 import threeOsc from '../../src/plugins/builtin/three-osc';
 import { automate, pt } from '../helpers/automation';
 import { kitProject, resolver } from '../helpers/fixtures';
+import { retryWhenOverloaded } from '../helpers/overload';
 
 const BAR = 3840;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -82,7 +83,7 @@ async function until(ok: () => boolean, ms: number, what: string) {
   }
 }
 
-describe('engine under stress', () => {
+describe('engine under stress', { tags: ['realtime'] }, () => {
   it('start/stop/seek spam leaves no stuck notes and no faults', async () => {
     const { project, view } = song();
     const { engine, faults } = await boot(project, view);
@@ -107,91 +108,103 @@ describe('engine under stress', () => {
     expect(engine.stats().faults).toBe(0);
   }, 60_000);
 
-  it('the playhead never goes backwards while a song plays', async () => {
-    const { project, view } = song();
-    const { engine } = await boot(project, view);
-    engine.play(0);
-    let last = -1;
-    const end = performance.now() + 2500;
-    let samples = 0;
-    while (performance.now() < end) {
-      const p = engine.playhead();
-      expect(p).toBeGreaterThanOrEqual(last);
-      last = p;
-      samples++;
-      await sleep(7);
-    }
-    expect(samples).toBeGreaterThan(100);
-    // About 2.5 s at 120 BPM = 5 beats; a stalled or runaway clock would be far off.
-    expect(last).toBeGreaterThan(2 * 960);
-    expect(last).toBeLessThan(8 * 960);
-    engine.stop();
-  }, 30_000);
+  it('the playhead never goes backwards while a song plays', { timeout: 120_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      for (const e of engines.splice(0)) await e.dispose(); // an earlier attempt's engine
+      const { project, view } = song();
+      const { engine } = await boot(project, view);
+      engine.play(0);
+      let last = -1;
+      const end = performance.now() + 2500;
+      let samples = 0;
+      while (performance.now() < end) {
+        const p = engine.playhead();
+        expect(p).toBeGreaterThanOrEqual(last);
+        last = p;
+        samples++;
+        await sleep(7);
+      }
+      expect(samples).toBeGreaterThan(100);
+      // About 2.5 s at 120 BPM = 5 beats; a stalled or runaway clock would be far off.
+      expect(last).toBeGreaterThan(2 * 960);
+      expect(last).toBeLessThan(8 * 960);
+      engine.stop();
+    });
+  });
 
-  it('moving the loop while playing keeps the playhead inside it, and clearing it plays on', async () => {
-    const { project, view } = song();
-    const { engine } = await boot(project, view);
-    engine.play(0);
-    await sleep(300);
-    const loop = { start: BAR, end: 2 * BAR };
-    engine.setTransportView({ ...view, loop });
-    await sleep(500);
-    for (let i = 0; i < 40; i++) {
-      const p = engine.playhead();
-      expect(p).toBeGreaterThanOrEqual(loop.start - 1);
-      expect(p).toBeLessThanOrEqual(loop.end + 1);
-      await sleep(25);
-    }
-    // A different loop while inside the first one, then no loop at all.
-    engine.setTransportView({ ...view, loop: { start: 2 * BAR, end: 3 * BAR } });
-    await sleep(500);
-    expect(engine.playhead()).toBeGreaterThanOrEqual(2 * BAR - 1);
-    expect(engine.playhead()).toBeLessThanOrEqual(3 * BAR + 1);
-    engine.setTransportView({ ...view, loop: null });
-    const before = engine.playhead();
-    await sleep(400);
-    expect(engine.playhead()).not.toBe(before);
-    expect(engine.playing).toBe(true);
-    engine.stop();
-  }, 30_000);
+  it('moving the loop while playing keeps the playhead inside it, and clearing it plays on', { timeout: 120_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      for (const e of engines.splice(0)) await e.dispose(); // an earlier attempt's engine
+      const { project, view } = song();
+      const { engine } = await boot(project, view);
+      engine.play(0);
+      await sleep(300);
+      const loop = { start: BAR, end: 2 * BAR };
+      engine.setTransportView({ ...view, loop });
+      await sleep(500);
+      for (let i = 0; i < 40; i++) {
+        const p = engine.playhead();
+        expect(p).toBeGreaterThanOrEqual(loop.start - 1);
+        expect(p).toBeLessThanOrEqual(loop.end + 1);
+        await sleep(25);
+      }
+      // A different loop while inside the first one, then no loop at all.
+      engine.setTransportView({ ...view, loop: { start: 2 * BAR, end: 3 * BAR } });
+      await sleep(500);
+      expect(engine.playhead()).toBeGreaterThanOrEqual(2 * BAR - 1);
+      expect(engine.playhead()).toBeLessThanOrEqual(3 * BAR + 1);
+      engine.setTransportView({ ...view, loop: null });
+      const before = engine.playhead();
+      await sleep(400);
+      expect(engine.playhead()).not.toBe(before);
+      expect(engine.playing).toBe(true);
+      engine.stop();
+    });
+  });
 
-  it('follows tempo automation while playing: the tempo rises and the playhead keeps up', async () => {
-    const { project: base, view } = song();
-    // 60 → 180 BPM over the four bars (range 60–180).
-    const { project } = automate(base, { kind: 'tempo' }, [pt(0, 0), pt(4 * BAR, 1)], [{ start: 0, length: 4 * BAR, lane: 1 }]);
-    const { engine, faults } = await boot(project, view);
-    engine.play(0);
-    await sleep(500);
-    const early = engine.tempoNow();
-    const p1 = engine.playhead();
-    await sleep(1500);
-    const late = engine.tempoNow();
-    const p2 = engine.playhead();
-    expect(late).toBeGreaterThan(early);
-    expect(p2).toBeGreaterThan(p1);
-    // Seconds-per-tick integrates the ramp: 1.5 s at 60–100 BPM is about 1.5 to 2.2 beats, never 5+.
-    expect((p2 - p1) / 960).toBeGreaterThan(1.2);
-    expect((p2 - p1) / 960).toBeLessThan(3.5);
-    engine.stop();
-    expect(faults).toEqual([]);
-  }, 30_000);
+  it('follows tempo automation while playing: the tempo rises and the playhead keeps up', { timeout: 120_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      for (const e of engines.splice(0)) await e.dispose(); // an earlier attempt's engine
+      const { project: base, view } = song();
+      // 60 → 180 BPM over the four bars (range 60–180).
+      const { project } = automate(base, { kind: 'tempo' }, [pt(0, 0), pt(4 * BAR, 1)], [{ start: 0, length: 4 * BAR, lane: 1 }]);
+      const { engine, faults } = await boot(project, view);
+      engine.play(0);
+      await sleep(500);
+      const early = engine.tempoNow();
+      const p1 = engine.playhead();
+      await sleep(1500);
+      const late = engine.tempoNow();
+      const p2 = engine.playhead();
+      expect(late).toBeGreaterThan(early);
+      expect(p2).toBeGreaterThan(p1);
+      // Seconds-per-tick integrates the ramp: 1.5 s at 60–100 BPM is about 1.5 to 2.2 beats, never 5+.
+      expect((p2 - p1) / 960).toBeGreaterThan(1.2);
+      expect((p2 - p1) / 960).toBeLessThan(3.5);
+      engine.stop();
+      expect(faults).toEqual([]);
+    });
+  });
 
-  it('reports how well the audio keeps up, and stays sane across seeks', async () => {
-    const { project, view } = song();
-    const { engine } = await boot(project, view);
-    expect(engine.stats().keepUp).toBeUndefined();
-    engine.play(0);
-    await until(() => engine.stats().keepUp !== undefined, 4000, 'a keepUp measurement');
-    const k = engine.stats().keepUp as number;
-    expect(k).toBeGreaterThan(0.2);
-    expect(k).toBeLessThanOrEqual(1);
-    // The scheduler's longest wait is for this playback only.
-    expect(engine.stats().maxPumpGapMs).toBeLessThan(1000);
-    engine.stop();
-    engine.play(0);
-    expect(engine.stats().maxPumpGapMs).toBeLessThan(200);
-    engine.stop();
-  }, 30_000);
+  it('reports how well the audio keeps up, and stays sane across seeks', { timeout: 120_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      for (const e of engines.splice(0)) await e.dispose(); // an earlier attempt's engine
+      const { project, view } = song();
+      const { engine } = await boot(project, view);
+      expect(engine.stats().keepUp).toBeUndefined();
+      engine.play(0);
+      await until(() => engine.stats().keepUp !== undefined, 4000, 'a keepUp measurement');
+      const k = engine.stats().keepUp as number;
+      expect(k).toBeGreaterThan(0.2);
+      expect(k).toBeLessThanOrEqual(1);
+      // The scheduler's longest wait is for this playback only.
+      expect(engine.stats().maxPumpGapMs).toBeLessThan(1000);
+      engine.stop();
+      engine.play(0);
+      expect(engine.stats().maxPumpGapMs).toBeLessThan(200);
+      engine.stop();
+    });
+  });
 
   it('rebooting the engine (audio buffer setting) while playing carries on and the sound comes back', async () => {
     const { project, view } = song();

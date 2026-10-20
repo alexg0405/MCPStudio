@@ -13,6 +13,7 @@ import { REVERB_ID } from '../../src/plugins/builtin/reverb/params';
 import { kitProject, resolver, withInsert, type FxSpec } from '../helpers/fixtures';
 import { perfLimit, settle } from '../helpers/perf';
 import { rmsRange } from '../helpers/routing';
+import { retryWhenOverloaded } from '../helpers/overload';
 
 const SR = 48000;
 const plugins = resolver();
@@ -93,7 +94,7 @@ describe('Reverb engines', () => {
     expect(factor).toBeGreaterThan(limit);
   });
 
-  it('a song with ten 7 s reverbs exports several times faster than with the convolution engine', async () => {
+  it('a song with ten 7 s reverbs exports several times faster than with the convolution engine', { tags: ['perf'], timeout: 120_000 }, async () => {
     const algo = reverbs(10, { ...LONG, engine: 'algorithmic' });
     const conv = reverbs(10, { ...LONG, engine: 'convolution' });
     const dry = reverbs(0, {});
@@ -109,9 +110,9 @@ describe('Reverb engines', () => {
         `time, convolution ${convSpeed.toFixed(1)}×, no reverb ${drySpeed.toFixed(1)}×`,
     );
     expect(algoSpeed).toBeGreaterThan(4 * convSpeed);
-  }, 120_000);
+  });
 
-  it('ten 7 s algorithmic reverbs keep the realtime audio clock at real time', { tags: ['perf'] }, async () => {
+  it('ten 7 s algorithmic reverbs keep the realtime audio clock at real time', { tags: ['perf', 'realtime'], timeout: 120_000 }, async (test) => {
     const rate = async (engineName: string) => {
       const { project, patternId } = reverbs(10, { ...LONG, engine: engineName });
       const engine = Engine.realtime({ plugins });
@@ -134,13 +135,17 @@ describe('Reverb engines', () => {
       }
     };
     const limit = perfLimit(0.95, 0.7);
-    const algo = await settle(() => rate('algorithmic'), (r) => r > limit, { attempts: 3, better: 'higher' });
-    const conv = await rate('convolution');
-    console.info(
-      `[reverb] 10 × 7 s realtime: the audio clock runs at ${algo.toFixed(2)}× (algorithmic), ` +
-        `${conv.toFixed(2)}× (convolution)`,
-    );
-    expect(algo).toBeGreaterThan(limit);
+    // A machine too busy to keep a clock at real time (checked by retryWhenOverloaded, which repeats the measurement and
+    // skips only when every attempt was on an overloaded machine) says nothing about the reverb.
+    await retryWhenOverloaded(test, async () => {
+      const algo = await settle(() => rate('algorithmic'), (r) => r > limit, { attempts: 3, better: 'higher' });
+      const conv = await rate('convolution');
+      console.info(
+        `[reverb] 10 × 7 s realtime: the audio clock runs at ${algo.toFixed(2)}× (algorithmic), ` +
+          `${conv.toFixed(2)}× (convolution)`,
+      );
+      expect(algo).toBeGreaterThan(limit);
+    });
   });
 
   it('sounds: a snare rings out, decays and stops; the tail is reported for exports', async () => {

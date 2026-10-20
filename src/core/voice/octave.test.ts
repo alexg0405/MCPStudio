@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { cpuNow, settle } from '../../../test/helpers/perf';
 import { sing, type Formant } from '../../../test/helpers/sung';
 import { hasSubharmonic, repairOctaveSlips } from './octave';
 import { analyzePitch, type PitchNote } from './pitch-notes';
@@ -228,13 +229,21 @@ describe('the evidence and the windows', () => {
 });
 
 describe('cost', () => {
-  it('the repair is a small part of the analysis of a minute of singing', () => {
+  it('the repair is a small part of the analysis of a minute of singing', { tags: ['perf'] }, async () => {
     // 60 s: a note every 1.5 s across the weak-fundamental range.
     const notes = Array.from({ length: 40 }, (_, i) => ({ from: 0.2 + i * 1.5, to: 1.4 + i * 1.5, midi: 62 + (i % 9) }));
     const x = sing(notes, SR, 61, VOICES.f900);
-    const t0 = performance.now();
-    const a = analyzePitch(x, SR);
-    const ms = performance.now() - t0;
+    // CPU time, best of up to three runs: the wall clock would count the time spent waiting for a core.
+    let a!: ReturnType<typeof analyzePitch>;
+    const ms = await settle(
+      () => {
+        const t0 = cpuNow();
+        a = analyzePitch(x, SR);
+        return cpuNow() - t0;
+      },
+      (cpuMs) => cpuMs < 3000,
+      { attempts: 3 },
+    );
     expect(a.notes.length).toBe(40);
     // Loose bound (the limit that matters is the 112 ms of the tracker itself plus a few ms): a shared CI runner can be slow.
     expect(ms).toBeLessThan(3000);

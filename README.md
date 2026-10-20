@@ -86,10 +86,17 @@ the development server on 5390, with hot reload, and has nothing to do with the 
 
 ## What's in it
 
-- **Help everywhere**: point at anything for a tooltip and the hint bar; a **?** on every window explains it;
-  **⌘K / Ctrl+K** finds any action by typing what you want (or hands the words to the AI); a welcome screen,
-  a guided tour (Help → Take the tour) and project templates (Trap, Boom bap, House, Lo-fi, Drill, and the dance pack: Big room, Progressive house,
-  Future bass, Dubstep, Melodic dubstep, Tech house, Trance, Drum & bass).
+- **Help everywhere**: point at anything for a tooltip and the hint bar; a **?** on every window explains it and links to
+  its tour; **⌘K / Ctrl+K** finds any action by typing what you want (or hands the words to the AI), and "learn …" there
+  starts a tour or opens a help topic; a welcome screen and project templates (Trap, Boom bap, House, Lo-fi, Drill, and the
+  dance pack: Big room, Progressive house, Future bass, Dubstep, Melodic dubstep, Tech house, Trance, Drum & bass).
+- **Guided tours, Help, Features and What's new** (the Help menu): eight tours that point at the real controls on a demo
+  song and give your own project back afterwards, whatever happens (a quick look around, your first song, recording and
+  polishing a vocal, DJ mixing, the clip launcher, chords and harmony, mixing and mastering, Studio and MCP); a searchable
+  **Help and tours** window (every window's "?", every action's hint, shortcuts, keyboard navigation, touch gestures);
+  a **Features** page that lists everything AGstudio can do by area, with a button that starts each, built from what the
+  app registers so it cannot go stale; and **What's new**, a short illustrated list of the newest features with "Show me"
+  buttons, which opens once after an update. Studio and MCP can start tours and open Help (`tour.start`, `help.open`).
 - **Channel rack**: step sequencer with fill/rotate/shift/reverse/randomize tools and a per-step graph editor
   (velocity, pan, release, pitch), mini piano-roll previews, volume/pan, mute/solo, mixer routing, automation rows.
 - **Piano roll**: draw, paint, select, slice, mute and delete tools; snap (incl. triplets); song key with scale

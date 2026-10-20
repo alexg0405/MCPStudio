@@ -1,4 +1,4 @@
-/** Read tools for what has been measured or found: the reference song, loudness, sung pitch, vocal cleanup and the sample library. */
+/** Read tools for what has been measured or found: the reference song, loudness, sung pitch, vocal cleanup, what Convert to MIDI would write and the sample library. */
 import { SAMPLE_CATEGORIES } from '@core/samples/types';
 import { cleanupReport } from '../../cleanup/report';
 import { alignReport } from '../../align/report';

@@ -263,6 +263,19 @@ function ConvertDialog({ clipId }: { clipId: ClipId }) {
             </span>
           </div>
         </fieldset>
+        <details className={styles.help}>
+          <summary data-hint="What each choice does and what this can and cannot read">How this works</summary>
+          <ul>
+            <li>
+              <strong>Melody</strong> follows one note at a time (a voice, a lead). <strong>Drums</strong> finds kick, snare, clap, hats, toms and cymbals, even when a hat is over a kick.
+              <strong> Chords</strong> reads a chord for every beat from the sound. <strong>Bassline</strong> follows the lowest line of a mixed loop and leaves the drums out.
+            </li>
+            <li>The notes land where the audio plays: the clip’s trim, its tempo follow and its pitch are all counted, so what you convert is what you hear.</li>
+            <li>Snap pulls note starts and ends to the grid. Strength below 100 % keeps some of the human timing; Keep the feel writes the recording’s own swing into the notes.</li>
+            <li>With Drums on a new channel the kick, snare, hats… are cut from your recording onto Drum Pads, so the notes sound like the original kit.</li>
+            <li>Chords and basslines of a full mix are a good guess, not a transcript: check them in the piano roll. One Undo removes everything this makes.</li>
+          </ul>
+        </details>
         <div className={dialog.buttons}>
           <button className={dialog.button} onClick={() => { s.engine.stopPreview(); closeConvertDialog(); }} data-hint="Close without making anything">
             Cancel

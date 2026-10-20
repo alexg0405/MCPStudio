@@ -211,3 +211,23 @@
     grid-template-columns: 1fr;
   }
 }
+
+.help {
+  margin: 4px 0 0;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.help summary {
+  cursor: pointer;
+  color: var(--ag-text-faint);
+  font-size: 11px;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.help ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  line-height: 1.5;
+}

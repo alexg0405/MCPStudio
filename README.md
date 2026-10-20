@@ -114,6 +114,11 @@ the development server on 5390, with hot reload, and has nothing to do with the 
   tracks under it: a third above, a fifth below, tones of the chord track, a fixed interval or the notes of a guide
   channel, each with its own level, pan, vowel colour and a little human timing and pitch drift; hear them first (A/B),
   one undo removes them all, and Update harmonies makes them again when the vocal, the chords or the key change.
+- **Convert to MIDI**: right-click an audio clip → Convert to MIDI… turns a sung line, a drum loop, chords or a bass line into
+  notes in a new pattern placed under the audio. It suggests what the sound is, finds kick, snare, clap, hats and toms even
+  when they sound together (and can put the loop's own hits on Drum Pads), reads a chord for every beat (and can fill the
+  chord track), follows the clip's trim and tempo, snaps to a grid with strength and swing straightened or kept, and lets you
+  hear the notes against the audio (A/B) first; one undo removes it all.
 - **Vocal cleanup**: right-click a recorded clip → Clean up vocal… takes out background noise (learned from a quiet part), tones
   down or removes breaths (shown as markers on the clip) and repairs mouth clicks, with a before/after listen; it is made
   in the background as a new sound (your recording stays, Undo goes back) and the Pitch editor then works on the cleaned sound.

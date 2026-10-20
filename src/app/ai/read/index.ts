@@ -6,7 +6,7 @@
  *
  * The tools live in one module per group: `project-tools` (overview, transport, selection, settings, windows),
  * `music-tools` (notes, chords), `sound-tools` (mixer, channels, plugins, chains), `arrangement-tools`
- * (clips, automation, takes, launcher), `mix-state-tools` (mixer snapshots and groups) and `measurement-tools` (reference, loudness, pitch, vocal cleanup, samples).
+ * (clips, automation, takes, launcher), `mix-state-tools` (mixer snapshots and groups) and `measurement-tools` (reference, loudness, pitch, vocal cleanup, MIDI conversion, samples).
  */
 import type { Services } from '../../services';
 import { isObj } from '../ops/values';

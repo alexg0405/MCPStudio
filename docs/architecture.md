@@ -72,6 +72,11 @@ does):
   settings' meaning in `core/audio/cleanup-edit.ts`, the draft mutators in `core/ops/cleanup.ts`, the renderer in `app/actions/cleanup-render.ts` with
   `app/cleanup/` (Worker, jobs, window state, the AI read) and the window in `ui/features/vocal-cleanup`. The clip edit chain (cleanup, then pitch)
   is `STAGES` in `core/audio/playback.ts`. The "Vocal cleanup" section has the details.
+- **Audio to MIDI**: pure listening and planning in `core/audio/transcribe/` (one file or small family per mode: `melody.ts`,
+  the drum files `drum-bands`, `drum-views`, `drum-rules`, `drum-leak`, `drum-cuts`, `kit-clean` behind `drums.ts`, `chords.ts`, `bass.ts`;
+  then `plan*.ts`, `quantize.ts`, `timeline.ts`, `suggest.ts`, `listen.ts`), the draft mutator in `core/ops/transcribe.ts`, the app in
+  `app/transcribe/` (Worker, remembered listening, `convert.ts`, `audition.ts`, `slices.ts`, `args.ts`, `report.ts`) and the dialog in
+  `ui/features/audio-to-midi`. The "Audio to MIDI" section has the details.
 - **Actions** (`app/actions`): the pitch renderer is `PitchRenderer` in `pitch-render.ts` (with `pitch-clip.ts` for the clip
   lookup and error type; `pitch.ts` keeps the door); the arranger's `transitionInDraft` is `app/arrange/transition.ts`.
 - **Engine** (`src/engine`): `engine.ts` is the facade; see the list under [Graph](#graph) for what each file does.
@@ -4832,6 +4837,185 @@ the lead, hashes kept, bit-identical samples from the same seed, no key, update 
 - A lead on a resample-follow channel is planned at the pitch the tempo it was made at gives; changing the song tempo later is not read
   as a change by the signature of a diatonic rule.
 - Voices of a run missing from the project (a deleted track) are not planned: the chord voices left take the nearer ranks.
+
+## Audio to MIDI (`core/audio/transcribe`, `core/ops/transcribe.ts`, `app/transcribe`, `ui/features/audio-to-midi`)
+
+"Convert to MIDI…" turns an audio clip (a sung line, a drum loop, chords, a bass) into notes in a new pattern. The audio is
+not changed, and the whole result (the channel, the pattern, the notes, the playlist clip, the chords) is one undo step.
+
+**What a producer does.** Right-click an audio clip (its ▾ menu is the same list), **Convert to MIDI…** (also Playlist → Convert
+to MIDI…, or Mod+K and "convert"). The dialog opens with the mode the sound suggests (a voice → Melody, a loop with a kick and
+hats → Drums, pads → Chords, one low line → Bassline), the number of notes found and a small piano roll of them. Pick a channel
+(a new one with an instrument that fits, or an existing instrument channel), the grid to snap to, how strongly, whether to
+straighten the swing or keep the recording's feel, and how sensitive the listening is; press **A · Audio**, **B · MIDI** or
+**A + B** to hear the notes against the audio, then **Convert**. "Place it on the playlist" puts a pattern clip under the audio
+clip at its place and length; "Mute the original audio" leaves only the notes playing.
+
+### Two stages, so the dialog stays quick
+
+- **Listening** (`listen(mode, mono, rate, { sensitivity, startSec })` in `core/audio/transcribe/listen.ts`, the slow part, run in a
+  Worker by `app/transcribe/jobs.ts`; inline in Node tests) gives `Heard` in the recording's own seconds: notes (melody and bass),
+  drum hits with kit examples, or the DJ chromagram (chords). It does not depend on the clip, the tempo or the grid, so it is
+  remembered (`app/transcribe/listening.ts`: the last dozen, keyed by the sound's hash, the part listened to, the mode and the
+  sensitivity in 5 % steps).
+- **Planning** (`planTranscription(heard, timeline, settings)` in `plan.ts`, cheap) lands the heard sounds in the clip's own ticks
+  and returns `Transcription { notes, chords, pads, lengthTicks, swingFound, summary }`. Moving a slider only plans again.
+
+`ClipTimeline` (`timeline.ts`) is the clip's own playback maths (`sourceSecondsAt` / `tickAtSourceSeconds` of
+`core/audio/playback.ts`: trim, tempo follow by resampling or stretching, the channel's pitch, tempo automation) plus the song's
+beat and bar lengths and swing. So **the notes land where the audio plays**: a note at 1 s of a sound recorded at 120 BPM and
+stretched into a 90 BPM song lands at 1920 ticks; what the trim cuts off is left out; a note that began before the trim and still
+sounds is kept from the clip's start; the keys are the pitch the song hears (the channel's pitch, and the speed of a resampling
+follow, move them). The audio listened to is the sound the clip plays (a vocal cleanup, an alignment or a pitch correction's
+render when it has one: `playedSampleRef`) with 0.25 s of margin each side, so a note or hit at the edge is whole. A reversed
+channel is refused in plain words.
+
+### Melody (`melody.ts`, `notes-heard.ts`, `levels.ts`)
+
+The pitch editor's sung-note analysis (`analyzePitch`: YIN, cleaning, octave repair, cut where the pitch settles on a new level),
+plus: a note is split where its level dips 6 dB and comes back (a repeated note of the same pitch, which the pitch track sees as
+one), each note gets a loudness (the 80th percentile of its 10 ms levels) and a velocity from it (the 95th percentile of all notes is
+1, 24 dB under is 0.25: the sensitivity moves that floor from 24 to 48 dB and the shortest note from 120 to 40 ms). Planned notes
+are whole semitones (`keepCents` writes the cents as the note's fine pitch). The ends: **natural** (as heard), **legato** (a gap
+shorter than the threshold, 150 ms by default, is closed) or **staccato** (half the length). Notes of one voice never overlap.
+
+### Drums (`drum-bands.ts`, `drum-views.ts`, `drum-rules.ts`, `drum-leak.ts`, `drum-cuts.ts`, `kit-clean.ts`, `plan-drums.ts`)
+
+A hat over a kick is two hits, so each kind is looked for where it lives. Four views of the sound (Butterworth filters of
+`core/voice/filters`): **sub** < 100 Hz (kicks, 808s), **low** 80–400 Hz (toms), **mid** > 330 Hz with an 8th-order filter so a kick's
+harmonics are gone (snares, claps, rim shots; its starts are looked for in 330 Hz–5.5 kHz so a hat's top end is not one), **high** > 7 kHz
+(hats, cymbals). Each view has a 2 ms peak-level curve whose peaks are held for about half a cycle of the view's lowest pitch (so a
+kick's own ripple does not read as new hits) and a start is a rise of 5–10 dB over the quietest block before it (`findOnsets`: a
+loop that starts on a hit starts with it; a start soon after one in the same view, such as a clap's four bursts, is part of it). The
+rules:
+
+- **kick**: a start in the sub view that holds (its level 24 ms later is within 9 dB: a snare's low tone leaks in and fades at once) and
+  that the **sample browser's classifier** (`categoryScores(extractFeatures(slice))`, `core/samples/classify.ts`) calls a kick or an 808
+  (a low tom reads as tom)
+- **tom**: a start in the low view with the mid view at least 5 dB under it, classified as a tom; the toms are grouped by the pitch of
+  their body (zero crossings, 15–90 ms) and get the General MIDI toms' keys from the lowest drum up (1 drum: 45; 2: 41, 48; 3: 41, 45,
+  48 …)
+- **snare, clap, perc**: a start in the mid view that lasts (22 dB within 12 ms: a click does not), is not a hat's top end (the mid
+  peak is at most 8 dB under the high view's start beside it), is more than a kick *leaks* there (below), classified from the mid view
+  between snare, clap and percussion (the classifier's burst count tells a clap)
+- **hat, open hat, cymbal**: a start in the high view that rings on (within 14 dB 8 ms after the peak: a kick's or tom's click and a
+  clap's first burst do not) and is not the tail of another hit (< 60 ms after it), told by how long it rings (the classifier on the
+  whole ring when 0.45 s are free, else its level 80 ms later). A hat under a snare or clap counts only when the recording has hats of
+  its own (≥ 3), this one is within 3 dB of them and one of them is within 0.45 s (a hat pattern is running there)
+
+**What a kick leaks** (`drum-leak.ts`): a kick has a click and harmonics, so the mid view starts at every kick. The recording teaches
+the model: for each kick, the level the mid view reached in its first 30 ms and in the 30–70 ms after, against the kick's own level;
+the lowest quarter of those ratios is what a kick does alone. A mid start beside a kick counts as another hit when it is 6 dB over
+that in its head or 8 dB in its tail (a clap's bursts go on when a kick's click is gone). A hit's level is its peak less what was still
+sounding before it (a kick on the tail of the last one is not as loud as the sum), which also gives the velocity: the loudest hits
+of a kind are 1, the quietest kept are 0.25.
+
+**Keys** (`GM_KEY`): kick 36, side stick (percussion) 37, snare 38, clap 39, closed hat 42, open hat 46, cymbal 49, toms as above: the
+General MIDI map Drum Pads' default kit plays. **Pads from the recording**: for every key that plays, the hit of its kind with the
+most room around it is cut out (from 4 ms before it to where the next hit starts, at most 0.1–1.5 s by kind; `cutsFor`), and when a
+kind is always sounding with another (a clap on every kick), the other kind's clean example is slid ±5 ms to line up, fitted by
+least squares over its first 0.15 s and subtracted (`cleanCuts`: the clap pad comes out with the kick 15 dB or more down instead of
+doubling the kick). The cuts are stored as 24-bit WAV through the sample store (`app/transcribe/slices.ts`) and go into the new Drum
+Pads channel's slots (`pad<n>`, n = key − 35).
+
+### Chords (`chords.ts`)
+
+`chromagram` of the sound (the DJ analysis), then for every beat (or half bar, or bar) of the clip the chroma is summed
+(`clipChromaWindows`: trim, tempo follow and pitch respected) and read by `detectSpansFromChroma`. A slash bass read from a mix is
+mostly a passing bass note, so chords come out as plain chords; one window that disagrees with both neighbours (below 0.8
+confidence) is taken as a flicker. The chords are voiced with the harmony code (`voiceChords`: smooth voice leading around middle C,
+an optional root as a low note) and written with a rhythm (`compNotes`: held, on every beat, on the off-beats, every eighth).
+"Fill the chord track" also puts them on the song's chord track, replacing what was there under their stretch.
+
+### Bassline (`bass.ts`)
+
+The recording is low-passed at 260 Hz and followed by the melody path's tracker and note cutting (YIN 30–260 Hz), then: a note is
+also cut where the low band attacks again (a bass struck on the tail of a kick or of the note before: a rise of ≥ 4 dB, not within
+100 ms of an end), a note starts at the strongest attack of the low band within 110 ms before the tracker heard it (it needs two
+periods), and **a kick is not a bass note**: a kick is a sub start with a click (a sharp rise > 7 kHz that is gone 8 ms later
+by 15 dB), the pitch kicks ring at is the median pitch of the notes struck with one, and a note struck with a kick at that pitch (±0.7
+semitone) is the kick's tail and is left out; a bass note at another pitch struck with a kick is kept. Repeated bass notes need a
+10 dB dip.
+
+### Quantize, swing and the mode suggestion (`quantize.ts`, `suggest.ts`)
+
+The grid is the song's (a clip that starts between grid lines still lands its notes on them). Strength 1 puts a time on its line, 0
+leaves it where it was heard. **Swing**: `measureSwing` is how late the sounds on odd 16ths are against the even ones, in units of
+half a step (needs 4 off-beat sounds). *Straighten* snaps to straight lines as they play with the song's own swing (`unswingTick` in
+`core/time/swing.ts` is the inverse of `swingTick`, so written ticks play where the quantizer said); *Keep* snaps to the lines of the
+recording's own swung grid whatever the song's swing is. The **suggestion** (`suggestMode`, the first 30 s) scores the four modes from
+the share of sounding frames with one clear pitch, how low the energy sits, how many kinds of drum there are (a kick alone is a bass,
+hats alone are not a voice) and how often they hit, and how many pitch classes sound at once with how sure the key is.
+
+### Writing it (`core/ops/transcribe.ts`, `app/transcribe/convert.ts`)
+
+`writeTranscription(draft, …)` is one call, so one `history.transact`: a new instrument channel (`instrumentChannelFor`) or an
+existing one, the pad samples (`addSample`, `setPluginSample`), a pattern as long as the clip rounded up to whole bars (its step
+grid as many 1/16 steps), the notes, a pattern clip on the first free track under the audio clip (a new track when none has room),
+the audio clip muted if asked, the chords. A new pattern is made even when nothing is placed (it is in the channel rack). The
+suggested instruments (`app/transcribe/instruments.ts`): Drum Pads, Pluck, FM, 3xOsc. Pad samples are written inside `whileBusy`, so
+storage clean-up keeps them; the project mentions their hashes. `planClip` remembers its plan (`plan-cache.ts`, keyed by the clip's
+place, trim, tempo follow, sound, the song's tempo and swing and the settings), which the AI's synchronous read answers from.
+
+### The audition (`app/transcribe/audition.ts`)
+
+The first 16 s of the clip rendered twice with the engine's own offline render: the notes written into a *copy* of the project with
+only the new pattern clip playing (so it is the real instrument, the real pad samples), and the audio alone; "A + B" is the sum
+(all three turned down together when the sum would pass 0.95). They play as WAV files on the audition bus, so nothing in the project
+changes and the transport is left alone.
+
+### UI, commands, AI and MCP
+
+- The command `audioToMidi.convert` ("Convert to MIDI…", with an `argsHint`): with no mode it opens the dialog
+  (`ui/features/audio-to-midi`: the four mode buttons with a "Suggested" tag, the channel and instrument menus, the options, the
+  controls each mode uses, the notes found as a mini piano roll, A/B/A+B/Stop, a "How this works" panel, every control with a
+  `data-hint` that gives its units); with a mode it converts without it. `dialog-model.ts` is the dialog as plain data.
+- AI and MCP: the action `audio_to_midi { clip | track + bar, mode, quantize, strength, swing, sensitivity, articulation, target,
+  instrument, place, mute_original, slice_pads, fill_chord_track, chord_resolution, chord_rhythm, chord_bass }`
+  (`app/ai/ops/audio-to-midi.ts`) checks every field now (`specParts`) and queues the command as an after-step, since listening takes
+  a moment; the read `get_midi_conversion` (`app/transcribe/report.ts`) lists the notes a conversion would write (bar, beat, key and
+  note name or drum, velocity, length in beats, the summary, the chords, the pads from the recording), "analyzing" the first time it
+  listens. Both are in the MCP tool list without further work (`apply_actions`' schema and the read tools).
+
+### Tests
+
+Node: `core/audio/transcribe/transcribe.accuracy.test.ts` (the numbers below, on synthetic recordings from
+`test/helpers/transcribe-signals.ts`: a sung voice, the Drum Pads' own sounds in loops, chord pads, a bass under a kit),
+`transcribe.plan.test.ts` (trim, tempo follow and pitch, quantize strength and the song's grid, cents, legato and staccato, swing
+straightened and kept with and without the song's swing, GM keys, toms, pads, velocity, the suggestion, determinism),
+`kit-clean.test.ts`, `core/time/swing.test.ts` (`unswingTick`), `app/transcribe/convert.test.ts` (one undo step, the pattern and the
+clip, pad samples kept by hash, existing channel, chord track, tempo follow), `app/ai/ops/audio-to-midi.test.ts`,
+`ui/features/audio-to-midi/dialog-model.test.ts` (settings, menus, command). Browser: `test/browser/convert-to-midi.test.ts` (the
+audition of a loop through the engine hits the same drums at the same times; a melody written as notes and played by the FM synth is
+heard at the sung pitches).
+
+### Measured (synthetic recordings, Node 22, one thread; the machine was shared, so times are upper bounds)
+
+| mode | test material | result |
+|---|---|---|
+| Melody | 3 sung lines (24 notes: steps, repeated notes with rests, wide leaps; vibrato) | 24 of 24 notes at the right pitch, onsets within 20 ms (median 2.5 ms, worst 9.4 ms), no extra notes (asserted ≥ 95 %) |
+| Drums | 5 loops, 270 hits (house at 124, boom bap at 90, trap at 140 and 48 kHz, rock with a tom fill, swung rock with ±6 ms of jitter) | 269 of 270 hits found with the right kind within 15 ms (99.6 %), precision 100 % (269 of 269), onsets median 0.9 ms, worst 11.7 ms; per kind: kick 63/63, snare 27/27, clap 8/8, hat 163/164, open hat 4/4, tom 4/4 (asserted ≥ 90 % overall and per kind) |
+| Chords | 8 chords (triads and sevenths, changes on beat 1 and beat 3), 24 beats | 24 of 24 beats (asserted ≥ 90 %) |
+| Bass | a bass on the off-beats under a four-on-the-floor kit with claps and hats, 90–128 BPM, 80 notes | 77 of 80 root notes (96 %; the three misses start 40–55 ms late), 4 extra (asserted ≥ 85 %, extras ≤ 15 %) |
+| Audition | the loop through Drum Pads with its own hits, in the engine | ≥ 90 % of the audio render's hits found at the same time and kind in the MIDI render |
+
+Speed: melody 0.53 s for 13 s of audio, drums 0.48 s for 50 s (five loops), chords 0.12 s for 14 s, bass 0.28 s for 40 s, the mode
+suggestion about 0.1 s.
+
+### Limits
+
+- Hits that sound together are separated by where they live: a snare with a hat over it is found only when the hat pattern is
+  running around it (a recording with hats only under snares reads none of them); a kick on the tail of another can be found up
+  to 17 ms late; a clap on every kick has its pad cleaned only if the kick has an example of its own.
+- The listening is tuned on the Drum Pads' sounds and the synthetic voice, bass, pads: real recordings have noise, room and
+  bleed. Bass at tempos over about 130 BPM with a long kick can lose a note start by 50 ms; a bass note at the kick's own pitch struck
+  exactly with a kick is lost; a kick without a click (an 808 on its own) reads as a bass note.
+- Melody reads one voice: chords give no notes, and a plucked or synthetic timbre can read an octave low for the first 100 ms of a
+  note. Chords and basslines from a full mix are a good guess: slash chords are not read, a passing note held for a beat can win.
+- The notes are whole semitones by default and fixed velocities for chords. Pitch bends, sustain and other controllers are not
+  written. Clips longer than 10 minutes are refused.
+- The audition uses the engine's offline render (a few seconds for 16 s); the first B of a drum conversion also stores the pad
+  samples, which storage clean-up removes when nothing mentions them.
 
 ## Lyrics (`core/lyrics`, `core/ops/lyrics.ts`, `core/query/lyrics.ts`, `app/lyrics`, `ui/features/lyrics`)
 

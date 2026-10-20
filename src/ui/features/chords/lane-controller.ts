@@ -4,6 +4,7 @@
  * into chord edits: click an empty spot to type a chord, drag across to draw one, drag a chord to move it, drag its
  * edges to resize it, double-click to retype it, right-click for the menu. Drags preview on the canvas and commit as one undo step.
  */
+import { drawSelectionMark } from '../../a11y/selection-mark';
 import { addChordAt, deleteChord, renameChord } from '@app/harmony/chord-track';
 import type { Services } from '@app/services';
 import { formatChord, parseChord, qualityOf } from '@core/harmony/chord';
@@ -214,6 +215,7 @@ export class ChordLaneController {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
+    if (isSelected && theme.colorSafe) drawSelectionMark(ctx, x, 3, w, CHORD_LANE_HEIGHT - 7, theme.accentLight);
     if (w < MIN_LABEL_PX) return;
     const symbol = symbolOf(event);
     const roman = romanOf(context.key, symbol);

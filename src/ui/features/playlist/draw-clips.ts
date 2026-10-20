@@ -19,6 +19,7 @@ import { clipSampleId } from '@core/audio/playback';
 import { tempoMapOf } from '@core/automation/tempo';
 import { clipChannelId } from '@core/model/clips';
 import type { Waveform } from '@engine/api';
+import { drawPattern, patternFor } from '../../a11y/color-patterns';
 import { roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import { audioClipTags, drawAudioBody, type AudioHandle } from './audio-clip';
@@ -121,6 +122,7 @@ function drawClip(scene: ClipScene, clip: Clip, row: number): void {
   const paint = clipPaint(baseColor, theme);
   ctx.globalAlpha = isDimmed ? DIMMED_ALPHA : 1;
   fillClipShape(ctx, theme, box, baseColor, isSelected);
+  if (theme.colorSafe) markClipForColorBlindness(ctx, paint, box, baseColor, isDimmed);
   if (isSelected) outlineSelectedClip(ctx, theme, box);
   const hasMenuButton = box.w >= CLIP_MENU_MIN_WIDTH && box.h >= CLIP_TITLE_HEIGHT;
   if (hasMenuButton) drawMenuMark(ctx, box, paint);
@@ -144,6 +146,22 @@ function fillClipShape(
   roundRectPath(ctx, 0, 0, w, h, CLIP_RADIUS);
   ctx.fill();
   ctx.translate(-x, -y);
+}
+
+/** Width of the pattern badge at the right end of a clip's title strip (px), and the narrowest clip that shows it. */
+const PATTERN_BADGE_WIDTH = 16;
+const MIN_PATTERN_CLIP_WIDTH = 56;
+
+/**
+ * Colour-blind safe colours: a badge of the colour's pattern at the right of the title strip, so clips of different
+ * colours differ by more than colour, and muted clips get diagonal stripes (they are otherwise only paler).
+ */
+function markClipForColorBlindness(ctx: CanvasRenderingContext2D, paint: ClipPaint, box: ClipBox, baseColor: string, isDimmed: boolean): void {
+  if (box.w >= MIN_PATTERN_CLIP_WIDTH) {
+    const badgeX = box.x + box.w - PATTERN_BADGE_WIDTH - 2;
+    drawPattern(ctx, patternFor(baseColor), badgeX, box.y + 2, PATTERN_BADGE_WIDTH, CLIP_TITLE_HEIGHT - 4, paint.ink);
+  }
+  if (isDimmed && box.bodyH > MIN_BODY_HEIGHT) drawPattern(ctx, 'slash', box.x + 1, box.bodyY, box.w - 2, box.bodyH, paint.inkSoft);
 }
 
 function outlineSelectedClip(ctx: CanvasRenderingContext2D, theme: TimelineTheme, box: ClipBox): void {
@@ -194,7 +212,9 @@ function drawTitle(
   const { ctx } = scene;
   ctx.fillStyle = paint.ink;
   const left = hasMenuButton ? box.x + CLIP_MENU_SIZE + 1 : box.x + TITLE_INSET;
-  ctx.fillText(clipTitle(scene, clip, pattern, channel), left, box.y + CLIP_TITLE_HEIGHT / 2 + 0.5, box.x + box.w - TITLE_INSET - left);
+  // The pattern badge of the colour-blind safe colours takes the end of the strip.
+  const badge = scene.theme.colorSafe && box.w >= MIN_PATTERN_CLIP_WIDTH ? PATTERN_BADGE_WIDTH + 4 : 0;
+  ctx.fillText(clipTitle(scene, clip, pattern, channel), left, box.y + CLIP_TITLE_HEIGHT / 2 + 0.5, box.x + box.w - TITLE_INSET - left - badge);
 }
 
 /** The body: notes for pattern clips, a waveform for audio clips, the curve for automation clips. */

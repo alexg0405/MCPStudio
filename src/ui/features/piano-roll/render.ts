@@ -245,7 +245,8 @@ function fillNoteBatches(
       ctx.globalAlpha = baseAlpha * Math.max(0.55, opacity);
       if (batches.noteHeight >= 6) {
         ctx.strokeStyle = state === NOTE_SELECTED ? theme.select : edge;
-        ctx.lineWidth = state === NOTE_SELECTED ? 1.25 : 0.75;
+        // Colour-blind safe colours: a selected note is told by a heavy outline, not by its colour alone.
+        ctx.lineWidth = state === NOTE_SELECTED ? (theme.colorSafe ? 2.5 : 1.25) : 0.75;
         ctx.stroke(group.body);
       }
       ctx.fillStyle = theme.noteTop;

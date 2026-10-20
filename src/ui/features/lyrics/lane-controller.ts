@@ -4,6 +4,7 @@
  * edits: click an empty spot to type a word, drag across to draw its length, drag a word to move it, drag its edges to
  * resize it, double-click to retype it, right-click for the menu. Drags preview on the canvas and commit as one undo step.
  */
+import { drawSelectionMark } from '../../a11y/selection-mark';
 import { addLyricAt, deleteLyrics, moveLyrics, resizeLyric, retypeLyric } from '@app/lyrics/actions';
 import type { Services } from '@app/services';
 import { wordLabel } from '@core/lyrics/lines';
@@ -194,6 +195,7 @@ export class LyricsLaneController {
     ctx.fill();
     ctx.strokeStyle = isSelected ? theme.accentLight : alpha(theme.accent, 0.55);
     ctx.stroke();
+    if (isSelected && theme.colorSafe) drawSelectionMark(ctx, x, 3, w, LYRICS_LANE_HEIGHT - 7, theme.accentLight);
     if (w < MIN_LABEL_PX) return;
     ctx.save();
     ctx.beginPath();

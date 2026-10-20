@@ -12,6 +12,8 @@ import { dbToPosition, FADER_PAD, FLOOR_DB } from './scale';
 
 /** Displayed level falls this fast once the signal drops (dB per second). */
 const FALL_DB_PER_S = 26;
+/** Where the meter's colour changes, in dB (the gradient's stops). */
+const SAFE_ZONE_DB = [-18, -6];
 /** The peak marker holds for this long before falling. */
 const HOLD_MS = 1500;
 
@@ -47,6 +49,8 @@ interface Colors {
   tick: string;
   /** The unlit scale's opacity. */
   unlit: number;
+  /** Colour-blind safe colours: the zones are also marked by notches and a clip by a triangle. */
+  safe: boolean;
 }
 
 /** The device-pixel row of a level (dB) on a meter of `m`'s height, with the given pad and span. */
@@ -268,6 +272,32 @@ export class MeterBank {
     g.fillStyle = clip ? c.hi : c.hold;
     if (hl < bottom) g.fillRect(0, hl, bar, gap);
     if (hr < bottom) g.fillRect(meter.w - bar, hr, bar, gap);
+    if (c.safe) this.drawZoneMarks(meter, c, pad, span, clip);
+  }
+
+  /**
+   * Colour-blind safe colours: notches where the colour changes (-18 and -6 dB) on both edges of the meter, and a
+   * triangle at the top while the peak hold is over 0 dB, so the zones and clipping are told by position and shape too.
+   */
+  private drawZoneMarks(meter: Meter, c: Colors, pad: number, span: number, clip: boolean): void {
+    const g = meter.g as CanvasRenderingContext2D;
+    const notch = Math.max(3, Math.round(meter.dpr * 3));
+    const thick = Math.max(1, Math.round(meter.dpr));
+    g.fillStyle = c.hold;
+    for (const db of SAFE_ZONE_DB) {
+      const y = meterY(meter, db, pad, span);
+      g.fillRect(0, y, notch, thick);
+      g.fillRect(meter.w - notch, y, notch, thick);
+    }
+    if (!clip) return;
+    const size = Math.max(4, Math.round(meter.dpr * 5));
+    const mid = meter.w / 2;
+    g.beginPath();
+    g.moveTo(mid - size, 0);
+    g.lineTo(mid + size, 0);
+    g.lineTo(mid, size);
+    g.closePath();
+    g.fill();
   }
 
   private resolveColors(): void {
@@ -279,6 +309,7 @@ export class MeterBank {
       hold: t.text,
       tick: t.textFaint,
       unlit: 0.12,
+      safe: t.colorSafe,
     };
   }
 }

@@ -58,6 +58,11 @@ export interface TimelineTheme {
   meterHi: string;
   /** Font family for canvas text. */
   font: string;
+  /**
+   * Colour-blind safe colours are on (Settings → Accessibility): editors then add shapes and patterns wherever colour
+   * alone would tell two things apart (meter zones, clip hue, selected notes, muted clips).
+   */
+  colorSafe: boolean;
 }
 
 let cached: TimelineTheme | null = null;
@@ -242,6 +247,7 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     meterMid: v('--ag-meter-mid', '#e3cf46'),
     meterHi: v('--ag-meter-hi', '#e5574d'),
     font: s.getPropertyValue('--ag-font').trim() || 'system-ui, sans-serif',
+    colorSafe: document.documentElement.dataset.palette === 'safe',
   };
   return cached;
 }

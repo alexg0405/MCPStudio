@@ -1,0 +1,10 @@
+export { alignToGuide, frameCount, overlapOf, MAX_ALIGN_SECONDS, MAX_ALIGN_SHIFT_SEC, type AlignInput, type GuideVoice } from './align';
+export { bandedDtw, dtwTableBytes } from './dtw';
+export { ALIGN_HOP_SEC, frameFeatures, type FrameFeatures } from './features';
+export { lagThroughMoves, planGridMoves, tightenToGrid, type GridInput, type GridMove } from './grid';
+export { MAX_SPEED, MIN_SPEED, tightnessSettings, type KeptSpan } from './lag';
+export { followGuidePitch, medianDeviationCents, pitchFollowCurve } from './pitch-follow';
+export { syllableOnsets } from './onsets';
+export type { AlignOutput, AlignStats, AudibleSpan } from './types';
+export { MAX_WARP_POINTS, moveAt, warpKnots } from './warp-knots';
+export { renderLag } from './warp-render';

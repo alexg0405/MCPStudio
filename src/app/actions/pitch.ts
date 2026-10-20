@@ -11,6 +11,7 @@
  * its result is folded into the edit's own undo step (undo brings back the edit and its render
  * together).
  */
+import { alignedSampleId } from '@core/audio/align/edit';
 import { tempoMapOf } from '@core/automation/tempo';
 import { clipSourceRange, playbackMode } from '@core/audio/playback';
 import {
@@ -79,7 +80,8 @@ export async function analyzeClip(s: Services, clipId: ClipId): Promise<ClipPitc
   const problem = pitchProblem(p, clipId);
   if (problem) throw new PitchError(problem);
   const { clip, channel } = audioClipOf(p, clipId) as NonNullable<ReturnType<typeof audioClipOf>>;
-  const ref = p.samples[channel.sampleId] as SampleRef;
+  // The notes are found on the aligned sound when the clip has one (align first, then tune).
+  const ref = (p.samples[alignedSampleId(channel, clip)] ?? p.samples[channel.sampleId]) as SampleRef;
   const data = await s.engine.sampleData(ref);
   if (!data) throw new PitchError('This clip’s audio could not be read.');
   if (data.duration > PITCH_MAX_SECONDS) throw new PitchError('This sound is over 15 minutes long: cut the clip out of it first, then correct the pitch.');

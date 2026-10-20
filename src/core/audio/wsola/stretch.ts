@@ -1,7 +1,7 @@
 import { monoReaderOf } from './mono';
-import { detectOnsetsLazy } from './onsets';
+import { detectOnsetsLazy, type MonoReader } from './onsets';
 import { COARSE_RATE_HZ, createSimilaritySearch, decimateMix, type SimilaritySearch } from './similarity';
-import { TimeMap } from './time-map';
+import { TimeMap, type FrameTimeMap } from './time-map';
 import { placeZones } from './zones';
 
 /**
@@ -31,7 +31,7 @@ const UNITY_SCALE_EPSILON = 1e-9;
 const ATTACK_ENTRY_TOLERANCE_DIVISOR = 6;
 
 /** Frame sizes in frames at the signal's rate. */
-interface FrameGeometry {
+export interface FrameGeometry {
   /** Half a frame: the hop between frames and the overlap that has to match. */
   half: number;
   /** A whole frame (two halves). */
@@ -40,7 +40,7 @@ interface FrameGeometry {
   tolerance: number;
 }
 
-function frameGeometry(opts: StretchOptions): FrameGeometry {
+export function frameGeometry(opts: StretchOptions): FrameGeometry {
   const half = Math.max(
     MIN_HALF_FRAME,
     Math.round((((opts.frameMs ?? DEFAULT_FRAME_MS) / 1000) * opts.sampleRate) / 2),
@@ -104,13 +104,7 @@ export function stretchStream(
   const geometry = frameGeometry(opts);
   const { half, length: frameLength, tolerance } = geometry;
   const readMono = monoReaderOf(channels, inLen);
-
-  // Decimated copy for the coarse pass, over the signal padded on both sides as the fine search sees it.
-  const pad = frameLength + 2 * tolerance + 64;
-  const decimation = Math.max(1, Math.round(sampleRate / COARSE_RATE_HZ));
-  const decimatedPad = Math.ceil(pad / decimation);
-  const decimated = decimateMix(readMono, inLen, pad, decimation);
-  const search = createSimilaritySearch(decimated, readMono, { halfFrame: half, decimation, decimatedPad }, tolerance);
+  const search = similaritySearchFor(readMono, inLen, sampleRate, geometry);
 
   // The time map: output frame → input frame, slope 1/scale except around kept attacks (slope 1).
   const pre = frameLength + half + tolerance;
@@ -124,12 +118,30 @@ export function stretchStream(
   overlapAdd(channels, { outLen, geometry, search, timeMap, sink });
 }
 
+/**
+ * The similarity search over a signal of `inLen` frames read through `readMono`: it works on a copy decimated to about
+ * 6 kHz, padded on both sides as the fine search sees it. Shared by the constant stretch and the warp.
+ */
+export function similaritySearchFor(
+  readMono: MonoReader,
+  inLen: number,
+  sampleRate: number,
+  geometry: FrameGeometry,
+): SimilaritySearch {
+  const { half, length: frameLength, tolerance } = geometry;
+  const pad = frameLength + 2 * tolerance + 64;
+  const decimation = Math.max(1, Math.round(sampleRate / COARSE_RATE_HZ));
+  const decimatedPad = Math.ceil(pad / decimation);
+  const decimated = decimateMix(readMono, inLen, pad, decimation);
+  return createSimilaritySearch(decimated, readMono, { halfFrame: half, decimation, decimatedPad }, tolerance);
+}
+
 /** What the frame loop works with. */
-interface OverlapAddInput {
+export interface OverlapAddInput {
   outLen: number;
   geometry: FrameGeometry;
   search: SimilaritySearch;
-  timeMap: TimeMap;
+  timeMap: FrameTimeMap;
   sink: StretchSink;
 }
 
@@ -138,7 +150,7 @@ interface OverlapAddInput {
  * Hann-windowed and added to the frames before it; every half frame that no later frame will touch
  * goes to the sink.
  */
-function overlapAdd(channels: readonly Float32Array[], input: OverlapAddInput): void {
+export function overlapAdd(channels: readonly Float32Array[], input: OverlapAddInput): void {
   const { outLen, geometry, search, timeMap, sink } = input;
   const { half, length: frameLength } = geometry;
   const inLen = channels[0]?.length ?? 0;

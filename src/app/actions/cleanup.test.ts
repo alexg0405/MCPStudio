@@ -1,3 +1,4 @@
+import { pitchRenderSignature } from '@core/audio/align/edit';
 import { afterEach, describe, expect, it } from 'vitest';
 import { audioClipProject, TestSamples } from '../../../test/helpers/audio';
 import { sing } from '../../../test/helpers/sung';
@@ -5,7 +6,6 @@ import { cleanupSignature, isRenderCurrent } from '@core/audio/cleanup-edit';
 import { renderCleanup } from '@core/audio/cleanup/render';
 import { pinkNoise, rms, syntheticPhrase, toDb } from '@core/audio/cleanup/test-signals';
 import { clipSampleId, clipSourceSampleId } from '@core/audio/playback';
-import { editSignature } from '@core/audio/pitch-edit';
 import { collectHashes } from '@core/gc/refs';
 import { decodeFlac } from '@core/io/flac-decoder';
 import { heardProject } from '@core/query/hear';
@@ -288,7 +288,13 @@ describe('cleanup before pitch correction', () => {
     await until(() => !!clean()?.renderedSampleId && isRenderCurrent(clean()!));
     const cleaned = clean()!.renderedSampleId!;
     // The cleanup render made the pitch render out of date; it is made again from the cleaned sound.
-    await until(() => pitch()?.renderedSampleId !== undefined && pitch()?.renderedSampleId !== plain && pitch()?.renderedFor === editSignature(pitch()!));
+    // Its signature now names the cleaned sound it was made from (`pitchRenderSignature`), so it is current again.
+    const current = () => {
+      const p = s.doc.getState().project;
+      const channel = p.channels[channelId];
+      return channel?.kind === 'audioClip' ? pitchRenderSignature(channel, clipOf(p, clipId)) : null;
+    };
+    await until(() => pitch()?.renderedSampleId !== undefined && pitch()?.renderedSampleId !== plain && pitch()?.renderedFor === current());
     const p = s.doc.getState().project;
     const channel = p.channels[channelId]!;
     expect(channel.kind === 'audioClip' && clipSourceSampleId(channel, clipOf(p, clipId), 'pitch')).toBe(cleaned);

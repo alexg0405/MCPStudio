@@ -14,6 +14,7 @@ import type { Viewport } from '../../timeline/viewport';
 import { drawBreathMarkers } from './breath-markers';
 import type { ClipPaint } from './clip-paint';
 import type { ClipBox } from './clip-geometry';
+import { drawWarpOverlay } from './warp-overlay';
 
 /** The three handles on an audio clip: the fade-in and fade-out at the top corners, and the gain at the top centre. */
 export type AudioHandle = 'fadeIn' | 'fadeOut' | 'gain';
@@ -48,6 +49,8 @@ export function audioClipTags(
   if (clip.pitchEdit?.renderedSampleId) tags.push('Pitch corrected');
   // A cleaned-up clip plays its cleaned render (noise, breaths and clicks), the pitch edit then works on it.
   if (clip.cleanup?.renderedSampleId) tags.push('Cleaned up');
+  // An aligned clip plays its aligned render (the waveform shows it, and a line along the bottom shows where it moved).
+  if (clip.align?.renderedSampleId) tags.push(clip.align.mode === 'grid' ? 'Tightened to grid' : 'Aligned');
   return tags;
 }
 
@@ -136,6 +139,7 @@ export function drawAudioBody(
   }
   drawFadeCurves(ctx, vp, clip, levels, tempo, box, paint, clipSec, dur);
   drawBreathMarkers(ctx, vp, clip, ch, tempo, box, paint);
+  drawWarpOverlay(ctx, vp, clip, ch, tempo, box, paint);
   if (handles.show && w >= MIN_HANDLES_WIDTH && h >= HANDLE_ZONE + 4) drawHandles(ctx, vp, theme, clip, levels, tempo, box, paint, handles.hot);
 }
 

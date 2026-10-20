@@ -1,6 +1,7 @@
 /** Read tools for what has been measured or found: the reference song, loudness, sung pitch, vocal cleanup and the sample library. */
 import { SAMPLE_CATEGORIES } from '@core/samples/types';
 import { cleanupReport } from '../../cleanup/report';
+import { alignReport } from '../../align/report';
 import { loudnessFacts } from '../../metering/facts';
 import { pitchReport } from '../../pitch/report';
 import { referenceReport } from '../../reference/summary';
@@ -34,6 +35,13 @@ export const getCleanup = tool(
   'The vocal cleanup of a recorded audio clip, as the Clean up vocal window shows it: which parts are on (noise reduction in dB and where the noise was learned from, breath reduction and the breaths found with their numbers, bar and seconds and whether each is lowered, mouth-click removal), whether the cleaned sound is ready, and which sound the musician hears (the before/after switch: hearing). The breaths are found when the cleaned sound is made.',
   { clip: S.str('An audio clip id (clip_…; default: the selected audio clip).') },
   (services, args) => cleanupReport(services, args),
+);
+
+export const getAlignment = tool(
+  'get_alignment',
+  'Vocal alignment of recorded audio clips (doubles, backing vocals and ad-libs lined up with a lead, or tightened to the grid): for each aligned clip its id, track and bar, the mode (guide or grid), the guide clip, tightness, pitch alignment % or grid strength, the state (ready, rendering with progress, out of date, problem with the reason), how far the sound was moved (median and largest move in ms) and which sound the musician hears (the A/B switch: hearing). Without clip it lists every aligned clip. The align_clips and tighten_timing actions set it; the aligned audio is made in the background.',
+  { clip: S.str('An audio clip id (clip_…); default: every aligned clip.') },
+  (services, args) => alignReport(services, args),
 );
 
 export const listSampleSounds = tool(

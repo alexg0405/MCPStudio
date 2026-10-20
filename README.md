@@ -121,6 +121,11 @@ the development server on 5390, with hot reload, and has nothing to do with the 
   overdub or replace), an on-screen keyboard, MIDI learn for any knob, MIDI file import and export, hum to notes.
   FL's score log: everything you play is kept for 5 minutes, so Patterns → Dump what I played… turns a riff you
   played without recording into a pattern. Tap tempo (Shift+T or Options → Tap tempo).
+- **Vocal alignment** (right-click an audio clip → Align to guide…, or Playlist → Align vocals…): make doubles, backing
+  vocals and ad-libs follow a lead like VocAlign: their syllables move onto the lead's timing (consonants stay sharp, pitch
+  is kept), with a Tightness from "only big offsets" to "syllable by syllable", and optionally their pitch follows the lead's
+  contour (a harmony keeps its interval). Tighten timing to the grid snaps a vocal's syllables to the beat. A/B against your
+  original recording, a subtle line on the clip shows where it was moved, undo restores it, and the Studio chat does it too.
 - **Samples**: add folders from your disk to the browser, preview, drag onto the rack or playlist (or drop files
   from Finder or File Explorer). Samples are embedded in saved projects.
 - **DJ auto-mix** (View → DJ mix, ⌥J, or the browser's Music section): add your own songs (MP3, AAC/M4A, WAV,

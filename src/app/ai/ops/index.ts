@@ -4,6 +4,7 @@
  */
 import type { PromptSection } from '../prompt-section';
 import type { OpSchema } from '../schema/parts';
+import { align } from './align';
 import { arrange } from './arrange';
 import { automation } from './automation';
 import { beat } from './beat';
@@ -52,6 +53,7 @@ export const MODULES: readonly OpModule[] = [
   pitch,
   harmonyVoicesOps,
   cleanup,
+  align,
   arrange,
   beat,
   mix,

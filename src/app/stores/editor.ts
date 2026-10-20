@@ -73,6 +73,11 @@ export interface EditorState {
    * (the Clean up vocal window's before/after A/B). Session state, never saved or undoable; the engine hears `uncleanedSound`.
    */
   cleanupOriginal: readonly ClipId[];
+  /**
+   * Audio clips that play their recording as it was recorded, without the vocal alignment and the pitch correction (the
+   * Align window's A/B). Session state, never saved or undoable; the engine hears `unalignedSound` of the project.
+   */
+  alignOriginal: readonly ClipId[];
   /** Copied clips, starts relative to the first one. */
   clipClipboard: readonly Clip[] | null;
   /** Selected notes of the piano roll's channel in the current pattern. Not undoable. */
@@ -107,6 +112,7 @@ export interface EditorActions {
   clearPitchOriginal(): void;
   setCleanupOriginal(clip: ClipId, original: boolean): void;
   clearCleanupOriginal(): void;
+  setAlignOriginal(clip: ClipId, original: boolean): void;
   setClipClipboard(clips: readonly Clip[] | null): void;
   selectNotes(ids: readonly NoteId[]): void;
   setNoteClipboard(notes: readonly Note[] | null): void;
@@ -158,6 +164,7 @@ export function createEditorStore(
     auditionTake: null,
     pitchOriginal: [],
     cleanupOriginal: [],
+    alignOriginal: [],
     clipClipboard: null,
     setPlaylist(patch) {
       const cur = get().playlist;
@@ -193,6 +200,11 @@ export function createEditorStore(
     },
     clearCleanupOriginal() {
       if (get().cleanupOriginal.length) set({ cleanupOriginal: [] });
+    },
+    setAlignOriginal(clip, original) {
+      const cur = get().alignOriginal;
+      if (cur.includes(clip) === original) return;
+      set({ alignOriginal: original ? [...cur, clip] : cur.filter((c) => c !== clip) });
     },
     setClipClipboard(clips) {
       set({ clipClipboard: clips });

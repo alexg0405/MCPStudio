@@ -12,7 +12,7 @@ import type { Services } from '../../services';
 import { isObj } from '../ops/values';
 import { getAutomation, getClips, getLauncher, getTakes } from './arrangement-tools';
 import { getLyrics } from './lyrics-tools';
-import { getCleanup, listSampleSounds, getLoudness, getPitch, getReference } from './measurement-tools';
+import { getAlignment, getCleanup, listSampleSounds, getLoudness, getPitch, getReference } from './measurement-tools';
 import { getMixGroups, getMixSnapshots } from './mix-state-tools';
 import { getChords, getPatternNotes } from './music-tools';
 import { getProject, getSelection, getSettings, getTransport, getWindows } from './project-tools';
@@ -44,6 +44,7 @@ export const readTools: readonly ReadTool[] = [
   getLoudness,
   getPitch,
   getCleanup,
+  getAlignment,
   getLauncher,
   listSampleSounds,
 ];

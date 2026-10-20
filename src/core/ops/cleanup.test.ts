@@ -166,3 +166,23 @@ describe('cleanup ops', () => {
     expect(t.history.transact('x', (d) => setCleanup(d, 'nope' as never, settings))).toBe(false);
   });
 });
+
+describe('the clip edit chain order', () => {
+  it('runs cleanup, then alignment, then pitch: each stage reads the render of the last stage before it', async () => {
+    const { clipSampleId, clipSourceSampleId } = await import('../audio/playback');
+    const channel = { sampleId: 'smp_rec' as never };
+    const clip = {
+      cleanup: { renderedSampleId: 'smp_clean' },
+      align: { renderedSampleId: 'smp_aligned' },
+      pitchEdit: { renderedSampleId: 'smp_tuned' },
+    } as never;
+    expect(clipSourceSampleId(channel, clip, 'cleanup')).toBe('smp_rec');
+    expect(clipSourceSampleId(channel, clip, 'align')).toBe('smp_clean');
+    expect(clipSourceSampleId(channel, clip, 'pitch')).toBe('smp_aligned');
+    expect(clipSampleId(channel, clip)).toBe('smp_tuned');
+    // A stage without a render is skipped: pitch reads the cleaned sound when nothing was aligned.
+    const noAlign = { cleanup: { renderedSampleId: 'smp_clean' }, pitchEdit: {} } as never;
+    expect(clipSourceSampleId(channel, noAlign, 'pitch')).toBe('smp_clean');
+    expect(clipSampleId(channel, noAlign)).toBe('smp_clean');
+  });
+});

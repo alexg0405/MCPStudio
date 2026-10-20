@@ -8,7 +8,8 @@
  * stored as 24-bit FLAC through the sample store, and listed in `Project.samples`.
  */
 import { clipSourceSampleId } from '@core/audio/playback';
-import { editSignature, isNeutralEdit, renderRange } from '@core/audio/pitch-edit';
+import { pitchRenderSignature } from '@core/audio/align/edit';
+import { isNeutralEdit, renderRange } from '@core/audio/pitch-edit';
 import type { ClipId, PitchEdit, Project, SampleId, SampleRef } from '@core/model/types';
 import { setPitchRender } from '@core/ops/pitch';
 import type { SampleData } from '@engine/api';
@@ -112,8 +113,8 @@ class PitchRenderer {
   private currentEdit(id: ClipId): SignedEdit | null {
     const found = audioClipOf(this.s.doc.getState().project, id);
     const edit = found?.clip.pitchEdit;
-    if (!edit) return null;
-    return { edit, signature: editSignature(edit), source: clipSourceSampleId(found.channel, found.clip, 'pitch') };
+    if (!found || !edit) return null;
+    return { edit, signature: pitchRenderSignature(found.channel, found.clip) as string, source: clipSourceSampleId(found.channel, found.clip, 'pitch') };
   }
 
   /**
@@ -152,10 +153,11 @@ class PitchRenderer {
     const project = this.s.doc.getState().project;
     const found = audioClipOf(project, id);
     const edit = found?.clip.pitchEdit;
-    if (!found || !edit || editSignature(edit) !== signature || clipSourceSampleId(found.channel, found.clip, 'pitch') !== source) return;
+    if (!found || !edit || pitchRenderSignature(found.channel, found.clip) !== signature || clipSourceSampleId(found.channel, found.clip, 'pitch') !== source) return;
     const progress = (fraction: number) => pitchState.setState({ rendering: { clipId: id, fraction } });
     try {
       progress(0);
+      // The correction works on the sound the pitch stage reads: cleaned and aligned when the clip has those.
       await whileBusy(() => this.renderAndStore(run, id, signature, source, found.channel.name, edit, project, progress), { project });
     } catch (e) {
       if (!(e instanceof PitchJobCancelled)) {

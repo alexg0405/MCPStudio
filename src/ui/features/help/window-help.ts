@@ -56,7 +56,7 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Right-click → Filter ▸', 'Nightcore, slowed + reverb, telephone, lo-fi… on that part (Remove filter undoes it)'],
         ['Double-click a pattern clip', 'Open that pattern'],
         ['Squares along an audio clip’s top', 'Drag the outer ones to fade in or out, the middle one for volume'],
-        ['Clip ▾ on an audio clip', 'Reverse, pitch, follow the tempo, normalize, slice at hits…'],
+        ['Clip ▾ on an audio clip', 'Reverse, pitch, follow the tempo, normalize, slice at hits, align to a lead vocal, tighten to the grid…'],
         ['Automation clips', 'Double-click the curve for a point; drag points; right-click for shapes'],
         [`Hold ${alt} while dragging`, 'Ignore the grid'],
         [`${mod}+scroll / ${alt}+scroll`, 'Zoom in time / make tracks taller'],

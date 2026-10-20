@@ -1,11 +1,22 @@
 import type { Zone } from './zones';
 
 /**
+ * What the overlap-add needs of a time map: the input frame each output frame comes from, and which kept zone (played at
+ * the input's own speed) an output frame is in. Both are asked in increasing order of output frame.
+ */
+export interface FrameTimeMap {
+  /** The (fractional) input frame for output frame `o`. */
+  inputFrameAt(o: number): number;
+  /** Index of the kept zone whose span contains output frame `o`, or −1. */
+  zoneAt(o: number): number;
+}
+
+/**
  * Which input frame each output frame comes from: slope 1 / scale, except around kept attacks
  * where the input plays at its own speed (slope 1). Both lookups remember where the last one was,
  * so they must be asked in increasing order of output frame (which the frame loop does).
  */
-export class TimeMap {
+export class TimeMap implements FrameTimeMap {
   /** Anchor points (output frame, input frame), increasing in both. */
   private readonly outFrames: number[] = [0];
   private readonly inFrames: number[] = [0];

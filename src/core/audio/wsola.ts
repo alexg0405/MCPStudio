@@ -18,7 +18,8 @@
  *
  * The code is split by job in `wsola/`: `onsets.ts` (finding attacks), `zones.ts` (which to keep),
  * `time-map.ts` (output frame to input frame), `similarity.ts` (the search), `mono.ts` (the mix) and
- * `stretch.ts` (the overlap-add). This file keeps the import path every caller uses.
+ * `stretch.ts` (the overlap-add) and `warp.ts` (the same overlap-add along a time map that changes speed: vocal alignment). This file keeps the import path every caller uses.
  */
 export { detectOnsets, detectOnsetsLazy, type MonoReader, type Onset } from './wsola/onsets';
 export { stretchStream, timeStretch, type StretchOptions, type StretchSink } from './wsola/stretch';
+export { WarpTimeMap, warpChannels, warpStream } from './wsola/warp';

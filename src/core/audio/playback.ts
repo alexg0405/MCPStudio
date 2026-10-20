@@ -69,22 +69,23 @@ export function playbackKey(ch: ModeFields & Pick<AudioClipChannel, 'sampleId'>)
  * render (a whole new sample on the same timeline as the recording, written through the sample store) replaces
  * the channel's own sample as the next stage's input:
  *
- *     channel sample → cleanup (`clip.cleanup`) → pitch edit (`clip.pitchEdit`) → the clip's gain and fades
+ *     channel sample → cleanup (`clip.cleanup`) → alignment (`clip.align`) → pitch edit (`clip.pitchEdit`) → the clip's gain and fades
  *
  * Every stage keeps the recording's length and timeline, so trims, fades, splits and tempo follow work on any of them.
  * `clipSourceSampleId(channel, clip, 'pitch')` is the sample the pitch stage reads; `clipSampleId` the one the clip plays.
  * A stage added later goes in `STAGES` at its place in the order; nothing else here changes.
  */
-type ClipStageFields = Pick<AudioClip, 'pitchEdit' | 'cleanup'>;
+type ClipStageFields = Pick<AudioClip, 'pitchEdit' | 'cleanup' | 'align'>;
 
 /** The stages in the order they run, each with the render it leaves (absent while it has none). */
 const STAGES: readonly { id: ClipStage; render: (clip: ClipStageFields) => SampleId | undefined }[] = [
   { id: 'cleanup', render: (clip) => clip.cleanup?.renderedSampleId },
+  { id: 'align', render: (clip) => clip.align?.renderedSampleId },
   { id: 'pitch', render: (clip) => clip.pitchEdit?.renderedSampleId },
 ];
 
 /** A stage of the clip edit chain. */
-export type ClipStage = 'cleanup' | 'pitch';
+export type ClipStage = 'cleanup' | 'align' | 'pitch';
 
 /** The sample that `stage` reads: the render of the last stage before it that has one, else the channel's own. */
 export function clipSourceSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: ClipStageFields | undefined, stage: ClipStage): SampleId {
@@ -98,8 +99,8 @@ export function clipSourceSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, 
 }
 
 /**
- * The sample a clip plays: the render of the last stage of its edit chain that has one (pitch correction after
- * cleanup), else the channel's own. All share one timeline (a render is as long as the original), so trims, fades
+ * The sample a clip plays: the render of the last stage of its edit chain that has one (cleanup, then alignment, then
+ * pitch correction), else the channel's own. All share one timeline (a render is as long as the original), so trims, fades
  * and tempo follow work on any of them.
  */
 export function clipSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: ClipStageFields | undefined): SampleId {

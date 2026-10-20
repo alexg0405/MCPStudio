@@ -40,7 +40,7 @@
 }
 
 .search:focus-visible {
-  outline: 1px solid var(--ag-accent);
+  outline: var(--ag-focus-width) solid var(--ag-focus);
 }
 
 .select {

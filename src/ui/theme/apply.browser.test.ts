@@ -21,15 +21,22 @@ const GOLD: Record<string, string> = {
   light: '#c9a45c',
 };
 
+/** The high-contrast themes keep their own accent, picked or not: it is part of what makes them readable. */
+const HIGH_CONTRAST: Record<string, string> = {
+  contrast: '#ffd60a',
+  'contrast-light': '#0033cc',
+};
+const regularThemes = () => THEMES.filter((t) => !(t.id in HIGH_CONTRAST));
+
 describe('Gold accent on the page', () => {
   afterAll(() => {
     delete root.dataset.theme;
     delete root.dataset.accent;
   });
 
-  it('shows gold in all six themes once Gold is picked', () => {
-    expect(THEMES.map((t) => t.id).sort()).toEqual(Object.keys(GOLD).sort());
-    for (const t of THEMES) {
+  it('shows gold in all six regular themes once Gold is picked', () => {
+    expect(THEMES.map((t) => t.id).sort()).toEqual([...Object.keys(GOLD), ...Object.keys(HIGH_CONTRAST)].sort());
+    for (const t of regularThemes()) {
       applyTheme(t.id, 'gold', true);
       expect(accentNow(), `${t.id} / Gold`).toBe(GOLD[t.id]);
       expect(accentNow(), `${t.id} / Gold is not orange`).not.toBe('#ff9a3c');
@@ -37,10 +44,19 @@ describe('Gold accent on the page', () => {
   });
 
   it('keeps each theme default for users who never picked an accent', () => {
-    for (const t of THEMES) {
+    for (const t of regularThemes()) {
       applyTheme(t.id, 'gold', false);
       const slate = ['classic', 'midnight', 'graphite', 'light'].includes(t.id);
       expect(accentNow(), `${t.id} / default`).toBe(slate ? '#ff9a3c' : GOLD[t.id]);
+    }
+  });
+
+  it('keeps the high-contrast accent whether or not an accent was picked', () => {
+    for (const [id, accent] of Object.entries(HIGH_CONTRAST)) {
+      applyTheme(id as never, 'gold', true);
+      expect(accentNow(), `${id} / Gold picked`).toBe(accent);
+      applyTheme(id as never, 'gold', false);
+      expect(accentNow(), `${id} / default`).toBe(accent);
     }
   });
 });

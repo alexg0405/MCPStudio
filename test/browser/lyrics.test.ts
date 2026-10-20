@@ -122,9 +122,15 @@ describe('lyrics (UI)', { timeout: 120_000 }, () => {
     await frames(5);
     const before = commits;
     const first = lit();
-    await frames(40);
+    // The fake engine's playhead stays where it is told: move it along the words, a few frames each.
+    for (let word = 1; word <= 12; word++) {
+      s.fakeEngine.startTick = word * 60 + 5;
+      await frames(3);
+    }
     expect(commits).toBe(before);
     expect(lit()).toBeGreaterThan(first);
+    expect(lit()).toBe(12);
+    expect(sung()).toBe(12);
     s.engine.stop();
   });
 

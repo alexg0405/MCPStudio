@@ -113,6 +113,7 @@ export async function convertToMidi(s: Services, spec: ConvertSpec): Promise<Con
   const patternName = `${source.channel.name} · ${MODE_LABELS[mode].label}`;
   const place = spec.place !== false;
   let made: TranscriptionWritten | null = null as TranscriptionWritten | null;
+  s.versions.beforeBigChange('before-convert', `convert ${source.channel.name} to MIDI`);
   const committed = s.history.transact(`Convert to MIDI: ${MODE_LABELS[mode].label}`, (draft) => {
     made = writeTranscription(draft, {
       audioClipId: spec.clip,

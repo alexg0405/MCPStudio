@@ -64,6 +64,8 @@ installStorage(services, start.sessionId, {
   dryRunOnly: import.meta.env.DEV && globalThis.localStorage?.getItem('agstudio:gc-dry-run') !== '0',
 });
 void loadRecentFiles();
+// Save points: versions of the project made on save, after minutes of editing, before big changes and on close.
+services.versions.start();
 // Reloaded mid-song (the dev server does that when code changes): carry on playing.
 resumeAfterReload(services, restored?.transport);
 

@@ -1,0 +1,235 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--ag-surface-1);
+}
+
+.help {
+  flex: none;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.45;
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ag-line-faint);
+}
+
+.search {
+  flex: 1 1 180px;
+  min-width: 120px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+}
+
+.search:focus-visible {
+  outline: 1px solid var(--ag-accent);
+}
+
+.select {
+  height: 28px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+}
+
+.button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+  color: var(--ag-text);
+  font: inherit;
+  font-size: var(--ag-font-size-sm);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.primary {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent-ink);
+}
+
+.grid {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 10px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 10px;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-sheen);
+}
+
+.card:hover {
+  border-color: var(--ag-accent-dim);
+}
+
+.current {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent-tint);
+}
+
+.picture {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.picture:focus-visible {
+  outline: 2px solid var(--ag-accent);
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pin {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: none;
+  color: var(--ag-text-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pin:hover,
+.pin[aria-pressed='true'] {
+  color: var(--ag-accent-ink);
+}
+
+.meta,
+.when {
+  color: var(--ag-text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.when {
+  color: var(--ag-text-faint);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.badge {
+  padding: 1px 6px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: 999px;
+  color: var(--ag-text-dim);
+  font-size: 10px;
+}
+
+.badgeOn {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.small {
+  height: 26px;
+  min-width: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.small:hover:not(:disabled) {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}
+
+.small:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.empty {
+  flex: 1;
+  padding: 18px 16px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+  line-height: 1.5;
+}
+
+.empty b {
+  color: var(--ag-text);
+}

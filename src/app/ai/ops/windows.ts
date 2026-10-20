@@ -32,6 +32,8 @@ export const OPEN_WINDOWS = [
   'chords',
   'lyrics',
   'mix-snapshots',
+  'versions',
+  'projects',
   'browser',
 ] as const;
 export type OpenWindow = (typeof OPEN_WINDOWS)[number];

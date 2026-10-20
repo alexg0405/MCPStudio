@@ -10,6 +10,7 @@ import {
 } from '@platform/fs-access';
 import { downloadParts, memorySink, openFileSink } from '@platform/sinks';
 import { APP_VERSION } from '@core/model/defaults';
+import { newId } from '@core/model/ids';
 import { createDefaultProject } from './default-project';
 import { buildProjectFile, openProjectBlob, writeProjectTo } from './persistence/project-io';
 import { fileHandle, forgetFile, rememberFile } from './persistence/recent-files';
@@ -131,6 +132,37 @@ export class ProjectFiles {
       }
       this.fail('open the project', e);
       return false;
+    }
+  }
+
+  /**
+   * Opens a recently used file as a new, unsaved copy: its own identity (so its versions start fresh) and no file, so
+   * Save asks where. The original is not touched.
+   */
+  async openRecentAsCopy(key: string): Promise<boolean> {
+    const handle = await fileHandle(key);
+    if (!handle) {
+      await forgetFile(key);
+      this.toast('That file is no longer available.', 'error');
+      return false;
+    }
+    if (!(await this.confirmReplace())) return false;
+    if (!(await ensurePermission(handle, 'read', true))) {
+      this.toast(`No permission to open "${handle.name}".`, 'error');
+      return false;
+    }
+    this.store.setState({ busy: 'opening' });
+    try {
+      const opened = await openProjectBlob(await handle.getFile());
+      const name = `${baseName(handle.name)} (copy)`;
+      const copy: Project = { ...opened.project, projectId: newId.project(), meta: { ...opened.project.meta, title: name } };
+      this.replace(copy, opened.view, { name, handle: null, fileKey: null }, { dirty: true });
+      return true;
+    } catch (e) {
+      this.fail(`open a copy of "${handle.name}"`, e);
+      return false;
+    } finally {
+      this.store.setState({ busy: null });
     }
   }
 

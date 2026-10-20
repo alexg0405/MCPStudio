@@ -957,6 +957,9 @@ re-analysed): matched notes within 1.8 cents (median 0.5). 60 s of stereo render
   the comping "listen to this take"), exports and offline renders read the real project. It clears when the clip goes away, when
   the editor shows another clip and when its window closes.
 - Analysis range ≤ 15 minutes of sample (`PITCH_MAX_SECONDS`).
+- **After alignment** (see Vocal alignment): the analysis and the render read the clip's *aligned* sound when it has one
+  (`alignedSampleId`), and the render signature carries which aligned sample it was made from (`pitchRenderSignature`), so an
+  alignment that changes re-makes the correction in the same undo step. Align first, then tune.
 
 ### The Pitch editor window (`ui/features/pitch-editor`, window type `pitch-editor`)
 
@@ -1049,6 +1052,165 @@ can be mixed. One voice at a time: chords
 and noisy takes give no notes. TD-PSOLA keeps formants well within about ±5 semitones and sounds rougher at ±12; a shifted
 note repeats or skips whole periods. Breaths and "s" sounds are never shifted.
 The edit works on the clip's sample, not on its reverse or on a stretched copy (tempo follow still works on the render).
+
+## Vocal alignment (`core/audio/align`, `core/audio/wsola/warp.ts`, `app/actions/align*.ts`, `app/align`, `ui/features/align`)
+
+Make doubles, backing vocals and ad-libs line up with a lead, like VocAlign: the syllables of a clip move onto the
+timing of a guide clip (and, if asked, its pitch contour), or a vocal is snapped to the song's grid. The aligned sound is a
+new sample that the clip plays; the recording stays. Align first, then tune: the Pitch editor works on the aligned sound.
+
+### The chain of sounds a clip can play (`clipSampleId`, `core/audio/playback.ts`)
+
+    channel sample  ──align──▶  AlignEdit.renderedSampleId  ──pitch edit──▶  PitchEdit.renderedSampleId
+
+`clipSampleId(channel, clip)` is `pitchEdit.renderedSampleId ?? align.renderedSampleId ?? channel.sampleId`, and it is the one
+funnel for the engine, the residency plan, the waveform and the exports, so nothing else knows about the chain. Every render is
+as long as the original and on its timeline (trims, fades, tempo follow work unchanged). The pitch render is made *from* the
+aligned sound (`alignedSampleId` in `core/audio/align/edit.ts`; `analyzeClip` and the pitch renderer read it), so it already
+contains the alignment. Its render signature (`pitchRenderSignature` = `editSignature`, plus `|aligned:<sample id>` only while
+the clip has an alignment render) therefore changes when the alignment's render does, and the pitch renderer re-makes it; with
+no alignment it is exactly `editSignature`, so earlier projects keep their renders. The pitch re-render is folded into the same
+undo step as the alignment that caused it. The notes of a pitch edit are seconds on the sample's timeline: aligning *after*
+tuning moves syllables by up to ~100 ms, so the notes should be found again in the Pitch editor (a limit, below). Other renders
+(vocal cleanup, harmonies) join the same chain by adding their own field and a link in `clipSampleId`.
+
+### The record (`AudioClip.align`, one commented block in `types/playlist.ts`)
+
+`AlignEdit { mode: 'guide' | 'grid', guide?, tightness (0–100), pitch? (0–100 %), strength? (0–100 %), stepTicks?,
+renderedSampleId?, renderedFor?, warp? }`. `renderedFor` is the signature of the plan the render was made for; `warp` is the
+overlay's points. `core/ops/align.ts` (`setAlign`, `setAlignRender`, `clearAlignRender`) are the draft mutators;
+`core/schema/repair/playlist.ts` (`repairAlign`, `sanitizeAlignEdit`) cleans damaged data and forgets a render whose sample is
+missing. Removing a render drops its `Project.samples` entry unless another clip (an alignment or a pitch render) or a channel
+plays it. The storage clean-up needs nothing: the render's hash is in `Project.samples`, so it is kept like any sample.
+
+### The plan (`core/audio/align/plan.ts`, pure)
+
+`planAlignment(project, clipId)` gives the stretch of the clip's sample to render (the part the clip plays ± 0.3 s, `region`),
+the part of it that is audible, the guide's sound on the same axis (`GuidePlan`: which sample it plays, where that sample is at
+the start of the stretch, which part is audible) or the grid lines of the stretch (`GridPlan`), and the **signature**: every
+input of the render as a string (mode, tightness, pitch, source sample, region, audible spans, guide clip, its sample and place,
+a digest of the grid lines). Moving the clip or the guide, a new tempo, another sample under the guide all change it; the render
+and its own signature do not. A clip is refused with a plain reason when it does not play at its own speed (Reverse, Pitch,
+Follow tempo: `isPlainPlayback`), when its audio is missing, or when the guide is itself or part of a ring (A follows B follows A).
+
+### Features, match and move (`core/audio/align/*.ts`, pure, deterministic, Worker or Node)
+
+1. **Features** (`features.ts`), every 5 ms (`ALIGN_HOP_SEC`): a 20 ms Hann window (1024 at 44.1 and 48 kHz); 12 mel bands from
+   100 Hz to 7.5 kHz as dB *relative to the frame's own loudness* (the shape of the sound: vowels against consonants; weight 1); the
+   loudness against the clip's own 95th percentile (weight 1.6); the spectral flux (rises per band, gated by how much sound there
+   is; weight 1.6); and voiced / unvoiced from the shared YIN tracker (`trackVoicePitch`; weight 0.7). Outside the audible part
+   everything is silence, so the match never leans on sound the clip does not play. The vectors are pre-weighted, so a frame
+   distance is a plain sum of squares. Level, pitch and tone differ between two voices; shape, energy contour and onsets do not.
+2. **Match** (`dtw.ts`): dynamic time warping in a **band** of ±0.5 s around the diagonal (`MAX_ALIGN_SHIFT_SEC`), so the trace
+   table is `frames × 201` bytes and the work is linear in the clip's length (a 3-minute clip: 36,000 frames, 7.5 MB of trace; a
+   full table would be 1.3 billion cells). Steps keep the speed of the clip between ¼× and 4× ((1,1); (1,2) to (1,4); (2,1) to
+   (4,1)); a step that is not diagonal costs a penalty (more for the steeper kinds) **where either voice sounds** and is free
+   where both are silent, so a held note keeps its offset and a gap can be squeezed or stretched to make up the time between two
+   syllables. Both voices get `2 × band` frames of silence at either end and the path may begin and end at any offset, so a
+   double that comes in 300 ms late is matched from its first frame. The result is the clip frame matching every guide frame.
+3. **Lag curve** (`lag.ts`): the lag of a frame is how much later than the guide the clip was there (seconds; output time o plays
+   the clip's own sound from o + lag(o)). The raw path is smoothed with a moving average weighted by how much both voices sound (in
+   a silence the path is arbitrary, so it takes the lag of the sound next to it). **Tightness** sets the window (1.2 s at 0 to 30 ms
+   at 100, a constant ratio), a dead zone (offsets under 60 ms are left alone at 0, none from 60 up) and the DTW step penalty (0.5 at
+   0 to 0.05 at 100). The move fades out at the ends of the stretch (the margin). Then **attacks are kept**: `syllableOnsets`
+   (`onsets.ts`: flux and loudness rise, peak-picked, then placed where the envelope reaches 20 % of the attack's peak) finds the
+   consonants and syllable starts of the clip; across each the lag is flat from 53 ms before to 40 ms after (what the WSOLA frames
+   need so that every frame that reaches the attack continues the input exactly), and its value is pinned. The last step limits the
+   speed to ½–2× where the clip sounds and 0.2–4× in silence, with the pins as hard constraints: the stretch a big change needs is
+   made in the vowels and gaps *before* the attack, so the attack lands where the match put it (`limitSpeed`: a forward, backward
+   and forward projection, then a clamp inside the lags that can still reach every pin).
+4. **Render** (`warp-render.ts`, `wsola/warp.ts`): WSOLA (30 ms frames, ±8 ms search; the same similarity search and overlap-add as
+   the constant time-stretch: `wsola/stretch.ts` now exports `overlapAdd`, `frameGeometry` and `similaritySearchFor`, and
+   `timeStretch` itself is unchanged, its characterization snapshots untouched) along a **piecewise-linear time map**
+   (`WarpTimeMap`: an anchor per 5 ms frame, plus the kept spans that play at the input's own speed). Pitch stays, the stereo image
+   holds (every channel uses the same frames), the output is as long as the input.
+5. **Pitch alignment** (`pitch-follow.ts`, optional, strength 0–100 %): the aligned clip is tracked again; where both voices are
+   voiced the distance to the guide is read in cents, the *interval* the clip sings (the median over ±0.25 s, rounded to whole
+   semitones: a harmony a third above stays a third above) is taken away, and `strength` of what is left (up to 75 cents; more is a
+   different note or a tracker slip) is the shift curve for **TD-PSOLA** (`psolaShift`: formants stay, unvoiced frames and
+   deviations over the limit are never touched), glided over about 30 ms and bridged over gaps up to 80 ms. The guide's vibrato is
+   followed too.
+6. **Tighten timing to the grid** (`grid.ts`): every onset within `maxMoveSec` (the smaller of 120 ms and 45 % of a grid step) of a
+   grid line gets a target (onset + strength × distance); the lag is a line through those moves and zero away from them
+   (`lagThroughMoves`), then step 3's fade, kept attacks and speed limit, then the same render. Grid lines come from the tempo map
+   (`GridPlan`), so tempo automation is followed.
+
+`alignToGuide(input) → { channels, lagSec, hopSec, kept, stats }`; stats are the median and largest move, the time moved, the
+overlap, and the median pitch deviation before and after. `warpKnots` thins the lag to a few hundred `[sampleSec, moveMs]` points
+(Douglas–Peucker, 1.5 ms, at most 2,000) for the project file and the overlay.
+
+### Render and playback (`app/actions/align-render.ts`)
+
+- `startAlignRenderer` (created once in the feature's `register`) watches the document: after an edit (origin `edit`, not
+  undo/redo/load) that touches the playlist, the transport, the channels or the samples, every aligned clip is planned; when its
+  `renderedFor` differs from the plan's signature it waits 450 ms and renders. The clip's stretch of the sample (and the guide's
+  sound as mono on the same axis, `app/align/guide-audio.ts`) go to a Worker (`app/align/align.worker.ts`, `align-jobs.ts`; inline
+  in Node tests); the result is spliced into a copy of the whole sample (`spliceRendered`, shared with the pitch renderer), encoded
+  as 24-bit FLAC off-thread, written through the sample store inside `whileBusy(…, { project })` and recorded by `setAlignRender`
+  (sample entry, `renderedFor`, `warp`). A newer edit cancels the job in flight; a result for an out-of-date signature is dropped.
+  Moving the clip or the guide, changing the tempo or the guide's own sound re-render by themselves.
+- **Undo**: the commit is `transact(…, { amend: <the edit's undo entry> })`, so the settings and their render are one undo step (a
+  batch of clips is one step for all of them) and undo restores the earlier settings with the earlier render.
+- **A/B** (`editor.alignOriginal`, `core/query/hear.ts` `unalignedSound`): session state, not in the document and not undoable. The
+  engine hears a copy of the project in which the clip has neither the alignment's render nor the pitch render (made from it), so it
+  plays the recording as recorded. It clears when the clip goes away and when the Align window closes.
+- The playlist draws the **aligned waveform** (`clipSampleId`), a tag ("Aligned", "Tightened to grid") and the **warp overlay**
+  (`ui/features/playlist/warp-overlay.ts`): a thin line along the bottom that rises where the sound was moved earlier and dips where
+  it was moved later (full height = 150 ms), faintly shaded down to its dotted baseline.
+
+### UI (`ui/features/align`, window type `vocal-align`)
+
+- Entry points: clip ▾ / right-click on an audio clip ("Align to guide…", "Tighten timing to the grid", "Remove alignment" when
+  aligned), the Playlist menu and the action search (Mod+K) for the same commands.
+- The **Align window** is small and not modal, so you listen while you adjust: *Follow a lead* (a guide chooser listing every other
+  audio clip as "name · track, bar", Tightness 0–100 %, Pitch alignment 0–100 %) or *Snap to the grid* (1/4 to 1/32, Strength
+  0–100 %); **Align** / **Update alignment** (one undo step), Play, an **Aligned / Original** switch (A/B), Remove, and a status line
+  ("Making the aligned sound… 40 %", "Aligned: syllables moved 35 ms typically, 120 ms at most", the reason when something failed,
+  "Render now"). It acts on the selected audio clips (several at once = a batch aligned to one guide). Its empty state says what to
+  select. Every control has a `data-hint` with its units; the "?" panel lists the moves.
+- Commands (all with a `hint` and an `argsHint`, so they are in the AI/MCP catalog): `align.open`, `align.apply`
+  (`{ guide, clips?, tightness?, pitch? }`), `align.tighten` (`{ clips?, strength?, grid? }`), `align.remove`, `align.toggleOriginal`.
+
+### AI and MCP
+
+- Actions (`app/ai/ops/align.ts`): `align_clips { guide | guide_track + guide_bar, clips | tracks, tightness, pitch }`,
+  `tighten_timing { clip | track + bar | clips | tracks, strength, grid }` and `remove_alignment`. Each is a plain edit of the clips'
+  settings in the answer's undo step; the renderer follows by itself. Clips the check refuses come back as warnings with the reason.
+- Read `get_alignment { clip? }` (`app/align/report.ts`): per aligned clip its track and bar, mode, guide (id, track, bar),
+  tightness, pitch %, grid strength, **state** (`ready`, `rendering` with progress, `out of date`, `problem` with the reason), how
+  far the sound was moved (median and largest, ms), what the last run measured (the pitch deviation before and after included) and
+  which sound is heard (`aligned sound` or `original recording`). Window `vocal-align` is in `OPEN_WINDOWS`.
+
+### Tests
+
+Node: `core/audio/align/align.test.ts` (a synthetic lead and double: onsets within 10 ms with ±80 ms jitter and ±15 % lengths, a
+double 300 ms late or 250 ms early, tightness monotone and 0 fixing only big offsets, stereo, a lead at another sample rate, no
+overlap, determinism, no clicks at the joins, consonant bursts keep their peak, pitch kept when only time is aligned, median pitch
+deviation under 10 cents at 100 %, 50 % lands between, a harmony keeps its interval, the 3-minute clip's memory and time),
+`dtw.test.ts`, `lag.test.ts` (speed bounds, pins, silences take up time), `grid.test.ts`, `warp-knots.test.ts`, `plan.test.ts`
+(axes, signature, refusals, rings, grid lines), `wsola/warp.test.ts`, `core/ops/align.test.ts` (undo, renders, chain order),
+`app/actions/align.test.ts` (the whole flow through the real renderer and FLAC: one undo step, onsets within 10 ms *in the stored
+render*, a batch, re-render on a changed setting or a moved guide, removal, A/B), `app/ai/ops/align.test.ts`,
+`ui/features/align/align.test.ts` (menus, commands, A/B in the engine) and the AI coverage audit.
+
+### Measured (Node 22, one thread, 48 kHz mono; the machine was shared with other work, so times are upper bounds)
+
+- Onset accuracy: 40 doubles with ±80 ms start jitter and ±15 % length changes (10 syllables each): every onset within 7.1 ms of
+  the lead's (median of the worst per double 3.4 ms; before alignment they were up to 270 ms off). With ±100 ms and ±25 % some
+  syllables have no gap left to squeeze: 11 of 40 doubles then have one onset off by up to 60 ms.
+- Pitch: a double sung up to 35 cents off, no vibrato: the median deviation from the lead goes 19.9 → 2.1 cents at 100 % (10.7 at
+  50 %).
+- Speed and memory: a 6.25 s clip aligns in 0.13–0.2 s; a **3 min 7 s** clip with pitch alignment in 5.9 s wall (6.3 s CPU), peak
+  array memory 218 MB above the 72 MB of the two inputs (the trace table is 7.5 MB of that).
+
+### Limits
+
+Alignment needs a clip that plays at its own speed (no Reverse, Pitch or Follow tempo) and works on one voice at a time; the match is
+bounded to ±0.5 s from where the clip is, so a clip further off has to be moved close first. Two doubles with no gap left between
+syllables (or a guide with words the clip does not sing) cannot be matched exactly: the attacks stay sharp, but the match lands where
+it can. Pitch alignment corrects up to 75 cents from the interval the clip sings and cannot turn a harmony into a unison. Notes of a
+pitch edit made before the clip was aligned (or re-aligned) keep their old times: remove them and let the Pitch editor listen again.
+A guide that follows another guide works (the chain renders in turn); a ring is refused.
 
 ## Beat assistant (`src/core/beat`, `src/core/voice`, `src/app/assistant`, `tools/ai`)
 

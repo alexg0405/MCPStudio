@@ -4,6 +4,7 @@ import { buildPreview, PREVIEW_SECONDS, playPreview, type HarmonyPreview } from 
 import { MAX_HARMONY_VOICES, HUMANIZE_LIMITS } from '@core/harmony/voices';
 import type { ClipId, Project } from '@core/model/types';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import dialog from '../../controls/Dialog.module.css';
 import { useServices } from '../../services-context';
 import {
@@ -130,9 +131,9 @@ function HarmonyDialog({ clipId, seed }: { clipId: ClipId; seed: number }) {
     changed();
   };
 
+  useDialogFocus(ref);
   useEffect(() => {
     const release = holdModal();
-    ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();

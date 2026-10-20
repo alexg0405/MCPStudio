@@ -5,7 +5,9 @@
  *
  *     <div role="toolbar" aria-label="Piano roll tools" data-roving>…buttons…</div>
  *
- * - `data-roving` (or `data-roving="horizontal"`): Left and Right move, Home and End jump to the ends.
+ * - `data-roving` (or `data-roving="horizontal"`): Left and Right move, Home and End jump to the ends. A `role="toolbar"`,
+ *   `tablist` or `radiogroup` is a group even without the mark (`aria-orientation="vertical"` makes it vertical).
+ *   A list box opts in with `data-roving="vertical"` (a palette's results are not one: they follow `aria-activedescendant`).
  * - `data-roving="vertical"`: Up and Down move (a list of rows).
  * - `data-roving="grid"`: all four arrows move to the nearest control in that direction (the channel rack's steps,
  *   the clip launcher's pads). Home and End go to the ends of the row, Ctrl+Home and Ctrl+End to the corners.
@@ -43,7 +45,11 @@ export type RovingMode = 'horizontal' | 'vertical' | 'grid';
 /** How far (in pixels) two controls' centres may differ and still count as the same row (or column) of a grid. */
 const SAME_LINE_TOLERANCE = 0.6;
 
-const GROUP_SELECTOR = '[data-roving]';
+/**
+ * What makes a group: the explicit `data-roving` mark, and the roles whose arrow keys are defined by the ARIA patterns
+ * (toolbar, tab strip, radio group), so a plain `role="toolbar"` is one Tab stop without anyone remembering the mark.
+ */
+const GROUP_SELECTOR = '[data-roving], [role="toolbar"], [role="tablist"], [role="radiogroup"]';
 
 /** The control each group last had focus, so Tab comes back to it. */
 const activeItems = new WeakMap<Element, Element>();
@@ -53,7 +59,9 @@ let flushScheduled = false;
 
 function modeOf(group: Element): RovingMode {
   const value = group.getAttribute('data-roving');
-  return value === 'vertical' || value === 'grid' ? value : 'horizontal';
+  if (value === 'vertical' || value === 'grid' || value === 'horizontal') return value;
+  if (group.getAttribute('aria-orientation') === 'vertical') return 'vertical';
+  return 'horizontal';
 }
 
 function isUsable(el: Element): boolean {
@@ -250,16 +258,24 @@ export function installRoving(): () => void {
     activeItems.set(group, item);
     markDirty(group);
   };
+  // The global shortcut handler (src/ui/keyboard.ts) calls `rovingKeyDown` first, but it stands down while a dialog or
+  // a menu is open. This listener catches those arrow keys on their way up, so a radio group in a dialog still moves.
+  const onKeyDown = (e: KeyboardEvent): void => {
+    if (e.defaultPrevented) return;
+    if (rovingKeyDown(e)) e.stopPropagation();
+  };
   observer.observe(document.body, {
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ['disabled', 'aria-disabled', 'hidden', 'data-roving'],
+    attributeFilter: ['disabled', 'aria-disabled', 'hidden', 'data-roving', 'role'],
   });
   document.addEventListener('focusin', onFocusIn);
+  document.addEventListener('keydown', onKeyDown);
   markAround(document.body);
   return () => {
     observer.disconnect();
     document.removeEventListener('focusin', onFocusIn);
+    document.removeEventListener('keydown', onKeyDown);
   };
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { FILTERS, lengthNote, type FilterPreset } from '@core/filters/presets';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import dialog from '../../controls/Dialog.module.css';
 import { useServices } from '../../services-context';
 import { filterStore } from './filter-store';
@@ -36,9 +37,9 @@ function FilterDialog({ start }: { start: string | undefined }) {
     void runFilter(s, chosen, target);
   };
 
+  useDialogFocus(ref);
   useEffect(() => {
     const release = holdModal();
-    ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();

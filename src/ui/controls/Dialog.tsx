@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createStore, useStore } from 'zustand';
+import { useDialogFocus } from './dialog-focus';
 import styles from './Dialog.module.css';
 
 /**
@@ -25,15 +26,19 @@ export interface DialogOptions<T extends string> {
 }
 
 interface Open {
+  /** Tells one queued question from the next, so each opens fresh. */
+  id: number;
   options: DialogOptions<string>;
   resolve(id: string): void;
 }
+
+let nextDialogId = 0;
 
 const dialogStore = createStore<{ queue: Open[] }>(() => ({ queue: [] }));
 
 export function showDialog<T extends string>(options: DialogOptions<T>): Promise<T> {
   return new Promise<T>((resolve) => {
-    const entry: Open = { options, resolve: resolve as (id: string) => void };
+    const entry: Open = { id: nextDialogId++, options, resolve: resolve as (id: string) => void };
     dialogStore.setState({ queue: [...dialogStore.getState().queue, entry] });
   });
 }
@@ -63,14 +68,18 @@ function close(entry: Open, id: string): void {
 /** Rendered once by the app shell. */
 export function DialogHost() {
   const entry = useStore(dialogStore, (s) => s.queue[0]);
+  // Keyed by the entry: a second dialog queued behind the first opens fresh (focus, keys) once the first is answered.
+  return entry ? <AlertDialog key={entry.id} entry={entry} /> : null;
+}
+
+/** One question: Enter picks the default button and Esc the cancel button; Tab stays inside (see `useDialogFocus`). */
+function AlertDialog({ entry }: { entry: Open }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // The dialog itself takes focus, not a button: Space is play/stop muscle memory in a DAW and must
+  // not "click" Save. Enter picks the default button; Tab reaches the buttons.
+  useDialogFocus(dialogRef);
 
   useEffect(() => {
-    if (!entry) return;
-    const prevFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    // The dialog itself takes focus, not a button: Space is play/stop muscle memory in a DAW and must
-    // not "click" Save. Enter picks the default button; Tab reaches the buttons.
-    dialogRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -88,13 +97,9 @@ export function DialogHost() {
       }
     };
     window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      prevFocus?.focus?.();
-    };
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [entry]);
 
-  if (!entry) return null;
   const { title, message, detail, buttons } = entry.options;
   return (
     <div className={styles.backdrop}>
@@ -105,11 +110,14 @@ export function DialogHost() {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="ag-dialog-title"
+        aria-describedby="ag-dialog-message"
       >
         <h2 id="ag-dialog-title" className={styles.title}>
           {title}
         </h2>
-        <p className={styles.message}>{message}</p>
+        <p id="ag-dialog-message" className={styles.message}>
+          {message}
+        </p>
         {detail && <p className={styles.detail}>{detail}</p>}
         <div className={styles.buttons}>
           {buttons.map((b) => (

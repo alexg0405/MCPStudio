@@ -6,6 +6,7 @@ import type { PrefsState } from '@app/stores/prefs';
 import { planStems, withoutMasterChain } from '@core/query/stems';
 import { ticksPerBar } from '@core/time/ppq';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import { useDoc, useServices, useView } from '../../services-context';
 import dialog from '../../controls/Dialog.module.css';
 import { FormatSection, RangeSection, StemsSection } from './AudioExportSections';
@@ -27,9 +28,9 @@ export function ExportOverlay() {
  * export (or closes the dialog when none is running).
  */
 function useModalKeyboard(dialogRef: RefObject<HTMLDivElement | null>, abortRef: MutableRefObject<AbortController | null>) {
+  useDialogFocus(dialogRef);
   useEffect(() => {
     const release = holdModal();
-    dialogRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();

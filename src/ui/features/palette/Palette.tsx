@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { createStore, useStore } from 'zustand';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import type { ActionEntry } from '../../shell/actions';
 import { useServices } from '../../services-context';
 import { collectActions } from './collect';
@@ -70,22 +71,20 @@ function useActiveRowInView(listRef: RefObject<HTMLDivElement | null>, active: n
   }, [listRef, active]);
 }
 
-/** While the search is open it has the keyboard and gives it back to what had the focus when it closes. */
-function useHoldKeyboard(inputRef: RefObject<HTMLInputElement | null>): void {
+/** While the search is open it has the keyboard (the focus goes to its box, Tab stays there, and what had the focus gets it back on closing). */
+function useHoldKeyboard(panelRef: RefObject<HTMLDivElement | null>, inputRef: RefObject<HTMLInputElement | null>): void {
+  useDialogFocus(panelRef);
   useEffect(() => {
     const release = holdModal();
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     inputRef.current?.focus();
-    return () => {
-      release();
-      if (previous?.isConnected) previous.focus();
-    };
+    return release;
   }, [inputRef]);
 }
 
 /** The action search: type to find any menu entry or command, Enter runs it, and anything else can be asked of Studio. */
 function Palette() {
   const services = useServices();
+  const panelRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState(() => paletteStore.getState().query);
@@ -113,7 +112,7 @@ function Palette() {
   useLayoutEffect(() => {
     runRef.current = run;
   });
-  useHoldKeyboard(inputRef);
+  useHoldKeyboard(panelRef, inputRef);
   useActiveRowInView(listRef, active);
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -138,7 +137,7 @@ function Palette() {
   const to = Math.min(rows.length, Math.max(scrollRow + WINDOW_ROWS, active + 1 + OVERSCAN));
   return (
     <div className={styles.backdrop} onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div className={styles.panel} role="dialog" aria-label="Search actions">
+      <div ref={panelRef} tabIndex={-1} className={styles.panel} role="dialog" aria-modal="true" aria-label="Search actions">
         <input
           ref={inputRef}
           className={styles.input}
@@ -150,6 +149,10 @@ function Palette() {
             setActive(0);
           }}
           onKeyDown={onKeyDown}
+          role="combobox"
+          aria-label="Search actions"
+          aria-autocomplete="list"
+          aria-expanded={rows.length > 0}
           aria-controls="ag-palette-list"
           aria-activedescendant={current ? `ag-palette-${active}` : undefined}
         />
@@ -158,6 +161,7 @@ function Palette() {
           id="ag-palette-list"
           className={styles.list}
           role="listbox"
+          aria-label="Matching actions"
           onScroll={(ev) => {
             const first = Math.max(0, Math.floor((ev.currentTarget.scrollTop - LIST_PAD) / rowHeight()));
             if (first !== scrollRow) setScrollRow(first);

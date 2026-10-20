@@ -79,7 +79,6 @@ export function RackRows({ patternId, stepCount }: { patternId: PatternId; stepC
         )}
         <div className={`${styles.addRow} ${dropTarget === 'new' ? styles.addRowDrop : ''}`}>
           <button
-            tabIndex={-1}
             className={styles.addButton}
             onPointerDown={(e) => e.preventDefault()}
             onClick={(e) => showContextMenu(e, addChannelMenu(services))}

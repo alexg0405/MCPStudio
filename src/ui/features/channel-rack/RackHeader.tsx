@@ -60,7 +60,6 @@ export function RackHeader({ patternId, stepCount }: { patternId: PatternId; ste
         Swing
       </span>
       <button
-        tabIndex={-1}
         className={styles.headerButton}
         disabled={!selectedName}
         onPointerDown={(e) => e.preventDefault()}
@@ -74,7 +73,6 @@ export function RackHeader({ patternId, stepCount }: { patternId: PatternId; ste
         Steps ▾
       </button>
       <button
-        tabIndex={-1}
         className={`${styles.headerButton} ${selected && graphChannel === selected ? styles.headerButtonOn : ''}`}
         disabled={!selectedName}
         onPointerDown={(e) => e.preventDefault()}

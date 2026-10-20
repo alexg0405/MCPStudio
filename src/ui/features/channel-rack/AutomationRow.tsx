@@ -65,7 +65,6 @@ export function AutomationRow({ id }: { id: ChannelId }) {
   return (
     <div className={styles.row} data-channel-id={id}>
       <button
-        tabIndex={-1}
         className={`${styles.led} ${ch.muted ? '' : styles.ledOn}`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={toggleMute}
@@ -74,7 +73,6 @@ export function AutomationRow({ id }: { id: ChannelId }) {
       />
       <span className={styles.autoSpacer} />
       <button
-        tabIndex={-1}
         className={styles.name}
         style={{ ['--ch-color' as string]: ch.color }}
         onPointerDown={(e) => e.preventDefault()}

@@ -81,7 +81,6 @@ const SlotRow = memo(function SlotRow({
     >
       <span className={styles.slotIndex}>{index + 1}</span>
       <button
-        tabIndex={-1}
         className={`${styles.led} ${styles.slotLed} ${slot.enabled ? styles.ledOn : ''}`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={() => toggleEffect(services, insertId, slot.id)}
@@ -132,7 +131,6 @@ const EmptySlot = memo(function EmptySlot({
   };
   return (
     <button
-      tabIndex={-1}
       className={`${styles.slot} ${styles.slotEmpty}`}
       onPointerDown={(e) => e.preventDefault()}
       onClick={add}

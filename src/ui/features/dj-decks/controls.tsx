@@ -196,7 +196,6 @@ export function PadButton({
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={`${styles.pad} ${on ? styles.padOn : ''} ${idle ? styles.idle : ''} ${className ?? ''}`}
       aria-label={label}
       aria-pressed={on === undefined ? undefined : on}

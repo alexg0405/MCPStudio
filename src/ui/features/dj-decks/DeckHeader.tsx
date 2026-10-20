@@ -55,7 +55,6 @@ export function DeckHeader({
       </span>
       <button
         type="button"
-        tabIndex={-1}
         data-dj-target={deckTarget(deckId, 'load')}
         className={styles.load}
         aria-label={`Load a song on deck ${deckId}`}
@@ -67,7 +66,6 @@ export function DeckHeader({
       </button>
       <button
         type="button"
-        tabIndex={-1}
         data-dj-target={deckTarget(deckId, 'eject')}
         className={`${styles.eject} ${!hasSong && isLearning ? styles.idle : ''}`}
         disabled={!hasSong && !isLearning}

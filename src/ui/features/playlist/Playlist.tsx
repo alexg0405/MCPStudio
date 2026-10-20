@@ -42,7 +42,6 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         {TOOLS.map((t) => (
           <button
             key={t.tool}
-            tabIndex={-1}
             className={`${styles.tool} ${pl.tool === t.tool ? styles.toolOn : ''}`}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => set({ tool: t.tool })}
@@ -67,7 +66,6 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
       </span>
       <span className={styles.zoom}>
         <button
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => controller.current?.zoomBy(1 / 1.5)}
           data-hint="Zoom out (Ctrl/Cmd + wheel, or pinch)"
@@ -75,7 +73,6 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
           −
         </button>
         <button
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => controller.current?.zoomBy(1.5)}
           data-hint="Zoom in"
@@ -84,7 +81,6 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
         </button>
       </span>
       <button
-        tabIndex={-1}
         className={`${styles.tool} ${follow ? styles.toolOn : ''}`}
         aria-pressed={follow}
         onPointerDown={(e) => e.preventDefault()}
@@ -187,7 +183,6 @@ export function Playlist() {
           ref={askPill}
           className={styles.askPill}
           style={{ display: 'none' }}
-          tabIndex={-1}
           aria-label="Ask Studio about this part"
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => void askAboutSelection(services, { kind: 'pill' })}

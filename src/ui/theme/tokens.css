@@ -35,6 +35,14 @@
   --ag-led-off: #2c3529;
   --ag-danger: #e0675a;
   --ag-select: #8eb4e3;
+  /*
+   * Keyboard focus: the ring around the control the keyboard is on, and the cursor a canvas editor draws where the
+   * keyboard is (a dashed box with corner ticks, so it never depends on its colour alone). Both keep at least 3:1
+   * against every surface in every theme (test/browser/a11y-audit.test.ts checks it).
+   */
+  --ag-focus: var(--ag-accent-ink);
+  --ag-focus-width: 2px;
+  --ag-cursor: var(--ag-select);
 
   /* Title bars */
   --ag-title: #131417;

@@ -17,7 +17,6 @@ function ModeSwitch() {
   return (
     <button
       className={styles.modeSwitch}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run('transport.toggleMode')}
       data-hint="Pattern mode loops the current pattern; song mode plays the playlist (L)"
@@ -130,7 +129,6 @@ function Position() {
   return (
     <button
       className={`${styles.lcd} ${styles.time}`}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => setExpanded((on) => !on)}
       data-expanded={expanded || undefined}

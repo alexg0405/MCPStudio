@@ -30,7 +30,6 @@ function ColumnHeads({ browser }: { browser: SampleBrowser }) {
         <button
           key={column.sort}
           className={column.isNumeric ? `${styles.headButton} ${styles.num}` : styles.headButton}
-          tabIndex={-1}
           onClick={() => browser.setSort(column.sort)}
           data-hint={`Sort the list by ${column.hintWord}: click again to turn it round`}
         >
@@ -86,7 +85,6 @@ function SampleRowView({ browser, row, isSelected, isCursor, isPlaying, onChoose
     >
       <button
         className={row.favorite ? styles.starOn : styles.star}
-        tabIndex={-1}
         aria-pressed={row.favorite}
         aria-label={row.favorite ? `Unstar ${row.name}` : `Star ${row.name}`}
         data-hint={row.favorite ? 'A favorite: click to remove the star' : 'Click to star this sound as a favorite'}

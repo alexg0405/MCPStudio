@@ -45,7 +45,6 @@ function ToolButtons() {
     {TOOLS.map((t) => (
       <button
         key={t.tool}
-        tabIndex={-1}
         className={`${styles.tool} ${tool === t.tool ? styles.toolOn : ''}`}
         onPointerDown={keepFocus}
         onClick={() => set({ tool: t.tool })}
@@ -63,7 +62,6 @@ function ToolsMenuButton() {
   const services = useServices();
   return (
   <button
-    tabIndex={-1}
     className={styles.tool}
     onPointerDown={keepFocus}
     onClick={(e) => menuBelow(e, toolsMenu(services))}
@@ -107,7 +105,6 @@ function KeyAndScaleButtons() {
   return (
   <span className={styles.group}>
     <button
-      tabIndex={-1}
       className={`${styles.tool} ${styles.keyButton} ${songKey ? styles.keySet : ''}`}
       onPointerDown={keepFocus}
       onClick={(e) => menuBelow(e, keyMenu(services))}
@@ -116,7 +113,6 @@ function KeyAndScaleButtons() {
       Key: {keyName} ▾
     </button>
     <button
-      tabIndex={-1}
       className={`${styles.tool} ${songKey && pr.scaleHighlight ? styles.toolOn : ''}`}
       disabled={!songKey}
       onPointerDown={keepFocus}
@@ -130,7 +126,6 @@ function KeyAndScaleButtons() {
       Highlight scale
     </button>
     <button
-      tabIndex={-1}
       className={`${styles.tool} ${songKey && pr.scaleSnap ? styles.toolOn : ''}`}
       disabled={!songKey}
       onPointerDown={keepFocus}
@@ -144,7 +139,6 @@ function KeyAndScaleButtons() {
       Scale lock
     </button>
     <button
-      tabIndex={-1}
       className={`${styles.tool} ${pr.chordHighlight ? styles.toolOn : ''}`}
       onPointerDown={keepFocus}
       onClick={() => set({ chordHighlight: !pr.chordHighlight })}
@@ -202,7 +196,6 @@ function GhostNotesButton() {
   const set = services.editor.getState().setPianoRoll;
   return (
   <button
-    tabIndex={-1}
     className={`${styles.tool} ${ghosts ? styles.toolOn : ''}`}
     onPointerDown={keepFocus}
     onClick={() => set({ ghosts: !ghosts })}
@@ -248,7 +241,6 @@ function ZoomButtons({ controller }: { controller: React.RefObject<PianoRollCont
   return (
   <span className={styles.zoom}>
     <button
-      tabIndex={-1}
       onPointerDown={keepFocus}
       onClick={() => controller.current?.zoomBy(1 / 1.4)}
       data-hint="Zoom out (or Ctrl/Cmd + wheel, or pinch)"
@@ -256,7 +248,6 @@ function ZoomButtons({ controller }: { controller: React.RefObject<PianoRollCont
       −
     </button>
     <button
-      tabIndex={-1}
       onPointerDown={keepFocus}
       onClick={() => controller.current?.zoomBy(1.4)}
       data-hint="Zoom in (or Ctrl/Cmd + wheel, or pinch)"
@@ -273,7 +264,6 @@ function FollowButton() {
   const follow = useStore(services.prefs, (p) => p.followPlayhead);
   return (
   <button
-    tabIndex={-1}
     className={`${styles.tool} ${follow ? styles.toolOn : ''}`}
     aria-pressed={follow}
     onPointerDown={keepFocus}

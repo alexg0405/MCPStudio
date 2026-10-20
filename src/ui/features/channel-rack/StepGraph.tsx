@@ -80,7 +80,6 @@ export function StepGraph({ channelId, patternId, stepCount }: { channelId: Chan
           ))}
         </select>
         <button
-          tabIndex={-1}
           className={styles.graphClose}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => services.editor.getState().setStepGraph({ channelId: null })}

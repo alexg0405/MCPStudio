@@ -150,7 +150,6 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
       )}
       <StripPan id={id} label={label} name={name} />
       <button
-        tabIndex={-1}
         className={`${styles.led} ${isMuted ? '' : styles.ledOn} ${isSoloed ? styles.ledSolo : ''}`}
         onPointerDown={(event) => event.preventDefault()}
         onClick={toggleMute}

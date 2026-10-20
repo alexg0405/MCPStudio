@@ -61,7 +61,6 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
       <span className={styles.pill}>
         <button
           type="button"
-          tabIndex={-1}
           className={styles.arrow}
           disabled={!hasChoices}
           onClick={() => step(-1)}
@@ -72,7 +71,6 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
         </button>
         <button
           type="button"
-          tabIndex={-1}
           className={styles.name}
           onClick={(e) => {
             const box = e.currentTarget.getBoundingClientRect();
@@ -89,7 +87,6 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
         </button>
         <button
           type="button"
-          tabIndex={-1}
           className={styles.arrow}
           disabled={!hasChoices}
           onClick={() => step(1)}
@@ -99,7 +96,7 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
           ▶
         </button>
       </span>
-      <button type="button" tabIndex={-1} className={styles.save} onClick={() => void savePresetAs(s, owner, def, instance, saveSuggestion)} data-hint="Save these settings as a preset of your own">
+      <button type="button" className={styles.save} onClick={() => void savePresetAs(s, owner, def, instance, saveSuggestion)} data-hint="Save these settings as a preset of your own">
         Save…
       </button>
     </div>

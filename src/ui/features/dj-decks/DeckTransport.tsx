@@ -127,7 +127,6 @@ function PitchFader({ api, deckId, deck }: { api: DecksApi; deckId: DeckId; deck
           <button
             key={r}
             type="button"
-            tabIndex={-1}
             className={`${styles.range} ${range === r ? styles.rangeOn : ''}`}
             aria-pressed={range === r}
             data-hint={`Pitch range ±${Math.round(r * 100)}%: how far the pitch fader goes`}

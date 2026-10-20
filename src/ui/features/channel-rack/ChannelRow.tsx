@@ -71,7 +71,6 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
       data-channel-id={id}
     >
       <button
-        tabIndex={-1}
         className={`${styles.led} ${ch.muted ? '' : styles.ledOn} ${ch.solo ? styles.ledSolo : ''}`}
         onPointerDown={(e) => e.preventDefault()}
         onClick={() =>
@@ -106,7 +105,6 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
         <RenameInput channelId={id} name={ch.name} onDone={() => setRenaming(false)} />
       ) : (
         <button
-          tabIndex={-1}
           className={`${styles.name} ${missing ? styles.nameMissing : ''}`}
           style={{ ['--ch-color' as string]: ch.color }}
           onPointerDown={(e) => {

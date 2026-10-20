@@ -120,7 +120,6 @@ function SlotPower({ insertId, slotId, name }: { insertId: InsertId; slotId: Slo
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={`${styles.power} ${enabled ? styles.powerOn : ''}`}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() =>
@@ -239,7 +238,6 @@ function PluginHeader({ owner, def, instance }: { owner: PluginOwner; def: Plugi
       {services.plugins.entry(def.id)?.source === 'user' && (
         <button
           type="button"
-          tabIndex={-1}
           className={styles.editCode}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => services.commands.run('plugins.editCode', def.id)}

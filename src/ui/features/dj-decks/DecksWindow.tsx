@@ -106,7 +106,6 @@ function Loaded({ api }: { api: DecksApi }) {
             <button
               key={n}
               type="button"
-              tabIndex={-1}
               className={count === n ? styles.segOn : styles.segItem}
               aria-pressed={count === n}
               data-hint={n === 2 ? 'Show two decks, A and B' : 'Show four decks: A, B, C and D'}

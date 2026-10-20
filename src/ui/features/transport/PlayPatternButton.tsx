@@ -47,7 +47,6 @@ export function PlayPatternButton({
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={`${className} ${playing ? onClassName : ''}`}
       disabled={disabled}
       aria-label={playing ? 'Stop' : 'Play pattern'}

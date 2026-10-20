@@ -46,7 +46,6 @@ export function Mixer() {
             </Fragment>
           ))}
           <button
-            tabIndex={-1}
             className={styles.addInsert}
             onPointerDown={(event) => event.preventDefault()}
             onClick={() => addMixerInsert(services)}

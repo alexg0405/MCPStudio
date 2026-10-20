@@ -31,7 +31,6 @@ const StepButtons = memo(function StepButtons({ on }: { on: string }) {
       {Array.from(on, (bit, i) => (
         <button
           key={i}
-          tabIndex={-1}
           className={`${styles.step} ${Math.floor(i / 4) % 2 ? styles.stepB : ''} ${bit === '1' ? styles.stepOn : ''}`}
           style={{ left: stepX(i) }}
           data-step={i}

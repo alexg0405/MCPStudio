@@ -73,7 +73,6 @@ export function PatternPicker({ compact = false }: { compact?: boolean }) {
 
   return (
     <button
-      tabIndex={-1}
       className={`${styles.picker} ${compact ? styles.compact : ''}`}
       style={current ? { ['--pat-color' as string]: current.color } : undefined}
       onPointerDown={(e) => e.preventDefault()}

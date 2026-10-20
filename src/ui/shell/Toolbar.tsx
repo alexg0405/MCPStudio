@@ -47,7 +47,6 @@ export function CommandButton({
     <button
       className={`${styles.toolButton} ${checked ? styles.toolButtonOn : ''} ${className ?? ''}`}
       disabled={!enabled}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run(command, args)}
       data-hint={hint}
@@ -224,7 +223,6 @@ function OverflowSlots() {
         <button
           ref={moreRef}
           className={`${styles.toolButton} ${showPanel ? styles.toolButtonOn : ''}`}
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={toggle}
           aria-label="More toolbar controls"

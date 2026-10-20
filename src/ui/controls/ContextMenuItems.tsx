@@ -32,7 +32,6 @@ function MenuHeader({ label, onPointerEnter }: { label: string; onPointerEnter()
       <span className={styles.headerText}>{label}</span>
       <button
         type="button"
-        tabIndex={-1}
         className={styles.close}
         aria-label="Close (Esc)"
         data-hint="Close (Esc)"

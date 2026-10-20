@@ -47,8 +47,10 @@ function MixTempoField({ options, set }: { options: DjMixOptions; set(patch: Par
     <div className={styles.field}>
       <span className={styles.label}>Mix tempo</span>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <div className={styles.seg}>
+        <div className={styles.seg} role="radiogroup" aria-label="Mix tempo">
           <button
+            role="radio"
+            aria-checked={!isFixed}
             className={isFixed ? styles.segItem : styles.segOn}
             onClick={() => set({ mixTempo: 'follow' })}
             data-hint="Each song plays at its own tempo; the tempo glides from one to the next during the transitions"
@@ -56,6 +58,8 @@ function MixTempoField({ options, set }: { options: DjMixOptions; set(patch: Par
             Follow songs
           </button>
           <button
+            role="radio"
+            aria-checked={isFixed}
             className={isFixed ? styles.segOn : styles.segItem}
             onClick={() => set({ mixTempo: options.mixTempo === 'follow' ? DEFAULT_FIXED_BPM : options.mixTempo })}
             data-hint="The whole mix plays at one tempo (every song is time-stretched to it)"
@@ -93,7 +97,7 @@ function KeyLockField({ options, set }: { options: DjMixOptions; set(patch: Part
     <div className={styles.field}>
       <span className={styles.label}>Key lock</span>
       <div className={styles.seg}>
-        <button className={isOn ? styles.segOn : styles.segItem} disabled={isFixedTempo} onClick={() => set({ keyLock: !options.keyLock })} data-hint={hint}>
+        <button aria-pressed={isOn} className={isOn ? styles.segOn : styles.segItem} disabled={isFixedTempo} onClick={() => set({ keyLock: !options.keyLock })} data-hint={hint}>
           {isOn ? 'On' : 'Off'}
         </button>
       </div>

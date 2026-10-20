@@ -593,6 +593,109 @@ and touch-action; for `touchEnd` the points listed are the ones that lift): `tou
 `touch-controls`, `touch-shell` (windows, menus, search, hints, layout, step painting, Keys), `touch-launcher`. A synthetic
 `new PointerEvent(...)` cannot capture a pointer that does not exist, which is why the older mouse tests stay as they are.
 
+## Accessibility (`src/ui/a11y`, `features/accessibility`, the `--ag-scale`, `data-contrast`, `data-motion` and `data-palette` page attributes)
+
+AGstudio works with the keyboard alone and with a screen reader, and has a look for low vision and colour blindness, without
+changing anything for people who use none of it. Everything is plain DOM and the existing stores: no new dependency.
+
+- **Tab stops.** Every `<button>` is a native Tab stop (nothing carries `tabIndex={-1}` any more). Mouse users never focus the
+  toolbar buttons (their pointer-down is cancelled, as before), and `ui/keyboard.ts` lets Space and Enter press a control that
+  the keyboard focused (`:focus-visible` on a button, tab, menu item, switch...) instead of running a shortcut, so Space still
+  means play/stop for a mouse user and "press" for a keyboard user. A mouse click leaves nothing `:focus-visible`.
+- **Roving groups** (`a11y/roving.ts`). A container with `data-roving` (`horizontal`, `vertical` or `grid`) is one Tab stop:
+  its controls get `tabindex` 0 (the active one) or -1, and the arrow keys, Home and End move inside it (`rovingKeyDown`, called
+  first by the global key handler). One MutationObserver on the page keeps the stops right as React adds, removes and disables
+  controls, so a group is only markup: `<div role="toolbar" aria-label="…" data-roving>`. Fields that use the arrows themselves
+  (text boxes, selects, range inputs, sliders, spin buttons) are never taken over.
+- **Moving between parts of the screen** (`features/accessibility/panes.ts`). Ctrl+F6 and Ctrl+Shift+F6 (Alt+9 and
+  Alt+Shift+9 where F-keys need Fn) go through the menu bar, the transport, the browser panel and every open window in the
+  order they were opened; F6 itself stays the channel rack, as in FL Studio. Alt+0 "Where am I?" says the pane, the front
+  window, the selected sound and pattern and the transport state. A window is a `role="dialog"` named by its title
+  (`aria-modal` stays off: it does not block the rest) and is focusable itself; focus entering a window makes it the focused
+  window (the shortcuts of that window apply) and Esc on its frame or title bar closes it (inside, Esc belongs to the
+  content). `features/accessibility/focus-follow.ts` moves the focus into a window that a key press opened and onto another
+  window when the focused one closes, but only after keyboard input (`a11y/modality.ts` tracks the last input), so a mouse
+  user's focus is never moved.
+- **The live region** (`a11y/announce.ts`). `announce(text, 'polite' | 'assertive')` writes into one of two hidden elements
+  (`role="status"` and `role="alert"`); the same sentence twice in a row still speaks (an invisible mark alternates). The
+  announcers in `features/accessibility/announcers.ts` listen to stores that exist anyway: play and stop (the engine), record
+  armed / on / off, PAT and SONG, every toast (errors are assertive: finished exports, saves and failures all come through toasts),
+  the Studio's thinking and replies (long ones are cut at a word), plus the settings commands and the editors' keyboard cursors.
+  Nothing runs per frame: playing makes no React commits (`test/browser/a11y-shell.test.ts` counts them).
+- **Interface size** (Settings → Accessibility, `prefs.uiScale`, 90 to 150 percent; commands `options.uiScale`,
+  `options.uiScaleUp/Down/Reset`). `a11y/preferences.ts` sets `--ag-scale` on `<html>`; every `font-size` in the CSS is
+  `calc(Npx * var(--ag-scale, 1))` (a mechanical rewrite: at 100 % the value is the old one), the font tokens and the toolbar and
+  title-bar heights scale with it, and canvas text goes through `fontPx(size)` (`timeline/canvas.ts`; a row-limited size is
+  `Math.min(fontPx(10), rowHeight - 4)`), so rulers, notes, clip titles, meters and lanes follow. Heights of other fixed-size
+  controls are not scaled (they are shared with JavaScript row maths), so at 150 % the dense rows are tight but never clipped
+  in the checked windows.
+- **High contrast.** Two themes (`contrast`: black and white with a yellow accent, `contrast-light`: white and black with a blue
+  one; the accent setting is ignored there so the checked colours are the ones shown), and `prefs.highContrast` (`auto` follows
+  the system's `prefers-contrast: more`) which sets `data-contrast="more"` on any theme: quiet text and lines move toward the
+  main text colour and the focus ring gets thicker. `@media (forced-colors: active)` keeps the focus ring and pressed states.
+  The focus ring is `outline: var(--ag-focus-width) solid var(--ag-focus)` for every `:focus-visible`; `--ag-cursor` is the
+  keyboard cursor of the canvas editors.
+- **Less motion.** `prefs.reduceMotion` (`auto` follows `prefers-reduced-motion`) sets `data-motion="reduced"` (or `full`):
+  transitions and animations are off in every stylesheet, the karaoke lyrics scroll jumps, and the playlist's and piano
+  roll's follow-playhead never glides or slides: the smooth style turns into the page style and a page turn lands in one
+  frame (`FollowFrame.reducedMotion`, `timeline/follow.ts`).
+- **Colour-blind safe colours** (`prefs.colorSafe`, `data-palette="safe"`). Meter low/mid/high, the lit LED, notes and the
+  danger colour switch to the Okabe-Ito blue, yellow and orange family (darker versions on the light themes); on top, wherever
+  colour carried a state the canvas editors add a shape: the mixer meter gets notches at -18 and -6 dB and a triangle while
+  clipping, playlist clips get a pattern badge per hue family (`a11y/color-patterns.ts`: eight patterns, so clips of different
+  colours differ by more than colour) and diagonal stripes when muted, selected notes get a heavy outline, a selected chord or
+  lyric word a heavy outline and a corner triangle (`a11y/selection-mark.ts`), and the lyrics' sung and current words are
+  underlined. `theme.colorSafe` (from `readTheme()`) is the flag canvas code reads.
+- **Settings, AI and MCP.** The four settings are prefs, commands (menu Options → Accessibility, the action search) and fields of
+  the `settings` action (`interface_size_percent`, `high_contrast`, `reduce_motion`, `color_blind_safe`, also read back by
+  `get_settings`), so Studio and MCP clients set them like the window does. The two theme ids are in `options.theme`.
+- **Keyboard help.** Help → Keyboard navigation (command `help.keyboard`, window `keyboard-help`) and the end of the
+  Shortcuts window list every navigation key and what a screen reader says (`a11y/keyboard-help-data.ts`, the editors'
+  keys in `keyboard-help-editors.ts`); `docs/shortcuts.md` carries the same list (generated by `test/unit/shortcuts-doc.test.ts`).
+- **Keyboard cursor of the canvas editors** (`ui/timeline/key-cursor/`). The playlist, piano roll and pitch editor each have one
+  Tab stop (their grid: `role="application"`, a label, a hidden `aria-describedby` summary of the notes or clips and the cursor, a
+  `:focus-visible` frame) and a cursor that lives in the controller context (`state.keyboard`), never in React: it moves by the snap
+  step, a track, a key, a bar or an octave, selects and extends, adds, deletes, moves and resizes through the same History calls as
+  the mouse (a held key is one undo step through `mergeKey`), and is drawn on the overlay layer from `--ag-cursor` as a dashed
+  box with solid corner ticks (`drawKeyCursor`), only while the grid has the focus from the keyboard. Every move is spoken
+  through `CoalescedAnnouncer` (one sentence per 120 ms, newest wins; `describe.ts` words them: "C6, bar 1 beat 2, note 1/16,
+  velocity 102, selected"), `?` says everything at once, and the view scrolls to the cursor in one jump (`revealTicks`,
+  `revealRow`), never a glide. `router.ts` hands the keys to the editor ahead of `ui/keyboard.ts` (each feature's `register()` starts
+  it, which runs before `installKeyboard`; only a stack that has the keyboard focus gets keys, and a click or touch inside it
+  hands them back to the window's own shortcuts until the next Tab). Space stays play/stop and Enter selects. The pitch editor's
+  cursor goes note to note (it has no snap grid). Files per editor: `control/key-cursor.ts`, `key-edit.ts`, `keys.ts` (playlist
+  and piano roll, plus `key-automation.ts` for automation points), `pitch-editor/keyboard.ts` and `keyboard-text.ts`. Tests:
+  `test/browser/keyboard-piano-roll.test.ts` (21), `keyboard-playlist.test.ts` (22), `keyboard-pitch-editor.test.ts` (11), unit tests in
+  `key-cursor/key-cursor.test.ts`.
+- **Controls, menus and dialogs, per window.** The rest of the shared pieces: `a11y/own-keys.ts` (a focused slider, spin button,
+  list box, tab strip or menu keeps the arrows, Page keys, Home and End; window shortcuts stand aside: `focusOwnsKey` in
+  `keyboard.ts`), `sdk/ui/slider-keys.ts` (Knob, Fader and the DJ sliders are focusable sliders: arrows 1 %, Shift 0.1 %, Page 10 %,
+  Home and End the ends, Delete resets, `aria-valuetext` with units; plugin authors can use `sliderKeyTarget`), DragNumber as a spin
+  button (arrows, Page, Home, End; a digit, Enter or F2 starts typing), `controls/dialog-focus.ts` (`useDialogFocus`: focus goes in,
+  Tab stays inside, Esc closes, focus returns to the opener; every modal is a labelled `dialog` or `alertdialog`), menus (context
+  menus and the menu bar's dropdowns take the focus when opened from the keyboard, arrows, Home, End, letters and ← → between
+  menus; checkable entries are `menuitemcheckbox`, swatches `menuitemradio`; Tab or Esc closes and returns focus; Shift+F10 opens
+  a focused thing's menu) and the action search as a combobox with a listbox (`aria-activedescendant`). Roving also treats any
+  `role="toolbar"`, `tablist` or `radiogroup` as a group, skips controls that take no room and menus opened inside a group, and
+  listens in the bubble phase too so arrows work inside dialogs. Per window: the menu bar is a `menubar` and one Tab stop; the
+  transport, studio and project, windows and history groups are roving toolbars (the whole toolbar is 5 Tab stops); the channel
+  rack's mutes, names and steps are one grid ("Kick step 5", `aria-pressed`; Space or Enter toggles, Shift+Space solos, Enter on a
+  name selects, again opens the editor); the mixer's strips are named groups whose buttons are one grid (Enter on a name selects,
+  again or F2 renames, Shift+Space solos); the clip launcher's pads are one grid named like "Scene 2, track 3, Drums, playing"
+  (Enter or Space launches); the DJ decks' overview seeks with the arrows and each deck's groups are toolbars; the sample list is a
+  list box with an active row; each Browser section's list is one vertical stop (88 Tab stops became 14); plugin windows have
+  labelled sections, a preset toolbar and slider knobs; the Studio conversation is a `log` that announces additions.
+- **Tests.** `test/browser/a11y-contrast.test.ts` computes the contrast of 34 token pairs in all eight themes, with every
+  accent, with more contrast and with the safe palette (text 4.5:1, marks such as the focus ring, notes, meters and LEDs 3:1,
+  the High contrast themes 7:1 and 4.5:1) from the resolved CSS, and simulates protanopia, deuteranopia and tritanopia for
+  the safe meter, note and light colours; `a11y-color-safe.test.ts` (patterns and selection marks), `a11y-shell.test.ts` (live
+  region, pane cycling, window dialogs, focus following, the Space rule, settings reaching the page, no commits while
+  playing), `a11y-audit.test.ts` (names, roles, tab order and focus rings of every window, menu and dialog),
+  `keyboard-playlist.test.ts` and `keyboard-piano-roll.test.ts` (the keyboard cursors), unit tests for the pure parts.
+  Limits: the interface size does not scale fixed-height controls; the DJ decks' own meters and the plugin windows' custom
+  canvases keep their colours and sizes; screen reader behaviour is checked by the tree it gets (roles, names, values, live
+  text), not with a real reader.
+
 ## Persistence (`src/app/persistence`, `src/platform`)
 
 - `.agproj` = zip (fflate, `core/io/project-file.ts`): `meta.json` (`{ format: 1, appVersion, savedAt }`),

@@ -68,6 +68,7 @@ export function RecordingSection() {
         <select
           className={styles.select}
           value={countIn}
+          aria-label="Count-in"
           onChange={(e) => s.commands.run('transport.countIn', Number(e.target.value))}
         >
           {COUNT_IN.map((bars) => (
@@ -81,6 +82,7 @@ export function RecordingSection() {
         <select
           className={styles.select}
           value={quantize}
+          aria-label="Snap notes to"
           onChange={(e) => s.commands.run('transport.recordQuantize', Number(e.target.value))}
         >
           {QUANTIZE.map(([label, ticks]) => (
@@ -94,6 +96,7 @@ export function RecordingSection() {
         <select
           className={styles.select}
           value={mode}
+          aria-label="Over old notes"
           onChange={(e) => s.commands.run('transport.recordMode', e.target.value)}
         >
           <option value="overdub">Keep them (overdub)</option>

@@ -275,7 +275,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     await frames(3);
     rows()[0]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
     await frames(3);
-    const items = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')];
+    const items = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')];
     const labels = items.map((b) => b.textContent);
     for (const l of ['Add as a sampler channel', 'Add to the playlist', 'Find similar sounds']) expect(labels.some((x) => x?.includes(l)), `${l} in ${labels.join(' | ')}`).toBe(true);
     expect(labels.some((x) => x === 'Play' || x === 'Stop')).toBe(true);

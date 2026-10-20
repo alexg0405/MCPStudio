@@ -25,7 +25,7 @@ export function HotCuePads({ api, deckId, deck }: { api: DecksApi; deckId: DeckI
     showContextMenu(e, [{ label: `Clear hot cue ${padIndex + 1}`, onSelect: () => api.clearHotCue(deckId, padIndex) }]);
   };
   return (
-    <div className={styles.hotCues} role="group" aria-label={`Deck ${deckId} hot cues`}>
+    <div className={styles.hotCues} role="toolbar" aria-label={`Deck ${deckId} hot cues`}>
       {Array.from({ length: HOT_CUES }, (_, padIndex) => {
         const cueSec = deck.hotCues[padIndex];
         const isSet = cueSec !== null && cueSec !== undefined;
@@ -60,7 +60,7 @@ export function LoopPads({ api, deckId, deck }: { api: DecksApi; deckId: DeckId;
   const hasLoopEnd = deck.loop !== null && deck.loop.endSec > deck.loop.startSec;
   const loopSizeBeats = deck.loop && hasLoopEnd ? loopBeats(deck.loop, { bpm: deck.baseBpm ?? FALLBACK_BPM, firstDownbeat: 0 }) : 0;
   return (
-    <div className={styles.loops}>
+    <div className={styles.loops} role="toolbar" aria-label={`Deck ${deckId} loops and jumps`}>
       <PadButton
         label={`Deck ${deckId} loop in`}
         hint="Loop in: mark where a loop starts (on the beat)"

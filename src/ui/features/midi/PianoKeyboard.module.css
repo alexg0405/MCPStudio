@@ -79,7 +79,7 @@
   left: 0;
   right: 0;
   color: color-mix(in srgb, var(--ag-on-light) 55%, transparent);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   font-weight: 500;
   text-align: center;
   pointer-events: none;

@@ -14,3 +14,11 @@ export {
   useParamStatus,
   type ParamStatus,
 } from './param-menu';
+export {
+  discreteSteps,
+  FLOAT_STEPS,
+  isSliderMoveKey,
+  isSliderResetKey,
+  sliderKeyTarget,
+  type SliderSteps,
+} from './slider-keys';

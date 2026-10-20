@@ -60,6 +60,13 @@ export function PageButtons({ track, scene, pages }: { track: number; scene: num
   );
 }
 
+/** Enter and Space press a div that stands in for a button (a real button does this by itself). */
+function pressLikeButton(e: React.KeyboardEvent<HTMLElement>): void {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  e.preventDefault();
+  e.currentTarget.click();
+}
+
 /** The name at the top of a track's column; right-click to rename, colour it or tie it to a playlist track. */
 export const TrackHead = memo(function TrackHead({ track, index, off }: { track: LaunchTrack | undefined; index: number; off: boolean }) {
   const services = useServices();
@@ -67,6 +74,16 @@ export const TrackHead = memo(function TrackHead({ track, index, off }: { track:
   return (
     <div
       className={styles.head}
+      role="button"
+      aria-haspopup="menu"
+      aria-label={`${track?.name ?? `Track ${index + 1}`}: track options`}
+      onClick={(e) => {
+        // Enter or Space (detail 0) opens the track's menu, as a right-click does; a mouse click does nothing.
+        if (e.detail !== 0 || !track) return;
+        const box = e.currentTarget.getBoundingClientRect();
+        trackMenu(services, { clientX: box.left, clientY: box.bottom }, track.id, index);
+      }}
+      onKeyDown={pressLikeButton}
       data-off-page={off ? '' : undefined}
       style={track?.color ? ({ ['--c' as string]: track.color } as CSSProperties) : undefined}
       onContextMenu={(e) => {
@@ -117,6 +134,8 @@ export const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, 
   const mode = slot ? slotMode(slot) : 'trigger';
   const meta = slotMeta(slot);
   const ref = useRef<HTMLDivElement>(null);
+  // What a screen reader says on the pad. The live state (playing, queued) is added by the frame loop (see view-controller.ts).
+  const padName = `Scene ${si + 1}, track ${ti + 1}, ${slot ? label : 'empty'}`;
   const dropClass = styles.drop as string;
 
   return (
@@ -125,6 +144,9 @@ export const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, 
       className={`${styles.slot} ${cursor ? styles.cursor : ''}`}
       style={color ? ({ ['--c' as string]: color } as CSSProperties) : undefined}
       data-slot=""
+      role="button"
+      aria-label={padName}
+      data-pad-name={padName}
       data-state={slot ? 'idle' : 'empty'}
       data-track-id={trackId}
       data-scene-id={sceneId}
@@ -143,6 +165,18 @@ export const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, 
         session.setCursor(ti, si);
         (e.currentTarget.closest('[data-window-focus]') as HTMLElement | null)?.focus({ preventScroll: true });
         if (slot) session.pressAt(ti, si, true);
+      }}
+      onFocus={() => session.setCursor(ti, si)}
+      onKeyDown={(e) => {
+        // A key press launches like a pointer press (a gate slot plays while the key is held); the repeat is not a new press.
+        if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat || !slot) return;
+        e.preventDefault();
+        session.pressAt(ti, si, true);
+      }}
+      onKeyUp={(e) => {
+        if ((e.key !== 'Enter' && e.key !== ' ') || !slot) return;
+        e.stopPropagation();
+        session.pressAt(ti, si, false);
       }}
       onPointerUp={() => slot && session.pressAt(ti, si, false)}
       onPointerCancel={() => slot && session.pressAt(ti, si, false)}
@@ -174,6 +208,7 @@ export const Slot = memo(function Slot({ ti, si, trackId, sceneId, slot, track, 
         <span
           className={styles.grip}
           draggable
+          aria-hidden
           onPointerDown={(e) => e.stopPropagation()}
           onDragStart={(e) => startSlotDrag(e, trackId, sceneId)}
           data-hint="Drag to move this slot to another place (hold Alt to copy it)"

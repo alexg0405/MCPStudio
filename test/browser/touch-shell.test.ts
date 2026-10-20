@@ -43,7 +43,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
     return { x: box.left, y: box.top, w: box.width, h: box.height };
   };
   const menuItem = (label: string) =>
-    [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')].find((b) => b.textContent?.includes(label));
+    [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')].find((b) => b.textContent?.includes(label));
   const label = (menu: string) => host.querySelector<HTMLElement>(`[data-menu="${menu}"]`)!;
 
   beforeAll(async () => {
@@ -170,7 +170,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       await frames(2);
       await fingers.tap(1, centerOf(label('view')));
       await until(() => !!document.querySelector('[role="menu"]'));
-      const rows = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')];
+      const rows = [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')];
       expect(rows.length).toBeGreaterThan(5);
       expect(rows.map((r) => `${r.textContent}: ${Math.round(r.getBoundingClientRect().height)}`).filter((t) => parseInt(t.split(': ').pop()!) < 40)).toEqual([]);
     });

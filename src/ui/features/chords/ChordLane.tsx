@@ -53,7 +53,6 @@ export function ChordLane({ view, headerWidth }: Props) {
         <span>Chords</span>
         <button
           className={styles.open}
-          tabIndex={-1}
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => void services.commands.run('view.chords')}
           data-hint="Open the Chords window: progressions by mood and genre, detect chords, make chords, a bassline and a melody that fit"

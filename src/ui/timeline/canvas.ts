@@ -35,6 +35,8 @@ export interface TimelineTheme {
   lineFaint: string;
   danger: string;
   select: string;
+  /** The keyboard cursor of the canvas editors (a dashed box with corner ticks, drawn while the editor has keyboard focus). */
+  cursor: string;
   led: string;
   ledOff: string;
   ledGlow: string;
@@ -58,6 +60,11 @@ export interface TimelineTheme {
   meterHi: string;
   /** Font family for canvas text. */
   font: string;
+  /**
+   * Colour-blind safe colours are on (Settings → Accessibility): editors then add shapes and patterns wherever colour
+   * alone would tell two things apart (meter zones, clip hue, selected notes, muted clips).
+   */
+  colorSafe: boolean;
 }
 
 let cached: TimelineTheme | null = null;
@@ -225,6 +232,7 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     lineFaint: v('--ag-line-faint', 'rgba(255,255,255,0.05)'),
     danger: v('--ag-danger', '#e5574d'),
     select: v('--ag-select', '#5aa4e8'),
+    cursor: v('--ag-cursor', '#5aa4e8'),
     led: v('--ag-led', '#9fde5a'),
     ledOff: v('--ag-led-off', '#46532f'),
     ledGlow: v('--ag-led-glow', 'rgba(159,222,90,0.6)'),
@@ -242,6 +250,7 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     meterMid: v('--ag-meter-mid', '#e3cf46'),
     meterHi: v('--ag-meter-hi', '#e5574d'),
     font: s.getPropertyValue('--ag-font').trim() || 'system-ui, sans-serif',
+    colorSafe: document.documentElement.dataset.palette === 'safe',
   };
   return cached;
 }
@@ -256,6 +265,21 @@ export function invalidateTheme(): void {
   derived.clear();
   version++;
   for (const fn of themeListeners) fn();
+}
+
+let interfaceScale = 1;
+
+/** Sets the interface size (1 = normal) canvases draw their text at; `a11y/preferences.ts` calls it from the settings. */
+export function setInterfaceScale(scale: number): void {
+  interfaceScale = scale;
+}
+
+/**
+ * A font size in pixels for canvas text, grown with the interface size setting (Settings, Accessibility). Write
+ * ctx.font = `600 ${fontPx(10)}px ${theme.font}`. At the normal size it returns `size` itself, so nothing changes.
+ */
+export function fontPx(size: number): number {
+  return size * interfaceScale;
 }
 
 /** Counts theme changes (for React canvases: put it in an effect's dependencies). */

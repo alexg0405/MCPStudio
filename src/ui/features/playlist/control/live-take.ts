@@ -3,7 +3,7 @@ import type { LiveTake } from '@app/audio-recorder';
 import { tempoMapOf } from '@core/automation/tempo';
 import type { LaneId, Project } from '@core/model/types';
 import type { TempoMap } from '@core/time/ppq';
-import { alpha, inkOn, mix, roundRectPath, type TimelineTheme } from '../../../timeline/canvas';
+import { alpha, inkOn, mix, roundRectPath, type TimelineTheme, fontPx } from '../../../timeline/canvas';
 import type { Viewport } from '../../../timeline/viewport';
 import { CLIP_RADIUS } from '../clip-geometry';
 import type { PlaylistContext } from './context';
@@ -34,7 +34,7 @@ export function drawLiveTake(ctx: PlaylistContext, canvas: CanvasRenderingContex
   drawFrame(canvas, theme, x0, x1, y, height);
   const tempo = tempoMapOf(project, 'song');
   const seconds = Math.max(0, tempo.tickToSeconds(live.now) - tempo.tickToSeconds(live.start));
-  canvas.font = `600 10px ${theme.font}`;
+  canvas.font = `600 ${fontPx(10)}px ${theme.font}`;
   canvas.textBaseline = 'middle';
   canvas.fillStyle = inkOn(theme.danger, theme);
   canvas.fillText(`● Recording… ${seconds.toFixed(1)} s`, x0 + 4, y + 7, Math.max(0, x1 - x0 - 8));

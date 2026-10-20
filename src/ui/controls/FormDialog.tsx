@@ -3,6 +3,7 @@ import { createStore, useStore } from 'zustand';
 import { formatValue, type ParamSpec, type ParamValue } from '@agstudio/sdk';
 import { Knob, Select, Toggle } from '@agstudio/sdk/ui';
 import { holdModal } from './Dialog';
+import { useDialogFocus } from './dialog-focus';
 import styles from './Dialog.module.css';
 
 /**
@@ -187,10 +188,10 @@ function Form({ open }: { open: Open }) {
   const ref = useRef<HTMLDivElement>(null);
   // The values the next OK reports (updated with every edit, so key handlers see them).
   const latest = useRef(values);
+  useDialogFocus(ref);
 
   useEffect(() => {
     const release = holdModal();
-    ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -218,8 +219,10 @@ function Form({ open }: { open: Open }) {
 
   return (
     <div className={styles.backdrop}>
-      <div ref={ref} tabIndex={-1} className={`${styles.dialog} ${styles.form}`} role="dialog" aria-modal="true">
-        <h2 className={styles.title}>{options.title}</h2>
+      <div ref={ref} tabIndex={-1} className={`${styles.dialog} ${styles.form}`} role="dialog" aria-modal="true" aria-labelledby="ag-form-title">
+        <h2 id="ag-form-title" className={styles.title}>
+          {options.title}
+        </h2>
         {options.message && <p className={styles.message}>{options.message}</p>}
         <div className={styles.fields}>
           {options.fields.map((f, i) => (

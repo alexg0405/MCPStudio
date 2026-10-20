@@ -64,7 +64,7 @@ describe('app smoke test', () => {
   it('renders the shell and its default windows', async () => {
     await until(() => !!host.querySelector('header') && host.textContent!.includes('Channel rack'));
     expect(host.textContent).toContain('Playlist');
-    expect(host.querySelectorAll('[role="menuitem"]').length).toBe(0); // menus closed
+    expect(host.querySelectorAll('[role="menu"]').length).toBe(0); // menus closed
   });
 
   it('opens a project file, plays, seeks, stops, saves and reopens it', async () => {

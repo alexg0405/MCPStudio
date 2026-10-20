@@ -102,7 +102,11 @@ function Building({ building }: { building: NonNullable<AssistantState['building
           Building the {building.kind} “{building.name}”: {BUILD_STAGES[building.stage].toLowerCase()}
           {building.round > 0 ? ` (fix ${building.round} of ${MAX_FIX_ROUNDS})` : ''}…
         </span>
-        {seconds > SECONDS_SHOWN_AFTER && <span className={styles.seconds}>{seconds}s</span>}
+        {seconds > SECONDS_SHOWN_AFTER && (
+          <span className={styles.seconds} aria-hidden>
+            {seconds}s
+          </span>
+        )}
         <button
           className={styles.ghost}
           onClick={() => services.assistant.cancelBuild()}
@@ -123,7 +127,11 @@ function Thinking() {
       <div className={`${styles.card} ${styles.thinking}`}>
         <Icon name="studio" size={13} className={styles.spark} />
         <span className={styles.shimmer}>Working on it…</span>
-        {seconds > SECONDS_SHOWN_AFTER && <span className={styles.seconds}>{seconds}s</span>}
+        {seconds > SECONDS_SHOWN_AFTER && (
+          <span className={styles.seconds} aria-hidden>
+            {seconds}s
+          </span>
+        )}
       </div>
     </div>
   );
@@ -144,7 +152,8 @@ export const Conversation = memo(function Conversation({
     if (element) element.scrollTop = element.scrollHeight;
   }, [state.messages.length, state.phase]);
   return (
-    <div className={styles.messages} ref={scroller}>
+    // A log: a screen reader reads each new message as it arrives (additions only: the seconds counter is not news).
+    <div className={styles.messages} ref={scroller} role="log" aria-label="Conversation with Studio" aria-relevant="additions">
       {state.messages.length === 0 && <Intro isBusy={isBusy} sendText={sendText} />}
       {state.messages.map((message) => (
         <Message key={message.id} message={message} />

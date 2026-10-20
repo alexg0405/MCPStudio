@@ -47,7 +47,7 @@
   top: 6px;
   left: 9px;
   color: var(--ag-text-faint, #6f6c66);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking, 0.08em);
   text-transform: uppercase;
@@ -66,7 +66,7 @@
 .name {
   align-self: center;
   color: var(--ag-text-faint, #6f6c66);
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -76,14 +76,14 @@
 .number {
   color: var(--ag-lcd-text, #f1e6c8);
   font-family: var(--ag-font-mono, monospace);
-  font-size: 12px;
+  font-size: calc(12px * var(--ag-scale, 1));
   text-align: right;
   white-space: nowrap;
 }
 
 .big {
   color: var(--ag-accent, #c9a45c);
-  font-size: 15px;
+  font-size: calc(15px * var(--ag-scale, 1));
   font-weight: 600;
 }
 
@@ -143,7 +143,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--ag-text-faint, #6f6c66);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
 }
 
 .footer {

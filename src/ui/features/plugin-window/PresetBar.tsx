@@ -57,11 +57,10 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
 
   const hasChoices = choices.length > 0;
   return (
-    <div className={styles.bar} data-tour="preset-bar">
+    <div className={styles.bar} data-tour="preset-bar" role="toolbar" aria-label="Presets">
       <span className={styles.pill}>
         <button
           type="button"
-          tabIndex={-1}
           className={styles.arrow}
           disabled={!hasChoices}
           onClick={() => step(-1)}
@@ -72,7 +71,6 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
         </button>
         <button
           type="button"
-          tabIndex={-1}
           className={styles.name}
           onClick={(e) => {
             const box = e.currentTarget.getBoundingClientRect();
@@ -82,6 +80,8 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
             e.preventDefault();
             openMenu(e);
           }}
+          aria-haspopup="menu"
+          aria-label={`Preset: ${presetLabel(exact, lastName, isAtDefault)}. Opens the preset menu`}
           data-hint="Presets: load one, save your own, reset or randomize"
         >
           <span className={styles.label}>{presetLabel(exact, lastName, isAtDefault)}</span>
@@ -89,7 +89,6 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
         </button>
         <button
           type="button"
-          tabIndex={-1}
           className={styles.arrow}
           disabled={!hasChoices}
           onClick={() => step(1)}
@@ -99,7 +98,7 @@ export function PresetBar({ owner, def, instance }: { owner: PluginOwner; def: P
           ▶
         </button>
       </span>
-      <button type="button" tabIndex={-1} className={styles.save} onClick={() => void savePresetAs(s, owner, def, instance, saveSuggestion)} data-hint="Save these settings as a preset of your own">
+      <button type="button" className={styles.save} onClick={() => void savePresetAs(s, owner, def, instance, saveSuggestion)} data-hint="Save these settings as a preset of your own">
         Save…
       </button>
     </div>

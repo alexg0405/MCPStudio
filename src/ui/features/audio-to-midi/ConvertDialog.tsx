@@ -8,6 +8,7 @@ import { MODE_LABELS, TRANSCRIBE_MODES, type ModeSuggestion, type Transcription,
 import type { AudioClip, ClipId } from '@core/model/types';
 import { ticksPerBar } from '@core/time/ppq';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import dialog from '../../controls/Dialog.module.css';
 import { useServices } from '../../services-context';
 import { CheckField, SelectField, SliderField } from './ConvertFields';
@@ -71,9 +72,9 @@ function ConvertDialog({ clipId }: { clipId: ClipId }) {
     setForm((f) => ({ ...f, ...patch }));
   };
 
+  useDialogFocus(ref);
   useEffect(() => {
     const release = holdModal();
-    ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();

@@ -57,7 +57,7 @@ select {
 }
 
 :focus-visible {
-  outline: 1.5px solid var(--ag-accent);
+  outline: var(--ag-focus-width, 2px) solid var(--ag-focus, var(--ag-accent));
   outline-offset: 2px;
   border-radius: var(--ag-radius-sm);
 }
@@ -96,11 +96,43 @@ select {
   background: transparent;
 }
 
+/*
+ * Less motion: no transitions or animations, no smooth scrolling. `a11y/preferences.ts` puts data-motion="reduced" on
+ * <html> when the setting (or, on Auto, the system) asks for it, and "full" when the person chose to keep animations
+ * on a system that asks for less. Before that runs (the first paint) the system's own setting decides.
+ */
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  transition-duration: 0ms !important;
+  transition-delay: 0ms !important;
+  animation-duration: 0ms !important;
+  animation-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion]) *,
+  :root:not([data-motion]) *::before,
+  :root:not([data-motion]) *::after {
     transition-duration: 0ms !important;
     animation-duration: 0ms !important;
+  }
+}
+
+/*
+ * Windows' forced colors (and other system high-contrast modes) replace our colours: keep the keyboard focus ring and
+ * the pressed or selected state visible in the system's own colours.
+ */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 3px solid Highlight;
+  }
+
+  [aria-pressed='true'],
+  [aria-checked='true'],
+  [aria-selected='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
   }
 }

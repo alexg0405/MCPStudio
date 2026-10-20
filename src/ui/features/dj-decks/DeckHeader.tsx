@@ -38,7 +38,7 @@ export function DeckHeader({
   const hasSong = deck.song !== null;
   const openLoadMenu = useLoadMenu(deckId);
   return (
-    <header className={styles.deckHead}>
+    <header className={styles.deckHead} role="toolbar" aria-label={`Deck ${deckId} song`}>
       <span className={styles.letter} data-hint={`Deck ${deckId}`}>
         {deckId}
       </span>
@@ -55,7 +55,6 @@ export function DeckHeader({
       </span>
       <button
         type="button"
-        tabIndex={-1}
         data-dj-target={deckTarget(deckId, 'load')}
         className={styles.load}
         aria-label={`Load a song on deck ${deckId}`}
@@ -67,7 +66,6 @@ export function DeckHeader({
       </button>
       <button
         type="button"
-        tabIndex={-1}
         data-dj-target={deckTarget(deckId, 'eject')}
         className={`${styles.eject} ${!hasSong && isLearning ? styles.idle : ''}`}
         disabled={!hasSong && !isLearning}

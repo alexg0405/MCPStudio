@@ -5,7 +5,7 @@ import { useDoc, useServices, useView } from '../../services-context';
 import { MiniRoll } from './MiniRoll';
 import { STEP_W, stepX } from './layout';
 import styles from './ChannelRack.module.css';
-import { beginPaint, paintEnter } from './step-paint';
+import { beginPaint, endPaint, paintEnter } from './step-paint';
 
 /** Which steps are on, as "0100…": all the step buttons show, so a row whose steps did not change skips rendering. */
 const stepBits = (() => {
@@ -25,19 +25,18 @@ const stepBits = (() => {
  * them) and their only prop is which steps are on, so switching patterns re-renders just the rows whose
  * steps differ.
  */
-const StepButtons = memo(function StepButtons({ on }: { on: string }) {
+const StepButtons = memo(function StepButtons({ on, channelName }: { on: string; channelName: string }) {
   return (
     <>
       {Array.from(on, (bit, i) => (
         <button
           key={i}
-          tabIndex={-1}
           className={`${styles.step} ${Math.floor(i / 4) % 2 ? styles.stepB : ''} ${bit === '1' ? styles.stepOn : ''}`}
           style={{ left: stepX(i) }}
           data-step={i}
           data-hint={`Step ${i + 1}. Click or drag to paint (tap a lit step to turn it off), right-click to erase`}
           aria-pressed={bit === '1'}
-          aria-label={`Step ${i + 1}`}
+          aria-label={`${channelName} step ${i + 1}`}
         />
       ))}
     </>
@@ -45,12 +44,12 @@ const StepButtons = memo(function StepButtons({ on }: { on: string }) {
 });
 
 /** The step button under a pointer event, and whether it is on. */
-function stepUnder(e: React.PointerEvent): { index: number; on: boolean } | null {
+function stepUnder(e: React.MouseEvent): { index: number; on: boolean } | null {
   const button = (e.target as Element).closest<HTMLElement>('[data-step]');
   return button ? { index: Number(button.dataset.step), on: button.getAttribute('aria-pressed') === 'true' } : null;
 }
 
-export function StepGrid({ channelId, rootKey }: { channelId: ChannelId; rootKey: number }) {
+export function StepGrid({ channelId, channelName, rootKey }: { channelId: ChannelId; channelName: string; rootKey: number }) {
   const services = useServices();
   const patternId = useView((s) => s.currentPatternId);
   const stepCount = useDoc((pr) => (patternId ? pr.patterns[patternId]?.stepCount : undefined)) ?? 16;
@@ -73,6 +72,14 @@ export function StepGrid({ channelId, rootKey }: { channelId: ChannelId; rootKey
       data-touch-own=""
       style={{ width: stepX(stepCount - 1) + STEP_W }}
       onContextMenu={(e) => e.preventDefault()}
+      onClick={(e) => {
+        // Space or Enter on a focused step (detail 0): the mouse and fingers already acted on pointer down.
+        if (e.detail !== 0) return;
+        const step = stepUnder(e);
+        if (!step) return;
+        beginPaint(services, patternId, channelId, rootKey, step.index, !step.on);
+        endPaint();
+      }}
       onPointerDown={(e) => {
         const step = stepUnder(e);
         if (!step) return;
@@ -92,7 +99,7 @@ export function StepGrid({ channelId, rootKey }: { channelId: ChannelId; rootKey
         if (under && under.closest('[data-steps]') === e.currentTarget) paintEnter(channelId, Number(under.dataset.step), e.buttons);
       }}
     >
-      <StepButtons on={stepBits(view)} />
+      <StepButtons on={stepBits(view)} channelName={channelName} />
     </div>
   );
 }

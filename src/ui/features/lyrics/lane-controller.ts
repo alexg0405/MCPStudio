@@ -4,6 +4,7 @@
  * edits: click an empty spot to type a word, drag across to draw its length, drag a word to move it, drag its edges to
  * resize it, double-click to retype it, right-click for the menu. Drags preview on the canvas and commit as one undo step.
  */
+import { drawSelectionMark } from '../../a11y/selection-mark';
 import { addLyricAt, deleteLyrics, moveLyrics, resizeLyric, retypeLyric } from '@app/lyrics/actions';
 import type { Services } from '@app/services';
 import { wordLabel } from '@core/lyrics/lines';
@@ -13,7 +14,7 @@ import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import { gridTicks } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
 import { onFrame } from '../../frame-loop';
-import { alpha, fitCanvas, onThemeChange, readTheme, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, fitCanvas, onThemeChange, readTheme, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import {
   createdSpan,
   endDraggedSpan,
@@ -179,7 +180,7 @@ export class LyricsLaneController {
 
   private drawEmptyHint(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
     ctx.fillStyle = theme.textFaint;
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = `${fontPx(11)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillText('No lyrics yet: click here and type a word, or open Lyrics to paste a whole song’s words and spread them over the notes', 10, LYRICS_LANE_HEIGHT / 2);
   }
@@ -194,12 +195,13 @@ export class LyricsLaneController {
     ctx.fill();
     ctx.strokeStyle = isSelected ? theme.accentLight : alpha(theme.accent, 0.55);
     ctx.stroke();
+    if (isSelected && theme.colorSafe) drawSelectionMark(ctx, x, 3, w, LYRICS_LANE_HEIGHT - 7, theme.accentLight);
     if (w < MIN_LABEL_PX) return;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, 0, w, LYRICS_LANE_HEIGHT);
     ctx.clip();
-    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.font = `600 ${fontPx(12)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = theme.text;
     ctx.fillText(wordLabel(word), x + 5, LYRICS_LANE_HEIGHT / 2);

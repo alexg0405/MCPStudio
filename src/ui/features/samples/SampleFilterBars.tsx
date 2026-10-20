@@ -30,13 +30,14 @@ interface KindChipsProps {
 export function KindChips({ browser, filter, counts, isInSongKey, songKey, onToggleSongKey }: KindChipsProps) {
   const isAllSelected = filter.kind === 'any' && filter.categories.length === 0;
   return (
-    <div className={styles.barQuiet}>
-      <button className={isAllSelected ? styles.chipOn : styles.chip} onClick={() => browser.setFilter({ kind: 'any', categories: [] })} data-hint="Show every kind of sound">
+    <div className={styles.barQuiet} role="toolbar" aria-label="Filter by kind of sound">
+      <button aria-pressed={isAllSelected} className={isAllSelected ? styles.chipOn : styles.chip} onClick={() => browser.setFilter({ kind: 'any', categories: [] })} data-hint="Show every kind of sound">
         All<span className={styles.chipCount}>{counts.analyzed.toLocaleString('en')}</span>
       </button>
       {SAMPLE_CATEGORIES.filter((c) => counts.byCategory.has(c) || filter.categories.includes(c)).map((c) => (
         <button
           key={c}
+          aria-pressed={filter.categories.includes(c)}
           className={filter.categories.includes(c) ? styles.chipOn : styles.chip}
           onClick={() => browser.setFilter({ categories: toggleIn(filter.categories, c), kind: filter.kind === 'loop' ? 'any' : filter.kind })}
           data-hint={`${CATEGORY_LABELS[c]} one-shots: click to show only these (click more types to add them)`}
@@ -46,6 +47,7 @@ export function KindChips({ browser, filter, counts, isInSongKey, songKey, onTog
         </button>
       ))}
       <button
+        aria-pressed={filter.kind === 'loop'}
         className={filter.kind === 'loop' ? styles.chipOn : styles.chip}
         onClick={() => browser.setFilter({ kind: filter.kind === 'loop' ? 'any' : 'loop', categories: [] })}
         data-hint="Loops: rhythmic or musical phrases with a tempo and a number of bars"
@@ -53,13 +55,14 @@ export function KindChips({ browser, filter, counts, isInSongKey, songKey, onTog
         Loops<span className={styles.chipCount}>{counts.loops}</span>
       </button>
       <span className={styles.spacer} />
-      <button className={filter.favorites ? styles.chipOn : styles.chip} onClick={() => browser.setFilter({ favorites: !filter.favorites })} data-hint="Only the sounds you starred (press F on a sound, or click its star)">
+      <button aria-pressed={filter.favorites} className={filter.favorites ? styles.chipOn : styles.chip} onClick={() => browser.setFilter({ favorites: !filter.favorites })} data-hint="Only the sounds you starred (press F on a sound, or click its star)">
         ★ Favorites
       </button>
-      <button className={filter.recent ? styles.chipOn : styles.chip} onClick={() => browser.setFilter({ recent: !filter.recent })} data-hint="Only sounds you used in the project lately (sort by Recently used to see the newest first)">
+      <button aria-pressed={filter.recent} className={filter.recent ? styles.chipOn : styles.chip} onClick={() => browser.setFilter({ recent: !filter.recent })} data-hint="Only sounds you used in the project lately (sort by Recently used to see the newest first)">
         Recent
       </button>
       <button
+        aria-pressed={isInSongKey}
         className={isInSongKey ? styles.chipOn : styles.chip}
         disabled={!songKey}
         onClick={onToggleSongKey}
@@ -92,7 +95,7 @@ export function TempoKeyTagBar(props: TempoKeyTagBarProps) {
   const { browser, filter, bpmMinText, bpmMaxText, onBpmTextChange } = props;
   const digitsOnly = (text: string) => text.replace(/[^\d]/g, '');
   return (
-    <div className={styles.barQuiet}>
+    <div className={styles.barQuiet} role="toolbar" aria-label="Filter by tempo, key and tag">
       <span className={styles.label}>Tempo</span>
       <input
         className={styles.number}
@@ -113,6 +116,7 @@ export function TempoKeyTagBar(props: TempoKeyTagBarProps) {
         onChange={(e) => onBpmTextChange(bpmMinText, digitsOnly(e.target.value))}
       />
       <button
+        aria-pressed={filter.halfDouble}
         className={filter.halfDouble ? styles.chipOn : styles.chip}
         onClick={() => browser.setFilter({ halfDouble: !filter.halfDouble })}
         data-hint="Also match loops at half or double the tempo (a 70 BPM loop fits a 140 BPM song)"
@@ -130,6 +134,7 @@ export function TempoKeyTagBar(props: TempoKeyTagBarProps) {
       {PITCH_CLASSES.map((pitchClass) => (
         <button
           key={pitchClass}
+          aria-pressed={filter.keys.includes(pitchClass)}
           className={filter.keys.includes(pitchClass) ? styles.keyOn : styles.key}
           onClick={() => browser.setFilter({ keys: toggleIn(filter.keys, pitchClass) })}
           data-hint={`Sounds in ${keyLabel(pitchClass)}: a one-shot tuned to ${keyLabel(pitchClass)} or a loop in a ${keyLabel(pitchClass)} key`}
@@ -160,6 +165,7 @@ function TagButtons({ browser, filter, tags }: { browser: SampleBrowser; filter:
       {tags.slice(0, MAX_TAG_BUTTONS).map((t) => (
         <button
           key={t.tag}
+          aria-pressed={filter.tags.includes(t.tag)}
           className={filter.tags.includes(t.tag) ? styles.chipOn : styles.chip}
           onClick={() => browser.setFilter({ tags: toggleIn(filter.tags, t.tag) })}
           data-hint={`Your tag “${t.tag}”: show the ${t.count} sound${t.count === 1 ? '' : 's'} that have it`}

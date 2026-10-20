@@ -44,7 +44,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
   let channels: ChannelId[];
   const rack = () => host.querySelector<HTMLElement>('[data-window-type="channel-rack"]')!;
   const row = (id: ChannelId) => rack()?.querySelector<HTMLElement>(`[data-channel-id="${id}"]`) as HTMLElement;
-  const step = (id: ChannelId, i: number) => row(id).querySelectorAll<HTMLButtonElement>('button[aria-label^="Step "]')[i]!;
+  const step = (id: ChannelId, i: number) => row(id).querySelectorAll<HTMLButtonElement>('button[data-step]')[i]!;
   const project = () => s.doc.getState().project;
   const stepsOn = (id: ChannelId) => notesSorted(project().patterns[pattern]?.notes[id]).map((n) => n.tick / 240);
   const cursor = () => s.history.status().cursor;
@@ -55,7 +55,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
   const over = (el: Element, init: PointerEventInit = {}) =>
     el.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 1, ...init }));
   const insertBox = (id: ChannelId) => row(id).querySelector<HTMLElement>('[data-hint^="Mixer insert"]')!;
-  const insertInput = (id: ChannelId) => row(id).querySelector<HTMLInputElement>('input[aria-label="Mixer insert"]');
+  const insertInput = (id: ChannelId) => row(id).querySelector<HTMLInputElement>('input[aria-label$="mixer insert"]');
   const output = (id: ChannelId) => {
     const ch = project().channels[id];
     return ch && ch.kind !== 'automation' ? ch.output : MASTER;
@@ -209,7 +209,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
 
   it('the LED mutes (one step) and a right-click on it solos', async () => {
     const id = channels[0]!;
-    const led = row(id).querySelector<HTMLButtonElement>('button[aria-label="Mute"]')!;
+    const led = row(id).querySelector<HTMLButtonElement>('button[aria-label^="Mute "]')!;
     const before = cursor();
     await userEvent.click(led);
     expect(project().channels[id]).toMatchObject({ muted: true });
@@ -230,7 +230,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
     const name = row(a).querySelector<HTMLElement>('button[data-hint*="right-click for options"]')!;
     name.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
     await until(() => !!document.querySelector('[role="menu"]'));
-    const move = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((i) => i.textContent?.includes('Move down'))!;
+    const move = [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((i) => i.textContent?.includes('Move down'))!;
     move.click();
     await frames(2);
     await expect.poll(() => order(), EVENTUALLY).toEqual([b, a]);
@@ -250,7 +250,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
       setStep(d, pattern, b, 9, true, { rootKey: 60 });
     });
     const on = (id: ChannelId) =>
-      [...row(id).querySelectorAll<HTMLButtonElement>('button[aria-label^="Step "]')].flatMap((el, i) => (el.getAttribute('aria-pressed') === 'true' ? [i] : []));
+      [...row(id).querySelectorAll<HTMLButtonElement>('button[data-step]')].flatMap((el, i) => (el.getAttribute('aria-pressed') === 'true' ? [i] : []));
     await frames(2);
     await expect.poll(() => [on(a), on(b)], EVENTUALLY).toEqual([[], [9]]);
     const untouched = step(channels[2] ?? a, 0);

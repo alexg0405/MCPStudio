@@ -19,7 +19,6 @@ export function AiStudioButton() {
   return (
     <button
       className={`${styles.aiPill} ${checked ? styles.aiPillOn : ''} ${busy ? styles.aiPillBusy : ''}`}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run('view.assistant')}
       data-hint={`${checked ? 'Hide Studio' : 'Ask Studio to make or change anything'}${keys}${busy ? ' · Studio is working' : ''}`}

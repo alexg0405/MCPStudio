@@ -103,6 +103,18 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
     }
   };
 
+  /** Enter on the name picks the strip, and Enter again (or F2) renames it: the keyboard's click and double-click. */
+  const onNameKey = (event: React.KeyboardEvent) => {
+    if (event.key === 'F2') {
+      event.preventDefault();
+      setIsRenaming(true);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (isSelected) setIsRenaming(true);
+      else services.session.getState().selectInsert(id);
+    }
+  };
+
   const classNames = [
     styles.strip,
     isMaster && styles.master,
@@ -117,13 +129,15 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         // Shift or Ctrl on the strip's own area picks several tracks (for Group and Link); on a control it keeps its own meaning.
-        const isOnControl = event.target instanceof Element && !!event.target.closest('button, input, canvas, [role]');
+        const isOnControl = event.target instanceof Element && !!event.target.closest('button, input, canvas, [role="slider"], [role="spinbutton"]');
         const isPicking = (event.shiftKey || event.ctrlKey || event.metaKey) && !isOnControl;
         if (isPicking) services.session.getState().toggleMarkedInsert(id);
         // Working a control of a picked strip keeps the picks (a plain click on the strip clears them).
         else if (!(isMarked && isOnControl)) services.session.getState().selectInsert(id);
       }}
       onContextMenu={openMenu}
+      role="group"
+      aria-label={name === label ? label : `${label}, ${name}`}
       data-hint={stripHint({ name, label, routed, routesText, isMaster, isSilenced })}
     >
       <GroupBand id={id} />
@@ -141,23 +155,32 @@ export const Strip = memo(function Strip({ id, index, isLast, isSelected, meters
       ) : (
         <div
           className={styles.stripName}
+          role="button"
+          tabIndex={0}
+          aria-pressed={isSelected}
+          aria-label={`Select ${label}${name === label ? '' : `, ${name}`}`}
+          onKeyDown={onNameKey}
           onDoubleClick={() => setIsRenaming(true)}
           title={ownName}
-          data-hint={`${name}. Double-click to rename`}
+          data-hint={`${name}. Double-click to rename (keys: Enter selects, Enter again or F2 renames)`}
         >
           {ownName}
         </div>
       )}
       <StripPan id={id} label={label} name={name} />
       <button
-        tabIndex={-1}
         className={`${styles.led} ${isMuted ? '' : styles.ledOn} ${isSoloed ? styles.ledSolo : ''}`}
         onPointerDown={(event) => event.preventDefault()}
-        onClick={toggleMute}
+        onClick={(event) => {
+          // A key press (detail 0) with Shift solos, as the right-click does for the mouse.
+          if (event.detail === 0 && event.shiftKey) toggleSolo(event);
+          else toggleMute();
+        }}
         onContextMenu={toggleSolo}
         data-hint={`${name}: ${isMuted ? 'muted' : 'on'}${isSoloed ? ', soloed' : ''}. Click to mute${isMaster ? '' : '; right-click to solo (hear only this track, what feeds it and where it goes)'}`}
-        aria-label={isMuted ? `Unmute ${label}` : `Mute ${label}`}
-        aria-pressed={!isMuted}
+        aria-label={`Mute ${label}`}
+        aria-pressed={isMuted}
+        aria-keyshortcuts={isMaster ? undefined : 'Shift+Space'}
       />
       <div className={styles.meterFader}>
         <canvas

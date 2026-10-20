@@ -1,6 +1,6 @@
-import { useContext, useEffect, useEffectEvent, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { useContext, useEffect, useEffectEvent, useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { faderToGain, formatGain, gainToFader, UNITY_POSITION } from '@core/model/fader';
-import { emitHint, ParamMenuContext, TouchAssist, useParamStatus } from '@agstudio/sdk/ui';
+import { emitHint, FLOAT_STEPS, isSliderResetKey, ParamMenuContext, sliderKeyTarget, TouchAssist, useParamStatus } from '@agstudio/sdk/ui';
 import { FADER_CAP, FADER_PAD } from './scale';
 import styles from './Mixer.module.css';
 
@@ -101,6 +101,22 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
     if (restedAt && e.type === 'pointerup' && param && openMenu) openMenu(param, { clientX: restedAt.x, clientY: restedAt.y });
   };
 
+  /** Arrows nudge, Shift is finer, Page Up and Down jump, Home and End go to the ends, Delete sets 0 dB. */
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isSliderResetKey(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      onCommit(1);
+      return;
+    }
+    const next = sliderKeyTarget(e, pos, FLOAT_STEPS);
+    if (next === null) return;
+    e.preventDefault();
+    if (next === pos) return;
+    const gain = faderToGain(next);
+    onCommit(gain);
+    emitHint(e.currentTarget, `${label}: ${formatGain(gain)}`);
+  };
+
   const text = formatGain(value);
   // Automated (or being recorded): a dot on the fader, and the hint says by what.
   const status = useParamStatus(param);
@@ -110,6 +126,8 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
       ref={ref}
       className={styles.fader}
       role="slider"
+      tabIndex={0}
+      aria-orientation="vertical"
       aria-label={label}
       aria-valuemin={0}
       aria-valuemax={1}
@@ -130,6 +148,7 @@ export function Fader({ value, label, onBegin, onChange, onEnd, onCommit, param 
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onDoubleClick={() => onCommit(1)}
+      onKeyDown={onKeyDown}
     >
       <div className={styles.faderTrack} />
       <div className={styles.faderFill} style={{ height: `calc((100% - ${FADER_CAP}px) * ${pos})` }} />

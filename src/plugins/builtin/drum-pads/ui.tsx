@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import type { ParamValue, PluginUIProps } from '@agstudio/sdk';
 import { noteName } from '@agstudio/sdk/notes';
 import { formatPan, ParamKnob, ParamSelect, ParamToggle, Section } from '@agstudio/sdk/ui';
@@ -16,6 +16,9 @@ const ROWS = [
 ];
 
 const keyOf = (n: number) => FIRST_KEY + n - 1;
+
+/** How hard a pad plays when it is pressed from the keyboard (0-1). */
+const KEY_VELOCITY = 0.8;
 const decayText = (v: ParamValue) => (Number(v) >= FULL_DECAY * 0.999 ? 'Full' : `${Number(v).toFixed(2)} s`);
 const chokeText = (v: ParamValue) => (Number(v) === 0 ? 'None' : `Group ${Number(v)}`);
 
@@ -42,23 +45,39 @@ function Pad({ ui, n, selected, onSelect }: { ui: Props; n: number; selected: bo
     release.current = null;
     setLit(false);
   };
-  const down = (e: PointerEvent<HTMLButtonElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
+  /** Selects the pad and plays it at `velocity` (0-1) until `stop`. */
+  const press = (velocity: number) => {
     onSelect(n);
     if (!ui.playNote) return;
     stop();
-    const r = e.currentTarget.getBoundingClientRect();
-    const velocity = Math.max(0.2, Math.min(1, 1 - (e.clientY - r.top) / Math.max(1, r.height)) * 0.8 + 0.2);
     release.current = ui.playNote(key, velocity);
     setLit(true);
+  };
+  const down = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    press(Math.max(0.2, Math.min(1, 1 - (e.clientY - r.top) / Math.max(1, r.height)) * 0.8 + 0.2));
+  };
+  // Enter and Space play the pad at a firm level for as long as the key is held.
+  const keyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || e.repeat) return;
+    e.preventDefault();
+    press(KEY_VELOCITY);
+  };
+  const keyUp = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') stop();
   };
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={`${styles.pad} ${selected ? styles.selected : ''} ${over ? styles.over : ''} ${lit ? styles.lit : ''}`}
       data-hint={hint}
+      aria-pressed={selected}
+      aria-label={`Pad ${n}, ${sample ?? builtin}`}
+      onKeyDown={keyDown}
+      onKeyUp={keyUp}
+      onBlur={stop}
       onPointerDown={down}
       onPointerUp={stop}
       onPointerLeave={stop}
@@ -117,7 +136,6 @@ function PadEditor({ ui, n }: { ui: Props; n: number }) {
           <div className={styles.sampleButtons}>
             <button
               type="button"
-              tabIndex={-1}
               className={styles.button}
               onClick={() => samples.choose(slot)}
               data-hint={`Choose an audio file (WAV, AIFF, FLAC, MP3, OGG) for pad ${n}`}
@@ -143,7 +161,6 @@ function PadEditor({ ui, n }: { ui: Props; n: number }) {
             {sample && (
               <button
                 type="button"
-                tabIndex={-1}
                 className={styles.button}
                 onClick={() => samples.clear(slot)}
                 data-hint={`Remove the sample: pad ${n} plays its built-in sound again`}
@@ -175,7 +192,7 @@ export function DrumPadsUI(ui: Props) {
   return (
     <div className={styles.root}>
       <div className={styles.top}>
-        <div className={styles.grid} data-hint="The pads: click one to play and edit it, drop samples on them">
+        <div className={styles.grid} role="group" aria-label="Pads" data-roving="grid" data-hint="The pads: click one to play and edit it, drop samples on them">
           {ROWS.map((row) =>
             row.map((n) => <Pad key={n} ui={ui} n={n} selected={n === selected} onSelect={setSelected} />),
           )}

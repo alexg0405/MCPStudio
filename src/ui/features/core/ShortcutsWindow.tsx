@@ -5,6 +5,7 @@ import { holdModal } from '../../controls/Dialog';
 import { Icon } from '../../controls/Icon';
 import { useServices } from '../../services-context';
 import { TOUCH_GESTURES } from '../../touch/gestures';
+import { KeyboardNavigationList } from '../accessibility/KeyboardNavigation';
 import { setCustomShortcuts, shortcutRows, type ShortcutRow } from './shortcut-rows';
 import styles from './ShortcutsWindow.module.css';
 
@@ -84,7 +85,7 @@ export function ShortcutsWindow() {
   return (
     <div className={styles.wrap}>
       <div className={styles.bar}>
-        <input className={styles.search} value={query} placeholder="Search shortcuts…" onChange={(e) => setQuery(e.target.value)} data-hint="Find a command or a key" />
+        <input className={styles.search} value={query} placeholder="Search shortcuts…" aria-label="Search shortcuts" onChange={(e) => setQuery(e.target.value)} data-hint="Find a command or a key" />
         <label className={styles.toggle} data-hint="Also list commands that have no shortcut yet, to give them one">
           <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} /> All commands
         </label>
@@ -101,16 +102,18 @@ export function ShortcutsWindow() {
         </button>
       </div>
       {(recorder.note || recording) && (
-        <div className={styles.note}>{recording ? `Press the new shortcut for “${commands.get(recording)?.title}”… (Esc to cancel)` : recorder.note}</div>
+        <div className={styles.note} role="status">{recording ? `Press the new shortcut for “${commands.get(recording)?.title}”… (Esc to cancel)` : recorder.note}</div>
       )}
-      <table className={styles.table}>
-        <tbody>
+      <table className={styles.table} aria-label="Keyboard shortcuts">
+        {/* Every button of the table (add, remove, reset) is one grid: one Tab stop, the arrow keys move between rows. */}
+        <tbody data-roving="grid">
           {rows.map((row) => (
             <ShortcutRowView key={row.def.id} row={row} services={services} isRecording={recording === row.def.id} onRecord={() => recorder.start(row.def.id)} />
           ))}
         </tbody>
       </table>
       {rows.length === 0 && <div className={styles.empty}>No command matches “{query}”.</div>}
+      {!query && <KeyboardNavigationList />}
       {!query && <TouchGestureList />}
     </div>
   );
@@ -157,13 +160,13 @@ function ShortcutRowView({ row, services, isRecording, onRecord }: { row: Shortc
               className={styles.remove}
               onClick={() => setCustomShortcuts(prefs, { [def.id]: chords.filter((x) => x !== c) })}
               data-hint={`Remove ${formatChord(c, platform)} from “${def.title}”`}
-              aria-label="Remove shortcut"
+              aria-label={`Remove ${formatChord(c, platform)} from ${def.title}`}
             >
               <Icon name="close" size={9} />
             </button>
           </kbd>
         ))}
-        <button className={styles.add} onClick={onRecord} data-hint={`Give “${def.title}” a new shortcut: click, then press the keys`} aria-label="Add shortcut">
+        <button className={styles.add} onClick={onRecord} data-hint={`Give “${def.title}” a new shortcut: click, then press the keys`} aria-label={`Add a shortcut to ${def.title}`}>
           <Icon name="plus" size={10} />
         </button>
         {custom && (
@@ -171,6 +174,7 @@ function ShortcutRowView({ row, services, isRecording, onRecord }: { row: Shortc
             className={styles.resetOne}
             onClick={() => setCustomShortcuts(prefs, { [def.id]: null })}
             data-hint={`Back to the built-in shortcut${keymap.defaultChordsFor(def.id).length === 1 ? '' : 's'}`}
+            aria-label={`Reset the shortcuts of ${def.title}`}
           >
             Reset
           </button>

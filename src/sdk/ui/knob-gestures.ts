@@ -1,7 +1,8 @@
 // What a knob does with the mouse and with fingers: vertical drag and wheel nudges (a finger also has its fine modes).
-import { useRef, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import { fromNormalized, type ParamSpec, type ParamValue } from '../params';
 import { emitHint } from './hint';
+import { discreteSteps, FLOAT_STEPS, isSliderMoveKey, isSliderResetKey, sliderKeyTarget, type SliderSteps } from './slider-keys';
 import { TouchAssist } from './touch-assist';
 
 /** Pixels of vertical drag for the full range. */
@@ -46,6 +47,13 @@ function wheelStep(spec: ParamSpec): number {
   if (spec.type === 'enum') return 1 / Math.max(1, spec.options.length - 1);
   if (spec.type === 'int') return 1 / Math.max(1, spec.max - spec.min);
   return FLOAT_WHEEL_STEP;
+}
+
+/** How far the arrow and Page keys move a knob of this param. */
+function keySteps(spec: ParamSpec): SliderSteps {
+  if (spec.type === 'enum') return discreteSteps(spec.options.length);
+  if (spec.type === 'int') return discreteSteps(spec.max - spec.min + 1);
+  return FLOAT_STEPS;
 }
 
 /** The pointer and wheel handlers of a knob. Drag is one undo step (`onBegin` to `onEnd`). */
@@ -110,5 +118,26 @@ export function useKnobGestures(o: KnobGestureOptions) {
     if (next !== o.position) o.commit(fromNormalized(o.spec, next));
   };
 
-  return { onPointerDown, onPointerMove, onPointerUp, onWheel };
+  /**
+   * The keyboard: arrows nudge (Shift is finer), Page Up and Down jump, Home and End go to the ends, Delete resets to the
+   * default. Each press is one edit, so one undo step.
+   */
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (o.disabled) return;
+    if (isSliderResetKey(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      o.commit(o.spec.default);
+      return;
+    }
+    if (!isSliderMoveKey(e.key)) return;
+    const next = sliderKeyTarget(e, o.position, keySteps(o.spec));
+    if (next === null) return;
+    e.preventDefault();
+    if (next === o.position) return;
+    const value = fromNormalized(o.spec, next);
+    o.commit(value);
+    emitHint(e.currentTarget, o.hintText(value));
+  };
+
+  return { onPointerDown, onPointerMove, onPointerUp, onWheel, onKeyDown };
 }

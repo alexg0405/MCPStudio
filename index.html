@@ -30,7 +30,7 @@
       // light or slate theme (the stylesheet keys its colors off data-theme; the app re-applies it when it starts).
       try {
         var theme = JSON.parse(localStorage.getItem('agstudio:prefs:v1') || '{}').theme;
-        var boot = { carrara: '#e9e6e0', light: '#e6e9ec', classic: '#1b2024', midnight: '#0f1215', graphite: '#1e1e1e' };
+        var boot = { carrara: '#e9e6e0', light: '#e6e9ec', classic: '#1b2024', midnight: '#0f1215', graphite: '#1e1e1e', contrast: '#000000', 'contrast-light': '#ffffff' };
         if (boot[theme]) {
           document.documentElement.setAttribute('data-theme', theme);
           document.documentElement.style.setProperty('--boot-bg', boot[theme]);

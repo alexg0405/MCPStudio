@@ -34,7 +34,7 @@
   background: none;
   color: var(--ag-text-dim);
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   text-align: left;
   cursor: pointer;
 }
@@ -124,7 +124,7 @@
 .label {
   fill: var(--ag-text-dim);
   font-family: var(--ag-font-mono);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   pointer-events: none;
 }
 
@@ -139,7 +139,7 @@
 .summary {
   flex: 1 1 100%;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
 }
 
 .toggles {

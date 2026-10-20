@@ -2,6 +2,7 @@ import type { Services } from '@app/services';
 import { startPitchRenderer } from '@app/actions/pitch';
 import { pitchState } from '@app/pitch/state';
 import { addContextMenuItems } from '../../context-menus';
+import { startKeyRouting } from '../../timeline/key-cursor/router';
 import { addMenuItems, cmd } from '../../shell/menus';
 import { lazyWindow } from '../../workspace/lazy';
 import { registerWindowType } from '../../workspace/registry';
@@ -17,6 +18,8 @@ const WINDOW = PITCH_EDITOR_WINDOW;
  * audio is made in the background and the clip plays it (app/actions/pitch.ts).
  */
 export function register(services: Services): void {
+  // Before the app's key handler is installed, so the notes' cursor keys reach it first (timeline/key-cursor/router.ts).
+  startKeyRouting();
   registerWindowType({
     type: WINDOW,
     title: () => 'Pitch editor',
@@ -45,6 +48,7 @@ export function register(services: Services): void {
       ['Right-click', 'a menu for the note: split, merge, snap, octave, reset'],
       ['Wheel / Ctrl+wheel / Alt+wheel', 'scroll, zoom in time, zoom the rows'],
       ['Delete', 'puts the selected notes back as sung'],
+      ['Tab to the grid, then ← →', 'keyboard cursor: note to note (each is spoken), Enter selects, ↑ ↓ retune, ? says where you are'],
       ['B (or the A/B button)', 'switches between the corrected sound and your original recording so you can compare; nothing in the project changes'],
     ],
   });

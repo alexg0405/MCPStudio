@@ -105,6 +105,6 @@
 .time {
   flex: none;
   color: var(--ag-text-faint);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--ag-scale, 1));
   font-variant-numeric: tabular-nums;
 }

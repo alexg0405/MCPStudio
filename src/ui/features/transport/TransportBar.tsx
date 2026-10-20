@@ -17,9 +17,9 @@ function ModeSwitch() {
   return (
     <button
       className={styles.modeSwitch}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run('transport.toggleMode')}
+      aria-label={`${mode === 'pattern' ? 'Pattern' : 'Song'} mode, press to switch to ${mode === 'pattern' ? 'song' : 'pattern'} mode`}
       data-hint="Pattern mode loops the current pattern; song mode plays the playlist (L)"
     >
       <span className={mode === 'pattern' ? styles.modeOn : ''}>
@@ -130,7 +130,6 @@ function Position() {
   return (
     <button
       className={`${styles.lcd} ${styles.time}`}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => setExpanded((on) => !on)}
       data-expanded={expanded || undefined}
@@ -152,7 +151,7 @@ function Position() {
 export function TransportBar() {
   const { playing } = useEngineStatus();
   return (
-    <div className={styles.transport}>
+    <div className={styles.transport} role="toolbar" aria-label="Transport" data-roving>
       <ModeSwitch />
       <CommandButton command="transport.playPause" icon={playing ? 'pause' : 'play'} className={styles.play} />
       <CommandButton command="transport.stop" icon="stop" />

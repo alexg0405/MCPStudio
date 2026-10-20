@@ -25,5 +25,5 @@
 .mine {
   margin-right: 2px;
   color: var(--ag-accent-ink);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
 }

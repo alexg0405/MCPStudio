@@ -32,14 +32,14 @@ export function Toggle({ spec, value, label, onCommit, param, hint }: ToggleProp
   return (
     <button
       type="button"
-      tabIndex={-1}
       onContextMenu={onContextMenu}
       className={`${styles.toggle} ${value ? styles.toggleOn : ''}`}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => onCommit(!value)}
+      aria-pressed={value}
       data-hint={hint ? `${state} — ${hint}` : state}
     >
-      <i className={styles.led} />
+      <i className={styles.led} aria-hidden />
       {label ?? spec.label}
     </button>
   );

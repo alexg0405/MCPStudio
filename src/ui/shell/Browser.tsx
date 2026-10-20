@@ -54,7 +54,8 @@ function Section({ section }: { section: BrowserSection }) {
         <span>{section.title}</span>
       </button>
       {open && (
-        <div className={styles.sectionBody}>
+        // A section's list of choices is one Tab stop, and Up and Down move through it.
+        <div className={styles.sectionBody} role="group" aria-label={section.title} data-roving="vertical">
           <Body />
         </div>
       )}
@@ -87,7 +88,7 @@ export function Browser() {
   };
 
   return (
-    <aside className={styles.browser} style={{ width: browser.width }} data-tour="browser">
+    <aside className={styles.browser} style={{ width: browser.width }} data-tour="browser" aria-label="Browser">
       <div className={styles.header}>
         <span>Browser</span>
       </div>
@@ -96,7 +97,7 @@ export function Browser() {
           <Section key={s.id} section={s} />
         ))}
       </div>
-      <div className={styles.resizer} onPointerDown={startResize} data-hint="Drag to resize the browser" />
+      <div className={styles.resizer} onPointerDown={startResize} data-hint="Drag to resize the browser" aria-hidden />
     </aside>
   );
 }

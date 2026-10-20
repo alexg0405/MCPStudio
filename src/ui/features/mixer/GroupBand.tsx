@@ -25,7 +25,6 @@ export const GroupBand = memo(function GroupBand({ id }: { id: InsertId }) {
   };
   return (
     <button
-      tabIndex={-1}
       className={styles.groupBand}
       style={{ ['--group-color' as string]: group.color }}
       onPointerDown={(event) => event.stopPropagation()}

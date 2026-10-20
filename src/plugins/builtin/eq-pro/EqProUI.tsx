@@ -221,7 +221,6 @@ function BandStrip({
               type="button"
               role="tab"
               aria-selected={isSelected}
-              tabIndex={-1}
               className={`${styles.tab} ${isSelected ? styles.tabSelected : ''} ${band.isOn ? '' : styles.tabOff}`}
               style={{ borderColor: isSelected ? BAND_COLORS[band.number - 1] : undefined }}
               onClick={() => onSelect(band.number)}

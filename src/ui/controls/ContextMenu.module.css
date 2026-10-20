@@ -91,7 +91,7 @@
 .label {
   padding: 6px 10px 3px 22px;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -112,7 +112,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -171,7 +171,9 @@
 
 .item:focus-visible {
   outline: none;
+  box-shadow: inset 0 0 0 var(--ag-focus-width, 2px) var(--ag-focus, var(--ag-accent));
 }
+
 
 /*
  * A quick fade in. No transform: a submenu panel is positioned inside its parent panel (the blur makes

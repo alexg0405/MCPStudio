@@ -4,7 +4,7 @@
  */
 import type { MeterHandle } from '@engine/api';
 import { R, SCOPE_FRAMES } from '@app/metering/layout';
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import { correlationText, widthText } from './meters-model';
 
 /** Frames of the scope ring drawn as dots (the newest ones). */
@@ -24,7 +24,7 @@ export function drawGoniometer(g: CanvasRenderingContext2D, width: number, heigh
   g.strokeStyle = theme.lineFaint;
   g.fillStyle = theme.textFaint;
   g.lineWidth = 1;
-  g.font = `500 10px ${theme.font}`;
+  g.font = `500 ${fontPx(10)}px ${theme.font}`;
   g.beginPath();
   g.arc(centerX, centerY, radius, 0, Math.PI * 2);
   g.moveTo(centerX, centerY - radius);
@@ -91,7 +91,7 @@ export const STEREO_BARS_HEIGHT = 4 * 22;
 /** Correlation and the three widths as labelled bars. */
 export function drawStereoBars(g: CanvasRenderingContext2D, width: number, height: number, theme: TimelineTheme, meter: MeterHandle): void {
   g.clearRect(0, 0, width, height);
-  g.font = `500 11px ${theme.font}`;
+  g.font = `500 ${fontPx(11)}px ${theme.font}`;
   const r = meter.readings;
   const correlation = r[R.correlation] as number;
   drawLabel(g, theme, 'Correlation', 4, correlationText(correlation), width);

@@ -10,6 +10,8 @@ export interface KnobProps {
   spec: ParamSpec;
   value: ParamValue;
   label?: string;
+  /** What a screen reader calls the knob when the short `label` is not enough ("Kick volume" where the label says "Volume"). */
+  accessibleName?: string;
   size?: number;
   /** Draw the value arc from the centre (pan, detune). */
   bipolar?: boolean;
@@ -95,6 +97,7 @@ export const Knob = memo(function Knob({
   spec,
   value,
   label,
+  accessibleName,
   size = 28,
   bipolar,
   color,
@@ -148,7 +151,9 @@ export const Knob = memo(function Knob({
       className={`${styles.knob} ${disabled ? styles.disabled : ''}`}
       style={{ width: size, height: size }}
       role="slider"
-      aria-label={label ?? spec.label}
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
+      aria-label={accessibleName ?? label ?? spec.label}
       aria-valuemin={0}
       aria-valuemax={1}
       aria-valuenow={position}
@@ -169,6 +174,7 @@ export const Knob = memo(function Knob({
           : undefined
       }
       onWheel={gestures.onWheel}
+      onKeyDown={gestures.onKeyDown}
     >
       <span className={styles.knobBody} style={{ inset: center - bodyRadius }} aria-hidden />
       <svg className={styles.knobSvg} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>

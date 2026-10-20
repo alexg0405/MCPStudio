@@ -23,7 +23,7 @@
 .category {
   width: 96px;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -118,7 +118,7 @@
   height: 20px;
   margin-left: 6px;
   padding: 0 6px;
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
 }
 
 .note {
@@ -144,7 +144,10 @@
 }
 
 .remove {
-  display: none;
+  /* Seen on hover or keyboard focus. It stays in the layout (invisible) so the keyboard can reach it. */
+  opacity: 0;
+  pointer-events: none;
+  display: grid;
   position: absolute;
   top: -6px;
   right: -6px;
@@ -160,8 +163,10 @@
   place-items: center;
 }
 
-.chords kbd:hover .remove {
-  display: grid;
+.chords kbd:hover .remove,
+.chords kbd:focus-within .remove {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .remove:hover {
@@ -212,7 +217,7 @@
 .touchWhere {
   padding: 8px 6px 2px;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-align: left;

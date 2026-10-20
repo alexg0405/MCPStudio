@@ -68,7 +68,7 @@
 .padKey {
   color: var(--ag-text-faint);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .pad:active:not(:disabled) .padKey {
@@ -78,7 +78,7 @@
 .label {
   padding-left: 8px;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;

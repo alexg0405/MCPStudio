@@ -28,7 +28,7 @@ function themeBg(id: string): string | undefined {
 describe('boot background', () => {
   const boot = /var boot = \{([^}]*)\}/.exec(html)?.[1] ?? '';
   const colors = Object.fromEntries(
-    [...boot.matchAll(/(\w+):\s*'(#[0-9a-f]{6})'/gi)].map((m) => [m[1]!, m[2]!.toLowerCase()]),
+    [...boot.matchAll(/'?([\w-]+)'?:\s*'(#[0-9a-f]{6})'/gi)].map((m) => [m[1]!, m[2]!.toLowerCase()]),
   );
 
   it.each(THEMES.filter((t) => t.id !== 'marble').map((t) => t.id))('index.html knows the %s theme background', (id) => {

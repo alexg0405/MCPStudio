@@ -168,14 +168,14 @@
   gap: 8px;
   min-height: 20px;
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
 }
 
 .link {
   border: none;
   background: transparent;
   color: var(--ag-accent-ink);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   text-decoration: underline;
   cursor: pointer;
 }

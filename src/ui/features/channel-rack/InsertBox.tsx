@@ -7,7 +7,7 @@ import { parseTypedNumber } from '../../controls/number-text';
 import styles from './ChannelRack.module.css';
 
 /** The number of the mixer insert a channel plays through (-- is the master): drag, scroll or type it. */
-export function InsertBox({ channelId }: { channelId: ChannelId }) {
+export function InsertBox({ channelId, channelName }: { channelId: ChannelId; channelName: string }) {
   const order = useDoc((pr) => pr.mixer.order);
   const output = useDoc((pr) => {
     const ch = pr.channels[channelId];
@@ -28,13 +28,14 @@ export function InsertBox({ channelId }: { channelId: ChannelId }) {
       perPixel={0.15}
       step={1}
       format={(v) => (Math.round(v) === 0 ? '--' : String(Math.round(v)))}
+      speak={(v) => (Math.round(v) === 0 ? 'Master' : `Insert ${Math.round(v)}`)}
       // “--”, “0” or “master” is the master; a number is that insert.
       parse={(t) => (/^\s*(--?|m(aster)?)\s*$/i.test(t) ? 0 : parseTypedNumber(t))}
       editText={(v) => String(Math.round(v))}
       {...edit}
       hint="Mixer insert this channel plays through (-- = master): drag, scroll, or click to type its number"
       editHint="Type a mixer insert number (0 or -- = master) · Enter sets it, Esc cancels"
-      label="Mixer insert"
+      label={`${channelName} mixer insert`}
     />
   );
 }

@@ -114,7 +114,7 @@ type ControllerRef = RefObject<PitchEditorController | null>;
 export function PitchToolbar({ controller, tool, setTool }: { controller: ControllerRef; tool: PitchTool; setTool: (t: PitchTool) => void }) {
   const model = useToolbarModel();
   return (
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} role="toolbar" aria-label="Pitch editor tools">
       <PlayButton model={model} />
       <ListenChoice model={model} />
       <ToolChoice tool={tool} setTool={setTool} />
@@ -135,7 +135,6 @@ function PlayButton({ model }: { model: ToolbarModel }) {
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={`${styles.tool} ${styles.play} ${isPlaying ? styles.toolOn : ''}`}
       disabled={!clip}
       onPointerDown={keepFocus}
@@ -156,7 +155,6 @@ function ListenChoice({ model }: { model: ToolbarModel }) {
     <div className={styles.tools} role="group" aria-label="Hear">
       <button
         type="button"
-        tabIndex={-1}
         className={`${styles.tool} ${!hearingOriginal ? styles.toolOn : ''}`}
         disabled={!canCompare}
         aria-pressed={!hearingOriginal}
@@ -168,7 +166,6 @@ function ListenChoice({ model }: { model: ToolbarModel }) {
       </button>
       <button
         type="button"
-        tabIndex={-1}
         className={`${styles.tool} ${hearingOriginal ? styles.toolOn : ''}`}
         disabled={!canCompare}
         aria-pressed={hearingOriginal}
@@ -185,11 +182,11 @@ function ListenChoice({ model }: { model: ToolbarModel }) {
 /** Select or Split: what a click on a note does. */
 function ToolChoice({ tool, setTool }: { tool: PitchTool; setTool: (t: PitchTool) => void }) {
   return (
-    <div className={styles.tools} role="toolbar">
+    <div className={styles.tools} role="group" aria-label="Tool">
       <button
         type="button"
-        tabIndex={-1}
         className={`${styles.tool} ${tool === 'select' ? styles.toolOn : ''}`}
+        aria-pressed={tool === 'select'}
         onPointerDown={keepFocus}
         onClick={() => setTool('select')}
         data-hint="Select: click a note, drag it up or down to retune it (snaps to semitones; hold Alt to move by cents), drag empty space to select several"
@@ -198,8 +195,8 @@ function ToolChoice({ tool, setTool }: { tool: PitchTool; setTool: (t: PitchTool
       </button>
       <button
         type="button"
-        tabIndex={-1}
         className={`${styles.tool} ${tool === 'split' ? styles.toolOn : ''}`}
+        aria-pressed={tool === 'split'}
         onPointerDown={keepFocus}
         onClick={() => setTool('split')}
         data-hint="Split: click on a note to cut it in two there (or press S over a note). Merge them again with M"
@@ -235,7 +232,6 @@ function KeyChoice({ model }: { model: ToolbarModel }) {
       {songKey && !st.keyFollowsSong ? (
         <button
           type="button"
-          tabIndex={-1}
           className={styles.tool}
           onPointerDown={keepFocus}
           onClick={() => pitchState.setState({ keyRoot: songKey.root, keyScale: songKey.scale, keyFollowsSong: true })}
@@ -269,7 +265,6 @@ function SnapButtons({ model, controller }: { model: ToolbarModel; controller: C
     <>
       <button
         type="button"
-        tabIndex={-1}
         className={styles.tool}
         disabled={!isReady}
         onPointerDown={keepFocus}
@@ -280,7 +275,6 @@ function SnapButtons({ model, controller }: { model: ToolbarModel; controller: C
       </button>
       <button
         type="button"
-        tabIndex={-1}
         className={`${styles.tool} ${isDragSnapped ? styles.toolOn : ''}`}
         aria-pressed={isDragSnapped}
         onPointerDown={keepFocus}
@@ -294,7 +288,6 @@ function SnapButtons({ model, controller }: { model: ToolbarModel; controller: C
       </button>
       <button
         type="button"
-        tabIndex={-1}
         className={`${styles.tool} ${isKeyShown ? styles.toolOn : ''}`}
         aria-pressed={isKeyShown}
         onPointerDown={keepFocus}
@@ -369,7 +362,7 @@ function MoreButton({ model }: { model: ToolbarModel }) {
     showContextMenu({ x: box.left, y: box.bottom + 2 }, moreMenuEntries({ services, clip, clipId, edit, selected, isReady, which }));
   };
   return (
-    <button type="button" tabIndex={-1} className={styles.tool} disabled={!isReady} onPointerDown={keepFocus} onClick={openMenu} data-hint="More: merge notes, reset notes, render again, remove all correction">
+    <button type="button" className={styles.tool} disabled={!isReady} aria-haspopup="menu" onPointerDown={keepFocus} onClick={openMenu} data-hint="More: merge notes, reset notes, render again, remove all correction">
       More ▾
     </button>
   );
@@ -378,13 +371,13 @@ function MoreButton({ model }: { model: ToolbarModel }) {
 function ZoomButtons({ controller }: { controller: ControllerRef }) {
   return (
     <span className={styles.zoom}>
-      <button type="button" tabIndex={-1} onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(1 / ZOOM_STEP)} data-hint="Zoom out (or Ctrl/Cmd + wheel)">
+      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(1 / ZOOM_STEP)} aria-label="Zoom out" data-hint="Zoom out (or Ctrl/Cmd + wheel)">
         −
       </button>
-      <button type="button" tabIndex={-1} onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(ZOOM_STEP)} data-hint="Zoom in (or Ctrl/Cmd + wheel)">
+      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.zoomBy(ZOOM_STEP)} aria-label="Zoom in" data-hint="Zoom in (or Ctrl/Cmd + wheel)">
         +
       </button>
-      <button type="button" tabIndex={-1} onPointerDown={keepFocus} onClick={() => controller.current?.fit()} data-hint="Fit the whole clip in the window">
+      <button type="button" onPointerDown={keepFocus} onClick={() => controller.current?.fit()} data-hint="Fit the whole clip in the window">
         Fit
       </button>
     </span>
@@ -398,7 +391,7 @@ function StatusLine({ model }: { model: ToolbarModel }) {
     <span className={styles.status} data-hint="What the clip plays: the corrected audio is made in the background after each change and replaces the clip's sound; your original recording stays untouched">
       {text}
       {needsRender ? (
-        <button type="button" tabIndex={-1} className={styles.link} onClick={() => clipId && renderNow(clipId)}>
+        <button type="button" className={styles.link} onClick={() => clipId && renderNow(clipId)}>
           Render now
         </button>
       ) : null}

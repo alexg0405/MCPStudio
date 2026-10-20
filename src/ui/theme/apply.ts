@@ -8,6 +8,8 @@ export const THEMES = [
   { id: 'midnight', label: 'Midnight', hint: 'Darker, nearly black: easy on the eyes at night' },
   { id: 'graphite', label: 'Graphite', hint: 'Neutral grays without the blue tint' },
   { id: 'light', label: 'Light', hint: 'Light surfaces and dark text, for bright rooms' },
+  { id: 'contrast', label: 'High contrast', hint: 'Black with white text, a yellow accent and white edges: the strongest contrast (ignores the accent color)' },
+  { id: 'contrast-light', label: 'High contrast light', hint: 'White with black text, a blue accent and black edges: the strongest contrast on a light page (ignores the accent color)' },
 ] as const;
 
 export const ACCENTS = [
@@ -29,8 +31,10 @@ export type AccentId = (typeof ACCENTS)[number]['id'];
 /** A theme or accent named loosely ("Light", "night", "purple"), or undefined. */
 export function findTheme(name: string): ThemeId | undefined {
   const t = name.trim().toLowerCase();
-  return THEMES.find((x) => x.id === t || x.label.toLowerCase() === t)?.id ??
-    (t === 'dark' || t.includes('black') ? 'marble' : t.includes('white') || t.includes('carrara') ? 'carrara' : t.includes('slate') || t.includes('fl') ? 'classic' : t.includes('night') ? 'midnight' : t.includes('gray') || t.includes('grey') ? 'graphite' : t.includes('marble') ? 'marble' : undefined);
+  const exact = THEMES.find((x) => x.id === t || x.label.toLowerCase() === t)?.id;
+  if (exact) return exact;
+  if (t.includes('contrast')) return t.includes('light') || t.includes('white') ? 'contrast-light' : 'contrast';
+  return (t === 'dark' || t.includes('black') ? 'marble' : t.includes('white') || t.includes('carrara') ? 'carrara' : t.includes('slate') || t.includes('fl') ? 'classic' : t.includes('night') ? 'midnight' : t.includes('gray') || t.includes('grey') ? 'graphite' : t.includes('marble') ? 'marble' : undefined);
 }
 
 export function findAccent(name: string): AccentId | undefined {

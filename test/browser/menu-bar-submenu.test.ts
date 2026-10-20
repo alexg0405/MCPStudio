@@ -31,7 +31,7 @@ describe('the menu bar’s submenus (UI)', { timeout: 90_000 }, () => {
   const menus = () => [...document.querySelectorAll<HTMLElement>('[role="menu"]')];
   const optionsLabel = () => host.querySelector<HTMLElement>('[data-menu="options"]')!;
   const themeRow = () =>
-    [...(menus()[0]?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])].find((b) => b.textContent === 'Theme');
+    [...(menus()[0]?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])].find((b) => b.textContent === 'Theme');
   /** The Theme submenu is open and placed. */
   const subPlaced = () => menus().length === 2 && menus()[1]!.style.visibility !== 'hidden';
   const expectBesideRow = () => {

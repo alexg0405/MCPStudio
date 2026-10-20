@@ -25,7 +25,7 @@
 }
 
 /* Menu rows (the menu bar's and the context menus'). */
-:root[data-touch='on'] [role='menuitem'] {
+:root[data-touch='on'] [role='menu'] [role^='menuitem'] {
   min-height: var(--ag-touch-target);
 }
 

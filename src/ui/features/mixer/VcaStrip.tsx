@@ -44,6 +44,8 @@ export const VcaStrip = memo(function VcaStrip({ groupId }: { groupId: GroupId }
       style={{ ['--ins-color' as string]: group.color, ['--group-color' as string]: group.color }}
       onContextMenu={openMenu}
       onClick={() => pickGroupMembers(services, groupId)}
+      role="group"
+      aria-label={`VCA of group ${group.name}`}
       data-hint={`VCA of the group “${group.name}” (${memberNames.join(', ')}): it scales their levels in dB without moving their faders. Click to pick the group, right-click for its settings`}
     >
       <span className={styles.stripNumber}>VCA</span>

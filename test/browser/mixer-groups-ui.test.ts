@@ -50,7 +50,7 @@ describe('mixer groups, VCA and snapshots (UI)', { timeout: 40_000 }, () => {
   const button = (name: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find((el) => el.textContent === name)!;
   const slider = (label: string) => host.querySelector<HTMLElement>(`[role="slider"][aria-label="${label}"]`)!;
   const menuItem = (text: string) =>
-    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) => el.textContent?.trim().startsWith(text));
+    [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((el) => el.textContent?.trim().startsWith(text));
   const wheel = (el: Element, deltaY: number) =>
     el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY }));
   const cursor = () => s.history.status().cursor;

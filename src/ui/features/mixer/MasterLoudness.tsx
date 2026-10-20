@@ -42,7 +42,6 @@ export function MasterLoudness() {
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={styles.masterLoudness}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={() => openWindow(services, 'meters')}

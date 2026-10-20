@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { useServices } from '../../services-context';
 import { ACCENTS, effectiveAccent, findTheme, THEMES } from '../../theme/apply';
+import { AccessibilitySection } from '../accessibility/AccessibilitySection';
 import { McpSettings } from '../mcp/McpSettings';
 import { Row, Section, Switch } from './parts';
 import { StorageSection } from './StorageSection';
@@ -84,6 +85,7 @@ function Interface() {
           className={styles.select}
           value={theme}
           onChange={(e) => s.commands.run('options.theme', e.target.value)}
+          aria-label="Theme"
           data-hint="How AGstudio looks (remembered in this browser)"
         >
           {THEMES.map((t) => (
@@ -152,6 +154,7 @@ export function SettingsWindow() {
       <ComputerKeyboard />
       <RecordingSection />
       <Interface />
+      <AccessibilitySection />
       <McpSettings />
       <StorageSection />
       <p className={styles.footer}>Settings are remembered in this browser. They aren’t saved in your projects.</p>

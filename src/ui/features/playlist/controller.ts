@@ -22,6 +22,7 @@ import {
 } from './control/context';
 import { runFrame } from './control/frame';
 import { renameLane } from './control/header-pointer';
+import { attachKeyboard } from './control/keys';
 import { createLayerDrawers, type LayerDrawers } from './control/layers';
 import { renameMarker } from './control/marker-rename';
 import { cancelDrag } from './control/pointer';
@@ -63,6 +64,7 @@ export class PlaylistController implements PlaylistHooks {
     subscribeToChanges(this.ctx, this.cleanups);
     this.cleanups.add(onFrame(() => runFrame(this.ctx, this.drawers)));
     listenToElements(this.ctx, this.cleanups);
+    attachKeyboard(this.ctx, this.cleanups);
     measureLayout(this.ctx);
   }
 

@@ -4,6 +4,7 @@ import type { Services } from '@app/services';
 import { startFromTemplate, TEMPLATES } from '@app/template-list';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import { placeBeside } from '../../controls/place';
 import { Icon, type IconName } from '../../controls/Icon';
 import { onFrame } from '../../frame-loop';
@@ -313,9 +314,9 @@ function TemplateChips({ services, close }: { services: Services; close: () => v
 
 /** While the welcome shows it has the keyboard: Esc or Enter (when no button has the focus) closes it. */
 function useWelcomeKeys(ref: RefObject<HTMLDivElement | null>, services: Services): void {
+  useDialogFocus(ref);
   useEffect(() => {
     const release = holdModal();
-    ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' && e.key !== 'Enter') return;
       if (e.key === 'Enter' && document.activeElement instanceof HTMLButtonElement) return;

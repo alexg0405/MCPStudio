@@ -61,7 +61,6 @@ function SampleBar({ name, samples }: { name: string | null; samples: Samples | 
       ) : (
         <button
           type="button"
-          tabIndex={-1}
           className={styles.empty}
           onClick={() => samples?.choose('main')}
           data-hint="No sample yet: this is the built-in demo loop. Drop a sample here or click to choose one"
@@ -73,7 +72,6 @@ function SampleBar({ name, samples }: { name: string | null; samples: Samples | 
         <span className={styles.buttons}>
           <button
             type="button"
-            tabIndex={-1}
             className={styles.button}
             onClick={() => samples.choose('main')}
             data-hint="Choose an audio file to slice (WAV, AIFF, FLAC, MP3, OGG)"
@@ -83,7 +81,6 @@ function SampleBar({ name, samples }: { name: string | null; samples: Samples | 
           {name && (
             <button
               type="button"
-              tabIndex={-1}
               className={styles.button}
               onClick={() => samples.clear('main')}
               data-hint="Remove the sample (the demo loop plays again)"

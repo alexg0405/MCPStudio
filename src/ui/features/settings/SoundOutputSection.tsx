@@ -67,6 +67,7 @@ export function SoundOutputSection() {
         <select
           className={styles.select}
           value={chosen}
+          aria-label="Play through"
           disabled={!supported}
           onChange={(e) => s.prefs.getState().set({ outputDevice: e.target.value })}
           data-hint="The device AGstudio plays through (remembered in this browser)"
@@ -99,6 +100,7 @@ export function SoundOutputSection() {
         <select
           className={styles.select}
           value={buffer}
+          aria-label="Audio buffer"
           onChange={(e) => {
             const choice = e.target.value as AudioBufferChoice;
             // A picked size is kept; choosing Auto starts again from the smallest.

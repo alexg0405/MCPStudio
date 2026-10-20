@@ -28,12 +28,14 @@ type SubAt = { index: number; top: number; left: number; flip: boolean };
 /** A menu's first label: its title, with a × that closes the menu. */
 function MenuHeader({ label, onPointerEnter }: { label: string; onPointerEnter(): void }) {
   return (
-    <div className={styles.header} onPointerEnter={onPointerEnter}>
+    <div className={styles.header} onPointerEnter={onPointerEnter} role="presentation">
       <span className={styles.headerText}>{label}</span>
+      {/* The × is for the mouse: the keyboard closes the menu with Esc, so a screen reader need not meet it. */}
       <button
         type="button"
-        tabIndex={-1}
         className={styles.close}
+        tabIndex={-1}
+        aria-hidden
         aria-label="Close (Esc)"
         data-hint="Close (Esc)"
         onPointerDown={(e) => e.preventDefault()}
@@ -48,17 +50,20 @@ function MenuHeader({ label, onPointerEnter }: { label: string; onPointerEnter()
 /** A row of colours to pick from. */
 function SwatchRow({ item, onPointerEnter }: { item: Extract<MenuEntry, { kind: 'swatches' }>; onPointerEnter(): void }) {
   return (
-    <div className={styles.swatches} onPointerEnter={onPointerEnter}>
-      {item.colors.map((c) => (
+    <div className={styles.swatches} onPointerEnter={onPointerEnter} role="group" aria-label="Color">
+      {item.colors.map((c, i) => (
         <button
           key={c}
+          role="menuitemradio"
+          aria-checked={item.selected === c}
+          tabIndex={-1}
           className={`${styles.swatch} ${item.selected === c ? styles.swatchOn : ''}`}
           style={{ background: c }}
           onClick={() => {
             closeContextMenu();
             item.onSelect(c);
           }}
-          aria-label={`Color ${c}`}
+          aria-label={`Color ${i + 1} of ${item.colors.length}`}
         />
       ))}
     </div>
@@ -89,6 +94,7 @@ function SubmenuRow({ item, isOpen, sub, onOpen, onClose, onKeepOpen }: {
     >
       <button
         role="menuitem"
+        tabIndex={-1}
         aria-haspopup="menu"
         aria-expanded={isOpen}
         className={`${styles.item} ${isOpen ? styles.itemOpen : ''}`}
@@ -110,7 +116,7 @@ function SubmenuRow({ item, isOpen, sub, onOpen, onClose, onKeepOpen }: {
         <span className={styles.text}>{item.label}</span>
         <Icon name="chevronRight" size={12} className={styles.arrow} />
       </button>
-      {isOpen && sub && <SubPanel items={typeof item.items === 'function' ? item.items() : item.items} at={sub} onPointerEnter={onKeepOpen} />}
+      {isOpen && sub && <SubPanel label={item.label} items={typeof item.items === 'function' ? item.items() : item.items} at={sub} onPointerEnter={onKeepOpen} />}
     </div>
   );
 }
@@ -119,7 +125,9 @@ function SubmenuRow({ item, isOpen, sub, onOpen, onClose, onKeepOpen }: {
 function ItemButton({ item, onPointerEnter }: { item: Extract<MenuEntry, { kind?: 'item' }>; onPointerEnter(): void }) {
   return (
     <button
-      role="menuitem"
+      role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+      aria-checked={item.checked}
+      tabIndex={-1}
       className={`${styles.item} ${item.danger ? styles.danger : ''}`}
       disabled={item.disabled}
       data-hint={item.hint}
@@ -184,7 +192,7 @@ export function MenuItems({ items, header = false }: { items: MenuEntry[]; heade
 }
 
 /** A submenu's panel: measured after render (before paint) so it sits beside its row without spilling off the window. */
-function SubPanel({ items, at, onPointerEnter }: { items: MenuEntry[]; at: SubAt; onPointerEnter(): void }) {
+function SubPanel({ label, items, at, onPointerEnter }: { label: string; items: MenuEntry[]; at: SubAt; onPointerEnter(): void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
@@ -201,6 +209,7 @@ function SubPanel({ items, at, onPointerEnter }: { items: MenuEntry[]; at: SubAt
       ref={ref}
       className={styles.menu}
       role="menu"
+      aria-label={label}
       style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: 'hidden' }}
       onKeyDown={panelKeys}
       onPointerEnter={onPointerEnter}

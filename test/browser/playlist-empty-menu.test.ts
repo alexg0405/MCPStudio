@@ -59,7 +59,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
   /** A spot in the grid: the middle of bar `bar` (1-based) on track `lane` (0-based). */
   const spot = (bar: number, lane: number) => ({ x: (bar - 1) * BAR_PX + BAR_PX / 2, y: lane * 36 + 18 });
   const item = (label: string) =>
-    [...(menu()?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])].find((b) => b.textContent?.includes(label));
+    [...(menu()?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])].find((b) => b.textContent?.includes(label));
   /** Synthetic pointer events (mouse id 1) for a drag; the controller listens on the grid host. */
   const drag = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     const r = grid().getBoundingClientRect();
@@ -225,7 +225,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
     expect(Math.abs(sr.left - row.right)).toBeLessThan(2);
     expect(Math.abs(sr.top - (row.top - 5))).toBeLessThan(2);
     // Crossing the row below on the way there doesn't snap it shut (pointer moves, back to back).
-    const inner = sub.querySelector<HTMLElement>('[role="menuitem"]')!;
+    const inner = sub.querySelector<HTMLElement>('[role^="menuitem"]')!;
     const below = item('Below')!;
     const move = (from: Element, to: Element) => {
       from.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: to, pointerId: 1, pointerType: 'mouse' }));
@@ -382,7 +382,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       await until(nearLeft);
       s.engine.stop();
       await frames(2);
-      const toggle = host.querySelector<HTMLElement>('[data-window-type="playlist"] button[aria-pressed]')!;
+      const toggle = host.querySelector<HTMLElement>('[data-window-type="playlist"] button[aria-pressed][data-hint^="Follow playhead"]')!;
       expect(toggle.getAttribute('data-hint')).toMatch(/^Follow playhead on/);
       await userEvent.click(toggle);
       expect(s.prefs.getState().followPlayhead).toBe(false);

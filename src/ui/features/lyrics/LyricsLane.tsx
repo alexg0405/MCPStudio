@@ -52,7 +52,6 @@ export function LyricsLane({ view, headerWidth }: Props) {
         <span>Lyrics</span>
         <button
           className={styles.open}
-          tabIndex={-1}
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => void services.commands.run('view.lyrics')}
           data-hint="Open the Lyrics window: big text that follows playback, paste lyrics, export as text or LRC"

@@ -3,7 +3,14 @@
  * overview, dropping a song on the deck and the "Load…" menu. They talk to the decks API directly; nothing here
  * re-renders the panel.
  */
-import { useRef, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useRef,
+  type DragEvent,
+  type FocusEvent as ReactFocusEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { DeckId, DecksApi } from '@app/dj/decks-api';
 import { library, loadLibrary, pickSongFiles } from '@app/dj/library';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
@@ -80,6 +87,28 @@ export interface OverviewHandlers {
   onPointerDown(e: ReactPointerEvent<HTMLCanvasElement>): void;
   onPointerMove(e: ReactPointerEvent<HTMLCanvasElement>): void;
   onPointerUp(e: ReactPointerEvent<HTMLCanvasElement>): void;
+  onKeyDown(e: ReactKeyboardEvent<HTMLCanvasElement>): void;
+  onFocus(e: ReactFocusEvent<HTMLCanvasElement>): void;
+}
+
+/** How far the arrow keys, Shift+arrows and the Page keys move the song position (seconds). */
+const SEEK_STEP_SEC = 5;
+const SEEK_FINE_STEP_SEC = 1;
+const SEEK_PAGE_SEC = 30;
+
+/** "1:05" for a time in seconds. */
+function clockText(sec: number): string {
+  const whole = Math.max(0, Math.floor(sec));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Writes the position into the slider's attributes. The canvas is drawn on the frame loop and React never re-renders it,
+ * so the numbers a screen reader reads are brought up to date when the slider gets the focus and after each key.
+ */
+function describePosition(canvas: HTMLElement, sec: number, durationSec: number): void {
+  canvas.setAttribute('aria-valuenow', String(Math.round(sec * 10) / 10));
+  canvas.setAttribute('aria-valuetext', `${clockText(sec)} of ${clockText(durationSec)}`);
 }
 
 /** Overview: click or drag to jump to that place in the song. */
@@ -91,7 +120,34 @@ export function useOverviewSeek(api: DecksApi, deckId: DeckId, song: DeckView['s
     const share = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
     api.seek(deckId, share * song.durationSec);
   };
+  const moveBy = (e: ReactKeyboardEvent<HTMLCanvasElement>, sec: number) => {
+    if (!song) return;
+    const to = Math.min(song.durationSec, Math.max(0, api.positionNow(deckId) + sec));
+    api.seek(deckId, to);
+    describePosition(e.currentTarget, to, song.durationSec);
+  };
   return {
+    onFocus(e) {
+      if (song) describePosition(e.currentTarget, api.positionNow(deckId), song.durationSec);
+    },
+    onKeyDown(e) {
+      if (!song || e.ctrlKey || e.metaKey || e.altKey) return;
+      const fine = e.shiftKey ? SEEK_FINE_STEP_SEC : SEEK_STEP_SEC;
+      const moves: Record<string, number> = {
+        ArrowRight: fine,
+        ArrowUp: fine,
+        ArrowLeft: -fine,
+        ArrowDown: -fine,
+        PageUp: SEEK_PAGE_SEC,
+        PageDown: -SEEK_PAGE_SEC,
+        Home: -song.durationSec,
+        End: song.durationSec,
+      };
+      const sec = moves[e.key];
+      if (sec === undefined) return;
+      e.preventDefault();
+      moveBy(e, sec);
+    },
     onPointerDown(e) {
       isDragging.current = true;
       e.currentTarget.setPointerCapture(e.pointerId);

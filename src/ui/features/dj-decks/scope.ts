@@ -8,7 +8,7 @@
 import type { DeckId, DecksApi, DeckState } from '@app/dj/decks-api';
 import { reducePeaks, type DeckWaveform } from '@core/dj/deck-peaks';
 import { formatDeckTime, MIN_TRACKED_BEATS, REV_SEC } from '@core/dj/decks-math';
-import { alpha, fitCanvas, mix, readTheme, themeVersion, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, fitCanvas, mix, readTheme, themeVersion, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import { StallLatch } from './stall';
 
 /** Seconds of song across the scrolling waveform. */
@@ -236,7 +236,7 @@ export class DeckScope {
       g.fillRect(px, 0, 1.5, H);
       g.fillRect(px, 0, 14, 12);
       g.fillStyle = theme.onLight;
-      g.font = `600 9px ${theme.font}`;
+      g.font = `600 ${fontPx(9)}px ${theme.font}`;
       g.textBaseline = 'middle';
       g.fillText(text, px + 4, 6.5);
     };

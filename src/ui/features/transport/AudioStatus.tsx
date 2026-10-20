@@ -39,7 +39,6 @@ export function AudioStatus({ show }: { show: 'enable' | 'stats' }) {
     return (
       <button
         className={styles.audioOff}
-        tabIndex={-1}
         onClick={() => void services.engine.resume()}
         data-hint="The browser keeps audio off until you interact with the page"
       >

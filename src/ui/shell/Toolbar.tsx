@@ -47,7 +47,6 @@ export function CommandButton({
     <button
       className={`${styles.toolButton} ${checked ? styles.toolButtonOn : ''} ${className ?? ''}`}
       disabled={!enabled}
-      tabIndex={-1}
       onPointerDown={(e) => e.preventDefault()}
       onClick={() => services.commands.run(command, args)}
       data-hint={hint}
@@ -106,12 +105,17 @@ function useCloseOnOutsideClick(isOpen: boolean, panelRef: RefObject<HTMLElement
     const onDown = (e: PointerEvent) => {
       const target = e.target as Node;
       if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
-      // Menus opened from inside the panel render elsewhere; only close for clicks on the app itself.
-      if ((target as Element).closest?.('[role="menu"], [role="listbox"], [role="dialog"]')) return;
+      // Menus opened from inside the panel render elsewhere; only close for clicks on the app itself (a window is a dialog
+      // too, but it is the app).
+      if ((target as Element).closest?.('[role="menu"], [role="listbox"], [role="dialog"]:not([data-window-id])')) return;
       close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape') return;
+      // The focus goes back to the button that opened the panel, when it was inside the panel.
+      const wasInside = panelRef.current?.contains(document.activeElement);
+      close();
+      if (wasInside) buttonRef.current?.focus();
     };
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey);
@@ -136,6 +140,8 @@ function OverflowSlots() {
   const groupRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  /** True when the panel was opened with the keyboard, so its first control takes the focus once it is shown. */
+  const focusPanel = useRef(false);
   const widths = useRef(new Map<string, number>());
   // Which slots fit, for the slot list it was measured with; a new list shows everything once to measure it.
   const [measured, setMeasured] = useState<{ ids: string; shown: ReadonlySet<string> | null }>({
@@ -206,15 +212,28 @@ function OverflowSlots() {
   const rightShown = right.filter(visible);
 
   const toggle = () => {
+    // Opened from the keyboard: the panel takes the focus (see below). A mouse click leaves the focus alone.
+    focusPanel.current = !open && !!moreRef.current?.matches(':focus-visible');
     const rect = moreRef.current!.getBoundingClientRect();
     setPanelPos({ top: rect.bottom + 4, right: Math.max(4, window.innerWidth - rect.right) });
     setOpen((o) => !o);
   };
 
   useCloseOnOutsideClick(showPanel, panelRef, moreRef, () => setOpen(false));
+  useEffect(() => {
+    if (!showPanel || !focusPanel.current) return;
+    focusPanel.current = false;
+    panelRef.current?.querySelector<HTMLElement>('button, [tabindex]')?.focus();
+  }, [showPanel]);
 
   return (
-    <div ref={groupRef} className={`${styles.toolbarGroup} ${styles.toolbarGroupFill}`}>
+    <div
+      ref={groupRef}
+      className={`${styles.toolbarGroup} ${styles.toolbarGroupFill}`}
+      role="toolbar"
+      aria-label="Studio and project controls"
+      data-roving
+    >
       {center.filter(visible).map((slot) => (
         <div key={slot.id} data-slot={slot.id} className={styles.toolbarSlot}>
           <slot.component />
@@ -224,10 +243,10 @@ function OverflowSlots() {
         <button
           ref={moreRef}
           className={`${styles.toolButton} ${showPanel ? styles.toolButtonOn : ''}`}
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={toggle}
           aria-label="More toolbar controls"
+          aria-haspopup="true"
           aria-expanded={showPanel}
           data-hint={`More toolbar controls that don't fit this window width (${hidden.length} hidden). Widen the window to show them in the bar.`}
         >
@@ -235,7 +254,7 @@ function OverflowSlots() {
         </button>
       )}
       {rightShown.length > 0 && (
-        <div className={styles.toolbarRight} data-tour="windows">
+        <div className={styles.toolbarRight} data-tour="windows" role="toolbar" aria-label="Windows, history and audio" data-roving>
           {rightShown.map((slot) => (
             <div key={slot.id} data-slot={slot.id} className={styles.toolbarSlot}>
               <slot.component />
@@ -244,7 +263,14 @@ function OverflowSlots() {
         </div>
       )}
       {showPanel && (
-        <div ref={panelRef} className={styles.toolbarOverflow} style={panelPos}>
+        <div
+          ref={panelRef}
+          className={styles.toolbarOverflow}
+          style={panelPos}
+          role="toolbar"
+          aria-label="More toolbar controls"
+          data-roving
+        >
           {hidden.map((slot) => (
             <div key={slot.id} className={styles.toolbarOverflowItem}>
               <slot.component />

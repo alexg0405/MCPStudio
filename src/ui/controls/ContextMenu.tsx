@@ -5,6 +5,7 @@ import { holdModal } from './Dialog';
 import { moveInPanel } from './menu-nav';
 import { placeAtPointer } from './place';
 import { MenuItems, panelKeys } from './ContextMenuItems';
+import { panelItems } from './menu-nav';
 import styles from './ContextMenu.module.css';
 
 export { closeContextMenu, isContextMenuOpen, showContextMenu, type MenuEntry } from './context-menu-store';
@@ -43,16 +44,21 @@ function swallowRestOfPress(pointerId: number): void {
  * While a menu is open it has the keyboard (shortcuts and the typing piano wait), a click outside only closes it, scrolling or
  * zooming what it was opened on closes it, Esc closes it, and the first arrow key (when it was opened with the mouse) moves into it.
  */
-function useOpenMenuBehaviour(open: MenuOpen | null, menuRef: RefObject<HTMLDivElement | null>): void {
+function useOpenMenuBehaviour(
+  open: MenuOpen | null,
+  menuRef: RefObject<HTMLDivElement | null>,
+  opener: RefObject<HTMLElement | null>,
+): void {
   useEffect(() => {
     if (!open) return;
     const release = holdModal();
     const inside = (e: Event) => !!menuRef.current?.contains(e.target as Node);
     const onDown = (e: PointerEvent) => {
       if (inside(e)) return;
-      // A click outside only closes the menu.
+      // A click outside only closes the menu (and does not pull the focus back to where the keyboard was).
       e.preventDefault();
       e.stopPropagation();
+      opener.current = null;
       swallowRestOfPress(e.pointerId);
       closeContextMenu();
     };
@@ -62,6 +68,13 @@ function useOpenMenuBehaviour(open: MenuOpen | null, menuRef: RefObject<HTMLDivE
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        closeContextMenu();
+        return;
+      }
+      // Tab leaves a menu: it closes (the focus goes back to where it was opened from).
+      if (e.key === 'Tab') {
         e.preventDefault();
         e.stopPropagation();
         closeContextMenu();
@@ -87,7 +100,42 @@ function useOpenMenuBehaviour(open: MenuOpen | null, menuRef: RefObject<HTMLDivE
       window.removeEventListener('blur', closeContextMenu);
       window.removeEventListener('resize', closeContextMenu);
     };
-  }, [open, menuRef]);
+  }, [open, menuRef, opener]);
+}
+
+/**
+ * Keyboard users get the menu with the focus on its first entry, and the focus goes back to the control that opened
+ * it when the menu closes (by Esc or by choosing an entry). A mouse-opened menu leaves the focus alone, as it always did.
+ * Returns the opener, which `useOpenMenuBehaviour` clears when a click outside closes the menu.
+ */
+function useMenuFocus(open: MenuOpen | null, ready: boolean, menuRef: RefObject<HTMLDivElement | null>): RefObject<HTMLElement | null> {
+  const opener = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (open && !wasOpen.current) {
+      const active = document.activeElement;
+      opener.current = active instanceof HTMLElement && active !== document.body && active.matches(':focus-visible') ? active : null;
+    }
+    if (!open && wasOpen.current) {
+      const back = opener.current;
+      opener.current = null;
+      if (back?.isConnected) back.focus();
+    }
+    wasOpen.current = open !== null;
+  }, [open]);
+  // The menu is hidden until it is placed, and a hidden entry cannot take the focus.
+  useEffect(() => {
+    if (!ready || !opener.current) return;
+    const menu = menuRef.current;
+    if (menu && !menu.contains(document.activeElement)) panelItems(menu)[0]?.focus();
+  }, [ready, menuRef]);
+  return opener;
+}
+
+/** The menu's name for a screen reader: its header (a first label entry), else "Menu". */
+function headerLabel(open: MenuOpen): string {
+  const first = open.items[0];
+  return first?.kind === 'label' ? first.label : 'Menu';
 }
 
 /** Rendered once by the app shell. */
@@ -102,16 +150,18 @@ export function ContextMenuHost() {
     // Measured after render (before paint): the menu never spills off-screen or opens under the pointer.
     setPlaced({ for: open, ...placeAtPointer(open.x, open.y, box.width, box.height, window.innerWidth, window.innerHeight) });
   }, [open]);
-  useOpenMenuBehaviour(open, ref);
+  const pos = open && placed?.for === open ? placed : null;
+  const opener = useMenuFocus(open, pos !== null, ref);
+  useOpenMenuBehaviour(open, ref, opener);
 
   if (!open) return null;
-  const pos = placed?.for === open ? placed : null;
   return (
     <div
       ref={ref}
       className={styles.menu}
       style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: 'hidden' }}
       role="menu"
+      aria-label={headerLabel(open)}
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={panelKeys}
     >

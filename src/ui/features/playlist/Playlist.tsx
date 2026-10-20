@@ -37,13 +37,13 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
   const set = services.editor.getState().setPlaylist;
   const follow = useStore(services.prefs, (p) => p.followPlayhead);
   return (
-    <div className={styles.toolbar}>
-      <div className={styles.tools}>
+    <div className={styles.toolbar} role="toolbar" aria-label="Playlist tools">
+      <div className={styles.tools} role="group" aria-label="Tool">
         {TOOLS.map((t) => (
           <button
             key={t.tool}
-            tabIndex={-1}
             className={`${styles.tool} ${pl.tool === t.tool ? styles.toolOn : ''}`}
+            aria-pressed={pl.tool === t.tool}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => set({ tool: t.tool })}
             data-hint={`${t.hint} (${t.key})`}
@@ -67,24 +67,23 @@ function Toolbar({ controller }: { controller: React.RefObject<PlaylistControlle
       </span>
       <span className={styles.zoom}>
         <button
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => controller.current?.zoomBy(1 / 1.5)}
+          aria-label="Zoom out"
           data-hint="Zoom out (Ctrl/Cmd + wheel, or pinch)"
         >
           −
         </button>
         <button
-          tabIndex={-1}
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => controller.current?.zoomBy(1.5)}
+          aria-label="Zoom in"
           data-hint="Zoom in"
         >
           +
         </button>
       </span>
       <button
-        tabIndex={-1}
         className={`${styles.tool} ${follow ? styles.toolOn : ''}`}
         aria-pressed={follow}
         onPointerDown={(e) => e.preventDefault()}
@@ -187,7 +186,6 @@ export function Playlist() {
           ref={askPill}
           className={styles.askPill}
           style={{ display: 'none' }}
-          tabIndex={-1}
           aria-label="Ask Studio about this part"
           onPointerDown={(e) => e.preventDefault()}
           onClick={() => void askAboutSelection(services, { kind: 'pill' })}

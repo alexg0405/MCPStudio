@@ -120,7 +120,7 @@
 
 .time {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .slot,
@@ -158,14 +158,14 @@
   margin: 6px 4px 2px;
   padding: 0 0 0 18px;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   line-height: 1.5;
 }
 
 .same {
   margin: 6px 8px 2px;
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
 }
 
 .empty {

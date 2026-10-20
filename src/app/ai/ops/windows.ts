@@ -19,6 +19,7 @@ export const OPEN_WINDOWS = [
   'visualizer',
   'settings',
   'shortcuts',
+  'keyboard-help',
   'dj',
   'dj-controllers',
   'dj-decks',

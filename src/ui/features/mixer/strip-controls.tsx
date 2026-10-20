@@ -163,7 +163,6 @@ export const StripRoute = memo(function StripRoute({ id, name }: { id: InsertId;
         <span className={styles.knobGap} />
       )}
       <button
-        tabIndex={-1}
         className={`${styles.routeArrow} ${send ? styles.routeOn : ''} ${send?.pre ? styles.routePre : ''}`}
         disabled={!send && !isRoutable}
         onPointerDown={(event) => {

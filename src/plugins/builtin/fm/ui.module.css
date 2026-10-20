@@ -41,7 +41,7 @@
 }
 
 .diagram text {
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   font-weight: 600;
 }
 
@@ -111,7 +111,7 @@
 }
 
 .opName {
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -123,13 +123,13 @@
 
 .opRole {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .opRatio {
   color: var(--ag-text-dim);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .knobs {

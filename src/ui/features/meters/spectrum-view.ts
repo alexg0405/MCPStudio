@@ -6,7 +6,7 @@
 import { BandMap, octaveEdges, powerToDb, tiltDb } from '@core/metering/octave';
 import type { MeterHandle } from '@engine/api';
 import { R, SPECTRUM_SIZE } from '@app/metering/layout';
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 
 export const SPECTRUM_LOW_HZ = 20;
 export const SPECTRUM_HIGH_HZ = 20000;
@@ -171,7 +171,7 @@ export class SpectrumView {
   }
 
   private drawGrid(g: CanvasRenderingContext2D, width: number, height: number, theme: TimelineTheme): void {
-    g.font = `500 10px ${theme.font}`;
+    g.font = `500 ${fontPx(10)}px ${theme.font}`;
     g.fillStyle = theme.textFaint;
     g.strokeStyle = theme.lineFaint;
     g.lineWidth = 1;

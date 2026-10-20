@@ -68,7 +68,9 @@ let cachedKey = '';
  */
 export function themeColors(): ThemeColors {
   const root = typeof document === 'undefined' ? null : document.documentElement;
-  const key = root ? `${root.getAttribute('data-theme') ?? ''}|${root.getAttribute('data-accent') ?? ''}` : '';
+  const key = root
+    ? ['data-theme', 'data-accent', 'data-contrast', 'data-palette'].map((name) => root.getAttribute(name) ?? '').join('|')
+    : '';
   if (cached && key === cachedKey) return cached;
   const s = root ? getComputedStyle(root) : null;
   const v: ReadToken = (name, fallback) => s?.getPropertyValue(name).trim() || fallback;

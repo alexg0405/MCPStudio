@@ -40,7 +40,7 @@
   width: 24px;
   padding: 0;
   color: var(--ag-text-faint);
-  font-size: 8px;
+  font-size: calc(8px * var(--ag-scale, 1));
   transition: color var(--ag-dur) var(--ag-ease);
 }
 
@@ -91,7 +91,7 @@
 .caret {
   flex: none;
   color: var(--ag-text-faint);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
 }
 
 .save {

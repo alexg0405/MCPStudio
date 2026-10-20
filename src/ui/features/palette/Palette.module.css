@@ -35,7 +35,7 @@
   color: var(--ag-text);
   font: inherit;
   font-family: var(--ag-font-display);
-  font-size: 17px;
+  font-size: calc(17px * var(--ag-scale, 1));
   font-weight: 400;
   outline: none;
   caret-color: var(--ag-accent);
@@ -123,7 +123,7 @@
   box-shadow: var(--ag-elev-1);
   color: var(--ag-text-dim);
   font-family: var(--ag-font);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--ag-scale, 1));
   line-height: 17px;
   text-align: center;
 }

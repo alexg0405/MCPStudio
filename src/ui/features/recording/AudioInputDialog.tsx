@@ -2,6 +2,7 @@ import { useEffect, useRef, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import type { Services } from '@app/services';
 import { holdModal } from '../../controls/Dialog';
+import { useDialogFocus } from '../../controls/dialog-focus';
 import { useDoc, useServices } from '../../services-context';
 import dialog from '../../controls/Dialog.module.css';
 import { InputDeviceSection, LatencySection, MonitoringSection, PunchSection, RecordWhatSection } from './AudioInputSections';
@@ -26,9 +27,9 @@ function closeDialog(): void {
  * dialog also opens the input, which shows the meter (and asks for permission the first time: the menu click is the gesture).
  */
 function useModalAndInput(dialogRef: RefObject<HTMLDivElement | null>, services: Services): void {
+  useDialogFocus(dialogRef);
   useEffect(() => {
     const release = holdModal();
-    dialogRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       e.preventDefault();

@@ -52,6 +52,7 @@ function SubmenuButton({ label, isOpen, disabled, onOpen }: { label: string; isO
   return (
     <button
       role="menuitem"
+      tabIndex={-1}
       aria-haspopup="menu"
       aria-expanded={isOpen}
       className={`${styles.menuItem} ${isOpen ? styles.menuItemOpen : ''}`}
@@ -105,7 +106,9 @@ function SubmenuRoot({ label, disabled, isOpen, onOpen, onCloseSub, children }: 
 function DynamicEntryRow({ entry, onClose, onHover }: { entry: DynamicMenuEntry; onClose(): void; onHover(): void }) {
   return (
     <button
-      role="menuitem"
+      role={entry.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+      aria-checked={entry.checked === undefined ? undefined : entry.checked}
+      tabIndex={-1}
       className={styles.menuItem}
       disabled={entry.disabled}
       onPointerDown={(e) => e.preventDefault()}
@@ -129,9 +132,12 @@ function CommandRow({ item, onClose, onHover }: { item: Extract<MenuItem, { kind
   const def = commands.get(item.command);
   if (!def) return null;
   const chord = keymap.chordsFor(item.command)[0];
+  const checked = commands.isChecked(item.command);
   return (
     <button
-      role="menuitem"
+      role={def.checked ? 'menuitemcheckbox' : 'menuitem'}
+      aria-checked={def.checked ? checked : undefined}
+      tabIndex={-1}
       className={styles.menuItem}
       disabled={!commands.isEnabled(item.command)}
       onPointerDown={(e) => e.preventDefault()}
@@ -142,7 +148,7 @@ function CommandRow({ item, onClose, onHover }: { item: Extract<MenuItem, { kind
       }}
       data-hint={def.hint ?? def.title}
     >
-      <span className={styles.menuCheck}>{commands.isChecked(item.command) ? '✓' : ''}</span>
+      <span className={styles.menuCheck}>{checked ? '✓' : ''}</span>
       <span className={styles.menuText}>{item.label ?? def.title}</span>
       <span className={styles.menuChord}>{chord ? formatChord(chord, platform) : ''}</span>
     </button>
@@ -150,11 +156,13 @@ function CommandRow({ item, onClose, onHover }: { item: Extract<MenuItem, { kind
 }
 
 /** A nested menu of dynamic entries. */
-function EntriesDropdown({ entries, onClose }: { entries: DynamicMenuEntry[]; onClose(): void }) {
-  return <MenuDropdown items={[{ kind: 'dynamic', id: 'sub', order: 0, entries: () => entries }]} nested onClose={onClose} />;
+function EntriesDropdown({ label, entries, onClose }: { label: string; entries: DynamicMenuEntry[]; onClose(): void }) {
+  return <MenuDropdown label={label} items={[{ kind: 'dynamic', id: 'sub', order: 0, entries: () => entries }]} nested onClose={onClose} />;
 }
 
 interface MenuDropdownProps {
+  /** The menu's name for a screen reader ("File", or the submenu row's label). */
+  label: string;
   items: MenuItem[];
   /** A top-level menu: where it opens, in viewport coordinates. */
   position?: { left: number; top: number };
@@ -168,7 +176,7 @@ interface MenuDropdownProps {
 }
 
 /** One panel of a menu: its rows, separators and submenus. Arrow keys move through it; a top-level panel also moves sideways. */
-export function MenuDropdown({ items, position, nested = false, onClose, autoFocus = false, onSideways }: MenuDropdownProps) {
+export function MenuDropdown({ label, items, position, nested = false, onClose, autoFocus = false, onSideways }: MenuDropdownProps) {
   useCommandsVersion();
   const [openSub, setOpenSub] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -198,7 +206,7 @@ export function MenuDropdown({ items, position, nested = false, onClose, autoFoc
       if (!children) return <DynamicEntryRow key={key} entry={entry} onClose={onClose} onHover={closeSub} />;
       return (
         <SubmenuRoot key={key} label={entry.label} disabled={entry.disabled} isOpen={openSub === key} onOpen={() => setOpenSub(key)} onCloseSub={closeSub}>
-          {() => <EntriesDropdown entries={children} onClose={onClose} />}
+          {() => <EntriesDropdown label={entry.label} entries={children} onClose={onClose} />}
         </SubmenuRoot>
       );
     });
@@ -208,6 +216,7 @@ export function MenuDropdown({ items, position, nested = false, onClose, autoFoc
       ref={panelRef}
       className={`${styles.menuDropdown} ${nested ? styles.menuDropdownNested : ''}`}
       role="menu"
+      aria-label={label}
       style={nested ? (placed ?? { left: 0, top: 0, visibility: 'hidden' }) : position}
       onKeyDown={onPanelKey}
     >
@@ -218,7 +227,7 @@ export function MenuDropdown({ items, position, nested = false, onClose, autoFoc
           const key = `sub:${item.id}`;
           return (
             <SubmenuRoot key={key} label={item.label} isOpen={openSub === key} onOpen={() => setOpenSub(key)} onCloseSub={closeSub}>
-              {() => <MenuDropdown items={item.items()} nested onClose={onClose} />}
+              {() => <MenuDropdown label={item.label} items={item.items()} nested onClose={onClose} />}
             </SubmenuRoot>
           );
         }

@@ -193,10 +193,11 @@ function ProgressionCard({ progression, flats }: { progression: Progression; fla
         <span className={styles.tag}>{progression.mode}</span>
         <span className={styles.spacer} />
         <label className={styles.field} data-hint="Use the key’s seventh chords instead of plain triads">
-          <input type="checkbox" checked={sevenths} onChange={(event) => setSevenths(event.target.checked)} /> 7ths
+          <input type="checkbox" checked={sevenths} aria-label={`Seventh chords for ${progression.name}`} onChange={(event) => setSevenths(event.target.checked)} /> 7ths
         </label>
         <button
           className={styles.button}
+          aria-label={`Use ${progression.name}`}
           onClick={() => report(services, applyProgression(services, progression, { sevenths, bars: Math.max(8, progressionChords(progression, key).reduce((sum, entry) => sum + entry.bars, 0)) }))}
           data-hint={`Put ${progression.name} on the chord track in ${keyLabel(key.root, key.scale)}, from the song position, repeated to fill at least 8 bars (one undo step)`}
         >
@@ -249,7 +250,7 @@ function ProgressionsSection() {
       {list.length === 0 ? (
         <p className={styles.empty}>No progression has that mood and genre together: try one of them alone.</p>
       ) : (
-        <ul className={styles.cards}>
+        <ul className={styles.cards} aria-label="Progressions" data-roving="grid">
           {list.map((progression) => (
             <ProgressionCard key={progression.id} progression={progression} flats={flats} />
           ))}

@@ -49,6 +49,14 @@ export function MenuBar() {
         if (hadFocus) bar?.querySelector<HTMLElement>(`[data-menu="${open}"]`)?.focus();
         return;
       }
+      // Tab leaves the menu: it closes and the focus waits on its label (the next Tab moves on).
+      if (e.key === 'Tab' && bar?.contains(document.activeElement)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setOpenState(null);
+        bar.querySelector<HTMLElement>(`[data-menu="${open}"]`)?.focus();
+        return;
+      }
       // Opened with the mouse: the first arrow key moves into the menu.
       const panel = bar?.querySelector(`[data-menu="${open}"] + [role="menu"]`);
       if (panel && !bar?.contains(document.activeElement) && moveInPanel(e, panel)) {
@@ -66,12 +74,13 @@ export function MenuBar() {
   }, [open]);
 
   return (
-    <div className={styles.menuBar} ref={barRef}>
+    <div className={styles.menuBar} ref={barRef} role="menubar" aria-label="Main menu" data-roving>
       {menus.map((m) => (
         <div key={m.id} className={styles.menuRoot}>
           <button
             className={`${styles.menuLabel} ${open === m.id ? styles.menuLabelOpen : ''}`}
             data-menu={m.id}
+            role="menuitem"
             aria-haspopup="menu"
             aria-expanded={open === m.id}
             onPointerDown={(e) => {
@@ -96,6 +105,7 @@ export function MenuBar() {
           </button>
           {openState?.id === m.id && (
             <MenuDropdown
+              label={m.label}
               items={getMenuItems(m.id)}
               position={{ left: openState.left, top: openState.top }}
               onClose={() => setOpen(null)}

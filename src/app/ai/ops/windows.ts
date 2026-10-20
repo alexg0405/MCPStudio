@@ -35,6 +35,8 @@ export const OPEN_WINDOWS = [
   'mix-snapshots',
   'versions',
   'projects',
+  'help',
+  'features',
   'browser',
 ] as const;
 export type OpenWindow = (typeof OPEN_WINDOWS)[number];

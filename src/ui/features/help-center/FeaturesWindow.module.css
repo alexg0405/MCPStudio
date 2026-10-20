@@ -1,0 +1,156 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ag-surface-1);
+}
+
+.bar {
+  padding: 8px 12px;
+  background: var(--ag-surface-2);
+  border-bottom: 1px solid var(--ag-line-faint);
+}
+
+.search {
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+.areas {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.card {
+  padding: 12px 14px;
+  border-radius: var(--ag-radius-lg);
+  background: var(--ag-surface-2);
+  box-shadow: var(--ag-elev-1);
+}
+
+.cardTitle {
+  margin: 0 0 2px;
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size-title);
+  font-weight: 600;
+}
+
+.cardSummary {
+  margin: 0 0 8px;
+  color: var(--ag-text-dim);
+  line-height: 1.5;
+}
+
+.entryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.entry {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.entry:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.entry:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.entryTour {
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent-ink);
+}
+
+.commands > summary {
+  cursor: pointer;
+  color: var(--ag-text-dim);
+}
+
+.commandList {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.commandRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  border-top: 1px solid var(--ag-line-faint);
+}
+
+.commandText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.commandName {
+  color: var(--ag-text);
+}
+
+.commandWhere {
+  color: var(--ag-text-faint);
+  font-size: calc(10px * var(--ag-scale, 1));
+}
+
+.chord {
+  padding: 1px 6px;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-3);
+  font-family: var(--ag-font);
+  font-size: var(--ag-font-size-sm);
+  white-space: nowrap;
+}
+
+.run {
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  color: var(--ag-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.run:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.run:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  color: var(--ag-text-dim);
+}

@@ -129,7 +129,7 @@ export function searchActions(entries: readonly ActionEntry[], query: string, re
     }
     if (!all) continue;
     if (p.label === q) score += 20;
-    score += recency(entry);
+    score += recency(entry) + (entry.boost ?? 0);
     if (entry.disabled) score -= 4;
     scored.push({ entry, score });
   }

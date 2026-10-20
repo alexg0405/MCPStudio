@@ -17,6 +17,8 @@ export interface ActionEntry {
   chord?: string;
   checked?: boolean;
   disabled?: boolean;
+  /** Added to its ranking score, to put it ahead of entries that match equally well (a tour before the window it teaches). */
+  boost?: number;
   run(): void;
 }
 

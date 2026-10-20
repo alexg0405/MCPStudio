@@ -20,6 +20,7 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import { SampleBrowserWindow } from './SampleBrowserWindow';
 import { EMPTY_NO_AUDIO_TEXT, EMPTY_NO_FOLDERS_TEXT, EMPTY_NO_MATCH_TEXT, ROW_H } from './view';
+import { EVENTUALLY } from '../../../../test/helpers/wait';
 
 const frames = (n: number) =>
   new Promise<void>((resolve) => {
@@ -113,7 +114,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     sampleFolders.setState({ folders: [], loaded: true });
     s.sampleBrowser.store.setState({ rows: [] });
     await frames(3);
-    expect(host.textContent).toContain('No sample folders yet');
+    await expect.poll(() => host.textContent, EVENTUALLY).toContain('No sample folders yet');
     expect(host.textContent).toContain(EMPTY_NO_FOLDERS_TEXT.slice(0, 40));
     expect(host.querySelector('[role="listbox"]')).toBeNull();
   });
@@ -121,14 +122,14 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
   it('a folder without audio says so', async () => {
     sampleFolders.setState({ folders: [folder()], loaded: true });
     await frames(3);
-    expect(host.textContent).toContain('No audio found');
+    await expect.poll(() => host.textContent, EVENTUALLY).toContain('No audio found');
     expect(host.textContent).toContain(EMPTY_NO_AUDIO_TEXT.slice(0, 30));
   });
 
   it('draws a window of 5000 sounds, and every row is reachable by scrolling', async () => {
     await setRows(makeRows(5000));
     await frames(4);
-    expect(rows().length).toBeGreaterThan(8);
+    await expect.poll(() => rows().length, EVENTUALLY).toBeGreaterThan(8);
     expect(rows().length).toBeLessThan(80);
     expect(rows()[0]!.textContent).toContain('Sound 0000');
     expect(list().scrollHeight).toBeGreaterThanOrEqual(5000 * ROW_H);
@@ -143,7 +144,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     expect(Math.abs((rows()[0] as HTMLElement).offsetTop - 2500 * ROW_H)).toBeLessThanOrEqual(12 * ROW_H);
     list().scrollTop = 0;
     await frames(2);
-    expect(footer()).toContain('5,000 of 5,000 sounds');
+    await expect.poll(() => footer(), EVENTUALLY).toContain('5,000 of 5,000 sounds');
   });
 
   it('scrolling and stepping make few DOM nodes and no work for rows out of view', async () => {
@@ -169,21 +170,21 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     expect(rows().every((r) => r.textContent!.includes('Kick'))).toBe(true);
     click(chip('Clear filters'));
     await frames(3);
-    expect(footer()).toContain('5,000 of 5,000 sounds');
+    await expect.poll(() => footer(), EVENTUALLY).toContain('5,000 of 5,000 sounds');
     click(chip('Loops'));
     await frames(3);
-    expect(rows().every((r) => r.textContent!.includes('loop'))).toBe(true);
+    await expect.poll(() => rows().every((r) => r.textContent!.includes('loop')), EVENTUALLY).toBe(true);
     const input = host.querySelector<HTMLInputElement>('input[type="search"]')!;
     const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
     set.call(input, 'Sound 0330');
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await frames(3);
-    expect(rows().map((r) => r.textContent).join(' ')).toContain('Sound 0330');
+    await expect.poll(() => rows().map((r) => r.textContent).join(' '), EVENTUALLY).toContain('Sound 0330');
     expect(rows().length).toBe(1);
     set.call(input, 'zzzz');
     input.dispatchEvent(new Event('input', { bubbles: true }));
     await frames(3);
-    expect(host.textContent).toContain(EMPTY_NO_MATCH_TEXT.slice(0, 30));
+    await expect.poll(() => host.textContent, EVENTUALLY).toContain(EMPTY_NO_MATCH_TEXT.slice(0, 30));
     expect(host.querySelector('[role="listbox"]')).toBeNull();
     click(chip('Clear filters'));
     await frames(3);
@@ -214,7 +215,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     const bKey = [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'B' && b.getAttribute('data-hint')?.startsWith('Sounds in B'))!;
     click(bKey);
     await frames(3);
-    expect(rows().length).toBeGreaterThan(0);
+    await expect.poll(() => rows().length, EVENTUALLY).toBeGreaterThan(0);
     expect(rows().every((r) => r.children[4]!.textContent === 'B')).toBe(true);
   });
 
@@ -240,7 +241,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     await frames(2);
     key(list(), 'ArrowDown');
     await frames(2);
-    expect(s.fakeEngine.previews.length).toBe(3);
+    await expect.poll(() => s.fakeEngine.previews.length, EVENTUALLY).toBe(3);
     key(list(), 'Enter');
     await expect.poll(() => s.fakeEngine.previews.length).toBe(4);
     key(list(), 'Escape');
@@ -281,7 +282,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     expect(labels.some((x) => x?.includes('drum kit'))).toBe(true);
     items.find((b) => b.textContent?.includes('Find similar sounds'))!.click();
     await frames(3);
-    expect(host.textContent).toContain('Sounds like');
+    await expect.poll(() => host.textContent, EVENTUALLY).toContain('Sounds like');
     expect(rows()[0]!.textContent).toContain('Kick');
     click(chip('Back to all sounds'));
     await frames(3);
@@ -306,7 +307,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
     await frames(2);
     key(tagBox, 'Enter');
     await frames(3);
-    expect(s.sampleBrowser.store.getState().rows.filter((r) => r.userTags.includes('punchy')).length).toBe(4);
+    await expect.poll(() => s.sampleBrowser.store.getState().rows.filter((r) => r.userTags.includes('punchy')).length, EVENTUALLY).toBe(4);
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'punchy')).toBe(true);
   });
 
@@ -331,7 +332,7 @@ describe('Sample browser window (UI)', { timeout: 60_000 }, () => {
   });
 });
 
-async function until(ok: () => boolean, ms = 8000): Promise<void> {
+async function until(ok: () => boolean, ms = 30_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

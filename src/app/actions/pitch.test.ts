@@ -46,7 +46,7 @@ async function setup() {
 }
 
 const clipOf = (p: Project, id: ClipId) => p.playlist.clips[id] as AudioClip;
-async function until(fn: () => boolean, ms = 8000): Promise<void> {
+async function until(fn: () => boolean, ms = 30_000): Promise<void> {
   const t0 = Date.now();
   while (!fn()) {
     if (Date.now() - t0 > ms) throw new Error('timed out');

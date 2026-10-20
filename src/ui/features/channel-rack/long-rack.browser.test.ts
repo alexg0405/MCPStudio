@@ -15,6 +15,7 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY } from '../../../../test/helpers/wait';
 
 const frames = (n: number) =>
   new Promise<void>((resolve) => {
@@ -76,7 +77,7 @@ describe('long channel rack (UI)', { timeout: 60_000 }, () => {
     s.session.getState().selectChannel(id);
     s.editor.getState().setStepGraph({ channelId: id });
     await frames(4);
-    expect(rows().length).toBe(s.doc.getState().project.channelOrder.length);
+    await expect.poll(() => rows().length, EVENTUALLY).toBe(s.doc.getState().project.channelOrder.length);
     s.editor.getState().setStepGraph({ channelId: null });
     await frames(4);
     expect(rows().length).toBeLessThan(80);

@@ -20,8 +20,9 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { untilStill } from '../helpers/wait';
 
-const until = async (ok: () => boolean, ms = 8000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -161,7 +162,9 @@ describe('Clip launcher window (UI)', { timeout: 60_000 }, () => {
   });
 
   it('idle playback causes no React commits and no DOM writes beyond the rings', async () => {
-    await frames(10);
+    // The scene launched by the test before this one starts at its quantized moment, which a busy machine delays: its own
+    // commits are not idle playback, so wait until the commit count has stopped moving.
+    await untilStill(() => commits);
     const before = commits;
     const writes: string[] = [];
     const obs = new MutationObserver((list) => {

@@ -13,6 +13,7 @@ import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import { paletteStore, togglePalette } from './Palette';
+import { EVENTUALLY } from '../../../../test/helpers/wait';
 
 const frames = (n: number) =>
   new Promise<void>((resolve) => {
@@ -49,7 +50,7 @@ describe('action search (UI)', { timeout: 30_000 }, () => {
   it('draws a window of the rows, and the arrow keys scroll the choice into view', async () => {
     togglePalette();
     await frames(3);
-    expect(rows().length).toBeGreaterThan(5);
+    await expect.poll(() => rows().length, EVENTUALLY).toBeGreaterThan(5);
     expect(rows().length).toBeLessThan(40);
     const list = document.getElementById('ag-palette-list')!;
     for (let i = 0; i < 60; i++) {

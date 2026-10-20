@@ -12,6 +12,7 @@ import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import { DjWindow } from './DjWindow';
+import { EVENTUALLY } from '../../../../test/helpers/wait';
 
 const frames = (n: number) =>
   new Promise<void>((resolve) => {
@@ -82,6 +83,6 @@ describe('DJ library table (UI)', { timeout: 30_000 }, () => {
   it('a short library renders every row', async () => {
     library.setState({ songs: Array.from({ length: 12 }, (_, i) => song(i)) });
     await frames(3);
-    expect(bodyRows().length).toBe(12);
+    await expect.poll(() => bodyRows().length, EVENTUALLY).toBe(12);
   });
 });

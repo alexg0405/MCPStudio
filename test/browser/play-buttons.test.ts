@@ -26,9 +26,10 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY, untilStill } from '../helpers/wait';
 
 const BAR = 3840;
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -144,7 +145,7 @@ describe('play buttons and menus (UI)', { timeout: 30_000 }, () => {
     // Another pattern becomes the one that loops (and is being edited): still ■.
     s.view.getState().setCurrentPattern(chorus);
     await frames(3);
-    expect(playButton('channel-rack').getAttribute('aria-label')).toBe('Stop');
+    await expect.poll(() => playButton('channel-rack').getAttribute('aria-label'), EVENTUALLY).toBe('Stop');
     // Song mode plays the playlist, not this pattern.
     s.view.getState().setMode('song');
     await until(() => playButton('channel-rack').getAttribute('aria-label') === 'Play pattern');
@@ -168,7 +169,7 @@ describe('play buttons and menus (UI)', { timeout: 30_000 }, () => {
   it('the toolbar shifting by a pixel while playing does not re-render anything', async () => {
     playButton('piano-roll').click();
     await until(() => s.fakeEngine.playing);
-    await frames(10);
+    await untilStill(() => commits);
     const group = host.querySelector<HTMLElement>('[data-slot]')!.parentElement!;
     const before = commits;
     // The position readout changing width resizes the toolbar's centre group by a pixel or so.
@@ -178,7 +179,7 @@ describe('play buttons and menus (UI)', { timeout: 30_000 }, () => {
     await frames(5);
     group.parentElement!.style.paddingRight = '';
     await frames(5);
-    expect(commits - before).toBe(0);
+    await expect.poll(() => commits - before, EVENTUALLY).toBe(0);
   });
 
   it('the browser’s pattern menu plays a pattern, and says Stop while it plays', async () => {

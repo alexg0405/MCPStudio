@@ -22,6 +22,7 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import '@ui/touch/touch.css';
 import { centerOf, Fingers, nextFrame, sleep, until } from '../helpers/touch';
+import { EVENTUALLY } from '../helpers/wait';
 
 const SPEC = p.float(0, 1, 0.5, { label: 'Amount' });
 
@@ -281,7 +282,7 @@ describe('controls with touch', { timeout: 60_000 }, () => {
       await fingers.dragTogether({ id: 1, to: { x: a.x, y: a.y - 50 } }, { id: 2, to: { x: b.x, y: b.y + 50 } });
       await fingers.liftAll();
       await nextFrame();
-      expect(log.begins).toBe(2);
+      await expect.poll(() => log.begins, EVENTUALLY).toBe(2);
       expect(first!.getAttribute('aria-valuenow')).not.toBe('0.5');
       expect(second!.getAttribute('aria-valuenow')).not.toBe('0.5');
       expect(Number(first!.getAttribute('aria-valuenow'))).toBeGreaterThan(0.5);

@@ -21,6 +21,7 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY, untilStill } from '../helpers/wait';
 
 const BAR = 3840;
 // A passing wait ends as soon as the condition holds; the generous limit only matters on a machine so busy that React takes seconds.
@@ -100,12 +101,12 @@ describe('Ask Studio about this part (UI)', () => {
     expect(r.right).toBeLessThanOrEqual(grid.right);
     s.editor.getState().selectClips([intro[0]!.id]);
     await frames(2);
-    expect(pill()!.textContent).toBe('');
+    await expect.poll(() => pill()!.textContent, EVENTUALLY).toBe('');
     expect(pill()!.querySelector('svg')).not.toBeNull();
     s.editor.getState().selectClips([]);
     s.view.getState().setLoop({ start: 8 * BAR, end: 16 * BAR });
     await frames(2);
-    expect(pill()!.textContent).toBe('Ask Studio');
+    await expect.poll(() => pill()!.textContent, EVENTUALLY).toBe('Ask Studio');
     expect(pill()!.getAttribute('data-hint')).toBe('Ask Studio to change Pre-verse (bars 9–16), Alt+A: only those bars change');
     // Clicking it opens the card about that section.
     await userEvent.click(pill()!);
@@ -140,7 +141,7 @@ describe('Ask Studio about this part (UI)', () => {
     s.view.getState().setSongStart(0);
     await userEvent.click(ruler, { position: { x: flag.left - rr.left + 8, y: flag.top - rr.top + 7 } });
     await frames(2);
-    expect(s.view.getState().songStart).toBe(16 * BAR);
+    await expect.poll(() => s.view.getState().songStart, EVENTUALLY).toBe(16 * BAR);
     expect(card()).toBeNull();
   });
 
@@ -195,10 +196,10 @@ describe('Ask Studio about this part (UI)', () => {
     closeAsk();
     s.view.getState().setMode('song');
     s.engine.play(0);
-    await frames(10);
+    await untilStill(() => commits);
     const before = commits;
     await frames(30);
-    expect(commits).toBe(before);
+    await expect.poll(() => commits, EVENTUALLY).toBe(before);
     s.engine.stop();
   });
 

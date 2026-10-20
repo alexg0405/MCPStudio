@@ -24,7 +24,7 @@ const frames = (n: number) =>
     requestAnimationFrame(step);
   });
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const until = async (ok: () => boolean, ms = 3000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

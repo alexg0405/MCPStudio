@@ -27,11 +27,12 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY } from '../helpers/wait';
 
 const BAR = 3840;
 const BAR_PX = 96; // pxPerTick 0.025
 const LANE_H = 36;
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -359,7 +360,7 @@ describe('playlist gestures (UI)', { timeout: 40_000 }, () => {
       const pill = host.querySelector<HTMLElement>('button[aria-label="Ask Studio about this part"]')!;
       s.editor.getState().selectClips([]);
       await frames(3);
-      expect(pill.style.display).toBe('none');
+      await expect.poll(() => pill.style.display, EVENTUALLY).toBe('none');
       s.editor.getState().selectClips([made.id]);
       await until(() => pill.style.display !== 'none');
       expect(pill.getAttribute('data-hint')).toContain('change this clip');

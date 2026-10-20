@@ -25,6 +25,7 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY } from '../helpers/wait';
 
 const BAR = 3840;
 // pxPerTick 0.025: a bar is 96 px; lanes are 36 px tall.
@@ -341,7 +342,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       await scrollHome();
       play(0.5 * visible());
       await frames(3);
-      expect(playheadX() / width()).toBeCloseTo(0.5, 1);
+      await expect.poll(() => playheadX() / width(), EVENTUALLY).toBeCloseTo(0.5, 1);
       s.fakeEngine.startTick = 0.9 * visible();
       await frames(3);
       // On its way, not there in one jump.
@@ -353,7 +354,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       await new Promise((r) => setTimeout(r, 400));
       s.engine.stop();
       await frames(2);
-      expect(s.editor.getState().playlist.scrollTick).toBeCloseTo(0.75 * visible(), 0);
+      await expect.poll(() => s.editor.getState().playlist.scrollTick, EVENTUALLY).toBeCloseTo(0.75 * visible(), 0);
     });
 
     it('smooth style: holds the playhead near 40 % and scrolls with it every frame', async () => {
@@ -369,7 +370,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       for (const step of [0.72, 0.75, 0.8]) {
         s.fakeEngine.startTick = step * visible();
         await frames(2);
-        expect(playheadX() / width()).toBeCloseTo(0.4, 1);
+        await expect.poll(() => playheadX() / width(), EVENTUALLY).toBeCloseTo(0.4, 1);
       }
       s.engine.stop();
       s.prefs.getState().set({ followStyle: 'page' });

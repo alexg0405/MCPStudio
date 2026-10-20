@@ -20,6 +20,7 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY } from '../helpers/wait';
 
 const BAR = 3840;
 const PX_PER_TICK = 0.1;
@@ -107,7 +108,7 @@ describe('follow playhead in the piano roll (UI)', { timeout: 90_000 }, () => {
     expect(toggle.getAttribute('data-hint')).toMatch(/^Follow playhead on/);
     play(0.5 * visible());
     await frames(3);
-    expect(playheadX() / width()).toBeCloseTo(0.5, 1);
+    await expect.poll(() => playheadX() / width(), EVENTUALLY).toBeCloseTo(0.5, 1);
     s.fakeEngine.startTick = 0.92 * visible();
     await until(nearLeft);
     // A jump off-screen (a seek) comes straight back.

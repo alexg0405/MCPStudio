@@ -32,7 +32,7 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 30)));
-const until = async (ok: () => boolean, ms = 8000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

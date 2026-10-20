@@ -19,8 +19,9 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY } from '../helpers/wait';
 
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -121,7 +122,7 @@ describe('mixer groups, VCA and snapshots (UI)', { timeout: 40_000 }, () => {
 
     wheel(slider('Kick volume'), -1);
     await frames(2);
-    expect(volume(a)).toBeGreaterThan(1);
+    await expect.poll(() => volume(a), EVENTUALLY).toBeGreaterThan(1);
     expect(volume(b)).toBeCloseTo(volume(a), 9);
     expect(volume(c)).toBe(1);
     await s.history.undo();

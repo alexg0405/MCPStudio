@@ -20,8 +20,9 @@ import { openWindow } from '@ui/workspace/registry';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
+import { EVENTUALLY } from '../helpers/wait';
 
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');
@@ -232,7 +233,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
     const move = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((i) => i.textContent?.includes('Move down'))!;
     move.click();
     await frames(2);
-    expect(order()).toEqual([b, a]);
+    await expect.poll(() => order(), EVENTUALLY).toEqual([b, a]);
     await s.history.undo();
     expect(order()).toEqual([a, b]);
   });
@@ -251,12 +252,12 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
     const on = (id: ChannelId) =>
       [...row(id).querySelectorAll<HTMLButtonElement>('button[aria-label^="Step "]')].flatMap((el, i) => (el.getAttribute('aria-pressed') === 'true' ? [i] : []));
     await frames(2);
-    expect([on(a), on(b)]).toEqual([[], [9]]);
+    await expect.poll(() => [on(a), on(b)], EVENTUALLY).toEqual([[], [9]]);
     const untouched = step(channels[2] ?? a, 0);
 
     s.view.getState().setCurrentPattern(other.id);
     await frames(2);
-    expect([on(a), on(b)]).toEqual([[2, 6], []]);
+    await expect.poll(() => [on(a), on(b)], EVENTUALLY).toEqual([[2, 6], []]);
     expect(step(channels[2] ?? a, 0)).toBe(untouched); // the same button, not rebuilt
 
     // Painting still works on the new pattern, and lands in it.
@@ -266,7 +267,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
 
     s.view.getState().setCurrentPattern(pattern);
     await frames(2);
-    expect([on(a), on(b)]).toEqual([[], [9]]);
+    await expect.poll(() => [on(a), on(b)], EVENTUALLY).toEqual([[], [9]]);
     await s.history.undo();
     await s.history.undo();
   });

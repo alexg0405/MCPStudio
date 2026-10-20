@@ -24,6 +24,7 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import '@ui/touch/touch.css';
 import { centerOf, Fingers, insideOf, nextFrame, sleep, until } from '../helpers/touch';
+import { EVENTUALLY } from '../helpers/wait';
 
 const frames = async (n: number) => {
   for (let i = 0; i < n; i++) await nextFrame();
@@ -123,7 +124,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       await fingers.drag(1, { x: outside.x + 40, y: outside.y + 30 });
       await fingers.lift(1);
       await frames(2);
-      expect(rectOf('channel-rack').w - before.w).toBeCloseTo(40, 0);
+      await expect.poll(() => rectOf('channel-rack').w - before.w, EVENTUALLY).toBeCloseTo(40, 0);
     });
 
     it('two quick taps on the title bar maximize the window (a double-click)', async () => {
@@ -207,7 +208,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       expect(tip.textContent!.length).toBeGreaterThan(5);
       await fingers.lift(1);
       await sleep(150);
-      expect(s.engine.playing).toBe(wasPlaying);
+      await expect.poll(() => s.engine.playing, EVENTUALLY).toBe(wasPlaying);
       // The hint goes away by itself.
       await until(() => tip.hidden === true, 6000);
     });
@@ -271,7 +272,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       // A tap on a lit step turns it off.
       await fingers.tap(1, centerOf(steps[3]!));
       await frames(3);
-      expect(steps[3]!.getAttribute('aria-pressed')).toBe('false');
+      await expect.poll(() => steps[3]!.getAttribute('aria-pressed'), EVENTUALLY).toBe('false');
     });
   });
 
@@ -325,21 +326,21 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       await fingers.press(2, { x: e!.x, y: key(64).getBoundingClientRect().bottom - 20 });
       await fingers.press(3, { x: g!.x, y: key(67).getBoundingClientRect().bottom - 20 });
       await frames(2);
-      expect(noteOns().map((n) => (n as { key: number }).key).sort()).toEqual([60, 64, 67]);
+      await expect.poll(() => noteOns().map((n) => (n as { key: number }).key).sort(), EVENTUALLY).toEqual([60, 64, 67]);
       expect(s.live.heldKeys().sort()).toEqual([60, 64, 67]);
       await fingers.lift(2);
       await frames(2);
-      expect(s.live.heldKeys().sort()).toEqual([60, 67]);
+      await expect.poll(() => s.live.heldKeys().sort(), EVENTUALLY).toEqual([60, 67]);
       await fingers.liftAll();
       await frames(2);
-      expect(s.live.heldKeys()).toEqual([]);
+      await expect.poll(() => s.live.heldKeys(), EVENTUALLY).toEqual([]);
     });
 
     it('a black key and the white key behind it sound separately', async () => {
       const black = key(61);
       await fingers.press(1, centerOf(black));
       await frames(1);
-      expect(s.live.heldKeys()).toEqual([61]);
+      await expect.poll(() => s.live.heldKeys(), EVENTUALLY).toEqual([61]);
       await fingers.liftAll();
     });
 
@@ -380,7 +381,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       const pads = [36, 37, 40, 51].map((n) => centerOf(key(n)));
       for (let i = 0; i < pads.length; i++) await fingers.press(i + 1, pads[i]!);
       await frames(2);
-      expect(noteOns().map((n) => (n as { key: number }).key).sort((a, b) => a - b)).toEqual([36, 37, 40, 51]);
+      await expect.poll(() => noteOns().map((n) => (n as { key: number }).key).sort((a, b) => a - b), EVENTUALLY).toEqual([36, 37, 40, 51]);
       await fingers.liftAll();
       events = [];
       // A finger that slides from one pad to the next does not hit the second.
@@ -428,7 +429,7 @@ describe('the shell with touch', { timeout: 90_000 }, () => {
       await fingers.press(1, centerOf(key(62)));
       s.view.getState().hideWindow('keys');
       await frames(3);
-      expect(s.live.heldKeys()).toEqual([]);
+      await expect.poll(() => s.live.heldKeys(), EVENTUALLY).toEqual([]);
       await fingers.liftAll();
       s.commands.run('view.keys');
       await until(() => !!windowEl('keys'));

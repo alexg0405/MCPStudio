@@ -47,6 +47,8 @@ export class AssistantSession {
   lastProblems: string[] = [];
   /** Everything asked so far in offline mode (the generator is stateless). */
   offlinePrompt = '';
+  /** How many songs the offline generator has written in this conversation: the next one is a variation. */
+  offlineSongs = 0;
   /** Stops the request in flight (asking, listening, following up). Null when none is running. */
   abort: AbortController | null = null;
   /** Stops the plugin build in flight. */

@@ -42,6 +42,8 @@ export interface TurnInfo {
   outside?: 'refuse' | 'allow';
   /** How many rounds of look-ups (query actions) led to this answer. */
   lookupRounds?: number;
+  /** The answer was written by the offline generator, not an AI. */
+  offline?: boolean;
 }
 
 type AppliedAnswer = ReturnType<typeof applyAnswer>;
@@ -132,7 +134,13 @@ function startAudition(session: AssistantSession, after: readonly AfterEdit[]): 
  * Runs the answer's commands and deck actions and says what happened in the chat (with an Undo when the
  * project changed). The UI is told which windows to open and which file dialogs wait for a click.
  */
-function reportAnswer(session: AssistantSession, answer: AiAnswer, result: AppliedAnswer, cursor: number): void {
+function reportAnswer(
+  session: AssistantSession,
+  answer: AiAnswer,
+  result: AppliedAnswer,
+  cursor: number,
+  offline: boolean,
+): void {
   const { services, store } = session;
   const report = { changes: [...result.changes, ...(result.ui ?? [])], warnings: result.warnings };
   // Live DJ deck actions run now (loading a song takes a moment: problems come up as messages).
@@ -143,6 +151,7 @@ function reportAnswer(session: AssistantSession, answer: AiAnswer, result: Appli
     ...(report.changes.length ? { changes: report.changes } : {}),
     ...(report.warnings.length ? { warnings: report.warnings } : {}),
     ...(result.edited ? { undo: cursor } : {}),
+    ...(offline ? { offline: true } : {}),
     ...beatMessageFields(services, result.beat, cursor),
   });
   store.setState({
@@ -190,7 +199,7 @@ export async function applyTurn(session: AssistantSession, answer: AiAnswer, tur
   const wantsToListen = result.after.some((action) => action.kind === 'analyze_mix');
   session.lastProblems = result.warnings;
   const cursor = services.history.status().cursor;
-  reportAnswer(session, answer, result, cursor);
+  reportAnswer(session, answer, result, cursor, turn.offline === true);
   // The part after the edit (copies made for it, clips that moved), unless the musician changed it meanwhile.
   if (part && result.focus && store.getState().focus === turn.focus) session.setFocus(result.focus);
   selectWhatChanged(session, result);

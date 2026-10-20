@@ -131,6 +131,7 @@ export class BeatAssistant implements AssistantApi {
     session.catalogSent = {};
     session.lastProblems = [];
     session.offlinePrompt = '';
+    session.offlineSongs = 0;
     session.approvals.clear();
     this.store.setState({ applied: null, messages: [], take: this.store.getState().take, focus: null });
   }

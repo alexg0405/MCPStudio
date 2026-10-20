@@ -12,6 +12,7 @@ import { PluginRegistry } from '@app/plugins/registry';
 import { ServicesProvider } from './services-context';
 import { registerFeatures } from './features';
 import { offerRecovery } from './features/files/recovery';
+import { showWhatsNewAfterUpdate } from './features/whats-new/whats-new-state';
 import { installAccessibilityPrefs } from './a11y/preferences';
 import { installRoving } from './a11y/roving';
 import { installKeyboard } from './keyboard';
@@ -122,5 +123,8 @@ if (restored) {
 
 if (start.recovery.length > 0) void offerRecovery(services, start.recovery, persistence);
 // First start: say what everything is (Help → Getting started brings it back). Not over crash recovery.
-else if (!services.prefs.getState().welcomeSeen && !new URLSearchParams(location.search).has('perf'))
-  services.commands.run('help.welcome');
+// Later starts: after an update, say what is new, once (Help → What's new brings it back).
+else if (!new URLSearchParams(location.search).has('perf')) {
+  if (!services.prefs.getState().welcomeSeen) services.commands.run('help.welcome');
+  showWhatsNewAfterUpdate(services);
+}

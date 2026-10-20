@@ -70,6 +70,8 @@ export interface PrefsState {
   keysVelocity: KeysVelocity;
   /** The welcome dialog was closed once; it no longer opens by itself. */
   welcomeSeen: boolean;
+  /** The version of the What's new list that was last shown ('' = never): the panel opens by itself once per version. */
+  whatsNewSeen: string;
   /** Most recent first: what the action search ranks higher. */
   recentActions: string[];
   /** Your own keyboard shortcuts by command id (they replace its built-in ones; [] = none). */
@@ -182,6 +184,7 @@ const DEFAULTS: PrefsState = {
   colorSafe: false,
   keysVelocity: 'position',
   welcomeSeen: false,
+  whatsNewSeen: '',
   recentActions: [],
   customKeys: {},
   outputDevice: '',

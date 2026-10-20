@@ -48,6 +48,7 @@ export function register(services: Services): void {
       ['Right-click', 'a menu for the note: split, merge, snap, octave, reset'],
       ['Wheel / Ctrl+wheel / Alt+wheel', 'scroll, zoom in time, zoom the rows'],
       ['Delete', 'puts the selected notes back as sung'],
+      ['Tab to the grid, then ← →', 'keyboard cursor: note to note (each is spoken), Enter selects, ↑ ↓ retune, ? says where you are'],
       ['B (or the A/B button)', 'switches between the corrected sound and your original recording so you can compare; nothing in the project changes'],
     ],
   });

@@ -32,6 +32,7 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
         ['Key ▾', 'The song key: highlight and snap to its scale'],
         ['Lanes below', 'Velocity, pan, release, fine pitch per note'],
         [`Scroll / ${mod}+scroll`, 'Scroll / zoom'],
+        ['Tab to the grid, then arrow keys', 'Keyboard cursor: move by the grid, Enter selects or adds a note, Delete removes, Alt+arrows move, ? says where you are'],
         ['Touch: one finger', 'Does what the tool does with a mouse'],
         ['Touch: two fingers', 'Pan; pinch sideways to zoom time, up and down for taller keys'],
         ['Touch: hold one finger', 'The right-click menu of the note or the empty spot'],
@@ -40,6 +41,7 @@ export function windowHelpTexts(mod: string, alt: string): Record<string, Window
     playlist: {
       intro: 'Your song: patterns, audio and automation clips over time. Switch the transport to SONG to hear it.',
       moves: [
+        ['Tab to the grid, then arrow keys', 'Keyboard cursor: move by the grid, Enter selects or places a pattern, Delete removes, Alt+arrows move, ? says where you are'],
         ['Click an empty spot (Draw)', 'A menu: place a pattern, paste, ask Studio, a fill, a marker…'],
         ['Drag on an empty spot (Draw)', 'Place the current pattern there'],
         ['Drag a clip', 'Move it (Shift+drag copies it)'],

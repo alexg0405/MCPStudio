@@ -2,6 +2,7 @@
 import { defineConfig, loadEnv, normalizePath, type EnvironmentModuleNode, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
+import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { draftServer } from './tools/ai/drafts.ts';
 import { faustPlugin } from './tools/faust/vite-plugin.ts';
@@ -23,11 +24,25 @@ const UNIT_EXCLUDE = ['**/*.browser.test.{ts,tsx}', '**/node_modules/**', 'plugi
 const UNIT_SETUP = ['test/unit/setup.ts'];
 const AUDIO_INCLUDE = ['src/**/*.browser.test.{ts,tsx}', 'test/browser/**/*.test.ts'];
 
+/**
+ * How many test files run in Chrome side by side in the `audio` project: about six tenths of the cores. Vitest's default (all
+ * cores but one) put nine pages on ten cores, and each page renders audio on threads of its own, so the pages waited for each
+ * other: on this machine nine pages took 248 to 292 s and six took 229 s, with every file's own time a third shorter (and the
+ * timing-sensitive UI tests failing less).
+ */
+const AUDIO_WORKERS = Math.max(2, Math.round(availableParallelism() * 0.6));
+
 /** The files with `perf` or `realtime` tests (tools/test/quiet-files.ts): what the two sequential projects run. */
 const quietFiles = findQuietFiles(root);
 
 /** A project that runs its test files in headless Chrome; `sequential` runs them one at a time instead of side by side. */
-function browserProject(options: { name: string; include: string[]; testTimeout: number; sequential?: boolean }) {
+function browserProject(options: {
+  name: string;
+  include: string[];
+  testTimeout: number;
+  sequential?: boolean;
+  maxWorkers?: number;
+}) {
   return {
     extends: true,
     // The dev server's strictPort would otherwise apply to the browser-test server too; parallel
@@ -41,6 +56,7 @@ function browserProject(options: { name: string; include: string[]; testTimeout:
       // Fixed entity ids: renders (whose noise is seeded from ids) repeat from run to run.
       setupFiles: ['test/browser/setup.ts'],
       ...(options.sequential ? { fileParallelism: false } : {}),
+      ...(options.maxWorkers ? { maxWorkers: options.maxWorkers } : {}),
       browser: {
         enabled: true,
         headless: true,
@@ -222,6 +238,7 @@ export default defineConfig(({ mode }) => ({
         // inside a file (describe.concurrent) wait for each other: the browser default of 15 s only ever fired
         // on a busy machine. A timeout is for a hang, not a speed check. Longer chains of renders set their own.
         testTimeout: 180_000,
+        maxWorkers: AUDIO_WORKERS,
       }),
       // The browser tests tagged `perf` or `realtime`, one file at a time, so the live audio clock and the wall-clock
       // measurements of one test are not disturbed by the renders of another.

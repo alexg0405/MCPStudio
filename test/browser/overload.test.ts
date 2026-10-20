@@ -80,9 +80,9 @@ describe('retryWhenOverloaded', () => {
       runs++;
       throw new Error('too slow');
     };
-    await expect(retryWhenOverloaded(test, failing, { watchLoad: busy.watchLoad, pauseMs: 0, attempts: 2 })).rejects.toThrow(
-      'skipped',
-    );
+    await expect(
+      retryWhenOverloaded(test, failing, { watchLoad: busy.watchLoad, pauseMs: 0, attempts: 2 }),
+    ).rejects.toThrow('skipped');
     expect(runs).toBe(2);
     expect(test.skipped).toHaveLength(1);
     expect(test.skipped[0]).toContain('overloaded in all 2 attempts');

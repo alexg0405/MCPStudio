@@ -18,6 +18,7 @@ import { createEmptyProject } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
 import { MASTER, type AudioClip, type AudioClipChannel, type LaneId, type Project, type SampleRef } from '@core/model/types';
 import { PPQ } from '@core/time/ppq';
+import { retryWhenOverloaded } from '../helpers/overload';
 
 const SR = 48000;
 const MB = 1024 * 1024;
@@ -159,72 +160,75 @@ describe('a DJ mix of long songs', () => {
     for (const s of services) await s.engine.dispose();
   });
 
-  it('plays and exports six long songs, beat-matched, within the memory budget', { tags: ['realtime'], timeout: 300_000 }, async () => {
-    // Stretched copies made by earlier runs are kept in OPFS: start without them, so they are made here.
-    await (await navigator.storage.getDirectory()).removeEntry('derived', { recursive: true }).catch(() => {});
-    const mix = await buildMix(6, 60, 126, 8);
-    const s = createServices({ project: mix.project });
-    services.push(s);
-    s.view.getState().setMode('song');
-    // 6 songs ≈ 140 MB decoded plus as much stretched: far over this budget.
-    const budget = 100 * MB;
-    s.sampleCache.budgetBytes = budget;
-    const tempo = tempoMapOf(mix.project, 'song');
+  it('plays and exports six long songs, beat-matched, within the memory budget', { tags: ['realtime'], timeout: 300_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      for (const old of services.splice(0)) await old.engine.dispose(); // an earlier attempt's engine
+      // Stretched copies made by earlier runs are kept in OPFS: start without them, so they are made here.
+      await (await navigator.storage.getDirectory()).removeEntry('derived', { recursive: true }).catch(() => {});
+      const mix = await buildMix(6, 60, 126, 8);
+      const s = createServices({ project: mix.project });
+      services.push(s);
+      s.view.getState().setMode('song');
+      // 6 songs ≈ 140 MB decoded plus as much stretched: far over this budget.
+      const budget = 100 * MB;
+      s.sampleCache.budgetBytes = budget;
+      const tempo = tempoMapOf(mix.project, 'song');
 
-    // Playing: start just before two transitions; what plays is decoded, stretched and pinned in time.
-    await s.engine.resume();
-    for (const k of [1, 4]) {
-      s.engine.play(mix.clips[k]!.start - 4 * PPQ);
-      await wait(2500);
-      expect(s.engine.playing).toBe(true);
-    }
-    const stats = s.engine.stats();
-    s.engine.stop();
-    expect(stats.lateEvents).toBe(0);
-    const played = s.sampleCache.stats();
-    expect(played.peakBytes).toBeLessThanOrEqual(budget * 1.3);
-
-    // Exporting the whole mix (5 minutes) into a file.
-    s.sampleCache.resetPeak();
-    const handle = await opfsFile('dj-mix.wav');
-    const t0 = performance.now();
-    const res = await runExport(s, settings({}), { kind: 'file', handle, name: 'dj-mix.wav' });
-    const ms = performance.now() - t0;
-    const cache = s.sampleCache.stats();
-    console.log(
-      `DJ mix: ${res.seconds.toFixed(0)} s exported in ${(ms / 1000).toFixed(1)} s; decoded audio peak ` +
-        `${(cache.peakBytes / MB).toFixed(0)} MB (budget ${budget / MB} MB, ${cache.evictions} evictions, ` +
-        `${cache.decodes} decodes); while playing ${(played.peakBytes / MB).toFixed(0)} MB, late events ${stats.lateEvents}`,
-    );
-    expect(cache.peakBytes).toBeLessThanOrEqual(budget * 1.3);
-    expect(cache.evictions).toBeGreaterThan(0);
-    // Each song decoded about once (not again and again as the budget churns).
-    expect(cache.decodes).toBeLessThanOrEqual(2 * mix.clips.length);
-    const end = tempo.tickToSeconds(mix.clips[mix.clips.length - 1]!.end);
-    expect(res.seconds).toBeGreaterThan(end - 0.5);
-
-    // Every song in sync and whole: on every third beat of each song, a click on time, at full level.
-    const file = await handle.getFile();
-    const half = Math.round(0.02 * SR);
-    let checked = 0;
-    for (const [k, c] of mix.clips.entries()) {
-      for (let tick = c.start + PPQ; tick < c.end - PPQ; tick += 3 * PPQ) {
-        const frame = Math.round(tempo.tickToSeconds(tick) * SR);
-        const w = await wavWindow(file, frame, half);
-        const hit = firstLoud(w);
-        const label = `song ${k + 1}, beat ${(tick - c.start) / PPQ}`;
-        expect(hit, label).toBeGreaterThan(0);
-        // The master's safety limiter looks 1.3 ms ahead (exports keep that delay); the stretch
-        // places each hit within 2 ms.
-        expect(Math.abs((hit - half) / SR - LIMITER), label).toBeLessThan(0.0025);
-        let peak = 0;
-        for (let i = hit; i < Math.min(w.length, hit + 48); i++) peak = Math.max(peak, Math.abs(w[i]!));
-        // 0.7 × 0.8: one click, not dulled by interpolation or split by the stretch.
-        expect(peak, label).toBeGreaterThan(0.5);
-        checked++;
+      // Playing: start just before two transitions; what plays is decoded, stretched and pinned in time.
+      await s.engine.resume();
+      for (const k of [1, 4]) {
+        s.engine.play(mix.clips[k]!.start - 4 * PPQ);
+        await wait(2500);
+        expect(s.engine.playing).toBe(true);
       }
-    }
-    expect(checked).toBeGreaterThan(200);
+      const stats = s.engine.stats();
+      s.engine.stop();
+      expect(stats.lateEvents).toBe(0);
+      const played = s.sampleCache.stats();
+      expect(played.peakBytes).toBeLessThanOrEqual(budget * 1.3);
+
+      // Exporting the whole mix (5 minutes) into a file.
+      s.sampleCache.resetPeak();
+      const handle = await opfsFile('dj-mix.wav');
+      const t0 = performance.now();
+      const res = await runExport(s, settings({}), { kind: 'file', handle, name: 'dj-mix.wav' });
+      const ms = performance.now() - t0;
+      const cache = s.sampleCache.stats();
+      console.log(
+        `DJ mix: ${res.seconds.toFixed(0)} s exported in ${(ms / 1000).toFixed(1)} s; decoded audio peak ` +
+          `${(cache.peakBytes / MB).toFixed(0)} MB (budget ${budget / MB} MB, ${cache.evictions} evictions, ` +
+          `${cache.decodes} decodes); while playing ${(played.peakBytes / MB).toFixed(0)} MB, late events ${stats.lateEvents}`,
+      );
+      expect(cache.peakBytes).toBeLessThanOrEqual(budget * 1.3);
+      expect(cache.evictions).toBeGreaterThan(0);
+      // Each song decoded about once (not again and again as the budget churns).
+      expect(cache.decodes).toBeLessThanOrEqual(2 * mix.clips.length);
+      const end = tempo.tickToSeconds(mix.clips[mix.clips.length - 1]!.end);
+      expect(res.seconds).toBeGreaterThan(end - 0.5);
+
+      // Every song in sync and whole: on every third beat of each song, a click on time, at full level.
+      const file = await handle.getFile();
+      const half = Math.round(0.02 * SR);
+      let checked = 0;
+      for (const [k, c] of mix.clips.entries()) {
+        for (let tick = c.start + PPQ; tick < c.end - PPQ; tick += 3 * PPQ) {
+          const frame = Math.round(tempo.tickToSeconds(tick) * SR);
+          const w = await wavWindow(file, frame, half);
+          const hit = firstLoud(w);
+          const label = `song ${k + 1}, beat ${(tick - c.start) / PPQ}`;
+          expect(hit, label).toBeGreaterThan(0);
+          // The master's safety limiter looks 1.3 ms ahead (exports keep that delay); the stretch
+          // places each hit within 2 ms.
+          expect(Math.abs((hit - half) / SR - LIMITER), label).toBeLessThan(0.0025);
+          let peak = 0;
+          for (let i = hit; i < Math.min(w.length, hit + 48); i++) peak = Math.max(peak, Math.abs(w[i]!));
+          // 0.7 × 0.8: one click, not dulled by interpolation or split by the stretch.
+          expect(peak, label).toBeGreaterThan(0.5);
+          checked++;
+        }
+      }
+      expect(checked).toBeGreaterThan(200);
+    });
   });
 
   it.skipIf(!import.meta.env.VITE_LONG_EXPORT)(

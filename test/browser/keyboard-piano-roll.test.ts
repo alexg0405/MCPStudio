@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
-import { createElement } from 'react';
+import { createElement, Profiler } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createTestServices } from '@app/testing';
 import { newId } from '@core/model/ids';
@@ -20,7 +20,7 @@ import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
 import { recentAnnouncements, resetAnnouncements } from '@ui/a11y/announce';
 import { openWindow } from '@ui/workspace/registry';
-import { EVENTUALLY } from '../helpers/wait';
+import { EVENTUALLY, untilStill } from '../helpers/wait';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
@@ -53,6 +53,8 @@ describe('piano roll keyboard cursor (UI)', { timeout: 60_000 }, () => {
   let channel: ChannelId;
   let grid: HTMLElement;
   let overlay: HTMLCanvasElement;
+  /** How many times React committed anything (the cursor must cost none). */
+  let commits = 0;
   const notes = (): Note[] => [...notesSorted(s.doc.getState().project.patterns[pattern]?.notes[channel])];
   const cursor = () => s.history.status().cursor;
   const selected = (): number[] => notes().filter((n) => s.editor.getState().noteSelection.includes(n.id)).map((n) => n.tick);
@@ -118,7 +120,9 @@ describe('piano roll keyboard cursor (UI)', { timeout: 60_000 }, () => {
     openWindow(s, 'piano-roll');
     s.view.getState().setMaximized('piano-roll', true);
     root = createRoot(host);
-    root.render(createElement(ServicesProvider, { services: s, children: createElement(App) }));
+    root.render(
+      createElement(Profiler, { id: 'app', onRender: () => commits++ }, createElement(ServicesProvider, { services: s, children: createElement(App) })),
+    );
     await until(() => !!host.querySelector('[data-window-type="piano-roll"] [class*="gridHost"]'));
     grid = host.querySelector<HTMLElement>('[data-window-type="piano-roll"] [class*="gridHost"]')!;
     overlay = grid.querySelectorAll('canvas')[2] as HTMLCanvasElement;
@@ -415,5 +419,40 @@ describe('piano roll keyboard cursor (UI)', { timeout: 60_000 }, () => {
     expect(6 * BAR).toBeLessThanOrEqual(scrollTick + 1000 / PX);
     for (let i = 0; i < 30; i++) press('ArrowDown');
     await expect.poll(() => s.editor.getState().pianoRoll.scrollRow, EVENTUALLY).toBeGreaterThan(TOP_ROW);
+  });
+
+  it('moving the cursor causes no React commits (the cursor and the description live outside React)', async () => {
+    const [note] = seed([{ tick: 0, key: 72, length: 240 }]);
+    await focusOn(note!);
+    await untilStill(() => commits);
+    const before = commits;
+    for (let i = 0; i < 12; i++) {
+      press('ArrowRight');
+      press('ArrowDown');
+      press('ArrowLeft', { ctrlKey: true });
+      press('ArrowUp');
+    }
+    await expect.poll(lastSaid, EVENTUALLY).toBeTruthy();
+    await frames(10);
+    expect(commits - before).toBe(0);
+  });
+
+  it('a click with the mouse hides the cursor and hands the arrow keys back to the window until the keyboard returns', async () => {
+    const [note] = seed([{ tick: 960, key: 72, length: 240 }]);
+    await focusOn(note!);
+    await expect.poll(paintedBox, EVENTUALLY).not.toBeNull();
+    s.editor.getState().setPianoRoll({ tool: 'select' }); // a click then only selects: it adds no note
+    grid.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 1, clientX: 0, clientY: 0 }));
+    grid.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: 0, clientX: 0, clientY: 0 }));
+    await expect.poll(paintedBox, EVENTUALLY).toBeNull();
+    s.editor.getState().selectNotes([note!.id]);
+    resetAnnouncements();
+    press('ArrowUp'); // the window's own shortcut: transposes the selected note
+    await expect.poll(() => notes()[0]?.key, EVENTUALLY).toBe(73);
+    expect(recentAnnouncements()).toHaveLength(0);
+    // Tab away and back: the cursor is the keyboard's again.
+    grid.blur();
+    grid.focus();
+    await expect.poll(paintedBox, EVENTUALLY).not.toBeNull();
   });
 });

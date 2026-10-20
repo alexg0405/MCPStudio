@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { page } from 'vitest/browser';
-import { createElement } from 'react';
+import { createElement, Profiler } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createTestServices } from '@app/testing';
 import { newId } from '@core/model/ids';
@@ -23,7 +23,7 @@ import { ServicesProvider } from '@ui/services-context';
 import { App } from '@ui/shell/App';
 import { recentAnnouncements, resetAnnouncements } from '@ui/a11y/announce';
 import { openWindow } from '@ui/workspace/registry';
-import { EVENTUALLY } from '../helpers/wait';
+import { EVENTUALLY, untilStill } from '../helpers/wait';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
@@ -56,6 +56,8 @@ describe('playlist keyboard cursor (UI)', { timeout: 60_000 }, () => {
   let patternName: string;
   let grid: HTMLElement;
   let overlay: HTMLCanvasElement;
+  /** How many times React committed anything (the cursor must cost none). */
+  let commits = 0;
   const clips = (): Clip[] => clipsSorted(s.doc.getState().project.playlist.clips) as Clip[];
   const markers = () => Object.values(s.doc.getState().project.playlist.markers);
   const cursor = () => s.history.status().cursor;
@@ -131,7 +133,9 @@ describe('playlist keyboard cursor (UI)', { timeout: 60_000 }, () => {
     openWindow(s, 'playlist');
     s.view.getState().setMaximized('playlist', true);
     root = createRoot(host);
-    root.render(createElement(ServicesProvider, { services: s, children: createElement(App) }));
+    root.render(
+      createElement(Profiler, { id: 'app', onRender: () => commits++ }, createElement(ServicesProvider, { services: s, children: createElement(App) })),
+    );
     await until(() => !!host.querySelector('[data-window-type="playlist"] div[data-hint^="Draw:"]'));
     grid = host.querySelector<HTMLElement>('[data-window-type="playlist"] div[data-hint^="Draw:"]')!;
     overlay = grid.querySelectorAll('canvas')[2] as HTMLCanvasElement;
@@ -512,5 +516,41 @@ describe('playlist keyboard cursor (UI)', { timeout: 60_000 }, () => {
     expect(cursorTick).toBeLessThanOrEqual(scrollTick + grid.getBoundingClientRect().width / 0.025);
     for (let i = 0; i < 40; i++) press('ArrowDown');
     await expect.poll(() => s.editor.getState().playlist.scrollLane, EVENTUALLY).toBeGreaterThan(0);
+  });
+
+  it('moving the cursor causes no React commits (the cursor and the description live outside React)', async () => {
+    const [clip] = seed([{ bar: 1, lane: 0, bars: 1 }]);
+    await focusOn(clip!);
+    await untilStill(() => commits);
+    const before = commits;
+    for (let i = 0; i < 12; i++) {
+      press('ArrowRight');
+      press('ArrowDown');
+      press('ArrowLeft', { ctrlKey: true });
+      press('ArrowUp');
+    }
+    await expect.poll(lastSaid, EVENTUALLY).toBeTruthy();
+    await frames(10);
+    expect(commits - before).toBe(0);
+  });
+
+  it('a click with the mouse hides the cursor and hands the keys back to the window until the keyboard returns', async () => {
+    const [clip] = seed([{ bar: 1, lane: 0, bars: 1 }]);
+    await focusOn(clip!);
+    await expect.poll(paintedBox, EVENTUALLY).not.toBeNull();
+    grid.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 2, buttons: 2, clientX: 0, clientY: 0 }));
+    grid.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 2, buttons: 0, clientX: 0, clientY: 0 }));
+    closeContextMenu();
+    await expect.poll(paintedBox, EVENTUALLY).toBeNull();
+    resetAnnouncements();
+    s.editor.getState().selectClips([clip!.id]);
+    press('Delete'); // the window's own shortcut, silently
+    await expect.poll(() => clips().length, EVENTUALLY).toBe(0);
+    expect(recentAnnouncements()).toHaveLength(0);
+    const [again] = seed([{ bar: 1, lane: 0, bars: 1 }]);
+    s.editor.getState().selectClips([again!.id]);
+    grid.blur();
+    grid.focus();
+    await expect.poll(paintedBox, EVENTUALLY).not.toBeNull();
   });
 });

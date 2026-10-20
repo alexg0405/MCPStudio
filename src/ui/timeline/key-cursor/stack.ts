@@ -59,7 +59,13 @@ export class KeyStack {
     element.setAttribute('aria-describedby', this.summary.id);
     this.listen('focus', () => this.onFocus());
     this.listen('blur', () => this.setActive(false));
-    this.stopRouting = registerKeyOwner({ element, onKeyDown: (event) => options.onKeyDown(event) });
+    // A click or a touch means the person is pointing now: the cursor hides and the window's own key shortcuts return.
+    this.listen('pointerdown', () => this.setActive(false), true);
+    this.stopRouting = registerKeyOwner({
+      element,
+      isActive: () => this.isActive,
+      onKeyDown: (event) => options.onKeyDown(event),
+    });
   }
 
   /** Replaces the hidden description (what the editor holds, where the cursor is). Nothing happens when it is unchanged. */
@@ -90,9 +96,9 @@ export class KeyStack {
     }
   }
 
-  private listen(type: 'focus' | 'blur', handler: () => void): void {
-    this.element.addEventListener(type, handler);
-    this.cleanups.push(() => this.element.removeEventListener(type, handler));
+  private listen(type: 'focus' | 'blur' | 'pointerdown', handler: () => void, isCapture = false): void {
+    this.element.addEventListener(type, handler, isCapture);
+    this.cleanups.push(() => this.element.removeEventListener(type, handler, isCapture));
   }
 
   private onFocus(): void {

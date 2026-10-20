@@ -8,13 +8,16 @@
  * an editor that handles it is swallowed; every other key goes on to the shortcuts as usual (Space still plays,
  * Ctrl+C still copies, a tool letter still switches the tool).
  *
- * Only a stack that has the focus from the keyboard (Tab, not a mouse click) gets keys, so a mouse user's arrow keys
- * keep nudging and transposing the selection as they always did.
+ * Only a stack that has the focus from the keyboard (Tab, not a mouse click) gets keys, and a click with the mouse or a
+ * finger inside it hands them back until the next Tab, so a mouse user's arrow keys keep nudging and transposing the
+ * selection as they always did.
  */
 
-/** What an editor gives the router: its element, and how it handles a key (true when the key was used). */
+/** What an editor gives the router: its element, whether its cursor is in use, and how it handles a key (true when the key was used). */
 export interface KeyOwner {
   element: HTMLElement;
+  /** True while the cursor is shown and the keys are its (not after a click with the mouse). */
+  isActive(): boolean;
   onKeyDown(event: KeyboardEvent): boolean;
 }
 
@@ -33,7 +36,7 @@ function onKeyDown(event: KeyboardEvent): void {
   const target = event.target;
   if (!(target instanceof HTMLElement) || !target.hasAttribute(KEY_CURSOR_ATTRIBUTE)) return;
   const owner = owners.get(target);
-  if (!owner || event.isComposing || !hasKeyboardFocus(target)) return;
+  if (!owner || event.isComposing || !owner.isActive() || !hasKeyboardFocus(target)) return;
   if (!owner.onKeyDown(event)) return;
   event.preventDefault();
   event.stopImmediatePropagation();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { swingAmount, swingDelay, swingTick } from './swing';
+import { swingAmount, swingDelay, swingTick, unswingTick } from './swing';
 
 describe('swing curve', () => {
   it('moves the odd 1/16 by swing × half a step and bends everything around it', () => {
@@ -45,5 +45,19 @@ describe('swing curve', () => {
     // 3 ticks late at swing 0.5 (s = 60): it lands 0.75 × 3 ticks after the swung grid line.
     expect(swingTick(243, 0.5)).toBeCloseTo(300 + 0.75 * 3, 9);
     expect(swingTick(237, 0.5)).toBeCloseTo(300 - 1.25 * 3, 9);
+  });
+});
+
+describe('unswing', () => {
+  it('writes the tick that plays where asked, for every swing', () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 0.95, noNaN: true }), fc.integer({ min: 0, max: 7680 }), (swing, written) => {
+        expect(unswingTick(swingTick(written, swing), swing)).toBeCloseTo(written, 6);
+      }),
+    );
+  });
+
+  it('leaves ticks alone without swing', () => {
+    expect(unswingTick(251, 0)).toBe(251);
   });
 });

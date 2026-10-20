@@ -35,3 +35,18 @@ export function swingDelay(tick: number, swing: number): number {
 export function swingTick(tick: number, swing: number): number {
   return tick + swingDelay(tick, swing);
 }
+
+/**
+ * The tick to write so that a note plays at `playedTick` with `swing` (the inverse of `swingTick`). The curve is straight
+ * in each half of an 8th, so it inverts piece by piece (each 8th maps onto itself, so every position can be reached).
+ * Swing 0 returns the tick unchanged.
+ */
+export function unswingTick(playedTick: number, swing: number): number {
+  const s = swingAmount(swing);
+  if (s === 0) return playedTick;
+  const base = Math.floor(playedTick / EIGHTH) * EIGHTH;
+  const pos = playedTick - base;
+  const odd = HALF + s;
+  const written = pos < odd ? pos * (HALF / odd) : HALF + (pos - odd) * (HALF / (HALF - s));
+  return base + written;
+}

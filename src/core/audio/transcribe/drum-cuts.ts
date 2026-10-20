@@ -35,7 +35,14 @@ function cutOf(hits: readonly HeardHit[], hit: HeardHit, durationSec: number): K
   const next = nextHitAfter(hits, hit);
   const to = Math.min(durationSec, hit.timeSec + RING_SEC[hit.kind], next - TAIL_GAP_SEC);
   const from = Math.max(0, hit.timeSec - LEAD_SEC);
-  return { kind: hit.kind, fromSec: from, toSec: Math.max(from + 0.02, to), ...(hit.bodyHz !== undefined ? { bodyHz: hit.bodyHz } : {}) };
+  const together = hits.filter((other) => other !== hit && Math.abs(other.timeSec - hit.timeSec) <= TOGETHER_SEC).map((other) => ({ kind: other.kind, deltaSec: other.timeSec - hit.timeSec }));
+  return {
+    kind: hit.kind,
+    fromSec: from,
+    toSec: Math.max(from + 0.02, to),
+    ...(hit.bodyHz !== undefined ? { bodyHz: hit.bodyHz } : {}),
+    ...(together.length > 0 ? { with: together } : {}),
+  };
 }
 
 /** The clean example of each kind of hit in `hits` (one per kind; toms: one per distinct pitch group is left to the planner). */

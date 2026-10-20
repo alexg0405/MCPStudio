@@ -6,6 +6,7 @@
 import { padSlot } from '@core/samples/kit';
 import { encodeWav } from '@core/io/wav';
 import type { PlannedPad } from '@core/audio/transcribe';
+import { cleanCuts } from '@core/audio/transcribe/kit-clean';
 import type { SampleRef } from '@core/model/types';
 import { importSampleBytes } from '../persistence/sample-import';
 import type { Source } from './source';
@@ -40,19 +41,19 @@ export interface StoredPad {
   sample: SampleRef;
 }
 
-/** Cuts and stores the pads' sounds. `name` is the recording's name, used to name each sample. */
+/** Cuts and stores the pads' sounds, with the kinds that always sound with another taken out of it. `name` is the recording's name. */
 export async function storePads(source: Source, pads: readonly PlannedPad[], name: string): Promise<StoredPad[]> {
+  const rate = source.data.sampleRate;
+  const raw = pads.map((pad) => ({ kind: pad.kind, ...(pad.with ? { with: pad.with } : {}), channels: cutOf(source, pad) }));
+  const cleaned = cleanCuts(raw, rate);
   const stored: StoredPad[] = [];
-  for (const pad of pads) {
-    const channels = cutOf(source, pad);
-    const bytes = encodeWav(channels, source.data.sampleRate, { bitDepth: 24 });
+  for (const [i, pad] of pads.entries()) {
+    const channels = cleaned[i] as Float32Array[];
+    const bytes = encodeWav(channels, rate, { bitDepth: 24 });
     const label = `${name} ${KIND_NAMES[pad.kind] ?? pad.kind}`.slice(0, 100);
     const ref = await importSampleBytes(bytes, `${label}.wav`);
     const frames = channels[0]?.length ?? 0;
-    stored.push({
-      slot: padSlot(pad.pad),
-      sample: { ...ref, durationSec: frames / source.data.sampleRate, sampleRate: source.data.sampleRate, channels: channels.length },
-    });
+    stored.push({ slot: padSlot(pad.pad), sample: { ...ref, durationSec: frames / rate, sampleRate: rate, channels: channels.length } });
   }
   return stored;
 }

@@ -53,7 +53,7 @@ function lowAttacks(low: Float32Array, sampleRate: number, sensitivity: number):
 
 /** A click is gone this long after its peak (s), by this many dB: a hat's attack on the same beat is not (it rings on). */
 const CLICK_GONE_SEC = 0.008;
-const CLICK_GONE_DB = 25;
+const CLICK_GONE_DB = 15;
 
 /** True when a start in the high view is a click: its level 8 ms after the peak is far under it. */
 function isClick(env: Envelope, onset: BandOnset): boolean {
@@ -69,7 +69,7 @@ function kickMarks(mono: Float32Array, sampleRate: number): number[] {
   filterInPlace(high, butterworth('highpass', 4, Math.min(CLICK_HZ, sampleRate * 0.4), sampleRate));
   const subEnv = envelopeOf(sub, sampleRate, LOW_HOLD_SEC);
   const highEnv = envelopeOf(high, sampleRate, 0.002);
-  const subStarts = findOnsets(subEnv, { lookBack: 12, riseDb: 6, rangeDb: 30, minGapBlocks: 30 }, topDb(subEnv));
+  const subStarts = findOnsets(subEnv, { lookBack: 12, riseDb: 3, rangeDb: 30, minGapBlocks: 30 }, topDb(subEnv));
   const clicks = findOnsets(highEnv, { lookBack: 6, riseDb: 15, rangeDb: 35, minGapBlocks: 10 }, topDb(highEnv)).filter((c) => isClick(highEnv, c));
   return subStarts.filter((s) => clicks.some((c) => Math.abs(c.timeSec - s.timeSec) <= 0.012)).map((s) => s.timeSec);
 }

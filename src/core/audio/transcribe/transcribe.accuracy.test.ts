@@ -174,16 +174,20 @@ describe('bassline', () => {
   it('finds the root notes of a bass under a kit: the right pitch and the start within 40 ms, 85 % or more', () => {
     let played = 0;
     let right = 0;
+    let extra = 0;
     const lines: string[] = [];
-    for (const bpm of [124, 100]) {
+    for (const bpm of [90, 100, 110, 124, 128]) {
       const bass = bassLine({ bpm, bars: 4, steps: BASS_STEPS });
       const kit = drumLoop({ bpm, bars: 4, patterns: [BEATS.house ?? []], under: bass.mono });
       const heard = detectBass(kit.mono, SR).map((n) => ({ fromSec: n.fromSec, pitch: n.pitch }));
       const score = scoreNotes(bass.notes, heard, 0.04, 0.5);
       played += score.played;
       right += score.right;
+      extra += score.extra;
       lines.push(`${bpm} BPM: ${score.right}/${score.played}, ${score.extra} extra ${score.problems.slice(0, 6).join('; ')}`);
     }
     expect(percent(right, played), lines.join('\n')).toBeGreaterThanOrEqual(85);
+    // The kick's own tail is not a bass note: few notes that were not played.
+    expect(percent(extra, played), lines.join('\n')).toBeLessThanOrEqual(15);
   });
 });

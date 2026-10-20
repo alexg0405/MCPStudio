@@ -15,6 +15,7 @@ export {
   settingsFor,
   TRANSCRIBE_MODES,
   type Articulation,
+  type CoincidentHit,
   type DrumKind,
   type Heard,
   type HeardHit,

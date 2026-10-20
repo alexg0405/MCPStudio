@@ -91,7 +91,7 @@ function padsFor(hits: readonly HeardHit[], cuts: readonly KitCut[], keyOf: Map<
     if (pad < 1 || pad > PAD_COUNT) continue;
     const sample = [...keyOf].find(([, k]) => k === key)?.[0] as HeardHit;
     const cut = cutFor(sample, hits, cuts, keyOf, key);
-    if (cut) pads.push({ pad, kind: sample.kind, fromSec: cut.fromSec, toSec: cut.toSec });
+    if (cut) pads.push({ pad, kind: sample.kind, fromSec: cut.fromSec, toSec: cut.toSec, ...(cut.with ? { with: cut.with } : {}) });
   }
   return pads.sort((a, b) => a.pad - b.pad);
 }

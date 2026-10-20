@@ -52,13 +52,21 @@ export interface HeardHit {
   bodyHz?: number;
 }
 
-/** A stretch of the recording that is a clean example of one kind of hit (for slicing into Drum Pads). */
+/** A hit of another kind that sounds with a cut's own hit, and how long after it starts (s). */
+export interface CoincidentHit {
+  kind: DrumKind;
+  deltaSec: number;
+}
+
+/** A stretch of the recording that is the best example of one kind of hit (for slicing into Drum Pads). */
 export interface KitCut {
   kind: DrumKind;
   fromSec: number;
   toSec: number;
   /** The tom's pitch, to pick a pad. */
   bodyHz?: number;
+  /** Hits of other kinds that sound with the example (a clap that is always on a kick): the pad can subtract their own examples. */
+  with?: CoincidentHit[];
 }
 
 /**
@@ -144,12 +152,13 @@ export interface PlannedChord {
   confidence: number;
 }
 
-/** A hit to cut into a Drum Pads pad: the kind, the pad (1–16), and the stretch of the recording. */
+/** A hit to cut into a Drum Pads pad: the kind, the pad (1–16), the stretch of the recording and what else sounds in it. */
 export interface PlannedPad {
   pad: number;
   kind: DrumKind;
   fromSec: number;
   toSec: number;
+  with?: CoincidentHit[];
 }
 
 /** What a conversion makes, before anything is written to the project. */

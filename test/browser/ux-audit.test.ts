@@ -327,9 +327,9 @@ describe('UX audit (shell)', () => {
 
   it('the welcome dialog: centered, readable, every control named', async () => {
     s.commands.run('help.welcome');
-    await until(() => !!document.querySelector('[role="dialog"]'));
+    await until(() => !!document.querySelector('[role="dialog"]:not([data-window-id])'));
     await frame();
-    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]:not([data-window-id])')!;
     const r = dialog.getBoundingClientRect();
     expect(Math.abs(r.left + r.width / 2 - window.innerWidth / 2)).toBeLessThan(6);
     expect(Math.abs(r.top + r.height / 2 - window.innerHeight / 2)).toBeLessThan(window.innerHeight * 0.1);

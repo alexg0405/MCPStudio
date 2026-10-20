@@ -1,4 +1,5 @@
 /** The playhead line, and the view following it while playing. Both run on the frame loop: no React, nothing allocated. */
+import { isReducedMotion } from '../../../a11y/preferences';
 import { isContextMenuOpen } from '../../../controls/ContextMenu';
 import { patternTickAt } from '@core/query/playlist';
 import type { EditTarget, PianoRollContext } from './context';
@@ -36,6 +37,7 @@ export function followPlayhead(ctx: PianoRollContext, target: EditTarget): void 
   // The pattern loops at its end (in song mode its clip repeats it).
   frame.wrapEnd = patternEnd(target);
   frame.style = s.prefs.getState().followStyle;
+  frame.reducedMotion = isReducedMotion();
   frame.busy = state.drag !== null || isContextMenuOpen();
   const next = ctx.follow.step(frame);
   if (next === null) {
@@ -47,8 +49,8 @@ export function followPlayhead(ctx: PianoRollContext, target: EditTarget): void 
   }
   vp.scrollTick = next;
   state.followMoved = true;
-  // The grid, notes, ruler and lane slide (see the frame); only what is drawn at the pointer follows by redrawing.
-  if (state.hover || state.stampHover || state.drag) ctx.invalidate('overlay');
+  // The grid, notes, ruler and lane slide (see the frame); only what is drawn at the pointer, and the keyboard cursor, follow by redrawing.
+  if (state.hover || state.stampHover || state.drag || state.keyboard.isActive) ctx.invalidate('overlay');
 }
 
 /** Places the playhead line at the playing position (hidden when there is none). */

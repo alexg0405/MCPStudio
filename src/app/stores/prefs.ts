@@ -58,6 +58,14 @@ export interface PrefsState {
    * 'on' and 'off' are the musician's choice (`ui/touch/layout.ts`).
    */
   touchLayout: TouchLayoutChoice;
+  /** The size of the interface's text and controls, in percent of the normal size (90 to 150; 100 is the design size). */
+  uiScale: number;
+  /** More contrast: stronger text, lines and focus rings on the chosen theme. 'auto' follows the system's "increase contrast" setting. */
+  highContrast: AccessChoice;
+  /** Less motion: no smooth scrolling or gliding views, the follow-playhead view jumps by page. 'auto' follows the system's "reduce motion" setting. */
+  reduceMotion: AccessChoice;
+  /** Colour-blind safe colours for meters, clips, chords and lyrics (blue, orange and yellow instead of red and green; shapes and patterns always). */
+  colorSafe: boolean;
   /** What the on-screen Keys panel plays at: from where the finger lands on a key or pad, or one fixed velocity. */
   keysVelocity: KeysVelocity;
   /** The welcome dialog was closed once; it no longer opens by itself. */
@@ -100,6 +108,14 @@ export interface PrefsState {
 /** The touch layout setting: follow the device, or always on or off. */
 export const TOUCH_LAYOUT_CHOICES = ['auto', 'on', 'off'] as const;
 export type TouchLayoutChoice = (typeof TOUCH_LAYOUT_CHOICES)[number];
+
+/** A setting that can follow the system: 'auto' asks the operating system, 'on' and 'off' are the musician's choice. */
+export const ACCESS_CHOICES = ['auto', 'on', 'off'] as const;
+export type AccessChoice = (typeof ACCESS_CHOICES)[number];
+
+/** The interface scale's range in percent (Settings → Accessibility). */
+export const UI_SCALE_MIN = 90;
+export const UI_SCALE_MAX = 150;
 
 /** How the Keys panel picks a note's velocity. */
 export const KEYS_VELOCITIES = ['position', 'soft', 'medium', 'loud'] as const;
@@ -160,6 +176,10 @@ const DEFAULTS: PrefsState = {
   compCrossfadeMs: 10,
   tooltips: true,
   touchLayout: 'auto',
+  uiScale: 100,
+  highContrast: 'auto',
+  reduceMotion: 'auto',
+  colorSafe: false,
   keysVelocity: 'position',
   welcomeSeen: false,
   recentActions: [],
@@ -205,6 +225,9 @@ function load(): PrefsState {
     if (!VIDEO_FORMATS.includes(out.exportVideoFormat as VideoFormat)) out.exportVideoFormat = DEFAULTS.exportVideoFormat;
     if (out.exportVideoFps !== 30 && out.exportVideoFps !== 60) out.exportVideoFps = DEFAULTS.exportVideoFps;
     if (!TOUCH_LAYOUT_CHOICES.includes(out.touchLayout as TouchLayoutChoice)) out.touchLayout = DEFAULTS.touchLayout;
+    if (!ACCESS_CHOICES.includes(out.highContrast as AccessChoice)) out.highContrast = DEFAULTS.highContrast;
+    if (!ACCESS_CHOICES.includes(out.reduceMotion as AccessChoice)) out.reduceMotion = DEFAULTS.reduceMotion;
+    out.uiScale = Number.isFinite(out.uiScale) ? Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(out.uiScale as number))) : DEFAULTS.uiScale;
     if (!KEYS_VELOCITIES.includes(out.keysVelocity as KeysVelocity)) out.keysVelocity = DEFAULTS.keysVelocity;
     if (out.followStyle !== 'smooth' && out.followStyle !== 'page') out.followStyle = DEFAULTS.followStyle;
     return out as unknown as PrefsState;

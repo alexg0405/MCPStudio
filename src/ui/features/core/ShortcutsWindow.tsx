@@ -5,6 +5,7 @@ import { holdModal } from '../../controls/Dialog';
 import { Icon } from '../../controls/Icon';
 import { useServices } from '../../services-context';
 import { TOUCH_GESTURES } from '../../touch/gestures';
+import { KeyboardNavigationList } from '../accessibility/KeyboardNavigation';
 import { setCustomShortcuts, shortcutRows, type ShortcutRow } from './shortcut-rows';
 import styles from './ShortcutsWindow.module.css';
 
@@ -112,6 +113,7 @@ export function ShortcutsWindow() {
         </tbody>
       </table>
       {rows.length === 0 && <div className={styles.empty}>No command matches “{query}”.</div>}
+      {!query && <KeyboardNavigationList />}
       {!query && <TouchGestureList />}
     </div>
   );

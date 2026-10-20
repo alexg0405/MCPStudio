@@ -1,3 +1,4 @@
+import { fontPx } from '../../timeline/canvas';
 import { useLayoutEffect, useRef } from 'react';
 import type { Take } from '@app/assistant/assistant';
 import { noteName } from '@app/assistant/context';
@@ -39,7 +40,7 @@ export function TakeView({ take }: { take: Take }) {
     const hi = Math.max(...pitches, 0);
     const span = Math.max(6, hi - lo);
     const rowY = { hat: h * 0.18, snare: h * 0.5, kick: h * 0.82 } as const;
-    ctx.font = `600 9px ${color('--ag-font', 'sans-serif')}`;
+    ctx.font = `600 ${fontPx(9)}px ${color('--ag-font', 'sans-serif')}`;
     ctx.textBaseline = 'middle';
     for (const e of take.events) {
       const ex = x(e.step);

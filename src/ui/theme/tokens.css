@@ -24,7 +24,7 @@
   /* Text (warm grays, like light on stone) */
   --ag-text: #ecebe6;
   --ag-text-dim: #a6a39b;
-  --ag-text-faint: #7b7871;
+  --ag-text-faint: #88867f;
 
   /* Accents */
   --ag-accent: #c9a45c;
@@ -113,7 +113,7 @@
   --ag-danger-line: color-mix(in srgb, var(--ag-danger) 50%, transparent);
   --ag-danger-strong: color-mix(in srgb, var(--ag-danger) 75%, #000);
   --ag-danger-deep: color-mix(in srgb, var(--ag-danger) 38%, #000);
-  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 60%, #fff);
+  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 50%, #fff);
   --ag-led-glow: color-mix(in srgb, var(--ag-led) 60%, transparent);
 
   /*
@@ -177,10 +177,11 @@
   --ag-font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Inter, Roboto, 'Helvetica Neue',
     Arial, sans-serif;
   --ag-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --ag-font-size: 12px;
-  --ag-font-size-sm: 11px;
-  --ag-font-size-lg: 13px;
-  --ag-font-size-title: 15px;
+  /* The interface size setting (Settings, Accessibility) sets --ag-scale on <html>; every font size multiplies by it. */
+  --ag-font-size: calc(12px * var(--ag-scale, 1));
+  --ag-font-size-sm: calc(11px * var(--ag-scale, 1));
+  --ag-font-size-lg: calc(13px * var(--ag-scale, 1));
+  --ag-font-size-title: calc(15px * var(--ag-scale, 1));
   /* Small caps labels ("MIXER", section heads): wide tracking, dim. */
   --ag-label-tracking: 0.08em;
   --ag-radius-sm: 4px;
@@ -192,8 +193,8 @@
   --ag-space-2: 8px;
   --ag-space-3: 12px;
   --ag-space-4: 16px;
-  --ag-toolbar-h: 52px;
-  --ag-title-h: 28px;
+  --ag-toolbar-h: calc(52px * var(--ag-scale, 1));
+  --ag-title-h: calc(28px * var(--ag-scale, 1));
   /* Depth: 1 = a control resting on a panel, 2 = a floating panel, 3 = a window. */
   --ag-elev-1: 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --ag-elev-2: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);

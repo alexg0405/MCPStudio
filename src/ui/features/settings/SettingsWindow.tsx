@@ -2,6 +2,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { useServices } from '../../services-context';
 import { ACCENTS, effectiveAccent, findTheme, THEMES } from '../../theme/apply';
+import { AccessibilitySection } from '../accessibility/AccessibilitySection';
 import { McpSettings } from '../mcp/McpSettings';
 import { Row, Section, Switch } from './parts';
 import { StorageSection } from './StorageSection';
@@ -153,6 +154,7 @@ export function SettingsWindow() {
       <ComputerKeyboard />
       <RecordingSection />
       <Interface />
+      <AccessibilitySection />
       <McpSettings />
       <StorageSection />
       <p className={styles.footer}>Settings are remembered in this browser. They aren’t saved in your projects.</p>

@@ -1,0 +1,18 @@
+/*
+ * The frame around a canvas editor while the keyboard has the focus. The cursor itself is drawn on the editor's overlay
+ * canvas; this frame (a pseudo-element on top of the canvases) shows that the editor, not something near it, has the keys.
+ * A mouse click focuses the editor without the frame (:focus-visible is false for it).
+ */
+[data-key-cursor] {
+  outline: none;
+}
+
+[data-key-cursor]:focus-visible::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  border: var(--ag-focus-width, 2px) solid var(--ag-focus, #5aa4e8);
+  box-sizing: border-box;
+}

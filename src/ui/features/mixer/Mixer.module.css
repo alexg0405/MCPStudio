@@ -61,7 +61,7 @@
 .stripNumber {
   color: var(--ag-text-faint);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   line-height: 12px;
 }
 
@@ -73,7 +73,7 @@
   width: 100%;
   overflow: hidden;
   color: var(--ag-text);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 500;
   line-height: 14px;
   text-align: center;
@@ -90,7 +90,7 @@
   border-radius: var(--ag-radius-sm);
   background: var(--ag-surface-inset);
   box-shadow: 0 0 0 1.5px var(--ag-accent);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .led {
@@ -256,7 +256,7 @@
 .stripDb {
   color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   white-space: nowrap;
 }
 
@@ -273,13 +273,13 @@
   box-shadow: var(--ag-inset);
   color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   cursor: pointer;
 }
 
 .masterLoudness small {
   color: var(--ag-text-faint);
-  font-size: 8px;
+  font-size: calc(8px * var(--ag-scale, 1));
 }
 
 .masterLoudness [data-state='warn'] {
@@ -325,7 +325,7 @@
   padding: 0 4px;
   border-radius: var(--ag-radius-pill);
   font-family: var(--ag-font);
-  font-size: 8px;
+  font-size: calc(8px * var(--ag-scale, 1));
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 11px;
@@ -360,7 +360,7 @@
   height: 22px;
   overflow: hidden;
   color: var(--ag-text-faint);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   line-height: 11px;
   text-align: center;
   overflow-wrap: anywhere;
@@ -458,7 +458,7 @@
 .rackName {
   overflow: hidden;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -516,7 +516,7 @@
   width: 14px;
   color: var(--ag-text-faint);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   text-align: right;
 }
 
@@ -541,7 +541,7 @@
   border-radius: var(--ag-radius-pill);
   background: var(--ag-select-tint);
   color: var(--ag-select);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   font-weight: 700;
   line-height: 14px;
   text-overflow: ellipsis;
@@ -553,7 +553,7 @@
   flex: none;
   color: var(--ag-text-dim);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   white-space: nowrap;
 }
 
@@ -570,7 +570,7 @@
   display: flex;
   flex-direction: column;
   color: var(--ag-text-faint);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   line-height: 1.2;
@@ -579,7 +579,7 @@
 .masterValue {
   color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 400;
   letter-spacing: 0;
 }
@@ -604,7 +604,7 @@
   background: var(--group-color);
   color: color-mix(in srgb, var(--group-color) 15%, black);
   font: inherit;
-  font-size: 8px;
+  font-size: calc(8px * var(--ag-scale, 1));
   font-weight: 700;
   letter-spacing: 0.03em;
   line-height: 11px;
@@ -646,7 +646,7 @@
   background: var(--ag-surface-inset);
   color: var(--ag-text-dim);
   font-family: var(--ag-font);
-  font-size: 7px;
+  font-size: calc(7px * var(--ag-scale, 1));
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 11px;
@@ -702,7 +702,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ag-text-faint);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }

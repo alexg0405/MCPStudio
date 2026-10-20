@@ -1,6 +1,6 @@
 /** Marker flags on the ruler (and their hairlines down the tracks), and finding which flag a pointer is on. */
 import type { Marker, MarkerId, Tick } from '@core/model/types';
-import { alpha, inkOn, mix, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, inkOn, mix, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import { drawStudioMark } from '../../controls/studio-mark';
 import type { Viewport } from '../../timeline/viewport';
 import { MARKER_ASK_WIDTH, MARKER_LANE_Y, RULER_HEIGHT } from './layout';
@@ -84,7 +84,7 @@ export function drawMarkerFlags(
   placed: readonly Marker[],
 ): MarkerBox[] {
   const boxes: MarkerBox[] = [];
-  ctx.font = `600 10px ${theme.font}`;
+  ctx.font = `600 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   const flagTop = MARKER_LANE_Y + (RULER_HEIGHT - MARKER_LANE_Y - FLAG_HEIGHT) / 2;
   const centerY = flagTop + FLAG_HEIGHT / 2;

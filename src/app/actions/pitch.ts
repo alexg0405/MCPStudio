@@ -268,8 +268,18 @@ export function moveNote(s: Services, clip: ClipPitch, index: number, target: nu
   return commitEdit(s, clip.clipId, next, label);
 }
 
-/** Moves every selected note by the same number of semitones. One undo step. */
-export function moveNotes(s: Services, clip: ClipPitch, indices: readonly number[], semitones: number, snapTo?: readonly boolean[]): boolean {
+/**
+ * Moves every selected note by the same number of semitones. One undo step (a held key's repeats pass the same `mergeKey`
+ * and share one).
+ */
+export function moveNotes(
+  s: Services,
+  clip: ClipPitch,
+  indices: readonly number[],
+  semitones: number,
+  snapTo?: readonly boolean[],
+  mergeKey?: string,
+): boolean {
   const p = s.doc.getState().project;
   const edit = editFor(p, clip);
   const which = new Set(indices);
@@ -277,7 +287,7 @@ export function moveNotes(s: Services, clip: ClipPitch, indices: readonly number
     const t = noteTarget(n) + semitones;
     return withTarget(n, snapTo ? nearestAllowed(t, snapTo) : t);
   });
-  return commitEdit(s, clip.clipId, next, indices.length > 1 ? `Move ${indices.length} notes` : 'Move note');
+  return commitEdit(s, clip.clipId, next, indices.length > 1 ? `Move ${indices.length} notes` : 'Move note', mergeKey);
 }
 
 /** Sets drift flattening (0–1) and/or vibrato amount (0–2) of notes (`which`), merging slider drags. */

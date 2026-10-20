@@ -5,7 +5,7 @@
  */
 import { curveAt, segmentValue } from '@core/automation/curve';
 import type { AutomationChannel, AutomationClip, AutoPoint, Tick } from '@core/model/types';
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { ClipPaint } from './clip-paint';
 import type { Viewport } from '../../timeline/viewport';
 import type { ClipBox } from './clip-geometry';
@@ -224,7 +224,7 @@ function drawPointsAndHandles(
 /** A line of explanation in the body ("Flat: double-click to add points"); a warning is drawn in the danger color. */
 function drawNote(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, box: ClipBox, paint: ClipPaint, d: AutoDraw): void {
   if (!d.note) return;
-  ctx.font = `10px ${theme.font}`;
+  ctx.font = `${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = d.noteIsWarning ? theme.danger : paint.inkSoft;
   const left = Math.max(box.x, 0) + 6;
@@ -240,7 +240,7 @@ export function drawReadout(
   text: string,
   bounds: { width: number; height: number },
 ): void {
-  ctx.font = `600 11px ${theme.font}`;
+  ctx.font = `600 ${fontPx(11)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   const w = ctx.measureText(text).width + 10;
   const h = 18;

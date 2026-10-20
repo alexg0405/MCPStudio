@@ -23,7 +23,7 @@
 
 .label {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -141,7 +141,7 @@
   background: var(--ag-metal);
   color: var(--ag-on-accent);
   font-weight: 700;
-  font-size: 13px;
+  font-size: calc(13px * var(--ag-scale, 1));
   flex: none;
 }
 
@@ -180,13 +180,13 @@
   color: var(--ag-lcd-text);
   box-shadow: var(--ag-inset);
   font-family: var(--ag-font-mono);
-  font-size: 15px;
+  font-size: calc(15px * var(--ag-scale, 1));
   font-variant-numeric: tabular-nums;
 }
 
 .lcd small {
   color: var(--ag-text-faint);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   letter-spacing: var(--ag-label-tracking);
 }
 
@@ -307,10 +307,8 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stallDot {
-    animation: none;
-  }
+:global(:root[data-motion='reduced']) .stallDot {
+  animation: none;
 }
 
 .overview {
@@ -417,7 +415,7 @@
   background: var(--ag-surface-3);
   color: var(--ag-text-dim);
   font: inherit;
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   cursor: pointer;
 }
 
@@ -441,7 +439,7 @@
   box-shadow: var(--ag-elev-1);
   color: var(--ag-text);
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: 0.04em;
   cursor: pointer;
@@ -479,7 +477,7 @@
 }
 
 .play {
-  font-size: 13px;
+  font-size: calc(13px * var(--ag-scale, 1));
 }
 
 .cue {
@@ -522,7 +520,7 @@
 .autoLoop {
   min-width: 26px;
   padding: 0 4px;
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .sep {
@@ -568,7 +566,7 @@
 
 .stripLetter {
   color: var(--ag-text-dim);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 700;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -576,12 +574,12 @@
 
 .assign {
   width: 62px;
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   padding: 0 2px;
 }
 
 .padText {
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .faderRow {
@@ -616,7 +614,13 @@
   inset: 0;
   transform: scaleY(0);
   transform-origin: bottom;
-  background: linear-gradient(to top, var(--ag-meter-lo) 0%, var(--ag-meter-lo) 55%, var(--ag-meter-mid) 78%, var(--ag-meter-hi) 100%);
+  background: linear-gradient(
+    to top,
+    var(--ag-meter-lo) 0%,
+    var(--ag-meter-lo) 55%,
+    var(--ag-meter-mid) 78%,
+    var(--ag-meter-hi) 100%
+  );
   background-size: 100% 132px;
   background-position: bottom;
 }

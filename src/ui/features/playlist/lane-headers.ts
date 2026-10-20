@@ -1,6 +1,6 @@
 /** The track header column on the left of the playlist: mute light, solo ring, name, and the buttons of take tracks. */
 import type { Lane, LaneId } from '@core/model/types';
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import { FOLD_ZONE, LISTEN_ZONE } from './layout';
 
@@ -38,7 +38,7 @@ export function drawLaneHeaders(
   ctx.fillStyle = theme.surface2;
   ctx.fillRect(0, 0, width, vp.height);
   const [firstRow, lastRow] = vp.visibleRows();
-  ctx.font = `500 11px ${theme.font}`;
+  ctx.font = `500 ${fontPx(11)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= Math.min(lastRow, lanes.length - 1); row++) {
     drawLaneHeader(ctx, vp, theme, lanes[row] as Lane, row, width, state);

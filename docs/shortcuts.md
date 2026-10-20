@@ -29,6 +29,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | New pattern | `F4` |
 | New project | `⌘N` / `Ctrl+N`, `⌥N` / `Alt+N` |
 | Next pattern | `Num +` |
+| Next window or panel | `⌃F6` / `Ctrl+F6`, `⌥9` / `Alt+9` |
 | On-screen keyboard | `⌥7` / `Alt+7` |
 | Open… | `⌘O` / `Ctrl+O` |
 | Pattern / song mode | `L` |
@@ -37,6 +38,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Play / stop | `Space` |
 | Playlist | `F5`, `⌥1` / `Alt+1` |
 | Previous pattern | `Num −` |
+| Previous window or panel | `⌃⇧F6` / `Ctrl+Shift+F6`, `⌥⇧9` / `Alt+Shift+9` |
 | Record | `R` |
 | Redo | `⌘⇧Z` / `Ctrl+Shift+Z`, `⌘Y` / `Ctrl+Y` |
 | Reference | `⌥⇧R` / `Alt+Shift+R` |
@@ -52,6 +54,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Undo | `⌘Z` / `Ctrl+Z` |
 | Undo history | `⌥H` / `Alt+H` |
 | Visualizer | `⌥V` / `Alt+V` |
+| Where am I? | `⌥0` / `Alt+0` |
 
 ## When the channel-rack window is focused
 
@@ -194,3 +197,89 @@ On a touchscreen (the same list is under the keys in the Shortcuts window).
 | Two quick taps on a window’s title | Maximize or restore it |
 | Drag a window’s title or edge | Move or resize it (bigger handles in the touch layout) |
 | Several fingers on the Keys window | One note per finger: chords on the piano, rolls on the pads |
+
+## Keyboard navigation and screen readers
+
+Moving around without a mouse (the same list is in Help → Keyboard navigation). Keys are shown for Windows and Linux: on a Mac, Ctrl+K and similar `Mod` keys are Cmd.
+
+### Everywhere
+
+| Keys | What it does |
+|---|---|
+| `Tab / Shift+Tab` | Next or previous control. A toolbar, a menu bar or a grid is one stop: the arrow keys move inside it. |
+| `Ctrl+F6 / Ctrl+Shift+F6 (or Alt+9 / Alt+Shift+9)` | Next or previous part of the screen: menu bar, transport, browser, then each open window. |
+| `Alt+0` | Say where you are: the window, the selected sound and pattern, and whether it is playing. |
+| `Space or Enter` | Press the control the keyboard is on. When it is on a window or the page, Space plays and stops. |
+| `Ctrl+K` | Search every action by name and run it. |
+| `F1` | The list of all keyboard shortcuts. |
+| `Esc` | Close the open menu, dialog or help panel. On a window’s frame or title bar it closes the window. |
+
+### Menus, lists and grids
+
+| Keys | What it does |
+|---|---|
+| `← → (↑ ↓ in a list)` | Move between the controls of a toolbar, tab strip or list. |
+| `↑ ↓ ← →` | Move between the squares of the channel rack steps and the clip launcher pads. |
+| `Home / End` | First or last control in the group (the start or end of a row in a grid). |
+| `↓ or Enter on a menu name` | Open the menu; ↑ ↓ choose an entry, → opens a submenu, ← closes it, Esc closes the menu. |
+
+### Knobs, faders and number boxes
+
+| Keys | What it does |
+|---|---|
+| `← → or ↑ ↓` | Change the value a little; Shift makes it finer. |
+| `Page Up / Page Down` | Change the value a lot. |
+| `Home / End` | Smallest or largest value. |
+| `Enter, then type` | In a number box: type the exact value, Enter keeps it, Esc leaves it as it was. |
+
+### Piano roll (Tab to the grid)
+
+| Keys | What it does |
+|---|---|
+| `← →, ↑ ↓` | Move the cursor one snap step, or one key. Every move is spoken: key, bar and beat, note length, velocity. |
+| `Ctrl+← →, Ctrl+↑ ↓, Page Up / Page Down` | One bar sideways, one octave up or down (Cmd+arrows on a Mac, where Ctrl+arrows belong to the system). |
+| `Home / End` | Start or end of the pattern. |
+| `Shift + any move` | Extend the selection over the notes the cursor crosses. |
+| `Enter` | Select or deselect the note under the cursor; on an empty cell, add a note there. |
+| `Insert or Shift+Enter` | Add a note (or the chosen chord) at the cursor. |
+| `Delete or Backspace` | Delete the selected notes, or the note under the cursor. |
+| `Alt + arrows` | Move the selected notes by a step or a key (Alt+Page Up / Page Down: an octave). |
+| `Alt+Shift+← →, Alt+Shift+↑ ↓` | Make the selected notes shorter or longer by a step; change their velocity. |
+| `Ctrl+A, Esc` | Select every note; clear the selection. |
+| `?` | Say where the cursor is and what is selected. |
+
+### Playlist (Tab to the grid)
+
+| Keys | What it does |
+|---|---|
+| `← →, ↑ ↓` | Move the cursor one snap step, or one track (above the first track is the marker lane). Every move is spoken: track, bar and beat, the clip, its length. |
+| `Ctrl+← →, Ctrl+↑ ↓, Page Up / Page Down` | One bar sideways, four tracks up or down. |
+| `Home / End` | Start or end of the song. |
+| `Shift + any move` | Extend the selection over the clips the cursor crosses. |
+| `Enter` | Select the clip under the cursor; on an empty cell, place the current pattern; on a marker, rename it. |
+| `Insert or Shift+Enter` | Add a clip, a marker (on the marker lane) or an automation point. |
+| `Delete or Backspace` | Delete the selected clips, the marker or the automation point under the cursor. |
+| `Alt + arrows` | Move the selected clips by a step or a track. |
+| `Alt+Shift+← →, Alt+Shift+↑ ↓` | Make the selected clips shorter or longer; change an automation point’s value. |
+| `Ctrl+A, Esc` | Select every clip; clear the selection. |
+| `?` | Say where the cursor is and what is selected. |
+
+### Pitch editor (Tab to the grid)
+
+| Keys | What it does |
+|---|---|
+| `← →` | Previous or next note. Each is spoken: note number, pitch with cents, time, length, word. |
+| `Ctrl+← →, Page Up / Page Down` | Five notes back or on. |
+| `Home / End` | First or last note. |
+| `↑ ↓` | Retune the selected notes by a semitone (Mod+↑ ↓ an octave, Alt+↑ ↓ a cent). |
+| `Enter` | Select or deselect the note under the cursor. |
+| `Delete or Backspace` | Put the selected notes back as sung. |
+| `S / M` | Split the note in two; join it with the next one. |
+| `Ctrl+A, Esc, ?` | Select every note; clear the selection; say where the cursor is. |
+
+### With a screen reader
+
+- Every window is a dialog with its title as its name; every button, knob and fader has a name, and knobs and faders say their value with its unit.
+- Playing, stopping, recording, finished renders, errors and the Studio’s replies are spoken as they happen.
+- The keyboard cursor of the editors says what is under it: the track and bar, the clip or note, its length and whether it is selected.
+- Options → Accessibility has bigger text, high contrast, less motion and colour-blind safe colours.

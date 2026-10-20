@@ -7,7 +7,8 @@
 import { keyMask } from '@app/actions/pitch';
 import type { ClipPitch } from '@app/pitch/state';
 import { noteName } from '@agstudio/sdk/notes';
-import { alpha, inkOn, mix, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, inkOn, mix, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
+import { drawKeyCursor, type CursorBox } from '../../timeline/key-cursor/draw';
 import { clamp, type Viewport } from '../../timeline/viewport';
 import { clockText, keyForRow, pitchText, rowForKey, type DrawNote } from './model';
 import { KEYS_WIDTH, RULER_HEIGHT, type Drag, type PitchTool } from './pitch-types';
@@ -35,6 +36,8 @@ export interface PitchScene {
   playheadMs: number;
   /** The lyric word written under each note blob, by note index (empty without lyrics). */
   lyrics: ReadonlyMap<number, string>;
+  /** The box of the keyboard cursor (null while the keyboard is not in the editor). */
+  keyboardCursor: CursorBox | null;
 }
 
 /** The pitch classes (0 = C) of the black piano keys. */
@@ -155,6 +158,13 @@ function drawMovedFrom(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timel
   ctx.stroke();
 }
 
+/** The box a note blob is drawn in (px), also what the keyboard cursor goes around. */
+export function noteBlobBox(vp: Viewport, note: DrawNote): CursorBox {
+  const x = vp.tickToX(note.fromMs);
+  const height = Math.max(MIN_NOTE_HEIGHT_PX, vp.rowHeight * NOTE_HEIGHT_FRACTION);
+  return { x, y: rowY(vp, note.target) - height / 2, w: Math.max(3, vp.tickToX(note.toMs) - x), h: height };
+}
+
 /** One note blob, with its name when it is wide enough. */
 function drawNoteBlob(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, note: DrawNote, isSelected: boolean, noteHeight: number, lyric?: string): void {
   const x0 = vp.tickToX(note.fromMs);
@@ -171,7 +181,7 @@ function drawNoteBlob(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timeli
   ctx.stroke();
   if (x1 - x0 > MIN_WIDTH_FOR_LABEL_PX && noteHeight >= 10) {
     ctx.fillStyle = inkOn(fill, theme);
-    ctx.font = `600 ${Math.min(11, Math.floor(noteHeight - 2))}px ${theme.font}`;
+    ctx.font = `600 ${Math.min(fontPx(11), Math.floor(noteHeight - 2))}px ${theme.font}`;
     ctx.textBaseline = 'middle';
     ctx.fillText(pitchText(note.target, noteName), x0 + 5, centerY + 0.5);
   }
@@ -183,7 +193,7 @@ const MIN_LYRIC_WIDTH_PX = 40;
 
 /** The lyric word written under a blob. */
 function drawLyricUnder(ctx: CanvasRenderingContext2D, theme: TimelineTheme, text: string, x: number, width: number, y: number): void {
-  ctx.font = `600 11px ${theme.font}`;
+  ctx.font = `600 ${fontPx(11)}px ${theme.font}`;
   ctx.textBaseline = 'top';
   ctx.fillStyle = alpha(theme.text, 0.92);
   ctx.fillText(text, x + 1, y, width);
@@ -222,7 +232,7 @@ function noteCardLines(note: DrawNote): string[] {
 /** The card above a note with its details. */
 function drawNoteCard(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, note: DrawNote): void {
   const lines = noteCardLines(note);
-  ctx.font = `500 11px ${theme.font}`;
+  ctx.font = `500 ${fontPx(11)}px ${theme.font}`;
   const width = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 14;
   const height = lines.length * 14 + 8;
   const x = clamp(vp.tickToX((note.fromMs + note.toMs) / 2) - width / 2, 4, Math.max(4, vp.width - width - 4));
@@ -261,6 +271,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, theme: TimelineTheme,
     ctx.fillStyle = theme.playhead;
     ctx.fillRect(Math.round(vp.tickToX(scene.playheadMs)), 0, 1, vp.height);
   }
+  if (scene.keyboardCursor) drawKeyCursor(ctx, theme, scene.keyboardCursor);
 }
 
 /** The piano keys down the left edge, with the key's rows marked and the note names of C and the key's white keys. */
@@ -269,7 +280,7 @@ export function drawKeys(ctx: CanvasRenderingContext2D, theme: TimelineTheme, sc
   ctx.clearRect(0, 0, KEYS_WIDTH, vp.height);
   const mask = keyMask(scene.keyRoot, scene.keyScale);
   const [firstRow, lastRow] = vp.visibleRows();
-  ctx.font = `500 10px ${theme.font}`;
+  ctx.font = `500 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const key = keyForRow(row);
@@ -306,7 +317,7 @@ export function drawRuler(ctx: CanvasRenderingContext2D, theme: TimelineTheme, s
   const [fromMs, toMs] = vp.visibleTicks();
   const every = rulerEverySeconds(vp.pxPerTick * 1000);
   ctx.fillStyle = theme.textDim;
-  ctx.font = `500 10px ${theme.font}`;
+  ctx.font = `500 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (let seconds = Math.floor(fromMs / 1000 / every) * every; seconds * 1000 <= toMs; seconds += every) {
     const x = Math.round(vp.tickToX(seconds * 1000));

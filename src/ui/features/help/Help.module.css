@@ -30,7 +30,7 @@
 .title {
   margin: 0;
   font-family: var(--ag-font-display);
-  font-size: 24px;
+  font-size: calc(24px * var(--ag-scale, 1));
   font-weight: 300;
   letter-spacing: -0.005em;
   color: var(--ag-accent-ink);
@@ -98,7 +98,7 @@
   box-shadow: var(--ag-elev-1);
   color: var(--ag-text-dim);
   font-family: var(--ag-font);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--ag-scale, 1));
   font-weight: 400;
   line-height: 16px;
 }
@@ -249,7 +249,7 @@
 
 .stepCount {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;

@@ -48,7 +48,7 @@
   border-radius: var(--ag-radius);
   background: transparent;
   color: var(--ag-text-dim);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -137,7 +137,7 @@
   background: var(--ag-line-faint);
   box-shadow: inset 0 0 0 1px var(--ag-line-faint);
   color: var(--ag-text-faint);
-  font-size: 9px;
+  font-size: calc(9px * var(--ag-scale, 1));
   font-weight: 600;
   line-height: 15px;
   text-transform: uppercase;

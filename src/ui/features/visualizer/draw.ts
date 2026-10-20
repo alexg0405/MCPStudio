@@ -1,4 +1,4 @@
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 
 /** Frequencies the spectrum shows (log axis) and its dB range. */
 export const SPECTRUM_LO = 30;
@@ -81,7 +81,7 @@ export function drawSpectrum(
 
 /** Grid lines and labels for the spectrum: 100 Hz, 1 kHz, 10 kHz and every 12 dB. */
 export function drawSpectrumGrid(g: CanvasRenderingContext2D, w: number, h: number, theme: TimelineTheme): void {
-  g.font = `500 10px ${theme.font}`;
+  g.font = `500 ${fontPx(10)}px ${theme.font}`;
   g.fillStyle = theme.textFaint;
   g.strokeStyle = theme.lineFaint;
   g.lineWidth = 1;

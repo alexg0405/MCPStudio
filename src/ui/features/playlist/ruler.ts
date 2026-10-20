@@ -1,7 +1,7 @@
 /** The playlist's ruler: bar numbers on top, the loop and punch ranges, and the marker lane below. */
 import type { TimeSignature, Tick } from '@core/model/types';
 import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
-import { alpha, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import { MARKER_LANE_Y, RULER_HEIGHT } from './layout';
 import { drawMarkerFlags, drawMarkerSections, placedMarkers, type MarkerBox, type RulerMarkers } from './marker-flags';
@@ -78,7 +78,7 @@ function drawPunchBand(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timel
   ctx.fillStyle = theme.danger;
   ctx.fillRect(x0, 0, 2, MARKER_LANE_Y);
   ctx.fillRect(x1 - 2, 0, 2, MARKER_LANE_Y);
-  ctx.font = `700 8px ${theme.font}`;
+  ctx.font = `700 ${fontPx(8)}px ${theme.font}`;
   ctx.textBaseline = 'top';
   ctx.fillText('IN', x0 + 4, 12);
   if (x1 - x0 > MIN_PUNCH_LABEL_RANGE_PX) ctx.fillText('OUT', x1 - 24, 12);
@@ -104,7 +104,7 @@ function drawBarMarks(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timeli
       if (tick % bar !== 0) ctx.fillRect(vp.tickToPx(tick), MARKER_LANE_Y - 3, 1, 3);
     }
   }
-  ctx.font = `500 10px ${theme.font}`;
+  ctx.font = `500 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'top';
   const numberedTick = alpha(theme.textFaint, 0.6);
   for (let barIndex = Math.floor(firstTick / bar); barIndex * bar <= lastTick; barIndex++) {

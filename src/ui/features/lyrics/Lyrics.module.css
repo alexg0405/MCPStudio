@@ -96,6 +96,23 @@
   color: transparent;
 }
 
+/*
+ * Colour-blind safe colours: the sung words and the word being sung also get a line under them (dotted and solid), so the
+ * karaoke never depends on telling two colours apart.
+ */
+:global(:root[data-palette='safe']) .sung {
+  text-decoration: underline dotted;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+:global(:root[data-palette='safe']) .now {
+  text-decoration: underline;
+  text-decoration-color: var(--ag-text);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 .empty {
   display: flex;
   flex: 1;

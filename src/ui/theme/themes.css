@@ -18,12 +18,14 @@
   --ag-border-soft: #3f4951;
   --ag-highlight: rgba(255, 255, 255, 0.06);
   --ag-text: #d9dfe4;
-  --ag-text-dim: #929ca5;
-  --ag-text-faint: #7a858d;
+  --ag-text-dim: #a4adb5;
+  --ag-text-faint: #9da5ab;
   --ag-led: #9fde5a;
   --ag-led-off: #46532f;
   --ag-danger: #e5574d;
   --ag-select: #5aa4e8;
+  /* The accent as text on slate: a little lighter, so Purple, Red and Blue read as well as Orange. */
+  --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 68%, #fff);
   --ag-title: #2f383f;
   --ag-title-focused: #3d4851;
   --ag-step-off-a: #4a535b;
@@ -88,8 +90,10 @@
   --ag-highlight: rgba(0, 0, 0, 0.045);
   --ag-text: #1c1d20;
   --ag-text-dim: #5e5b55;
-  --ag-text-faint: #706c66;
-  --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 58%, #000);
+  --ag-text-faint: #6c6862;
+  --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 50%, #000);
+  /* The playhead is a thin line: on white stone it needs the deepened accent to be seen. */
+  --ag-playhead: var(--ag-accent-ink);
   --ag-led: #4f9a45;
   --ag-led-off: #cfd6c9;
   --ag-danger: #c94a3e;
@@ -130,11 +134,11 @@
   --ag-sheen: rgba(0, 0, 0, 0.02);
   --ag-line-faint: rgba(0, 0, 0, 0.06);
   --ag-scrim: rgba(40, 36, 30, 0.28);
-  --ag-meter-lo: #4c9f45;
-  --ag-meter-mid: #c9a231;
+  --ag-meter-lo: #459040;
+  --ag-meter-mid: #9c7d24;
   --ag-meter-hi: #c94a3e;
   /* Danger text sits on light tints here: darker than the default (which lightens it). */
-  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 82%, #000);
+  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 70%, #000);
   --ag-marble: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%271600%27%20height%3D%271000%27%20viewBox%3D%270%200%201600%201000%27%3E%3Cfilter%20id%3D%27c%27%20x%3D%270%27%20y%3D%270%27%20width%3D%27100%25%27%20height%3D%27100%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0014%200.0022%27%20numOctaves%3D%274%27%20seed%3D%276%27%2F%3E%3CfeColorMatrix%20values%3D%270%200%200%200%200.22%200%200%200%200%200.21%200%200%200%200%200.19%200%200%200%201.3%20-0.5%27%2F%3E%3C%2Ffilter%3E%3Cfilter%20id%3D%27w%27%20x%3D%27-20%25%27%20y%3D%27-20%25%27%20width%3D%27140%25%27%20height%3D%27140%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.0019%200.00304%27%20numOctaves%3D%275%27%20seed%3D%277%27%20result%3D%27n%27%2F%3E%3CfeDisplacementMap%20in%3D%27SourceGraphic%27%20in2%3D%27n%27%20scale%3D%27260%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%2F%3E%3CfeGaussianBlur%20stdDeviation%3D%270.5%27%2F%3E%3C%2Ffilter%3E%3Cfilter%20id%3D%27w2%27%20x%3D%27-20%25%27%20y%3D%27-20%25%27%20width%3D%27140%25%27%20height%3D%27140%25%27%3E%3CfeTurbulence%20type%3D%27fractalNoise%27%20baseFrequency%3D%270.00418%200.00570%27%20numOctaves%3D%275%27%20seed%3D%278%27%20result%3D%27n%27%2F%3E%3CfeDisplacementMap%20in%3D%27SourceGraphic%27%20in2%3D%27n%27%20scale%3D%27182%27%20xChannelSelector%3D%27R%27%20yChannelSelector%3D%27G%27%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%271600%27%20height%3D%271000%27%20filter%3D%27url(%23c)%27%20opacity%3D%270.09%27%2F%3E%3Cg%20filter%3D%27url(%23w)%27%20stroke%3D%27%233a3833%27%20fill%3D%27none%27%20opacity%3D%270.19%27%3E%3Cline%20x1%3D%271255%27%20y1%3D%27-300%27%20x2%3D%27-31%27%20y2%3D%271300%27%20stroke-width%3D%270.99%27%20stroke-opacity%3D%270.31%27%2F%3E%3Cline%20x1%3D%271021%27%20y1%3D%27-300%27%20x2%3D%27-239%27%20y2%3D%271300%27%20stroke-width%3D%271.99%27%20stroke-opacity%3D%270.42%27%2F%3E%3Cline%20x1%3D%271472%27%20y1%3D%27-300%27%20x2%3D%27201%27%20y2%3D%271300%27%20stroke-width%3D%270.53%27%20stroke-opacity%3D%270.60%27%2F%3E%3Cline%20x1%3D%27321%27%20y1%3D%27-300%27%20x2%3D%27-1027%27%20y2%3D%271300%27%20stroke-width%3D%271.28%27%20stroke-opacity%3D%270.79%27%2F%3E%3Cline%20x1%3D%27209%27%20y1%3D%27-300%27%20x2%3D%27-701%27%20y2%3D%271300%27%20stroke-width%3D%271.10%27%20stroke-opacity%3D%270.45%27%2F%3E%3Cline%20x1%3D%27-104%27%20y1%3D%27-300%27%20x2%3D%27-1239%27%20y2%3D%271300%27%20stroke-width%3D%271.38%27%20stroke-opacity%3D%270.31%27%2F%3E%3Cline%20x1%3D%271637%27%20y1%3D%27-300%27%20x2%3D%27578%27%20y2%3D%271300%27%20stroke-width%3D%271.95%27%20stroke-opacity%3D%270.45%27%2F%3E%3Cline%20x1%3D%27527%27%20y1%3D%27-300%27%20x2%3D%27-482%27%20y2%3D%271300%27%20stroke-width%3D%272.76%27%20stroke-opacity%3D%270.91%27%2F%3E%3Cline%20x1%3D%27828%27%20y1%3D%27-300%27%20x2%3D%27-475%27%20y2%3D%271300%27%20stroke-width%3D%270.83%27%20stroke-opacity%3D%270.73%27%2F%3E%3C%2Fg%3E%3Cg%20filter%3D%27url(%23w2)%27%20stroke%3D%27%233a3833%27%20fill%3D%27none%27%20opacity%3D%270.152%27%3E%3Cline%20x1%3D%27986%27%20y1%3D%27-300%27%20x2%3D%27-334%27%20y2%3D%271300%27%20stroke-width%3D%270.74%27%20stroke-opacity%3D%270.50%27%2F%3E%3Cline%20x1%3D%27-380%27%20y1%3D%27-300%27%20x2%3D%27-2133%27%20y2%3D%271300%27%20stroke-width%3D%270.52%27%20stroke-opacity%3D%270.38%27%2F%3E%3Cline%20x1%3D%271699%27%20y1%3D%27-300%27%20x2%3D%27425%27%20y2%3D%271300%27%20stroke-width%3D%270.44%27%20stroke-opacity%3D%270.62%27%2F%3E%3Cline%20x1%3D%27269%27%20y1%3D%27-300%27%20x2%3D%27-1529%27%20y2%3D%271300%27%20stroke-width%3D%270.36%27%20stroke-opacity%3D%270.38%27%2F%3E%3Cline%20x1%3D%271420%27%20y1%3D%27-300%27%20x2%3D%27100%27%20y2%3D%271300%27%20stroke-width%3D%270.68%27%20stroke-opacity%3D%270.24%27%2F%3E%3Cline%20x1%3D%27-208%27%20y1%3D%27-300%27%20x2%3D%27-1823%27%20y2%3D%271300%27%20stroke-width%3D%270.61%27%20stroke-opacity%3D%270.33%27%2F%3E%3Cline%20x1%3D%271832%27%20y1%3D%27-300%27%20x2%3D%27697%27%20y2%3D%271300%27%20stroke-width%3D%270.72%27%20stroke-opacity%3D%270.68%27%2F%3E%3Cline%20x1%3D%27285%27%20y1%3D%27-300%27%20x2%3D%27-1189%27%20y2%3D%271300%27%20stroke-width%3D%270.78%27%20stroke-opacity%3D%270.62%27%2F%3E%3Cline%20x1%3D%27989%27%20y1%3D%27-300%27%20x2%3D%27-780%27%20y2%3D%271300%27%20stroke-width%3D%270.70%27%20stroke-opacity%3D%270.47%27%2F%3E%3Cline%20x1%3D%27-136%27%20y1%3D%27-300%27%20x2%3D%27-1442%27%20y2%3D%271300%27%20stroke-width%3D%270.61%27%20stroke-opacity%3D%270.28%27%2F%3E%3Cline%20x1%3D%27205%27%20y1%3D%27-300%27%20x2%3D%27-1432%27%20y2%3D%271300%27%20stroke-width%3D%270.42%27%20stroke-opacity%3D%270.24%27%2F%3E%3Cline%20x1%3D%27384%27%20y1%3D%27-300%27%20x2%3D%27-1280%27%20y2%3D%271300%27%20stroke-width%3D%270.67%27%20stroke-opacity%3D%270.41%27%2F%3E%3Cline%20x1%3D%27-166%27%20y1%3D%27-300%27%20x2%3D%27-1469%27%20y2%3D%271300%27%20stroke-width%3D%270.83%27%20stroke-opacity%3D%270.36%27%2F%3E%3Cline%20x1%3D%271287%27%20y1%3D%27-300%27%20x2%3D%27-334%27%20y2%3D%271300%27%20stroke-width%3D%270.40%27%20stroke-opacity%3D%270.59%27%2F%3E%3C%2Fg%3E%3Cg%20filter%3D%27url(%23w)%27%20stroke%3D%27%23a8823c%27%20fill%3D%27none%27%20opacity%3D%270.3%27%3E%3Cline%20x1%3D%27212%27%20y1%3D%27-300%27%20x2%3D%27-990%27%20y2%3D%271300%27%20stroke-width%3D%271.47%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
   --ag-backdrop: radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.6), transparent 60%), var(--ag-marble), var(--ag-bg);
   --ag-glass: rgba(251, 250, 247, 0.8);
@@ -214,8 +218,8 @@
   --ag-border: #141414;
   --ag-border-soft: #4a4a4a;
   --ag-text: #e2e2e2;
-  --ag-text-dim: #9d9d9d;
-  --ag-text-faint: #828282;
+  --ag-text-dim: #a8a8a8;
+  --ag-text-faint: #9e9e9e;
   --ag-title: #333333;
   --ag-title-focused: #424242;
   --ag-grid-bg: #2a2a2a;
@@ -248,13 +252,13 @@
   --ag-highlight: rgba(0, 0, 0, 0.05);
   --ag-text: #1d2327;
   --ag-text-dim: #55606a;
-  --ag-text-faint: #66717b;
+  --ag-text-faint: #5a636c;
   /* Floating panels (menus, dialogs, the search) are light too: dark glass under dark text was unreadable. */
   --ag-glass: #f6f8fa;
   --ag-glass-strong: #f6f8fa;
   --ag-scrim: rgba(30, 40, 50, 0.32);
   --ag-accent-ink: color-mix(in srgb, var(--ag-accent) 48%, #000);
-  --ag-led: #45a823;
+  --ag-led: #3f9a20;
   --ag-led-off: #c3d1ba;
   --ag-danger: #d6453b;
   --ag-select: #2f7fd0;
@@ -284,9 +288,10 @@
   --ag-sheen: rgba(0, 0, 0, 0.02);
   --ag-line-faint: rgba(0, 0, 0, 0.07);
   --ag-shadow: 0 8px 28px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255, 255, 255, 0.7) inset;
-  --ag-meter-lo: #3fae35;
-  --ag-meter-mid: #d1b21f;
-  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 82%, #000);
+  --ag-meter-lo: #3aa331;
+  --ag-meter-mid: #a38a14;
+  --ag-playhead: var(--ag-accent-ink);
+  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 70%, #000);
   --ag-line-strong: rgba(0, 0, 0, 0.14);
   --ag-knob-top: #ffffff;
   --ag-knob-face: #eef1f3;
@@ -303,6 +308,263 @@
   --ag-palette-6: #2f7fd0;
   --ag-palette-7: #7458cc;
   --ag-palette-8: #b44f95;
+}
+
+/*
+ * High contrast, dark: pure black with white text, one yellow accent and hard white edges. Everything that is text
+ * reaches 7:1 (the AAA level), every edge and control outline 3:1 or more. The accent is fixed (the accent setting
+ * is ignored here), so the colours that were checked are the colours you get.
+ */
+:root[data-theme='contrast'],
+:root[data-theme='contrast'][data-accent] {
+  color-scheme: dark;
+  --ag-bg: #000000;
+  --ag-workspace: #000000;
+  --ag-surface-1: #000000;
+  --ag-surface-2: #0c0c0c;
+  --ag-surface-3: #1c1c1c;
+  --ag-surface-inset: #000000;
+  --ag-border: #ffffff;
+  --ag-border-soft: #8f8f8f;
+  --ag-highlight: rgba(255, 255, 255, 0.14);
+  --ag-text: #ffffff;
+  --ag-text-dim: #e6e6e6;
+  --ag-text-faint: #cccccc;
+  --ag-accent: #ffd60a;
+  --ag-accent-ink: #ffd60a;
+  --ag-focus: #ffffff;
+  --ag-focus-width: 3px;
+  --ag-cursor: #5ce1ff;
+  --ag-led: #5ce1ff;
+  --ag-led-off: #3a3a3a;
+  --ag-danger: #ff7a70;
+  --ag-select: #5ce1ff;
+  --ag-warning: #ffd60a;
+  --ag-title: #000000;
+  --ag-title-focused: #1c1c1c;
+  --ag-step-off-a: #3a3a3a;
+  --ag-step-off-b: #4a4a4a;
+  --ag-step-on: #ffd60a;
+  --ag-grid-bg: #000000;
+  --ag-grid-bg-alt: #0c0c0c;
+  --ag-grid-bar: #ffffff;
+  --ag-grid-beat: #6e6e6e;
+  --ag-grid-step: #333333;
+  --ag-grid-shade: rgba(0, 0, 0, 0.55);
+  --ag-key-white: #ffffff;
+  --ag-key-black: #000000;
+  --ag-note: #5ce1ff;
+  --ag-note-border: #ffffff;
+  --ag-note-selected: #ffd60a;
+  --ag-note-top: rgba(255, 255, 255, 0.45);
+  --ag-ghost: rgba(255, 255, 255, 0.28);
+  --ag-hover: #2e2e2e;
+  --ag-hover-flat: #2e2e2e;
+  --ag-raised: #242424;
+  --ag-active: #3d3300;
+  --ag-active-2: #2b2400;
+  --ag-active-border: #ffd60a;
+  --ag-lcd: #000000;
+  --ag-lcd-text: #ffffff;
+  --ag-lcd-text-alt: #5ce1ff;
+  --ag-well: #000000;
+  --ag-tooltip: #000000;
+  --ag-tooltip-text: #ffffff;
+  --ag-marker: #ffd60a;
+  --ag-ok-bg: #00461f;
+  --ag-ok-text: #ffffff;
+  --ag-on-accent: #000000;
+  --ag-on-light: #000000;
+  --ag-sheen: rgba(255, 255, 255, 0.06);
+  --ag-line-faint: rgba(255, 255, 255, 0.28);
+  --ag-line-strong: rgba(255, 255, 255, 0.5);
+  --ag-scrim: rgba(0, 0, 0, 0.8);
+  --ag-meter-lo: #5ce1ff;
+  --ag-meter-mid: #ffd60a;
+  --ag-meter-hi: #ff8a3d;
+  --ag-backdrop: var(--ag-bg);
+  --ag-glass: #000000;
+  --ag-glass-strong: #000000;
+  --ag-blur: none;
+  --ag-elev-1: 0 0 0 1px #8f8f8f;
+  --ag-elev-2: 0 0 0 2px #ffffff;
+  --ag-shadow: 0 0 0 2px #ffffff;
+  --ag-inset: inset 0 0 0 1px #8f8f8f;
+  --ag-knob-top: #3a3a3a;
+  --ag-knob-face: #1c1c1c;
+  --ag-knob-edge: #ffffff;
+  --ag-knob-pointer: #ffffff;
+  --ag-knob-shadow: 0 0 0 1px #ffffff;
+  --ag-knob-track: rgba(255, 255, 255, 0.35);
+  --ag-knob-track-hover: rgba(255, 255, 255, 0.55);
+  --ag-palette-1: #ff8a7d;
+  --ag-palette-2: #ffa94d;
+  --ag-palette-3: #ffe14d;
+  --ag-palette-4: #7dff9d;
+  --ag-palette-5: #5ce1ff;
+  --ag-palette-6: #8cb4ff;
+  --ag-palette-7: #c9a8ff;
+  --ag-palette-8: #ff9ee0;
+}
+
+/* High contrast, light: white with black text, one deep blue accent, hard black edges. */
+:root[data-theme='contrast-light'],
+:root[data-theme='contrast-light'][data-accent] {
+  color-scheme: light;
+  --ag-bg: #ffffff;
+  --ag-workspace: #ffffff;
+  --ag-surface-1: #ffffff;
+  --ag-surface-2: #f2f2f2;
+  --ag-surface-3: #e0e0e0;
+  --ag-surface-inset: #ffffff;
+  --ag-border: #000000;
+  --ag-border-soft: #6b6b6b;
+  --ag-highlight: rgba(0, 0, 0, 0.1);
+  --ag-text: #000000;
+  --ag-text-dim: #1f1f1f;
+  --ag-text-faint: #3d3d3d;
+  --ag-accent: #0033cc;
+  --ag-accent-ink: #0033cc;
+  --ag-focus: #000000;
+  --ag-focus-width: 3px;
+  --ag-cursor: #0033cc;
+  --ag-led: #0033cc;
+  --ag-led-off: #bdbdbd;
+  --ag-danger: #b00020;
+  --ag-select: #0033cc;
+  --ag-warning: #7a4a00;
+  --ag-title: #f2f2f2;
+  --ag-title-focused: #dcdcdc;
+  --ag-step-off-a: #d0d0d0;
+  --ag-step-off-b: #c0c0c0;
+  --ag-step-on: #000000;
+  --ag-grid-bg: #ffffff;
+  --ag-grid-bg-alt: #f2f2f2;
+  --ag-grid-bar: #000000;
+  --ag-grid-beat: #767676;
+  --ag-grid-step: #cccccc;
+  --ag-grid-shade: rgba(0, 0, 0, 0.12);
+  --ag-key-white: #ffffff;
+  --ag-key-black: #000000;
+  --ag-note: #0033cc;
+  --ag-note-border: #000000;
+  --ag-note-selected: #b35900;
+  --ag-note-top: rgba(255, 255, 255, 0.35);
+  --ag-ghost: rgba(0, 0, 0, 0.25);
+  --ag-hover: #dcdcdc;
+  --ag-hover-flat: #dcdcdc;
+  --ag-raised: #ffffff;
+  --ag-active: #cfdcff;
+  --ag-active-2: #dfe8ff;
+  --ag-active-border: #0033cc;
+  --ag-lcd: #000000;
+  --ag-lcd-text: #ffffff;
+  --ag-lcd-text-alt: #8fd8ff;
+  --ag-well: #e0e0e0;
+  --ag-tooltip: #000000;
+  --ag-tooltip-text: #ffffff;
+  --ag-marker: #7a4a00;
+  --ag-ok-bg: #0b5d2a;
+  --ag-ok-text: #ffffff;
+  --ag-on-accent: #ffffff;
+  --ag-on-light: #000000;
+  --ag-sheen: rgba(0, 0, 0, 0.04);
+  --ag-line-faint: rgba(0, 0, 0, 0.3);
+  --ag-line-strong: rgba(0, 0, 0, 0.55);
+  --ag-scrim: rgba(0, 0, 0, 0.55);
+  --ag-meter-lo: #0072b2;
+  --ag-meter-mid: #8a6e00;
+  --ag-meter-hi: #b34700;
+  --ag-playhead: var(--ag-accent-ink);
+  --ag-danger-text: #6b0014;
+  --ag-backdrop: var(--ag-bg);
+  --ag-glass: #ffffff;
+  --ag-glass-strong: #ffffff;
+  --ag-blur: none;
+  --ag-elev-1: 0 0 0 1px #6b6b6b;
+  --ag-elev-2: 0 0 0 2px #000000;
+  --ag-shadow: 0 0 0 2px #000000;
+  --ag-inset: inset 0 0 0 1px #6b6b6b;
+  --ag-knob-top: #ffffff;
+  --ag-knob-face: #f2f2f2;
+  --ag-knob-edge: #000000;
+  --ag-knob-pointer: #000000;
+  --ag-knob-shadow: 0 0 0 1px #000000;
+  --ag-knob-track: rgba(0, 0, 0, 0.3);
+  --ag-knob-track-hover: rgba(0, 0, 0, 0.5);
+  --ag-palette-1: #b3261e;
+  --ag-palette-2: #a64b00;
+  --ag-palette-3: #7a6a00;
+  --ag-palette-4: #1b6e2a;
+  --ag-palette-5: #006a80;
+  --ag-palette-6: #0033cc;
+  --ag-palette-7: #5b2cc0;
+  --ag-palette-8: #9c1c7a;
+}
+
+/*
+ * More contrast on any theme (Settings → Accessibility, or the system's "increase contrast"): quiet text and lines
+ * move toward the main text colour, and the focus ring gets thicker. The look is the same theme, just firmer.
+ */
+:root[data-contrast='more'] {
+  --ag-text-dim: color-mix(in srgb, var(--ag-text) 88%, var(--ag-surface-3));
+  --ag-text-faint: color-mix(in srgb, var(--ag-text) 76%, var(--ag-surface-3));
+  --ag-border-soft: color-mix(in srgb, var(--ag-text) 42%, var(--ag-surface-1));
+  --ag-line-faint: color-mix(in srgb, var(--ag-text) 22%, transparent);
+  --ag-line-strong: color-mix(in srgb, var(--ag-text) 36%, transparent);
+  --ag-focus-width: 3px;
+}
+
+/*
+ * Colour-blind safe colours (Settings → Accessibility): the pairs that differ only in red against green become blue
+ * against orange (the Okabe and Ito set), which stays apart for red-green colour blindness. Shapes and patterns
+ * carry the same information wherever the app uses these colours (meter ticks, clip stripes, lane glyphs).
+ */
+:root[data-palette='safe'] {
+  --ag-meter-lo: #56b4e9;
+  --ag-meter-mid: #f0e442;
+  --ag-meter-hi: #e8741a;
+  --ag-led: #56b4e9;
+  --ag-led-off: #26333b;
+  --ag-note: #56b4e9;
+  --ag-note-border: #1f5f87;
+  --ag-note-selected: #f0e442;
+  --ag-danger: #e8741a;
+  --ag-palette-1: #e69f00;
+  --ag-palette-2: #56b4e9;
+  --ag-palette-3: #f0e442;
+  --ag-palette-4: #3399cc;
+  --ag-palette-5: #d55e00;
+  --ag-palette-6: #cc79a7;
+  --ag-palette-7: #a9a9a9;
+  --ag-palette-8: #8fd1c1;
+}
+:root[data-palette='safe'][data-theme='carrara'],
+:root[data-palette='safe'][data-theme='light'],
+:root[data-palette='safe'][data-theme='contrast-light'] {
+  --ag-meter-lo: #0072b2;
+  --ag-meter-mid: #9d7c00;
+  --ag-meter-hi: #6b2d00;
+  --ag-led: #0072b2;
+  --ag-led-off: #c3ccd3;
+  --ag-note: #0072b2;
+  --ag-note-border: #00406a;
+  --ag-note-selected: #b35900;
+  --ag-danger: #b34700;
+  --ag-palette-1: #b37700;
+  --ag-palette-2: #0072b2;
+  --ag-palette-3: #8a7f00;
+  --ag-palette-4: #2a7ab0;
+  --ag-palette-5: #b34700;
+  --ag-palette-6: #a64d79;
+  --ag-palette-7: #6b6b6b;
+  --ag-palette-8: #2f8f7a;
+}
+
+/* The strictest light theme keeps its meter at 4.5:1 with the safe palette too. */
+:root[data-palette='safe'][data-theme='contrast-light'] {
+  --ag-meter-mid: #8a6e00;
+  --ag-meter-hi: #6b2d00;
 }
 
 /* Accent colors (brushed gold is the default, in tokens.css). */

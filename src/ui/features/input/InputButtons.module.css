@@ -5,5 +5,5 @@
 
 .octave {
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }

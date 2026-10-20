@@ -17,8 +17,7 @@
   border: 1px solid var(--ag-border-soft);
   border-radius: var(--ag-radius-lg);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--ag-accent) 7%, transparent), transparent 60px),
-    var(--ag-glass);
+    linear-gradient(180deg, color-mix(in srgb, var(--ag-accent) 7%, transparent), transparent 60px), var(--ag-glass);
   -webkit-backdrop-filter: var(--ag-blur);
   backdrop-filter: var(--ag-blur);
   box-shadow:
@@ -85,7 +84,7 @@
   border-radius: 50%;
   background: transparent;
   color: var(--ag-text-dim);
-  font-size: 11px;
+  font-size: calc(11px * var(--ag-scale, 1));
   cursor: pointer;
   transition:
     background-color var(--ag-dur) var(--ag-ease),
@@ -159,12 +158,10 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .statusText {
-    background: none;
-    color: var(--ag-text-dim);
-    animation: none;
-  }
+:global(:root[data-motion='reduced']) .statusText {
+  background: none;
+  color: var(--ag-text-dim);
+  animation: none;
 }
 
 .prompt {

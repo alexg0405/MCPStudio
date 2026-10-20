@@ -22,7 +22,7 @@
 
 .label {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -172,7 +172,7 @@
   height: 22px;
   padding: 0 var(--ag-space-2);
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-align: left;
@@ -266,7 +266,7 @@
   overflow: hidden;
   white-space: nowrap;
   color: var(--ag-text);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-variant-numeric: tabular-nums;
   pointer-events: none;
 }

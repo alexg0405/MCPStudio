@@ -70,7 +70,7 @@ function planKit(heard: Extract<Heard, { kind: 'drums' }>, timeline: ClipTimelin
 /** Chords: one chord per window, voiced as notes. */
 function planHarmony(heard: Extract<Heard, { kind: 'chroma' }>, timeline: ClipTimeline, settings: TranscribeSettings): Transcription {
   const lengthTicks = timeline.clip.length;
-  const spans = readChords(heard.chromagram, timeline, settings);
+  const spans = readChords(heard.chromagram, timeline, settings, heard.startSec);
   if (spans.length === 0) return nothing('chords', lengthTicks, 'No chords were found in this clip: it needs several notes sounding together. Try Melody or Bassline for a single line.');
   const notes = chordNotes(spans, timeline, settings);
   const names = spans.slice(0, 8).map((span) => formatChord(span.chord));

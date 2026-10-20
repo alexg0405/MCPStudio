@@ -77,9 +77,17 @@ function withoutSlash(span: DetectedSpan): DetectedSpan {
 }
 
 /** The chords of a clip, one reading per window, flickers smoothed, neighbours joined (song ticks). */
-export function readChords(chroma: Chromagram, timeline: ClipTimeline, settings: Pick<TranscribeSettings, 'chordResolution'>): DetectedSpan[] {
+export function readChords(
+  chroma: Chromagram,
+  timeline: ClipTimeline,
+  settings: Pick<TranscribeSettings, 'chordResolution'>,
+  /** Where the chromagram's first frame is on the recording's timeline, seconds. */
+  startSec = 0,
+): DetectedSpan[] {
   const windowTicks = windowTicksOf(settings.chordResolution, timeline);
-  const windows = clipChromaWindows(chroma, timeline.clip, timeline.mode, timeline.tempo, windowTicks);
+  // The chromagram counts from its own start: moving the trim back by that much reads the same stretch of sound.
+  const clip = { ...timeline.clip, offsetSec: timeline.clip.offsetSec - startSec };
+  const windows = clipChromaWindows(chroma, clip, timeline.mode, timeline.tempo, windowTicks);
   const spans = detectSpansFromChroma(windows).map(withoutSlash);
   return joined(withoutFlicker(perWindow(spans, windowTicks)));
 }

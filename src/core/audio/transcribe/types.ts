@@ -61,11 +61,14 @@ export interface KitCut {
   bodyHz?: number;
 }
 
-/** What listening to a recording found: notes, drum hits (with kit examples), or the chroma of the harmony. */
+/**
+ * What listening to a recording found: notes, drum hits (with kit examples), or the chroma of the harmony. Times are seconds on
+ * the recording's own timeline; the chroma (made from a stretch that starts `startSec` into it) counts from its own start.
+ */
 export type Heard =
   | { kind: 'notes'; mode: 'melody' | 'bass'; notes: HeardNote[] }
   | { kind: 'drums'; hits: HeardHit[]; cuts: KitCut[] }
-  | { kind: 'chroma'; chromagram: Chromagram };
+  | { kind: 'chroma'; chromagram: Chromagram; startSec: number };
 
 /** How note starts and ends are pulled to a grid. */
 export interface QuantizeSettings {

@@ -1,4 +1,5 @@
 import type { Services } from '@app/services';
+import { startKeyRouting } from '../../timeline/key-cursor/router';
 import { registerWindowType } from '../../workspace/registry';
 import { registerWindowToggle } from '../../workspace/window-commands';
 import { lazyWindow } from '../../workspace/lazy';
@@ -9,6 +10,8 @@ import { registerToolCommands } from './tool-commands';
 
 /** The piano roll: its window, the Piano roll toggle, and its commands, shortcuts and Edit menu entries. */
 export function register(services: Services): void {
+  // Before the app's key handler is installed, so the grid's cursor keys reach it first (timeline/key-cursor/router.ts).
+  startKeyRouting();
   registerWindowType({
     type: 'piano-roll',
     title: (_props, s) => {

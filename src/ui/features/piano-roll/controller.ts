@@ -24,6 +24,7 @@ import {
 import { stopAudition } from './control/audition';
 import { pianoRollPerf, runFrame } from './control/frame';
 import { createLayerDrawers, type LayerDrawers } from './control/layers';
+import { attachKeyboard } from './control/keys';
 import { cancelDrag } from './control/pointer';
 import { editTarget } from './control/target';
 import { measureLayout, zoomBy } from './control/viewport-control';
@@ -61,6 +62,7 @@ export class PianoRollController implements PianoRollHooks {
     subscribeToChanges(this.ctx, this.cleanups);
     this.cleanups.add(onFrame(() => runFrame(this.ctx, this.drawers)));
     listenToElements(this.ctx, this.cleanups);
+    attachKeyboard(this.ctx, this.cleanups);
     measureLayout(this.ctx);
   }
 

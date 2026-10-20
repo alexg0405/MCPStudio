@@ -47,8 +47,8 @@ export function followPlayhead(ctx: PianoRollContext, target: EditTarget): void 
   }
   vp.scrollTick = next;
   state.followMoved = true;
-  // The grid, notes, ruler and lane slide (see the frame); only what is drawn at the pointer follows by redrawing.
-  if (state.hover || state.stampHover || state.drag) ctx.invalidate('overlay');
+  // The grid, notes, ruler and lane slide (see the frame); only what is drawn at the pointer, and the keyboard cursor, follow by redrawing.
+  if (state.hover || state.stampHover || state.drag || state.keyboard.isActive) ctx.invalidate('overlay');
 }
 
 /** Places the playhead line at the playing position (hidden when there is none). */

@@ -1,8 +1,11 @@
 /** The overlay canvas over the notes: what follows the pointer and is not part of the pattern yet. */
 import { alpha, fitCanvas, readTheme, roundRectPath, type TimelineTheme } from '../../../timeline/canvas';
+import { drawKeyCursor } from '../../../timeline/key-cursor/draw';
 import { drawSelectionBox } from '../../../timeline/selection-box';
 import { rowForKey } from '../render';
 import type { PianoRollContext } from './context';
+import { cursorBox } from './key-cursor';
+import { editTarget } from './target';
 
 /** The stamp's label sits this far above its topmost note (px). */
 const STAMP_LABEL_RISE = 19;
@@ -21,6 +24,8 @@ export function drawOverlay(ctx: PianoRollContext): void {
   } else if (state.stampHover && !drag) {
     drawChordStamp(ctx, canvas, theme);
   }
+  // The keyboard cursor goes on top of everything, and only while the grid has the keyboard.
+  if (state.keyboard.isActive) drawKeyCursor(canvas, theme, cursorBox(ctx, editTarget(ctx)));
 }
 
 /** The note under the pointer lifts a little (a brighter rounded edge); with the slice tool, the cut line shows too. */

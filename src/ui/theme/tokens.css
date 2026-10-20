@@ -24,7 +24,7 @@
   /* Text (warm grays, like light on stone) */
   --ag-text: #ecebe6;
   --ag-text-dim: #a6a39b;
-  --ag-text-faint: #7b7871;
+  --ag-text-faint: #88867f;
 
   /* Accents */
   --ag-accent: #c9a45c;
@@ -113,7 +113,7 @@
   --ag-danger-line: color-mix(in srgb, var(--ag-danger) 50%, transparent);
   --ag-danger-strong: color-mix(in srgb, var(--ag-danger) 75%, #000);
   --ag-danger-deep: color-mix(in srgb, var(--ag-danger) 38%, #000);
-  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 60%, #fff);
+  --ag-danger-text: color-mix(in srgb, var(--ag-danger) 50%, #fff);
   --ag-led-glow: color-mix(in srgb, var(--ag-led) 60%, transparent);
 
   /*

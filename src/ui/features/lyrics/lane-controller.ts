@@ -13,7 +13,7 @@ import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import { gridTicks } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
 import { onFrame } from '../../frame-loop';
-import { alpha, fitCanvas, onThemeChange, readTheme, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, fitCanvas, onThemeChange, readTheme, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import {
   createdSpan,
   endDraggedSpan,
@@ -179,7 +179,7 @@ export class LyricsLaneController {
 
   private drawEmptyHint(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
     ctx.fillStyle = theme.textFaint;
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = `${fontPx(11)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillText('No lyrics yet: click here and type a word, or open Lyrics to paste a whole song’s words and spread them over the notes', 10, LYRICS_LANE_HEIGHT / 2);
   }
@@ -199,7 +199,7 @@ export class LyricsLaneController {
     ctx.beginPath();
     ctx.rect(x, 0, w, LYRICS_LANE_HEIGHT);
     ctx.clip();
-    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.font = `600 ${fontPx(12)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = theme.text;
     ctx.fillText(wordLabel(word), x + 5, LYRICS_LANE_HEIGHT / 2);

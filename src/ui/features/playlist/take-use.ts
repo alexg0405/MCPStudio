@@ -1,6 +1,6 @@
 /** Where a recording's comp uses each take: shown on the take tracks, so it is plain what plays from where. */
 import type { AudioClip, ClipId, LaneId, Tick } from '@core/model/types';
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import { clipBox, type ClipBox } from './clip-geometry';
 
@@ -48,7 +48,7 @@ function drawListeningMark(ctx: CanvasRenderingContext2D, theme: TimelineTheme, 
   ctx.lineWidth = 2;
   ctx.strokeRect(box.x + 1, box.y + 1, box.w - 2, box.h - 2);
   if (box.w > MIN_LISTENING_LABEL_CLIP_WIDTH) {
-    ctx.font = `600 10px ${theme.font}`;
+    ctx.font = `600 ${fontPx(10)}px ${theme.font}`;
     ctx.textBaseline = 'middle';
     const label = 'Listening to this take';
     const labelWidth = ctx.measureText(label).width + 10;

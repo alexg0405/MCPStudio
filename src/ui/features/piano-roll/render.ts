@@ -5,7 +5,7 @@
 import type { NoteLane } from '@app/stores/editor';
 import type { Note, NoteId, Tick, TimeSignature } from '@core/model/types';
 import { keyName, ticksPerBar, ticksPerBeat, TICKS_PER_STEP } from '@core/time/ppq';
-import { alpha, inkOn, isBlackKey, mix, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, inkOn, isBlackKey, mix, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import { laneValue, LANES } from './lanes';
 
@@ -36,7 +36,7 @@ export interface ChordBand {
 export function drawChordBands(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, bands: readonly ChordBand[]): void {
   const [r0, r1] = vp.visibleRows();
   const [t0, t1] = vp.visibleTicks();
-  ctx.font = `600 10px ${theme.font}`;
+  ctx.font = `600 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'top';
   for (const band of bands) {
     if (band.tick > t1 || band.tick + band.length < t0) continue;
@@ -264,7 +264,7 @@ function drawNoteLabels(
   baseAlpha: number,
 ): void {
   ctx.globalAlpha = baseAlpha;
-  ctx.font = `500 ${Math.min(10, vp.rowHeight - 4)}px ${theme.font}`;
+  ctx.font = `500 ${Math.min(fontPx(10), vp.rowHeight - 4)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (const note of labels) {
     const x = vp.tickToPx(note.tick);
@@ -354,7 +354,7 @@ export function drawKeys(
   const rowHeight = vp.rowHeight;
   const ink = theme.onLight;
   const strip: KeyStrip = { width, rowHeight, blackWidth: Math.round(width * 0.6), ink, seam: alpha(ink, 0.14) };
-  ctx.font = `500 ${Math.min(9, rowHeight - 3)}px ${theme.font}`;
+  ctx.font = `500 ${Math.min(fontPx(9), rowHeight - 3)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (let row = firstRow; row <= lastRow; row++) {
     const key = keyForRow(row);
@@ -447,7 +447,7 @@ export function drawRuler(
   const [t0, t1] = vp.visibleTicks();
   const barPx = bar * vp.pxPerTick;
   const labelEvery = barLabelInterval(barPx);
-  ctx.font = `500 10px ${theme.font}`;
+  ctx.font = `500 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'top';
   if (beat * vp.pxPerTick >= 8) {
     ctx.fillStyle = theme.lineFaint;
@@ -506,7 +506,7 @@ export function drawLane(
     ctx.fillRect(0, vp.snap(mid), vp.width, 1);
     // Which way is which: right/left for pan, up/down for fine pitch.
     ctx.fillStyle = theme.textFaint;
-    ctx.font = `500 9px ${theme.font}`;
+    ctx.font = `500 ${fontPx(9)}px ${theme.font}`;
     ctx.textBaseline = 'top';
     ctx.fillText(lane === 'pan' ? 'R' : '+100 ct', 3, 3);
     ctx.textBaseline = 'bottom';

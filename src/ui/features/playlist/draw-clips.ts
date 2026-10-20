@@ -19,7 +19,7 @@ import { clipSampleId } from '@core/audio/playback';
 import { tempoMapOf } from '@core/automation/tempo';
 import { clipChannelId } from '@core/model/clips';
 import type { Waveform } from '@engine/api';
-import { roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import { audioClipTags, drawAudioBody, type AudioHandle } from './audio-clip';
 import { drawAutomationBody, type AutoDraw } from './automation';
@@ -98,7 +98,7 @@ export function drawClips(
 ): void {
   const scene: ClipScene = { ctx, vp, theme, project, timeSig: project.transport.timeSig, style, mutedLanes };
   const [firstTick, lastTick] = vp.visibleTicks();
-  ctx.font = `600 10px ${theme.font}`;
+  ctx.font = `600 ${fontPx(10)}px ${theme.font}`;
   ctx.textBaseline = 'middle';
   for (const clip of clips) {
     if (clip.start > lastTick || clip.start + clip.length < firstTick || style.skip?.has(clip.id)) continue;

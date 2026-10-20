@@ -17,7 +17,7 @@ import { gridTicks } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
 import { rolesOf } from '@app/arrange/env';
 import { onFrame } from '../../frame-loop';
-import { alpha, fitCanvas, onThemeChange, readTheme, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, fitCanvas, onThemeChange, readTheme, roundRectPath, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import {
   createdSpan,
   endDraggedSpan,
@@ -187,7 +187,7 @@ export class ChordLaneController {
 
   private drawEmptyHint(ctx: CanvasRenderingContext2D, theme: TimelineTheme): void {
     ctx.fillStyle = theme.textFaint;
-    ctx.font = '11px system-ui, sans-serif';
+    ctx.font = `${fontPx(11)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillText('No chords yet: click here and type one (Am7, F/C…), or open Chords to pick a progression or detect them', 10, CHORD_LANE_HEIGHT / 2);
   }
@@ -221,14 +221,14 @@ export class ChordLaneController {
     ctx.beginPath();
     ctx.rect(x, 0, w, CHORD_LANE_HEIGHT);
     ctx.clip();
-    ctx.font = '600 12px system-ui, sans-serif';
+    ctx.font = `600 ${fontPx(12)}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.fillStyle = theme.text;
     const name = formatChord(symbol, context.flats);
     ctx.fillText(name, x + 6, CHORD_LANE_HEIGHT / 2);
     const nameWidth = ctx.measureText(name).width;
     if (roman && w > nameWidth + 40) {
-      ctx.font = '10px system-ui, sans-serif';
+      ctx.font = `${fontPx(10)}px system-ui, sans-serif`;
       ctx.fillStyle = theme.textDim;
       ctx.fillText(roman, x + 12 + nameWidth, CHORD_LANE_HEIGHT / 2 + 1);
     }

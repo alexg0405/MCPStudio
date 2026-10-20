@@ -1,5 +1,5 @@
 /** The overlay canvas over the notes: what follows the pointer and is not part of the pattern yet. */
-import { alpha, fitCanvas, readTheme, roundRectPath, type TimelineTheme } from '../../../timeline/canvas';
+import { alpha, fitCanvas, readTheme, roundRectPath, type TimelineTheme, fontPx } from '../../../timeline/canvas';
 import { drawSelectionBox } from '../../../timeline/selection-box';
 import { rowForKey } from '../render';
 import type { PianoRollContext } from './context';
@@ -61,7 +61,7 @@ function drawChordStamp(ctx: PianoRollContext, canvas: CanvasRenderingContext2D,
   }
   canvas.setLineDash([]);
   if (!name || !Number.isFinite(top)) return;
-  canvas.font = `600 11px ${theme.font}`;
+  canvas.font = `600 ${fontPx(11)}px ${theme.font}`;
   canvas.textBaseline = 'middle';
   const labelWidth = canvas.measureText(name).width + 14;
   canvas.fillStyle = theme.glass;

@@ -116,7 +116,7 @@ describe('settings', () => {
     ]);
     expect(res.warnings).toEqual([]);
     expect(s.prefs.getState()).toMatchObject({ uiScale: 125, highContrast: 'on', reduceMotion: 'off', colorSafe: true });
-    expect(res.ui[0]).toContain('interface size 125 percent');
+    expect(res.ui?.[0]).toContain('interface size 125 percent');
     noEdit(s, [{ op: 'settings', interface_size_percent: 400 }]);
     expect(s.prefs.getState().uiScale).toBe(150);
     noEdit(s, [{ op: 'settings', interface_size_percent: 1 }]);

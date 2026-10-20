@@ -5,7 +5,7 @@
  */
 import type { MeterHandle } from '@engine/api';
 import { HISTORY_CAPACITY, R } from '@app/metering/layout';
-import { alpha, type TimelineTheme } from '../../timeline/canvas';
+import { alpha, type TimelineTheme, fontPx } from '../../timeline/canvas';
 import { lufsText } from './meters-model';
 
 const TOP_LUFS = 0;
@@ -31,7 +31,7 @@ export function historyLength(meter: MeterHandle): number {
 }
 
 function drawGrid(g: CanvasRenderingContext2D, width: number, height: number, theme: TimelineTheme): void {
-  g.font = `500 10px ${theme.font}`;
+  g.font = `500 ${fontPx(10)}px ${theme.font}`;
   g.fillStyle = theme.textFaint;
   g.strokeStyle = theme.lineFaint;
   g.lineWidth = 1;

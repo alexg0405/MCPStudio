@@ -799,21 +799,25 @@ describe('decks: the real engine (realtime)', { tags: ['realtime'] }, () => {
     decks.play('B');
     await sleep(500);
     const ctx = s!.engine.deckHost!()!.ctx;
+    const beforeStart = ctx.currentTime;
     await decks.startRecording();
     const t0 = ctx.currentTime;
     expect(decks.store.getState().recording).not.toBeNull();
     await sleep(3500);
-    const seconds = ctx.currentTime - t0;
+    const stopCalled = ctx.currentTime;
     const title = await decks.stopRecording();
+    const stopReturned = ctx.currentTime;
     expect(title).toMatch(/^Live mix \d{4}-\d\d-\d\d \d\d:\d\d$/);
     expect(decks.store.getState().recording).toBeNull();
     // The recording is in the music library, as long as the audio clock ran while it was recording (the stop adds
-    // its 50 ms tail; a busy machine can stall the clock, which the recording follows). Adding it to the library
-    // takes a moment of its own: the clock is read before that.
+    // its 50 ms tail; a busy machine can stall the clock, which the recording follows). Starting and stopping take
+    // as long as they take, so the clock is read around them: it ran at least from the end of the start to the call of
+    // the stop, and at most from before the start to the return of the stop. Both bounds are as tight as the calls are
+    // quick, and a busy machine that delays one only widens its own window.
     const song = library.getState().songs.find((x) => x.title === title);
     expect(song).toBeDefined();
-    expect(song!.durationSec!).toBeGreaterThan(seconds - 0.25);
-    expect(song!.durationSec!).toBeLessThan(seconds + 0.25);
+    expect(song!.durationSec!).toBeGreaterThan(stopCalled - t0 - 0.25);
+    expect(song!.durationSec!).toBeLessThan(stopReturned - beforeStart + 0.25);
     // Both play at A's tempo: 124 BPM at +4 %.
     expect(decks.store.getState().decks.B.bpm).toBeCloseTo(124 * 1.04, 6);
     // The clicks are short: watch the meters for a beat or two.

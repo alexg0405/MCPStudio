@@ -1,7 +1,9 @@
 /** Things to ask Studio for, offered to get started. */
 export const IDEAS = [
   'Dark trap at 140, 808s that slide',
+  'Make a full song: a sad trap song at 140',
   'Boom bap at 90 with swing',
+  'Make a full song: uplifting house, about 2 minutes',
   'Drill with sliding 808s',
   'Busier hats',
   'More 808 slides',

@@ -20,7 +20,11 @@ export const BACKENDS: { value: AssistantState['backend']; label: string; hint: 
     hint: 'Through the Codex CLI (it comes with the ChatGPT app), signed in with your ChatGPT account',
   },
   { value: 'api', label: 'Claude (API key)', hint: 'Claude through an Anthropic API key' },
-  { value: 'offline', label: 'Offline generator', hint: 'The built-in beat generator: no AI, no network' },
+  {
+    value: 'offline',
+    label: 'Offline generator',
+    hint: 'The built-in generator: beats, and whole songs (chords, bass, melody, drums and an arrangement) from words like "a sad trap song at 140". No AI, no network',
+  },
 ];
 
 /** What "Auto" resolves to right now, for the label. */

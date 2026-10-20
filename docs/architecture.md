@@ -1315,7 +1315,96 @@ A guide that follows another guide works (the chain renders in turn); a ring is 
 - **Offline** (`core/beat/local.ts`): when no key is set, a deterministic generator reads style, tempo, key and
   "busier/simpler" from the description, uses per-style drum grids, writes an 808 that follows the kick, and maps a
   performance onto drums (beatbox) or an 808/melody (hummed contour moved into register and key, connected notes
-  overlapping so they glide).
+  overlapping so they glide). A request for a whole song ("a sad trap song at 140", "make a full song") goes to the
+  song generator below instead; a beat request, or a take to follow, stays here.
+
+## Offline song generator v2 (`core/song`, `app/assistant/song-answer.ts`, `beat-assistant/offline-song.ts`)
+
+With no AI set up (or the "Offline generator" chosen) "make a full song…" writes a finished song with no model call. The
+musician's bar for AI songs applies to it too: smooth transitions, variation, groove and a set-up mix by default. The
+generator is pure (`core/song`, no DOM, deterministic); the app turns its plan into the same actions an AI answer carries,
+so applying, undoing, leveling and playing are the AI path's own code.
+
+### What a request produces
+- `request.ts` reads the words: style (the beat generator's style words), tempo ("at 140"), key ("in F minor", or
+  "minor"/"major"), mood (sad, dark, uplifting, chill… → `Mood` of the harmony palette; sad, dark, tense and dramatic lean
+  minor, happy and uplifting major), length ("48 bars", "about 2 minutes", "short", "long") and busier/simpler. What the
+  words leave open (style, tempo inside the style's range, key, mode, mood) comes from the **seed**: the hash of the words,
+  plus 7919 × the number of songs this conversation has written (so the same words asked again are another song, and
+  New chat starts the count over). `isSongRequest` tells a song ("song", "full track", "verse", "chorus", "intro",
+  "64 bars", "2 minutes") from a beat ("trap beat with 808s", "busier hats", "Arrange it: 4 bars…").
+- `harmony.ts` picks a progression from `core/harmony/progressions` that fits four bars in the song's mode, scored by
+  mood tag (+4), the style's moods (+0.8 each) and genres (+1.6 each) and a seeded nudge, then a weighted pick among the best
+  four (so seeds differ). The verse and intro play it, the chorus plays it or (about every second song, rarely in dance
+  music) a second one, the build plays it turned around two bars (it ends leaning into the chorus), the break turned one
+  or three bars. Some styles use the key's sevenths. The whole song's chords go on the chord track in one `chords` action
+  (a name per bar, a dot where the chord holds).
+- `voicing.ts` voices every chord part (pad, keys) with the harmony module's candidate voicings and one more rule: a
+  dynamic program over the loop (its last chord leads into its first) whose cost is the movement between voicings, the
+  leap of the top voice and, heavily, **parallel fifths and octaves** between the outer voices and between the bass note
+  and the top. `parts.ts` plays the voicings in the style's rhythm for the kind of section (`COMP_HITS`: held, half, push,
+  lazy, two, stabs, offbeat, tech, dembow).
+- `bass.ts` writes the bass from the chords and the pattern's kick by a per-style rule (`BassRule` in `profiles.ts`): an
+  808 on the root at each kick hit, held to the next, sliding into the chord's fifth or octave at the end of the phrase
+  (trap every second bar, drill every bar, reggaeton at the loop's end), a sub on the kick with now and then a fifth or
+  octave (boom bap, afro), the harmony module's walking line (lo-fi) or root-fifth line (pop), rolling 16ths between the
+  kicks with an octave on the last 16th of each beat (house, progressive house), the offbeat 8th (trance, big room, EDM),
+  a syncopated groove (tech house, three seeded figures), long roots (future bass, melodic dubstep), a sub and a growl
+  (dubstep), a reese on the two-step kick (drum & bass). Every bass note is a tone of its chord; a chord change always
+  starts a new note.
+- `motif.ts` + `melody.ts` write the lead from a **two-bar motif** made once per song for the verses and once for the
+  hooks: a rhythm from the style family's cells (`plain`, `bounce`, `laid`, `driving`; the second bar the first or
+  another cell) and a contour (a walk of scale steps that arches; the second bar repeats the first bar's contour with its
+  last move changed when the rhythm repeats). A pattern is four bars: the statement, then the response (turned upside
+  down, or the same shape a step higher), a long cadence note on a chord tone at the end. The hook has three strengths
+  (hook; hook 2 with the same statement and a new answer, plus a counter-melody; hook final an octave higher and busier),
+  the second verse is the first with one note moved and a busier answer, the bridge is the verse thinned and inverted, the
+  intro plays a quiet teaser of the hook. Notes on the first or third beat or lasting a beat or more are **always chord
+  tones** of the chord under them (nearest in the direction the motif moves, so a contour survives); the notes between
+  are chord tones or scale tones reached and left by step, at most two steps long; leaps stay under a sixth when a nearer
+  tone exists. The lead stays in the style's register (`lead.low`/`high`).
+- `colour.ts`: the dance styles (and the biggest chorus of the others) get a chord-tone **arpeggio** (every 8th, trance
+  every 16th); the others get a **counter-melody** in hook 2 and the final hook: chord tones under the lead, starting where
+  the lead does not, a third or sixth below the note it sounds against, moving as little as possible.
+- `drums.ts` takes the style's grid (`drumGridOf`) at four strengths: light (the verse: no ghosts, open hat or rim), build
+  (rising 16th hats), full (the chorus: extra kick hits off the backbeat at a seeded step in bars 2 and 4, trap hat rolls
+  at the end of bar 4) and peak (the last chorus: more rolls, an open hat). The arranger adds the fills and builds.
+- `shape.ts` lays the sections out: the EDM pack's own songs (`SONG_SHAPES`; tech house keeps its bass in the intro),
+  three general ones (rap, pop, chill) and a club house shape; a length asked for halves the long sections (the intros,
+  breaks and builds before the peaks) and then drops the optional ones (a third hook, the bridge, the second build, the
+  second verse), or repeats the song's peak with a turn before it. `generate.ts` assigns the patterns (intro, verse,
+  build, chorus, chorus final, break, and the melodies) by role and by how many times the role came before, then writes
+  each once as a four-bar `BeatSpec`; velocities follow the section's energy (×0.85 at 1 … ×1.05 at 5) and the beat.
+- `metrics.ts` measures a plan from its notes (the tests use it): the lead's chord-tone ratio on strong notes, the bass's
+  root and chord-tone ratios, the parallel outer voices, the motif reuse (rhythm and contour trigrams that come back),
+  the lead's range, the syncopation.
+
+### Applying it (`app/assistant`)
+- `songToAnswer(plan)`: `song` (tempo, swing of the style, key), `chords` (the chord line), one `beat` per pattern (`pattern:
+  "new"`, a `ref`), one `arrange` (every section, `mix: 'auto'`) and a `level_mix` on the **first loudest section** (the
+  arranger's own leveling listens to the song's first 20 seconds, which are the intro: a trance song levelled there ended
+  1.1 dB short of its target; the last `level_mix` of an answer is the one that runs). `writeOfflineSong` also removes the
+  new project's empty "Pattern 1" and goes through `applyTurn` (one undo step; the arranger's fills, transitions and FX;
+  the mix set up by role; the level step; song mode and play), with `offline: true` on the chat message. The conversation's
+  "current beat" is cleared, so a follow-up ("busier hats") writes a new beat instead of rewriting the song's last pattern.
+- The offline generator still cannot change one part of a song (that needs an AI), as before.
+- Starter ideas and the "Who answers" help text say the offline generator writes full songs.
+
+### Measured
+- Across the 17 styles at 8 seeds (136 songs; `core/song/song.test.ts` asserts these with its own bounds): **100 %** of the 5 971
+  strong-beat lead notes are chord tones (bound 80 %); **100 %** of the 1 129 bass notes on a chord change are its root
+  and 100 % of all 8 363 bass notes are chord tones or approach notes (bound 90 %); **0 of 3 777** chord changes have
+  parallel fifths or octaves in the outer voices (bound 5 % each, 2 % overall; with the rule off, 17 % of a trap song's
+  changes do); the lead motif comes back: 35 % of the rhythm-and-contour trigrams of a song's melody occur more than
+  once (11 % to 66 % across songs; the test holds each between 8 % and 80 %, and the mean between 20 % and 55 %)
+  while 56 % to 95 % of the distinct shapes occur once; 51 % of the lead's notes are off the beat.
+- 16 seeds of "a sad trap song": at least 4 progressions, 14 different hooks, 6 different hook rhythms, 4 tempos, 5 keys.
+- The arrangement check (`checkArrangement`, the strict inferred-sections form too) finds no bugs in any of the 17 styles.
+- Loudness through the real engine (`test/browser/offline-song.test.ts`, the song's loudest 8 bars through the master
+  chain after the level step): trap −10.16 LUFS (target −10), lo-fi −12.58 (−13), trance −8.72 (−9), all −1.05 dBTP; a
+  whole song takes about 12 s from the request to the leveled, arranged mix in the browser.
+- Templates are unchanged (they stay a beat and an intro, with their baked levels): the DJ analysis fixtures and
+  `template-levels.ts` depend on them.
 
 ## v2 foundations (M8a)
 

@@ -103,6 +103,23 @@ function dropOrder(entry: ShapeSection, index: number, sections: readonly ShapeS
   return null;
 }
 
+/** A section this long (bars) or longer may be cut in half to shorten a song. */
+const HALVABLE_BARS = 16;
+
+/** Which sections give up bars first: the ends and the quiet middle before the builds, and the peaks last (lower goes first). */
+const HALVE_ORDER: Partial<Record<SectionRole, number>> = { intro: 0, outro: 0, break: 1, bridge: 1, verse: 2, pre: 3, build: 3 };
+
+/** The sections with the first of the most expendable long ones cut in half; null when none is long enough. */
+function halveOne(sections: readonly ShapeSection[]): ShapeSection[] | null {
+  const candidates = sections
+    .map((entry, index) => ({ entry, index }))
+    .filter(({ entry }) => entry.bars >= HALVABLE_BARS)
+    .sort((a, b) => (HALVE_ORDER[a.entry.role] ?? 4) - (HALVE_ORDER[b.entry.role] ?? 4) || b.entry.bars - a.entry.bars || a.index - b.index);
+  const chosen = candidates[0];
+  if (!chosen) return null;
+  return sections.map((entry, index) => (index === chosen.index ? { ...entry, bars: entry.bars / 2 } : entry));
+}
+
 /** The sections of a shape with one taken out. */
 function removeAt(sections: readonly ShapeSection[], index: number): ShapeSection[] {
   return sections.filter((_, at) => at !== index);
@@ -131,6 +148,12 @@ export function sectionsFor(style: Style, bars: number | undefined): ShapeSectio
   for (;;) {
     const total = totalBars(sections);
     if (total <= bars + LENGTH_SLACK_BARS) break;
+    // Long sections get shorter before any section goes: the song keeps its shape.
+    const halved = halveOne(sections);
+    if (halved) {
+      sections = halved;
+      continue;
+    }
     const order = sections.map((entry, index) => ({ index, order: dropOrder(entry, index, sections) })).filter((entry) => entry.order !== null);
     const next = order.sort((a, b) => (a.order as number) - (b.order as number))[0];
     if (!next) break;

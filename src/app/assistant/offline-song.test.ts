@@ -47,6 +47,8 @@ describe('the offline song', () => {
     expect(Object.keys(p.chords ?? {}).length).toBeGreaterThan(8);
     const names = Object.values(p.patterns).map((x) => x.name);
     for (const name of ['Intro', 'Verse', 'Verse melody', 'Chorus', 'Hook', 'Hook 2', 'Bridge melody']) expect(names).toContain(name);
+    // The new project's empty first pattern is gone: nothing in it, nowhere on the playlist.
+    expect(names).not.toContain('Pattern 1');
     // The mix is set up by role (buses, returns, a master limiter) and the song is in song mode, playing.
     expect(p.mixer.order.length).toBeGreaterThan(6);
     expect(s.view.getState().mode).toBe('song');

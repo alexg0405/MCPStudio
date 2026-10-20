@@ -2,7 +2,8 @@ import { useState, type MouseEvent, type PointerEvent, type RefObject } from 're
 import { useStore } from 'zustand';
 import { audioClipOf, editFor, renderNow, setNoteSettings, setTransition, snapClip } from '@app/actions/pitch';
 import { pitchState, type PitchEditorState } from '@app/pitch/state';
-import { DEFAULT_TRANSITION_MS, editSignature, isNeutralEdit } from '@core/audio/pitch-edit';
+import { pitchRenderSignature } from '@core/audio/align/edit';
+import { DEFAULT_TRANSITION_MS, isNeutralEdit } from '@core/audio/pitch-edit';
 import type { ClipId, PitchEdit } from '@core/model/types';
 import { PITCH_NAMES, SCALES } from '@agstudio/sdk/notes';
 import { showContextMenu } from '../../controls/ContextMenu';
@@ -34,6 +35,11 @@ function useToolbarModel() {
   const clipId = st.clipId;
   const clip = st.clip;
   const edit = useDoc((p) => (clipId ? audioClipOf(p, clipId)?.clip.pitchEdit : undefined));
+  // What the render must have been made for (the edit, and the aligned sound it was made from).
+  const signature = useDoc((p) => {
+    const found = clipId ? audioClipOf(p, clipId) : null;
+    return found ? pitchRenderSignature(found.clip) : null;
+  });
   const hearingOriginal = useStore(services.editor, (e) => !!clipId && e.pitchOriginal.includes(clipId));
   const noteCount = clip ? editFor(services.doc.getState().project, clip).notes.length : 0;
   const selected = st.selected;
@@ -46,7 +52,7 @@ function useToolbarModel() {
 
   const isReady = st.phase === 'ready' && !!clip && noteCount > 0;
   const hasCorrection = !!edit && !isNeutralEdit(edit);
-  const isRenderCurrent = !!edit && !!edit.renderedSampleId && edit.renderedFor === editSignature(edit);
+  const isRenderCurrent = !!edit && !!edit.renderedSampleId && edit.renderedFor === signature;
   const needsRender = hasCorrection && !isRenderCurrent && !st.rendering && st.phase === 'ready';
   const selectionScope = selected.length === 1 ? 'the selected note' : `the ${selected.length} selected notes`;
   const scaleName = SCALES.find((s) => s.id === st.keyScale)?.label.toLowerCase() ?? st.keyScale;
@@ -71,7 +77,7 @@ function useToolbarModel() {
     drift: shownNote?.drift ?? 0,
     vibrato: shownNote?.vibrato ?? 1,
     transitionMs: edit?.transition ?? DEFAULT_TRANSITION_MS,
-    statusText: statusText({ st, clipId, edit, hearingOriginal, noteCount }),
+    statusText: statusText({ st, clipId, edit, signature, hearingOriginal, noteCount }),
   };
 }
 
@@ -82,18 +88,20 @@ interface StatusInput {
   st: PitchEditorState;
   clipId: ClipId | null;
   edit: PitchEdit | undefined;
+  /** What the edit's render must have been made for (`pitchRenderSignature`). */
+  signature: string | null;
   hearingOriginal: boolean;
   noteCount: number;
 }
 
 /** What the status line says about the clip: listening, hearing the original, rendering, ready or nothing corrected yet. */
-function statusText({ st, clipId, edit, hearingOriginal, noteCount }: StatusInput): string {
+function statusText({ st, clipId, edit, signature, hearingOriginal, noteCount }: StatusInput): string {
   if (st.phase === 'analyzing') return 'Listening to the clip…';
   if (st.phase !== 'ready') return '';
   if (hearingOriginal) return 'Hearing your original recording (B switches back to the corrected sound)';
   if (st.rendering && st.rendering.clipId === clipId) return `Rendering corrected audio ${Math.round(st.rendering.fraction * 100)} %…`;
   if (edit && !isNeutralEdit(edit)) {
-    if (edit.renderedSampleId && edit.renderedFor === editSignature(edit)) return 'Corrected audio ready: the clip plays it';
+    if (edit.renderedSampleId && edit.renderedFor === signature) return 'Corrected audio ready: the clip plays it';
     // Nothing is rendering and nothing is on the way: the project was opened with an out-of-date render, or a render failed.
     return st.rendering ? 'Corrected audio is being made…' : 'Corrected audio is not made yet';
   }

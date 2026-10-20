@@ -13,6 +13,7 @@ import { alpha, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
 import type { ClipPaint } from './clip-paint';
 import type { ClipBox } from './clip-geometry';
+import { drawWarpOverlay } from './warp-overlay';
 
 /** The three handles on an audio clip: the fade-in and fade-out at the top corners, and the gain at the top centre. */
 export type AudioHandle = 'fadeIn' | 'fadeOut' | 'gain';
@@ -45,6 +46,8 @@ export function audioClipTags(
   if (clip.gain !== undefined && clip.gain !== 1) tags.push(formatDb(clip.gain));
   // A pitch-corrected clip plays its corrected render (the waveform shows it).
   if (clip.pitchEdit?.renderedSampleId) tags.push('Pitch corrected');
+  // An aligned clip plays its aligned render (the waveform shows it, and a line along the bottom shows where it moved).
+  if (clip.align?.renderedSampleId) tags.push(clip.align.mode === 'grid' ? 'Tightened to grid' : 'Aligned');
   return tags;
 }
 
@@ -132,6 +135,7 @@ export function drawAudioBody(
     ctx.fillRect(from, Math.round(mid), to - from, 1);
   }
   drawFadeCurves(ctx, vp, clip, levels, tempo, box, paint, clipSec, dur);
+  drawWarpOverlay(ctx, vp, clip, ch, tempo, box, paint);
   if (handles.show && w >= MIN_HANDLES_WIDTH && h >= HANDLE_ZONE + 4) drawHandles(ctx, vp, theme, clip, levels, tempo, box, paint, handles.hot);
 }
 

@@ -35,7 +35,8 @@ function useClipPlayingSignature(): string {
     const found = id ? audioClipOf(p, id) : null;
     if (!found) return '';
     const { clip, channel } = found;
-    const parts = [clip.offsetSec, clip.length, channel.pitch ?? 0, channel.reverse ? 1 : 0, channel.stretch ?? '', channel.sourceBpm ?? 0, channel.sampleId];
+    // The aligned sound counts too: the editor works on it, so a new alignment means looking at the clip again.
+    const parts = [clip.offsetSec, clip.length, channel.pitch ?? 0, channel.reverse ? 1 : 0, channel.stretch ?? '', channel.sourceBpm ?? 0, channel.sampleId, clip.align?.renderedSampleId ?? ''];
     return parts.join('|');
   });
 }

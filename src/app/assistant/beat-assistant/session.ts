@@ -49,6 +49,8 @@ export class AssistantSession {
   offlinePrompt = '';
   /** How many songs the offline generator has written in this conversation: the next one is a variation. */
   offlineSongs = 0;
+  /** How many changes the offline editor has made in this conversation: asking for "a new melody" again gives another one. */
+  offlineEdits = 0;
   /** Stops the request in flight (asking, listening, following up). Null when none is running. */
   abort: AbortController | null = null;
   /** Stops the plugin build in flight. */

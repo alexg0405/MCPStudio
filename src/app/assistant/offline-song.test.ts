@@ -117,11 +117,15 @@ describe('the offline song', () => {
   it('turns the answer into the actions an AI would write: song, chords, a beat per pattern, one arrange', () => {
     const plan = generateSongFromPrompt('a trance song', { seed: 3 });
     const answer = songToAnswer(plan);
-    expect(answer.actions.map((action) => action.op)).toEqual(['song', 'chords', ...plan.patterns.map(() => 'beat'), 'arrange']);
-    const arrange = answer.actions.at(-1)!;
+    expect(answer.actions.map((action) => action.op)).toEqual(['song', 'chords', ...plan.patterns.map(() => 'beat'), 'arrange', 'level_mix']);
+    const arrange = answer.actions.at(-2)!;
     expect(arrange).toMatchObject({ style: 'trance', mix: 'auto' });
     const refs = new Set(plan.patterns.map((entry) => entry.ref));
     for (const section of arrange.sections as { play: string[] }[]) for (const ref of section.play) expect(refs.has(ref)).toBe(true);
+    // The mix is leveled on the loudest part (the first drop, bar 33 after a 16-bar intro and build), not on the intro.
+    const sections = arrange.sections as { name: string; bars: number }[];
+    const dropStart = 1 + sections.slice(0, sections.findIndex((section) => section.name === 'Drop')).reduce((sum, section) => sum + section.bars, 0);
+    expect(answer.actions.at(-1)).toMatchObject({ op: 'level_mix', style: 'trance', from_bar: dropStart, bars: 8 });
   });
 
   it.each(STYLES.map((style) => [style] as const))('%s: the arrangement check finds no bugs, and every beat applies without a warning', async (style: Style) => {

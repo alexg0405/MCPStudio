@@ -43,5 +43,22 @@ export function songToAnswer(plan: SongPlan): AiAnswer {
     mix: 'auto',
     outro: 'auto',
   });
+  // The arranger would level the mix on the song's first seconds, which are the intro. A song is as loud as its loudest part,
+  // so the leveling listens there instead (the last level_mix of an answer is the one that runs).
+  actions.push({ op: 'level_mix', style: plan.style, ...loudestPart(plan) });
   return { message: plan.message, actions };
+}
+
+/** The most bars the leveling listens to, as the AI's own level_mix does. */
+const LISTENING_BARS = 8;
+
+/** Where the song is loudest: the first section at the highest energy, as the bar it starts on (1-based) and how many bars to listen to. */
+function loudestPart(plan: SongPlan): { from_bar: number; bars: number } {
+  const peak = Math.max(...plan.sections.map((section) => section.energy));
+  let startBar = 1;
+  for (const section of plan.sections) {
+    if (section.energy === peak) return { from_bar: startBar, bars: Math.min(LISTENING_BARS, section.bars) };
+    startBar += section.bars;
+  }
+  return { from_bar: 1, bars: LISTENING_BARS };
 }

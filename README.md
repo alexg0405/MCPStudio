@@ -55,7 +55,7 @@ computer, the first thing to send is the text the terminal prints.
 
 Other scripts (the same in cmd.exe and PowerShell): `npm run check` (types, lint, all tests), `npm test` (unit), `npm run test:audio` (headless Chrome;
 it uses the installed Chrome, or Edge with `AGSTUDIO_TEST_BROWSER=msedge`),
-`npm run test:perf` (speed assertions with their real limits; run it on a quiet machine),
+`npm run test:perf` (speed assertions with their real limits; run it on a quiet machine; `npm run check` runs the speed and live-audio tests last, one file at a time),
 `npm run build` (production build in `dist/`).
 
 ## Install as an app

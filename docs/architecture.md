@@ -3994,6 +3994,28 @@ machine is shared, so compare runs by their control row ("pointermove over an in
   24-bit round trip, trimming, start tick, progress and cancel).
 - App smoke test (`test/browser/app-smoke.test.ts`): the whole app with the real engine and React shell in headless
   Chrome: open a project file → play → seek → stop → save → reopen, with no errors logged and no late events.
+- **Test stages** (`npm run check`, `scripts/check.mjs`, `scripts/lib/test-stages.mjs`). Many files at once (up to nine Chrome
+  pages, as many Node workers) share the cores, which is fine for a test of what the code computes and wrong for a test of
+  how fast, how cheaply or how live it runs. So four stages follow the static checks, one after the other:
+  `unit` (Node) and `audio` (Chrome) run every test without a quiet-machine tag, files side by side; then `unit-timing` (Node)
+  and `audio-realtime` (Chrome) run only the tests tagged `perf` (speed, CPU cost, memory) or `realtime` (a live audio clock that
+  must keep up, a loopback recording, a long run with no late event), one file at a time (`fileParallelism: false`). A test
+  opts in with `{ tags: ['realtime'] }` in the options of the `it` or of its `describe` (a describe whose tests share a
+  rig is tagged as a whole); `tools/test/quiet-files.ts` reads the test files at config time and lists the ones that mention a
+  tag, so there is no list to keep up to date. `npm test` and `npm run test:audio` still run every test of their project
+  (handy for one file); `npm run test:perf` runs the `perf` tests alone with their real limits.
+  Rules for the tests inside: speed and cost assertions use CPU time and the best of a few attempts (`cpuNow`/`settle`,
+  `@agstudio/sdk/testing`; the browser has no CPU clock, so a browser test of speed takes the best of attempts of the
+  wall clock); a UI test waits for a condition (`expect.poll`, `until`, a settled-state helper), never for a fixed number of
+  frames or milliseconds; a test that must see the audio clock keep up wraps its measurement in `retryWhenOverloaded`
+  (`test/helpers/overload.ts`): when it fails, a control (how late the page's 10 ms timer fired, how fast a fixed little
+  offline render runs) says whether the machine was overloaded; if not, the failure stands, if so the attempt is repeated
+  and, when every attempt was overloaded, the test is skipped with those numbers in the message. The cost of audio code is the
+  cheapest of many short CPU-time runs (`cheapestRun`), because a busy machine interrupts a long run again and again and each
+  interruption leaves the caches cold. Files are the unit of parallelism in the `audio` stage (one page each, a describe.concurrent
+  inside a page only shares one thread), so a long chain of renders is split into files that run side by side
+  (`loudness-stage-<style>`, `edm-pack-<style>`, `dj-long-analysis-*`, `reference-studio`; shared parts in `test/helpers`). Vitest runs
+  the longest files first by their recorded time, so a file it has not seen yet runs last the first time.
 - In the app: `window.__ag` (dev) exposes services (stores, history, commands, engine, files) and `__ag.perf`
   (piano roll draw times, React commit count; `?perf=notes10k` loads a 10k-note fixture).
 - Measured at M7 (Chrome, M-series Mac): piano roll redraw with 10k notes median 0.6 ms, p95 0.9 ms; 0 React
@@ -4161,7 +4183,7 @@ sound reaches the speakers. Before, the old engine was closed first and the gap 
 
 ### Latency measurements (`test/browser/latency.test.ts`, `test/helpers/latency.ts`)
 
-`npm run test:perf` (or `VITE_PERF_STRICT=1 npx vitest run --project audio test/browser/latency.test.ts`) prints
+`npm run test:perf` (or `VITE_PERF_STRICT=1 npx vitest run --project audio-realtime test/browser/latency.test.ts`) prints
 `LAT |` lines. A probe worklet behind the limiter records the context frame of the first loud sample after arming; the
 frame is turned into speaker time with `getOutputTimestamp` (its context time is the audible position: it trails
 `currentTime` by `baseLatency + outputLatency`), so a measurement runs from a key's `event.timeStamp`, a MIDI message, the
@@ -5113,7 +5135,7 @@ platform in (`win32`, `darwin`, `linux`); a run on a real Windows machine is sti
   platform-taking parts are in `scripts/lib/launcher.mjs` (typed by `launcher.d.mts`); `bin/agstudio-mcp(.cmd)` does the same for the MCP helper.
   `.gitattributes` keeps text files LF in every checkout (`.cmd` files are CRLF) so snapshot tests and shell scripts keep their bytes.
 - **npm scripts.** Nothing in `package.json` needs a Unix shell: `test:perf` is `scripts/test-perf.mjs` (sets `VITE_PERF_STRICT`), and
-  `scripts/check.mjs` starts tsc, eslint and vitest as `node <their JS file>` (`scripts/lib/tools.mjs`), because Node (18.20+) refuses to
+  `scripts/check.mjs` starts tsc, eslint and vitest (the tag filters of its stages are plain words in `scripts/lib/test-stages.mjs`) as `node <their JS file>` (`scripts/lib/tools.mjs`), because Node (18.20+) refuses to
   start a `.cmd` shim without a shell and a shell would re-parse every argument. The audio tests use the installed Chrome; set
   `AGSTUDIO_TEST_BROWSER=msedge` to use Edge instead.
 - **Finding and starting the AI CLIs** (`tools/platform`): `find-cli.ts` lists where `claude` / `codex` may be (an override, then the PATH with

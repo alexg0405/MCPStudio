@@ -241,6 +241,10 @@ export class VersionService {
     const stops = [
       this.s.history.onChange((change) => this.onDocumentChange(change)),
       this.s.files.onSaved(() => void this.onSaved()),
+      // The file's name and link change just after the project does (a project opened, saved as): the card follows them.
+      this.s.files.store.subscribe((state, previous) => {
+        if (state.name !== previous.name || state.fileKey !== previous.fileKey) void this.writeCard(this.project, { isOpened: true });
+      }),
     ];
     const interval = setInterval(() => this.checkTimer(), TIMER_TICK_MS);
     const onPageHide = () => this.saveBeforeClosing();
@@ -263,7 +267,6 @@ export class VersionService {
       this.stored = new WeakSet();
       this.lastStored = null;
       this.firstEditAt = null;
-      void this.writeCard(change.next, { isOpened: true });
       void this.refresh();
       return;
     }

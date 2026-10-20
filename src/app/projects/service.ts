@@ -144,7 +144,8 @@ export class ProjectsService {
 
   /** Takes a project off the list. Its file, autosaves and versions stay where they are. */
   async removeFromList(item: ListedProject): Promise<void> {
-    if (item.fileKey) await forgetFile(item.fileKey);
+    // The open project keeps its file link (Save still writes to it); its card is hidden instead.
+    if (item.fileKey && !item.isOpen) await forgetFile(item.fileKey);
     if (item.projectId) await this.versions.catalog?.choose(item.projectId, { removed: true }, item.name);
     await this.refresh();
   }

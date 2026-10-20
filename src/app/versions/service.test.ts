@@ -232,6 +232,29 @@ describe('save points: when they are made', () => {
   });
 });
 
+describe('the project card', () => {
+  it('is written for a project that is opened, with that project’s own name and file, not the previous one’s', async () => {
+    const { s, stop } = rig();
+    const opened = songWithClips(3, 'Opened song');
+    // Opening replaces the project first and the file's name and link right after, as `ProjectFiles.replace` does.
+    s.files.replace(opened, null, { name: 'Opened song', handle: null, fileKey: 'file_9' });
+    await vi.waitFor(async () => expect(await s.versions.catalog!.get(opened.projectId)).not.toBeNull());
+    const card = (await s.versions.catalog!.get(opened.projectId))!;
+    expect(card).toMatchObject({ name: 'Opened song', fileKey: 'file_9', removed: false });
+    expect(card.facts).toMatchObject({ bars: 3, clips: 3 });
+    stop();
+  });
+
+  it('follows a Save as: the new name and file land on the project that was saved', async () => {
+    const { s, stop } = rig();
+    const projectId = s.doc.getState().project.projectId;
+    s.files.store.setState({ name: 'Night Drive', fileKey: 'file_3' });
+    await vi.waitFor(async () => expect((await s.versions.catalog!.get(projectId))?.fileKey).toBe('file_3'));
+    expect((await s.versions.catalog!.get(projectId))!.name).toBe('Night Drive');
+    stop();
+  });
+});
+
 describe('restoring', () => {
   it('puts the project back exactly, as one undo step, keeping the state it replaced', async () => {
     const { s, edit, versions, stop } = rig();

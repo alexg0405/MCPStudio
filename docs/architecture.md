@@ -593,6 +593,78 @@ and touch-action; for `touchEnd` the points listed are the ones that lift): `tou
 `touch-controls`, `touch-shell` (windows, menus, search, hints, layout, step painting, Keys), `touch-launcher`. A synthetic
 `new PointerEvent(...)` cannot capture a pointer that does not exist, which is why the older mouse tests stay as they are.
 
+## Accessibility (`src/ui/a11y`, `features/accessibility`, the `--ag-scale`, `data-contrast`, `data-motion` and `data-palette` page attributes)
+
+AGstudio works with the keyboard alone and with a screen reader, and has a look for low vision and colour blindness, without
+changing anything for people who use none of it. Everything is plain DOM and the existing stores: no new dependency.
+
+- **Tab stops.** Every `<button>` is a native Tab stop (nothing carries `tabIndex={-1}` any more). Mouse users never focus the
+  toolbar buttons (their pointer-down is cancelled, as before), and `ui/keyboard.ts` lets Space and Enter press a control that
+  the keyboard focused (`:focus-visible` on a button, tab, menu item, switch...) instead of running a shortcut, so Space still
+  means play/stop for a mouse user and "press" for a keyboard user. A mouse click leaves nothing `:focus-visible`.
+- **Roving groups** (`a11y/roving.ts`). A container with `data-roving` (`horizontal`, `vertical` or `grid`) is one Tab stop:
+  its controls get `tabindex` 0 (the active one) or -1, and the arrow keys, Home and End move inside it (`rovingKeyDown`, called
+  first by the global key handler). One MutationObserver on the page keeps the stops right as React adds, removes and disables
+  controls, so a group is only markup: `<div role="toolbar" aria-label="…" data-roving>`. Fields that use the arrows themselves
+  (text boxes, selects, range inputs, sliders, spin buttons) are never taken over.
+- **Moving between parts of the screen** (`features/accessibility/panes.ts`). Ctrl+F6 and Ctrl+Shift+F6 (Alt+9 and
+  Alt+Shift+9 where F-keys need Fn) go through the menu bar, the transport, the browser panel and every open window in the
+  order they were opened; F6 itself stays the channel rack, as in FL Studio. Alt+0 "Where am I?" says the pane, the front
+  window, the selected sound and pattern and the transport state. A window is a `role="dialog"` named by its title
+  (`aria-modal` stays off: it does not block the rest) and is focusable itself; focus entering a window makes it the focused
+  window (the shortcuts of that window apply) and Esc on its frame or title bar closes it (inside, Esc belongs to the
+  content). `features/accessibility/focus-follow.ts` moves the focus into a window that a key press opened and onto another
+  window when the focused one closes, but only after keyboard input (`a11y/modality.ts` tracks the last input), so a mouse
+  user's focus is never moved.
+- **The live region** (`a11y/announce.ts`). `announce(text, 'polite' | 'assertive')` writes into one of two hidden elements
+  (`role="status"` and `role="alert"`); the same sentence twice in a row still speaks (an invisible mark alternates). The
+  announcers in `features/accessibility/announcers.ts` listen to stores that exist anyway: play and stop (the engine), record
+  armed / on / off, PAT and SONG, every toast (errors are assertive: finished exports, saves and failures all come through toasts),
+  the Studio's thinking and replies (long ones are cut at a word), plus the settings commands and the editors' keyboard cursors.
+  Nothing runs per frame: playing makes no React commits (`test/browser/a11y-shell.test.ts` counts them).
+- **Interface size** (Settings → Accessibility, `prefs.uiScale`, 90 to 150 percent; commands `options.uiScale`,
+  `options.uiScaleUp/Down/Reset`). `a11y/preferences.ts` sets `--ag-scale` on `<html>`; every `font-size` in the CSS is
+  `calc(Npx * var(--ag-scale, 1))` (a mechanical rewrite: at 100 % the value is the old one), the font tokens and the toolbar and
+  title-bar heights scale with it, and canvas text goes through `fontPx(size)` (`timeline/canvas.ts`; a row-limited size is
+  `Math.min(fontPx(10), rowHeight - 4)`), so rulers, notes, clip titles, meters and lanes follow. Heights of other fixed-size
+  controls are not scaled (they are shared with JavaScript row maths), so at 150 % the dense rows are tight but never clipped
+  in the checked windows.
+- **High contrast.** Two themes (`contrast`: black and white with a yellow accent, `contrast-light`: white and black with a blue
+  one; the accent setting is ignored there so the checked colours are the ones shown), and `prefs.highContrast` (`auto` follows
+  the system's `prefers-contrast: more`) which sets `data-contrast="more"` on any theme: quiet text and lines move toward the
+  main text colour and the focus ring gets thicker. `@media (forced-colors: active)` keeps the focus ring and pressed states.
+  The focus ring is `outline: var(--ag-focus-width) solid var(--ag-focus)` for every `:focus-visible`; `--ag-cursor` is the
+  keyboard cursor of the canvas editors.
+- **Less motion.** `prefs.reduceMotion` (`auto` follows `prefers-reduced-motion`) sets `data-motion="reduced"` (or `full`):
+  transitions and animations are off in every stylesheet, the karaoke lyrics scroll jumps, and the playlist's and piano
+  roll's follow-playhead never glides or slides: the smooth style turns into the page style and a page turn lands in one
+  frame (`FollowFrame.reducedMotion`, `timeline/follow.ts`).
+- **Colour-blind safe colours** (`prefs.colorSafe`, `data-palette="safe"`). Meter low/mid/high, the lit LED, notes and the
+  danger colour switch to the Okabe-Ito blue, yellow and orange family (darker versions on the light themes); on top, wherever
+  colour carried a state the canvas editors add a shape: the mixer meter gets notches at -18 and -6 dB and a triangle while
+  clipping, playlist clips get a pattern badge per hue family (`a11y/color-patterns.ts`: eight patterns, so clips of different
+  colours differ by more than colour) and diagonal stripes when muted, selected notes get a heavy outline, a selected chord or
+  lyric word a heavy outline and a corner triangle (`a11y/selection-mark.ts`), and the lyrics' sung and current words are
+  underlined. `theme.colorSafe` (from `readTheme()`) is the flag canvas code reads.
+- **Settings, AI and MCP.** The four settings are prefs, commands (menu Options → Accessibility, the action search) and fields of
+  the `settings` action (`interface_size_percent`, `high_contrast`, `reduce_motion`, `color_blind_safe`, also read back by
+  `get_settings`), so Studio and MCP clients set them like the window does. The two theme ids are in `options.theme`.
+- **Keyboard help.** Help → Keyboard navigation (command `help.keyboard`, window `keyboard-help`) and the end of the
+  Shortcuts window list every navigation key and what a screen reader says (`a11y/keyboard-help-data.ts`, the editors'
+  keys in `keyboard-help-editors.ts`); `docs/shortcuts.md` carries the same list (generated by `test/unit/shortcuts-doc.test.ts`).
+@@EDITORS@@
+@@CONTROLS@@
+- **Tests.** `test/browser/a11y-contrast.test.ts` computes the contrast of 34 token pairs in all eight themes, with every
+  accent, with more contrast and with the safe palette (text 4.5:1, marks such as the focus ring, notes, meters and LEDs 3:1,
+  the High contrast themes 7:1 and 4.5:1) from the resolved CSS, and simulates protanopia, deuteranopia and tritanopia for
+  the safe meter, note and light colours; `a11y-color-safe.test.ts` (patterns and selection marks), `a11y-shell.test.ts` (live
+  region, pane cycling, window dialogs, focus following, the Space rule, settings reaching the page, no commits while
+  playing), `a11y-audit.test.ts` (names, roles, tab order and focus rings of every window, menu and dialog),
+  `keyboard-playlist.test.ts` and `keyboard-piano-roll.test.ts` (the keyboard cursors), unit tests for the pure parts.
+  Limits: the interface size does not scale fixed-height controls; the DJ decks' own meters and the plugin windows' custom
+  canvases keep their colours and sizes; screen reader behaviour is checked by the tree it gets (roles, names, values, live
+  text), not with a real reader.
+
 ## Persistence (`src/app/persistence`, `src/platform`)
 
 - `.agproj` = zip (fflate, `core/io/project-file.ts`): `meta.json` (`{ format: 1, appVersion, savedAt }`),

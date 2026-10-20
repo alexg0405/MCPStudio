@@ -95,6 +95,12 @@ The UI must explain itself:
 - Reach features from a menu or right-click, not only a shortcut. The action search (Mod+K) finds every menu entry;
   add others with `addActionProvider`.
 - Empty windows say what to do next.
+- Keep it usable without a mouse and with a screen reader (`docs/architecture.md`, "Accessibility"): every control has an
+  accessible name (icon buttons an `aria-label`; `data-hint` is not a name), a button is a Tab stop and a dense group is one
+  (`role="toolbar" data-roving`), knobs and faders are sliders with `aria-valuetext` in units, events worth hearing go through
+  `announce()` (`ui/a11y/announce.ts`), a canvas editor gets a keyboard cursor and a text summary, canvas text sizes go through
+  `fontPx()`, anything that glides asks `isReducedMotion()`, and colour is never the only clue (`theme.colorSafe` adds shapes).
+  New colours use tokens: `test/browser/a11y-contrast.test.ts` holds every theme to 4.5:1 for text and 3:1 for marks.
 - Give the AI studio matching actions (`src/app/ai/`) so the chat can drive the feature too. `test/unit/ai-coverage.test.ts`
   fails for a command or window with no AI path: add an `argsHint` for a command that takes an argument, or an action
   (and a `COVERED_BY_OP` entry); `NOT_FOR_AI` needs a written reason. New reads go in `src/app/ai/read/` (a tool module, listed in `read/index.ts`).

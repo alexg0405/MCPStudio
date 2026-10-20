@@ -74,7 +74,16 @@ export function MiniScope() {
   return (
     <div
       className={styles.mini}
+      role="button"
+      tabIndex={0}
+      aria-label={`Output display, showing the ${mode === 'scope' ? 'waveform' : 'spectrum'}. Press to show the ${mode === 'scope' ? 'spectrum' : 'waveform'}; the menu key offers more`}
       onClick={() => s.prefs.getState().set({ scopeMode: mode === 'scope' ? 'spectrum' : 'scope' })}
+      onKeyDown={(e) => {
+        // A div is not a button: Enter and Space press it by hand (the menu key already opens its context menu).
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.currentTarget.click();
+      }}
       onDoubleClick={() => openWindow(s, 'visualizer')}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -88,7 +97,7 @@ export function MiniScope() {
       }}
       data-hint={`What you hear: its ${mode === 'scope' ? 'waveform' : 'spectrum (low notes left, highs right)'}. Click for the ${mode === 'scope' ? 'spectrum' : 'waveform'}; double-click opens the Visualizer`}
     >
-      <canvas ref={ref} className={styles.miniCanvas} style={{ width: W, height: H }} />
+      <canvas ref={ref} className={styles.miniCanvas} style={{ width: W, height: H }} aria-hidden />
     </div>
   );
 }

@@ -62,12 +62,22 @@ function isUsable(el: Element): boolean {
   return true;
 }
 
+/**
+ * True when the control is an entry of a menu that opens from inside the group (the menu bar's dropdowns, a toolbar
+ * button's menu): that menu moves its own focus with the arrows, so the group must not count its entries.
+ */
+function isInsideOwnMenu(el: Element, group: Element): boolean {
+  const menu = el.closest('[role="menu"]');
+  return menu !== null && menu !== group && group.contains(menu);
+}
+
 /** The controls a group manages: its own, not those of a roving group nested inside it. */
 export function rovingItems(group: Element): HTMLElement[] {
   const items: HTMLElement[] = [];
   for (const el of group.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
     if (el.closest(GROUP_SELECTOR) !== group) continue;
     if (!isUsable(el)) continue;
+    if (isInsideOwnMenu(el, group)) continue;
     items.push(el);
   }
   return items;

@@ -63,6 +63,7 @@ export function RecordSource() {
       onPointerDown={(e) => e.preventDefault()}
       onClick={(e) => showContextMenu(e, recordSourceMenu(services))}
       data-hint={hint}
+      aria-haspopup="menu"
       aria-label={`Record: ${label}`}
     >
       <span className={recording ? styles.recording : ''}>{recording ? '● ' : ''}</span>

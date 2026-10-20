@@ -52,6 +52,7 @@ export function PatternPicker({ compact = false }: { compact?: boolean }) {
       <input
         className={`${styles.picker} ${styles.input}`}
         autoFocus
+        aria-label="Pattern name"
         defaultValue={current.name}
         onFocus={(e) => e.currentTarget.select()}
         onBlur={(e) => {
@@ -78,6 +79,8 @@ export function PatternPicker({ compact = false }: { compact?: boolean }) {
       onPointerDown={(e) => e.preventDefault()}
       onClick={open}
       onDoubleClick={() => setRenaming(true)}
+      aria-haspopup="menu"
+      aria-label={`Pattern: ${current?.name ?? 'none'}`}
       data-hint="Current pattern. Click to switch or add patterns (F4 = new); double-click to rename"
     >
       <span className={styles.swatch} />

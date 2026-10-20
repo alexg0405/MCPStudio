@@ -54,7 +54,7 @@ describe('Clip launcher window (UI)', { timeout: 60_000 }, () => {
   const cell = (track: number, scene: number) => cells()[scene * 8 + track]!;
   const state = (track: number, scene: number) => cell(track, scene).dataset.state;
   const menuItem = (label: string) =>
-    [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')].find((b) => b.textContent?.includes(label));
+    [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')].find((b) => b.textContent?.includes(label));
   const rightClick = (el: Element) => {
     const r = el.getBoundingClientRect();
     el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 10, clientY: r.top + 10 }));

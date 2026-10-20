@@ -1,11 +1,11 @@
 /**
  * Keyboard navigation for menus (the menu bar's and context menus): a panel is a role="menu"
- * element, its items the enabled role="menuitem" buttons whose nearest panel it is (not those of a
+ * element, its items the enabled menuitem, menuitemcheckbox and menuitemradio buttons whose nearest panel it is (not those of a
  * submenu open inside it). Focus moves with the keys; Enter and Space click the focused button.
  */
 
 export function panelItems(panel: Element): HTMLElement[] {
-  return [...panel.querySelectorAll<HTMLElement>('[role="menuitem"]')].filter(
+  return [...panel.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]')].filter(
     (el) => el.closest('[role="menu"]') === panel && !(el as HTMLButtonElement).disabled,
   );
 }

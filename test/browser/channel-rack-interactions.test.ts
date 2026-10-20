@@ -230,7 +230,7 @@ describe('channel rack interactions (UI)', { timeout: 40_000 }, () => {
     const name = row(a).querySelector<HTMLElement>('button[data-hint*="right-click for options"]')!;
     name.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 200, clientY: 200 }));
     await until(() => !!document.querySelector('[role="menu"]'));
-    const move = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((i) => i.textContent?.includes('Move down'))!;
+    const move = [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find((i) => i.textContent?.includes('Move down'))!;
     move.click();
     await frames(2);
     await expect.poll(() => order(), EVENTUALLY).toEqual([b, a]);

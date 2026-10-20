@@ -55,7 +55,7 @@ describe('play buttons and menus (UI)', { timeout: 30_000 }, () => {
   const win = (type: string) => host.querySelector<HTMLElement>(`[data-window-type="${type}"]`)!;
   const playButton = (type: string) => win(type)?.querySelector<HTMLButtonElement>('button[data-play-pattern]') as HTMLButtonElement;
   const menuItem = (label: string) =>
-    [...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]')].find((b) => b.textContent?.includes(label));
+    [...document.querySelectorAll<HTMLElement>('[role="menu"] [role^="menuitem"]')].find((b) => b.textContent?.includes(label));
   /** Clicks a menu entry like the user does. */
   const choose = async (label: string) => {
     await until(() => !!menuItem(label));

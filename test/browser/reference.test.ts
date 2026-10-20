@@ -3,88 +3,28 @@
  * intro, a 32-bar drop, a 16-bar break and a 32-bar drop at 128 BPM, scaled to −8 LUFS) is written as a WAV,
  * stored like any imported file, analyzed (tempo, key, sections, loudness, tonal balance per section) and set
  * as the reference of a house song at another tempo. Matching it gives the project the reference's tempo and
- * section lengths and levels the mix to within 0.5 dB of −8 LUFS, as one undo step.
+ * section lengths and levels the mix to within 0.5 dB of −8 LUFS, as one undo step. (The same through a Studio answer is
+ * `reference-studio.test.ts`; the reference song is made in `test/helpers/reference-song.ts`.)
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { applyAnswer } from '@app/ai/apply';
-import { Measurer } from '@app/analysis/measure';
-import { afterStepFor } from '@app/assistant/after-steps';
-import { busiestWindow } from '@app/mix/auto-level';
 import { arrangeLikeReference, matchLoudness, matchTempoAndKey, setReferenceFromFile } from '@app/reference/actions';
-import { forgetReferences } from '@app/reference/analyze';
 import { referenceState } from '@app/reference/state';
 import { toneDifference } from '@app/reference/actions';
 import { createServices, type Services } from '@app/services';
-import { renderTestSong, PATTERNS, MINOR, chord } from '@core/dj/test-songs';
-import { encodeWav } from '@core/io/wav';
 import { songSections } from '@core/query/sections';
 import { TONE_BANDS } from '@core/reference/bands';
 import { loudnessTarget } from '@core/reference/track';
-import { ticksPerBar } from '@core/time/ppq';
-import { renderOffline } from '@engine/render-offline';
-import { tempoMapOf } from '@core/automation/tempo';
 import { registerFeatures } from '@ui/features';
 import { ServicesProvider } from '@ui/services-context';
 import { openWindow } from '@ui/workspace/registry';
 import { ReferenceWindow } from '@ui/features/reference/ReferenceWindow';
 import { buildSong } from '../helpers/mix-level';
+import { BAR, loudnessOfBusiestPart, referenceFile, TARGET } from '../helpers/reference-song';
 import '@ui/theme/tokens.css';
 import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
-
-const RATE = 44100;
-const TARGET = -8;
-const BAR = 3840;
-
-/** The reference as a WAV file: the structure above, scaled so its integrated loudness is −8 LUFS. */
-function referenceFile() {
-  const all = { kick: true, snare: true, hats: true, bass: true, pads: true };
-  const song = renderTestSong({
-    sampleRate: RATE,
-    bpm: 128,
-    pattern: PATTERNS.house,
-    offset: 0.2,
-    tail: 0.2,
-    chords: [chord(57, MINOR), chord(50, MINOR), chord(52, [0, 4, 7]), chord(57, MINOR)],
-    parts: [
-      { bars: 16, kick: true, hats: true, level: 0.7 },
-      { bars: 32, ...all, crash: true },
-      { bars: 16, pads: true, level: 0.6 },
-      { bars: 32, ...all, crash: true },
-    ],
-  });
-  const m = new Measurer(RATE);
-  m.push(song.mono, song.mono);
-  const gain = Math.pow(10, (TARGET - m.result().lufs) / 20);
-  const scaled = song.mono.map((v) => v * gain);
-  const wav = encodeWav([scaled, scaled], RATE, { bitDepth: 32 });
-  return { name: 'Reference – Drops.wav', arrayBuffer: async () => wav.slice().buffer, scaledPeak: 0.9 * gain, partStarts: song.partStarts };
-}
-
-/** The busiest part of the song rendered again, as heard (master chain, Limiter), measured on its own. */
-async function loudnessOfBusiestPart(s: Services) {
-  const p = s.doc.getState().project;
-  const w = busiestWindow(p, null)!;
-  const tempo = tempoMapOf(p, w.mode);
-  const toTick = w.fromTick + w.bars * ticksPerBar(p.transport.timeSig);
-  const rate = 48000;
-  const frames = Math.round((tempo.tickToSeconds(toTick) - tempo.tickToSeconds(w.fromTick)) * rate);
-  const r = await renderOffline(p, {
-    plugins: s.plugins,
-    view: { mode: w.mode, patternId: w.patternId, loop: null },
-    bars: w.bars,
-    fromTick: w.fromTick,
-    sampleRate: rate,
-    tail: 0,
-    limiter: true,
-  });
-  const start = Math.round((r.preRoll + r.latency) * rate);
-  const m = new Measurer(rate, true);
-  m.push(r.buffer.getChannelData(0).subarray(start, start + frames), r.buffer.getChannelData(1).subarray(start, start + frames));
-  return { ...m.result(), window: w };
-}
 
 const services: Services[] = [];
 afterAll(async () => {
@@ -205,55 +145,6 @@ describe('reference track matching (headless Chrome, real analysis and renders)'
     expect(s.doc.getState().project).toBe(p);
   }, 240_000);
 
-  it('Studio: set_reference and match_reference in one answer: analyzed after it, matched, leveled, one undo step', async () => {
-    const s2 = createServices();
-    services.push(s2);
-    buildSong(s2, 'house', { bpm: 124, low: 'bass' });
-    const before = s2.doc.getState().project;
-    // The file is stored like any other (the music library does this).
-    const { songFromBytes, library } = await import('@app/dj/library');
-    const song = await songFromBytes(new Uint8Array(await file.arrayBuffer()), file.name);
-    library.setState({ songs: [song!], selected: [] });
-    forgetReferences();
-    const res = applyAnswer(
-      s2,
-      { message: 'Like your reference', actions: [{ op: 'set_reference', song: 'Reference' }, { op: 'match_reference' }] },
-      { previousBeat: null, label: 'like my reference' },
-    );
-    expect(res.warnings).toEqual([]);
-    expect(res.after.map((a) => a.kind)).toEqual(['set_reference', 'match_reference']);
-    let entry: number | null = res.edited ? s2.history.status().cursor : null;
-    const progress: string[] = [];
-    const messages: string[] = [];
-    for (const item of res.after) {
-      const step = afterStepFor(item.kind)!;
-      const was = s2.history.status().cursor;
-      const out = await step(item, {
-        s: s2,
-        entry,
-        signal: new AbortController().signal,
-        progress: (label) => progress.push(label),
-        whenQuiet: async () => {},
-      });
-      if (entry === null && s2.history.status().cursor !== was) entry = s2.history.status().cursor;
-      messages.push(...[out?.message ?? '', ...(out?.changes ?? [])]);
-    }
-    library.setState({ songs: [], selected: [] });
-    const p = s2.doc.getState().project;
-    console.log(`Studio match:\n  ${messages.join('\n  ')}`);
-    expect(p.reference?.title).toBe(song!.label);
-    expect(p.transport.bpm).toBe(128);
-    expect(songSections(p).map((x) => x.from / BAR + 1)).toEqual([1, 17, 49, 65]);
-    const heard = await loudnessOfBusiestPart(s2);
-    console.log(`Studio match loudness: ${heard.lufs.toFixed(2)} LUFS, true peak ${heard.truePeakDb!.toFixed(2)} dBTP`);
-    expect(Math.abs(heard.lufs - loudnessTarget(p.reference!))).toBeLessThanOrEqual(0.5);
-    expect(heard.truePeakDb!).toBeLessThanOrEqual(-0.95);
-    expect(progress).toContain('The mix');
-    // Setting the reference, matching it and leveling are one undo step.
-    expect(s2.history.steps().done.filter((e) => /like my reference|Set the reference|Match the reference|Level the mix/.test(e.label)).length).toBe(1);
-    s2.history.undo();
-    expect(s2.doc.getState().project).toEqual(before);
-  }, 600_000);
 });
 
 describe('the Reference window', () => {

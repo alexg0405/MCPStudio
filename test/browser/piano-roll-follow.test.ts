@@ -103,7 +103,7 @@ describe('follow playhead in the piano roll (UI)', { timeout: 90_000 }, () => {
   });
 
   it('pattern mode: turns the page as the playhead nears the right edge, and the toolbar shows the toggle', async () => {
-    const toggle = win().querySelector<HTMLElement>('button[aria-pressed]')!;
+    const toggle = win().querySelector<HTMLElement>('button[aria-pressed][data-hint^="Follow playhead"]')!;
     expect(toggle.textContent).toBe('Follow');
     expect(toggle.getAttribute('data-hint')).toMatch(/^Follow playhead on/);
     play(0.5 * visible());

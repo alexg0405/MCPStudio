@@ -463,9 +463,9 @@ describe('Accessibility audit (shell)', () => {
       const opener = host.querySelector<HTMLElement>('header button:not([disabled])')!;
       opener.focus();
       const closed = show();
-      await until(() => !!document.querySelector(`[role="${kind}"]`), 10_000, `the ${label} dialog`);
+      await until(() => !!document.querySelector(`[role="${kind}"]:not([data-window-id])`), 10_000, `the ${label} dialog`);
       await frame();
-      const dialog = document.querySelector<HTMLElement>(`[role="${kind}"]`)!;
+      const dialog = document.querySelector<HTMLElement>(`[role="${kind}"]:not([data-window-id])`)!;
       totals.dialogs++;
       if (dialog.getAttribute('aria-modal') !== 'true') problems.push(`${label}: aria-modal is not true`);
       if (!dialog.getAttribute('aria-labelledby') && !dialog.getAttribute('aria-label')) problems.push(`${label}: no label`);
@@ -484,7 +484,7 @@ describe('Accessibility audit (shell)', () => {
       await userEvent.keyboard('{Escape}');
       await frame();
       await closed;
-      if (document.querySelector(`[role="${kind}"]`)) problems.push(`${label}: Esc did not close it`);
+      if (document.querySelector(`[role="${kind}"]:not([data-window-id])`)) problems.push(`${label}: Esc did not close it`);
       if (document.activeElement !== opener) problems.push(`${label}: the focus did not return to the control that opened it`);
       return problems;
     }
@@ -556,7 +556,7 @@ describe('Accessibility audit (shell)', () => {
     await until(() => !!document.querySelector('[role="combobox"]'));
     await frame();
     const combo = document.querySelector<HTMLElement>('[role="combobox"]')!;
-    const dialog = combo.closest<HTMLElement>('[role="dialog"]') ?? combo.parentElement!;
+    const dialog = combo.closest<HTMLElement>('[role="dialog"]:not([data-window-id])') ?? combo.parentElement!;
     const problems = auditRegion('action search', dialog);
     const listId = combo.getAttribute('aria-controls');
     const list = listId ? document.getElementById(listId) : null;

@@ -382,7 +382,7 @@ describe('the playlist’s empty-spot menu (UI)', { timeout: 90_000 }, () => {
       await until(nearLeft);
       s.engine.stop();
       await frames(2);
-      const toggle = host.querySelector<HTMLElement>('[data-window-type="playlist"] button[aria-pressed]')!;
+      const toggle = host.querySelector<HTMLElement>('[data-window-type="playlist"] button[aria-pressed][data-hint^="Follow playhead"]')!;
       expect(toggle.getAttribute('data-hint')).toMatch(/^Follow playhead on/);
       await userEvent.click(toggle);
       expect(s.prefs.getState().followPlayhead).toBe(false);

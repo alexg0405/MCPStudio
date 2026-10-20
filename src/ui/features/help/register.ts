@@ -2,16 +2,16 @@ import type { Services } from '@app/services';
 import { addMenuItems, cmd, sep } from '../../shell/menus';
 import { addOverlay } from '../../shell/overlays';
 import { setWindowHelp } from '../../workspace/window-help';
-import { TourOverlay, WelcomeOverlay } from './Help';
-import { showWelcome, startTour } from './help-state';
+import { WelcomeOverlay } from './Help';
+import { showWelcome } from './help-state';
 import { LessonOverlay } from './Lesson';
 import { startLesson } from './lesson-state';
 import { LESSONS } from './lessons';
 import { windowHelpTexts } from './window-help';
 
 /**
- * Getting started: the welcome dialog (opens by itself the first time AGstudio starts), a guided
- * tour of the main windows, and the tooltip switch.
+ * Getting started: the welcome dialog (opens by itself the first time AGstudio starts), the first tour
+ * (the others are in features/tours), lessons, the "?" text of each window and the tooltip switch.
  */
 export function register(services: Services): void {
   const { commands } = services;
@@ -27,7 +27,7 @@ export function register(services: Services): void {
     title: 'Take the tour',
     category: 'Help',
     hint: 'A step-by-step look at the main windows',
-    run: () => startTour(),
+    run: (s) => void s.commands.run('tour.start', 'overview'),
   });
   commands.register({
     id: 'options.tooltips',
@@ -74,5 +74,4 @@ export function register(services: Services): void {
     setWindowHelp(type, help);
   addMenuItems('options', [sep(89), cmd('options.tooltips', 90)]);
   addOverlay('help-welcome', WelcomeOverlay);
-  addOverlay('help-tour', TourOverlay);
 }

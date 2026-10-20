@@ -22,7 +22,6 @@ import { applyDefaultLayout } from '@ui/workspace/layouts';
 import { openWindow, windowTypes } from '@ui/workspace/registry';
 import { addInstrumentChannel } from '@app/actions/channels';
 import { addEffect, addMixerInsert } from '@app/actions/mixer';
-import { TOUR } from '@ui/features/help/tour';
 import { LESSONS } from '@ui/features/help/lessons';
 import { page } from 'vitest/browser';
 import { createEmptyProject } from '@core/model/defaults';
@@ -516,23 +515,6 @@ describe('UX audit (shell)', () => {
     expect(opened).toBeGreaterThan(20);
     expect(problems).toEqual([]);
   }, 60_000);
-
-  it('every step of the tour points at something that is on screen', async () => {
-    const missing: string[] = [];
-    for (const step of TOUR) {
-      step.prepare?.(s);
-      await frame();
-      const el = document.querySelector(step.anchor);
-      const r = el?.getBoundingClientRect();
-      if (!el || !r || r.width === 0 || r.height === 0) missing.push(`${step.title}: ${step.anchor}`);
-      else if (r.right < 0 || r.bottom < 0 || r.left > window.innerWidth || r.top > window.innerHeight)
-        missing.push(`${step.title}: ${step.anchor} is off screen`);
-    }
-    expect(missing).toEqual([]);
-    // The tour text names keys with {key:command}: each must be a real command.
-    for (const step of TOUR)
-      for (const m of step.body.matchAll(/\{key:([\w.]+)\}/g)) expect(s.commands.get(m[1]!), m[1]).toBeTruthy();
-  });
 
   it('every lesson step points at something on screen once its step has started', async () => {
     const missing: string[] = [];

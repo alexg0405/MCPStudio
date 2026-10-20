@@ -5,17 +5,14 @@ import { startFromTemplate, TEMPLATES } from '@app/template-list';
 import { formatChord } from '@core/commands/keymap';
 import { holdModal } from '../../controls/Dialog';
 import { useDialogFocus } from '../../controls/dialog-focus';
-import { placeBeside } from '../../controls/place';
 import { Icon, type IconName } from '../../controls/Icon';
-import { onFrame } from '../../frame-loop';
 import { useServices } from '../../services-context';
 import { openWindow } from '../../workspace/registry';
-import { helpStore, startTour } from './help-state';
+import { helpStore } from './help-state';
 import { startLesson } from './lesson-state';
-import { TOUR } from './tour';
 import styles from './Help.module.css';
 
-/** What help is on screen: the welcome dialog, or the tour at a step. */
+/** The welcome dialog (the guided tours are in features/tours). */
 
 const PARTS: { icon: IconName; title: string; text: string; command: string }[] = [
   {
@@ -80,7 +77,8 @@ function Welcome() {
   };
   const tour = () => {
     services.prefs.getState().set({ welcomeSeen: true });
-    startTour();
+    helpStore.setState({ welcome: false });
+    services.commands.run('tour.start', 'overview');
   };
   const ai = () => {
     close();
@@ -93,7 +91,14 @@ function Welcome() {
   const undo = chord('edit.undo');
   return (
     <div className={styles.backdrop}>
-      <div ref={ref} tabIndex={-1} className={styles.welcome} role="dialog" aria-modal="true" aria-labelledby="ag-welcome-title">
+      <div
+        ref={ref}
+        tabIndex={-1}
+        className={styles.welcome}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ag-welcome-title"
+      >
         <h2 id="ag-welcome-title" className={styles.title}>
           Welcome to AG<b>studio</b>
         </h2>
@@ -144,6 +149,31 @@ function Welcome() {
           </button>
           . AGstudio also keeps earlier versions of your song as you work (File → Versions).
         </p>
+        <p className={styles.installLine}>
+          Can’t find something?{' '}
+          <button
+            className={styles.inlineLink}
+            onClick={() => {
+              close();
+              services.commands.run('help.open');
+            }}
+            data-hint="Search everything AGstudio explains: tours, what each window does, every action, shortcuts and gestures (Help → Help and tours)"
+          >
+            Search the help
+          </button>
+          , see{' '}
+          <button
+            className={styles.inlineLink}
+            onClick={() => {
+              close();
+              services.commands.run('help.features');
+            }}
+            data-hint="Everything AGstudio can do, by area, with a button that starts each one (Help → Features)"
+          >
+            everything it can do
+          </button>
+          , or take a guided tour from the Help menu: a first song, recording a vocal, DJ mixing and more.
+        </p>
         <TemplateChips services={services} close={close} />
         <div className={styles.buttons}>
           <button
@@ -164,93 +194,6 @@ function Welcome() {
           </button>
           <button className={`${styles.button} ${styles.primary}`} onClick={close}>
             Start making music
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function TourOverlay() {
-  const step = useStore(helpStore, (s) => s.tour);
-  return step === null ? null : <Tour index={step} />;
-}
-
-function Tour({ index }: { index: number }) {
-  const services = useServices();
-  const chord = useChord();
-  const holeRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const step = TOUR[index]!;
-  const last = index === TOUR.length - 1;
-  const go = (i: number) => helpStore.setState({ tour: i < 0 || i >= TOUR.length ? null : i });
-
-  useEffect(() => holdModal(), []);
-
-  useEffect(() => {
-    step.prepare?.(services);
-    const onKey = (e: KeyboardEvent) => {
-      const k = e.key;
-      if (k !== 'Escape' && k !== 'ArrowRight' && k !== 'ArrowLeft' && k !== 'Enter') return;
-      if (k === 'Enter' && document.activeElement instanceof HTMLButtonElement) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const now = helpStore.getState().tour ?? 0;
-      if (k === 'Escape') helpStore.setState({ tour: null });
-      else helpStore.setState({ tour: k === 'ArrowLeft' ? Math.max(0, now - 1) : now + 1 < TOUR.length ? now + 1 : null });
-    };
-    window.addEventListener('keydown', onKey, true);
-    // The highlight follows its target (windows open, move and resize) without re-rendering.
-    const stop = onFrame(() => {
-      const hole = holeRef.current;
-      const card = cardRef.current;
-      if (!hole || !card) return;
-      const el = document.querySelector(step.anchor);
-      const raw = el?.getBoundingClientRect();
-      const r = raw && raw.width > 0 && raw.height > 0 ? raw : null;
-      if (r) {
-        const pad = 6;
-        hole.style.display = '';
-        hole.style.transform = `translate(${r.left - pad}px, ${r.top - pad}px)`;
-        hole.style.width = `${r.width + pad * 2}px`;
-        hole.style.height = `${r.height + pad * 2}px`;
-      } else hole.style.display = 'none';
-      card.classList.toggle(styles.cardAlone!, !r);
-      // Beside the highlighted area if there is room, else below/above, else inside it.
-      const { x, y } = placeBeside(r, card.offsetWidth, card.offsetHeight, window.innerWidth, window.innerHeight);
-      card.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
-    });
-    return () => {
-      window.removeEventListener('keydown', onKey, true);
-      stop();
-    };
-  }, [services, step]);
-
-  return (
-    <div className={styles.tour}>
-      <div ref={holeRef} className={styles.hole} />
-      <div ref={cardRef} className={styles.card} role="dialog" aria-labelledby="ag-tour-title">
-        <div className={styles.stepCount}>
-          {index + 1} of {TOUR.length}
-        </div>
-        <h3 id="ag-tour-title" className={styles.cardTitle}>
-          {step.title}
-        </h3>
-        <p className={styles.cardBody}>
-          {step.body.replace(/\{key:([\w.]+)\}/g, (_, command: string) => chord(command) ?? '')}
-        </p>
-        <div className={styles.cardButtons}>
-          <button className={styles.link} onClick={() => go(-1)}>
-            Skip tour
-          </button>
-          <span className={styles.spacer} />
-          {index > 0 && (
-            <button className={styles.button} onClick={() => go(index - 1)}>
-              Back
-            </button>
-          )}
-          <button className={`${styles.button} ${styles.primary}`} onClick={() => go(last ? -1 : index + 1)} autoFocus>
-            {last ? 'Done' : 'Next'}
           </button>
         </div>
       </div>

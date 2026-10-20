@@ -1,0 +1,72 @@
+/* The tour card builds on the card, hole and buttons of the welcome screen (help/Help.module.css). */
+
+.card {
+  width: 340px;
+  max-width: calc(100vw - 16px);
+}
+
+.card:focus-visible {
+  outline: var(--ag-focus-width) solid var(--ag-focus);
+  outline-offset: 2px;
+}
+
+/* One dot per step: the current one is long and bright, the ones behind are filled. */
+.dots {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.dot,
+.dotDone,
+.dotOn {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ag-surface-3);
+}
+
+.dot,
+.dotDone {
+  width: 10px;
+}
+
+.dotDone {
+  background: var(--ag-text-faint);
+}
+
+.dotOn {
+  width: 22px;
+  background: var(--ag-accent);
+}
+
+.tryIt {
+  margin-top: 10px;
+}
+
+.note {
+  margin: 10px 0 0;
+  color: var(--ag-text-faint);
+  font-size: calc(11px * var(--ag-scale, 1));
+  line-height: 1.4;
+}
+
+/* Touch layout: a full-width sheet at the bottom (or the top, when the highlighted part is low), with finger-sized buttons. */
+.docked {
+  top: auto;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  width: auto;
+  max-width: none;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.docked[data-dock='top'] {
+  top: 8px;
+  bottom: auto;
+}
+
+.docked button {
+  min-height: var(--ag-touch-target, 40px);
+}

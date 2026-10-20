@@ -14,7 +14,7 @@ import type { Rect, Size } from '@core/time/geometry';
 import { useServices } from '../services-context';
 import { Icon } from '../controls/Icon';
 import { clampRect, getWindowType } from './registry';
-import { subscribeWindowHelp, windowHelp, type WindowHelp } from './window-help';
+import { subscribeWindowHelp, windowHelp, windowHelpLinks, type WindowHelp } from './window-help';
 import styles from './Workspace.module.css';
 
 type DragMode = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -162,7 +162,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
         <Suspense fallback={<div className={styles.loading}>Loading…</div>}>
           <Content windowId={instance.id} props={instance.props} />
         </Suspense>
-        {help && helpOpen && <HelpPanel help={help} onClose={() => setHelpOpen(false)} />}
+        {help && helpOpen && <HelpPanel type={instance.type} help={help} onClose={() => setHelpOpen(false)} />}
       </div>
       {!instance.maximized &&
         HANDLES.map((h) => (
@@ -173,7 +173,8 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
 });
 
 /** The window's how-to, over its content (Escape or the × closes it). */
-function HelpPanel({ help, onClose }: { help: WindowHelp; onClose(): void }) {
+function HelpPanel({ type, help, onClose }: { type: string; help: WindowHelp; onClose(): void }) {
+  const links = useSyncExternalStore(subscribeWindowHelp, () => windowHelpLinks(type));
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -199,6 +200,23 @@ function HelpPanel({ help, onClose }: { help: WindowHelp; onClose(): void }) {
           ))}
         </tbody>
       </table>
+      {links.length > 0 && (
+        <div className={styles.helpLinks}>
+          {links.map((link) => (
+            <button
+              key={link.label}
+              className={styles.helpLink}
+              data-hint={link.hint}
+              onClick={() => {
+                onClose();
+                link.run(type);
+              }}
+            >
+              {link.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { keyMask } from '@app/actions/pitch';
 import type { ClipPitch } from '@app/pitch/state';
 import { noteName } from '@agstudio/sdk/notes';
 import { alpha, inkOn, mix, roundRectPath, type TimelineTheme } from '../../timeline/canvas';
+import { drawKeyCursor, type CursorBox } from '../../timeline/key-cursor/draw';
 import { clamp, type Viewport } from '../../timeline/viewport';
 import { clockText, keyForRow, pitchText, rowForKey, type DrawNote } from './model';
 import { KEYS_WIDTH, RULER_HEIGHT, type Drag, type PitchTool } from './pitch-types';
@@ -35,6 +36,8 @@ export interface PitchScene {
   playheadMs: number;
   /** The lyric word written under each note blob, by note index (empty without lyrics). */
   lyrics: ReadonlyMap<number, string>;
+  /** The box of the keyboard cursor (null while the keyboard is not in the editor). */
+  keyboardCursor: CursorBox | null;
 }
 
 /** The pitch classes (0 = C) of the black piano keys. */
@@ -155,6 +158,13 @@ function drawMovedFrom(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timel
   ctx.stroke();
 }
 
+/** The box a note blob is drawn in (px), also what the keyboard cursor goes around. */
+export function noteBlobBox(vp: Viewport, note: DrawNote): CursorBox {
+  const x = vp.tickToX(note.fromMs);
+  const height = Math.max(MIN_NOTE_HEIGHT_PX, vp.rowHeight * NOTE_HEIGHT_FRACTION);
+  return { x, y: rowY(vp, note.target) - height / 2, w: Math.max(3, vp.tickToX(note.toMs) - x), h: height };
+}
+
 /** One note blob, with its name when it is wide enough. */
 function drawNoteBlob(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, note: DrawNote, isSelected: boolean, noteHeight: number, lyric?: string): void {
   const x0 = vp.tickToX(note.fromMs);
@@ -261,6 +271,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, theme: TimelineTheme,
     ctx.fillStyle = theme.playhead;
     ctx.fillRect(Math.round(vp.tickToX(scene.playheadMs)), 0, 1, vp.height);
   }
+  if (scene.keyboardCursor) drawKeyCursor(ctx, theme, scene.keyboardCursor);
 }
 
 /** The piano keys down the left edge, with the key's rows marked and the note names of C and the key's white keys. */

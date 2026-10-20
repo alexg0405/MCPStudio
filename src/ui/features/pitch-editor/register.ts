@@ -2,6 +2,7 @@ import type { Services } from '@app/services';
 import { startPitchRenderer } from '@app/actions/pitch';
 import { pitchState } from '@app/pitch/state';
 import { addContextMenuItems } from '../../context-menus';
+import { startKeyRouting } from '../../timeline/key-cursor/router';
 import { addMenuItems, cmd } from '../../shell/menus';
 import { lazyWindow } from '../../workspace/lazy';
 import { registerWindowType } from '../../workspace/registry';
@@ -17,6 +18,8 @@ const WINDOW = PITCH_EDITOR_WINDOW;
  * audio is made in the background and the clip plays it (app/actions/pitch.ts).
  */
 export function register(services: Services): void {
+  // Before the app's key handler is installed, so the notes' cursor keys reach it first (timeline/key-cursor/router.ts).
+  startKeyRouting();
   registerWindowType({
     type: WINDOW,
     title: () => 'Pitch editor',

@@ -8,7 +8,7 @@ import { DEFAULT_GRID_STEP_TICKS, GRID_STEPS } from '@core/audio/align/edit';
 import { alignProblem, guideProblem } from '@core/audio/align/plan';
 import type { AudioClip, ClipId, Project } from '@core/model/types';
 import { setAlign } from '@core/ops/align';
-import { guideEdit, gridEdit } from '../../actions/align';
+import { editProblem, guideEdit, gridEdit } from '../../actions/align';
 import * as S from '../schema/parts';
 import type { AiAction } from '../schema';
 import { fail, type OpContext, type OpModule } from './context';
@@ -50,6 +50,15 @@ function summarize(context: OpContext, done: AudioClip[], skipped: { clip: Audio
   if (done.length === 0) return fail(skipped.length ? skipped.map((s) => s.reason).join('; ') : 'there is no audio clip to work on');
   const names = done.map((c) => (context.project.channels[c.channelId]?.name ?? c.id) as string);
   return `${what} ${names.length === 1 ? `“${names[0]}”` : `${names.length} clips (${names.slice(0, 4).join(', ')}${names.length > 4 ? ', …' : ''})`}`;
+}
+
+/**
+ * Why a clip cannot take the edit. The committed project answers when it knows the clip (its tempo map is safe to
+ * memoize); a clip made earlier in the same answer is only in the draft, where the check that does not need the tempo is used.
+ */
+function problemOf(context: OpContext, draft: Project, id: ClipId, edit: ReturnType<typeof guideEdit>): string | null {
+  if (context.base.playlist.clips[id]) return editProblem(context.base, id, edit);
+  return alignProblem(draft, id) ?? (edit.mode === 'guide' ? guideProblem(draft, id, edit.guide) : null);
 }
 
 /** Sets an edit on each clip that can take it. */
@@ -129,8 +138,7 @@ export const align: OpModule = {
         return fail('which clips should follow the lead? give clips (ids) or tracks');
       }
       const edit = guideEdit({ guide: guide.id as ClipId, ...optional('tightness', num(action.tightness)), ...optional('pitch', num(action.pitch)) });
-      const check = (project: Project, id: ClipId) => alignProblem(project, id) ?? guideProblem(project, id, guide.id as ClipId);
-      const { done, skipped } = applyTo(context, clips, check, () => edit);
+      const { done, skipped } = applyTo(context, clips, (project, id) => problemOf(context, project, id, edit), () => edit);
       const line = summarize(context, done, skipped, 'Aligned');
       const pitch = edit.pitch ? `, pitch ${Math.round(edit.pitch)} %` : '';
       return `${line} to the lead (tightness ${Math.round(edit.tightness)}${pitch})`;
@@ -139,7 +147,7 @@ export const align: OpModule = {
       const clips = clipsOf(context, action);
       if (clips.length === 0) return fail('which clip? give clip (an id, or track and bar), clips or tracks');
       const edit = gridEdit({ ...optional('strength', num(action.strength)), stepTicks: stepOf(action.grid) });
-      const { done, skipped } = applyTo(context, clips, (project, id) => alignProblem(project, id), () => edit);
+      const { done, skipped } = applyTo(context, clips, (project, id) => problemOf(context, project, id, edit), () => edit);
       return `${summarize(context, done, skipped, 'Tightened')} to the grid (${Math.round(edit.strength ?? 0)} %)`;
     },
     remove_alignment: (action, context) => {

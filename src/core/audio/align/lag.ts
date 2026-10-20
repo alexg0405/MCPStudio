@@ -9,9 +9,9 @@
  *  2. leave small offsets alone when tightness is low (a dead zone),
  *  3. fade the move out towards the ends of the rendered stretch,
  *  4. keep attacks (consonants, transients) at their own speed: the lag is flat across each one,
- *  5. keep the speed of the sound between half and double (so the result never sounds like a tape machine), with each
- *     attack pinned to the lag it was given: the speed change happens in the vowels before it, so the attack lands
- *     where the match put it.
+ *  5. keep the speed of the sound between half and double where the clip sounds (so the result never sounds like a tape
+ *     machine; silences may be squeezed or stretched much more), with each attack pinned to the lag it was given: the
+ *     speed change happens in the vowels and gaps before it, so the attack lands where the match put it.
  *
  * "Tightness" 0..100 sets how closely the clip follows the guide: low = only big offsets, smoothly; high = syllable by
  * syllable. All plain arrays of numbers; no DOM.

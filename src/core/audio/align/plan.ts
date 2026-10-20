@@ -18,6 +18,8 @@ import type { AudibleSpan } from './types';
 
 /** Seconds of the clip's sample either side of what it plays that the render covers. */
 export const ALIGN_MARGIN_SEC = 0.3;
+/** A guide has to be heard at the same time as the clip for at least this long (seconds) to be followed. */
+const MIN_OVERLAP_SEC = 0.1;
 /** Changes whenever the algorithm does, so renders made by an older one count as out of date. */
 export const ALIGN_VERSION = 1;
 /** Grid-mode onsets move at most this far (seconds), and at most this share of a grid step. */
@@ -199,6 +201,8 @@ export function planAlignment(p: Project, id: ClipId, edit?: AlignEdit): AlignPl
     if (guideProblemText) return { problem: guideProblemText };
     const guide = planGuide(p, clip, own.guide as ClipId, region, tempo);
     if (!guide) return { problem: 'The guide has to be an audio clip.' };
+    const overlap = Math.min(audible.toSec, guide.audible.toSec) - Math.max(audible.fromSec, guide.audible.fromSec);
+    if (overlap < MIN_OVERLAP_SEC) return { problem: 'This clip and the guide are not heard at the same time: place them over each other first.' };
     const plan = { ...base, guide };
     return { plan: { ...plan, signature: signatureOf(plan) } };
   }

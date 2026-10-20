@@ -13,7 +13,7 @@ import {
   DEFAULT_PITCH_ALIGN,
   DEFAULT_TIGHTNESS,
 } from '@core/audio/align/edit';
-import { alignProblem, guideProblem } from '@core/audio/align/plan';
+import { planAlignment } from '@core/audio/align/plan';
 import type { AlignEdit, AudioClip, ClipId, Project } from '@core/model/types';
 import { setAlign } from '@core/ops/align';
 import type { Services } from '../services';
@@ -97,17 +97,25 @@ function applyEdit(s: Services, ids: readonly ClipId[], make: (id: ClipId) => Al
   return result;
 }
 
+/**
+ * Why the clip could not be aligned with this edit, in plain words (null when it can): not audio, not at its own speed,
+ * audio missing, a guide that is itself or a ring or not heard at the same time.
+ */
+export function editProblem(p: Project, id: ClipId, edit: AlignEdit): string | null {
+  const planned = planAlignment(p, id, edit);
+  return 'problem' in planned ? planned.problem : null;
+}
+
 /** Aligns the clips to the guide: one undo step; the aligned audio is made in the background. */
 export function alignClips(s: Services, req: AlignRequest): AlignResult {
   const edit = guideEdit(req);
-  const check = (p: Project, id: ClipId) => alignProblem(p, id) ?? guideProblem(p, id, req.guide);
-  return applyEdit(s, req.clips, () => edit, check, 'Align to guide');
+  return applyEdit(s, req.clips, () => edit, (p, id) => editProblem(p, id, edit), 'Align to guide');
 }
 
 /** Tightens the clips' syllable onsets to the grid: one undo step; the audio is made in the background. */
 export function tightenClips(s: Services, req: GridRequest): AlignResult {
   const edit = gridEdit(req);
-  return applyEdit(s, req.clips, () => edit, (p, id) => alignProblem(p, id), 'Tighten timing to the grid');
+  return applyEdit(s, req.clips, () => edit, (p, id) => editProblem(p, id, edit), 'Tighten timing to the grid');
 }
 
 /** Removes the alignment of the clips (they play their own audio again): one undo step. Returns how many were aligned. */

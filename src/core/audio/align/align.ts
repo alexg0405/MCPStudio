@@ -14,7 +14,7 @@
 import { monoMix } from '../pitch-edit/render';
 import { bandedDtw } from './dtw';
 import { ALIGN_HOP_SEC, FEATURE_DIM, frameFeatures, type FrameFeatures } from './features';
-import { lagFromPath, shapeLag, tightnessSettings } from './lag';
+import { lagFromPath, shapeLag, tightnessSettings, type ShapedLag } from './lag';
 import { syllableOnsets } from './onsets';
 import { followGuidePitch } from './pitch-follow';
 import type { AlignOutput, AlignStats, AudibleSpan } from './types';
@@ -138,62 +138,78 @@ export function lagStats(lag: Float32Array, hopSec: number, audible: AudibleSpan
 }
 
 /** A progress reporter that maps a step's 0..1 into its share of the whole. */
-function stepProgress(onProgress: AlignInput['onProgress'], from: number, share: number) {
+function stepProgress(onProgress: AlignInput['onProgress'], from: number, share: number): ((fraction: number) => void) | undefined {
   return onProgress ? (fraction: number) => onProgress(from + share * fraction) : undefined;
+}
+
+/** The identity: nothing moved (the clip and the guide are never heard together, or there is nothing to align). */
+function unchanged(input: AlignInput, frames: number, overlapSec: number): AlignOutput {
+  return {
+    channels: input.channels.map((c) => Float32Array.from(c)),
+    lagSec: new Float32Array(frames),
+    hopSec: ALIGN_HOP_SEC,
+    kept: [],
+    stats: { medianMoveMs: 0, maxMoveMs: 0, movedSec: 0, overlapSec },
+  };
+}
+
+/** The two voices described every `ALIGN_HOP_SEC`, and the clip's mono mix (the onsets are placed on it). */
+interface Voices {
+  clip: FrameFeatures;
+  guide: FrameFeatures;
+  clipMono: Float32Array;
+}
+
+function describeVoices(input: AlignInput, frames: number): Voices {
+  const { channels, sampleRate, audible, guide, onProgress } = input;
+  const clipMono = monoMix(channels);
+  const clip = frameFeatures({ mono: clipMono, sampleRate, frames, audible });
+  onProgress?.(FEATURES_SHARE / 2);
+  const guideFeatures = frameFeatures({ mono: guide.mono, sampleRate: guide.sampleRate, frames, audible: guide.audible });
+  onProgress?.(FEATURES_SHARE);
+  return { clip, guide: guideFeatures, clipMono };
+}
+
+/** The lag curve that carries the clip onto the guide: match the voices, then shape the path (see `lag.ts`). */
+function lagCurve(input: AlignInput, voices: Voices, frames: number): ShapedLag {
+  const settings = tightnessSettings(input.tightness);
+  const halfBand = Math.max(2, Math.round((input.maxShiftSec ?? MAX_ALIGN_SHIFT_SEC) / ALIGN_HOP_SEC));
+  const progress = stepProgress(input.onProgress, FEATURES_SHARE, MATCH_SHARE);
+  const matched = matchVoices(voices.guide, voices.clip, frames, {
+    halfBand,
+    stepPenalty: settings.stepPenalty,
+    ...(progress ? { onProgress: progress } : {}),
+  });
+  const attacks = syllableOnsets(voices.clip, voices.clipMono, input.sampleRate).map((sec) => ({ sec }));
+  return shapeLag(
+    lagFromPath(matched, ALIGN_HOP_SEC),
+    reliability(voices.guide, voices.clip, matched),
+    matched,
+    attacks,
+    input.tightness,
+    input.audible,
+    ALIGN_HOP_SEC,
+    soundOf(voices.clip, matched),
+  );
 }
 
 /** Aligns the clip to the guide: see the file header. */
 export function alignToGuide(input: AlignInput): AlignOutput {
   const { channels, sampleRate, audible, guide, onProgress } = input;
-  const length = channels[0]?.length ?? 0;
-  const frames = frameCount(length, sampleRate);
+  const frames = frameCount(channels[0]?.length ?? 0, sampleRate);
   const overlapSec = overlapOf(audible, guide.audible);
-  const identity = (): AlignOutput => ({
-    channels: channels.map((c) => Float32Array.from(c)),
-    lagSec: new Float32Array(frames),
-    hopSec: ALIGN_HOP_SEC,
-    kept: [],
-    stats: { medianMoveMs: 0, maxMoveMs: 0, movedSec: 0, overlapSec },
-  });
-  if (length === 0 || overlapSec < ALIGN_HOP_SEC * 4) return identity();
+  if (!channels[0]?.length || overlapSec < ALIGN_HOP_SEC * 4) return unchanged(input, frames, overlapSec);
 
-  const clipMono = monoMix(channels);
-  const clipFeatures = frameFeatures({ mono: clipMono, sampleRate, frames, audible });
-  onProgress?.(FEATURES_SHARE / 2);
-  const guideFeatures = frameFeatures({ mono: guide.mono, sampleRate: guide.sampleRate, frames, audible: guide.audible });
-  onProgress?.(FEATURES_SHARE);
-
-  const settings = tightnessSettings(input.tightness);
-  const halfBand = Math.max(2, Math.round((input.maxShiftSec ?? MAX_ALIGN_SHIFT_SEC) / ALIGN_HOP_SEC));
-  const matched = matchVoices(guideFeatures, clipFeatures, frames, {
-    halfBand,
-    stepPenalty: settings.stepPenalty,
-    ...(onProgress ? { onProgress: stepProgress(onProgress, FEATURES_SHARE, MATCH_SHARE) as (f: number) => void } : {}),
-  });
-  const attacks = syllableOnsets(clipFeatures, clipMono, sampleRate).map((sec) => ({ sec }));
-  const shaped = shapeLag(
-    lagFromPath(matched, ALIGN_HOP_SEC),
-    reliability(guideFeatures, clipFeatures, matched),
-    matched,
-    attacks,
-    input.tightness,
-    audible,
-    ALIGN_HOP_SEC,
-    soundOf(clipFeatures, matched),
-  );
+  const voices = describeVoices(input, frames);
+  const shaped = lagCurve(input, voices, frames);
   onProgress?.(FEATURES_SHARE + MATCH_SHARE);
   let aligned = renderLag(channels, sampleRate, shaped.lag, ALIGN_HOP_SEC, shaped.kept);
-  onProgress?.(FEATURES_SHARE + MATCH_SHARE + RENDER_SHARE);
+  const beforePitch = FEATURES_SHARE + MATCH_SHARE + RENDER_SHARE;
+  onProgress?.(beforePitch);
 
   const stats: AlignStats = { ...lagStats(shaped.lag, ALIGN_HOP_SEC, audible), overlapSec };
   if (input.pitch > 0) {
-    const followed = followGuidePitch(
-      aligned,
-      sampleRate,
-      guideFeatures.f0,
-      input.pitch / 100,
-      stepProgress(onProgress, FEATURES_SHARE + MATCH_SHARE + RENDER_SHARE, 1 - FEATURES_SHARE - MATCH_SHARE - RENDER_SHARE),
-    );
+    const followed = followGuidePitch(aligned, sampleRate, voices.guide.f0, input.pitch / 100, stepProgress(onProgress, beforePitch, 1 - beforePitch));
     aligned = followed.channels;
     stats.pitchCentsBefore = followed.stats.medianCentsBefore;
     stats.pitchCentsAfter = followed.stats.medianCentsAfter;

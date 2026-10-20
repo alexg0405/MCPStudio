@@ -11,6 +11,7 @@ import type { TempoMap } from '@core/time/ppq';
 import type { Waveform } from '@engine/api';
 import { alpha, type TimelineTheme } from '../../timeline/canvas';
 import type { Viewport } from '../../timeline/viewport';
+import { drawBreathMarkers } from './breath-markers';
 import type { ClipPaint } from './clip-paint';
 import type { ClipBox } from './clip-geometry';
 
@@ -45,6 +46,8 @@ export function audioClipTags(
   if (clip.gain !== undefined && clip.gain !== 1) tags.push(formatDb(clip.gain));
   // A pitch-corrected clip plays its corrected render (the waveform shows it).
   if (clip.pitchEdit?.renderedSampleId) tags.push('Pitch corrected');
+  // A cleaned-up clip plays its cleaned render (noise, breaths and clicks), the pitch edit then works on it.
+  if (clip.cleanup?.renderedSampleId) tags.push('Cleaned up');
   return tags;
 }
 
@@ -132,6 +135,7 @@ export function drawAudioBody(
     ctx.fillRect(from, Math.round(mid), to - from, 1);
   }
   drawFadeCurves(ctx, vp, clip, levels, tempo, box, paint, clipSec, dur);
+  drawBreathMarkers(ctx, vp, clip, ch, tempo, box, paint);
   if (handles.show && w >= MIN_HANDLES_WIDTH && h >= HANDLE_ZONE + 4) drawHandles(ctx, vp, theme, clip, levels, tempo, box, paint, handles.hot);
 }
 

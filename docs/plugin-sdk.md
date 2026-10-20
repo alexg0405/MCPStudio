@@ -398,7 +398,7 @@ loop through a DelayNode takes one render quantum (128 frames) longer than its `
 `n / sampleRate` delays by exactly n frames. The built-in Distortion and Delay (`src/plugins/builtin/`) show how to
 compensate. Worklet effects pass `latency` to `defineWorkletEffect`, as seconds or as a function of the sample rate for
 a whole number of frames at every rate: `latency: (sampleRate) => frames(sampleRate) / sampleRate`, with the kernel using
-the same `frames(sampleRate)` (the Limiter, Lo-Fi and Tune do this).
+the same `frames(sampleRate)` (the Limiter, Lo-Fi, Tune and Denoise do this).
 
 **Tails.** `tailTime` (seconds, can be a getter) is how long the effect keeps sounding after its input stops (reverb,
 delay feedback); exports add it to the render length. `reset()` clears internal buffers. Instruments have a `tailTime` too

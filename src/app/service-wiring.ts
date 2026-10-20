@@ -171,17 +171,17 @@ function followDocumentAsHeard(s: Services): void {
   const { engine, history, doc } = s;
   const listening = () => {
     const e = s.editor.getState();
-    return { audition: e.auditionTake, original: e.pitchOriginal };
+    return { audition: e.auditionTake, original: e.pitchOriginal, uncleaned: e.cleanupOriginal };
   };
   const isListeningDifferently = () => {
     const l = listening();
-    return l.audition !== null || l.original.length > 0;
+    return l.audition !== null || l.original.length > 0 || l.uncleaned.length > 0;
   };
   const project = doc.getState().project;
   engine.applyDocChange({ next: heardProject(project, listening()), prev: project, patches: null, origin: 'load' });
   history.onChange((change) => engine.applyDocChange(isListeningDifferently() ? { ...change, next: heardProject(change.next, listening()) } : change));
   s.editor.subscribe((next, prev) => {
-    if (next.auditionTake === prev.auditionTake && next.pitchOriginal === prev.pitchOriginal) return;
+    if (next.auditionTake === prev.auditionTake && next.pitchOriginal === prev.pitchOriginal && next.cleanupOriginal === prev.cleanupOriginal) return;
     const now = doc.getState().project;
     engine.applyDocChange({ next: heardProject(now, listening()), prev: now, patches: null, origin: 'edit' });
   });
@@ -190,6 +190,7 @@ function followDocumentAsHeard(s: Services): void {
     const e = s.editor.getState();
     if (e.auditionTake && !isTakeClip(next, e.auditionTake)) e.setAuditionTake(null);
     for (const id of e.pitchOriginal) if (next.playlist.clips[id]?.kind !== 'audio') e.setPitchOriginal(id, false);
+    for (const id of e.cleanupOriginal) if (next.playlist.clips[id]?.kind !== 'audio') e.setCleanupOriginal(id, false);
   });
 }
 

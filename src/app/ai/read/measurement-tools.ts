@@ -1,5 +1,6 @@
-/** Read tools for what has been measured or found: the reference song, loudness, sung pitch and the sample library. */
+/** Read tools for what has been measured or found: the reference song, loudness, sung pitch, vocal cleanup and the sample library. */
 import { SAMPLE_CATEGORIES } from '@core/samples/types';
+import { cleanupReport } from '../../cleanup/report';
 import { loudnessFacts } from '../../metering/facts';
 import { pitchReport } from '../../pitch/report';
 import { referenceReport } from '../../reference/summary';
@@ -26,6 +27,13 @@ export const getPitch = tool(
   'The sung notes of a recorded audio clip, as the Pitch editor shows them: per note its number (1-based, what the pitch action takes), bar, start/end seconds, pitch (MIDI and note name), how many cents off the nearest note, whether it is in the song key, drift and vibrato measured, and what has been changed (target, shift, flattened drift, vibrato %); also which sound the musician hears (the A/B switch: hearing). The first look at a clip it listens first (state "analyzing": ask again in a moment).',
   { clip: S.str('An audio clip id (clip_…; default: the selected audio clip).') },
   (services, args) => pitchReport(services, args),
+);
+
+export const getCleanup = tool(
+  'get_cleanup',
+  'The vocal cleanup of a recorded audio clip, as the Clean up vocal window shows it: which parts are on (noise reduction in dB and where the noise was learned from, breath reduction and the breaths found with their numbers, bar and seconds and whether each is lowered, mouth-click removal), whether the cleaned sound is ready, and which sound the musician hears (the before/after switch: hearing). The breaths are found when the cleaned sound is made.',
+  { clip: S.str('An audio clip id (clip_…; default: the selected audio clip).') },
+  (services, args) => cleanupReport(services, args),
 );
 
 export const listSampleSounds = tool(

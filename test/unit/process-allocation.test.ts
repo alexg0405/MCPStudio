@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /** Kernels checked (the vocal-chain effects). Add a kernel file here when it is written to this rule. */
-const KERNELS = ['de-esser', 'doubler', 'harmonizer'];
+const KERNELS = ['de-esser', 'doubler', 'harmonizer', 'denoise'];
 
 /** The text of a kernel's `process(` method with comments and string-free code only. */
 function processBody(source: string): string {

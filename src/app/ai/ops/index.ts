@@ -8,6 +8,7 @@ import { arrange } from './arrange';
 import { automation } from './automation';
 import { beat } from './beat';
 import { channels } from './channels';
+import { cleanup } from './cleanup';
 import { clips } from './clips';
 import { decks } from './decks';
 import { dj } from './dj';
@@ -50,6 +51,7 @@ export const MODULES: readonly OpModule[] = [
   recording,
   pitch,
   harmonyVoicesOps,
+  cleanup,
   arrange,
   beat,
   mix,

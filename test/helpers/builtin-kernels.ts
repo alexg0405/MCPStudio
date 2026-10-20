@@ -20,6 +20,9 @@ import { compressorParams } from '../../src/plugins/builtin/compressor/params';
 import deEsser from '../../src/plugins/builtin/de-esser';
 import { DeEsserKernel } from '../../src/plugins/builtin/de-esser/kernel';
 import { deEsserParams } from '../../src/plugins/builtin/de-esser/params';
+import denoise from '../../src/plugins/builtin/denoise';
+import { DenoiseKernel } from '../../src/plugins/builtin/denoise/kernel';
+import { denoiseParams } from '../../src/plugins/builtin/denoise/params';
 import doubler from '../../src/plugins/builtin/doubler';
 import { DoublerKernel } from '../../src/plugins/builtin/doubler/kernel';
 import { doublerParams } from '../../src/plugins/builtin/doubler/params';
@@ -250,6 +253,7 @@ export const KERNEL_ENTRIES: readonly KernelEntry[] = [
   effect(chorus, chorusParams, ChorusKernel),
   effect(compressor, compressorParams, CompressorKernel),
   effect(deEsser, deEsserParams, DeEsserKernel),
+  effect(denoise, denoiseParams, DenoiseKernel),
   effect(doubler, doublerParams, DoublerKernel),
   effect(ducker, duckerParams, DuckerKernel),
   effect(eqPro, eqProParams, EqProKernel),

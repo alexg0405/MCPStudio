@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyDeadZone,
   fadeEdges,
+  holdSilentEnds,
   limitSpeed,
   MAX_SPEED,
   MIN_SPEED,
@@ -44,6 +45,17 @@ describe('smoothing and the dead zone', () => {
   it('removes small offsets and shortens big ones by the dead zone', () => {
     const out = applyDeadZone(Float32Array.from([0.02, -0.03, 0.1, -0.2]), 0.06);
     expect(Array.from(out).map((v) => Math.round(v * 1000) / 1000 + 0)).toEqual([0, 0, 0.04, -0.14]);
+  });
+});
+
+describe('holdSilentEnds', () => {
+  it('gives the silent frames at either end the lag of the nearest sounding frame, and leaves the middle alone', () => {
+    const lag = Float32Array.from({ length: 10 }, (_, i) => i * 0.01);
+    const weight = Float32Array.from([0.03, 0.03, 1, 1, 0.03, 1, 1, 0.03, 0.03, 0.03]);
+    const out = holdSilentEnds(lag, weight);
+    expect(Array.from(out).map((v) => Math.round(v * 100))).toEqual([2, 2, 2, 3, 4, 5, 6, 6, 6, 6]);
+    // Nothing sounds: nothing to hold.
+    expect(Array.from(holdSilentEnds(lag, new Float32Array(10).fill(0.03)))).toEqual(Array.from(lag));
   });
 });
 

@@ -91,6 +91,26 @@ function weightedBox(x: Float32Array, weight: Float32Array, half: number): Float
   return out;
 }
 
+/** A frame whose reliability is at least this counts as sounding (the floor of a silent frame is far below it). */
+const SOUNDING_WEIGHT = 0.1;
+
+/**
+ * Before the first and after the last sounding frame the path is a free guess (it may begin and end at any offset), so
+ * those frames take the lag of the nearest sounding frame instead: the move holds, and the overlay and the numbers do
+ * not show a drift through the silence at the ends.
+ */
+export function holdSilentEnds(raw: Float32Array, weight: Float32Array): Float32Array {
+  const out = Float32Array.from(raw);
+  let first = 0;
+  while (first < out.length && (weight[first] as number) < SOUNDING_WEIGHT) first++;
+  if (first === out.length) return out;
+  let last = out.length - 1;
+  while ((weight[last] as number) < SOUNDING_WEIGHT) last--;
+  out.fill(out[first] as number, 0, first);
+  out.fill(out[last] as number, last + 1);
+  return out;
+}
+
 /** Smooths the raw lag: two passes of a weighted moving average (a triangle) of about `smoothSec`. */
 export function smoothLag(raw: Float32Array, weight: Float32Array, smoothSec: number, hopSec: number): Float32Array {
   const half = Math.max(0, Math.round(smoothSec / hopSec / 4));
@@ -342,7 +362,7 @@ export function shapeLag(
   sound: Float32Array,
 ): ShapedLag {
   const settings = tightnessSettings(tightness);
-  const smooth = applyDeadZone(smoothLag(raw, weight, settings.smoothSec, hopSec), settings.deadZoneSec);
+  const smooth = applyDeadZone(smoothLag(holdSilentEnds(raw, weight), weight, settings.smoothSec, hopSec), settings.deadZoneSec);
   return finishLag(smooth, matched, attacks, audible, hopSec, sound);
 }
 

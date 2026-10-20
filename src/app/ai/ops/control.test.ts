@@ -109,6 +109,23 @@ describe('settings', () => {
     expect(s.editor.getState().playlist).toMatchObject({ tool: 'select', snap: 'bar' });
   });
 
+  it('sets the accessibility options (interface size, contrast, motion, colour-blind safe colours) and refuses bad ones', () => {
+    const { s } = stackedSong();
+    const res = noEdit(s, [
+      { op: 'settings', interface_size_percent: 125, high_contrast: 'on', reduce_motion: 'off', color_blind_safe: true },
+    ]);
+    expect(res.warnings).toEqual([]);
+    expect(s.prefs.getState()).toMatchObject({ uiScale: 125, highContrast: 'on', reduceMotion: 'off', colorSafe: true });
+    expect(res.ui[0]).toContain('interface size 125 percent');
+    noEdit(s, [{ op: 'settings', interface_size_percent: 400 }]);
+    expect(s.prefs.getState().uiScale).toBe(150);
+    noEdit(s, [{ op: 'settings', interface_size_percent: 1 }]);
+    expect(s.prefs.getState().uiScale).toBe(90);
+    const bad = noEdit(s, [{ op: 'settings', high_contrast: 'maybe', reduce_motion: 'sometimes' }]);
+    expect(bad.warnings.filter((w) => /high_contrast|reduce_motion/.test(w))).toHaveLength(2);
+    expect(s.prefs.getState()).toMatchObject({ highContrast: 'on', reduceMotion: 'off' });
+  });
+
   it('clamps numbers into their range', () => {
     const { s } = stackedSong();
     noEdit(s, [{ op: 'settings', count_in_bars: 9, sample_memory_mb: 1, piano_octave: 99, latency_offset_ms: 500 }]);

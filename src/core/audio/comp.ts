@@ -123,6 +123,25 @@ export function swipeSegments(
   return normalizeSegments(rest);
 }
 
+/**
+ * `base` with the parts of `extra` that fall where `base` plays nothing: what another recording's comp played in the
+ * gaps of this one stays audible when its takes are added here (nothing of `base` changes).
+ */
+export function fillGaps(base: readonly CompSegment[], extra: readonly CompSegment[]): CompSegment[] {
+  const own = normalizeSegments(base);
+  const pieces: CompSegment[] = [];
+  for (const segment of normalizeSegments(extra)) {
+    let from = segment.from;
+    for (const taken of own) {
+      if (taken.to <= from || taken.from >= segment.to) continue;
+      if (taken.from > from) pieces.push({ take: segment.take, from, to: taken.from });
+      from = Math.max(from, taken.to);
+    }
+    if (from < segment.to) pieces.push({ take: segment.take, from, to: segment.to });
+  }
+  return normalizeSegments([...own, ...pieces]);
+}
+
 /** "Use this take": the whole take plays, in place of the whole comp. */
 export function wholeTake(spans: readonly CompSpan[], take: number): CompSegment[] {
   return normalizeSegments(spans.filter((s) => s.index === take).map((s) => ({ take, from: s.start, to: end(s) })));

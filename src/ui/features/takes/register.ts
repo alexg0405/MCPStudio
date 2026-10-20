@@ -26,6 +26,7 @@ export function register(services: Services): void {
     cmd('comp.toggleTakes', 63),
     cmd('comp.crossfade', 64),
     cmd('comp.flatten', 65),
+    cmd('comp.addTakes', 67),
     sep(69),
   ]);
 }

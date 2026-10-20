@@ -8,6 +8,7 @@
  * `playlist-lines`, and `budget` (shortening a very large project to fit).
  */
 import { chordTrackLines } from '@core/query/chords';
+import { lyricTrackLines } from '@core/query/lyrics';
 import type { Project } from '@core/model/types';
 import { insertLabel } from '@core/query/mixer';
 import { arrangementLines } from '../../arrange/summary';
@@ -107,6 +108,8 @@ function optionalSections(services: Services, project: Project): string[] {
       ...chordLines.map((line) => `  ${line}`),
     );
   }
+  const lyricLines = lyricTrackLines(project);
+  if (lyricLines.length) lines.push('', 'Lyrics (first bar of each line):', ...lyricLines.map((line) => `  ${line}`));
   const arrangement = arrangementLines(project);
   if (arrangement.length) lines.push(...arrangement);
   const sections = [

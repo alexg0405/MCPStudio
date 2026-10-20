@@ -33,6 +33,8 @@ export interface PitchScene {
   pointer: { x: number; y: number } | null;
   /** The playhead as milliseconds on the sample timeline, NaN when nothing of this clip plays. */
   playheadMs: number;
+  /** The lyric word written under each note blob, by note index (empty without lyrics). */
+  lyrics: ReadonlyMap<number, string>;
 }
 
 /** The pitch classes (0 = C) of the black piano keys. */
@@ -154,7 +156,7 @@ function drawMovedFrom(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timel
 }
 
 /** One note blob, with its name when it is wide enough. */
-function drawNoteBlob(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, note: DrawNote, isSelected: boolean, noteHeight: number): void {
+function drawNoteBlob(ctx: CanvasRenderingContext2D, vp: Viewport, theme: TimelineTheme, note: DrawNote, isSelected: boolean, noteHeight: number, lyric?: string): void {
   const x0 = vp.tickToX(note.fromMs);
   const x1 = Math.max(x0 + 3, vp.tickToX(note.toMs));
   const centerY = rowY(vp, note.target);
@@ -173,6 +175,18 @@ function drawNoteBlob(ctx: CanvasRenderingContext2D, vp: Viewport, theme: Timeli
     ctx.textBaseline = 'middle';
     ctx.fillText(pitchText(note.target, noteName), x0 + 5, centerY + 0.5);
   }
+  if (lyric) drawLyricUnder(ctx, theme, lyric, x0, Math.max(x1 - x0, MIN_LYRIC_WIDTH_PX), centerY + noteHeight / 2 + 2);
+}
+
+/** A lyric word is given at least this much width (px) under a blob that is narrower. */
+const MIN_LYRIC_WIDTH_PX = 40;
+
+/** The lyric word written under a blob. */
+function drawLyricUnder(ctx: CanvasRenderingContext2D, theme: TimelineTheme, text: string, x: number, width: number, y: number): void {
+  ctx.font = `600 11px ${theme.font}`;
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = alpha(theme.text, 0.92);
+  ctx.fillText(text, x + 1, y, width);
 }
 
 /** The pitch as sung (a thin line), then the note blobs, then the corrected line over them. */
@@ -188,7 +202,7 @@ export function drawContent(ctx: CanvasRenderingContext2D, theme: TimelineTheme,
   const noteHeight = Math.max(MIN_NOTE_HEIGHT_PX, vp.rowHeight * NOTE_HEIGHT_FRACTION);
   for (const note of scene.notes) {
     if (note.toMs < fromMs || note.fromMs > toMs) continue;
-    drawNoteBlob(ctx, vp, theme, note, scene.selected.has(note.index), noteHeight);
+    drawNoteBlob(ctx, vp, theme, note, scene.selected.has(note.index), noteHeight, scene.lyrics.get(note.index));
   }
   if (scene.corrected) {
     ctx.strokeStyle = theme.accentLight;

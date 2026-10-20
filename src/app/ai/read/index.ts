@@ -11,6 +11,7 @@
 import type { Services } from '../../services';
 import { isObj } from '../ops/values';
 import { getAutomation, getClips, getLauncher, getTakes } from './arrangement-tools';
+import { getLyrics } from './lyrics-tools';
 import { listSampleSounds, getLoudness, getPitch, getReference } from './measurement-tools';
 import { getMixGroups, getMixSnapshots } from './mix-state-tools';
 import { getChords, getPatternNotes } from './music-tools';
@@ -25,6 +26,7 @@ export const readTools: readonly ReadTool[] = [
   getProject,
   getTransport,
   getChords,
+  getLyrics,
   getSelection,
   getPatternNotes,
   getChannel,

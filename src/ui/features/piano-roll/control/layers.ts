@@ -3,13 +3,15 @@
  * (timeline/panned.ts) and only when it is stale (an edit, a zoom, a theme change), not on every frame.
  */
 import type { ChannelId } from '@core/model/types';
+import { patternLyrics } from '@core/query/lyrics';
 import { notesSorted } from '@core/query/queries';
-import { readTheme } from '../../../timeline/canvas';
+import { readTheme, type TimelineTheme } from '../../../timeline/canvas';
 import type { PanDraw } from '../../../timeline/panned';
 import type { Viewport } from '../../../timeline/viewport';
 import { RULER_HEIGHT } from '../layout';
+import { drawLyricLabels, lyricLabelsFor } from '../lyric-labels';
 import { drawGhosts, drawGrid, drawLane, drawNotes, drawRuler } from '../render';
-import type { PianoRollContext } from './context';
+import type { EditTarget, PianoRollContext } from './context';
 import { chordBandsOf, editTarget, patternEnd, scaleRowsOf, selectedNoteIds } from './target';
 
 /** The four drawing functions of the panned layers. */
@@ -82,4 +84,13 @@ function drawNotesLayer(ctx: PianoRollContext, canvas: CanvasRenderingContext2D,
       selected: new Set(state.previewAdds.map((note) => note.id)),
     });
   }
+  drawLyricsUnderNotes(canvas, wide, theme, target);
+}
+
+/** The lyrics of the song stretch this pattern plays, written under the notes they are sung on (nothing when there are none). */
+function drawLyricsUnderNotes(canvas: CanvasRenderingContext2D, wide: Viewport, theme: TimelineTheme, target: EditTarget): void {
+  if (!target.patternId || !target.project.lyrics) return;
+  const words = patternLyrics(target.project, target.patternId);
+  if (words.length === 0) return;
+  drawLyricLabels(canvas, wide, theme, lyricLabelsFor(target.notes, words));
 }

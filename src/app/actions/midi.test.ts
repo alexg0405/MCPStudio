@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseMidi, writeMidi } from '@core/io/midi';
 import type { ChannelId } from '@core/model/types';
+import { placeLyricWords } from '@core/ops/lyrics';
 import { createTestServices } from '../testing';
 import { exportMidi, importMidi } from './midi';
 
@@ -122,4 +123,58 @@ describe('MIDI export', () => {
     expect(all.filter((n) => n.channel === 9).map((n) => n.key).sort()).toEqual([36, 38, 42]);
     expect(back.tempos[0]?.bpm).toBeCloseTo(95, 1);
   });
+
+  it('writes the lyrics as lyric meta events on a Lyrics track (a "/" starts a line, a space ends a word)', () => {
+    const s = createTestServices();
+    const res = importMidi(s, parseMidi(file), 'groove.mid', { split: false, tempo: true, place: false });
+    s.view.getState().setCurrentPattern(res.patterns[0]!);
+    expect(parseMidi(exportMidi(s, 'pattern').bytes).tracks.some((t) => t.name === 'Lyrics')).toBe(false);
+    s.history.transact('Lyrics', (d) =>
+      void placeLyricWords(d, [
+        { tick: 0, length: 480, text: 'beau', line: 0, continues: true },
+        { tick: 480, length: 480, text: 'ti', line: 0, continues: true },
+        { tick: 960, length: 480, text: 'ful', line: 0 },
+        { tick: 3840, length: 480, text: 'day', line: 1 },
+      ]),
+    );
+    const { bytes } = exportMidi(s, 'pattern');
+    const back = parseMidi(bytes);
+    expect(back.tracks.some((t) => t.name === 'Lyrics')).toBe(true);
+    expect(lyricEvents(bytes)).toEqual([
+      [0, 'beau'],
+      [480, 'ti'],
+      [960, 'ful '],
+      [3840, '/day '],
+    ]);
+  });
 });
+
+/** The lyric meta events (FF 05) of a MIDI file as [absolute tick, text], read straight from the bytes. */
+function lyricEvents(bytes: Uint8Array): Array<[number, string]> {
+  const out: Array<[number, string]> = [];
+  let at = 14;
+  while (at < bytes.length) {
+    const end = at + 8 + ((bytes[at + 4]! << 24) | (bytes[at + 5]! << 16) | (bytes[at + 6]! << 8) | bytes[at + 7]!);
+    let p = at + 8;
+    let tick = 0;
+    let isLyrics = false;
+    while (p < end) {
+      let delta = 0;
+      let b: number;
+      do {
+        b = bytes[p++]!;
+        delta = (delta << 7) | (b & 0x7f);
+      } while (b & 0x80);
+      tick += delta;
+      if (bytes[p] !== 0xff) break;
+      const type = bytes[p + 1]!;
+      const length = bytes[p + 2]!;
+      const text = String.fromCharCode(...bytes.subarray(p + 3, p + 3 + length));
+      if (type === 0x03) isLyrics = text === 'Lyrics';
+      if (type === 0x05 && isLyrics) out.push([tick, text]);
+      p += 3 + length;
+    }
+    at = end;
+  }
+  return out;
+}

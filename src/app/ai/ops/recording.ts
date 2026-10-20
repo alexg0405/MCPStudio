@@ -1,14 +1,14 @@
 /**
  * Audio recording and comping: `record` (arm audio, the punch range, count-in and pre-roll, start and stop;
  * it acts on the app, after the edit) and `comp` (use a take for some bars, promote a take, next and previous
- * take, crossfade, flatten; it edits the playlist). What there is to comp is listed by the `get_takes` read.
+ * take, crossfade, flatten, add the takes of another recording; it edits the playlist). What there is to comp is listed by the `get_takes` read.
  */
 import type { Draft } from 'immer';
 import { MAX_CROSSFADE_MS } from '@core/audio/comp';
 import { tempoMapOf } from '@core/automation/tempo';
 import type { ClipId, Project, Tick } from '@core/model/types';
-import { compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
-import { buildTakeGroups, type TakeGroup } from '@core/query/takes';
+import { addTakesToComp, compSetCrossfade, compStep, compSwipe, compUseTake, flattenComp } from '@core/ops/comp';
+import { buildTakeGroups, groupName, overlappingGroups, type TakeGroup } from '@core/query/takes';
 import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
 import { clearPunch, describePunch, punchStartTick, setPunchRange } from '../../actions/punch';
@@ -35,15 +35,17 @@ export const recording: OpModule = {
     ),
     S.op(
       'comp',
-      'Comps the takes of an audio recording (get_takes lists them): the comp track plays one take at a time, with a short crossfade where it changes. use_take plays a take for from_bar–to_bar (or all of it without bars); promote makes a whole take the comp; next / previous swap the take that plays from_bar–to_bar for its neighbour; crossfade sets the length of the fades between takes; flatten keeps what the comp plays as ordinary clips and removes the take tracks. One undo step.',
+      'Comps the takes of an audio recording (get_takes lists them): the comp track plays one take at a time, with a short crossfade where it changes. use_take plays a take for from_bar–to_bar (or all of it without bars); promote makes a whole take the comp; next / previous swap the take that plays from_bar–to_bar for its neighbour; crossfade sets the length of the fades between takes; flatten keeps what the comp plays as ordinary clips and removes the take tracks; add_takes moves the takes of another recording of the same bars (group or track) into the comp of into_group / into_track (default: the overlapping one), so the comp can play parts of both. One undo step.',
       {
-        action: { type: 'string', enum: ['use_take', 'promote', 'next', 'previous', 'crossfade', 'flatten'] },
+        action: { type: 'string', enum: ['use_take', 'promote', 'next', 'previous', 'crossfade', 'flatten', 'add_takes'] },
         group: S.str('The take group id from get_takes (default: the one on track, or the only one).'),
         track: S.int('1-based playlist track of the comp track or one of its takes (to say which recording).'),
         take: S.int('use_take, promote: the 1-based take number from get_takes.'),
         from_bar: S.num('use_take, next, previous: the 1-based bar where the range starts (fractions allowed).'),
         to_bar: S.num('The 1-based last bar of the range (inclusive; default: the same bar).'),
         ms: S.num(`crossfade: the crossfade in milliseconds (0–${MAX_CROSSFADE_MS}).`),
+        into_group: S.str('add_takes: the take group id whose comp gets the takes (default: the overlapping recording that overlaps most).'),
+        into_track: S.int('add_takes: or the 1-based playlist track of that recording’s comp track or one of its takes.'),
       },
       ['action'],
     ),
@@ -104,6 +106,15 @@ export const recording: OpModule = {
           touched(g.start, g.end, []);
           return `Comp “${name}”: crossfade ${Math.round(Math.max(0, Math.min(MAX_CROSSFADE_MS, ms)) * 10) / 10} ms`;
         }
+        case 'add_takes': {
+          const other = intoGroupFrom(action, context, g);
+          context.focus.span(g.start, g.end, 'comp');
+          const added =
+            addTakesToComp(draft, g.id, other.id, tempo) ??
+            fail(`“${name}” does not overlap “${groupName(context.base, other)}” in time, so its takes cannot join that comp`);
+          touched(Math.min(g.start, other.start), Math.max(g.end, other.end), added.comp);
+          return `Added the ${added.takes} take${added.takes === 1 ? '' : 's'} of “${name}” to the comp of “${groupName(context.base, other)}”`;
+        }
         case 'flatten': {
           context.focus.span(g.start, g.end, 'comp');
           const { removedLanes } = flattenComp(draft, g.id);
@@ -130,6 +141,20 @@ function groupFrom(action: AiAction, context: OpContext): TakeGroup {
     return groups.find((g) => g.id === group) ?? fail(`track ${String(action.track)} is not part of a set of takes`);
   }
   return groups.length === 1 ? (groups[0] as TakeGroup) : fail('which recording? (give group, or track)');
+}
+
+/** The take group that gets the takes of `source`: `into_group`, a track of it, or the recording that overlaps most. */
+function intoGroupFrom(action: AiAction, context: OpContext, source: TakeGroup): TakeGroup {
+  const draft = context.draft as Draft<Project>;
+  const groups = buildTakeGroups(draft.playlist);
+  const id = str(action.into_group);
+  if (id) return groups.find((g) => g.id === id) ?? fail(`there is no take group "${id}" (get_takes lists them)`);
+  if (action.into_track !== undefined) {
+    const group = draft.playlist.lanes[context.lane(action.into_track)]?.takes?.group;
+    return groups.find((g) => g.id === group) ?? fail(`track ${String(action.into_track)} is not part of a set of takes`);
+  }
+  const best = overlappingGroups(draft as unknown as Project, source)[0];
+  return best ?? fail('no other recording overlaps these takes in time (give into_group or into_track)');
 }
 
 /** The names of the actions that act on the app instead of the playlist (they run after the edit). */

@@ -28,6 +28,7 @@ export const OPEN_WINDOWS = [
   'pitch-editor',
   'samples',
   'chords',
+  'lyrics',
   'mix-snapshots',
   'browser',
 ] as const;

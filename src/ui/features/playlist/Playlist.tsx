@@ -9,6 +9,7 @@ import { connectPlaylistController, registerPlaylistAnchors } from './connect';
 import { askAboutSelection } from '../ask-ai/ask-state';
 import { HEADER_WIDTH, RULER_HEIGHT } from './layout';
 import { ChordLane, useChordLaneVisible } from '../chords/ChordLane';
+import { LyricsLane, useLyricsLaneVisible } from '../lyrics/LyricsLane';
 import styles from './Playlist.module.css';
 
 const TOOLS: { tool: PlaylistTool; label: string; key: string; hint: string }[] = [
@@ -117,6 +118,7 @@ export function Playlist() {
   const markerRename = useRef<HTMLInputElement>(null);
   const askPill = useRef<HTMLButtonElement>(null);
   const showChordLane = useChordLaneVisible(services);
+  const showLyricsLane = useLyricsLaneVisible(services);
   // The chord lane reads the playlist's scroll and zoom every frame, so its bars stay lined up with the playlist's.
   const laneView = useCallback(() => controller.current?.vp ?? null, []);
 
@@ -152,6 +154,7 @@ export function Playlist() {
     <div className={styles.root}>
       <Toolbar controller={controller} />
       {showChordLane && <ChordLane view={laneView} headerWidth={HEADER_WIDTH} />}
+      {showLyricsLane && <LyricsLane view={laneView} headerWidth={HEADER_WIDTH} />}
       <div
         className={styles.area}
         style={{ gridTemplateColumns: `${HEADER_WIDTH}px 1fr`, gridTemplateRows: `${RULER_HEIGHT}px 1fr 12px` }}

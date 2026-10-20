@@ -25,6 +25,8 @@ export function subscribeToChanges(ctx: PianoRollContext, cleanups: CleanupList)
       if (now.transport !== before.transport) invalidateAll(ctx);
       // The chord track and where the pattern plays decide the chord tint behind the notes.
       if (now.chords !== before.chords || now.playlist !== before.playlist) ctx.invalidate('grid');
+      // The lyrics are written under the notes they are sung on.
+      if (now.lyrics !== before.lyrics || now.playlist !== before.playlist) ctx.invalidate('notes');
     }),
     s.editor.subscribe((next, prev) => {
       const now = next.pianoRoll;

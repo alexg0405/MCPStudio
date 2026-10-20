@@ -49,8 +49,9 @@ export function sampleSeconds(p: Project, ch: AudioClipChannel): number | null {
 /** Gain (linear 0–4) and fades (seconds) of clips, one undo step. */
 export function setClipLevels(s: Services, clips: readonly AudioClip[], edits: ClipLevels, label: string): void {
   if (clips.length === 0) return;
+  const tempo = tempoMapOf(s.doc.getState().project, 'song');
   s.history.transact(label, (d) => {
-    for (const c of clips) setAudioClipEdits(d, c.id, edits);
+    for (const c of clips) setAudioClipEdits(d, c.id, edits, { tempo });
   });
 }
 
@@ -150,7 +151,7 @@ export async function normalizeClips(s: Services, clips: readonly AudioClip[]): 
   }
   if (gains.size === 0) return 0;
   s.history.transact(gains.size > 1 ? 'Normalize clips' : 'Normalize clip', (d) => {
-    for (const [id, gain] of gains) setAudioClipEdits(d, id, { gain });
+    for (const [id, gain] of gains) setAudioClipEdits(d, id, { gain }, { tempo });
   });
   return gains.size;
 }

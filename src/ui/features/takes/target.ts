@@ -13,6 +13,8 @@ export type TakeArgs = {
   ms?: number;
   open?: boolean;
   on?: boolean;
+  /** `comp.addTakes`: the take group whose comp gets these takes. */
+  into?: string;
 };
 
 /** The hint shared by every command that says which recording it works on. */

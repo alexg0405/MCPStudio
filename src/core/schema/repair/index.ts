@@ -15,6 +15,7 @@ import { repairControllers } from './controllers';
 import { repairDj } from './dj';
 import { repairGroups } from './groups';
 import { repairLauncher } from './launcher';
+import { repairLyrics } from './lyrics';
 import { RepairLog } from './log';
 import { repairMixer } from './mixer';
 import { repairPatterns } from './patterns';
@@ -49,6 +50,7 @@ export function repairProject(project: Project): { project: Project; repairs: st
   repairReference(copy, log);
   repairLauncher(copy, log);
   repairChords(copy, log);
+  repairLyrics(copy, log);
   log.flush();
   return { project: copy as unknown as Project, repairs: log.messages };
 }

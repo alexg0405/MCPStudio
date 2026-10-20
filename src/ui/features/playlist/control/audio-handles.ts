@@ -152,11 +152,13 @@ export function commitLevelDrag(ctx: PlaylistContext, drag: LevelDrag): void {
   const { now, start, clip } = drag;
   const hasChanged = now.gain !== start.gain || now.fadeIn !== start.fadeIn || now.fadeOut !== start.fadeOut;
   if (!hasChanged) return;
-  ctx.s.history.transact(DRAG_LABELS[drag.handle], (draft) => setAudioClipEdits(draft, clip.id, now));
+  const tempo = tempoMapOf(ctx.s.doc.getState().project, 'song');
+  ctx.s.history.transact(DRAG_LABELS[drag.handle], (draft) => setAudioClipEdits(draft, clip.id, now, { tempo }));
 }
 
 /** Double-click on a handle: the gain goes back to 0 dB, or the fade is removed. */
 export function resetLevel(ctx: PlaylistContext, clipId: ClipId, handle: AudioHandle): void {
   const { edits, label } = RESET[handle];
-  ctx.s.history.transact(label, (draft) => setAudioClipEdits(draft, clipId, edits));
+  const tempo = tempoMapOf(ctx.s.doc.getState().project, 'song');
+  ctx.s.history.transact(label, (draft) => setAudioClipEdits(draft, clipId, edits, { tempo }));
 }

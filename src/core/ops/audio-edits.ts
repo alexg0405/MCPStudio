@@ -1,5 +1,7 @@
 import type { Draft } from 'immer';
 import type { AudioStretch, ChannelId, ClipId, Project } from '../model/types';
+import type { TempoMap } from '../time/ppq';
+import { refreshComps, snapshotComps } from './comp';
 
 // Draft mutators for audio clip edits. Neutral values remove their field (absent = default).
 
@@ -14,10 +16,14 @@ export interface AudioClipEdits {
   fadeOut?: number;
 }
 
-/** Gain and fades of one playlist audio clip. */
-export function setAudioClipEdits(d: Draft<Project>, id: ClipId, edits: AudioClipEdits): void {
+/**
+ * Gain and fades of one playlist audio clip. With `tempo`, a change to a take clip of a recording also reaches the comp
+ * clips that play it (the comp is rebuilt; a comp clip with a gain or fade of its own keeps it), in the same undo step.
+ */
+export function setAudioClipEdits(d: Draft<Project>, id: ClipId, edits: AudioClipEdits, opts: { tempo?: TempoMap } = {}): void {
   const clip = d.playlist.clips[id];
   if (clip?.kind !== 'audio') return;
+  const snaps = opts.tempo ? snapshotComps(d, [id], opts.tempo) : [];
   if (edits.gain !== undefined && Number.isFinite(edits.gain)) {
     const g = clamp(edits.gain, 0, 4);
     if (g === 1) delete clip.gain;
@@ -30,6 +36,7 @@ export function setAudioClipEdits(d: Draft<Project>, id: ClipId, edits: AudioCli
     if (s === 0) delete clip[key];
     else clip[key] = s;
   }
+  if (opts.tempo && snaps.length) refreshComps(d, snaps, opts.tempo);
 }
 
 /** The per-channel audio settings that `setAudioChannelEdits` can change; only the fields that are present change. */

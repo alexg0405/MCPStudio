@@ -73,6 +73,7 @@ const MESSAGE_PITCH_BEND = 0xe0;
 
 /** Meta event types. */
 const META_TRACK_NAME = 0x03;
+const META_LYRIC = 0x05;
 const META_END_OF_TRACK = 0x2f;
 const META_SET_TEMPO = 0x51;
 const META_TIME_SIGNATURE = 0x58;
@@ -391,16 +392,46 @@ function partTrack(part: MidiWriteTrack): number[] {
   return body;
 }
 
-/** A format-1 file at PPQ 960: a conductor track (name, tempo, time signature) and one track per part. */
+/** One lyric event to write: where it starts (ticks at PPQ 960) and its text, exactly as the file will carry it. */
+export interface MidiLyric {
+  tick: number;
+  text: string;
+}
+
+/**
+ * The lyrics track: its name, then one lyric meta event (FF 05) per syllable at its tick, in time order. The text is
+ * what karaoke players expect (`lyricsToMidiEvents`): "/" starts a new line, a space ends a word.
+ */
+function lyricsTrack(lyrics: readonly MidiLyric[]): number[] {
+  const body: number[] = [];
+  writeTextMeta(META_TRACK_NAME, 'Lyrics', body);
+  let previousTick = 0;
+  for (const lyric of [...lyrics].sort((a, b) => a.tick - b.tick)) {
+    const tick = Math.max(previousTick, Math.round(lyric.tick));
+    const bytes = [...lyric.text].map((c) => (c.charCodeAt(0) < 256 ? c.charCodeAt(0) : 0x3f));
+    writeVlq(tick - previousTick, body);
+    previousTick = tick;
+    body.push(STATUS_META_EVENT, META_LYRIC);
+    writeVlq(bytes.length, body);
+    body.push(...bytes);
+  }
+  body.push(0, STATUS_META_EVENT, META_END_OF_TRACK, 0);
+  return body;
+}
+
+/** A format-1 file at PPQ 960: a conductor track (name, tempo, time signature), a lyrics track when there are lyrics, and one track per part. */
 export function writeMidi(song: {
   name: string;
   bpm: number;
   timeSig: { num: number; den: number };
   tracks: readonly MidiWriteTrack[];
+  lyrics?: readonly MidiLyric[];
 }): Uint8Array {
   const format = 1;
-  const header = [0, format, 0, song.tracks.length + 1, PPQ >> 8, PPQ & 255];
+  const hasLyrics = !!song.lyrics && song.lyrics.length > 0;
+  const header = [0, format, 0, song.tracks.length + 1 + (hasLyrics ? 1 : 0), PPQ >> 8, PPQ & 255];
   const chunks = [chunk(HEADER_CHUNK_ID, header), chunk(TRACK_CHUNK_ID, conductorTrack(song))];
+  if (hasLyrics) chunks.push(chunk(TRACK_CHUNK_ID, lyricsTrack(song.lyrics!)));
   for (const part of song.tracks) chunks.push(chunk(TRACK_CHUNK_ID, partTrack(part)));
   return Uint8Array.from(chunks.flat());
 }

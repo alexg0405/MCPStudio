@@ -1,20 +1,20 @@
-import { createStore, type StoreApi } from 'zustand/vanilla';
+import type { StoreApi } from 'zustand/vanilla';
 import type { DocChange } from '@core/history/history';
-import { newId } from '@core/model/ids';
 import type { Project } from '@core/model/types';
-import { restoreProject } from '@core/ops/restore';
-import { describeProjectChanges, type ProjectChanges } from '@core/versions/diff';
+import type { ProjectChanges } from '@core/versions/diff';
 import { versionTitle, type SavePointReason, type VersionRecord } from '@core/versions/types';
 import { APP_VERSION } from '@core/model/defaults';
 import { ProjectCatalog } from '../projects/catalog';
-import { findMissingSamples, missingSoundsNotice } from '../persistence/project-io';
 import { captureView } from '../persistence/view-snapshot';
 import { zipOffThread } from '../persistence/zip-async';
 import type { Services } from '../services';
 import { defaultVersionBackend, type VersionBackend } from './backend';
-import { renderVersionPreview } from './preview';
 import { createVersionSettingsStore, type VersionSettings } from './settings';
-import { VersionError, VersionStore, type VersionUsage } from './store';
+import { VersionStore } from './store';
+import { VersionUse } from './use';
+import { createVersionsView, type VersionsView } from './view-state';
+
+export type { VersionsView };
 
 /**
  * Save points and what is done with them. The service decides when a version is made (on save, after some minutes of
@@ -33,24 +33,6 @@ const MAX_NAME_LENGTH = 80;
 /** How long after the app starts the old versions are tidied (ms): not in the middle of the first paint. */
 const STARTUP_TIDY_DELAY_MS = 8_000;
 
-/** What the Versions window shows. */
-export interface VersionsView {
-  /** The project whose versions are listed; null is the open project. */
-  projectId: string | null;
-  projectName: string;
-  versions: VersionRecord[];
-  /** Versions of the listed project, and of every project (both with their bytes). */
-  usage: { project: VersionUsage; all: VersionUsage };
-  /** The list is being read. */
-  isLoading: boolean;
-  /** The version being heard in a preview. */
-  previewingId: string | null;
-  /** The version a slow step (a preview render, a restore) is working on. */
-  busyId: string | null;
-}
-
-const EMPTY_USAGE: VersionUsage = { count: 0, bytes: 0 };
-
 /** What `savePoint` can be told besides why. */
 export interface SavePointOptions {
   /** The state to keep (default: the open project as it is). A "before" save point passes the state before an edit. */
@@ -60,20 +42,14 @@ export interface SavePointOptions {
 }
 
 export class VersionService {
-  readonly view: StoreApi<VersionsView> = createStore<VersionsView>(() => ({
-    projectId: null,
-    projectName: '',
-    versions: [],
-    usage: { project: EMPTY_USAGE, all: EMPTY_USAGE },
-    isLoading: false,
-    previewingId: null,
-    busyId: null,
-  }));
+  readonly view: StoreApi<VersionsView> = createVersionsView();
   readonly settings: StoreApi<VersionSettings> = createVersionSettingsStore();
   /** The records and files of versions, or null when this browser cannot keep any. */
   readonly store: VersionStore | null;
   /** The cards of the projects the browser has seen. */
   readonly catalog: ProjectCatalog | null;
+  /** What is done with a version once it exists (restore, copy, preview); null with no storage. */
+  private readonly use: VersionUse | null;
 
   /** The state of the open project when it was loaded or last given a version: "changed" means different from it. */
   private baseline: Project | null = null;
@@ -108,6 +84,16 @@ export class VersionService {
         })
       : null;
     this.catalog = kv ? new ProjectCatalog(kv.kv, now) : null;
+    this.use = this.store
+      ? new VersionUse({
+          s,
+          store: this.store,
+          view: this.view,
+          savePoint: (reason, note) => this.savePoint(reason, note),
+          settled: () => this.settled(),
+          versionsOf: (projectId) => this.versionsOf(projectId),
+        })
+      : null;
   }
 
   /** Whether versions can be kept in this browser. */
@@ -403,124 +389,38 @@ export class VersionService {
     return removed;
   }
 
-  // ---- Using a version ----
+  // ---- Using a version (src/app/versions/use.ts) ----
 
   /** What changed in the open project since a version: the sentences "what is different" shows. */
-  async changesSince(record: VersionRecord): Promise<ProjectChanges> {
-    const loaded = await this.readOrExplain(record);
-    if (!loaded) return { parts: [], lines: [] };
-    return describeProjectChanges(loaded.project, this.project, (id) => this.s.automation.pluginInfo(id));
-  }
-
-  private async readOrExplain(record: VersionRecord) {
-    try {
-      return await this.store?.read(record);
-    } catch (error) {
-      this.toast(error instanceof VersionError ? error.message : 'This version cannot be read.', 'error');
-      return null;
-    }
+  changesSince(record: VersionRecord): Promise<ProjectChanges> {
+    return this.use?.changesSince(record) ?? Promise.resolve({ parts: [], lines: [] });
   }
 
   /**
    * Puts the open project back to a version, as one undo step. The project as it is now is kept as a version first, so
    * even a restore that is later regretted past the undo history loses nothing.
    */
-  async restore(record: VersionRecord): Promise<boolean> {
-    const current = this.project;
-    if (record.projectId !== current.projectId) {
-      this.toast('That version belongs to another project. Open it as a copy, or open that project first.', 'error');
-      return false;
-    }
-    this.view.setState({ busyId: record.id });
-    try {
-      const loaded = await this.readOrExplain(record);
-      if (!loaded) return false;
-      await this.savePoint('before-restore', `restoring “${versionTitle(record)}”`);
-      await this.settled();
-      const base = this.project;
-      const changed = this.s.history.transact(`Restore version “${versionTitle(record)}”`, (draft) =>
-        restoreProject(draft, base, loaded.project),
-      );
-      this.toast(changed ? `Restored “${versionTitle(record)}”. Undo brings back what you had.` : 'The project already matches that version.');
-      await this.noteMissingSounds(loaded.project);
-      return changed;
-    } finally {
-      this.view.setState({ busyId: null });
-    }
+  restore(record: VersionRecord): Promise<boolean> {
+    return this.use?.restore(record) ?? Promise.resolve(false);
   }
 
   /** Opens a version as a new, unsaved project, so the open one is untouched (unsaved changes are asked about first). */
-  async openAsCopy(record: VersionRecord): Promise<boolean> {
-    this.view.setState({ busyId: record.id });
-    try {
-      const loaded = await this.readOrExplain(record);
-      if (!loaded) return false;
-      if (!(await this.s.files.confirmReplace())) return false;
-      const name = `${record.title || 'Untitled'} (${versionTitle(record)})`.slice(0, 120);
-      const copy: Project = { ...loaded.project, projectId: newId.project(), meta: { ...loaded.project.meta, title: name } };
-      this.s.files.replace(copy, loaded.view, { name, handle: null, fileKey: null }, { dirty: true });
-      await this.noteMissingSounds(copy);
-      return true;
-    } finally {
-      this.view.setState({ busyId: null });
-    }
+  openAsCopy(record: VersionRecord): Promise<boolean> {
+    return this.use?.openAsCopy(record) ?? Promise.resolve(false);
   }
 
-  /**
-   * Opens a project's newest version as the open project, keeping its identity, so its history carries on
-   * (for a project that has versions and no file).
-   */
-  async openLatestOf(projectId: string, name: string): Promise<boolean> {
-    const latest = (await this.versionsOf(projectId))[0];
-    if (!latest) {
-      this.toast('That project has no versions to open.', 'error');
-      return false;
-    }
-    const loaded = await this.readOrExplain(latest);
-    if (!loaded) return false;
-    if (!(await this.s.files.confirmReplace())) return false;
-    this.s.files.replace(loaded.project, loaded.view, { name, handle: null, fileKey: null }, { dirty: true });
-    await this.noteMissingSounds(loaded.project);
-    return true;
+  /** Opens a project's newest version as the open project, keeping its identity (for a project with versions and no file). */
+  openLatestOf(projectId: string, name: string): Promise<boolean> {
+    return this.use?.openLatestOf(projectId, name) ?? Promise.resolve(false);
   }
 
-  private async noteMissingSounds(project: Project): Promise<void> {
-    const notice = missingSoundsNotice(await findMissingSamples(project).catch(() => []));
-    if (notice) this.toast(notice, 'error');
-  }
-
-  /** Renders the start of a version and plays it, leaving the open project alone. */
-  async preview(record: VersionRecord): Promise<void> {
-    if (this.view.getState().previewingId === record.id) return this.stopPreview();
-    this.view.setState({ busyId: record.id });
-    try {
-      const loaded = await this.readOrExplain(record);
-      if (!loaded) return;
-      this.s.engine.stop();
-      const rendered = await renderVersionPreview(this.s, loaded.project);
-      if (!rendered) {
-        this.toast('That version has nothing to play yet (no clips and no patterns).');
-        return;
-      }
-      await this.s.engine.resume();
-      const isPlaying = await this.s.engine.previewAudio(rendered.wav.slice().buffer as ArrayBuffer);
-      this.view.setState({ previewingId: isPlaying ? record.id : null });
-      if (isPlaying) setTimeout(() => this.clearPreviewMark(record.id), rendered.seconds * 1000 + 600);
-    } catch (error) {
-      console.warn('Could not preview the version:', error);
-      this.toast('Could not play that version.', 'error');
-    } finally {
-      this.view.setState({ busyId: null });
-    }
-  }
-
-  private clearPreviewMark(id: string): void {
-    if (this.view.getState().previewingId === id) this.view.setState({ previewingId: null });
+  /** Renders the start of a version and plays it, leaving the open project alone. Asking again stops it. */
+  preview(record: VersionRecord): Promise<void> {
+    return this.use?.preview(record) ?? Promise.resolve();
   }
 
   /** Stops a version's preview. */
   stopPreview(): void {
-    this.s.engine.stopPreview();
-    this.view.setState({ previewingId: null });
+    this.use?.stopPreview();
   }
 }

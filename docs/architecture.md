@@ -767,7 +767,7 @@ from `core/snapshots/diff.ts` (`diffMixerStates`, on the tracks and effects both
 said by `diff.ts`), so "Kick: fader −14.0 dB → −1.9 dB" reads the same here and in the Mix snapshots window. Branches that are the same
 object in both projects are skipped without a look. `summarizeChanges` joins the first four phrases and counts the rest.
 
-### Restore, preview, copy (`core/ops/restore.ts`, `app/versions/service.ts`, `app/versions/preview.ts`)
+### Restore, preview, copy (`core/ops/restore.ts`, `app/versions/use.ts`, `app/versions/preview.ts`)
 
 - **Restore** is one `history.transact('Restore version “name”')`: `restoreProject(draft, base, target)` merges `target` into the draft
   key by key, so objects that did not change stay the very same objects (a small undo entry, a small engine reconcile), and the

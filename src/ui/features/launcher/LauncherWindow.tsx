@@ -124,7 +124,7 @@ export function LauncherWindow() {
     <div
       ref={rootRef}
       className={styles.root}
-      tabIndex={0}
+      tabIndex={-1}
       role="group"
       aria-label="Clip launcher"
       onKeyUp={onKeyUp}
@@ -215,7 +215,13 @@ function LauncherGrid({ launcher, trackCount, sceneCount, cursor, padPages }: La
   const { isTrackOnPage, isSceneOnPage } = padPages;
   return (
     <div className={styles.scroll}>
-      <div className={styles.grid} style={{ gridTemplateColumns: `repeat(${trackCount}, ${TRACK_COLUMN_WIDTH}) ${SCENE_COLUMN_WIDTH}` }}>
+      <div
+        className={styles.grid}
+        style={{ gridTemplateColumns: `repeat(${trackCount}, ${TRACK_COLUMN_WIDTH}) ${SCENE_COLUMN_WIDTH}` }}
+        role="group"
+        aria-label="Launcher grid: scenes down, tracks across"
+        data-roving="grid"
+      >
         {Array.from({ length: trackCount }, (_, ti) => (
           <TrackHead key={trackIds[ti] ?? `t${ti}`} track={launcher?.tracks[trackIds[ti] as LaunchTrackId]} index={ti} off={!isTrackOnPage(ti)} />
         ))}

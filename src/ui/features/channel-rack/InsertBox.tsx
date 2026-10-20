@@ -7,7 +7,7 @@ import { parseTypedNumber } from '../../controls/number-text';
 import styles from './ChannelRack.module.css';
 
 /** The number of the mixer insert a channel plays through (-- is the master): drag, scroll or type it. */
-export function InsertBox({ channelId }: { channelId: ChannelId }) {
+export function InsertBox({ channelId, channelName }: { channelId: ChannelId; channelName: string }) {
   const order = useDoc((pr) => pr.mixer.order);
   const output = useDoc((pr) => {
     const ch = pr.channels[channelId];
@@ -35,7 +35,7 @@ export function InsertBox({ channelId }: { channelId: ChannelId }) {
       {...edit}
       hint="Mixer insert this channel plays through (-- = master): drag, scroll, or click to type its number"
       editHint="Type a mixer insert number (0 or -- = master) · Enter sets it, Esc cancels"
-      label="Mixer insert"
+      label={`${channelName} mixer insert`}
     />
   );
 }

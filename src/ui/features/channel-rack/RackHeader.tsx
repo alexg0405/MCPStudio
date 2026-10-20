@@ -33,7 +33,7 @@ export function RackHeader({ patternId, stepCount }: { patternId: PatternId; ste
   };
   const noChannel = 'Select an instrument channel first (click its name)';
   return (
-    <div className={styles.header}>
+    <div className={styles.header} role="toolbar" aria-label="Pattern tools">
       <PlayPatternButton
         patternId={patternId}
         className={`${styles.headerButton} ${styles.playButton}`}
@@ -64,6 +64,7 @@ export function RackHeader({ patternId, stepCount }: { patternId: PatternId; ste
         disabled={!selectedName}
         onPointerDown={(e) => e.preventDefault()}
         onClick={(e) => menuBelow(e, stepsMenu(services, selected))}
+        aria-haspopup="menu"
         data-hint={
           selectedName
             ? `Step tools for ${selectedName}: fill every 2, 4 or 8 steps, rotate, shift, reverse, randomize or clear`
@@ -76,6 +77,7 @@ export function RackHeader({ patternId, stepCount }: { patternId: PatternId; ste
         className={`${styles.headerButton} ${selected && graphChannel === selected ? styles.headerButtonOn : ''}`}
         disabled={!selectedName}
         onPointerDown={(e) => e.preventDefault()}
+        aria-pressed={!!selected && graphChannel === selected}
         onClick={() => selected && stepTarget(services, selected) && toggleGraph(services, selected)}
         data-hint={
           selectedName

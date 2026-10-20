@@ -42,5 +42,5 @@ export function StepLight({ stepCount }: { stepCount: number }) {
       ro.disconnect();
     };
   }, [services, stepCount]);
-  return <div ref={ref} className={styles.stepLight} style={{ width: STEP_W, opacity: 0 }} />;
+  return <div ref={ref} className={styles.stepLight} style={{ width: STEP_W, opacity: 0 }} aria-hidden />;
 }

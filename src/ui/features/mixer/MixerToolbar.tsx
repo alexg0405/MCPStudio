@@ -28,9 +28,10 @@ export function MixerToolbar() {
       : 'Shift-click strips to pick tracks, then Group or Link selected: faders, pans, mutes and solos move together';
 
   return (
-    <div className={styles.toolbar}>
+    <div className={styles.toolbar} role="toolbar" aria-label="Mixer tools">
       <button
         className={`${styles.toolButton} ${isPanelOpen ? styles.toolButtonOn : ''}`}
+        aria-pressed={isPanelOpen}
         onClick={() => toggleWindow(services, 'mix-snapshots')}
         data-hint="Mixer snapshots: save the mix, recall it later (one undo step), compare two while the song plays"
       >

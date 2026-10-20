@@ -409,7 +409,7 @@ export function rovingProblems(root: Element): { groups: number; problems: strin
 
 /** The roving module's own notion of a member: a pressable control (see `ITEM_SELECTOR` in `a11y/roving.ts`). */
 function isRovingMember(el: HTMLElement): boolean {
-  if (el.matches('button, a[href], [data-roving-item]')) return true;
+  if (el.matches('button, a[href], [data-roving-item], input[type="checkbox"], input[type="radio"]')) return true;
   const role = el.getAttribute('role');
   return ['button', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'radio', 'switch', 'checkbox'].includes(role ?? '');
 }

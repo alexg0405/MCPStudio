@@ -85,10 +85,23 @@ const SlotRow = memo(function SlotRow({
         onPointerDown={(e) => e.preventDefault()}
         onClick={() => toggleEffect(services, insertId, slot.id)}
         data-hint={`${name}: ${slot.enabled ? 'on' : 'bypassed (audio passes through untouched)'}. Click to ${slot.enabled ? 'bypass' : 'turn it on'}`}
-        aria-label={slot.enabled ? `Bypass ${name}` : `Enable ${name}`}
+        aria-label={`Enable ${name}`}
         aria-pressed={slot.enabled}
       />
-      <span className={styles.slotName}>{name}</span>
+      <span
+        className={styles.slotName}
+        role="button"
+        tabIndex={0}
+        aria-label={`Open the editor of ${name}`}
+        onKeyDown={(e) => {
+          // The keyboard's double-click (the menu key or Shift+F10 opens the slot's menu).
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          openEffectEditor(services, insertId, slot.id);
+        }}
+      >
+        {name}
+      </span>
       {listens && keyName && (
         <span
           className={styles.slotKey}
@@ -136,6 +149,8 @@ const EmptySlot = memo(function EmptySlot({
       onClick={add}
       onContextMenu={add}
       data-hint="Empty effect slot. Click to add an effect"
+      aria-label={`Add an effect to slot ${index + 1}`}
+      aria-haspopup="menu"
     >
       <span className={styles.slotIndex}>{index + 1}</span>
       {/* Only the next free slot says it out loud; the rest stay quiet. */}
@@ -169,7 +184,7 @@ export function FxRack({ insertId }: { insertId: InsertId }) {
           </span>
         )}
       </div>
-      <div className={styles.slotList}>
+      <div className={styles.slotList} role="group" aria-label={`Effects of ${label}`} data-roving="grid">
         {Array.from({ length: MAX_FX_SLOTS }, (_, i) => {
           const slot = fx[i];
           return slot ? (

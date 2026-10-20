@@ -31,7 +31,14 @@ export function Mixer() {
     <div className={styles.mixer}>
       <div className={styles.mixerMain}>
         <MixerToolbar />
-        <div className={styles.strips} onContextMenu={(event) => event.preventDefault()}>
+        {/* Every button of the strips (names, mutes, sends, groups) is one grid: one Tab stop, arrows move between strips. */}
+        <div
+          className={styles.strips}
+          onContextMenu={(event) => event.preventDefault()}
+          role="group"
+          aria-label="Mixer tracks"
+          data-roving="grid"
+        >
           {order.map((id, index) => (
             <Fragment key={id}>
               <Strip

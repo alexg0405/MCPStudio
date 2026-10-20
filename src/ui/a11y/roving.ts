@@ -67,7 +67,8 @@ function modeOf(group: Element): RovingMode {
 function isUsable(el: Element): boolean {
   if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' || el.hasAttribute('hidden')) return false;
   if (el instanceof HTMLElement && el.closest('[hidden], [inert]')) return false;
-  return true;
+  // A control that takes no room (display: none, or inside something that does) cannot hold the Tab stop.
+  return el.getClientRects().length > 0;
 }
 
 /**

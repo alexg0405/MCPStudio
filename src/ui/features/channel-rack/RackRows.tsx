@@ -61,7 +61,13 @@ export function RackRows({ patternId, stepCount }: { patternId: PatternId; stepC
         void dropOnRack(services, targetOf(e), generator, files);
       }}
     >
-      <div className={styles.rows} style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}>
+      <div
+        className={styles.rows}
+        style={{ minWidth: 250 + stepX(stepCount - 1) + STEP_W }}
+        role="group"
+        aria-label="Channels and steps"
+        data-roving="grid"
+      >
         {windowed && win.padTop > 0 && <div aria-hidden style={{ height: win.padTop }} />}
         {order.slice(first, last).map((id) => (
           <Fragment key={id}>

@@ -35,6 +35,8 @@ import { showContextMenu } from '@ui/controls/ContextMenu';
 import { addInstrumentChannel } from '@app/actions/channels';
 import { addEffect, addMixerInsert } from '@app/actions/mixer';
 import { createEmptyProject } from '@core/model/defaults';
+import { buildStackedSong } from '@core/fixtures/stacked-song';
+import { fillFromPatterns } from '@app/launcher/edit';
 import {
   ariaProblems,
   describe as describeElement,
@@ -59,6 +61,9 @@ const until = async (ok: () => boolean, ms = 30_000, what = 'a condition') => {
     await new Promise((r) => setTimeout(r, 20));
   }
 };
+
+/** While working on one window: `VITE_A11Y_WINDOW=mixer npx vitest run ...` audits only the window types named (comma separated). */
+const ONLY_WINDOWS: string[] | null = import.meta.env.VITE_A11Y_WINDOW ? String(import.meta.env.VITE_A11Y_WINDOW).split(',') : null;
 
 /** More Tab stops than this inside one window means a grid or list that should be one stop is not. */
 const MAX_TAB_STOPS_PER_WINDOW = 90;
@@ -148,6 +153,17 @@ describe('Accessibility audit (shell)', () => {
     await s.engine.dispose();
     vi.restoreAllMocks();
   });
+
+  /** A full song (many channels, patterns, clips, automation, a busy mixer), so windows have real content to audit. */
+  async function loadSong(): Promise<void> {
+    s.history.markSaved(); // an earlier test's edits must not ask "keep your changes?"
+    await s.files.newProject(createEmptyProject());
+    s.history.transact('Song', (d) => {
+      buildStackedSong(d);
+    });
+    s.history.markSaved();
+    await frame();
+  }
 
   /** Opens a window type and waits until it has stopped saying Loading…; null when the type needs props. */
   async function open(type: string, props: Record<string, string> | null = null): Promise<HTMLElement | null> {
@@ -239,10 +255,12 @@ describe('Accessibility audit (shell)', () => {
   });
 
   it('every window opens; names, ARIA, structure, tab order and focus rings are right', async () => {
+    await loadSong();
     const problems: string[] = [];
     const opened: string[] = [];
     const stopsPerWindow: string[] = [];
     for (const type of windowTypes()) {
+      if (ONLY_WINDOWS && !ONLY_WINDOWS.includes(type)) continue;
       const win = await open(type);
       if (!win) continue;
       opened.push(type);
@@ -254,7 +272,7 @@ describe('Accessibility audit (shell)', () => {
       problems.push(...tab.problems);
     }
     console.info('A11y audit windows:', stopsPerWindow.join(' '));
-    expect(opened.length).toBeGreaterThan(8);
+    expect(opened.length).toBeGreaterThan(ONLY_WINDOWS ? 0 : 8);
     expect(problems).toEqual([]);
   }, 300_000);
 
@@ -269,6 +287,7 @@ describe('Accessibility audit (shell)', () => {
   });
 
   it('the channel rack step grid is a grid of steps that the arrows move through', async () => {
+    s.history.markSaved();
     await s.files.newProject(createEmptyProject());
     addInstrumentChannel(s, 'agstudio.drum-synth');
     addInstrumentChannel(s, 'agstudio.drum-synth');
@@ -277,45 +296,74 @@ describe('Accessibility audit (shell)', () => {
     await frame();
     const grid = win!.querySelector<HTMLElement>('[data-roving="grid"]');
     expect(grid, 'the step grid is a roving grid').toBeTruthy();
-    const steps = [...grid!.querySelectorAll<HTMLElement>('button')].filter(isVisible);
+    const steps = [...grid!.querySelectorAll<HTMLElement>('button[data-step]')].filter(isVisible);
     expect(steps.length).toBeGreaterThan(30);
-    const stop = steps.find((b) => b.getAttribute('tabindex') === '0')!;
+    // The whole rack (mutes, names, steps) is one Tab stop.
+    const stops = [...grid!.querySelectorAll<HTMLElement>('button')].filter((b) => b.getAttribute('tabindex') === '0');
+    expect(stops).toHaveLength(1);
+    const stop = steps[0]!;
     stop.focus();
     await userEvent.keyboard('{ArrowRight}');
-    expect(document.activeElement).toBe(steps[steps.indexOf(stop) + 1]);
+    expect(document.activeElement).toBe(steps[1]);
     await userEvent.keyboard('{ArrowDown}');
     const below = document.activeElement as HTMLElement;
     expect(grid!.contains(below)).toBe(true);
     expect(below.getBoundingClientRect().top).toBeGreaterThan(stop.getBoundingClientRect().top);
-    expect(steps[0]!.getAttribute('aria-label') ?? '').toMatch(/step 1\b/i);
-    expect(steps[0]!.getAttribute('aria-pressed')).toBe('false');
-    // Space on a keyboard-focused step toggles it, and the label follows.
+    expect(below.dataset.step).toBe('1');
+    await userEvent.keyboard('{ArrowUp}{ArrowLeft}');
+    expect(document.activeElement).toBe(stop);
+    expect(stop.getAttribute('aria-label') ?? '').toMatch(/ step 1$/i);
+    expect(stop.getAttribute('aria-pressed')).toBe('false');
+    // ArrowLeft from the first step reaches the channel's name button.
+    await userEvent.keyboard('{ArrowLeft}');
+    expect((document.activeElement as HTMLElement).className).toMatch(/name/);
+    await userEvent.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(stop);
+    // Space on a keyboard-focused step toggles it, and the pressed state follows.
     const before = s.doc.getState().project;
     await userEvent.keyboard(' ');
     await frame();
     expect(s.doc.getState().project).not.toBe(before);
-    expect(document.activeElement!.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(stop);
+    expect(stop.getAttribute('aria-pressed')).toBe('true');
     s.history.undo();
     (document.activeElement as HTMLElement).blur();
   });
 
-  it('the clip launcher grid is a roving grid with named pads', async () => {
+  it('the clip launcher grid is a roving grid with named pads that launch from the keyboard', async () => {
+    await loadSong();
+    fillFromPatterns(s);
     const win = await open('launcher');
     expect(win).toBeTruthy();
+    await frame();
     const grid = win!.querySelector<HTMLElement>('[data-roving="grid"]');
     expect(grid, 'the launcher is a roving grid').toBeTruthy();
-    const pads = [...grid!.querySelectorAll<HTMLElement>('button')].filter((b) => isVisible(b) && !b.hasAttribute('disabled'));
+    const pads = [...grid!.querySelectorAll<HTMLElement>('[data-slot]')].filter(isVisible);
     expect(pads.length).toBeGreaterThan(4);
-    for (const pad of pads) expect(pad.getAttribute('aria-label') ?? pad.textContent, 'a pad has a name').toBeTruthy();
-    const stop = pads.find((b) => b.getAttribute('tabindex') === '0')!;
-    stop.focus();
+    for (const pad of pads) expect(pad.getAttribute('aria-label'), 'a pad has a name').toMatch(/^Scene \d+, track \d+, /);
+    // The whole grid (pads, scene and stop buttons, track heads) is one Tab stop.
+    const stops = [...grid!.querySelectorAll<HTMLElement>('[tabindex="0"]')];
+    expect(stops).toHaveLength(1);
+    const first = pads[0]!;
+    first.focus();
+    expect(s.launcher.store.getState().cursor).toEqual({ track: 0, scene: 0 });
     await userEvent.keyboard('{ArrowRight}');
-    expect(document.activeElement).not.toBe(stop);
     expect(grid!.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(first);
+    // The highlight follows the focus, so the window's own keys and the arrows agree.
+    expect(s.launcher.store.getState().cursor.track).toBe(1);
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(document.activeElement).toBe(first);
+    expect(first.getAttribute('aria-label')).not.toMatch(/empty/);
+    await userEvent.keyboard('{Enter}');
+    await until(() => first.dataset.state === 'queued' || first.dataset.state === 'playing');
+    expect(first.getAttribute('aria-label')).toMatch(/, (queued|playing)$/);
+    s.launcher.stopAll(true);
     (document.activeElement as HTMLElement).blur();
   });
 
   it('every built-in instrument and effect window is named, valid and has no keyboard trap', async () => {
+    s.history.markSaved();
     await s.files.newProject(createEmptyProject());
     const problems: string[] = [];
     let opened = 0;

@@ -86,6 +86,10 @@ export class LauncherView {
       if (state !== c.state) {
         c.state = state;
         c.el.dataset.state = state;
+        // The pad's spoken name carries what it is doing: "Scene 2, track 3, Drums, playing".
+        const base = c.el.dataset.padName ?? '';
+        const doing = state === 'playing' || state === 'queued' || state === 'stopping';
+        c.el.setAttribute('aria-label', doing ? `${base}, ${state}` : base);
       }
       if (state === 'playing') c.el.style.setProperty('--p', p.toFixed(3));
       else c.el.style.removeProperty('--p');

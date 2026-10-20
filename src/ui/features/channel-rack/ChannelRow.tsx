@@ -73,15 +73,22 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
       <button
         className={`${styles.led} ${ch.muted ? '' : styles.ledOn} ${ch.solo ? styles.ledSolo : ''}`}
         onPointerDown={(e) => e.preventDefault()}
-        onClick={() =>
-          services.history.transact(ch.muted ? 'Unmute' : 'Mute', (d) => setChannelProp(d, id, 'muted', !ch.muted))
-        }
+        onClick={(e) => {
+          // A key press (detail 0) with Shift solos, as the right-click does for the mouse.
+          if (e.detail === 0 && e.shiftKey) {
+            services.history.transact('Solo', (d) => toggleSoloChannel(d, id));
+            return;
+          }
+          services.history.transact(ch.muted ? 'Unmute' : 'Mute', (d) => setChannelProp(d, id, 'muted', !ch.muted));
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           services.history.transact('Solo', (d) => toggleSoloChannel(d, id));
         }}
         data-hint={`${ch.name}: ${ch.muted ? 'muted' : 'on'}. Click to mute, right-click to solo`}
-        aria-label={ch.muted ? 'Unmute' : 'Mute'}
+        aria-label={`Mute ${ch.name}`}
+        aria-pressed={ch.muted}
+        aria-keyshortcuts="Shift+Space"
       />
       <Knob
         spec={PAN}
@@ -89,6 +96,7 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
         size={20}
         bipolar
         label="Pan"
+        accessibleName={`${ch.name} pan`}
         param={targetKey({ kind: 'channel', channelId: id, param: 'pan' })}
         {...pan}
       />
@@ -97,10 +105,11 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
         value={ch.volume}
         size={20}
         label="Volume"
+        accessibleName={`${ch.name} volume`}
         param={targetKey({ kind: 'channel', channelId: id, param: 'volume' })}
         {...volume}
       />
-      <InsertBox channelId={id} />
+      <InsertBox channelId={id} channelName={ch.name} />
       {renaming ? (
         <RenameInput channelId={id} name={ch.name} onDone={() => setRenaming(false)} />
       ) : (
@@ -111,23 +120,30 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
             e.preventDefault();
             if (e.button === 0) services.session.getState().selectChannel(id);
           }}
+          onClick={(e) => {
+            // The keyboard's way to what a click and a double-click do: Enter selects, and Enter again opens the editor.
+            if (e.detail !== 0) return;
+            if (selected) services.commands.run('plugin.openEditor', { channelId: id });
+            else services.session.getState().selectChannel(id);
+          }}
+          aria-current={selected || undefined}
           onDoubleClick={() => services.commands.run('plugin.openEditor', { channelId: id })}
           onContextMenu={menu}
           data-hint={
             missing
               ? `${ch.name}: plugin "${ch.kind === 'instrument' ? ch.plugin.pluginId : ''}" is not installed (settings are kept)`
-              : `${ch.name}${def ? ` (${def.name})` : ''}. Double-click to open, right-click for options`
+              : `${ch.name}${def ? ` (${def.name})` : ''}. Double-click to open, right-click for options (keys: Enter selects, Enter again opens, Shift+F10 for options)`
           }
         >
           {ch.name}
         </button>
       )}
       {ch.kind === 'instrument' ? (
-        <StepGrid channelId={id} rootKey={ch.rootKey} />
+        <StepGrid channelId={id} channelName={ch.name} rootKey={ch.rootKey} />
       ) : (
         <div className={styles.notesBar}>audio clip</div>
       )}
-      <span className={`${styles.select} ${selected ? styles.selectOn : ''}`} />
+      <span className={`${styles.select} ${selected ? styles.selectOn : ''}`} aria-hidden />
     </div>
   );
 });

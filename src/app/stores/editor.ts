@@ -78,6 +78,8 @@ export interface EditorState {
   stepGraph: StepGraphState;
   /** The chord lane above the playlist: shown, hidden, or (null) shown while the project has chords. View state, not undoable. */
   chordLane: boolean | null;
+  /** The lyrics lane above the playlist: shown, hidden, or (null) shown while the project has lyrics. View state, not undoable. */
+  lyricsLane: boolean | null;
 }
 
 /** The property the channel rack's graph editor edits per step. */
@@ -103,6 +105,7 @@ export interface EditorActions {
   setNoteClipboard(notes: readonly Note[] | null): void;
   setStepGraph(patch: Partial<StepGraphState>): void;
   setChordLane(show: boolean | null): void;
+  setLyricsLane(show: boolean | null): void;
 }
 
 export type EditorStore = StoreApi<EditorState & EditorActions>;
@@ -196,6 +199,10 @@ export function createEditorStore(
     chordLane: null,
     setChordLane(show) {
       if (get().chordLane !== show) set({ chordLane: show });
+    },
+    lyricsLane: null,
+    setLyricsLane(show) {
+      if (get().lyricsLane !== show) set({ lyricsLane: show });
     },
     setStepGraph(patch) {
       const cur = get().stepGraph;

@@ -4298,6 +4298,85 @@ Chords, basslines and melodies are written against one song-wide **chord track**
 - Audio detection uses the DJ chromagram of the whole clip (cost grows with its length) and is a guess for dense mixes.
 - The piano roll shows the chords of the pattern's first place in the song only.
 
+## Lyrics (`core/lyrics`, `core/ops/lyrics.ts`, `core/query/lyrics.ts`, `app/lyrics`, `ui/features/lyrics`)
+
+The words of a song live on a song-wide **lyrics lane**, placed in song time like the chord track, so they can be seen above the
+playlist, under the notes of the piano roll and the note blobs of the pitch editor, followed like karaoke while recording, and
+exported.
+
+### What is stored (`Project.lyrics`, optional, no version bump)
+- `Record<LyricId, LyricWord>`: `{ id, tick, length, text, line, continues? }`. A word is one word or one syllable (1-80 characters,
+  no spaces or edge hyphens); `continues: true` means the next word is the rest of the same word, so "beau-ti-ful" is three words, the
+  first two with `continues`. Words of one line share `line` (a new line starts where the number differs from the word before in
+  time order, so numbers only have to differ between neighbours). Absent until a word is added.
+- Words never overlap: every placement (`placeLyricWords`, `moveLyricWords`, `resizeLyricWord`) carves its span out of the words under
+  it (a word inside goes, one that starts before is cut short, one that starts inside begins where the new one ends). Retyping a word
+  with hyphens or spaces (`retextLyricWord`) splits its time equally among the syllables; `breakLyricLine` / `joinLyricLine` change
+  the `line` numbers. The track disappears with its last word. Every edit is one `history.transact`; a drag commits once.
+- `repairLyrics` (`core/schema/repair/lyrics.ts`, run by `repairProject`) drops words with a bad id, tick, length or text, cuts long text,
+  puts a bad line number or `continues` flag right, trims overlaps so each word ends where the next starts, caps the track at 4096
+  words and removes an empty track. Idempotent; tests in `core/ops/lyrics.test.ts`.
+- Queries (`core/query/lyrics.ts`, memoized on the stored record): `lyricsSorted`, `lyricLines`, `lyricsBetween`, `lyricsEnd`,
+  `patternLyrics(project, patternId)` (the words as a pattern plays them: the same first-clip mapping as the chord track,
+  `patternToSongShift`), `lyricTrackLines` (the AI's text).
+
+### Pure lyrics code (`core/lyrics`, no DOM, unit tested)
+- `parse.ts`: text to lines of syllables. A token with hyphens between letters ("beau-ti-ful"), a trailing hyphen ("beau- ti- ful"), a
+  leading one ("beau -ti -ful") or a lone dash between tokens are all the same syllables; blank lines are skipped, a word never runs on
+  past the end of its line, at most 4096 syllables and 80 characters each.
+- `slots.ts`: a slot is a place for one syllable. `slotsFromNotes`: notes that start within a 1/64 note are one slot (the highest
+  note sets the end: the melody over a chord) and a slot never runs into the next; `slotsFromSungNotes`: the notes a singer sang in an
+  audio clip (the pitch analysis, seconds on the sample) become song ticks through the clip's place and playback mode
+  (`tickAtSourceSeconds`), cut to what the clip plays.
+- `spread.ts` and `plan.ts` (`planLyrics`, the one place that decides where syllables go): **notes / clip**: one syllable per slot in
+  order across lines (a line break skips no note), slots before `from` (or after `to`) are not used, extra syllables are left out and
+  counted, extra notes stay empty; **even**: all syllables evenly between `from` and `to`, or without `to` one line per bar
+  (`bars_per_line`). Pasting replaces the span the new words cover (`placeLyricWords(..., { replaceSpan: true })`).
+- `lines.ts` (lines, `wordLabel` with its hyphen), `lrc.ts` (`lyricsToText`; `lyricsToLrc`: `[mm:ss.xx]line` per lyric line through the
+  tempo map, optionally with `<mm:ss.xx>` before every syllable (enhanced LRC); `lyricsToMidiEvents`), `karaoke.ts` (`lyricCursor`: binary
+  search for the last word that has begun and the progress through it, filling a cursor object: no allocation per frame).
+- MIDI export (`core/io/midi.ts` `writeMidi({ lyrics })`, `app/actions/midi.ts`): a track named "Lyrics" with one lyric meta event (FF 05)
+  per syllable at its tick, "/" before the first syllable of every line but the first, a space after the last syllable of a word; a
+  pattern export carries the words of the pattern's stretch in the pattern's ticks.
+
+### App and UI
+- `app/lyrics/slots.ts` gathers slots (the piano roll's selected notes, else the selected channel's notes in the current pattern, at the
+  place the pattern first plays; a channel's notes as the song plays them; the sung notes of an audio clip from its pitch edit or the
+  analysis at hand, `clipSungSlots` analyses first). `app/lyrics/actions.ts`: `pasteLyrics`, `addLyricAt`, `retypeLyric`, `moveLyrics`,
+  `resizeLyric`, `deleteLyrics`, `startLineAt`, `joinLineAt`, `clearLyricTrack`, `lyricsExport` / `saveLyricsFile` (text, LRC, LRC with
+  word times) and `copyLyrics`. Each edit is one undo step and answers `{ ok, message }` for a toast.
+- The **lyrics lane** (`ui/features/lyrics/lane-controller.ts`, `LyricsLane.tsx`) sits under the chord lane above the playlist ruler and is
+  built like it: a canvas lined up with the playlist's scroll and zoom, redrawn only when the lyrics, the view or the theme change. Click to
+  type a word (Enter adds, Tab adds and moves on one beat; "beau-ti-ful" makes three), drag across to set its length, drag a word to
+  move it, drag an edge to resize, double-click to retype, right-click for Retype, Start a new line here, Join this line, Delete, Paste
+  lyrics, Hide. Shown while the project has lyrics, or as chosen (`editor.lyricsLane`).
+- **Paste lyrics…** (`paste-dialog.ts`, `lyrics.paste`): the words, where to put them (the selected notes, the selected audio clip's sung
+  notes, evenly), the first bar and bars per line; the Lyrics window, the lane's menu, the Playlist menu, the piano roll's right-click and
+  the action search reach it.
+- The **piano roll** writes each word under the note it starts on (`piano-roll/lyric-labels.ts`: a note that starts up to a 1/32 note after
+  the word's start and, of notes starting together, the highest; one word per note), on the notes layer, redrawn when the lyrics or the
+  playlist change. The **pitch editor** does the same under the note blobs (`lyricsUnderBlobs` in `pitch-editor/model.ts`, the words
+  converted to seconds on the clip's sample through `sourceSecondsAt`).
+- The **Lyrics window** (`LyricsWindow.tsx`, `view.lyrics`, Alt+Shift+Y): the lines as big text (A- and A+, remembered), Paste lyrics, Save text,
+  Save LRC, Copy, Clear, and Follow. `karaoke-follow.ts` runs on `ui/frame-loop.ts`: it asks `lyricCursor` for the word at
+  `songPosition`, and only when the word changes toggles `sung` / `now` classes on the spans React drew once (and scrolls the current line
+  to the middle); the fill of the lit word is one CSS variable. Playing a song makes no React commits (`test/browser/lyrics.test.ts` counts
+  them with a Profiler). While there are no lyrics it explains what to do and offers Paste lyrics.
+- Commands (`lyrics.showLane`, `lyrics.paste`, `lyrics.clear`, `lyrics.exportText`, `lyrics.exportLrc`, `lyrics.copy`, `view.lyrics`), each with a
+  hint and an `argsHint`.
+
+### AI and MCP
+- Actions `set_lyrics { text, from_bar, to_bar?, align: notes | clip | even, channel?, clip?, bars_per_line? }` and `clear_lyrics`
+  (`app/ai/ops/lyrics.ts`, through `planLyrics` on a snapshot of the draft, so notes written earlier in the same answer carry words), the
+  `get_lyrics` read (lines with their bar and text, and with `words: true` every syllable's place), `lyrics` in the `open` windows, and a
+  context section "Lyrics (first bar of each line)" that lists at most 16 lines of 60 characters and a count: a few hundred characters,
+  nothing at all without lyrics. The prompt section is one sentence. A clip that has not been analysed yet answers "analyse it first".
+
+### Limits
+- One voice: words do not overlap, so two simultaneous singers (harmony lines) need separate takes or a later lane per voice.
+- LRC and the Lyrics window follow the song position, not an audio clip's own time: moving a clip does not move words with it.
+- MIDI import does not read lyric events back.
+
 ## Metering (`engine/meter`, `core/metering`, `app/metering`, `ui/features/meters`)
 
 Loudness and stereo problems are seen while mixing: the **Meters** window (View → Meters, Alt+Shift+M, a click on the master

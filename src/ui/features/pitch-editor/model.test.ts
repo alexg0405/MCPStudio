@@ -8,6 +8,8 @@ import {
   drawNotes,
   hitNote,
   keyForRow,
+  LYRIC_EARLY_MS,
+  lyricsUnderBlobs,
   notesInRect,
   pitchText,
   rowForKey,
@@ -86,5 +88,25 @@ describe('Pitch editor geometry', () => {
     expect(pitchText(59.7, name)).toBe('C5 −30 ct');
     expect(clockText(0)).toBe('0:00.0');
     expect(clockText(75.34)).toBe('1:15.3');
+  });
+});
+
+describe('lyrics under the note blobs', () => {
+  const notes = drawNotes(edit);
+
+  it('a word goes under the blob it starts in (a little early is fine), one word per blob, first come first served', () => {
+    const under = lyricsUnderBlobs(notes, [1000, 2500 - LYRIC_EARLY_MS + 5, 3300], ['beau-', 'ti-', 'ful']);
+    expect([...under.entries()]).toEqual([
+      [0, 'beau-'],
+      [1, 'ti-'],
+      [2, 'ful'],
+    ]);
+    const twice = lyricsUnderBlobs(notes, [1100, 1200], ['a', 'b']);
+    expect([...twice.entries()]).toEqual([[0, 'a']]);
+  });
+
+  it('a word before every blob, between two, or after the last is left out', () => {
+    expect(lyricsUnderBlobs(notes, [100, 2200, 4500], ['x', 'y', 'z']).size).toBe(0);
+    expect(lyricsUnderBlobs([], [1000], ['x']).size).toBe(0);
   });
 });

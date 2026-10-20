@@ -83,6 +83,27 @@ export function dragTarget(anchor: number, delta: number, opts: { free: boolean;
   return Math.round(raw);
 }
 
+/** A blob may carry a word that starts this long (ms) before it does: dragged words are rarely exact. */
+export const LYRIC_EARLY_MS = 60;
+
+/**
+ * Which word is written under which blob: `wordMs` are the starts of the lyric words (in time order) as milliseconds on the
+ * clip's sample timeline, `texts` their labels. A word goes to the blob it starts in (or just before); a blob carries one word, the
+ * first that fits; words with no blob are left out. Returns the label by blob index.
+ */
+export function lyricsUnderBlobs(notes: readonly DrawNote[], wordMs: readonly number[], texts: readonly string[]): Map<number, string> {
+  const out = new Map<number, string>();
+  wordMs.forEach((ms, i) => {
+    let best: DrawNote | null = null;
+    for (const note of notes) {
+      if (out.has(note.index) || ms < note.fromMs - LYRIC_EARLY_MS || ms >= note.toMs) continue;
+      if (!best || note.fromMs < best.fromMs) best = note;
+    }
+    if (best) out.set(best.index, texts[i] as string);
+  });
+  return out;
+}
+
 /** The pitch curve (MIDI, NaN where unvoiced) of frames, optionally moved by an edit's shift curve. */
 export function curveMidi(frames: PitchFrames, edit: PitchEdit | null): Float32Array {
   const out = new Float32Array(frames.f0.length);

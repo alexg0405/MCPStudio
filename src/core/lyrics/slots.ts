@@ -2,7 +2,9 @@
  * Slots: the places in song time that syllables are sung on, taken from notes. Notes that start together (a chord, a
  * doubled melody) are one slot, and a slot never runs into the next one (words do not overlap on the lyrics lane).
  */
-import type { Tick } from '../model/types';
+import { tickAtSourceSeconds, type PlaybackMode } from '../audio/playback';
+import type { AudioClip, Tick } from '../model/types';
+import type { TempoMap } from '../time/ppq';
 
 /** A place for one syllable. */
 export interface Slot {
@@ -15,6 +17,33 @@ export interface SlotNote {
   tick: Tick;
   length: Tick;
   key: number;
+}
+
+/** A note a singer sang, as the pitch analysis finds it: seconds into the clip's sample and a (fractional) MIDI pitch. */
+export interface SungNote {
+  from: number;
+  to: number;
+  pitch: number;
+}
+
+/**
+ * Slots from the notes sung in an audio clip: each note's seconds are turned into song ticks through the clip's place and
+ * playback mode (`tickAtSourceSeconds`), and only what the clip plays is kept (a note cut by the clip's edge is cut to it).
+ */
+export function slotsFromSungNotes(
+  clip: Pick<AudioClip, 'start' | 'length' | 'offsetSec'>,
+  mode: PlaybackMode,
+  tempo: TempoMap,
+  notes: readonly SungNote[],
+): Slot[] {
+  const clipEnd = clip.start + clip.length;
+  const inClip: SlotNote[] = [];
+  for (const note of notes) {
+    const from = Math.max(clip.start, Math.round(tickAtSourceSeconds(clip, mode, tempo, note.from)));
+    const to = Math.min(clipEnd, Math.round(tickAtSourceSeconds(clip, mode, tempo, note.to)));
+    if (to > from) inClip.push({ tick: from, length: to - from, key: Math.round(note.pitch) });
+  }
+  return slotsFromNotes(inClip);
 }
 
 /** Notes starting within this many ticks of each other count as one (a 1/64 note: a strum or a loose chord). */

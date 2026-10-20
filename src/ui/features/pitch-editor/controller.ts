@@ -12,7 +12,9 @@ import { pitchState, type ClipPitch } from '@app/pitch/state';
 import { tempoMapOf } from '@core/automation/tempo';
 import { playbackMode, sourceSecondsAt } from '@core/audio/playback';
 import { isNeutralEdit, noteIndexAt } from '@core/audio/pitch-edit';
-import type { PitchEdit, Project } from '@core/model/types';
+import { wordLabel } from '@core/lyrics/lines';
+import type { ClipId, PitchEdit, Project } from '@core/model/types';
+import { lyricsBetween } from '@core/query/lyrics';
 import type { TempoMap } from '@core/time/ppq';
 import { noteName } from '@agstudio/sdk/notes';
 import { onFrame } from '../../frame-loop';
@@ -22,7 +24,7 @@ import { applyTwoFingers } from '../../timeline/touch-view';
 import type { TwoFingerFrame } from '../../touch/recognizer';
 import { attachTouchSurface } from '../../touch/surface';
 import { clamp, Viewport } from '../../timeline/viewport';
-import { curveMidi, dragTarget, drawNotes, hitNote, notesInRect, pitchText, rowForKey, type DrawNote } from './model';
+import { curveMidi, dragTarget, drawNotes, hitNote, lyricsUnderBlobs, notesInRect, pitchText, rowForKey, type DrawNote } from './model';
 import { drawContent, drawGrid, drawKeys, drawOverlay, drawRuler, type PitchScene } from './pitch-draw';
 import { KEYS_WIDTH, RULER_HEIGHT, type Drag, type Layer, type PitchTool } from './pitch-types';
 
@@ -61,6 +63,8 @@ export class PitchEditorController {
   private project: Project | null = null;
   private edit: PitchEdit | null = null;
   private notes: DrawNote[] = [];
+  /** The lyric word under each blob, by note index (rebuilt with the notes and the lyrics). */
+  private lyrics: ReadonlyMap<number, string> = new Map();
   private sung: Float32Array | null = null;
   private corrected: Float32Array | null = null;
   /** The edit and analysis `corrected` was made from (the curve is only made again when one changes). */
@@ -171,11 +175,13 @@ export class PitchEditorController {
     if (!clip || !audioClipOf(project, clip.clipId)) {
       this.edit = null;
       this.notes = [];
+      this.lyrics = new Map();
       this.sung = null;
       this.corrected = null;
     } else {
       this.edit = editFor(project, clip);
       this.notes = drawNotes(this.edit);
+      this.lyrics = this.lyricsFor(project, clip.clipId);
       if (clipChanged || !this.sung) this.sung = curveMidi(clip.analysis, null);
       const same = this.correctedFrom?.edit === this.edit && this.correctedFrom?.analysis === clip.analysis;
       if (!same) {
@@ -253,6 +259,17 @@ export class PitchEditorController {
   private tempoMap(p: Project): TempoMap {
     if (!this.tempo || this.tempo.project !== p) this.tempo = { project: p, map: tempoMapOf(p, 'song') };
     return this.tempo.map;
+  }
+
+  /** The lyric words that start inside this clip, matched to the note blobs they are sung on (none without lyrics). */
+  private lyricsFor(p: Project, clipId: ClipId): ReadonlyMap<number, string> {
+    const found = audioClipOf(p, clipId);
+    if (!found || !p.lyrics) return new Map();
+    const mode = playbackMode(found.channel);
+    const tempo = this.tempoMap(p);
+    const words = lyricsBetween(p, found.clip.start, found.clip.start + found.clip.length);
+    const wordMs = words.map((word) => 1000 * sourceSecondsAt(found.clip, mode, tempo, word.tick));
+    return lyricsUnderBlobs(this.notes, wordMs, words.map(wordLabel));
   }
 
   /** The song position as milliseconds on the sample timeline, NaN when nothing of this clip is playing. */
@@ -549,6 +566,7 @@ export class PitchEditorController {
       hover: this.hover,
       pointer: this.pointer,
       playheadMs: this.lastPlayheadMs,
+      lyrics: this.lyrics,
     };
   }
 

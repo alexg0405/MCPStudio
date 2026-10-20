@@ -14,6 +14,7 @@ import { dj } from './dj';
 import { filters } from './filters';
 import { harmony } from './harmony';
 import { launcher } from './launcher';
+import { lyrics } from './lyrics';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
 import { meters } from './meters';
@@ -41,6 +42,7 @@ export const MODULES: readonly OpModule[] = [
   patterns,
   notes,
   harmony,
+  lyrics,
   automation,
   playlist,
   clips,

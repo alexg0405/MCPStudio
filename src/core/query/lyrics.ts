@@ -61,6 +61,18 @@ export interface PatternLyric {
 }
 
 /**
+ * How far a pattern tick is from its song tick where the pattern first plays (song tick = pattern tick + shift): the
+ * mapping the chord track and the lyrics use to line the song up with a pattern. A pattern that is not in the song plays
+ * from the start of it.
+ */
+export function patternToSongShift(project: Project, patternId: PatternId, length?: Tick): Tick {
+  const pattern = project.patterns[patternId];
+  const span = length ?? (pattern ? patternLength(pattern, project.transport.timeSig) : 0);
+  const { songStart, offset } = patternPlace(project, patternId);
+  return songStart - (span > 0 ? offset % span : 0);
+}
+
+/**
  * The lyrics as a pattern plays them: the words of the song stretch the pattern's first clip covers, in pattern ticks, cut
  * to the pattern's length (the same mapping the chord track uses). A pattern that is not in the song reads the lyrics from
  * the start of the song.
@@ -70,8 +82,8 @@ export function patternLyrics(project: Project, patternId: PatternId, length?: T
   if (!pattern || !project.lyrics) return [];
   const span = length ?? patternLength(pattern, project.transport.timeSig);
   if (span <= 0) return [];
-  const { songStart, offset } = patternPlace(project, patternId);
-  const shift = songStart - (offset % span);
+  const { songStart } = patternPlace(project, patternId);
+  const shift = patternToSongShift(project, patternId, span);
   const out: PatternLyric[] = [];
   for (const word of lyricsBetween(project, songStart, songStart + span)) {
     const from = Math.max(0, Math.max(word.tick, songStart) - shift);

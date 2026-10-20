@@ -148,6 +148,8 @@ export const Knob = memo(function Knob({
       className={`${styles.knob} ${disabled ? styles.disabled : ''}`}
       style={{ width: size, height: size }}
       role="slider"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
       aria-label={label ?? spec.label}
       aria-valuemin={0}
       aria-valuemax={1}
@@ -169,6 +171,7 @@ export const Knob = memo(function Knob({
           : undefined
       }
       onWheel={gestures.onWheel}
+      onKeyDown={gestures.onKeyDown}
     >
       <span className={styles.knobBody} style={{ inset: center - bodyRadius }} aria-hidden />
       <svg className={styles.knobSvg} width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>

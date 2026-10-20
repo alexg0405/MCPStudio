@@ -1,5 +1,6 @@
 import type { Services } from '@app/services';
 import { chordFromEvent } from '@core/commands/keymap';
+import { focusOwnsKey } from './a11y/own-keys';
 import { rovingKeyDown } from './a11y/roving';
 import { isModalOpen } from './controls/Dialog';
 import { TypingPiano } from './typing-piano';
@@ -54,6 +55,8 @@ export function installKeyboard(services: Services): () => void {
       return;
     }
     if (isKeyboardPress(e)) return;
+    // A focused slider or list uses the arrows itself (the window's Up and Down shortcuts would take them otherwise).
+    if (focusOwnsKey(e)) return;
     const inInput = isTextInput(e.target);
     // The Decks window uses the letter keys for its decks, the clip launcher the number keys for its scenes and the
     // sample browser A and F for adding and starring a sound: the typing piano stays quiet there.

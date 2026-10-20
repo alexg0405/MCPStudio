@@ -28,6 +28,7 @@ export function InsertBox({ channelId }: { channelId: ChannelId }) {
       perPixel={0.15}
       step={1}
       format={(v) => (Math.round(v) === 0 ? '--' : String(Math.round(v)))}
+      speak={(v) => (Math.round(v) === 0 ? 'Master' : `Insert ${Math.round(v)}`)}
       // “--”, “0” or “master” is the master; a number is that insert.
       parse={(t) => (/^\s*(--?|m(aster)?)\s*$/i.test(t) ? 0 : parseTypedNumber(t))}
       editText={(v) => String(Math.round(v))}

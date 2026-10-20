@@ -56,7 +56,6 @@ function Pad({ ui, n, selected, onSelect }: { ui: Props; n: number; selected: bo
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={`${styles.pad} ${selected ? styles.selected : ''} ${over ? styles.over : ''} ${lit ? styles.lit : ''}`}
       data-hint={hint}
       onPointerDown={down}
@@ -117,7 +116,6 @@ function PadEditor({ ui, n }: { ui: Props; n: number }) {
           <div className={styles.sampleButtons}>
             <button
               type="button"
-              tabIndex={-1}
               className={styles.button}
               onClick={() => samples.choose(slot)}
               data-hint={`Choose an audio file (WAV, AIFF, FLAC, MP3, OGG) for pad ${n}`}
@@ -143,7 +141,6 @@ function PadEditor({ ui, n }: { ui: Props; n: number }) {
             {sample && (
               <button
                 type="button"
-                tabIndex={-1}
                 className={styles.button}
                 onClick={() => samples.clear(slot)}
                 data-hint={`Remove the sample: pad ${n} plays its built-in sound again`}

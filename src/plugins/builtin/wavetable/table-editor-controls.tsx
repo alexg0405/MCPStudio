@@ -16,7 +16,6 @@ export function Button({
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={styles.button}
       disabled={disabled}
       onClick={onClick}

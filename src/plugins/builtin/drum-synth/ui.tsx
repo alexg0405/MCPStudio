@@ -35,7 +35,6 @@ function Pad({ ui, name, keys }: { ui: Props; name: string; keys: readonly numbe
   return (
     <button
       type="button"
-      tabIndex={-1}
       className={styles.pad}
       data-hint={hint}
       disabled={!ui.playNote}

@@ -50,7 +50,6 @@ export function FrameStrip({ frames, selected, onSelect, markers }: FrameStripPr
         <button
           key={i}
           type="button"
-          tabIndex={-1}
           role="option"
           aria-selected={i === selected}
           className={`${styles.frame} ${i === selected ? styles.frameActive : ''}`}

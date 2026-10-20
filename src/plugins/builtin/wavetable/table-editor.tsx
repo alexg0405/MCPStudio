@@ -183,7 +183,6 @@ function UsageStatus({ ui }: { ui: Props }) {
             <button
               key={n}
               type="button"
-              tabIndex={-1}
               className={styles.link}
               onClick={() => ui.setParam(oscParam(n).table, USER_TABLE)}
               data-hint={`Set oscillator ${n}'s Table to “My table” so you hear what you draw`}

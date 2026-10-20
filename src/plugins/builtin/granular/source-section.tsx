@@ -42,7 +42,6 @@ function SampleBar({ ui, name }: { ui: Props; name: string | null }) {
         {samples && (
           <button
             type="button"
-            tabIndex={-1}
             className={styles.button}
             onClick={() => samples.choose('main')}
             data-hint="Choose an audio file to cut grains from (WAV, AIFF, FLAC, MP3, OGG)"
@@ -53,7 +52,6 @@ function SampleBar({ ui, name }: { ui: Props; name: string | null }) {
         {samples && name && (
           <button
             type="button"
-            tabIndex={-1}
             className={styles.button}
             onClick={() => samples.clear('main')}
             data-hint="Remove the sample (the built-in sound plays again)"

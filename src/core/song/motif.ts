@@ -20,9 +20,31 @@ type Cell = string;
 
 /** Rhythm cells for a verse, by family: busy enough to carry words-less melody, with the syncopations the family likes. */
 const VERSE_CELLS: Record<RhythmFamily, readonly Cell[]> = {
-  plain: ['x..x..x...x.x...', 'x.....x.x.x.....', 'x...x...x..x.x..', 'x..xx..x....x...', 'x.x.x.x.x...x...', 'x..x....x..x..x.', 'x.x...x.x.x.x...'],
-  bounce: ['x.....x...x.....', 'x..x....x..x....', 'x.x...x.x.x.....', 'x....x..x.....x.', 'x..x..x...x.....', '..x...x...x...x.'],
-  laid: ['x..x..x.....x...', 'x....x..x..x....', '..x..x...x..x...', 'x..x....x.....x.', 'x.x.....x..x....', '..x...x.x...x...'],
+  plain: [
+    'x..x..x...x.x...',
+    'x.....x.x.x.....',
+    'x...x...x..x.x..',
+    'x..xx..x....x...',
+    'x.x.x.x.x...x...',
+    'x..x....x..x..x.',
+    'x.x...x.x.x.x...',
+  ],
+  bounce: [
+    'x.....x...x.....',
+    'x..x....x..x....',
+    'x.x...x.x.x.....',
+    'x....x..x.....x.',
+    'x..x..x...x.....',
+    '..x...x...x...x.',
+  ],
+  laid: [
+    'x..x..x.....x...',
+    'x....x..x..x....',
+    '..x..x...x..x...',
+    'x..x....x.....x.',
+    'x.x.....x..x....',
+    '..x...x.x...x...',
+  ],
   driving: ['x.x.xx..x.x.xx..', 'x.xx.x.x.xx.x.x.', 'x..x.xx.x..x.xx.', 'x.x..x.xx.x.x...', 'xx.x.x.xx.x.x.x.'],
 };
 
@@ -92,7 +114,13 @@ export function makeMotif(kind: MotifKind, family: RhythmFamily, random: Rng): M
   const first = random.pick(cells);
   const second = random.chance(0.45) ? first : random.pick(cells);
   const rhythm = rhythmNotes([first, second], MAX_NOTE_STEPS[family]);
-  const moves = contourFor(rhythm.filter((note) => note.step < STEPS_PER_BAR).length, first === second, rhythm.length, random, kind);
+  const moves = contourFor(
+    rhythm.filter((note) => note.step < STEPS_PER_BAR).length,
+    first === second,
+    rhythm.length,
+    random,
+    kind,
+  );
   return rhythm.map((note, index) => ({ ...note, move: moves[index] as number }));
 }
 
@@ -114,7 +142,8 @@ export const shifted = (motif: readonly MotifNote[], steps: number): MotifNote[]
   motif.map((note) => ({ ...note, step: note.step + steps }));
 
 /** The motif turned upside down: every move goes the other way (the first note's move too). */
-export const inverted = (motif: readonly MotifNote[]): MotifNote[] => motif.map((note) => ({ ...note, move: -note.move }));
+export const inverted = (motif: readonly MotifNote[]): MotifNote[] =>
+  motif.map((note) => ({ ...note, move: 0 - note.move }));
 
 /** The same motif a number of scale steps higher or lower (only its first note moves; the rest follow it). */
 export function transposed(motif: readonly MotifNote[], scaleSteps: number): MotifNote[] {
@@ -140,15 +169,17 @@ export function thinned(motif: readonly MotifNote[]): MotifNote[] {
 
 /**
  * A busier version: each note of three steps or more splits, its second half stepping to a neighbour in the scale and the
- * next note starting from where it would have (so the line returns to its old notes).
+ * next note starting from where it would have (so the line returns to its old notes). The last note is left whole.
  */
 export function ornamented(motif: readonly MotifNote[], random: Rng): MotifNote[] {
   const out: MotifNote[] = [];
   let owed = 0;
-  motif.forEach((note) => {
+  motif.forEach((note, position) => {
     const move = note.move - owed;
     owed = 0;
-    if (note.len < 3 || !random.chance(0.7)) {
+    // The last note stays whole: it is where the phrase ends.
+    const isLast = position === motif.length - 1;
+    if (isLast || note.len < 3 || !random.chance(0.7)) {
       out.push({ ...note, move });
       return;
     }

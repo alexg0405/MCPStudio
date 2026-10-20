@@ -108,7 +108,8 @@ function nearestChordTone(space: ScaleSpace, wanted: number, tones: ReadonlySet<
     }
     const distance = Math.abs(index - wanted);
     const bestDistance = Math.abs(best - wanted);
-    const isCloser = distance < bestDistance || (distance === bestDistance && Math.abs(index - lean) < Math.abs(best - lean));
+    const isCloser =
+      distance < bestDistance || (distance === bestDistance && Math.abs(index - lean) < Math.abs(best - lean));
     if (isCloser) best = index;
   });
   return best < 0 ? wanted : best;
@@ -118,7 +119,13 @@ function nearestChordTone(space: ScaleSpace, wanted: number, tones: ReadonlySet<
  * The chord tone nearest to `wanted` among those that lie in the direction of the motif's move from `previous` (a move up goes to
  * a higher chord tone, never back to the same note), so the contour survives being put on the chord. With none that way: the nearest.
  */
-function chordToneToward(space: ScaleSpace, previous: number, wanted: number, tones: ReadonlySet<number>, direction: number): number {
+function chordToneToward(
+  space: ScaleSpace,
+  previous: number,
+  wanted: number,
+  tones: ReadonlySet<number>,
+  direction: number,
+): number {
   let best = -1;
   space.keys.forEach((note, index) => {
     if (!tones.has(mod12(note)) || (index - previous) * direction <= 0) return;
@@ -128,7 +135,8 @@ function chordToneToward(space: ScaleSpace, previous: number, wanted: number, to
 }
 
 /** Whether a note must be a chord tone: it starts on a strong beat, or it is long. */
-const isStrong = (note: MotifNote): boolean => STRONG_STEPS.includes(note.step % STEPS_PER_BAR) || note.len >= LONG_NOTE_STEPS;
+const isStrong = (note: MotifNote): boolean =>
+  STRONG_STEPS.includes(note.step % STEPS_PER_BAR) || note.len >= LONG_NOTE_STEPS;
 
 /** The note's index, given a clamp that keeps an in-range leap. */
 function leapLimited(space: ScaleSpace, chosen: number, previous: number, tones: ReadonlySet<number>): number {
@@ -197,12 +205,7 @@ function settleWeakNotes(
 }
 
 /** The last note of a pattern: a chord tone (the root if it is near), held, so the phrase ends instead of stopping. */
-function settleCadence(
-  motif: MotifNote[],
-  indexes: number[],
-  chords: readonly PlacedChord[],
-  space: ScaleSpace,
-): void {
+function settleCadence(motif: MotifNote[], indexes: number[], chords: readonly PlacedChord[], space: ScaleSpace): void {
   const last = motif[motif.length - 1];
   if (!last) return;
   const chord = chordAtStep(chords, last.step);

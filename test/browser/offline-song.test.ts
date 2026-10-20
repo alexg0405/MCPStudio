@@ -58,10 +58,15 @@ describe.concurrent('offline song loudness', () => {
       });
       const start = Math.round((render.preRoll + render.latency) * SAMPLE_RATE);
       const meter = new Measurer(SAMPLE_RATE, true);
-      meter.push(render.buffer.getChannelData(0).subarray(start, start + frames), render.buffer.getChannelData(1).subarray(start, start + frames));
+      meter.push(
+        render.buffer.getChannelData(0).subarray(start, start + frames),
+        render.buffer.getChannelData(1).subarray(start, start + frames),
+      );
       const result = meter.result();
       const target = LEVEL_TARGETS[style].master;
-      console.log(`OFFLINE SONG | ${style}: ${result.lufs.toFixed(2)} LUFS (target ${target}), ${result.truePeakDb!.toFixed(2)} dBTP, ${total} bars; leveled ${leveled!.master.lufs.toFixed(2)} limiter ${leveled!.limiterInput} maximizer ${leveled!.maximizerInput} window ${window.fromTick}/${window.bars}; ${leveled!.changes.join(' · ')}`);
+      console.log(
+        `OFFLINE SONG | ${style}: ${result.lufs.toFixed(2)} LUFS (target ${target}), ${result.truePeakDb!.toFixed(2)} dBTP, ${total} bars; leveled ${leveled!.master.lufs.toFixed(2)} limiter ${leveled!.limiterInput} maximizer ${leveled!.maximizerInput} window ${window.fromTick}/${window.bars}; ${leveled!.changes.join(' · ')}`,
+      );
       expect(Math.abs(result.lufs - target)).toBeLessThanOrEqual(1);
       expect(result.truePeakDb!).toBeLessThanOrEqual(-0.9);
     },

@@ -61,7 +61,9 @@ function transitionCost(
   const topBefore = keysBefore[keysBefore.length - 1] as number;
   const topAfter = keysAfter[keysAfter.length - 1] as number;
   let cost = voiceMovement(keysBefore, keysAfter) + TOP_LEAP_COST * Math.abs(topAfter - topBefore);
-  cost += OUTER_PARALLEL_COST * outerParallels({ keys: keysBefore, chord: before.chord }, { keys: keysAfter, chord: after.chord });
+  cost +=
+    OUTER_PARALLEL_COST *
+    outerParallels({ keys: keysBefore, chord: before.chord }, { keys: keysAfter, chord: after.chord });
   const inner = Math.min(keysBefore.length, keysAfter.length);
   for (let low = 1; low < inner - 1; low++) {
     for (let high = low + 1; high < inner - 1; high++) {
@@ -163,5 +165,5 @@ export function voiceLoop(chords: readonly ChordSymbol[], center: number, spread
     if (!best || found.cost < best.cost) best = found;
   }
   const picks = (best as { picks: number[] }).picks;
-  return picks.map((pick, i) => [...(((sets[i] as Candidate[])[pick] as Candidate).keys)]);
+  return picks.map((pick, i) => [...((sets[i] as Candidate[])[pick] as Candidate).keys]);
 }

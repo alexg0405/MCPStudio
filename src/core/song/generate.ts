@@ -74,7 +74,15 @@ function recipeFor(ref: string, context: Context): PatternRecipe {
     kind: 'melody',
     loop: melody.loop,
     tracks: (chords, energy) => {
-      const lead = songMelody({ plan: melody.plan, key: request.key, chords, profile, motifs, seed: request.seed, energy });
+      const lead = songMelody({
+        plan: melody.plan,
+        key: request.key,
+        chords,
+        profile,
+        motifs,
+        seed: request.seed,
+        energy,
+      });
       const tracks: BeatTrack[] = [{ name: 'Lead', sound: profile.lead.sound, notes: lead }];
       if (melody.counter && profile.colour === 'counter') {
         tracks.push({ name: 'Counter', sound: profile.lead.sound, notes: songCounter(chords, lead, 0.62) });
@@ -107,7 +115,8 @@ function playFor(entry: ShapeSection, seen: Record<string, number>): { play: str
       return { play: [keepsDrums ? '@verse' : '@break', '@bridge-melody'], without };
     }
     default: {
-      const peak = turn === 0 ? ['@chorus', '@hook'] : turn === 1 ? ['@chorus', '@hook-2'] : ['@chorus-final', '@hook-final'];
+      const peak =
+        turn === 0 ? ['@chorus', '@hook'] : turn === 1 ? ['@chorus', '@hook-2'] : ['@chorus-final', '@hook-final'];
       return { play: peak, without };
     }
   }
@@ -128,7 +137,8 @@ function chordLineOf(sections: readonly SongSection[], loops: readonly HarmonyKi
     const loop = context.harmony.loops[loops[index] as HarmonyKind];
     for (let bar = 0; bar < entry.bars; bar++) {
       const step = (bar % PATTERN_BARS) * 16;
-      const placed = loop.find((chord) => step >= chord.step && step < chord.step + chord.length) ?? (loop[0] as PlacedChord);
+      const placed =
+        loop.find((chord) => step >= chord.step && step < chord.step + chord.length) ?? (loop[0] as PlacedChord);
       const name = formatChord(placed.chord, flats);
       names.push(name === previous ? '.' : name);
       previous = name;

@@ -4,12 +4,7 @@
  * the build on the progression turned around so it ends leaning into the chorus, the break on yet another turn of it.
  */
 import { chordPitchClasses, mod12, sameChord, type ChordSymbol } from '../harmony/chord';
-import {
-  PROGRESSIONS,
-  progressionChords,
-  withSeventh,
-  type Progression,
-} from '../harmony/progressions';
+import { PROGRESSIONS, progressionChords, withSeventh, type Progression } from '../harmony/progressions';
 import { FOUR_FLOOR, type Style } from '../beat/style';
 import { PROFILES } from './profiles';
 import { streamFor, type Rng } from './rng';
@@ -98,7 +93,8 @@ export function chooseHarmony(request: SongRequest): SongHarmony {
   const ranked = rankedProgressions(request);
   const progression = pickFrom(ranked, random);
   const others = ranked.filter((p) => p.id !== progression.id);
-  const chorusProgression = others.length > 0 && chorusChangesChords(request.style, random) ? pickFrom(others, random) : progression;
+  const chorusProgression =
+    others.length > 0 && chorusChangesChords(request.style, random) ? pickFrom(others, random) : progression;
   const sevenths = random.chance(PROFILES[request.style].seventhsShare);
   const verse = chordsPerBar(progression, request.key, sevenths) as ChordSymbol[];
   const chorus = chordsPerBar(chorusProgression, request.key, sevenths) as ChordSymbol[];

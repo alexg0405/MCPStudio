@@ -54,7 +54,8 @@ export const energyFactor = (energy: number): number => 0.8 + 0.05 * energy;
 /** Scales every velocity of a track (the kick keeps its strength: it is the pulse the rest is heard against). */
 export function scaleVelocities(track: BeatTrack, factor: number): void {
   if (track.sound === 'kick') return;
-  for (const note of track.notes) note.vel = Math.round(Math.max(0.05, Math.min(1, (note.vel ?? 0.8) * factor)) * 1000) / 1000;
+  for (const note of track.notes)
+    note.vel = Math.round(Math.max(0.05, Math.min(1, (note.vel ?? 0.8) * factor)) * 1000) / 1000;
 }
 
 /** The steps the kick hits in a set of drum tracks, once each, in order. */
@@ -78,7 +79,14 @@ export function makeBand(input: BandInput): BeatTrack[] {
   const recipe = RECIPES[kind];
   const tracks: BeatTrack[] = [];
   const drums = recipe.drums
-    ? songDrums({ style: request.style, tier: recipe.drums, seed: request.seed, label: kind, density: request.density, noHats: request.noHats })
+    ? songDrums({
+        style: request.style,
+        tier: recipe.drums,
+        seed: request.seed,
+        label: kind,
+        density: request.density,
+        noHats: request.noHats,
+      })
     : [];
   tracks.push(...drums);
   if (recipe.bass) {
@@ -95,13 +103,22 @@ export function makeBand(input: BandInput): BeatTrack[] {
       }),
     );
   }
-  for (const part of profile.chordParts) tracks.push(chordPartTrack(part, shapeFor(part, recipe), chords, recipe.chordStrength));
+  for (const part of profile.chordParts)
+    tracks.push(chordPartTrack(part, shapeFor(part, recipe), chords, recipe.chordStrength));
   if (hasArp(input, recipe)) {
     const arp = songArp(chords, profile, request.seed, recipe.arp ?? 0.7);
     tracks.push({ name: 'Arp', sound: profile.arp.sound, notes: arp });
   }
   if (kind === 'intro') {
-    const teaser = songMelody({ plan: 'teaser', key: request.key, chords, profile, motifs: input.motifs, seed: request.seed, energy });
+    const teaser = songMelody({
+      plan: 'teaser',
+      key: request.key,
+      chords,
+      profile,
+      motifs: input.motifs,
+      seed: request.seed,
+      energy,
+    });
     tracks.push({ name: 'Lead', sound: profile.lead.sound, notes: teaser });
   }
   const factor = energyFactor(energy);

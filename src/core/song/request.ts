@@ -88,13 +88,7 @@ function tempoFor(style: Style, seed: number): number {
 }
 
 /** The key's root and mode: named in the words, else a mode from the mood or the style, and a root from the seed. */
-function keyFor(
-  text: string,
-  style: Style,
-  mood: Mood | undefined,
-  named: SongKey | undefined,
-  seed: number,
-): SongKey {
+function keyFor(text: string, style: Style, mood: Mood | undefined, named: SongKey | undefined, seed: number): SongKey {
   if (named) return named;
   const random = streamFor(seed, 'key');
   const root = random.int(12);

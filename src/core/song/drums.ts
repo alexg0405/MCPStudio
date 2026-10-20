@@ -61,7 +61,9 @@ function addExtraKicks(kick: BeatTrack, others: readonly BeatTrack[], tier: Drum
   for (const bar of [1, 3]) {
     if (!random.chance(EXTRA_KICK_CHANCE[tier])) continue;
     const free = EXTRA_KICK_STEPS.filter((step) => !taken.has(step) && !taken.has(step - 1) && !taken.has(step + 1));
-    const barKicks = kick.notes.filter((note) => Math.floor(note.step / STEPS_PER_BAR) === bar).map((note) => note.step % STEPS_PER_BAR);
+    const barKicks = kick.notes
+      .filter((note) => Math.floor(note.step / STEPS_PER_BAR) === bar)
+      .map((note) => note.step % STEPS_PER_BAR);
     const choices = free.filter((step) => !barKicks.includes(step));
     if (choices.length === 0) continue;
     kick.notes.push({ step: bar * STEPS_PER_BAR + random.pick(choices), len: 1, vel: EXTRA_KICK_VELOCITY });
@@ -84,7 +86,8 @@ function hatRoll(from: number, to: number, perStep: 2 | 3): BeatNote[] {
 function addHatRolls(hat: BeatTrack, style: Style, tier: DrumTier): void {
   const perStep = GROOVE[style].roll === 24 ? 3 : 2;
   const rolls: [number, number][] = [[PATTERN_STEPS - 2, PATTERN_STEPS]];
-  if (tier === 'peak') rolls.push([STEPS_PER_BAR * 2 - 2, STEPS_PER_BAR * 2], [STEPS_PER_BAR * 2 + 6, STEPS_PER_BAR * 2 + 8]);
+  if (tier === 'peak')
+    rolls.push([STEPS_PER_BAR * 2 - 2, STEPS_PER_BAR * 2], [STEPS_PER_BAR * 2 + 6, STEPS_PER_BAR * 2 + 8]);
   for (const [from, to] of rolls) {
     hat.notes = hat.notes.filter((note) => note.step < from || note.step >= to);
     hat.notes.push(...hatRoll(from, to, perStep));
@@ -157,11 +160,13 @@ export function songDrums(options: DrumOptions): BeatTrack[] {
   const backbeat = tracks.filter((track) => BACKBEAT_SOUNDS.has(track.sound));
   if (kick && !FIXED_KICK_STYLES.has(style) && tier !== 'build') addExtraKicks(kick, backbeat, tier, random);
   if (hat && tier === 'build') hat.notes = buildHats();
-  if (hat && (tier === 'full' || tier === 'peak') && (style === 'trap' || style === 'drill')) addHatRolls(hat, style, tier);
+  if (hat && (tier === 'full' || tier === 'peak') && (style === 'trap' || style === 'drill'))
+    addHatRolls(hat, style, tier);
   if (tier === 'peak') addOpenHats(tracks);
   if (kick && PICKUP_STYLES.has(style) && tier !== 'build') {
     const pickup = PATTERN_STEPS - 2;
-    if (!kick.notes.some((note) => note.step === pickup)) kick.notes.push({ step: pickup, len: 1, vel: EXTRA_KICK_VELOCITY });
+    if (!kick.notes.some((note) => note.step === pickup))
+      kick.notes.push({ step: pickup, len: 1, vel: EXTRA_KICK_VELOCITY });
     kick.notes.sort((a, b) => a.step - b.step);
   }
   const kept = tracks.filter((track) => !(noHats && HAT_SOUNDS.has(track.sound)));

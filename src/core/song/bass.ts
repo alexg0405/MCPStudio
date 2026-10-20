@@ -22,6 +22,8 @@ const LOW_BASS = 36;
 const MAX_808 = 40;
 /** An 808 note rings at most this many steps (the sound dies away on its own, long holds only blur the next hit). */
 const MAX_808_STEPS = 12;
+/** The lowest key an 808 slides down to (C1): under it the note is felt, not heard. */
+const MIN_808_SLIDE = 24;
 /** The slide into the next note starts this many steps before the held note ends, overlapping it by half a step. */
 const SLIDE_LEAD_STEPS = 1;
 /** The bars of a pattern whose last 808 note slides into the next: drill every bar, trap every second, the rest at the loop's end. */
@@ -94,9 +96,6 @@ function eightOhEight(input: BassInput, random: Rng): BeatNote[] {
   return notes.sort((a, b) => a.step - b.step);
 }
 
-/** The lowest key an 808 slides down to (C1): under it the note is felt, not heard. */
-const MIN_808_SLIDE = 24;
-
 /**
  * Slides the last note of a bar into the chord's fifth above, its octave above or its fifth below, whichever stays between
  * C1 and E2: a second note that starts half a step before the first ends. A bar whose note has nowhere to go keeps it.
@@ -117,21 +116,43 @@ function addSlide(notes: BeatNote[], bar: number, chords: readonly PlacedChord[]
   last.len = at - last.step + 0.5;
 }
 
+/** Now and then a bass hit that is not on a downbeat plays the chord's fifth or its octave instead of the root. */
+const VARIED_HIT_CHANCE = 0.35;
+const FIFTH_SHARE_OF_VARIED = 0.6;
+
+/** The key of a bass hit on the kick: the root, or sometimes (off the downbeat) the fifth or the octave above it. */
+function keyOnKick(chord: ChordSymbol, isDownbeat: boolean, random: Rng): number {
+  const root = rootKeyOf(chord, LOW_BASS);
+  if (isDownbeat || !random.chance(VARIED_HIT_CHANCE)) return root;
+  if (hasPerfectFifth(chord) && random.chance(FIFTH_SHARE_OF_VARIED)) return fifthKeyOf(chord, LOW_BASS, FIFTH_CEILING);
+  return root + 12 <= OCTAVE_CEILING ? root + 12 : root;
+}
+
+/** The longest a bass hit on the kick lasts (steps): it stops short of the next hit so each one is heard. */
+const MAX_KICK_BASS_STEPS = 6;
+
 /** A bass that plays on the kick hits: the root, now and then the fifth or octave on the hits between the downbeats. */
 function subOnKick(input: BassInput, random: Rng): BeatNote[] {
   const hits = hitsFor(input.chords, input.kickSteps);
   return hits.map((step, index) => {
     const end = Math.min(hits[index + 1] ?? PATTERN_STEPS, chordEndAt(input.chords, step));
-    const chord = chordAtStep(input.chords, step);
     const isDownbeat = step % STEPS_PER_BAR === 0;
-    let key = rootKeyOf(chord, LOW_BASS);
-    if (!isDownbeat && random.chance(0.35)) key = hasPerfectFifth(chord) && random.chance(0.6) ? fifthKeyOf(chord, LOW_BASS, FIFTH_CEILING) : key + 12 <= OCTAVE_CEILING ? key + 12 : key;
-    return { step, len: Math.max(0.5, Math.min(6, end - step - 0.25)), key, vel: isDownbeat ? DOWNBEAT_VELOCITY : OFFBEAT_VELOCITY };
+    return {
+      step,
+      len: Math.max(0.5, Math.min(MAX_KICK_BASS_STEPS, end - step - 0.25)),
+      key: keyOnKick(chordAtStep(input.chords, step), isDownbeat, random),
+      vel: isDownbeat ? DOWNBEAT_VELOCITY : OFFBEAT_VELOCITY,
+    };
   });
 }
 
 /** Notes from the harmony module's line writer, whose times are already steps (a bar is 16, a beat 4). */
-function fromHarmonyLine(chords: readonly PlacedChord[], style: 'walking' | 'root-fifth', seed: number, low: number): BeatNote[] {
+function fromHarmonyLine(
+  chords: readonly PlacedChord[],
+  style: 'walking' | 'root-fifth',
+  seed: number,
+  low: number,
+): BeatNote[] {
   const line = makeBassline(
     chords.map((entry) => ({ tick: entry.step, length: entry.length, chord: entry.chord })),
     { style, bar: STEPS_PER_BAR, beat: 4, end: PATTERN_STEPS, low, seed },
@@ -149,7 +170,12 @@ function rolling(input: BassInput): BeatNote[] {
       const step = bar * STEPS_PER_BAR + inBar;
       const root = rootKeyOf(chordAtStep(input.chords, step), LOW_BASS);
       const isOctave = inBar % 4 === 3;
-      notes.push({ step, len: 0.8, key: isOctave && root + 12 <= OCTAVE_CEILING ? root + 12 : root, vel: isOctave ? OFFBEAT_VELOCITY : 0.75 });
+      notes.push({
+        step,
+        len: 0.8,
+        key: isOctave && root + 12 <= OCTAVE_CEILING ? root + 12 : root,
+        vel: isOctave ? OFFBEAT_VELOCITY : 0.75,
+      });
     }
   }
   return notes;
@@ -169,9 +195,30 @@ function offbeat(input: BassInput): BeatNote[] {
 
 /** Tech house grooves: [step, length, semitones above the root] per bar. */
 const GROOVES: readonly (readonly (readonly [number, number, number])[])[] = [
-  [[2, 1, 0], [3, 0.75, 0], [6, 1.5, 0], [10, 1, 0], [11, 0.75, 12], [14, 1, 7]],
-  [[1, 1, 0], [2, 1, 0], [6, 1.5, 0], [9, 1, 0], [10, 0.75, 12], [13, 1, 7], [14, 1, 0]],
-  [[3, 1, 0], [6, 1, 7], [7, 0.75, 0], [10, 1.5, 0], [14, 1, 12]],
+  [
+    [2, 1, 0],
+    [3, 0.75, 0],
+    [6, 1.5, 0],
+    [10, 1, 0],
+    [11, 0.75, 12],
+    [14, 1, 7],
+  ],
+  [
+    [1, 1, 0],
+    [2, 1, 0],
+    [6, 1.5, 0],
+    [9, 1, 0],
+    [10, 0.75, 12],
+    [13, 1, 7],
+    [14, 1, 0],
+  ],
+  [
+    [3, 1, 0],
+    [6, 1, 7],
+    [7, 0.75, 0],
+    [10, 1.5, 0],
+    [14, 1, 12],
+  ],
 ];
 
 /** A syncopated groove of the same few hits every bar, a different one for each seed. */
@@ -210,15 +257,31 @@ const sameRoot = (a: ChordSymbol, b: ChordSymbol): boolean => mod12(a.root) === 
 function dubstep(input: BassInput): BeatTrack[] {
   const sub: BeatNote[] = [];
   const growl: BeatNote[] = [];
-  const evenBar: readonly (readonly [number, number, number])[] = [[0, 6, 0], [6, 1.5, 0], [8, 3, 0], [12, 2, 7]];
-  const oddBar: readonly (readonly [number, number, number])[] = [[0, 4, 0], [4, 2, 0], [8, 2, 0], [10, 2, 7], [12, 4, 12]];
+  const evenBar: readonly (readonly [number, number, number])[] = [
+    [0, 6, 0],
+    [6, 1.5, 0],
+    [8, 3, 0],
+    [12, 2, 7],
+  ];
+  const oddBar: readonly (readonly [number, number, number])[] = [
+    [0, 4, 0],
+    [4, 2, 0],
+    [8, 2, 0],
+    [10, 2, 7],
+    [12, 4, 12],
+  ];
   for (let bar = 0; bar < PATTERN_STEPS / STEPS_PER_BAR; bar++) {
     const start = bar * STEPS_PER_BAR;
     const root808 = rootKeyOf(chordAtStep(input.chords, start), LOW_808);
     sub.push({ step: start, len: 8, key: root808, vel: 0.9 }, { step: start + 8, len: 8, key: root808, vel: 0.9 });
     const rootBass = rootKeyOf(chordAtStep(input.chords, start), LOW_BASS);
     for (const [inBar, len, up] of bar % 2 === 0 ? evenBar : oddBar) {
-      growl.push({ step: start + inBar, len, key: rootBass + up <= OCTAVE_CEILING ? rootBass + up : rootBass, vel: 0.9 });
+      growl.push({
+        step: start + inBar,
+        len,
+        key: rootBass + up <= OCTAVE_CEILING ? rootBass + up : rootBass,
+        vel: 0.9,
+      });
     }
   }
   return [
@@ -232,7 +295,12 @@ function reese(input: BassInput): BeatNote[] {
   const hits = hitsFor(input.chords, input.kickSteps);
   return hits.map((step, index) => {
     const end = Math.min(hits[index + 1] ?? PATTERN_STEPS, chordEndAt(input.chords, step));
-    return { step, len: Math.max(1, end - step - 0.5), key: rootKeyOf(chordAtStep(input.chords, step), LOW_BASS), vel: 0.85 };
+    return {
+      step,
+      len: Math.max(1, end - step - 0.5),
+      key: rootKeyOf(chordAtStep(input.chords, step), LOW_BASS),
+      vel: 0.85,
+    };
   });
 }
 

@@ -8,7 +8,13 @@ import { SONG_SHAPES, type ShapeSection } from '../arrange/shapes';
 import type { SectionRole } from '../arrange/sections';
 import type { Style } from '../beat/style';
 
-const section = (name: string, role: SectionRole, bars: number, energy: number, without?: readonly string[]): ShapeSection => ({
+const section = (
+  name: string,
+  role: SectionRole,
+  bars: number,
+  energy: number,
+  without?: readonly string[],
+): ShapeSection => ({
   name,
   role,
   bars,
@@ -107,14 +113,27 @@ function dropOrder(entry: ShapeSection, index: number, sections: readonly ShapeS
 const HALVABLE_BARS = 16;
 
 /** Which sections give up bars first: the ends and the quiet middle before the builds, and the peaks last (lower goes first). */
-const HALVE_ORDER: Partial<Record<SectionRole, number>> = { intro: 0, outro: 0, break: 1, bridge: 1, verse: 2, pre: 3, build: 3 };
+const HALVE_ORDER: Partial<Record<SectionRole, number>> = {
+  intro: 0,
+  outro: 0,
+  break: 1,
+  bridge: 1,
+  verse: 2,
+  pre: 3,
+  build: 3,
+};
 
 /** The sections with the first of the most expendable long ones cut in half; null when none is long enough. */
 function halveOne(sections: readonly ShapeSection[]): ShapeSection[] | null {
   const candidates = sections
     .map((entry, index) => ({ entry, index }))
     .filter(({ entry }) => entry.bars >= HALVABLE_BARS)
-    .sort((a, b) => (HALVE_ORDER[a.entry.role] ?? 4) - (HALVE_ORDER[b.entry.role] ?? 4) || b.entry.bars - a.entry.bars || a.index - b.index);
+    .sort(
+      (a, b) =>
+        (HALVE_ORDER[a.entry.role] ?? 4) - (HALVE_ORDER[b.entry.role] ?? 4) ||
+        b.entry.bars - a.entry.bars ||
+        a.index - b.index,
+    );
   const chosen = candidates[0];
   if (!chosen) return null;
   return sections.map((entry, index) => (index === chosen.index ? { ...entry, bars: entry.bars / 2 } : entry));
@@ -127,16 +146,23 @@ function removeAt(sections: readonly ShapeSection[], index: number): ShapeSectio
 
 /** The sections that carry a song, which a longer song repeats: its last peak with the build and the verse before it. */
 function growBy(sections: readonly ShapeSection[]): ShapeSection[] {
-  const lastPeak = [...sections].reverse().find((entry) => entry.role === 'drop' || entry.role === 'hook' || entry.role === 'chorus');
+  const lastPeak = [...sections]
+    .reverse()
+    .find((entry) => entry.role === 'drop' || entry.role === 'hook' || entry.role === 'chorus');
   if (!lastPeak) return [...sections];
   const insertAt = sections.length - 1;
   const copies = sections.filter((entry) => entry.role === lastPeak.role).length + 1;
   const base = lastPeak.name.replace(/ \d+$/, '');
   const extra = [section(`${base} ${copies}`, lastPeak.role, lastPeak.bars, lastPeak.energy)];
   const lead = sections.find((entry) => entry.role === 'break' || entry.role === 'bridge' || entry.role === 'verse');
-  const turn = lead ? [section(`${lead.name.replace(/ \d+$/, '')} ${copies}`, lead.role, lead.bars, lead.energy, lead.without)] : [];
+  const turn = lead
+    ? [section(`${lead.name.replace(/ \d+$/, '')} ${copies}`, lead.role, lead.bars, lead.energy, lead.without)]
+    : [];
   return [...sections.slice(0, insertAt), ...turn, ...extra, ...sections.slice(insertAt)];
 }
+
+/** The most sections an arrange action takes (`MAX_SECTIONS` in the arrange op). */
+const MAX_SECTIONS = 24;
 
 /** How far from the asked length a song may end, in bars: sections come in fours and eights. */
 const LENGTH_SLACK_BARS = 6;
@@ -154,14 +180,16 @@ export function sectionsFor(style: Style, bars: number | undefined): ShapeSectio
       sections = halved;
       continue;
     }
-    const order = sections.map((entry, index) => ({ index, order: dropOrder(entry, index, sections) })).filter((entry) => entry.order !== null);
+    const order = sections
+      .map((entry, index) => ({ index, order: dropOrder(entry, index, sections) }))
+      .filter((entry) => entry.order !== null);
     const next = order.sort((a, b) => (a.order as number) - (b.order as number))[0];
     if (!next) break;
     sections = removeAt(sections, next.index);
   }
   while (totalBars(sections) < bars - LENGTH_SLACK_BARS) {
     const grown = growBy(sections);
-    if (grown.length === sections.length) break;
+    if (grown.length === sections.length || grown.length > MAX_SECTIONS) break;
     sections = grown;
   }
   return sections;

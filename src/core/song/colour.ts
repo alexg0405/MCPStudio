@@ -10,9 +10,9 @@ import type { StyleProfile } from './profiles';
 import { streamFor } from './rng';
 import type { PlacedChord } from './types';
 
-/** The arpeggio's register (MIDI keys): above the pads, a little under the lead. */
-const ARP_LOW = 62;
-const ARP_HIGH = 79;
+/** The arpeggio's register (MIDI keys): above the pads and under the lead, so a hook is heard over it. */
+const ARP_LOW = 58;
+const ARP_HIGH = 74;
 /** Orders the arpeggio visits the chord's tones in (indexes into its tones, going up the keys). */
 const ARP_ORDERS: readonly (readonly number[])[] = [
   [0, 1, 2, 3, 2, 1],
@@ -30,7 +30,12 @@ function tonesBetween(chord: ChordSymbol, low: number, high: number): number[] {
 }
 
 /** An arpeggio of the chord under it, a note every `profile.arp.every` steps, the first of each beat accented. */
-export function songArp(chords: readonly PlacedChord[], profile: StyleProfile, seed: number, strength: number): BeatNote[] {
+export function songArp(
+  chords: readonly PlacedChord[],
+  profile: StyleProfile,
+  seed: number,
+  strength: number,
+): BeatNote[] {
   const { every } = profile.arp;
   const order = streamFor(seed, 'arp').pick(ARP_ORDERS);
   const notes: BeatNote[] = [];
@@ -99,7 +104,12 @@ export function songCounter(chords: readonly PlacedChord[], lead: readonly BeatN
     if (sounding?.key === undefined) continue;
     const key = counterKey(chordAtStep(chords, step), sounding.key, previousKey);
     if (key === null) continue;
-    notes.push({ step, len: COUNTER_NOTE_STEPS, key, vel: Math.round(strength * 1000) / 1000 });
+    notes.push({
+      step,
+      len: Math.min(COUNTER_NOTE_STEPS, PATTERN_STEPS - step),
+      key,
+      vel: Math.round(strength * 1000) / 1000,
+    });
     previousKey = key;
     lastStart = step;
   }

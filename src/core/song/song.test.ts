@@ -32,8 +32,11 @@ const ALL: { style: Style; seed: number; plan: SongPlan }[] = STYLES.flatMap((st
 );
 
 const stepsOf = (pattern: SongPattern | undefined, sound: string): number[] =>
-  (pattern?.spec.tracks ?? []).filter((track) => track.sound === sound).flatMap((track) => track.notes.map((note) => note.step));
-const patternOf = (plan: SongPlan, ref: string): SongPattern | undefined => plan.patterns.find((entry) => entry.ref === ref);
+  (pattern?.spec.tracks ?? [])
+    .filter((track) => track.sound === sound)
+    .flatMap((track) => track.notes.map((note) => note.step));
+const patternOf = (plan: SongPlan, ref: string): SongPattern | undefined =>
+  plan.patterns.find((entry) => entry.ref === ref);
 
 describe('reading a request', () => {
   it('takes the style, tempo and key from the words and fills the rest from the seed', () => {
@@ -56,15 +59,29 @@ describe('reading a request', () => {
     expect(readSongRequest('a trap song, 48 bars', { seed: 1 }).bars).toBe(48);
     const twoMinutes = readSongRequest('a house song about 2 minutes at 120 bpm', { seed: 1 }).bars;
     expect(twoMinutes).toBe(60);
-    expect(readSongRequest('a short pop song at 120', { seed: 1 }).bars).toBeLessThan(readSongRequest('a long pop song at 120', { seed: 1 }).bars!);
+    expect(readSongRequest('a short pop song at 120', { seed: 1 }).bars).toBeLessThan(
+      readSongRequest('a long pop song at 120', { seed: 1 }).bars!,
+    );
     expect(readSongRequest('a trap song', { seed: 1 }).bars).toBeUndefined();
   });
 
   it('knows a request for a song from a request for a beat', () => {
-    for (const text of ['a sad trap song at 140', 'make a full song', 'house with a verse and a chorus', 'a 64 bars track', 'about 3 minutes of lofi']) {
+    for (const text of [
+      'a sad trap song at 140',
+      'make a full song',
+      'house with a verse and a chorus',
+      'a 64 bars track',
+      'about 3 minutes of lofi',
+    ]) {
       expect(isSongRequest(text), text).toBe(true);
     }
-    for (const text of ['trap beat with 808s', 'busier hats', 'Arrange it: 4 bars, then 8 bars with the hats', 'big room festival drop with a mono lead', 'boom bap at 90 with swing']) {
+    for (const text of [
+      'trap beat with 808s',
+      'busier hats',
+      'Arrange it: 4 bars, then 8 bars with the hats',
+      'big room festival drop with a mono lead',
+      'boom bap at 90 with swing',
+    ]) {
       expect(isSongRequest(text), text).toBe(false);
     }
   });
@@ -133,7 +150,9 @@ describe('every style, several seeds', () => {
         const checked = validateBeatSpec({ ...pattern.spec, message: 'x' }, { style });
         if ('error' in checked) throw new Error(`${style} ${seed} ${pattern.ref}: ${checked.error}`);
         expect(checked.warnings, `${style} ${seed} ${pattern.ref}`).toEqual([]);
-        expect(checked.spec.tracks.map((track) => track.notes.length)).toEqual(pattern.spec.tracks.map((track) => track.notes.length));
+        expect(checked.spec.tracks.map((track) => track.notes.length)).toEqual(
+          pattern.spec.tracks.map((track) => track.notes.length),
+        );
       }
     }
   });
@@ -146,9 +165,35 @@ describe('every style, several seeds', () => {
             const where = `${style} ${seed} ${pattern.ref} ${track.name}`;
             expect(note.step, where).toBeGreaterThanOrEqual(0);
             expect(note.step, where).toBeLessThan(64);
+            expect(note.step + (note.len ?? 1), where).toBeLessThanOrEqual(64 + 1e-9);
             expect(note.vel ?? 0.8, where).toBeGreaterThan(0);
             expect(note.vel ?? 0.8, where).toBeLessThanOrEqual(1);
-            if (!['kick', 'snare', 'clap', 'hat', 'open-hat', 'rim'].includes(track.sound)) expect(note.key, where).toBeTypeOf('number');
+            if (!['kick', 'snare', 'clap', 'hat', 'open-hat', 'rim'].includes(track.sound))
+              expect(note.key, where).toBeTypeOf('number');
+          }
+        }
+      }
+    }
+  });
+
+  it('never plays the same pitch twice at once on one track (a note ends before the same note starts again)', () => {
+    for (const { style, seed, plan } of ALL) {
+      for (const pattern of plan.patterns) {
+        for (const track of pattern.spec.tracks.filter(
+          (entry) => entry.sound !== 'kick' && !['snare', 'clap', 'hat', 'open-hat', 'rim'].includes(entry.sound),
+        )) {
+          const byKey = new Map<number, { step: number; len: number }[]>();
+          for (const note of track.notes)
+            byKey.set(note.key ?? 0, [...(byKey.get(note.key ?? 0) ?? []), { step: note.step, len: note.len ?? 1 }]);
+          for (const [key, notes] of byKey) {
+            const sorted = notes.sort((a, b) => a.step - b.step);
+            sorted.slice(1).forEach((note, index) => {
+              const before = sorted[index] as { step: number; len: number };
+              expect(
+                before.step + before.len,
+                `${style} ${seed} ${pattern.ref} ${track.name} key ${key} at ${note.step}`,
+              ).toBeLessThanOrEqual(note.step + 1e-9);
+            });
           }
         }
       }
@@ -217,16 +262,24 @@ describe('seeds', () => {
     const request = (seed: number) => generateSong(readSongRequest('a sad trap song', { seed }));
     const plans = Array.from({ length: 16 }, (_, index) => request(index + 1));
     expect(new Set(plans.map((plan) => plan.progression.id)).size).toBeGreaterThanOrEqual(4);
-    const hooks = plans.map((plan) => JSON.stringify(patternOf(plan, '@hook')?.spec.tracks[0]?.notes.map((note) => [note.step, note.key])));
+    const hooks = plans.map((plan) =>
+      JSON.stringify(patternOf(plan, '@hook')?.spec.tracks[0]?.notes.map((note) => [note.step, note.key])),
+    );
     expect(new Set(hooks).size).toBeGreaterThanOrEqual(14);
-    const rhythms = plans.map((plan) => JSON.stringify(patternOf(plan, '@hook')?.spec.tracks[0]?.notes.map((note) => note.step)));
+    const rhythms = plans.map((plan) =>
+      JSON.stringify(patternOf(plan, '@hook')?.spec.tracks[0]?.notes.map((note) => note.step)),
+    );
     expect(new Set(rhythms).size).toBeGreaterThanOrEqual(6);
     expect(new Set(plans.map((plan) => plan.bpm)).size).toBeGreaterThanOrEqual(4);
     expect(new Set(plans.map((plan) => `${plan.key.root}${plan.key.minor}`)).size).toBeGreaterThanOrEqual(5);
   });
 
   it('changes the groove with the seed too: the extra kick hits and the bass', () => {
-    const kicks = new Set(SEEDS.concat([7, 8, 9, 10]).map((seed) => JSON.stringify(stepsOf(patternOf(songOf('boombap', seed), '@chorus'), 'kick'))));
+    const kicks = new Set(
+      SEEDS.concat([7, 8, 9, 10]).map((seed) =>
+        JSON.stringify(stepsOf(patternOf(songOf('boombap', seed), '@chorus'), 'kick')),
+      ),
+    );
     expect(kicks.size).toBeGreaterThanOrEqual(3);
   });
 });
@@ -234,12 +287,21 @@ describe('seeds', () => {
 describe('shapes of songs', () => {
   it('uses the dance styles’ own usual songs', () => {
     const plan = songOf('bigroom', 1);
-    expect(plan.sections.map((entry) => entry.name)).toEqual(['Intro', 'Build', 'Drop', 'Breakdown', 'Build 2', 'Drop 2', 'Outro']);
+    expect(plan.sections.map((entry) => entry.name)).toEqual([
+      'Intro',
+      'Build',
+      'Drop',
+      'Breakdown',
+      'Build 2',
+      'Drop 2',
+      'Outro',
+    ]);
     expect(plan.sections.find((entry) => entry.name === 'Drop')?.energy).toBe(5);
   });
 
   it('shortens or lengthens a song toward the length asked for', () => {
-    const bars = (prompt: string) => generateSongFromPrompt(prompt, { seed: 3 }).sections.reduce((sum, entry) => sum + entry.bars, 0);
+    const bars = (prompt: string) =>
+      generateSongFromPrompt(prompt, { seed: 3 }).sections.reduce((sum, entry) => sum + entry.bars, 0);
     expect(bars('a trap song')).toBe(60);
     expect(bars('a trap song, 36 bars')).toBeLessThanOrEqual(36 + 6);
     expect(bars('a trap song, 36 bars')).toBeGreaterThanOrEqual(24);
@@ -252,12 +314,25 @@ describe('shapes of songs', () => {
     expect(short.at(-1)?.role).toBe('outro');
   });
 
+  it('keeps the longest song within what one arrange action takes (24 sections, 512 bars) in every style', () => {
+    for (const style of STYLES) {
+      const plan = generateSong(readSongRequest(`a ${style} song, 160 bars`, { seed: 2 }));
+      const bars = plan.sections.reduce((sum, entry) => sum + entry.bars, 0);
+      expect(plan.sections.length, style).toBeLessThanOrEqual(24);
+      expect(bars, style).toBeLessThanOrEqual(512);
+      expect(bars, style).toBeGreaterThanOrEqual(100);
+    }
+  });
+
   it('plays a different melody in each statement of the verse and the hook, and the biggest chorus last', () => {
     const plan = songOf('pop', 2);
     const plays = plan.sections.map((entry) => entry.play.join('+'));
     expect(plays.filter((play) => play.includes('@hook')).length).toBeGreaterThanOrEqual(3);
     expect(new Set(plays.filter((play) => play.includes('@verse-melody'))).size).toBe(2);
-    expect(plan.sections.filter((entry) => entry.role === 'chorus').at(-1)?.play).toEqual(['@chorus-final', '@hook-final']);
+    expect(plan.sections.filter((entry) => entry.role === 'chorus').at(-1)?.play).toEqual([
+      '@chorus-final',
+      '@hook-final',
+    ]);
   });
 });
 
@@ -279,11 +354,17 @@ describe('dynamics and colour', () => {
 
   it('adds an arpeggio to the loud sections of the dance styles and a counter-melody to the second hook of the others', () => {
     for (const style of ['trance', 'house', 'trap'] as const) {
-      expect(patternOf(songOf(style, 1), '@chorus')?.spec.tracks.map((track) => track.name), style).toContain('Arp');
+      expect(
+        patternOf(songOf(style, 1), '@chorus')?.spec.tracks.map((track) => track.name),
+        style,
+      ).toContain('Arp');
     }
     for (const style of ['pop', 'lofi', 'afro'] as const) {
       const hook2 = patternOf(songOf(style, 1), '@hook-2');
-      expect(hook2?.spec.tracks.map((track) => track.name), style).toContain('Counter');
+      expect(
+        hook2?.spec.tracks.map((track) => track.name),
+        style,
+      ).toContain('Counter');
     }
   });
 
@@ -303,7 +384,8 @@ describe('dynamics and colour', () => {
 
 describe('the bass of each style', () => {
   const bassOf = (style: Style, ref = '@chorus') =>
-    patternOf(songOf(style, 4), ref)?.spec.tracks.filter((track) => track.sound === 'bass' || track.sound === '808') ?? [];
+    patternOf(songOf(style, 4), ref)?.spec.tracks.filter((track) => track.sound === 'bass' || track.sound === '808') ??
+    [];
 
   it('follows the kick with an 808 that slides in trap and drill', () => {
     for (const style of ['trap', 'drill'] as const) {
@@ -313,7 +395,9 @@ describe('the bass of each style', () => {
       const kick = new Set(stepsOf(pattern, 'kick'));
       const starts = (bass?.notes ?? []).map((note) => note.step);
       expect([...kick].filter((step) => starts.includes(step)).length / kick.size, style).toBeGreaterThanOrEqual(0.8);
-      const overlaps = (bass?.notes ?? []).some((note, index, notes) => index > 0 && note.step < (notes[index - 1]?.step ?? 0) + (notes[index - 1]?.len ?? 0));
+      const overlaps = (bass?.notes ?? []).some(
+        (note, index, notes) => index > 0 && note.step < (notes[index - 1]?.step ?? 0) + (notes[index - 1]?.len ?? 0),
+      );
       expect(overlaps, `${style} slides`).toBe(true);
     }
   });
@@ -363,7 +447,8 @@ describe('voicing', () => {
         const before = voicings[index] as number[];
         const after = voicings[(index + 1) % 4] as number[];
         changes++;
-        if (isParallelPerfect(Math.min(...before), Math.max(...before), Math.min(...after), Math.max(...after))) parallels++;
+        if (isParallelPerfect(Math.min(...before), Math.max(...before), Math.min(...after), Math.max(...after)))
+          parallels++;
       }
       expect(request.seed).toBe(root);
     }

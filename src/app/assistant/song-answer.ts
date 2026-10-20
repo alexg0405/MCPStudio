@@ -14,7 +14,13 @@ const keyText = (plan: SongPlan): string => `${pitchName(plan.key.root, false)} 
 export function songToAnswer(plan: SongPlan): AiAnswer {
   const actions: AiAction[] = [
     { op: 'song', bpm: plan.bpm, swing: plan.swing, key: keyText(plan) },
-    { op: 'chords', action: 'set', text: plan.chordLine.text, bars_per_chord: plan.chordLine.barsPerChord, from_bar: 1 },
+    {
+      op: 'chords',
+      action: 'set',
+      text: plan.chordLine.text,
+      bars_per_chord: plan.chordLine.barsPerChord,
+      from_bar: 1,
+    },
   ];
   for (const pattern of plan.patterns) {
     const { spec } = pattern;

@@ -27,7 +27,8 @@ const STRONG_STEPS = [0, 8];
 const STRONG_LENGTH_STEPS = 4;
 
 /** Whether a note is strong: it starts on the first or third beat, or it lasts a beat or more. */
-export const isStrongNote = (note: BeatNote): boolean => STRONG_STEPS.includes(note.step % 16) || (note.len ?? 1) >= STRONG_LENGTH_STEPS;
+export const isStrongNote = (note: BeatNote): boolean =>
+  STRONG_STEPS.includes(note.step % 16) || (note.len ?? 1) >= STRONG_LENGTH_STEPS;
 
 /** The share of the lead's strong notes that are tones of the chord under them. */
 export function leadChordToneRatio(plan: SongPlan): Ratio {
@@ -47,7 +48,9 @@ export function leadChordToneRatio(plan: SongPlan): Ratio {
 
 /** The notes of the bass tracks of a pattern. */
 const bassNotes = (pattern: SongPattern): BeatNote[] =>
-  pattern.spec.tracks.filter((track) => track.sound === 'bass' || track.sound === '808').flatMap((track) => track.notes);
+  pattern.spec.tracks
+    .filter((track) => track.sound === 'bass' || track.sound === '808')
+    .flatMap((track) => track.notes);
 
 /** The share of the bass notes that start with a chord (on its first step) that play its root (or slash bass). */
 export function bassRootRatio(plan: SongPlan): Ratio {
@@ -76,7 +79,9 @@ export function bassChordToneRatio(plan: SongPlan): Ratio {
     for (const note of bassNotes(pattern)) {
       const key = note.key ?? 0;
       const chord = chordAtStep(pattern.chords, note.step);
-      const placedIndex = pattern.chords.findIndex((entry) => note.step >= entry.step && note.step < entry.step + entry.length);
+      const placedIndex = pattern.chords.findIndex(
+        (entry) => note.step >= entry.step && note.step < entry.step + entry.length,
+      );
       const placed = pattern.chords[placedIndex];
       const next = pattern.chords[(placedIndex + 1) % pattern.chords.length];
       total++;
@@ -97,8 +102,12 @@ export function bassChordToneRatio(plan: SongPlan): Ratio {
 function voicingsOf(track: BeatTrack): { step: number; keys: number[] }[] {
   const byStep = new Map<number, number[]>();
   for (const note of track.notes) byStep.set(note.step, [...(byStep.get(note.step) ?? []), note.key ?? 0]);
-  const voicings = [...byStep.entries()].sort((a, b) => a[0] - b[0]).map(([step, keys]) => ({ step, keys: keys.sort((a, b) => a - b) }));
-  return voicings.filter((voicing, index) => index === 0 || voicing.keys.join() !== (voicings[index - 1] as { keys: number[] }).keys.join());
+  const voicings = [...byStep.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([step, keys]) => ({ step, keys: keys.sort((a, b) => a - b) }));
+  return voicings.filter(
+    (voicing, index) => index === 0 || voicing.keys.join() !== (voicings[index - 1] as { keys: number[] }).keys.join(),
+  );
 }
 
 /** How many chord changes of the chord parts there are, and how many of them move the outer voices in parallel fifths or octaves (the loop's last chord into its first included). */
@@ -161,7 +170,11 @@ export function motifReuse(plan: SongPlan): { repeated: number; unique: number; 
   const counts = [...seen.values()];
   const repeated = counts.filter((count) => count > 1).reduce((sum, count) => sum + count, 0);
   const unique = counts.filter((count) => count === 1).length;
-  return { repeated: total === 0 ? 0 : repeated / total, unique: counts.length === 0 ? 0 : unique / counts.length, total };
+  return {
+    repeated: total === 0 ? 0 : repeated / total,
+    unique: counts.length === 0 ? 0 : unique / counts.length,
+    total,
+  };
 }
 
 /** The first and last notes (by pitch) the lead plays, across the whole song. */

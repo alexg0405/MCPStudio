@@ -13,7 +13,8 @@ import { BeatAssistant } from './assistant';
 import { songToAnswer } from './song-answer';
 
 const NO = { ok: false, reason: 'not set up' };
-const offline = (async () => new Response(JSON.stringify({ subscription: NO, api: NO }), { status: 200 })) as typeof fetch;
+const offline = (async () =>
+  new Response(JSON.stringify({ subscription: NO, api: NO }), { status: 200 })) as typeof fetch;
 
 /** Node has no OfflineAudioContext: the leveling step (a render) is left out; the browser test measures it. */
 let removeLevelStep: () => void;
@@ -28,7 +29,10 @@ function setup() {
 }
 
 const project = (s: ReturnType<typeof createTestServices>): Project => s.doc.getState().project;
-const markers = (p: Project) => Object.values(p.playlist.markers).sort((x, y) => x.tick - y.tick).map((m) => m.name);
+const markers = (p: Project) =>
+  Object.values(p.playlist.markers)
+    .sort((x, y) => x.tick - y.tick)
+    .map((m) => m.name);
 
 describe('the offline song', () => {
   it('writes a whole song for "a sad trap song at 140": tempo, key, chords, patterns, sections and a mix', async () => {
@@ -43,10 +47,22 @@ describe('the offline song', () => {
     const p = project(s);
     expect(p.transport.bpm).toBe(140);
     expect(p.transport.key?.scale).toBe('minor');
-    expect(markers(p)).toEqual(['Intro', 'Verse', 'Build', 'Hook', 'Verse 2', 'Build 2', 'Hook 2', 'Bridge', 'Hook 3', 'Outro']);
+    expect(markers(p)).toEqual([
+      'Intro',
+      'Verse',
+      'Build',
+      'Hook',
+      'Verse 2',
+      'Build 2',
+      'Hook 2',
+      'Bridge',
+      'Hook 3',
+      'Outro',
+    ]);
     expect(Object.keys(p.chords ?? {}).length).toBeGreaterThan(8);
     const names = Object.values(p.patterns).map((x) => x.name);
-    for (const name of ['Intro', 'Verse', 'Verse melody', 'Chorus', 'Hook', 'Hook 2', 'Bridge melody']) expect(names).toContain(name);
+    for (const name of ['Intro', 'Verse', 'Verse melody', 'Chorus', 'Hook', 'Hook 2', 'Bridge melody'])
+      expect(names).toContain(name);
     // The new project's empty first pattern is gone: nothing in it, nowhere on the playlist.
     expect(names).not.toContain('Pattern 1');
     // The mix is set up by role (buses, returns, a master limiter) and the song is in song mode, playing.
@@ -95,13 +111,21 @@ describe('the offline song', () => {
   it('gives another song when the same thing is asked for again, and the same one after New chat', async () => {
     const { s, a } = setup();
     await a.send('a house song');
-    const first = chordsSorted(project(s)).map((entry) => `${entry.root}${entry.quality}`).join();
+    const first = chordsSorted(project(s))
+      .map((entry) => `${entry.root}${entry.quality}`)
+      .join();
     await a.send('a house song');
-    const second = chordsSorted(project(s)).map((entry) => `${entry.root}${entry.quality}`).join();
+    const second = chordsSorted(project(s))
+      .map((entry) => `${entry.root}${entry.quality}`)
+      .join();
     expect(second).not.toBe(first);
     a.newBeat();
     await a.send('a house song');
-    expect(chordsSorted(project(s)).map((entry) => `${entry.root}${entry.quality}`).join()).toBe(first);
+    expect(
+      chordsSorted(project(s))
+        .map((entry) => `${entry.root}${entry.quality}`)
+        .join(),
+    ).toBe(first);
   });
 
   it('still writes a beat for a request that is only a beat, and for a follow-up on a song', async () => {
@@ -116,26 +140,61 @@ describe('the offline song', () => {
     expect(markers(project(s)).length).toBe(10);
   });
 
+  it('writes the length asked for: a short song and a long one', async () => {
+    const short = setup();
+    await short.a.send('a pop song, 32 bars');
+    const shortBars =
+      Math.max(...Object.values(project(short.s).playlist.clips).map((clip) => clip.start + clip.length)) / 3840;
+    const long = setup();
+    await long.a.send('a lofi song, 150 bars');
+    const longBars =
+      Math.max(...Object.values(project(long.s).playlist.clips).map((clip) => clip.start + clip.length)) / 3840;
+    expect(shortBars).toBeGreaterThanOrEqual(24);
+    expect(shortBars).toBeLessThanOrEqual(40);
+    expect(longBars).toBeGreaterThanOrEqual(140);
+    expect(long.a.store.getState().messages.at(-1)?.warnings).toBeUndefined();
+    expect(
+      checkArrangement(long.s, project(long.s), { style: 'lofi' }).filter((finding) => finding.severity === 'bug'),
+    ).toEqual([]);
+  });
+
   it('turns the answer into the actions an AI would write: song, chords, a beat per pattern, one arrange', () => {
     const plan = generateSongFromPrompt('a trance song', { seed: 3 });
     const answer = songToAnswer(plan);
-    expect(answer.actions.map((action) => action.op)).toEqual(['song', 'chords', ...plan.patterns.map(() => 'beat'), 'arrange', 'level_mix']);
+    expect(answer.actions.map((action) => action.op)).toEqual([
+      'song',
+      'chords',
+      ...plan.patterns.map(() => 'beat'),
+      'arrange',
+      'level_mix',
+    ]);
     const arrange = answer.actions.at(-2)!;
     expect(arrange).toMatchObject({ style: 'trance', mix: 'auto' });
     const refs = new Set(plan.patterns.map((entry) => entry.ref));
-    for (const section of arrange.sections as { play: string[] }[]) for (const ref of section.play) expect(refs.has(ref)).toBe(true);
+    for (const section of arrange.sections as { play: string[] }[])
+      for (const ref of section.play) expect(refs.has(ref)).toBe(true);
     // The mix is leveled on the loudest part (the first drop, bar 33 after a 16-bar intro and build), not on the intro.
     const sections = arrange.sections as { name: string; bars: number }[];
-    const dropStart = 1 + sections.slice(0, sections.findIndex((section) => section.name === 'Drop')).reduce((sum, section) => sum + section.bars, 0);
+    const dropStart =
+      1 +
+      sections
+        .slice(
+          0,
+          sections.findIndex((section) => section.name === 'Drop'),
+        )
+        .reduce((sum, section) => sum + section.bars, 0);
     expect(answer.actions.at(-1)).toMatchObject({ op: 'level_mix', style: 'trance', from_bar: dropStart, bars: 8 });
   });
 
-  it.each(STYLES.map((style) => [style] as const))('%s: the arrangement check finds no bugs, and every beat applies without a warning', async (style: Style) => {
-    const { s, a } = setup();
-    await a.send(`a ${style === 'edm' ? 'edm' : style} song`);
-    const reply = a.store.getState().messages.at(-1)!;
-    expect(reply.warnings, reply.text).toBeUndefined();
-    const found = checkArrangement(s, project(s), { style }).filter((finding) => finding.severity === 'bug');
-    expect(found).toEqual([]);
-  });
+  it.each(STYLES.map((style) => [style] as const))(
+    '%s: the arrangement check finds no bugs, and every beat applies without a warning',
+    async (style: Style) => {
+      const { s, a } = setup();
+      await a.send(`a ${style === 'edm' ? 'edm' : style} song`);
+      const reply = a.store.getState().messages.at(-1)!;
+      expect(reply.warnings, reply.text).toBeUndefined();
+      const found = checkArrangement(s, project(s), { style }).filter((finding) => finding.severity === 'bug');
+      expect(found).toEqual([]);
+    },
+  );
 });

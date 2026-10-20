@@ -134,6 +134,27 @@ describe('every style, several seeds', () => {
     expect(average).toBeLessThan(0.55);
   });
 
+  it('moves the lead like a melody: mostly by step and skip, no leap over an octave, no more than three of the same note in a row', () => {
+    let motions = 0;
+    let leaps = 0;
+    for (const { style, seed, plan } of ALL) {
+      for (const pattern of plan.patterns.filter((entry) => entry.kind === 'melody')) {
+        const notes = (pattern.spec.tracks[0]?.notes ?? []).slice().sort((a, b) => a.step - b.step);
+        let run = 1;
+        notes.slice(1).forEach((note, index) => {
+          const interval = Math.abs((note.key ?? 0) - (notes[index]?.key ?? 0));
+          motions++;
+          if (interval > 7) leaps++;
+          expect(interval, `${style} ${seed} ${pattern.ref}`).toBeLessThanOrEqual(12);
+          run = interval === 0 ? run + 1 : 1;
+          expect(run, `${style} ${seed} ${pattern.ref} at ${note.step}`).toBeLessThanOrEqual(3);
+        });
+      }
+    }
+    expect(motions).toBeGreaterThan(5000);
+    expect(leaps / motions).toBeLessThanOrEqual(0.05);
+  });
+
   it('keeps the lead in its style’s register and gives it some syncopation', () => {
     for (const { style, seed, plan } of ALL) {
       const range = leadRange(plan);

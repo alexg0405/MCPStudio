@@ -204,6 +204,33 @@ function settleWeakNotes(
   });
 }
 
+/** A line may repeat a note this many times in a row; the next one moves (a hook repeats, a drone does not). */
+const MAX_REPEATED_NOTES = 3;
+
+/**
+ * Moves any note that would be the fourth in a row on the same pitch to the next chord tone, up and down in turn. The last
+ * note is the cadence and stays where it is: the note before it moves instead.
+ */
+function breakUpRepeats(
+  motif: readonly MotifNote[],
+  indexes: number[],
+  chords: readonly PlacedChord[],
+  space: ScaleSpace,
+): void {
+  indexes.forEach((index, position) => {
+    const run = indexes.slice(Math.max(0, position - MAX_REPEATED_NOTES), position);
+    if (run.length < MAX_REPEATED_NOTES || run.some((earlier) => earlier !== index)) return;
+    const target = position === indexes.length - 1 ? position - 1 : position;
+    const note = motif[target] as MotifNote;
+    const tones = new Set(chordPitchClasses(chordAtStep(chords, note.step)));
+    const direction = position % 2 === 0 ? 1 : -1;
+    const moved = chordToneToward(space, index, space.clamp(index + direction), tones, direction);
+    // At the edge of the range there may be no chord tone that way: go the other way.
+    indexes[target] =
+      moved !== index ? moved : chordToneToward(space, index, space.clamp(index - direction), tones, -direction);
+  });
+}
+
 /** The last note of a pattern: a chord tone (the root if it is near), held, so the phrase ends instead of stopping. */
 function settleCadence(motif: MotifNote[], indexes: number[], chords: readonly PlacedChord[], space: ScaleSpace): void {
   const last = motif[motif.length - 1];
@@ -217,6 +244,12 @@ function settleCadence(motif: MotifNote[], indexes: number[], chords: readonly P
   last.len = Math.max(last.len, Math.min(CADENCE_STEPS, PATTERN_STEPS - last.step));
 }
 
+/** How much louder (+) or softer (−) a note plays than its plan's strength: strong notes lean in, off-beat notes lean back. */
+function beatAccent(note: MotifNote, onBeat: boolean): number {
+  if (isStrong(note)) return 0.07;
+  return onBeat ? 0 : -0.07;
+}
+
 /** Notes from a motif and its scale indexes: the velocity follows the beat and the plan's strength, with a little seeded life. */
 function toBeatNotes(
   motif: readonly MotifNote[],
@@ -227,7 +260,7 @@ function toBeatNotes(
 ): BeatNote[] {
   return motif.map((note, position) => {
     const onBeat = note.step % 4 === 0;
-    const accent = isStrong(note) ? 0.07 : onBeat ? 0 : -0.07;
+    const accent = beatAccent(note, onBeat);
     const life = (random.next() - 0.5) * 0.06;
     const vel = Math.max(0.3, Math.min(1, strength + accent + life));
     const nextStep = motif[position + 1]?.step ?? PATTERN_STEPS;
@@ -298,6 +331,7 @@ export function songMelody(input: MelodyInput): BeatNote[] {
   const indexes = placeOnChords(motif, input.chords, space, startIndexOf(space, input.chords, startOffset));
   settleWeakNotes(motif, indexes, input.chords, space);
   if (input.plan !== 'teaser') settleCadence(motif, indexes, input.chords, space);
+  breakUpRepeats(motif, indexes, input.chords, space);
   const energy = 0.9 + 0.025 * input.energy;
   return toBeatNotes(motif, indexes, space, PLAN_STRENGTH[input.plan] * energy, random);
 }

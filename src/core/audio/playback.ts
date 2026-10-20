@@ -65,12 +65,17 @@ export function playbackKey(ch: ModeFields & Pick<AudioClipChannel, 'sampleId'>)
 }
 
 /**
- * The sample a clip plays: the render of its pitch correction (`pitchEdit.renderedSampleId`, see
- * pitch-edit.ts) when it has one, else the channel's own. Both share one timeline (the render is
- * as long as the original), so trims, fades and tempo follow work on either.
+ * The sample a clip plays: the render of its pitch correction (`pitchEdit.renderedSampleId`, see pitch-edit.ts) when it
+ * has one, else the render of its vocal alignment (`align.renderedSampleId`, see align/), else the channel's own. The
+ * order of the chain is align, then pitch: the pitch render is made from the aligned sound, so it already contains the
+ * alignment. All of them share one timeline (a render is as long as the original), so trims, fades and tempo follow
+ * work on any.
  */
-export function clipSampleId(channel: Pick<AudioClipChannel, 'sampleId'>, clip: Pick<AudioClip, 'pitchEdit'> | undefined): SampleId {
-  return clip?.pitchEdit?.renderedSampleId ?? channel.sampleId;
+export function clipSampleId(
+  channel: Pick<AudioClipChannel, 'sampleId'>,
+  clip: Pick<AudioClip, 'pitchEdit' | 'align'> | undefined,
+): SampleId {
+  return clip?.pitchEdit?.renderedSampleId ?? clip?.align?.renderedSampleId ?? channel.sampleId;
 }
 
 /** Source seconds per tick in the tempo-locked modes. */

@@ -72,6 +72,14 @@ export interface AudioClip extends ClipBase {
    * sample stays as it was. Absent = untouched. (See core/audio/pitch-edit.ts.)
    */
   pitchEdit?: PitchEdit;
+  // ---- Vocal alignment (this block belongs to core/audio/align; other renders add their own blocks) ----
+  /**
+   * Vocal alignment of this clip: its syllables moved onto a guide clip's timing (and pitch), or onto the grid. A render
+   * of it (WSOLA time warp, optional TD-PSOLA, written through the sample store) is what the clip plays; the channel's
+   * own sample stays. A pitch edit, when there is one, works on the aligned sound. Absent = not aligned.
+   */
+  align?: AlignEdit;
+  // ---- end of vocal alignment ----
   /** Set when the clip is one take of a recording, or a piece of its comp (takes and comping). */
   take?: TakeTag;
 }
@@ -111,6 +119,31 @@ export interface PitchEdit {
   renderedSampleId?: SampleId;
   /** The `editSignature` of the edits `renderedSampleId` was made from (it is out of date when they differ). */
   renderedFor?: string;
+}
+
+/** How a clip is aligned (`AudioClip.align`, see core/audio/align). */
+export interface AlignEdit {
+  /** `guide`: follow another clip (the lead); `grid`: move the syllable starts towards the song's grid lines. */
+  mode: 'guide' | 'grid';
+  /** Guide mode: the clip to follow. */
+  guide?: ClipId;
+  /** How strictly to follow, 0–100: 0 only fixes big offsets, 100 follows syllable by syllable (guide mode). */
+  tightness: number;
+  /** Guide mode: how much of the pitch deviation from the guide to correct, 0–100 % (absent = 0). */
+  pitch?: number;
+  /** Grid mode: how far each syllable start moves towards the grid, 0–100 %. */
+  strength?: number;
+  /** Grid mode: ticks between grid lines (absent = 240, a 1/16 step). */
+  stepTicks?: number;
+  /** The sample (in `Project.samples`) holding the render; absent while it is not made yet. */
+  renderedSampleId?: SampleId;
+  /** The alignment signature the render was made for (it is out of date when the clip's alignment signature differs). */
+  renderedFor?: string;
+  /**
+   * Where the render moved the sound, for the overlay on the clip: flat `[sampleSec, moveMs, …]` points (positive = moved
+   * earlier). Written with the render.
+   */
+  warp?: number[];
 }
 
 /** Plays an automation channel's curve over its span (content does not repeat). */

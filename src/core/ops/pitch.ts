@@ -8,7 +8,7 @@ import type { ClipId, PitchEdit, Project, SampleId, SampleRef } from '../model/t
 /** True when some clip (other than `except`) still plays `sampleId` as the render of its pitch edit. */
 function renderInUse(d: Draft<Project>, sampleId: SampleId, except?: ClipId): boolean {
   for (const c of Object.values(d.playlist.clips)) {
-    if (c.kind === 'audio' && c.id !== except && c.pitchEdit?.renderedSampleId === sampleId) return true;
+    if (c.kind === 'audio' && c.id !== except && (c.pitchEdit?.renderedSampleId === sampleId || c.align?.renderedSampleId === sampleId)) return true;
   }
   for (const ch of Object.values(d.channels)) if (ch.kind === 'audioClip' && ch.sampleId === sampleId) return true;
   return false;

@@ -9,6 +9,7 @@ import { createTestServices } from '@app/testing';
 import { formatChord } from '@core/commands/keymap';
 import { registerFeatures } from '@ui/features';
 import { TOUCH_GESTURES } from '@ui/touch/gestures';
+import { KEYBOARD_NAVIGATION, SCREEN_READER_NOTES, spellOutKeys } from '@ui/a11y/keyboard-help-data';
 
 const PATH = new URL('../../docs/shortcuts.md', import.meta.url);
 
@@ -60,6 +61,20 @@ function render(): string {
     for (const g of group.gestures) lines.push(`| ${g.gesture} | ${g.what} |`);
     lines.push('');
   }
+  lines.push(
+    '## Keyboard navigation and screen readers',
+    '',
+    'Moving around without a mouse (the same list is in Help → Keyboard navigation). Keys are shown for Windows and Linux: on a Mac, Ctrl+K and similar `Mod` keys are Cmd.',
+    '',
+  );
+  for (const group of KEYBOARD_NAVIGATION) {
+    lines.push(`### ${group.where}`, '', '| Keys | What it does |', '|---|---|');
+    for (const move of group.moves) lines.push(`| \`${spellOutKeys(move.keys, 'other')}\` | ${move.what} |`);
+    lines.push('');
+  }
+  lines.push('### With a screen reader', '');
+  for (const note of SCREEN_READER_NOTES) lines.push(`- ${note}`);
+  lines.push('');
   return lines.join('\n');
 }
 

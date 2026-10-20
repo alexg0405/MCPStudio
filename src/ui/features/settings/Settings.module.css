@@ -19,7 +19,7 @@
 .heading {
   margin: 0 0 6px;
   color: var(--ag-text-faint);
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;

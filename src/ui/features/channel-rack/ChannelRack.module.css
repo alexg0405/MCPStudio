@@ -153,7 +153,7 @@
   box-shadow: var(--ag-inset);
   color: var(--ag-lcd-text);
   font-family: var(--ag-font-mono);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   text-align: center;
 }
 

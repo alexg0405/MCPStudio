@@ -46,7 +46,7 @@
 
 .label {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -114,7 +114,7 @@
 .heading {
   margin: 0;
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   text-transform: uppercase;
@@ -145,13 +145,13 @@
 .readoutLabel,
 .readoutUnit {
   color: var(--ag-text-faint);
-  font-size: 10px;
+  font-size: calc(10px * var(--ag-scale, 1));
 }
 
 .readoutValue {
   color: var(--ag-accent-ink);
   font-family: var(--ag-font-mono);
-  font-size: 22px;
+  font-size: calc(22px * var(--ag-scale, 1));
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }

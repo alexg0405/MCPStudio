@@ -8,7 +8,7 @@ import type { Draft } from 'immer';
 import type { Project } from '@core/model/types';
 import type { Services } from '../../../services';
 import { PIANO_ROLL_TOOLS, PLAYLIST_TOOLS } from '../../../stores/editor';
-import { KEYS_VELOCITIES, TOUCH_LAYOUT_CHOICES } from '../../../stores/prefs';
+import { ACCESS_CHOICES, KEYS_VELOCITIES, TOUCH_LAYOUT_CHOICES } from '../../../stores/prefs';
 import type { AiAnswer } from '../../schema';
 import * as S from '../../schema/parts';
 import { ActionError, createOpContext, type AnswerState, type OpModule } from '../context';
@@ -58,6 +58,18 @@ export const session: OpModule = {
           enum: [...TOUCH_LAYOUT_CHOICES],
           description: 'Bigger buttons and handles for fingers: auto follows the device (on for tablets), on, off.',
         },
+        interface_size_percent: S.int('Size of the interface text and labels in percent of normal (90–150).'),
+        high_contrast: {
+          type: 'string',
+          enum: [...ACCESS_CHOICES],
+          description: 'Stronger text, lines and focus rings: auto follows the system, on, off.',
+        },
+        reduce_motion: {
+          type: 'string',
+          enum: [...ACCESS_CHOICES],
+          description: 'No gliding or smooth scrolling (the view jumps a page): auto follows the system, on, off.',
+        },
+        color_blind_safe: S.bool('Colour-blind safe colours (blue and orange instead of green and red) and patterns.'),
         keys_velocity: {
           type: 'string',
           enum: [...KEYS_VELOCITIES],

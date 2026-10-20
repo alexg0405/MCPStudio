@@ -17,7 +17,7 @@
   background: var(--ag-lcd);
   box-shadow: var(--ag-inset);
   color: color-mix(in srgb, var(--ag-lcd-text) 38%, var(--ag-lcd));
-  font-size: 9.5px;
+  font-size: calc(9.5px * var(--ag-scale, 1));
   font-weight: 600;
   letter-spacing: var(--ag-label-tracking);
   cursor: pointer;
@@ -108,7 +108,7 @@
 }
 
 .lcdLabel {
-  font-size: 8.5px;
+  font-size: calc(8.5px * var(--ag-scale, 1));
   font-weight: 600;
   color: color-mix(in srgb, var(--ag-lcd-text) 42%, var(--ag-lcd));
   letter-spacing: var(--ag-label-tracking);
@@ -200,7 +200,7 @@
 
   .modeSwitch {
     padding: 0 6px;
-    font-size: 8.5px;
+    font-size: calc(8.5px * var(--ag-scale, 1));
   }
 
   .lcd {

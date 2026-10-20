@@ -29,6 +29,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | New pattern | `F4` |
 | New project | `⌘N` / `Ctrl+N`, `⌥N` / `Alt+N` |
 | Next pattern | `Num +` |
+| Next window or panel | `⌃F6` / `Ctrl+F6`, `⌥9` / `Alt+9` |
 | On-screen keyboard | `⌥7` / `Alt+7` |
 | Open… | `⌘O` / `Ctrl+O` |
 | Pattern / song mode | `L` |
@@ -37,6 +38,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Play / stop | `Space` |
 | Playlist | `F5`, `⌥1` / `Alt+1` |
 | Previous pattern | `Num −` |
+| Previous window or panel | `⌃⇧F6` / `Ctrl+Shift+F6`, `⌥⇧9` / `Alt+Shift+9` |
 | Record | `R` |
 | Redo | `⌘⇧Z` / `Ctrl+Shift+Z`, `⌘Y` / `Ctrl+Y` |
 | Reference | `⌥⇧R` / `Alt+Shift+R` |
@@ -52,6 +54,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Undo | `⌘Z` / `Ctrl+Z` |
 | Undo history | `⌥H` / `Alt+H` |
 | Visualizer | `⌥V` / `Alt+V` |
+| Where am I? | `⌥0` / `Alt+0` |
 
 ## When the channel-rack window is focused
 
@@ -194,3 +197,44 @@ On a touchscreen (the same list is under the keys in the Shortcuts window).
 | Two quick taps on a window’s title | Maximize or restore it |
 | Drag a window’s title or edge | Move or resize it (bigger handles in the touch layout) |
 | Several fingers on the Keys window | One note per finger: chords on the piano, rolls on the pads |
+
+## Keyboard navigation and screen readers
+
+Moving around without a mouse (the same list is in Help → Keyboard navigation). Keys are shown for Windows and Linux: on a Mac, Ctrl+K and similar `Mod` keys are Cmd.
+
+### Everywhere
+
+| Keys | What it does |
+|---|---|
+| `Tab / Shift+Tab` | Next or previous control. A toolbar, a menu bar or a grid is one stop: the arrow keys move inside it. |
+| `Ctrl+F6 / Ctrl+Shift+F6 (or Alt+9 / Alt+Shift+9)` | Next or previous part of the screen: menu bar, transport, browser, then each open window. |
+| `Alt+0` | Say where you are: the window, the selected sound and pattern, and whether it is playing. |
+| `Space or Enter` | Press the control the keyboard is on. When it is on a window or the page, Space plays and stops. |
+| `Ctrl+K` | Search every action by name and run it. |
+| `F1` | The list of all keyboard shortcuts. |
+| `Esc` | Close the open menu, dialog or help panel. On a window’s frame or title bar it closes the window. |
+
+### Menus, lists and grids
+
+| Keys | What it does |
+|---|---|
+| `← → (↑ ↓ in a list)` | Move between the controls of a toolbar, tab strip or list. |
+| `↑ ↓ ← →` | Move between the squares of the channel rack steps and the clip launcher pads. |
+| `Home / End` | First or last control in the group (the start or end of a row in a grid). |
+| `↓ or Enter on a menu name` | Open the menu; ↑ ↓ choose an entry, → opens a submenu, ← closes it, Esc closes the menu. |
+
+### Knobs, faders and number boxes
+
+| Keys | What it does |
+|---|---|
+| `← → or ↑ ↓` | Change the value a little; Shift makes it finer. |
+| `Page Up / Page Down` | Change the value a lot. |
+| `Home / End` | Smallest or largest value. |
+| `Enter, then type` | In a number box: type the exact value, Enter keeps it, Esc leaves it as it was. |
+
+### With a screen reader
+
+- Every window is a dialog with its title as its name; every button, knob and fader has a name, and knobs and faders say their value with its unit.
+- Playing, stopping, recording, finished renders, errors and the Studio’s replies are spoken as they happen.
+- The keyboard cursor of the editors says what is under it: the track and bar, the clip or note, its length and whether it is selected.
+- Options → Accessibility has bigger text, high contrast, less motion and colour-blind safe colours.

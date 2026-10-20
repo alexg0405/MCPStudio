@@ -46,6 +46,17 @@ describe('PlayheadFollow', () => {
     expect(frames).toBeLessThan(40);
   });
 
+  it('with less motion the page turns in one jump, in either style', () => {
+    for (const style of ['page', 'smooth'] as const) {
+      const f = new PlayheadFollow();
+      const playhead = 0.9 * VISIBLE;
+      const goal = playhead - FOLLOW_LEAD * VISIBLE;
+      // One frame lands on the new page; the next leaves the view alone (no glide, no sliding with the playhead).
+      expect(f.step({ ...base, playhead, style, reducedMotion: true }), style).toBe(goal);
+      expect(f.step({ ...base, playhead: playhead + 10, scrollTick: goal, style, reducedMotion: true }), style).toBeNull();
+    }
+  });
+
   it('brings a playhead that jumped off-screen straight back (a loop or a seek)', () => {
     const f = new PlayheadFollow();
     // Looped back to the start while the view shows bars further on.

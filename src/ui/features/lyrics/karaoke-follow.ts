@@ -4,6 +4,7 @@
  * `data-w` span per word in time order, one `data-line` block per line) and only touches classes and one style property,
  * so playing a song makes no React commits.
  */
+import { isReducedMotion } from '../../a11y/preferences';
 import { songPosition } from '@app/actions/markers';
 import type { Services } from '@app/services';
 import { lyricCursor, newCursor } from '@core/lyrics/karaoke';
@@ -90,8 +91,7 @@ export class KaraokeFollow {
     el.classList.add(currentLine);
     if (!this.isFollowing()) return;
     const top = el.offsetTop - this.root.clientHeight / 2 + el.clientHeight / 2;
-    const isReduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.root.scrollTo({ top: Math.max(0, top), behavior: isReduced ? 'auto' : 'smooth' });
+    this.root.scrollTo({ top: Math.max(0, top), behavior: isReducedMotion() ? 'auto' : 'smooth' });
   }
 
   /** How far through the lit word the song is, as a percentage the stylesheet paints the word with (steps of 2 %). */

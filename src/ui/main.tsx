@@ -12,6 +12,7 @@ import { PluginRegistry } from '@app/plugins/registry';
 import { ServicesProvider } from './services-context';
 import { registerFeatures } from './features';
 import { offerRecovery } from './features/files/recovery';
+import { installAccessibilityPrefs } from './a11y/preferences';
 import { installRoving } from './a11y/roving';
 import { installKeyboard } from './keyboard';
 import { installTouch } from './touch';
@@ -51,6 +52,7 @@ registerFeatures(services);
 mark('features');
 installKeyboard(services);
 installRoving();
+installAccessibilityPrefs(services.prefs);
 installTouch(services);
 installAudioUnlock(services.engine);
 if (restored) {

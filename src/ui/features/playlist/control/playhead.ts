@@ -1,4 +1,5 @@
 /** The playhead line, and the view following it while playing. Both run on the frame loop: no React, nothing allocated. */
+import { isReducedMotion } from '../../../a11y/preferences';
 import type { FollowFrame } from '../../../timeline/follow';
 import { closeContextMenu, isContextMenuOpen } from '../../../controls/ContextMenu';
 import type { Project } from '@core/model/types';
@@ -64,6 +65,7 @@ function fillPlayingFrame(ctx: PlaylistContext, frame: FollowFrame, project: Pro
   frame.maxScroll = Math.max(0, maxScrollTick(project) - visibleTicks);
   frame.wrapEnd = wrapEndTick(ctx, project);
   frame.style = s.prefs.getState().followStyle;
+  frame.reducedMotion = isReducedMotion();
   frame.busy = ctx.state.drag !== null || isContextMenuOpen() || ctx.els.markerRename.style.display === 'block';
 }
 

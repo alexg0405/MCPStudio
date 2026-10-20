@@ -51,6 +51,11 @@ export interface FollowFrame {
   busy: boolean;
   /** Smooth (move with the playhead) or page (turn a page at the edge); page when left out. */
   style?: FollowStyle;
+  /**
+   * Less motion is on: the view never moves on its own except in one jump per page (the smooth style turns into the
+   * page style, and a page turn lands at once instead of gliding).
+   */
+  reducedMotion?: boolean;
 }
 
 /**
@@ -122,7 +127,7 @@ export class PlayheadFollow {
       this.held = false;
       if (!inView) this.glideNext = true;
     }
-    if (f.style === 'smooth') return this.smooth(f, at, inView);
+    if (f.style === 'smooth' && !f.reducedMotion) return this.smooth(f, at, inView);
     this.glideNext = false; // page style: an off-screen playhead snaps back below
     const goal = Math.max(0, Math.min(f.maxScroll, f.playhead - FOLLOW_LEAD * f.visible));
     if (!inView) {
@@ -133,6 +138,7 @@ export class PlayheadFollow {
     if (!this.glide) {
       const wrapShows = f.wrapEnd <= f.scrollTick + f.visible;
       if (at < FOLLOW_EDGE || wrapShows || goal <= f.scrollTick) return null;
+      if (f.reducedMotion) return goal;
       // The page it turns to is set now (the playhead moves on a little during the glide); it starts moving this frame.
       this.glide = { from: f.scrollTick, to: goal, t0: f.now - 16 };
     }

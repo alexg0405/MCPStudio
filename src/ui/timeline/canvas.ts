@@ -258,6 +258,21 @@ export function invalidateTheme(): void {
   for (const fn of themeListeners) fn();
 }
 
+let interfaceScale = 1;
+
+/** Sets the interface size (1 = normal) canvases draw their text at; `a11y/preferences.ts` calls it from the settings. */
+export function setInterfaceScale(scale: number): void {
+  interfaceScale = scale;
+}
+
+/**
+ * A font size in pixels for canvas text, grown with the interface size setting (Settings, Accessibility). Write
+ * ctx.font = `600 ${fontPx(10)}px ${theme.font}`. At the normal size it returns `size` itself, so nothing changes.
+ */
+export function fontPx(size: number): number {
+  return size * interfaceScale;
+}
+
 /** Counts theme changes (for React canvases: put it in an effect's dependencies). */
 export function themeVersion(): number {
   return version;

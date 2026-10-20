@@ -3,8 +3,11 @@ import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
 import type { Services } from '../../../services';
 import { PIANO_ROLL_TOOLS, PLAYLIST_TOOLS } from '../../../stores/editor';
 import {
+  ACCESS_CHOICES,
   KEYS_VELOCITIES,
   TOUCH_LAYOUT_CHOICES,
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
   type AudioBufferChoice,
   type PrefsState,
 } from '../../../stores/prefs';
@@ -170,6 +173,31 @@ function applyTouchSettings({ action, out, prefs, text }: SettingsEdit): void {
   }
 }
 
+/** Interface size, contrast, motion and colour-blind safe colours (Options → Accessibility). */
+function applyAccessibilitySettings({ action, out, prefs, text }: SettingsEdit): void {
+  const percent = num(action.interface_size_percent);
+  if (percent !== undefined) {
+    prefs.uiScale = Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, Math.round(percent)));
+    text.push(`interface size ${prefs.uiScale} percent`);
+  }
+  for (const [key, pref, label] of [
+    ['high_contrast', 'highContrast', 'high contrast'],
+    ['reduce_motion', 'reduceMotion', 'less motion'],
+  ] as const) {
+    const choice = ACCESS_CHOICES.find((candidate) => candidate === str(action[key]));
+    if (action[key] !== undefined && !choice) out.warn(`${key} must be auto, on or off`);
+    if (choice) {
+      prefs[pref] = choice;
+      text.push(`${label} ${choice}`);
+    }
+  }
+  const colorSafe = bool(action.color_blind_safe);
+  if (colorSafe !== undefined) {
+    prefs.colorSafe = colorSafe;
+    text.push(`colour-blind safe colours ${onOff(colorSafe)}`);
+  }
+}
+
 /** The typing keyboard, audio buffer, sample memory, toolbar display, audio input and latency correction. */
 function applyAudioSettings({ action, context, out, prefs, text }: SettingsEdit): void {
   const octave = num(action.piano_octave);
@@ -271,6 +299,7 @@ export function applySettings(services: Services, action: AiAction, context: OpC
   applyRecordSettings(edit);
   applyAudioSettings(edit);
   applyTouchSettings(edit);
+  applyAccessibilitySettings(edit);
   applyExportSettings(edit);
   if (Object.keys(edit.prefs).length) services.prefs.getState().set(edit.prefs);
   applyEditorSettings(services, edit);

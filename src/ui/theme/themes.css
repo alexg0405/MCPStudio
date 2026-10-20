@@ -305,6 +305,256 @@
   --ag-palette-8: #b44f95;
 }
 
+/*
+ * High contrast, dark: pure black with white text, one yellow accent and hard white edges. Everything that is text
+ * reaches 7:1 (the AAA level), every edge and control outline 3:1 or more. The accent is fixed (the accent setting
+ * is ignored here), so the colours that were checked are the colours you get.
+ */
+:root[data-theme='contrast'],
+:root[data-theme='contrast'][data-accent] {
+  color-scheme: dark;
+  --ag-bg: #000000;
+  --ag-workspace: #000000;
+  --ag-surface-1: #000000;
+  --ag-surface-2: #0c0c0c;
+  --ag-surface-3: #1c1c1c;
+  --ag-surface-inset: #000000;
+  --ag-border: #ffffff;
+  --ag-border-soft: #8f8f8f;
+  --ag-highlight: rgba(255, 255, 255, 0.14);
+  --ag-text: #ffffff;
+  --ag-text-dim: #e6e6e6;
+  --ag-text-faint: #cccccc;
+  --ag-accent: #ffd60a;
+  --ag-accent-ink: #ffd60a;
+  --ag-focus: #ffffff;
+  --ag-focus-width: 3px;
+  --ag-cursor: #5ce1ff;
+  --ag-led: #5ce1ff;
+  --ag-led-off: #3a3a3a;
+  --ag-danger: #ff7a70;
+  --ag-select: #5ce1ff;
+  --ag-warning: #ffd60a;
+  --ag-title: #000000;
+  --ag-title-focused: #1c1c1c;
+  --ag-step-off-a: #3a3a3a;
+  --ag-step-off-b: #4a4a4a;
+  --ag-step-on: #ffd60a;
+  --ag-grid-bg: #000000;
+  --ag-grid-bg-alt: #0c0c0c;
+  --ag-grid-bar: #ffffff;
+  --ag-grid-beat: #6e6e6e;
+  --ag-grid-step: #333333;
+  --ag-grid-shade: rgba(0, 0, 0, 0.55);
+  --ag-key-white: #ffffff;
+  --ag-key-black: #000000;
+  --ag-note: #5ce1ff;
+  --ag-note-border: #ffffff;
+  --ag-note-selected: #ffd60a;
+  --ag-note-top: rgba(255, 255, 255, 0.45);
+  --ag-ghost: rgba(255, 255, 255, 0.28);
+  --ag-hover: #2e2e2e;
+  --ag-hover-flat: #2e2e2e;
+  --ag-raised: #242424;
+  --ag-active: #3d3300;
+  --ag-active-2: #2b2400;
+  --ag-active-border: #ffd60a;
+  --ag-lcd: #000000;
+  --ag-lcd-text: #ffffff;
+  --ag-lcd-text-alt: #5ce1ff;
+  --ag-well: #000000;
+  --ag-tooltip: #000000;
+  --ag-tooltip-text: #ffffff;
+  --ag-marker: #ffd60a;
+  --ag-ok-bg: #00461f;
+  --ag-ok-text: #ffffff;
+  --ag-on-accent: #000000;
+  --ag-on-light: #000000;
+  --ag-sheen: rgba(255, 255, 255, 0.06);
+  --ag-line-faint: rgba(255, 255, 255, 0.28);
+  --ag-line-strong: rgba(255, 255, 255, 0.5);
+  --ag-scrim: rgba(0, 0, 0, 0.8);
+  --ag-meter-lo: #5ce1ff;
+  --ag-meter-mid: #ffd60a;
+  --ag-meter-hi: #ff8a3d;
+  --ag-backdrop: var(--ag-bg);
+  --ag-glass: #000000;
+  --ag-glass-strong: #000000;
+  --ag-blur: none;
+  --ag-elev-1: 0 0 0 1px #8f8f8f;
+  --ag-elev-2: 0 0 0 2px #ffffff;
+  --ag-shadow: 0 0 0 2px #ffffff;
+  --ag-inset: inset 0 0 0 1px #8f8f8f;
+  --ag-knob-top: #3a3a3a;
+  --ag-knob-face: #1c1c1c;
+  --ag-knob-edge: #ffffff;
+  --ag-knob-pointer: #ffffff;
+  --ag-knob-shadow: 0 0 0 1px #ffffff;
+  --ag-knob-track: rgba(255, 255, 255, 0.35);
+  --ag-knob-track-hover: rgba(255, 255, 255, 0.55);
+  --ag-palette-1: #ff8a7d;
+  --ag-palette-2: #ffa94d;
+  --ag-palette-3: #ffe14d;
+  --ag-palette-4: #7dff9d;
+  --ag-palette-5: #5ce1ff;
+  --ag-palette-6: #8cb4ff;
+  --ag-palette-7: #c9a8ff;
+  --ag-palette-8: #ff9ee0;
+}
+
+/* High contrast, light: white with black text, one deep blue accent, hard black edges. */
+:root[data-theme='contrast-light'],
+:root[data-theme='contrast-light'][data-accent] {
+  color-scheme: light;
+  --ag-bg: #ffffff;
+  --ag-workspace: #ffffff;
+  --ag-surface-1: #ffffff;
+  --ag-surface-2: #f2f2f2;
+  --ag-surface-3: #e0e0e0;
+  --ag-surface-inset: #ffffff;
+  --ag-border: #000000;
+  --ag-border-soft: #6b6b6b;
+  --ag-highlight: rgba(0, 0, 0, 0.1);
+  --ag-text: #000000;
+  --ag-text-dim: #1f1f1f;
+  --ag-text-faint: #3d3d3d;
+  --ag-accent: #0033cc;
+  --ag-accent-ink: #0033cc;
+  --ag-focus: #000000;
+  --ag-focus-width: 3px;
+  --ag-cursor: #0033cc;
+  --ag-led: #0033cc;
+  --ag-led-off: #bdbdbd;
+  --ag-danger: #b00020;
+  --ag-select: #0033cc;
+  --ag-warning: #7a4a00;
+  --ag-title: #f2f2f2;
+  --ag-title-focused: #dcdcdc;
+  --ag-step-off-a: #d0d0d0;
+  --ag-step-off-b: #c0c0c0;
+  --ag-step-on: #000000;
+  --ag-grid-bg: #ffffff;
+  --ag-grid-bg-alt: #f2f2f2;
+  --ag-grid-bar: #000000;
+  --ag-grid-beat: #767676;
+  --ag-grid-step: #cccccc;
+  --ag-grid-shade: rgba(0, 0, 0, 0.12);
+  --ag-key-white: #ffffff;
+  --ag-key-black: #000000;
+  --ag-note: #0033cc;
+  --ag-note-border: #000000;
+  --ag-note-selected: #b35900;
+  --ag-note-top: rgba(255, 255, 255, 0.35);
+  --ag-ghost: rgba(0, 0, 0, 0.25);
+  --ag-hover: #dcdcdc;
+  --ag-hover-flat: #dcdcdc;
+  --ag-raised: #ffffff;
+  --ag-active: #cfdcff;
+  --ag-active-2: #dfe8ff;
+  --ag-active-border: #0033cc;
+  --ag-lcd: #000000;
+  --ag-lcd-text: #ffffff;
+  --ag-lcd-text-alt: #8fd8ff;
+  --ag-well: #e0e0e0;
+  --ag-tooltip: #000000;
+  --ag-tooltip-text: #ffffff;
+  --ag-marker: #7a4a00;
+  --ag-ok-bg: #0b5d2a;
+  --ag-ok-text: #ffffff;
+  --ag-on-accent: #ffffff;
+  --ag-on-light: #000000;
+  --ag-sheen: rgba(0, 0, 0, 0.04);
+  --ag-line-faint: rgba(0, 0, 0, 0.3);
+  --ag-line-strong: rgba(0, 0, 0, 0.55);
+  --ag-scrim: rgba(0, 0, 0, 0.55);
+  --ag-meter-lo: #0072b2;
+  --ag-meter-mid: #b38f00;
+  --ag-meter-hi: #b34700;
+  --ag-danger-text: #8a0019;
+  --ag-backdrop: var(--ag-bg);
+  --ag-glass: #ffffff;
+  --ag-glass-strong: #ffffff;
+  --ag-blur: none;
+  --ag-elev-1: 0 0 0 1px #6b6b6b;
+  --ag-elev-2: 0 0 0 2px #000000;
+  --ag-shadow: 0 0 0 2px #000000;
+  --ag-inset: inset 0 0 0 1px #6b6b6b;
+  --ag-knob-top: #ffffff;
+  --ag-knob-face: #f2f2f2;
+  --ag-knob-edge: #000000;
+  --ag-knob-pointer: #000000;
+  --ag-knob-shadow: 0 0 0 1px #000000;
+  --ag-knob-track: rgba(0, 0, 0, 0.3);
+  --ag-knob-track-hover: rgba(0, 0, 0, 0.5);
+  --ag-palette-1: #b3261e;
+  --ag-palette-2: #a64b00;
+  --ag-palette-3: #7a6a00;
+  --ag-palette-4: #1b6e2a;
+  --ag-palette-5: #006a80;
+  --ag-palette-6: #0033cc;
+  --ag-palette-7: #5b2cc0;
+  --ag-palette-8: #9c1c7a;
+}
+
+/*
+ * More contrast on any theme (Settings → Accessibility, or the system's "increase contrast"): quiet text and lines
+ * move toward the main text colour, and the focus ring gets thicker. The look is the same theme, just firmer.
+ */
+:root[data-contrast='more'] {
+  --ag-text-dim: color-mix(in srgb, var(--ag-text) 88%, var(--ag-surface-3));
+  --ag-text-faint: color-mix(in srgb, var(--ag-text) 76%, var(--ag-surface-3));
+  --ag-border-soft: color-mix(in srgb, var(--ag-text) 42%, var(--ag-surface-1));
+  --ag-line-faint: color-mix(in srgb, var(--ag-text) 22%, transparent);
+  --ag-line-strong: color-mix(in srgb, var(--ag-text) 36%, transparent);
+  --ag-focus-width: 3px;
+}
+
+/*
+ * Colour-blind safe colours (Settings → Accessibility): the pairs that differ only in red against green become blue
+ * against orange (the Okabe and Ito set), which stays apart for red-green colour blindness. Shapes and patterns
+ * carry the same information wherever the app uses these colours (meter ticks, clip stripes, lane glyphs).
+ */
+:root[data-palette='safe'] {
+  --ag-meter-lo: #56b4e9;
+  --ag-meter-mid: #f0e442;
+  --ag-meter-hi: #e8741a;
+  --ag-led: #56b4e9;
+  --ag-led-off: #26333b;
+  --ag-note: #56b4e9;
+  --ag-note-border: #1f5f87;
+  --ag-note-selected: #f0e442;
+  --ag-danger: #e8741a;
+  --ag-palette-1: #e69f00;
+  --ag-palette-2: #56b4e9;
+  --ag-palette-3: #f0e442;
+  --ag-palette-4: #3399cc;
+  --ag-palette-5: #d55e00;
+  --ag-palette-6: #cc79a7;
+  --ag-palette-7: #a9a9a9;
+  --ag-palette-8: #8fd1c1;
+}
+:root[data-palette='safe'][data-theme='carrara'],
+:root[data-palette='safe'][data-theme='light'],
+:root[data-palette='safe'][data-theme='contrast-light'] {
+  --ag-meter-lo: #0072b2;
+  --ag-meter-mid: #b38f00;
+  --ag-meter-hi: #b34700;
+  --ag-led: #0072b2;
+  --ag-led-off: #c3ccd3;
+  --ag-note: #0072b2;
+  --ag-note-border: #00406a;
+  --ag-note-selected: #b35900;
+  --ag-danger: #b34700;
+  --ag-palette-1: #b37700;
+  --ag-palette-2: #0072b2;
+  --ag-palette-3: #8a7f00;
+  --ag-palette-4: #2a7ab0;
+  --ag-palette-5: #b34700;
+  --ag-palette-6: #a64d79;
+  --ag-palette-7: #6b6b6b;
+  --ag-palette-8: #2f8f7a;
+}
+
 /* Accent colors (brushed gold is the default, in tokens.css). */
 :root[data-accent='orange'] {
   --ag-accent: #ff9a3c;

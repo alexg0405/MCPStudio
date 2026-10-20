@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { WindowInstance } from '@app/stores/view';
@@ -93,6 +94,15 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
     grip.addEventListener('pointercancel', up);
   };
 
+  // Esc closes the window when the keyboard is on its frame or title bar (inside the content Esc belongs to the content).
+  const closeWithEscape = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    const target = e.target as HTMLElement;
+    const isOnFrame = target === e.currentTarget || !!target.closest(`.${styles.titleBar}`);
+    if (!isOnFrame) return;
+    e.stopPropagation();
+    services.view.getState().hideWindow(instance.id);
+  };
   const toggleMax = () => services.view.getState().setMaximized(instance.id, !instance.maximized);
   const close = () => services.view.getState().hideWindow(instance.id);
 
@@ -102,6 +112,14 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
       className={`${styles.window} ${focused ? styles.focused : ''}`}
       style={{ transform: `translate(${rect.x}px, ${rect.y}px)`, width: rect.w, height: rect.h, zIndex: instance.z }}
       onPointerDownCapture={() => services.view.getState().focusWindow(instance.id)}
+      // The keyboard reaching a window makes it the focused one too, so its shortcuts apply and it comes to the front.
+      onFocusCapture={() => services.view.getState().focusWindow(instance.id)}
+      onKeyDown={closeWithEscape}
+      // A window is a labelled dialog that does not block the rest (aria-modal stays off). Its own element can take
+      // focus (an empty window, or the Ctrl+F6 jump), but is not a Tab stop.
+      role="dialog"
+      aria-label={title}
+      tabIndex={-1}
       data-window-id={instance.id}
       data-window-type={instance.type}
     >
@@ -140,7 +158,7 @@ export const FloatingWindow = memo(function FloatingWindow({ instance, workspace
           </button>
         </div>
       </div>
-      <div className={styles.body}>
+      <div className={styles.body} data-window-body>
         <Suspense fallback={<div className={styles.loading}>Loading…</div>}>
           <Content windowId={instance.id} props={instance.props} />
         </Suspense>

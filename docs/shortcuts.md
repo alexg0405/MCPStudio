@@ -232,6 +232,51 @@ Moving around without a mouse (the same list is in Help → Keyboard navigation)
 | `Home / End` | Smallest or largest value. |
 | `Enter, then type` | In a number box: type the exact value, Enter keeps it, Esc leaves it as it was. |
 
+### Piano roll (Tab to the grid)
+
+| Keys | What it does |
+|---|---|
+| `← →, ↑ ↓` | Move the cursor one snap step, or one key. Every move is spoken: key, bar and beat, note length, velocity. |
+| `Ctrl+← →, Ctrl+↑ ↓, Page Up / Page Down` | One bar sideways, one octave up or down (Cmd+arrows on a Mac, where Ctrl+arrows belong to the system). |
+| `Home / End` | Start or end of the pattern. |
+| `Shift + any move` | Extend the selection over the notes the cursor crosses. |
+| `Enter` | Select or deselect the note under the cursor; on an empty cell, add a note there. |
+| `Insert or Shift+Enter` | Add a note (or the chosen chord) at the cursor. |
+| `Delete or Backspace` | Delete the selected notes, or the note under the cursor. |
+| `Alt + arrows` | Move the selected notes by a step or a key (Alt+Page Up / Page Down: an octave). |
+| `Alt+Shift+← →, Alt+Shift+↑ ↓` | Make the selected notes shorter or longer by a step; change their velocity. |
+| `Ctrl+A, Esc` | Select every note; clear the selection. |
+| `?` | Say where the cursor is and what is selected. |
+
+### Playlist (Tab to the grid)
+
+| Keys | What it does |
+|---|---|
+| `← →, ↑ ↓` | Move the cursor one snap step, or one track (above the first track is the marker lane). Every move is spoken: track, bar and beat, the clip, its length. |
+| `Ctrl+← →, Ctrl+↑ ↓, Page Up / Page Down` | One bar sideways, four tracks up or down. |
+| `Home / End` | Start or end of the song. |
+| `Shift + any move` | Extend the selection over the clips the cursor crosses. |
+| `Enter` | Select the clip under the cursor; on an empty cell, place the current pattern; on a marker, rename it. |
+| `Insert or Shift+Enter` | Add a clip, a marker (on the marker lane) or an automation point. |
+| `Delete or Backspace` | Delete the selected clips, the marker or the automation point under the cursor. |
+| `Alt + arrows` | Move the selected clips by a step or a track. |
+| `Alt+Shift+← →, Alt+Shift+↑ ↓` | Make the selected clips shorter or longer; change an automation point’s value. |
+| `Ctrl+A, Esc` | Select every clip; clear the selection. |
+| `?` | Say where the cursor is and what is selected. |
+
+### Pitch editor (Tab to the grid)
+
+| Keys | What it does |
+|---|---|
+| `← →` | Previous or next note. Each is spoken: note number, pitch with cents, time, length, word. |
+| `Ctrl+← →, Page Up / Page Down` | Five notes back or on. |
+| `Home / End` | First or last note. |
+| `↑ ↓` | Retune the selected notes by a semitone (Mod+↑ ↓ an octave, Alt+↑ ↓ a cent). |
+| `Enter` | Select or deselect the note under the cursor. |
+| `Delete or Backspace` | Put the selected notes back as sung. |
+| `S / M` | Split the note in two; join it with the next one. |
+| `Ctrl+A, Esc, ?` | Select every note; clear the selection; say where the cursor is. |
+
 ### With a screen reader
 
 - Every window is a dialog with its title as its name; every button, knob and fader has a name, and knobs and faders say their value with its unit.

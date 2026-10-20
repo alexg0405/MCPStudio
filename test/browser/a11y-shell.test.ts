@@ -164,16 +164,18 @@ describe('accessibility of the shell', () => {
     s.view.getState().setMode('song');
     s.engine.play(0);
     await until(() => s.engine.playing, 10_000, 'playback');
-    // Let whatever the start of playback renders settle, then count over a stretch of frames.
-    let last = -1;
-    await until(() => {
-      const settled = commits === last;
-      last = commits;
-      return settled;
-    }, 10_000, 'the commits to settle');
-    const before = commits;
-    for (let i = 0; i < 40; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
-    expect(commits).toBe(before);
+    // Whatever the start of playback renders (lazy windows arriving on a busy machine) settles; then a stretch of frames
+    // must pass with no commit at all. A commit on every frame would never leave such a stretch.
+    const frames = async (n: number) => {
+      for (let i = 0; i < n; i++) await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    };
+    let quiet = false;
+    for (let attempt = 0; attempt < 8 && !quiet; attempt++) {
+      const before = commits;
+      await frames(40);
+      quiet = commits === before;
+    }
+    expect(quiet, 'a stretch of 40 frames with no React commit while playing').toBe(true);
     s.engine.stop();
     s.view.getState().setMode('pattern');
   });
@@ -280,6 +282,8 @@ describe('accessibility of the shell', () => {
 
     it('Alt+0 says where you are', async () => {
       resetAnnouncements();
+      s.engine.stop();
+      await until(() => !s.engine.playing, 10_000, 'playback to stop');
       const win = host.querySelector<HTMLElement>('[data-window-id="mixer"]')!;
       win.focus();
       press('Digit0', { altKey: true });

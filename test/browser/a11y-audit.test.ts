@@ -364,6 +364,60 @@ describe('Accessibility audit (shell)', () => {
     (document.activeElement as HTMLElement).blur();
   });
 
+  it('faders, knobs and number boxes work from the keyboard: arrows, Page, Home, End, Delete, typing a number', async () => {
+    s.history.markSaved();
+    await s.files.newProject(createEmptyProject());
+    addInstrumentChannel(s, 'agstudio.drum-synth');
+    await frame();
+    const project = () => s.doc.getState().project;
+    const mixer = await open('mixer');
+    expect(mixer).toBeTruthy();
+    const fader = mixer!.querySelector<HTMLElement>('[role="slider"][aria-label$="volume"]')!;
+    const insertId = project().mixer.order[0]!;
+    const volume = () => project().mixer.inserts[insertId]!.volume;
+    fader.focus();
+    await userEvent.keyboard('{Delete}');
+    expect(volume()).toBeCloseTo(1, 3);
+    await userEvent.keyboard('{ArrowUp}');
+    const up = volume();
+    expect(up).toBeGreaterThan(1);
+    await userEvent.keyboard('{PageDown}');
+    expect(volume()).toBeLessThan(up);
+    await userEvent.keyboard('{Home}');
+    expect(volume()).toBe(0);
+    await userEvent.keyboard('{End}');
+    expect(volume()).toBeGreaterThan(up);
+    expect(fader.getAttribute('aria-valuetext')).toMatch(/dB/);
+
+    // A knob of the channel rack (its volume).
+    const rack = await open('channel-rack');
+    const knob = rack!.querySelector<HTMLElement>('[role="slider"][aria-label$=" volume"]')!;
+    const channelId = project().channelOrder[0]!;
+    const channelVolume = () => (project().channels[channelId] as { volume: number }).volume;
+    knob.focus();
+    await userEvent.keyboard('{Delete}');
+    const resting = channelVolume();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(channelVolume()).toBeGreaterThan(resting);
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(channelVolume()).toBeLessThan(resting);
+    expect(knob.getAttribute('aria-valuetext')).toMatch(/%/);
+
+    // The tempo box: arrows step it, typing digits opens the text box, Enter sets the value and gives the focus back.
+    const tempo = host.querySelector<HTMLElement>('[role="spinbutton"][aria-label="Tempo in BPM"]')!;
+    const bpm = () => project().transport.bpm;
+    tempo.focus();
+    const start = bpm();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(bpm()).toBeCloseTo(start + 1, 3);
+    await userEvent.keyboard('140{Enter}');
+    await until(() => bpm() === 140);
+    const tempoBox = () => host.querySelector<HTMLElement>('[role="spinbutton"][aria-label="Tempo in BPM"]');
+    await until(() => !!tempoBox() && document.activeElement === tempoBox());
+    expect(tempoBox()!.getAttribute('aria-valuenow')).toBe('140');
+    s.history.markSaved();
+  });
+
   it('every built-in instrument and effect window is named, valid and has no keyboard trap', async () => {
     s.history.markSaved();
     await s.files.newProject(createEmptyProject());

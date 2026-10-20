@@ -19,7 +19,7 @@ import type { Services } from '../services';
 import { loadAutosave, pruneAutosaves, selectRecoveryCandidates, startAutosave, type Autosave } from './autosave';
 import { findMissingSamples, missingSoundsNotice } from './project-io';
 import { fileHandle } from './recent-files';
-import { captureView } from './view-snapshot';
+import { captureView, type ViewSnapshot } from './view-snapshot';
 
 /**
  * Keeps work safe across reloads and crashes.
@@ -223,9 +223,21 @@ export interface SessionPersistence {
   stop(): void;
 }
 
+/**
+ * The project the reload snapshot and the crash autosave keep: the open one, or, while a guided tour shows its demo song,
+ * the musician's own (so a reload or a crash in the middle of a tour never brings the demo back instead of their work).
+ */
+const ownProject = (s: Services): Project => s.demo.own?.project ?? s.doc.getState().project;
+const ownView = (s: Services): ViewSnapshot => s.demo.own?.view ?? captureView(s);
+/** Whether that project has changes that are not in its file. */
+const isOwnProjectDirty = (s: Services): boolean => s.demo.own?.isDirty ?? s.history.status().dirty;
+
 /** Starts the reload snapshot and the crash autosave for this tab. */
 export function installSessionPersistence(s: Services, sessionId: string): SessionPersistence {
   const fileInfo = (): SessionFile => {
+    // While a tour shows its demo song, what is kept is the musician's own project, never the demo.
+    const own = s.demo.own;
+    if (own) return { name: own.name, fileKey: own.fileKey, dirty: own.isDirty };
     const f = s.files.store.getState();
     return { name: f.name, fileKey: f.fileKey, dirty: s.history.status().dirty };
   };
@@ -266,7 +278,7 @@ function startReloadSnapshot(s: Services, fileInfo: () => SessionFile): { stop()
       const transport: SessionTransport = { playing: s.engine.playing, tick: s.engine.playhead(), at: Date.now() };
       storage.setItem(
         SNAPSHOT_KEY,
-        JSON.stringify({ project: s.doc.getState().project, view: captureView(s), file: fileInfo(), transport }),
+        JSON.stringify({ project: ownProject(s), view: ownView(s), file: fileInfo(), transport }),
       );
       isTooBig = false;
     } catch {
@@ -323,21 +335,21 @@ function startCrashAutosave(
     storage: {
       writeAutosave,
       // Closing a tab with unsaved changes keeps them recoverable: only a saved project ends clean.
-      markAutosaveClean: (id) => (s.history.status().dirty ? Promise.resolve() : markAutosaveClean(id)),
+      markAutosaveClean: (id) => (isOwnProjectDirty(s) ? Promise.resolve() : markAutosaveClean(id)),
     },
     getSnapshot: () => {
-      const project = s.doc.getState().project;
+      const project = ownProject(s);
       const file = fileInfo();
       return {
         // The recovery prompt shows the title: use the file's name.
         project: { ...project, meta: { ...project.meta, title: file.name } },
-        view: { ...captureView(s), session: file },
+        view: { ...ownView(s), session: file },
       };
     },
     // Only unsaved work needs a crash copy (a clean project is in its file already).
     subscribe: (fn) => {
       const onChange = () => {
-        if (s.history.status().dirty) fn();
+        if (isOwnProjectDirty(s)) fn();
       };
       const unsubscribes = [s.history.onChange(onChange), s.view.subscribe(onChange)];
       return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
@@ -347,7 +359,7 @@ function startCrashAutosave(
   });
   // Saved, opened or started fresh: the old crash copy holds nothing worth recovering.
   const markCleanIfSaved = () => {
-    if (!s.history.status().dirty) void markAutosaveClean(sessionId).catch(() => {});
+    if (!isOwnProjectDirty(s)) void markAutosaveClean(sessionId).catch(() => {});
   };
   const unsubscribes = [
     s.files.onSaved(markCleanIfSaved),

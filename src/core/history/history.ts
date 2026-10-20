@@ -79,7 +79,18 @@ interface Entry {
   hashes?: readonly string[];
 }
 
-const samePath = (a: Patch['path'], b: Patch['path']) => a.length === b.length && a.every((p, i) => p === b[i]);
+/** An opaque copy of a document's history (see `History.snapshot`). */
+export interface HistorySnapshot {
+  readonly project: Project;
+  readonly undo: readonly Entry[];
+  readonly redo: readonly Entry[];
+  /** Cursor of the saved state, as `History` keeps it (-1: none reachable). */
+  readonly savedCursor: number;
+  /** Whether the project had changes that were not saved when the snapshot was made. */
+  readonly dirty: boolean;
+}
+
+const samePath =(a: Patch['path'], b: Patch['path']) => a.length === b.length && a.every((p, i) => p === b[i]);
 
 /**
  * Shrinks replace-only patch sequences (a fader drag) to one patch per path: last value forward,
@@ -315,6 +326,36 @@ export class History {
     this.savedCursor = opts.dirty ? -1 : 0;
     this.container.set(project);
     this.emit({ next: project, prev, patches: null, origin: 'load' });
+  }
+
+  /**
+   * Everything about the document that `load()` throws away: the project, the undo and redo steps and which state is
+   * saved. A guided tour keeps this while it shows a demo song, and `restore()` puts it all back, undo history included.
+   */
+  snapshot(): HistorySnapshot {
+    this.gestureActive?.commit();
+    const top = this.undoStack[this.undoStack.length - 1];
+    // A step that was still open to merging must not absorb edits made to the demo song after the snapshot.
+    if (top) delete top.mergeKey;
+    return {
+      project: this.container.get(),
+      undo: [...this.undoStack],
+      redo: [...this.redoStack],
+      savedCursor: this.savedCursor,
+      dirty: this.status().dirty,
+    };
+  }
+
+  /** Puts back what `snapshot()` kept: the project, its undo and redo steps and its saved state. */
+  restore(snapshot: HistorySnapshot): void {
+    this.gestureActive = null;
+    this.gestureChanged = false;
+    const prev = this.container.get();
+    this.undoStack = [...snapshot.undo];
+    this.redoStack = [...snapshot.redo];
+    this.savedCursor = snapshot.savedCursor;
+    this.container.set(snapshot.project);
+    this.emit({ next: snapshot.project, prev, patches: null, origin: 'load' });
   }
 
   /**

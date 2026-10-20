@@ -39,6 +39,7 @@ import { MeterService } from './metering/service';
 import { createTrackAnalyzer, type AnalysisStorage, type TrackAnalyzer } from './dj/analysis-cache';
 import { createDecksFactory, type DecksAccess } from './dj/decks-factory';
 import { LauncherSession } from './launcher/session';
+import { DemoSession } from './demo-session';
 import {
   connectAudioRecording,
   connectEngine,
@@ -105,6 +106,8 @@ export interface Services {
   readonly versions: VersionService;
   /** The list of your projects (files the app remembers, autosaves, projects with versions) and what to do with each. */
   readonly projects: ProjectsService;
+  /** The demo song a guided tour runs on, with the musician's own project kept safe until it ends (`app/demo-session.ts`). */
+  readonly demo: DemoSession;
   /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). Its code loads on first use. */
   readonly assistant: AssistantFacade;
   /** AI apps (Claude Code, Claude Desktop…) controlling the project over MCP: the tools and the dev server's channel. */
@@ -259,6 +262,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let meters: MeterService | null = null;
   let versions: VersionService | null = null;
   let projects: ProjectsService | null = null;
+  let demo: DemoSession | null = null;
   const services: Services = {
     platform,
     commands,
@@ -305,6 +309,9 @@ export function createServices(opts: ServiceOptions = {}): Services {
     },
     get projects() {
       return (projects ??= new ProjectsService(services, opts.projectSources));
+    },
+    get demo() {
+      return (demo ??= new DemoSession(services));
     },
     presets,
     trackAnalyzer,

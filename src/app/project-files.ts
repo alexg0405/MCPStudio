@@ -78,8 +78,20 @@ export class ProjectFiles {
     return this.s.history.status().dirty;
   }
 
+  /**
+   * Runs first when anything is about to replace the open project. A guided tour that shows a demo song uses it to put
+   * the musician's own project back, so what is then asked ("keep your changes?") is about their song, not the demo.
+   */
+  private beforeReplace: (() => void) | null = null;
+
+  /** Sets (or, with null, removes) the function that runs before the project is replaced. */
+  setBeforeReplace(fn: (() => void) | null): void {
+    this.beforeReplace = fn;
+  }
+
   /** Resolves true when the project may be replaced (nothing unsaved, saved now, or discarded). */
   async confirmReplace(): Promise<boolean> {
+    this.beforeReplace?.();
     if (!this.dirty) return true;
     const choice = await this.ui.askUnsaved(this.store.getState().name);
     if (choice === 'cancel') return false;

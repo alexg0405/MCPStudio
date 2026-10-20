@@ -314,3 +314,47 @@ describe('History', () => {
     );
   });
 });
+
+describe('snapshot and restore', () => {
+  it('puts back the project, the undo and redo steps and the saved state after a load', () => {
+    const h = setup();
+    h.history.transact('add kick', (d) => addChannel(d, channel('Kick')));
+    h.tick(5000);
+    h.history.markSaved();
+    h.history.transact('add clap', (d) => addChannel(d, channel('Clap')));
+    h.tick(5000);
+    h.history.transact('add hat', (d) => addChannel(d, channel('Hat')));
+    h.history.undo();
+    const before = h.doc;
+    const status = h.history.status();
+    expect(status.canRedo).toBe(true);
+
+    const snap = h.history.snapshot();
+    h.history.load(createEmptyProject({ now: new Date(1) }));
+    h.history.transact('demo edit', (d) => addChannel(d, channel('Demo')));
+    expect(h.doc.channelOrder).toHaveLength(1);
+
+    h.history.restore(snap);
+    expect(h.doc).toBe(before);
+    expect(h.history.status()).toEqual(status);
+    expect(h.changes.at(-1)?.origin).toBe('load');
+    // The restored steps still undo and redo like the originals.
+    h.history.redo();
+    expect(h.doc.channelOrder).toHaveLength(3);
+    h.history.undo();
+    h.history.undo();
+    expect(h.doc.channelOrder).toHaveLength(1);
+    expect(h.history.status().dirty).toBe(false);
+  });
+
+  it('keeps a step that could still merge from absorbing edits made while away', () => {
+    const h = setup();
+    const id = () => h.doc.channelOrder[0] as ChannelId;
+    h.history.transact('add', (d) => addChannel(d, channel('A')));
+    h.history.transact('vol', (d) => setChannelProp(d, id(), 'volume', 0.5), { mergeKey: 'vol' });
+    const snap = h.history.snapshot();
+    h.history.restore(snap);
+    h.history.transact('vol again', (d) => setChannelProp(d, id(), 'volume', 0.4), { mergeKey: 'vol' });
+    expect(h.history.steps().done).toHaveLength(3);
+  });
+});

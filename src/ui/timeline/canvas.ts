@@ -35,6 +35,8 @@ export interface TimelineTheme {
   lineFaint: string;
   danger: string;
   select: string;
+  /** The keyboard cursor of the canvas editors (a dashed box with corner ticks, drawn while the editor has keyboard focus). */
+  cursor: string;
   led: string;
   ledOff: string;
   ledGlow: string;
@@ -230,6 +232,7 @@ export function readTheme(el: Element = document.documentElement): TimelineTheme
     lineFaint: v('--ag-line-faint', 'rgba(255,255,255,0.05)'),
     danger: v('--ag-danger', '#e5574d'),
     select: v('--ag-select', '#5aa4e8'),
+    cursor: v('--ag-cursor', '#5aa4e8'),
     led: v('--ag-led', '#9fde5a'),
     ledOff: v('--ag-led-off', '#46532f'),
     ledGlow: v('--ag-led-glow', 'rgba(159,222,90,0.6)'),

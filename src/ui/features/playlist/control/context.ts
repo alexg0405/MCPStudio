@@ -5,7 +5,7 @@
  * pointer handling, the ruler...) and takes the `PlaylistContext`; `../controller.ts` builds it and wires the events.
  */
 import type { Services } from '@app/services';
-import type { Clip, LaneId, MarkerId, AutomationClip, Tick } from '@core/model/types';
+import type { Clip, ClipId, LaneId, MarkerId, AutomationClip, Tick } from '@core/model/types';
 import { type FollowFrame, PlayheadFollow, createFollowFrame } from '../../../timeline/follow';
 import { PannedLayer } from '../../../timeline/panned';
 import { PlayheadLine } from '../../../timeline/playhead-line';
@@ -92,8 +92,30 @@ export interface AutoHover {
   hit: AutoHit;
 }
 
+/** A place on the playlist the keyboard cursor can be: a tick (on the snap grid) and a track row (-1 is the marker lane above the tracks). */
+export interface ClipCursor {
+  tick: Tick;
+  row: number;
+}
+
+/** The keyboard cursor (see `key-cursor.ts`): where it is, the corner a Shift-extended selection started from, and whether it is shown. */
+export interface PlaylistKeyboardState {
+  cursor: ClipCursor;
+  /** The cell a Shift + arrow selection grows from (null while no selection is being extended), and what was selected then. */
+  anchor: ClipCursor | null;
+  anchorSelection: readonly ClipId[];
+  /** The grid has keyboard focus: the cursor is drawn and the keys are its. */
+  isActive: boolean;
+  /** The cursor has been put somewhere sensible (the first time the grid gets the keyboard focus). */
+  isPlaced: boolean;
+  /** The selection as it was when the keyboard last left the grid: a different one on return was made elsewhere (with the mouse). */
+  selectionWhenLeft: readonly ClipId[] | null;
+}
+
 /** The mutable state of the interaction. Only the modules of this folder change it; the frame loop reads it. */
 export interface PlaylistState {
+  /** The keyboard cursor. */
+  keyboard: PlaylistKeyboardState;
   /** The layers to draw on the next frame. */
   dirty: Set<Layer>;
   /** What the pointer is doing (a drag, a swipe...), or null. */
@@ -200,6 +222,7 @@ export function createPlaylistContext(s: Services, els: PlaylistElements, hooks:
 
 function createPlaylistState(): PlaylistState {
   return {
+    keyboard: { cursor: { tick: 0, row: 0 }, anchor: null, anchorSelection: [], isActive: false, isPlaced: false, selectionWhenLeft: null },
     dirty: new Set<Layer>(['grid', 'clips', 'overlay', 'headers', 'ruler']),
     drag: null,
     hover: null,

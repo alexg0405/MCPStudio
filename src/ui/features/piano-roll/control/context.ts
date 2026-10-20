@@ -108,8 +108,30 @@ export interface MaxTickMemo {
   result: Tick;
 }
 
+/** A place on the grid the keyboard cursor can be: a tick (on the snap grid) and a key. */
+export interface NoteCursor {
+  tick: Tick;
+  key: number;
+}
+
+/** The keyboard cursor (see `key-cursor.ts`): where it is, the corner a Shift-extended selection started from, and whether it is shown. */
+export interface KeyboardState {
+  cursor: NoteCursor;
+  /** The cell a Shift + arrow selection grows from (null while no selection is being extended), and what was selected then. */
+  anchor: NoteCursor | null;
+  anchorSelection: readonly NoteId[];
+  /** The grid has keyboard focus: the cursor is drawn and the keys are its. */
+  isActive: boolean;
+  /** The cursor has been put somewhere sensible (the first time the grid gets the keyboard focus). */
+  isPlaced: boolean;
+  /** The selection as it was when the keyboard last left the grid: a different one on return was made elsewhere (with the mouse). */
+  selectionWhenLeft: readonly NoteId[] | null;
+}
+
 /** The mutable state of the interaction. Only the modules of this folder change it; the frame loop reads it. */
 export interface PianoRollState {
+  /** The keyboard cursor. */
+  keyboard: KeyboardState;
   /** The layers to draw on the next frame. */
   dirty: Set<Layer>;
   /** What the pointer is doing, or null. */
@@ -217,6 +239,7 @@ export function createPianoRollContext(s: Services, els: PianoRollElements, hook
 
 function createPianoRollState(): PianoRollState {
   return {
+    keyboard: { cursor: { tick: 0, key: DEFAULT_TOP_KEY }, anchor: null, anchorSelection: [], isActive: false, isPlaced: false, selectionWhenLeft: null },
     dirty: new Set<Layer>(['grid', 'notes', 'overlay', 'keys', 'ruler', 'lane']),
     drag: null,
     hover: null,

@@ -25,6 +25,7 @@ import type { TwoFingerFrame } from '../../touch/recognizer';
 import { attachTouchSurface } from '../../touch/surface';
 import { clamp, Viewport } from '../../timeline/viewport';
 import { curveMidi, dragTarget, drawNotes, hitNote, lyricsUnderBlobs, notesInRect, pitchText, rowForKey, type DrawNote } from './model';
+import { PitchKeyboard } from './keyboard';
 import { drawContent, drawGrid, drawKeys, drawOverlay, drawRuler, type PitchScene } from './pitch-draw';
 import { KEYS_WIDTH, RULER_HEIGHT, type Drag, type Layer, type PitchTool } from './pitch-types';
 
@@ -74,11 +75,26 @@ export class PitchEditorController {
   private lastPlayheadMs = Number.NaN;
   private lastHint = '';
   private scrollTrackW = 1;
+  /** The keyboard cursor on the notes (see `keyboard.ts`). */
+  private readonly keyboard: PitchKeyboard;
 
   constructor(
     private readonly s: Services,
     private readonly els: PitchEditorElements,
-  ) {}
+  ) {
+    this.keyboard = new PitchKeyboard({
+      services: s,
+      viewport: this.vp,
+      element: els.area,
+      notes: () => this.notes,
+      clip: () => this.clip,
+      words: () => this.lyrics,
+      maxMs: () => this.maxMs(),
+      setSelected: (indices) => this.setSelected(indices),
+      isDragging: () => this.drag !== null,
+      redraw: () => this.mark('grid', 'content', 'overlay', 'keys', 'ruler'),
+    });
+  }
 
   // ---- Lifecycle ----
 
@@ -109,6 +125,7 @@ export class PitchEditorController {
     on(this.els.hscroll, 'pointerup', (e) => this.onPointerUp(e));
     this.listenToTouch();
     this.unsubs.push(
+      this.keyboard.attach(),
       pitchState.subscribe(() => this.onData()),
       this.s.doc.subscribe(() => this.onData()),
       onThemeChange(() => this.mark('grid', 'content', 'overlay', 'keys', 'ruler')),
@@ -196,6 +213,7 @@ export class PitchEditorController {
     // Selection never points past the notes.
     const n = this.notes.length;
     if (st.selected.some((i) => i >= n)) pitchState.setState({ selected: st.selected.filter((i) => i < n) });
+    this.keyboard.dataChanged();
     this.mark('grid', 'content', 'overlay', 'keys');
   }
 
@@ -567,6 +585,7 @@ export class PitchEditorController {
       pointer: this.pointer,
       playheadMs: this.lastPlayheadMs,
       lyrics: this.lyrics,
+      keyboardCursor: this.keyboard.cursorBox(),
     };
   }
 

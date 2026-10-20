@@ -105,8 +105,9 @@ function useCloseOnOutsideClick(isOpen: boolean, panelRef: RefObject<HTMLElement
     const onDown = (e: PointerEvent) => {
       const target = e.target as Node;
       if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
-      // Menus opened from inside the panel render elsewhere; only close for clicks on the app itself.
-      if ((target as Element).closest?.('[role="menu"], [role="listbox"], [role="dialog"]')) return;
+      // Menus opened from inside the panel render elsewhere; only close for clicks on the app itself (a window is a dialog
+      // too, but it is the app).
+      if ((target as Element).closest?.('[role="menu"], [role="listbox"], [role="dialog"]:not([data-window-id])')) return;
       close();
     };
     const onKey = (e: KeyboardEvent) => {

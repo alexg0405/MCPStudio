@@ -7,6 +7,7 @@
  * edits touch, spliced into a copy of the whole sample (so trims, fades and tempo follow keep working),
  * stored as 24-bit FLAC through the sample store, and listed in `Project.samples`.
  */
+import { clipSourceSampleId } from '@core/audio/playback';
 import { editSignature, isNeutralEdit, renderRange } from '@core/audio/pitch-edit';
 import type { ClipId, PitchEdit, Project, SampleId, SampleRef } from '@core/model/types';
 import { setPitchRender } from '@core/ops/pitch';
@@ -29,6 +30,8 @@ const PROGRESS_AFTER_RENDER = 0.97;
 interface RenderRun {
   /** The edit it renders (`editSignature`): a newer edit makes this run stale. */
   signature: string;
+  /** The sample it reads: the clip's cleanup render, else the channel's own (a new cleanup render makes this run stale too). */
+  source: SampleId;
   job: RunningPitchJob<Float32Array[]> | null;
 }
 
@@ -36,6 +39,8 @@ interface RenderRun {
 interface SignedEdit {
   edit: PitchEdit;
   signature: string;
+  /** The sample the render reads (see `clipSourceSampleId`). */
+  source: SampleId;
 }
 
 /** The part of a sample the edits touch, as frames [startFrame, endFrame) of every channel. */
@@ -108,7 +113,7 @@ class PitchRenderer {
     const found = audioClipOf(this.s.doc.getState().project, id);
     const edit = found?.clip.pitchEdit;
     if (!edit) return null;
-    return { edit, signature: editSignature(edit) };
+    return { edit, signature: editSignature(edit), source: clipSourceSampleId(found.channel, found.clip, 'pitch') };
   }
 
   /**
@@ -128,30 +133,30 @@ class PitchRenderer {
       return;
     }
     if (!force && current.edit.renderedFor === current.signature && current.edit.renderedSampleId) return;
-    if (!force && run && run.signature === current.signature) return;
+    if (!force && run && run.signature === current.signature && run.source === current.source) return;
     run?.job?.cancel();
-    this.runs.set(id, { signature: current.signature, job: null });
+    this.runs.set(id, { signature: current.signature, source: current.source, job: null });
     this.timers.set(
       id,
       setTimeout(() => {
         this.timers.delete(id);
-        void this.render(id, current.signature);
+        void this.render(id, current.signature, current.source);
       }, RENDER_DELAY_MS),
     );
   }
 
   /** Renders the edit with this signature, if it is still the clip's edit, and shows progress and failures. */
-  private async render(id: ClipId, signature: string): Promise<void> {
+  private async render(id: ClipId, signature: string, source: SampleId): Promise<void> {
     const run = this.runs.get(id);
-    if (!run || run.signature !== signature) return;
+    if (!run || run.signature !== signature || run.source !== source) return;
     const project = this.s.doc.getState().project;
     const found = audioClipOf(project, id);
     const edit = found?.clip.pitchEdit;
-    if (!found || !edit || editSignature(edit) !== signature) return;
+    if (!found || !edit || editSignature(edit) !== signature || clipSourceSampleId(found.channel, found.clip, 'pitch') !== source) return;
     const progress = (fraction: number) => pitchState.setState({ rendering: { clipId: id, fraction } });
     try {
       progress(0);
-      await whileBusy(() => this.renderAndStore(run, id, signature, found.channel.sampleId, found.channel.name, edit, project, progress), { project });
+      await whileBusy(() => this.renderAndStore(run, id, signature, source, found.channel.name, edit, project, progress), { project });
     } catch (e) {
       if (!(e instanceof PitchJobCancelled)) {
         this.s.session.getState().toast(`Pitch correction could not be rendered: ${e instanceof Error ? e.message : String(e)}`, 'error');
@@ -187,7 +192,7 @@ class PitchRenderer {
     const bytes = await encodeOffThread(full, data.sampleRate, { codec: 'flac', bits: 24, kbps: 0 });
     const stored = await importSampleBytes(bytes, `${clipName} (pitch corrected).flac`);
     const sample: SampleRef = { ...stored, durationSec: data.duration, sampleRate: data.sampleRate, channels: full.length };
-    this.commitRender(id, signature, sample);
+    this.commitRender(id, signature, sampleId, sample);
   }
 
   /** Runs the correction in a Worker over the region. Null when a newer run replaced this one meanwhile. */
@@ -208,9 +213,9 @@ class PitchRenderer {
   }
 
   /** Writes the render into the edit's own undo step, unless a newer edit has come in (it has its own render coming). */
-  private commitRender(id: ClipId, signature: string, sample: SampleRef): void {
+  private commitRender(id: ClipId, signature: string, source: SampleId, sample: SampleRef): void {
     const now = this.currentEdit(id);
-    if (!now || now.signature !== signature) return;
+    if (!now || now.signature !== signature || now.source !== source) return;
     this.s.history.transact(
       'Pitch correction rendered',
       (d) => setPitchRender(d, id, sample, signature),

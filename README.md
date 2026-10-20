@@ -106,9 +106,12 @@ the development server on 5390, with hot reload, and has nothing to do with the 
 - **Built-in effects**: EQ, EQ Pro (8 bands on a draggable curve over a live spectrum), Filter, Delay, Reverb,
   Compressor (with sidechain), Limiter (true peak), Multiband, Transient Shaper, Saturator, Distortion, Ducker
   (sidechain or tempo pump), Gate, Chorus, Flanger, Phaser, Stereo, Lo-Fi, Stutter, Vocoder, Tune, De-esser,
-  Doubler and Analyzer (spectrum, LUFS, true peak). Vocal chains: six ready-made effect chains (clean pop, rap, airy
+  Doubler, Denoise (live noise reduction that learns your room) and Analyzer (spectrum, LUFS, true peak). Vocal chains: six ready-made effect chains (clean pop, rap, airy
   ballad, lo-fi, trap auto-tune, podcast) that go on a mixer track in one click (Chains in the browser, or
   right-click a track), save your own track's effects as a chain and share it as a .agchain file; voices get a Vocals bus.
+  Vocal cleanup: right-click a recorded clip → **Clean up vocal…** takes out background noise (learned from a quiet part), tones
+  down or removes breaths (shown as markers on the clip) and repairs mouth clicks, with a before/after listen; it is made
+  in the background as a new sound (your recording stays, Undo goes back) and the Pitch editor then works on the cleaned sound.
 - **Recording and MIDI**: metronome and count-in, note recording from MIDI or the computer keyboard (quantize,
   overdub or replace), an on-screen keyboard, MIDI learn for any knob, MIDI file import and export, hum to notes.
   FL's score log: everything you play is kept for 5 minutes, so Patterns → Dump what I played… turns a riff you

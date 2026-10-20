@@ -218,53 +218,67 @@ class Run {
 
   /** One frame's final gains: patches isolated in time and frequency lowered, smoothed across bins, with a limited fall. */
   private smooth(m: number, target: number): void {
-    const bins = this.bins;
+    const inTime = this.rowScratch;
+    this.openInTime(m, inTime);
+    this.keepWhereEitherOpeningHolds(m, inTime, target);
+    this.smoothAndLimitFall(target);
+  }
+
+  /** Opening in time of frame `m`'s raw gains: the smallest over three frames, then the largest of three such minima (a patch of one or two frames goes). */
+  private openInTime(m: number, out: Float32Array): void {
     const raw = this.raw;
     const a = this.rowOf(m - 2);
     const b = this.rowOf(m - 1);
     const c = this.rowOf(m);
     const d = this.rowOf(m + 1);
     const e = this.rowOf(m + 2);
-    const row = this.rowScratch;
-    // Opening in time: the erosion over three frames, then the largest of three erosions.
-    for (let k = 0; k < bins; k++) {
-      const ra = raw[a + k] as number;
-      const rb = raw[b + k] as number;
-      const rc = raw[c + k] as number;
-      const rd = raw[d + k] as number;
-      const re = raw[e + k] as number;
-      const before = Math.min(ra, rb, rc);
-      const here = Math.min(rb, rc, rd);
-      const after = Math.min(rc, rd, re);
-      row[k] = Math.max(before, here, after);
+    for (let k = 0; k < this.bins; k++) {
+      const twoBefore = raw[a + k] as number;
+      const before = raw[b + k] as number;
+      const now = raw[c + k] as number;
+      const after = raw[d + k] as number;
+      const twoAfter = raw[e + k] as number;
+      const minBefore = Math.min(twoBefore, before, now);
+      const minHere = Math.min(before, now, after);
+      const minAfter = Math.min(now, after, twoAfter);
+      out[k] = Math.max(minBefore, minHere, minAfter);
     }
-    // Opening in frequency of the middle frame; a patch survives when either opening keeps it.
-    const gain = this.final;
+  }
+
+  /**
+   * Opening in frequency of frame `m`, then for every bin the larger of that and the opening in time (`inTime`): a patch that
+   * is wide in either direction survives, one that is narrow in both is lowered. Written to `final` at `target`.
+   */
+  private keepWhereEitherOpeningHolds(m: number, inTime: Float32Array, target: number): void {
+    const bins = this.bins;
+    const raw = this.raw;
+    const now = this.rowOf(m);
     for (let k = 0; k < bins; k++) {
-      const lo = Math.max(0, k - 1);
-      const hi = Math.min(bins - 1, k + 1);
       let widest = 0;
-      for (let j = lo; j <= hi; j++) {
+      for (let j = Math.max(0, k - 1); j <= Math.min(bins - 1, k + 1); j++) {
         const eroded = Math.min(
-          raw[c + Math.max(0, j - 1)] as number,
-          raw[c + j] as number,
-          raw[c + Math.min(bins - 1, j + 1)] as number,
+          raw[now + Math.max(0, j - 1)] as number,
+          raw[now + j] as number,
+          raw[now + Math.min(bins - 1, j + 1)] as number,
         );
         widest = Math.max(widest, eroded);
       }
-      gain[target + k] = Math.max(row[k] as number, widest);
+      this.final[target + k] = Math.max(inTime[k] as number, widest);
     }
-    // Smooth across three bins, then limit how fast it falls.
-    const released = this.released;
-    const ratio = this.releaseRatio;
+  }
+
+  /** Smooths the gains at `target` across three bins and lets them fall no faster than the release allows (and never below the floor). */
+  private smoothAndLimitFall(target: number): void {
+    const bins = this.bins;
+    const gain = this.final;
     let left = gain[target] as number;
     for (let k = 0; k < bins; k++) {
       const mid = gain[target + k] as number;
       const right = gain[target + Math.min(bins - 1, k + 1)] as number;
       const smoothed = SIDE_WEIGHT * left + (1 - 2 * SIDE_WEIGHT) * mid + SIDE_WEIGHT * right;
       left = mid;
-      const g = Math.max(smoothed, (released[k] as number) * ratio, this.floor);
-      released[k] = g;
+      const g = Math.max(smoothed, (this.released[k] as number) * this.releaseRatio, this.floor);
+      this.released[k] = g;
       gain[target + k] = g;
     }
   }

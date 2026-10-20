@@ -21,6 +21,9 @@ const FLATNESS_HIGH_HZ = 8000;
 const MIN_FLATNESS = 0.2;
 /** A frame the pitch tracker finds a voice in with at least this confidence is voiced (0–1). */
 const VOICED_CONFIDENCE = 0.55;
+/** The range of fundamentals the pitch tracker looks for a voice in, Hz. */
+const VOICE_MIN_HZ = 70;
+const VOICE_MAX_HZ = 1000;
 /** Frames this far (seconds) from a voiced frame are not breath: the voice's own tail and onset noise. */
 const VOICE_GUARD_SECONDS = 0.02;
 /** A breath must be this many dB above the quiet floor (the 10th-percentile frame level). */
@@ -86,12 +89,13 @@ function measureFrames(mono: Float32Array, sampleRate: number): Frames {
 /** Which analysis frames have a voice in them, from the YIN pitch track (its frames are 5 ms apart). */
 function voicedFrames(mono: Float32Array, sampleRate: number, count: number, hop: number, size: number): Uint8Array {
   const voiced = new Uint8Array(count);
-  const track = trackPitch(mono, sampleRate, { minHz: 70, maxHz: 1000 });
-  const centre = size / 2;
+  const track = trackPitch(mono, sampleRate, { minHz: VOICE_MIN_HZ, maxHz: VOICE_MAX_HZ });
+  // The tracker's frames are this many samples apart (its default hop, a rounded 5 ms).
+  const trackHop = track.times.length > 1 ? (track.times[1] as number) * sampleRate : 1;
   for (let m = 0; m < count; m++) {
     // The tracker's frames inside this analysis frame's middle half.
-    const from = Math.floor((m * hop + centre * 0.5) / (track.times.length > 1 ? (track.times[1] as number) * sampleRate : 1));
-    const to = Math.ceil((m * hop + centre * 1.5) / (track.times.length > 1 ? (track.times[1] as number) * sampleRate : 1));
+    const from = Math.floor((m * hop + size * 0.25) / trackHop);
+    const to = Math.ceil((m * hop + size * 0.75) / trackHop);
     for (let i = Math.max(0, from); i <= Math.min(track.f0.length - 1, to); i++) {
       if ((track.f0[i] as number) > 0 && (track.confidence[i] as number) >= VOICED_CONFIDENCE) {
         voiced[m] = 1;

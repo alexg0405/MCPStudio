@@ -17,6 +17,8 @@ export interface Listening {
   audition: ClipId | null;
   /** Audio clips that play their original recording although they have a corrected render. */
   original: readonly ClipId[];
+  /** Audio clips that play the recording as recorded, without cleanup or the pitch correction made from it (the cleanup A/B). */
+  uncleaned?: readonly ClipId[];
 }
 
 const originalCache = new WeakMap<object, Map<string, Project>>();
@@ -25,6 +27,39 @@ const originalCache = new WeakMap<object, Map<string, Project>>();
 export function hasPitchRender(project: Project, id: ClipId): boolean {
   const c = project.playlist.clips[id];
   return c?.kind === 'audio' && !!c.pitchEdit?.renderedSampleId;
+}
+
+/** True when the clip has a cleanup render that the cleanup A/B can switch away from. */
+export function hasCleanupRender(project: Project, id: ClipId): boolean {
+  const c = project.playlist.clips[id];
+  return c?.kind === 'audio' && !!c.cleanup?.renderedSampleId;
+}
+
+const uncleanedCache = new WeakMap<object, Map<string, Project>>();
+
+/**
+ * The project with these clips playing the recording as it was recorded: neither the cleanup render nor the pitch render
+ * (which was made from the cleaned sound). Returns `project` when none of them has a cleanup render.
+ */
+export function uncleanedSound(project: Project, ids: readonly ClipId[]): Project {
+  const wanted = ids.filter((id) => hasCleanupRender(project, id));
+  if (wanted.length === 0) return project;
+  const key = [...wanted].sort().join('|');
+  let byKey = uncleanedCache.get(project);
+  if (!byKey) uncleanedCache.set(project, (byKey = new Map()));
+  let v = byKey.get(key);
+  if (!v) {
+    v = produce(project, (d) => {
+      for (const id of wanted) {
+        const c = d.playlist.clips[id];
+        if (c?.kind !== 'audio') continue;
+        if (c.cleanup) delete c.cleanup.renderedSampleId;
+        if (c.pitchEdit) delete c.pitchEdit.renderedSampleId;
+      }
+    });
+    byKey.set(key, v);
+  }
+  return v;
 }
 
 /** The project with these clips playing their own recording (no render). Returns `project` when none has a render. */
@@ -49,5 +84,5 @@ export function originalSound(project: Project, ids: readonly ClipId[]): Project
 
 /** The project as the engine should play it for the current way of listening. */
 export function heardProject(project: Project, listening: Listening): Project {
-  return originalSound(auditionProject(project, listening.audition), listening.original);
+  return uncleanedSound(originalSound(auditionProject(project, listening.audition), listening.original), listening.uncleaned ?? []);
 }

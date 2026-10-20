@@ -32,10 +32,10 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 
 const frame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 30)));
-const until = async (ok: () => boolean, ms = 8000) => {
+const until = async (ok: () => boolean, ms = 30_000, what = 'a condition') => {
   const end = performance.now() + ms;
   while (!ok()) {
-    if (performance.now() > end) throw new Error('timed out');
+    if (performance.now() > end) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 20));
   }
 };
@@ -295,8 +295,10 @@ describe('UX audit (shell)', () => {
         empties.push(`${type}: no DOM window found`);
         continue;
       }
-      // Windows whose code loads on first use show "Loading…" until it arrives.
-      await until(() => !(win.textContent ?? '').includes('Loading…'));
+      // Windows whose code loads on first use show "Loading…" until it arrives. Only what can be seen counts (innerText, not
+      // textContent): a Decks panel always holds its stall note, a hidden "Loading…" that is not the window loading. The test used
+      // to wait on that note for ever whenever the window had rendered within the one frame it was given, which a quiet machine does.
+      await until(() => !(win.innerText ?? '').includes('Loading…'), 30_000, `the ${type} window to stop saying Loading…`);
       await frame();
       opened.push(type);
       const a = audit(win);

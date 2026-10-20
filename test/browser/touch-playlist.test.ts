@@ -25,6 +25,7 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import '@ui/touch/touch.css';
 import { Fingers, insideOf, nextFrame, sleep, until } from '../helpers/touch';
+import { EVENTUALLY } from '../helpers/wait';
 
 const BAR = 3840;
 const BAR_PX = 96; // pxPerTick 0.025
@@ -136,7 +137,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await fingers.pressAndDrag(1, inGrid(2.1 * BAR_PX, LANE_H * 1.5), inGrid(3.2 * BAR_PX, LANE_H * 1.5));
     await fingers.lift(1);
     await frames(2);
-    expect(clips()).toHaveLength(before + 1);
+    await expect.poll(() => clips(), EVENTUALLY).toHaveLength(before + 1);
     // The new clip follows the finger: it is dropped at the bar it ended on.
     expect(clips()[0]!.start).toBe(BAR * 3);
     expect(s.history.status().undoLabel).toBe('Add clip');
@@ -147,7 +148,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await fingers.pressAndDrag(1, inGrid(1.5 * BAR_PX, LANE_H / 2), inGrid(3.5 * BAR_PX, LANE_H / 2));
     await fingers.lift(1);
     await frames(2);
-    expect(clips().find((c) => c.id === made.id)!.start).toBe(BAR * 3);
+    await expect.poll(() => clips().find((c) => c.id === made.id)!.start, EVENTUALLY).toBe(BAR * 3);
   });
 
   it('two fingers pan: the song follows the fingers, and the tool never sees them', async () => {
@@ -171,7 +172,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: inGrid(300, 100) }, { id: 2, to: inGrid(420, 100) });
     await fingers.liftAll();
     await settled();
-    expect(view().scrollLane).toBeCloseTo(1, 1);
+    await expect.poll(() => view().scrollLane, EVENTUALLY).toBeCloseTo(1, 1);
   });
 
   it('a pinch zooms the time axis around the point between the fingers', async () => {
@@ -203,7 +204,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: { x, y: y - 80 } }, { id: 2, to: { x, y: y + 80 } });
     await fingers.liftAll();
     await settled();
-    expect(view().laneHeight).toBeGreaterThan(height * 1.4);
+    await expect.poll(() => view().laneHeight, EVENTUALLY).toBeGreaterThan(height * 1.4);
   });
 
   it('two fingers on the ruler and on the track headers pan and zoom too', async () => {
@@ -213,7 +214,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: { x: rulerBox.left + 404, y } }, { id: 2, to: { x: rulerBox.left + 504, y } });
     await fingers.liftAll();
     await settled();
-    expect(view().scrollTick).toBeCloseTo(BAR, -1);
+    await expect.poll(() => view().scrollTick, EVENTUALLY).toBeCloseTo(BAR, -1);
     // No loop was set by the finger that began on the ruler.
     expect(s.view.getState().loop).toBeNull();
   });
@@ -228,7 +229,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     expect(menu.textContent).toContain('Delete');
     await fingers.lift(1);
     await frames(2);
-    expect(clips()).toHaveLength(1);
+    await expect.poll(() => clips(), EVENTUALLY).toHaveLength(1);
     expect(clips()[0]!.start).toBe(BAR * 2);
     // The menu is still there for the finger to choose from.
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
@@ -241,7 +242,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await until(() => !!document.querySelector('[role="menu"]'));
     await fingers.lift(1);
     await frames(2);
-    expect(clips()).toHaveLength(before);
+    await expect.poll(() => clips(), EVENTUALLY).toHaveLength(before);
     expect(s.history.status().undoLabel).not.toBe('Add clip');
   });
 
@@ -265,7 +266,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     expect(document.querySelector('[role="menu"]')).toBeNull();
     await fingers.lift(1);
     await frames(2);
-    expect(clips()).toHaveLength(1);
+    await expect.poll(() => clips(), EVENTUALLY).toHaveLength(1);
   });
 
   it('two quick taps on a pattern clip are a double-click: that pattern opens in the channel rack', async () => {
@@ -286,7 +287,7 @@ describe('playlist with touch', { timeout: 60_000 }, () => {
     await sleep(500);
     await fingers.tap(1, spot);
     await sleep(150);
-    expect(Object.values(s.view.getState().windows).some((w) => w.type === 'channel-rack' && w.visible)).toBe(false);
+    await expect.poll(() => Object.values(s.view.getState().windows).some((w) => w.type === 'channel-rack' && w.visible), EVENTUALLY).toBe(false);
   });
 
   it('the playlist stays where it is while the page itself is not scrolled or zoomed by a pinch', async () => {

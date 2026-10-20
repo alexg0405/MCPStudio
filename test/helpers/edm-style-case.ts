@@ -1,7 +1,11 @@
 /**
- * The EDM style pack through the real engine: the offline generator's beat in each new style, eight bars
- * on the playlist with the mix set up and leveled for its style. It must sound (not silent), keep the true
- * peak at most −0.9 dBTP and land within 0.5 dB of the style's loudness.
+ * One style of the EDM pack test (`test/browser/edm-pack-<style>.test.ts`, one file per style so the styles render in separate pages
+ * side by side): the offline generator's beat in the style, eight bars on the playlist with the mix set up and leveled for its
+ * style. It must sound (not silent), keep the true peak at most −0.9 dBTP and land within 0.5 dB of the style's loudness.
+ *
+ * The pack has eight new styles; big room, dubstep and drum & bass are checked in the loudness stage files
+ * (`test/helpers/loudness-stage-case.ts`), on the same renders those need anyway, so only the other five are built here (each build
+ * is ten renders of eight bars).
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { applyAnswer } from '@app/ai/apply';
@@ -10,20 +14,29 @@ import { autoLevel, LEVEL_TARGETS } from '@app/mix/auto-level';
 import { createServices, type Services } from '@app/services';
 import { generateLocalBeat } from '@core/beat/local';
 import { STYLE_LABELS, type Style } from '@core/beat/style';
-import { measureMaster } from '../helpers/mix-level';
+import { measureMaster } from './mix-level';
 
-const NEW_STYLES = ['bigroom', 'proghouse', 'futurebass', 'dubstep', 'melodicdub', 'techhouse', 'trance', 'dnb'] as const satisfies readonly Style[];
+/** The pack's styles that have a file of their own here. */
+export const EDM_STYLES = [
+  'proghouse',
+  'futurebass',
+  'melodicdub',
+  'techhouse',
+  'trance',
+] as const satisfies readonly Style[];
+export type EdmStyle = (typeof EDM_STYLES)[number];
+
 const BARS = 8;
 
-describe.concurrent('EDM style pack', () => {
-  const services: Services[] = [];
-  afterAll(async () => {
-    for (const s of services) await s.engine.dispose();
-  });
+/** The test of one style: registers the suite in the file that calls it. */
+export function describeEdmStyle(style: EdmStyle): void {
+  describe('EDM style pack', () => {
+    const services: Services[] = [];
+    afterAll(async () => {
+      for (const s of services) await s.engine.dispose();
+    });
 
-  it.each(NEW_STYLES.map((s) => [s] as const))(
-    '%s: eight bars are audible, leveled to the style’s loudness, true peak at most −0.9 dBTP',
-    async (style) => {
+    it(`${style}: eight bars are audible, leveled to the style’s loudness, true peak at most −0.9 dBTP`, async () => {
       const s = createServices();
       services.push(s);
       const spec = generateLocalBeat({ prompt: STYLE_LABELS[style], bpm: 120 });
@@ -46,8 +59,6 @@ describe.concurrent('EDM style pack', () => {
       expect(master.silent).toBe(false);
       expect(master.truePeakDb!).toBeLessThanOrEqual(-0.9);
       expect(Math.abs(master.lufs - t.master)).toBeLessThanOrEqual(0.5);
-    },
-    // The 8 styles render side by side (about 210 s together on a quiet machine); in the full audio run they share the CPU.
-    900_000,
-  );
-});
+    }, 900_000); // a timeout is for a hang, not a speed check
+  });
+}

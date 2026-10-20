@@ -24,6 +24,7 @@ import '@ui/theme/themes.css';
 import '@ui/theme/base.css';
 import '@ui/touch/touch.css';
 import { Fingers, insideOf, nextFrame, sleep, until } from '../helpers/touch';
+import { EVENTUALLY } from '../helpers/wait';
 
 const PX = 0.1; // a 1/16 step (240 ticks) is 24 px
 const ROW_H = 20;
@@ -128,14 +129,14 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
   it('one finger draws a note with the draw tool, and drags a note it lands on', async () => {
     await fingers.tap(1, at(480, 72));
     await frames(2);
-    expect(notes()).toHaveLength(1);
+    await expect.poll(() => notes(), EVENTUALLY).toHaveLength(1);
     expect(notes()[0]!.tick).toBe(480);
     expect(notes()[0]!.key).toBe(72);
     const note = notes()[0]!;
     await fingers.pressAndDrag(1, at(500, 72), at(980, 74));
     await fingers.lift(1);
     await frames(2);
-    expect(notes()).toHaveLength(1);
+    await expect.poll(() => notes(), EVENTUALLY).toHaveLength(1);
     expect(notes()[0]!.tick).toBe(note.tick + 480);
     expect(notes()[0]!.key).toBe(74);
   });
@@ -147,7 +148,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: at(480, 72) }, { id: 2, to: at(1200, 72) }, 2);
     await fingers.liftAll();
     await frames(2);
-    expect(notes()).toHaveLength(0);
+    await expect.poll(() => notes(), EVENTUALLY).toHaveLength(0);
     expect(s.history.status().cursor).toBe(before);
   });
 
@@ -157,7 +158,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: { x: at(2000, 76).x - 120, y: at(2000, 76).y - 60 } }, { id: 2, to: { x: at(2600, 76).x - 120, y: at(2600, 76).y - 60 } });
     await fingers.liftAll();
     await settled();
-    expect(view().scrollTick).toBeCloseTo(120 / PX, -1);
+    await expect.poll(() => view().scrollTick, EVENTUALLY).toBeCloseTo(120 / PX, -1);
     expect(view().scrollRow).toBeCloseTo(TOP_ROW + 3, 1);
   });
 
@@ -169,7 +170,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: { x: centre.x - 180, y: centre.y } }, { id: 2, to: { x: centre.x + 180, y: centre.y } });
     await fingers.liftAll();
     await settled();
-    expect(view().pxPerTick / before.zoom).toBeGreaterThan(2.2);
+    await expect.poll(() => view().pxPerTick / before.zoom, EVENTUALLY).toBeGreaterThan(2.2);
     expect(view().pxPerTick / before.zoom).toBeLessThan(3.4);
     expect(tickAtCentre()).toBeCloseTo(before.tick, -2);
 
@@ -178,7 +179,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: { x: centre.x, y: centre.y - 90 } }, { id: 2, to: { x: centre.x, y: centre.y + 90 } });
     await fingers.liftAll();
     await settled();
-    expect(view().rowHeight).toBeGreaterThan(rowHeight * 1.3);
+    await expect.poll(() => view().rowHeight, EVENTUALLY).toBeGreaterThan(rowHeight * 1.3);
   });
 
   it('a finger that rests on a note opens its menu, selects it, and leaves it where it is', async () => {
@@ -190,7 +191,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     expect(s.editor.getState().noteSelection).toEqual([made!.id]);
     await fingers.lift(1);
     await frames(2);
-    expect(notes()).toHaveLength(1);
+    await expect.poll(() => notes(), EVENTUALLY).toHaveLength(1);
     expect(notes()[0]!.tick).toBe(960);
     expect(document.querySelector('[role="menu"]')).not.toBeNull();
   });
@@ -201,7 +202,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await until(() => !!document.querySelector('[role="menu"]'));
     await fingers.lift(1);
     await frames(2);
-    expect(notes()).toHaveLength(0);
+    await expect.poll(() => notes(), EVENTUALLY).toHaveLength(0);
   });
 
   it('a finger drags values across the event lane, one undo step', async () => {
@@ -214,7 +215,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await fingers.pressAndDrag(1, { x: lane.left + 1 * PX * 0 + 4, y }, { x: lane.left + 480 * PX + 20, y });
     await fingers.lift(1);
     await frames(2);
-    expect(notes().every((n) => n.velocity > 0.7)).toBe(true);
+    await expect.poll(() => notes().every((n) => n.velocity > 0.7), EVENTUALLY).toBe(true);
     expect(s.history.status().undoLabel).toBeTruthy();
   });
 
@@ -225,7 +226,7 @@ describe('piano roll with touch', { timeout: 60_000 }, () => {
     await fingers.dragTogether({ id: 1, to: { x: lane.left + 180, y: y - 10 } }, { id: 2, to: { x: lane.left + 280, y: y - 10 } });
     await fingers.liftAll();
     await settled();
-    expect(view().scrollTick).toBeCloseTo(120 / PX, -1);
+    await expect.poll(() => view().scrollTick, EVENTUALLY).toBeCloseTo(120 / PX, -1);
     expect(view().scrollRow).toBe(TOP_ROW);
   });
 });

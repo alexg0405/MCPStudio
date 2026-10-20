@@ -8,7 +8,7 @@ import { resolver } from '../helpers/fixtures';
  * Loops a known signal back through a MediaStream into the recorder (no acoustic path) to check
  * the clock math: where bar 1 lands in the recording.
  */
-describe('recorder', () => {
+describe('recorder', { tags: ['realtime'] }, () => {
   const engine = Engine.realtime({ plugins: resolver() });
   const ctx = engine.ctx as AudioContext;
   afterAll(() => engine.dispose());

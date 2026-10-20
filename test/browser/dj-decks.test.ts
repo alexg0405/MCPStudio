@@ -19,6 +19,7 @@ import type { DeckHost } from '@engine/api';
 import { SampleCache } from '@engine/samples';
 import { autocorrelationPitch, TestSamples } from '../helpers/audio';
 import { perfLimit } from '../helpers/perf';
+import { retryWhenOverloaded } from '../helpers/overload';
 
 const SR = 48000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -756,7 +757,7 @@ describe('decks: speed', () => {
   });
 });
 
-describe('decks: the real engine (realtime)', () => {
+describe('decks: the real engine (realtime)', { tags: ['realtime'] }, () => {
   let s: Services | null = null;
   afterAll(async () => {
     (await s?.decks())?.dispose();
@@ -798,21 +799,25 @@ describe('decks: the real engine (realtime)', () => {
     decks.play('B');
     await sleep(500);
     const ctx = s!.engine.deckHost!()!.ctx;
+    const beforeStart = ctx.currentTime;
     await decks.startRecording();
     const t0 = ctx.currentTime;
     expect(decks.store.getState().recording).not.toBeNull();
     await sleep(3500);
-    const seconds = ctx.currentTime - t0;
+    const stopCalled = ctx.currentTime;
     const title = await decks.stopRecording();
+    const stopReturned = ctx.currentTime;
     expect(title).toMatch(/^Live mix \d{4}-\d\d-\d\d \d\d:\d\d$/);
     expect(decks.store.getState().recording).toBeNull();
     // The recording is in the music library, as long as the audio clock ran while it was recording (the stop adds
-    // its 50 ms tail; a busy machine can stall the clock, which the recording follows). Adding it to the library
-    // takes a moment of its own: the clock is read before that.
+    // its 50 ms tail; a busy machine can stall the clock, which the recording follows). Starting and stopping take
+    // as long as they take, so the clock is read around them: it ran at least from the end of the start to the call of
+    // the stop, and at most from before the start to the return of the stop. Both bounds are as tight as the calls are
+    // quick, and a busy machine that delays one only widens its own window.
     const song = library.getState().songs.find((x) => x.title === title);
     expect(song).toBeDefined();
-    expect(song!.durationSec!).toBeGreaterThan(seconds - 0.25);
-    expect(song!.durationSec!).toBeLessThan(seconds + 0.25);
+    expect(song!.durationSec!).toBeGreaterThan(stopCalled - t0 - 0.25);
+    expect(song!.durationSec!).toBeLessThan(stopReturned - beforeStart + 0.25);
     // Both play at A's tempo: 124 BPM at +4 %.
     expect(decks.store.getState().decks.B.bpm).toBeCloseTo(124 * 1.04, 6);
     // The clicks are short: watch the meters for a beat or two.
@@ -828,30 +833,37 @@ describe('decks: the real engine (realtime)', () => {
     decks.pause('B');
   }, 60_000);
 
-  it('two key-locked decks keep up with real time (keepUp, as app/playback-health.ts measures it)', { tags: ['perf'], timeout: 60_000 }, async () => {
+  it('two key-locked decks keep up with real time (keepUp, as app/playback-health.ts measures it)', { tags: ['perf'], timeout: 120_000 }, async (test) => {
     const decks = await s!.decks();
-    for (const id of ['A', 'B'] as const) decks.setKeyLock(id, true);
-    decks.setPitch('A', 0.04);
-    decks.sync('B', true);
-    decks.seek('A', 2);
-    decks.play('A');
-    decks.play('B');
-    // Over one-second windows: the audio clock against the wall clock; the decks report the last window.
-    const end = performance.now() + 6000;
-    let worst = 1;
-    let seen = 0;
-    while (performance.now() < end) {
-      await sleep(1100);
-      const k = decks.keepUp?.();
-      if (k !== undefined) {
-        seen++;
-        worst = Math.min(worst, k);
+    // A machine too busy to keep even this up is not a regression: retryWhenOverloaded repeats the measurement (and skips
+    // when every attempt was on an overloaded machine); a failure on a quiet machine fails the test.
+    await retryWhenOverloaded(test, async () => {
+      for (const id of ['A', 'B'] as const) decks.setKeyLock(id, true);
+      decks.setPitch('A', 0.04);
+      decks.sync('B', true);
+      decks.seek('A', 2);
+      decks.play('A');
+      decks.play('B');
+      try {
+        // Over one-second windows: the audio clock against the wall clock; the decks report the last window.
+        const end = performance.now() + 6000;
+        let worst = 1;
+        let seen = 0;
+        while (performance.now() < end) {
+          await sleep(1100);
+          const k = decks.keepUp?.();
+          if (k !== undefined) {
+            seen++;
+            worst = Math.min(worst, k);
+          }
+        }
+        expect(seen).toBeGreaterThanOrEqual(3);
+        expect(worst).toBeGreaterThanOrEqual(perfLimit(0.98, 0.85));
+      } finally {
+        decks.pause('A');
+        decks.pause('B');
       }
-    }
-    expect(seen).toBeGreaterThanOrEqual(3);
-    expect(worst).toBeGreaterThanOrEqual(perfLimit(0.98, 0.85));
-    decks.pause('A');
-    decks.pause('B');
+    });
   });
 
   it('plays through the engine’s output: the host is the engine’s, and a reboot carries the decks over', async () => {

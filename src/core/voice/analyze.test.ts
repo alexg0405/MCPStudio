@@ -343,7 +343,7 @@ describe('analyzeVoice: robustness', () => {
     expect(Object.values(events[0]?.features ?? {}).every(Number.isFinite)).toBe(true);
   });
 
-  it('analyses 30 s of 48 kHz audio in well under a second', async () => {
+  it('analyses 30 s of 48 kHz audio in well under a second', { tags: ['perf'], timeout: 30_000 }, async () => {
     // Alternating bars of beatbox and hummed bass at 120 BPM.
     const bar = 2;
     const x = noiseFloor(SR, 30, -60, 8);
@@ -378,5 +378,5 @@ describe('analyzeVoice: robustness', () => {
     expect(events.length).toBe(8 * 9 + 7 * 4);
     // The target is ~400 ms in Node; the bound leaves room for a loaded CI machine.
     expect(best).toBeLessThan(800);
-  }, 30000);
+  });
 });

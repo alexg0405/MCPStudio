@@ -16,12 +16,21 @@ way) `node` and `npm` are on the PATH already. AGstudio runs on Windows 10/11 to
   `bin\agstudio.cmd` on Windows) starts it and opens the browser, or just opens it when it is already running. Both are thin
   wrappers that find Node and run `scripts/agstudio.mjs`, where the logic is.
 - `npm run check`: everything CI would run (`scripts/check.mjs`): `tsc -b` (all five tsconfigs, incremental) and `eslint .`
-  (cached) side by side, then the unit project, then the audio project, one after the other so the speed tests are not
-  starved. A warm run with nothing changed spends seconds on the static checks.
-- `npm test`: unit tests only (Node). `npm run test:audio`: browser tests in headless Chrome (installed Chrome, no download).
+  (cached) side by side, then four test stages one after the other: the unit project and the audio project (many files side by
+  side, without the quiet-machine tests), then those quiet-machine tests alone, one file at a time: first in Node
+  (`unit-timing`), then in Chrome (`audio-realtime`). A warm run with nothing changed spends seconds on the static checks.
+- `npm test`: unit tests only (Node), every test. `npm run test:audio`: browser tests in headless Chrome (installed Chrome, no
+  download), every test. Both run all the tests of their project side by side, as the stages of `check` do not.
+- Two tags mark the tests that cannot share the machine with other tests: `perf` (asserts on speed, CPU cost or memory) and
+  `realtime` (needs a live audio clock: a realtime AudioContext that must keep up, a loopback recording, playing while
+  something changes). Put `{ tags: ['realtime'] }` in the options of the `it` or `describe`; the files that carry a tag are found
+  by `tools/test/quiet-files.ts` and run last, sequentially (`scripts/lib/test-stages.mjs`, `vite.config.ts`). A realtime test
+  that fails because the machine was overloaded (not because the code is wrong) is retried and, if every attempt was
+  overloaded, skipped with the numbers: `retryWhenOverloaded` in `test/helpers/overload.ts`.
 - `npm run test:perf`: only the tests tagged `perf` (speed assertions), with their real limits (`VITE_PERF_STRICT`); run it
   on a quiet machine. The regular run keeps loose bounds for them. Speed assertions use `cpuNow`/`settle` from
-  `@agstudio/sdk/testing` (CPU time, best of a few attempts), never a single wall-clock sample.
+  `@agstudio/sdk/testing` (CPU time, best of a few attempts), never a single wall-clock sample. UI tests wait for a condition
+  (`expect.poll`, `until`), never for a fixed number of frames or milliseconds, before they assert.
 - `agstudio --app` (`bin/agstudio`): serves the production build on port 5391 (`$APP_PORT`) and opens the installed app; the
   installed app (PWA, `docs/architecture.md` "Installable app (PWA)") belongs to that origin, not to the dev server's.
 - `npm run new:plugin -- --kind instrument|effect --style graph|worklet|faust --id user.my-thing`: scaffold a user plugin

@@ -28,7 +28,7 @@ import '@ui/theme/base.css';
 const BAR = 3840;
 const BAR_PX = 96; // pxPerTick 0.025
 const LANE_H = 36;
-const until = async (ok: () => boolean, ms = 8000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

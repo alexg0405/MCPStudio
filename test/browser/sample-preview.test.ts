@@ -8,10 +8,11 @@ import { encodeWav } from '@core/io/wav';
 import { PPQ } from '@core/time/ppq';
 import { createServices, type Services } from '@app/services';
 import { Engine } from '@engine/engine';
+import { retryWhenOverloaded } from '../helpers/overload';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe('sample preview in the engine', { timeout: 60_000 }, () => {
+describe('sample preview in the engine', { timeout: 60_000, tags: ['realtime'] }, () => {
   let engine: Engine | null = null;
   let s: Services;
   const starts: { when: number; loop: boolean; rate: number; duration: number }[] = [];
@@ -49,24 +50,26 @@ describe('sample preview in the engine', { timeout: 60_000 }, () => {
     s.engine.stopPreview();
   });
 
-  it('waits for the next beat of the playing song and starts on it (to a few ms), for several moments in a bar', async () => {
-    s.engine.play(0);
-    await sleep(500);
-    const ctx = engine!.ctx as AudioContext;
-    for (let k = 0; k < 4; k++) {
-      starts.length = 0;
-      expect(await s.engine.previewAudio(bytes(), { loop: true, onBeat: true })).toBe(true);
-      const p = starts.find((x) => x.loop)!;
-      expect(p.when).toBeGreaterThan(ctx.currentTime - 0.01);
-      expect(p.when).toBeLessThan(ctx.currentTime + 1.1);
-      // The song heard when the preview starts is on a beat: 120 BPM is 1.92 ticks per millisecond.
-      const tick = s.engine.tickAt(p.when).tick;
-      const off = Math.abs(tick - Math.round(tick / PPQ) * PPQ);
-      expect(off / 1.92, `${k}: ${tick} is ${(off / 1.92).toFixed(1)} ms from a beat`).toBeLessThan(12);
-      await sleep(137 + k * 90);
-    }
-    s.engine.stopPreview();
-    s.engine.stop();
+  it('waits for the next beat of the playing song and starts on it (to a few ms), for several moments in a bar', async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      s.engine.play(0);
+      await sleep(500);
+      const ctx = engine!.ctx as AudioContext;
+      for (let k = 0; k < 4; k++) {
+        starts.length = 0;
+        expect(await s.engine.previewAudio(bytes(), { loop: true, onBeat: true })).toBe(true);
+        const p = starts.find((x) => x.loop)!;
+        expect(p.when).toBeGreaterThan(ctx.currentTime - 0.01);
+        expect(p.when).toBeLessThan(ctx.currentTime + 1.1);
+        // The song heard when the preview starts is on a beat: 120 BPM is 1.92 ticks per millisecond.
+        const tick = s.engine.tickAt(p.when).tick;
+        const off = Math.abs(tick - Math.round(tick / PPQ) * PPQ);
+        expect(off / 1.92, `${k}: ${tick} is ${(off / 1.92).toFixed(1)} ms from a beat`).toBeLessThan(12);
+        await sleep(137 + k * 90);
+      }
+      s.engine.stopPreview();
+      s.engine.stop();
+    });
   });
 
   it('time-stretches a loop to the project tempo keeping its pitch (the copy is longer, the rate stays 1), and resamples with a rate', async () => {

@@ -137,7 +137,7 @@ describe('DeckStream', () => {
     expect(s.covers(cue, cue + 2.8 * SR)).toBe(false);
   });
 
-  it('a jump far away from a source that is not in memory waits for its first blocks only', async () => {
+  it('a jump far away from a source that is not in memory waits for its first blocks only', { tags: ['perf'] }, async () => {
     const src = fakeSource(2 * 3600 * SR, { delayMs: 5 });
     const s = new DeckStream(src);
     s.moveTo(0);

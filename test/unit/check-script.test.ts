@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import config from '../../vite.config';
+import { STAGES } from '../../scripts/lib/test-stages.mjs';
 import { binPath, nodeArgumentsForScript } from '../../scripts/lib/tools.mjs';
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
@@ -16,9 +17,11 @@ describe('npm run check', () => {
       (p) => p.test?.name,
     );
     expect(projects.length).toBeGreaterThan(0);
-    const script = read('scripts/check.mjs');
-    const run = [...script.matchAll(/'--project',\s*'([\w-]+)'/g)].map((m) => m[1]);
+    // The stages (scripts/lib/test-stages.mjs) name the projects; check.mjs runs every stage.
+    const run = Object.values(STAGES).map((stage) => stage.project);
     expect([...run].sort()).toEqual([...projects].sort());
+    const script = read('scripts/check.mjs');
+    for (const stage of Object.keys(STAGES)) expect(script, stage).toContain(`'${stage}'`);
   });
 
   it('type-checks all five tsconfigs and lints through the package scripts it calls', () => {

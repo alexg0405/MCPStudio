@@ -140,7 +140,7 @@ export const sleep = (ms: number): Promise<void> => new Promise((resolve) => set
  * Waits until `ok()` is true (polling a frame apart), or throws after `ms`. Generous by default: in the full audio run
  * the page shares the CPU with heavy render tests, and a tap can take seconds to be handled there.
  */
-export async function until(ok: () => boolean, ms = 15_000): Promise<void> {
+export async function until(ok: () => boolean, ms = 30_000): Promise<void> {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

@@ -2,12 +2,14 @@
 import { defineConfig, loadEnv, normalizePath, type EnvironmentModuleNode, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { playwright } from '@vitest/browser-playwright';
+import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { draftServer } from './tools/ai/drafts.ts';
 import { faustPlugin } from './tools/faust/vite-plugin.ts';
 import { aiServer } from './tools/ai/server.ts';
 import { mcpServer } from './tools/mcp/server.ts';
 import { pwaPrecache } from './tools/pwa/precache.ts';
+import { findQuietFiles } from './tools/test/quiet-files.ts';
 
 // Vite, its globs and its aliases use forward slashes on every system; fileURLToPath gives `C:\Users\…\` on Windows.
 // (The folder keeps its trailing slash, so `${root}src/…` below reads the same everywhere.)
@@ -15,6 +17,59 @@ const root = normalizePath(fileURLToPath(new URL('.', import.meta.url)));
 
 /** The browser the audio tests run in: the installed Google Chrome, or another Chromium browser of the same install (`msedge`). */
 const testBrowser = process.env.AGSTUDIO_TEST_BROWSER || 'chrome';
+
+const UNIT_INCLUDE = ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts', 'test/unit/**/*.test.ts'];
+const UNIT_EXCLUDE = ['**/*.browser.test.{ts,tsx}', '**/node_modules/**', 'plugins/_*/**'];
+/** Runs before each Node test file (a longer default for `vi.waitFor`, which gives up after 1 s). */
+const UNIT_SETUP = ['test/unit/setup.ts'];
+const AUDIO_INCLUDE = ['src/**/*.browser.test.{ts,tsx}', 'test/browser/**/*.test.ts'];
+
+/**
+ * How many test files run in Chrome side by side in the `audio` project: about six tenths of the cores. Vitest's default (all
+ * cores but one) put nine pages on ten cores, and each page renders audio on threads of its own, so the pages waited for each
+ * other: on this machine nine pages took 248 to 292 s and six took 229 s, with every file's own time a third shorter (and the
+ * timing-sensitive UI tests failing less).
+ */
+const AUDIO_WORKERS = Math.max(2, Math.round(availableParallelism() * 0.6));
+
+/** The files with `perf` or `realtime` tests (tools/test/quiet-files.ts): what the two sequential projects run. */
+const quietFiles = findQuietFiles(root);
+
+/** A project that runs its test files in headless Chrome; `sequential` runs them one at a time instead of side by side. */
+function browserProject(options: {
+  name: string;
+  include: string[];
+  testTimeout: number;
+  sequential?: boolean;
+  maxWorkers?: number;
+}) {
+  return {
+    extends: true,
+    // The dev server's strictPort would otherwise apply to the browser-test server too; parallel
+    // runs (another terminal, a worktree) should take the next free port instead of failing.
+    server: { strictPort: false },
+    test: {
+      name: options.name,
+      include: options.include,
+      testTimeout: options.testTimeout,
+      hookTimeout: 120_000,
+      // Fixed entity ids: renders (whose noise is seeded from ids) repeat from run to run.
+      setupFiles: ['test/browser/setup.ts'],
+      ...(options.sequential ? { fileParallelism: false } : {}),
+      ...(options.maxWorkers ? { maxWorkers: options.maxWorkers } : {}),
+      browser: {
+        enabled: true,
+        headless: true,
+        // Uses the locally installed Google Chrome (or the browser named in AGSTUDIO_TEST_BROWSER, e.g. msedge); no Playwright browser download needed.
+        provider: playwright({
+          launchOptions: { channel: testBrowser, args: ['--autoplay-policy=no-user-gesture-required'] },
+        }),
+        instances: [{ browser: 'chromium' as const }],
+        screenshotFailures: false,
+      },
+    },
+  };
+}
 
 // Cross-origin isolation: lets us use SharedArrayBuffer later (e.g. lock-free meters).
 // Consequence: every asset must be self-hosted.
@@ -134,49 +189,60 @@ export default defineConfig(({ mode }) => ({
     // (plugin discovery, feature registration) keeps its old matches after folders are added or
     // removed. Discovery is central here, so correctness wins over a slightly faster cold start.
     fsModuleCache: false,
-    // `perf` marks the tests that assert on speed. The regular run keeps loose sanity bounds for them (the whole suite
-    // competes for the same cores); `npm run test:perf` runs only these, with the real limits (VITE_PERF_STRICT).
-    tags: [{ name: 'perf', description: 'Asserts on speed: real limits only under `npm run test:perf` (quiet machine).' }],
+    // `expect.poll` (UI and engine tests waiting for a state to arrive) gives up after 1 s unless told otherwise; a state that
+    // arrives is passed at once whatever the limit, and a busy machine only delays it.
+    expect: { poll: { timeout: 15_000, interval: 25 } },
+    // Two tags mark the tests that only mean something on a machine that is not shared with other tests. `npm run check`
+    // (scripts/check.mjs) leaves them out of the parallel stages and runs them last, one file at a time (the `unit-timing`
+    // and `audio-realtime` projects below):
+    //  - `perf`: asserts on speed, CPU cost or memory. The regular run keeps loose sanity bounds for them (the whole suite
+    //    competes for the same cores); `npm run test:perf` runs only these, with the real limits (VITE_PERF_STRICT).
+    //  - `realtime`: needs a live audio clock (a realtime AudioContext that must keep up, a loopback recording, playing
+    //    while something else changes), so any other load on the machine changes what it measures.
+    tags: [
+      { name: 'perf', description: 'Asserts on speed, CPU cost or memory: real limits only under `npm run test:perf` (quiet machine).' },
+      { name: 'realtime', description: 'Needs a live audio clock: runs alone, after the parallel tests (`npm run check`).' },
+    ],
     projects: [
       {
         extends: true,
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['src/**/*.test.{ts,tsx}', 'plugins/**/*.test.ts', 'test/unit/**/*.test.ts'],
-          exclude: ['**/*.browser.test.{ts,tsx}', '**/node_modules/**', 'plugins/_*/**'],
-          // DSP tests render seconds of audio: a busy machine (browser tests running alongside) can
-          // take several times as long as a quiet one.
-          testTimeout: 20_000,
+          include: UNIT_INCLUDE,
+          exclude: UNIT_EXCLUDE,
+          setupFiles: UNIT_SETUP,
+          // DSP tests render seconds of audio and a busy machine (the other workers, a browser run alongside) can take
+          // several times as long as a quiet one: a timeout is for a hang, not a speed check.
+          testTimeout: 60_000,
         },
       },
       {
+        // The Node tests tagged `perf` (kernel cost, analysis speed), one file at a time. `npm run check` runs only the
+        // tagged tests here and leaves them out of the `unit` project.
         extends: true,
-        // The dev server's strictPort would otherwise apply to the browser-test server too; parallel
-        // runs (another terminal, a worktree) should take the next free port instead of failing.
-        server: { strictPort: false },
         test: {
-          name: 'audio',
-          include: ['src/**/*.browser.test.{ts,tsx}', 'test/browser/**/*.test.ts'],
-          // Offline renders compete with up to nine other files for the cores, and tests that run concurrently
-          // inside a file (describe.concurrent) wait for each other: the browser default of 15 s only ever fired
-          // on a busy machine. A timeout is for a hang, not a speed check. Longer chains of renders set their own.
-          testTimeout: 180_000,
-          hookTimeout: 120_000,
-          // Fixed entity ids: renders (whose noise is seeded from ids) repeat from run to run.
-          setupFiles: ['test/browser/setup.ts'],
-          browser: {
-            enabled: true,
-            headless: true,
-            // Uses the locally installed Google Chrome (or the browser named in AGSTUDIO_TEST_BROWSER, e.g. msedge); no Playwright browser download needed.
-            provider: playwright({
-              launchOptions: { channel: testBrowser, args: ['--autoplay-policy=no-user-gesture-required'] },
-            }),
-            instances: [{ browser: 'chromium' }],
-            screenshotFailures: false,
-          },
+          name: 'unit-timing',
+          environment: 'node',
+          include: quietFiles.node,
+          exclude: UNIT_EXCLUDE,
+          setupFiles: UNIT_SETUP,
+          testTimeout: 120_000,
+          fileParallelism: false,
         },
       },
+      browserProject({
+        name: 'audio',
+        include: AUDIO_INCLUDE,
+        // Offline renders compete with up to nine other files for the cores, and tests that run concurrently
+        // inside a file (describe.concurrent) wait for each other: the browser default of 15 s only ever fired
+        // on a busy machine. A timeout is for a hang, not a speed check. Longer chains of renders set their own.
+        testTimeout: 180_000,
+        maxWorkers: AUDIO_WORKERS,
+      }),
+      // The browser tests tagged `perf` or `realtime`, one file at a time, so the live audio clock and the wall-clock
+      // measurements of one test are not disturbed by the renders of another.
+      browserProject({ name: 'audio-realtime', include: quietFiles.browser, testTimeout: 180_000, sequential: true }),
     ],
   },
 }));

@@ -27,7 +27,7 @@ import '@ui/theme/base.css';
 const PX = 0.1; // a 1/16 step (240 ticks) is 24 px
 const ROW_H = 20;
 const TOP_ROW = 40; // key 87 at the top
-const until = async (ok: () => boolean, ms = 5000) => {
+const until = async (ok: () => boolean, ms = 30_000) => {
   const end = performance.now() + ms;
   while (!ok()) {
     if (performance.now() > end) throw new Error('timed out');

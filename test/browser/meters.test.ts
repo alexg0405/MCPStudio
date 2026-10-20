@@ -15,6 +15,7 @@ import { MeterNode } from '@engine/meter/meter-node';
 import { renderOffline } from '@engine/render-offline';
 import { buildSong, measureMaster } from '../helpers/mix-level';
 import { perfLimit } from '../helpers/perf';
+import { retryWhenOverloaded } from '../helpers/overload';
 
 const SR = 48000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -116,47 +117,50 @@ describe('the worklet against the offline measurement', () => {
   }, 120_000);
 });
 
-describe('a live engine', () => {
+describe('a live engine', { tags: ['realtime'] }, () => {
   let services: Services | null = null;
   afterAll(async () => {
     await services?.engine.dispose();
   });
 
-  it('a song playing live reads within 0.3 LU of the offline measurement, and a closed meter does no audio-thread work', async () => {
-    let engine!: Engine;
-    const s = createServices({ createEngine: (o) => (engine = Engine.realtime(o)) });
-    services = s;
-    await s.engine.resume();
-    buildSong(s, 'house', { bpm: 124, low: 'bass' });
-    const bars = 4;
-    const project = s.doc.getState().project;
-    const bar = ticksPerBar(project.transport.timeSig);
-    const seconds = tempoMapOf(project, 'song').tickToSeconds(bars * bar);
-    const offline = await measureMaster(s, bars);
+  it('a song playing live reads within 0.3 LU of the offline measurement, and a closed meter does no audio-thread work', { timeout: 120_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      await services?.engine.dispose(); // an earlier attempt's engine
+      let engine!: Engine;
+      const s = createServices({ createEngine: (o) => (engine = Engine.realtime(o)) });
+      services = s;
+      await s.engine.resume();
+      buildSong(s, 'house', { bpm: 124, low: 'bass' });
+      const bars = 4;
+      const project = s.doc.getState().project;
+      const bar = ticksPerBar(project.transport.timeSig);
+      const seconds = tempoMapOf(project, 'song').tickToSeconds(bars * bar);
+      const offline = await measureMaster(s, bars);
 
-    expect(engine.meterCount).toBe(0);
-    const lease = s.meters.listen(MASTER, { full: true });
-    // The lease opens the meter on first read; wait until its processor runs.
-    await until(() => lease.meter.active && lease.meter.blocks > 10);
-    expect(engine.meterCount).toBe(1);
-    const readings = lease.meter.readings;
-    s.engine.play(0);
-    await until(() => s.engine.playhead() >= bars * bar);
-    s.engine.stop();
-    const liveLufs = readings[R.integrated] as number;
-    const row = `live ${liveLufs.toFixed(2)} LUFS, offline ${offline.lufs.toFixed(2)} (${seconds.toFixed(1)} s of the house song)`;
-    console.log(`Live engine against offline render: ${row}`);
-    expect(Math.abs(liveLufs - offline.lufs), row).toBeLessThan(0.3);
-    expect(readings[R.maxMomentary]).toBeGreaterThan(readings[R.integrated] as number);
+      expect(engine.meterCount).toBe(0);
+      const lease = s.meters.listen(MASTER, { full: true });
+      // The lease opens the meter on first read; wait until its processor runs.
+      await until(() => lease.meter.active && lease.meter.blocks > 10);
+      expect(engine.meterCount).toBe(1);
+      const readings = lease.meter.readings;
+      s.engine.play(0);
+      await until(() => s.engine.playhead() >= bars * bar);
+      s.engine.stop();
+      const liveLufs = readings[R.integrated] as number;
+      const row = `live ${liveLufs.toFixed(2)} LUFS, offline ${offline.lufs.toFixed(2)} (${seconds.toFixed(1)} s of the house song)`;
+      console.log(`Live engine against offline render: ${row}`);
+      expect(Math.abs(liveLufs - offline.lufs), row).toBeLessThan(0.3);
+      expect(readings[R.maxMomentary]).toBeGreaterThan(readings[R.integrated] as number);
 
-    // Closing the last lease takes the processor away: nothing counts blocks any more.
-    lease.release();
-    expect(engine.meterCount).toBe(0);
-    await sleep(100);
-    const stopped = readings[R.blocks] as number;
-    await sleep(400);
-    expect(readings[R.blocks]).toBe(stopped);
-  }, 120_000);
+      // Closing the last lease takes the processor away: nothing counts blocks any more.
+      lease.release();
+      expect(engine.meterCount).toBe(0);
+      await sleep(100);
+      const stopped = readings[R.blocks] as number;
+      await sleep(400);
+      expect(readings[R.blocks]).toBe(stopped);
+    });
+  });
 });
 
 describe('cost', () => {

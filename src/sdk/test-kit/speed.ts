@@ -18,6 +18,22 @@ export function cpuNow(): number {
   return performance.now();
 }
 
+/**
+ * The least CPU time (ms) any of `repeats` runs of `run` took. For the cost of audio code: a busy machine interrupts a long run
+ * again and again (every interruption leaves the caches cold, so even CPU time grows), while a short run often fits between
+ * two interruptions and shows what the code costs when it is left alone, which is what an audio thread gets. Make `run`
+ * a few hundred milliseconds of audio at most and `repeats` a hundred or more.
+ */
+export function cheapestRun(run: () => void, repeats: number): number {
+  let least = Infinity;
+  for (let i = 0; i < repeats; i++) {
+    const start = cpuNow();
+    run();
+    least = Math.min(least, cpuNow() - start);
+  }
+  return least;
+}
+
 /** How a measurement compares: a duration is better lower, a speed or a throughput factor is better higher. */
 export type Better = 'lower' | 'higher';
 

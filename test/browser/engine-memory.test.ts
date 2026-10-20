@@ -15,6 +15,8 @@ import { defaultValues, type PluginDef } from '@agstudio/sdk';
 import fm from '../../src/plugins/builtin/fm';
 import threeOsc from '../../src/plugins/builtin/three-osc';
 import { kitProject, resolver } from '../helpers/fixtures';
+import { retryWhenOverloaded } from '../helpers/overload';
+import { EVENTUALLY } from '../helpers/wait';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -75,55 +77,59 @@ function song(): { project: Project; patternId: string } {
   return { project, patternId };
 }
 
-describe('engine memory', () => {
-  it('a short loop played dozens of times leaves the audio graph and the scheduler as it was', async () => {
-    const { project, patternId } = song();
-    const edges = countEdges();
-    try {
-      engine = Engine.realtime({ plugins: resolver(threeOsc, fm) });
-      engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
-      // A quarter of a bar at 240 BPM: 0.25 s a pass.
-      engine.setTransportView({ mode: 'pattern', patternId: patternId as never, loop: null });
-      await engine.resume();
-      await engine.ready();
-      const internals = engine as unknown as {
-        transport: { pendingNotes: number; plannedSegmentCount: number };
-        ports: Set<unknown>;
-        params: { keys(): IterableIterator<string> };
-      };
-      const idle = edges.total;
-      const ports = internals.ports.size;
-      const paramKeys = [...internals.params.keys()].length;
-      engine.play(0);
-      const sample = async (ms: number) => {
-        const end = performance.now() + ms;
-        let min = Infinity;
-        let max = 0;
-        let pending = 0;
-        while (performance.now() < end) {
-          min = Math.min(min, edges.total);
-          max = Math.max(max, edges.total);
-          pending = Math.max(pending, internals.transport.pendingNotes);
-          await sleep(25);
-        }
-        return { min, max, pending };
-      };
-      const early = await sample(3000);
-      await sleep(15_000); // about 60 passes
-      const late = await sample(3000);
-      // The bar (2 s at 240 BPM) played ~8 times early and ~70 times by the end.
-      expect(late.max).toBeLessThanOrEqual(early.max + 12);
-      expect(late.min).toBeLessThanOrEqual(early.min + 12);
-      expect(late.pending).toBeLessThanOrEqual(early.pending + 8);
-      expect(internals.transport.plannedSegmentCount).toBeLessThan(200);
-      expect(internals.ports.size).toBe(ports);
-      expect([...internals.params.keys()].length).toBe(paramKeys);
-      engine.stop();
-      // Voices are let go once their release is over.
-      await sleep(3500);
-      expect(edges.total).toBeLessThanOrEqual(idle + 12);
-    } finally {
-      edges.restore();
-    }
-  }, 60_000);
+describe('engine memory', { tags: ['realtime'] }, () => {
+  it('a short loop played dozens of times leaves the audio graph and the scheduler as it was', { timeout: 180_000 }, async (test) => {
+    await retryWhenOverloaded(test, async () => {
+      await engine?.dispose(); // an earlier attempt's engine
+      engine = null;
+      const { project, patternId } = song();
+      const edges = countEdges();
+      try {
+        engine = Engine.realtime({ plugins: resolver(threeOsc, fm) });
+        engine.applyDocChange({ next: project, prev: project, patches: null, origin: 'load' });
+        // A quarter of a bar at 240 BPM: 0.25 s a pass.
+        engine.setTransportView({ mode: 'pattern', patternId: patternId as never, loop: null });
+        await engine.resume();
+        await engine.ready();
+        const internals = engine as unknown as {
+          transport: { pendingNotes: number; plannedSegmentCount: number };
+          ports: Set<unknown>;
+          params: { keys(): IterableIterator<string> };
+        };
+        const idle = edges.total;
+        const ports = internals.ports.size;
+        const paramKeys = [...internals.params.keys()].length;
+        engine.play(0);
+        const sample = async (ms: number) => {
+          const end = performance.now() + ms;
+          let min = Infinity;
+          let max = 0;
+          let pending = 0;
+          while (performance.now() < end) {
+            min = Math.min(min, edges.total);
+            max = Math.max(max, edges.total);
+            pending = Math.max(pending, internals.transport.pendingNotes);
+            await sleep(25);
+          }
+          return { min, max, pending };
+        };
+        const early = await sample(3000);
+        await sleep(15_000); // about 60 passes
+        const late = await sample(3000);
+        // The bar (2 s at 240 BPM) played ~8 times early and ~70 times by the end.
+        expect(late.max).toBeLessThanOrEqual(early.max + 12);
+        expect(late.min).toBeLessThanOrEqual(early.min + 12);
+        expect(late.pending).toBeLessThanOrEqual(early.pending + 8);
+        expect(internals.transport.plannedSegmentCount).toBeLessThan(200);
+        expect(internals.ports.size).toBe(ports);
+        expect([...internals.params.keys()].length).toBe(paramKeys);
+        engine.stop();
+        // Voices are let go once their release is over: wait for the count to come back (a busy machine delays the release
+        // timers), not for a fixed time.
+        await expect.poll(() => edges.total, EVENTUALLY).toBeLessThanOrEqual(idle + 12);
+      } finally {
+        edges.restore();
+      }
+    });
+  });
 });

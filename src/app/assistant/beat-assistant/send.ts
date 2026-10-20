@@ -9,7 +9,6 @@ import { askStudio, buildTurnText } from './ask-studio';
 import { errorText, isAbortError } from './errors';
 import { isSongRequest } from '@core/song/request';
 import { writeOfflineBeat } from './offline-beat';
-import { writeOfflineSong } from './offline-song';
 import { inferRole, roleLabel } from './performance-role';
 import type { AssistantSession } from './session';
 import { reanalyzeTake } from './take-recorder';
@@ -158,6 +157,7 @@ export async function send(
     return;
   }
   // Asking for a song (not a loop) and no performance to follow: the song generator writes the whole thing.
-  if (!take && isSongRequest(request)) await writeOfflineSong(session, request);
+  // The song generator loads on first use: most sessions never ask the offline mode for a song.
+  if (!take && isSongRequest(request)) await (await import('./offline-song')).writeOfflineSong(session, request);
   else await writeOfflineBeat(session, request, take, projectBpm);
 }

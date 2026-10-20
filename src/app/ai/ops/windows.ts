@@ -26,6 +26,7 @@ export const OPEN_WINDOWS = [
   'reference',
   'meters',
   'pitch-editor',
+  'vocal-align',
   'samples',
   'chords',
   'mix-snapshots',

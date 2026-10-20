@@ -5,7 +5,8 @@
  */
 import { tempoMapOf } from '@core/automation/tempo';
 import { playbackMode, tickAtSourceSeconds } from '@core/audio/playback';
-import { editSignature, isNeutralEdit, noteDrift, noteShift, noteTarget, noteVibrato } from '@core/audio/pitch-edit';
+import { pitchRenderSignature } from '@core/audio/align/edit';
+import { isNeutralEdit, noteDrift, noteShift, noteTarget, noteVibrato } from '@core/audio/pitch-edit';
 import type { AudioClip, ClipId, Project } from '@core/model/types';
 import { ticksPerBar } from '@core/time/ppq';
 import { PITCH_NAMES, keyLabel, scaleMask } from '@agstudio/sdk/notes';
@@ -58,7 +59,7 @@ export function pitchReport(s: Services, args: { clip?: unknown }): unknown {
   const barT = ticksPerBar(p.transport.timeSig);
   const key = p.transport.key;
   const mask = key ? scaleMask(key.root, key.scale) : null;
-  const corrected = !!edit.renderedSampleId && edit.renderedFor === editSignature(edit);
+  const corrected = !!edit.renderedSampleId && edit.renderedFor === pitchRenderSignature(clip);
   return {
     clip: id,
     name: channel.name,

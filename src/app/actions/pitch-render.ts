@@ -7,7 +7,8 @@
  * edits touch, spliced into a copy of the whole sample (so trims, fades and tempo follow keep working),
  * stored as 24-bit FLAC through the sample store, and listed in `Project.samples`.
  */
-import { editSignature, isNeutralEdit, renderRange } from '@core/audio/pitch-edit';
+import { alignedSampleId, pitchRenderSignature } from '@core/audio/align/edit';
+import { isNeutralEdit, renderRange } from '@core/audio/pitch-edit';
 import type { ClipId, PitchEdit, Project, SampleId, SampleRef } from '@core/model/types';
 import { setPitchRender } from '@core/ops/pitch';
 import type { SampleData } from '@engine/api';
@@ -107,8 +108,8 @@ class PitchRenderer {
   private currentEdit(id: ClipId): SignedEdit | null {
     const found = audioClipOf(this.s.doc.getState().project, id);
     const edit = found?.clip.pitchEdit;
-    if (!edit) return null;
-    return { edit, signature: editSignature(edit) };
+    if (!found || !edit) return null;
+    return { edit, signature: pitchRenderSignature(found.clip) as string };
   }
 
   /**
@@ -147,11 +148,13 @@ class PitchRenderer {
     const project = this.s.doc.getState().project;
     const found = audioClipOf(project, id);
     const edit = found?.clip.pitchEdit;
-    if (!found || !edit || editSignature(edit) !== signature) return;
+    if (!found || !edit || pitchRenderSignature(found.clip) !== signature) return;
     const progress = (fraction: number) => pitchState.setState({ rendering: { clipId: id, fraction } });
     try {
       progress(0);
-      await whileBusy(() => this.renderAndStore(run, id, signature, found.channel.sampleId, found.channel.name, edit, project, progress), { project });
+      // The correction works on the aligned sound when the clip has one: align first, then tune.
+      const sourceId = alignedSampleId(found.channel, found.clip);
+      await whileBusy(() => this.renderAndStore(run, id, signature, sourceId, found.channel.name, edit, project, progress), { project });
     } catch (e) {
       if (!(e instanceof PitchJobCancelled)) {
         this.s.session.getState().toast(`Pitch correction could not be rendered: ${e instanceof Error ? e.message : String(e)}`, 'error');

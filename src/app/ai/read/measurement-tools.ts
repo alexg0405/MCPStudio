@@ -1,5 +1,6 @@
 /** Read tools for what has been measured or found: the reference song, loudness, sung pitch and the sample library. */
 import { SAMPLE_CATEGORIES } from '@core/samples/types';
+import { alignReport } from '../../align/report';
 import { loudnessFacts } from '../../metering/facts';
 import { pitchReport } from '../../pitch/report';
 import { referenceReport } from '../../reference/summary';
@@ -26,6 +27,13 @@ export const getPitch = tool(
   'The sung notes of a recorded audio clip, as the Pitch editor shows them: per note its number (1-based, what the pitch action takes), bar, start/end seconds, pitch (MIDI and note name), how many cents off the nearest note, whether it is in the song key, drift and vibrato measured, and what has been changed (target, shift, flattened drift, vibrato %); also which sound the musician hears (the A/B switch: hearing). The first look at a clip it listens first (state "analyzing": ask again in a moment).',
   { clip: S.str('An audio clip id (clip_…; default: the selected audio clip).') },
   (services, args) => pitchReport(services, args),
+);
+
+export const getAlignment = tool(
+  'get_alignment',
+  'Vocal alignment of recorded audio clips (doubles, backing vocals and ad-libs lined up with a lead, or tightened to the grid): for each aligned clip its id, track and bar, the mode (guide or grid), the guide clip, tightness, pitch alignment % or grid strength, the state (ready, rendering with progress, out of date, problem with the reason), how far the sound was moved (median and largest move in ms) and which sound the musician hears (the A/B switch: hearing). Without clip it lists every aligned clip. The align_clips and tighten_timing actions set it; the aligned audio is made in the background.',
+  { clip: S.str('An audio clip id (clip_…); default: every aligned clip.') },
+  (services, args) => alignReport(services, args),
 );
 
 export const listSampleSounds = tool(

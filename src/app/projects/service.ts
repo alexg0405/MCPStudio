@@ -8,6 +8,8 @@ import {
   type RecentFileInfo,
   type VersionSummary,
 } from '@core/projects/list';
+import { projectFacts } from '@core/versions/facts';
+import { arrangementThumbnail } from '@core/versions/thumbnail';
 import { isOpfsAvailable, listAutosaves, type AutosaveMeta } from '@platform/opfs';
 import { loadAutosave } from '../persistence/autosave';
 import { forgetFile, loadRecentFiles } from '../persistence/recent-files';
@@ -73,6 +75,7 @@ export class ProjectsService {
     const [recents, autosaves] = await Promise.all([this.sources.recentFiles(), this.sources.autosaves()]);
     let cards: ProjectCard[] = catalog ? await catalog.all() : [];
     if (catalog && (await this.makeCardsForOldAutosaves(autosaves, cards))) cards = await catalog.all();
+    cards = cards.map((card) => this.withLiveNumbers(card));
     const summaries = new Map<string, VersionSummary>();
     for (const [projectId, versions] of store ? await store.listAll() : []) {
       const newest = versions[0];
@@ -91,6 +94,13 @@ export class ProjectsService {
    * Autosaves made before project cards existed have no card: read the newest few and make theirs, so they show their
    * length, tempo and picture too. Returns whether any card was made.
    */
+  /** The open project's card shows the song as it is now, not as it was when the card was last written. */
+  private withLiveNumbers(card: ProjectCard): ProjectCard {
+    const project = this.s.doc.getState().project;
+    if (card.projectId !== project.projectId) return card;
+    return { ...card, facts: projectFacts(project), thumbnail: arrangementThumbnail(project) };
+  }
+
   private async makeCardsForOldAutosaves(autosaves: readonly AutosaveMeta[], cards: readonly ProjectCard[]): Promise<boolean> {
     const known = new Set(cards.map((card) => card.projectId));
     const missing = autosaves.filter((meta) => !known.has(meta.projectId) && !meta.clean).slice(0, MIGRATE_AUTOSAVES_PER_REFRESH);

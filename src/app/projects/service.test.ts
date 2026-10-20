@@ -59,6 +59,18 @@ describe('ProjectsService.list', () => {
     expect(item!.thumbnail?.rows.length).toBe(1);
   });
 
+  it('shows the open project as it is now, not as it was when its card was written', async () => {
+    const { s } = rig();
+    await s.versions.saveNamed('First');
+    s.history.transact('Faster', (draft) => void (draft.transport.bpm = 150));
+    const [item] = await s.projects.list();
+    expect(item!.facts!.bpm).toBe(150);
+    // A project that is not open keeps what its card says.
+    s.history.load(songWithClips(1, 'Elsewhere'));
+    const other = (await s.projects.list()).find((i) => !i.isOpen)!;
+    expect(other.facts!.bpm).toBe(130);
+  });
+
   it('orders recent files by when they were opened, newest first', async () => {
     const { s, recents } = rig();
     recents.push(

@@ -295,5 +295,18 @@
 }
 
 .expand {
-  margin-top: 4px;
+  min-width: 0;
+  height: auto;
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ag-accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.expand:hover:not(:disabled) {
+  border: 0;
+  color: var(--ag-text);
 }

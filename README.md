@@ -142,6 +142,13 @@ the development server on 5390, with hot reload, and has nothing to do with the 
 - **Files**: `.agproj` save/open (File System Access, so Ctrl+S / Cmd+S overwrites), recent files, reload restore, autosave
   with crash recovery, WAV export (16-bit dithered, 24-bit, 32-bit float), undo history (⌥H) with click-to-jump,
   and shortcuts you can change (Help → Keyboard shortcuts).
+- **Versions and projects** (File → Versions…, ⌥⇧V; File → Projects…, ⌥⇧O): the song is kept as a version when you save, after
+  ten minutes of editing, before an AI answer, a develop, a clean-up or a conversion, and when the tab closes; File → Save a
+  version… names one ("Before vocals") and keeps it forever. The Versions timeline says what changed in each ("+3 clips, mixer:
+  Kick −2.0 dB"), plays the start of any version without opening it, restores one in a single undo step (the song as it was is
+  kept first) or opens it as a copy. Everything from the last day is kept, then one an hour for a week and one a day for a month;
+  pinned versions stay. The Projects window lists every project with its tempo, key, length and a picture of the arrangement:
+  search, sort, pin, open, open a copy, show its versions. Studio and MCP can save, list and restore versions and list projects.
 - **Music videos** (File → Export as video…, or right-click a marker, the loop or a clip): the song or a part of it
   as an MP4 (H.264 + AAC) or WebM (VP9 or AV1 + Opus) file, rendered offline, several times faster than real time.
   Four looks (spectrum bars, waveform, circular spectrum, minimal with a progress bar) with your title and artist, an

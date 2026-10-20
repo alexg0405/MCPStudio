@@ -610,7 +610,7 @@ and touch-action; for `touchEnd` the points listed are the ones that lift): `tou
 - Save/Open (`app/project-files.ts`, `services.files`): `showSaveFilePicker`/`showOpenFilePicker`, keep the handle for
   Cmd+S, `createWritable()` swaps atomically. Fallback: `<input type=file>` / `<a download>`. Pickers need a recent
   user gesture, so a command shows its picker before any slow work, and the unsaved-changes prompt is an in-app dialog
-  (its button click is a fresh gesture). Handles of recent files live in IndexedDB (`persistence/recent-files.ts`);
+  (its button click is a fresh gesture). Handles of recent files live in IndexedDB (`persistence/recent-files.ts`, the 40 newest: the File menu shows eight under Open recent, the Projects window all of them);
   a reopened handle asks for permission again when the browser wants it. `.agproj` files dropped on the window open
   (Chrome gives a handle for them, so Save writes back). `beforeunload` guard while dirty (production builds only:
   in dev it would block Vite's full reloads).
@@ -669,7 +669,7 @@ stats), UI in Settings → Storage.
   changes. Sources: every live tab's record (its project, its undo *and* redo history through
   `History.referencedHashes()`, and audio pinned by a running export/render, `app/storage/busy.ts`); every autosave
   slot file (`projectFileHashes`: the text of `project.json`/`view.json`, valid or not); the DJ library
-  (`dj-library`); and **every other value in the IndexedDB `kv` store** except `gc:*` and the cached track analyses
+  (`dj-library`); and **every other value in the IndexedDB `kv` store** (this is how versions keep their samples: see Versions below) except `gc:*` and the cached track analyses
   (`dj-analysis:*` and `pitch-analysis:*`, which are keyed by hash but are not a use; both go with the blob). Recent files hold handles, never bytes, so they pin
   nothing. The DJ-mix and sound-filter records live inside the project, so they are covered through it.
 - **Tabs publish** a `gc:tab:<session id>` record (hashes, heartbeat, `playing`, `busy`), 1 s after a change and every
@@ -707,6 +707,128 @@ stats), UI in Settings → Storage.
   audio, undo, grace, dead tabs, writer vs. collector, recovery after a collection, 1,000 blobs),
   `test/browser/storage-settings.test.ts` (Settings → Storage numbers, dialog, switch). New code that stores a hash
   outside a project must keep it in IndexedDB `kv` (or tell the collector); that is all it takes to stay safe.
+
+## Versions and the project browser (`core/versions`, `core/projects`, `app/versions`, `app/projects`, `ui/features/versions`, `ui/features/projects`)
+
+Never lose work, and find your projects. A **version** is the whole project (and its window layout) at one moment, kept in this
+browser; the **project list** shows every project the app remembers with what a card needs (name, tempo, key, length, a picture of
+the arrangement). Autosave (crash recovery) is unchanged: versions are the history, autosave is the safety net for the newest edit.
+
+### What a version is (`core/versions/types.ts`, `app/versions/store.ts`, `platform/opfs-versions.ts`)
+
+- **Two things, written in this order**: a thin project file in OPFS (`versions/<projectId>/<versionId>.agver`: the
+  `projectFileParts` zip with no sample bytes, so reading one back goes through `readProjectFile` and an older schema is
+  migrated and repaired like any opened file) and a small record in the IndexedDB `kv` store (`version:<projectId>:<versionId>`,
+  `VersionRecord`): when, why (`reason`), the musician's `name`, `pinned`, `size`, `contentHash` (SHA-256 of `project.json`), the
+  project's title, `facts` (bars, seconds, BPM, key, clips, patterns, channels) and what changed since the version before
+  (`changes`, `summary`). Removal goes the other way, file then record. `VersionStore.reconcile()` (run a few seconds after start)
+  drops a record whose file is gone and **adopts** a file with no record (rebuilding its record from the file), so an interrupted
+  save or delete never leaves a version that looks fine and cannot be opened, nor one that is lost.
+- **Deduplicated**: the same song again (same `contentHash` as the newest version) is not a new version; asking to *name* an
+  unchanged song names and pins the newest one instead. Samples are never copied (they stay in the blob store, shared by hash
+  with the open project, autosaves and every other version). The project JSON compresses about 6 to 8 times: the 113-bar stacked
+  test song is 95 KB of JSON and 16.6 KB as a version (eleven versions of it, each after a small edit: 183 KB); a 10,000-note
+  pattern is 770 KB and 93 KB (made in 46 ms on the main thread, or in the zip Worker). Deltas between versions were left out on
+  purpose: a version must stay readable when its neighbours are pruned, retention bounds the count (below), and the gain would be a
+  small multiple of a few hundred KB per project.
+- **Storage clean-up counts versions as references.** The record holds `hashes`, every 64-hex run in the project and view
+  (`collectHashes`, the same finder the clean-up uses), and the clean-up already treats "every other value in the IndexedDB `kv`
+  store" as a use, so a sample only an old version uses is kept for as long as the version exists. Deleting or pruning the
+  version removes the reference; the sample then goes like any other unused audio, after the usual 7-day grace
+  (`app/versions/gc.test.ts` runs the collector on fakes). Nothing in the collector changed.
+
+### When a version is made (`app/versions/service.ts`, `VersionService`, `services.versions`)
+
+`services.versions.start()` (called from `ui/main.tsx`) listens; every write is queued one at a time and never rejects (a failure is
+reported once). What is kept is captured synchronously (Immer makes the project a free snapshot), the writing happens in the background.
+- **On save** (`files.onSaved`) and **on close** (`pagehide`, compressed on the calling thread because a Worker may never answer;
+  best effort, the crash autosave still covers it): only if the project changed since the last version (`baseline`).
+- **After minutes of editing** (default 10, Versions window: 2 to 30): counted from the first edit since the last version
+  (`checkTimer`, looked at every 30 s).
+- **Before big changes**: `beforeBigChange(kind, note)` from `applyAnswer` (every Studio and MCP answer: `before-ai`), `developSong`
+  (`before-arrange`), `tidyNow` (`before-tidy`) and `convertToMidi` (`before-convert`), and a generic net for any single edit of 150
+  or more patches (`before-big`, from the change's `prev`, at most one per 2 minutes). The state *before* the change is what is kept.
+- **On request**: `saveNamed(name)` (File → Save a version…, `versions.save`): named, pinned, kept forever.
+- **Before a restore**: the project as it is now (`before-restore`), so even a restore regretted past the undo history loses nothing.
+- The switch and the interval are `VersionSettings` (localStorage `agstudio:versions-settings`, not a project setting, not in prefs).
+
+### Retention (`core/versions/retention.ts`, pure)
+
+`planRetention(versions, now, policy, utcOffsetMinutes)` returns the ids to delete: everything younger than a day stays; from a day
+to a week the newest of each clock hour; from a week to a month the newest of each calendar day (in the musician's time zone); older
+goes; **pinned versions and the newest version of a project never go**; at most 400 versions that are not pinned. Run after every new
+version and once at start (`VersionStore.prune`).
+
+### What changed (`core/versions/diff.ts`)
+
+`describeProjectChanges(before, after, plugins)` gives `parts` (short phrases for the timeline, in a fixed order: tempo, key,
+patterns, clips, notes, channels, mixer, samples, other) and `lines` (every difference as a sentence). The mixer's sentences come
+from `core/snapshots/diff.ts` (`diffMixerStates`, on the tracks and effects both states have; added and removed tracks and effects are
+said by `diff.ts`), so "Kick: fader −14.0 dB → −1.9 dB" reads the same here and in the Mix snapshots window. Branches that are the same
+object in both projects are skipped without a look. `summarizeChanges` joins the first four phrases and counts the rest.
+
+### Restore, preview, copy (`core/ops/restore.ts`, `app/versions/service.ts`, `app/versions/preview.ts`)
+
+- **Restore** is one `history.transact('Restore version “name”')`: `restoreProject(draft, base, target)` merges `target` into the draft
+  key by key, so objects that did not change stay the very same objects (a small undo entry, a small engine reconcile), and the
+  project keeps its own `projectId`. The result is deep-equal to the version; undo brings the old state back exactly. A version of
+  another project cannot be restored into the open one.
+- **Preview** renders the first 20 s of the version offline at 32 kHz (`renderOffline` with the version's own project, the open
+  project untouched) and plays the WAV on the audition bus (`engine.previewAudio`); Stop is `engine.stopPreview()`.
+- **Open as a copy** opens a version as a new unsaved project (new `projectId`, no file, dirty). **Open** on a project that has versions
+  and no file opens its newest version with its own id, so its history carries on.
+
+### Project cards and the list (`core/projects/list.ts`, `app/projects/catalog.ts`, `service.ts`)
+
+- A **card** (`kv` key `project-card:<projectId>`, `ProjectCard`) holds name, `fileKey`, last opened / changed, `facts`, a **thumbnail**
+  (`core/versions/thumbnail.ts`: the playlist cut into 96 columns, one row per track with clips, at most 12 rows, as a few numbers)
+  and the musician's `pinned` / `removed`. It is written when a project is opened, saved or given a version, and the open project's card is
+  always shown with the song as it is now. The **drawing** is `thumbnailRects`, plain geometry in whole pixels, the same for the same
+  input; `ProjectThumbnail` only paints it at its card's width in the theme's colours.
+- `mergeProjectList({ cards, recents, autosaves, versions })` makes one row per project from what the app already remembers: the remembered
+  file handles (`persistence/recent-files`, now 40 of them), unsaved autosaves, and projects that have versions. A project is listed once
+  however many places know it; a clean autosave of a filed project is not listed; a removed card hides it (its file, autosaves and
+  versions are never touched). Autosaves from before cards existed get a card the first time the list is read (the newest few at a time,
+  with the autosave's own times), so they show their numbers and picture too. `sortProjects` (pinned first, then last opened / last changed
+  / name / length / tempo, ties by name then id) and `filterProjects` (every word of name, key or "128 bpm") are pure.
+- A row opens from where it lives: a file (`files.openRecent`), an autosave (the recovery read), or its newest version. Open a copy:
+  `files.openRecentAsCopy` for a file, `versions.openAsCopy` otherwise.
+
+### UI
+
+- **Versions** (View menu, File → Versions…, ⌥⇧V; window type `versions`): "Save a version…", the switch and interval, the timeline grouped
+  by day (what, when, why, what changed), per row Listen / Restore (Open copy for another project's versions) / ⋯ (open as a copy,
+  rename, keep forever, delete; deleting a kept one asks), "What changed since then" (computed on demand against the open song), and a
+  footer with the versions and bytes of this project and of all projects and the retention rule. It says what to do when empty.
+- **Projects** (File → Projects…, ⌥⇧O; window type `projects`; the welcome page links to it): search, sort, cards with the picture,
+  tempo, key, length, where it is kept, when it was opened, badges (open now, unsaved changes, N versions), Open / Open a copy /
+  Versions / Remove, a pin, and the same in the right-click menu. File → **Open recent** is a submenu of the newest files plus "All projects…".
+
+### AI and MCP
+
+Commands (so Studio's `command` action and MCP `run_command` have them): `versions.save` (optional name), `versions.restore`,
+`versions.openCopy` and `projects.open` (each by name; `gesture: true`, so the musician confirms with one click: they replace the
+song), `versions.keep` (pin). Read tools: `get_versions` (the open project's versions with what changed, size, kept forever, whether save
+points are automatic, the storage they use) and `get_recent_projects` (tempo, key, length, versions, pinned, unsaved work). A read tool
+may declare `prepare()`: MCP awaits it so the answer is read from storage just now; Studio's look-ups use the cache the service refreshes
+after every change. Both windows are in `OPEN_WINDOWS`.
+
+### Tests
+
+`core/versions/*.test.ts` (retention math, diff text, thumbnail geometry and determinism, time words), `core/projects/list.test.ts`
+(merging, ordering, search), `core/ops/restore.test.ts` (exact restore, undo, shared objects), `app/versions/store.test.ts` (dedupe,
+what changed, prune, reconcile), `service.test.ts` (save points at the right moments on a fake clock, restore and its safety version,
+copy, find), `gc.test.ts` (a sample kept by a version, freed after it is deleted and the grace passes), `app/projects/service.test.ts`
+(autosave cards, ordering, pin, remove, open), `ui/features/versions/commands.test.ts` (commands and read tools),
+`app/versions/versions.browser.test.ts` (real OPFS and the Worker compressor), `ProjectThumbnail.browser.test.tsx` (the same pixels
+every time), `test/browser/versions-ui.test.ts` (the windows in the real React shell). Crash recovery is `app/persistence/*`, unchanged.
+
+### Limits
+
+Versions are per browser profile (not synced, not in the `.agproj`; "Save as" a project to take its state with you). Preview plays the
+first 20 s only. A project that is only a recent file and was never opened since cards existed has no tempo or picture until it is
+opened once. The Settings → Storage table does not list versions yet (the Versions window shows their size). A restore replaces the
+project's content, not the window layout.
 
 ## Sample browser (`src/core/samples`, `src/app/samples`, `src/ui/features/samples`)
 

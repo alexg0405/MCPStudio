@@ -26,6 +26,9 @@ import { NoteRecorder } from './note-recorder';
 import { MidiInput } from './midi-input';
 import { watchAutoBuffer } from './audio-buffer-watch';
 import { ProjectFiles } from './project-files';
+import { ProjectsService, type ProjectSources } from './projects/service';
+import { VersionService } from './versions/service';
+import type { VersionBackend } from './versions/backend';
 import { AssistantFacade } from './assistant/facade';
 import { McpLink } from './mcp/bridge';
 import { Pwa } from './pwa/pwa';
@@ -95,6 +98,13 @@ export interface Services {
   readonly automation: AutomationService;
   /** The open project's file: new, open, save, save as, recent files. */
   readonly files: ProjectFiles;
+  /**
+   * Save points of the project: made on save, after minutes of editing, before big changes and when the tab closes, kept
+   * in this browser and listed in the Versions window (src/app/versions). Starts making them when `start()` is called.
+   */
+  readonly versions: VersionService;
+  /** The list of your projects (files the app remembers, autosaves, projects with versions) and what to do with each. */
+  readonly projects: ProjectsService;
   /** The beat assistant (describe or perform a beat; Claude or the offline generator writes it). Its code loads on first use. */
   readonly assistant: AssistantFacade;
   /** AI apps (Claude Code, Claude Desktop…) controlling the project over MCP: the tools and the dev server's channel. */
@@ -157,6 +167,13 @@ export interface ServiceOptions {
   analysisStorage?: AnalysisStorage;
   /** The sample browser's storage, analysis runner and folders (default: IndexedDB, Workers, your sample folders). */
   sampleBrowser?: SampleBrowserOptions;
+  /**
+   * Where versions and project cards are kept (default: IndexedDB and OPFS). `null` keeps none (the default in a browser
+   * without them); tests pass memory stores.
+   */
+  versionBackend?: VersionBackend | null;
+  /** Where the project list reads the remembered files and autosaves from (default: IndexedDB and OPFS). */
+  projectSources?: ProjectSources;
 }
 
 /**
@@ -240,6 +257,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let mcp: McpLink | null = null;
   let pwa: Pwa | null = null;
   let meters: MeterService | null = null;
+  let versions: VersionService | null = null;
+  let projects: ProjectsService | null = null;
   const services: Services = {
     platform,
     commands,
@@ -280,6 +299,12 @@ export function createServices(opts: ServiceOptions = {}): Services {
     },
     get meters() {
       return (meters ??= new MeterService(services));
+    },
+    get versions() {
+      return (versions ??= new VersionService(services, opts.versionBackend));
+    },
+    get projects() {
+      return (projects ??= new ProjectsService(services, opts.projectSources));
     },
     presets,
     trackAnalyzer,

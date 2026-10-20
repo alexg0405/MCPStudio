@@ -4,6 +4,7 @@
  *   blobs/<sha256>.<ext>          sample blob store (content-addressed, original encoded bytes)
  *   autosave/<sessionId>/a.agproj  autosave slot A (+ a.json: its AutosaveMeta, size and SHA-256)
  *   autosave/<sessionId>/b.agproj  autosave slot B (+ b.json)
+ *   versions/<projectId>/<versionId>.agver  a saved version (thin project file; `opfs-versions.ts`)
  *
  * Writes go through createWritable(), which swaps the file in atomically on close, so a crash leaves
  * the previous version. An autosave slot is valid when its data matches the size and hash recorded in
@@ -14,6 +15,7 @@
  */
 import { createAutosaveStorage } from './opfs-autosave';
 import { createBlobStorage } from './opfs-blobs';
+import { createVersionFiles, type VersionFileStore } from './opfs-versions';
 import {
   StorageError,
   type AutosaveStore,
@@ -23,6 +25,7 @@ import {
 } from './opfs-types';
 
 export { checkBlobKey } from './opfs-files';
+export { createVersionFiles, type VersionFileInfo, type VersionFileStore } from './opfs-versions';
 export {
   StorageError,
   type AutosaveFile,
@@ -75,6 +78,19 @@ let defaultStorage: OpfsStorage | null = null;
 export function opfsStorage(): OpfsStorage {
   defaultStorage ??= createOpfsStorage();
   return defaultStorage;
+}
+
+let defaultVersionFiles: VersionFileStore | null = null;
+
+/** The app-wide store of version files (created on first use). */
+export function opfsVersionFiles(): VersionFileStore {
+  defaultVersionFiles ??= createVersionFiles(async () => {
+    if (!isOpfsAvailable()) {
+      throw new StorageError('unavailable', 'This browser has no origin private file system (OPFS) storage.');
+    }
+    return navigator.storage.getDirectory();
+  });
+  return defaultVersionFiles;
 }
 
 export const putBlob: BlobStore['putBlob'] = (hash, ext, bytes) => opfsStorage().putBlob(hash, ext, bytes);

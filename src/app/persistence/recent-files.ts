@@ -15,7 +15,8 @@ export interface RecentFile {
 }
 
 const LIST = 'recent-files';
-const MAX = 10;
+/** How many files are remembered (the File menu shows the newest few; the project list shows them all). */
+const MAX = 40;
 const handleKey = (key: string) => `file-handle:${key}`;
 
 let cache: RecentFile[] = [];

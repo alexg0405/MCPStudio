@@ -68,6 +68,10 @@ does):
   tool or layer.
 - **Shell** (`ui/shell`): `MenuBar.tsx` and `MenuDropdown.tsx` (submenus, dynamic entries, command rows);
   `HoverTip.tsx` owns the element and `hover-tip.ts` the delays and gaps.
+- **Vocal cleanup**: pure DSP in `core/audio/cleanup/` (`spectral-denoise.ts`, `noise-profile.ts`, `breaths.ts`, `clicks.ts`, `render.ts` the chain, `test-signals.ts`), the
+  settings' meaning in `core/audio/cleanup-edit.ts`, the draft mutators in `core/ops/cleanup.ts`, the renderer in `app/actions/cleanup-render.ts` with
+  `app/cleanup/` (Worker, jobs, window state, the AI read) and the window in `ui/features/vocal-cleanup`. The clip edit chain (cleanup, then pitch)
+  is `STAGES` in `core/audio/playback.ts`. The "Vocal cleanup" section has the details.
 - **Actions** (`app/actions`): the pitch renderer is `PitchRenderer` in `pitch-render.ts` (with `pitch-clip.ts` for the clip
   lookup and error type; `pitch.ts` keeps the door); the arranger's `transitionInDraft` is `app/arrange/transition.ts`.
 - **Engine** (`src/engine`): `engine.ts` is the facade; see the list under [Graph](#graph) for what each file does.
@@ -957,6 +961,10 @@ re-analysed): matched notes within 1.8 cents (median 0.5). 60 s of stereo render
   the comping "listen to this take"), exports and offline renders read the real project. It clears when the clip goes away, when
   the editor shows another clip and when its window closes.
 - Analysis range ≤ 15 minutes of sample (`PITCH_MAX_SECONDS`).
+- **With a vocal cleanup on the clip** (see "Vocal cleanup"): the analysis stays on the recording, but the render reads the cleanup's render
+  (`clipSourceSampleId(channel, clip, 'pitch')`: the order is recording, cleanup, pitch, then gain and fades), so the shifted voice carries no
+  noise, breaths or clicks. A new cleanup render clears `renderedFor` of the pitch render, which makes the pitch renderer make it again
+  from the new source (a run whose source changed meanwhile is dropped).
 
 ### The Pitch editor window (`ui/features/pitch-editor`, window type `pitch-editor`)
 
@@ -3001,6 +3009,207 @@ quiet machine, the preset extremes and a busy machine at the high end). The benc
   loudness within 0.3 dB on a natural voice (inserts and sends to returns) and within 1.3 dB on one with a harsh "s" as
   loud as the vowel (the de-esser rightly takes that down); the makeup of each chain's Compressor is what calibrates it.
   `npm run bench:plugins -- --chains` measures a chain's CPU, the worklet effects in series (3.5–5.4 % of one core).
+
+## Vocal cleanup (`core/audio/cleanup`, `core/audio/cleanup-edit.ts`, `core/ops/cleanup.ts`, `app/actions/cleanup*.ts`, `app/cleanup`, `ui/features/vocal-cleanup`, `plugins/builtin/denoise`)
+
+Clean a recorded vocal clip: take out steady background noise, tone down or remove breaths, repair mouth clicks. Like the pitch
+editor's correction it is **non-destructive**: the clip keeps settings, a render of them is a new sample the clip plays, the recording
+stays, and Undo goes back. A real-time **Denoise** effect does the noise part for monitoring and live input.
+
+**What a singer or producer does.** Record or drop a vocal on the playlist, right-click the clip, **Clean up vocal…** (also Playlist →
+Clean up vocal for the selected audio clip, View → Clean up vocal, or Mod+K and "clean up"). In the window switch **Noise reduction** on
+(12 dB, learned from the quietest half second), **Breaths** on (12 dB; the breaths found appear as orange boxes on the strip and on the
+clip in the playlist) and **Mouth clicks** on. Change a slider and a moment later the cleaned sound is made in the background; press
+Play and flip **Cleaned / Original** to compare, or **Hear what was removed** to check that no voice went with the noise. Drag on the
+strip over a stretch with only the room sound to choose where the noise is learned from; untick a breath to keep it. Everything is one
+undo step per change (a slider drag is one step), and **Remove cleanup** puts the recording back.
+
+### The clip edit chain (`core/audio/playback.ts`)
+
+A clip's sound goes through stages in a fixed order, each an optional field of the clip whose **render** (a whole new sample, on the
+recording's own length and timeline, stored through the sample store) replaces the channel's sample as the next stage's input:
+
+    channel sample → cleanup (`clip.cleanup`) → pitch edit (`clip.pitchEdit`) → the clip's gain and fades
+
+`STAGES` in `playback.ts` lists them in order; `clipSourceSampleId(channel, clip, stage)` is the sample a stage reads (the render of
+the last stage before it that has one, else the channel's sample) and `clipSampleId` the one the clip plays (the engine, the
+residency planner and the playlist waveform all call it). A stage added later goes in `STAGES` at its place and nothing else changes.
+
+**Decision: cleanup before pitch.** A pitch shifter carries the noise, breaths and clicks along with the voice (a shifted hiss repeats
+grains and gets a rhythm of its own), and PSOLA and YIN both work better on a clean voice. So:
+- the Pitch editor's **render** reads the cleaned sample (`pitch-render.ts` uses `clipSourceSampleId(…, 'pitch')`, and a run is stale when
+  its source changed as well as its edit);
+- its **analysis** stays on the recording (cached by the recording's hash; cleanup keeps length and timeline, so the notes stay where
+  they are, and a cleanup change does not start a new analysis);
+- whenever the cleanup's render changes (a new one, or the cleanup removed) the ops clear `pitchEdit.renderedFor` (`core/ops/cleanup.ts`
+  `pitchRenderIsStale`): the pitch renderer sees a render that is not current and makes it again from the new source after its usual
+  pause, in the same undo step. The old pitch render plays until the new one is there;
+- A/B: the cleanup's before/after (`editor.cleanupOriginal`, `uncleanedSound` in `core/query/hear.ts`, in `heardProject`) plays the
+  clip as recorded, so it drops the cleanup render **and** the pitch render made from it; the Pitch editor's A/B (`pitchOriginal`) still
+  switches only the pitch correction (the cleaned sound is then what it hears as "original"). Both are session state.
+
+### Settings and what is stored (`AudioClip.cleanup`, `core/audio/cleanup-edit.ts`)
+
+```ts
+VocalCleanup {
+  noise?:   { amountDb 0–30, sensitivity 0–1, from?, to? }   // from/to: the quiet stretch the noise is learned from (seconds in the sample)
+  breaths?: { reduceDb 0–60, sensitivity 0–1, spans?: { from, to, off? }[] }   // 60 removes; off = the musician kept this one
+  clicks?:  { sensitivity 0–1 }
+  renderedSampleId?, renderedFor?                              // the render, and the cleanupSignature it was made from
+}
+```
+
+The noise profile is **not stored**: only the stretch it is learned from, so the same settings always give the same profile
+from the same sample and nothing big goes into the project. A section absent is off; settings that do nothing are removed. The
+fields are one commented block in `types/playlist.ts` and `schema/repair/cleanup.ts` (called from `repair/playlist.ts`, also one
+commented block): ranges clamped, spans sorted, overlapping or backwards ones dropped, a render that is not in `Project.samples`
+forgotten. `cleanupSignature` (rounded numbers, switched-off spans ignored, "find" where the stretch or the breaths are not found yet)
+tells a stale render; `applyCleanupRequest` is the one function the window, the commands and the AI use to turn "noise 14 dB, breaths
+off" into new settings (a changed breath sensitivity forgets the breaths found so they are found again; a changed amount keeps them).
+
+### The render (`app/actions/cleanup-render.ts`, `app/cleanup/cleanup.worker.ts`, `core/audio/cleanup/render.ts`)
+
+- `startCleanupRenderer` (created once in the feature's `register`) watches the document like the pitch renderer: after an edit (origin
+  `edit`) that leaves a clip's render out of date it waits 450 ms and renders the **whole sample** (cleanup never leaves unprocessed
+  audio behind a trim edge) in a Worker (`renderCleanup`), encodes 24-bit FLAC off-thread, writes it through the sample store
+  inside `whileBusy(…, { project })`, and `setCleanupRender` puts the new `SampleRef` into `Project.samples`, makes the clip name it,
+  drops the previous render's entry when no clip plays it, and **writes what the render found** into the settings (the quiet stretch
+  when none was given, the breaths when none were found yet) so the render is reproducible. The commit is `transact(…, { amend })`:
+  the change and its render are one undo step, and undo restores the earlier settings with their render. A newer change cancels the job;
+  a result for a stale signature is dropped. Samples over 15 minutes are refused ("cut the clip out first").
+- **Storage**: the render's hash is in `Project.samples` (kept like any sample), the recording stays the channel's; undo's patches name
+  the old render, so history keeps it too.
+- **Order inside the render**: 1. clicks (sharp events are repaired before anything smears them), 2. noise reduction (profile learned from
+  the click-repaired sound), 3. breaths (a gain envelope on the spans found in the original recording).
+- **Determinism**: plain double arithmetic in a fixed order, no random, so two renders of the same settings are bit-identical (same FLAC,
+  same hash in the store).
+- "Hear what was removed" (`hearRemoved`): original minus cleaned over the clip's part, played on the preview bus (`previewAudio`).
+
+### Noise reduction (`cleanup/noise-profile.ts`, `cleanup/spectral-denoise.ts`)
+
+- **Profile**: the mean power per bin over the frames of a stretch of the sample (2048-sample frames at 48 kHz, quarter-frame hop,
+  square-root Hann), smoothed over three bins. `findQuietStretch` finds the quietest 0.5 s that is not digital silence (a stretch
+  under −100 dBFS is "nothing to learn", reported in plain words).
+- **Gain**: a Wiener-style gate. The a priori signal-to-noise ratio ξ is estimated decision-directed (Ephraim and Malah): 93 % from what
+  the previous frame kept, 7 % from this frame; gain ξ/(1 + ξ), never below −amount dB. Sensitivity raises the learned noise by 0–6 dB.
+- **No musical noise**: a patch of gain that is narrow in both time and frequency is lowered to its surroundings (opening over three
+  frames and over three bins, kept where either is wide: a consonant burst is wide in frequency, a partial is long in time), then the gain is
+  smoothed across three bins and may fall no faster than 200 dB/s. The gains are found from the mix of the channels and applied to every
+  channel, so the stereo image stays. It runs in chunks with two frames of look-ahead: memory is flat for any length.
+
+### Breath control (`cleanup/breaths.ts`)
+
+- **Finding** (`detectBreaths`, on the mono mix of the recording, 10 ms frames of 20 ms): a frame is breath-like when the YIN pitch
+  tracker (the existing voice analysis, `core/voice/pitch.ts`) finds no voice in it, its spectral flatness over 300 Hz–8 kHz is at least 0.2
+  (harmonic voices score under 0.05, white noise about 0.56), it is at least 6 dB above the quiet floor (the 10th-percentile level), and it is
+  below the singing's median level by 22 dB (sensitivity 0) to 10 dB (sensitivity 1; 16 dB at the default). Runs of such frames
+  (gaps up to 40 ms bridged) of 0.2 s (0.1 s at sensitivity 1) up to 1.8 s are breaths; a short noisy sound touching a vowel is a consonant
+  and a loud one ("s", "f" at −8 dB under the vowels) fails the level test. No singing in the clip (fewer than five voiced frames), nothing to
+  compare to: none found.
+- **Lowering** (`lowerBreaths`): the span's samples are multiplied by the target gain with a raised-cosine fade of 20 ms *inside* each edge
+  (a neighbour's voice is never touched; the singing between spans is bit-identical). 60 dB or more is "remove" (gain 0). A span the
+  musician switched off (`off`) is left alone; the playlist clip draws solid markers for lowered breaths and outlined ones for kept ones
+  (`ui/features/playlist/breath-markers.ts`), the window's strip and list do the same and click or tick toggles them (`setBreathOff`).
+
+### Mouth clicks (`cleanup/clicks.ts`)
+
+- **Finding**: the second difference of the sound (a high-pass that makes a click's edge stand out) against its own 30 ms average: a sample
+  10× (sensitivity 0) to 5× (sensitivity 1) above it is a candidate; its extent is where the sharp sound stays above 3× the average (at most
+  3 ms each way, 7 ms in all, else it is a consonant); three candidates evenly spaced 2.5–14 ms apart are a voice's glottal pulses and are
+  dropped.
+- **Repair** (`repairClicks`): the sound on each side continues through the gap and the two continuations are crossfaded. In a voiced
+  stretch (normalized autocorrelation ≥ 0.6 at a lag of 2.5–12.5 ms) the continuation repeats the last pitch period; elsewhere it is
+  linear prediction (order 24, Levinson-Durbin on 30 ms of tapered sound), so noise and breath stay smooth. Too little sound on a side
+  (the start of the file): a straight line. Detection is on the mono mix, repair on every channel.
+
+### Window, commands, AI and MCP (`ui/features/vocal-cleanup`, `app/ai/ops/cleanup.ts`, `app/cleanup/report.ts`)
+
+- Window type `vocal-cleanup` ("Clean up vocal"): header with the clip name and a status line ("Making the cleaned sound 40 %…", "Cleaned
+  sound ready: the clip plays it. Your recording is untouched", "Hearing your recording as recorded…"), the **strip** (the recording's
+  outline from `engine.sampleData`; the played part lighter, the learned stretch blue, breaths orange; drag = learn the noise from there,
+  click a box = keep that breath), three sections (a switch, a plain sentence, sliders with units, the breath list, the click count), a
+  footer (Play from the clip start, **Cleaned / Original**, **Hear what was removed**, Make it now, Remove cleanup). Empty states say what
+  to do (no clip chosen; no breaths found, raise the sensitivity; no clicks found; noise cannot be learned: choose a stretch). Every
+  control has a `data-hint` with units; the window has a "?" help.
+- Ways in: the clip ▾ menu and right-click ("Clean up vocal…"), Playlist → Clean up vocal for the selected audio clip, View → Clean up
+  vocal, the action search (every command has a hint). Commands: `cleanup.openClip`, `.apply` (`noise_db`, `breaths_db`, `clicks`,
+  sensitivities, `noise_from`/`noise_to`), `.toggleOriginal`, `.hearRemoved`, `.learnNoise` (`source: 'loop' | 'auto'`, or seconds),
+  `.renderNow`, `.clear`, and `cleanup.open` (the window). Window `vocal-cleanup` is in `OPEN_WINDOWS`.
+- **AI**: the `clean_vocal { clip | track + bar, noise_db, noise_sensitivity, noise_from, noise_to, breaths_db, breath_sensitivity, clicks,
+  click_sensitivity, clear }` action (one undo step, a part left out stays as it is; plain-word failures for nothing asked, a half
+  stretch, a stretch under 0.1 s, a clip that is not audio) and the read tool **`get_cleanup`**: sections on with their numbers, where
+  the noise was learned (or "not looked for yet"), the breaths found (number, bar, seconds, lowered or kept), whether the cleaned sound is
+  ready, which sound is heard, and the processing order in one sentence. Both are MCP tools through the same schema and read list. The
+  characterization snapshot of the action schema moved by exactly the new `clean_vocal` entry, the `vocal-cleanup` window name and the
+  `get_cleanup` read.
+
+### Denoise (`plugins/builtin/denoise`, id `agstudio.denoise`, category Voice)
+
+A worklet effect for monitoring and live input. The same gain as the offline gate at 1024 samples per frame (2048 above 50 kHz) and a
+quarter-frame hop; one complex transform carries left and right (left in the real part, right in the imaginary part), the gain is real and
+symmetric, so it multiplies the combined spectrum and one more transform (the conjugate trick) brings both channels back: two 1024-point FFTs
+per 256 frames for stereo. Without a profile the noise is *tracked* (a smoothed power that falls at once and rises 3 dB/s, trusted 2.4×
+above its minimum); **Learn noise** (a bool: on while only the room is heard, off after a second or two) averages the power and posts it
+(the kernel's preallocated message, one level in dB per bin); `setup()` in `index.ts` puts it in the plugin's **state** (`{ profile, frames }`,
+saved with the project, undoable, rescaled to the transform size when it differs) and the kernel takes it back through `setState`. Params:
+Reduction 0–30 dB (12), Sensitivity (50 %), Learn noise, **Hear noise only** (input minus output). A meter shows the average reduction.
+**Latency is one frame, 1024 frames (21.3 ms at 48 kHz)**, reported to the host (`latency: (sr) => frames / sr`), which delays the dry path
+and compensates the mixer. Nothing allocates after construction (`test/unit/process-allocation.test.ts` audits `process()`, the kernel
+test audits every method that runs per block or frame). Presets: Gentle (monitoring), Normal (12 dB), Strong (fan or hiss), Podcast.
+
+### Measured (synthetic phrases from `core/audio/cleanup/test-signals.ts`: harmonic voice with vibrato and a formant, "s" sounds, breaths, pink room noise, clicks; Node 22, 48 kHz)
+
+- **Noise reduction at 12 dB** (pink noise at −40 dBFS under vowels at −22 dBFS, gains found from the mix and applied to the voice and the noise
+  separately): signal-to-noise (vowel level over the noise floor in the pauses) **+11.2 dB** (asserted ≥ 10 and < 14); the voice within **0.5 dB**
+  (vowels −0.5, "s" −0.4; asserted < 1); the noise inside the vowels falls 7.6 dB (only the gaps between harmonics can be reached) and the
+  whole file's noise energy 8.9 dB, which is the honest overall figure: a 12 dB floor everywhere would be 12 dB, but noise under a voice
+  partial passes with it. Noise alone: **12.0 dB** down (asserted 10–13), the spectral tilt kept to within 9–15 dB per bin region.
+- **Musical noise** (share of 1024-sample time-frequency cells more than 10 dB above their frequency's mean power, noise alone):
+  input 3.2e-5, this gate **1.4e-4**, plain per-frame spectral subtraction (the control, same noise down about as far) **1.1e-3**, 8× worse
+  (asserted: ours under max(5× the input's, 3e-4) and the control above 5× ours). A 50 Hz hum and its harmonics fall by more than 15 dB at 24 dB.
+- **Breaths** (14 per 40 s phrase, an "s" 8 dB under the vowels before each phrase): **14 of 14 found with no mark on a syllable** at noise −50 / breath
+  −16 dB, noise −46 / −16 dB and −50 / −22 dB re the vowels (asserted ≥ 90 %, no syllable marked, no mark that is not a breath); an "s" at −3 dB
+  is never marked; room noise alone and singing alone give none. Lowering by 12 dB: 11.5–12.5 dB in the middle of each breath, the singing
+  bit-identical; removing: exact zero in the middle; the largest sample step stays within 1.5× the breath's own.
+- **Clicks** (3.5 kHz bursts of 1.5 ms): **15 of 15 found** (6 in pauses, 9 over vowels, loud ones; quiet ones in the pauses at higher sensitivity),
+  none in clean singing, noise or breaths; error against the clean sound **−23 dB in the pauses, −16 dB over the vowels** (asserted ≥ 15 / ≥ 10);
+  samples outside the repaired spans unchanged; a held 220 Hz tone comes back within 1 %.
+- **Speed** (Node, loaded machine): 60 s of 48 kHz mono or stereo noise reduction about 1.5–3 s (the 15-minute limit is about 40 s in a Worker), breath finding 0.3 s and
+  click finding 0.06 s per minute. In Chrome a 14 s clip renders, encodes and is stored in about 1.2 s.
+- **Denoise kernel**: latency exactly 1024 frames (a click comes out 1024 frames later, reconstruction with no reduction within 1e-4); after
+  learning, pink noise at −40 dBFS is turned down 10–13 dB (12 asked); a voice within 1 dB over it and the gap noise down at least 8 dB; the
+  tracker alone reaches 6 dB after a few seconds; allocation audit and heap check pass. **CPU** (`npm run bench:plugins -- --only denoise`, % of one core at
+  48 kHz, 4 s, best of 7): **1.63 %** (1.64 % worst preset) on a machine at load average about 40, where Tune read 0.90 % (0.38–0.40 % quiet) and the
+  De-esser 0.51 %, so roughly 0.7 % on a quiet machine; two 1024-point complex FFTs per 256 frames dominate it.
+
+### Tests
+
+Node: `cleanup/spectral-denoise.test.ts` (profile and quiet-stretch finder; the numbers above; hum; stereo; chunks; determinism),
+`breaths.test.ts`, `clicks.test.ts`, `render.test.ts` (the whole chain, determinism, given findings kept, problems said in plain words,
+removed sound = input − output), `cleanup-edit.test.ts` (settings, signature, requests, repair, wording), `core/ops/cleanup.test.ts` (undo
+restores the earlier edit and render, replacement drops the old sample, the chain's sources, the pitch render marked stale, shared render
+after a split), `schema/repair/cleanup.test.ts`, `app/actions/cleanup.test.ts` (each change one undo step, drags merge, render in the same
+step, findings written, stored hash kept (`collectHashes`, `referencedHashes`), two renders bit-identical (same hash), the cleaned
+sound is 12 dB lower in the quiet, failed render toast, no-quiet-stretch message, nothing rendered after undo or stop, and **cleanup then
+pitch**: the pitch render reads the cleaned sound and is made again when the cleanup changes), `app/ai/ops/cleanup.test.ts`,
+`ui/features/vocal-cleanup/ab.test.ts` (A/B, menu and command entries, AI catalog), `wave-peaks.test.ts`, the Denoise `kernel.test.ts`
+and `test/unit/process-allocation.test.ts`, `ai-coverage.test.ts` (every command and the window have an AI path). Browser: `test/browser/vocal-cleanup.test.ts`
+(offline renders: a clip plays its cleaned render, the recording without it and when the render is missing; the Denoise worklet turns a learned noise down
+by the amount, two exports are bit-identical, and its latency is compensated by the mixer).
+
+### Limits
+
+- The finders are tuned on synthetic voices: a real breath that is as loud as a soft "s", a whispered line (no pitch, flat spectrum), or a
+  very noisy room (a breath under 6 dB above the floor) are not found; raise the sensitivity or untick/keep markers by hand. A click inside a loud
+  fricative or at the start of an "s" is not found. Clicks over a vowel are repaired by repeating the last pitch period: a very quick
+  vibrato or a pitch glide through the click leaves a small discontinuity.
+- Noise reduction learns a *steady* noise: a changing noise (traffic, keyboard taps) is not learned from one stretch. Noise under a
+  voiced partial cannot be removed (it passes with the partial), so 12 dB asked is 12 dB between the words and about 8 dB overall.
+- The whole sample is processed (up to 15 minutes); cleanup of a reversed clip works (the markers are not drawn while reversed).
+- Denoise has one frame (21 ms) of latency and 1024-point resolution (47 Hz per bin): it is for monitoring and live input; the offline
+  clip cleanup resolves the voice's harmonics better.
+- Other stages that follow the cleanup (alignment of doubles, harmony voices) read `clipSourceSampleId` of their own stage; a stage
+  that changes the timeline would need its own convention, since every stage today keeps the recording's length.
 
 ## Audio recording, editing and export (M15)
 

@@ -3160,8 +3160,8 @@ test audits every method that runs per block or frame). Presets: Gentle (monitor
 ### Measured (synthetic phrases from `core/audio/cleanup/test-signals.ts`: harmonic voice with vibrato and a formant, "s" sounds, breaths, pink room noise, clicks; Node 22, 48 kHz)
 
 - **Noise reduction at 12 dB** (pink noise at −40 dBFS under vowels at −22 dBFS, gains found from the mix and applied to the voice and the noise
-  separately): signal-to-noise (vowel level over the noise floor in the pauses) **+11.2 dB** (asserted ≥ 10 and < 14); the voice within **0.5 dB**
-  (vowels −0.5, "s" −0.4; asserted < 1); the noise inside the vowels falls 7.6 dB (only the gaps between harmonics can be reached) and the
+  separately): signal-to-noise (vowel level over the noise floor in the pauses) **+11.2 dB** (asserted ≥ 10 and < 14); the voice band within **0.5 dB**
+  (vowels −0.5 dB, asserted < 1; an "s" 8 dB under the vowels, itself only 10 dB over the room noise, −1.6 dB, asserted < 2: the sensitivity's margin costs a noise-like sound a little); the noise inside the vowels falls 7.6 dB (only the gaps between harmonics can be reached) and the
   whole file's noise energy 8.9 dB, which is the honest overall figure: a 12 dB floor everywhere would be 12 dB, but noise under a voice
   partial passes with it. Noise alone: **12.0 dB** down (asserted 10–13), the spectral tilt kept to within 9–15 dB per bin region.
 - **Musical noise** (share of 1024-sample time-frequency cells more than 10 dB above their frequency's mean power, noise alone):

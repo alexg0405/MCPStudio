@@ -26,7 +26,7 @@ export function register(services: Services): void {
     command: 'cleanup.open',
     type: CLEANUP_WINDOW,
     title: 'Clean up vocal',
-    hint: 'Take background noise, breaths and mouth clicks out of a recorded vocal clip, with a before/after listen',
+    hint: 'Take background noise, breaths and lip smacks out of a recorded vocal clip, with a before/after listen',
     chords: [],
     menuOrder: 32,
   });
@@ -51,7 +51,7 @@ export function register(services: Services): void {
       ? [
           {
             label: 'Clean up vocal…',
-            hint: 'Take background noise, breaths and mouth clicks out of this clip, with a before/after listen',
+            hint: 'Take background noise, breaths and lip smacks out of this clip, with a before/after listen',
             onSelect: () => void s.commands.run('cleanup.openClip', { clip: clip.id }),
           },
         ]

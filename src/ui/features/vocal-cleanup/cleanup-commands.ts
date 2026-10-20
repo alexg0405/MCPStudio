@@ -77,7 +77,7 @@ export function registerCleanupCommands({ commands }: Services): void {
     id: 'cleanup.openClip',
     title: 'Clean up vocal for the selected audio clip',
     category: 'Audio clip',
-    hint: 'Opens the Clean up vocal window on the selected audio clip: take out background noise, tone down breaths and remove mouth clicks, with a before/after listen',
+    hint: 'Opens the Clean up vocal window on the selected audio clip: take out background noise, tone down breaths and remove lip smacks, with a before/after listen',
     argsHint: 'optional { clip: id } or the clip id (default: the selected audio clip)',
     run: (s, args) => {
       const id = targetClip(s, args);
@@ -90,9 +90,9 @@ export function registerCleanupCommands({ commands }: Services): void {
   });
   commands.register<ApplyArgs>({
     id: 'cleanup.apply',
-    title: 'Clean up an audio clip: noise, breaths and clicks',
+    title: 'Clean up an audio clip: noise, breaths and lip smacks',
     category: 'Audio clip',
-    hint: 'Sets the vocal cleanup of an audio clip: noise reduction in dB, breath reduction in dB (60 removes them), mouth-click removal (one undo step; the cleaned audio is made in the background)',
+    hint: 'Sets the vocal cleanup of an audio clip: noise reduction in dB, breath reduction in dB (60 removes them), lip-smack removal (one undo step; the cleaned audio is made in the background)',
     argsHint:
       'optional { clip?: id (default: the selected audio clip), noise_db?: 0-30 (0 off), noise_sensitivity?: 0-100 %, breaths_db?: 0-60 (0 off, 60 removes them), breath_sensitivity?: 0-100 %, clicks?: true | false, click_sensitivity?: 0-100 %, noise_from?: seconds, noise_to?: seconds (a stretch of the recording with only the room sound) }',
     run: (s, args) => {
@@ -130,7 +130,7 @@ export function registerCleanupCommands({ commands }: Services): void {
     id: 'cleanup.hearRemoved',
     title: 'Clean up vocal: hear what was removed',
     category: 'Audio clip',
-    hint: 'Plays only what the cleanup took out of the clip (the noise, breaths and clicks), so you can check that no voice went with it',
+    hint: 'Plays only what the cleanup took out of the clip (the noise, breaths and lip smacks), so you can check that no voice went with it',
     argsHint: 'optional { clip: id (default: the clip in the Clean up vocal window), on: false stops it }',
     run: async (s, args) => {
       if (args?.on === false) return stopHearingRemoved(s);

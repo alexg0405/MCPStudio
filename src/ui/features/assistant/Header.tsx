@@ -170,7 +170,7 @@ export const Header = memo(function Header({
         data-hint={
           backend
             ? `Answers come from ${modelLabel(state)}: click to change who answers or the model`
-            : 'Answers come from the built-in offline generator (beats and full songs, no AI): click to use your Claude subscription, your ChatGPT plan or an API key'
+            : 'Answers come from the built-in offline generator and editor (beats, full songs, and plain-word changes to a song: busier hats, a new melody, new chords…; no AI): click to use your Claude subscription, your ChatGPT plan or an API key'
         }
       >
         <span className={`${styles.modelDot} ${backend ? styles.modelDotOn : ''}`} aria-hidden />

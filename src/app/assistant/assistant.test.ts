@@ -522,16 +522,29 @@ describe('asking about a part of the song', () => {
     }
   });
 
-  it('needs an AI: offline, a request about a part writes nothing', async () => {
+  it('offline, a request about a part it cannot read says so and writes nothing', async () => {
     const { s } = stackedSong();
     const a = new BeatAssistant(s, { fetch: offline });
     const before = s.doc.getState().project;
-    await a.send('add a fill at the end', { focus: verseOf(s) });
+    await a.send('translate the lyrics into French', { focus: verseOf(s) });
     const last = a.store.getState().messages.at(-1)!;
-    expect(last.text).toMatch(/^Changing one part of the song needs an AI/);
+    expect(last.text).toMatch(/^I did not understand that as a change I can make offline/);
+    expect(last.text).toMatch(/connect an AI/);
     expect(last.offline).toBe(true);
     expect(s.doc.getState().project).toBe(before);
     expect(a.store.getState().phase).toBe('idle');
+  });
+
+  it('offline, a request about selected notes needs an AI', async () => {
+    const { s } = stackedSong();
+    const a = new BeatAssistant(s, { fetch: offline });
+    const project = s.doc.getState().project;
+    const patternId = project.patternOrder.find((id) => Object.values(project.patterns[id]?.notes ?? {}).some((notes) => Object.keys(notes ?? {}).length > 0))!;
+    const channelId = Object.keys(project.patterns[patternId]!.notes)[0] as never;
+    const noteIds = Object.keys(project.patterns[patternId]!.notes[channelId] ?? {}) as never[];
+    await a.send('make it catchier', { focus: { kind: 'notes', patternId, channelId, noteIds, projectId: project.projectId } });
+    expect(a.store.getState().messages.at(-1)!.text).toMatch(/^Changing the selected notes needs an AI/);
+    expect(s.doc.getState().project).toBe(project);
   });
 
   it('forgets the part on New chat, on opening another project, and when the part is gone', async () => {

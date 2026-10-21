@@ -23,7 +23,7 @@ export const BACKENDS: { value: AssistantState['backend']; label: string; hint: 
   {
     value: 'offline',
     label: 'Offline generator',
-    hint: 'The built-in generator: beats, and whole songs (chords, bass, melody, drums and an arrangement) from words like "a sad trap song at 140". No AI, no network',
+    hint: 'The built-in generator and editor: beats, whole songs from words like "a sad trap song at 140", and changes to the song you have ("busier hats in the chorus", "a new melody for the hook", "change the chords", "add a breakdown"; say "help" for the list). No AI, no network',
   },
 ];
 

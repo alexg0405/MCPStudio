@@ -7,6 +7,7 @@ import { AiError, type AiBackend } from '../claude';
 import type { Take } from '../state';
 import { askStudio, buildTurnText } from './ask-studio';
 import { errorText, isAbortError } from './errors';
+import { hasSongToEdit } from '@core/offline-edit/has-song';
 import { isSongRequest } from '@core/song/request';
 import { writeOfflineBeat } from './offline-beat';
 import { inferRole, roleLabel } from './performance-role';
@@ -19,8 +20,8 @@ const REQUEST_FROM_TAKE_ONLY = 'Make a beat from my performance.';
 /** What the chat shows for a request that was only a take. */
 const TAKE_ONLY_CHAT_TEXT = 'Turn my take into a beat.';
 
-const NO_AI_FOR_A_PART =
-  'Changing one part of the song needs an AI (your Claude subscription, ChatGPT through Codex, or an API key), and none is set up. Set one up in Studio’s ⋯ menu, or clear the part to make a beat with the offline generator.';
+const NO_AI_FOR_NOTES =
+  'Changing the selected notes needs an AI (your Claude subscription, ChatGPT through Codex, or an API key), and none is set up. Set one up in Studio’s ⋯ menu, or pick bars or a section of the playlist to change with the offline editor.';
 
 /** "808s that go like this" after a take left on "figure it out": listens to the take again as that instrument. */
 function relistenForRequestedRole(session: AssistantSession, take: Take | null, request: string): Take | null {
@@ -150,11 +151,17 @@ export async function send(
   } else {
     session.abort = null;
   }
-  if (focus) {
-    // The offline generator writes whole beats: it can't change one part of a song.
-    session.say('assistant', NO_AI_FOR_A_PART, { offline: true });
+  if (focus?.notes) {
+    // The offline editor changes bars of the song, not a selection of notes.
+    session.say('assistant', NO_AI_FOR_NOTES, { offline: true });
     store.setState({ phase: 'idle' });
     return;
+  }
+  // A song that is already in the project is changed in place (a beat of this conversation is still its own follow-up).
+  const isEditingASong = !take && (focus !== null || (store.getState().applied === null && hasSongToEdit(services.doc.getState().project)));
+  if (isEditingASong) {
+    const { runOfflineEdit } = await import('./offline-edit');
+    if ((await runOfflineEdit(session, request, { focus, asked: focus ? askedFocus : null })) === 'answered') return;
   }
   // Asking for a song (not a loop) and no performance to follow: the song generator writes the whole thing.
   // The song generator loads on first use: most sessions never ask the offline mode for a song.

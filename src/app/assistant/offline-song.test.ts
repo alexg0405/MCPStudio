@@ -128,16 +128,26 @@ describe('the offline song', () => {
     ).toBe(first);
   });
 
-  it('still writes a beat for a request that is only a beat, and for a follow-up on a song', async () => {
+  it('still writes a beat for a request that is only a beat; a change after a song changes the song', async () => {
     const { s, a } = setup();
     await a.send('trap beat with 808s');
     expect(Object.keys(project(s).chords ?? {})).toHaveLength(0);
     expect(project(s).playlist.markers).toEqual({});
     await a.send('a sad trap song');
     const patternsAfterSong = Object.keys(project(s).patterns).length;
+    const stepsAfterSong = s.history.steps().done.length;
+    // "Busier hats" changes the hats of the song in place (variants of its patterns), as one undo step; it writes no beat.
     await a.send('busier hats');
-    expect(Object.keys(project(s).patterns).length).toBe(patternsAfterSong + 1);
+    const reply = a.store.getState().messages.at(-1)!;
+    expect(reply).toMatchObject({ from: 'assistant', offline: true });
+    expect(reply.changes?.join(' ')).toMatch(/double hats/);
+    expect(s.history.steps().done.length).toBe(stepsAfterSong + 1);
     expect(markers(project(s)).length).toBe(10);
+    expect(Object.keys(project(s).patterns).length).toBeGreaterThan(patternsAfterSong);
+    // A beat asked for after a song is still a beat of its own.
+    await a.send('boom bap beat with swing');
+    const beat = a.store.getState().messages.at(-1)!;
+    expect(beat.beat).toBeDefined();
   });
 
   it('writes the length asked for: a short song and a long one', async () => {

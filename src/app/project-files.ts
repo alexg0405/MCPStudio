@@ -11,6 +11,8 @@ import {
 import { downloadParts, memorySink, openFileSink } from '@platform/sinks';
 import { APP_VERSION } from '@core/model/defaults';
 import { newId } from '@core/model/ids';
+import type { PluginUse } from '@core/query/plugin-usage';
+import { missingPlugins } from '@core/query/plugin-usage';
 import { createDefaultProject } from './default-project';
 import { buildProjectFile, openProjectBlob, writeProjectTo } from './persistence/project-io';
 import { fileHandle, forgetFile, rememberFile } from './persistence/recent-files';
@@ -40,6 +42,26 @@ export interface FileUi {
   askUnsaved(name: string): Promise<UnsavedChoice>;
   /** Arranges the default windows for a project that has no saved layout. */
   defaultLayout(): void;
+  /**
+   * An opened project uses plugins that are not installed: say which, and offer the bundles the file carries (if any) or
+   * a bundle file. Not awaited: the project is already open and silent where a plugin is missing.
+   */
+  pluginsMissing(info: MissingPluginsInfo): void;
+  /**
+   * Save As: which of the user plugins the project uses should travel inside the file (off by default). Resolves with their
+   * bundles (an empty map for none) or `null` to cancel the save.
+   */
+  chooseEmbeddedPlugins(): Promise<Map<string, Uint8Array> | null>;
+}
+
+/** What the open flow knows when plugins are missing. */
+export interface MissingPluginsInfo {
+  /** The project's name. */
+  name: string;
+  /** The missing user plugin ids with where the project uses each. */
+  missing: Map<string, PluginUse>;
+  /** The bundles the file carries, by plugin id (possibly none, possibly only some of the missing ones). */
+  embedded: Map<string, Uint8Array>;
 }
 
 export const UNTITLED = 'Untitled';
@@ -66,7 +88,12 @@ export class ProjectFiles {
     askUnsaved: async (name) =>
       globalThis.confirm?.(`Discard unsaved changes to "${name}"?`) === true ? 'discard' : 'cancel',
     defaultLayout: () => {},
+    pluginsMissing: () => {},
+    chooseEmbeddedPlugins: async () => new Map(),
   };
+
+  /** The plugin bundles the open file carries: Save writes them back, so saving never strips a shared song of its sounds. */
+  private carriedPlugins: ReadonlyMap<string, Uint8Array> = new Map();
 
   constructor(private readonly s: Services) {}
 
@@ -169,6 +196,8 @@ export class ProjectFiles {
       const name = `${baseName(handle.name)} (copy)`;
       const copy: Project = { ...opened.project, projectId: newId.project(), meta: { ...opened.project.meta, title: name } };
       this.replace(copy, opened.view, { name, handle: null, fileKey: null }, { dirty: true });
+      this.carriedPlugins = opened.plugins;
+      this.offerMissingPlugins(name, copy, opened.plugins);
       return true;
     } catch (e) {
       this.fail(`open a copy of "${handle.name}"`, e);
@@ -208,6 +237,8 @@ export class ProjectFiles {
       const opened = await openProjectBlob(blob);
       const name = baseName(fileName);
       this.replace(opened.project, opened.view, { name, handle, fileKey });
+      this.carriedPlugins = opened.plugins;
+      this.offerMissingPlugins(name, opened.project, opened.plugins);
       if (opened.migratedFrom < opened.project.schemaVersion)
         this.toast(`Upgraded "${name}" from an older AGstudio format.`);
       if (opened.repairs.length > 0) {
@@ -239,6 +270,7 @@ export class ProjectFiles {
     opts: { dirty?: boolean } = {},
   ): void {
     this.s.engine.stop();
+    this.carriedPlugins = new Map();
     this.s.history.load(project, opts);
     if (!applyView(this.s, view, project)) this.ui.defaultLayout();
     this.store.setState({ name: file.name, handle: file.handle, fileKey: file.fileKey });
@@ -257,7 +289,10 @@ export class ProjectFiles {
 
   async saveAs(): Promise<boolean> {
     const suggested = `${this.store.getState().name}${PROJECT_FILE_EXTENSION}`;
-    if (!isFileSystemAccessSupported()) return this.download(suggested);
+    // Asked first, in the click's own moment, so the file picker after it still counts as the musician's action.
+    const chosen = await this.ui.chooseEmbeddedPlugins();
+    if (!chosen) return false;
+    if (!isFileSystemAccessSupported()) return this.download(suggested, chosen);
     let handle: FileSystemFileHandle | null;
     try {
       handle = await pickSaveFile(suggested);
@@ -271,7 +306,8 @@ export class ProjectFiles {
       return false;
     }
     if (!handle) return false;
-    if (!(await this.writeTo(handle))) return false;
+    if (!(await this.writeTo(handle, chosen))) return false;
+    this.carriedPlugins = chosen;
     const fileKey = await rememberFile(handle);
     this.store.setState({ handle, fileKey, name: baseName(handle.name) });
     return true;
@@ -293,16 +329,17 @@ export class ProjectFiles {
    * sample store one by one as they are written, so a project with hundreds of MB of songs never
    * sits in memory whole.
    */
-  private async writeStream(write: (bytes: Uint8Array) => Promise<void>): Promise<void> {
+  private async writeStream(write: (bytes: Uint8Array) => Promise<void>, plugins: ReadonlyMap<string, Uint8Array>): Promise<void> {
     let missing = 0;
     await writeProjectTo(write, this.s.doc.getState().project, captureView(this.s), APP_VERSION, {
       onMissingSamples: (refs) => (missing = refs.length),
+      plugins,
     });
     if (missing > 0)
       this.toast(`${missing} sample${missing === 1 ? ' is' : 's are'} missing and weren't saved with the project.`);
   }
 
-  private async writeTo(handle: FileSystemFileHandle): Promise<boolean> {
+  private async writeTo(handle: FileSystemFileHandle, plugins: ReadonlyMap<string, Uint8Array> = this.carriedPlugins): Promise<boolean> {
     this.store.setState({ busy: 'saving' });
     try {
       // What gets written is the state at this point; edits made while saving stay unsaved.
@@ -310,7 +347,7 @@ export class ProjectFiles {
       // createWritable swaps the file in on close: a failed save leaves the old file.
       const sink = await openFileSink(handle);
       try {
-        await this.writeStream((b) => sink.write(b));
+        await this.writeStream((b) => sink.write(b), plugins);
         await sink.close();
       } catch (e) {
         await sink.abort();
@@ -327,12 +364,13 @@ export class ProjectFiles {
     }
   }
 
-  private async download(fileName: string): Promise<boolean> {
+  private async download(fileName: string, plugins: ReadonlyMap<string, Uint8Array> = this.carriedPlugins): Promise<boolean> {
     this.store.setState({ busy: 'saving' });
     try {
       const cursor = this.s.history.checkpoint();
       const sink = memorySink();
-      await this.writeStream((b) => sink.write(b));
+      await this.writeStream((b) => sink.write(b), plugins);
+      this.carriedPlugins = plugins;
       downloadParts(fileName, sink.parts(), PROJECT_FILE_MIME);
       this.s.history.markSaved(cursor);
       this.store.setState({ name: baseName(fileName) });
@@ -344,6 +382,12 @@ export class ProjectFiles {
     } finally {
       this.store.setState({ busy: null });
     }
+  }
+
+  /** Tells the UI about user plugins the opened project needs and this computer lacks (nothing when all are installed). */
+  private offerMissingPlugins(name: string, project: Project, embedded: Map<string, Uint8Array>): void {
+    const missing = missingPlugins(project, (id) => !!this.s.plugins.get(id) || !!this.s.plugins.script(id));
+    if (missing.size > 0) this.ui.pluginsMissing({ name, missing, embedded });
   }
 
   private savedListeners = new Set<() => void>();

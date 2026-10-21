@@ -27,6 +27,8 @@ export interface BuildProjectFileOptions {
   now?: Date;
   /** Embedded samples the store doesn't have. The file is still written, without their bytes. */
   onMissingSamples?(refs: SampleRef[]): void;
+  /** Plugin bundles (`.agplugin` bytes by plugin id) to carry inside the file, so a shared song brings its own sounds. */
+  plugins?: ReadonlyMap<string, Uint8Array>;
 }
 
 export interface OpenedProject {
@@ -38,6 +40,8 @@ export interface OpenedProject {
   migratedFrom: number;
   /** Embedded samples that are neither in the file nor in the store (they will be silent). */
   missingSamples: SampleRef[];
+  /** Plugin bundles the file carries (by plugin id), not yet checked or installed: the open flow offers them. */
+  plugins: Map<string, Uint8Array>;
 }
 
 const embedded = (ref: SampleRef) => (ref.source.kind === 'embedded' ? ref.source : null);
@@ -75,7 +79,7 @@ export async function buildProjectFile(
 ): Promise<Uint8Array> {
   const { samples, missing } = await collectEmbeddedSamples(project, opts.store);
   if (missing.length > 0) opts.onMissingSamples?.(missing);
-  return writeProjectFile({ project, view, samples, appVersion, now: opts.now });
+  return writeProjectFile({ project, view, samples, appVersion, now: opts.now, ...(opts.plugins ? { plugins: opts.plugins } : {}) });
 }
 
 /**
@@ -105,7 +109,7 @@ export async function writeProjectTo(
     };
   });
   const { missing } = await writeProjectFileStream(
-    { project, view, appVersion, now: opts.now, samples },
+    { project, view, appVersion, now: opts.now, samples, ...(opts.plugins ? { plugins: opts.plugins } : {}) },
     write,
   );
   if (missing.length > 0) opts.onMissingSamples?.(missing.flatMap((h) => byHash.get(h) ?? []));
@@ -231,7 +235,7 @@ export async function findMissingSamples(
 
 /** Reports damaged and missing samples of an opened project. */
 async function finishOpen(
-  file: { project: Project; view: unknown; migratedFrom: number },
+  file: { project: Project; view: unknown; migratedFrom: number; plugins: Map<string, Uint8Array> },
   repairs: string[],
   damaged: number,
   store: BlobStore,
@@ -246,7 +250,7 @@ async function finishOpen(
       `${plural(n, 'sample is', 'samples are')} missing and will be silent: ${describeSamples(missingSamples)}.`,
     );
   }
-  return { project: file.project, view: file.view, repairs, migratedFrom: file.migratedFrom, missingSamples };
+  return { project: file.project, view: file.view, repairs, migratedFrom: file.migratedFrom, missingSamples, plugins: file.plugins };
 }
 
 /**

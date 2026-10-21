@@ -169,7 +169,7 @@ describe('saving and opening big projects a piece at a time', () => {
     expect(whole.project).toEqual(project);
     const store = createMemoryBlobStore();
     const opened = await openProjectBlob(blob, { store });
-    expect(opened).toEqual({ project, view: { mode: 'song' }, repairs: [], migratedFrom: SCHEMA_VERSION, missingSamples: [] });
+    expect(opened).toEqual({ project, view: { mode: 'song' }, repairs: [], migratedFrom: SCHEMA_VERSION, missingSamples: [], plugins: new Map() });
     const songHash = (songRef.source as { hash: string }).hash;
     expect(await sha256Hex((await store.getBlob(songHash))!.bytes)).toBe(songHash);
   });
@@ -209,6 +209,7 @@ describe('openProjectFile', () => {
       repairs: [],
       migratedFrom: SCHEMA_VERSION,
       missingSamples: [],
+      plugins: new Map(),
     });
     expect((await store.getBlob(hash))?.bytes).toEqual(wavBytes(800));
   });

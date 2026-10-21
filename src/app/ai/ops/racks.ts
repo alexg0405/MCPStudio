@@ -149,7 +149,7 @@ function mappingOf(c: OpContext, rackSlot: FxSlot & { rack: Rack }, entry: Recor
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /** A plain copy to read from: a draft is unwrapped; a thing made earlier in the same recipe is not a draft yet and is already plain. */
-const plain = <T>(value: T): T => (isDraft(value) ? (current(value) as T) : value);
+const plain = <T>(value: T): T => (isDraft(value) ? (current(value as Draft<T>) as T) : value);
 
 export const racks: OpModule = {
   schemas: [

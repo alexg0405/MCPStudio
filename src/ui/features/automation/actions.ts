@@ -20,6 +20,7 @@ import { p } from '@agstudio/sdk';
 import type { MenuEntry } from '../../controls/ContextMenu';
 import { showFormDialog } from '../../controls/FormDialog';
 import { openWindow } from '../../workspace/registry';
+import { openEffect } from '../rack/open';
 
 export const SHAPE_LABELS: Record<AutoShape, string> = {
   curve: 'Curve (drag its handle to bend it)',
@@ -95,7 +96,7 @@ export function showTarget(s: Services, target: ParamTarget): void {
       return;
     case 'plugin':
       if (target.owner.kind === 'channel') openWindow(s, 'plugin', { kind: 'channel', channelId: target.owner.channelId });
-      else openWindow(s, 'plugin', { kind: 'fx', insertId: target.owner.insertId, slotId: target.owner.slotId });
+      else openEffect(s, target.owner.insertId, target.owner.slotId);
       return;
     case 'insert':
     case 'slot':

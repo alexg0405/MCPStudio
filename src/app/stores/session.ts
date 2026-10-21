@@ -1,5 +1,5 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { ChannelId, InsertId, SnapshotId } from '@core/model/types';
+import type { ChannelId, InsertId, SlotId, SnapshotId } from '@core/model/types';
 
 /** In-memory session state: never saved, never undoable. */
 export interface Toast {
@@ -28,6 +28,11 @@ export interface SessionState {
    * order picked. Empty: only the selected insert counts. Picking one track again with a plain click clears it.
    */
   markedInsertIds: InsertId[];
+  /**
+   * Effects of the selected track picked together in the mixer (Ctrl- or Shift-click on a slot) for "Group into a rack", in the
+   * order picked. Empty: only the slot that is right-clicked counts. Choosing another track clears them.
+   */
+  markedSlotIds: SlotId[];
   /** The mixer snapshots the A/B toggle switches between. */
   snapshotCompare: SnapshotCompare;
 }
@@ -42,6 +47,10 @@ export interface SessionActions {
   toggleMarkedInsert(id: InsertId): void;
   /** Replaces the picked tracks (an empty list clears them). */
   markInserts(ids: readonly InsertId[]): void;
+  /** Adds an effect slot to the picked ones, or takes it off them. */
+  toggleMarkedSlot(id: SlotId): void;
+  /** Forgets the picked effect slots. */
+  clearMarkedSlots(): void;
   setSnapshotCompare(patch: Partial<SnapshotCompare>): void;
 }
 
@@ -56,6 +65,7 @@ export function createSessionStore(): SessionStore {
     selectedChannelId: null,
     selectedInsertId: null,
     markedInsertIds: [],
+    markedSlotIds: [],
     snapshotCompare: { a: null, b: null, side: null },
     setHint(hint) {
       if (get().hint !== hint) set({ hint });
@@ -73,7 +83,8 @@ export function createSessionStore(): SessionStore {
     },
     selectInsert(id) {
       const marked = get().markedInsertIds;
-      if (get().selectedInsertId !== id || marked.length) set({ selectedInsertId: id, markedInsertIds: [] });
+      const slots = get().markedSlotIds;
+      if (get().selectedInsertId !== id || marked.length || slots.length) set({ selectedInsertId: id, markedInsertIds: [], markedSlotIds: [] });
     },
     toggleMarkedInsert(id) {
       const { markedInsertIds, selectedInsertId } = get();
@@ -85,6 +96,13 @@ export function createSessionStore(): SessionStore {
     },
     markInserts(ids) {
       set({ markedInsertIds: ids.length > 1 ? [...ids] : [] });
+    },
+    toggleMarkedSlot(id) {
+      const picked = get().markedSlotIds;
+      set({ markedSlotIds: picked.includes(id) ? picked.filter((other) => other !== id) : [...picked, id] });
+    },
+    clearMarkedSlots() {
+      if (get().markedSlotIds.length) set({ markedSlotIds: [] });
     },
     setSnapshotCompare(patch) {
       set({ snapshotCompare: { ...get().snapshotCompare, ...patch } });

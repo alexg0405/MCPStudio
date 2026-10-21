@@ -6,7 +6,7 @@ import { insertLabel } from '@core/query/mixer';
 import { p } from '@agstudio/sdk/params';
 import { Knob } from '@agstudio/sdk/ui';
 import { addEffect, moveEffectBy, removeEffect, replaceEffect, toggleEffect } from '@app/actions/mixer';
-import { useDoc, useServices } from '../../services-context';
+import { useDoc, useServices, useSession } from '../../services-context';
 import { usePluginDef } from '../../plugin-hooks';
 import { useGestureEdit } from '../../edit';
 import { showContextMenu } from '../../controls/ContextMenu';
@@ -39,7 +39,10 @@ const SlotRow = memo(function SlotRow({
   const def = usePluginDef(slot.plugin.pluginId);
   const mix = useGestureEdit<number>('Effect mix', (draft, value) => setFxSlotMix(draft, insertId, slot.id, value), `fxmix:${slot.id}`);
   const name = def?.name ?? slot.plugin.pluginId;
+  const rack = slot.rack;
+  const rackNote = rack ? (rack.branches.length === 1 ? 'chain' : `${rack.branches.length} ${rack.split === 'bands' ? 'bands' : rack.split === 'parallel' ? 'branches' : rack.split === 'midside' ? 'mid/side' : 'left/right'}`) : '';
   const listens = def?.kind === 'effect' && !!def.sidechain;
+  const isMarked = useSession((session) => session.markedSlotIds.includes(slot.id));
   const keyName = useDoc((project) =>
     slot.sidechain && project.mixer.inserts[slot.sidechain] ? insertName(project, slot.sidechain) : null,
   );
@@ -48,7 +51,7 @@ const SlotRow = memo(function SlotRow({
     e.preventDefault();
     const at = { x: e.clientX, y: e.clientY };
     showContextMenu(at, [
-      { label: 'Open editor', onSelect: () => openEffectEditor(services, insertId, slot.id) },
+      { label: rack ? 'Open rack' : 'Open editor', onSelect: () => openEffectEditor(services, insertId, slot.id) },
       {
         kind: 'submenu',
         label: 'Replace with',
@@ -70,12 +73,12 @@ const SlotRow = memo(function SlotRow({
 
   return (
     <div
-      className={`${styles.slot} ${slot.enabled ? '' : styles.slotOff} ${def ? '' : styles.slotMissing}`}
+      className={`${styles.slot} ${slot.enabled ? '' : styles.slotOff} ${def ? '' : styles.slotMissing} ${isMarked ? styles.slotMarked : ''}`}
       onDoubleClick={() => openEffectEditor(services, insertId, slot.id)}
       onContextMenu={menu}
       data-hint={
         def
-          ? `${name}${slot.enabled ? '' : ' (bypassed: audio passes through untouched)'}${listens ? (keyName ? `. Sidechain: reacts to “${keyName}”` : '. Sidechain: reacts to its own input') : ''}. Double-click to edit, right-click for options${listens ? ' (Sidechain from…)' : ''}`
+          ? `${rack ? `Effect rack (${rackNote})` : name}${slot.enabled ? '' : ' (bypassed: audio passes through untouched)'}${listens ? (keyName ? `. Sidechain: reacts to “${keyName}”` : '. Sidechain: reacts to its own input') : ''}. Double-click to ${rack ? 'open it' : 'edit'}, right-click for options${listens ? ' (Sidechain from…)' : rack ? ' (Ungroup, Save as my rack…)' : ' (Group into a rack…)'}. Ctrl- or Shift-click marks it for grouping`
           : `"${slot.plugin.pluginId}" is not installed: audio passes through and its settings are kept`
       }
     >
@@ -93,6 +96,11 @@ const SlotRow = memo(function SlotRow({
         role="button"
         tabIndex={0}
         aria-label={`Open the editor of ${name}`}
+        aria-pressed={isMarked || undefined}
+        onClick={(e) => {
+          // Ctrl, Cmd or Shift marks the slot for "Group into a rack".
+          if (e.ctrlKey || e.metaKey || e.shiftKey) services.session.getState().toggleMarkedSlot(slot.id);
+        }}
         onKeyDown={(e) => {
           // The keyboard's double-click (the menu key or Shift+F10 opens the slot's menu).
           if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -101,6 +109,7 @@ const SlotRow = memo(function SlotRow({
         }}
       >
         {name}
+        {rack && <span className={styles.slotRack}> · {rackNote}</span>}
       </span>
       {listens && keyName && (
         <span

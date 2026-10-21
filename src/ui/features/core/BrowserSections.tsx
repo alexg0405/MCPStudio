@@ -2,7 +2,8 @@ import { memo, useCallback, useSyncExternalStore } from 'react';
 import { KIT, KIT_VERSION } from '@core/model/kit';
 import { addEffectToSelectedInsert } from '@app/actions/mixer';
 import { showContextMenu } from '../../controls/ContextMenu';
-import { openWindow } from '../../workspace/registry';
+import { openEffect } from '../rack/open';
+import { startEffectDrag } from '../rack/rack-drag';
 import { addInstrumentChannel, addKitChannel } from '@app/actions/channels';
 import { newPattern } from '@app/actions/patterns';
 import { isPatternPlaying } from '@app/actions/transport';
@@ -81,11 +82,13 @@ export function PluginsSection() {
           key={e.def.id}
           className={styles.item}
           onContextMenu={(ev) => pluginMenu(ev, e.def.id, e.source)}
+          draggable
+          onDragStart={(ev) => startEffectDrag(ev, e.def.id)}
           onClick={() => {
             const added = addEffectToSelectedInsert(services, e.def.id);
-            if (added) openWindow(services, 'plugin', { kind: 'fx', ...added });
+            if (added) openEffect(services, added.insertId, added.slotId);
           }}
-          data-hint={`${e.def.description ?? e.def.name}. Click to add it to the selected mixer insert.`}
+          data-hint={`${e.def.description ?? e.def.name}. Click to add it to the selected mixer insert, or drag it into a branch of a rack.`}
         >
           {e.def.name}
           <span className={styles.badge}>fx</span>

@@ -4,6 +4,8 @@
  */
 import type {
   BranchId,
+  InsertId,
+  ParamTarget,
   FxSlot,
   Insert,
   MacroTarget,
@@ -13,7 +15,7 @@ import type {
   SlotId,
 } from '../model/types';
 import type { PluginInfoResolver } from '../automation/labels';
-import { isRackSlot, macroIndexOfParam } from '../model/rack';
+import { isRackSlot, macroIndexOfParam, sameMacroTarget } from '../model/rack';
 
 /** Where a slot sits: on the insert itself, or in a branch of a rack slot on it. */
 export interface SlotLocation {
@@ -127,4 +129,64 @@ export function describeMacroTarget(rack: Rack, target: MacroTarget, plugins: Pl
     case 'gain':
       return 'Rack output';
   }
+}
+
+/** The macro that moves a control, when it is mapped to one: which rack, which macro and what the musician called it. */
+export interface MacroDriver {
+  insertId: InsertId;
+  rackSlotId: SlotId;
+  /** 0-based. */
+  macro: number;
+  name: string;
+}
+
+/** A control that a rack's macro can move: the rack it is in and what it is called there. */
+export interface RackControl {
+  insertId: InsertId;
+  rackSlot: FxSlot & { rack: Rack };
+  macroTarget: MacroTarget;
+}
+
+/** The macro target a control is, when it is something a rack's macro can move (an effect in a rack, its mix, a rack's output). */
+function macroTargetOfControl(insert: Insert, target: ParamTarget): { rackSlot: FxSlot & { rack: Rack }; macroTarget: MacroTarget } | null {
+  if (target.kind === 'plugin' && target.owner.kind === 'fx') {
+    const found = locateSlot(insert, target.owner.slotId);
+    if (!found) return null;
+    if (found.rackSlot && isRackSlot(found.rackSlot)) {
+      return { rackSlot: found.rackSlot, macroTarget: { kind: 'param', slotId: found.slot.id, paramId: target.paramId } };
+    }
+    if (isRackSlot(found.slot) && target.paramId === 'gain') return { rackSlot: found.slot, macroTarget: { kind: 'gain' } };
+    return null;
+  }
+  if (target.kind === 'slot') {
+    const found = locateSlot(insert, target.slotId);
+    if (found?.rackSlot && isRackSlot(found.rackSlot)) return { rackSlot: found.rackSlot, macroTarget: { kind: 'mix', slotId: found.slot.id } };
+  }
+  return null;
+}
+
+/** The insert a control of an effect belongs to (null for any other control). */
+function insertOfControl(target: ParamTarget): InsertId | null {
+  if (target.kind === 'plugin') return target.owner.kind === 'fx' ? target.owner.insertId : null;
+  return target.kind === 'slot' ? target.insertId : null;
+}
+
+/** The rack control a parameter target is (an effect's setting or dry/wet inside a rack, a rack's output), or null for any other. */
+export function rackControlOf(project: Project, target: ParamTarget): RackControl | null {
+  const insertId = insertOfControl(target);
+  const insert = insertId ? project.mixer.inserts[insertId] : undefined;
+  const control = insert ? macroTargetOfControl(insert, target) : null;
+  return insertId && control ? { insertId, ...control } : null;
+}
+
+/** The macro that moves the control, or null when none does. */
+export function macroDriving(project: Project, target: ParamTarget): MacroDriver | null {
+  const control = rackControlOf(project, target);
+  if (!control) return null;
+  const { insertId } = control;
+  const index = control.rackSlot.rack.macros.findIndex((macro) =>
+    macro.mappings.some((mapping) => sameMacroTarget(mapping.target, control.macroTarget)),
+  );
+  if (index < 0) return null;
+  return { insertId, rackSlotId: control.rackSlot.id, macro: index, name: control.rackSlot.rack.macros[index]?.name ?? `Macro ${index + 1}` };
 }

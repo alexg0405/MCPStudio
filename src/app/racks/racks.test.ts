@@ -3,6 +3,8 @@ import { makePluginInstance } from '@core/model/defaults';
 import { RACK_PLUGIN_ID, isRackSlot } from '@core/model/rack';
 import type { InsertId, SlotId } from '@core/model/types';
 import { MAX_FX_SLOTS, addFxSlot } from '@core/ops/mixer';
+import { targetKey } from '@core/model/targets';
+import { removeEffect } from '../actions/mixer';
 import { macroTargetValue } from '@core/rack/mapping';
 import { writeRackFile, readRackFile } from '@core/rack/file';
 import { addEmptyRack, addRackChoice, allRacks, groupSlotsIntoRack, mapToMacro, rackAt, saveRackAs, ungroupSlot } from '../actions/racks';
@@ -212,3 +214,44 @@ describe('grouping, ungrouping and mapping', () => {
   });
 });
 
+describe('around a rack in the app', () => {
+  function withRack() {
+    const s = createTestServices();
+    const insertId = insertOf(s);
+    const slotId = addRackChoice(s, insertId, findRackChoice(allRacks(s), 'Parallel NY')!)!;
+    return { s, insertId, slotId };
+  }
+
+  it('removes an effect inside a rack with the usual remove action, and its macro mappings go with it', () => {
+    const { s, insertId, slotId } = withRack();
+    const compressor = rackAt(s, insertId, slotId)!.rack.branches[1]!.fx[1]!;
+    removeEffect(s, insertId, compressor.id);
+    const rack = rackAt(s, insertId, slotId)!.rack;
+    expect(rack.branches[1]!.fx.map((x) => x.plugin.pluginId)).toEqual(['agstudio.eq-pro']);
+    expect(rack.macros[1]!.mappings).toEqual([]);
+    expect(rack.macros[2]!.mappings).toEqual([]);
+    s.history.undo();
+    expect(rackAt(s, insertId, slotId)!.rack.macros[1]!.mappings).toHaveLength(2);
+  });
+
+  it('keeps the effects marked for grouping until another track is chosen', () => {
+    const { s, insertId } = withRack();
+    s.session.getState().toggleMarkedSlot('fx_a' as SlotId);
+    s.session.getState().toggleMarkedSlot('fx_b' as SlotId);
+    s.session.getState().toggleMarkedSlot('fx_a' as SlotId);
+    expect(s.session.getState().markedSlotIds).toEqual(['fx_b']);
+    s.session.getState().selectInsert(s.doc.getState().project.mixer.order[2] as InsertId);
+    expect(s.session.getState().markedSlotIds).toEqual([]);
+    expect(insertId).toBeDefined();
+  });
+
+  it('says a setting is moved by a macro, and says nothing for one that is not', () => {
+    const { s, insertId, slotId } = withRack();
+    const compressor = rackAt(s, insertId, slotId)!.rack.branches[1]!.fx[1]!;
+    const key = (paramId: string) => targetKey({ kind: 'plugin', owner: { kind: 'fx', insertId, slotId: compressor.id }, paramId });
+    expect(s.automation.statusOf(key('threshold'))).toMatchObject({ kind: 'macro', hint: expect.stringContaining('“Squash”') });
+    expect(s.automation.statusOf(key('release'))).toBeNull();
+    expect(s.automation.statusOf(targetKey({ kind: 'plugin', owner: { kind: 'fx', insertId, slotId }, paramId: 'gain' }))).toMatchObject({ kind: 'macro' });
+    expect(s.automation.statusOf(targetKey({ kind: 'plugin', owner: { kind: 'fx', insertId, slotId }, paramId: 'macro1' }))).toBeNull();
+  });
+});

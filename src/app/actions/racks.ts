@@ -3,13 +3,14 @@
  * take it apart, save it, map a knob to a macro. Each is one undo step and says in a toast what it did or why it could not.
  */
 import { MAX_FX_SLOTS } from '@core/ops/mixer';
-import { addRackSlot, groupIntoRack, insertRackSlot, setMacroMapping, ungroupRack } from '@core/ops/racks';
-import { isRackSlot } from '@core/model/rack';
-import type { FxSlot, InsertId, MacroTarget, Rack, SlotId } from '@core/model/types';
+import { addRackFx, addRackSlot, groupIntoRack, insertRackSlot, moveRackFx, setMacroMapping, ungroupRack } from '@core/ops/racks';
+import { RACK_PLUGIN_ID, isRackSlot } from '@core/model/rack';
+import type { BranchId, FxSlot, InsertId, MacroTarget, Rack, SlotId } from '@core/model/types';
 import { insertLabel } from '@core/query/mixer';
 import { rackSlotOf } from '@core/query/rack';
 import { rackSlotToFile } from '@core/rack/file';
 import { buildChoice } from '../racks/build';
+import { effectData } from './mixer';
 import type { RackChoice, UserRack } from '../racks/library';
 import { rackChoices } from '../racks/library';
 import { startingMapping } from '../racks/targets';
@@ -96,4 +97,30 @@ export function mapToMacro(s: Services, insertId: InsertId, slotId: SlotId, macr
   const mapping = slot ? startingMapping(s, slot, target) : null;
   if (!mapping) return false;
   return s.history.transact('Map to macro', (d) => void setMacroMapping(d, insertId, slotId, macroIndex, mapping));
+}
+
+/** Adds an effect (at its default settings) to a branch of a rack, at the end or at `index`. Returns its slot id, or null (a toast says why). */
+export function addEffectToBranch(s: Services, insertId: InsertId, rackSlotId: SlotId, branchId: BranchId, pluginId: string, index?: number): SlotId | null {
+  if (pluginId === RACK_PLUGIN_ID) {
+    s.session.getState().toast('A rack cannot go inside another rack', 'error');
+    return null;
+  }
+  const fx = effectData(s, pluginId);
+  if (!fx) return null;
+  let added: SlotId | null = null;
+  s.history.transact(`Add ${fx.name} to the rack`, (d) => {
+    added = addRackFx(d, insertId, rackSlotId, branchId, fx.data, index === undefined ? {} : { index });
+  });
+  if (!added) s.session.getState().toast('That branch is full: a branch holds at most 8 effects', 'error');
+  return added;
+}
+
+/** Moves an effect of a rack to a place in a branch of the same rack (an undo step of its own). */
+export function moveEffectToBranch(s: Services, insertId: InsertId, effectId: SlotId, branchId: BranchId, index: number): boolean {
+  let ok = false;
+  s.history.transact('Move effect', (d) => {
+    ok = moveRackFx(d, insertId, effectId, branchId, index);
+  });
+  if (!ok) s.session.getState().toast('That effect could not go there: a branch holds at most 8 effects', 'error');
+  return ok;
 }

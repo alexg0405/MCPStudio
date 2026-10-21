@@ -22,6 +22,8 @@ import {
 } from '@core/ops/mixer';
 import { clearRoutes, removeRoute, routeOnlyTo, setRoute, setSlotSidechain } from '@core/ops/routing';
 import { fxSlotOf, insertLabel } from '@core/query/mixer';
+import { locateSlot } from '@core/query/rack';
+import { removeRackFx } from '@core/ops/racks';
 import { canRoute, wouldCycle } from '@core/query/routing';
 import { defaultValues } from '@agstudio/sdk';
 import type { Services } from '../services';
@@ -30,7 +32,7 @@ import { presetValues, type PresetChoice } from '../presets';
 // User-level mixer actions: each is one undoable edit, used by the mixer, menus and the browser.
 
 /** Fresh plugin data (default params, or a preset's) for an effect, or null if the id isn't an installed effect. */
-function effectData(s: Services, pluginId: string, preset?: PresetChoice): { name: string; data: PluginInstance } | null {
+export function effectData(s: Services, pluginId: string, preset?: PresetChoice): { name: string; data: PluginInstance } | null {
   const def = s.plugins.get(pluginId);
   if (!def || def.kind !== 'effect') return null;
   if (!preset) return { name: def.name, data: makePluginInstance(def.id, def.version, defaultValues(def.params)) };
@@ -93,7 +95,12 @@ export function removeEffect(s: Services, insertId: InsertId, slotId: SlotId): v
   const slot = fxSlotOf(s.doc.getState().project, insertId, slotId);
   if (!slot) return;
   const name = s.plugins.get(slot.plugin.pluginId)?.name ?? 'effect';
-  s.history.transact(`Remove ${name}`, (d) => removeFxSlot(d, insertId, slotId));
+  // An effect inside a rack leaves its branch (and the macro mappings that moved it); any other leaves the track.
+  const isInRack = !!locateSlot(s.doc.getState().project.mixer.inserts[insertId], slotId)?.rackSlot;
+  s.history.transact(`Remove ${name}`, (d) => {
+    if (isInRack) removeRackFx(d, insertId, slotId);
+    else removeFxSlot(d, insertId, slotId);
+  });
 }
 
 export function moveEffectBy(s: Services, insertId: InsertId, slotId: SlotId, delta: number): void {

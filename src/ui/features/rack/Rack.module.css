@@ -1,0 +1,429 @@
+.window {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+}
+
+.gone {
+  padding: 18px 20px;
+  color: var(--ag-text-dim);
+  line-height: 1.5;
+}
+
+/* ---- Header ---- */
+
+.header {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
+}
+
+.title {
+  font-weight: 700;
+  letter-spacing: var(--ag-label-tracking);
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-dim);
+}
+
+.select {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+.button {
+  flex: none;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+  color: var(--ag-text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.buttonOn {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent-tint);
+  color: var(--ag-accent-ink);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  border-color: var(--ag-danger);
+  color: var(--ag-danger);
+}
+
+.led {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.led::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--ag-led-off);
+  box-shadow: inset 0 1px 1px color-mix(in srgb, var(--ag-border) 60%, transparent);
+}
+
+.ledOn::after {
+  background: var(--ag-led);
+  box-shadow: 0 0 6px var(--ag-led-glow);
+}
+
+.rename {
+  width: 100%;
+  height: 18px;
+  padding: 0 4px;
+  border: none;
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-inset);
+  box-shadow: 0 0 0 1.5px var(--ag-accent);
+  color: var(--ag-text);
+  font: inherit;
+}
+
+/* ---- Macros ---- */
+
+.macros {
+  flex: none;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--ag-line-faint);
+}
+
+.macroRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.macro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 76px;
+  padding: 5px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--ag-radius);
+  background: var(--ag-sheen);
+}
+
+.macroSelected {
+  border-color: var(--ag-accent-dim);
+  background: var(--ag-accent-tint);
+}
+
+.macroName {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.macroMore {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-select-tint);
+  color: var(--ag-select);
+  font: inherit;
+  font-size: calc(9px * var(--ag-scale, 1));
+  font-weight: 700;
+  line-height: 14px;
+  cursor: pointer;
+}
+
+.macroMoreNone {
+  background: transparent;
+  color: var(--ag-text-faint);
+}
+
+.mappings {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+}
+
+.mappingsTitle {
+  margin: 0 0 4px;
+  color: var(--ag-text-dim);
+  font-weight: 600;
+}
+
+.mappingList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mapping {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid var(--ag-line-faint);
+}
+
+.mappingTarget {
+  flex: 1 1 180px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.number {
+  width: 74px;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-sm);
+  background: var(--ag-surface-inset);
+  color: var(--ag-text);
+  font: inherit;
+  font-family: var(--ag-font-mono);
+}
+
+.hintLine {
+  margin: 0;
+  color: var(--ag-text-dim);
+  line-height: 1.45;
+}
+
+/* ---- Branches ---- */
+
+.branches {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 10px;
+  overflow: auto;
+}
+
+.branch {
+  flex: 1 1 180px;
+  min-width: 170px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-2);
+}
+
+.branchSilent {
+  opacity: 0.6;
+}
+
+.branchDrop {
+  border-color: var(--ag-accent);
+  background: var(--ag-accent-tint);
+}
+
+.branchHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.branchTop {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.branchName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.branchKnobs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ag-text-dim);
+}
+
+.knobBox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 40px;
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--ag-radius);
+  background: var(--ag-sheen);
+  cursor: grab;
+}
+
+.card:hover {
+  background: var(--ag-hover);
+}
+
+.cardOff .cardName {
+  color: var(--ag-text-faint);
+}
+
+.cardDragging {
+  opacity: 0.45;
+}
+
+.cardName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ag-text);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mapped {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--ag-radius-pill);
+  background: var(--ag-select-tint);
+  color: var(--ag-select);
+  font-size: calc(9px * var(--ag-scale, 1));
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.emptyBranch {
+  margin: 0;
+  padding: 6px 4px;
+  color: var(--ag-text-faint);
+  line-height: 1.4;
+}
+
+.add {
+  height: 26px;
+  border: 1px dashed var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: transparent;
+  color: var(--ag-text-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.add:hover {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}
+
+.crossover {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 64px;
+  color: var(--ag-text-dim);
+  text-align: center;
+}
+
+.addBranch {
+  flex: none;
+  align-self: stretch;
+  width: 56px;
+  border: 1px dashed var(--ag-line-faint);
+  border-radius: var(--ag-radius);
+  background: transparent;
+  color: var(--ag-text-faint);
+  font: inherit;
+  cursor: pointer;
+}
+
+.addBranch:hover {
+  border-color: var(--ag-accent-dim);
+  color: var(--ag-accent-ink);
+}

@@ -113,6 +113,12 @@
   box-sizing: border-box;
 }
 
+/* A rack's macro moves this knob: a diamond, so it is not told apart by colour alone. */
+.statusDot[data-kind='macro'] {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+
 .statusDot[data-kind='recording'] {
   background: var(--ag-danger, #e0675a);
   box-shadow:

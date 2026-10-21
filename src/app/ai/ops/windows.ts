@@ -13,6 +13,7 @@ export const OPEN_WINDOWS = [
   'piano-roll',
   'playlist',
   'plugin',
+  'rack',
   'piano-keyboard',
   'keys',
   'history',
@@ -52,6 +53,7 @@ export const isOpenWindow = (v: unknown): v is OpenWindow => (OPEN_WINDOWS as re
 
 /** The id of a window instance: singletons use their type; a plugin window is per channel or effect slot. */
 export function windowIdOf(type: OpenWindow, target: { channelId?: ChannelId; slotId?: SlotId }): string | null {
+  if (type === 'rack') return target.slotId ? `rack:${target.slotId}` : null;
   if (type !== 'plugin') return type;
   if (target.slotId) return `plugin:fx:${target.slotId}`;
   if (target.channelId) return `plugin:${target.channelId}`;

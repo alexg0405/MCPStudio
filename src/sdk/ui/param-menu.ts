@@ -18,9 +18,9 @@ export const ParamFollowContext = createContext<
   ((param: string, paint: (value: ParamValue | null) => void) => () => void) | null
 >(null);
 
-/** What the host says drives a param: an automation clip, a muted one, or recording in progress. */
+/** What the host says drives a param: an automation clip, a muted one, recording in progress, or a rack's macro knob. */
 export interface ParamStatus {
-  kind: 'automated' | 'muted' | 'recording';
+  kind: 'automated' | 'muted' | 'recording' | 'macro';
   /** Added to the control's hint, e.g. "Automated by clip ‘Cutoff · Lead’ – right-click to edit". */
   hint: string;
 }

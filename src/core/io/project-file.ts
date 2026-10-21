@@ -14,6 +14,7 @@ import { SCHEMA_VERSION, type Project } from '../model/types';
 import { MIGRATIONS, SchemaError, migrateProject, repairProject, type Migration } from '../schema/migrate';
 import { collectHashes } from '../gc/refs';
 import { isSha256Hex } from './hash';
+import { projectJson } from './project-json';
 import { readZipEntry, readZipIndex, type RangeReader, type ZipEntry } from './zip-index';
 
 /** Version of the zip layout (not the project schema, which is project.schemaVersion). */
@@ -139,7 +140,7 @@ export function projectFileParts(input: WriteProjectFileInput): ProjectFileParts
   const json = (value: unknown, indent?: number) => strToU8(JSON.stringify(value ?? null, null, indent));
   const files: Zippable = {
     'meta.json': [json(meta, 2), { level: 6 }],
-    'project.json': [json(input.project), { level: 6 }],
+    'project.json': [strToU8(projectJson(input.project)), { level: 6 }],
     'view.json': [json(input.view), { level: 6 }],
   };
   for (const hash of [...input.samples.keys()].sort()) {

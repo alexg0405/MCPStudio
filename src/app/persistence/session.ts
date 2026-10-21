@@ -13,6 +13,7 @@ import {
   type AutosaveMeta,
 } from '@platform/opfs';
 import { sweepTempFiles } from '@platform/sinks';
+import { projectJson } from '@core/io/project-json';
 import { randomId } from '@core/model/ids';
 import { UNTITLED } from '../project-files';
 import type { Services } from '../services';
@@ -264,10 +265,10 @@ function startReloadSnapshot(s: Services, fileInfo: () => SessionFile): { stop()
     if (!storage) return;
     try {
       const transport: SessionTransport = { playing: s.engine.playing, tick: s.engine.playhead(), at: Date.now() };
-      storage.setItem(
-        SNAPSHOT_KEY,
-        JSON.stringify({ project: s.doc.getState().project, view: captureView(s), file: fileInfo(), transport }),
-      );
+      // The same text as JSON.stringify of the whole object, but the project's part is the one made for this
+      // version of the project already when only the view moved (the usual reason for a snapshot).
+      const rest = JSON.stringify({ view: captureView(s), file: fileInfo(), transport });
+      storage.setItem(SNAPSHOT_KEY, `{"project":${projectJson(s.doc.getState().project)},${rest.slice(1)}`);
       isTooBig = false;
     } catch {
       // Over the quota (huge project): the OPFS autosave covers reloads instead.
@@ -308,6 +309,16 @@ function startReloadSnapshot(s: Services, fileInfo: () => SessionFile): { stop()
   };
 }
 
+let lastTitled: { project: Project; title: string; copy: Project } | null = null;
+
+/** The project with `title` as its title: the same object as last time while neither the project nor the title changed. */
+function titledCopy(project: Project, title: string): Project {
+  if (lastTitled && lastTitled.project === project && lastTitled.title === title) return lastTitled.copy;
+  const copy = { ...project, meta: { ...project.meta, title } };
+  lastTitled = { project, title, copy };
+  return copy;
+}
+
 /**
  * The crash autosave into OPFS (autosave.ts) of unsaved work. A saved, opened or fresh project marks the old
  * crash copy clean, since it holds nothing worth recovering.
@@ -329,8 +340,9 @@ function startCrashAutosave(
       const project = s.doc.getState().project;
       const file = fileInfo();
       return {
-        // The recovery prompt shows the title: use the file's name.
-        project: { ...project, meta: { ...project.meta, title: file.name } },
+        // The recovery prompt shows the title: use the file's name. The renamed copy is kept while the project and the
+        // name stay the same, so the project's JSON text (made once per project object) is reused by the next autosave.
+        project: titledCopy(project, file.name),
         view: { ...captureView(s), session: file },
       };
     },

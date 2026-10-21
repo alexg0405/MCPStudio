@@ -6,6 +6,7 @@ import { decode, formatValue, type ParamSpecs } from '@agstudio/sdk/params';
 import { formatGain } from '../model/fader';
 import type { AutomationChannel, ParamTarget, Project } from '../model/types';
 import { fxSlotOf, insertLabel } from '../query/mixer';
+import { macroNameOf } from '../query/rack';
 import type { ResolvedTarget } from './targets';
 
 /** Name and param specs of a plugin by id (the app's registry; core can't see plugin definitions). */
@@ -48,7 +49,8 @@ export function targetName(p: Project, t: ParamTarget, plugins: PluginInfoResolv
       if (!slot) return null;
       const info = plugins(slot.plugin.pluginId);
       const spec = info?.params[t.paramId];
-      return `${spec?.label ?? t.paramId} · ${info?.name ?? 'Effect'} (${insertLabel(p, t.owner.insertId)})`;
+      const label = macroNameOf(slot, t.paramId) ?? spec?.label ?? t.paramId;
+      return `${label} · ${info?.name ?? 'Effect'} (${insertLabel(p, t.owner.insertId)})`;
     }
     case 'tempo':
       return 'Tempo';

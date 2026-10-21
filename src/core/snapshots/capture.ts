@@ -4,7 +4,9 @@
  * arrangement, no plugin state, no samples, so a snapshot stays a few kilobytes even for a big mix.
  */
 import { newId } from '../model/ids';
+import { allSlots } from '../query/rack';
 import {
+  type BranchId,
   type FxSlot,
   type GroupId,
   type Insert,
@@ -13,6 +15,7 @@ import {
   type Project,
   type SlotId,
   type SnapshotInsert,
+  type SnapshotRack,
   type SnapshotRouting,
   type SnapshotSlot,
 } from '../model/types';
@@ -27,14 +30,23 @@ export interface CaptureOptions {
 }
 
 function captureSlot(slot: FxSlot): SnapshotSlot {
-  return { plugin: slot.plugin.pluginId, enabled: slot.enabled, mix: slot.mix, params: { ...slot.plugin.params } };
+  const saved: SnapshotSlot = { plugin: slot.plugin.pluginId, enabled: slot.enabled, mix: slot.mix, params: { ...slot.plugin.params } };
+  if (slot.rack) {
+    const branches: SnapshotRack['branches'] = {} as SnapshotRack['branches'];
+    for (const branch of slot.rack.branches) {
+      branches[branch.id as BranchId] = { name: branch.name, levelDb: branch.levelDb, pan: branch.pan, muted: branch.muted, solo: branch.solo };
+    }
+    saved.rack = { branches, crossovers: [...slot.rack.crossovers] };
+  }
+  return saved;
 }
 
 function captureInsert(insert: Insert): SnapshotInsert {
   const sends: Record<InsertId, number> = {};
   for (const route of insert.routes) sends[route.to] = route.level;
   const fx: Record<SlotId, SnapshotSlot> = {};
-  for (const slot of insert.fx) fx[slot.id] = captureSlot(slot);
+  // The effects inside racks are kept too, each under its own slot id.
+  for (const slot of allSlots(insert)) fx[slot.id] = captureSlot(slot);
   return { name: insert.name, volume: insert.volume, pan: insert.pan, muted: insert.muted, solo: insert.solo, sends, fx };
 }
 

@@ -6,12 +6,14 @@
 import type { Draft } from 'immer';
 import {
   MASTER,
+  type BranchId,
   type GroupId,
   type InsertId,
   type MixSnapshot,
   type Project,
   type SlotId,
   type SnapshotInsert,
+  type SnapshotRack,
   type SnapshotRouting,
   type SnapshotSlot,
 } from '../model/types';
@@ -19,6 +21,8 @@ import { setFxSlotEnabled, setFxSlotMix, setInsertProp } from '../ops/mixer';
 import { setRoute, setRouteLevel, setSlotSidechain } from '../ops/routing';
 import { setVcaLevel } from '../ops/groups';
 import { wouldCycle } from '../query/routing';
+import { locateSlot } from '../query/rack';
+import { setBranch, setCrossovers } from '../ops/racks';
 
 /** What a recall could not put back (each line is plain words for the musician). */
 export interface RecallReport {
@@ -48,16 +52,26 @@ export function recallSnapshot(d: Draft<Project>, snapshot: MixSnapshot, options
     setInsertProp(d, id, 'solo', saved.solo);
     for (const [target, level] of Object.entries(saved.sends) as [InsertId, number][]) setRouteLevel(d, id, target, level);
     for (const [slotId, slot] of Object.entries(saved.fx) as [SlotId, SnapshotSlot][]) {
-      const live = insert.fx.find((candidate) => candidate.id === slotId);
+      // Effects inside racks have slot ids of their own, so they are found here too.
+      const live = locateSlot(insert, slotId)?.slot;
       if (!live) continue;
       setFxSlotEnabled(d, id, slotId, slot.enabled);
       setFxSlotMix(d, id, slotId, slot.mix);
       // Parameters belong to the effect that was in the slot; a different one keeps its own.
       if (live.plugin.pluginId === slot.plugin) Object.assign(live.plugin.params, slot.params);
+      if (slot.rack && live.rack) recallRack(d, id, slotId, slot.rack);
     }
   }
   for (const [groupId, level] of Object.entries(snapshot.vca ?? {})) setVcaLevel(d, groupId as GroupId, level);
   return report;
+}
+
+/** Puts a rack's branch levels, pans, mutes, solos and crossovers back (branches that were removed since are skipped). */
+function recallRack(d: Draft<Project>, insertId: InsertId, slotId: SlotId, saved: SnapshotRack): void {
+  for (const [branchId, branch] of Object.entries(saved.branches) as [BranchId, SnapshotRack['branches'][BranchId]][]) {
+    setBranch(d, insertId, slotId, branchId, { levelDb: branch.levelDb, pan: branch.pan, muted: branch.muted, solo: branch.solo });
+  }
+  setCrossovers(d, insertId, slotId, saved.crossovers);
 }
 
 /** Puts the routes of a track in the order the snapshot had them (nothing is written when they already are). */

@@ -1,6 +1,7 @@
 import type { ParamValue } from '@agstudio/sdk/params';
 import type { PluginInstance } from './channels';
-import type { GroupId, InsertId, SlotId, SnapshotId } from './ids';
+import type { BranchId, GroupId, InsertId, SlotId, SnapshotId } from './ids';
+import type { Rack } from './rack';
 
 /** The mixer: inserts (tracks) in order, the master first. */
 export interface Mixer {
@@ -92,6 +93,11 @@ export interface FxSlot {
   mix: number;
   /** Insert whose output feeds this effect's sidechain input (effects that declare one); null = none. */
   sidechain: InsertId | null;
+  /**
+   * The inside of the slot when it is an effect rack (its plugin is `agstudio.rack`): branches of effects, how the
+   * input is split between them and the macro knobs. Absent for every other effect. Added in v3 (optional).
+   */
+  rack?: Rack;
 }
 
 /**
@@ -126,13 +132,27 @@ export interface SnapshotInsert {
   fx: Record<SlotId, SnapshotSlot>;
 }
 
-/** One effect slot in a snapshot: bypass, dry/wet and the values of its parameters. */
+/**
+ * One effect slot in a snapshot: bypass, dry/wet and the values of its parameters. The effects inside a rack are kept
+ * the same way, each under its own slot id, so a snapshot holds a rack's macros (parameters of the rack slot) and the
+ * settings of every effect in it.
+ */
 export interface SnapshotSlot {
   /** The effect it held; its parameters are only recalled while the slot still holds the same one. */
   plugin: string;
   enabled: boolean;
   mix: number;
   params: Record<string, ParamValue>;
+  /** For a rack slot: what its branches and crossovers were set to. */
+  rack?: SnapshotRack;
+}
+
+/** The mix settings of a rack in a snapshot (what is inside each branch is kept per effect, not here). */
+export interface SnapshotRack {
+  /** By branch; the name is kept so a list of differences can name a branch that has been removed since. */
+  branches: Record<BranchId, { name: string; levelDb: number; pan: number; muted: boolean; solo: boolean }>;
+  /** The band edges (Hz) of a `bands` rack. */
+  crossovers: number[];
 }
 
 /** One track's routing in a snapshot (the send levels are in `SnapshotInsert.sends`). */

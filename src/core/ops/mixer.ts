@@ -11,6 +11,7 @@ import {
   type SlotId,
 } from '../model/types';
 import { targetUsesInsert, targetUsesSlot } from '../model/targets';
+import { locateSlot, innerSlots } from '../query/rack';
 import { dropControllers, retargetChannels } from './channels';
 import { dropFromGroups } from './groups';
 import { dropRoutesTo } from './routing';
@@ -128,8 +129,9 @@ function slotsOf(d: Draft<Project>, insertId: InsertId) {
   return d.mixer.inserts[insertId]?.fx;
 }
 
+/** A slot of the insert by id, whether it is on the insert or inside one of its racks. */
 function slotOf(d: Draft<Project>, insertId: InsertId, slotId: SlotId) {
-  return slotsOf(d, insertId)?.find((s) => s.id === slotId);
+  return locateSlot(d.mixer.inserts[insertId], slotId)?.slot as Draft<FxSlot> | undefined;
 }
 
 /**
@@ -144,7 +146,7 @@ export function addFxSlot(
   id: SlotId = newId.slot(),
 ): SlotId | null {
   const fx = slotsOf(d, insertId);
-  if (!fx || fx.length >= MAX_FX_SLOTS || fx.some((s) => s.id === id)) return null;
+  if (!fx || fx.length >= MAX_FX_SLOTS || locateSlot(d.mixer.inserts[insertId], id)) return null;
   const slot: FxSlot = { id, plugin, enabled: true, mix: 1, sidechain: null };
   const at = index === undefined ? fx.length : Math.max(0, Math.min(Math.round(index), fx.length));
   fx.splice(at, 0, slot as Draft<FxSlot>);
@@ -155,8 +157,10 @@ export function removeFxSlot(d: Draft<Project>, insertId: InsertId, slotId: Slot
   const fx = slotsOf(d, insertId);
   const i = fx?.findIndex((s) => s.id === slotId) ?? -1;
   if (fx && i >= 0) {
-    fx.splice(i, 1);
+    const [removed] = fx.splice(i, 1);
     dropControllers(d, (t) => targetUsesSlot(t, insertId, slotId));
+    // The effects inside a removed rack go with it, and so do the controller links that pointed at them.
+    for (const inner of removed ? innerSlots(removed) : []) dropControllers(d, (t) => targetUsesSlot(t, insertId, inner.id));
   }
 }
 

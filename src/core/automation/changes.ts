@@ -7,6 +7,7 @@ import type { Patch } from 'immer';
 import { targetKey } from '../model/targets';
 import type { ChannelId, InsertId, ParamTarget, PluginInstance, PluginOwner, Project } from '../model/types';
 import { pluginInstanceOf } from '../query/mixer';
+import { allSlots, locateSlot } from '../query/rack';
 
 /** Params of a plugin instance whose values differ between two versions of it. */
 function changedParams(a: PluginInstance | undefined, b: PluginInstance | undefined): string[] {
@@ -70,8 +71,9 @@ function insertChanges(moved: MovedTargets, insertId: InsertId, field: string | 
   if ((field === undefined || field === 'pan') && a.pan !== b.pan)
     moved.add({ kind: 'insert', insertId, param: 'pan' });
   if (field === undefined || field === 'fx') {
-    for (const slot of b.fx) {
-      const old = a.fx.find((s) => s.id === slot.id);
+    // Effects inside racks count too: each has an id of its own on the insert.
+    for (const slot of allSlots(b)) {
+      const old = locateSlot(a, slot.id)?.slot;
       if (!old || old === slot) continue;
       if (old.mix !== slot.mix) moved.add({ kind: 'slot', insertId, slotId: slot.id, param: 'mix' });
       moved.addPluginParams({ kind: 'fx', insertId, slotId: slot.id });

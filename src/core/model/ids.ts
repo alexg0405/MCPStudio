@@ -1,4 +1,4 @@
-import type { ChannelId, ChordId, ClipId, GroupId, InsertId, LaneId, LaunchTrackId, LinkId, LyricId, MarkerId, NoteId, PatternId, SampleId, SceneId, SlotId, SnapshotId } from './types';
+import type { BranchId, ChannelId, ChordId, ClipId, GroupId, InsertId, LaneId, LaunchTrackId, LinkId, LyricId, MarkerId, NoteId, PatternId, SampleId, SceneId, SlotId, SnapshotId } from './types';
 
 /**
  * Ids are a short prefix plus 10 random base64url characters (60 bits). The random source is
@@ -59,6 +59,7 @@ export const newId = {
   clip: () => randomId('clip') as ClipId,
   insert: () => randomId('ins') as InsertId,
   slot: () => randomId('fx') as SlotId,
+  branch: () => randomId('br') as BranchId,
   sample: () => randomId('smp') as SampleId,
   link: () => randomId('lnk') as LinkId,
   marker: () => randomId('mk') as MarkerId,

@@ -1,5 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { ChannelId, Clip, ClipId, Note, NoteId, Tick } from '@core/model/types';
+import type { ClefChoice, NotationGrid } from '@core/notation/types';
 import type { Snap } from '@core/time/snap';
 import { TICKS_PER_STEP } from '@core/time/ppq';
 
@@ -41,6 +42,33 @@ export interface PianoRollViewState {
   chord: string;
   /** Inversion of the chord stamp (0–3). */
   inversion: number;
+}
+
+/** The duration the Sheet music window's keyboard entry writes new notes with (see `core/notation/edit.ts`). */
+export interface SheetEntryDuration {
+  base: 1 | 2 | 4 | 8 | 16 | 32;
+  isDotted: boolean;
+  isTriplet: boolean;
+}
+
+/** What the Sheet music window shows and how: view state, not undoable. */
+export interface SheetViewState {
+  /** The smallest note value the score rounds to. */
+  grid: NotationGrid;
+  clef: ClefChoice;
+  /** Mark loudness (pp to ff) from the velocities. */
+  dynamics: boolean;
+  /** Write the project's lyrics under the notes. */
+  lyrics: boolean;
+  /** Write the chord track's symbols over the staff. */
+  chords: boolean;
+  /** Drawing size in percent (50 to 200). */
+  zoom: number;
+  /** Light the notes being played and keep them in view while the song plays. */
+  follow: boolean;
+  /** 'auto' follows the piano roll's channel; 'drums' is every drum channel on one staff; otherwise a channel id. */
+  part: string;
+  entry: SheetEntryDuration;
 }
 
 export interface PlaylistViewState {
@@ -90,6 +118,8 @@ export interface EditorState {
   chordLane: boolean | null;
   /** The lyrics lane above the playlist: shown, hidden, or (null) shown while the project has lyrics. View state, not undoable. */
   lyricsLane: boolean | null;
+  /** The Sheet music window's settings. */
+  sheet: SheetViewState;
 }
 
 /** The property the channel rack's graph editor edits per step. */
@@ -119,6 +149,7 @@ export interface EditorActions {
   setStepGraph(patch: Partial<StepGraphState>): void;
   setChordLane(show: boolean | null): void;
   setLyricsLane(show: boolean | null): void;
+  setSheet(patch: Partial<SheetViewState>): void;
 }
 
 export type EditorStore = StoreApi<EditorState & EditorActions>;
@@ -139,6 +170,18 @@ export const defaultPianoRoll = (): PianoRollViewState => ({
   chordHighlight: true,
   chord: '',
   inversion: 0,
+});
+
+export const defaultSheet = (): SheetViewState => ({
+  grid: '1/16',
+  clef: 'auto',
+  dynamics: false,
+  lyrics: true,
+  chords: true,
+  zoom: 100,
+  follow: true,
+  part: 'auto',
+  entry: { base: 4, isDotted: false, isTriplet: false },
 });
 
 export const defaultPlaylist = (): PlaylistViewState => ({
@@ -231,6 +274,12 @@ export function createEditorStore(
     lyricsLane: null,
     setLyricsLane(show) {
       if (get().lyricsLane !== show) set({ lyricsLane: show });
+    },
+    sheet: defaultSheet(),
+    setSheet(patch) {
+      const cur = get().sheet;
+      if (Object.entries(patch).every(([key, value]) => Object.is(cur[key as keyof SheetViewState], value))) return;
+      set({ sheet: { ...cur, ...patch } });
     },
     setStepGraph(patch) {
       const cur = get().stepGraph;

@@ -25,6 +25,7 @@ import { meters } from './meters';
 import { mix } from './mix';
 import { mixer } from './mixer';
 import { mixerState } from './mixer-state';
+import { notation } from './notation';
 import { notes } from './notes';
 import { patterns } from './patterns';
 import { pitch } from './pitch';
@@ -45,6 +46,7 @@ export const MODULES: readonly OpModule[] = [
   mixerState,
   patterns,
   notes,
+  notation,
   harmony,
   lyrics,
   automation,

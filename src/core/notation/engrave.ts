@@ -16,7 +16,7 @@ import { quantizeNotes, type QuantizedNote } from './quantize';
 import { keySignatureOf, spellKey } from './spelling';
 import { placeAllStems } from './stems';
 import type { ClefChoice, ClefKind, EngraveInput, Measure, NotationNote, Score, StaffMeasure, Voice } from './types';
-import { drumVoices, pitchedVoices, type StaffVoices } from './voices';
+import { drumVoices, pitchedVoices, type StaffVoices, type VoiceEvent } from './voices';
 
 /** The lowest key a treble staff alone may hold (A3, two ledger lines below), and the highest a bass staff alone may hold (E4). */
 const TREBLE_LOWEST = 57;
@@ -66,7 +66,7 @@ function buildMeasures(staves: readonly StaffVoices[], barCount: number, ctx: Bu
     staves.forEach((staff, staffIndex) => {
       const staffMeasure = measure.staves[staffIndex] as StaffMeasure;
       for (const number of [1, 2] as const) {
-        const items = buildBar(staff.voices[number - 1], measure.startTick, measure.startTick + barTicks, number, ctx);
+        const items = buildBar(staff.voices[number - 1] as VoiceEvent[], measure.startTick, measure.startTick + barTicks, number, ctx);
         if (items.length > 0) staffMeasure.voices.push({ number, items });
       }
     });

@@ -2,7 +2,7 @@
 /**
  * Per-frame cost while a song plays with smooth follow (the view scrolls a little every frame), dev server:
  *
- *   node scripts/perf-follow.mjs [--url http://localhost:5422] [--seconds 12] [--fixture stacked-song|notes10k|mix30]
+ *   node scripts/perf-follow.mjs [--url http://localhost:5422] [--seconds 12] [--fixture stacked-song|notes10k|mix30|huge]
  *                                [--json out.json] [--label before]
  *
  * Playlist and piano roll are both open side by side. Reports, over the measurement window:
@@ -34,7 +34,7 @@ const pct = (xs, p) => {
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
 const results = [];
 try {
-  for (const fixture of ['stacked-song', 'notes10k', 'mix30']) {
+  for (const fixture of ['stacked-song', 'notes10k', 'mix30', 'huge']) {
     if (ONLY && ONLY !== fixture) continue;
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();

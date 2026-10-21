@@ -117,7 +117,7 @@ describe('FM Bell', () => {
   const play = (key: number, params: Record<string, number | boolean | string> = {}, seconds = 3, offAt?: number) => {
     const kernel = new FmBellKernel(testHost({ sampleRate: SR }));
     const events = [{ frame: 0, run: () => kernel.noteOn(key, 1, 1, 0, 0) }];
-    if (offAt !== undefined) events.push({ frame: Math.round(offAt * SR), run: () => kernel.noteOff(1, key, 0) });
+    if (offAt !== undefined) events.push({ frame: Math.round(offAt * SR), run: () => kernel.noteOff(1) });
     return renderInstrument(kernel, Math.round(seconds * SR), paramBlock(bellParams, params), events)[0];
   };
 

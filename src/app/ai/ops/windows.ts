@@ -35,6 +35,7 @@ export const OPEN_WINDOWS = [
   'mix-snapshots',
   'versions',
   'projects',
+  'plugin-manager',
   'help',
   'features',
   'browser',

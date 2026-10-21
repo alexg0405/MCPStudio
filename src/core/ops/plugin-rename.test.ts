@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { produce } from 'immer';
 import { createEmptyProject, makeInstrumentChannel, makePluginInstance } from '../model/defaults';
 import { MASTER, type Project } from '../model/types';
-import { missingPlugins, pluginUsage, useCount } from '../query/plugin-usage';
+import { missingPlugins, pluginUsage, placeCount } from '../query/plugin-usage';
 import { addChannel } from './channels';
 import { addFxSlot } from './mixer';
 import { renamePluginId } from './plugin-rename';
@@ -34,7 +34,7 @@ describe('where a plugin is used', () => {
     const usage = pluginUsage(song());
     expect(usage.get('user.fm-bell')!.channels).toMatchObject([{ name: 'Bell' }]);
     expect(usage.get('user.tape-stop')!.inserts.map((i) => i.slotId)).toEqual(['slot_a', 'slot_b']);
-    expect(useCount(usage.get('user.tape-stop')!)).toBe(2);
+    expect(placeCount(usage.get('user.tape-stop')!)).toBe(2);
     expect(usage.get('agstudio.reverb')!.inserts).toHaveLength(1);
   });
 

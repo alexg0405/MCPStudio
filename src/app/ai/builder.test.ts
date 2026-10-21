@@ -109,6 +109,7 @@ describe('BUILDER_PROMPT', () => {
 
   it('leaves the on-disk sections, note scripts and lazy editors out of the builder’s guide, and keeps the rest', () => {
     expect(BUILDER_PROMPT).not.toContain('## Hot reload');
+    expect(BUILDER_PROMPT).not.toContain('## Sharing plugins');
     expect(BUILDER_PROMPT).not.toContain('## Testing');
     expect(BUILDER_PROMPT).not.toContain('lazyUi(');
     expect(BUILDER_PROMPT).not.toContain('## Note scripts');

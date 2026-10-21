@@ -21,8 +21,8 @@ const template = (name: string, files: Record<string, string>) =>
     .map(([path, text]) => `<file path="${path}">\n${text.trim()}\n</file>`)
     .join('\n')}\n</template>`;
 
-/** Guide sections the builder never needs: working on plugin files on disk, and note scripts (the builder makes only instruments and effects). */
-const SECTIONS_LEFT_OUT = new Set(['## Hot reload', '## Testing', '## Note scripts', '### The contract', '### A complete example']);
+/** Guide sections the builder never needs: working on plugin files on disk, sharing plugins, and note scripts (the builder makes only instruments and effects). */
+const SECTIONS_LEFT_OUT = new Set(['## Hot reload', '## Sharing plugins', '## Testing', '## Note scripts', '### The contract', '### A complete example']);
 
 /**
  * The guide as the builder needs it, which keeps the prompt under the AI server's 60 000-character limit. Left out:

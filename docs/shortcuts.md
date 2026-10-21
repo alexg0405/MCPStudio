@@ -26,6 +26,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Metronome | `⌥M` / `Alt+M` |
 | Mix snapshots | `⌥⇧S` / `Alt+Shift+S` |
 | Mixer | `F9`, `⌥4` / `Alt+4` |
+| My plugins | `⌥⇧U` / `Alt+Shift+U` |
 | New pattern | `F4` |
 | New project | `⌘N` / `Ctrl+N`, `⌥N` / `Alt+N` |
 | Next pattern | `Num +` |

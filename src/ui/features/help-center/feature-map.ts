@@ -112,7 +112,7 @@ const AREAS: readonly AreaDef[] = [
     id: 'sounds',
     title: 'Sounds, samples and plugins',
     summary: 'The sample browser, instrument and effect windows, and writing your own plugins.',
-    windows: ['samples', 'plugin'],
+    windows: ['samples', 'plugin', 'plugin-manager'],
     tours: [],
     categories: ['Samples', 'Plugins'],
   },

@@ -5,7 +5,7 @@
  * `runReadTool` runs one by name and turns a bad argument into `{ error }` instead of a throw.
  *
  * The tools live in one module per group: `project-tools` (overview, transport, selection, settings, windows),
- * `music-tools` (notes, chords), `sound-tools` (mixer, channels, plugins, chains), `arrangement-tools`
+ * `music-tools` (notes, chords), `sound-tools` (mixer, channels, plugins, chains), `plugin-library-tools` (your own plugins), `arrangement-tools`
  * (clips, automation, takes, launcher), `mix-state-tools` (mixer snapshots and groups), `versions-tools` (save points and your projects) and `measurement-tools` (reference, loudness, pitch, vocal cleanup, MIDI conversion, samples).
  */
 import type { Services } from '../../services';
@@ -16,6 +16,7 @@ import { getAlignment, getCleanup, getMidiConversion, listSampleSounds, getLoudn
 import { getMixGroups, getMixSnapshots } from './mix-state-tools';
 import { getChords, getPatternNotes } from './music-tools';
 import { getProject, getSelection, getSettings, getTransport, getWindows } from './project-tools';
+import { getUserPlugins } from './plugin-library-tools';
 import { getChains, getChannel, getMixer, getPlugins } from './sound-tools';
 import { getRecentProjects, getVersions } from './versions-tools';
 import type { ReadTool, ToolArgs } from './tool';
@@ -42,6 +43,7 @@ export const readTools: readonly ReadTool[] = [
   getSettings,
   getWindows,
   getPlugins,
+  getUserPlugins,
   getChains,
   getReference,
   getLoudness,

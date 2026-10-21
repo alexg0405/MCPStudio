@@ -761,6 +761,25 @@ When you change params or state incompatibly, bump `version` and add
 `migrate({ version, params, state }) => ({ params, state })`. Projects and user presets saved with
 older versions are upgraded when they load.
 
+## Sharing plugins
+
+A plugin travels as one `.agplugin` file (a zip): `agplugin.json` (id, name, `version`, kind, author, description, the SDK versions it
+was written for, and a SHA-256 of every file), your flat source files under `files/`, and optionally your presets for it
+(`presets.json`). The manifest's `version` is your plugin's own `version`.
+
+- **Share:** "Share…" in the plugin's window header, right-click it in the browser, or in My plugins (`Alt+Shift+U`). Needs the dev server.
+- **Install:** Add → Import a plugin…, drop the file on AGstudio, or the Gallery in My plugins. A dialog first says what the plugin is and
+  can do and what it cannot; nothing installs until you say yes. A plugin with an id you already have is never overwritten without asking:
+  Replace (the old folder goes to `plugins/_backup`; songs keep their settings and `migrate` upgrades them) or Install as a copy.
+- **Checks** (the plugin builder's, run again by the dev server, which also runs `tsc`): at most 8 flat files, 64 KB each, 256 KB in all;
+  only `@agstudio/sdk*`, `react` and your own files imported; no network, storage, eval or dynamic import; the code must spell the
+  manifest's id as a quoted string (`const ID = 'user.my-synth'`); `sdk` in the manifest must contain the SDK version (`PLUGIN_SDK_VERSION` in
+  `src/core/plugin-bundle/sdk-range.ts`, now 1.0.0; ranges like `^1.0.0`, `~1.2.0`, `>=1.0.0 <2.0.0`, `1.x`). These checks stop mistakes and
+  obvious misuse; they are not a sandbox, so install plugins only from people you trust.
+- **Folders:** `plugins/_disabled` (switched off), `plugins/_trash` (deleted, restorable), `plugins/_backup` (replaced by an update), `plugins/_drafts`.
+  Changing a plugin's id (My plugins → ⋯) copies it to the new folder, points the song, presets and chains at the new id (one undo step), then trashes the old folder.
+- **Songs** can carry the plugins they use: Save As asks (off by default) and puts a bundle per plugin inside the `.agproj`.
+
 ## Testing
 
 - Pure kernels: plain Vitest in Node (`src/plugins/builtin/pluck/kernel.test.ts` checks tuning by

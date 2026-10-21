@@ -76,6 +76,11 @@ async function loadItem(folder: string, loaders: Map<string, Loader>): Promise<G
   return { folder, ...identity, name: meta.name, kind: meta.kind, author: meta.author, description: meta.description, style: meta.style, files };
 }
 
+/** The ids of the gallery's plugins ("user.tape-stop"), known without loading any file: a gallery folder's name is its id. */
+export function galleryIds(files: Record<string, Loader> = sources): string[] {
+  return [...foldersOf(files).keys()].sort().map((folder) => `user.${folder}`);
+}
+
 /** The gallery's plugins, by name. */
 export async function loadGallery(files: Record<string, Loader> = sources): Promise<GalleryItem[]> {
   const items: GalleryItem[] = [];

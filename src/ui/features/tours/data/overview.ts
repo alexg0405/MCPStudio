@@ -20,6 +20,7 @@ export const OVERVIEW: Tour = {
     'keys',
     'visualizer',
     'plugin',
+    'plugin-manager',
     'help',
     'features',
   ],

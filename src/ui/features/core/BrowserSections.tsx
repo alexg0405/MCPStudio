@@ -37,9 +37,24 @@ export function PluginsSection() {
               onSelect: () => services.commands.run('plugins.editCode', id),
               hint: 'Open its code in your code editor (saving hot-reloads it)',
             },
+            {
+              label: 'Share this plugin…',
+              onSelect: () => services.commands.run('plugins.share', id),
+              hint: 'Save it, with your presets for it, as one .agplugin file to send to a friend',
+            },
             { kind: 'separator' as const },
           ]
         : []),
+      {
+        label: 'Import a plugin…',
+        onSelect: () => services.commands.run('plugins.import'),
+        hint: 'Install a plugin someone shared (a .agplugin file)',
+      },
+      {
+        label: 'My plugins…',
+        onSelect: () => services.commands.run('view.pluginManager'),
+        hint: 'List, share, duplicate, switch off or delete your own plugins',
+      },
       {
         label: 'New plugin…',
         onSelect: () => services.commands.run('plugins.new'),
@@ -77,6 +92,13 @@ export function PluginsSection() {
           {e.source === 'user' && <span className={styles.badge}>user</span>}
         </button>
       ))}
+      <button
+        className={styles.item}
+        onClick={() => void services.commands.run('plugins.import')}
+        data-hint="Install a plugin someone shared (a .agplugin file). You can also drop the file anywhere on AGstudio."
+      >
+        Import a plugin…
+      </button>
       {errors.map((err) => (
         <div key={err.path} className={styles.error} title={err.error} data-hint={err.error}>
           ⚠ {err.path.split('/').slice(-2, -1)[0] ?? err.path}: {err.error}

@@ -246,6 +246,17 @@ function PluginHeader({ owner, def, instance }: { owner: PluginOwner; def: Plugi
           {'</>'} Edit code
         </button>
       )}
+      {services.plugins.entry(def.id)?.source === 'user' && (
+        <button
+          type="button"
+          className={styles.editCode}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => services.commands.run('plugins.share', def.id)}
+          data-hint="Share this plugin: save it, with your presets for it, as one .agplugin file to send to a friend"
+        >
+          Share…
+        </button>
+      )}
       {owner.kind === 'channel' && <RootKey channelId={owner.channelId} />}
       {def.samplePickers !== false &&
         def.sampleSlots?.map((slot) => <SampleSlot key={slot} owner={owner} slot={slot} />)}

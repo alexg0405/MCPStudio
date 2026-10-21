@@ -9,7 +9,7 @@ export interface PluginUse {
 }
 
 /** How many places use it (channels plus effect slots). */
-export const useCount = (use: PluginUse): number => use.channels.length + use.inserts.length;
+export const placeCount = (use: PluginUse): number => use.channels.length + use.inserts.length;
 
 /** Every plugin id a project uses, with where. Instrument channels and effect slots only (audio channels have no plugin). */
 export function pluginUsage(project: Project): Map<string, PluginUse> {

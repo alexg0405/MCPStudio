@@ -5,9 +5,12 @@
  *   project.json            the Project document (deflated)
  *   view.json               window layout and editor state, opaque at this layer (deflated)
  *   samples/<sha256>.<ext>  original encoded sample bytes (stored, no compression)
+ *   plugins/<id>.agplugin   optional: a plugin bundle (core/plugin-bundle) the project uses, only when the
+ *                           musician chose to share the song with its own plugins
  *
- * Plugin code is never embedded: plugins are referenced by id + version. Samples are keyed by
- * content hash, so a sample used by several channels is stored once.
+ * Plugin code is not embedded by default: plugins are referenced by id + version. Samples are keyed by
+ * content hash, so a sample used by several channels is stored once. Readers that do not know the
+ * `plugins/` entries (older versions) skip them.
  */
 import { strFromU8, strToU8, unzipSync, Zip, ZipDeflate, ZipPassThrough, zipSync, type Zippable } from 'fflate';
 import { SCHEMA_VERSION, type Project } from '../model/types';
@@ -52,6 +55,8 @@ export interface WriteProjectFileInput {
   view: unknown;
   /** Samples to embed, keyed by SHA-256 hex of their bytes. */
   samples: ReadonlyMap<string, EmbeddedSample>;
+  /** Plugin bundles to embed (`.agplugin` bytes), keyed by plugin id. Left out: none are embedded. */
+  plugins?: ReadonlyMap<string, Uint8Array>;
   appVersion: string;
   now?: Date;
 }
@@ -68,6 +73,8 @@ export interface ProjectFileContents {
   meta: ProjectFileMeta;
   /** Embedded samples by hash. Their bytes are not verified here (hashing is async). */
   samples: Map<string, EmbeddedSample>;
+  /** Embedded plugin bundles by plugin id (`.agplugin` bytes, not checked here: reading a bundle checks it). */
+  plugins: Map<string, Uint8Array>;
   /** Plain-language notes about what had to be fixed or assumed while opening. */
   repairs: string[];
   /** The project's schemaVersion in the file. */
@@ -96,6 +103,10 @@ export class ProjectFileError extends Error {
 }
 
 const SAMPLE_ENTRY = /^samples\/([0-9a-fA-F]{64})\.([A-Za-z0-9]{1,10})$/;
+const PLUGIN_ENTRY = /^plugins\/(user\.[a-z][a-z0-9-]{1,40})\.agplugin$/;
+/** A project carries at most this many plugin bundles, each at most this big (a bundle itself is limited to 1 MB). */
+export const MAX_EMBEDDED_PLUGINS = 32;
+const MAX_EMBEDDED_PLUGIN_BYTES = 1024 * 1024;
 const EXTENSION = /^[a-z0-9]{1,10}$/;
 const JSON_ENTRIES = new Set(['meta.json', 'project.json', 'view.json']);
 /** Guards against absurd (or hostile) sizes claimed by a damaged zip directory. */
@@ -151,7 +162,18 @@ export function projectFileParts(input: WriteProjectFileInput): ProjectFileParts
     // Audio is already compressed or doesn't deflate well: store it as is.
     files[`samples/${hash}.${ext}`] = [sample.bytes, { level: 0 }];
   }
+  for (const [id, bytes] of pluginEntries(input.plugins)) files[`plugins/${id}.agplugin`] = [bytes, { level: 0 }];
   return { files, mtime: zipTime(now) };
+}
+
+/** The plugin bundles to write, sorted by id; an id that is not a user plugin id is a programming error. */
+function pluginEntries(plugins: ReadonlyMap<string, Uint8Array> | undefined): [string, Uint8Array][] {
+  const entries = [...(plugins ?? [])].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  for (const [id] of entries) {
+    if (!PLUGIN_ENTRY.test(`plugins/${id}.agplugin`)) throw new TypeError(`writeProjectFile: "${id}" is not a user plugin id.`);
+  }
+  if (entries.length > MAX_EMBEDDED_PLUGINS) throw new TypeError('writeProjectFile: too many plugins to embed.');
+  return entries;
 }
 
 /** Zips the parts (the compression of `writeProjectFile`, on its own so a Worker can run it). */
@@ -207,6 +229,7 @@ export function readProjectFile(
           if (f.originalSize > MAX_JSON_BYTES) oversized = true;
           return !oversized;
         }
+        if (PLUGIN_ENTRY.test(f.name)) return f.originalSize <= MAX_EMBEDDED_PLUGIN_BYTES;
         return SAMPLE_ENTRY.test(f.name);
       },
     });
@@ -222,7 +245,12 @@ export function readProjectFile(
     const hash = (m[1] as string).toLowerCase();
     if (!samples.has(hash)) samples.set(hash, { ext: (m[2] as string).toLowerCase(), bytes: data });
   }
-  return { ...doc, samples };
+  const plugins = new Map<string, Uint8Array>();
+  for (const [name, data] of Object.entries(entries)) {
+    const m = PLUGIN_ENTRY.exec(name);
+    if (m && plugins.size < MAX_EMBEDDED_PLUGINS) plugins.set(m[1] as string, data);
+  }
+  return { ...doc, samples, plugins };
 }
 
 /**
@@ -304,7 +332,18 @@ export async function readProjectFileIndex(
     if (!samples.has(hash))
       samples.set(hash, { ext: (m[2] as string).toLowerCase(), size: e.size, read: () => readZipEntry(read, e) });
   }
-  return { ...doc, samples };
+  // Plugin bundles are small (at most 1 MB each): read now, so the open flow can offer them without another trip to the file.
+  const plugins = new Map<string, Uint8Array>();
+  for (const e of index) {
+    const m = PLUGIN_ENTRY.exec(e.name);
+    if (!m || plugins.size >= MAX_EMBEDDED_PLUGINS || e.size > MAX_EMBEDDED_PLUGIN_BYTES) continue;
+    try {
+      plugins.set(m[1] as string, await readZipEntry(read, e));
+    } catch {
+      // A damaged bundle is skipped; the project itself still opens.
+    }
+  }
+  return { ...doc, samples, plugins };
 }
 
 /**
@@ -447,6 +486,7 @@ export async function writeProjectFileStream(
     // Audio is already compressed or doesn't deflate well: stored as is.
     await output.addStored(`samples/${sample.hash}.${ext}`, got.bytes);
   }
+  for (const [id, bytes] of pluginEntries(input.plugins)) await output.addStored(`plugins/${id}.agplugin`, bytes);
   await output.finish();
   return { missing };
 }
@@ -457,7 +497,7 @@ function interpretEntries(
   projectBytes: Uint8Array | undefined,
   viewBytes: Uint8Array | undefined,
   opts: { migrations?: readonly (Migration | undefined)[] },
-): Omit<ProjectFileContents, 'samples'> {
+): Omit<ProjectFileContents, 'samples' | 'plugins'> {
   const repairs: string[] = [];
   const meta = readMeta(metaBytes, repairs);
   if (!projectBytes) {

@@ -1,4 +1,5 @@
 import { FakeEngine } from '@engine/fake-engine';
+import { memoryPluginMeta } from './plugins/meta';
 import { memoryPresetStorage } from './presets';
 import { createServices, type ServiceOptions, type Services } from './services';
 
@@ -10,6 +11,7 @@ export function createTestServices(
   const services = createServices({
     platform: 'mac',
     presetStorage: memoryPresetStorage(),
+    pluginMetaStorage: memoryPluginMeta(),
     ...opts,
     createEngine: () => engine,
   });

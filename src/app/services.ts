@@ -33,6 +33,9 @@ import { AssistantFacade } from './assistant/facade';
 import { McpLink } from './mcp/bridge';
 import { Pwa } from './pwa/pwa';
 import { idbPresetStorage, PresetLibrary, type PresetStorage } from './presets';
+import { PluginMeta, type PluginMetaStorage } from './plugins/meta';
+import type { PluginServer } from './plugins/server';
+import { UserPlugins } from './plugins/user-plugins';
 import { SampleBrowser, type SampleBrowserOptions } from './samples/browser';
 import { TapRegistry } from './taps';
 import { MeterService } from './metering/service';
@@ -116,6 +119,11 @@ export interface Services {
   readonly pwa: Pwa;
   /** Your own presets (kept in this browser) and which preset each plugin loaded last. */
   readonly presets: PresetLibrary;
+  /**
+   * Your own plugins as things to manage: the list (yours and the built-ins), share and install `.agplugin` bundles,
+   * duplicate, rename, switch off, delete to the trash. Needs the dev server for anything that touches `plugins/`.
+   */
+  readonly userPlugins: UserPlugins;
   /** DJ mode: each song's tempo, beat grid, key, energy, sections and mix points (cached by content hash). */
   readonly trackAnalyzer: TrackAnalyzer;
   /**
@@ -166,6 +174,10 @@ export interface ServiceOptions {
   playlist?: Partial<PlaylistViewState>;
   /** Where your presets live (default: IndexedDB). */
   presetStorage?: PresetStorage;
+  /** Where the notes about your plugins (author, origin) live (default: IndexedDB). */
+  pluginMetaStorage?: PluginMetaStorage;
+  /** The dev server's plugin endpoints (default: the page's fetch to `/api/plugins`). */
+  pluginServer?: PluginServer;
   /** Where track analyses are kept (default: IndexedDB). */
   analysisStorage?: AnalysisStorage;
   /** The sample browser's storage, analysis runner and folders (default: IndexedDB, Workers, your sample folders). */
@@ -263,6 +275,7 @@ export function createServices(opts: ServiceOptions = {}): Services {
   let versions: VersionService | null = null;
   let projects: ProjectsService | null = null;
   let demo: DemoSession | null = null;
+  let userPlugins: UserPlugins | null = null;
   const services: Services = {
     platform,
     commands,
@@ -314,6 +327,17 @@ export function createServices(opts: ServiceOptions = {}): Services {
       return (demo ??= new DemoSession(services));
     },
     presets,
+    get userPlugins() {
+      return (userPlugins ??= new UserPlugins({
+        plugins,
+        doc,
+        history,
+        presets,
+        session,
+        meta: new PluginMeta(opts.pluginMetaStorage),
+        ...(opts.pluginServer ? { server: opts.pluginServer } : {}),
+      }));
+    },
     trackAnalyzer,
     sampleBrowser,
     decks: createDecksFactory(() => services),

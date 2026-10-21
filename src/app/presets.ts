@@ -266,6 +266,34 @@ export class PresetLibrary {
     this.changedChains();
   }
 
+  /**
+   * After a plugin got a new id: your presets and chains follow it. Returns how many presets and chain steps changed.
+   * (Factory presets belong to the plugin's code and move with it.)
+   */
+  renamePlugin(from: string, to: string): number {
+    let changed = 0;
+    if (this.items.some((p) => p.pluginId === from)) {
+      this.items = this.items.map((p) => {
+        if (p.pluginId !== from) return p;
+        changed++;
+        return { ...p, pluginId: to };
+      });
+      this.changed();
+    }
+    if (this.chainItems.some((c) => c.steps.some((step) => step.pluginId === from))) {
+      this.chainItems = this.chainItems.map((c) => ({
+        ...c,
+        steps: c.steps.map((step) => {
+          if (step.pluginId !== from) return step;
+          changed++;
+          return { ...step, pluginId: to };
+        }),
+      }));
+      this.changedChains();
+    }
+    return changed;
+  }
+
   /** The preset a plugin loaded last (the name shows "edited" once you turn a knob). */
   loadedInto(owner: PluginOwner): string | undefined {
     return this.lastLoaded.get(ownerKey(owner));

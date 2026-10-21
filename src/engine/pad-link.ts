@@ -49,10 +49,17 @@ export class PadLink {
     if (old?.to === to && (to === null || old?.frames === frames)) return;
     // Crossfade only while audio runs and there is something to fade from.
     const crossfade = !!old && !this.offline && this.ctx.currentTime > 0;
+    // A path switched in one step leaves before its replacement arrives: the replacement then takes the very slot the old
+    // one had in the target's ordered mix (see OrderedMix). Built first, it would sit one slot further out, and where
+    // every link ends up would depend on the order the links were changed in, which follows when each effect finished
+    // loading: the mix would add its sources in a different order from one render to the next.
+    if (old && !crossfade) {
+      this.path = null;
+      this.drop(old);
+    }
     const next = to ? this.build(to, frames, crossfade ? 0 : 1) : null;
     this.path = next;
     if (old && crossfade) this.fadeOut(old, next);
-    else if (old) this.drop(old);
   }
 
   dispose(): void {

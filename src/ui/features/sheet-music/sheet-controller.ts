@@ -141,7 +141,10 @@ export class SheetController {
     const width = Math.max(MIN_PAGE_WIDTH, this.host.clientWidth - SCROLLBAR_ROOM) / zoom;
     const rendered = renderSheet(this.state.score, { width, zoom });
     this.layout = rendered.layout;
+    // Drawing again (after a typed note, say) must not throw the page back to the top.
+    const scrolled = this.host.scrollTop;
     this.content.innerHTML = `${rendered.systems.join('')}${textVersion(this.state.score)}`;
+    this.host.scrollTop = scrolled;
     this.events = scoreEvents(this.state.score);
     this.stops = cursorStops(this.events);
     this.indexHeads();

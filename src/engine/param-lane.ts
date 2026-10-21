@@ -210,6 +210,7 @@ export class AutoLane implements AutomatableParam {
       this.extend([this.ctx.currentTime + MIN_RAMP_SEC, v]);
       return;
     }
+    if (!this.drivenFlag) this.onFirstDrive?.();
     for (const b of this.bindings) b.param.cancelScheduledValues(0);
     this.segs = [{ kind: 'set', time: 0, fromValue: v, value: v, end: 0, tau: 0 }];
     for (const b of this.bindings) this.schedule(b, 'set', 0, v, 0);
@@ -229,7 +230,14 @@ export class AutoLane implements AutomatableParam {
   /** Told about every value change the lane schedules for automation (onChange-only plugin params). */
   onScheduled?: (value: number, time: number) => void;
 
+  /**
+   * Called just before automation takes the value over for the first time, so whoever owns the control can bind the
+   * AudioParams it had left out while nothing moved them (an unbound lane only keeps its model).
+   */
+  onFirstDrive?: () => void;
+
   extend(points: ArrayLike<number>): void {
+    if (!this.drivenFlag) this.onFirstDrive?.();
     const tail = this.segs[this.segs.length - 1] as Seg;
     // A linear ramp must not follow a running setTarget: anchor it first.
     if (tail.kind === 'target') this.cut(Math.max(this.ctx.currentTime, tail.time));

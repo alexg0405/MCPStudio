@@ -3,7 +3,7 @@ import { addInstrumentChannel } from '@app/actions/channels';
 import { addEffect, addMixerInsert } from '@app/actions/mixer';
 import { buildStackedSong } from '@core/fixtures/stacked-song';
 import { buildHugeSong } from '@app/fixtures/huge-song';
-import { newId } from '@core/model/ids';
+import { newId, seededBytes, setIdSource } from '@core/model/ids';
 import type { InsertId, Note, PatternId } from '@core/model/types';
 import { KIT, kitPiece } from '@core/model/kit';
 import { makePattern, paletteColor } from '@core/model/defaults';
@@ -101,15 +101,24 @@ function stackedSong(s: Services): void {
   openWindow(s, 'playlist');
 }
 
+/** Seed of the ids of the huge project. */
+const HUGE_ID_SEED = 20260;
+
 /**
  * The very big project (see `app/fixtures/huge-song.ts`), opened on its playlist in song mode; the piano roll and
  * rack scenarios of `scripts/perf-huge.mjs` open the windows they need.
  */
 function huge(s: Services): void {
   let built!: ReturnType<typeof buildHugeSong>;
-  s.history.transact('Perf fixture', (d) => {
-    built = buildHugeSong(d);
-  });
+  // Seeded ids: the same project (and so the same render) on every load, which is what a before/after comparison needs.
+  const previousIds = setIdSource(seededBytes(HUGE_ID_SEED));
+  try {
+    s.history.transact('Perf fixture', (d) => {
+      built = buildHugeSong(d);
+    });
+  } finally {
+    setIdSource(previousIds);
+  }
   s.view.getState().setCurrentPattern(built.bigPattern);
   s.session.getState().selectChannel(built.bigChannel);
   s.view.getState().setMode('song');

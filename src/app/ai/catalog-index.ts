@@ -113,7 +113,10 @@ export function indexLine(item: CatalogItem): string {
     case 'tool':
       return toolLine(item);
     case 'chain':
+    case 'midi-chain':
       return chainLine(item);
+    case 'midi-effect':
+      return toolLine(item);
     case 'command':
       return `${item.category}: ${commandEntry(item)}`;
   }
@@ -126,7 +129,7 @@ function areaLine(area: string, commands: readonly CatalogItem[]): string {
 
 /** What the model is told about the index, above the data (it is the same in every chat: it is part of the cached prefix). */
 const HOW_TO_USE = [
-  'This is the catalog index: a table of contents of the plugins, piano-roll tools, effect chains and app commands you can use.',
+  'This is the catalog index: a table of contents of the plugins, piano-roll tools, effect chains, MIDI effects and app commands you can use.',
   'It has no settings, ranges, presets or arguments. Each request comes with <details> for the items it most likely needs.',
   'For anything else, look it up before you use it: if you can call tools, call get_plugin_details {ids}, get_commands {ids} or',
   'search_catalog {query}; if you cannot (the request says so), answer with a query action for the same tool and use the result in the next turn.',
@@ -155,6 +158,8 @@ export function catalogIndex(services: Services): CatalogIndex {
   const effects = ofKind(items, 'effect');
   const tools = ofKind(items, 'tool');
   const chains = ofKind(items, 'chain');
+  const midiEffects = ofKind(items, 'midi-effect');
+  const midiChains = ofKind(items, 'midi-chain');
   const commands = ofKind(items, 'command');
   const areas = commandAreas(commands);
 
@@ -167,17 +172,23 @@ export function catalogIndex(services: Services): CatalogIndex {
       chains.map(chainLine),
     ),
     ...section(
+      'MIDI effects (add_midi_effect action, instrument channels only; id | name | what it does):',
+      midiEffects.map(toolLine),
+    ),
+    ...section('MIDI effect chains (midi_effects_chain action; name | what it is for):', midiChains.map(chainLine)),
+    ...section(
       'App commands by area (command action; id, "label", * = takes an argument):',
       [...areas].map(([area, inArea]) => areaLine(area, inArea)),
     ),
   ].join('\n');
   const version = hashText(data);
 
-  const counts = `${instruments.length + effects.length} plugins, ${tools.length} piano-roll tools, ${chains.length} chains, ${commands.length} commands`;
+  const counts = `${instruments.length + effects.length} plugins, ${tools.length} piano-roll tools, ${chains.length} chains, ${midiEffects.length} MIDI effects, ${commands.length} commands`;
   const text = `${HOW_TO_USE}\nCatalog index v${version}: ${counts}.\n${data}`;
 
   const lines = new Map<string, string>();
-  for (const item of [...instruments, ...effects, ...tools, ...chains, ...commands]) lines.set(itemKey(item), indexLine(item));
+  const indexed = [...instruments, ...effects, ...tools, ...chains, ...midiEffects, ...midiChains, ...commands];
+  for (const item of indexed) lines.set(itemKey(item), indexLine(item));
   return { text, version, lines };
 }
 

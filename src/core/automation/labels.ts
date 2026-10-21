@@ -5,6 +5,8 @@
 import { decode, formatValue, type ParamSpecs } from '@agstudio/sdk/params';
 import { formatGain } from '../model/fader';
 import type { AutomationChannel, ParamTarget, Project } from '../model/types';
+import { midiFxDef } from '../midi-fx/registry';
+import { midiFxSlotOf } from '../query/midi-fx';
 import { fxSlotOf, insertLabel } from '../query/mixer';
 import type { ResolvedTarget } from './targets';
 
@@ -49,6 +51,13 @@ export function targetName(p: Project, t: ParamTarget, plugins: PluginInfoResolv
       const info = plugins(slot.plugin.pluginId);
       const spec = info?.params[t.paramId];
       return `${spec?.label ?? t.paramId} · ${info?.name ?? 'Effect'} (${insertLabel(p, t.owner.insertId)})`;
+    }
+    case 'midiFx': {
+      const channel = p.channels[t.channelId];
+      const slot = midiFxSlotOf(p, t.channelId, t.slotId);
+      const def = slot ? midiFxDef(slot.effect) : undefined;
+      if (!channel || !slot) return null;
+      return `${def?.params[t.paramId]?.label ?? t.paramId} · ${def?.name ?? 'MIDI effect'} (${channel.name})`;
     }
     case 'tempo':
       return 'Tempo';

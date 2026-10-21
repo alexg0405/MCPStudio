@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChannelId, Note, PatternId } from '@core/model/types';
+import { addMidiFx } from '@core/ops/midi-fx';
 import { createTestServices } from './testing';
 
 function setup() {
@@ -54,6 +55,42 @@ describe('note recording', () => {
     play(65, 280, 400); // overlaps the note just recorded: replaces it
     expect(notes().filter((n) => n.key === 62)).toHaveLength(0);
     expect(notes().find((n) => n.key === 65)?.tick).toBe(480);
+    engine.stop();
+  });
+
+  it('on a channel with MIDI effects records the keys played, or what the effects made of them, as the setting says', () => {
+    const { s, engine, channelId, notes } = setup();
+    s.history.transact('arp', (d) => void addMidiFx(d, channelId, 'arp'));
+    // The keys played, then three notes the arpeggiator made of them (the engine tells the live input as they start and end).
+    const heardOnce = () => {
+      s.live.noteOn(60, 0.9, { source: 'midi' }, 1000);
+      s.live.noteOff(60, 0.5, { source: 'midi' }, 1700);
+      [0, 250, 500].forEach((ms, i) => {
+        const time = 1 + ms / 1000;
+        s.live.generated({ channelId, kind: 'on', noteId: 2 ** 31 + i, key: 64 + i, velocity: 0.7, time });
+        s.live.generated({ channelId, kind: 'off', noteId: 2 ** 31 + i, key: 64 + i, velocity: 0.5, time: time + 0.1 });
+      });
+    };
+    s.recording.setArmed(true);
+    engine.play();
+    const before = notes().length;
+    heardOnce();
+    expect(notes().slice(before).map((n) => n.key)).toEqual([60]);
+    s.history.undo();
+    s.prefs.getState().set({ recordMidiFx: 'generated' });
+    heardOnce();
+    expect(notes().slice(before).map((n) => n.key).sort()).toEqual([64, 65, 66]);
+    engine.stop();
+  });
+
+  it('a channel without effects records what is played whatever the setting says', () => {
+    const { s, engine, notes, play } = setup();
+    s.prefs.getState().set({ recordMidiFx: 'generated' });
+    s.recording.setArmed(true);
+    engine.play();
+    const before = notes().length;
+    play(70, 1000, 1200);
+    expect(notes().slice(before).map((n) => n.key)).toEqual([70]);
     engine.stop();
   });
 });

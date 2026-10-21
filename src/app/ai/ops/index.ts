@@ -22,6 +22,7 @@ import { lyrics } from './lyrics';
 import type { OpHandler, OpModule } from './context';
 import { FOCUS_PROMPT } from './focus-guard';
 import { meters } from './meters';
+import { midiFx } from './midi-fx';
 import { mix } from './mix';
 import { mixer } from './mixer';
 import { mixerState } from './mixer-state';
@@ -46,6 +47,7 @@ export const MODULES: readonly OpModule[] = [
   mixerState,
   patterns,
   notes,
+  midiFx,
   notation,
   harmony,
   lyrics,

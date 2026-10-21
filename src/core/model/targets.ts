@@ -1,4 +1,4 @@
-import type { ChannelId, GroupId, InsertId, ParamTarget, SlotId } from './types';
+import type { ChannelId, GroupId, InsertId, MidiFxSlotId, ParamTarget, SlotId } from './types';
 
 /**
  * A stable string for a target: the key the engine registers automatable params under and the UI
@@ -20,6 +20,8 @@ export function targetKey(t: ParamTarget): string {
       return t.owner.kind === 'channel'
         ? `plug:ch:${t.owner.channelId}:${t.paramId}`
         : `plug:fx:${t.owner.insertId}:${t.owner.slotId}:${t.paramId}`;
+    case 'midiFx':
+      return `mfx:${t.channelId}:${t.slotId}:${t.paramId}`;
     case 'tempo':
       return 'tempo';
   }
@@ -30,10 +32,15 @@ export function sameTarget(a: ParamTarget, b: ParamTarget): boolean {
   return targetKey(a) === targetKey(b);
 }
 
-/** Whether the target belongs to the channel (its volume, pan, pitch or instrument params). */
+/** Whether the target belongs to the channel (its volume, pan, pitch, instrument params or MIDI effect knobs). */
 export function targetUsesChannel(t: ParamTarget, id: ChannelId): boolean {
-  if (t.kind === 'channel') return t.channelId === id;
+  if (t.kind === 'channel' || t.kind === 'midiFx') return t.channelId === id;
   return t.kind === 'plugin' && t.owner.kind === 'channel' && t.owner.channelId === id;
+}
+
+/** Whether the target is a knob of the MIDI effect in this slot of the channel's chain. */
+export function targetUsesMidiFx(t: ParamTarget, channelId: ChannelId, slotId: MidiFxSlotId): boolean {
+  return t.kind === 'midiFx' && t.channelId === channelId && t.slotId === slotId;
 }
 
 /** Whether the target belongs to the insert (its levels, slots, effects or routes, either end). */
@@ -47,6 +54,7 @@ export function targetUsesInsert(t: ParamTarget, id: InsertId): boolean {
     case 'plugin':
       return t.owner.kind === 'fx' && t.owner.insertId === id;
     case 'channel':
+    case 'midiFx':
     case 'vca':
     case 'tempo':
       return false;
@@ -109,6 +117,12 @@ export function parseTargetKey(key: string): ParamTarget | null {
         };
       }
       return null;
+    }
+    case 'mfx': {
+      const [channelId, slotId, ...param] = rest;
+      return channelId && slotId && param.length > 0
+        ? { kind: 'midiFx', channelId: channelId as ChannelId, slotId: slotId as MidiFxSlotId, paramId: param.join(':') }
+        : null;
     }
     case 'tempo':
       return rest.length === 0 ? { kind: 'tempo' } : null;

@@ -22,6 +22,7 @@ export function RecordingSection() {
   const countIn = useStore(s.prefs, (p) => p.countInBars);
   const quantize = useStore(s.prefs, (p) => p.recordQuantize);
   const mode = useStore(s.prefs, (p) => p.recordMode);
+  const midiFx = useStore(s.prefs, (p) => p.recordMidiFx);
   const notes = useStore(s.prefs, (p) => p.recordNotes);
   const audio = useStore(s.prefs, (p) => p.recordAudio);
   const device = useStore(s.prefs, (p) => p.audioInputDevice);
@@ -101,6 +102,20 @@ export function RecordingSection() {
         >
           <option value="overdub">Keep them (overdub)</option>
           <option value="replace">Replace them</option>
+        </select>
+      </Row>
+      <Row
+        label="MIDI effects"
+        hint="On a channel with MIDI effects (an arpeggiator, chords…), record the keys you play, or the notes the effects make of them."
+      >
+        <select
+          className={styles.select}
+          value={midiFx}
+          aria-label="What to record from MIDI effects"
+          onChange={(e) => s.commands.run('transport.recordMidiFx', e.target.value)}
+        >
+          <option value="played">The keys I play</option>
+          <option value="generated">The notes the effects make</option>
         </select>
       </Row>
     </Section>

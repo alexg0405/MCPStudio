@@ -18,6 +18,8 @@ import {
 } from '../model/target-specs';
 import { targetKey } from '../model/targets';
 import type { ParamTarget, Project } from '../model/types';
+import { midiFxDef } from '../midi-fx/registry';
+import { midiFxSlotOf } from '../query/midi-fx';
 import { pluginInstanceOf } from '../query/mixer';
 
 /** Param specs of a plugin by id (the app's registry; core can't see plugin definitions). */
@@ -106,6 +108,12 @@ export function resolveTarget(
       if (!inst || !spec) return null;
       const raw = inst.params[t.paramId];
       return bySpec(key, spec, encode(spec, raw ?? spec.default));
+    }
+    case 'midiFx': {
+      const slot = midiFxSlotOf(p, t.channelId, t.slotId);
+      const spec = slot ? midiFxDef(slot.effect)?.params[t.paramId] : undefined;
+      if (!slot || !spec) return null;
+      return bySpec(key, spec, encode(spec, slot.params[t.paramId] ?? spec.default));
     }
     case 'tempo': {
       const r = range && range.min < range.max ? range : TEMPO_RANGE;

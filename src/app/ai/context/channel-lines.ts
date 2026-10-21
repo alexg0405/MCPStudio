@@ -16,6 +16,7 @@ import { insertLabel } from '@core/query/mixer';
 import type { Services } from '../../services';
 import { SHORT_VALUES, FULL_CHANNELS, type ContextRender, type Section } from './budget';
 import { cachedForProject } from './project-cache';
+import { midiFxLine } from './midi-fx-line';
 import { formatDb, round2 } from './units';
 
 /** A plugin's name, or its id marked missing when it isn't installed. */
@@ -158,5 +159,6 @@ export function channelLine(
   const sample = channel.plugin.samples?.main ? project.samples[channel.plugin.samples.main] : undefined;
   const kit = sample?.source.kind === 'builtin' ? kitPiece(sample.source.generator)?.name : sample?.name;
   const plugin = `${pluginName(services, channel.plugin.pluginId)} (${channel.plugin.pluginId})`;
-  return `${head} — ${plugin}${kit ? ` sample "${kit}"` : ''}; ${mix}; ${output}\n   settings: ${paramSummary(services, channel.plugin, render, 'channels')}`;
+  const effects = midiFxLine(channel);
+  return `${head} — ${plugin}${kit ? ` sample "${kit}"` : ''}; ${mix}; ${output}\n   settings: ${paramSummary(services, channel.plugin, render, 'channels')}${effects}`;
 }

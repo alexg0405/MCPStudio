@@ -2,6 +2,8 @@ import { targetKey } from '@core/model/targets';
 import { memo, useState } from 'react';
 import type { ChannelId } from '@core/model/types';
 import { setChannelProp, toggleSoloChannel } from '@core/ops/channels';
+import { midiFxDef } from '@core/midi-fx/registry';
+import { midiFxOf, midiFxSummary } from '@core/query/midi-fx';
 import { p } from '@agstudio/sdk/params';
 import { Knob } from '@agstudio/sdk/ui';
 import { useDoc, useServices, useSession } from '../../services-context';
@@ -13,9 +15,17 @@ import { AutomationRow } from './AutomationRow';
 import { channelMenuEntries } from './channel-menu';
 import { InsertBox } from './InsertBox';
 import { StepGrid } from './StepGrid';
+import { openWindow } from '../../workspace/registry';
 
 const VOLUME = p.float(0, 1.25, 0.78, { label: 'Volume', unit: '%' });
 const PAN = p.float(-1, 1, 0, { label: 'Pan' });
+
+/** The badge text of a chain: the first effect's three letters, and how many more follow ("ARP", "CHD+2"). */
+function midiFxBadge(chain: ReturnType<typeof midiFxOf>): string {
+  const first = chain[0];
+  const short = first ? (midiFxDef(first.effect)?.short ?? 'FX') : 'FX';
+  return chain.length > 1 ? `${short}+${chain.length - 1}` : short;
+}
 
 /** The name of a channel being edited in place: Enter or leaving the box renames it, Esc keeps the old name. */
 function RenameInput({ channelId, name, onDone }: { channelId: ChannelId; name: string; onDone(): void }) {
@@ -58,12 +68,58 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
   if (!ch) return null;
   if (ch.kind === 'automation') return <AutomationRow id={id} />;
   const missing = ch.kind === 'instrument' && !def;
+  const fxChain = midiFxOf(ch);
 
   const menu = (e: React.MouseEvent) => {
     e.preventDefault();
     services.session.getState().selectChannel(id);
     showContextMenu(e, channelMenuEntries(services, ch, () => setRenaming(true)));
   };
+
+  const nameButton = (
+    <button
+      className={`${styles.name} ${missing ? styles.nameMissing : ''} ${fxChain.length > 0 ? styles.nameWithBadge : ''}`}
+      style={{ ['--ch-color' as string]: ch.color }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        if (e.button === 0) services.session.getState().selectChannel(id);
+      }}
+      onClick={(e) => {
+        // The keyboard's way to what a click and a double-click do: Enter selects, and Enter again opens the editor.
+        if (e.detail !== 0) return;
+        if (selected) services.commands.run('plugin.openEditor', { channelId: id });
+        else services.session.getState().selectChannel(id);
+      }}
+      aria-current={selected || undefined}
+      onDoubleClick={() => services.commands.run('plugin.openEditor', { channelId: id })}
+      onContextMenu={menu}
+      data-hint={
+        missing
+          ? `${ch.name}: plugin "${ch.kind === 'instrument' ? ch.plugin.pluginId : ''}" is not installed (settings are kept)`
+          : `${ch.name}${def ? ` (${def.name})` : ''}. Double-click to open, right-click for options (keys: Enter selects, Enter again opens, Shift+F10 for options)`
+      }
+    >
+      {ch.name}
+    </button>
+  );
+  const fxBadge = fxChain.length > 0 && (
+    <button
+      type="button"
+      className={`${styles.fxBadge} ${fxChain.some((slot) => slot.enabled) ? '' : styles.fxBadgeOff}`}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        if (e.button === 0) services.session.getState().selectChannel(id);
+      }}
+      onClick={() => {
+        services.session.getState().selectChannel(id);
+        openWindow(services, 'midi-fx');
+      }}
+      aria-label={`MIDI effects of ${ch.name}: ${midiFxSummary(ch)}. Opens the MIDI effects window`}
+      data-hint={`MIDI effects: ${midiFxSummary(ch)}${fxChain.some((slot) => slot.enabled) ? '' : ' (all bypassed)'}. Click to open them`}
+    >
+      {midiFxBadge(fxChain)}
+    </button>
+  );
 
   return (
     <div
@@ -112,31 +168,13 @@ export const ChannelRow = memo(function ChannelRow({ id, dropTarget }: { id: Cha
       <InsertBox channelId={id} channelName={ch.name} />
       {renaming ? (
         <RenameInput channelId={id} name={ch.name} onDone={() => setRenaming(false)} />
+      ) : fxChain.length > 0 ? (
+        <span className={styles.nameCell}>
+          {nameButton}
+          {fxBadge}
+        </span>
       ) : (
-        <button
-          className={`${styles.name} ${missing ? styles.nameMissing : ''}`}
-          style={{ ['--ch-color' as string]: ch.color }}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            if (e.button === 0) services.session.getState().selectChannel(id);
-          }}
-          onClick={(e) => {
-            // The keyboard's way to what a click and a double-click do: Enter selects, and Enter again opens the editor.
-            if (e.detail !== 0) return;
-            if (selected) services.commands.run('plugin.openEditor', { channelId: id });
-            else services.session.getState().selectChannel(id);
-          }}
-          aria-current={selected || undefined}
-          onDoubleClick={() => services.commands.run('plugin.openEditor', { channelId: id })}
-          onContextMenu={menu}
-          data-hint={
-            missing
-              ? `${ch.name}: plugin "${ch.kind === 'instrument' ? ch.plugin.pluginId : ''}" is not installed (settings are kept)`
-              : `${ch.name}${def ? ` (${def.name})` : ''}. Double-click to open, right-click for options (keys: Enter selects, Enter again opens, Shift+F10 for options)`
-          }
-        >
-          {ch.name}
-        </button>
+        nameButton
       )}
       {ch.kind === 'instrument' ? (
         <StepGrid channelId={id} channelName={ch.name} rootKey={ch.rootKey} />

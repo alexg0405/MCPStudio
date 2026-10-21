@@ -2,6 +2,7 @@ import type { Draft } from 'immer';
 import type { ParamValue } from '@agstudio/sdk/params';
 import type { ParamTarget, Project } from '../model/types';
 import { setChannelProp, setPluginParam } from './channels';
+import { setMidiFxParam } from './midi-fx';
 import { setFxSlotMix, setInsertProp } from './mixer';
 import { setVcaLevel } from './groups';
 import { setBpm } from './notes';
@@ -38,6 +39,9 @@ export function setTargetValue(d: Draft<Project>, t: ParamTarget, value: ParamVa
       return;
     case 'plugin':
       setPluginParam(d, t.owner, t.paramId, value);
+      return;
+    case 'midiFx':
+      setMidiFxParam(d, t.channelId, t.slotId, t.paramId, value);
       return;
     case 'tempo':
       if (Number.isFinite(n)) setBpm(d, n);

@@ -10,8 +10,9 @@ import type { RecordOptions, Recording, RecordingHandle } from './recorder';
 import type { AudioCapture, AudioInput, CapturedAudio } from './audio-input';
 import type { SampleCache } from './samples';
 import type { LaunchClock, LaunchDriver } from '@core/launcher/run';
+import type { LiveFxOutput } from './live-midi-fx';
 
-export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio };
+export type { Waveform, RecordOptions, Recording, RecordingHandle, AudioCapture, AudioInput, CapturedAudio, LiveFxOutput };
 
 /**
  * A live meter on one audio node (see engine/meter): the numbers the audio thread measures, in shared memory (a
@@ -283,6 +284,11 @@ export interface EngineApi {
   launcherClock?(): LaunchClock;
   /** The driver's runs changed: play them (starts the transport for the launcher alone when nothing plays). */
   launcherChanged?(): void;
+  /**
+   * Hears the notes a channel's MIDI effects play for live keys, as they start and end (note recording can keep these in place of
+   * the keys played). Optional: engines that play nothing (fakes) leave it out. Returns its removal.
+   */
+  onLiveFxOutput?(listener: (output: LiveFxOutput) => void): () => void;
   /** Fires on playing/stopped and state changes, and when graphLatency() changes. */
   subscribe(fn: () => void): () => void;
   dispose(): Promise<void>;

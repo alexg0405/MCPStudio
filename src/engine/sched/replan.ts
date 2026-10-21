@@ -8,6 +8,7 @@ import { playbackKey } from '@core/audio/playback';
 import type { LaunchRun } from '@core/launcher/run';
 import type { Timeline } from './core';
 import type { EventSource, NoteEvent } from './events';
+import { fxNoteEnd } from './fx-events';
 import type { Scheduled } from './plan-state';
 
 /** Rounding slack when comparing positions on the launcher axis (ticks). */
@@ -72,7 +73,7 @@ export function reviseSoundingNotes(host: ReviseHost, notes: readonly Scheduled[
       reviseLauncherNote(host, scheduled, project, at);
       continue;
     }
-    const end = ev.kind === 'audio' ? audioClipEnd(scheduled, project, at.tempoChanged) : patternNoteEnd(ev, project);
+    const end = noteEndAfterEdit(host, scheduled, at);
     if (end === null || !channel) {
       host.release(scheduled, at.safe);
       continue;
@@ -80,6 +81,14 @@ export function reviseSoundingNotes(host: ReviseHost, notes: readonly Scheduled[
     scheduled.endTick = end;
     if (scheduled.iter === at.iter && scheduled.endTick <= at.tick) host.release(scheduled, at.safe);
   }
+}
+
+/** Where a sounding note of the song ends after an edit, or null when it must be released: an audio clip, a note the effects made, or a pattern note. */
+function noteEndAfterEdit(host: ReviseHost, scheduled: Scheduled, at: ReviseAt): Tick | null {
+  const ev = scheduled.ev;
+  if (ev.kind === 'audio') return audioClipEnd(scheduled, host.source.project, at.tempoChanged);
+  if (ev.fx !== undefined) return fxNoteEnd(host.source, ev);
+  return patternNoteEnd(ev, host.source.project);
 }
 
 /**

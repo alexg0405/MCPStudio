@@ -18,6 +18,8 @@ export interface PianoRollViewState {
   tool: PianoRollTool;
   snap: Snap;
   ghosts: boolean;
+  /** Show the notes the channel's MIDI effects make of the pattern, faintly behind its own notes. */
+  fxGhosts: boolean;
   /** Length used for new notes (FL: the last note length you drew or resized). */
   lastLength: Tick;
   pxPerTick: number;
@@ -158,6 +160,7 @@ export const defaultPianoRoll = (): PianoRollViewState => ({
   tool: 'draw',
   snap: 'auto',
   ghosts: true,
+  fxGhosts: false,
   lastLength: TICKS_PER_STEP,
   pxPerTick: 0.1,
   rowHeight: 14,

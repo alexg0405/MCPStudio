@@ -16,6 +16,8 @@ import {
   VCA_SPEC,
 } from '@core/model/target-specs';
 import type { ParamTarget } from '@core/model/types';
+import { midiFxDef } from '@core/midi-fx/registry';
+import { midiFxSlotOf } from '@core/query/midi-fx';
 import { fxSlotOf, insertLabel, pluginInstanceOf } from '@core/query/mixer';
 import type { ParamSpec } from '@agstudio/sdk';
 import { showContextMenu, type MenuEntry } from './controls/ContextMenu';
@@ -106,6 +108,14 @@ export function paramInfoFor(s: Services, target: ParamTarget): ParamMenuInfo | 
       const spec = def?.params[target.paramId] as ParamSpec | undefined;
       if (!def || !spec) return null;
       return { target, spec, label: `${def.name} · ${spec.label ?? target.paramId}` };
+    }
+    case 'midiFx': {
+      const slot = midiFxSlotOf(p, target.channelId, target.slotId);
+      const def = slot ? midiFxDef(slot.effect) : undefined;
+      const spec = def?.params[target.paramId] as ParamSpec | undefined;
+      const channel = p.channels[target.channelId];
+      if (!def || !spec || !channel) return null;
+      return { target, spec, label: `${channel.name} · ${def.name} · ${spec.label ?? target.paramId}` };
     }
     case 'tempo':
       return { target, spec: TEMPO_SPEC, label: 'Tempo' };

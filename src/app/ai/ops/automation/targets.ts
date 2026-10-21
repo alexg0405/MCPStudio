@@ -6,7 +6,9 @@ import { targetName } from '@core/automation/labels';
 import type { ResolvedTarget } from '@core/automation/targets';
 import { gainToDecibels } from '@core/model/fader';
 import type { AutomationChannel, ParamTarget, PluginOwner, Project } from '@core/model/types';
-import { dbToGain, decode, encode, type ParamSpecs } from '@agstudio/sdk';
+import { dbToGain, decode, encode, isAutomatable, type ParamSpecs } from '@agstudio/sdk';
+import { midiFxDef } from '@core/midi-fx/registry';
+import { resolveMidiFxSlot } from '../midi-fx';
 import type { Services } from '../../../services';
 import { fail, type OpContext } from '../context';
 import { coerceParam, findParamId, isObj, num, r2, str } from '../values';
@@ -44,7 +46,8 @@ export function normalizedOf(resolved: ResolvedTarget, target: ParamTarget, raw:
       const value = num(raw);
       return value === undefined ? null : resolved.toNormalized(asFraction(value));
     }
-    case 'plugin': {
+    case 'plugin':
+    case 'midiFx': {
       const value = coerceParam(resolved.spec, raw);
       return value === null ? null : resolved.toNormalized(encode(resolved.spec, value));
     }
@@ -67,7 +70,7 @@ export function ownUnitOf(
     target.kind === 'vca' ||
     ((target.kind === 'channel' || target.kind === 'insert') && target.param === 'volume');
   if (isLevel) return gainAsDb(value);
-  if (target.kind === 'plugin') return decode(resolved.spec, value);
+  if (target.kind === 'plugin' || target.kind === 'midiFx') return decode(resolved.spec, value);
   return round3(value);
 }
 
@@ -104,6 +107,17 @@ function pluginTarget(context: OpContext, raw: Record<string, unknown>): ParamTa
   return { kind: 'plugin', owner, paramId };
 }
 
+/** A knob of a MIDI effect on a channel, as an automation target (only the knobs a curve may move). */
+function midiEffectTarget(context: OpContext, raw: Record<string, unknown>): ParamTarget {
+  const settingName = str(raw.param) ?? fail('which setting should it move?');
+  const channelId = context.channel(raw.channel);
+  const slot = resolveMidiFxSlot(context, channelId, raw.midi_effect);
+  const definition = midiFxDef(slot.effect) ?? fail(`this version has no MIDI effect "${slot.effect}"`);
+  const paramId = findParamId(definition.params, settingName) ?? fail(`${definition.name} has no setting "${settingName}"`);
+  if (!isAutomatable(definition.params[paramId]!)) fail(`${definition.name} ${paramId} can't be automated (it is picked, not turned)`);
+  return { kind: 'midiFx', channelId, slotId: slot.id, paramId };
+}
+
 /** The control an automation target names (kind plus the ids it needs), as the model addresses it. */
 export function paramTargetOf(context: OpContext, raw: unknown): ParamTarget {
   const named = isObj(raw) ? raw : fail('what should the automation move?');
@@ -128,6 +142,8 @@ export function paramTargetOf(context: OpContext, raw: unknown): ParamTarget {
     }
     case 'plugin':
       return pluginTarget(context, named);
+    case 'midi_effect':
+      return midiEffectTarget(context, named);
     case 'tempo':
       return { kind: 'tempo' };
     default:

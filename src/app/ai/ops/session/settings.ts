@@ -145,6 +145,12 @@ function applyRecordSettings({ action, out, prefs, text }: SettingsEdit): void {
     prefs.recordMode = recordMode;
     text.push(`record mode ${recordMode}`);
   }
+  const recordMidiFx = (['played', 'generated'] as const).find((candidate) => candidate === str(action.record_midi_fx));
+  if (action.record_midi_fx !== undefined && !recordMidiFx) out.warn('record_midi_fx must be played or generated');
+  if (recordMidiFx) {
+    prefs.recordMidiFx = recordMidiFx;
+    text.push(`MIDI effects record the ${recordMidiFx === 'played' ? 'keys played' : 'notes the effects make'}`);
+  }
   if (action.record_quantize !== undefined) {
     const grid = str(action.record_quantize);
     const gridName = Object.keys(RECORD_GRIDS).find((name) => name === grid);

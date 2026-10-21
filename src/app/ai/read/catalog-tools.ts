@@ -74,13 +74,13 @@ const tooMany = (count: number) => ({ error: `${count} ids at once is too many: 
 
 const pluginDetails = tool(
   'get_plugin_details',
-  'The details of plugins, piano-roll tools and effect chains, for the ids (or exact names) in the catalog index: every setting with its id, kind, range, unit and default, the presets, and for a chain its effects in order. Ask for what you are about to use, up to 12 at a time, instead of guessing a setting id or a range. An id that is not found comes back with the closest matches.',
+  'The details of plugins, piano-roll tools, effect chains, MIDI effects and their chains, for the ids (or exact names) in the catalog index: every setting with its id, kind, range, unit and default, the presets, and for a chain its effects in order. Ask for what you are about to use, up to 12 at a time, instead of guessing a setting id or a range. An id that is not found comes back with the closest matches.',
   { ids: ID_LIST('Plugin ids (e.g. "agstudio.reverb"), piano-roll tool ids or chain names; exact names also work.') },
   (services, args) => {
     const ids = stringList(args.ids);
     if (ids.length === 0) return { error: 'give ids: ["agstudio.reverb", …] from the catalog index' };
     if (ids.length > MAX_IDS) return tooMany(ids.length);
-    return detailsOf(services, ids, ['instrument', 'effect', 'tool', 'chain']);
+    return detailsOf(services, ids, ['instrument', 'effect', 'tool', 'chain', 'midi-effect', 'midi-chain']);
   },
 );
 
@@ -121,6 +121,7 @@ const SEARCH_KINDS: Record<string, readonly CatalogKind[]> = {
   plugin: ['instrument', 'effect'],
   tool: ['tool'],
   chain: ['chain'],
+  midi: ['midi-effect', 'midi-chain'],
   command: ['command'],
 };
 
@@ -132,7 +133,7 @@ const SEARCH_PROPERTIES = {
 
 const search = tool(
   'search_catalog',
-  'Finds plugins, piano-roll tools, effect chains and commands by what they do, with the same matching as the action search: "sidechain", "make harmonies", "export mp3". Returns their lines from the catalog index (id, name, what it does); then ask get_plugin_details or get_commands for the ones you want to use.',
+  'Finds plugins, piano-roll tools, effect chains, MIDI effects and commands by what they do, with the same matching as the action search: "sidechain", "make harmonies", "export mp3". Returns their lines from the catalog index (id, name, what it does); then ask get_plugin_details or get_commands for the ones you want to use.',
   SEARCH_PROPERTIES,
   (services, args: ToolArgs) => {
     const query = str(args.query);

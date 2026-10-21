@@ -5,6 +5,7 @@ import { type RepairLog, CHANNEL, countOf, noun } from './log';
 import { CHANNEL_VOLUME_MAX } from './limits';
 import { repairAutomationChannel } from './automation';
 import { FieldRepairs } from './fields';
+import { repairMidiFx } from './midi-fx';
 import { repairPlugin } from './plugin';
 import { repairOrder, repairRecords } from './records';
 import { isSoundFilter } from './sound-filter';
@@ -98,6 +99,7 @@ function repairChannelSettings(
   } else {
     repairLevelsAndOutput(channel, inserts, reroutedChannelNames, log);
   }
+  repairMidiFx(channel, log);
   if (fixes.changed) log.count('ch-fields', (n) => `Fixed ${countOf(n, CHANNEL)} with invalid settings.`);
 }
 

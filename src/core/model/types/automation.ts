@@ -1,4 +1,4 @@
-import type { ChannelId, GroupId, InsertId, LinkId, SlotId, Tick } from './ids';
+import type { ChannelId, GroupId, InsertId, LinkId, MidiFxSlotId, SlotId, Tick } from './ids';
 
 /** The owner of a plugin instance: an instrument channel, or an effect slot of a mixer insert. */
 export type PluginOwner =
@@ -13,6 +13,8 @@ export type ParamTarget =
   /** The VCA fader of a mixer group (its level scales every member's fader). */
   | { kind: 'vca'; groupId: GroupId }
   | { kind: 'plugin'; owner: PluginOwner; paramId: string }
+  /** A knob of a MIDI effect in an instrument channel's chain (`InstrumentChannel.midiFx`). */
+  | { kind: 'midiFx'; channelId: ChannelId; slotId: MidiFxSlotId; paramId: string }
   | { kind: 'tempo' };
 
 /** How the curve gets from a point to the next one. */

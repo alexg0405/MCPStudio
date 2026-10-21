@@ -1,6 +1,6 @@
 /**
- * Everything Studio can be told about, as one flat list: instruments, effects, piano-roll tools, effect chains and app
- * commands. The compact index (`catalog-index.ts`), the guess of what a request needs (`predict.ts`), the read tools
+ * Everything Studio can be told about, as one flat list: instruments, effects, piano-roll tools, effect chains, MIDI
+ * effects and their chains, and app commands. The compact index (`catalog-index.ts`), the guess of what a request needs (`predict.ts`), the read tools
  * (`read/catalog-tools.ts`) and the attached details (`catalog-details.ts`) all start from it, so they never disagree about
  * what exists or what it is called.
  *
@@ -11,11 +11,14 @@ import type { PluginDef } from '@agstudio/sdk';
 import { chainChoices, type ChainChoice } from '@app/chains';
 import type { PluginRegistry } from '@app/plugins/registry';
 import type { PresetLibrary } from '@app/presets';
+import { FACTORY_CHAINS, type FactoryChain } from '@app/actions/midi-fx';
+import { MIDI_FX } from '@core/midi-fx/registry';
+import type { MidiFxDef } from '@core/midi-fx/types';
 import type { Services } from '../services';
-import { describeChain, describePlugin, describeScript } from './catalog';
+import { describeChain, describeMidiFx, describeMidiFxChain, describePlugin, describeScript } from './catalog';
 import { aiCommands, describeCommand } from './commands';
 
-export type CatalogKind = 'instrument' | 'effect' | 'tool' | 'chain' | 'command';
+export type CatalogKind = 'instrument' | 'effect' | 'tool' | 'chain' | 'midi-effect' | 'midi-chain' | 'command';
 
 /** One thing in the catalog. */
 export interface CatalogItem {
@@ -43,7 +46,15 @@ export interface CatalogItem {
 /** Plain code-unit order: the same on every machine (`localeCompare` is not). */
 export const byCodeUnits = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-const KIND_ORDER: Record<CatalogKind, number> = { instrument: 0, effect: 1, tool: 2, chain: 3, command: 4 };
+const KIND_ORDER: Record<CatalogKind, number> = {
+  instrument: 0,
+  effect: 1,
+  tool: 2,
+  chain: 3,
+  'midi-effect': 4,
+  'midi-chain': 5,
+  command: 6,
+};
 
 function pluginItem(entry: { def: PluginDef; source: 'builtin' | 'user' }, kind: 'instrument' | 'effect'): CatalogItem {
   const { def } = entry;
@@ -97,6 +108,38 @@ function chainItem(choice: ChainChoice): CatalogItem {
   };
 }
 
+/** A MIDI effect (an arpeggiator, a chord maker…): it changes an instrument channel's notes before the instrument plays them. */
+function midiEffectItem(def: MidiFxDef): CatalogItem {
+  return {
+    kind: 'midi-effect',
+    id: def.id,
+    name: def.name,
+    category: 'MIDI',
+    description: def.description,
+    presetCount: def.presets.length,
+    isUserPlugin: false,
+    isInIndex: true,
+    takesArgument: false,
+    describe: (presets) => ({ text: describeMidiFx(def, presets), hasNumberedSettings: false }),
+  };
+}
+
+/** A ready-made chain of MIDI effects (the musician's own are in get_chains, like effect chains). */
+function midiChainItem(chain: FactoryChain): CatalogItem {
+  return {
+    kind: 'midi-chain',
+    id: chain.name,
+    name: chain.name,
+    category: '',
+    description: chain.description,
+    presetCount: 0,
+    isUserPlugin: false,
+    isInIndex: true,
+    takesArgument: false,
+    describe: () => ({ text: describeMidiFxChain(chain), hasNumberedSettings: false }),
+  };
+}
+
 function commandItems(services: Services): CatalogItem[] {
   return aiCommands(services).map((def) => ({
     kind: 'command' as const,
@@ -119,6 +162,8 @@ export function catalogItems(services: Services): CatalogItem[] {
     ...services.plugins.list('effect').map((entry) => pluginItem(entry, 'effect')),
     ...toolItems(services.plugins),
     ...chainChoices(services.presets.chains()).map(chainItem),
+    ...MIDI_FX.map(midiEffectItem),
+    ...FACTORY_CHAINS.map(midiChainItem),
     ...commandItems(services),
   ];
   return items.sort(

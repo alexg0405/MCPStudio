@@ -106,6 +106,10 @@ export function showTarget(s: Services, target: ParamTarget): void {
     case 'vca':
       openWindow(s, 'mixer');
       return;
+    case 'midiFx':
+      s.session.getState().selectChannel(target.channelId);
+      openWindow(s, 'midi-fx');
+      return;
     case 'tempo':
       return;
   }

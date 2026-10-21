@@ -20,7 +20,7 @@ import { requestWords, synonymsFor } from './predict-words';
 
 /** How many of each group a request's details may carry. */
 export interface DetailsBudget {
-  /** Instruments, effects and piano-roll tools together. */
+  /** Instruments, effects, piano-roll tools and MIDI effects together. */
   plugins: number;
   chains: number;
   commands: number;
@@ -107,6 +107,10 @@ function textScore(entry: PreparedEntry, request: RequestWords, weights: Readonl
 const pluginOfChannel = (channel: Channel | undefined): string | null =>
   channel?.kind === 'instrument' ? channel.plugin.pluginId : null;
 
+/** The ids of the MIDI effects on an instrument channel (they share the plugins' boosts: both are ids in that group). */
+const midiEffectsOf = (channel: Channel | undefined): string[] =>
+  channel?.kind === 'instrument' ? (channel.midiFx ?? []).map((slot) => slot.effect) : [];
+
 /** The plugin ids of the effects on one mixer track. */
 function effectsOfInsert(project: Project, insertId: string | null): string[] {
   const insert = insertId ? project.mixer.inserts[insertId as keyof Project['mixer']['inserts']] : undefined;
@@ -144,7 +148,11 @@ function pluginBoosts(services: Services, input: PredictInput, words: readonly s
   };
 
   for (const pluginId of pluginUsage(project).keys()) boost(pluginId, USED_BOOST);
-  if (session.selectedChannelId) boost(pluginOfChannel(project.channels[session.selectedChannelId]), SELECTED_BOOST);
+  if (session.selectedChannelId) {
+    const selected = project.channels[session.selectedChannelId];
+    boost(pluginOfChannel(selected), SELECTED_BOOST);
+    for (const effect of midiEffectsOf(selected)) boost(effect, SELECTED_BOOST);
+  }
   for (const pluginId of effectsOfInsert(project, session.selectedInsertId)) boost(pluginId, SELECTED_BOOST);
   for (const pluginId of pluginsInFocus(project, input.focus)) boost(pluginId, FOCUS_BOOST);
 
@@ -217,8 +225,10 @@ export function predictItems(
   const request: RequestWords = { words, synonyms: synonymsFor(words) };
   const items = catalogItems(services);
   const entries = new Map(items.map((item) => [item, searchEntry(item)]));
-  const plugins = items.filter((item) => item.kind === 'instrument' || item.kind === 'effect' || item.kind === 'tool');
-  const chains = items.filter((item) => item.kind === 'chain');
+  const isPluginLike = (item: CatalogItem) =>
+    item.kind === 'instrument' || item.kind === 'effect' || item.kind === 'tool' || item.kind === 'midi-effect';
+  const plugins = items.filter(isPluginLike);
+  const chains = items.filter((item) => item.kind === 'chain' || item.kind === 'midi-chain');
   const commands = items.filter((item) => item.kind === 'command');
 
   // A search by the request's words alone (the read tool) ignores the song.

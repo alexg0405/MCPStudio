@@ -8,6 +8,7 @@ import type {
   EngineSession,
   EngineState,
   EngineStats,
+  LiveFxOutput,
   MeterHandle,
   PreviewOptions,
   RecordOptions,
@@ -213,6 +214,9 @@ export class EngineHost implements EngineApi {
   private pendingPlay: { from: Tick | undefined } | null = null;
   private readonly listeners = new Set<() => void>();
   private detach: () => void;
+  /** Hears the running engine's live MIDI effect notes for the host's own listeners. */
+  private detachFx: () => void = () => {};
+  private readonly fxListeners = new Set<(output: LiveFxOutput) => void>();
   private lastDoc: DocChange | null = null;
   private view: TransportView | null = null;
   private session: EngineSession | null = null;
@@ -242,6 +246,7 @@ export class EngineHost implements EngineApi {
       this.inner = factory();
       mark('engine');
       this.detach = this.inner.subscribe(() => this.emit());
+      this.watchFx(this.inner);
     }
   }
 
@@ -413,6 +418,7 @@ export class EngineHost implements EngineApi {
     this.inner = next;
     if (this.launcher) next.setLauncher?.(this.launcher);
     this.detach = next.subscribe(() => this.emit());
+    this.watchFx(next);
   }
 
   /** The new engine takes over a song that is playing: it starts at the tick that will be heard as it begins. */
@@ -570,6 +576,17 @@ export class EngineHost implements EngineApi {
   playTestClicks(count: number, interval: number): number[] {
     return this.use().playTestClicks(count, interval);
   }
+  onLiveFxOutput(listener: (output: LiveFxOutput) => void): () => void {
+    this.fxListeners.add(listener);
+    return () => this.fxListeners.delete(listener);
+  }
+  /** Passes the notes the engine's live MIDI effects play on to this host's listeners (and swaps engines without dropping them). */
+  private watchFx(engine: EngineApi): void {
+    this.detachFx();
+    this.detachFx = engine.onLiveFxOutput?.((output) => {
+      for (const listener of this.fxListeners) listener(output);
+    }) ?? (() => {});
+  }
   setLauncher(driver: LaunchDriver | null): void {
     this.launcher = driver;
     this.inner.setLauncher?.(driver);
@@ -667,6 +684,7 @@ export class EngineHost implements EngineApi {
     this.warming = false;
     this.idle = false;
     this.detach();
+    this.detachFx();
     for (const l of [...this.leases]) l.close();
     await this.inner.dispose();
   }

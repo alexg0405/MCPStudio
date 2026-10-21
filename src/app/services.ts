@@ -231,6 +231,8 @@ export function createServices(opts: ServiceOptions = {}): Services {
   const engine = new EngineHost(() => makeEngine(engineOptions), { deferred: !!opts.deferEngine });
   plugins.subscribe((ids) => engine.pluginsChanged(ids));
   engineRef = engine;
+  // The notes a channel's MIDI effects play for live keys reach note recording through the live input.
+  engine.onLiveFxOutput((output) => live.generated(output));
   followOutputDevice(prefs, session, engine);
   rebootEngineOnBufferChange(prefs, engine);
   watchPlaybackHealth(engine, prefs, session);

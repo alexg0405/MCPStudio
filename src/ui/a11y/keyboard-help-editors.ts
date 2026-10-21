@@ -1,7 +1,7 @@
 import type { KeyboardGroup } from './keyboard-help-data';
 
 /**
- * The keys of the three canvas editors' keyboard cursors (playlist, piano roll, pitch editor). They are handled by the
+ * The keys of the canvas editors' keyboard cursors (playlist, piano roll, pitch editor) and of the Sheet music window. They are handled by the
  * editors' own key code (`ui/timeline/key-cursor`), so they are listed here by hand; `test/browser/keyboard-*.test.ts`
  * send these keys. The cursor is on while the editor's grid has the keyboard focus (Tab until its frame shows); a click
  * with the mouse hides it and gives the arrow keys back to the window until the next Tab.
@@ -50,6 +50,20 @@ export const EDITOR_KEYBOARD_GROUPS: readonly KeyboardGroup[] = [
       { keys: 'Delete or Backspace', what: 'Put the selected notes back as sung.' },
       { keys: 'S / M', what: 'Split the note in two; join it with the next one.' },
       { keys: 'Mod+A, Esc, ?', what: 'Select every note; clear the selection; say where the cursor is.' },
+    ],
+  },
+  {
+    where: 'Sheet music (Tab to the page)',
+    moves: [
+      { keys: '← →', what: 'Previous or next note. Each is spoken: bar, beat, note name (C 4 is middle C here), length, tied or not, the word under it.' },
+      { keys: 'Mod+← →, Home / End', what: 'The previous or next bar; the first or last note. Shift + ← → adds the note to the selection.' },
+      { keys: 'Enter, Mod+A, Esc', what: 'Select or deselect the notes at the cursor; select every note of the part; clear the selection.' },
+      { keys: '↑ ↓', what: 'Move the selected notes (or the ones at the cursor) a step of the song key’s scale; Shift+↑ ↓ a semitone, Mod+↑ ↓ an octave.' },
+      { keys: 'A to G', what: 'Type a note at the cursor as long as the entry duration, and move on. Shift makes it a sharp, Alt a flat; the song key’s signature applies.' },
+      { keys: '1 2 4 8 6 3, . and T', what: 'Entry duration: whole, half, quarter, eighth, sixteenth, thirty-second; dotted; triplet. With notes selected they change those notes too.' },
+      { keys: 'R or 0', what: 'A rest: move on by the entry duration without a note.' },
+      { keys: 'Delete or Backspace', what: 'Delete the selected notes, or the note at the cursor.' },
+      { keys: '?', what: 'Say where the cursor is, what is selected and the entry duration.' },
     ],
   },
 ];

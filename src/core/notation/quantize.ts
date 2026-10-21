@@ -37,20 +37,37 @@ const distanceToLattice = (tick: number, unit: number): number => {
 /** Rounds `tick` to the nearest multiple of `unit` counted from `origin`. */
 const snapTo = (tick: number, unit: number, origin = 0): number => origin + Math.round((tick - origin) / unit) * unit;
 
-/**
- * The places inside a window (not its edges, which are on every grid) that decide whether it is a triplet: the note
- * starts. A short staccato note's end says nothing about the rhythm, so ends only count when no note starts inside the
- * window (a note that fills a triplet beat and is followed by a rest).
- */
-function interiorPoints(notes: readonly NotationNote[], windowStart: Tick, windowEnd: Tick, useEnds: boolean): number[] {
-  const starts: number[] = [];
-  const ends: number[] = [];
+/** The note starts and ends that fall strictly inside each window (a window's own edges are on every grid), by window index. */
+interface WindowPoints {
+  starts: Map<number, number[]>;
+  ends: Map<number, number[]>;
+}
+
+function pointsByWindow(notes: readonly NotationNote[], windowTicks: Tick): WindowPoints {
+  const starts = new Map<number, number[]>();
+  const ends = new Map<number, number[]>();
+  const add = (map: Map<number, number[]>, tick: number): void => {
+    const index = Math.floor(tick / windowTicks);
+    if (tick === index * windowTicks) return;
+    const list = map.get(index);
+    if (list) list.push(tick);
+    else map.set(index, [tick]);
+  };
   for (const note of notes) {
-    if (note.tick > windowStart && note.tick < windowEnd) starts.push(note.tick);
-    const end = note.tick + note.length;
-    if (end > windowStart && end < windowEnd) ends.push(end);
+    add(starts, note.tick);
+    add(ends, note.tick + note.length);
   }
-  return starts.length > 0 || !useEnds ? starts : ends;
+  return { starts, ends };
+}
+
+/**
+ * The places inside a window that decide whether it is a triplet: the note starts. A short staccato note's end says
+ * nothing about the rhythm, so ends only count when no note starts inside the window (a note that fills a triplet beat and
+ * is followed by a rest).
+ */
+function interiorPoints(points: WindowPoints, index: number, useEnds: boolean): readonly number[] {
+  const starts = points.starts.get(index) ?? [];
+  return starts.length > 0 || !useEnds ? starts : (points.ends.get(index) ?? []);
 }
 
 /**
@@ -84,9 +101,10 @@ export function quantizeNotes(notes: readonly NotationNote[], meter: Meter, grid
   const windowTicks = meter.tripletWindowTicks;
   const lastEnd = notes.reduce((end, note) => Math.max(end, note.tick + note.length), 0);
   const tripletUnits = new Map<number, Tick>();
+  const points = pointsByWindow(notes, windowTicks);
   for (let index = 0; index * windowTicks < lastEnd; index++) {
     const start = index * windowTicks;
-    const unit = tripletUnitFor(interiorPoints(notes, start, start + windowTicks, options.useEnds !== false), start, windowTicks, gridTicks);
+    const unit = tripletUnitFor(interiorPoints(points, index, options.useEnds !== false), start, windowTicks, gridTicks);
     if (unit !== null) tripletUnits.set(index, unit);
   }
   const snap = (tick: number): number => {

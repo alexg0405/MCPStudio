@@ -41,11 +41,18 @@ const topKey = (event: VoiceEvent): number => Math.max(...event.notes.map((note)
  * melody stays one voice. "A little" is up to one grid step.
  */
 function trimLegato(events: VoiceEvent[], gridTicks: Tick): void {
-  for (const event of events) {
-    let nextStart = Number.POSITIVE_INFINITY;
-    for (const other of events) if (other.start > event.start && other.start < event.end) nextStart = Math.min(nextStart, other.start);
-    if (nextStart < event.end && event.end - nextStart <= gridTicks) event.end = nextStart;
+  const sorted = [...events].sort((a, b) => a.start - b.start);
+  // For each event, the first event that starts later (several events can start together).
+  let nextLater = sorted.length;
+  const laterStart: number[] = new Array<number>(sorted.length);
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    if (i + 1 < sorted.length && (sorted[i + 1] as VoiceEvent).start > (sorted[i] as VoiceEvent).start) nextLater = i + 1;
+    laterStart[i] = nextLater < sorted.length ? (sorted[nextLater] as VoiceEvent).start : Number.POSITIVE_INFINITY;
   }
+  sorted.forEach((event, i) => {
+    const nextStart = laterStart[i] as number;
+    if (nextStart < event.end && event.end - nextStart <= gridTicks) event.end = nextStart;
+  });
 }
 
 /** Puts the chords of a pitched staff into voices. */

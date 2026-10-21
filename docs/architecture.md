@@ -736,7 +736,8 @@ changing anything for people who use none of it. Everything is plain DOM and the
   the safe meter, note and light colours; `a11y-color-safe.test.ts` (patterns and selection marks), `a11y-shell.test.ts` (live
   region, pane cycling, window dialogs, focus following, the Space rule, settings reaching the page, no commits while
   playing), `a11y-audit.test.ts` (names, roles, tab order and focus rings of every window, menu and dialog),
-  `keyboard-playlist.test.ts` and `keyboard-piano-roll.test.ts` (the keyboard cursors), unit tests for the pure parts.
+  `keyboard-playlist.test.ts` and `keyboard-piano-roll.test.ts` (the keyboard cursors), `sheet-music.test.ts` (the Sheet music window's cursor and
+  note entry, see "Sheet music"), unit tests for the pure parts.
   Limits: the interface size does not scale fixed-height controls; the DJ decks' own meters and the plugin windows' custom
   canvases keep their colours and sizes; screen reader behaviour is checked by the tree it gets (roles, names, values, live
   text), not with a real reader.
@@ -5616,6 +5617,116 @@ exported.
 - One voice: words do not overlap, so two simultaneous singers (harmony lines) need separate takes or a later lane per voice.
 - LRC and the Lyrics window follow the song position, not an audio clip's own time: moving a clip does not move words with it.
 - MIDI import does not read lyric events back.
+
+## Sheet music (`core/notation`, `app/notation`, `ui/features/sheet-music`)
+
+The current pattern as a score: to read, to print and to edit. Nothing is stored in the project (a score is always made from the notes,
+the time signature, the song key, the chord track and the lyrics as they are now); the view settings live in `editor.sheet` (not
+undoable). Pitches are named as sheet music names them: **middle C (MIDI 60) is C4** here, where the piano roll calls it C5 (FL's
+numbering). The window's status line, its help and the keyboard help say so.
+
+### Engraving (`core/notation`, pure, no DOM, deterministic)
+- `engrave(input) -> Score` (`engrave.ts`): staves, bars, voices, chords and rests with no coordinates. The steps, each in its own file:
+  `quantize.ts` rounds starts and ends to the chosen grid (1/8, 1/16, 1/32; `useEnds: false` for drums) and looks at each beat on its
+  own: when its note starts sit on third or sixth places of the beat better than on the grid (and at least one is clearly off the
+  grid) the beat is a triplet (eighth or sixteenth triplets; one window per beat, up to a quarter note). `voices.ts` stacks notes that
+  start and end together into chords, shortens a note that runs less than one grid step into the next (a legato line stays one
+  voice) and puts chords into at most two voices per staff (three at once cut the earlier voice short and count it in
+  `Score.simplified`). A drum part uses the voices by limb: hands in voice 1 (stems up), kick and pedal hi-hat in voice 2 (stems
+  down); a hit lasts until the next hit of its voice or the end of its beat, and the rest of the beat is rests.
+- `meter.ts`: how a time signature divides a bar. Simple meters beat by the denominator's note (4/4: four groups, with the middle of
+  the bar a stronger place), compound meters (6/8, 9/8, 12/8) group by three eighths, 5 and 7 are 3+2 and 2+2+3. `levelAt` gives the
+  strength of any place: bar line 0, middle of a long bar 1, a beat group 2, a division 3, then each halving.
+- `split.ts` + `measures.ts`: a span becomes one symbol when it is one note value and does not run over a stronger place than the one
+  it starts on; otherwise it is cut at the strongest place inside it and each part is tried again (ties join the pieces). Notes may
+  also run over one beat line when they start on an eighth in a simple meter (the "eighth, quarter, eighth" syncopation); rests
+  never run over a place as strong as their start, so a half rest begins only on beat 1 or 3 of 4/4. A bar with nothing in it is one
+  whole-bar rest in any meter. A triplet beat is cut in "written ticks" (a third longer than they sound), so three eighths in the
+  time of two come out as ordinary eighths with a `TupletInfo`; a whole beat of one note stays a plain note.
+- `spelling.ts`: the key signature from the song key (modes and their parents: A minor has none, D dorian none, a pentatonic uses its
+  parent's), the letter and accidental of every key (diatonic notes as the signature says, notes of the key's own seven-note scale
+  by scale letters so D harmonic minor has C sharp, a white key outside the key natural, other black keys leaning with the
+  signature), staff position, and `stepInKey`. `accidentals.ts`: a sign when a note differs from what is in force for its letter and
+  octave in the bar; natural signs; courtesy signs (in brackets) when the last bar left a letter altered and this one is back at the
+  key's value; a tied note does not repeat its sign. `stems.ts`: stems (away from the middle line, voice 1 up and voice 2 down in two
+  voices), beam groups (inside a beat group, a triplet or a rest-free run), seconds in chords on the other side of the stem.
+- Clefs (`chooseClefs`, automatic): treble when the lowest note is A3 or higher, bass when the highest is E4 or lower, else a grand
+  staff split at middle C; a drum part has the percussion clef. `drums.ts` is the General MIDI map (kick on the bottom space, snare on
+  the third, hi-hat as a cross above the top line, open hi-hat with a small "o", toms, crash and ride crosses, others diamonds) and
+  the names the text uses.
+- `annotate.ts`: dynamics from velocities (pp to ff, a new mark only when the level moves for two chords in a row), lyric syllables
+  under the voice-1 chord that starts within a 1/32 note, chord symbols per bar. `events.ts`: the score as a flat list of events (what
+  the cursor steps through and what follows the playhead) and `describeEvent` / `describeBar` ("bar 3, beat 2, C sharp 5, quarter note").
+- `text.ts`: the compact text, `| C4q E4q G4h |` (values w h q e s t, `.` dotted, `3` triplet, `~` tie, `[C4 E4 G4]h` chords, `rq` rests,
+  `R` a whole-bar rest, `&` between voices, `kick:q` / `[kick hat]:e` drums, a header `4/4 key=Am tempo=120`). `formatNotation(score)` writes
+  it from an engraved score and `parseNotation` reads it back (joining ties, warning about bars that do not add up).
+- `musicxml.ts` / `musicxml-read.ts` / `xml.ts`: MusicXML 4.0 partwise out (divisions 960, key, meter, tempo, staves and clefs, voices with
+  backups, chords, ties and tied marks, beams, tuplets with time-modification, accidentals, lyrics with syllabic, chord symbols as
+  `harmony`, dynamics, percussion with `unpitched` and `midi-unpitched`) and a reader for the notes of the first part (durations in
+  any divisions, backup and forward, chords, ties, percussion by instrument; not dynamics, lyrics or harmonies). A tiny XML reader
+  does the parsing because core has no DOM.
+- `edit.ts`: what editing means for notes: `movedKey` (scale step, semitone, octave), `entryTicks` (a dot is half again, a triplet two
+  thirds), `keyForLetter` (a typed letter with the key signature, in the octave nearest the last note).
+
+### Drawing (`core/notation/render`)
+- `glyphs.ts`: noteheads (filled, half, whole, cross, diamond), clefs, accidentals, rests, flags and the brace as SVG paths in staff-space
+  units (no music font to download); `layout.ts`: the width of each bar from its notes (spacing grows with the logarithm of the time to the
+  next note; accidentals, dots and lyrics push neighbours apart), bars into systems that fill the page width (a short last system is not
+  stretched), the vertical places of staves, chord symbols, dynamics and lyrics; `draw-voice.ts` and `draw.ts`: stems, beams (slant limited,
+  stems never shorter than 2.75 spaces), ties, tuplet brackets, ledger lines, key and time signatures, bar lines, bar numbers. Each system
+  is its own `<svg>` (a printed page can break between them). Everything is `currentColor`, so the theme colours it.
+- Every chord and rest is a group with `data-t0` / `data-t1` (the pattern ticks it sounds between) and every notehead a group with
+  `data-note` (the note id) and a hidden ring, so the window follows playback and shows the selection by changing one class.
+
+### App and window (`app/notation`, `ui/features/sheet-music`)
+- `app/notation/part.ts` chooses the part: the piano roll's channel (or the one named), or "All drums" (every drum channel on one staff,
+  each written as the GM drum its role names). `sheet.ts` engraves it with `editor.sheet`; `actions.ts` are the edits (`moveSelectedNotes`,
+  `setSelectedDuration`, `deleteSelectedNotes`, `insertNoteAt`) and MusicXML (`musicXmlOfSheet`, `importMusicXmlText`): each is one
+  `history.transact` (repeated moves merge under one `mergeKey`), on the notes underneath, so the piano roll shows the same change. The
+  selection is `editor.noteSelection`, shared with the piano roll in both directions.
+- The window (`SheetMusicWindow.tsx`, `view.sheetMusic`, Alt+Shift+N; also in the piano roll's toolbar and right-click menu, File and the
+  action search) is a React toolbar around a page that `sheet-controller.ts` draws imperatively: it engraves again (once per frame at most)
+  when the pattern, the meter or key, the chords, the lyrics, the channels, the settings or the width change, and draws the systems with
+  `innerHTML`; clicking a note selects it (Shift or Ctrl/Cmd adds), clicking empty space puts the cursor there and clears the selection,
+  right-click opens the menu (raise, lower, duration, delete, print, save). `sheet-follow.ts` runs on the frame loop and toggles `ag-now` on
+  the chords and rests whose ticks hold the playhead (a band behind them as well as a colour), turning the page when the lit system
+  changes: playing makes no React commits.
+- **Keyboard** (`sheet-keys.ts`, through `timeline/key-cursor`'s `KeyStack`, so it is one Tab stop with a name, a description and a visible
+  frame): Left and Right step through the notes (rests are gaps: "nothing here"), Ctrl/Cmd a bar, Enter selects, Up and Down move the selected
+  notes a scale step (Shift a semitone, Ctrl/Cmd an octave), A to G type a note at the cursor with the entry duration and move on (Shift
+  sharp, Alt flat), 1 2 4 8 6 3 pick the duration (and change selected notes), `.` dots, T makes triplets, R rests, Delete removes. Every
+  move and edit is spoken through the live region ("bar 3, beat 2, C sharp 5, quarter note, selected"); the svg is `aria-hidden` and a hidden
+  text version (one paragraph a bar, up to 64 bars) is in the page.
+- **Print** (`print.ts`, `sheet-music.css`): Print... builds a copy of the sheet laid out for 680 px (A4 or Letter inside 14 mm margins),
+  appends it as `#ag-print-root`, marks `<html>` `ag-printing` and calls `window.print()`; the print stylesheet hides everything else,
+  forces black on white and keeps each system whole; "Save as PDF" is the browser's own destination. The app renders no file itself.
+
+### AI and MCP
+- `get_notation { pattern?, channel? (an id, a name or "drums"), from_bar?, to_bar?, grid? }` reads a part as the compact text (up to 64 bars;
+  `more` says where it goes on), with the header, the clefs and a note when overlapping notes had to be simplified; `write_notation { pattern,
+  channel, text, from_bar?, replace? }` (`app/ai/ops/notation.ts`) writes a channel's notes from the same text (ties joined, chords, rests,
+  triplets, two voices; drum names only into a drum kit channel; words it does not understand and bars that do not add up come back as
+  warnings and the rest is written). What the read returns the action writes back unchanged (tested). The window is in the `open` action's
+  list; the commands (`sheet.options`, `sheet.movePitch`, `sheet.setDuration`, `sheet.deleteNotes`, `sheet.print`, `sheet.exportMusicXml`,
+  `sheet.importMusicXml`, `view.sheetMusic`) have hints and `argsHint`s.
+
+### Tests
+`core/notation/*.test.ts` (engraving in 4/4, 3/4 and 6/8; ties, rests and merging; grids and triplets; accidentals in sharp and flat keys,
+courtesy signs and ties; clefs; two voices, beams, stems; drums; the compact text and its round trip; spoken descriptions; MusicXML out, the
+reader, and the round trip of our own output including triplets, two voices, drums and ties; the SVG as a snapshot and its determinism; layout;
+speed: 100 dense bars under 600 ms of CPU), `app/notation/actions.test.ts`, `app/ai/ops/notation.test.ts`, and
+`test/browser/sheet-music.test.ts` (in Chrome: drawing, selection in both directions, pitch, length and delete from the keyboard through History,
+typing notes and what is said, following with no React commits, the print copy and stylesheet, MusicXML out and in, and the accessibility checks).
+
+### Limits
+- Tuplets are the eighth and sixteenth triplets of one beat (no quarter-note triplets, quintuplets or nested tuplets); two voices per staff (a
+  third overlapping chord shortens the earlier one); no grace notes, trills, slurs, articulations, clef changes or key and meter changes inside
+  a pattern (the song has one of each); a pitched part is one channel (chords of several channels are not merged), and voice 2 chords are not
+  moved aside when they meet voice 1's heads. A long pattern is drawn in full (hundreds of bars draw fine but print on many pages).
+- MusicXML import reads the notes of one part only (no dynamics, lyrics or chord symbols), keeps the file's rhythm as it is (it is not
+  re-quantized) and tells you when the meter differs from the song's.
+- The selection is shared with the piano roll and belongs to one pattern: change the pattern and it is not translated.
+- Spoken names use the sheet's octave numbers (middle C is C4), not the piano roll's (C5), so a screen reader user hears the names a score uses.
 
 ## Metering (`engine/meter`, `core/metering`, `app/metering`, `ui/features/meters`)
 

@@ -269,7 +269,7 @@ the terminal that starts AGstudio, forces one way: handy to try the Windows way 
    `AGSTUDIO_CODEX_BIN` (where those apps keep it is not known here).
 3. **An API key**: copy `.env.example` to `.env.local` and put your key after `ANTHROPIC_API_KEY=` (from
    https://console.anthropic.com/). The dev server adds it to requests; changes apply without a restart.
-4. **The offline generator**: built in, always available, no account needed.
+4. **The offline generator**: built in, always available, no account needed. It writes beats and whole songs, and changes the song you have from plain words ("busier hats in the chorus", "a new melody for the hook", "change the chords in bars 9–16"; say "help" for the list).
 
 "Auto" tries them in this order: your Claude subscription, your ChatGPT plan, the API key, then offline. You can pick
 the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster) or the ChatGPT model ("Codex default", or type

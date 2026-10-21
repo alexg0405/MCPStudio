@@ -1612,8 +1612,8 @@ so applying, undoing, leveling and playing are the AI path's own code.
   new project's empty "Pattern 1" and goes through `applyTurn` (one undo step; the arranger's fills, transitions and FX;
   the mix set up by role; the level step; song mode and play), with `offline: true` on the chat message. The conversation's
   "current beat" is cleared, so a follow-up ("busier hats") writes a new beat instead of rewriting the song's last pattern.
-- The offline generator still cannot change one part of a song (that needs an AI), as before.
-- Starter ideas and the "Who answers" help text say the offline generator writes full songs.
+- Changing the song afterwards works offline too: see "Offline edits" below. A request after a song is no longer written as a separate beat.
+- Starter ideas and the "Who answers" help text say the offline generator writes full songs and changes them.
 
 ### Measured
 - Across the 17 styles at 8 seeds (136 songs; `core/song/song.test.ts` asserts these with its own bounds): **100 %** of the 5 971
@@ -1630,6 +1630,41 @@ so applying, undoing, leveling and playing are the AI path's own code.
   whole song takes about 12 s from the request to the leveled, arranged mix in the browser.
 - Templates are unchanged (they stay a beat and an intro, with their baked levels): the DJ analysis fixtures and
   `template-levels.ts` depend on them.
+
+## Offline edits (`core/offline-edit`, `app/assistant/beat-assistant/offline-edit.ts`)
+
+With no AI, plain words change a song that is already in the project. The interpreter is pure (`interpretEdit({ text, project, roles, focus, variation })`, deterministic, never changes the project) and answers with the same actions an AI's answer carries, so `applyTurn` does the rest unchanged: one undo step, the focus guard and its approval question, the arranger's follow-up work, the leveling step, autoplay. **No new ops**: the AI coverage test and the characterization snapshot did not change.
+
+### When it runs (`beat-assistant/send.ts`)
+- A part picked in the playlist (focus: range, section or clips), or a project with pattern clips on its playlist and no beat of this conversation in progress (`applied` is null). A take, or a follow-up to a beat this conversation wrote, still goes to the beat generator ("busier hats" after "trap beat" rewrites that beat).
+- `interpretEdit` returns `edit` (applied), `reply` (a plain answer, nothing changes: help, a part the song lacks, nothing to change there, words it cannot read: "connect an AI") or `none` (the words are a new beat or song: "a house beat at 124", "make a sad trap song", "boom bap beat with swing"; these go to the generators as before). Selected notes still need an AI.
+- `session.offlineEdits` counts the changes of the conversation (reset by New chat): it is part of the seed, so asking for "a new melody" again gives another one, and the same words in a fresh chat give the same one.
+
+### Reading the words (`words.ts`, `scope.ts`, `interpret.ts`)
+- `normalizeWords` (lower case, "&", counts as digits where a count belongs), `amountOf` ("a bit" small, "a lot" large, else medium), `decibelsIn` ("+3 dB", "down 3 dB"), `tempoChangeIn`, `keyChangeIn`, `splitClauses` (commas, "then", an "and" that starts a new request: "busier hats and a new melody for the chorus" is two clauses).
+- The part (`scope.ts`): "bars 9–16", "from bar 9 to 16", "the first 8 bars", "the last 12 bars", sections by marker name or role ("the chorus" is Hook, Chorus and Drop alike; "verse 2", "the second verse", "the last chorus"; no ordinal means every match), and a place around a part ("into the chorus", "before the last chorus", "at the end"). The part picked in the playlist wins over the words. A part the song lacks is answered with the parts it has.
+- Each clause is read by the first rule that fits (`RULES` order: specific before general, so "hit harder" beats "louder" and "add a breakdown" beats "fill"). A part named in one clause carries over to the clauses with none.
+- **The guard**: when every clause names the same single part (or a part was picked), `guard` is that span and the app turns it into a range focus (`focusFromRange`), so the guard copies patterns shared with the rest of the song. A place around a part is not the part (no guard). Several parts at once ("the chorus" with three hooks) have no guard: patterns that also play elsewhere are left alone and named in the reply.
+- `song-facts.ts` and `rule-kit.ts` hold what rules share (sections, which patterns play where, `patternParts`: the patterns and channels a note edit writes into: the part's patterns, or the source of every pattern for the whole song, since unmodified variations are rebuilt from their source when the answer commits).
+
+### What it can do (`rules/`, with `help.ts` holding the words the help shows)
+| Intent | Examples | Becomes |
+|---|---|---|
+| Hats and drums | "busier hats in the chorus", "simpler drums", "no hats in bars 9–16", "add a fill at the end of bar 8", "hat rolls" | `vary` double_hats / hat_roll / thin (level 2 normally) / without / fill / hat_roll, `develop` for fills through the song |
+| Hit harder | "make the kick and snare hit harder", "punchier kick" | `note_tool` velocity-scale per pattern and channel; a clap layered under a snare that has none (`add_channel` + `write_notes`); saturation on the Kick bus and a sharper attack on the Drums bus (whole song only) |
+| New melody | "write a new melody for the hook", "a different hook for the last chorus" | `write_notes` with `songMelody` from the chord track and a new motif seed, one pattern at a time, kept in the old line's octave |
+| Chords | "change the chords in bars 9–16", "darker chords", "use seventh chords", "make it sadder" | `chords` progression (palette, not the one playing, by mood and style), then `voice_chords` (rhythm and register of the old part), `bassline` (808 style for an 808), `fit_melody`; `update_harmonies` when voices exist |
+| Key, tempo, swing | "transpose up 2 semitones", "change the key to F minor", "tempo 128", "a bit faster", "double time", "swing 30%" | `song` key / bpm / swing; a key change also `chords` set (typed again, shifted), `note_tool` transpose on pitched parts, `edit_channel` pitch for a vocal; a named part only moves its notes and chords |
+| Song parts | "add a breakdown before the last chorus", "make bars 25–32 a breakdown", "add a build", "add a drop", "add an outro" | breakdown: `vary` without drums and bass, `transition` dip and rise, a `marker`; build: double hats, hat roll, rise; drop: rise, crash, marker; outro: `arrange` appended after the end. Nothing is deleted. An intro before bar 1 is refused (it would move the song) |
+| Variation, transitions | "more variation", "smoother transitions", "a riser into the chorus", "a crash at bar 17" | `develop`, `transition` |
+| Vocals | "add harmonies to the vocal", "a third above and a fifth below", "clean up the vocal", "remove the breaths" | `make_harmonies`, `clean_vocal` on the voice clips (fixed distances when the song has no key) |
+| Mix | "turn the lead up 3 dB", "quieter drums", "more reverb on the lead", "make the pads wider", "mute the hats", "pan the pad left", "level the mix" | `edit_insert` / `edit_channel`, `route`, `add_effect` stereo, `setup_mix` + `level_mix`; a named part gets an `automate` clip that goes back at its end, and mute becomes `vary` without |
+| Style | "make it sound like house", "turn it into lo-fi" | `song` swing and tempo (when far from the style's range), the drums written again in the style's grid (`songDrums`) with `write_notes`, the 808 follows (`bassline`), a lo-fi effect for lo-fi |
+| Other | "undo", "tidy up the song", "what key is this in", "help" | `command` edit.undo, `tidy`, replies |
+Not done offline: making a melody or chords simpler or busier by themselves, an intro before bar 1, changing between major and minor, notes of a selection, sound design. These get a reply that says so and what to do instead.
+
+### Tests
+- `core/offline-edit/words.test.ts` (words); `app/assistant/offline-edit.phrases.test.ts` (78 phrasings against a generated trap song, the guard of 17 more, vocals, amounts, determinism, the empty playlist); `app/assistant/offline-edit.test.ts` (on generated trap, boom bap and house songs: hats busier in the named section only, chord track changed only in bars 9–16 and the pad on the new chords, every pitched note moved and the drums not, a breakdown with no drums and a marker, a melody on the chords that differs each time, 23 phrasings each one undo step, a picked part holds, the approval question, unknown words change nothing); `test/browser/ask-ai.test.ts` (the card).
 
 ## v2 foundations (M8a)
 
@@ -2307,7 +2342,7 @@ part changes, as one undo step.
   from its start; notes play their pattern). The focus is snapshotted when sending and resolved again when
   applying; the musician's message says "About …". Autoplay loops the part. It persists with the tab
   (sessionStorage, checked on restore), New chat and opening another project clear it, and offline a request about
-  a part says it needs Claude. `listenAndAsk` renders just the part (`AnalyzeOptions.range`).
+  a part is read by the offline editor ("Offline edits"; selected notes still need an AI). `listenAndAsk` renders just the part (`AnalyzeOptions.range`).
 - **UI** (`ui/features/ask-ai/`): the Ask AI card (`AskCard.tsx`, an overlay placed with `controls/place.ts`
   `placeBeside` next to an anchor from `anchors.ts`, on the frame loop only while open; scope chip, box, quick
   requests from `chips.ts`, replies with Undo via `assistant/Message.tsx`, Play this part, Open in AI studio). It

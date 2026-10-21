@@ -70,8 +70,9 @@ function displaceSeconds(chord: ChordItem): void {
 /** Sets stems, beam ids and displaced heads for the voices of one staff in one bar. */
 export function placeStems(staffMeasure: StaffMeasure, clef: ClefKind, meter: Meter): void {
   const middle = middlePosition(clef);
-  const hasTwoVoices = staffMeasure.voices.length > 1;
   for (const voice of staffMeasure.voices) {
+    // Voice 2 always points down and voice 1 up when there are two (a lone voice 2, such as a kick drum part, still points down).
+    const forced: 'up' | 'down' | null = voice.number === 2 ? 'down' : staffMeasure.voices.length > 1 ? 'up' : null;
     const groups = beamGroups(voice.items, meter);
     let nextBeam = 0;
     for (const group of groups) {
@@ -81,11 +82,11 @@ export function placeStems(staffMeasure: StaffMeasure, clef: ClefKind, meter: Me
     const grouped = new Set(groups.flat());
     for (const item of voice.items) {
       if (!isChord(item)) continue;
-      item.stem = item.value.base === 1 ? 'none' : hasTwoVoices ? (voice.number === 1 ? 'up' : 'down') : directionOf(item, middle);
+      item.stem = item.value.base === 1 ? 'none' : (forced ?? directionOf(item, middle));
     }
     for (const group of groups) {
       const total = group.reduce((sum, chord) => sum + offsetFromMiddle(chord, middle), 0);
-      const direction = hasTwoVoices ? (voice.number === 1 ? 'up' : 'down') : total >= 0 ? 'down' : 'up';
+      const direction = forced ?? (total >= 0 ? 'down' : 'up');
       for (const chord of group) chord.stem = direction;
     }
     for (const item of voice.items) if (isChord(item) && (grouped.has(item) || item.stem !== 'none')) displaceSeconds(item);

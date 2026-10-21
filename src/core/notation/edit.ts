@@ -25,7 +25,7 @@ export function movedKey(key: number, direction: 1 | -1, move: PitchMove, songKe
 
 /** The input duration of the keyboard: a value, with a dot or a triplet. */
 export interface EntryDuration {
-  base: NoteValue['base'];
+  base: Exclude<NoteValue['base'], 64>;
   isDotted: boolean;
   isTriplet: boolean;
 }
@@ -37,7 +37,7 @@ export function entryTicks(duration: EntryDuration): Tick {
 }
 
 /** The number key that picks each value: 1 whole, 2 half, 4 quarter, 8 eighth, 6 sixteenth, 3 thirty-second. */
-export const DURATION_KEYS: Readonly<Record<string, NoteValue['base']>> = { '1': 1, '2': 2, '4': 4, '8': 8, '6': 16, '3': 32 };
+export const DURATION_KEYS: Readonly<Record<string, EntryDuration['base']>> = { '1': 1, '2': 2, '4': 4, '8': 8, '6': 16, '3': 32 };
 
 /** "quarter note", "dotted eighth triplet" as the toolbar and the announcements say it. */
 export function entryName(duration: EntryDuration): string {

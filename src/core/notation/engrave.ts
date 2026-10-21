@@ -69,6 +69,10 @@ function buildMeasures(staves: readonly StaffVoices[], barCount: number, ctx: Bu
         const items = buildBar(staff.voices[number - 1] as VoiceEvent[], measure.startTick, measure.startTick + barTicks, number, ctx);
         if (items.length > 0) staffMeasure.voices.push({ number, items });
       }
+      // A drum bar with only feet (a kick part) shows no rest for the empty hands.
+      const [first, second] = staffMeasure.voices;
+      const isEmptyHands = first?.items.length === 1 && first.items[0]?.kind === 'rest' && second !== undefined;
+      if (ctx.isPercussion && isEmptyHands) staffMeasure.voices.shift();
     });
     measures.push(measure);
   }

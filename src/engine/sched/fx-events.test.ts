@@ -9,6 +9,7 @@ import { addChannel } from '@core/ops/channels';
 import { setChord } from '@core/ops/chords';
 import { addMidiFx, setMidiFxEnabled, setMidiFxParam } from '@core/ops/midi-fx';
 import { addNote } from '@core/ops/notes';
+import { createAutomationClip } from '@core/ops/automation';
 import { addClips } from '@core/ops/playlist';
 import { parseChord } from '@core/harmony/chord';
 import { constantTempo } from '@core/time/ppq';
@@ -110,6 +111,39 @@ describe('collecting notes through a channel’s MIDI effects', () => {
     expect(chordAtBar(0)).toContain(57);
     expect(chordAtBar(1)).toContain(55);
     expect(chordAtBar(4)).toContain(55);
+  });
+
+  it('a knob driven by an automation clip is read where each note falls, in song mode only', () => {
+    const { project, patternId, channelId } = rig((draft, id) => void addMidiFx(draft, id, 'arp', { params: { rate: '1/4', gate: 1 } }));
+    const lane = project.playlist.laneOrder[0] as LaneId;
+    const slotId = firstSlot(project, channelId);
+    const song = produce(project, (draft) => {
+      addClips(draft, [
+        { kind: 'pattern', id: 'a' as ClipId, laneId: lane, start: 0, length: BAR, patternId, offset: 0 },
+        { kind: 'pattern', id: 'b' as ClipId, laneId: lane, start: BAR, length: BAR, patternId, offset: 0 },
+      ]);
+      // The gate sits at its lowest for the first bar and at its highest for the second (the clip is a step: hold, then jump).
+      createAutomationClip(draft, {
+        target: { kind: 'midiFx', channelId, slotId, paramId: 'gate' },
+        name: 'Gate',
+        color: '#ffffff',
+        start: 0,
+        length: BAR * 2,
+        points: [
+          { tick: 0, value: 0, shape: 'hold' },
+          { tick: BAR, value: 1 },
+          { tick: BAR * 2, value: 1 },
+        ],
+      });
+    });
+    const out: NoteEvent[] = [];
+    collectNotes(songModeSource(song).source, 0, BAR * 2, out);
+    const lengths = (from: number, to: number) => out.filter((e) => e.rawStart >= from && e.rawStart < to).map((e) => Math.round(e.end - e.start));
+    // Gate 0.05 and 1.5 of a quarter note (960 ticks): 48 and 1440 ticks (a note is cut at the end of its clip).
+    expect(new Set(lengths(0, BAR))).toEqual(new Set([48]));
+    expect(Math.min(...lengths(BAR, BAR * 2))).toBeGreaterThan(900);
+    // A pattern played on its own ignores the clip: it uses the knob's own value (gate 1).
+    expect(new Set(events(song, patternId, 0, BAR).map((e) => Math.round(e.end - e.start)))).toEqual(new Set([960]));
   });
 
   it('keeps its result while nothing it depends on changes, and makes it again when the chain does', () => {

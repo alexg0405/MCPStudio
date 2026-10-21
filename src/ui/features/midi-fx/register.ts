@@ -213,7 +213,7 @@ function registerFxHelp(): void {
     moves: [
       ['Add effect', 'Arpeggiator, Chord, Scale, Note repeat, MIDI echo, Humanize, Velocity, Transpose, Note length or Random, in the order the notes go through them'],
       ['The LED', 'Bypasses one effect: the notes pass through it unchanged (right-click for more)'],
-      ['Drag the title bar of an effect', 'Changes the order (Alt+Up and Alt+Down do it from the keyboard)'],
+      ['Drag the title bar of an effect', 'Changes the order (Alt+Shift+Up and Alt+Shift+Down do it from the keyboard)'],
       ['Presets ▾', 'Ready-made settings for the effect, your own, or back to the defaults'],
       ['Chains ▾', 'Ready-made chains, your saved chains, saving this one, and removing all effects'],
       ['Render to notes', 'Writes what the effects make into the patterns as ordinary notes and takes the effects out of the way (one undo step)'],

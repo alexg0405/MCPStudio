@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { ChannelId } from '@core/model/types';
 import { hasActiveMidiFx, midiFxOf } from '@core/query/midi-fx';
-import { addMidiEffect, bakeMidiEffects, moveMidiEffectTo } from '@app/actions/midi-fx';
+import { addMidiEffect, bakeMidiEffects, MIDI_EFFECT_CHOICES, moveMidiEffectTo } from '@app/actions/midi-fx';
 import { showContextMenu } from '../../controls/ContextMenu';
 import { useDoc, useServices } from '../../services-context';
 import { MidiFxCard, type DropSide, type ReorderState } from './MidiFxCard';
@@ -108,7 +108,13 @@ export function MidiFxPanel({ channelId }: { channelId: ChannelId }) {
           </p>
           <div className={styles.quickAdd}>
             {QUICK_EFFECTS.map(([id, label]) => (
-              <button key={id} type="button" className={styles.button} onClick={() => addMidiEffect(services, channelId, id)}>
+              <button
+                key={id}
+                type="button"
+                className={styles.button}
+                data-hint={`Add ${label}: ${MIDI_EFFECT_CHOICES.find((choice) => choice.id === id)?.description ?? ''}`}
+                onClick={() => addMidiEffect(services, channelId, id)}
+              >
                 {label}
               </button>
             ))}

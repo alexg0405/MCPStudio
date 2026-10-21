@@ -81,7 +81,8 @@ export const MidiFxCard = memo(function MidiFxCard({ channelId, slot, index, cou
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    // Alt+Up and Alt+Down are the typing keyboard's octave keys everywhere, so moving an effect takes Shift as well.
+    if (!e.altKey || !e.shiftKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
     e.preventDefault();
     moveMidiEffectBy(services, channelId, slot.id, e.key === 'ArrowUp' ? -1 : 1);
   };
@@ -123,7 +124,7 @@ export const MidiFxCard = memo(function MidiFxCard({ channelId, slot, index, cou
         }}
         onDragEnd={reorder.cancel}
         onKeyDown={onKeyDown}
-        data-hint={`${name}. Drag to change the order the notes go through the effects, right-click for more (Alt+Up and Alt+Down move it from the keyboard)`}
+        data-hint={`${name}. Drag to change the order the notes go through the effects, right-click for more (Alt+Shift+Up and Alt+Shift+Down move it from the keyboard)`}
       >
         <span className={styles.handle} aria-hidden>
           ⋮⋮

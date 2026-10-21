@@ -6,6 +6,7 @@ import type { ParamSpec, PluginDef } from '@agstudio/sdk';
 import type { PluginRegistry } from '@app/plugins/registry';
 import type { PresetLibrary } from '@app/presets';
 import { chainChoices, type ChainChoice } from '@app/chains';
+import { rackChoices, type RackChoice } from '@app/racks/library';
 
 /** A param's kind and range without its name or default: "float 20..20000 Hz log". */
 function shape(spec: ParamSpec): string {
@@ -100,6 +101,11 @@ function describeChain(c: ChainChoice): string {
   return `- "${c.name}"${c.source === 'user' ? " (the musician's own)" : ''}${c.description ? `: ${c.description}` : ''}\n  effects, in order: ${steps.join('; ')}`;
 }
 
+/** One rack: its name, what it is for and what is inside. */
+function describeRack(r: RackChoice): string {
+  return `- "${r.name}"${r.source === 'user' ? " (the musician's own)" : ''}: ${r.description}\n  inside: ${r.summary}`;
+}
+
 /** The catalog text and a key that changes when it does. */
 export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary): { text: string; key: string } {
   const instruments = registry.list('instrument').map((e) => describePlugin(e.def, presets));
@@ -125,6 +131,9 @@ export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary)
     '',
     'Effect chains (add_chain action: the whole row on a mixer track at once; save_chain keeps a track’s effects as one):',
     ...chainChoices(presets?.chains() ?? []).map(describeChain),
+    '',
+    'Effect racks (add_rack action: a container of effects with branches and macro knobs; save_rack keeps one as the musician’s own):',
+    ...rackChoices(presets?.racks() ?? []).map(describeRack),
     ...(scripts.length ? ['', 'Piano-roll tools (note_tool action):', ...scripts] : []),
   ].join('\n');
   let h = 2166136261;

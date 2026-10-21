@@ -88,6 +88,18 @@ export function addRackSlot(
 }
 
 /**
+ * Puts a rack slot that is already made (a factory rack, one you saved) on an insert at `index` (default: after the last slot).
+ * Its ids must be new. False when the insert is full or the id is taken.
+ */
+export function insertRackSlot(d: Draft<Project>, insertId: InsertId, slot: FxSlot, index?: number): boolean {
+  const insert = d.mixer.inserts[insertId];
+  if (!insert || insert.fx.length >= MAX_FX_SLOTS || locateSlot(insert, slot.id)) return false;
+  const at = index === undefined ? insert.fx.length : clampNumber(Math.round(index), 0, insert.fx.length);
+  insert.fx.splice(at, 0, slot as Draft<FxSlot>);
+  return true;
+}
+
+/**
  * Puts the chosen effects of an insert into one new rack (a single branch holding them in their order), at the place of
  * the first of them. They keep their ids, so automation and controller links still find them.
  */

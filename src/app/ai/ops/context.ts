@@ -23,6 +23,7 @@ import type {
   Tick,
 } from '@core/model/types';
 import { MASTER } from '@core/model/types';
+import { locateSlot } from '@core/query/rack';
 import { formatValue, type ParamSpec, type ParamSpecs, type PluginDef } from '@agstudio/sdk';
 import type { BeatPlan } from '../../assistant/apply';
 import { presetChoices, presetValues } from '../../presets';
@@ -183,7 +184,8 @@ export function createOpContext(
     if (r) return { insertId: r.insertId, slotId: r.slotId };
     for (const id of d.mixer.order) {
       const ins = d.mixer.inserts[id];
-      if (ins?.fx.some((f) => f.id === ref)) return { insertId: id, slotId: ref as SlotId };
+      // An effect inside a rack has an id that is unique on its track, so it is found here too.
+      if (locateSlot(ins, ref as SlotId)) return { insertId: id, slotId: ref as SlotId };
     }
     const m = /^(?:insert\s*)?(\w+)\s*[:/]\s*(?:slot\s*)?(\d+)$/i.exec(ref);
     if (m) {

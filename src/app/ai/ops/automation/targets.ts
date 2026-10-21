@@ -6,6 +6,7 @@ import { targetName } from '@core/automation/labels';
 import type { ResolvedTarget } from '@core/automation/targets';
 import { gainToDecibels } from '@core/model/fader';
 import type { AutomationChannel, ParamTarget, PluginOwner, Project } from '@core/model/types';
+import { locateSlot } from '@core/query/rack';
 import { dbToGain, decode, encode, type ParamSpecs } from '@agstudio/sdk';
 import type { Services } from '../../../services';
 import { fail, type OpContext } from '../context';
@@ -89,7 +90,7 @@ function pluginTarget(context: OpContext, raw: Record<string, unknown>): ParamTa
   if (raw.effect !== undefined) {
     const effect = context.effect(raw.effect);
     owner = { kind: 'fx', insertId: effect.insertId, slotId: effect.slotId };
-    pluginId = draft.mixer.inserts[effect.insertId]!.fx.find((slot) => slot.id === effect.slotId)!.plugin.pluginId;
+    pluginId = locateSlot(draft.mixer.inserts[effect.insertId], effect.slotId)!.slot.plugin.pluginId;
   } else {
     const channelId = context.channel(raw.channel);
     const channel = draft.channels[channelId]!;

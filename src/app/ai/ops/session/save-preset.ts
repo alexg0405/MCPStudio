@@ -1,5 +1,6 @@
 /** The `save_preset` action: a channel's or effect's settings saved as one of the musician's own presets. */
 import type { PluginOwner } from '@core/model/types';
+import { locateSlot } from '@core/query/rack';
 import type { Services } from '../../../services';
 import type { AiAction } from '../../schema';
 import { fail, type OpContext } from '../context';
@@ -14,7 +15,7 @@ export function applySavePreset(services: Services, action: AiAction, context: O
   if (action.effect !== undefined) {
     const effect = context.effect(action.effect);
     owner = { kind: 'fx', insertId: effect.insertId, slotId: effect.slotId };
-    instance = context.project.mixer.inserts[effect.insertId]!.fx.find((slot) => slot.id === effect.slotId)!.plugin;
+    instance = locateSlot(context.project.mixer.inserts[effect.insertId], effect.slotId)!.slot.plugin;
   } else {
     const channel = context.project.channels[context.channel(action.channel)]!;
     if (channel.kind !== 'instrument') return fail(`“${channel.name}” has no instrument to save`);

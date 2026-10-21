@@ -231,6 +231,13 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "sidechain",
   "mixer_snapshot",
   "mixer_group",
+  "add_rack",
+  "edit_rack",
+  "rack_branch",
+  "rack_effect",
+  "rack_macro",
+  "group_into_rack",
+  "save_rack",
   "add_pattern",
   "edit_pattern",
   "remove_pattern",
@@ -304,6 +311,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"dce6894c"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"e1265429"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"b0dedab8"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"953ef998"`;

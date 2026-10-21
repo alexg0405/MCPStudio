@@ -3,7 +3,7 @@
  * take it apart, save it, map a knob to a macro. Each is one undo step and says in a toast what it did or why it could not.
  */
 import { MAX_FX_SLOTS } from '@core/ops/mixer';
-import { addRackSlot, groupIntoRack, setMacroMapping, ungroupRack } from '@core/ops/racks';
+import { addRackSlot, groupIntoRack, insertRackSlot, setMacroMapping, ungroupRack } from '@core/ops/racks';
 import { isRackSlot } from '@core/model/rack';
 import type { FxSlot, InsertId, MacroTarget, Rack, SlotId } from '@core/model/types';
 import { insertLabel } from '@core/query/mixer';
@@ -45,12 +45,7 @@ export function addRackChoice(s: Services, insertId: InsertId, choice: RackChoic
     return null;
   }
   const slot = built.slot;
-  s.history.transact(`Rack: ${choice.name}`, (d) => {
-    const fx = d.mixer.inserts[insertId]?.fx;
-    if (!fx) return;
-    const at = index === undefined ? fx.length : Math.max(0, Math.min(index, fx.length));
-    fx.splice(at, 0, slot as never);
-  });
+  s.history.transact(`Rack: ${choice.name}`, (d) => void insertRackSlot(d, insertId, slot, index));
   s.session.getState().toast(`Put the rack “${choice.name}” on ${insertLabel(project, insertId)}`);
   return slot.id;
 }

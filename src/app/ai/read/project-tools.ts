@@ -186,6 +186,7 @@ export const getSettings = tool(
       metronome: prefs.metronome,
       count_in_bars: prefs.countInBars,
       record_mode: prefs.recordMode,
+      record_midi_fx: prefs.recordMidiFx,
       record_quantize: recordGridName(prefs.recordQuantize),
       record_notes: prefs.recordNotes,
       record_audio: prefs.recordAudio,

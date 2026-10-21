@@ -6,6 +6,9 @@ import type { ParamSpec, PluginDef } from '@agstudio/sdk';
 import type { PluginRegistry } from '@app/plugins/registry';
 import type { PresetLibrary } from '@app/presets';
 import { chainChoices, type ChainChoice } from '@app/chains';
+import { FACTORY_CHAINS, FX_CHAIN_KEY, fxPresetKey } from '@app/actions/midi-fx';
+import { MAX_MIDI_FX, MIDI_FX } from '@core/midi-fx/registry';
+import type { MidiFxDef } from '@core/midi-fx/types';
 
 /** A param's kind and range without its name or default: "float 20..20000 Hz log". */
 function shape(spec: ParamSpec): string {
@@ -94,6 +97,24 @@ function describePlugin(def: PluginDef, presets?: PresetLibrary): { text: string
   return { text: lines.join('\n'), families: params.families };
 }
 
+/** A MIDI effect as the catalog lists it: id, name, what it does, settings and presets (ready-made and the musician's own). */
+function describeMidiFx(def: MidiFxDef, presets?: PresetLibrary): string {
+  const lines = [`- ${def.id} "${def.name}": ${def.description}`];
+  const params = describeParams(def.params as Record<string, ParamSpec>);
+  if (params.lines.length) lines.push(`  params: ${params.lines.join('; ')}`);
+  lines.push(`  presets: ${def.presets.map((preset) => preset.name).join(', ')}`);
+  const mine = presets?.forPlugin(fxPresetKey(def.id)) ?? [];
+  if (mine.length) lines.push(`  the musician's own presets: ${mine.map((preset) => preset.name).join(', ')}`);
+  return lines.join('\n');
+}
+
+/** The chains of MIDI effects offered by name: the ready-made ones and the musician's own. */
+function describeMidiFxChains(presets?: PresetLibrary): string[] {
+  const ready = FACTORY_CHAINS.map((chain) => `- "${chain.name}": ${chain.description} (${chain.slots.map((slot) => slot.effect).join(', ')})`);
+  const mine = (presets?.forPlugin(FX_CHAIN_KEY) ?? []).map((chain) => `- "${chain.name}" (the musician's own)`);
+  return [...ready, ...mine];
+}
+
 /** One chain: its name, what it is for and its effects in order (a send marks where a return takes over). */
 function describeChain(c: ChainChoice): string {
   const steps = c.steps.map((x) => (x.send ? `${x.label} (a send to the ${x.send.to} return when the song has one)` : x.label));
@@ -125,6 +146,11 @@ export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary)
     '',
     'Effect chains (add_chain action: the whole row on a mixer track at once; save_chain keeps a track’s effects as one):',
     ...chainChoices(presets?.chains() ?? []).map(describeChain),
+    '',
+    `MIDI effects (for instrument channels, add_midi_effect action; up to ${MAX_MIDI_FX} per channel, run first to last on the notes before the instrument, in the song and for live keys):`,
+    ...MIDI_FX.map((def) => describeMidiFx(def, presets)),
+    'MIDI effect chains (midi_effects_chain action):',
+    ...describeMidiFxChains(presets),
     ...(scripts.length ? ['', 'Piano-roll tools (note_tool action):', ...scripts] : []),
   ].join('\n');
   let h = 2166136261;

@@ -2,7 +2,7 @@
  * A channel's MIDI effects as user actions: add, remove, reorder and bypass effects, load presets and saved chains, and render
  * the effects into the notes. Each is one undo step; the window, the menus, the action search and Studio all come through here.
  */
-import type { ChannelId, MidiFxSlot, MidiFxSlotId, Note } from '@core/model/types';
+import type { ChannelId, MidiFxSlotId } from '@core/model/types';
 import { midiFxDef, MIDI_FX, MAX_MIDI_FX, slotValues } from '@core/midi-fx/registry';
 import type { FxPreset } from '@core/midi-fx/types';
 import {
@@ -20,7 +20,7 @@ import { hasActiveMidiFx, midiFxOf } from '@core/query/midi-fx';
 import type { ParamValue } from '@agstudio/sdk/params';
 import type { JsonValue } from '@agstudio/sdk';
 import type { Services } from '../services';
-import { MAX_BAKED_NOTES, planBake } from './midi-fx-bake';
+import { MAX_BAKED_NOTES, planBake, writeBake } from './midi-fx-bake';
 
 /** What an action did, for a toast or Studio's change line. */
 export interface MidiFxResult {
@@ -245,18 +245,7 @@ export function bakeMidiEffects(s: Services, channelId: ChannelId, options: Bake
   if (plan.after > MAX_BAKED_NOTES) {
     return { ok: false, message: `The effects would make ${plan.after} notes, more than the ${MAX_BAKED_NOTES} one render may write: lower the rate or shorten the part.` };
   }
-  s.history.transact('Render MIDI effects to notes', (d) => {
-    for (const { patternId, notes } of plan.patterns) {
-      const written: Record<string, Note> = {};
-      for (const note of notes) written[note.id] = note;
-      d.patterns[patternId]!.notes[channelId] = written as never;
-    }
-    if (options.keepEffects) {
-      for (const slot of midiFxOf(d.channels[channelId]) as readonly MidiFxSlot[]) setMidiFxEnabled(d, channelId, slot.id, false);
-    } else {
-      clearMidiFx(d, channelId);
-    }
-  });
+  s.history.transact('Render MIDI effects to notes', (d) => writeBake(d, channelId, plan, options));
   const where = plan.patterns.length === 1 ? `pattern “${plan.patterns[0]!.name}”` : `${plan.patterns.length} patterns`;
   return { ok: true, message: `Wrote ${plan.after} notes into ${where} of ${problem.name} (${plan.before} before) and ${options.keepEffects ? 'bypassed' : 'removed'} the MIDI effects.` };
 }

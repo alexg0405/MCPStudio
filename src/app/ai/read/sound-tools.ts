@@ -9,6 +9,8 @@ import { automationDrives } from '../ops/automation';
 import { lower, str } from '../ops/values';
 import * as S from '../schema/parts';
 import { channelBrief, describeParam, describeParams, pluginName, presetOf, soundChannels } from './describe';
+import { midiFxDef, slotValues } from '@core/midi-fx/registry';
+import { midiFxOf } from '@core/query/midi-fx';
 import { gainDb, mixerNumber, mixerTrackName, projectOf, round2, tool } from './tool';
 
 /** One mixer track with its routes, effects (and their settings) and the channels feeding it. */
@@ -123,6 +125,27 @@ function describeAudioChannel(project: Project, channel: Extract<Channel, { kind
   };
 }
 
+/** The effects of an instrument channel's MIDI chain, in order, each with every setting (nothing for a channel without effects). */
+function describeMidiEffects(channel: Extract<Channel, { kind: 'instrument' }>) {
+  const chain = midiFxOf(channel);
+  if (chain.length === 0) return {};
+  return {
+    midi_effects: chain.map((slot, index) => {
+      const def = midiFxDef(slot.effect);
+      return {
+        n: index + 1,
+        id: slot.id,
+        effect: slot.effect,
+        ...(def ? { name: def.name } : { error: `this version has no MIDI effect "${slot.effect}"` }),
+        enabled: slot.enabled,
+        params: def
+          ? (Object.entries(def.params) as [string, ParamSpec][]).map(([id, spec]) => describeParam(id, spec, slotValues(def, slot)[id]))
+          : [],
+      };
+    }),
+  };
+}
+
 /** An instrument channel: its plugin with every setting, preset and samples. */
 function describeInstrumentChannel(
   services: Services,
@@ -147,6 +170,7 @@ function describeInstrumentChannel(
     preset: presetOf(services, definition, channel.plugin, { kind: 'channel', channelId: channel.id }),
     ...(samples ? { samples } : {}),
     params: describeParams(definition, channel.plugin, true),
+    ...describeMidiEffects(channel),
     ...(definition ? {} : { error: `the plugin ${channel.plugin.pluginId} isn't installed` }),
   };
 }

@@ -3,8 +3,10 @@
  * the same without the effects (and can be edited by hand). It reads the notes the way the transport plays a pattern on its own
  * (`collectNotes` in pattern mode: the same code that plays them), so what is written is what was heard, to the tick.
  */
+import type { Draft } from 'immer';
 import { newId } from '@core/model/ids';
-import type { ChannelId, Note, NoteId, PatternId, Project } from '@core/model/types';
+import type { ChannelId, MidiFxSlot, Note, NoteId, PatternId, Project } from '@core/model/types';
+import { clearMidiFx, setMidiFxEnabled } from '@core/ops/midi-fx';
 import { hasActiveMidiFx, midiFxOf } from '@core/query/midi-fx';
 import { patternLength } from '@core/query/queries';
 import { collectNotes, patternModeSource, type NoteEvent } from '@engine/sched/events';
@@ -62,6 +64,23 @@ export function planBake(project: Project, channelId: ChannelId): BakePlan | nul
     plan.patterns.push({ patternId, name: pattern.name, notes });
   }
   return plan;
+}
+
+/**
+ * Writes a bake into a draft: every planned pattern gets the planned notes in place of the channel's own, and the effects are
+ * taken out (or only bypassed, with `keepEffects`) because what they make is in the notes now.
+ */
+export function writeBake(draft: Draft<Project>, channelId: ChannelId, plan: BakePlan, options: { keepEffects?: boolean } = {}): void {
+  for (const { patternId, notes } of plan.patterns) {
+    const written: Record<string, Note> = {};
+    for (const note of notes) written[note.id] = note;
+    draft.patterns[patternId]!.notes[channelId] = written as never;
+  }
+  if (!options.keepEffects) {
+    clearMidiFx(draft, channelId);
+    return;
+  }
+  for (const slot of midiFxOf(draft.channels[channelId]) as readonly MidiFxSlot[]) setMidiFxEnabled(draft, channelId, slot.id, false);
 }
 
 /** The project with no channel muted or soloed: a muted channel plays nothing, but its notes are still what gets baked. */

@@ -44,6 +44,11 @@ export const session: OpModule = {
         metronome: S.bool('Metronome.'),
         count_in_bars: S.int('Count-in bars before recording (0–4).'),
         record_mode: { type: 'string', enum: ['overdub', 'replace'] },
+        record_midi_fx: {
+          type: 'string',
+          enum: ['played', 'generated'],
+          description: 'On a channel with MIDI effects, recording keeps the keys played or the notes the effects make of them.',
+        },
         record_quantize: {
           type: 'string',
           enum: Object.keys(RECORD_GRIDS),

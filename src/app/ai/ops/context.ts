@@ -15,6 +15,7 @@ import type {
   GroupId,
   InsertId,
   LaneId,
+  MidiFxSlotId,
   PatternId,
   PluginInstance,
   Project,
@@ -45,6 +46,7 @@ export type Ref =
   | { kind: 'insert'; id: InsertId }
   | { kind: 'group'; id: GroupId }
   | { kind: 'effect'; insertId: InsertId; slotId: SlotId }
+  | { kind: 'midiFx'; channelId: ChannelId; slotId: MidiFxSlotId }
   | { kind: 'pattern'; id: PatternId };
 
 /** The answer's running state, shared by every action of it. */

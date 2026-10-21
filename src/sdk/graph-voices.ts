@@ -1,4 +1,5 @@
 import { OrderedMix } from './ordered-mix';
+import { SleepSignal } from './api/sleep';
 
 /**
  * Voice bookkeeping for main-thread ("graph") instruments built from native Web Audio nodes.
@@ -75,6 +76,12 @@ export class GraphVoices {
   private readonly mix: OrderedMix;
   private readonly max: number;
   private gcTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Asleep while no voice is left, in a realtime context (see `Sleeper`): pass it on as the instrument's `sleep`. It
+   * wakes in `add()`, before the new voice is scheduled, and falls asleep when the last voice has been cleaned up.
+   * Offline contexts never sleep: their voices are only cleaned up by the next note.
+   */
+  readonly sleep = new SleepSignal();
 
   constructor(
     private readonly ac: BaseAudioContext,
@@ -83,6 +90,7 @@ export class GraphVoices {
   ) {
     this.max = opts.max ?? 16;
     this.mix = new OrderedMix(ac, destination);
+    this.sleepWhenEmpty();
   }
 
   get size(): number {
@@ -91,7 +99,7 @@ export class GraphVoices {
 
   /** Registers a voice that has already been scheduled. */
   add(noteId: number, voice: GraphVoice): void {
-    this.gc(this.ac.currentTime);
+    this.disposeFinished(this.ac.currentTime);
     const kill = new GainNode(this.ac, { gain: 1 });
     voice.out.connect(kill);
     const live: Live = {
@@ -108,6 +116,7 @@ export class GraphVoices {
     this.voices.set(noteId, live);
     this.enforceMax(voice.start);
     this.armGc();
+    this.sleep.set(false);
   }
 
   /** Note-off. A release time at or before the voice's start cancels it. */
@@ -116,6 +125,7 @@ export class GraphVoices {
     if (!v || v.released) return;
     if (time <= v.start) {
       this.dispose(v, true);
+      this.sleepWhenEmpty();
       return;
     }
     v.released = true;
@@ -135,6 +145,7 @@ export class GraphVoices {
       else this.release(v.noteId, time);
     }
     this.armGc();
+    this.sleepWhenEmpty();
   }
 
   /** Cuts every voice except `keep` with a short fade (monophonic "cut itself" behaviour). */
@@ -145,6 +156,11 @@ export class GraphVoices {
 
   /** Disposes voices that finished before `now`. Called automatically on add(); call it from long-idle plugins too. */
   gc(now: number): void {
+    this.disposeFinished(now);
+    this.sleepWhenEmpty();
+  }
+
+  private disposeFinished(now: number): void {
     for (const v of [...this.voices.values()]) if (v.until + 0.05 < now) this.dispose(v, false);
   }
 
@@ -153,6 +169,11 @@ export class GraphVoices {
     this.mix.dispose();
     if (this.gcTimer !== null) clearTimeout(this.gcTimer);
     this.gcTimer = null;
+  }
+
+  /** Asleep once no voice is left (realtime contexts only). */
+  private sleepWhenEmpty(): void {
+    if (this.voices.size === 0 && typeof AudioContext !== 'undefined' && this.ac instanceof AudioContext) this.sleep.set(true);
   }
 
   /**

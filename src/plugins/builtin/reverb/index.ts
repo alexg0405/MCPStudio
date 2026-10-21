@@ -36,6 +36,7 @@ export default defineEffect({
     return {
       input,
       output,
+      sleep: engines.sleep,
       get tailTime() {
         return reverbTail(params.decay.value, params.preDelay.value);
       },

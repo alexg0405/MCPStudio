@@ -1,6 +1,7 @@
 /** What the host gives a plugin instance: params, state, transport, samples, the worklet and the editor tap. */
 import type { ParamSpec, ParamSpecs, ValueOf } from '../params';
 import type { NoteOff, NoteOn } from './notes';
+import type { Sleeper } from './sleep';
 
 /** Anything JSON can hold: what plugin state is made of, since projects are saved as JSON. */
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -145,6 +146,13 @@ export interface WorkletPort {
   onMessage(cb: (msg: unknown) => void): () => void;
   /** Resolves once the processor has handled everything sent before this call. */
   sync(): Promise<void>;
+  /**
+   * Whether the kernel is asleep (see `Sleeper`): the SDK-owned processor puts an instrument with no notes held, or an
+   * effect with silence in, to sleep after a second of silence and the host stops processing it until its next
+   * event. Pass it on as `InstrumentInstance.sleep` / `EffectInstance.sleep`; `defineWorkletInstrument` and
+   * `defineWorkletEffect` do.
+   */
+  readonly sleep: Sleeper;
   dispose(): void;
 }
 

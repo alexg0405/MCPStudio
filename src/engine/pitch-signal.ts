@@ -14,11 +14,16 @@ const PITCH_BEND_TAU_SEC = 0.002;
  * The knob's and the bend's ConstantSourceNodes are made only when they carry something: a channel at pitch 0 that is not
  * automated and has not been bent (nearly every channel) has no source running, because an always-running source feeding
  * an AudioParam costs the audio thread a little on every block, for every instrument, for nothing. The detune an
- * instrument connects the node to is 0 without a source, which is what a source at offset 0 gave.
+ * instrument connects the node to is 0 without a source, which is what a source at offset 0 gave. The same goes for the
+ * summing node and its connections into the instruments' AudioParams: an AudioParam with an input is worked out per
+ * frame even when the input is silence, so they are made, and connected, when the first source is.
  */
 export class PitchSignal implements ParamSignal {
-  readonly node: GainNode;
   readonly lane: AutoLane;
+  /** The summing node, made when something first needs it (see `node`). */
+  private summing: GainNode | null = null;
+  /** The AudioParams instruments asked to have the pitch added to, connected once there is a pitch to add. */
+  private readonly targets = new Set<AudioParam>();
   private knob: ConstantSourceNode | null = null;
   private bend: ConstantSourceNode | null = null;
   private bendCents = 0;
@@ -28,18 +33,30 @@ export class PitchSignal implements ParamSignal {
     key: string,
     cents: number,
   ) {
-    this.node = new GainNode(ctx);
     this.lane = new AutoLane(ctx, key, CHANNEL_PITCH_SPEC, cents, PITCH_KNOB_TAU_SEC);
     // Automation that takes the pitch over needs the knob's source to write to.
     this.lane.onFirstDrive = () => this.ensureKnob();
     if (cents !== 0) this.ensureKnob();
   }
 
+  /** The node that carries the pitch in cents. Asking for it (to route it through your own nodes) makes it. */
+  get node(): GainNode {
+    if (this.summing) return this.summing;
+    const node = new GainNode(this.ctx);
+    this.summing = node;
+    for (const source of [this.knob, this.bend]) source?.connect(node);
+    for (const target of this.targets) node.connect(target);
+    return node;
+  }
+
   connect(target: AudioParam): () => void {
-    this.node.connect(target);
+    this.targets.add(target);
+    // Without a source there is nothing to add: the param is connected when the first source is made.
+    if (this.summing) this.summing.connect(target);
     return () => {
+      this.targets.delete(target);
       try {
-        this.node.disconnect(target);
+        this.summing?.disconnect(target);
       } catch {
         /* already disconnected */
       }
@@ -77,7 +94,7 @@ export class PitchSignal implements ParamSignal {
       source.disconnect();
     }
     this.lane.dispose();
-    this.node.disconnect();
+    this.summing?.disconnect();
   }
 
   /** Makes the knob's source (binding the lane replays its value), once. */
@@ -89,6 +106,7 @@ export class PitchSignal implements ParamSignal {
 
   private makeSource(): ConstantSourceNode {
     const source = new ConstantSourceNode(this.ctx, { offset: 0 });
+    // The summing node and the connections into the instruments' params come with the first source.
     source.connect(this.node);
     source.start();
     return source;

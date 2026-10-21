@@ -88,6 +88,8 @@ export interface EngineStats {
    * in time). Absent until a second has been measured.
    */
   keepUp?: number;
+  /** Channels and mixer inserts idle parking has taken out of the audio graph right now (absent where parking is off). */
+  parked?: { channels: number; inserts: number };
 }
 
 /** Where plugin definitions come from (the app's registry). */
@@ -121,6 +123,12 @@ export interface EngineOptions {
    * instance went away. The app hands editors a stable view of the latest tap per owner.
    */
   onPluginTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
+  /**
+   * Take plugins that sleep, and the mixer chains only they feed, out of the audio graph until a note comes
+   * (engine/idle-parking.ts). Default true; realtime engines only (offline renders never park). A switch for
+   * measuring and for finding out whether parking is behind a problem.
+   */
+  idleParking?: boolean;
 }
 
 /**

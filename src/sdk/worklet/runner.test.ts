@@ -549,6 +549,96 @@ describe('KernelRunner sleep and the song transport', () => {
   });
 });
 
+describe('KernelRunner telling the host about sleep', () => {
+  const SECOND = 48000 / 128;
+  const silent = () => [[new Float32Array(128), new Float32Array(128)]];
+  class Quiet extends InstrumentKernel {
+    noteOn() {}
+    noteOff() {}
+    render() {}
+  }
+  class Echo extends EffectKernel {
+    process(inp: Float32Array[], out: Float32Array[], n: number) {
+      for (let c = 0; c < out.length; c++) for (let i = 0; i < n; i++) out[c]![i] = inp[c]![i]! * 0.5;
+    }
+  }
+  const run = (r: KernelRunner, blocks: number, from: number, inputs: () => Float32Array[][] = () => []) => {
+    for (let b = 0; b < blocks; b++) r.process(inputs(), block(), {}, from + b * 128);
+    return from + blocks * 128;
+  };
+  const sleeps = (posted: FromProcessor[]) => posted.filter((m) => m.t === 'sleep');
+
+  it('says once that an instrument sleeps, with the count of messages it has taken in', () => {
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(new Quiet(host), (m) => posted.push(m));
+    r.onMessage({ t: 'ev', data: pack([EV_PARAM, 0, 0, 0, 1, 0, 0]) });
+    r.onMessage({ t: 'sync', id: 1 });
+    run(r, 3 * SECOND, 0);
+    expect(r.asleep).toBe(true);
+    // The sync barrier is not counted, the event message is.
+    expect(sleeps(posted)).toEqual([{ t: 'sleep', received: 1 }]);
+  });
+
+  it('says it woke when a note comes due, and reports the next sleep again', () => {
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(new Quiet(host), (m) => posted.push(m));
+    let f = run(r, 3 * SECOND, 0);
+    expect(sleeps(posted)).toHaveLength(1);
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, f + 5, 1, 60, 1, 0, 0]) });
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_OFF, f + 50, 1, 60, 0, 0, 0]) });
+    f = run(r, 1, f);
+    expect(posted).toContainEqual({ t: 'wake' });
+    run(r, 3 * SECOND, f);
+    expect(r.asleep).toBe(true);
+    expect(sleeps(posted)).toEqual([
+      { t: 'sleep', received: 0 },
+      { t: 'sleep', received: 2 },
+    ]);
+  });
+
+  it('does not report a sleep while a note is queued for later', () => {
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(new Quiet(host), (m) => posted.push(m));
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, 10 * 48000, 1, 60, 1, 0, 0]) });
+    run(r, 3 * SECOND, 0);
+    expect(r.asleep).toBe(true);
+    expect(sleeps(posted)).toEqual([]);
+  });
+
+  it('reports again after a message that left it asleep, such as a note that was cancelled', () => {
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(new Quiet(host), (m) => posted.push(m));
+    const f = run(r, 3 * SECOND, 0);
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_ON, f + 100000, 1, 60, 1, 0, 0]) });
+    r.onMessage({ t: 'ev', data: pack([EV_NOTE_OFF, f + 100000, 1, 60, 0, 0, 0]) });
+    run(r, 3, f);
+    expect(sleeps(posted).map((m) => (m as { received: number }).received)).toEqual([0, 2]);
+  });
+
+  it('an instrument that sounds by itself with the song never reports a sleep', () => {
+    const k = new Quiet(host);
+    k.wakeOnTransport = true;
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(k, (m) => posted.push(m));
+    run(r, 3 * SECOND, 0);
+    expect(r.asleep).toBe(true);
+    expect(sleeps(posted)).toEqual([]);
+  });
+
+  it('says that an effect sleeps on silent input and that it woke when sound arrived', () => {
+    const posted: FromProcessor[] = [];
+    const r = new KernelRunner(new Echo(host), (m) => posted.push(m));
+    let f = run(r, 3 * SECOND, 0, silent);
+    expect(sleeps(posted)).toEqual([{ t: 'sleep', received: 0 }]);
+    const loud = () => [[new Float32Array(128).fill(0.4), new Float32Array(128).fill(0.4)]];
+    f = run(r, 1, f, loud);
+    expect(posted).toContainEqual({ t: 'wake' });
+    run(r, 3 * SECOND, f, silent);
+    // The same count as before, yet reported again: it woke and slept in between.
+    expect(sleeps(posted)).toHaveLength(2);
+  });
+});
+
 describe('KernelRunner gliding event params', () => {
   const TAU = 0.002;
   const step = 1 - Math.exp(-1 / (TAU * 48000));

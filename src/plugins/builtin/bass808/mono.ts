@@ -2,7 +2,16 @@
  * The 808's mono voice handling: one sine voice per hit, legato glides inside it, and rescheduling
  * when late events change the performance (see legato.ts for the rules and why).
  */
-import { clamp, mtof, ParamLane as Lane, type NoteOff, type NoteOn, OrderedMix, type ParamSignal } from '@agstudio/sdk';
+import {
+  clamp,
+  mtof,
+  ParamLane as Lane,
+  type NoteOff,
+  type NoteOn,
+  OrderedMix,
+  type ParamSignal,
+  SleepSignal,
+} from '@agstudio/sdk';
 import { firstDifference, LegatoTracker, type LegatoAction, type NoteAction, type Phrase } from './legato';
 
 /** Attack ramp of a hit (the sine starts at zero phase, so this only rounds the corner). */
@@ -25,6 +34,8 @@ const CLICK_LEVEL = 0.5;
 const NEVER = 1e9;
 /** Finished voices are disconnected this long after they stopped. */
 const COLLECT_AFTER_SEC = 0.05;
+/** While voices exist, they are looked at this often to see whether the instrument can go to sleep (milliseconds). */
+const SLEEP_CHECK_MS = 500;
 
 /** Settings read when a voice starts (glide when a glide starts). */
 export interface BassSettings {
@@ -199,9 +210,17 @@ export class MonoBass {
 
   /** Adds the voices (and their clicks) up in a fixed order, so an offline render repeats bit for bit. */
   private readonly mix: OrderedMix;
+  /** Asleep while no voice is left, in a realtime context (see the SDK's `Sleeper`). */
+  readonly sleep = new SleepSignal();
+  private sleepCheck: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: MonoBassOptions) {
     this.mix = new OrderedMix(options.audioContext, options.destination);
+    if (this.isRealtime) this.sleep.set(true);
+  }
+
+  private get isRealtime(): boolean {
+    return typeof AudioContext !== 'undefined' && this.options.audioContext instanceof AudioContext;
   }
 
   /** Tracked notes and live voices (diagnostics and tests). */
@@ -210,6 +229,8 @@ export class MonoBass {
   }
 
   noteOn(e: NoteOn): void {
+    this.sleep.set(false);
+    this.armSleepCheck();
     this.tracker.noteOn(e.noteId, e.key, clamp(e.velocity, 0, 1), this.snap(e.time), this.performanceNow());
     this.sync();
   }
@@ -231,11 +252,27 @@ export class MonoBass {
   }
 
   dispose(): void {
+    if (this.sleepCheck !== null) clearTimeout(this.sleepCheck);
+    this.sleepCheck = null;
     for (const v of [...this.voices, ...this.dying]) v.dispose();
     this.mix.dispose();
     this.voices = [];
     this.dying = [];
     this.tracker.clear();
+  }
+
+  /**
+   * Finished voices are only collected when an event comes, so a timer looks while voices exist: when none is left (a
+   * note held with no end keeps one) the instrument goes to sleep.
+   */
+  private armSleepCheck(): void {
+    if (!this.isRealtime || this.sleepCheck !== null) return;
+    this.sleepCheck = setTimeout(() => {
+      this.sleepCheck = null;
+      this.collect(this.options.audioContext.currentTime);
+      if (this.voices.length === 0 && this.dying.length === 0) this.sleep.set(true);
+      else this.armSleepCheck();
+    }, SLEEP_CHECK_MS);
   }
 
   /**

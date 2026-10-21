@@ -1,5 +1,6 @@
 /** The running side of a plugin: what `create(host)` returns. */
 import type { NoteOff, NoteOn } from './notes';
+import type { Sleeper } from './sleep';
 
 /** What an instrument's `create()` returns: its output node and how it plays notes. */
 export interface InstrumentInstance<S = unknown> {
@@ -14,6 +15,8 @@ export interface InstrumentInstance<S = unknown> {
   dispose(): void;
   /** Seconds of release tail after the last note (export padding). */
   readonly tailTime?: number;
+  /** Optional: tells the host when the instrument has no voices and no tail, so it can stop processing it (see `Sleeper`). */
+  readonly sleep?: Sleeper;
 }
 
 /** What an effect's `create()` returns: the nodes audio goes through, and its latency and tail. */
@@ -26,4 +29,6 @@ export interface EffectInstance<S = unknown> {
   dispose(): void;
   readonly latency?: number;
   readonly tailTime?: number;
+  /** Optional: tells the host when the effect has silence in and no tail, so it can stop processing it and its chain (see `Sleeper`). */
+  readonly sleep?: Sleeper;
 }

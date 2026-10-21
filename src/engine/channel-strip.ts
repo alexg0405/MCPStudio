@@ -20,16 +20,21 @@ const MUTE_GLIDE_TAU_SEC = 0.003;
 const DEFAULT_TAIL_SEC = 0.5;
 
 /**
- * A channel in the channel rack: instrument → volume → pan → mute → its mixer insert.
- * Plugin creation is async; until it resolves, notes are dropped.
+ * A channel in the channel rack: instrument → volume → pan → [mute] → its mixer insert.
+ * Plugin creation is async; until it resolves, notes are dropped. The mute gate is made the first time the channel is
+ * muted: a gain at 1 does nothing but cost the audio thread time on every block, and nearly no channel is muted.
  */
 export class ChannelStrip {
-  readonly input: GainNode;
   private readonly vol: GainNode;
   private readonly panner: StereoPannerNode;
-  readonly out: GainNode;
+  /** The mute gate (see the class comment); null until the channel is first muted. */
+  private muteGate: GainNode | null = null;
   /** Takes `out` off the mix of the insert it plays into. */
   private detachFromInsert: () => void;
+  /** `out` is off the insert's mix because the instrument sleeps (see park()). */
+  private isParked = false;
+  /** Stops listening to the instrument's sleep (see watchSleep). */
+  private stopWatchingSleep: () => void = () => {};
   private readonly volLane: AutoLane;
   private readonly panLane: AutoLane;
   /** Instrument channels only. */
@@ -59,10 +64,8 @@ export class ChannelStrip {
     const ctx = core.ctx;
     this.channel = channel;
     this.project = project;
-    this.input = new GainNode(ctx);
     this.vol = new GainNode(ctx);
     this.panner = new StereoPannerNode(ctx);
-    this.out = new GainNode(ctx);
     const key = (param: 'volume' | 'pan' | 'pitch') => targetKey({ kind: 'channel', channelId: channel.id, param });
     this.volLane = new AutoLane(ctx, key('volume'), CHANNEL_VOLUME_SPEC, channel.volume, CHANNEL_GLIDE_TAU_SEC);
     this.panLane = new AutoLane(ctx, key('pan'), CHANNEL_PAN_SPEC, channel.pan, CHANNEL_GLIDE_TAU_SEC);
@@ -71,10 +74,51 @@ export class ChannelStrip {
     this.pitch = channel.kind === 'instrument' ? new PitchSignal(ctx, key('pitch'), channel.pitch ?? 0) : null;
     for (const lane of [this.volLane, this.panLane, this.pitch?.lane])
       if (lane) this.unregister.push(core.params.register(lane));
-    this.input.connect(this.vol).connect(this.panner).connect(this.out);
-    this.detachFromInsert = core.insertInput(channel.output).attach(this.out);
+    this.vol.connect(this.panner);
+    this.detachFromInsert = core.insertInput(channel.output).attach(this.tail);
     this.setShift(core.channelShift(channel.output));
     this.load(channel, project);
+  }
+
+  /** Where the instrument's output joins the strip (its volume node: the strip has no node of its own for it). */
+  private get entry(): GainNode {
+    return this.vol;
+  }
+
+  /** The last node of the strip: what the insert's mix takes. */
+  private get tail(): AudioNode {
+    return this.muteGate ?? this.panner;
+  }
+
+  /** The instrument says it has no voices and no tail: nothing can come out of this channel until its next note. */
+  get isIdle(): boolean {
+    return this.instance?.sleep?.asleep === true;
+  }
+
+  /** The channel is out of the audio graph (see park()). */
+  get parked(): boolean {
+    return this.isParked;
+  }
+
+  /**
+   * Takes the channel's output off its insert's mix while the instrument sleeps. Nothing downstream of a node's
+   * output is pulled once nothing is connected beyond it, so the instrument, volume, pan and mute nodes are no longer
+   * processed. Idle parking (engine/idle-parking.ts) parks and unparks; a note brings the channel back before it is due.
+   */
+  park(): void {
+    if (this.isParked) return;
+    this.isParked = true;
+    this.detachFromInsert();
+    this.detachFromInsert = () => {};
+    this.liveHost?.setParked(true);
+  }
+
+  /** Puts the channel's output back on its insert's mix. */
+  unpark(): void {
+    if (!this.isParked) return;
+    this.isParked = false;
+    this.detachFromInsert = this.core.insertInput(this.channel.output).attach(this.tail);
+    this.liveHost?.setParked(false);
   }
 
   /** The insert this channel plays through. */
@@ -152,8 +196,9 @@ export class ChannelStrip {
       this.pitch?.setKnob(next.pitch ?? 0, t);
     if (prev.output !== next.output) {
       this.detachFromInsert();
-      this.detachFromInsert = this.core.insertInput(next.output).attach(this.out);
+      this.detachFromInsert = this.isParked ? () => {} : this.core.insertInput(next.output).attach(this.tail);
       this.setShift(this.core.channelShift(next.output));
+      this.core.idle?.changed();
     }
     if (prev.kind !== next.kind) {
       this.load(next, project);
@@ -196,10 +241,21 @@ export class ChannelStrip {
     return this.channel.kind === 'instrument' ? this.channel.plugin.pluginId : '';
   }
 
+  /** Puts the mute gate between the pan and the insert (at gain 1, so nothing changes until it moves). */
+  private ensureMuteGate(): GainNode {
+    if (this.muteGate) return this.muteGate;
+    const gate = new GainNode(this.core.ctx);
+    this.detachFromInsert();
+    this.panner.connect(gate);
+    this.muteGate = gate;
+    this.detachFromInsert = this.isParked ? () => {} : this.core.insertInput(this.channel.output).attach(gate);
+    return gate;
+  }
+
   setMuted(muted: boolean): void {
     if (muted === this.muted) return;
     this.muted = muted;
-    this.out.gain.setTargetAtTime(muted ? 0 : 1, this.core.ctx.currentTime, MUTE_GLIDE_TAU_SEC);
+    this.ensureMuteGate().gain.setTargetAtTime(muted ? 0 : 1, this.core.ctx.currentTime, MUTE_GLIDE_TAU_SEC);
   }
 
   noteOn(e: NoteOn): void {
@@ -260,22 +316,25 @@ export class ChannelStrip {
 
   dispose(): void {
     this.generation++;
+    this.stopWatchingSleep();
     this.disposePlugin();
     for (const off of this.unregister) off();
     this.volLane.dispose();
     this.panLane.dispose();
     this.pitch?.dispose();
     this.detachFromInsert();
-    this.out.disconnect();
+    this.muteGate?.disconnect();
     this.panner.disconnect();
     this.vol.disconnect();
-    this.input.disconnect();
   }
 
   /** Replaces what the channel plays with: the clip player of an audio clip channel, or its instrument plugin. */
   private load(channel: InstrumentChannel | AudioClipChannel, project: Project): void {
     const generation = ++this.generation;
+    this.stopWatchingSleep();
     this.disposePlugin();
+    // A new instrument starts awake, whatever the old one was doing.
+    this.unpark();
     if (channel.kind === 'audioClip') {
       this.loadClipPlayer();
       return;
@@ -317,7 +376,7 @@ export class ChannelStrip {
       },
       hold: (key) => residency.hold(key),
     });
-    player.output.connect(this.input);
+    player.output.connect(this.entry);
     this.instance = player;
     this.clipPlayer = player;
     this.faulted = false;
@@ -355,11 +414,12 @@ export class ChannelStrip {
         host.dispose();
         return;
       }
-      instance.output.connect(this.input);
+      instance.output.connect(this.entry);
       host.onState = (state) => instance.setState?.(state as never);
       this.instance = instance;
       this.host = host;
       this.faulted = false;
+      this.watchSleep(instance);
       // Catch up with edits made while the plugin was loading.
       if (this.channel.kind === 'instrument') {
         host.setRootKey(this.channel.rootKey);
@@ -369,6 +429,13 @@ export class ChannelStrip {
       host.dispose();
       if (generation === this.generation) this.fault(err);
     }
+  }
+
+  /** Idle parking hears when the instrument wakes (it brings the channel back at once); it falls asleep quietly. */
+  private watchSleep(instance: InstrumentInstance): void {
+    this.stopWatchingSleep = instance.sleep?.onChange((asleep) => {
+      if (!asleep) this.core.idle?.changed();
+    }) ?? (() => {});
   }
 
   private disposePlugin(): void {

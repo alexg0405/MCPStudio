@@ -82,6 +82,8 @@ export function createEngineOptions(parts: {
       session.getState().toast(message, 'error');
     },
     onPluginTap: (owner, tap, live) => taps.report(owner, tap, live),
+    // A diagnostic switch: `?nopark` keeps every idle plugin in the audio graph, for measuring and for finding out whether parking matters.
+    idleParking: !new URLSearchParams(globalThis.location?.search ?? '').has('nopark'),
   };
 }
 

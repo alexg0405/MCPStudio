@@ -109,6 +109,8 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   lite = false;
   /** Seconds this instance sits behind the song's clock (see `AutomatableParam.shift`). */
   private shiftSec = 0;
+  /** The mixer is not processing this instance now (see setParked); taps made meanwhile start out parked. */
+  private isParked = false;
 
   constructor(private readonly deps: HostDeps) {
     this.audioContext = deps.ctx;
@@ -189,6 +191,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
     const report = this.deps.reportTap;
     if (this.offline || !report || this.abort.signal.aborted) return NO_TAP;
     const tap = new TapImpl(this.deps.ctx, node, options);
+    if (this.isParked) tap.setParked(true);
     this.taps.add(tap);
     report(tap, true);
     return tap;
@@ -196,6 +199,15 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
 
   get shift(): number {
     return this.shiftSec;
+  }
+
+  /**
+   * The mixer stopped (or resumed) pulling this instance's audio because nothing can sound (engine/idle-parking.ts).
+   * Its editor taps stop listening meanwhile (a listening analyser would keep the node being processed) and read silence.
+   */
+  setParked(isParked: boolean): void {
+    this.isParked = isParked;
+    for (const tap of this.taps) tap.setParked(isParked);
   }
 
   /**
@@ -237,6 +249,7 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
         this.myPorts.delete(closed);
         stopListening();
       },
+      def.kind === 'instrument',
     );
     port.shift = this.shiftSec;
     this.deps.ports.add(port);

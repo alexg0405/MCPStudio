@@ -24,6 +24,8 @@ export default defineInstrument({
 
     return {
       output: out,
+      // Lets the host stop processing this instrument (and its channel) while no voice is left.
+      sleep: voices.sleep,
 
       noteOn({ time, key, velocity, noteId }) {
         const t = Math.max(time, ac.currentTime);

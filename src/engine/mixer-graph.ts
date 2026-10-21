@@ -37,6 +37,7 @@ import type { EngineCore } from './engine-core';
 import { InsertStrip } from './insert-strip';
 import { MeterScratch } from './meter-peak';
 import { InsertBus, RouteLink } from './mixer-links';
+import type { ParkingView } from './parking-plan';
 import { DelayCompensation } from './pdc';
 
 /** Used when a document has no master insert (repair adds one; the engine never runs without). */
@@ -94,6 +95,18 @@ export class MixerGraph {
     return pdc.arrival(this.strips.has(id) ? id : MASTER) / this.core.ctx.sampleRate;
   }
 
+  /** What idle parking decides from: the strips, the routing and what feeds each insert's mixes (engine/parking-plan.ts). */
+  get parkingView(): ParkingView {
+    return {
+      strips: this.strips,
+      edges: this.edges,
+      mixSizes: (id) => {
+        const bus = this.bus(id);
+        return { channelMix: bus.chMix.size, routeMix: bus.routeMix.size };
+      },
+    };
+  }
+
   /** Compensation currently applied (tests and diagnostics). */
   get compensation(): DelayCompensation | null {
     return this.pdc;
@@ -131,6 +144,8 @@ export class MixerGraph {
         this.rewire(next.mixer, glideSec);
         this.dirty = true;
       });
+      // New routes may bring sound to an insert that is parked.
+      this.core.idle?.changed();
     }
     if (prev && prev.samples !== next.samples) for (const strip of this.strips.values()) strip.samplesChanged(next);
     return removed;

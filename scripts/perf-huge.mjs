@@ -5,14 +5,15 @@
  * and the smooth-follow row is `scripts/perf-follow.mjs --fixture huge`; this script measures the rest:
  *
  *   node scripts/perf-huge.mjs [--url http://localhost:5402] [--only load,save,memory,idle,engine,context,render]
- *                              [--reps 3] [--json out.json] [--label before]
+ *                              [--reps 3] [--json out.json] [--label before] [--query '&nopark']
  *
  *  load     page start to a painted project, then the file round trip: build the .agproj, read it, replace the project
  *  save     file build, autosave (serialize on the main thread, zip in the Worker), a version save point; main-thread
  *           blocking (long animation frames) while each ran
  *  memory   JS heap after a collection, decoded audio in the sample cache, the page's whole memory, live audio nodes
  *  idle     per-frame JS and React commits with nothing happening; script time per second
- *  engine   audio thread load (CDP render capacity) idle and playing, the audio clock's keep-up, reboot time
+ *  engine   audio thread load (CDP render capacity) idle and playing everything, the audio clock's keep-up, reboot time
+ *  section  a typical stretch of the song (the 4 bars whose number of sounding channels is the median) played: load, keep-up
  *  context  the AI context text: time to build and its size
  *  render   a 30 s offline render: time, times realtime, and the hash of the audio (must not change between builds)
  *
@@ -27,11 +28,13 @@ const arg = (name, def) => {
   return i >= 0 ? argv[i + 1] : def;
 };
 const BASE = arg('url', 'http://localhost:5402');
-const ONLY = arg('only', 'load,save,memory,idle,engine,context,render').split(',');
+const ONLY = arg('only', 'load,save,memory,idle,engine,section,context,render').split(',');
 const REPS = Number(arg('reps', '3'));
 const LABEL = arg('label', '');
 const JSON_OUT = arg('json', '');
 const FIXTURE = arg('fixture', 'huge');
+/** Extra query parameters for the page, e.g. `&nopark` to keep every idle plugin in the audio graph (the engine as it was before idle parking). */
+const QUERY = arg('query', '');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => {
@@ -68,7 +71,7 @@ async function openPage(browser) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
   const started = Date.now();
-  await page.goto(`${BASE}/?perf=${FIXTURE}`, { waitUntil: 'load' });
+  await page.goto(`${BASE}/?perf=${FIXTURE}${QUERY}`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.__ag && document.querySelector('[data-window-type]'), null, { timeout: 180000 });
   const readyMs = Date.now() - started;
   return { ctx, page, client, watch, errors, readyMs };
@@ -177,7 +180,16 @@ async function stageMemory(env) {
     return out;
   });
   const n = nodeCounts(watch);
-  return { ...r, audioNodes: n.total, workletNodes: n.worklets, gainNodes: n.gains };
+  return {
+    ...r,
+    audioNodes: n.total,
+    workletNodes: n.worklets,
+    gainNodes: n.gains,
+    constantSourceNodes: n.counts.ConstantSource ?? 0,
+    delayNodes: n.counts.Delay ?? 0,
+    biquadNodes: n.counts.BiquadFilter ?? 0,
+    pannerNodes: n.counts.StereoPanner ?? 0,
+  };
 }
 
 async function stageIdle(env) {
@@ -218,6 +230,9 @@ async function stageEngine(env) {
   const idle = await audioLoad(client, watch, 5);
   out.idleAudioLoad = idle.capacity;
   out.idleClockRate = idle.clockRate;
+  const idleParked = await page.evaluate(() => window.__ag.engine.stats().parked);
+  out.idleParkedChannels = idleParked?.channels ?? 0;
+  out.idleParkedInserts = idleParked?.inserts ?? 0;
   await page.evaluate(() => window.__ag.commands.run('transport.playPause'));
   await sleep(2500);
   const playing = await audioLoad(client, watch, 6);
@@ -234,6 +249,52 @@ async function stageEngine(env) {
     await window.__ag.engine.ready();
     return performance.now() - t;
   });
+  return out;
+}
+
+/** A typical stretch: the 4 bars whose count of channels with notes is the median of all 4-bar windows, played for a while. */
+async function stageSection(env) {
+  const { page, client, watch } = env;
+  await sleep(4000);
+  const chosen = await page.evaluate(() => {
+    const project = window.__ag.doc.getState().project;
+    const BAR = 3840;
+    const WINDOW_BARS = 4;
+    const bars = 300;
+    const channelsOf = new Map();
+    for (const [id, pattern] of Object.entries(project.patterns)) channelsOf.set(id, Object.keys(pattern.notes).filter((c) => Object.keys(pattern.notes[c]).length > 0));
+    const active = Array.from({ length: bars }, () => new Set());
+    for (const clip of Object.values(project.playlist.clips)) {
+      if (clip.muted || clip.kind === 'automation') continue;
+      const first = Math.floor(clip.start / BAR);
+      const last = Math.min(bars - 1, Math.floor((clip.start + clip.length - 1) / BAR));
+      for (let b = first; b <= last; b++) {
+        if (clip.kind === 'audio') active[b].add(clip.channelId);
+        else for (const c of channelsOf.get(clip.patternId) ?? []) active[b].add(c);
+      }
+    }
+    const windows = [];
+    for (let b = 0; b + WINDOW_BARS <= bars; b++) {
+      const union = new Set();
+      for (let k = 0; k < WINDOW_BARS; k++) for (const c of active[b + k]) union.add(c);
+      windows.push({ bar: b, count: union.size });
+    }
+    const sorted = [...windows].sort((a, b) => a.count - b.count);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    return { startTick: median.bar * BAR, channels: median.count, ofChannels: Object.values(project.channels).filter((c) => c.kind !== 'automation').length };
+  });
+  const out = { sectionChannelsSounding: chosen.channels, sectionOfChannels: chosen.ofChannels };
+  await page.evaluate((tick) => window.__ag.engine.play(tick), chosen.startTick);
+  await sleep(3000);
+  const playing = await audioLoad(client, watch, 8);
+  out.sectionAudioLoad = playing.capacity;
+  out.sectionClockRate = playing.clockRate;
+  const stats = await page.evaluate(() => window.__ag.engine.stats());
+  out.sectionKeepUp = stats.keepUp ?? NaN;
+  out.sectionLateEvents = stats.lateEvents;
+  out.sectionParkedChannels = stats.parked?.channels ?? 0;
+  out.sectionParkedInserts = stats.parked?.inserts ?? 0;
+  await page.evaluate(() => window.__ag.engine.stop());
   return out;
 }
 
@@ -279,7 +340,7 @@ async function stageRender(env) {
   });
 }
 
-const STAGES = { load: stageLoad, save: stageSave, memory: stageMemory, idle: stageIdle, engine: stageEngine, context: stageContext, render: stageRender };
+const STAGES = { load: stageLoad, save: stageSave, memory: stageMemory, idle: stageIdle, engine: stageEngine, section: stageSection, context: stageContext, render: stageRender };
 
 const browser = await chromium.launch({
   channel: 'chrome',

@@ -2,11 +2,12 @@
  * A mixer insert (the master uses the same strip). The insert's persistent nodes (its taps, see
  * engine/mixer-graph.ts) belong to the mixer graph; a strip wires its own nodes between them:
  *
- *   routeIn → slot 1 … slot N → scTap → gate (mute/solo) → preTap → StereoPanner → fader → [vca] → postTap
+ *   routeIn → slot 1 … slot N → scTap → [gate (mute/solo)] → preTap → StereoPanner → fader → [vca] → postTap
  *                                                                        (meters: ChannelSplitter → 2× AnalyserNode, only while read)
  *
  * Each effect slot is an `FxSlotStrip` (engine/fx-slot-strip.ts). Reordering slots only rewires the chain. The `[vca]` gain
- * exists only while the strip's mixer group has a VCA (engine/vca-stage.ts).
+ * exists only while the strip's mixer group has a VCA (engine/vca-stage.ts), and the `[gate]` from the first time the
+ * insert is muted (a gain at 1 does nothing but cost the audio thread time on every block, and most inserts are never muted).
  */
 import { MAX_INSERT_VOLUME } from '@core/model/fader';
 import type { GroupId } from '@core/model/types';
@@ -15,7 +16,7 @@ import { targetKey } from '@core/model/targets';
 import type { FxSlot, Insert, InsertId, Project, SlotId } from '@core/model/types';
 import { clampOrFallback, disconnectFrom, glide } from './audio-graph';
 import type { EngineCore } from './engine-core';
-import { FxSlotStrip } from './fx-slot-strip';
+import { FxSlotStrip, type SlotIdleNeeds } from './fx-slot-strip';
 import { InsertMeters } from './insert-meters';
 import type { MeterScratch } from './meter-peak';
 import { AutoLane } from './param-lane';
@@ -42,7 +43,8 @@ export interface InsertTaps {
 
 /** A mixer insert (the master uses the same strip). */
 export class InsertStrip {
-  private readonly gate: GainNode;
+  /** The mute/solo gate; null until the insert is first muted (see the file comment). */
+  private gate: GainNode | null = null;
   private readonly panner: StereoPannerNode;
   private readonly fader: GainNode;
   private readonly meters: InsertMeters;
@@ -53,6 +55,10 @@ export class InsertStrip {
   private ordered: readonly FxSlotStrip[] = [];
   private insert: Insert;
   private muted = false;
+  /** The last node of the chain (routeIn when there are no effects): what feeds the sidechain tap. */
+  private chainEnd: AudioNode;
+  /** The chain is cut off from the sidechain tap because nothing can sound in it (see park()). */
+  private isParked = false;
   private readonly volumeLane: AutoLane;
   private readonly panLane: AutoLane;
   private readonly unregisterLanes: (() => void)[];
@@ -67,7 +73,7 @@ export class InsertStrip {
   ) {
     const ctx = core.ctx;
     this.insert = insert;
-    this.gate = new GainNode(ctx);
+    this.chainEnd = taps.routeIn;
     this.panner = new StereoPannerNode(ctx);
     this.fader = new GainNode(ctx);
     this.meters = new InsertMeters(ctx, taps.postTap, core.offline);
@@ -83,8 +89,7 @@ export class InsertStrip {
     this.volumeLane.bind(this.fader.gain);
     this.panLane.bind(this.panner.pan);
     this.unregisterLanes = [core.params.register(this.volumeLane), core.params.register(this.panLane)];
-    taps.scTap.connect(this.gate);
-    this.gate.connect(taps.preTap);
+    taps.scTap.connect(taps.preTap);
     taps.preTap.connect(this.panner);
     this.panner.connect(this.fader);
     this.fader.connect(taps.postTap);
@@ -112,6 +117,48 @@ export class InsertStrip {
   /** The effect slots in chain order. */
   get slotStrips(): readonly FxSlotStrip[] {
     return this.ordered;
+  }
+
+  /** The effect chain is out of the audio graph (see park()). */
+  get parked(): boolean {
+    return this.isParked;
+  }
+
+  /**
+   * What the chain needs before it may be parked: every effect that reports its sleep is asleep, and the ones that
+   * cannot say so have had silence at the input for as long as they ring (`tailSec`, the sum for effects in series:
+   * an echo can leave one effect after another has gone quiet).
+   */
+  idleNeeds(): SlotIdleNeeds {
+    let busy = false;
+    let tailSec = 0;
+    for (const slot of this.ordered) {
+      const needs = slot.idleNeeds();
+      busy = busy || needs.busy;
+      tailSec += needs.tailSec;
+    }
+    return { busy, tailSec };
+  }
+
+  /**
+   * Cuts the effect chain off from the sidechain tap while nothing can sound in it. The browser pulls audio from the
+   * destination backwards through connections, so with the last effect connected to nothing the whole chain (the
+   * routes' padded inputs, the slots' gates, every effect) is no longer processed; the tap, the fader and everything
+   * after it keep running on silence, which costs next to nothing. Idle parking decides when (engine/idle-parking.ts).
+   */
+  park(): void {
+    if (this.isParked) return;
+    this.isParked = true;
+    disconnectFrom(this.chainEnd, this.taps.scTap);
+    for (const slot of this.ordered) slot.setParked(true);
+  }
+
+  /** Puts the chain back between the effects' input and the sidechain tap. */
+  unpark(): void {
+    if (!this.isParked) return;
+    this.isParked = false;
+    this.chainEnd.connect(this.taps.scTap);
+    for (const slot of this.ordered) slot.setParked(false);
   }
 
   /**
@@ -157,11 +204,22 @@ export class InsertStrip {
     for (const slot of this.slots.values()) if (ids.has(slot.pluginId)) slot.reload(project);
   }
 
+  /** Puts the gate between the sidechain tap and the pre-fader tap (at gain 1, so nothing changes until it moves). */
+  private ensureGate(): GainNode {
+    if (this.gate) return this.gate;
+    const gate = new GainNode(this.core.ctx);
+    disconnectFrom(this.taps.scTap, this.taps.preTap);
+    this.taps.scTap.connect(gate);
+    gate.connect(this.taps.preTap);
+    this.gate = gate;
+    return gate;
+  }
+
   /** The mute/solo gate (after the effects, so pre-fader sends are muted too; the sidechain tap isn't). */
   setMuted(muted: boolean, glideSec = 0): void {
     if (muted === this.muted) return;
     this.muted = muted;
-    glide(this.gate.gain, muted ? 0 : 1, this.core.ctx, glideTau(glideSec));
+    glide(this.ensureGate().gain, muted ? 0 : 1, this.core.ctx, glideTau(glideSec));
   }
 
   /** The strip's group has a VCA at `level` (linear gain), or none (`groupId` null): see engine/vca-stage.ts. */
@@ -192,10 +250,10 @@ export class InsertStrip {
     this.vca.dispose();
     // Only the strip's own connections: the taps' sends belong to the mixer graph.
     this.taps.routeIn.disconnect();
-    disconnectFrom(this.taps.scTap, this.gate);
+    disconnectFrom(this.taps.scTap, this.gate ?? this.taps.preTap);
     disconnectFrom(this.taps.preTap, this.panner);
     this.meters.drop();
-    this.gate.disconnect();
+    this.gate?.disconnect();
     this.panner.disconnect();
     this.fader.disconnect();
   }
@@ -211,6 +269,7 @@ export class InsertStrip {
         strip.update(data, project);
       } else {
         strip = new FxSlotStrip(this.core, this.insert.id, data, project, this.onLatency);
+        strip.setParked(this.isParked);
         this.slots.set(data.id, strip);
       }
       next.push(strip);
@@ -227,6 +286,7 @@ export class InsertStrip {
     }
     // Slot order decides how much latency sits ahead of each sidechain input.
     if (reordered) this.onLatency();
+    if (reordered || removed.length > 0) this.core.idle?.changed();
   }
 
   /** Connects routeIn → each slot in turn → scTap. */
@@ -238,6 +298,7 @@ export class InsertStrip {
       previous.connect(slot.input);
       previous = slot.output;
     }
-    previous.connect(this.taps.scTap);
+    this.chainEnd = previous;
+    if (!this.isParked) previous.connect(this.taps.scTap);
   }
 }

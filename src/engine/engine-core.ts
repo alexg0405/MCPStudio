@@ -7,6 +7,15 @@ import type { SampleCache } from './samples';
 import type { SampleResidency } from './sample-residency';
 import type { WorkletPortImpl } from './worklet-port';
 
+/** What strips tell the engine's idle parking (engine/idle-parking.ts) when the picture of what can sound may have changed. */
+export interface IdleSignals {
+  /**
+   * Something that was asleep is awake, or the wiring changed: work out now what may stay out of the graph. Calls for the
+   * opposite (a plugin fell asleep) are not made: parking waits for the next tick, waking cannot.
+   */
+  changed(): void;
+}
+
 /** What channel strips and mixer inserts need from the engine (keeps them decoupled from it). */
 export interface EngineCore {
   readonly ctx: BaseAudioContext;
@@ -31,6 +40,8 @@ export interface EngineCore {
   reportTap?(owner: PluginOwner, tap: AudioTap, live: boolean): void;
   loadModule(url: string): Promise<void>;
   readonly ports: Set<WorkletPortImpl>;
+  /** Absent offline and where idle parking is off. */
+  readonly idle?: IdleSignals;
   /** The notes instrument channels play, for effects that follow a melody (`PluginHost.notes`). */
   readonly noteFeed: NoteFeedHub;
   /** Something subscribers show changed (e.g. a time-stretch started or finished). */

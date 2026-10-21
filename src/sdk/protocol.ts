@@ -64,6 +64,14 @@ export type FromProcessor =
   | { t: 'ready' }
   | { t: 'sync'; id: number }
   | { t: 'fault'; error: string }
+  /**
+   * The kernel is asleep and nothing is queued for it. `received` counts the messages the processor has taken in
+   * (every kind but `sync` and `dispose`): the host acts on it only when it has sent no more than that, so a message
+   * still on its way is never lost to a sleep that was reported before it arrived.
+   */
+  | { t: 'sleep'; received: number }
+  /** The kernel, told above that it sleeps, woke by itself (a note came due, or sound reached an effect). */
+  | { t: 'wake' }
   | { t: 'nan' }
   | { t: 'user'; msg: unknown };
 

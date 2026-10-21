@@ -34,6 +34,7 @@ import { FxInstance } from './fx-instance';
 import { FxMixStage } from './fx-mix-stage';
 import { HostImpl } from './host';
 import { AutoLane } from './param-lane';
+import { UNREPORTED_TAIL_MARGIN_SEC } from './parking-plan';
 
 /**
  * Time constant for enable/disable, mix changes and instance swaps: three of them make about a 10 ms crossfade
@@ -46,6 +47,17 @@ const UNFEED_DELAY_MS = 60;
 const RETIRE_DELAY_MS = 80;
 /** The longest latency an effect may report (seconds); more is clamped. */
 const MAX_EFFECT_LATENCY_SEC = 1;
+
+/** What a slot needs before the insert it is in may stop processing (see FxSlotStrip.idleNeeds). */
+export interface SlotIdleNeeds {
+  /** The effect reports that it is awake, or an instance is still fading out: the insert has to keep running. */
+  busy: boolean;
+  /**
+   * Seconds the insert's input must have been silent for, when the effect cannot say that it is asleep (a plugin
+   * made of native nodes): its `tailTime`. 0 for effects that report their sleep, and for slots that pass audio through.
+   */
+  tailSec: number;
+}
 
 /** One effect slot of an insert. */
 export class FxSlotStrip {
@@ -80,6 +92,8 @@ export class FxSlotStrip {
   private shiftIn = 0;
   /** True when the plugin is missing or failed (the slot passes audio through; data is kept). */
   faulted = false;
+  /** The insert is parked (see setParked); instances made while it is start out that way. */
+  private isParked = false;
 
   constructor(
     private readonly core: EngineCore,
@@ -145,6 +159,25 @@ export class FxSlotStrip {
   get tailTime(): number {
     const tail = this.live ? this.current?.effect.tailTime : 0;
     return typeof tail === 'number' && Number.isFinite(tail) ? Math.max(0, tail) : 0;
+  }
+
+  /**
+   * What the slot asks of the insert before it may be parked. A slot that is not live passes its input through and
+   * asks nothing. A live effect that reports its sleep must be asleep; one that does not (native nodes) must have had
+   * silence at the input for as long as it rings (`tailTime`).
+   */
+  idleNeeds(): SlotIdleNeeds {
+    if (this.retiring.size > 0) return { busy: true, tailSec: 0 };
+    const instance = this.live ? this.current : null;
+    if (!instance) return { busy: false, tailSec: 0 };
+    if (instance.effect.sleep) return { busy: !instance.effect.sleep.asleep, tailSec: 0 };
+    return { busy: false, tailSec: this.tailTime + UNREPORTED_TAIL_MARGIN_SEC };
+  }
+
+  /** The insert stopped (or resumed) processing its chain: the effects' editor taps follow (see HostImpl.setParked). */
+  setParked(isParked: boolean): void {
+    this.isParked = isParked;
+    for (const instance of this.instances()) instance.host.setParked(isParked);
   }
 
   /** Frames the slot delays its audio by (its live effect's latency; 0 when it passes through). */
@@ -417,10 +450,13 @@ export class FxSlotStrip {
       const latencyFrames = Math.round(latencySec * ctx.sampleRate);
       this.current = new FxInstance(ctx, effect, host, this.wetDestination, this.mixStage?.dryMix ?? null, latencyFrames);
       this.keyInstance(this.current);
+      this.current.watchSleep(() => this.core.idle?.changed());
+      if (this.isParked) host.setParked(true);
       this.faulted = false;
       // Catch up with edits made while the effect was loading.
       host.apply(this.slot.plugin, this.project, ctx.currentTime);
       this.applyGains();
+      this.core.idle?.changed();
     } catch (err) {
       host.dispose();
       if (generation === this.generation) this.fault(err);

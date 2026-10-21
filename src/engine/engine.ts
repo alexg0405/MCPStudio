@@ -29,6 +29,7 @@ import type {
 import { AutomationDriver } from './automation/driver';
 import type { ChannelStrip } from './channel-strip';
 import type { EngineCore } from './engine-core';
+import { IdleParking } from './idle-parking';
 import { KernelTransportFeed } from './kernel-transport';
 import { LauncherLink } from './launcher-link';
 import { LiveCapture, type RecordAlongOptions } from './live-capture';
@@ -83,6 +84,8 @@ export class Engine implements EngineApi, EngineCore {
   readonly noteFeed = new NoteFeedHub();
   /** Inserts, routes, sidechains and delay compensation (engine/mixer-graph.ts). */
   readonly mixer: MixerGraph;
+  /** Keeps what cannot sound out of the audio graph (engine/idle-parking.ts); absent offline and when switched off. */
+  readonly idle?: IdleParking;
 
   /** The buses after the master track, the safety limiter and the output visualizer's tap. */
   readonly output: OutputStage;
@@ -145,6 +148,10 @@ export class Engine implements EngineApi, EngineCore {
       () => this.emit(),
       () => this.alignChannels(),
     );
+    if (!offline && isRealtimeContext(ctx) && opts.idleParking !== false) {
+      this.idle = new IdleParking(ctx, this.strips, this.mixer);
+      this.idle.start();
+    }
     this.transport = this.createTransport();
     this.automation = this.createAutomation();
     this.mirror = this.createProjectMirror();
@@ -722,6 +729,7 @@ export class Engine implements EngineApi, EngineCore {
       maxPumpGapMs: Math.round(this.pumpMonitor.maxGapMs),
       faults: this.faults,
       ...(keepUp !== undefined ? { keepUp } : {}),
+      ...(this.idle ? { parked: this.idle.counts } : {}),
     };
   }
 
@@ -760,6 +768,7 @@ export class Engine implements EngineApi, EngineCore {
     this.automation.dispose();
     this.metronome?.dispose();
     this.schedulerClock.dispose();
+    this.idle?.dispose();
     for (const strip of this.strips.values()) strip.dispose();
     this.strips.clear();
     this.residency.dispose();

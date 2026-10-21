@@ -297,7 +297,7 @@ How the host keeps worklet plugins cheap (you don't need to do anything):
   arrives. Song transport changes (play, a loop wrapping, a tempo change) and sync barriers don't wake
   it: it gets them when it wakes (`transport` is current by then). An instrument that starts sounding
   by itself when the song starts (a sequencer) sets `wakeOnTransport = true`. Output that never falls
-  silent (a drone, a noise generator) keeps it running.
+  silent (a drone, a noise generator) keeps it running. The host also takes a sleeping kernel out of the audio graph (see [Sleeping](#sleeping-costing-nothing-while-idle)).
 
 ## Faust plugins
 
@@ -493,6 +493,26 @@ export default defineWorkletEffect({ id: ID, name: 'Follow', version: 1, params,
 ```
 
 The built-in **Tune** is the complete example (Target = played notes).
+
+## Sleeping: costing nothing while idle
+
+The browser charges for every node it processes, silent or not, and a project has hundreds of plugins of which a few dozen sound
+at once. A plugin that reports it is idle lets the host stop processing it, and the mixer chain only it feeds, until its next
+note: an optional `sleep` on what `create` returns (`{ asleep, onChange(listener) }`, a `Sleeper`). While `asleep` the output is
+silent and stays silent until the host sends something (a note or controller; for an effect also sound at its input), and
+nothing is ringing. Report `asleep: false` the moment anything can sound again.
+
+- **Worklet plugins do nothing**: `defineWorkletInstrument`/`defineWorkletEffect` pass the SDK processor's sleep on. A sleeping
+  worklet instrument is not sent note offs; its param changes and the song's transport anchors are held and replayed before
+  its next note. An instrument that sounds by itself with the song sets `wakeOnTransport = true` and is never taken out.
+- **`GraphVoices` instruments** return `sleep: voices.sleep` (asleep while no voice is left; it wakes in `voices.add()`).
+- **Anything else** makes a `SleepSignal` (from `@agstudio/sdk`): `set(true)` when the last voice is gone, `set(false)` at the top of `noteOn`.
+- **Native-node effects without `sleep`** are judged by `tailTime` plus half a second of silence, so report a tail that covers
+  what they ring (a delay's repeats, a resonant filter).
+
+Don't rely on code that runs while idle, accept events whose time has passed (a note wakes the plugin a lookahead before it is
+due, a live note's time is now) and keep `tailTime` honest. Offline renders never take anything out. `?nopark` on the app's
+address keeps everything in the graph, to find out whether this is behind a problem.
 
 ## Hot reload
 

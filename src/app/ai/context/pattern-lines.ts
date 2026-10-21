@@ -5,6 +5,7 @@ import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Pattern, PatternId, Project } from '@core/model/types';
 import { derivedLabel } from '../../arrange/summary';
+import { cachedForProject } from './project-cache';
 import { noteName } from '../../assistant/context';
 import type { ResolvedFocus } from '../focus';
 import { FULL_PATTERNS, fullRender, type ContextRender } from './budget';
@@ -12,6 +13,15 @@ import { round2 } from './units';
 
 /** Pitch range and count of a pattern's notes, for the patterns the song is not showing in detail. */
 function noteSummary(project: Project, pattern: Pattern): string {
+  const byPattern = cachedForProject(project, 'note-summaries', () => new Map<PatternId, string>());
+  const known = byPattern.get(pattern.id);
+  if (known !== undefined) return known;
+  const text = writeNoteSummary(project, pattern);
+  byPattern.set(pattern.id, text);
+  return text;
+}
+
+function writeNoteSummary(project: Project, pattern: Pattern): string {
   let count = 0;
   let lowest = Infinity;
   let highest = -Infinity;
@@ -63,6 +73,21 @@ export function fullPatterns(project: Project, current: PatternId | null, focus:
   return kept;
 }
 
+/** The channels with notes in a pattern, as "Name (count)" in rack order (per project version: every render needs them). */
+function channelsOf(project: Project, pattern: Pattern): string[] {
+  const byPattern = cachedForProject(project, 'pattern-channels', () => new Map<PatternId, string[]>());
+  const known = byPattern.get(pattern.id);
+  if (known) return known;
+  const used = project.channelOrder
+    .filter((channelId) => Object.keys(pattern.notes[channelId] ?? {}).length > 0)
+    .map(
+      (channelId) =>
+        `${project.channels[channelId]?.name ?? channelId} (${Object.keys(pattern.notes[channelId] ?? {}).length})`,
+    );
+  byPattern.set(pattern.id, used);
+  return used;
+}
+
 /** Each pattern: its channels with note counts, and where it plays in the song. */
 export function patternLines(
   project: Project,
@@ -83,12 +108,7 @@ export function patternLines(
       continue;
     }
     const bars = patternLength(pattern, timeSig) / barTicks;
-    const usedChannels = project.channelOrder
-      .filter((channelId) => Object.keys(pattern.notes[channelId] ?? {}).length > 0)
-      .map(
-        (channelId) =>
-          `${project.channels[channelId]?.name ?? channelId} (${Object.keys(pattern.notes[channelId] ?? {}).length})`,
-      );
+    const usedChannels = channelsOf(project, pattern);
     const isSummarized = render.shorten.otherNotes && patternId !== current && usedChannels.length > 0;
     if (isSummarized) render.cut.add('patterns');
     let content = usedChannels.length ? usedChannels.join(', ') : 'empty';

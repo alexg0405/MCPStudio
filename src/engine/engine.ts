@@ -50,6 +50,7 @@ import { SamplePreview } from './sample-preview';
 import { SampleCache } from './samples';
 import { SchedulerClock, PumpMonitor } from './scheduler-clock';
 import type { EventSource } from './sched/events';
+import { withRackPlugin } from './rack/rack-def';
 import { Transport } from './sched/transport';
 import { SongNoteSink } from './song-note-sink';
 import { TempoInfo, TempoReporter } from './tempo-info';
@@ -136,7 +137,7 @@ export class Engine implements EngineApi, EngineCore {
   ) {
     this.ctx = ctx;
     this.offline = offline;
-    this.plugins = opts.plugins;
+    this.plugins = withRackPlugin(opts.plugins);
     this.samples = opts.sampleCache ?? new SampleCache(opts.samples);
     this.residency = this.createResidency();
     this.transportInfo = new TempoInfo(DEFAULT_BPM, ctx);

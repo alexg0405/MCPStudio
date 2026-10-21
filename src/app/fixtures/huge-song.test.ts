@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createEmptyProject } from '@core/model/defaults';
 import { seededBytes, setIdSource } from '@core/model/ids';
 import { repairProject } from '@core/schema/repair';
-import { registerBuiltinPlugins } from '../plugins/discover';
-import { PluginRegistry } from '../plugins/registry';
+import { registerBuiltinPlugins } from '@app/plugins/discover';
+import { PluginRegistry } from '@app/plugins/registry';
 import { buildHugeSong, HUGE_PLUGIN_IDS, HUGE_SIZE, SMALL_HUGE_SIZE } from './huge-song';
 
 beforeEach(() => setIdSource(seededBytes(9)));

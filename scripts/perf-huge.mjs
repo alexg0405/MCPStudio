@@ -74,17 +74,6 @@ async function openPage(browser) {
   return { ctx, page, client, watch, errors, readyMs };
 }
 
-const frames = (page, n = 2) =>
-  page.evaluate(
-    (n) =>
-      new Promise((res) => {
-        let i = 0;
-        const f = () => (++i >= n ? res() : requestAnimationFrame(f));
-        requestAnimationFrame(f);
-      }),
-    n,
-  );
-
 const metric = (m, name) => m.metrics.find((x) => x.name === name)?.value ?? 0;
 
 /** Live audio nodes by kind, from the CDP events. */
@@ -173,9 +162,11 @@ async function stageMemory(env) {
   await sleep(3000);
   const r = await page.evaluate(async () => {
     const s = window.__ag;
-    if (typeof gc === 'function') {
-      gc();
-      gc();
+    // Chrome runs with --js-flags=--expose-gc: collect first so the heap figure is what stays alive.
+    const collect = globalThis.gc;
+    if (typeof collect === 'function') {
+      collect();
+      collect();
     }
     const out = { jsHeapMB: performance.memory.usedJSHeapSize / 1e6, decodedAudioMB: s.sampleCache.usedBytes / 1e6 };
     try {

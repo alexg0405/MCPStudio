@@ -53,8 +53,14 @@ const GROUP_SELECTOR = '[data-roving], [role="toolbar"], [role="tablist"], [role
 
 /** The control each group last had focus, so Tab comes back to it. */
 const activeItems = new WeakMap<Element, Element>();
-/** Groups whose tab stops need re-checking at the next flush. */
+/** Groups whose tab stops need re-checking from scratch at the next flush. */
 const dirtyGroups = new Set<Element>();
+/**
+ * Elements added inside a group that already has its Tab stop: at the next flush only these are looked at, because
+ * scanning a dense group again (the channel rack's step grid has a thousand controls) for each row that scrolls into
+ * view made scrolling cost more than the rows themselves.
+ */
+const addedInGroup = new Map<Element, Element[]>();
 let flushScheduled = false;
 
 function modeOf(group: Element): RovingMode {
@@ -80,14 +86,33 @@ function isInsideOwnMenu(el: Element, group: Element): boolean {
   return menu !== null && menu !== group && group.contains(menu);
 }
 
+/** True when `el` belongs to `group` itself: not in a roving group nested inside it, and not an entry of a menu it opens. */
+function isOwnControl(el: HTMLElement, group: Element): boolean {
+  return el.closest(GROUP_SELECTOR) === group && !isInsideOwnMenu(el, group);
+}
+
+/** True when `el` is a control `group` manages: its own, and one that takes room (so it can hold the Tab stop). */
+function isGroupItem(el: HTMLElement, group: Element): boolean {
+  return isOwnControl(el, group) && isUsable(el);
+}
+
+/**
+ * The control of `group` that is, or contains, `target`: the outermost one when controls are nested (the same one
+ * a search through the group's controls in page order finds first), without looking at the rest of the group.
+ */
+function itemContaining(group: Element, target: HTMLElement): HTMLElement | null {
+  let found: HTMLElement | null = null;
+  for (let el: HTMLElement | null = target; el && el !== group; el = el.parentElement) {
+    if (el.matches(ITEM_SELECTOR) && isGroupItem(el, group)) found = el;
+  }
+  return found;
+}
+
 /** The controls a group manages: its own, not those of a roving group nested inside it. */
 export function rovingItems(group: Element): HTMLElement[] {
   const items: HTMLElement[] = [];
   for (const el of group.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
-    if (el.closest(GROUP_SELECTOR) !== group) continue;
-    if (!isUsable(el)) continue;
-    if (isInsideOwnMenu(el, group)) continue;
-    items.push(el);
+    if (isGroupItem(el, group)) items.push(el);
   }
   return items;
 }
@@ -99,9 +124,36 @@ function syncGroup(group: Element): void {
   const remembered = activeItems.get(group);
   const active = remembered && items.includes(remembered as HTMLElement) ? remembered : items[0]!;
   activeItems.set(group, active);
-  for (const item of items) {
-    const wanted = item === active ? '0' : '-1';
-    if (item.getAttribute('tabindex') !== wanted) item.setAttribute('tabindex', wanted);
+  for (const item of items) setStop(item, item === active);
+}
+
+function setStop(item: Element, isActive: boolean): void {
+  const wanted = isActive ? '0' : '-1';
+  if (item.getAttribute('tabindex') !== wanted) item.setAttribute('tabindex', wanted);
+}
+
+/** The group's remembered Tab stop, when it is still in the page (otherwise the group needs a full look). */
+function liveStop(group: Element): Element | null {
+  const active = activeItems.get(group);
+  return active?.isConnected ? active : null;
+}
+
+/**
+ * Gives the controls inside the newly added `roots` their Tab stop state without looking at the rest of the group. A
+ * control that takes no room gets its tabindex too, which does no harm, and asking would force a layout for nothing.
+ */
+function syncAdded(group: Element, roots: readonly Element[]): void {
+  const active = liveStop(group);
+  if (!active) {
+    syncGroup(group);
+    return;
+  }
+  for (const root of roots) {
+    if (!root.isConnected) continue;
+    if (root instanceof HTMLElement && root.matches(ITEM_SELECTOR) && isOwnControl(root, group)) setStop(root, root === active);
+    for (const el of root.querySelectorAll<HTMLElement>(ITEM_SELECTOR)) {
+      if (isOwnControl(el, group)) setStop(el, el === active);
+    }
   }
 }
 
@@ -109,20 +161,42 @@ function flush(): void {
   flushScheduled = false;
   const groups = [...dirtyGroups];
   dirtyGroups.clear();
-  for (const group of groups) if (group.isConnected) syncGroup(group);
+  const added = new Map(addedInGroup);
+  addedInGroup.clear();
+  for (const group of groups) {
+    added.delete(group);
+    if (group.isConnected) syncGroup(group);
+  }
+  for (const [group, roots] of added) if (group.isConnected) syncAdded(group, roots);
 }
 
-function markDirty(group: Element): void {
-  dirtyGroups.add(group);
+function scheduleFlush(): void {
   if (flushScheduled) return;
   flushScheduled = true;
   queueMicrotask(flush);
 }
 
+function markDirty(group: Element): void {
+  dirtyGroups.add(group);
+  scheduleFlush();
+}
+
+/** Something was added inside `group`: a group with a Tab stop only checks the new controls, one without looks at all of them. */
+function markAdded(group: Element, root: Element): void {
+  if (!liveStop(group)) {
+    markDirty(group);
+    return;
+  }
+  const roots = addedInGroup.get(group);
+  if (roots) roots.push(root);
+  else addedInGroup.set(group, [root]);
+  scheduleFlush();
+}
+
 /** Re-checks every group inside `root` (and the one `root` sits in). */
 function markAround(root: Element): void {
   const own = root.closest(GROUP_SELECTOR);
-  if (own) markDirty(own);
+  if (own && own !== root) markAdded(own, root);
   if (root.matches?.(GROUP_SELECTOR)) markDirty(root);
   for (const group of root.querySelectorAll(GROUP_SELECTOR)) markDirty(group);
 }
@@ -244,9 +318,9 @@ export function installRoving(): () => void {
         continue;
       }
       for (const node of record.addedNodes) if (node instanceof Element) markAround(node);
-      // Something left: its group may have lost its Tab stop.
+      // Something left: its group may have lost its Tab stop (only then does it need a full look).
       const group = record.target instanceof Element ? record.target.closest(GROUP_SELECTOR) : null;
-      if (group && record.removedNodes.length > 0) markDirty(group);
+      if (group && record.removedNodes.length > 0 && !liveStop(group)) markDirty(group);
     }
   });
   const onFocusIn = (e: FocusEvent): void => {
@@ -254,10 +328,13 @@ export function installRoving(): () => void {
     if (!(target instanceof HTMLElement)) return;
     const group = target.closest(GROUP_SELECTOR);
     if (!group) return;
-    const item = rovingItems(group).find((candidate) => candidate === target || candidate.contains(target));
-    if (!item || activeItems.get(group) === item) return;
+    const item = itemContaining(group, target);
+    const previous = activeItems.get(group);
+    if (!item || previous === item) return;
     activeItems.set(group, item);
-    markDirty(group);
+    // Only the two controls whose stop changed need their tabindex written; the rest of the group is as it was.
+    if (previous?.isConnected) setStop(previous, false);
+    setStop(item, true);
   };
   // The global shortcut handler (src/ui/keyboard.ts) calls `rovingKeyDown` first, but it stands down while a dialog or
   // a menu is open. This listener catches those arrow keys on their way up, so a radio group in a dialog still moves.

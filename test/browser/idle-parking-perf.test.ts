@@ -57,23 +57,28 @@ async function audioThreadLoad(contextId: string, seconds: number): Promise<numb
 describe('idle parking, measured', { tags: ['perf', 'realtime'] }, () => {
   it('the very big project idles at a small share of the audio thread', { timeout: 300_000 }, async () => {
     const contexts: string[] = [];
+    const onContext = (event: { context: { contextId: string } }) => contexts.push(event.context.contextId);
     await cdp().send('WebAudio.enable');
-    cdp().on('WebAudio.contextCreated', (event: { context: { contextId: string } }) => contexts.push(event.context.contextId));
-    let engine!: Engine;
-    const s = createServices({ project: hugeProject(), createEngine: (options) => (engine = Engine.realtime(options)) });
-    rigs.push(s);
-    await s.engine.resume();
-    await s.engine.ready();
-    const total = engine.stats().parked;
-    expect(total).toBeDefined();
-    // Every kernel has slept a second and every channel and track has been looked at: all of them are out of the graph.
-    await expect
-      .poll(() => engine.stats().parked, { timeout: 60_000, interval: 250 })
-      .toEqual({ channels: Object.values(s.doc.getState().project.channels).filter((c) => c.kind !== 'automation').length, inserts: 100 });
-    const load = await audioThreadLoad(contexts[contexts.length - 1] as string, 5);
-    console.log(`PARK | huge project idle: audio thread at ${(load * 100).toFixed(1)} %`);
-    // It was 100 % (and the audio clock lost time) before parking.
-    expect(load).toBeLessThan(perfLimit(0.15, 0.6));
+    cdp().on('WebAudio.contextCreated', onContext);
+    try {
+      let engine!: Engine;
+      const s = createServices({ project: hugeProject(), createEngine: (options) => (engine = Engine.realtime(options)) });
+      rigs.push(s);
+      await s.engine.resume();
+      await s.engine.ready();
+      expect(engine.stats().parked).toBeDefined();
+      // Every kernel has slept a second and every channel and track has been looked at: all of them are out of the graph.
+      const channels = Object.values(s.doc.getState().project.channels).filter((c) => c.kind !== 'automation').length;
+      await expect.poll(() => engine.stats().parked, { timeout: 60_000, interval: 250 }).toEqual({ channels, inserts: 100 });
+      const load = await audioThreadLoad(contexts[contexts.length - 1] as string, 5);
+      console.log(`PARK | huge project idle: audio thread at ${(load * 100).toFixed(1)} %`);
+      // It was 100 % (and the audio clock lost time) before parking.
+      expect(load).toBeLessThan(perfLimit(0.15, 0.6));
+    } finally {
+      // The protocol's events must not outlive the test: they are sent to a page that is gone by then.
+      cdp().off('WebAudio.contextCreated', onContext);
+      await cdp().send('WebAudio.disable');
+    }
   });
 
   it('a note into a parked channel is heard no later than one into a channel that was awake', { timeout: 300_000 }, async () => {

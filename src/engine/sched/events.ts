@@ -2,12 +2,13 @@
  * Turns the project into note events for a tick range. Pure; shares semantics with the UI through
  * core/query (pattern length, sorted notes, effective mute).
  */
-import type { AudioClip, ChannelId, Note, NoteId, Pattern, PatternId, Project, Tick } from '@core/model/types';
+import type { AudioClip, ChannelId, InstrumentChannel, Note, NoteId, Pattern, PatternId, Project, Tick } from '@core/model/types';
 import type { LaunchRun } from '@core/launcher/run';
 import { effectivelyMuted, lowerBound, notesSorted, patternLength } from '@core/query/queries';
 import { audibleClips, songLength } from '@core/query/playlist';
 import { PPQ, type TempoMap } from '@core/time/ppq';
 import { swingDelay } from '@core/time/swing';
+import { collectFxNotes, hasActiveFx } from './fx-events';
 
 /** A pattern placed on the timeline: a playlist clip, or the virtual clip used in pattern mode. */
 export interface PlayClip {
@@ -38,6 +39,11 @@ export interface NoteEvent {
   channelId: ChannelId;
   patternId: PatternId | null;
   noteId: NoteId | null;
+  /**
+   * Set on a note the channel's MIDI effects made (it has no `noteId`): its identity within the effect chain's output, the same
+   * every time the same notes are evaluated, so a re-plan can tell whether the chain still makes it.
+   */
+  fx?: string;
   /** End of the clip the note plays in (notes are cut there). */
   clipEnd: number;
   /** Unswung absolute start. */
@@ -64,6 +70,10 @@ export interface NoteEvent {
 /** What the transport plays: the project, the clips to play and what the launcher adds. */
 export interface EventSource {
   project: Project;
+  /** The tempo the transport plays under, for effects that think in milliseconds (the project's own tempo when absent). */
+  tempo?: TempoMap;
+  /** Song mode follows automation clips (MIDI effect knobs too); pattern mode plays the pattern alone. Absent = pattern mode. */
+  mode?: 'song' | 'pattern';
   clips: readonly PlayClip[];
   audio?: readonly AudioPlayClip[];
   /** What the clip launcher plays on top of the song (see `launch.ts`). */
@@ -80,7 +90,7 @@ export function songModeSource(project: Project): { source: EventSource; length:
     else if (c.kind === 'audio')
       audio.push({ clipId: c.id, channelId: c.channelId, start: c.start, length: c.length, offsetSec: c.offsetSec });
   }
-  return { source: { project, clips, audio }, length: songLength(project) };
+  return { source: { project, mode: 'song', clips, audio }, length: songLength(project) };
 }
 
 /**
@@ -140,10 +150,10 @@ export function patternModeSource(
   patternId: PatternId | null,
 ): { source: EventSource; length: Tick } {
   const pattern = patternId ? project.patterns[patternId] : undefined;
-  if (!pattern) return { source: { project, clips: [] }, length: patternLengthOrBar(project) };
+  if (!pattern) return { source: { project, mode: 'pattern', clips: [] }, length: patternLengthOrBar(project) };
   const length = patternLength(pattern, project.transport.timeSig);
   return {
-    source: { project, clips: [{ clipId: 'pattern', patternId: pattern.id, start: 0, length, offset: 0 }] },
+    source: { project, mode: 'pattern', clips: [{ clipId: 'pattern', patternId: pattern.id, start: 0, length, offset: 0 }] },
     length,
   };
 }
@@ -172,13 +182,13 @@ export function collectNotes(source: EventSource, from: number, to: number, out:
     if (spanEnd <= spanStart) continue;
     const pattern = project.patterns[clip.patternId];
     if (!pattern) continue;
-    collectClipNotes(project, clip, pattern, muted, spanStart, spanEnd, out);
+    collectClipNotes(source, clip, pattern, muted, spanStart, spanEnd, out);
   }
 }
 
 /** The notes of one pattern clip whose start falls in [spanStart, spanEnd) (a part of the clip), for every instrument channel. */
 function collectClipNotes(
-  project: Project,
+  source: EventSource,
   clip: PlayClip,
   pattern: Pattern,
   muted: ReadonlySet<ChannelId>,
@@ -186,6 +196,7 @@ function collectClipNotes(
   spanEnd: number,
   out: NoteEvent[],
 ): void {
+  const project = source.project;
   const patternTicks = patternLength(pattern, project.transport.timeSig);
   // Clip-local [spanStart, spanEnd) → content positions, repeating every patternTicks ticks.
   const contentStart = spanStart - clip.start + clip.offset;
@@ -198,6 +209,10 @@ function collectClipNotes(
     if (!channel || channel.kind !== 'instrument' || muted.has(channelId)) continue;
     const notes = notesSorted(pattern.notes[channelId]);
     if (notes.length === 0) continue;
+    if (hasActiveFx(channel)) {
+      collectFxNotes(source, clip, pattern, channel as InstrumentChannel, spanStart, spanEnd, out);
+      continue;
+    }
     for (let repetition = firstRepetition; repetition <= lastRepetition; repetition++) {
       const from = Math.max(contentStart - repetition * patternTicks, 0);
       const to = Math.min(contentEnd - repetition * patternTicks, patternTicks);

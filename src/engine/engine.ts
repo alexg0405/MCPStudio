@@ -32,6 +32,8 @@ import type { EngineCore } from './engine-core';
 import { IdleParking } from './idle-parking';
 import { KernelTransportFeed } from './kernel-transport';
 import { LauncherLink } from './launcher-link';
+import { createLiveMidiFx } from './live-fx-link';
+import type { LiveFxOutput, LiveMidiFx } from './live-midi-fx';
 import { LiveCapture, type RecordAlongOptions } from './live-capture';
 import { LiveMeters } from './live-meters';
 import { Metronome } from './metronome';
@@ -107,6 +109,9 @@ export class Engine implements EngineApi, EngineCore {
   private readonly launcherLink: LauncherLink;
   private readonly samplePreview: SamplePreview;
   private readonly notePreview: NotePreview;
+  /** The MIDI effects live keys go through on channels that have them. */
+  private readonly liveFx: LiveMidiFx;
+  private readonly liveFxListeners = new Set<(output: LiveFxOutput) => void>();
   private readonly testClicks: TestClicks;
   private readonly liveCapture: LiveCapture;
   private readonly liveMeters: LiveMeters;
@@ -170,6 +175,7 @@ export class Engine implements EngineApi, EngineCore {
       strips: this.strips,
     });
     this.samplePreview = this.createSamplePreview();
+    this.liveFx = this.createLiveFx();
     this.notePreview = this.createNotePreview();
     this.testClicks = new TestClicks(ctx, this.output.monitorBus);
     this.liveCapture = this.createLiveCapture();
@@ -253,7 +259,26 @@ export class Engine implements EngineApi, EngineCore {
       strips: this.strips,
       noteFeed: this.noteFeed,
       clock: this.outputClock,
+      midiFx: this.liveFx,
       resume: () => this.resume(),
+    });
+  }
+
+  /** The live MIDI effects, with the scheduler's worker clock running them ahead of the audio clock (realtime engines only). */
+  private createLiveFx(): LiveMidiFx {
+    const hasClock = !this.offline && isRealtimeContext(this.ctx);
+    return createLiveMidiFx({
+      ctx: this.ctx,
+      strips: this.strips,
+      noteFeed: this.noteFeed,
+      project: () => this.project,
+      tempoMap: () => this.tempoMap(),
+      songTickAt: (time) => (this.transport.playing ? this.driver.tickAt(time).tick : null),
+      restingTick: () => this.driver.tickAt(this.ctx.currentTime).tick,
+      timer: hasClock ? new SchedulerClock(() => this.liveFx.tick()) : null,
+      report: (output) => {
+        for (const listener of this.liveFxListeners) listener(output);
+      },
     });
   }
 
@@ -427,6 +452,7 @@ export class Engine implements EngineApi, EngineCore {
 
   applyDocChange(change: DocChange): void {
     this.mirror.applyDocChange(change);
+    this.liveFx.projectChanged();
   }
 
   /** True while a time-stretched copy of the channel's sample is being computed. */
@@ -516,6 +542,8 @@ export class Engine implements EngineApi, EngineCore {
 
   stop(): void {
     this.driver.stop();
+    // Stop silences everything, including an arpeggio a key press latched and the echoes of a live note.
+    this.liveFx.allNotesOff();
   }
 
   async setOutputDevice(deviceId: string): Promise<boolean> {
@@ -598,6 +626,11 @@ export class Engine implements EngineApi, EngineCore {
 
   previewPitchBend(channelId: ChannelId, cents: number): void {
     this.notePreview.pitchBend(channelId, cents);
+  }
+
+  onLiveFxOutput(listener: (output: LiveFxOutput) => void): () => void {
+    this.liveFxListeners.add(listener);
+    return () => this.liveFxListeners.delete(listener);
   }
 
   previewSample(ref: Pick<SampleRef, 'source' | 'name'>): void {
@@ -765,6 +798,7 @@ export class Engine implements EngineApi, EngineCore {
     await this.output.fadeOutIfRunning();
     this.disposed = true;
     this.transport.stop();
+    this.liveFx.dispose();
     this.automation.dispose();
     this.metronome?.dispose();
     this.schedulerClock.dispose();

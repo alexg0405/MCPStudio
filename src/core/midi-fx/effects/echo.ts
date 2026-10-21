@@ -33,7 +33,7 @@ export const echo: MidiFxDef = {
     { name: 'Falling triplets', params: { delay: '1/8t', pitch: -2, repeats: 6, decay: 0.8 } },
   ],
   reach(values) {
-    return { before: 0, after: noteValueTicks(String(values.delay)) * MAX_REPEATS };
+    return { before: 0, after: noteValueTicks(String(values.delay)) * Math.round(Number(values.repeats)) };
   },
   run(input, run) {
     const out: FxNote[] = [];

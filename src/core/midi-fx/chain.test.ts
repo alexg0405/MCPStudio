@@ -33,7 +33,8 @@ describe('a chain of effects', () => {
 
   it('reports how far the chain can move notes', () => {
     const reach = chainReach(activeEffects([slotOf('arp', { rate: '1/8' }), slotOf('echo', { delay: '1/4', repeats: 2 })]));
-    expect(reach.after).toBeGreaterThanOrEqual(2 * 480 + 16 * 960);
+    // Two steps of the arpeggiator's rate (480 each) and two echoes of a quarter note (960 each).
+    expect(reach.after).toBe(2 * 480 + 2 * 960);
     expect(reach.before).toBe(0);
   });
 

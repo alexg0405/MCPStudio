@@ -83,6 +83,11 @@ const MAX_REMEMBERED_RUNS = 256;
 /** Planned segments are kept this long after they end (seconds), for the playhead and the tempo readouts. */
 const KEEP_SEGMENTS_SEC = 2;
 
+/** The source with the timeline's tempo in it, unless it already names one (the MIDI effects think in milliseconds). */
+function withTempo(source: EventSource, tempo: TempoMap): EventSource {
+  return source.tempo ? source : { ...source, tempo };
+}
+
 /** The lookahead scheduler: plans segments of the timeline a little ahead of the clock and dispatches their notes to the sink. */
 export class Transport {
   /** Where the transport is and what it has planned; the position queries read the same state. */
@@ -113,6 +118,7 @@ export class Transport {
     timeline: Timeline,
     opts: { lookahead?: number } = {},
   ) {
+    this.source = withTempo(source, timeline.tempo);
     this.plan = new PlanState(timeline);
     this.where = new PositionQueries(this.plan);
     this.lookahead = opts.lookahead ?? DEFAULT_LOOKAHEAD_SEC;
@@ -228,7 +234,7 @@ export class Transport {
    * it just stores the model.
    */
   setModel(source: EventSource, timeline: Timeline): void {
-    this.source = source;
+    this.source = withTempo(source, timeline.tempo);
     const loopChanged =
       timeline.loop?.start !== this.plan.timeline.loop?.start || timeline.loop?.end !== this.plan.timeline.loop?.end;
     const tempoChanged = timeline.tempo !== this.plan.timeline.tempo;

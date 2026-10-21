@@ -45,7 +45,9 @@ does):
   controller.
 - **AI** (`app/ai`): `context/` (budget and the channel, mixer, pattern and playlist lines), `read/` (read tools in
   groups: project, music, sound, arrangement, measurement), `ops/` (one module per kind of action; `ops/automation/`
-  and `ops/session/` are folders), `focus/` (the `<focus>` block), `schema/`. The beat writer (`assistant/apply.ts`) keeps its door and has `beat-writer/`
+  and `ops/session/` are folders), `focus/` (the `<focus>` block), `schema/`, and the catalog the AI is told about:
+  `catalog-items.ts` (one list of plugins, tools, chains and commands), `catalog-index.ts` (the index in the system prompt),
+  `predict.ts` + `predict-words.ts` (which items a request needs), `catalog-details.ts` (their details). The beat writer (`assistant/apply.ts`) keeps its door and has `beat-writer/`
   behind it (channel matching, sounds, plan, write).
 - **MCP** (`app/mcp`): `tools.ts` builds the tool list from `edit-tools.ts`, `transport-tools.ts`, `history-tools.ts`,
   `read-tools.ts` and `audio-tools.ts`; shared pieces are in `common.ts` and `tool-deps.ts`.
@@ -1556,7 +1558,7 @@ A guide that follows another guide works (the chain renders in turn); a ring is 
   structured-output schema (`BEAT_JSON_SCHEMA`: `additionalProperties: false` everywhere, ranges in descriptions,
   enforced by `validateBeatSpec`; a beat that fails validation is sent back once for a fix). Three backends:
   - **subscription** (`tools/ai/subscription-backend.ts`): the musician's own Claude Code CLI, signed in with their
-    Claude plan, run in print mode per turn with no tools, resuming its session for follow-ups. How the system prompt
+    Claude plan, run in print mode per turn with no built-in tools (its only tools are AGstudio's read tools, see "AI context: cached prefix, index, lookups"), resuming its session for follow-ups. How the system prompt
     and the schema reach it is `tools/ai/claude-turn.ts`: as `--system-prompt` / `--json-schema` arguments when the
     command line is safely short for the system (macOS and Linux, always in practice), otherwise through the CLI's
     stream-json input (an `initialize` control message carrying `systemPrompt` and `jsonSchema`, then one user message),
@@ -1587,7 +1589,7 @@ A guide that follows another guide works (the chain renders in turn); a ring is 
   generator; a chosen backend that isn't set up shows its reason in the window. The page keeps the model per backend
   (`model` for Claude, `codexModel` for Codex, empty = Codex's own default, "Other model…" takes a typed id) and one
   server-side conversation per backend (`ClaudeChat.sessions`, saved with the tab): switching backend starts a fresh
-  thread there (the plugin catalog and command list are sent again) and switching back continues the old one. Claude
+  thread there (it starts from the same system prompt, with the catalog index in it) and switching back continues the old one. Claude
   Opus 5.5 and Sonnet 5.5 reject forced tool choice, which is why the answer is a structured output rather than a
   tool call. The endpoint refuses requests without the `x-agstudio` header or from another origin; the model id is
   checked per backend (`claude-…`, or Codex's `[a-z0-9][a-z0-9._:-]{0,63}` or empty).
@@ -2320,10 +2322,11 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
   skipped with a warning (shown in the chat and sent back with the next turn); the rest still apply.
 - **Context** (`app/ai/context/`, one module per part of the text) each turn: song, channels with non-default plugin settings and
   routing, mixer tracks with levels, routes, effects (settings, bypass, sidechains), patterns (notes of
-  the current one), playlist clips and the selection. The **plugin catalog** (`app/ai/catalog.ts`:
-  every param with type, range, unit, default, plus presets) is sent at the start of a conversation
-  and whenever it changes. The system prompt (`app/ai/prompt.ts`) carries the control rules and the
-  beat/mixing know-how.
+  the current one), playlist clips and the selection. The plugin and command **catalog** is a compact
+  index in the system prompt (`app/ai/catalog-index.ts`); the settings, ranges, units and presets (`app/ai/catalog.ts`)
+  of the plugins a request most likely needs come with the request, and the rest through read tools (see "AI context:
+  cached prefix, index, lookups" below). The system prompt (`app/ai/prompt.ts`) carries the control rules, the
+  beat/mixing know-how and that index.
 - **Transport**: `ClaudeChat` (`app/assistant/claude.ts`) posts each turn to `/api/ai/chat` (`/beat`
   still works) with the system prompt, schema and text; a malformed answer is sent back once for a fix.
   The subscription backend's CLI prompt is task-neutral. Without an AI, beat requests still go to the
@@ -2385,7 +2388,8 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
     steps, MIDI keys); a bad argument returns `{ error }`. The MCP server lists the same array.
   - **Look-ups in the chat**: the `query` action (`tool`, `args_json`) runs a read tool after the edits and
     returns the result in `AppliedTurn.queries`; the assistant asks again with a `<lookups>` block (at most 3
-    rounds, 4 tools per answer).
+    rounds, 4 tools per answer). This is the fallback: when the AI can call the same read tools itself during the turn
+    (through MCP) it does not need a round trip.
 - **Coverage rule** (`test/unit/ai-coverage.test.ts`): every registered command and window type must be
   reachable by the AI, or the test fails.
   - A command is reachable when it is in the command catalog (`ai` is not false) and, if it takes an argument
@@ -2397,8 +2401,9 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
     (`WINDOWS_NOT_FOR_AI`); the others are in `OPEN_WINDOWS`. Do not add to these lists to make the test pass.
   - Selection commands (`pianoRoll.*`, `playlist.*`, `audioClip.*`, `channels.delete`…) work on what `select` picked.
 - **App commands**:
-  - The `command` action runs any registered command by id (`app/ai/commands.ts`). The first turn, and any
-    turn after the list changes, sends `<commands>` with every command's id, title, hint and `argsHint`.
+  - The `command` action runs any registered command by id (`app/ai/commands.ts`). The catalog index lists every
+    command's id with a short label (one line per area); the details (title, hint, `argsHint`) of the ones a request needs
+    are attached, `get_commands` gives the others.
     So every menu entry, button and shortcut is something the AI can do: save, export, undo, windows,
     layouts, settings… New features' commands join automatically.
   - `CommandDef.gesture` marks commands that open a file dialog. The AI studio shows a one-click
@@ -2473,6 +2478,114 @@ part changes, as one undo step.
 - Tests: `focus.test.ts`, `ops/focus-guard.test.ts` (incl. "add a fill at the end of the Verse" on the stacked
   song), the assistant's fake-fetch tests, `test/browser/ask-ai.test.ts` (the pill, the marker ✦, typing in the
   card plays no notes, no React commits while playing with the card closed).
+
+### AI context: cached prefix, index, lookups
+
+A new chat used to send the whole catalog in its first turn: system prompt 58 809 characters, answer schema 108 915,
+and a first-turn text of 105 918 on an empty project (the project 1 588, `<plugins>` 49 967, `<commands>` 54 320;
+143 463 with a 200-channel song). Nearly all of it was the same in every chat, and it only reached the AI's prompt cache
+within one chat. Three changes fix that (the answer schema is not slimmed yet).
+
+| characters sent by a new chat | before | after |
+|---|---|---|
+| system prompt | 58 809 | 76 651 (rules 59 683 + catalog index 16 966) |
+| answer schema | 108 915 | 108 973 |
+| turn text, empty project, "make a dark beat" | 105 918 | 5 404 (project 1 588, details 3 775) |
+| turn text, 200-channel song, same request | 143 463 | 46 595 (project 39 133, details 7 421) |
+| turn text, empty, "add a warm pad with a long reverb" | 105 918 | 12 012 (details 10 366) |
+| turn text, empty, "sidechain the bass to the kick and export an mp3" | 105 918 | 14 057 (details 12 396) |
+
+What changes from chat to chat is now the 5 000 to 14 000 characters of the turn (the project and the details), not
+106 000. The system prompt, the schema and (for the API and CLI backends) the 32 read tool definitions (24 010 characters)
+are byte-identical while the installed plugins and commands are, which is what lets the prompt caches reuse them.
+`test/unit/ai-first-turn.test.ts` and `test/browser/ai-request-size.test.ts` hold the sizes (system under 72 % of
+`MAX_SYSTEM_CHARS`, text under 20 % of `MAX_TEXT_CHARS`).
+
+- **A stable cached prefix** (`app/ai/prompt.ts` `studioSystem`, `app/ai/catalog-index.ts`). The system prompt is the rules
+  (`studioPrompt()`: intro, how to act, the ops' sections, the example) then the catalog index, as two blocks that join with a
+  blank line. Nothing in either varies: no clock, no id, no random value, a fixed order (kind, built-in before the musician's
+  own, then id in code-unit order, never the locale's), and nothing the musician can change without installing something
+  (their presets and chains are in the details, not the index). The index says `Catalog index v<hash>`: the hash of its data
+  lines changes exactly when a plugin, tool, chain or command is added, removed or changed. A test builds two apps, two new
+  chats and a reload and requires the same bytes, and requires that a new plugin changes only the second block.
+  - **A change in the middle of a chat** is told in the turn text (`beat-assistant/catalog-blocks.ts`): a `<catalog-changes>`
+    block with the added, changed and removed lines (or the whole new index when more than 40 % moved, or after a reload,
+    when only the version was saved). What each backend's conversation knows (version, index lines, which details it was sent)
+    lives in the assistant session (`catalogKnown`, in memory; the version is saved with the tab as before) and is recorded
+    only once the answer has come back (`commit`), so a request that failed is told again.
+  - Each conversation keeps the system prompt it began with: the Claude CLI records it per session (`--system-prompt-snapshot`
+    is on by default), and the API backend keeps it with the session's history (`ApiSession.system`), so a new plugin never
+    changes the cached prefix of a chat that is going on.
+- **A compact index and predicted details** (`catalog-items.ts`, `catalog-index.ts`, `predict.ts`, `catalog-details.ts`).
+  `catalogItems(services)` is the one flat list (instruments, effects, piano-roll tools, chains, commands). The index has one
+  line per plugin (`id | name | kind | category | up to 10 words | N presets`), per tool and per chain, and one line per command
+  area (`Transport: transport.metronome, transport.countIn*, …`: ids with a label of up to three words, none when the id says it,
+  a star for "takes an argument"). Descriptions are cut on a phrase, never on "and" or "with".
+  - **The guess** (`predictItems`) runs without a model, on the action search's own word matching (`core/search/rank.ts`,
+    moved out of `ui/features/palette/search.ts`, which still uses it): each word of the request (little words dropped, plus a
+    table of producer words such as "grunge", "pump", "harmonies" in `predict-words.ts`, and word stems) is matched to every
+    item's name, category, keywords and description; a word that matches many items counts less; an item that matches more of
+    the words counts more. The song adds: the plugin of the selected channel and the effects of the selected mixer track, the
+    plugins of channels playing in the part the request is about, plugins whose channel or track the request names ("the
+    lead"), the plugins the song uses and the areas it uses (chords, lyrics, launcher). The budget is 8 plugins or tools, 2
+    chains and 30 commands (`DEFAULT_DETAILS_BUDGET`), each kept only when its score is at least a quarter of the group's best.
+  - **The details** are the old catalog text of those items (settings with kind, range, unit and default, presets, the
+    musician's own presets, a command's `argsHint`), in a `<details>` block of the turn. A conversation is sent an item's
+    details once (and again when they change): the follow-up "more reverb" carries none.
+  - **How good the guess is** (`test/unit/ai-predict.test.ts`, requests in `test/helpers/predict-cases.ts`, each need a list of
+    acceptable alternatives): 48 of 48 needs on the 47 requests the producer words were tuned on (47 of 48 on the first run;
+    the miss, "cut the mud…", got its word), and 14 of 14 needs on 12 requests written before the tuning and not looked at
+    while tuning (14 of 14 on the first run too). A miss costs a read-tool call, not a wrong answer.
+- **Lookups during the turn** (`app/ai/read/catalog-tools.ts`, `tools/ai/lookup.ts`, `tools/mcp/lookup-scope.ts`). Three read tools
+  join the others: `get_plugin_details {ids}` (plugins, tools and chains by id or exact name, up to 12, with "did you mean"
+  for an id it does not know), `get_commands {ids | area}` and `search_catalog {query, kind, limit}` (the guess's ranking,
+  ignoring the song). The system prompt says: details for the likely items are attached; look up anything else before using it
+  with a read tool, or, when the turn says there are none (a `<tools>` note), with a `query` action; never guess a setting id,
+  a range, a unit or an argument.
+  - **The read-only door.** `POST /mcp?scope=lookup` serves the full MCP protocol but lists and runs only
+    `LOOKUP_TOOL_NAMES` (the read tools of the chat, `app/mcp/defs.ts`): any other name is "no such tool". Its calls run as the
+    client `agstudio-studio`, which the page answers without a toast and the settings do not list. The token is the same one;
+    a caller can only narrow its own access.
+  - **How a backend gets there.** The page says `readTools: true` in the request when `/api/ai/status` reports
+    `lookups: { mcp: true }` (a dev server; a preview server says false) and `prefs.mcpEnabled` is on. The server builds a
+    `LookupAccess` per request (never from the page): `http://localhost:<port>/mcp?scope=lookup`, the token file (made through
+    the shared token store when missing), Node and `bin/agstudio-mcp.mjs`, and the tool names. **The token is never put in a
+    config file, a command line, an environment or a log:** the helper reads it from its file for every request
+    (`AGSTUDIO_MCP_TOKEN_FILE`); the API backend's client reads it the same way and sends it only to the endpoint on this machine.
+  - **Claude Code CLI**: the turn's flags are `--safe-mode --tools "" --permission-mode dontAsk`, then
+    `--mcp-config <temp>/mcp-<uuid>.json --strict-mcp-config --allowedTools mcp__agstudio__<read tool>,…` (every read tool by
+    its full name, never the whole server), `--model … --effort medium --max-turns 6` (3 without lookups). The config is one stdio
+    server (Node, the helper, `AGSTUDIO_MCP_URL`, `AGSTUDIO_MCP_TOKEN_FILE`) and is deleted after the turn. The stdin transport
+    (Windows) takes the same flags. Each list option is followed by another option so it cannot swallow the prompt.
+  - **Codex CLI**: next to `--ignore-user-config` the turn gets `-c mcp_servers.agstudio.command`, `.args`, `.env`,
+    `.enabled_tools=[the read tools]`, `.default_tools_approval_mode="approve"` and start-up and tool time-outs. Codex has a
+    per-server tool list and approval mode, so no write tool is even enabled (the settings parse in codex-cli 0.155: checked
+    with `codex mcp get`).
+  - **API backend** (`tools/ai/api-loop.ts`, `mcp-client.ts`): the request has `tools` (the read tools from the endpoint's
+    `tools/list`, filtered to the allowed names), `system` as two blocks with `cache_control` (`ttl: '1h'`: the same prompt starts
+    every chat) and the conversation's last block with a 5-minute breakpoint (put on a copy: three of the four allowed). While the
+    model answers with `tool_use` the server calls the tool through the endpoint and sends the results back in one message
+    (an error result for a failure or an unknown name), at most 6 rounds; the 7th request has `tool_choice: none`. Thinking blocks
+    and tool calls stay in the kept history (append-only).
+  - **Fallbacks, so a broken lookup never breaks chat**: no `readTools` (MCP off, preview server, older server) is today's
+    behaviour with the `<tools>` note and `query` actions; a CLI that fails with a message about MCP is run again without
+    it; an API endpoint that cannot be reached means no tools for that turn.
+  - **What stays the same**: the answer still comes as the structured output and the page applies it with `applyAnswer`
+    (one undo step, the focus guard, the approvals). Nothing reachable from a turn changes the project, plays it or renders it.
+- **Tests**: `ai-catalog-index.test.ts` (format, determinism, versions, diff), `ai-first-turn.test.ts` (sizes, identical
+  system prompts, details once, mid-chat changes, `readTools`), `ai-predict.test.ts`, `ai-catalog-tools.test.ts`,
+  `ai-lookups.test.ts` (both CLIs' flags and temp files with fake `claude` and `codex`, no token anywhere, fallbacks, what the
+  server accepts), `ai-api-lookups.test.ts` (breakpoints, the loop, with a fake SDK client and a fake endpoint),
+  `mcp-lookup-scope.test.ts` (the door), `mcp-stdio-proxy.test.ts` (token file) and `mcp-e2e.test.ts` (the real dev server and
+  page: a stand-in `claude` starts the helper from the config the server wrote, lists the tools, reads a plugin and is refused
+  a write).
+- **To confirm with the real CLIs** (nothing here calls a model): that `claude --safe-mode` still loads the server named by
+  `--mcp-config` and that the structured output works next to `--allowedTools`; that Codex starts the stdio server and calls
+  its tools without asking; that `cache_read_input_tokens` (API) rises on the second chat.
+- **Limits**: lookups need the dev server (MCP is dev-only); the read tool definitions weigh 24 000 characters in every API
+  request and CLI conversation (cached); a tool result is cut at 30 000 characters (API) or 14 000 (query action); the guess
+  knows the producer words in `predict-words.ts` and nothing else (a plugin from the musician's folder is found by its name,
+  category and description).
 
 ## Track analysis (DJ mode)
 
@@ -5178,7 +5291,13 @@ Setup for people is in the README ("Control AGstudio from AI apps (MCP)"); this 
   MCP servers as programs. Claude Desktop's config file takes only such servers (remote ones go through Settings →
   Connectors and must be reachable from the internet), so this is its path. One line in, one POST out, concurrent;
   keeps the session id and negotiated version; mirrors `Mcp-Method`/`Mcp-Name` for 2026 requests; reads the token from
-  `.agstudio/mcp-token` for every request; says "AGstudio isn't running…" as a JSON-RPC error when nothing answers.
+  `.agstudio/mcp-token` for every request (or the file `AGSTUDIO_MCP_TOKEN_FILE` names; `AGSTUDIO_MCP_URL` replaces the endpoint, e.g.
+  with `/mcp?scope=lookup`); says "AGstudio isn't running…" as a JSON-RPC error when nothing answers.
+- **Studio's own look-ups** (`POST /mcp?scope=lookup`, `tools/mcp/lookup-scope.ts`). The same endpoint with only the read tools
+  of the Studio chat (`LOOKUP_TOOL_NAMES` in `app/mcp/defs.ts`, including `get_plugin_details`, `get_commands`,
+  `search_catalog`): the AI backends call them during a turn, through this helper (Claude Code, Codex) or directly (the API
+  backend). Any other tool is "no such tool", and the calls are not listed as a connected app. See "AI context: cached prefix,
+  index, lookups".
 - **Tests.** `test/unit/mcp-protocol.test.ts` (both eras, errors, validation, 405, batches),
   `mcp-server-parts.test.ts` (guard: loopback, Host, Origin, token; token file; uploads; the bridge with fake tabs:
   election, ack, timeouts, closed tab, switched off; status), `mcp-stdio-proxy.test.ts` (the helper against a stand-in

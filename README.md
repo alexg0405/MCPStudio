@@ -260,8 +260,8 @@ the terminal that starts AGstudio, forces one way: handy to try the Windows way 
    If AGstudio says Claude Code isn't installed although it is, set `AGSTUDIO_CLAUDE_BIN` to its full path in `.env.local`
    (for example `AGSTUDIO_CLAUDE_BIN=C:\Users\you\.local\bin\claude.exe`).
 
-   AGstudio's dev server then runs `claude -p` for each request (isolated with `--safe-mode`, no tools), so the
-   page never sees your login. This is for your own use on your machine: don't share the app with others using
+   AGstudio's dev server then runs `claude -p` for each request (isolated with `--safe-mode`, no built-in tools; the
+   only tools are AGstudio's own read-only ones, see "What it sends" below), so the page never sees your login. This is for your own use on your machine: don't share the app with others using
    your login.
 2. **Your ChatGPT plan, through Codex** (no API key, nothing billed separately; it counts toward your plan's Codex
    usage). The ChatGPT app for Mac already includes the Codex command; otherwise install it with
@@ -273,7 +273,7 @@ the terminal that starts AGstudio, forces one way: handy to try the Windows way 
    ```
 
    AGstudio's dev server then runs `codex exec` for each request (read-only, in an empty temporary folder, with
-   Codex's tools turned off and your Codex config ignored), so the page never sees your login. Every AI feature
+   Codex's tools turned off, except AGstudio's own read-only ones, and your Codex config ignored), so the page never sees your login. Every AI feature
    works through it: the Studio chat, "Check my mix", the follow-up looks and the plugin builder. An API-key login
    of Codex is not used (it would bill the API, not your plan); if `codex` lives somewhere unusual, set
    `AGSTUDIO_CODEX_BIN=/path/to/codex` in `.env.local`. Same rule as above: for your own use on your machine. On Windows install it with
@@ -283,6 +283,16 @@ the terminal that starts AGstudio, forces one way: handy to try the Windows way 
 3. **An API key**: copy `.env.example` to `.env.local` and put your key after `ANTHROPIC_API_KEY=` (from
    https://console.anthropic.com/). The dev server adds it to requests; changes apply without a restart.
 4. **The offline generator**: built in, always available, no account needed. It writes beats and whole songs, and changes the song you have from plain words ("busier hats in the chorus", "a new melody for the hook", "change the chords in bars 9–16"; say "help" for the list).
+
+**What it sends.** The AI's system prompt carries the rules and a compact index of every plugin and command (one line
+each), the same text in every chat while your plugins and commands don't change, so Claude and ChatGPT can reuse it from
+their prompt caches instead of reading some 100 000 characters of catalog again. Each request adds the full details
+(settings with ranges and units, presets, command arguments) only for the plugins and commands it most likely needs,
+guessed on your computer from your words and your song (no AI involved), and the AI can look up anything else itself
+while it answers, through the read-only side of the MCP connection (it cannot change anything that way: its answer is
+still applied by the app, as one undo step). If "Let other apps control AGstudio (MCP)" is switched off in Settings, or
+you run the built app (`agstudio --app`), it looks things up the older way, with one more round. Sizes, flags and
+limits: `docs/architecture.md`, "AI context: cached prefix, index, lookups".
 
 "Auto" tries them in this order: your Claude subscription, your ChatGPT plan, the API key, then offline. You can pick
 the Claude model (Opus 5.5 by default; Sonnet and Haiku are faster) or the ChatGPT model ("Codex default", or type
@@ -333,7 +343,7 @@ none, the AI app is told "Open AGstudio in the browser first". Sound stays locke
 **Tools**: `get_guide` (the rules and music know-how Studio itself uses; read first), `get_project` (the text Studio
 sends Claude, optionally with the detail of some bars), `list_plugins`, and the read tools Studio has (`get_pattern_notes`,
 `get_channel`, `get_mixer`, `get_clips`, `get_automation`, `get_selection`, `get_transport`, `get_settings`,
-`get_windows`, `get_plugins`, `get_project_summary`),
+`get_windows`, `get_plugins`, `get_plugin_details`, `get_commands`, `search_catalog`, `get_project_summary`),
 `apply_actions` (the Studio action list: one undo step; with a `focus` of bars only that part may change, and edits
 reaching outside it come back as a question until `approve_outside: true`), `list_commands` / `run_command` (every
 menu item; file dialogs become a button for you to click: "Claude Code wants to export…"), `play`, `stop`, `seek`,

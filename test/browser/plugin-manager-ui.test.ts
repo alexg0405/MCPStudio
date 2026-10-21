@@ -8,10 +8,16 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { makePluginInstance } from '@core/model/defaults';
+import { createEmptyProject, makePluginInstance } from '@core/model/defaults';
 import { MASTER } from '@core/model/types';
 import { addFxSlot } from '@core/ops/mixer';
+import { produce } from 'immer';
+import { shareLooseFiles } from '@app/plugins/bundle-export';
+import { galleryBundle, loadGallery } from '@app/plugins/gallery';
+import { buildProjectFile } from '@app/persistence/project-io';
+import { createMemoryBlobStore } from '@app/persistence/blob-store';
 import { registerBuiltinPlugins } from '@app/plugins/discover';
+import { readBundle } from '@core/plugin-bundle/bundle';
 import { PluginRegistry } from '@app/plugins/registry';
 import { createTestServices } from '@app/testing';
 import { registerFeatures } from '@ui/features';
@@ -146,6 +152,15 @@ describe('My plugins (UI)', { timeout: 90_000 }, () => {
     await expect.poll(() => pluginRow('user.tape-stop')!.textContent ?? '', EVENTUALLY).toContain('by Alex');
   });
 
+  it('shares what the plugin builder wrote from its files in memory, with no server involved', async () => {
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const files = Object.entries(server.installed.get('tape-stop')!).map(([path, content]) => ({ path, content }));
+    const packed = await shareLooseFiles({ id: 'user.tape-stop', name: 'Tape Stop', kind: 'effect', files });
+    click.mockRestore();
+    expect(packed.fileName).toBe('Tape Stop.agplugin');
+    expect((await readBundle(packed.bytes)).ok).toBe(true);
+  });
+
   it('switches a plugin off after saying what goes silent, and back on', async () => {
     s.history.transact('Use it', (d) => void addFxSlot(d, MASTER, makePluginInstance('user.tape-stop', 1, {})));
     await expect.poll(() => pluginRow('user.tape-stop')!.textContent ?? '', EVENTUALLY).toContain('Used in 1 place in this song');
@@ -180,5 +195,27 @@ describe('My plugins (UI)', { timeout: 90_000 }, () => {
     const restore = [...manager()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Restore' && b.closest('li')?.textContent?.includes('tape-stop-2'));
     await userEvent.click(restore!);
     await expect.poll(() => pluginRow('user.tape-stop-2'), EVENTUALLY).toBeTruthy();
+  });
+
+  it('opening a song that needs a plugin says which, and installs the one the file carries after the install dialog', async () => {
+    const [crusher] = (await loadGallery()).filter((item) => item.id === 'user.bit-crusher');
+    const project = produce(createEmptyProject(), (d) => void addFxSlot(d, MASTER, makePluginInstance('user.bit-crusher', 1, { bits: 6 })));
+    const file = await buildProjectFile(project, null, 'test', {
+      store: createMemoryBlobStore(),
+      plugins: new Map([['user.bit-crusher', await galleryBundle(crusher!)]]),
+    });
+    expect(registry.get('user.bit-crusher')).toBeUndefined();
+    void s.files.openFile(new File([file.slice().buffer], 'Shared song.agproj'));
+    // The earlier tests changed the open song, so opening another asks about those changes first.
+    await expect.poll(() => dialog()?.textContent ?? '', EVENTUALLY).toContain('Unsaved changes');
+    await answer("Don't save");
+    await expect.poll(() => dialog()?.textContent ?? '', EVENTUALLY).toContain('This song needs a plugin you do not have');
+    expect(dialog()!.textContent).toContain('user.bit-crusher');
+    expect(dialog()!.textContent).toContain('the track Master');
+    // Its answer is followed at once by the install dialog of the plugin the file carries.
+    await userEvent.click(buttonIn(dialog(), 'Install the plugins from this song')!);
+    await expect.poll(() => dialog()?.textContent ?? '', EVENTUALLY).toContain('Install “Bit Crusher”?');
+    await answer('Install');
+    await expect.poll(() => registry.get('user.bit-crusher'), EVENTUALLY).toBeDefined();
   });
 });

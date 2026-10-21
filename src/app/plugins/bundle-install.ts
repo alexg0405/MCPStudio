@@ -1,6 +1,7 @@
 import { readBundle, type PluginBundle } from '@core/plugin-bundle/bundle';
 import { pluginCapabilities } from '@core/plugin-bundle/capabilities';
 import { replaceQuoted, withPluginId, type PluginFile } from '@core/plugin-bundle/rules';
+import { devServerMissing } from '../local-server';
 import { PluginServerError, type FolderInfo } from './server';
 import {
   PluginActionError,
@@ -66,9 +67,7 @@ export async function inspectBundle(up: UserPlugins, bytes: Uint8Array): Promise
       capabilities: pluginCapabilities(bundle.manifest.kind, bundle.files),
       collision,
       newPresets,
-      cannotInstall: up.hasServer
-        ? null
-        : "Installing a plugin needs AGstudio's dev server: run `agstudio` (that is `npm run dev`) in a terminal and use the browser tab it opens; the installed app can't do this.",
+      cannotInstall: up.hasServer ? null : devServerMissing('Installing a plugin'),
     },
   };
 }

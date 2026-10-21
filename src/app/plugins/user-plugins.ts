@@ -4,6 +4,7 @@ import type { BundleKind } from '@core/plugin-bundle/manifest';
 import { pluginUsage, type PluginUse } from '@core/query/plugin-usage';
 import type { DocStore } from '../stores/doc';
 import type { SessionStore } from '../stores/session';
+import { devServerMissing } from '../local-server';
 import type { PresetLibrary } from '../presets';
 import { PluginMeta } from './meta';
 import type { PluginRegistry } from './registry';
@@ -100,7 +101,7 @@ export class UserPlugins {
   async requireServer(what: string): Promise<PluginListing> {
     await this.refresh();
     const { listing, server } = this.store.getState();
-    if (server !== 'ok' || !listing) throw new PluginActionError(`${what} needs AGstudio's dev server: run \`agstudio\` (that is \`npm run dev\`) in a terminal and use the browser tab it opens; the installed app can't do this.`);
+    if (server !== 'ok' || !listing) throw new PluginActionError(devServerMissing(what));
     return listing;
   }
 

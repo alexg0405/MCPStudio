@@ -155,3 +155,15 @@ export function withPluginId(
 export function declaresPluginId(files: readonly PluginFile[], id: string): boolean {
   return withPluginId(files, id, id).changes > 0;
 }
+
+const DECLARED_ID = /['"](user\.[a-z][a-z0-9-]{1,40})['"]/;
+const DECLARED_VERSION = /\bversion:\s*(\d+)/;
+
+/** The id and version a plugin's code declares (the code is the one place they are written); null when no id is found. */
+export function declaredIdentity(files: readonly PluginFile[]): { id: string; version: number } | null {
+  const code = files.filter((file) => /\.(ts|tsx)$/.test(file.path));
+  const id = code.map((file) => DECLARED_ID.exec(file.content)?.[1]).find((found) => found !== undefined);
+  const index = code.find((file) => /^index\.tsx?$/.test(file.path));
+  const version = Number(DECLARED_VERSION.exec(index?.content ?? '')?.[1] ?? 1);
+  return id ? { id, version } : null;
+}

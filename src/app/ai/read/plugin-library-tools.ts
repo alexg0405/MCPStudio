@@ -3,7 +3,7 @@
  * them, the gallery of examples, and what is in the trash. Over MCP `prepare` reads the plugins folder first, so the answer
  * is current. Sharing, importing, duplicating and the rest are commands (`plugins.*`), which ask the musician.
  */
-import { galleryIds } from '../../plugins/gallery';
+import { galleryIds } from '@app/plugins/gallery';
 import * as S from '../schema/parts';
 import { tool, type ReadTool } from './tool';
 

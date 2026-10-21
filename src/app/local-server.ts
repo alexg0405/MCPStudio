@@ -16,7 +16,7 @@ export const AI_SERVER_MISSING =
 /** The shorter form for a status line. */
 export const AI_SERVER_MISSING_SHORT = "The AGstudio server can't be reached: run `agstudio --app` (or `agstudio`) in a terminal.";
 
-/** A feature that only the dev server (`agstudio`) provides: the plugin builder, new plugins, MCP, open in editor. */
+/** A feature that only the dev server (`agstudio`) provides: the plugin builder, new plugins, sharing and installing plugins (`.agplugin`), managing them, MCP, open in editor. */
 export function devServerMissing(what: string): string {
   return `${what} needs AGstudio's dev server: run \`agstudio\` (that is \`npm run dev\`) in a terminal and use the browser tab it opens; the installed app can't do this.`;
 }

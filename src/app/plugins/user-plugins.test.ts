@@ -9,7 +9,7 @@ import { addFxSlot } from '@core/ops/mixer';
 import { readBundle, writeBundle } from '@core/plugin-bundle/bundle';
 import { effectSource, folderServer, readFolder, syncRegistry, tempPlugins, writeFolder, type TempPlugins } from '../../../test/helpers/plugin-folder';
 import { createTestServices } from '../testing';
-import { exportBundle } from './bundle-export';
+import { exportBundle, shareLooseFiles } from './bundle-export';
 import { inspectBundle, installBundle } from './bundle-install';
 import { duplicatePlugin, renamePlugin } from './plugin-edit';
 import { PluginRegistry } from './registry';
@@ -240,6 +240,13 @@ describe('sharing: export and import a bundle', () => {
     expect(checked.inspection.bundle.manifest.name).toBe('Tape stop');
     expect(checked.inspection.cannotInstall).toMatch(/needs AGstudio's dev server/);
     await expect(installBundle(noServer.userPlugins, checked.inspection.bundle, 'new')).rejects.toThrow(/dev server/);
+  });
+});
+
+describe('sharing what the plugin builder wrote', () => {
+  it('refuses a draft that would not pass the safety checks, before saving anything', async () => {
+    const draft = { id: 'user.sneaky', name: 'Sneaky', kind: 'effect' as const, files: [{ path: 'index.ts', content: `fetch('/x'); const id = 'user.sneaky';` }] };
+    await expect(shareLooseFiles(draft)).rejects.toMatchObject({ problems: [expect.stringMatching(/network access/)] });
   });
 });
 

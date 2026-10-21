@@ -77,7 +77,7 @@ the development server on 5390, with hot reload, and has nothing to do with the 
   your plugins (they are part of the build).
 - **Needs `agstudio --app` running** (a terminal is enough): the AI studio (Claude, ChatGPT, API key).
 - **Needs the dev server, `agstudio`, in a browser tab:** AI apps connecting over MCP, the AI plugin builder, New plugin…, Edit
-  code, and hot reload while you write plugins. These say so when they cannot be reached. Plugins you add or change reach the
+  code, sharing, importing and managing plugins (My plugins), and hot reload while you write plugins. These say so when they cannot be reached. Plugins you add or change reach the
   installed app the next time `agstudio --app` builds (it rebuilds by itself when the code is newer).
 - **Updates:** a new build downloads in the background and a small "Update ready" note offers Reload; nothing reloads by itself, and
   Reload waits while a song plays.
@@ -179,6 +179,12 @@ the development server on 5390, with hot reload, and has nothing to do with the 
 - **Presets**: every plugin window has a preset bar (◀ name ▶): load factory presets, save your own, rename,
   delete, reset, randomize ("vary a little" to "everything"), export and import `.agpreset` files. The browser's
   Presets section lists yours and searches every preset; click one to add it.
+- **My plugins** (Alt+Shift+U): your own plugins as code, in one list. **Share…** packs a plugin (and your presets for it) into one
+  `.agplugin` file; drop a file a friend sent on AGstudio (or Add → Import a plugin…) and a dialog says what it is and what it can
+  and cannot do before it installs, asking before it replaces a plugin with the same id (or install it as a copy). Duplicate, change
+  a plugin's id (the song follows, one undo step), switch off, or delete to a trash that brings it back. A gallery has a tape stop,
+  a bit crusher, an FM bell and a Faust wobble filter to install with one click. Save As can carry the plugins a song uses. All of it
+  needs the dev server. See "Sharing plugins" in `docs/plugin-sdk.md`.
 - **Settings** (Options → Settings…, F10): which speakers or headphones to play through (with a left/right test
   sound), MIDI devices, the typing piano, recording options, tooltips, and the look: four themes (Dark, Midnight,
   Graphite, Light) and seven accent colors (also in Options → Theme and Accent color).

@@ -2346,6 +2346,7 @@ The assistant window is an AI studio: every turn, the AI (Claude, or ChatGPT thr
   4. Problems go back to Claude, for at most three fix rounds.
   5. Install moves the folder to `plugins/<name>/`, backing up an older one in `plugins/_backup/`, and hot
      reload registers it. `plugins/_*` is outside `tsc -b`, eslint, vitest and git.
+  6. The result card also has Share…, which packs the files into a `.agplugin` bundle (see "Sharing and managing plugins").
 
 ### Asking the AI about a part
 
@@ -5894,7 +5895,7 @@ files). No Electron and no dependency: a manifest, a hand-written service worker
   with no server: the whole editor, the engine, projects (File System Access, OPFS, IndexedDB), export, the offline beat generator,
   built-in and (build-time bundled) user plugins. `agstudio --app` (production server): additionally `/api/ai` (the AI studio's
   backends: Claude subscription, Codex, API key). Only `agstudio` (dev server): MCP for AI apps (`/mcp`, tokens), the plugin builder
-  and "New plugin…" (`/api/plugins`), "Edit code" (`/__open-in-editor`), hot reload of code and of `plugins/`. User plugins are part of the
+  and "New plugin…", sharing, installing and managing plugins (`/api/plugins`), "Edit code" (`/__open-in-editor`), hot reload of code and of `plugins/`. User plugins are part of the
   production build (`import.meta.glob` at build time): add or edit one, rebuild (`agstudio --app` does when the code is newer).
 - **Tests.** `src/sw/routing.test.ts` (routes, caches, headers), `test/unit/pwa-precache.test.ts` (the list and the build id),
   `test/unit/pwa.test.ts` (installability by hand, since Lighthouse is not installed: manifest fields, icon files and sizes, colors from
@@ -5909,3 +5910,87 @@ files). No Electron and no dependency: a manifest, a hand-written service worker
 - **Limits.** Chrome's install and file-handling UI is Chrome's (there is no way to install from a script); the installed app's
   files and settings are the browser profile's (the same IndexedDB and OPFS as the tab on that origin, a different origin than
   `agstudio`'s dev server, so projects kept only in the browser are separate per origin); window controls overlay is untested here.
+
+## Sharing and managing plugins (`core/plugin-bundle`, `tools/plugins`, `app/plugins`, `ui/features/plugin-manager`)
+
+The owner's own instruments and effects are code in `plugins/<folder>/`. This part makes them easy to share, install and keep
+tidy. Everything that touches the `plugins/` folder goes through the dev server (`agstudio`); the installed app has no
+server behind `/api/plugins`, says so in plain words (`devServerMissing`) and can still show what a bundle is.
+
+### The `.agplugin` bundle (`core/plugin-bundle`, pure, no DOM, unit tested)
+- **Layout** (`bundle.ts`): a zip with `agplugin.json` (the manifest), `files/<name>` (the flat source files) and optional
+  `presets.json`. Writing is deterministic (fixed timestamps), so exporting twice gives the same bytes.
+- **Manifest** (`manifest.ts`): `format: "agstudio-plugin"`, `formatVersion`, `id` (`user.<name>`), `name`, `version` (the
+  plugin's own `version`, a whole number), `kind` (`instrument`, `effect`, `note-script`), `author`, `description`, `sdk` (a
+  version range), `files` (path, SHA-256, bytes), `presets` (count and SHA-256 of `presets.json`) and `createdWith`.
+- **SDK version** (`sdk-range.ts`): `PLUGIN_SDK_VERSION` is 1.0.0 (its major goes up only for a change that breaks existing
+  plugins). The range language is `^1.0.0`, `~1.2.0`, `>=1.0.0 <2.0.0`, `1.x`, an exact version or `*`.
+- **Reading** (`readBundle`) refuses the whole bundle when anything is wrong: not a zip, over 1 MB, an entry that is not
+  `agplugin.json`, `presets.json` or `files/<flat name>` (nested folders, `..`), a file or the total over the limits, a bad
+  manifest, a newer format, an SDK range that does not contain this SDK, a file missing from or not listed in the manifest, a
+  hash or size that does not match, then the rules below, then "the code never spells the manifest's id" and bad presets.
+  Sizes are read from the zip directory before anything is unpacked.
+- **The rules** (`rules.ts`) are the plugin builder's, moved here so the dev server, the builder and the importer share one
+  copy: flat names ending in `.ts`, `.tsx`, `.dsp`, `.md` (at most 8 files, 64 KB each, 256 KB in all, an `index.ts`), imports
+  only from `@agstudio/sdk*`, `react` and the plugin's own files (audio-thread files: the worklet SDK only), and no network,
+  storage, eval, dynamic import or opening pages (the scan ignores strings and comments). `tools/ai/drafts.ts` re-exports
+  `checkFiles`/`scanSource`. They stop mistakes and obvious misuse; they are **not a sandbox** (a user plugin is trusted code in the
+  page), and `capabilities.ts` says exactly that in the install dialog together with what the files show the plugin can do.
+- `replaceQuoted`/`withPluginId` rewrite a quoted id or name in code (copies, duplicates, renames); an id the code never spells whole is
+  refused, so nothing is renamed halfway.
+
+### The dev server (`tools/ai/drafts.ts`, `tools/plugins/*`)
+Same-origin POSTs with the `x-agstudio` header only. `pluginHandlers(paths, { typeCheck, openFolder })` builds the endpoints on a
+`PluginPaths` (`plugins/`, `_drafts`, `_backup`, `_trash`, `_disabled`; tests pass a temporary folder and a stand-in type check):
+`draft` (checks and writes `plugins/_drafts/<name>`, runs `tsc`), `install` (moves it into `plugins/`; an existing folder goes to
+`_backup`, or with `keepExisting` the install is refused with 409), `discard`, `new`, `list` (folders by place, with the id their code
+declares), `files`, `check`, `trash`, `restore`, `disable`, `enable` and `open-folder`. Folder names from requests are checked so they
+can never leave the plugin folders (`safeFolderName`). Nothing deletes for good: delete moves to `_trash/<folder>-<time>`, disable to
+`_disabled/<folder>`, both ignored by discovery because they start with `_`.
+
+### The app (`app/plugins`, `services.userPlugins`)
+- `UserPlugins` (`user-plugins.ts`) is the list: the registry's loaded plugins and load errors plus the server's folder listing, the
+  state (`loaded`, `error`, `disabled`), where the open project uses each (`core/query/plugin-usage.ts`), the last "Check code" result, and
+  the actions disable, enable, trash, restore, check, open folder. Author and origin are kept in IndexedDB (`meta.ts`).
+- `bundle-export.ts` reads the files from the server, packs them with your presets for the plugin and reads the result back with the
+  importer's checks, so what comes out always imports. `bundle-install.ts` is `inspectBundle` (checks, collision with a plugin of the same
+  id: identical, or different with its version relation, presets that are new, no server) and `installBundle` with three modes: `new`
+  (refuses when the id exists), `replace` (the old folder goes to `_backup`; a switched-off one is switched on first; projects keep their
+  settings and `migrate` upgrades them) and `copy` (a free id like `user.x-2`, the code's id and name rewritten). The server checks the files
+  again, so a page that skips the importer is still refused.
+- `plugin-edit.ts`: `duplicatePlugin` and `renamePlugin`. A rename copies the code to the new folder (id rewritten), waits until it loads,
+  then in one `history.transact` points channels, effect slots and mixer snapshots at the new id (`core/ops/plugin-rename.ts`), moves the
+  user's presets and chain steps (`PresetLibrary.renamePlugin`) and only then trashes the old folder, so nothing the song plays is ever
+  without its plugin. Undo restores the document exactly; the old folder is in `_trash`.
+- `gallery.ts`: the example plugins live in `templates/gallery/<name>/` (type checked and linted like the templates; the folder
+  name is the id) with a `gallery.json`; they are packed into bundles on demand and installed through the same dialog as any bundle.
+- `project-plugins.ts` and `ProjectFiles`: opening a project that uses `user.*` plugins that are not installed calls `FileUi.pluginsMissing`
+  (the UI says which, where they are used, and offers the bundles the file carries or a bundle file). Save As asks
+  (`FileUi.chooseEmbeddedPlugins`, off by default, only when the project uses loaded user plugins and the dev server answers) and the
+  `.agproj` then holds `plugins/<id>.agplugin` entries (`core/io/project-file.ts`: at most 32, 1 MB each, older versions skip them). Save keeps
+  what the open file carried.
+
+### UI, AI and MCP
+- The "My plugins" window (`view.pluginManager`, `Alt+Shift+U`): your plugins with name, kind, version, author, id, where the song uses
+  them and any load or check error; Edit code, Share…, and a ⋯ menu (duplicate, change id, update from a newer bundle, check, open folder,
+  switch off, delete); the gallery; the trash; the built-ins (read only). "Share…" is also in the plugin window's header, the browser's
+  right-click menu and the plugin builder's result card (it packs the draft's files in memory, no server). A `.agplugin` file dropped
+  anywhere on AGstudio and Add → Import a plugin… both open the install dialog (`flows.ts`, texts in `describe.ts`).
+- **Nothing installs without the dialog being answered**, whoever started it. Commands: `plugins.import` (a gallery name, or a file
+  chooser: `gesture: true`), `plugins.share`, `plugins.duplicate`, `plugins.changeId`, `plugins.disable`, `plugins.enable`,
+  `plugins.delete`, `plugins.restore`, `plugins.check`, `plugins.openFolder`, all with an `argsHint` so Studio and MCP clients drive
+  them; the read tool `get_user_plugins` lists them (state, errors, where used, trash, gallery ids; over MCP it reads the folder first).
+- The installed app (PWA) does not register `.agplugin` as a file type: installing needs `agstudio`, so there is nothing for it to open
+  the file with.
+
+### Tests
+`core/plugin-bundle/bundle.test.ts` (round trip, every refusal case, ranges, id rewriting), `core/io/project-file-plugins.test.ts`,
+`core/ops/plugin-rename.test.ts`, `test/unit/plugin-server.test.ts` (the real handlers on a temporary folder and over HTTP, guards),
+`app/plugins/user-plugins.test.ts` and `project-plugins.test.ts` (export → import into a second folder gives identical files and presets,
+collisions, rename with exact undo, trash and restore, the missing-plugin flow), `test/unit/plugin-gallery*.test.ts` (kernels in Node, Faust
+compiles, real `tsc` on three gallery plugins) and `test/browser/plugin-manager-ui.test.ts` (the window, the dialogs, with an in-memory
+server). No test touches the repository's own `plugins/` folder.
+
+### Limits
+The checks are text scans plus the compiler, not isolation. A bundle holds one plugin (no dependencies between plugins). Open folder uses
+the system's `open`/`explorer`/`xdg-open` (not tried here on Windows or Linux). The trash is emptied by hand.

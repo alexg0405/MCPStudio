@@ -1,5 +1,5 @@
 import { galleryBundle, type GalleryItem } from '@app/plugins/gallery';
-import { shareBundle } from '@app/plugins/bundle-export';
+import { shareBundle, shareLooseFiles, type LoosePlugin } from '@app/plugins/bundle-export';
 import { inspectBundle, installBundle } from '@app/plugins/bundle-install';
 import { packPlugins, usedUserPlugins } from '@app/plugins/project-plugins';
 import { PluginServerError } from '@app/plugins/server';
@@ -211,5 +211,15 @@ export async function offerMissingPlugins(s: Services, info: MissingPluginsInfo)
     for (const id of carried) await importBundleBytes(s, info.embedded.get(id) as Uint8Array);
   } else if (answer === 'file') {
     await importBundleFile(s);
+  }
+}
+
+/** Shares a plugin the plugin builder wrote (a draft, or installed): the files it has are packed into a `.agplugin` file. */
+export async function sharePluginDraft(s: Services, plugin: LoosePlugin): Promise<void> {
+  try {
+    const packed = await shareLooseFiles(plugin);
+    say(s, `Saved ${packed.fileName}. Send it to a friend: they drop it on AGstudio and see what it can do before installing.`);
+  } catch (error) {
+    await reportFailure(s, error, 'share this plugin');
   }
 }

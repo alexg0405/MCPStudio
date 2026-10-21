@@ -5,6 +5,7 @@ import type { Services } from '@app/services';
 import { showDialog } from '../../controls/Dialog';
 import { Icon } from '../../controls/Icon';
 import { useHistoryStatus, useServices } from '../../services-context';
+import { sharePluginDraft } from '../plugin-manager/flows';
 import { shortcutLabel } from '../../shortcut-label';
 import styles from './Assistant.module.css';
 
@@ -266,6 +267,15 @@ function PluginCard({ message }: { message: AssistantMessage }) {
             data-hint="Throw this draft away (it didn't pass the checks)"
           >
             Discard draft
+          </button>
+        )}
+        {(state === 'draft' || state === 'installed') && (
+          <button
+            className={styles.ghost}
+            onClick={() => void sharePluginDraft(services, { id: draft.id, name: draft.name, kind: draft.kind, files: draft.files })}
+            data-hint="Save this plugin as one .agplugin file to send to a friend (they see what it can do before installing it)"
+          >
+            Share…
           </button>
         )}
         {state === 'installing' && <span className={styles.dim}>Installing…</span>}

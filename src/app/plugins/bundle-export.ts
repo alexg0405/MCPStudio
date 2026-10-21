@@ -1,7 +1,7 @@
 import { APP_VERSION } from '@core/model/defaults';
 import { readBundle, writeBundle } from '@core/plugin-bundle/bundle';
 import { BUNDLE_EXTENSION, BUNDLE_MIME, type BundleKind, type BundlePreset } from '@core/plugin-bundle/manifest';
-import { pluginFileProblems } from '@core/plugin-bundle/rules';
+import { declaredIdentity, pluginFileProblems, type PluginFile } from '@core/plugin-bundle/rules';
 import { downloadBytes } from '@platform/fs-access';
 import { PluginActionError } from './types';
 import type { UserPlugins } from './user-plugins';
@@ -75,4 +75,37 @@ export async function shareBundle(up: UserPlugins, id: string, details: ShareDet
   const exported = await exportBundle(up, id, details);
   downloadBytes(exported.fileName, exported.bytes, BUNDLE_MIME);
   return exported;
+}
+
+/** A plugin that is not installed (the plugin builder's draft): its identity and the files it has in memory. */
+export interface LoosePlugin {
+  id: string;
+  name: string;
+  kind: 'instrument' | 'effect';
+  files: readonly PluginFile[];
+}
+
+/**
+ * Packs files that are in memory (a draft from the plugin builder) into a bundle and saves it, with no dev server needed.
+ * The same checks apply as when sharing an installed plugin.
+ */
+export async function shareLooseFiles(plugin: LoosePlugin, details: ShareDetails = {}): Promise<ExportedBundle> {
+  const problems = pluginFileProblems(plugin.files);
+  if (problems.length > 0)
+    throw new PluginActionError(`“${plugin.name}” would not pass the plugin safety checks, so it cannot be shared as a bundle.`, problems);
+  const bytes = await writeBundle({
+    id: plugin.id,
+    name: plugin.name,
+    version: declaredIdentity(plugin.files)?.version ?? 1,
+    kind: plugin.kind,
+    author: details.author ?? '',
+    description: details.description ?? '',
+    files: plugin.files,
+    createdWith: `AGstudio ${APP_VERSION}`,
+  });
+  const check = await readBundle(bytes);
+  if (!check.ok) throw new PluginActionError(`“${plugin.name}” could not be packed into a valid bundle.`, check.problems);
+  const fileName = bundleFileName(plugin.name);
+  downloadBytes(fileName, bytes, BUNDLE_MIME);
+  return { bytes, fileName, skipped: [], presetCount: 0 };
 }

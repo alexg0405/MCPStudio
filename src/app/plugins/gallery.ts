@@ -1,7 +1,7 @@
 import { APP_VERSION } from '@core/model/defaults';
 import { writeBundle } from '@core/plugin-bundle/bundle';
 import type { BundleKind } from '@core/plugin-bundle/manifest';
-import type { PluginFile } from '@core/plugin-bundle/rules';
+import { declaredIdentity, type PluginFile } from '@core/plugin-bundle/rules';
 
 /**
  * The gallery: example plugins that ship with AGstudio, each one a folder in `templates/gallery/<name>/` (the plugin's own
@@ -40,9 +40,6 @@ type Loader = () => Promise<string>;
 /** Every file of every gallery plugin, loaded only when the gallery is opened. */
 const sources = import.meta.glob<string>('/templates/gallery/*/*', { query: '?raw', import: 'default' });
 
-const PLUGIN_ID = /['"](user\.[a-z][a-z0-9-]{1,40})['"]/;
-const VERSION = /\bversion:\s*(\d+)/;
-
 /** Groups the loaded files by gallery folder: `folder → file name → loader`. */
 function foldersOf(files: Record<string, Loader>): Map<string, Map<string, Loader>> {
   const folders = new Map<string, Map<string, Loader>>();
@@ -54,14 +51,6 @@ function foldersOf(files: Record<string, Loader>): Map<string, Map<string, Loade
     folders.set(match[1] as string, folder);
   }
   return folders;
-}
-
-/** The id and version a plugin's code declares (the code is the one place they are written). */
-export function declaredIdentity(files: readonly PluginFile[]): { id: string; version: number } | null {
-  const code = files.filter((file) => /\.(ts|tsx)$/.test(file.path));
-  const id = code.map((file) => PLUGIN_ID.exec(file.content)?.[1]).find((found) => found !== undefined);
-  const version = Number(VERSION.exec(code.find((file) => /^index\.tsx?$/.test(file.path))?.content ?? '')?.[1] ?? 1);
-  return id ? { id, version } : null;
 }
 
 async function loadItem(folder: string, loaders: Map<string, Loader>): Promise<GalleryItem | null> {

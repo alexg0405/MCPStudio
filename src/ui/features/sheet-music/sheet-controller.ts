@@ -118,6 +118,11 @@ export class SheetController {
     return now.length !== this.lastKey.length || now.some((value, i) => value !== this.lastKey[i]);
   }
 
+  /** Draws now if something changed since the last drawing (a key press must act on what is on the page, not on last frame's). */
+  refreshIfStale(): void {
+    if (this.hasChanged()) this.refresh();
+  }
+
   /** Engraves and draws now. */
   refresh(): void {
     this.lastKey = this.inputs();
@@ -181,7 +186,7 @@ export class SheetController {
 
   private clampCursor(): void {
     const length = this.score ? this.score.measures.length * ticksPerBar(this.score.timeSig) : 0;
-    this.cursor.tick = Math.max(0, Math.min(this.cursor.tick, Math.max(0, length - 1)));
+    this.cursor.tick = Math.max(0, Math.min(this.cursor.tick, length));
   }
 
   /** Moves the cursor (and the view with it). */

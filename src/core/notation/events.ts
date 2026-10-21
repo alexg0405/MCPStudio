@@ -50,9 +50,12 @@ export function scoreEvents(score: Score): ScoreEvent[] {
   return events.sort((a, b) => a.tick - b.tick || a.staff - b.staff || a.voice - b.voice);
 }
 
-/** The events a cursor visits: notes and chords that start a note (not the continuation of a tie), and rests. */
+/**
+ * The events a cursor visits: the notes and chords, but not the continuation of a tied note and not the rests (a rest is
+ * a gap: the cursor says "nothing here" there, and a typed note fills it).
+ */
 export function cursorStops(events: readonly ScoreEvent[]): ScoreEvent[] {
-  return events.filter((event) => !event.isContinuation);
+  return events.filter((event) => !event.isContinuation && event.item.kind === 'chord');
 }
 
 /** "beat 2", "beat 2 and" (half a beat later), "beat 2 plus 3 steps". Beats count from 1. */

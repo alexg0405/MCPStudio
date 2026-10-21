@@ -60,7 +60,7 @@ function moveToStop(s: Services, c: SheetController, direction: 1 | -1, isExtend
   const ticks = stopTicks(c);
   const length = c.score ? c.score.measures.length * c.barTicks : 0;
   let target: number | undefined;
-  if (direction > 0) target = ticks.find((tick) => tick > c.cursor.tick) ?? Math.min(length - 1, c.cursor.tick + entryTicks(entryOf(s)));
+  if (direction > 0) target = ticks.find((tick) => tick > c.cursor.tick) ?? Math.min(length, c.cursor.tick + entryTicks(entryOf(s)));
   else target = [...ticks].reverse().find((tick) => tick < c.cursor.tick) ?? 0;
   if (target === undefined || target === c.cursor.tick) return direction > 0 ? 'That is the end of the sheet.' : 'That is the start of the sheet.';
   c.setCursor(target);
@@ -185,6 +185,7 @@ export function summaryOf(s: Services, c: SheetController): string {
 
 /** Handles a key press for the sheet. Returns true when the key was the sheet's. */
 export function handleSheetKey(s: Services, c: SheetController, event: KeyboardEvent, say: Say): boolean {
+  c.refreshIfStale();
   if (!c.score) return false;
   const said = (text: string): boolean => {
     say(text);

@@ -6,8 +6,8 @@ export const HARMONY_CHORDS: Tour = {
   id: 'harmony-chords',
   title: 'Harmony and the chord track',
   summary:
-    'Put chords on a track, then write chords, a bass line, a melody and harmonies that fit them, add lyrics, and see it all as sheet music.',
-  minutes: 3,
+    'Put chords on a track, then write chords, a bass line, a melody and harmonies that fit them, let MIDI effects play chords and arpeggios that follow them, add lyrics, and see it all as sheet music.',
+  minutes: 4,
   area: 'Harmony',
   keywords: [
     'chord',
@@ -25,8 +25,11 @@ export const HARMONY_CHORDS: Tour = {
     'notation',
     'score',
     'print',
+    'arpeggiator',
+    'arp',
+    'midi effects',
   ],
-  windows: ['chords', 'lyrics', 'sheet-music'],
+  windows: ['chords', 'midi-fx', 'lyrics', 'sheet-music'],
   steps: [
     {
       id: 'lane',
@@ -58,15 +61,22 @@ export const HARMONY_CHORDS: Tour = {
       prepare: showWindow('piano-roll'),
     },
     {
+      id: 'midi-effects',
+      target: 'window:midi-fx',
+      title: '5. Chords and arpeggios as you play',
+      body: 'MIDI effects sit between your notes and the instrument: an arpeggiator turns a held chord into a pattern, Chord adds notes, Scale keeps everything in key. Chord and Scale can follow the chord track and the song key. They work on the keys you play and on the song; Render to notes writes the result into the pattern when you want to edit it by hand.',
+      prepare: showWindow('midi-fx'),
+    },
+    {
       id: 'harmonies',
       target: 'menu:playlist',
-      title: '5. Harmonies from a vocal',
+      title: '6. Harmonies from a vocal',
       body: 'Playlist → Make harmonies… builds backing voices from a sung clip, using the chord track for the notes. Update harmonies redoes them when the vocal, the chords or the key change.',
     },
     {
       id: 'lyrics',
       target: 'window:lyrics',
-      title: '6. Lyrics',
+      title: '7. Lyrics',
       body: 'Paste your words, one line per line, and they go onto the notes you selected, the notes sung in an audio clip, or evenly over the bars. The Lyrics window shows them big and follows the song so you can read along while you record.',
       prepare: showWindow('lyrics'),
       tryIt: { label: 'Open the Lyrics window', command: 'view.lyrics' },
@@ -74,7 +84,7 @@ export const HARMONY_CHORDS: Tour = {
     {
       id: 'sheet-music',
       target: 'window:sheet-music',
-      title: '7. Sheet music',
+      title: '8. Sheet music',
       body: 'View → Sheet music shows the current pattern as a score, with the song key, ties, triplets and the chords and lyrics you added. Click a note to select it here and in the piano roll, press the arrows to move it, type A to G to add notes, and print it or save a PDF or MusicXML.',
       prepare: showWindow('sheet-music'),
       tryIt: { label: 'Open the Sheet music window', command: 'view.sheetMusic' },

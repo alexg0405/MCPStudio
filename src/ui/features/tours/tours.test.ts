@@ -35,7 +35,6 @@ describe('the tour list', () => {
       'sounds',
       'beat',
       'melody',
-      'midi-effects',
       'song',
       'play',
       'mix',

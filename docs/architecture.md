@@ -162,6 +162,8 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
   already-scheduled notes with no extra API.
 - Open-notes table: noteOff comes from the table's end tick, not from re-reading the project, so deleting a sounding note
   can't leave it stuck. Open notes close at loop wrap and clip end.
+- A channel with MIDI effects is collected through its chain (`engine/sched/fx-events.ts`, see "MIDI effects"):
+  its events carry `fx` instead of a `noteId`, and a re-plan asks `fxNoteEnd` whether a sounding one is still made.
 - Live edits: rebuild the index, re-patch `[now + 10 ms, frontier)` using segment history: dispatch keys
   (`clipId:noteId:iter`) not yet dispatched; send `noteOff(now + 10 ms)` for dispatched keys that vanished; update end
   ticks. Tempo/loop/mode/pattern changes re-anchor the cursor at the frontier.
@@ -1992,7 +1994,7 @@ the graph until a note comes, and the audio thread pays for what plays. Measured
   the metronome and the decks).
 - **Waking.** The port that is handed a note sets `asleep` false before anything else, which calls `IdleParking.changed()`, which
   works out the plan again and puts the wiring back synchronously from the inserts out to the channel, before the note is
-  posted: a scheduled note wakes its path at least a lookahead (120 ms) before it is due, and a live note on the very call, with
+  posted: a scheduled note (one a MIDI effect generated too: it reaches the strip like any note) wakes its path at least a lookahead (120 ms) before it is due, and a live note on the very call, with
   no measurable cost (the engine's part of key-to-sound time: 1.29 ms into an awake channel, 1.29 ms into a parked one,
   `test/browser/idle-parking-perf.test.ts`). Parking waits for a 250 ms timer; waking never does. Topology changes (a new
   route, a slot added, an effect finished loading) re-plan at once.
@@ -2299,7 +2301,119 @@ History like any other edit.
   (tonal mode) and the grid quantizer turn it into notes on the selected channel (one undo step).
 - **On-screen keyboard** (`ui/features/midi/PianoKeyboard.tsx`, Alt+7): plays with the mouse (velocity
   from where the key is pressed) and lights up what any input plays.
+- **MIDI effects and recording**: on a channel with MIDI effects, note recording keeps the keys played or the notes the effects made of them
+  (`prefs.recordMidiFx`, Options > Record MIDI effects; `LiveInput` re-emits the engine's generated notes as `fxOn`/`fxOff`), see MIDI effects.
 - **AI**: `transport` actions can `record` (arm and play) and switch the metronome.
+
+## MIDI effects (`core/midi-fx`, `core/ops/midi-fx.ts`, `engine/sched/fx-events.ts`, `engine/live-midi-fx.ts`, `app/actions/midi-fx*.ts`, `ui/features/midi-fx`)
+
+A chain of effects per instrument channel that changes the notes on their way to the instrument, for the song and for live keys
+(FL's channel arpeggiator, Ableton's MIDI effects). Ten effects: **Arpeggiator** (up, down, up and down, random, as played, chord;
+rate 1/4 to 1/32 with triplets and dotted notes; 1 to 4 octaves; gate; swing; start on the key press or on the song grid; latch;
+velocity as played, fixed or accented), **Chord** (a named shape, notes you add, stacked in the song key, or the chord track's chord;
+inversion, open, drop 2, spread), **Scale** (snap or filter to the song key, the chord track's chord or a scale you pick), **Note repeat**
+(a roll with a loudness ramp), **MIDI echo** (synced delay, feedback, pitch and length per echo), **Humanize** (timing in ms, velocity,
+seeded), **Velocity** (compress or expand curve, fixed, range), **Transpose**, **Note length** (fixed, scaled, legato) and **Random**
+(chance to play, octave jumps, seeded). Pitch bend and modulation generators are not part of it.
+
+### One pure function runs everywhere (`core/midi-fx`, no DOM, unit tested)
+
+- `FxNote` is a note in ticks on the song's timeline (fractions allowed; `end` is Infinity for a key still held, live) with a stable
+  `id`. An effect is a `MidiFxDef`: `params` (SDK `ParamSpecs`, so the window, the automation menu and the AI get labels, units and
+  ranges for free), `presets`, `reach(values)` (how far it can move a note sooner or later, in ticks) and
+  `run(input, run) → notes`. `runChain(active, input, span, context)` runs the enabled effects in order and returns the notes that
+  start in `span`, sorted; each effect is asked for the span widened by the reach of the effects after it, and nothing carries state
+  between calls. The chain, the notes and a context (`FxContext`: song key, `chordAt(tick)`, `msToTicks`, `live`, `automated`)
+  fully decide the output.
+- **The grid is the song's, not a clock's.** The arpeggiator finds *groups* (the stretches during which notes overlap) and puts its
+  steps on `groupStart + k·step` ("on key press") or on multiples of the step ("next step of the song grid"); the note a step picks
+  is a function of the notes held at that tick and the step number. A group always gets its first step, so a key tapped between two
+  grid steps still plays once. Latch lets a group's notes ring until the next group begins. So any window of the song asked for in
+  pieces, planned again after an edit, or baked, gives the same notes: **re-plans keep arpeggios in phase by construction**
+  (`midi-fx.test.ts` renders with an edit in the middle).
+- **Seeded and repeatable.** Randomness is a hash of (the slot's `seed` param, the effect id, the note's identity and start): the same
+  note always gets the same draw, a re-plan or a bake changes nothing, and editing one note never reshuffles the others. Humanize
+  and Random draw per note; the arpeggiator's random pattern draws per step. A live humanize can only delay (a key cannot be moved
+  before it was pressed).
+- **Music theory in core.** Core may not import the SDK's note theory, so `scale-tools.ts` builds on `core/harmony` (`scalePitchClasses`,
+  chord qualities); the scale ids match the SDK's.
+
+### In the model
+
+`InstrumentChannel.midiFx?: MidiFxSlot[]` (absent = none; at most `MAX_MIDI_FX` = 8): `{ id: 'mfx_…', effect, enabled, params }`, no
+version bump (an older project has none, an older app ignores the field). `core/ops/midi-fx.ts` has add, remove, move, enable,
+set a param (checked against the param's spec), reset, `setMidiFxChain` and `planOfSlot`; every edit goes through History like any
+other. Repair (`schema/repair/midi-fx.ts`) drops what is not a slot, makes ids unique, fills the bypass switch and clamps settings; a
+slot of an effect this version does not know is kept (a newer version made it) and skipped. A knob is an automation target:
+`{ kind: 'midiFx', channelId, slotId, paramId }` (key `mfx:ch:slot:param`), so "Create automation clip" and "Link to controller…" work
+as on any knob. The engine has no audio param to drive, so the chain reads the clip's curve where each note falls
+(`FxContext.automated`, song mode only; a pattern played on its own uses the knob's value, and live play does too).
+
+### In the schedule (`engine/sched/fx-events.ts`)
+
+`collectNotes` hands a channel with an active chain to `collectFxNotes`: the pattern's notes become `FxNote`s on the clip's timeline
+(unswung, cut at the clip's end, none before its start), `runChain` turns them into the notes to play, and **the project's swing is
+applied last**, to generated notes like any other (so an arpeggio swings with the song, and a bake writes unswung notes). The result
+is evaluated in **blocks of whole pattern repetitions** (about 32 bars, at fixed places in the clip, with the chain's reach of notes
+on either side) and cached per (the channel's notes in that pattern, the chain, key, swing, time signature, chords, tempo map and
+the automation of its knobs, the clip's place): an unrelated edit during playback costs nothing. Each generated event carries
+`fx` (its id in the chain's output) instead of a `noteId`; `fxNoteEnd` is how a re-plan finds out whether a sounding generated note
+is still made (and where it ends) instead of cutting it. The chord track is read at song ticks for song clips, through the pattern's
+first place in the song for a pattern played on its own, and not at all for the clip launcher. `SchedulingWatch` re-plans when a
+chain, the chord track or the automation of a knob changes (and only then: a project without effects is as it was).
+Generated notes go to the strip like any other, so delay compensation, the note feed (melody-following effects), idle parking
+(a generated note wakes its instrument a lookahead before it is due, exactly as a pattern note does) and offline renders need nothing
+special. The MIDI export (`collectNotes`) includes them.
+
+### Live keys (`engine/live-midi-fx.ts`)
+
+`NotePreview` sends a key to `LiveMidiFx` when the channel has an active chain (`handles`: a map lookup; a channel without effects
+takes the old path unchanged). The held keys are `FxNote`s with an open end; the chain runs on `[change, now + 70 ms)` on every key
+event and on the scheduler's worker clock (25 ms) while anything is held, latched or ringing, and its notes are handed to the strip
+with their audio times. Notes that cannot have started yet (more than 10 ms ahead) are taken back when the keys change; started
+ones keep going; an output that is still held (a transpose) is released with its key. The clock is the song's while it plays
+(`Engine.tickAt`, so an arpeggio lines up with what is heard) and a free-running one that starts at the first key while it is
+stopped: **the first step plays the moment the key goes down** ("on key press"), or at the next song-grid step with "Start: next step
+of the song grid". Latch goes on after the keys are up until a new chord is played or Stop is pressed (`Engine.stop` ends live
+effects, like panic). Editing the chain while keys are held re-plans at once. `EngineApi.onLiveFxOutput` tells the app when a
+generated note starts and ends (the engine host passes it across reboots); `LiveInput` re-emits them as `fxOn`/`fxOff`, which
+the note recorder keeps instead of the keys played when `prefs.recordMidiFx` is `generated` and the channel has effects.
+
+### UI, commands, AI and MCP
+
+The window `midi-fx` (`Alt+E`, View menu) follows the selected channel: cards in chain order, each with a bypass LED, presets (ready
+made, yours, save, reset), move earlier/later buttons, `Alt+Shift+Up/Down`, drag by the header, remove, and the knobs of its
+`ParamSpecs` through the SDK's `AutoPanel` (right-click: automation, controller link). The same panel sits at the foot of an
+instrument's window, and the channel rack shows a small badge on the name ("ARP", "CHD+2": the first effect and how many follow;
+dimmed when every effect is bypassed). The toolbar has Add effect, Chains (ready-made chains, yours, save this chain, render, remove
+all) and **Render to notes** (`bakeMidiEffects`: `collectNotes` in pattern mode for every pattern that has notes for the channel,
+written as ordinary notes in one undo step, the effects removed, or bypassed with `keepEffects`; the swing stays the project's).
+Your presets and chains are kept in the preset library (`midifx:<effect>` and `midifx:chain`). The piano roll's **Effect notes** button
+shows the notes the effects make of the pattern faintly behind its own. Commands (category "MIDI effects"): `midiFx.add`,
+`midiFx.bake`, `midiFx.bypass`, `midiFx.clear`, `midiFx.chain`, `view.midiFx`, and the Options menu's "Record MIDI effects"
+(`transport.recordMidiFx`). Studio and MCP: `add_midi_effect`, `edit_midi_effect`, `remove_midi_effect`, `midi_effects_chain`,
+`render_midi_effects`, automation target kind `midi_effect`, `settings` `record_midi_fx`; the catalog lists the effects (settings,
+presets) and the chains, the project text adds a line under a channel that has effects, and `get_channel` returns `midi_effects`.
+
+### Measured (headless Chrome, M-series Mac, 48 kHz)
+
+`test/browser/midi-fx-live.test.ts` (engine part of the key-to-sound time, `npm run test:perf`): a plain live key 1.29 ms median, a key
+on a channel with an arpeggiator 1.29 ms (difference 0.00 ms, n = 30 each); the `previewNoteOn` call itself is 0.000 ms median
+(p95 0.005) on a plain channel and 0.020 ms (p95 0.055) with an arpeggiator. Offline (`test/browser/midi-fx.test.ts`): every onset of a
+1/16 arpeggio lands on its frame exactly (6000 frames apart at 120 BPM, also triplets at 4000 and swing at +3000) at chunk sizes of
+16, 37 and 256 render quanta; two renders of an arp + humanize + echo + random chain are bit-identical; a render with the effects
+and a render of the same notes written by "Render to notes" are identical sample for sample (with project swing).
+
+### Limits
+
+- Pitch bend and modulation generators are not effects. The chain is per instrument channel (not per pattern or clip).
+- Live humanize can only delay; live legato and the scale mode of Note length can only lengthen (the release is not known in
+  advance). Live play does not read knob automation or the clip launcher's chord context.
+- The chord track is read at the pattern's first place in the song when a pattern plays on its own, so a bake follows the chords
+  under the pattern's first clip; the same pattern in two places of the song sounds with each place's chords.
+- Recording the generated notes then playing them through the same chain processes them twice: turn the effects off (or render) first.
+- A repeat's, echo's or arpeggio's reach is taken from the knob's value, not from its automation; automating the number of echoes
+  above the set value can cut the tail of the last echoes at a block's edge.
 
 ## AI studio: the AI controls the project (M16a)
 

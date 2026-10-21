@@ -46,13 +46,14 @@ function noteOf(event: NoteEvent, patternTicks: number): Note {
 
 /**
  * What the channel's effects make of each of its patterns, as notes. Null when the channel has no effect that does anything.
- * (The notes get new ids each time: call it once per edit.)
+ * `only` limits it to one pattern. (The notes get new ids each time: call it once per edit.)
  */
-export function planBake(project: Project, channelId: ChannelId): BakePlan | null {
+export function planBake(project: Project, channelId: ChannelId, only?: PatternId): BakePlan | null {
   if (!hasActiveMidiFx(project.channels[channelId])) return null;
   const audible = withEveryChannelAudible(project);
   const plan: BakePlan = { patterns: [], before: 0, after: 0 };
   for (const patternId of patternsWithNotes(project, channelId)) {
+    if (only !== undefined && patternId !== only) continue;
     const pattern = project.patterns[patternId];
     if (!pattern) continue;
     const length = patternLength(pattern, project.transport.timeSig);

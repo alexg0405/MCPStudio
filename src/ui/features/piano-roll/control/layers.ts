@@ -3,6 +3,7 @@
  * (timeline/panned.ts) and only when it is stale (an edit, a zoom, a theme change), not on every frame.
  */
 import type { ChannelId } from '@core/model/types';
+import { effectNotesOf } from '@app/actions/midi-fx-ghosts';
 import { patternLyrics } from '@core/query/lyrics';
 import { notesSorted } from '@core/query/queries';
 import { readTheme, type TimelineTheme } from '../../../timeline/canvas';
@@ -65,6 +66,9 @@ function drawNotesLayer(ctx: PianoRollContext, canvas: CanvasRenderingContext2D,
       const notes = target.pattern.notes[channelId as ChannelId];
       if (channelId !== target.channelId && notes) drawGhosts(canvas, wide, theme, notesSorted(notes));
     }
+  }
+  if (ctx.s.editor.getState().pianoRoll.fxGhosts && target.patternId && target.channelId) {
+    drawGhosts(canvas, wide, theme, effectNotesOf(target.project, target.patternId, target.channelId));
   }
   const style = { color: theme.note, selected: selectedNoteIds(ctx) };
   const preview = state.preview;

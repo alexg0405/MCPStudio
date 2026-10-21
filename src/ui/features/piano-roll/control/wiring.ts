@@ -24,7 +24,7 @@ export function subscribeToChanges(ctx: PianoRollContext, cleanups: CleanupList)
       if (now.patterns !== before.patterns || now.channels !== before.channels) invalidateAll(ctx);
       if (now.transport !== before.transport) invalidateAll(ctx);
       // The chord track and where the pattern plays decide the chord tint behind the notes.
-      if (now.chords !== before.chords || now.playlist !== before.playlist) ctx.invalidate('grid');
+      if (now.chords !== before.chords || now.playlist !== before.playlist) ctx.invalidate('grid', 'notes');
       // The lyrics are written under the notes they are sung on.
       if (now.lyrics !== before.lyrics || now.playlist !== before.playlist) ctx.invalidate('notes');
     }),
@@ -32,7 +32,7 @@ export function subscribeToChanges(ctx: PianoRollContext, cleanups: CleanupList)
       const now = next.pianoRoll;
       const before = prev.pianoRoll;
       if (next.noteSelection !== prev.noteSelection) ctx.invalidate('notes', 'lane');
-      if (now.snap !== before.snap || now.ghosts !== before.ghosts) invalidateAll(ctx);
+      if (now.snap !== before.snap || now.ghosts !== before.ghosts || now.fxGhosts !== before.fxGhosts) invalidateAll(ctx);
       if (now.velocityLane !== before.velocityLane || now.lane !== before.lane) invalidateAll(ctx);
       if (now.scaleHighlight !== before.scaleHighlight) ctx.invalidate('grid', 'keys');
       if (now.chordHighlight !== before.chordHighlight) ctx.invalidate('grid');

@@ -1,5 +1,6 @@
 /** The piano roll's toolbar: tools, snap, key and scale, chord stamp, ghost notes, event lane, zoom and follow. */
 import { useStore } from 'zustand';
+import { hasActiveMidiFx } from '@core/query/midi-fx';
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
 import { NOTE_LANES, type NoteLane, type PianoRollTool } from '@app/stores/editor';
 import { useDoc, useServices, useView } from '../../services-context';
@@ -302,6 +303,26 @@ function SheetMusicButton() {
 }
 
 /** The piano roll's toolbar. */
+/** Shows the notes the channel's MIDI effects make of the pattern faintly behind its own (only for a channel that has effects). */
+function EffectNotesButton() {
+  const services = useServices();
+  const fxGhosts = useStore(services.editor, (s) => s.pianoRoll.fxGhosts);
+  const selected = useStore(services.session, (s) => s.selectedChannelId);
+  const hasEffects = useDoc((project) => hasActiveMidiFx(selected ? project.channels[selected] : undefined));
+  if (!hasEffects) return null;
+  return (
+    <button
+      className={`${styles.tool} ${fxGhosts ? styles.toolOn : ''}`}
+      aria-pressed={fxGhosts}
+      onPointerDown={keepFocus}
+      onClick={() => services.editor.getState().setPianoRoll({ fxGhosts: !fxGhosts })}
+      data-hint="Effect notes: show the notes this channel’s MIDI effects make of the pattern (an arpeggio, a chord…) faintly behind your own notes"
+    >
+      Effect notes
+    </button>
+  );
+}
+
 export function Toolbar({ controller }: { controller: React.RefObject<PianoRollController | null> }) {
   const services = useServices();
   const count = useStore(services.editor, (s) => s.noteSelection.length);
@@ -314,6 +335,7 @@ export function Toolbar({ controller }: { controller: React.RefObject<PianoRollC
       <KeyAndScaleButtons />
       <ChordStampFields />
       <GhostNotesButton />
+      <EffectNotesButton />
       <LaneField />
       <ZoomButtons controller={controller} />
       <FollowButton />

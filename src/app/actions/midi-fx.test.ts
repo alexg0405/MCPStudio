@@ -8,6 +8,8 @@ import { addNotes, setSwing } from '@core/ops/notes';
 import { hasActiveMidiFx, midiFxOf } from '@core/query/midi-fx';
 import { notesSorted } from '@core/query/queries';
 import { note } from '../../../test/helpers/notes';
+import { effectNotesOf } from './midi-fx-ghosts';
+import { planBake } from './midi-fx-bake';
 import {
   addMidiEffect,
   applyMidiFxPreset,
@@ -177,5 +179,21 @@ describe('render MIDI effects to notes', () => {
     }
     const shape = (t: ReturnType<typeof setup>) => notesSorted(t.s.doc.getState().project.patterns[t.patternId]!.notes[t.channelId]).map(({ id: _id, ...rest }) => rest);
     expect(shape(a)).toEqual(shape(b));
+  });
+});
+
+describe('the notes the effects make, for the piano roll to show', () => {
+  it('are the notes a render would write, kept while nothing changes, and none without effects', () => {
+    const { s, channelId, patternId } = setup();
+    expect(effectNotesOf(s.doc.getState().project, patternId, channelId)).toEqual([]);
+    addMidiEffect(s, channelId, 'arp', { params: { rate: '1/8' } });
+    const project = s.doc.getState().project;
+    const ghosts = effectNotesOf(project, patternId, channelId);
+    expect(ghosts).toHaveLength(8);
+    expect(ghosts.map((n) => n.tick)).toEqual([0, 480, 960, 1440, 1920, 2400, 2880, 3360]);
+    expect(effectNotesOf(project, patternId, channelId)).toBe(ghosts);
+    const baked = planBake(project, channelId)!.patterns[0]!.notes.map((n) => [n.tick, n.length, n.key]);
+    expect(ghosts.map((n) => [n.tick, n.length, n.key])).toEqual(baked);
+    expect(s.doc.getState().project.patterns[patternId]!.notes[channelId]).toBe(project.patterns[patternId]!.notes[channelId]);
   });
 });

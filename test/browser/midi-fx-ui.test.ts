@@ -155,6 +155,18 @@ describe('MIDI effects (UI)', { timeout: 60_000 }, () => {
     expect(logged.filter((line) => !/ResizeObserver|Download the React DevTools/.test(line))).toEqual([]);
   });
 
+  it('the piano roll offers to show the notes the effects make, only for a channel that has effects', async () => {
+    openWindow(s, 'piano-roll');
+    const roll = () => host.querySelector<HTMLElement>('[data-window-type="piano-roll"]');
+    const toggle = () => [...(roll()?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === 'Effect notes');
+    await until(() => !!toggle());
+    expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
+    toggle()!.click();
+    await until(() => s.editor.getState().pianoRoll.fxGhosts);
+    expect(toggle()!.getAttribute('aria-pressed')).toBe('true');
+    s.editor.getState().setPianoRoll({ fxGhosts: false });
+  });
+
   it('the instrument’s own window has the effects at its foot, open because there are some, and folds away', async () => {
     openWindow(s, 'plugin', { kind: 'channel', channelId });
     const plugin = () => host.querySelector<HTMLElement>(`[data-window-id="plugin:${channelId}"]`)!;

@@ -34,12 +34,11 @@ async function setup() {
   const plugins = new PluginRegistry();
   registerBuiltinPlugins(plugins);
   plugins.sync('user', [{ path: 'test/latency-tone', def: tone }]);
-  let engine!: Engine;
   const s = createServices({
     plugins,
     project: createEmptyProject(),
     presetStorage: memoryPresetStorage(),
-    createEngine: (options) => (engine = Engine.realtime(options)),
+    createEngine: (options) => Engine.realtime(options),
   });
   rigs.push(s);
   const plain = addInstrumentChannel(s, 'test.latency-tone') as ChannelId;

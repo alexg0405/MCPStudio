@@ -124,7 +124,7 @@ export class FxSlotStrip {
     if (this.mixStage) return;
     const stage = new FxMixStage(this.core.ctx, this.input, this.output, this.mixLane);
     this.mixStage = stage;
-    for (const instance of this.instances()) instance.useMixStage(stage.wetMix, stage.dryMix, this.input);
+    for (const instance of this.instances()) instance.useMixStage(stage.wetMix, stage.dryMix);
     this.applyGains();
   }
 

@@ -9,10 +9,10 @@ import type { HostImpl } from './host';
 export class FxInstance {
   /** The wet path's gate: the slot opens it while this is the live instance. */
   readonly wetGate: GainNode;
-  /** The dry path's delay, as long as the effect's latency (null for an effect without latency, or while the slot has no dry path). */
-  dryDelay: DelayNode | null = null;
+  /** The dry path's delay, as long as the effect's latency (null for an effect without latency). */
+  readonly dryDelay: DelayNode | null = null;
   /** The dry path's gate after the delay: opened with the wet gate so the two stay aligned. */
-  dryAlign: GainNode | null = null;
+  readonly dryAlign: GainNode | null = null;
   /** Where the wet gate sends its sound: the slot's wet gain, or (a slot at mix 1) the slot's output. */
   private wetTarget: AudioNode;
   private isFed = false;
@@ -36,25 +36,22 @@ export class FxInstance {
     this.wetTarget = wetTarget;
     effect.output.connect(this.wetGate);
     this.wetGate.connect(wetTarget);
-    if (dryMix) this.addDryPath(dryMix);
+    // The delay line is made (and fed) from the start even while the slot has no dry/wet stage to join: its history is
+    // the dry sound the stage needs the moment the mix first moves, and a line made then would start empty.
+    if (latencyFrames > 0) {
+      this.dryDelay = frameDelay(ctx, latencyFrames);
+      this.dryAlign = new GainNode(ctx, { gain: 0 });
+      this.dryDelay.connect(this.dryAlign);
+      if (dryMix) this.dryAlign.connect(dryMix);
+    }
   }
 
-  /** The slot made its mix stage: the wet gate now goes through its wet gain, and the latency-aligned dry path joins its dry gain. */
-  useMixStage(wetMix: AudioNode, dryMix: AudioNode, input: AudioNode): void {
+  /** The slot made its mix stage: the wet gate now goes through its wet gain, and the (already running) latency-aligned dry path joins its dry gain. */
+  useMixStage(wetMix: AudioNode, dryMix: AudioNode): void {
     disconnectFrom(this.wetGate, this.wetTarget);
     this.wetTarget = wetMix;
     this.wetGate.connect(wetMix);
-    this.addDryPath(dryMix);
-    if (this.isFed && this.dryDelay) input.connect(this.dryDelay);
-  }
-
-  /** The delayed dry path for an effect with latency (nothing for one without). */
-  private addDryPath(dryMix: AudioNode): void {
-    if (this.latencyFrames <= 0 || this.dryDelay) return;
-    this.dryDelay = frameDelay(this.ctx, this.latencyFrames);
-    this.dryAlign = new GainNode(this.ctx, { gain: 0 });
-    this.dryDelay.connect(this.dryAlign);
-    this.dryAlign.connect(dryMix);
+    this.dryAlign?.connect(dryMix);
   }
 
   /** The effect has a sidechain input. */

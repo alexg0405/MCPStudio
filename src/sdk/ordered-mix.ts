@@ -44,6 +44,7 @@ export class OrderedMix {
   /** The source on each slot (null: free). */
   private readonly slots: (AudioNode | null)[] = [];
   private readonly ordered: boolean;
+  private attached = 0;
 
   constructor(
     private readonly ac: BaseAudioContext,
@@ -54,19 +55,31 @@ export class OrderedMix {
     this.ordered = options.ordered ?? isOffline(ac);
   }
 
+  /** How many sources are attached now (a host that knows its own sources can tell whether someone else feeds the mix). */
+  get size(): number {
+    return this.attached;
+  }
+
   /** Connects `source` into the mix. The returned function disconnects it again (safe to call twice). */
   attach(source: AudioNode): () => void {
+    this.attached++;
+    let isAttached = true;
     if (!this.ordered) {
       source.connect(this.into);
-      return () => disconnectQuietly(source, this.into);
+      return () => {
+        if (!isAttached) return;
+        isAttached = false;
+        this.attached = Math.max(0, this.attached - 1);
+        disconnectQuietly(source, this.into);
+      };
     }
     const slot = this.claimSlot(source);
     const stage = this.stage(slot);
     source.connect(stage);
-    let attached = true;
     return () => {
-      if (!attached) return;
-      attached = false;
+      if (!isAttached) return;
+      isAttached = false;
+      this.attached = Math.max(0, this.attached - 1);
       disconnectQuietly(source, stage);
       this.slots[slot] = null;
     };
@@ -78,6 +91,7 @@ export class OrderedMix {
       if (source) disconnectQuietly(source, this.stages[slot] as AudioNode);
     });
     this.slots.length = 0;
+    this.attached = 0;
     for (const stage of this.stages.slice(1)) stage.disconnect();
     this.stages.length = 1;
   }

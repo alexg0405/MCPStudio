@@ -13,6 +13,12 @@ import type { ChannelId, Project } from '@core/model/types';
 import { renderOffline } from '@engine/render-offline';
 import { SampleCache } from '@engine/samples';
 import { OrderedMix, type PluginDef } from '@agstudio/sdk';
+import { buildHugeSong, HUGE_SIZE } from '@app/fixtures/huge-song';
+import { registerBuiltinPlugins } from '@app/plugins/discover';
+import { PluginRegistry } from '@app/plugins/registry';
+import { createEmptyProject } from '@core/model/defaults';
+import { seededBytes, setIdSource } from '@core/model/ids';
+import { PadLink } from '@engine/pad-link';
 import threeOsc from '../../src/plugins/builtin/three-osc';
 import { kitProject, maxDiff, resolver, withInsert } from '../helpers/fixtures';
 import { instrumentProject } from '../helpers/instruments';
@@ -152,5 +158,57 @@ describe('OrderedMix', () => {
     };
     expect(await sum(true)).toBe(15);
     expect(await sum(false)).toBe(15);
+  });
+});
+
+describe('where a route lands in the sum of its target', () => {
+  /**
+   * Three routes into one insert, each through a padded link, changed to a new delay in the order given. Which order
+   * that is follows when each effect finished loading (the delay compensation changes a link when the latency of an
+   * effect on its path becomes known), so it differs from one run to the next. Three values that add up differently
+   * in each order: 1, then two halves of the last place of 1.
+   */
+  async function renderRoutes(changeOrder: number[]): Promise<number> {
+    const ctx = new OfflineAudioContext(1, 2048, SR);
+    const into = new GainNode(ctx);
+    into.connect(ctx.destination);
+    const mix = new OrderedMix(ctx, into);
+    const half = 2 ** -24;
+    const links = [1, half, half].map((offset) => {
+      const source = new ConstantSourceNode(ctx, { offset });
+      source.start();
+      const link = new PadLink(ctx, source, true);
+      link.set(mix, 0);
+      return link;
+    });
+    for (const index of changeOrder) links[index]!.set(mix, 1);
+    return (await ctx.startRendering()).getChannelData(0)[1500]!;
+  }
+
+  it('does not depend on the order the routes were changed in', async () => {
+    const reference = await renderRoutes([0, 1, 2]);
+    for (const order of [[2, 1, 0], [1, 2, 0], [2, 0, 1], [1, 0, 2], [0, 2, 1]]) {
+      expect(await renderRoutes(order), `changed in order ${order.join(',')}`).toBe(reference);
+    }
+  });
+});
+
+describe('the very big project', () => {
+  const previous = setIdSource(seededBytes(11));
+  const project = produce(createEmptyProject({ now: new Date(0) }), (draft) => void buildHugeSong(draft, HUGE_SIZE));
+  setIdSource(previous);
+  const plugins = new PluginRegistry();
+  registerBuiltinPlugins(plugins);
+
+  it('renders identically every time: 100 mixer tracks, 450 effects, delay compensation settling in whatever order the effects load', { timeout: 300_000 }, async () => {
+    // A tenth of a bar is enough: the sums that went wrong differed from the first notes on. Before the fix the renders
+    // came out in two versions, about two to one, so eight in a row agree by luck one time in twenty-five.
+    const render = async () =>
+      hashOf(
+        (await renderOffline(project, { plugins, view: { mode: 'song', patternId: null, loop: null }, bars: 0.1, tail: 0, sampleRate: SR }))
+          .buffer,
+      );
+    const reference = await render();
+    for (let i = 0; i < 7; i++) expect(await render(), `render ${i + 2}`).toBe(reference);
   });
 });

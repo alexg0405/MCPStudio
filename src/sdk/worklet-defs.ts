@@ -148,6 +148,7 @@ export function defineWorkletInstrument<const P extends ParamSpecs, S = undefine
         get tailTime() {
           return tailOf(def.tailTime, host, 1);
         },
+        sleep: port.sleep,
         noteOn: (e) => port.noteOn(e),
         noteOff: (e) => port.noteOff(e),
         allNotesOff: (time, hard) => port.allNotesOff(time, hard),
@@ -190,6 +191,7 @@ export function defineWorkletEffect<const P extends ParamSpecs, S = undefined>(
           return tailOf(def.tailTime, host, 0);
         },
         latency: latency ?? 0,
+        sleep: port.sleep,
         setState: (state) => port.setState(state),
         reset: () => port.reset(),
         dispose: () => {

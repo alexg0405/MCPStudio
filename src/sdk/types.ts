@@ -8,6 +8,7 @@
 export * from './api/notes';
 export * from './api/host';
 export * from './api/instances';
+export * from './api/sleep';
 export * from './api/editor';
 export * from './api/definitions';
 export * from './api/note-script';

@@ -1,4 +1,4 @@
-import { GraphVoices, type InstrumentInstance, type NoteOff, type NoteOn } from '@agstudio/sdk';
+import { GraphVoices, type InstrumentInstance, type NoteOff, type NoteOn, type Sleeper } from '@agstudio/sdk';
 import {
   sourceRateAt,
   sourceSecondsAt,
@@ -120,6 +120,7 @@ interface ClipSource {
 class AudioClipPlayer implements ClipPlayer {
   readonly output: GainNode;
   readonly tailTime = TAIL_SEC;
+  readonly sleep: Sleeper;
   private readonly voices: GraphVoices;
   private readonly live = new Map<number, LiveClip>();
   private readonly holds = new Map<number, BufferHold[]>();
@@ -133,6 +134,7 @@ class AudioClipPlayer implements ClipPlayer {
   ) {
     this.output = new GainNode(ctx);
     this.voices = new GraphVoices(ctx, this.output, { max: MAX_VOICES });
+    this.sleep = this.voices.sleep;
   }
 
   // ---- Playlist clips ----

@@ -42,6 +42,10 @@ export class KernelRunner {
   private quietFrames = 0;
   /** Notes on minus notes off (a sleep heuristic: never sleep while a key is held). */
   private held = 0;
+  /** Messages taken in, every kind but `sync` and `dispose`: the host compares its own count with this one (see FromProcessor `sleep`). */
+  private received = 0;
+  /** The `received` count the host was last told about a sleep at; -1 when the host has not been told since the kernel last woke. */
+  private sleepReportedAt = -1;
   private nanReported = false;
   private lastBlockStartFrame = -Infinity;
   private readonly ev: QueuedEvent = { type: 0, frame: 0, id: 0, key: 0, vel: 0, pan: 0, fine: 0 };
@@ -72,6 +76,7 @@ export class KernelRunner {
     // they come due (a note wakes an instrument; transport anchors and param changes are applied
     // quietly): an offline render's barrier every chunk, or a loop's wrap anchor, would otherwise
     // keep every idle kernel awake. The rest reach the kernel's own code, which may start sound.
+    if (msg.t !== 'sync' && msg.t !== 'dispose') this.received++;
     if (msg.t !== 'ev' && msg.t !== 'sync' && msg.t !== 'dispose') this.wake();
     try {
       switch (msg.t) {
@@ -142,7 +147,10 @@ export class KernelRunner {
     params: Record<string, Float32Array>,
     block: ParamBlock,
   ): void {
-    if (this.asleep && !this.wakeForDueEvent(k, n, blockStartFrame)) return;
+    if (this.asleep && !this.wakeForDueEvent(k, n, blockStartFrame)) {
+      this.reportSleep(k.wakeOnTransport);
+      return;
+    }
     k.pitch = params[PITCH_PARAM] ?? this.noPitch;
     this.runInstrument(k, out, n, blockStartFrame, block);
     this.messageParams.finishBlock(n);
@@ -181,7 +189,10 @@ export class KernelRunner {
       peakOf(input, n) < SILENT && (sidechainOrSecondInput === undefined || peakOf(sidechainOrSecondInput, n) < SILENT);
     // Asleep, an effect wakes when sound arrives.
     if (this.asleep) {
-      if (isInputQuiet) return;
+      if (isInputQuiet) {
+        this.reportSleep(false);
+        return;
+      }
       this.wake();
     }
     this.messageParams.advance(n);
@@ -199,10 +210,25 @@ export class KernelRunner {
     } else this.quietFrames = 0;
   }
 
+  /** Wakes the kernel. If the host was told it sleeps, it is told it is awake (once per change of state, never per block: the post allocates). */
   private wake(): void {
+    if (this.asleep && this.sleepReportedAt >= 0) this.post({ t: 'wake' });
     this.asleep = false;
     this.quietFrames = 0;
+    this.sleepReportedAt = -1;
     this.messageParams.landGlides();
+  }
+
+  /**
+   * Tells the host the kernel is asleep with nothing queued, once per sleep (and again when messages have arrived since
+   * and left it asleep): the host may then stop calling the processor until it sends something. An instrument that
+   * sounds by itself with the song never says so, because a transport anchor, which the host holds back from a
+   * sleeping plugin, would have to wake it.
+   */
+  private reportSleep(isWokenByTransport: boolean): void {
+    if (isWokenByTransport || this.received === this.sleepReportedAt || this.queue.length > 0) return;
+    this.sleepReportedAt = this.received;
+    this.post({ t: 'sleep', received: this.received });
   }
 
   private runInstrument(k: InstrumentKernel, out: Float32Array[], n: number, blockStartFrame: number, params: ParamBlock): void {

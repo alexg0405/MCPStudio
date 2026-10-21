@@ -108,6 +108,7 @@ export default defineInstrument({
 
     const instance: InstrumentInstance = {
       output: out,
+      sleep: voices.sleep,
       // With the envelope, the release. Without it a note plays the whole sample even after its key is up, so the
       // tail is the rest of the sample at the slowest pitch it is played at: its length comes from the file's
       // header (`durationSec`), because the export's tail probe decodes nothing.

@@ -21,6 +21,7 @@ export class FxInstance {
   /** The key path while connected: source → [keyDelay] → host.sidechain. */
   private isKeyed = false;
   private keyDelay: DelayNode | null = null;
+  private stopWatchingSleep: () => void = () => {};
 
   constructor(
     private readonly ctx: BaseAudioContext,
@@ -54,6 +55,11 @@ export class FxInstance {
     this.dryAlign?.connect(dryMix);
   }
 
+  /** Calls `onChange` whenever the effect wakes from sleep or falls asleep (see the SDK's `Sleeper`). */
+  watchSleep(onChange: (asleep: boolean) => void): void {
+    this.stopWatchingSleep = this.effect.sleep?.onChange(onChange) ?? (() => {});
+  }
+
   /** The effect has a sidechain input. */
   get listens(): boolean {
     return this.host.sidechain !== null;
@@ -84,6 +90,7 @@ export class FxInstance {
 
   /** Disconnects everything and disposes the effect and its host; `input` is the slot input it was fed from. */
   dispose(input: AudioNode): void {
+    this.stopWatchingSleep();
     this.feed(input, false);
     this.unkey();
     disconnectFrom(this.effect.output, this.wetGate);

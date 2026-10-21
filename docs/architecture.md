@@ -183,8 +183,8 @@ collect(index, seg) → events with time = time0 + (start - tick0) * spt
 ### Graph
 
 ```
-channel: instrument.output → vol → StereoPanner → mute ──► insert chIn
-insert : chIn/routeIn → slot 1…N → scTap → mute/solo gate → preTap → StereoPanner → fader → postTap ──► routes
+channel: instrument.output → vol → StereoPanner → [mute] ──► insert chIn
+insert : chIn/routeIn → slot 1…N → scTap → [mute/solo gate] → preTap → StereoPanner → fader → postTap ──► routes
 slot   : in ─► bypass / dry / latency-aligned dry / fx … wet ─► out   (gates crossfade ~10 ms)
 master : the same strip; postTap → masterOut → SafetyLimiter (worklet) → destination
          preview bus → masterOut;  monitor bus (metronome, later) → limiter only
@@ -315,7 +315,7 @@ The SDK-owned processor: preallocated sorted event ring; splits each block at ev
 current position); `f0 = max(currentFrame, lastF0 + n)` (Chromium bug 442866743: `currentFrame` can be stale for a
 quantum while the main thread holds the graph lock); never assumes 128 frames (`renderSizeHint` is shipping); try/catch
 around render → silent + `faulted` report; NaN/Inf scrub (`x - x !== 0`) → zero block + `reset()`; returns `false` only
-after dispose. Unconnected inputs arrive with zero channels → pass zero buffers. Effects use `channelCount: 2`,
+after dispose; tells the host when it falls asleep and wakes (see "Idle parking" under Mixer routing). Unconnected inputs arrive with zero channels → pass zero buffers. Effects use `channelCount: 2`,
 `channelCountMode: 'explicit'`; instruments `outputChannelCount: [2]`. No `fetch` in worklets and no global
 `AudioWorklet.port` in Chrome: transfer sample data per node.
 
@@ -363,6 +363,14 @@ directly, so playback costs nothing extra. `GraphVoices` uses it for its voices,
 voices or oscillators should too. Left alone on purpose: inputs that are silent except one or two (the master's preview
 and monitor buses, a slot's bypass/dry/wet gates), since adding exact zeros is order-free. Different chunk sizes can still
 differ by a last bit, because which mix slot a voice takes depends on when finished voices were cleaned up.
+**Where a route lands in the sum also has to be repeatable.** A mix adds its sources in slot order (`s0 + (s1 + (s2 + …))`), and
+a source's slot is the lowest one free when it attaches. The delay compensation changes a route's `PadLink` when an effect on its
+path reports its latency, and effects finish loading in whatever order the browser gets to them, so a link that built its
+replacement before dropping the old path took a different slot each time: the huge project's 30 s render ended in one of two
+hashes (one ulp apart, from sample 3,000, about two loads in three one way), in any length of render. A link switched in one
+step now drops the old path first (a crossfading link in a live engine is not ordered and does not matter), so the replacement
+takes the slot just freed and every link keeps the slot its creation gave it (`test/browser/render-determinism.test.ts`
+changes the three links of a mix in every order, and renders the huge project eight times in a page).
 WAV: 16-bit TPDF dither, 24-bit, 32-bit float, encoded in a Worker; pick the file first (user activation lasts ~5 s).
 
 As built (M6, `app/export`; WAV, FLAC, MP3 and stems since M15, see
@@ -1906,7 +1914,7 @@ Every insert id has persistent nodes (an `InsertBus`) that outlive its strip, so
 sidechains never reconnect when a strip is rebuilt, deleted or restored by undo:
 
 ```
-channels ──► chIn ───────────────► routeIn ─► slot 1 … slot N ─► scTap ─► gate ─► preTap ─► pan ─► fader ─► postTap
+channels ──► chIn ───────────────► routeIn ─► slot 1 … slot N ─► scTap ─► [gate] ─► preTap ─► pan ─► fader ─► postTap
 other inserts' routes ─[pad]──────► routeIn            sidechain out ◄─┘  mute/solo  pre sends ◄─┘   post sends, meters ◄─┘
                                                                                      (master: postTap → masterOut → limiter)
 route  : tap (pre or post) ─► level (AutoLane, `route:from:to`) ─[pad]─► target routeIn
@@ -1918,6 +1926,13 @@ slot   : in ─► bypass ──────────────────
           mix = one ConstantSourceNode (offset written only by the `slot:…:mix` AutoLane) → wetMix.gain, → ×(−1) → dryMix.gain
 ```
 
+- **Stages made when first needed.** A gain at 1 does nothing but cost the audio thread time on every block, so the mute/solo
+  gate of an insert and the mute gate of a channel (`[gate]`, `[mute]` above) are made the first time that insert or channel is
+  muted (at gain 1, so nothing changes until it moves), the channel's pitch signal (`PitchSignal`: the summing gain and its
+  connections into the instruments' pitch params) when the pitch first moves, and a channel has no node of its own for its
+  instrument's output (the instrument connects to the volume gain). Renders are bit for bit what they were
+  (`test/browser/render-mixer-golden.test.ts`: hashes of a mix with pan, volume, sends, a bus, latency compensation, a mute and
+  a solo, recorded before the stages became lazy).
 - **Gate and tap order.** The mute/solo gate sits after the effects and before the pre-fader tap, so muting an insert
   (or a solo that leaves it out) silences its pre-fader sends too. The sidechain tap is taken before the gate: a
   muted or solo-silenced kick still keys a ducker, so soloing a ducked bass still ducks. The sidechain tap is also
@@ -1940,6 +1955,61 @@ slot   : in ─► bypass ──────────────────
 - **Slot mix** is automatable through its own ConstantSource (target `slot:insert:slot:mix`); bypass, loading,
   missing, failed and instance swaps are separate gates that glide (~10 ms; exact at time 0 offline). A slot that isn't
   live is exactly its input: bypass 1, every other path 0, so a bypassed slot renders bit-exact with no slot.
+
+### Idle parking (`engine/idle-parking.ts`, `engine/parking-plan.ts`, `engine/worklet-port.ts`)
+
+Chrome pulls audio from the destination backwards through connections and processes every node it reaches, silent or not: about a
+quarter of a microsecond for a gain, three for an AudioWorklet kernel, per 128-frame block. A project is mostly idle at any
+moment (69 of the huge project's 200 channels sound in a typical four bars, none in a gap), so what cannot sound is cut out of
+the graph until a note comes, and the audio thread pays for what plays. Measured on the huge project before this: 100 % idle.
+
+- **Who says it sleeps.** The SDK's `Sleeper` (`docs/plugin-sdk.md`, "Sleeping"): `WorkletPort.sleep`, optional `sleep` on an
+  `InstrumentInstance` or `EffectInstance`, and a ready-made `SleepSignal`. The SDK processor (`worklet/runner.ts`) already put a
+  kernel to sleep after a second of silence (an instrument with no key held, an effect with silent input and output); it now also
+  posts `{ t: 'sleep', received }` when it is asleep with nothing queued (`received`: how many messages it has taken in, every
+  kind but sync and dispose) and `{ t: 'wake' }` when it wakes by itself (a note came due, sound reached an effect). The host's
+  `WorkletPortImpl` counts what it sends and believes a sleep only when nothing is in flight, so a note on its way is never lost
+  to a sleep reported before it arrived. `GraphVoices` (the Sampler, 3xOsc and the audio clip channels), the 808 (a timer that
+  collects finished voices) and the algorithmic Reverb report theirs by hand; a convolution Reverb and every plugin that does not
+  report never sleep as far as the mixer is concerned (a native-node effect is judged by its `tailTime`, below).
+- **What a sleeping port does with events.** An instrument's port drops a note off and an all-notes-off (nothing is
+  sounding; an all-notes-off used to wake every sleeping instrument at every stop), holds param changes (the latest of each) and
+  the last eight transport anchors, and sends them in front of the next note or controller, which wake it. An effect wakes on
+  sound, which the host does not see, so it is sent everything as usual and only notes (it may be following them), controllers and
+  messages count as waking it. A kernel that sounds by itself with the song (`wakeOnTransport`) never reports a sleep.
+- **What is cut.** Chrome only skips nodes nothing downstream pulls, and an AudioWorkletNode with no connected output is pulled
+  by itself (measured: a worklet disconnected from everything keeps being processed; one whose gain is disconnected from the
+  destination is not). So the cuts are made at the far end: a channel whose instrument has slept for half a second is taken off
+  its insert's mix (`ChannelStrip.park`: the instrument and the volume, pan and mute nodes stop being processed), and an insert
+  whose inputs are all parked and whose effects sleep is cut between its last effect and its sidechain tap (`InsertStrip.park`:
+  the route inputs, the slots' gates and every effect stop; the tap, gate, fader and sends keep running on silence for a few
+  nodes, which is where the idle 4 % goes, and meters, sends and sidechain keys downstream need nothing special).
+- **When an insert may park** (`InsertParkingPlanner`, pure, `parking-plan.test.ts`): every channel routed to it is parked,
+  every insert routed or sidechained into it is parked (so a chain of buses goes quiet in order), nothing else is attached to its
+  channel mix or route mix (`OrderedMix.size`: a live input's monitor keeps it running), every effect that reports its sleep is
+  asleep and every one that does not (native nodes) has had silence at the input for its `tailTime` plus half a second, summed
+  over the chain (an echo can leave one effect after another has gone quiet). The master never parks (it also takes the preview,
+  the metronome and the decks).
+- **Waking.** The port that is handed a note sets `asleep` false before anything else, which calls `IdleParking.changed()`, which
+  works out the plan again and puts the wiring back synchronously from the inserts out to the channel, before the note is
+  posted: a scheduled note wakes its path at least a lookahead (120 ms) before it is due, and a live note on the very call, with
+  no measurable cost (the engine's part of key-to-sound time: 1.29 ms into an awake channel, 1.29 ms into a parked one,
+  `test/browser/idle-parking-perf.test.ts`). Parking waits for a 250 ms timer; waking never does. Topology changes (a new
+  route, a slot added, an effect finished loading) re-plan at once.
+- **Taps.** An AnalyserNode with an input and no output is pulled by the browser by itself, which would keep a parked plugin and
+  everything feeding it being processed (every Analyzer, EQ Pro, Limiter, Multiband… has one), so `HostImpl.setParked` makes
+  its taps let go of the node while parked and read silence (`TapImpl.setParked`); a tap on a sleeping strip reads silence
+  without waking it. Insert meters read the fader's output, downstream of the cut. Sync barriers are messages and need no
+  processing: a parked kernel still answers them.
+- **Offline renders never park**: `Engine.idle` is absent, so the mixer graph is the one it always was (a port still drops and
+  holds what a sleeping kernel has no use for, which leaves the audio exactly as it was: the hashes of the fixture songs did not
+  move). `?nopark` on the app's address, or `idleParking: false` in the engine options, turns parking off in a live engine;
+  `engine.stats().parked` says what is parked.
+- **Traps found on the way.** `GraphVoices.add` cleaned up finished voices before registering the new one and put an empty
+  instrument back to sleep under its own note (a kick lost: the meters test measured 0.6 LU quieter live); a held sleeping
+  effect's param changes and anchors must not wait for the kernel's own wake, because by then audio is flowing (a ducker not
+  ducking); an instrument whose voices end every few hundred milliseconds would be parked and woken in a loop, hence the half
+  second before a channel parks.
 
 ### Delay compensation (PDC)
 
@@ -3496,6 +3566,8 @@ slot's dry path line up exactly (`test/browser/effects.test.ts` checks the Limit
   keeps drawing across instance swaps (hot reload, engine reboot) without re-rendering; a replaced instance's removal
   only clears its own tap. `PluginWindow` passes `tap` in the UI props and provides the app's frame loop as
   `FrameContext`.
+- While the plugin is parked by idle parking (see the Mixer section) the tap's analysers are disconnected from its node and
+  `spectrum`/`waveform` return silence (`TapImpl.setParked`): an analyser pulls the node it listens to by itself.
 - `getFloatFrequencyData` reads a full-scale sine at 20·log10(0.42 / 2) ≈ −13.6 dB (Blackman window, 1/N scaling);
   `TapImpl.spectrum` adds that back, so a full-scale sine reads 0 dBFS in its bin (`test/browser/taps.test.ts`).
 - Editors: a 2-D drag (EQ Pro handles move frequency and gain) is one undo step: `usePluginEditing.setParam` joins the
@@ -4421,6 +4493,36 @@ five repetitions). Before = the code at the start of this work, run back to back
 | open the mixer (paint) | 129 ms, one 97 ms frame | 56 ms, longest frame 24 ms |
 | mixer fader / knob drag, from the page's handler to paint | 9.6 / 9.3 ms | 4.2 / 4.0 ms |
 
+A second round, **idle parking** (see "Idle parking" under Mixer routing), measured the same way (medians of three fresh pages
+with `scripts/perf-huge.mjs`, `?nopark` and the code of the commit before it for "before", the machine shared with other work;
+"typical" is the 4-bar stretch whose number of sounding channels is the median of all of them, 69 of the 200, played after
+the project has idled; "light" the 10th percentile, 52):
+
+| | before | after |
+|---|---|---|
+| engine, idle: audio thread load (CDP render capacity), once parking has settled (about 7.5 s after load) | 100 % | 4 % (all 200 channels and 100 tracks parked) |
+| engine, idle: audio clock vs wall clock | 0.98 | 1.00 |
+| audio nodes (live) / gains / worklets | 6,830 / 4,830 / 453 | 6,215 / 4,215 / 453 (mute gates, channel input and pitch signals made when needed) |
+| everything playing: audio clock rate, keep-up | 0.09, 0.45 | 0.13, 0.64 |
+| typical 4 bars (69 channels sound): clock rate, keep-up | 0.26, 0.44 | 0.42, 0.47 |
+| light 4 bars (52 channels sound): clock rate, keep-up | 0.27, 0.48 | 0.47, 0.53 |
+| live note, engine's part of key-to-sound (parked / awake channel; `test/browser/idle-parking-perf.test.ts`) | n/a | 1.29 / 1.29 ms |
+| engine reboot | 693-828 ms | 772-839 ms (the same: building the graph, not running it; the runs were on a busy machine) |
+| idle main-thread script per second | 2.4 ms | 4.7-7 ms (no parking work runs once settled and the frame rate is the same; every frame function reads 2-3x slower with the same code, the cores no longer being kept busy by the audio thread: 0.4 to 0.7 % of a core) |
+| 30 s offline render, repeated in fresh pages | two hashes (about 2:1) | one hash (`test/browser/render-determinism.test.ts`; 10 of 10 renders of a tenth of a bar, three 16-bar renders in fresh pages) |
+
+A project this size still cannot be played in real time while 50-70 channels sound: their own DSP (wavetables, convolution-free
+reverbs, multiband…) needs more than one audio thread, which parking cannot change. What changed is that a gap costs nothing and the
+rest costs what plays.
+
+Normal songs (`?perf=mix30`, 30 channels and 20 effects, and `?perf=stacked-song`; idle load, playing load, nodes, offline render speed, from the same runs): mix30 22 -> 8 %,
+28 -> 26 %, 769 -> 654 nodes, 3.7x -> 3.8x; stacked-song 20 -> 7 %, 12 -> 9 %, 537 -> 461 nodes, 13.5x -> 14.1x; key-to-sound
+(`test/browser/latency.test.ts`, three buffers, idle and heavy song, 40 runs each) within a millisecond of before in every row
+(small buffer, idle song, key: 28.9 -> 28.6 ms median; medium heavy 38.3 -> 39.8; large idle 48.7 -> 46.9). The offline renders of
+`mix30` (ids seeded), `stacked-song` and the huge project (4 bars) hash exactly as before the lazy stages and parking; the huge
+one differs from the hashes the old engine happened to produce only because of the determinism fix below (it equals one of the
+two the old engine made, the less common one).
+
 Interface rows that were already fine on this project and did not move (medians, paint to paint, dev build, the wheel
 rows sit on the browser's own 19-20 ms wheel floor): piano roll with 5,000 notes (drag 50 notes 4.8 ms, resize 4.3,
 undo of a 1,000-note delete 14.8), playlist (drag a clip 4.0, rubber band 4.1, zoom 21, scroll 20), undo and redo of
@@ -4443,7 +4545,17 @@ What was found and done, in the order of what it cost:
   `test/browser/big-project.test.ts`). The 453 worklets stay: an asleep kernel still costs a `process()` call per block
   (about 3 us each, the largest share left: 453 of them are half the audio thread's budget), and returning false does not
   let Chrome skip it unless its input is flagged silent, which needs the instruments upstream to be flagged too, and a
-  worklet that returned false cannot be woken again. See Left to do.
+  worklet that returned false cannot be woken again. (Taken up by idle parking, below.)
+- **Idle audio load** (second round): a sleeping kernel still cost its `process()` call and kept every gain behind it and every
+  effect of its track being pulled. Sleep is now told to the host and what cannot sound is taken out of the graph (Idle parking,
+  Mixer routing); an offline render of 100 tracks is unchanged by it. **Measured trap**: Chrome keeps processing an
+  AudioWorkletNode that has no connected output, so the cuts are made downstream, where nothing is pulled at all.
+- **The last nondeterminism** (a 30 s render ending in one of two hashes): not a fan-in of three or more at all. A connect counter
+  by node in a render found only sums of at most two real signals; halving the project, one plugin type at a time and one half
+  of the tracks at a time all rendered the same every time, and only the whole project did not, which pointed at the order effects
+  finish loading in. Delay compensation changes a route's `PadLink` when an effect reports its latency, the old link built its
+  replacement before leaving its `OrderedMix` slot, and so each route's place in the sum (`s0 + (s1 + (s2 + …))`) followed the load
+  order. See "Render determinism". It showed up in any render length (a tenth of a bar in about a third of renders).
 - **The AI context**, 675 ms for 110 kB of text: the text is built up to seven times (each pass shortens one more part
   when it is over its budget, which a project this size always is), and each pass worked out the arrangement
   (`inferSections`, 100 ms), the song check, the playlist runs and the pattern summaries again. These are now worked out once per
@@ -4471,22 +4583,23 @@ opening a project 6 ms synchronously and one frame to paint; the idle frame loop
 Guard rails: `test/unit/big-project.test.ts` (tag `perf`: writing and reading the file, the AI context cold and again; limits
 300 / 450 / 700 / 120 ms under `npm run test:perf`, far looser in the regular run) and `test/browser/big-project.test.ts`
 (node counts of the mixer, always checked; offline render speed at least a tenth of real time with everything sounding, a scroll
-frame under 2 ms and an idle frame under 0.3 ms of script, `perf`-tagged).
+frame under 2 ms and an idle frame under 0.3 ms of script, `perf`-tagged), `test/browser/idle-parking-perf.test.ts` (`perf`, `realtime`: the huge
+project idles under 15 % of the audio thread under `npm run test:perf`, 60 % in the regular run, read through the DevTools protocol; a
+note into a parked channel adds under a millisecond, 4 ms in the regular run, to the engine's part of key-to-sound),
+`test/browser/idle-parking.test.ts` (a live song is as loud parked as not, a note wakes its path on the call, barriers and taps),
+`test/browser/render-mixer-golden.test.ts` (render hashes of the mixer graph that must not move) and the repeat renders of
+`test/browser/render-determinism.test.ts`.
 
 Left to do:
 
-- **Idle audio load is still at the limit.** 453 sleeping worklets (about 3 us a block each), 4,800 gains and 1,200 constant
-  sources. Ideas that need more than a local change: a sleeping instrument told to the host so the host takes it out of the
-  graph until its next event (the processor's sleep is exact; the host would have to keep the sync barriers and the editor
-  taps working for a node that is not being processed), after which sleeping effects could return false and Chrome would skip the
-  whole silent chain; or merging the mixer's per-track unity gains (chIn, chLink path, routeIn).
+- **Idle audio load** is now 4 % (above). What is left is the nodes parking cannot cut: a parked track keeps its sidechain tap, mute gate,
+  pan, fader, post tap and send gains running on silence (about 10 nodes each), and each route its level gain and padded path.
+  Cutting at the tap would need every consumer (sends, keys, meters) to be cut with it; merging the persistent per-track unity gains
+  (chIn, chLink path, routeIn) is the other way. A convolution Reverb and plugins that do not report `sleep` keep their track
+  in the graph; every built-in worklet and the Sampler, 3xOsc, 808, audio clips and the algorithmic Reverb do report it.
 - **Muted channels with no notes anywhere** (25 here) still get a strip and an instrument. They could wait until unmuted or
   given a note; it saves about 3 % of the nodes here and a first preview of an unmuted unused channel would have to wait for
   the instrument to load, so it was left.
-- **Offline renders are not bit-identical between page loads.** A 30 s render of the huge project ends in one of two values
-  (one ulp, at most 1.8e-7, from sample 3,000 on), in the old code as well as the new: Chrome adds the inputs of a node that has
-  three or more in an order that depends on memory addresses, and some node in a plugin's graph is not behind an `OrderedMix`.
-  4- and 8-bar renders are always the same. Not tracked down.
 - The numbers above are dev builds like every other number in this chapter, and a dev build makes mounting rows and strips
   look worse than production does (`jsxDEV` is a large share of the rack's 4 ms a row).
 

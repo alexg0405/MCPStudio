@@ -45,6 +45,7 @@ export default defineInstrument({
 
     return {
       output: out,
+      sleep: voices.sleep,
       get tailTime() {
         return Math.max(1, host.params.release.value);
       },

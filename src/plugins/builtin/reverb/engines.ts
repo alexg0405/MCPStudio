@@ -1,4 +1,4 @@
-import type { WorkletPort } from '@agstudio/sdk';
+import { SleepSignal, type Sleeper, type WorkletPort } from '@agstudio/sdk';
 import { createConvolution, type ConvolutionEngine, type ReverbHost } from './convolution';
 import type { ReverbEngine } from './params';
 import { createTimers } from './timers';
@@ -10,6 +10,11 @@ const FADE_OUT_MARGIN_MS = 60;
 
 /** What the Reverb's main file keeps of the two engines. */
 export interface ReverbEngines {
+  /**
+   * Asleep while the algorithmic engine is the one in use and its kernel sleeps (see the SDK's `Sleeper`). The
+   * convolution engine is made of native nodes that cannot say when their tail is over, so it never sleeps.
+   */
+  readonly sleep: Sleeper;
   /** Clears both tails. */
   reset(): void;
   dispose(): void;
@@ -37,6 +42,10 @@ export function createEngines(host: ReverbHost, kernel: WorkletPort, input: Gain
   const timers = createTimers();
 
   let engine: ReverbEngine = params.engine.value;
+  let convolution: OpenConvolution | null = null;
+  const sleep = new SleepSignal();
+  const updateSleep = () => sleep.set(engine === 'algorithmic' && convolution === null && kernel.sleep.asleep);
+  const stopWatchingKernel = kernel.sleep.onChange(updateSleep);
   const algorithmic = new GainNode(ac, { gain: engine === 'algorithmic' ? 1 : 0 });
   kernel.node.connect(algorithmic).connect(output);
 
@@ -49,20 +58,22 @@ export function createEngines(host: ReverbHost, kernel: WorkletPort, input: Gain
   };
   feedKernel(engine === 'algorithmic');
 
-  let convolution: OpenConvolution | null = null;
   const openConvolution = (fadeGain: number): OpenConvolution => {
     if (convolution) return convolution;
     const engineNodes = createConvolution(host);
     const fade = new GainNode(ac, { gain: fadeGain });
     engineNodes.output.connect(fade).connect(output);
     input.connect(engineNodes.input);
-    return (convolution = { ...engineNodes, fade });
+    convolution = { ...engineNodes, fade };
+    updateSleep();
+    return convolution;
   };
   const closeConvolution = () => {
     if (!convolution) return;
     convolution.dispose();
     convolution.fade.disconnect();
     convolution = null;
+    updateSleep();
   };
   if (engine === 'convolution') openConvolution(1);
 
@@ -104,6 +115,7 @@ export function createEngines(host: ReverbHost, kernel: WorkletPort, input: Gain
   const switchTo = (next: ReverbEngine, time: number) => {
     if (next === engine) return;
     engine = next;
+    updateSleep();
     const isImmediate = host.offline || ac.currentTime === 0;
     const fadeStart = Math.max(time, ac.currentTime);
     if (next === 'algorithmic') switchToAlgorithmic(fadeStart, isImmediate);
@@ -112,12 +124,14 @@ export function createEngines(host: ReverbHost, kernel: WorkletPort, input: Gain
   const stopListening = params.engine.onChange((value, time) => switchTo(value, time));
 
   return {
+    sleep,
     reset() {
       kernel.reset();
       convolution?.reset();
     },
     dispose() {
       stopListening();
+      stopWatchingKernel();
       timers.clear();
       closeConvolution();
       algorithmic.disconnect();

@@ -138,6 +138,7 @@ export default defineInstrument({
 
     return {
       output: outputGain,
+      sleep: mono.sleep,
       // Held notes decay on their own; after the last note-off only the short release remains.
       tailTime: 0.25,
       noteOn: (e) => mono.noteOn(e),

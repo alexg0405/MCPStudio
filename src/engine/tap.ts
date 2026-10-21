@@ -43,6 +43,8 @@ export class TapImpl implements AudioTap, PluginTap {
   private readonly scratch: Float32Array<ArrayBuffer>;
   private readonly values = new Map<string, number>();
   private live = true;
+  /** The plugin's node is parked by the mixer: the analysers are disconnected from it and read silence (see setParked). */
+  private isParked = false;
 
   constructor(
     private readonly ctx: BaseAudioContext,
@@ -69,8 +71,30 @@ export class TapImpl implements AudioTap, PluginTap {
     }
   }
 
+  /**
+   * The mixer stops processing the tapped node while nothing can sound through it. An analyser listening to a node is
+   * pulled by the browser by itself and would keep the node (and everything feeding it) processed, so the analysers
+   * let go while parked, and a read in the meantime returns silence without waking anything.
+   */
+  setParked(isParked: boolean): void {
+    if (!this.live || isParked === this.isParked) return;
+    this.isParked = isParked;
+    if (isParked) {
+      this.disconnectAnalysers();
+      return;
+    }
+    this.node.connect(this.mix);
+    if (this.channels) {
+      this.node.connect(this.channels.splitter);
+    }
+  }
+
   spectrum(out: Float32Array<ArrayBuffer>): boolean {
     if (!this.live) return false;
+    if (this.isParked) {
+      out.fill(-Infinity, 0, Math.min(out.length, this.fftSize / 2));
+      return true;
+    }
     this.mix.getFloatFrequencyData(out);
     const n = Math.min(out.length, this.fftSize / 2);
     for (let i = 0; i < n; i++) out[i] = (out[i] as number) + SPECTRUM_OFFSET_DB;
@@ -79,6 +103,10 @@ export class TapImpl implements AudioTap, PluginTap {
 
   waveform(out: Float32Array<ArrayBuffer>, channel: 0 | 1 = 0): boolean {
     if (!this.live) return false;
+    if (this.isParked) {
+      out.fill(0, 0, Math.min(out.length, this.fftSize));
+      return true;
+    }
     const analyser = this.channelAnalysers()[channel] ?? this.mix;
     // The analyser hands out its whole window (oldest first): keep its newest `out.length` frames.
     analyser.getFloatTimeDomainData(this.scratch);
@@ -94,20 +122,24 @@ export class TapImpl implements AudioTap, PluginTap {
   dispose(): void {
     if (!this.live) return;
     this.live = false;
+    this.disconnectAnalysers();
+    this.channels?.splitter.disconnect();
+    this.values.clear();
+  }
+
+  /** Takes the analysers off the tapped node (it may already be disconnected). */
+  private disconnectAnalysers(): void {
     try {
       this.node.disconnect(this.mix);
     } catch {
       /* the plugin already disconnected its node */
     }
-    if (this.channels) {
-      try {
-        this.node.disconnect(this.channels.splitter);
-      } catch {
-        /* already disconnected */
-      }
-      this.channels.splitter.disconnect();
+    if (!this.channels) return;
+    try {
+      this.node.disconnect(this.channels.splitter);
+    } catch {
+      /* already disconnected */
     }
-    this.values.clear();
   }
 
   private channelAnalysers(): AnalyserNode[] {
@@ -116,7 +148,7 @@ export class TapImpl implements AudioTap, PluginTap {
       const analysers = [0, 1].map(
         () => new AnalyserNode(this.ctx, { fftSize: this.fftSize, smoothingTimeConstant: 0 }),
       );
-      this.node.connect(splitter);
+      if (!this.isParked) this.node.connect(splitter);
       analysers.forEach((a, i) => splitter.connect(a, i));
       this.channels = { splitter, analysers };
     }

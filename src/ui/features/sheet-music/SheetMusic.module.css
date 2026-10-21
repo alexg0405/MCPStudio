@@ -1,0 +1,101 @@
+/* The Sheet music window: a toolbar and the score on a page that scrolls. */
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ag-surface-1);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size);
+}
+
+.bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-2) var(--ag-space-3);
+  border-bottom: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-2);
+}
+
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ag-space-1, 4px);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.field select {
+  height: 24px;
+  max-width: 160px;
+}
+
+.button {
+  height: 26px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--ag-hover-flat);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.on {
+  background: var(--ag-accent-dim);
+  color: var(--ag-text);
+  box-shadow: inset 0 0 0 1px var(--ag-accent);
+}
+
+.zoomLabel {
+  min-width: 3.2em;
+  text-align: center;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.status {
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+/* The page. It is the keyboard stop, so it is the positioning parent of the focus frame. */
+.host {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--ag-space-3);
+  background: var(--ag-surface-inset);
+}
+
+.empty {
+  max-width: 44em;
+  margin: var(--ag-space-5, 32px) auto;
+  padding: 0 var(--ag-space-4);
+  color: var(--ag-text-dim);
+  line-height: 1.5;
+}

@@ -1,0 +1,117 @@
+/*
+ * Sheet music. The score is SVG drawn with `currentColor`, so these rules (plain CSS, because the SVG is written as text
+ * and cannot carry hashed module class names) give it the theme's colours, and show the three states with a shape as well
+ * as a colour: the notes that are playing get a band behind them, selected notes a ring, and the cursor a dashed box.
+ * The print rules at the end hide the app and show only the copy `print.ts` makes, black on white.
+ */
+.ag-sheet svg.ag-system {
+  display: block;
+  color: var(--ag-text);
+  overflow: visible;
+}
+
+.ag-sheet .ag-band {
+  opacity: 0;
+  pointer-events: none;
+  color: var(--ag-accent);
+}
+
+.ag-sheet .ag-now .ag-band {
+  opacity: 0.2;
+}
+
+.ag-sheet .ag-now .ag-notehead,
+.ag-sheet .ag-now.ag-rest {
+  color: var(--ag-accent-ink);
+}
+
+.ag-sheet .ag-ring {
+  display: none;
+  color: var(--ag-select);
+}
+
+.ag-sheet .ag-sel .ag-ring {
+  display: inline;
+}
+
+.ag-sheet .ag-sel .ag-notehead {
+  color: var(--ag-select);
+}
+
+.ag-sheet .ag-hit {
+  cursor: pointer;
+}
+
+.ag-sheet .ag-cursor {
+  color: var(--ag-cursor);
+}
+
+/* The text version of the score for screen readers: out of sight, still in the accessibility tree. */
+.ag-sheet .ag-sheet-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media screen {
+  #ag-print-root {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  html.ag-printing,
+  html.ag-printing body {
+    background: #fff !important;
+    color: #000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  html.ag-printing body > *:not(#ag-print-root) {
+    display: none !important;
+  }
+
+  #ag-print-root {
+    display: block !important;
+    color: #000;
+    background: #fff;
+    font-family: sans-serif;
+  }
+
+  #ag-print-root h1 {
+    margin: 0 0 4pt;
+    font-size: 18pt;
+  }
+
+  #ag-print-root p {
+    margin: 0 0 14pt;
+    font-size: 10pt;
+  }
+
+  #ag-print-root svg.ag-system {
+    display: block;
+    width: 100% !important;
+    height: auto !important;
+    color: #000;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #ag-print-root .ag-band,
+  #ag-print-root .ag-ring,
+  #ag-print-root .ag-cursor {
+    display: none;
+  }
+}

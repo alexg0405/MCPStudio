@@ -15,6 +15,7 @@ import { getLyrics } from './lyrics-tools';
 import { getAlignment, getCleanup, getMidiConversion, listSampleSounds, getLoudness, getPitch, getReference } from './measurement-tools';
 import { getMixGroups, getMixSnapshots } from './mix-state-tools';
 import { getChords, getPatternNotes } from './music-tools';
+import { getNotation } from './notation-tools';
 import { getProject, getSelection, getSettings, getTransport, getWindows } from './project-tools';
 import { getUserPlugins } from './plugin-library-tools';
 import { getChains, getChannel, getMixer, getPlugins } from './sound-tools';
@@ -31,6 +32,7 @@ export const readTools: readonly ReadTool[] = [
   getLyrics,
   getSelection,
   getPatternNotes,
+  getNotation,
   getChannel,
   getMixer,
   getMixSnapshots,

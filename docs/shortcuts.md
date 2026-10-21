@@ -49,6 +49,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Save as… | `⌘⇧S` / `Ctrl+Shift+S` |
 | Search actions… | `⌘K` / `Ctrl+K` |
 | Settings… | `F10` |
+| Sheet music | `⌥⇧N` / `Alt+Shift+N` |
 | Studio | `⌥6` / `Alt+6` |
 | Tap tempo | `⇧T` / `Shift+T` |
 | Typing keyboard octave down | `⌥↓` / `Alt+↓` |
@@ -279,6 +280,20 @@ Moving around without a mouse (the same list is in Help → Keyboard navigation)
 | `Delete or Backspace` | Put the selected notes back as sung. |
 | `S / M` | Split the note in two; join it with the next one. |
 | `Ctrl+A, Esc, ?` | Select every note; clear the selection; say where the cursor is. |
+
+### Sheet music (Tab to the page)
+
+| Keys | What it does |
+|---|---|
+| `← →` | Previous or next note. Each is spoken: bar, beat, note name (C 4 is middle C here), length, tied or not, the word under it. |
+| `Ctrl+← →, Home / End` | The previous or next bar; the first or last note. Shift + ← → adds the note to the selection. |
+| `Enter, Ctrl+A, Esc` | Select or deselect the notes at the cursor; select every note of the part; clear the selection. |
+| `↑ ↓` | Move the selected notes (or the ones at the cursor) a step of the song key’s scale; Shift+↑ ↓ a semitone, Mod+↑ ↓ an octave. |
+| `A to G` | Type a note at the cursor as long as the entry duration, and move on. Shift makes it a sharp, Alt a flat; the song key’s signature applies. |
+| `1 2 4 8 6 3, . and T` | Entry duration: whole, half, quarter, eighth, sixteenth, thirty-second; dotted; triplet. With notes selected they change those notes too. |
+| `R or 0` | A rest: move on by the entry duration without a note. |
+| `Delete or Backspace` | Delete the selected notes, or the note at the cursor. |
+| `?` | Say where the cursor is, what is selected and the entry duration. |
 
 ### With a screen reader
 

@@ -94,11 +94,11 @@ const AREAS: readonly AreaDef[] = [
   },
   {
     id: 'harmony',
-    title: 'Chords, harmony and lyrics',
-    summary: 'The chord track, parts written from it, and lyrics lined up with the song.',
-    windows: ['chords', 'lyrics'],
+    title: 'Chords, harmony, lyrics and sheet music',
+    summary: 'The chord track, parts written from it, lyrics lined up with the song, and the pattern as printable sheet music.',
+    windows: ['chords', 'lyrics', 'sheet-music'],
     tours: ['harmony-chords'],
-    categories: ['Chords', 'Lyrics'],
+    categories: ['Chords', 'Lyrics', 'Sheet music'],
   },
   {
     id: 'mixing',

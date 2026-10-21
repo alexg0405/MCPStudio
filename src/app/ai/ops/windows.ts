@@ -32,6 +32,7 @@ export const OPEN_WINDOWS = [
   'samples',
   'chords',
   'lyrics',
+  'sheet-music',
   'mix-snapshots',
   'versions',
   'projects',

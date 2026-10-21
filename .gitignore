@@ -20,3 +20,6 @@ coverage/
 # AI plugin builder drafts and replaced plugins
 plugins/_drafts/
 plugins/_backup/
+# Plugins you switched off or deleted from My plugins (they can be brought back)
+plugins/_disabled/
+plugins/_trash/

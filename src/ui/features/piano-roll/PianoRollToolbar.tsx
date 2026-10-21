@@ -2,7 +2,7 @@
 import { useStore } from 'zustand';
 import { SNAP_OPTIONS, type Snap } from '@core/time/snap';
 import { NOTE_LANES, type NoteLane, type PianoRollTool } from '@app/stores/editor';
-import { useDoc, useServices } from '../../services-context';
+import { useDoc, useServices, useView } from '../../services-context';
 import { showContextMenu, type MenuEntry } from '../../controls/ContextMenu';
 import type { PianoRollController } from './controller';
 import { PlayPatternButton } from '../transport/PlayPatternButton';
@@ -284,6 +284,23 @@ function FollowButton() {
   );
 }
 
+/** Opens the Sheet music window (the same pattern written as notation). */
+function SheetMusicButton() {
+  const services = useServices();
+  const isOpen = useView((s) => !!s.windows['sheet-music']?.visible);
+  return (
+    <button
+      className={`${styles.tool} ${isOpen ? styles.toolOn : ''}`}
+      aria-pressed={isOpen}
+      onPointerDown={keepFocus}
+      onClick={() => services.commands.run('view.sheetMusic')}
+      data-hint="Sheet music: show this pattern as a score you can read, print, save as PDF or MusicXML and edit; selecting a note there selects it here"
+    >
+      Sheet music
+    </button>
+  );
+}
+
 /** The piano roll's toolbar. */
 export function Toolbar({ controller }: { controller: React.RefObject<PianoRollController | null> }) {
   const services = useServices();
@@ -300,6 +317,7 @@ export function Toolbar({ controller }: { controller: React.RefObject<PianoRollC
       <LaneField />
       <ZoomButtons controller={controller} />
       <FollowButton />
+      <SheetMusicButton />
       <span className={styles.selCount}>{count > 0 ? `${count} selected` : ''}</span>
     </div>
   );

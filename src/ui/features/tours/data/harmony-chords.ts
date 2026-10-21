@@ -6,7 +6,7 @@ export const HARMONY_CHORDS: Tour = {
   id: 'harmony-chords',
   title: 'Harmony and the chord track',
   summary:
-    'Put chords on a track, then write chords, a bass line, a melody and harmonies that fit them, and add lyrics.',
+    'Put chords on a track, then write chords, a bass line, a melody and harmonies that fit them, add lyrics, and see it all as sheet music.',
   minutes: 3,
   area: 'Harmony',
   keywords: [
@@ -21,8 +21,12 @@ export const HARMONY_CHORDS: Tour = {
     'scale',
     'detect',
     'roman',
+    'sheet music',
+    'notation',
+    'score',
+    'print',
   ],
-  windows: ['chords', 'lyrics'],
+  windows: ['chords', 'lyrics', 'sheet-music'],
   steps: [
     {
       id: 'lane',
@@ -66,6 +70,14 @@ export const HARMONY_CHORDS: Tour = {
       body: 'Paste your words, one line per line, and they go onto the notes you selected, the notes sung in an audio clip, or evenly over the bars. The Lyrics window shows them big and follows the song so you can read along while you record.',
       prepare: showWindow('lyrics'),
       tryIt: { label: 'Open the Lyrics window', command: 'view.lyrics' },
+    },
+    {
+      id: 'sheet-music',
+      target: 'window:sheet-music',
+      title: '7. Sheet music',
+      body: 'View → Sheet music shows the current pattern as a score, with the song key, ties, triplets and the chords and lyrics you added. Click a note to select it here and in the piano roll, press the arrows to move it, type A to G to add notes, and print it or save a PDF or MusicXML.',
+      prepare: showWindow('sheet-music'),
+      tryIt: { label: 'Open the Sheet music window', command: 'view.sheetMusic' },
     },
   ],
 };

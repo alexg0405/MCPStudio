@@ -3,7 +3,7 @@ import type { Plugin } from 'vite';
 import { apiBackend } from './api-backend.ts';
 import { codexBackend } from './codex-backend.ts';
 import { subscriptionBackend } from './subscription-backend.ts';
-import { AiServerError, type Backend, type BackendId, type BeatRequest } from './types.ts';
+import { AiServerError, MAX_SYSTEM_CHARS, MAX_TEXT_CHARS, type Backend, type BackendId, type BeatRequest } from './types.ts';
 
 /**
  * The AI studio's server side, on the dev and preview servers (the browser never holds a key):
@@ -75,7 +75,12 @@ function parseRequest(raw: string): BeatRequest {
       ? b.model === '' || (str(b.model, 80) && CODEX_MODEL.test(b.model as string))
       : str(b.model, 80) && CLAUDE_MODEL.test(b.model as string);
   if (!modelOk) throw new AiServerError('Unknown model.', 'invalid_request_error', 400);
-  if (!str(b.system, 60_000) || !str(b.text, 100_000))
+  const tooLong = (v: unknown, max: number) => typeof v === 'string' && v.length > max;
+  if (tooLong(b.system, MAX_SYSTEM_CHARS) || tooLong(b.text, MAX_TEXT_CHARS)) {
+    const sizes = `system ${String(b.system).length}, text ${String(b.text).length} characters`;
+    throw new AiServerError(`The request is too long for AGstudio's AI server (${sizes}).`, 'invalid_request_error', 413);
+  }
+  if (!str(b.system, MAX_SYSTEM_CHARS) || !str(b.text, MAX_TEXT_CHARS))
     throw new AiServerError('Missing prompt.', 'invalid_request_error', 400);
   if (typeof b.schema !== 'object' || b.schema === null || Array.isArray(b.schema))
     throw new AiServerError('Missing schema.', 'invalid_request_error', 400);

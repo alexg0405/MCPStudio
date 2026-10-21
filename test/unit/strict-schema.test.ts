@@ -5,6 +5,7 @@ import { STUDIO_PROMPT } from '@app/ai/prompt';
 import { SYSTEM_PROMPT } from '@app/assistant/claude';
 import { BEAT_JSON_SCHEMA, validateBeatSpec } from '@core/beat/spec';
 import { stripNulls, toStrictSchema } from '../../tools/ai/strict-schema.ts';
+import { MAX_SYSTEM_CHARS } from '../../tools/ai/types.ts';
 
 /**
  * The conversion of AGstudio's answer schemas into OpenAI's strict form for the Codex backend: the rules, a round
@@ -307,7 +308,7 @@ describe('OpenAI strict-mode limits', () => {
     expect(bad.problems.join('\n')).toMatch(/additionalProperties[\s\S]*not every property[\s\S]*const/);
   });
 
-  it('the system prompts fit the 60 000-character limit of the server', () => {
-    for (const prompt of [STUDIO_PROMPT, BUILDER_PROMPT, SYSTEM_PROMPT]) expect(prompt.length).toBeLessThan(60_000);
+  it('the system prompts fit the AI server’s system-prompt limit', () => {
+    for (const prompt of [STUDIO_PROMPT, BUILDER_PROMPT, SYSTEM_PROMPT]) expect(prompt.length).toBeLessThan(MAX_SYSTEM_CHARS);
   });
 });

@@ -1,6 +1,14 @@
 /** What the beat assistant asks the dev server for, and what it gets back. */
 export type BackendId = 'subscription' | 'api' | 'codex';
 
+/**
+ * The longest system prompt and turn text the dev server takes (characters). Guards against runaway requests, not a model
+ * limit: the text reaches the Claude and Codex CLIs on stdin and the API as a message. A new chat's first turn carries the
+ * plugin and command catalogs (about 110 000 characters with every built-in), so these leave room to grow.
+ */
+export const MAX_SYSTEM_CHARS = 120_000;
+export const MAX_TEXT_CHARS = 400_000;
+
 export interface BeatRequest {
   backend: BackendId;
   /** A Claude model id; for the codex backend a Codex model id, or empty for Codex's own default. */

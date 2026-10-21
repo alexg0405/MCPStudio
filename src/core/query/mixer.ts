@@ -10,6 +10,7 @@ import {
   type PluginOwner,
   type Project,
 } from '../model/types';
+import { locateSlot } from './rack';
 
 type Inserts = Readonly<Record<InsertId, Insert>>;
 
@@ -93,9 +94,9 @@ export function effectivelyMutedInserts(inserts: Inserts): ReadonlySet<InsertId>
   return out;
 }
 
-/** An effect slot by id. */
+/** An effect slot by id: on the insert, or inside one of its effect racks. */
 export function fxSlotOf(project: Project, insertId: InsertId, slotId: FxSlot['id']): FxSlot | undefined {
-  return project.mixer.inserts[insertId]?.fx.find((s) => s.id === slotId);
+  return locateSlot(project.mixer.inserts[insertId], slotId)?.slot;
 }
 
 /** The plugin data a plugin owner refers to: a channel's instrument or an insert slot's effect. */

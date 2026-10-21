@@ -169,7 +169,8 @@ describe('what a first turn weighs', () => {
 
   it('is mostly the stable prefix: the turn text is the request, the project and the details', async () => {
     const empty = await firstTurn(false);
-    expect(empty.text.length).toBeLessThan(14_000);
+    // About 16 000 today: the details of the Reverb and of a few pad instruments (the Wavetable's alone are 4 000).
+    expect(empty.text.length).toBeLessThan(18_000);
     expect(empty.text).toContain('<details>');
     expect(empty.system.length).toBeGreaterThan(empty.text.length * 4);
   });

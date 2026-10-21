@@ -13,6 +13,7 @@ export * from './types/patterns';
 export * from './types/playlist';
 export * from './types/automation';
 export * from './types/mixer';
+export * from './types/rack';
 export * from './types/samples';
 export * from './types/launcher';
 export * from './types/reference';

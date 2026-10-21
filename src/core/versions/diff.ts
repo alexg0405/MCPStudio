@@ -8,6 +8,7 @@
 import type { PluginInfoResolver } from '../automation/labels';
 import { gainToDecibels } from '../model/fader';
 import type { Channel, Insert, InsertId, Note, Pattern, Project, SlotId } from '../model/types';
+import { allSlots } from '../query/rack';
 import { captureMixerState, type MixerState } from '../snapshots/capture';
 import { diffMixerStates } from '../snapshots/diff';
 import { songKeyText } from './facts';
@@ -225,14 +226,16 @@ function effectChanges(
 ): void {
   const name = now.name;
   const effectName = (pluginId: string) => plugins(pluginId)?.name ?? pluginId;
-  const oldSlots = new Set(old.fx.map((slot) => slot.id));
-  const nowSlots = new Set(now.fx.map((slot) => slot.id));
-  for (const slot of now.fx) {
+  const oldAll = allSlots(old);
+  const nowAll = allSlots(now);
+  const oldSlots = new Set(oldAll.map((slot) => slot.id));
+  const nowSlots = new Set(nowAll.map((slot) => slot.id));
+  for (const slot of nowAll) {
     if (oldSlots.has(slot.id)) continue;
     counts.added++;
     out.lines.push(`${name}: effect added (${effectName(slot.plugin.pluginId)})`);
   }
-  for (const slot of old.fx) {
+  for (const slot of oldAll) {
     if (nowSlots.has(slot.id)) continue;
     counts.removed++;
     out.lines.push(`${name}: effect removed (${effectName(slot.plugin.pluginId)})`);

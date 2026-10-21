@@ -32,6 +32,7 @@ import { patterns } from './patterns';
 import { pitch } from './pitch';
 import { playlist } from './playlist';
 import { query } from './query';
+import { racks } from './racks';
 import { recording, RECORD_OP_NAMES } from './recording';
 import { reference } from './reference';
 import { samples } from './samples';
@@ -45,6 +46,7 @@ export const MODULES: readonly OpModule[] = [
   channels,
   mixer,
   mixerState,
+  racks,
   patterns,
   notes,
   midiFx,

@@ -12,6 +12,10 @@
  *   value there. `extend` appends linear ramps (steps for discrete params);
  * - `release` hands the value back to its base (the document value) with a short ramp.
  *
+ * - `follow(source, map)` makes the lane a copy of another lane seen through a function: every value the source has or
+ *   schedules reaches this lane's AudioParams mapped (a macro knob driving a parameter inside an effect rack). While it
+ *   follows, automation and document edits leave the value alone.
+ *
  * It never writes `.value` (offline renders must be exact), never uses value curves, exponential
  * ramps or cancelAndHold, and keeps event times strictly increasing.
  */
@@ -111,6 +115,8 @@ export class AutoLane implements AutomatableParam {
   readonly automatable: boolean;
   /** See AutomatableParam.shift; set by whoever owns the control when the mixer's compensation changes. */
   shift = 0;
+  /** Stops listening to the lane this one follows (null while it follows none). */
+  private stopFollowing: ((release?: boolean) => void) | null = null;
 
   constructor(
     private readonly ctx: BaseAudioContext,
@@ -169,6 +175,7 @@ export class AutoLane implements AutomatableParam {
   }
 
   cut(at: number): number {
+    if (this.stopFollowing) return at;
     const segs = this.segs;
     let i = segs.length - 1;
     while (i > 0 && (segs[i] as Seg).time > at) i--;
@@ -203,6 +210,7 @@ export class AutoLane implements AutomatableParam {
   }
 
   start(value: number): void {
+    if (this.stopFollowing) return;
     const v = this.clamp(value);
     if (this.ctx.currentTime > 0) {
       // Already rendering: the closest thing is a step at the next opportunity.
@@ -237,6 +245,7 @@ export class AutoLane implements AutomatableParam {
   onFirstDrive?: () => void;
 
   extend(points: ArrayLike<number>): void {
+    if (this.stopFollowing) return;
     if (!this.drivenFlag) this.onFirstDrive?.();
     const tail = this.segs[this.segs.length - 1] as Seg;
     // A linear ramp must not follow a running setTarget: anchor it first.
@@ -263,6 +272,7 @@ export class AutoLane implements AutomatableParam {
   }
 
   release(at: number, ramp = DEFAULT_RELEASE_RAMP_SEC): void {
+    if (this.stopFollowing) return;
     const tb = this.cut(at);
     this.extend([tb + Math.max(ramp, MIN_RAMP_SEC), this.baseValue]);
     this.drivenFlag = false;
@@ -277,7 +287,75 @@ export class AutoLane implements AutomatableParam {
   }
 
   dispose(): void {
+    this.stopFollowing?.(false);
+    this.stopFollowing = null;
     this.bindings = [];
+  }
+
+  /** True while the lane is a copy of another lane (see `follow`). */
+  get following(): boolean {
+    return this.stopFollowing !== null;
+  }
+
+  /**
+   * Makes this lane follow `source`: the source's value now, and everything it schedules later, reaches this lane's
+   * AudioParams through `map` (source units to this lane's units). Automation and document edits leave the value alone
+   * until the returned function is called, which gives the value back to the document's (with a short ramp, or at once
+   * when `release` is false: a lane that is going away).
+   *
+   * `bent` says that `map` is not a straight line, so a long linear ramp of the source is cut into short pieces that
+   * follow the bend (a frequency sweep stays even in octaves).
+   */
+  follow(source: AutoLane, map: (value: number) => number, options: { bent: boolean }): (release?: boolean) => void {
+    this.stopFollowing?.(false);
+    if (!this.drivenFlag) this.onFirstDrive?.();
+    // The lane's own schedule goes: from here on it is a copy of the source's.
+    this.cancel(0);
+    this.segs = [{ kind: 'set', time: 0, fromValue: this.baseValue, value: this.baseValue, end: 0, tau: 0 }];
+    this.drivenFlag = true;
+    const relay = new LaneRelay(this, source.base, map, options.bent);
+    const unbind = source.bind(relay as unknown as AudioParam);
+    let isActive = true;
+    const stop = (release = true): void => {
+      if (!isActive) return;
+      isActive = false;
+      unbind();
+      if (this.stopFollowing === stop) this.stopFollowing = null;
+      if (release && this.stopFollowing === null) this.release(this.ctx.currentTime);
+    };
+    this.stopFollowing = stop;
+    return stop;
+  }
+
+  /**
+   * One scheduled value of the lane being followed, already mapped into this lane's units (called by the LaneRelay).
+   * It is scheduled and remembered exactly as the lane would its own.
+   */
+  mirror(kind: SegKind, time: number, raw: number, tau = 0): void {
+    if (!Number.isFinite(raw) || !Number.isFinite(time)) return;
+    const v = this.clamp(raw);
+    const last = this.lastTime();
+    const before = this.valueAt(kind === 'lin' ? last : time);
+    // A ramp that does not end after the last event, or any ramp of a stepped parameter, is a step.
+    const asKind: SegKind = kind === 'lin' && (this.discrete || !(time > last)) ? 'set' : kind;
+    if (asKind === 'lin') this.push({ kind: 'lin', time: last, fromValue: before, value: v, end: time, tau: 0 });
+    else if (asKind === 'set') this.push({ kind: 'set', time, fromValue: v, value: v, end: time, tau: 0 });
+    else this.push({ kind: 'target', time, fromValue: before, value: v, end: time, tau });
+    for (const b of this.bindings) this.schedule(b, asKind, time, v, asKind === 'target' ? tau : 0);
+    if (v !== before) this.onScheduled?.(v, time);
+  }
+
+  /** The lane being followed cancelled what it had scheduled from `time` on (called by the LaneRelay). */
+  mirrorCancel(time: number): void {
+    for (const b of this.bindings) b.param.cancelScheduledValues(time);
+    const segs = this.segs;
+    while (segs.length > 1) {
+      const tail = segs[segs.length - 1] as Seg;
+      // A ramp is an event at its end (as it is to an AudioParam): a ramp that ends from `time` on goes whole.
+      const eventTime = tail.kind === 'lin' ? tail.end : tail.time;
+      if (eventTime < time) break;
+      segs.pop();
+    }
   }
 
   /** Time of the latest scheduled event. */
@@ -336,6 +414,57 @@ export class AutoLane implements AutomatableParam {
         if (s.end > now) this.schedule(b, 'lin', s.end, s.value, 0);
       } else if (s.time > now) this.schedule(b, 'set', s.time, s.value, 0);
     }
+  }
+}
+
+/** A followed linear ramp is cut into pieces about this long (seconds) when the map bends. */
+const RAMP_PIECE_SEC = 0.02;
+/** The most pieces one ramp is cut into: a very long sweep gets longer pieces rather than thousands of events. */
+const MAX_RAMP_PIECES = 64;
+
+/**
+ * The AudioParam a followed lane writes to: it hands every event to the lane that follows (`AutoLane.follow`), mapped
+ * into the follower's units. It keeps the source's own values so a long ramp can be cut into pieces that follow a bent map.
+ */
+class LaneRelay {
+  /** The events of the source as an AudioParam would hold them, in the source's units. */
+  private events: { time: number; value: number }[] = [];
+
+  constructor(
+    private readonly follower: AutoLane,
+    private readonly initial: number,
+    private readonly map: (value: number) => number,
+    private readonly bent: boolean,
+  ) {}
+
+  setValueAtTime(value: number, time: number): this {
+    this.events.push({ time, value });
+    this.follower.mirror('set', time, this.map(value));
+    return this;
+  }
+
+  linearRampToValueAtTime(value: number, time: number): this {
+    const from = this.events[this.events.length - 1] ?? { time, value: this.initial };
+    this.events.push({ time, value });
+    const pieces = this.bent ? Math.min(MAX_RAMP_PIECES, Math.max(1, Math.ceil((time - from.time) / RAMP_PIECE_SEC))) : 1;
+    for (let i = 1; i <= pieces; i++) {
+      const at = i === pieces ? time : from.time + ((time - from.time) * i) / pieces;
+      const along = i === pieces ? value : from.value + ((value - from.value) * i) / pieces;
+      this.follower.mirror('lin', at, this.map(along));
+    }
+    return this;
+  }
+
+  setTargetAtTime(value: number, time: number, tau: number): this {
+    this.events.push({ time, value });
+    this.follower.mirror('target', time, this.map(value), tau);
+    return this;
+  }
+
+  cancelScheduledValues(time: number): this {
+    while (this.events.length > 0 && (this.events[this.events.length - 1] as { time: number }).time >= time) this.events.pop();
+    this.follower.mirrorCancel(time);
+    return this;
   }
 }
 

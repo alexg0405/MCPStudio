@@ -113,6 +113,7 @@ export function indexLine(item: CatalogItem): string {
     case 'tool':
       return toolLine(item);
     case 'chain':
+    case 'rack':
     case 'midi-chain':
       return chainLine(item);
     case 'midi-effect':
@@ -129,7 +130,7 @@ function areaLine(area: string, commands: readonly CatalogItem[]): string {
 
 /** What the model is told about the index, above the data (it is the same in every chat: it is part of the cached prefix). */
 const HOW_TO_USE = [
-  'This is the catalog index: a table of contents of the plugins, piano-roll tools, effect chains, MIDI effects and app commands you can use.',
+  'This is the catalog index: a table of contents of the plugins, piano-roll tools, effect chains, effect racks, MIDI effects and app commands you can use.',
   'It has no settings, ranges, presets or arguments. Each request comes with <details> for the items it most likely needs.',
   'For anything else, look it up before you use it: if you can call tools, call get_plugin_details {ids}, get_commands {ids} or',
   'search_catalog {query}; if you cannot (the request says so), answer with a query action for the same tool and use the result in the next turn.',
@@ -158,6 +159,7 @@ export function catalogIndex(services: Services): CatalogIndex {
   const effects = ofKind(items, 'effect');
   const tools = ofKind(items, 'tool');
   const chains = ofKind(items, 'chain');
+  const racks = ofKind(items, 'rack');
   const midiEffects = ofKind(items, 'midi-effect');
   const midiChains = ofKind(items, 'midi-chain');
   const commands = ofKind(items, 'command');
@@ -172,6 +174,10 @@ export function catalogIndex(services: Services): CatalogIndex {
       chains.map(chainLine),
     ),
     ...section(
+      'Effect racks (add_rack action; name | what it is for; the musician’s own racks are in get_racks):',
+      racks.map(chainLine),
+    ),
+    ...section(
       'MIDI effects (add_midi_effect action, instrument channels only; id | name | what it does):',
       midiEffects.map(toolLine),
     ),
@@ -183,11 +189,11 @@ export function catalogIndex(services: Services): CatalogIndex {
   ].join('\n');
   const version = hashText(data);
 
-  const counts = `${instruments.length + effects.length} plugins, ${tools.length} piano-roll tools, ${chains.length} chains, ${midiEffects.length} MIDI effects, ${commands.length} commands`;
+  const counts = `${instruments.length + effects.length} plugins, ${tools.length} piano-roll tools, ${chains.length} chains, ${racks.length} racks, ${midiEffects.length} MIDI effects, ${commands.length} commands`;
   const text = `${HOW_TO_USE}\nCatalog index v${version}: ${counts}.\n${data}`;
 
   const lines = new Map<string, string>();
-  const indexed = [...instruments, ...effects, ...tools, ...chains, ...midiEffects, ...midiChains, ...commands];
+  const indexed = [...instruments, ...effects, ...tools, ...chains, ...racks, ...midiEffects, ...midiChains, ...commands];
   for (const item of indexed) lines.set(itemKey(item), indexLine(item));
   return { text, version, lines };
 }

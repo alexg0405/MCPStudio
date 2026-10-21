@@ -120,7 +120,7 @@ exports[`AI applier characterization > applies every op the same way 3`] = `
   "build plugin: it needs a name and a kind (instrument or effect)",
   "command: there is no command "file.save"",
   "command: there is no command "no.such.command"",
-  "open: there is no window "garage" (windows: mixer, channel-rack, piano-roll, playlist, plugin, piano-keyboard, keys, history, visualizer, settings, shortcuts, keyboard-help, dj, dj-controllers, dj-decks, launcher, reference, meters, pitch-editor, vocal-cleanup, vocal-align, samples, chords, midi-fx, lyrics, sheet-music, mix-snapshots, versions, projects, plugin-manager, help, features, browser)",
+  "open: there is no window "garage" (windows: mixer, channel-rack, piano-roll, playlist, plugin, rack, piano-keyboard, keys, history, visualizer, settings, shortcuts, keyboard-help, dj, dj-controllers, dj-decks, launcher, reference, meters, pitch-editor, vocal-cleanup, vocal-align, samples, chords, midi-fx, lyrics, sheet-music, mix-snapshots, versions, projects, plugin-manager, help, features, browser)",
 ]
 `;
 
@@ -231,6 +231,13 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
   "sidechain",
   "mixer_snapshot",
   "mixer_group",
+  "add_rack",
+  "edit_rack",
+  "rack_branch",
+  "rack_effect",
+  "rack_macro",
+  "group_into_rack",
+  "save_rack",
   "add_pattern",
   "edit_pattern",
   "remove_pattern",
@@ -309,6 +316,6 @@ exports[`AI applier characterization > keeps the op list and the prompt 1`] = `
 ]
 `;
 
-exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"35848d0c"`;
+exports[`AI applier characterization > keeps the op list and the prompt 2`] = `"bb5b3eb5"`;
 
-exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"47e1c65e"`;
+exports[`AI applier characterization > keeps the op list and the prompt 3`] = `"c78bfc1c"`;

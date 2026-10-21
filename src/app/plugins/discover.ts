@@ -1,3 +1,4 @@
+import { RACK_DEF } from '@engine/rack/rack-def';
 import type { PluginLoadError, PluginRegistry } from './registry';
 
 /**
@@ -21,11 +22,16 @@ function definitions(path: string, exported: unknown): { path: string; def: unkn
     : [{ path, def: exported }];
 }
 
+/** The built-in definitions: every folder under src/plugins/builtin, and the rack, which the engine builds itself. */
+function builtinDefinitions(): { path: string; def: unknown }[] {
+  return [
+    ...Object.entries(builtin).flatMap(([path, mod]) => definitions(path, mod.default)),
+    { path: 'src/engine/rack/rack-def.ts', def: RACK_DEF },
+  ];
+}
+
 async function syncAll(target: PluginRegistry): Promise<void> {
-  target.sync(
-    'builtin',
-    Object.entries(builtin).flatMap(([path, mod]) => definitions(path, mod.default)),
-  );
+  target.sync('builtin', builtinDefinitions());
   const entries = Object.entries(user);
   const results = await Promise.allSettled(entries.map(([, load]) => load()));
   const defs: { path: string; def: unknown }[] = [];
@@ -51,10 +57,7 @@ export async function installPluginDiscovery(target: PluginRegistry): Promise<vo
 
 /** Synchronous built-in-only registration (tests, and the first paint before user plugins load). */
 export function registerBuiltinPlugins(target: PluginRegistry): void {
-  target.sync(
-    'builtin',
-    Object.entries(builtin).flatMap(([path, mod]) => definitions(path, mod.default)),
-  );
+  target.sync('builtin', builtinDefinitions());
 }
 
 if (import.meta.hot) {

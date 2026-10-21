@@ -19,6 +19,7 @@ import { getChords, getPatternNotes } from './music-tools';
 import { getNotation } from './notation-tools';
 import { getProject, getSelection, getSettings, getTransport, getWindows } from './project-tools';
 import { getUserPlugins } from './plugin-library-tools';
+import { getRacks } from './rack-tools';
 import { getChains, getChannel, getMixer, getPlugins } from './sound-tools';
 import { getRecentProjects, getVersions } from './versions-tools';
 import type { ReadTool, ToolArgs } from './tool';
@@ -51,6 +52,7 @@ export const readTools: readonly ReadTool[] = [
   getCommands,
   getUserPlugins,
   getChains,
+  getRacks,
   getReference,
   getLoudness,
   getPitch,

@@ -1,6 +1,6 @@
 /**
- * Everything Studio can be told about, as one flat list: instruments, effects, piano-roll tools, effect chains, MIDI
- * effects and their chains, and app commands. The compact index (`catalog-index.ts`), the guess of what a request needs (`predict.ts`), the read tools
+ * Everything Studio can be told about, as one flat list: instruments, effects, piano-roll tools, effect chains, effect
+ * racks, MIDI effects and their chains, and app commands. The compact index (`catalog-index.ts`), the guess of what a request needs (`predict.ts`), the read tools
  * (`read/catalog-tools.ts`) and the attached details (`catalog-details.ts`) all start from it, so they never disagree about
  * what exists or what it is called.
  *
@@ -12,13 +12,14 @@ import { chainChoices, type ChainChoice } from '@app/chains';
 import type { PluginRegistry } from '@app/plugins/registry';
 import type { PresetLibrary } from '@app/presets';
 import { FACTORY_CHAINS, type FactoryChain } from '@app/actions/midi-fx';
+import { rackChoices, type RackChoice } from '@app/racks/library';
 import { MIDI_FX } from '@core/midi-fx/registry';
 import type { MidiFxDef } from '@core/midi-fx/types';
 import type { Services } from '../services';
-import { describeChain, describeMidiFx, describeMidiFxChain, describePlugin, describeScript } from './catalog';
+import { describeChain, describeMidiFx, describeMidiFxChain, describePlugin, describeRack, describeScript } from './catalog';
 import { aiCommands, describeCommand } from './commands';
 
-export type CatalogKind = 'instrument' | 'effect' | 'tool' | 'chain' | 'midi-effect' | 'midi-chain' | 'command';
+export type CatalogKind = 'instrument' | 'effect' | 'tool' | 'chain' | 'rack' | 'midi-effect' | 'midi-chain' | 'command';
 
 /** One thing in the catalog. */
 export interface CatalogItem {
@@ -51,9 +52,10 @@ const KIND_ORDER: Record<CatalogKind, number> = {
   effect: 1,
   tool: 2,
   chain: 3,
-  'midi-effect': 4,
-  'midi-chain': 5,
-  command: 6,
+  rack: 4,
+  'midi-effect': 5,
+  'midi-chain': 6,
+  command: 7,
 };
 
 function pluginItem(entry: { def: PluginDef; source: 'builtin' | 'user' }, kind: 'instrument' | 'effect'): CatalogItem {
@@ -105,6 +107,22 @@ function chainItem(choice: ChainChoice): CatalogItem {
     isInIndex: choice.source === 'factory',
     takesArgument: false,
     describe: () => ({ text: describeChain(choice), hasNumberedSettings: false }),
+  };
+}
+
+/** An effect rack: effects in branches with macro knobs. The musician's own racks are left out of the index, like chains. */
+function rackItem(choice: RackChoice): CatalogItem {
+  return {
+    kind: 'rack',
+    id: choice.name,
+    name: choice.name,
+    category: '',
+    description: choice.description,
+    presetCount: 0,
+    isUserPlugin: false,
+    isInIndex: choice.source === 'factory',
+    takesArgument: false,
+    describe: () => ({ text: describeRack(choice), hasNumberedSettings: false }),
   };
 }
 
@@ -162,6 +180,7 @@ export function catalogItems(services: Services): CatalogItem[] {
     ...services.plugins.list('effect').map((entry) => pluginItem(entry, 'effect')),
     ...toolItems(services.plugins),
     ...chainChoices(services.presets.chains()).map(chainItem),
+    ...rackChoices(services.presets.racks()).map(rackItem),
     ...MIDI_FX.map(midiEffectItem),
     ...FACTORY_CHAINS.map(midiChainItem),
     ...commandItems(services),

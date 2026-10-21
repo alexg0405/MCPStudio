@@ -1,5 +1,6 @@
 /** Actions the UI runs after the edit: playback, auditions, mix analysis, the plugin builder, commands, windows. */
 import type { ChannelId, InsertId, SlotId } from '@core/model/types';
+import { locateSlot } from '@core/query/rack';
 import { ticksPerBar } from '@core/time/ppq';
 import type { Services } from '../../services';
 import type { AiAnswer } from '../schema';
@@ -57,7 +58,7 @@ export const ui: OpModule = {
     ),
     S.op(
       'open',
-      'Shows, hides, focuses or maximizes a window (or the browser panel), applied after the edits. A plugin window needs its channel or effect.',
+      'Shows, hides, focuses or maximizes a window (or the browser panel), applied after the edits. A plugin window needs its channel or effect; a rack window needs the rack (its effect id or @ref).',
       {
         window: { type: 'string', enum: [...OPEN_WINDOWS] },
         action: { type: 'string', enum: [...WINDOW_ACTIONS], description: 'Default open.' },
@@ -138,9 +139,13 @@ export function uiAfter(services: Services, answer: AiAnswer, state: AnswerState
         fx?.kind === 'effect' ? { insertId: fx.insertId, slotId: fx.slotId } : undefined;
       if (!slot && fxRef)
         for (const id of project.mixer.order)
-          if (project.mixer.inserts[id]?.fx.some((f) => f.id === fxRef)) slot = { insertId: id, slotId: fxRef as SlotId };
+          if (locateSlot(project.mixer.inserts[id], fxRef as SlotId)) slot = { insertId: id, slotId: fxRef as SlotId };
       if (w === 'plugin' && !channelId && !slot) {
         warnings.push('open: a plugin window needs its channel or effect');
+        continue;
+      }
+      if (w === 'rack' && !slot) {
+        warnings.push('open: a rack window needs the rack (its effect id or @ref)');
         continue;
       }
       if (w === 'browser' || subAction !== 'open') {

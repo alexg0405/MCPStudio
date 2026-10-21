@@ -27,7 +27,9 @@ export class ParamHandleImpl<S extends ParamSpec> implements ParamHandle<S> {
     this.lane.onScheduled = (v, time) => this.emitScheduled(decode(spec, v), time);
   }
 
+  /** The value now: the document's, or while the param follows a macro (a rack) the macro's, so a plugin made later starts there. */
   get value() {
+    if (this.lane.following) return decode(this.spec, this.lane.valueAt(this.ctx.currentTime)) as never;
     return this.current as never;
   }
 

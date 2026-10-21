@@ -24,6 +24,8 @@ export type InsertId = Id<'ins'>;
 export type SlotId = Id<'fx'>;
 /** A MIDI effect in a channel's chain (arpeggiator, chord, scale…). */
 export type MidiFxSlotId = Id<'mfx'>;
+/** One parallel branch (or band, or mid/side half) of an effect rack. */
+export type BranchId = Id<'br'>;
 /** A sample of the project (a recording, an import or a generated sound). */
 export type SampleId = Id<'smp'>;
 /** A MIDI controller link. */

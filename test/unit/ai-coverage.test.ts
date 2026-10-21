@@ -76,6 +76,7 @@ const COVERED_BY_OP: Readonly<Record<string, string>> = {
   'mixer.balance': 'level_mix',
   'mixer.snapshotCompare': 'mixer_snapshot',
   'mixer.groupSelected': 'mixer_group',
+  'mixer.groupIntoRack': 'group_into_rack',
   'mixer.linkSelected': 'mixer_group',
   'audioClip.levels': 'edit_audio_clip',
   'options.audioInput': 'settings',

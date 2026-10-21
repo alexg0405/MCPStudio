@@ -15,9 +15,10 @@ import { mergePasses, spliceCurve, thinSamples, type Sample } from '@core/automa
 import { automationLabel, formatAutomationValue, targetName, type PluginInfoResolver } from '@core/automation/labels';
 import { resolveTarget, TEMPO_RANGE, type ResolvedTarget, type SpecsResolver } from '@core/automation/targets';
 import { PALETTE } from '@core/model/defaults';
-import { targetKey } from '@core/model/targets';
+import { parseTargetKey, targetKey } from '@core/model/targets';
 import type { AutomationChannel, ChannelId, ClipId, LaneId, ParamTarget, Project, Tick } from '@core/model/types';
 import { mutedLanes } from '@core/query/playlist';
+import { macroDriving } from '@core/query/rack';
 import { createAutomationClip, setAutomationPoints } from '@core/ops/automation';
 import { ticksPerBar } from '@core/time/ppq';
 import { isAutomatable, type ParamSpecs } from '@agstudio/sdk';
@@ -40,9 +41,9 @@ export interface AutomationDeps {
   session: SessionStore;
 }
 
-/** What a control shows about its target: driven by a clip, or being recorded. */
+/** What a control shows about its target: driven by a clip, being recorded, or moved by a rack's macro. */
 export interface AutomationStatus {
-  kind: 'automated' | 'muted' | 'recording';
+  kind: 'automated' | 'muted' | 'recording' | 'macro';
   /** For the control's hint, e.g. "Automated by clip ‘Cutoff · 3xOsc’ – right-click to edit". */
   hint: string;
 }
@@ -96,7 +97,11 @@ export class AutomationService {
     });
     s.recording.register({ id: 'automation', start: () => this.startTake(), stop: () => this.stopTake() });
     s.doc.subscribe((next, prev) => {
-      if (next.project.channels !== prev.project.channels || next.project.playlist !== prev.project.playlist)
+      if (
+        next.project.channels !== prev.project.channels ||
+        next.project.playlist !== prev.project.playlist ||
+        next.project.mixer !== prev.project.mixer
+      )
         this.refresh();
     });
     s.plugins.subscribe(() => this.refresh());
@@ -368,7 +373,7 @@ export class AutomationService {
       return { kind: 'recording', hint: 'Recording automation: your moves are written to a clip when you stop' };
     const p = this.project;
     const channels = this.channelsFor(key, p);
-    if (channels.length === 0) return null;
+    if (channels.length === 0) return this.macroStatusOf(key, p);
     const muted = mutedLanes(p.playlist);
     let playing = 0;
     let any = 0;
@@ -387,6 +392,17 @@ export class AutomationService {
         channels.length === 1
           ? `Automated by clip ‘${name}’ – right-click to edit`
           : `Automated by ${channels.length} clips (‘${name}’…) – right-click to edit`,
+    };
+  }
+
+  /** A control inside a rack that one of the rack's macros moves says so (its own value is ignored while it is mapped). */
+  private macroStatusOf(key: string, project: Project): AutomationStatus | null {
+    const target = parseTargetKey(key);
+    const driver = target ? macroDriving(project, target) : null;
+    if (!driver) return null;
+    return {
+      kind: 'macro',
+      hint: `Moved by the rack's macro ${driver.macro + 1} “${driver.name}”: turn the macro (this knob's own value is ignored while it is mapped). Right-click to map it elsewhere or let go`,
     };
   }
 

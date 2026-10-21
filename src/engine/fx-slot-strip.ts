@@ -26,6 +26,7 @@
 import { SLOT_MIX_SPEC } from '@core/model/target-specs';
 import { targetKey } from '@core/model/targets';
 import { automatedOwners, ownerKey } from '@core/automation/owners';
+import { RACK_PLUGIN_ID } from '@core/model/rack';
 import type { FxSlot, InsertId, PluginOwner, PluginInstance, Project, SlotId } from '@core/model/types';
 import type { AnyEffectDef, JsonValue, PluginDef } from '@agstudio/sdk';
 import { clampOrFallback, glide } from './audio-graph';
@@ -35,6 +36,7 @@ import { FxMixStage } from './fx-mix-stage';
 import { HostImpl } from './host';
 import { AutoLane } from './param-lane';
 import { UNREPORTED_TAIL_MARGIN_SEC } from './parking-plan';
+import { nestedOf, type NestedEffect, type RackBuild } from './rack/rack-build';
 
 /**
  * Time constant for enable/disable, mix changes and instance swaps: three of them make about a 10 ms crossfade
@@ -59,7 +61,20 @@ export interface SlotIdleNeeds {
   tailSec: number;
 }
 
-/** One effect slot of an insert. */
+/** What a rack wants to know about the effects inside it, and what it gives them. */
+export interface SlotHooks {
+  /** A host was made for the slot's effect (at every load, a hot reload too): the rack hooks its macros onto its params. */
+  hostCreated?(slotId: SlotId, host: HostImpl): void;
+}
+
+/** What only the effects inside a rack have. */
+export interface SlotNesting {
+  /** The owner of the rack slot: automation of the rack's macros makes the effects inside run as full processors. */
+  parentOwner?: PluginOwner;
+  hooks?: SlotHooks;
+}
+
+/** One effect slot of an insert, or of a branch of a rack. */
 export class FxSlotStrip {
   readonly input: GainNode;
   readonly output: GainNode;
@@ -102,6 +117,7 @@ export class FxSlotStrip {
     project: Project,
     /** Called when the slot's live latency or its listening to a sidechain changes. */
     private readonly onLatency: () => void = () => {},
+    private readonly nesting: SlotNesting = {},
   ) {
     const ctx = core.ctx;
     this.slot = slot;
@@ -146,6 +162,16 @@ export class FxSlotStrip {
     return this.slot.id;
   }
 
+  /** The rack inside the slot while it is a loaded rack, else null (tests and diagnostics). */
+  get nestedEffect(): NestedEffect | null {
+    return this.current ? nestedOf(this.current.effect) : null;
+  }
+
+  /** The lane of the slot's dry/wet mix (a rack's macro can follow it). */
+  get mix(): AutoLane {
+    return this.mixLane;
+  }
+
   /** Resolves when the effect instance has been created (or has failed to be). */
   get ready(): Promise<void> {
     return this.pending;
@@ -170,6 +196,8 @@ export class FxSlotStrip {
     if (this.retiring.size > 0) return { busy: true, tailSec: 0 };
     const instance = this.live ? this.current : null;
     if (!instance) return { busy: false, tailSec: 0 };
+    const nested = nestedOf(instance.effect);
+    if (nested) return nested.idleNeeds();
     if (instance.effect.sleep) return { busy: !instance.effect.sleep.asleep, tailSec: 0 };
     return { busy: false, tailSec: this.tailTime + UNREPORTED_TAIL_MARGIN_SEC };
   }
@@ -177,7 +205,10 @@ export class FxSlotStrip {
   /** The insert stopped (or resumed) processing its chain: the effects' editor taps follow (see HostImpl.setParked). */
   setParked(isParked: boolean): void {
     this.isParked = isParked;
-    for (const instance of this.instances()) instance.host.setParked(isParked);
+    for (const instance of this.instances()) {
+      instance.host.setParked(isParked);
+      nestedOf(instance.effect)?.setParked(isParked);
+    }
   }
 
   /** Frames the slot delays its audio by (its live effect's latency; 0 when it passes through). */
@@ -203,7 +234,10 @@ export class FxSlotStrip {
   setShift(inSeconds: number, outSeconds: number): void {
     this.shiftIn = inSeconds;
     this.mixLane.shift = outSeconds;
-    for (const instance of this.instances()) instance.host.setShift(inSeconds);
+    for (const instance of this.instances()) {
+      instance.host.setShift(inSeconds);
+      nestedOf(instance.effect)?.setShift(inSeconds, outSeconds);
+    }
   }
 
   update(next: FxSlot, project: Project): void {
@@ -217,6 +251,8 @@ export class FxSlotStrip {
     }
     const ctx = this.core.ctx;
     if (prev.plugin !== next.plugin) this.current?.host.apply(next.plugin, project, ctx.currentTime);
+    // The rack (its branches, effects, macros) changed, or the slot's effect is a rack and the project did.
+    if (this.current) nestedOf(this.current.effect)?.applyRack(next, project);
     if (prev.mix !== next.mix) {
       const mix = clampOrFallback(next.mix, 0, 1, 1);
       if (mix !== 1) this.ensureMixStage();
@@ -239,6 +275,7 @@ export class FxSlotStrip {
   samplesChanged(project: Project): void {
     this.project = project;
     this.current?.host.apply(this.slot.plugin, project, this.core.ctx.currentTime);
+    if (this.current) nestedOf(this.current.effect)?.samplesChanged(project);
   }
 
   /**
@@ -247,7 +284,30 @@ export class FxSlotStrip {
    */
   automationChanged(project: Project): void {
     this.project = project;
-    if (this.current?.host.lite && automatedOwners(project.channels).has(ownerKey(this.owner))) this.load();
+    if (this.current) nestedOf(this.current.effect)?.automationChanged(project);
+    if (this.current?.host.lite && this.isAutomated(project)) this.load();
+  }
+
+  /** Some automation drives this effect's params, or (inside a rack) the rack's macros. */
+  private isAutomated(project: Project): boolean {
+    const owners = automatedOwners(project.channels);
+    const parent = this.nesting.parentOwner;
+    return owners.has(ownerKey(this.owner)) || (parent !== undefined && owners.has(ownerKey(parent)));
+  }
+
+  /** Effects inside this slot's rack whose plugin definition changed are rebuilt (hot reload, install/uninstall). */
+  innerPluginsChanged(ids: ReadonlySet<string>, project: Project): void {
+    this.project = project;
+    if (this.current) nestedOf(this.current.effect)?.pluginsChanged(ids, project);
+  }
+
+  /** The rack inside this slot has a new latency: the dry path is made to match, and the mixer is told. */
+  private rackLatencyChanged(): void {
+    const instance = this.current;
+    const nested = instance ? nestedOf(instance.effect) : null;
+    if (!instance || !nested) return;
+    instance.setLatencyFrames(nested.latencyFrames);
+    this.applyGains();
   }
 
   /** Re-creates the effect (its code was hot-reloaded). */
@@ -411,7 +471,26 @@ export class FxSlotStrip {
     this.core.reportFault(this.owner, pluginId, reason);
   }
 
+  /** What a rack gets from the slot that holds it (undefined for any other effect). */
+  private rackBuild(data: PluginInstance): RackBuild | undefined {
+    if (data.pluginId !== RACK_PLUGIN_ID) return undefined;
+    return {
+      core: this.core,
+      insertId: this.owner.kind === 'fx' ? this.owner.insertId : ('' as InsertId),
+      owner: this.owner,
+      slot: () => this.slot,
+      project: () => this.project,
+      onLatency: () => this.rackLatencyChanged(),
+    };
+  }
+
   private createHost(def: AnyEffectDef, data: PluginInstance, generation: number): HostImpl {
+    const host = this.newHost(def, data, generation);
+    this.nesting.hooks?.hostCreated?.(this.slot.id, host);
+    return host;
+  }
+
+  private newHost(def: AnyEffectDef, data: PluginInstance, generation: number): HostImpl {
     return new HostImpl({
       ctx: this.core.ctx,
       def,
@@ -431,7 +510,8 @@ export class FxSlotStrip {
         if (generation === this.generation) this.fault(err);
       },
       reportTap: (tap, live) => this.core.reportTap?.(this.owner, tap, live),
-      lite: () => !automatedOwners(this.project.channels).has(ownerKey(this.owner)),
+      lite: () => !this.isAutomated(this.project),
+      rack: this.rackBuild(data),
     });
   }
 
@@ -455,8 +535,11 @@ export class FxSlotStrip {
       this.faulted = false;
       // Catch up with edits made while the effect was loading.
       host.apply(this.slot.plugin, this.project, ctx.currentTime);
+      nestedOf(effect)?.applyRack(this.slot, this.project);
       this.applyGains();
       this.core.idle?.rewired();
+      // A rack is ready when the effects inside it are too.
+      await nestedOf(effect)?.ready;
     } catch (err) {
       host.dispose();
       if (generation === this.generation) this.fault(err);

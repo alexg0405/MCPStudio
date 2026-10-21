@@ -4,6 +4,7 @@ import type { ChannelId, InsertId, PluginInstance, PluginOwner, SlotId } from '@
 import { addSample, setChannelProp, setPluginSample } from '@core/ops/channels';
 import { setFxSlotEnabled } from '@core/ops/mixer';
 import { fxSlotOf, pluginInstanceOf } from '@core/query/mixer';
+import { locateSlot } from '@core/query/rack';
 import { keyName, parseKeyName } from '@core/time/ppq';
 import { resolveValues, type ParamSpecs, type ParamValue, type PluginDef, type PluginUIProps } from '@agstudio/sdk';
 import {
@@ -25,6 +26,7 @@ import { useGestureEdit } from '../../edit';
 import { showParamMenu } from '../../param-menu';
 import { onFrame } from '../../frame-loop';
 import { MidiFxSection } from '../midi-fx/MidiFxSection';
+import { openRack } from '../rack/open';
 import { AutoPanel } from './AutoPanel';
 import { Meters } from './Meters';
 import { usePluginSamples } from './plugin-samples';
@@ -230,6 +232,9 @@ function MissingPlugin({ pluginId, isEffect }: { pluginId: string; isEffect: boo
 /** The window's header: the plugin's name, the bypass switch (effects), the preset bar, Edit code (your plugins), the root key (instruments) and sample slots. */
 function PluginHeader({ owner, def, instance }: { owner: PluginOwner; def: PluginDef; instance: PluginInstance }) {
   const services = useServices();
+  // An effect inside a rack says so, and takes you back to the rack (where its settings can be mapped to macros).
+  const rackSlotId = useDoc((project) => (owner.kind === 'fx' ? locateSlot(project.mixer.inserts[owner.insertId], owner.slotId)?.rackSlot?.id : undefined));
+  const branchName = useDoc((project) => (owner.kind === 'fx' ? locateSlot(project.mixer.inserts[owner.insertId], owner.slotId)?.branch?.name : undefined));
   return (
     <div className={styles.header}>
       <span className={styles.pluginName} data-hint={def.description ?? def.name}>
@@ -237,6 +242,17 @@ function PluginHeader({ owner, def, instance }: { owner: PluginOwner; def: Plugi
       </span>
       {owner.kind === 'fx' && <SlotPower insertId={owner.insertId} slotId={owner.slotId} name={def.name} />}
       <PresetBar owner={owner} def={def} instance={instance} />
+      {owner.kind === 'fx' && rackSlotId && (
+        <button
+          type="button"
+          className={styles.editCode}
+          onPointerDown={(e) => e.preventDefault()}
+          onClick={() => openRack(services, owner.insertId, rackSlotId)}
+          data-hint={`This effect is in the branch “${branchName}” of a rack. Right-click a knob and choose Map to macro to let a macro move it. Open the rack`}
+        >
+          In rack · {branchName}
+        </button>
+      )}
       {services.plugins.entry(def.id)?.source === 'user' && (
         <button
           type="button"

@@ -10,11 +10,13 @@ import {
   type ChannelId,
   type InsertId,
   type ParamTarget,
+  type PluginInstance,
   type PluginOwner,
   type Project,
   type SampleId,
   type SampleRef,
 } from '../model/types';
+import { locateSlot } from '../query/rack';
 
 // Pure draft mutators. Call them inside history.transact()/gesture() recipes.
 
@@ -134,7 +136,8 @@ function pluginOf(d: Draft<Project>, owner: PluginOwner) {
     const ch = d.channels[owner.channelId];
     return ch?.kind === 'instrument' ? ch.plugin : undefined;
   }
-  return d.mixer.inserts[owner.insertId]?.fx.find((s) => s.id === owner.slotId)?.plugin;
+  // An effect inside a rack has an id of its own on the insert, so the owner finds it like any other slot.
+  return locateSlot(d.mixer.inserts[owner.insertId], owner.slotId)?.slot.plugin as Draft<PluginInstance> | undefined;
 }
 
 /**

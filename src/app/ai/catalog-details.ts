@@ -29,12 +29,13 @@ const HEADINGS: Record<CatalogKind, string> = {
   effect: 'Effects (same):',
   tool: 'Piano-roll tools (note_tool action):',
   chain: 'Effect chains (add_chain action):',
+  rack: 'Effect racks (add_rack action):',
   'midi-effect': 'MIDI effects (add_midi_effect action; settings: kind, range, unit = default; presets):',
   'midi-chain': 'MIDI effect chains (midi_effects_chain action):',
   command: 'App commands (command action):',
 };
 
-const KIND_ORDER: CatalogKind[] = ['instrument', 'effect', 'tool', 'chain', 'midi-effect', 'midi-chain', 'command'];
+const KIND_ORDER: CatalogKind[] = ['instrument', 'effect', 'tool', 'chain', 'rack', 'midi-effect', 'midi-chain', 'command'];
 
 /** The details of several items as one block: a heading per kind, the numbered-settings note once when it applies. */
 export function detailsText(details: readonly ItemDetails[]): string {

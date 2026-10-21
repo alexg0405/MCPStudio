@@ -1,20 +1,22 @@
 import { importChainText } from '../chains';
 import { importPresetText } from '../presets';
+import { importRackText } from '../racks/library';
 import type { Services } from '../services';
 
 /**
- * "Open with AGstudio": the installed app is registered for .agproj, .agchain and .agpreset files (the manifest's
+ * "Open with AGstudio": the installed app is registered for .agproj, .agchain, .agpreset and .agrack files (the manifest's
  * file_handlers). Chrome hands the files to `launchQueue`; with the manifest's launch_handler (focus-existing) a file
  * opened while AGstudio is already running arrives in that same window instead of a second one.
  */
 
-export type LaunchedKind = 'project' | 'chain' | 'preset' | 'unknown';
+export type LaunchedKind = 'project' | 'chain' | 'preset' | 'rack' | 'unknown';
 
 export function launchedKind(fileName: string): LaunchedKind {
   const name = fileName.toLowerCase();
   if (name.endsWith('.agproj')) return 'project';
   if (name.endsWith('.agchain')) return 'chain';
   if (name.endsWith('.agpreset')) return 'preset';
+  if (name.endsWith('.agrack')) return 'rack';
   return 'unknown';
 }
 
@@ -42,7 +44,7 @@ interface LaunchQueue {
   setConsumer(consumer: (params: LaunchParams) => void | Promise<void>): void;
 }
 
-/** Opens what the app was launched with: the project, and the chains and presets added to the libraries. */
+/** Opens what the app was launched with: the project, and the chains, presets and racks added to the libraries. */
 export async function openLaunchedFiles(s: Services, handles: readonly FileSystemFileHandle[]): Promise<void> {
   const toast = s.session.getState().toast;
   const plan = planLaunch(handles.map((h) => h.name));
@@ -53,7 +55,8 @@ export async function openLaunchedFiles(s: Services, handles: readonly FileSyste
       const text = await (await handle.getFile()).text();
       if (kind === 'chain') importChainText(s, text);
       else if (kind === 'preset') importPresetText(s, text);
-      else toast(`AGstudio can't open "${handle.name}": it opens .agproj projects, .agchain chains and .agpreset presets.`, 'error');
+      else if (kind === 'rack') importRackText(s, text);
+      else toast(`AGstudio can't open "${handle.name}": it opens .agproj projects, .agchain chains, .agpreset presets and .agrack racks.`, 'error');
     } catch (e) {
       toast(`Could not read "${handle.name}": ${e instanceof Error ? e.message : String(e)}`, 'error');
     }

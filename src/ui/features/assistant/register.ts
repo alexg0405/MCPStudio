@@ -74,6 +74,10 @@ export function register(services: Services): void {
         else if (r.channelId) openWindow(services, 'plugin', { kind: 'channel', channelId: r.channelId });
         continue;
       }
+      if (r.window === 'rack') {
+        if (r.slotId && r.insertId) openWindow(services, 'rack', { insertId: r.insertId, slotId: r.slotId });
+        continue;
+      }
       if (r.window === 'piano-roll' && r.channelId) services.session.getState().selectChannel(r.channelId);
       openWindow(services, r.window);
     }

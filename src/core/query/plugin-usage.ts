@@ -1,4 +1,5 @@
 import type { Project } from '../model/types';
+import { allSlots } from './rack';
 
 /** Where one plugin is used in a project: instrument channels and effect slots, by name. */
 export interface PluginUse {
@@ -29,7 +30,8 @@ export function pluginUsage(project: Project): Map<string, PluginUse> {
   for (const insertId of project.mixer.order) {
     const insert = project.mixer.inserts[insertId];
     if (!insert) continue;
-    for (const slot of insert.fx) entryFor(slot.plugin.pluginId).inserts.push({ id: insert.id, name: insert.name, slotId: slot.id });
+    // The effects inside racks count: a project with a rack of user plugins needs those plugins.
+    for (const slot of allSlots(insert)) entryFor(slot.plugin.pluginId).inserts.push({ id: insert.id, name: insert.name, slotId: slot.id });
   }
   return uses;
 }

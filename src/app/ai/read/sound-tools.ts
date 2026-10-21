@@ -11,6 +11,7 @@ import * as S from '../schema/parts';
 import { channelBrief, describeParam, describeParams, pluginName, presetOf, soundChannels } from './describe';
 import { midiFxDef, slotValues } from '@core/midi-fx/registry';
 import { midiFxOf } from '@core/query/midi-fx';
+import { rackFields } from './rack-tools';
 import { gainDb, mixerNumber, mixerTrackName, projectOf, round2, tool } from './tool';
 
 /** One mixer track with its routes, effects (and their settings) and the channels feeding it. */
@@ -57,7 +58,11 @@ function describeInsert(services: Services, project: Project, id: InsertId, incl
           : {}),
         ...(definition?.kind === 'effect' && definition.sidechain ? { has_sidechain_input: true } : {}),
         ...(preset ? { preset } : {}),
-        params: describeParams(definition, effect.plugin, includeDefaults),
+        // A rack: what is inside it (the macros are shown there with their names, so they are left out of the settings).
+        ...rackFields(services, project, id, effect),
+        params: describeParams(definition, effect.plugin, includeDefaults).filter(
+          (param) => !(effect.rack && /^macro[1-8]$/.test(String(param.id))),
+        ),
       };
     }),
   };

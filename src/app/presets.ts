@@ -14,6 +14,8 @@ import {
 import { downloadBytes, uploadFile } from '@platform/fs-access';
 import { idbGet, idbSet, isIdbAvailable } from '@platform/idb';
 import { readChain, type ChainPreset, type UserChain } from './chains';
+import { userRackOf, type UserRack } from './racks/library';
+import type { RackFile } from '@core/rack/file';
 import type { Services } from './services';
 
 /**
@@ -49,10 +51,14 @@ export interface PresetStorage {
   /** Your effect chains (a storage without these keeps them for the session only). */
   readChains?(): Promise<unknown>;
   writeChains?(list: readonly UserChain[]): Promise<void>;
+  /** Your effect racks (same: kept for the session only without these). */
+  readRacks?(): Promise<unknown>;
+  writeRacks?(list: readonly UserRack[]): Promise<void>;
 }
 
 const KEY = 'user-presets:v1';
 const CHAINS_KEY = 'user-chains:v1';
+const RACKS_KEY = 'user-racks:v1';
 
 export const idbPresetStorage: PresetStorage = {
   read: () => (isIdbAvailable() ? idbGet(KEY) : Promise.resolve([])),
@@ -65,15 +71,22 @@ export const idbPresetStorage: PresetStorage = {
     if (!isIdbAvailable()) return Promise.reject(new Error('This browser has no storage for chains.'));
     return idbSet(CHAINS_KEY, list);
   },
+  readRacks: () => (isIdbAvailable() ? idbGet(RACKS_KEY) : Promise.resolve([])),
+  writeRacks: (list) => {
+    if (!isIdbAvailable()) return Promise.reject(new Error('This browser has no storage for racks.'));
+    return idbSet(RACKS_KEY, list);
+  },
 };
 
 export function memoryPresetStorage(
   initial: UserPreset[] = [],
   initialChains: UserChain[] = [],
-): PresetStorage & { list: UserPreset[]; chains: UserChain[] } {
+  initialRacks: UserRack[] = [],
+): PresetStorage & { list: UserPreset[]; chains: UserChain[]; racks: UserRack[] } {
   const store = {
     list: initial,
     chains: initialChains,
+    racks: initialRacks,
     read: () => Promise.resolve(store.list),
     write: (list: readonly UserPreset[]) => {
       store.list = structuredClone([...list]);
@@ -82,6 +95,11 @@ export function memoryPresetStorage(
     readChains: () => Promise.resolve(store.chains),
     writeChains: (list: readonly UserChain[]) => {
       store.chains = structuredClone([...list]);
+      return Promise.resolve();
+    },
+    readRacks: () => Promise.resolve(store.racks),
+    writeRacks: (list: readonly UserRack[]) => {
+      store.racks = structuredClone([...list]);
       return Promise.resolve();
     },
   };
@@ -111,6 +129,24 @@ const isPreset = (x: unknown): x is UserPreset => {
 };
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/** Whether a saved rack has an effect of this plugin in it. */
+const rackUses = (r: UserRack, pluginId: string): boolean =>
+  (r.file.slot.rack?.branches ?? []).some((branch) => branch.fx.some((fx) => fx.plugin.pluginId === pluginId));
+
+/** The rack with `from` renamed to `to` in every effect that uses it (`count` is called for each). */
+function renamePluginInRack(r: UserRack, from: string, to: string, count: () => void): UserRack {
+  if (!rackUses(r, from)) return r;
+  const copy = structuredClone(r);
+  for (const branch of copy.file.slot.rack?.branches ?? []) {
+    for (const fx of branch.fx) {
+      if (fx.plugin.pluginId !== from) continue;
+      fx.plugin.pluginId = to;
+      count();
+    }
+  }
+  return copy;
+}
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 const ownerKey = (o: PluginOwner) => (o.kind === 'fx' ? `fx:${o.insertId}:${o.slotId}` : `channel:${o.channelId}`);
 
@@ -118,6 +154,7 @@ const ownerKey = (o: PluginOwner) => (o.kind === 'fx' ? `fx:${o.insertId}:${o.sl
 export class PresetLibrary {
   private items: UserPreset[] = [];
   private chainItems: UserChain[] = [];
+  private rackItems: UserRack[] = [];
   private version = 0;
   private readonly listeners = new Set<() => void>();
   private loading: Promise<void> | null = null;
@@ -134,14 +171,18 @@ export class PresetLibrary {
     return (this.loading ??= Promise.all([
       this.storage.read(),
       (this.storage.readChains?.() ?? Promise.resolve([])).catch(() => []),
+      (this.storage.readRacks?.() ?? Promise.resolve([])).catch(() => []),
     ])
-      .then(([raw, rawChains]) => {
+      .then(([raw, rawChains, rawRacks]) => {
         const saved = Array.isArray(raw) ? raw.filter(isPreset) : [];
         const mine = new Set(this.items.map((p) => p.id));
         this.items = [...saved.filter((p) => !mine.has(p.id)), ...this.items];
         const chains = Array.isArray(rawChains) ? rawChains.map(userChainOf).filter((c): c is UserChain => !!c) : [];
         const mineChains = new Set(this.chainItems.map((c) => c.id));
         this.chainItems = [...chains.filter((c) => !mineChains.has(c.id)), ...this.chainItems];
+        const racks = Array.isArray(rawRacks) ? rawRacks.map(userRackOf).filter((r): r is UserRack => !!r) : [];
+        const mineRacks = new Set(this.rackItems.map((r) => r.id));
+        this.rackItems = [...racks.filter((r) => !mineRacks.has(r.id)), ...this.rackItems];
         this.emit();
       })
       .catch(() => {}));
@@ -266,6 +307,56 @@ export class PresetLibrary {
     this.changedChains();
   }
 
+  /** Your effect racks (a rack with its effects, macros and mappings, put on a mixer track in one step). */
+  racks(): readonly UserRack[] {
+    return this.rackItems;
+  }
+
+  getRack(id: string): UserRack | undefined {
+    return this.rackItems.find((r) => r.id === id);
+  }
+
+  findRack(name: string): UserRack | undefined {
+    return this.rackItems.find((r) => same(r.file.name, name));
+  }
+
+  /** Saves a rack; one of yours with the same name is replaced. */
+  saveRack(file: RackFile): UserRack {
+    const name = file.name.trim().slice(0, 64) || 'My rack';
+    const old = this.findRack(name);
+    const rack: UserRack = { id: old?.id ?? randomId('rck'), saved: Date.now(), file: { ...structuredClone(file), name } };
+    this.rackItems = old ? this.rackItems.map((r) => (r.id === old.id ? rack : r)) : [...this.rackItems, rack];
+    this.changedRacks();
+    return rack;
+  }
+
+  /** Renames one of your racks; false when another one already has the name. */
+  renameRack(id: string, name: string): boolean {
+    const r = this.getRack(id);
+    const next = name.trim().slice(0, 64);
+    if (!r || !next) return false;
+    const clash = this.findRack(next);
+    if (clash && clash.id !== id) return false;
+    this.rackItems = this.rackItems.map((x) => (x.id === id ? { ...x, file: { ...x.file, name: next } } : x));
+    this.changedRacks();
+    return true;
+  }
+
+  removeRack(id: string): UserRack | undefined {
+    const r = this.getRack(id);
+    if (!r) return undefined;
+    this.rackItems = this.rackItems.filter((x) => x.id !== id);
+    this.changedRacks();
+    return r;
+  }
+
+  /** Puts back a rack you deleted (undo). */
+  restoreRack(r: UserRack): void {
+    if (this.getRack(r.id)) return;
+    this.rackItems = [...this.rackItems, r];
+    this.changedRacks();
+  }
+
   /**
    * After a plugin got a new id: your presets and chains follow it. Returns how many presets and chain steps changed.
    * (Factory presets belong to the plugin's code and move with it.)
@@ -279,6 +370,10 @@ export class PresetLibrary {
         return { ...p, pluginId: to };
       });
       this.changed();
+    }
+    if (this.rackItems.some((r) => rackUses(r, from))) {
+      this.rackItems = this.rackItems.map((r) => renamePluginInRack(r, from, to, () => changed++));
+      this.changedRacks();
     }
     if (this.chainItems.some((c) => c.steps.some((step) => step.pluginId === from))) {
       this.chainItems = this.chainItems.map((c) => ({
@@ -324,6 +419,17 @@ export class PresetLibrary {
       .catch((e: unknown) => {
         this.onError(
           `Your chains couldn’t be saved in this browser (${e instanceof Error ? e.message : String(e)}). Export them as files to keep them.`,
+        );
+      });
+  }
+
+  private changedRacks(): void {
+    this.emit();
+    void this.load()
+      .then(() => this.storage.writeRacks?.(this.rackItems))
+      .catch((e: unknown) => {
+        this.onError(
+          `Your racks couldn’t be saved in this browser (${e instanceof Error ? e.message : String(e)}). Export them as files to keep them.`,
         );
       });
   }

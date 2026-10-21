@@ -24,7 +24,7 @@ export const MIX_MASTER: Tour = {
     'balance',
     'loud',
   ],
-  windows: ['mixer', 'mix-snapshots', 'meters', 'reference'],
+  windows: ['mixer', 'rack', 'mix-snapshots', 'meters', 'reference'],
   steps: [
     {
       id: 'strips',

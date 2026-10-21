@@ -21,6 +21,7 @@ import type { ParamTarget, Project } from '../model/types';
 import { midiFxDef } from '../midi-fx/registry';
 import { midiFxSlotOf } from '../query/midi-fx';
 import { pluginInstanceOf } from '../query/mixer';
+import { locateSlot } from '../query/rack';
 
 /** Param specs of a plugin by id (the app's registry; core can't see plugin definitions). */
 export type SpecsResolver = (pluginId: string) => ParamSpecs | undefined;
@@ -91,7 +92,7 @@ export function resolveTarget(
         : bySpec(key, INSERT_PAN_SPEC, ins.pan);
     }
     case 'slot': {
-      const slot = p.mixer.inserts[t.insertId]?.fx.find((s) => s.id === t.slotId);
+      const slot = locateSlot(p.mixer.inserts[t.insertId], t.slotId)?.slot;
       return slot ? bySpec(key, SLOT_MIX_SPEC, slot.mix) : null;
     }
     case 'route': {

@@ -32,6 +32,7 @@ import { createPluginNode } from './host-worklet-node';
 import type { NoteFeedHub } from './note-feed';
 import { ParamHandleImpl } from './param-handle';
 import type { ParamRegistry } from './param-lane';
+import type { RackBuild } from './rack/rack-build';
 import type { SampleCache } from './samples';
 import { NO_TAP, TapImpl } from './tap';
 import { WorkletPortImpl } from './worklet-port';
@@ -70,6 +71,8 @@ export interface HostDeps {
    * much less. Absent: always the full processor.
    */
   lite?(): boolean;
+  /** Set for the effect that is a rack: what the rack needs from the slot that holds it (see engine/rack). */
+  rack?: RackBuild;
 }
 
 /** The root key a channel without one reports (middle C). */
@@ -111,6 +114,8 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
   private shiftSec = 0;
   /** The mixer is not processing this instance now (see setParked); taps made meanwhile start out parked. */
   private isParked = false;
+  /** Called when the host is disposed (a rack lets go of what it hooked onto this instance's params). */
+  private readonly disposeListeners = new Set<() => void>();
 
   constructor(private readonly deps: HostDeps) {
     this.audioContext = deps.ctx;
@@ -199,6 +204,17 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
 
   get shift(): number {
     return this.shiftSec;
+  }
+
+  /** What a rack needs from its slot, for the host of the rack effect itself (undefined for every other plugin). */
+  get rackBuild(): RackBuild | undefined {
+    return this.deps.rack;
+  }
+
+  /** Calls `listener` when this host is disposed (once). Returns the way to stop listening. */
+  onDispose(listener: () => void): () => void {
+    this.disposeListeners.add(listener);
+    return () => this.disposeListeners.delete(listener);
   }
 
   /**
@@ -293,6 +309,8 @@ export class HostImpl implements PluginHost<ParamSpecs, unknown> {
 
   dispose(): void {
     this.abort.abort();
+    for (const listener of [...this.disposeListeners]) listener();
+    this.disposeListeners.clear();
     this.sampleSlots.dispose();
     // Ports the plugin forgot to dispose.
     for (const port of [...this.myPorts]) port.dispose();

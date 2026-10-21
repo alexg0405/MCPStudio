@@ -103,8 +103,8 @@ const AREAS: readonly AreaDef[] = [
   {
     id: 'mixing',
     title: 'Mixing and mastering',
-    summary: 'The mixer, snapshots, loudness meters, reference songs, effect chains and the visualizer.',
-    windows: ['mixer', 'mix-snapshots', 'meters', 'reference', 'visualizer'],
+    summary: 'The mixer, snapshots, effect racks and chains, loudness meters, reference songs and the visualizer.',
+    windows: ['mixer', 'rack', 'mix-snapshots', 'meters', 'reference', 'visualizer'],
     tours: ['mix-master'],
     categories: ['Mixer', 'Reference'],
   },
@@ -210,7 +210,8 @@ function windowEntry(type: string, services: Services): FeatureEntry {
     label,
     hint: windowHelp(type)?.intro ?? `The ${label} window.`,
     where: 'Window',
-    ...(type === 'plugin' ? {} : { run: () => void openWindow(services, type) }),
+    // A plugin window or a rack window belongs to one effect or instrument, which only its own slot can name.
+    ...(type === 'plugin' || type === 'rack' ? {} : { run: () => void openWindow(services, type) }),
   };
 }
 

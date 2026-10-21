@@ -84,7 +84,7 @@ describe('the catalog index', () => {
     expect(text).toContain('This is the catalog index');
     expect(text).toContain('get_plugin_details');
     expect(text).toContain('search_catalog');
-    expect(text).toMatch(/Catalog index v[a-z0-9]+: \d+ plugins, \d+ piano-roll tools, \d+ chains, \d+ MIDI effects, \d+ commands\./);
+    expect(text).toMatch(/Catalog index v[a-z0-9]+: \d+ plugins, \d+ piano-roll tools, \d+ chains, \d+ racks, \d+ MIDI effects, \d+ commands\./);
   });
 });
 

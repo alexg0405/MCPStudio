@@ -12,6 +12,7 @@ import { FACTORY_CHAINS, FX_CHAIN_KEY, fxPresetKey, type FactoryChain } from '@a
 import { MAX_MIDI_FX, MIDI_FX } from '@core/midi-fx/registry';
 import type { MidiFxDef } from '@core/midi-fx/types';
 import { hashText } from './text-hash';
+import { rackChoices, type RackChoice } from '@app/racks/library';
 
 /** A param's kind and range without its name or default: "float 20..20000 Hz log". */
 function shape(spec: ParamSpec): string {
@@ -144,6 +145,11 @@ export function describeScript(def: { id: string; name: string; description?: st
 export const FAMILY_NOTE =
   'A numbered range such as pad1..16Sound stands for one setting per number (pad1Sound, pad2Sound … pad16Sound); its defaults are listed in order.';
 
+/** One rack: its name, what it is for and what is inside. */
+export function describeRack(r: RackChoice): string {
+  return `- "${r.name}"${r.source === 'user' ? " (the musician's own)" : ''}: ${r.description}\n  inside: ${r.summary}`;
+}
+
 /** The catalog text and a key that changes when it does. */
 export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary): { text: string; key: string } {
   const instruments = registry.list('instrument').map((e) => describePlugin(e.def, presets));
@@ -165,6 +171,9 @@ export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary)
     ...MIDI_FX.map((def) => describeMidiFx(def, presets)),
     'MIDI effect chains (midi_effects_chain action):',
     ...describeMidiFxChains(presets),
+    '',
+    'Effect racks (add_rack action: a container of effects with branches and macro knobs; save_rack keeps one as the musician’s own):',
+    ...rackChoices(presets?.racks() ?? []).map(describeRack),
     ...(scripts.length ? ['', 'Piano-roll tools (note_tool action):', ...scripts] : []),
   ].join('\n');
   return { text, key: hashText(text) };

@@ -18,6 +18,8 @@ import {
 } from '@core/ops/mixer';
 import { removeRoute, routeOnlyTo, setRoute, setSlotSidechain } from '@core/ops/routing';
 import { insertLabel } from '@core/query/mixer';
+import { locateSlot } from '@core/query/rack';
+import { moveRackFx, removeRackFx } from '@core/ops/racks';
 import { defaultValues } from '@agstudio/sdk';
 import { describeApplied, applyChainToDraft } from '../../actions/chains';
 import { chainChoices, chainFromInsert, findChainChoice } from '../../chains';
@@ -234,7 +236,9 @@ export const mixer: OpModule = {
     edit_effect: (action, context) => {
       const { draft, services, project } = context;
       const { insertId, slotId } = context.effect(action.effect);
-      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId) as Draft<FxSlot>;
+      // The effect may be on the track or inside one of its racks (its id is unique on the track).
+      const found = locateSlot(draft.mixer.inserts[insertId], slotId);
+      const slot = found?.slot as Draft<FxSlot>;
       const out: string[] = [];
       let def = services.plugins.get(slot.plugin.pluginId);
       const swap = str(action.plugin);
@@ -244,8 +248,8 @@ export const mixer: OpModule = {
         out.push(`now ${def.name}`);
       }
       if (def && (action.preset !== undefined || action.params !== undefined)) {
-        const live = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
-        out.push(...context.settings(live.plugin, def, action));
+        const live = locateSlot(draft.mixer.inserts[insertId], slotId)!.slot;
+        out.push(...context.settings(live.plugin as Draft<PluginInstance>, def, action));
       }
       const mix = num(action.mix);
       if (mix !== undefined) {
@@ -259,7 +263,10 @@ export const mixer: OpModule = {
       }
       const pos = num(action.position);
       if (pos !== undefined) {
-        moveFxSlot(draft, insertId, slotId, pos - 1);
+        // Inside a rack the place is in its branch.
+        const branch = found?.branch;
+        if (branch) moveRackFx(draft, insertId, slotId, branch.id, pos - 1);
+        else moveFxSlot(draft, insertId, slotId, pos - 1);
         out.push(`slot ${pos}`);
       }
       return out.length ? `${def?.name ?? 'Effect'} on ${insertLabel(project, insertId)}: ${out.join(', ')}` : null;
@@ -268,9 +275,10 @@ export const mixer: OpModule = {
     remove_effect: (action, context) => {
       const { draft, services, project } = context;
       const { insertId, slotId } = context.effect(action.effect);
-      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
+      const slot = locateSlot(draft.mixer.inserts[insertId], slotId)!.slot;
       const name = services.plugins.get(slot.plugin.pluginId)?.name ?? slot.plugin.pluginId;
-      removeFxSlot(draft, insertId, slotId);
+      // An effect inside a rack leaves its branch (and its macro mappings); any other leaves the track.
+      if (!removeRackFx(draft, insertId, slotId)) removeFxSlot(draft, insertId, slotId);
       return `Removed ${name} from ${insertLabel(project, insertId)}`;
     },
 
@@ -333,8 +341,9 @@ export const mixer: OpModule = {
     sidechain: (action, context) => {
       const { draft, services, project } = context;
       const { insertId, slotId } = context.effect(action.effect);
-      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId)!;
-      const def = services.plugins.get(slot.plugin.pluginId);
+      const slot = draft.mixer.inserts[insertId]!.fx.find((f) => f.id === slotId);
+      if (!slot) fail('an effect inside a rack keys from its own input: it cannot take a sidechain from a track');
+      const def = services.plugins.get(slot!.plugin.pluginId);
       const fromText = str(action.from);
       const source = !fromText || lower(fromText) === 'none' ? null : context.insert(fromText);
       if (source && def?.kind === 'effect' && !def.sidechain) fail(`${def.name} has no sidechain input`);

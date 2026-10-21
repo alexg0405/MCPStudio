@@ -119,7 +119,7 @@ const PRODUCER_WORDS: Synonyms = {
   // Movement.
   wide: ['stereo', 'chorus', 'doubler', 'width'],
   wider: ['stereo', 'chorus', 'doubler', 'width'],
-  widen: ['stereo', 'chorus', 'doubler', 'width'],
+  widen: ['stereo', 'chorus', 'doubler', 'width', 'widener'],
   stereo: ['stereo', 'width'],
   width: ['stereo'],
   chorus: ['chorus', 'detuned'],
@@ -213,6 +213,14 @@ const PRODUCER_WORDS: Synonyms = {
   legato: ['legato'],
   velocity: ['velocity'],
   melody: ['melody', 'generate', 'notes', 'piano roll'],
+  // Effect racks.
+  parallel: ['parallel', 'rack'],
+  multiband: ['multiband', 'bands', 'rack'],
+  rack: ['rack'],
+  racks: ['rack'],
+  macro: ['macro', 'rack'],
+  macros: ['macro', 'rack'],
+  throws: ['throws', 'delay'],
   // The app.
   clip: ['clip', 'audio clip'],
   launcher: ['launcher'],

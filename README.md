@@ -117,6 +117,11 @@ the development server on 5390, with hot reload, and has nothing to do with the 
   reduction that learns your room) and Analyzer (spectrum, LUFS, true peak). Vocal chains: six ready-made effect chains (clean pop, rap, airy
   ballad, lo-fi, trap auto-tune, podcast) that go on a mixer track in one click (Chains in the browser, or
   right-click a track), save your own track's effects as a chain and share it as a .agchain file; voices get a Vocals bus.
+- **Effect racks**: one effect slot that holds a graph of effects (parallel branches, frequency bands, mid/side or left/right, each branch a
+  chain with its own level, pan, mute and solo; branches line up in time by themselves) with eight macro knobs that move many settings at once
+  (automatable and MIDI-learnable). Group effects into a rack from the mixer, drag effects between branches, right-click any setting and
+  Map to macro. Five factory racks (parallel NY compression, multiband saturation, mid/side widener, dub delay throws, lo-fi tape), save your
+  own and share them as .agrack files (Racks in the browser).
 - **Harmonies from a vocal**: right-click a sung audio clip › Make harmonies… turns it into 1–4 backing voices on new
   tracks under it: a third above, a fifth below, tones of the chord track, a fixed interval or the notes of a guide
   channel, each with its own level, pan, vowel colour and a little human timing and pitch drift; hear them first (A/B),

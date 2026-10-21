@@ -1,7 +1,7 @@
 import type { FxSlot, InsertId } from '@core/model/types';
 import type { Services } from '@app/services';
 import type { MenuEntry } from '../../controls/ContextMenu';
-import { openWindow } from '../../workspace/registry';
+import { openEffect } from '../rack/open';
 
 /** Every installed effect (built-ins first, then your plugins). */
 export function effectMenu(services: Services, pick: (pluginId: string) => void, current?: string): MenuEntry[] {
@@ -19,6 +19,7 @@ export function effectMenu(services: Services, pick: (pluginId: string) => void,
   return out;
 }
 
+/** Opens an effect's editor: its plugin window, or the rack window for a rack. */
 export function openEffectEditor(services: Services, insertId: InsertId, slotId: FxSlot['id']): void {
-  openWindow(services, 'plugin', { kind: 'fx', insertId, slotId });
+  openEffect(services, insertId, slotId);
 }

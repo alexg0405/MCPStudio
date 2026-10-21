@@ -6,6 +6,7 @@ import { type RepairLog, INSERT, ROUTE, SLOT, countOf, noun, withPrefix } from '
 import { INSERT_VOLUME_MAX } from './limits';
 import { FieldRepairs } from './fields';
 import { repairPlugin } from './plugin';
+import { repairRackOfSlot } from './rack';
 import { repairOrder, repairRecords } from './records';
 import { breakRoutingCycles } from './routing-cycles';
 import { hasOwn, isBoolean, isId, isObject, isString, type JsonObject } from '../json-values';
@@ -125,6 +126,7 @@ function repairEffectSlots(
       log.count('fx-id', (n) => `Gave ${countOf(n, SLOT)} a new id (missing or duplicate).`);
     }
     slotIds.add(slot.id as string);
+    repairRackOfSlot(slot, slotIds, samples, log);
     repairSlotSettings(slot, log);
     repairSidechain(slot, insertId, inserts, log);
     return true;

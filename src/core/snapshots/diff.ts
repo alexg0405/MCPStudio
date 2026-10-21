@@ -5,13 +5,16 @@
 import { formatValue, type ParamValue } from '@agstudio/sdk/params';
 import type { PluginInfoResolver } from '../automation/labels';
 import { formatGain } from '../model/fader';
+import { BRANCH_LEVEL_MIN_DB } from '../model/rack';
 import type {
+  BranchId,
   GroupId,
   InsertId,
   MixSnapshot,
   Project,
   SlotId,
   SnapshotInsert,
+  SnapshotRack,
   SnapshotRouting,
   SnapshotSlot,
 } from '../model/types';
@@ -82,6 +85,7 @@ function slotDifferences(id: InsertId, from: SnapshotInsert, to: SnapshotInsert,
       out.push({ insertId: id, text: `${label}: dry/wet ${Math.round(before.mix * 100)}% → ${Math.round(after.mix * 100)}%` });
     }
     if (before.plugin === after.plugin) out.push(...paramDifferences(id, label, before, after, names));
+    if (before.rack && after.rack) out.push(...rackDifferences(id, label, before.rack, after.rack));
   }
   for (const slotId of Object.keys(from.fx) as SlotId[]) {
     const added = from.fx[slotId]!;
@@ -101,6 +105,30 @@ function paramDifferences(id: InsertId, label: string, before: SnapshotSlot, aft
     out.push({ insertId: id, text: `${label}: ${spec?.label ?? key} ${show(old)} → ${show(value)}` });
   }
   return out;
+}
+
+/** What differs in a rack's branches (level, pan, mute, solo) and crossovers. */
+function rackDifferences(id: InsertId, label: string, before: SnapshotRack, after: SnapshotRack): MixDifference[] {
+  const out: MixDifference[] = [];
+  const say = (text: string) => out.push({ insertId: id, text: `${label}: ${text}` });
+  for (const [branchId, now] of Object.entries(after.branches) as [BranchId, SnapshotRack['branches'][BranchId]][]) {
+    const old = before.branches[branchId];
+    if (!old) continue;
+    if (!isSame(old.levelDb, now.levelDb)) say(`${now.name} level ${formatDb(old.levelDb)} → ${formatDb(now.levelDb)}`);
+    if (!isSame(old.pan, now.pan)) say(`${now.name} pan ${formatPan(old.pan)} → ${formatPan(now.pan)}`);
+    if (old.muted !== now.muted) say(`${now.name} ${describeSwitch(old.muted, 'muted', 'playing')} → ${describeSwitch(now.muted, 'muted', 'playing')}`);
+    if (old.solo !== now.solo) say(`${now.name} ${describeSwitch(old.solo, 'soloed', 'not soloed')} → ${describeSwitch(now.solo, 'soloed', 'not soloed')}`);
+  }
+  after.crossovers.forEach((hz, index) => {
+    const old = before.crossovers[index];
+    if (old !== undefined && !isSame(old, hz)) say(`crossover ${index + 1} ${Math.round(old)} Hz → ${Math.round(hz)} Hz`);
+  });
+  return out;
+}
+
+/** "−6.0 dB" for a branch level (−60 reads as "off"). */
+function formatDb(db: number): string {
+  return db <= BRANCH_LEVEL_MIN_DB ? 'off' : `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
 }
 
 function routeList(routing: SnapshotRouting, names: Names): string {

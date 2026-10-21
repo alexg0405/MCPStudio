@@ -22,6 +22,7 @@ import { requestWords, synonymsFor } from './predict-words';
 export interface DetailsBudget {
   /** Instruments, effects, piano-roll tools and MIDI effects together. */
   plugins: number;
+  /** Effect chains, effect racks and MIDI effect chains together. */
   chains: number;
   commands: number;
 }
@@ -228,7 +229,7 @@ export function predictItems(
   const isPluginLike = (item: CatalogItem) =>
     item.kind === 'instrument' || item.kind === 'effect' || item.kind === 'tool' || item.kind === 'midi-effect';
   const plugins = items.filter(isPluginLike);
-  const chains = items.filter((item) => item.kind === 'chain' || item.kind === 'midi-chain');
+  const chains = items.filter((item) => item.kind === 'chain' || item.kind === 'rack' || item.kind === 'midi-chain');
   const commands = items.filter((item) => item.kind === 'command');
 
   // A search by the request's words alone (the read tool) ignores the song.

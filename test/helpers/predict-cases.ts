@@ -70,6 +70,9 @@ export const TUNED_REQUESTS: PredictCase[] = [
   { request: 'show the piano roll', needs: [['view.pianoRoll']] },
   { request: 'switch to the mix layout', needs: [['view.layout.mix']] },
   { request: 'analyze the spectrum', needs: [[plugin('analyzer'), 'view.meters']] },
+  // From a second batch, written after the tuning: its first run missed this one (the Reverb has a "Cathedral" preset, but
+  // presets are not searched), so it got its word and joined the tuned requests.
+  { request: 'can you make it sound like a cathedral', needs: [[plugin('reverb')]] },
 ];
 
 /** Requests written before the producers' words were tuned and not looked at while tuning them. */

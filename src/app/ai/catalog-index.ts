@@ -39,9 +39,9 @@ const COMMAND_LABEL_WORDS = 3;
 export const itemKey = (item: Pick<CatalogItem, 'kind' | 'id'>): string => `${item.kind}:${item.id}`;
 
 /** Words a phrase must not end on ("…with amp and"): a cut that lands on one gives them up. */
-const DANGLING_WORDS = new Set([
-  'a', 'an', 'the', 'and', 'or', 'of', 'to', 'on', 'in', 'at', 'as', 'by', 'for', 'from', 'into', 'with', 'without', 'that', 'than', 'is', 'are',
-]);
+const DANGLING_WORDS = new Set(
+  'a an the and or of to on in at as by for from into with without that than is are'.split(' '),
+);
 
 /** A cut-off phrase without the little words and the punctuation it ends on. */
 function endCleanly(words: readonly string[]): string {

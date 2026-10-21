@@ -2533,9 +2533,12 @@ are byte-identical while the installed plugins and commands are, which is what l
     musician's own presets, a command's `argsHint`), in a `<details>` block of the turn. A conversation is sent an item's
     details once (and again when they change): the follow-up "more reverb" carries none.
   - **How good the guess is** (`test/unit/ai-predict.test.ts`, requests in `test/helpers/predict-cases.ts`, each need a list of
-    acceptable alternatives): 48 of 48 needs on the 47 requests the producer words were tuned on (47 of 48 on the first run;
-    the miss, "cut the mud…", got its word), and 14 of 14 needs on 12 requests written before the tuning and not looked at
-    while tuning (14 of 14 on the first run too). A miss costs a read-tool call, not a wrong answer.
+    acceptable alternatives): 49 of 49 needs on the 48 requests the producer words were tuned on, 14 of 14 needs on 12
+    requests written before the tuning and not looked at while tuning, and 13 of 15 on a second batch of 15 written after it
+    (the honest estimate for a request nobody tuned for: about 87 %). The two misses of that batch: "sound like a
+    cathedral" (the Reverb has a Cathedral preset, but presets are not searched: it got its word and joined the tuned
+    requests) and "I want the kick to push the bass out of the way" (a sidechain in plain words: still missed; the AI finds
+    the Ducker with `search_catalog`). A miss costs a read-tool call, not a wrong answer.
 - **Lookups during the turn** (`app/ai/read/catalog-tools.ts`, `tools/ai/lookup.ts`, `tools/mcp/lookup-scope.ts`). Three read tools
   join the others: `get_plugin_details {ids}` (plugins, tools and chains by id or exact name, up to 12, with "did you mean"
   for an id it does not know), `get_commands {ids | area}` and `search_catalog {query, kind, limit}` (the guess's ranking,

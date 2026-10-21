@@ -6,7 +6,15 @@ import { cliCandidates } from '../platform/find-cli.ts';
 import { currentHost, envWithout, type Host } from '../platform/host.ts';
 import { firstExecutable, run as runCli, type RunResult } from './cli.ts';
 import { stripNulls, toStrictSchema } from './strict-schema.ts';
-import { AiServerError, type Backend, type BackendStatus, type BeatReply, type BeatRequest } from './types.ts';
+import { codexMcpOverrides, looksLikeLookupFailure } from './lookup.ts';
+import {
+  AiServerError,
+  type Backend,
+  type BackendStatus,
+  type BeatReply,
+  type BeatRequest,
+  type LookupAccess,
+} from './types.ts';
 
 /**
  * ChatGPT through the musician's own ChatGPT plan: the Codex CLI (it ships inside the ChatGPT app, or
@@ -18,6 +26,7 @@ import { AiServerError, type Backend, type BackendStatus, type BeatReply, type B
  * Each turn is a plain chat completion with a structured answer, not an agent run: the system prompt replaces
  * Codex's own instructions, every tool-like feature is switched off, the sandbox is read-only in an empty
  * folder with approvals off, and the answer is held to the schema (OpenAI's strict form, see strict-schema.ts).
+ * The one thing it can call is AGstudio's own read tools, through the dev server's MCP endpoint (lookup.ts).
  * The musician's request goes on stdin, the system prompt and the schema through temp files that are deleted
  * after the turn.
  */
@@ -109,7 +118,12 @@ const THREAD_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
  * The CLI arguments for one turn: the only part tied to Codex's version (checked against codex-cli 0.155). The
  * request goes on stdin (`-`). A fresh turn is `codex exec …`, a follow-up `codex exec resume <thread> …`.
  */
-export function cliArgs(req: BeatRequest, files: TurnFiles, disable: readonly string[] = TOOL_FEATURES): string[] {
+export function cliArgs(
+  req: BeatRequest,
+  files: TurnFiles,
+  disable: readonly string[] = TOOL_FEATURES,
+  lookup?: LookupAccess,
+): string[] {
   const thread = req.session && THREAD_ID.test(req.session) ? req.session : null;
   const args = [
     'exec',
@@ -125,7 +139,7 @@ export function cliArgs(req: BeatRequest, files: TurnFiles, disable: readonly st
     // `exec resume` has no --sandbox flag, so the sandbox is a config value, the same on both paths.
     '-c',
     'sandbox_mode="read-only"',
-    // Never stop to ask for approval (nothing is asked for: there are no tools).
+    // Never stop to ask for approval (nothing is asked for: the only tools are the read tools below, approved in advance).
     '-c',
     'approval_policy="never"',
     // The system prompt replaces Codex's own coding-agent instructions.
@@ -140,6 +154,8 @@ export function cliArgs(req: BeatRequest, files: TurnFiles, disable: readonly st
     // Medium effort keeps a turn to a few seconds of thinking: it is an interactive request.
     '-c',
     'model_reasoning_effort="medium"',
+    // AGstudio's read tools (MCP) when this turn may look things up: only those, approved in advance (lookup.ts).
+    ...(lookup ? codexMcpOverrides(lookup) : []),
     // Every tool-like feature off (see TOOL_FEATURES).
     ...disable.flatMap((f) => ['--disable', f]),
     // The answer must follow this schema (strict structured output).
@@ -319,9 +335,10 @@ async function runTurn(
   workDir: string,
   signal: AbortSignal,
   host: Host,
+  lookup: LookupAccess | undefined,
 ): Promise<RunResult> {
   try {
-    return await runCli(bin, cliArgs(req, files, disable), {
+    return await runCli(bin, cliArgs(req, files, disable, lookup), {
       input: req.text,
       cwd: workDir,
       env: childEnv(host),
@@ -379,40 +396,60 @@ export function codexBackend(override: () => string | undefined, host: Host = cu
     return cached;
   }
 
+  /** One `codex exec` turn, with the read tools of `lookup` or none; its temp folder is deleted afterwards. */
+  async function turn(
+    req: BeatRequest,
+    codex: { bin: string; disable: readonly string[] },
+    signal: AbortSignal,
+    lookup: LookupAccess | undefined,
+  ): Promise<BeatReply> {
+    const turnDir = join(BASE_DIR, randomUUID());
+    const files: TurnFiles = {
+      instructions: join(turnDir, 'instructions.md'),
+      schema: join(turnDir, 'schema.json'),
+      out: join(turnDir, 'answer.txt'),
+    };
+    try {
+      await writeTurnFiles(req, files);
+      const result = await runTurn(req, files, codex.bin, codex.disable, workDir, signal, host, lookup);
+      let answerAndEvents: { answer: string; events: TurnEvents };
+      try {
+        answerAndEvents = await answerOf(result, files, req.model, codex.bin);
+      } catch (e) {
+        cached = null; // look again next time (signed out, updated, …)
+        throw e;
+      }
+      const { answer, events } = answerAndEvents;
+      let beat: unknown;
+      try {
+        beat = stripNulls(JSON.parse(answer));
+      } catch {
+        throw new AiServerError("ChatGPT's answer wasn't valid JSON in the required format.", 'bad_output', 502);
+      }
+      return { session: events.thread ?? req.session ?? '', beat, model: req.model };
+    } finally {
+      await rm(turnDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   return {
     async status() {
       return (await check()).status;
     },
 
-    async beat(req: BeatRequest, signal: AbortSignal): Promise<BeatReply> {
+    async beat(req: BeatRequest, signal: AbortSignal, access?: LookupAccess): Promise<BeatReply> {
       const { status, bin, disable } = await check();
       if (!status.ok || !bin) throw new AiServerError(status.reason ?? installHint(host.platform), 'not_configured', 503);
-      const turnDir = join(BASE_DIR, randomUUID());
-      const files: TurnFiles = {
-        instructions: join(turnDir, 'instructions.md'),
-        schema: join(turnDir, 'schema.json'),
-        out: join(turnDir, 'answer.txt'),
-      };
+      const lookup = req.readTools ? access : undefined;
       try {
-        await writeTurnFiles(req, files);
-        const result = await runTurn(req, files, bin, disable, workDir, signal, host);
-        let answerAndEvents: { answer: string; events: TurnEvents };
-        try {
-          answerAndEvents = await answerOf(result, files, req.model, bin);
-        } catch (e) {
-          cached = null; // look again next time (signed out, updated, …)
-          throw e;
+        return await turn(req, { bin, disable }, signal, lookup);
+      } catch (e) {
+        // A look-up setup this Codex does not accept must not take the chat down: ask again without read tools (the model
+        // then looks things up with a query action).
+        if (lookup && e instanceof AiServerError && looksLikeLookupFailure(e.message)) {
+          return turn(req, { bin, disable }, signal, undefined);
         }
-        const { answer, events } = answerAndEvents;
-        let beat: unknown;
-        try {
-          beat = stripNulls(JSON.parse(answer));
-        } catch {
-          throw new AiServerError("ChatGPT's answer wasn't valid JSON in the required format.", 'bad_output', 502);
-        }
-        return { session: events.thread ?? req.session ?? '', beat, model: req.model };
-      } finally {
-        await rm(turnDir, { recursive: true, force: true }).catch(() => {});
+        throw e;
       }
     },
   };

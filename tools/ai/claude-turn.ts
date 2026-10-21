@@ -8,7 +8,7 @@ import type { BeatRequest } from './types.ts';
  * `argv` (the way it has always been done on macOS and Linux): the system prompt and the answer schema are
  * command-line arguments, the musician's request is on stdin, and the CLI prints one JSON result.
  *
- * `stdin` (for a command line that would be too long): the system prompt (up to 60 000 characters) and the schema
+ * `stdin` (for a command line that would be too long): the system prompt (up to 120 000 characters) and the schema
  * (about 76 KB) travel inside the CLI's own stream-json input, in the `initialize` message the Claude Agent SDK
  * sends, so nothing big is an argument. Windows stops a command line at 32 767 characters (8 191 through cmd.exe), so
  * a Windows turn always takes this way; other systems take it only when the arguments would pass a safe size.
@@ -28,29 +28,51 @@ export interface CliResult {
   structured_output?: unknown;
 }
 
-/** The flags both transports share: no tools, no customizations, a medium effort, at most three turns. */
-function commonFlags(req: BeatRequest): string[] {
+/** Turns the CLI may take for an answer with no look-ups: the answer itself, with room for one fix of its own output. */
+const MAX_TURNS = 3;
+/** With look-ups every tool call is a turn: a few rounds of reading, then the answer. */
+const MAX_TURNS_WITH_LOOKUPS = 6;
+
+/**
+ * What lets a turn call AGstudio's read tools: the MCP config file (one server, the read-only endpoint) and the tool names
+ * allowed, each read tool by its full name. Without it the turn has no tools at all.
+ */
+export interface CliLookup {
+  mcpConfigPath: string;
+  allowedTools: string[];
+}
+
+/**
+ * The flags both transports share: no built-in tools, no customizations, a medium effort, a few turns. With a look-up the
+ * only other tools are the read tools: `--strict-mcp-config` ignores every MCP server but ours, `--allowedTools` names the
+ * read tools one by one (never the whole server), and the other permissions stay at `dontAsk`, which refuses what is not
+ * allowed. Each option that takes a list is followed by another option, so it cannot swallow the prompt.
+ */
+function commonFlags(req: BeatRequest, lookup?: CliLookup): string[] {
   return [
     '--safe-mode',
     '--tools',
     '',
     '--permission-mode',
     'dontAsk',
+    ...(lookup
+      ? ['--mcp-config', lookup.mcpConfigPath, '--strict-mcp-config', '--allowedTools', lookup.allowedTools.join(',')]
+      : []),
     '--model',
     req.model,
     '--effort',
     'medium',
     '--max-turns',
-    '3',
+    String(lookup ? MAX_TURNS_WITH_LOOKUPS : MAX_TURNS),
   ];
 }
 
 /** The CLI flags of the argv transport (the only part tied to Claude Code's version). The request goes on stdin. */
-export function cliArgs(req: BeatRequest): string[] {
+export function cliArgs(req: BeatRequest, lookup?: CliLookup): string[] {
   const args = [
     '-p',
     TASK_LINE,
-    ...commonFlags(req),
+    ...commonFlags(req, lookup),
     '--output-format',
     'json',
     '--system-prompt',
@@ -63,10 +85,10 @@ export function cliArgs(req: BeatRequest): string[] {
 }
 
 /** The CLI flags of the stdin transport: short, whatever the prompt and the schema weigh. */
-export function streamArgs(req: BeatRequest): string[] {
+export function streamArgs(req: BeatRequest, lookup?: CliLookup): string[] {
   const args = [
     '-p',
-    ...commonFlags(req),
+    ...commonFlags(req, lookup),
     '--input-format',
     'stream-json',
     '--output-format',
@@ -109,13 +131,19 @@ export interface TurnCommand {
  * `AGSTUDIO_CLAUDE_TRANSPORT=stdin` (or `argv`) in the server's environment forces one: it lets the stdin way, which
  * every Windows turn takes, be tried on a Mac or Linux machine, and the plain way be tried where it would not be chosen.
  */
-export function chooseTurn(req: BeatRequest, bin: string, host: Host, readText?: ReadText): TurnCommand {
-  const argvArgs = cliArgs(req);
+export function chooseTurn(
+  req: BeatRequest,
+  bin: string,
+  host: Host,
+  readText?: ReadText,
+  lookup?: CliLookup,
+): TurnCommand {
+  const argvArgs = cliArgs(req, lookup);
   const forced = host.env.AGSTUDIO_CLAUDE_TRANSPORT;
   const plan = planSpawn(bin, argvArgs, host, readText);
   const useArgv = forced === 'argv' || (forced !== 'stdin' && fitsCommandLine(plan, host));
   if (useArgv) return { transport: 'argv', args: argvArgs, input: req.text };
-  return { transport: 'stdin', args: streamArgs(req), input: streamInput(req) };
+  return { transport: 'stdin', args: streamArgs(req, lookup), input: streamInput(req) };
 }
 
 /** The result object of a finished turn, or null when the output has none (signed out, crashed, updated…). */

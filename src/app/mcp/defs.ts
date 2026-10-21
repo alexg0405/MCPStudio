@@ -299,6 +299,13 @@ const READ_TOOL_DEFS: readonly ToolDef[] = readTools.map((t) => ({
   annotations: READ,
 }));
 
+/**
+ * The tools Studio's own AI backends may call during a turn (`tools/ai/lookup.ts`): the read tools of the chat, by their MCP
+ * names. Nothing that changes the project, plays it or renders it is in this list, and the dev server's `?scope=lookup`
+ * endpoint offers and runs only these.
+ */
+export const LOOKUP_TOOL_NAMES: readonly string[] = readTools.map((t) => mcpReadName(t.name));
+
 /** get_guide, get_project, list_plugins, then the read tools, then everything that changes or plays something. */
 export const TOOL_DEFS: readonly ToolDef[] = [...OWN_TOOL_DEFS.slice(0, 3), ...READ_TOOL_DEFS, ...OWN_TOOL_DEFS.slice(3)];
 

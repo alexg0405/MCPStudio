@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 
 /**
  * The access token AI apps present to the MCP endpoint. Generated once and kept in a file that version control
@@ -21,6 +21,13 @@ function keepPrivate(file: string): void {
     /* Windows, or a file system without permissions (FAT, some network and WSL mounts) */
   }
 }
+
+/**
+ * Where the access token lives: `<root>/.agstudio/mcp-token`, or the file `AGSTUDIO_MCP_TOKEN_FILE` names (the tests use
+ * it). The MCP endpoint and Studio's own look-ups (tools/ai) both ask here, so they always mean the same file.
+ */
+export const tokenFilePath = (root: string, override?: string): string =>
+  override ?? process.env.AGSTUDIO_MCP_TOKEN_FILE ?? join(root, '.agstudio', 'mcp-token');
 
 const VALID = /^agmcp_[A-Za-z0-9_-]{32,}$/;
 
@@ -49,4 +56,12 @@ export class TokenStore {
     keepPrivate(this.file);
     return (this.cached = token);
   }
+}
+
+/** One store per token file, so the MCP endpoint and Studio's look-ups share one cached token and one creation of the file. */
+const stores = new Map<string, TokenStore>();
+export function sharedTokenStore(file: string): TokenStore {
+  let store = stores.get(file);
+  if (!store) stores.set(file, (store = new TokenStore(file)));
+  return store;
 }

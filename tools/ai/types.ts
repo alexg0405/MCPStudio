@@ -3,8 +3,9 @@ export type BackendId = 'subscription' | 'api' | 'codex';
 
 /**
  * The longest system prompt and turn text the dev server takes (characters). Guards against runaway requests, not a model
- * limit: the text reaches the Claude and Codex CLIs on stdin and the API as a message. A new chat's first turn carries the
- * plugin and command catalogs (about 110 000 characters with every built-in), so these leave room to grow.
+ * limit: the text reaches the Claude and Codex CLIs on stdin and the API as a message. The system prompt carries the rules and
+ * the catalog index (about 78 000 characters with every built-in plugin and command); a turn's text is the request, the
+ * project and the details of what the request needs. These leave room to grow.
  */
 export const MAX_SYSTEM_CHARS = 120_000;
 export const MAX_TEXT_CHARS = 400_000;
@@ -16,10 +17,38 @@ export interface BeatRequest {
   /** The conversation so far (from an earlier reply), or null for a new one. */
   session: string | null;
   system: string;
+  /**
+   * The blocks `system` is made of (the rules, then the catalog index): joined with a blank line they are `system`. The API
+   * backend puts a cache breakpoint after each, so a changed index still reuses the cached rules. Ignored when they do not
+   * add up to `system`.
+   */
+  systemBlocks?: string[];
   /** JSON schema the answer must follow (structured output). */
   schema: Record<string, unknown>;
   /** This turn's user message. */
   text: string;
+  /**
+   * The page can answer read-tool calls (MCP is on in its settings): the backend lets the AI look things up during the
+   * turn. Without it the AI looks things up with a query action, as it always could.
+   */
+  readTools?: boolean;
+}
+
+/**
+ * How a backend reaches AGstudio's read tools during one turn. The server makes it per request (the page never sends it): it
+ * names this dev server's read-only MCP endpoint and the program that talks to it, and it holds no secret. The access token
+ * stays in its file: the helper program reads it there, so no config file, command line or log of a backend has it.
+ */
+export interface LookupAccess {
+  /** The read-only MCP endpoint on this dev server (loopback; `?scope=lookup` offers only the read tools). */
+  url: string;
+  /** The file holding the access token. */
+  tokenFile: string;
+  /** The program that speaks MCP over stdio and forwards to `url` (Node), and its arguments (the helper script). */
+  command: string;
+  args: string[];
+  /** The read tools the AI may call, by name. */
+  tools: readonly string[];
 }
 
 export interface BeatReply {
@@ -37,7 +66,8 @@ export interface BackendStatus {
 
 export interface Backend {
   status(): Promise<BackendStatus>;
-  beat(req: BeatRequest, signal: AbortSignal): Promise<BeatReply>;
+  /** `lookup`: the read tools the AI may call during this turn (the request asked for them and the server can offer them). */
+  beat(req: BeatRequest, signal: AbortSignal, lookup?: LookupAccess): Promise<BeatReply>;
 }
 
 /** A failure with a message meant for the musician; `type` lets the app react (e.g. not_configured). */

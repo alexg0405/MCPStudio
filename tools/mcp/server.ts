@@ -1,8 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { join } from 'node:path';
 import type { Plugin, ViteDevServer, WebSocketClient } from 'vite';
 import {
   BRIDGE_EVENTS,
+  STUDIO_LOOKUP_CLIENT,
   type BridgeHello,
   type BridgeResult,
   type McpInfo,
@@ -12,8 +12,9 @@ import {
 import { BridgeError, McpBridge } from './bridge.ts';
 import { checkAccess, isLocalHost, isLocalOrigin, isLoopbackAddress, RateLimit } from './guard.ts';
 import { createMcpProtocol, errorResult, UnknownToolError, type HttpIn, type McpBackend } from './protocol.ts';
+import { lookupScope, LOOKUP_SCOPE_QUERY } from './lookup-scope.ts';
 import { StatusTracker } from './status.ts';
-import { TokenStore } from './token.ts';
+import { sharedTokenStore, tokenFilePath, type TokenStore } from './token.ts';
 import { cleanName, defaultExportsDir, saveUpload, UploadError, UploadTickets } from './uploads.ts';
 
 /**
@@ -21,6 +22,7 @@ import { cleanName, defaultExportsDir, saveUpload, UploadError, UploadTickets } 
  * can read and change the open project, play it and render it, with the same tools the Studio chat uses.
  *
  *   POST /mcp                      JSON-RPC 2.0 (tools/mcp/protocol.ts); needs the access token
+ *   POST /mcp?scope=lookup         the same, read tools only: what Studio's own AI backends call during a turn
  *   GET  /api/mcp/info             the token, paths and who is connected (the app's Settings; same origin only)
  *   POST /api/mcp/token            a new token (same origin only)
  *   POST /api/mcp/upload/<ticket>  where the page sends a rendered export (valid only during that call)
@@ -91,7 +93,13 @@ interface Defs {
   TOOL_DEFS: readonly ToolDef[];
   RESOURCE_DEFS: readonly ResourceDef[];
   SERVER_INSTRUCTIONS: string;
+  /** The read tools Studio's own AI backends may call (`?scope=lookup`). */
+  LOOKUP_TOOL_NAMES: readonly string[];
 }
+
+/** The app's tool definitions, read from its own module every time so they are always current. */
+const loadDefs = async (server: ViteDevServer): Promise<Defs> =>
+  (await server.ssrLoadModule('/src/app/mcp/defs.ts')) as unknown as Defs;
 
 /** What the endpoints share: the access token, where exports go, who is connected, and the limits. */
 interface McpContext {
@@ -119,9 +127,7 @@ export function mcpServer(options: McpServerOptions): Plugin {
   // AGSTUDIO_MCP_TOKEN_FILE and AGSTUDIO_EXPORTS_DIR move the token and the exports (the tests use them).
   const context: McpContext = {
     options,
-    tokens: new TokenStore(
-      options.tokenFile ?? process.env.AGSTUDIO_MCP_TOKEN_FILE ?? join(options.root, '.agstudio', 'mcp-token'),
-    ),
+    tokens: sharedTokenStore(tokenFilePath(options.root, options.tokenFile)),
     exportsDir: options.exportsDir ?? process.env.AGSTUDIO_EXPORTS_DIR ?? defaultExportsDir(),
     status: new StatusTracker(),
     uploads: new UploadTickets(),
@@ -135,8 +141,12 @@ export function mcpServer(options: McpServerOptions): Plugin {
       const bridge = new McpBridge({ openHint: () => `Open AGstudio in the browser first: ${serverUrl(server)}` });
       relayTabEvents(server, bridge);
       pushStatusToSettings(server, context.status, bridge);
-      const protocol = createMcpProtocol(createBackend(server, bridge, context), SERVER_INFO);
-      installMcpEndpoint(server, context, protocol);
+      const backend = createBackend(server, bridge, context);
+      const readOnly = lookupScope(backend, async () => (await loadDefs(server)).LOOKUP_TOOL_NAMES);
+      installMcpEndpoint(server, context, {
+        full: createMcpProtocol(backend, SERVER_INFO),
+        lookup: createMcpProtocol(readOnly, SERVER_INFO),
+      });
       installOauthNotice(server);
       installAppEndpoints(server, context, bridge);
     },
@@ -191,7 +201,7 @@ function pushStatusToSettings(server: ViteDevServer, status: StatusTracker, brid
 /** What the tools are (read from the app's own module, so it is always current) and how a call reaches the page. */
 function createBackend(server: ViteDevServer, bridge: McpBridge, context: McpContext): McpBackend {
   const { status, uploads } = context;
-  const defs = async (): Promise<Defs> => (await server.ssrLoadModule('/src/app/mcp/defs.ts')) as unknown as Defs;
+  const defs = () => loadDefs(server);
   return {
     tools: async () => (await defs()).TOOL_DEFS,
     resources: async () => (await defs()).RESOURCE_DEFS,
@@ -199,7 +209,8 @@ function createBackend(server: ViteDevServer, bridge: McpBridge, context: McpCon
     onClient: (client) => status.touch(client),
     async call(name, args, client) {
       if (!(await defs()).TOOL_DEFS.some((t) => t.name === name)) throw new UnknownToolError(name);
-      status.touch(client, true);
+      // Studio reading its own project during a turn is not a connected app: it stays out of the settings' list.
+      if (client?.name !== STUDIO_LOOKUP_CLIENT) status.touch(client, true);
       const ticket = name === 'export_audio' || name === 'export_video' ? uploads.issue() : undefined;
       const timeoutMs = SLOW.has(name) ? SLOW_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS;
       try {
@@ -218,7 +229,7 @@ function createBackend(server: ViteDevServer, bridge: McpBridge, context: McpCon
 function installMcpEndpoint(
   server: ViteDevServer,
   context: McpContext,
-  protocol: ReturnType<typeof createMcpProtocol>,
+  protocols: { full: ReturnType<typeof createMcpProtocol>; lookup: ReturnType<typeof createMcpProtocol> },
 ): void {
   const { tokens, limit } = context;
   server.middlewares.use('/mcp', (req, res, next) => {
@@ -254,6 +265,9 @@ function installMcpEndpoint(
           ),
           body: req.method === 'POST' ? await readBody(req) : '',
         };
+        // `?scope=lookup` is the read-only face Studio's own AI backends use; anything else is the whole server.
+        const query = new URL(req.url ?? '', 'http://localhost').searchParams;
+        const protocol = query.get('scope') === LOOKUP_SCOPE_QUERY ? protocols.lookup : protocols.full;
         const out = await protocol.handle(input);
         send(res, out.status, out.body, out.headers);
       } catch (e) {

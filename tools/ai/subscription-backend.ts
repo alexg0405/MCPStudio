@@ -1,11 +1,26 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cliCandidates } from '../platform/find-cli.ts';
 import { currentHost, envWithout, type Host } from '../platform/host.ts';
-import { chooseTurn, answerOf, readResult } from './claude-turn.ts';
+import { chooseTurn, answerOf, readResult, type CliLookup } from './claude-turn.ts';
 import { firstExecutable, run as runCli, type RunResult } from './cli.ts';
-import { AiServerError, type Backend, type BackendStatus, type BeatReply, type BeatRequest } from './types.ts';
+import {
+  claudeAllowedTools,
+  claudeMcpConfig,
+  looksLikeLookupFailure,
+  removeFile,
+  writePrivateFile,
+} from './lookup.ts';
+import {
+  AiServerError,
+  type Backend,
+  type BackendStatus,
+  type BeatReply,
+  type BeatRequest,
+  type LookupAccess,
+} from './types.ts';
 
 /**
  * Claude through the musician's own Claude subscription: their installed Claude Code CLI, signed in
@@ -15,8 +30,9 @@ import { AiServerError, type Backend, type BackendStatus, type BeatReply, type B
  * background, and AGstudio never touches the CLI's credentials.
  *
  * Each turn: `--safe-mode` (no CLAUDE.md, hooks, plugins, MCP servers or memory; unlike `--bare` it
- * still uses the subscription login), no tools, `dontAsk` permissions, the beat's JSON schema as a
+ * still uses the subscription login), no built-in tools, `dontAsk` permissions, the beat's JSON schema as a
  * structured output, and API credentials removed from the environment so the subscription is used.
+ * The only tools a turn can have are AGstudio's own read tools (lookup.ts), through a temp MCP config of that turn.
  * How the prompt and the schema reach the CLI (command line or stdin) is in claude-turn.ts.
  */
 
@@ -111,35 +127,53 @@ export function subscriptionBackend(override: () => string | undefined, host: Ho
     return cached;
   }
 
+  /** One turn of Claude Code, with the read tools of `lookup` or none. */
+  async function turn(req: BeatRequest, bin: string, signal: AbortSignal, lookup: CliLookup | undefined): Promise<BeatReply> {
+    const command = chooseTurn(req, bin, host, undefined, lookup);
+    let r: RunResult;
+    try {
+      r = await run(bin, command.args, { input: command.input, cwd: workDir, signal });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e;
+      throw new AiServerError(`Claude Code didn't run: ${e instanceof Error ? e.message : e}`, 'api_error', 502);
+    }
+    const result = readResult(r.stdout, command.transport);
+    if (!result) {
+      cached = null; // look again next time (signed out, updated, …)
+      throw failure((r.stderr || r.stdout).trim().split('\n').slice(-3).join(' '));
+    }
+    if (result.is_error || r.code !== 0) {
+      cached = null;
+      throw failure((result.errors?.join('; ') || result.result || `exit ${r.code}`).trim());
+    }
+    const beat = answerOf(result, command.transport);
+    if (beat === undefined)
+      throw new AiServerError("Claude's answer wasn't a beat in the required format.", 'bad_output', 502);
+    return { session: result.session_id ?? req.session ?? '', beat, model: req.model };
+  }
+
   return {
     async status() {
       return (await check()).status;
     },
 
-    async beat(req: BeatRequest, signal: AbortSignal): Promise<BeatReply> {
+    async beat(req: BeatRequest, signal: AbortSignal, access?: LookupAccess): Promise<BeatReply> {
       const { status, bin } = await check();
       if (!status.ok || !bin) throw new AiServerError(status.reason ?? installHint(host.platform), 'not_configured', 503);
-      const turn = chooseTurn(req, bin, host);
-      let r: RunResult;
+      if (!req.readTools || !access) return turn(req, bin, signal, undefined);
+      const config = join(workDir, `mcp-${randomUUID()}.json`);
+      await writePrivateFile(config, claudeMcpConfig(access));
       try {
-        r = await run(bin, turn.args, { input: turn.input, cwd: workDir, signal });
+        const lookup: CliLookup = { mcpConfigPath: config, allowedTools: claudeAllowedTools(access) };
+        return await turn(req, bin, signal, lookup);
       } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') throw e;
-        throw new AiServerError(`Claude Code didn't run: ${e instanceof Error ? e.message : e}`, 'api_error', 502);
+        // A look-up setup the CLI does not accept must not take the chat down: ask again without read tools (the model
+        // then looks things up with a query action).
+        if (e instanceof AiServerError && looksLikeLookupFailure(e.message)) return turn(req, bin, signal, undefined);
+        throw e;
+      } finally {
+        await removeFile(config);
       }
-      const result = readResult(r.stdout, turn.transport);
-      if (!result) {
-        cached = null; // look again next time (signed out, updated, …)
-        throw failure((r.stderr || r.stdout).trim().split('\n').slice(-3).join(' '));
-      }
-      if (result.is_error || r.code !== 0) {
-        cached = null;
-        throw failure((result.errors?.join('; ') || result.result || `exit ${r.code}`).trim());
-      }
-      const beat = answerOf(result, turn.transport);
-      if (beat === undefined)
-        throw new AiServerError("Claude's answer wasn't a beat in the required format.", 'bad_output', 502);
-      return { session: result.session_id ?? req.session ?? '', beat, model: req.model };
     },
   };
 }

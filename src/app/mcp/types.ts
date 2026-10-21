@@ -3,6 +3,12 @@
  * (src/app/mcp). Pure types: no imports, so both sides can load this file.
  */
 
+/**
+ * The client name of Studio's own AI backends when they read the project during a turn (tools/ai/lookup.ts). It is not an
+ * app the musician connected, so it gets no toast and no row in the settings' list of connected apps.
+ */
+export const STUDIO_LOOKUP_CLIENT = 'agstudio-studio';
+
 /** Who is calling: the name an AI app gives itself when it connects ("claude-code"). */
 export interface ClientInfo {
   name: string;

@@ -21,7 +21,9 @@ describe('AI server endpoints', () => {
     const res = await fetch('/api/ai/status');
     expect(res.ok).toBe(true);
     const body = (await res.json()) as Record<string, { ok: boolean; reason?: string }>;
-    expect(Object.keys(body).sort()).toEqual(['api', 'codex', 'subscription']);
+    // The three backends, and what the server offers a turn besides: read tools through its MCP endpoint (a dev server has one).
+    expect(Object.keys(body).sort()).toEqual(['api', 'codex', 'lookups', 'subscription']);
+    expect(body.lookups).toEqual({ mcp: true });
     expect(typeof body.subscription?.ok).toBe('boolean');
     expect(typeof body.api?.ok).toBe('boolean');
     expect(typeof body.codex?.ok).toBe('boolean');

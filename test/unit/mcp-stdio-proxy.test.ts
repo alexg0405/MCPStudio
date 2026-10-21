@@ -1,8 +1,11 @@
 /// <reference types="node" />
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +17,7 @@ const SCRIPT = fileURLToPath(new URL('../../bin/agstudio-mcp.mjs', import.meta.u
 
 let server: Server;
 let port: number;
-const seen: { headers: IncomingMessage['headers']; body: Record<string, unknown> }[] = [];
+const seen: { url: string | undefined; headers: IncomingMessage['headers']; body: Record<string, unknown> }[] = [];
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -22,7 +25,7 @@ beforeAll(async () => {
     req.on('data', (c) => (raw += c));
     req.on('end', () => {
       const body = JSON.parse(raw) as Record<string, unknown>;
-      seen.push({ headers: req.headers, body });
+      seen.push({ url: req.url, headers: req.headers, body });
       if (req.headers.authorization !== 'Bearer agmcp_test') {
         res.statusCode = 401;
         return void res.end('AGstudio needs its access token.\n');
@@ -119,6 +122,33 @@ describe('bin/agstudio-mcp.mjs', () => {
     });
     expect(out).toHaveLength(1);
     expect((out[0]!.error as { message: string }).message).toMatch(/AGstudio isn't running at http:\/\/127\.0\.0\.1:9\. Start it with the "agstudio" command/);
+  });
+
+  it('reads the token from the file AGSTUDIO_MCP_TOKEN_FILE names, for every request, and goes to AGSTUDIO_MCP_URL', async () => {
+    // How Studio's own AI backends use it: the token stays in its file, so no config file or command line holds it.
+    const dir = await mkdtemp(join(tmpdir(), 'ag-token-'));
+    const file = join(dir, 'mcp-token');
+    try {
+      await writeFile(file, 'agmcp_wrong\n');
+      const env = {
+        AGSTUDIO_MCP_TOKEN: '',
+        AGSTUDIO_MCP_TOKEN_FILE: file,
+        AGSTUDIO_MCP_URL: `http://127.0.0.1:${port}/mcp?scope=lookup`,
+      };
+      seen.length = 0;
+      const refused = await run([{ jsonrpc: '2.0', id: 8, method: 'tools/list' }], env);
+      expect((refused.out[0]!.error as { message: string }).message).toMatch(/answered 401/);
+
+      // A new token in the file works at once (the helper reads it again for the next request).
+      await writeFile(file, 'agmcp_test\n');
+      seen.length = 0;
+      const { out } = await run([{ jsonrpc: '2.0', id: 9, method: 'tools/list' }], env);
+      expect(out[0]).toMatchObject({ id: 9, result: { echoed: 'tools/list' } });
+      expect(seen[0]!.url).toBe('/mcp?scope=lookup');
+      expect(seen[0]!.headers.authorization).toBe('Bearer agmcp_test');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('reports bad input without dying', async () => {

@@ -73,6 +73,16 @@ try {
       const cid = Object.keys(pat?.notes ?? {}).find((k) => Object.keys(pat.notes[k]).length > 0);
       if (cid) s.session.getState().selectChannel(cid);
       s.prefs.getState().set({ followPlayhead: true, followStyle: 'smooth' });
+      // The huge project's sound is more than one core of audio work: the song would crawl and nothing would scroll.
+      // Silence the channels so the clock keeps up; the playlist and piano roll still draw all their clips and notes.
+      if (window.__fx === 'huge') {
+        // A fixed audio buffer: the automatic one would restart the engine (and the frame numbers with it) if it saw a stall.
+        s.prefs.getState().set({ audioBuffer: 'large' });
+      }
+      if (window.__fx === 'huge')
+        s.history.transact('Perf: mute', (d) => {
+          for (const c of Object.values(d.channels)) if (c.kind !== 'automation') c.muted = true;
+        });
       // Zoom in so the song really scrolls.
       s.editor.getState().setPlaylist({ pxPerTick: 0.04, scrollTick: 0 });
       s.editor.getState().setPianoRoll({ scrollTick: 0 });

@@ -13,6 +13,7 @@ import { romanOf } from '@core/harmony/scale';
 import type { ChordEvent, ChordId, Project, Tick } from '@core/model/types';
 import { resizeChord, symbolOf } from '@core/ops/chords';
 import { chordsSorted, projectUsesFlats } from '@core/query/chords';
+import { firstEndingAfter } from '@core/query/spans';
 import { ticksPerBar } from '@core/time/ppq';
 import { gridTicks } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
@@ -70,6 +71,7 @@ export class ChordLaneController {
   /** The chord being typed: a new one at a span, or an existing one to rename. */
   private typing: { span: ChordSpanTicks; id: ChordId | null } | null = null;
   private lastHint: string | null = null;
+  private harmony: { project: Project; flats: boolean; key: ReturnType<typeof harmonyKey> } | null = null;
 
   /** Opens the lane's right-click menu (set by the component, which owns menus). */
   onMenu?: (chordId: ChordId | null, tick: Tick, at: { clientX: number; clientY: number }) => void;
@@ -153,20 +155,29 @@ export class ChordLaneController {
     this.draw(fitCanvas(canvas, width, CHORD_LANE_HEIGHT), view, width, readTheme());
   }
 
+  /** How chords are spelled and which key they are read in: worked out once for each version of the project, not on every frame of a scroll. */
+  private harmonyOf(p: Project): { flats: boolean; key: ReturnType<typeof harmonyKey> } {
+    if (this.harmony?.project !== p) this.harmony = { project: p, flats: projectUsesFlats(p), key: harmonyKey(p, rolesOf(p)) };
+    return this.harmony;
+  }
+
   private draw(ctx: CanvasRenderingContext2D, view: LaneView, width: number, theme: TimelineTheme): void {
     const p = this.project();
     ctx.fillStyle = theme.surface2;
     ctx.fillRect(0, 0, width, CHORD_LANE_HEIGHT);
     this.drawBarLines(ctx, view, width, theme, ticksPerBar(p.transport.timeSig));
-    const flats = projectUsesFlats(p);
-    const key = harmonyKey(p, rolesOf(p));
+    const { flats, key } = this.harmonyOf(p);
     this.boxes = [];
     const chords = chordsSorted(p);
     if (chords.length === 0 && !this.drag) this.drawEmptyHint(ctx, theme);
-    for (const event of chords) {
+    // Only the chords on screen are looked at (a dragged one can be previewed anywhere, so a drag looks at them all).
+    const first = this.drag ? 0 : firstEndingAfter(chords, view.scrollTick);
+    for (let i = first; i < chords.length; i++) {
+      const event = chords[i] as ChordEvent;
       const span = this.drag?.kind === 'chord' && this.drag.id === event.id ? this.drag.preview : event;
       const left = (span.tick - view.scrollTick) * view.pxPerTick;
       const right = (span.tick + span.length - view.scrollTick) * view.pxPerTick;
+      if (!this.drag && left > width) break;
       if (right < 0 || left > width) continue;
       this.boxes.push({ id: event.id, left, right });
       this.drawChord(ctx, theme, event, left, right, { flats, key });

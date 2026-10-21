@@ -22,6 +22,8 @@ export type ClipId = Id<'clip'>;
 export type InsertId = Id<'ins'>;
 /** An effect slot on a mixer insert. */
 export type SlotId = Id<'fx'>;
+/** A MIDI effect in a channel's chain (arpeggiator, chord, scale…). */
+export type MidiFxSlotId = Id<'mfx'>;
 /** A sample of the project (a recording, an import or a generated sound). */
 export type SampleId = Id<'smp'>;
 /** A MIDI controller link. */

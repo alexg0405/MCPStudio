@@ -1,7 +1,7 @@
 import type { ParamValue } from '@agstudio/sdk/params';
 import type { Json } from '../json';
 import type { AutoPoint, ParamTarget } from './automation';
-import type { ChannelId, ClipId, InsertId, SampleId, SlotId, Tick } from './ids';
+import type { ChannelId, ClipId, InsertId, MidiFxSlotId, SampleId, SlotId, Tick } from './ids';
 import type { Clip } from './playlist';
 
 /** A plugin's saved data. The host owns it; plugins receive it and request changes. */
@@ -15,6 +15,20 @@ export interface PluginInstance {
   state?: Json;
   /** Host-managed sample slots ('main', 'pad3', …). */
   samples?: Record<string, SampleId>;
+}
+
+/**
+ * One MIDI effect in an instrument channel's chain (`InstrumentChannel.midiFx`): it changes the notes on their way to the
+ * instrument, in the song and from live keys (`core/midi-fx`). Its settings are plain values like a plugin's.
+ */
+export interface MidiFxSlot {
+  id: MidiFxSlotId;
+  /** The effect's id in `core/midi-fx/registry` ('arp', 'chord', 'scale', 'repeat', 'humanize', 'velocity', 'transpose', 'echo', 'length', 'random'). Unknown ids are kept and skipped. */
+  effect: string;
+  /** False = bypassed: the notes pass through this effect unchanged. */
+  enabled: boolean;
+  /** Values keyed by the effect's param ids (numbers in the declared unit, booleans, option ids); missing ones are the defaults. */
+  params: Record<string, ParamValue>;
 }
 
 /** What every channel has: an id, a name, a colour and the mute and solo switches. */
@@ -44,6 +58,12 @@ export interface InstrumentChannel extends ChannelBase, Audible {
   rootKey: number;
   /** Channel pitch in cents (−2400…2400, FL's pitch knob); absent = 0. Reaches instruments as `host.channel.pitch`. */
   pitch?: number;
+  /**
+   * The MIDI effects the channel's notes go through before they reach the instrument, first to last (absent = none). They
+   * run in the song and for live keys, never touch the notes stored in patterns, and `core/ops/midi-fx` can bake them
+   * into the notes. Added in v3 (optional).
+   */
+  midiFx?: MidiFxSlot[];
 }
 
 /** FL's "audio clip" channel: what playlist audio clips play through. */

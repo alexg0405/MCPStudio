@@ -44,7 +44,8 @@ export function normalizedOf(resolved: ResolvedTarget, target: ParamTarget, raw:
       const value = num(raw);
       return value === undefined ? null : resolved.toNormalized(asFraction(value));
     }
-    case 'plugin': {
+    case 'plugin':
+    case 'midiFx': {
       const value = coerceParam(resolved.spec, raw);
       return value === null ? null : resolved.toNormalized(encode(resolved.spec, value));
     }
@@ -67,7 +68,7 @@ export function ownUnitOf(
     target.kind === 'vca' ||
     ((target.kind === 'channel' || target.kind === 'insert') && target.param === 'volume');
   if (isLevel) return gainAsDb(value);
-  if (target.kind === 'plugin') return decode(resolved.spec, value);
+  if (target.kind === 'plugin' || target.kind === 'midiFx') return decode(resolved.spec, value);
   return round3(value);
 }
 

@@ -20,6 +20,8 @@ export function isParamTarget(value: unknown): boolean {
       return isId(value.groupId);
     case 'plugin':
       return isPluginOwner(value.owner) && isId(value.paramId);
+    case 'midiFx':
+      return isId(value.channelId) && isId(value.slotId) && isId(value.paramId);
     case 'tempo':
       return true;
     default:

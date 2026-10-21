@@ -123,8 +123,8 @@ describe('BeatAssistant', () => {
     expect(st.messages[1]?.changes).toEqual(['Wrote the beat “Claude beat” (Kick)', 'Song: tempo 126 BPM']);
     expect(s.doc.getState().project.patterns[st.applied!.patternId]?.name).toBe('Claude beat');
     expect(s.doc.getState().project.transport.bpm).toBe(126);
-    // The first turn carries the plugin catalog and the project; later ones only what changed.
-    expect(String(calls[0]!.text)).toContain('<plugins>');
+    // The catalog index is in the system prompt, the project in the turn's text.
+    expect(String(calls[0]!.system)).toContain('Catalog index v');
     expect(String(calls[0]!.text)).toContain('<project>');
     // One undo step undoes the whole answer.
     s.history.undo();
@@ -173,7 +173,7 @@ describe('BeatAssistant', () => {
     expect(st.messages.at(-1)?.warnings).toEqual(['command: there is no command "test.nope"']);
   });
 
-  it('tells Claude what the app can do: the command list with the first turn', async () => {
+  it('tells Claude what the app can do: the command index in the system prompt, the details of the ones the request needs', async () => {
     const calls: Record<string, unknown>[] = [];
     const fetchImpl = (async (url: string, init?: RequestInit) => {
       if (url.endsWith('/status'))
@@ -186,13 +186,16 @@ describe('BeatAssistant', () => {
     }) as typeof fetch;
     const { s, a } = setup(fetchImpl);
     s.commands.register({ id: 'file.save', title: 'Save', hint: 'Save the project to its file', gesture: true, run: () => {} });
-    await a.send('hello');
+    await a.send('save the project');
+    // The index names the command; the request's details carry its title, hint and what it takes.
+    expect(String(calls[0]!.system)).toMatch(/^Other: .*file\.save/m);
     const text = String(calls[0]!.text);
-    expect(text).toContain('<commands>');
+    expect(text).toContain('<details>');
     expect(text).toContain('- file.save "Save": Save the project to its file [the musician confirms with one click]');
     expect(text).toMatch(/App: file "Untitled" \(saved\)/);
-    await a.send('again');
-    expect(String(calls[1]!.text)).not.toContain('<commands>');
+    // Told once: the same conversation is not sent the same details again.
+    await a.send('save the project again');
+    expect(String(calls[1]!.text)).not.toContain('- file.save "Save"');
   });
 
   it('builds a plugin the answer asks for, then installs it with one click', async () => {

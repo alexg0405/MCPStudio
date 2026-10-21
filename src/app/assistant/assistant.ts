@@ -129,6 +129,8 @@ export class BeatAssistant implements AssistantApi {
     const { session } = this;
     session.chat.reset();
     session.catalogSent = {};
+    session.catalogKnown = {};
+    session.stagedCatalog = null;
     session.lastProblems = [];
     session.offlinePrompt = '';
     session.offlineSongs = 0;

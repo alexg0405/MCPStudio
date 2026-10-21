@@ -11,6 +11,7 @@ import type { AiAnswer } from '../../ai/schema';
 import type { AiFocus, ResolvedFocus } from '../../ai/focus';
 import type { analyzeMix } from '../../analysis/mix';
 import { ClaudeChat, fetchAiStatus, type AiBackend, type AiStatus } from '../claude';
+import type { CatalogBlocks, KnownCatalog } from './catalog-blocks';
 import { lastMessageId, type AssistantCore, type AssistantMessage, type AssistantState, type Take } from '../state';
 
 /** The outside world a session talks to; tests pass fakes. */
@@ -41,8 +42,12 @@ export class AssistantSession {
   readonly fetchImpl: typeof fetch;
   readonly smoke: (folder: string) => Promise<SmokeReport>;
   readonly analyzeMix: typeof analyzeMix;
-  /** Catalog key each backend's conversation has (sent again when the plugins change). */
+  /** The catalog index version each backend's conversation has (saved with the tab; a changed index is told as a diff). */
   catalogSent: Partial<Record<AiBackend, string>> = {};
+  /** What each backend's conversation knows of the catalog: index lines and the details it was sent (not saved). */
+  catalogKnown: Partial<Record<AiBackend, KnownCatalog>> = {};
+  /** The catalog blocks of the turn being asked, recorded as sent once its answer arrives. */
+  stagedCatalog: CatalogBlocks | null = null;
   /** What the last turn couldn't do, told to the AI with the next request. */
   lastProblems: string[] = [];
   /** Everything asked so far in offline mode (the generator is stateless). */
@@ -117,6 +122,15 @@ export class AssistantSession {
     if (status.codex.ok) return 'codex';
     if (status.api.ok) return 'api';
     return null;
+  }
+
+  /**
+   * Whether the AI can call read tools during a turn (through MCP, see tools/ai): the dev server offers them and the musician
+   * has not switched connections off in the settings. Otherwise it looks things up with a query action.
+   */
+  canUseReadTools(): boolean {
+    const offered = this.store.getState().status?.lookups?.mcp === true;
+    return offered && this.services.prefs.getState().mcpEnabled;
   }
 
   /** The model id this backend is asked for (Claude's, or the typed Codex model; empty = Codex's default). */

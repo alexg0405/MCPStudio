@@ -1,17 +1,21 @@
 /**
- * One question to the AI in Studio's voice: the system prompt, the answer schema and the model the musician
- * picked, with the answer read and checked (`readAnswer`) before it is returned.
+ * One question to the AI in Studio's voice: the system prompt (the rules and the catalog index), the answer schema and the
+ * model the musician picked, with the answer read and checked (`readAnswer`) before it is returned.
  */
-import { pluginCatalog } from '../../ai/catalog';
-import { commandCatalog } from '../../ai/commands';
+import { catalogIndex } from '../../ai/catalog-index';
 import { focusContext, type ResolvedFocus } from '../../ai/focus';
 import { projectContext } from '../../ai/context';
-import { STUDIO_PROMPT } from '../../ai/prompt';
+import { studioSystem } from '../../ai/prompt';
 import { ACTIONS_SCHEMA, readAnswer, type AiAnswer } from '../../ai/schema';
 import { VOICE_SUMMARY_LEGEND } from '@core/voice';
 import { performanceBlock, type AiBackend } from '../claude';
 import type { Take } from '../state';
+import { catalogBlocks } from './catalog-blocks';
 import type { AssistantSession } from './session';
+
+/** Said when the AI cannot call read tools this turn (the dev server's MCP is not there, or switched off in the settings). */
+const NO_READ_TOOLS_NOTE =
+  '<tools>You have no read tools in this conversation. To look something up, use a query action with the same tool and use its result in the next turn.</tools>';
 
 /** What one turn's message to the AI is built from. */
 export interface TurnTextInput {
@@ -29,7 +33,11 @@ export interface TurnTextInput {
   lookups?: string;
 }
 
-/** This turn's message to the AI: the request, the project, the part it is about, and what this backend's conversation doesn't have yet. */
+/**
+ * This turn's message to the AI: the request, the project, the part it is about, the details of the plugins and commands the
+ * request most likely needs (and what changed in the catalog since this conversation began), and what else this backend's
+ * conversation doesn't have yet. The catalog index itself is in the system prompt.
+ */
 export function buildTurnText(session: AssistantSession, input: TurnTextInput): string {
   const { services } = session;
   const { prompt, route, take, analysis, focus, lookups } = input;
@@ -41,6 +49,9 @@ export function buildTurnText(session: AssistantSession, input: TurnTextInput): 
     const focusText = focusContext(services.doc.getState().project, focus, session.pluginInfo);
     parts.push(`<focus>\n${focusText}\n</focus>`);
   }
+  const catalog = catalogBlocks(session, { route, request: prompt, focus: focus ?? null });
+  session.stagedCatalog = catalog;
+  parts.push(...catalog.blocks);
   if (lookups) {
     parts.push(
       `<lookups>\n${lookups}\n</lookups>\nThis is what you asked to look at (read just now). Answer the request with it; look up again only if something is still missing.`,
@@ -51,7 +62,7 @@ export function buildTurnText(session: AssistantSession, input: TurnTextInput): 
       `<mix-analysis>\n${analysis}\n</mix-analysis>\nThis is how the mix sounds right now (rendered and measured just now). Answer the request with it; don't ask for another analysis.`,
     );
   }
-  parts.push(...catalogBlocksNotSentYet(session, route));
+  if (!session.canUseReadTools()) parts.push(NO_READ_TOOLS_NOTE);
   if (take && !take.sent) {
     parts.push(
       performanceBlock({
@@ -70,35 +81,29 @@ export function buildTurnText(session: AssistantSession, input: TurnTextInput): 
   return parts.join('\n\n');
 }
 
-/**
- * The plugin and command lists, when this backend's conversation doesn't have the current ones (a new
- * conversation, or plugins changed since): they are long, so they are not repeated every turn.
- */
-function catalogBlocksNotSentYet(session: AssistantSession, route: AiBackend): string[] {
-  const { services } = session;
-  const catalog = pluginCatalog(services.plugins, services.presets);
-  const commands = commandCatalog(services);
-  const key = `${catalog.key}:${commands.key}`;
-  if (session.chat.hasHistoryFor(route) && session.catalogSent[route] === key) return [];
-  session.catalogSent[route] = key;
-  return [`<plugins>\n${catalog.text}\n</plugins>`, `<commands>\n${commands.text}\n</commands>`];
-}
-
 /** Asks the AI for the next answer and returns it (throws when the request fails or is stopped). */
-export function askStudio(
+export async function askStudio(
   session: AssistantSession,
   question: { text: string; route: AiBackend; signal: AbortSignal },
 ): Promise<AiAnswer> {
-  return session.chat.ask<AiAnswer>({
-    system: STUDIO_PROMPT,
+  const system = studioSystem(catalogIndex(session.services));
+  const staged = session.stagedCatalog;
+  session.stagedCatalog = null;
+  const answer = await session.chat.ask<AiAnswer>({
+    system: system.text,
+    systemBlocks: system.blocks,
     schema: ACTIONS_SCHEMA,
     text: question.text,
     model: session.modelFor(question.route),
     backend: question.route,
+    readTools: session.canUseReadTools(),
     signal: question.signal,
     read: (raw) => {
       const checked = readAnswer(raw);
       return 'error' in checked ? { error: checked.error } : { value: checked.answer };
     },
   });
+  // The AI has the request now: what the turn told it about the catalog is known from here on.
+  staged?.commit();
+  return answer;
 }

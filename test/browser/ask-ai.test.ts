@@ -171,13 +171,15 @@ describe('Ask Studio about this part (UI)', () => {
     spy.mockRestore();
   });
 
-  it('asks from the card: without an AI it says so, and Studio shows the part as a chip', async () => {
+  it('asks from the card: without an AI the offline editor changes the part, or says what it cannot do, and Studio shows the part as a chip', async () => {
     askAboutMarker(s, marker('Verse'));
     await until(() => !!card());
     await userEvent.keyboard('add a fill at the end{Enter}');
-    await until(() => (card()?.textContent ?? '').includes('needs an AI'));
+    await until(() => (card()?.textContent ?? '').includes('Added a fill at the end of bar 32'));
     expect(card()!.textContent).toContain('add a fill at the end');
     expect(card()!.textContent).toContain('About Verse · bars 17–32');
+    await userEvent.keyboard('translate the lyrics into French{Enter}');
+    await until(() => (card()?.textContent ?? '').includes('connect an AI'));
     closeAsk();
     // The conversation keeps the part: Studio shows it, ▶ plays it, × lets it go.
     openWindow(s, 'assistant');

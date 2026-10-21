@@ -10,7 +10,7 @@ import type { OfflineAction, Rule, RuleContext, RuleResult } from '../types';
 const HARMONIES =
   /\b(?:(?<!re-?)harmon(?:y|ies|ise|ize|ising|izing)|backing (?:vocals?|voices?|singers?)|double (?:the )?(?:vocals?|voice|vox)|stack(?:ed)? (?:the )?(?:vocals?|vox)|(?:add|put|give)(?: it| the vocals?)?(?: some| a| an)? (?:third|fifth|sixth|octave)s? (?:above|below))\b/;
 const CLEAN_VERB =
-  /\b(?:clean(?:ing)?(?: it| the \w+)? up|clean|de-?noise|tidy|polish|remove (?:the )?(?:background )?(?:noise|hiss|hum|breaths?|clicks?|mouth clicks?|lip smacks?)|reduce (?:the )?(?:noise|breaths?|clicks?)|get rid of (?:the )?(?:noise|hiss|hum|breaths?|clicks?)|(?:breaths?|noise|hiss) (?:are |is )?(?:too )?(?:loud|much|bad|noticeable)|noisy|hissy)\b/;
+  /\b(?:(?:take|turn|bring|pull|knock) (?:the |those )?(?:breaths?|noise|hiss|clicks?)[^.]*\b(?:down|out|away)\b|clean(?:ing)?(?: it| the \w+)? up|clean|de-?noise|tidy|polish|remove (?:(?:a lot|some|most|all|a bit|a little) of )?(?:the )?(?:background )?(?:noise|hiss|hum|breaths?|clicks?|mouth clicks?|lip smacks?)|reduce (?:(?:a lot|some|most|all|a bit|a little) of )?(?:the )?(?:noise|breaths?|clicks?)|get rid of (?:the )?(?:noise|hiss|hum|breaths?|clicks?)|(?:breaths?|noise|hiss) (?:are |is )?(?:too )?(?:loud|much|bad|noticeable)|noisy|hissy)\b/;
 const VOCAL_WORD = /\b(?:vocals?|vox|voice|singing|singer|recording|take|acapella|a cappella)\b/;
 const NOISE_WORDS = /\b(?:noise|noisy|hiss|hissy|hum|background|room)\b/;
 const BREATH_WORDS = /\bbreath/;

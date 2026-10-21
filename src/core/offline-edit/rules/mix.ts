@@ -68,6 +68,9 @@ const LOUDER =
   /\b(?:louder|turn (?:[\w'-]+ ){0,3}up|boost|raise|bring (?:it |them )?up|bump|push|pump up|increase (?:the )?(?:volume|level)|more (?:volume|level|presence|punch)|up (?:by )?\d)\b|\bmore (?:kick|bass|808|lead|vocals?|vox|chords?|pads?|snare|claps?)\b/;
 const QUIETER =
   /\b(?:quieter|softer|turn (?:[\w'-]+ ){0,3}down|lower|reduce|pull (?:it |them )?back|decrease (?:the )?(?:volume|level)|less (?:volume|level)|too loud|tame|duck)\b|\b(?:cut|drop) (?:the |some )?(?:kick|bass|808|lead|vocals?|vox|chords?|pads?|snare|drums|hats|fx)\b|\bless (?:kick|bass|808|lead|vocals?|vox|chords?|pads?|snare|claps?)\b/;
+/** A part and a signed level with no direction word: "lead +3 dB", "drums -2 dB". */
+const SIGNED_UP = /\+\s*\d+(?:\.\d+)?\s*(?:db|decibels?)/;
+const SIGNED_DOWN = /-\s*\d+(?:\.\d+)?\s*(?:db|decibels?)/;
 const MORE_REVERB =
   /\b(?:more (?:reverb|echo|delay|space)|add (?:some |a little )?(?:reverb|echo|delay)|reverb(?:ier|y)|wetter|spacier|more spacious|more ambient|more atmosphere|(?:reverb|echo|delay) on|put (?:some )?(?:reverb|echo|delay))\b/;
 const LESS_REVERB =
@@ -303,6 +306,6 @@ export const MIX_RULES: readonly Rule[] = [
   { id: 'wider', matches: (text) => WIDER.test(text), run: changeWidth },
   { id: 'mute', matches: (text) => MUTE.test(text), run: muteParts },
   { id: 'pan', matches: (text) => PAN.test(text), run: panParts },
-  { id: 'quieter', matches: (text) => QUIETER.test(text), run: (context) => changeLevel(context, -1) },
-  { id: 'louder', matches: (text) => LOUDER.test(text), run: (context) => changeLevel(context, 1) },
+  { id: 'quieter', matches: (text) => QUIETER.test(text) || SIGNED_DOWN.test(text), run: (context) => changeLevel(context, -1) },
+  { id: 'louder', matches: (text) => LOUDER.test(text) || SIGNED_UP.test(text), run: (context) => changeLevel(context, 1) },
 ];

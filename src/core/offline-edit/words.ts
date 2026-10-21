@@ -75,7 +75,7 @@ export function decibelsIn(text: string): number | null {
 export function splitClauses(text: string): string[] {
   /** Words an "and" must be followed by to start a new request rather than join two nouns ("kick and snare"). */
   const NEW_REQUEST =
-    /^(?:please |also |then )?(?:make|add|put|turn|give|set|change|use|remove|clean|transpose|raise|lower|bring|write|create|let|try|more|less|busier|simpler|louder|quieter|fewer|a |an |some |new |no |smoother|bigger|wider|shift|move|mute|drop|swap|switch|speed|slow|cut|boost)\b/;
+    /^(?:please |also |then )?(?:make|add|put|turn|give|set|change|use|remove|clean|transpose|raise|lower|bring|write|create|let|try|more|less|busier|simpler|louder|quieter|fewer|(?:an? |some )?(?:new|different|fresh|another|bigger|longer|shorter)|no |smoother|bigger|wider|shift|move|mute|drop|swap|switch|speed|slow|cut|boost|tempo|key|bpm|swing)\b/;
   const pieces: string[] = [];
   for (const part of text.split(/\s*(?:[,;]|\.\s|\bthen\b|\bplus\b|\balso\b|\bafterwards\b)\s*/)) {
     if (part.trim()) pieces.push(part.trim());

@@ -1,3 +1,5 @@
+import { OFFLINE_SONG_IDEAS } from '@core/offline-edit/help';
+
 /** Things to ask Studio for, offered to get started. */
 export const IDEAS = [
   'Dark trap at 140, 808s that slide',
@@ -12,6 +14,8 @@ export const IDEAS = [
   'Swap the lead for a pluck',
   'Turn the 808 down 3 dB',
   'Arrange it: 4 bars, then 8 bars with the hats',
+  // Changes to a song that is already there: they work with an AI and with the offline editor.
+  ...OFFLINE_SONG_IDEAS,
 ];
 
 /** The first ideas a new conversation offers (the rest are in the ⋯ menu under Ideas). */

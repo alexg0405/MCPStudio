@@ -67,7 +67,8 @@ function drumAttack(context: RuleContext): { action: OfflineAction; line: string
 /** A clap layered under the snare, in every pattern the snare plays in (a snare with a clap already has its layer). */
 function snareLayer(context: RuleContext, parts: readonly PatternPart[], snares: readonly ChannelId[]): OfflineAction[] {
   const { facts } = context;
-  const hasClap = [...facts.roles.values()].includes('clap');
+  // A clap that plays with the snare is its layer already.
+  const hasClap = parts.some((part) => facts.roles.get(part.channel) === 'clap');
   const snareParts = parts.filter((part) => snares.includes(part.channel) && facts.roles.get(part.channel) === 'snare');
   if (hasClap || snareParts.length === 0) return [];
   const drums = insertNamed(facts.project, 'Drums');

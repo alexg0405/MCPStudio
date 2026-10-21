@@ -28,13 +28,14 @@ function reshaped(velocity: number, mode: string, at: number, param: (name: stri
 export const velocityCurve: MidiFxDef = {
   id: 'velocity',
   name: 'Velocity',
+  short: 'VEL',
   description: 'Reshapes how hard notes are played: even them out, make them more dynamic, play them all the same, or keep them in a range.',
   params: {
-    mode: p.enum(MODES, 'curve', { label: 'Mode', labels: MODE_LABELS, hint: 'Curve bends the dynamics, Fixed level plays every note the same, Range squeezes them between two levels' }),
-    curve: p.float(-1, 1, 0, { label: 'Curve', unit: '%', hint: 'Below 0 compresses (soft notes get louder), above 0 expands (soft notes get softer)' }),
-    fixed: p.float(0.01, 1, 0.8, { label: 'Fixed level', unit: '%', hint: 'Fixed level mode: every note is played at this velocity' }),
-    low: p.float(0.01, 1, 0.3, { label: 'Lowest', unit: '%', hint: 'Range mode: the softest note becomes this velocity' }),
-    high: p.float(0.01, 1, 0.9, { label: 'Highest', unit: '%', hint: 'Range mode: the hardest note becomes this velocity' }),
+    mode: p.enum(MODES, 'curve', { group: 'Mode', label: 'Mode', labels: MODE_LABELS, hint: 'Curve bends the dynamics, Fixed level plays every note the same, Range squeezes them between two levels' }),
+    curve: p.float(-1, 1, 0, { group: 'Curve', label: 'Curve', unit: '%', hint: 'Below 0 compresses (soft notes get louder), above 0 expands (soft notes get softer)' }),
+    fixed: p.float(0.01, 1, 0.8, { group: 'Fixed level', label: 'Fixed level', unit: '%', hint: 'Fixed level mode: every note is played at this velocity' }),
+    low: p.float(0.01, 1, 0.3, { group: 'Range', label: 'Lowest', unit: '%', hint: 'Range mode: the softest note becomes this velocity' }),
+    high: p.float(0.01, 1, 0.9, { group: 'Range', label: 'Highest', unit: '%', hint: 'Range mode: the hardest note becomes this velocity' }),
   },
   presets: [
     { name: 'Neutral', params: {} },

@@ -54,10 +54,10 @@ const AREAS: readonly AreaDef[] = [
   {
     id: 'beats',
     title: 'Beats and melodies',
-    summary: 'Step sequencer, piano roll, patterns and the keys you play with.',
-    windows: ['channel-rack', 'piano-roll', 'piano-keyboard', 'keys'],
+    summary: 'Step sequencer, piano roll, patterns, the keys you play with and the MIDI effects (arpeggiator, chords, scale…) between them and the instrument.',
+    windows: ['channel-rack', 'piano-roll', 'piano-keyboard', 'keys', 'midi-fx'],
     tours: ['first-song'],
-    categories: ['Channels', 'Patterns', 'Piano roll'],
+    categories: ['Channels', 'Patterns', 'Piano roll', 'MIDI effects'],
   },
   {
     id: 'arrange',

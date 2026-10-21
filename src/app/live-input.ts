@@ -4,7 +4,7 @@
  * recording, MIDI learn, the on-screen piano's lit keys) with the AudioContext time it happened at.
  */
 import type { ChannelId } from '@core/model/types';
-import type { EngineApi } from '@engine/api';
+import type { EngineApi, LiveFxOutput } from '@engine/api';
 
 export type LiveSource = 'midi' | 'typing' | 'screen';
 
@@ -34,6 +34,12 @@ export type LiveEvent =
       channelId: ChannelId | null;
       id: number;
     } & LiveOrigin)
+  /**
+   * A note a channel's MIDI effects played for the keys held (an arpeggio step, a chord note, an echo), as it started or ended.
+   * Note recording can keep these in place of the keys played; other listeners hear only the keys played.
+   */
+  | { type: 'fxOn'; key: number; velocity: number; time: number; channelId: ChannelId; id: number }
+  | { type: 'fxOff'; key: number; release: number; time: number; channelId: ChannelId; id: number }
   | ({ type: 'cc'; cc: number; value: number; time: number } & LiveOrigin)
   | ({ type: 'pitchBend'; value: number; time: number } & LiveOrigin);
 
@@ -95,6 +101,15 @@ export class LiveInput {
       id: h.id,
       ...origin,
     });
+  }
+
+  /** A note the effects of a channel played started or ended: listeners that want what came out (note recording) hear it. */
+  generated(output: LiveFxOutput): void {
+    if (output.kind === 'on') {
+      this.emit({ type: 'fxOn', key: output.key, velocity: output.velocity, time: output.time, channelId: output.channelId, id: output.noteId });
+    } else {
+      this.emit({ type: 'fxOff', key: output.key, release: output.velocity, time: output.time, channelId: output.channelId, id: output.noteId });
+    }
   }
 
   /** A controller (0–1). Mod wheel and friends reach the selected channel's instrument. */

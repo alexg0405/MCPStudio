@@ -24,6 +24,7 @@ import { ErrorBoundary } from '../../controls/ErrorBoundary';
 import { useGestureEdit } from '../../edit';
 import { showParamMenu } from '../../param-menu';
 import { onFrame } from '../../frame-loop';
+import { MidiFxSection } from '../midi-fx/MidiFxSection';
 import { AutoPanel } from './AutoPanel';
 import { Meters } from './Meters';
 import { usePluginSamples } from './plugin-samples';
@@ -208,6 +209,7 @@ export function PluginWindow({ windowId, props }: WindowContentProps<PluginWindo
     <div className={styles.window}>
       <PluginHeader owner={owner} def={def} instance={instance} />
       <PluginBody def={def} values={values} edit={edit} uiProps={uiProps} tap={tap} openParamMenu={openParamMenu} follow={follow} status={status} />
+      {owner.kind === 'channel' && <MidiFxSection channelId={owner.channelId} />}
     </div>
   );
 }

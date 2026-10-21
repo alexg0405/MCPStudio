@@ -18,11 +18,12 @@ const MAX_TIMING_MS = 60;
 export const humanize: MidiFxDef = {
   id: 'humanize',
   name: 'Humanize',
+  short: 'HUM',
   description: 'Moves each note a little early or late and a little louder or softer, a different small amount for every note.',
   params: {
-    timing: p.float(0, MAX_TIMING_MS, 8, { label: 'Timing', unit: 'ms', hint: 'How far a note may be moved early or late. Live keys can only be moved later' }),
-    velocity: p.float(0, 1, 0.1, { label: 'Velocity', unit: '%', hint: 'How much louder or softer a note may be' }),
-    seed: p.int(0, 9999, 1, { label: 'Seed', automatable: false, hint: 'Which random pattern: the same seed always gives the same result' }),
+    timing: p.float(0, MAX_TIMING_MS, 8, { group: 'Amount', label: 'Timing', unit: 'ms', hint: 'How far a note may be moved early or late. Live keys can only be moved later' }),
+    velocity: p.float(0, 1, 0.1, { group: 'Amount', label: 'Velocity', unit: '%', hint: 'How much louder or softer a note may be' }),
+    seed: p.int(0, 9999, 1, { group: 'Random', label: 'Seed', automatable: false, hint: 'Which random pattern: the same seed always gives the same result' }),
   },
   presets: [
     { name: 'Loose', params: {} },

@@ -34,6 +34,11 @@ export interface PrefsState {
   recordQuantize: number;
   /** Recording over existing notes adds to them or replaces what it passes over. */
   recordMode: 'overdub' | 'replace';
+  /**
+   * On a channel with MIDI effects, recording keeps the notes you played or the notes the effects made of them (an arpeggio, a chord).
+   * Channels without effects always record what is played.
+   */
+  recordMidiFx: 'played' | 'generated';
   /** What record mode records: notes and knob moves, and/or audio from the input. */
   recordNotes: boolean;
   recordAudio: boolean;
@@ -166,6 +171,7 @@ const DEFAULTS: PrefsState = {
   countInBars: 1,
   recordQuantize: 0,
   recordMode: 'overdub',
+  recordMidiFx: 'played',
   recordNotes: true,
   recordAudio: false,
   audioInputDevice: '',

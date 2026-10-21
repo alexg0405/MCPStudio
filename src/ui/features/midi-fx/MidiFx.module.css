@@ -1,0 +1,308 @@
+/*
+ * MIDI effects: a toolbar and a list of effect cards (a header with the bypass LED, name, presets and move buttons over the
+ * effect's knobs). Used by the MIDI effects window and by the section at the foot of an instrument's window. Tokens only
+ * (docs/design.md).
+ */
+/* The window: the panel scrolls when many effects are open. */
+.windowScroll {
+  height: 100%;
+  overflow: auto;
+  background: var(--ag-surface-1);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-2) var(--ag-space-3) var(--ag-space-3);
+  background: var(--ag-surface-1);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toolbarTitle {
+  margin-right: 6px;
+  color: var(--ag-text-faint);
+  font-size: calc(10px * var(--ag-scale, 1));
+  font-weight: 600;
+  letter-spacing: var(--ag-label-tracking);
+  text-transform: uppercase;
+}
+
+.button {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-3);
+  box-shadow: var(--ag-elev-1);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--ag-dur) var(--ag-ease);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--ag-hover);
+}
+
+.button:disabled {
+  color: var(--ag-text-faint);
+  cursor: default;
+}
+
+.primary {
+  background: var(--ag-metal);
+  color: var(--ag-on-accent);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--ag-metal);
+  filter: brightness(1.08);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ag-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  position: relative;
+  border: 1px solid var(--ag-line-faint);
+  border-radius: var(--ag-radius-lg);
+  background:
+    linear-gradient(180deg, var(--ag-sheen), transparent 48px),
+    var(--ag-surface-2);
+  box-shadow: inset 0 1px 0 var(--ag-sheen);
+}
+
+.cardOff .cardBody {
+  opacity: 0.5;
+}
+
+/* A line above the card an effect being dragged would land before. */
+.dropBefore::before,
+.dropAfter::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ag-accent);
+  box-shadow: 0 0 6px var(--ag-accent-glow);
+}
+
+.dropBefore::before {
+  top: -6px;
+}
+
+.dropAfter::after {
+  bottom: -6px;
+}
+
+.dragging {
+  opacity: 0.45;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--ag-line-faint);
+  cursor: grab;
+}
+
+.handle {
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size);
+  letter-spacing: -2px;
+  user-select: none;
+}
+
+.index {
+  min-width: 14px;
+  color: var(--ag-text-faint);
+  font-family: var(--ag-font-mono);
+  font-size: var(--ag-font-size-sm);
+  text-align: right;
+}
+
+/* The bypass LED: a 20px hit target with an 8px dot. */
+.led {
+  position: relative;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.led::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: var(--ag-led-off);
+  box-shadow: var(--ag-inset);
+}
+
+.ledOn::after {
+  background: var(--ag-led);
+  box-shadow: 0 0 6px var(--ag-led-glow);
+}
+
+.name {
+  color: var(--ag-text);
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size-lg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.description {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ag-text-faint);
+  font-size: var(--ag-font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iconButton {
+  flex: none;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: transparent;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size);
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--ag-hover);
+  color: var(--ag-text);
+}
+
+.iconButton:disabled {
+  color: var(--ag-text-faint);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.presets {
+  height: 22px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--ag-radius);
+  background: var(--ag-surface-inset);
+  box-shadow: var(--ag-inset);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+  cursor: pointer;
+}
+
+.presets:hover {
+  background: var(--ag-hover);
+}
+
+.cardBody {
+  transition: opacity var(--ag-dur) var(--ag-ease);
+}
+
+/* What an effect that is not known to this version says (its settings are kept). */
+.unknown {
+  padding: 10px 12px;
+  color: var(--ag-text-dim);
+  font-size: var(--ag-font-size-sm);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ag-space-2);
+  padding: var(--ag-space-4);
+  color: var(--ag-text-dim);
+  text-align: center;
+}
+
+.emptyTitle {
+  color: var(--ag-text);
+  font-family: var(--ag-font-display);
+  font-size: var(--ag-font-size-lg);
+  font-weight: 600;
+}
+
+.emptyText {
+  max-width: 46ch;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.quickAdd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* The section at the foot of an instrument's window. */
+.section {
+  flex: none;
+  max-height: 55%;
+  overflow: auto;
+  border-top: 1px solid var(--ag-line-faint);
+  background: var(--ag-surface-1);
+}
+
+.sectionBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 12px;
+  border: none;
+  background: var(--ag-surface-2);
+  color: var(--ag-text);
+  font-size: var(--ag-font-size-sm);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sectionBar:hover {
+  background: var(--ag-hover);
+}
+
+.sectionSummary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ag-text-faint);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

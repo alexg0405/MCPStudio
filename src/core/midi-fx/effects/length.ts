@@ -16,11 +16,12 @@ const MAX_SCALE = 4;
 export const noteLength: MidiFxDef = {
   id: 'length',
   name: 'Note length',
+  short: 'LEN',
   description: 'Changes how long notes last: all the same length, longer or shorter, or joined up until the next note.',
   params: {
-    mode: p.enum(MODES, 'fixed', { label: 'Mode', labels: MODE_LABELS, hint: 'Fixed length, a share of each note’s own length, or until the next note starts' }),
-    length: p.enum(LENGTH_IDS, '1/16', { label: 'Length', labels: noteValueLabels(LENGTH_IDS), hint: 'Fixed length mode: how long every note lasts' }),
-    scale: p.float(0.1, MAX_SCALE, 1, { label: 'Scale', unit: '%', hint: 'Scale mode: 100% keeps the length, 50% halves it, 200% doubles it (live keys can only get longer)' }),
+    mode: p.enum(MODES, 'fixed', { group: 'Mode', label: 'Mode', labels: MODE_LABELS, hint: 'Fixed length, a share of each note’s own length, or until the next note starts' }),
+    length: p.enum(LENGTH_IDS, '1/16', { group: 'Fixed length', label: 'Length', labels: noteValueLabels(LENGTH_IDS), hint: 'Fixed length mode: how long every note lasts' }),
+    scale: p.float(0.1, MAX_SCALE, 1, { group: 'Scale', label: 'Scale', unit: '%', hint: 'Scale mode: 100% keeps the length, 50% halves it, 200% doubles it (live keys can only get longer)' }),
   },
   presets: [
     { name: 'Staccato', params: { mode: 'fixed', length: '1/32' } },

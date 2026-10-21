@@ -36,17 +36,19 @@ function allowedAt(run: FxRun, start: number): PitchMask | null {
 export const scale: MidiFxDef = {
   id: 'scale',
   name: 'Scale',
+  short: 'SCL',
   description: 'Keeps every note in a scale: notes outside it move to the nearest note of the scale, or are dropped.',
   params: {
-    source: p.enum(SOURCES, 'song', { label: 'Scale from', labels: SOURCE_LABELS, hint: 'The notes that are allowed: the song key, the chord on the chord track, or a scale you pick' }),
-    root: p.enum(PITCH_NAMES_FOR_PARAMS, 'C', { label: 'Root', hint: 'A scale I pick: its first note' }),
+    source: p.enum(SOURCES, 'song', { group: 'Scale', label: 'Scale from', labels: SOURCE_LABELS, hint: 'The notes that are allowed: the song key, the chord on the chord track, or a scale you pick' }),
+    root: p.enum(PITCH_NAMES_FOR_PARAMS, 'C', { group: 'Scale', label: 'Root', hint: 'A scale I pick: its first note' }),
     scale: p.enum(SCALE_IDS, 'major', {
+      group: 'Scale',
       label: 'Scale',
       labels: Object.fromEntries(SCALE_IDS.map((id) => [id, scaleLabel(id)])),
       hint: 'A scale I pick: which scale',
     }),
-    mode: p.enum(MODES, 'snap', { label: 'Notes outside', labels: MODE_LABELS, hint: 'Move them into the scale, or drop them' }),
-    direction: p.enum(DIRECTIONS, 'nearest', { label: 'Move', labels: DIRECTION_LABELS, hint: 'Which way a note outside the scale moves' }),
+    mode: p.enum(MODES, 'snap', { group: 'Notes outside', label: 'Notes outside', labels: MODE_LABELS, hint: 'Move them into the scale, or drop them' }),
+    direction: p.enum(DIRECTIONS, 'nearest', { group: 'Notes outside', label: 'Move', labels: DIRECTION_LABELS, hint: 'Which way a note outside the scale moves' }),
   },
   presets: [
     { name: 'Snap to the song key', params: {} },

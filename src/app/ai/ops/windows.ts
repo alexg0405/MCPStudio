@@ -31,6 +31,7 @@ export const OPEN_WINDOWS = [
   'vocal-align',
   'samples',
   'chords',
+  'midi-fx',
   'lyrics',
   'sheet-music',
   'mix-snapshots',

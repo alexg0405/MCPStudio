@@ -100,6 +100,16 @@ export function toggleMidiEffect(s: Services, channelId: ChannelId, slotId: Midi
   s.history.transact(`${slot.enabled ? 'Bypass' : 'Enable'} ${nameOf(slot.effect)}`, (d) => setMidiFxEnabled(d, channelId, slotId, !slot.enabled));
 }
 
+/** Bypasses every effect of the chain (when any is on) or turns them all back on: A/B-ing a whole chain in one undo step. */
+export function toggleAllMidiEffects(s: Services, channelId: ChannelId): void {
+  const chain = midiFxOf(s.doc.getState().project.channels[channelId]);
+  if (chain.length === 0) return;
+  const anyOn = chain.some((slot) => slot.enabled);
+  s.history.transact(anyOn ? 'Bypass MIDI effects' : 'Turn MIDI effects on', (d) => {
+    for (const slot of chain) setMidiFxEnabled(d, channelId, slot.id, !anyOn);
+  });
+}
+
 /** Gives an effect the settings of a preset (the ones the preset names; the rest stay). */
 export function applyMidiFxPreset(s: Services, channelId: ChannelId, slotId: MidiFxSlotId, preset: FxPreset): void {
   const slot = midiFxOf(s.doc.getState().project.channels[channelId]).find((x) => x.id === slotId);

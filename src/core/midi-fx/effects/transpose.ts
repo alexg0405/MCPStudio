@@ -13,10 +13,11 @@ const OCTAVE = 12;
 export const transpose: MidiFxDef = {
   id: 'transpose',
   name: 'Transpose',
+  short: 'TRN',
   description: 'Moves every note up or down by semitones and octaves.',
   params: {
-    semitones: p.int(-24, 24, 0, { label: 'Semitones', unit: 'st', hint: 'How far to move the notes: 7 is a fifth up, -5 a fourth down' }),
-    octaves: p.int(-4, 4, 0, { label: 'Octaves', hint: 'Moves the notes up or down whole octaves, on top of the semitones' }),
+    semitones: p.int(-24, 24, 0, { group: 'Move by', label: 'Semitones', unit: 'st', hint: 'How far to move the notes: 7 is a fifth up, -5 a fourth down' }),
+    octaves: p.int(-4, 4, 0, { group: 'Move by', label: 'Octaves', hint: 'Moves the notes up or down whole octaves, on top of the semitones' }),
   },
   presets: [
     { name: 'Octave up', params: { octaves: 1 } },

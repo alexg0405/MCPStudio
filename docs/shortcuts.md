@@ -24,6 +24,7 @@ On macOS, F-keys may need Fn; every window toggle also has an Alt+number alterna
 | Lyrics | `⌥⇧Y` / `Alt+Shift+Y` |
 | Meters | `⌥⇧M` / `Alt+Shift+M` |
 | Metronome | `⌥M` / `Alt+M` |
+| MIDI effects | `⌥E` / `Alt+E` |
 | Mix snapshots | `⌥⇧S` / `Alt+Shift+S` |
 | Mixer | `F9`, `⌥4` / `Alt+4` |
 | My plugins | `⌥⇧U` / `Alt+Shift+U` |

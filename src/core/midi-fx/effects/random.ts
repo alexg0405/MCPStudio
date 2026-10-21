@@ -19,12 +19,13 @@ const OCTAVE = 12;
 export const randomNotes: MidiFxDef = {
   id: 'random',
   name: 'Random',
+  short: 'RND',
   description: 'Plays each note only some of the time, and sometimes an octave or two higher or lower.',
   params: {
-    chance: p.float(0, 1, 0.8, { label: 'Chance to play', unit: '%', hint: 'The chance that a note plays at all' }),
-    jump: p.float(0, 1, 0.25, { label: 'Octave jump', unit: '%', hint: 'The chance that a note that plays is moved up or down by octaves' }),
-    range: p.int(1, 3, 1, { label: 'Octaves', hint: 'The most octaves a jump may move a note' }),
-    seed: p.int(0, 9999, 1, { label: 'Seed', automatable: false, hint: 'Which random pattern: the same seed always gives the same result' }),
+    chance: p.float(0, 1, 0.8, { group: 'Chance', label: 'Chance to play', unit: '%', hint: 'The chance that a note plays at all' }),
+    jump: p.float(0, 1, 0.25, { group: 'Octaves', label: 'Octave jump', unit: '%', hint: 'The chance that a note that plays is moved up or down by octaves' }),
+    range: p.int(1, 3, 1, { group: 'Octaves', label: 'Octaves', hint: 'The most octaves a jump may move a note' }),
+    seed: p.int(0, 9999, 1, { group: 'Random', label: 'Seed', automatable: false, hint: 'Which random pattern: the same seed always gives the same result' }),
   },
   presets: [
     { name: 'Sometimes', params: {} },

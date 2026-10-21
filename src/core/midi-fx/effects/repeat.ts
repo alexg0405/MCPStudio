@@ -12,18 +12,19 @@ const OPEN_ROLL_RAMP_HITS = 16;
 /** The quietest a ramp makes a hit, as a share of the note's velocity. */
 const MIN_RAMP_LEVEL = 0.05;
 /** The most hits a roll makes in one note (a safety limit for very long notes at the fastest rate). */
-const MAX_HITS = 512;
+const MAX_HITS = 65_536;
 
 /** Note repeat: see the file comment. */
 export const repeat: MidiFxDef = {
   id: 'repeat',
   name: 'Note repeat',
+  short: 'RPT',
   description: 'Plays each note again and again at a fast rate while it lasts, like a hi-hat roll, getting louder or softer along the way.',
   params: {
-    rate: p.enum(ROLL_RATE_IDS, '1/16', { label: 'Rate', labels: noteValueLabels(ROLL_RATE_IDS), hint: 'How fast the note repeats, as a note value of the song tempo' }),
-    count: p.int(0, 32, 0, { label: 'Hits', hint: 'How many times each note plays; 0 repeats it for as long as the note lasts' }),
-    gate: p.float(0.05, 1, 0.7, { label: 'Gate', unit: '%', hint: 'How long each hit lasts as a share of the time to the next one' }),
-    ramp: p.float(-1, 1, 0, { label: 'Ramp', unit: '%', hint: 'Whether the roll gets louder (above 0) or softer (below 0) from its first hit to its last' }),
+    rate: p.enum(ROLL_RATE_IDS, '1/16', { group: 'Roll', label: 'Rate', labels: noteValueLabels(ROLL_RATE_IDS), hint: 'How fast the note repeats, as a note value of the song tempo' }),
+    count: p.int(0, 32, 0, { group: 'Roll', label: 'Hits', hint: 'How many times each note plays; 0 repeats it for as long as the note lasts' }),
+    gate: p.float(0.05, 1, 0.7, { group: 'Roll', label: 'Gate', unit: '%', hint: 'How long each hit lasts as a share of the time to the next one' }),
+    ramp: p.float(-1, 1, 0, { group: 'Loudness', label: 'Ramp', unit: '%', hint: 'Whether the roll gets louder (above 0) or softer (below 0) from its first hit to its last' }),
   },
   presets: [
     { name: 'Hi-hat roll 1/16', params: {} },

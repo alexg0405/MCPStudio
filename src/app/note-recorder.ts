@@ -8,6 +8,7 @@
 import type { Gesture } from '@core/history/history';
 import { newId } from '@core/model/ids';
 import type { ChannelId, Note, NoteId, PatternId } from '@core/model/types';
+import { hasActiveMidiFx } from '@core/query/midi-fx';
 import { patternLength } from '@core/query/queries';
 import { patternTickAt } from '@core/query/playlist';
 import { snapRound } from '@core/time/snap';
@@ -53,9 +54,19 @@ export class NoteRecorder implements Recorder {
     this.gesture = null;
   }
 
+  /**
+   * Whether this starting note is one to record. On a channel with MIDI effects the setting picks the notes played or the notes the
+   * effects made of them; a channel without effects records what is played.
+   */
+  private isWanted(e: Extract<LiveEvent, { type: 'noteOn' | 'fxOn' }>): boolean {
+    const channel = e.channelId ? this.s.doc.getState().project.channels[e.channelId] : undefined;
+    const keepsGenerated = this.s.prefs.getState().recordMidiFx === 'generated' && hasActiveMidiFx(channel);
+    return e.type === 'fxOn' ? keepsGenerated : !keepsGenerated;
+  }
+
   private onLive(e: LiveEvent): void {
-    if (e.type === 'noteOn') {
-      if (!e.channelId) return;
+    if (e.type === 'noteOn' || e.type === 'fxOn') {
+      if (!e.channelId || !this.isWanted(e)) return;
       const pos = this.position(e.time);
       if (!pos) return;
       this.pending.set(e.id, {
@@ -66,7 +77,8 @@ export class NoteRecorder implements Recorder {
         tick: pos.tick,
         len: pos.length,
       });
-    } else if (e.type === 'noteOff') {
+    } else if (e.type === 'noteOff' || e.type === 'fxOff') {
+      // An end whose start was not wanted finds nothing pending and is ignored.
       const p = this.pending.get(e.id);
       if (!p) return;
       this.pending.delete(e.id);

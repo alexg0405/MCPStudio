@@ -175,6 +175,14 @@ function registerRecordCommands({ commands }: Services): void {
     hint: 'Overdub adds to existing notes; replace clears what the recording passes over',
     run: (s, mode) => s.prefs.getState().set({ recordMode: mode === 'replace' ? 'replace' : 'overdub' }),
   });
+  commands.register<string>({
+    id: 'transport.recordMidiFx',
+    argsHint: "'played' (the keys you play) or 'generated' (the notes a channel's MIDI effects make of them)",
+    title: 'Record what MIDI effects make',
+    category: 'Transport',
+    hint: 'On a channel with MIDI effects, record the keys you play, or the notes the effects make of them (an arpeggio, a chord)',
+    run: (s, what) => s.prefs.getState().set({ recordMidiFx: what === 'generated' ? 'generated' : 'played' }),
+  });
 }
 
 /** Panic, the song settings dialog and the pattern or song mode switch. */
@@ -262,6 +270,18 @@ function recordSettingEntries(services: Services) {
         ] as const,
         prefs.recordMode,
         (mode) => run('transport.recordMode', mode),
+      ),
+    },
+    {
+      label: 'Record MIDI effects',
+      run: () => {},
+      children: choiceEntries(
+        [
+          ['The keys I play', 'played'],
+          ['The notes the effects make', 'generated'],
+        ] as const,
+        prefs.recordMidiFx,
+        (what) => run('transport.recordMidiFx', what),
       ),
     },
   ];

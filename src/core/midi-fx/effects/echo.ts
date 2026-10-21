@@ -18,13 +18,14 @@ const MAX_REPEATS = 16;
 export const echo: MidiFxDef = {
   id: 'echo',
   name: 'MIDI echo',
+  short: 'ECH',
   description: 'Repeats each note a few times, a synced time apart, each echo quieter than the last and optionally higher or lower.',
   params: {
-    delay: p.enum(ECHO_DELAY_IDS, '1/8.', { label: 'Delay', labels: noteValueLabels(ECHO_DELAY_IDS), hint: 'The time between a note and its echo, as a note value of the song tempo' }),
-    repeats: p.int(1, MAX_REPEATS, 4, { label: 'Echoes', hint: 'How many echoes follow each note' }),
-    feedback: p.float(0, 1, 0.65, { label: 'Feedback', unit: '%', hint: 'How loud each echo is compared with the one before it' }),
-    pitch: p.float(-12, 12, 0, { label: 'Pitch per echo', unit: 'st', hint: 'How many semitones each echo moves up or down compared with the one before' }),
-    decay: p.float(0.2, 1, 1, { label: 'Length per echo', unit: '%', hint: 'How long each echo lasts compared with the one before it (100% keeps the note’s length)' }),
+    delay: p.enum(ECHO_DELAY_IDS, '1/8.', { group: 'Time', label: 'Delay', labels: noteValueLabels(ECHO_DELAY_IDS), hint: 'The time between a note and its echo, as a note value of the song tempo' }),
+    repeats: p.int(1, MAX_REPEATS, 4, { group: 'Time', label: 'Echoes', hint: 'How many echoes follow each note' }),
+    feedback: p.float(0, 1, 0.65, { group: 'Each echo', label: 'Feedback', unit: '%', hint: 'How loud each echo is compared with the one before it' }),
+    pitch: p.float(-12, 12, 0, { group: 'Each echo', label: 'Pitch per echo', unit: 'st', hint: 'How many semitones each echo moves up or down compared with the one before' }),
+    decay: p.float(0.2, 1, 1, { group: 'Each echo', label: 'Length per echo', unit: '%', hint: 'How long each echo lasts compared with the one before it (100% keeps the note’s length)' }),
   },
   presets: [
     { name: 'Dotted eighth echo', params: {} },

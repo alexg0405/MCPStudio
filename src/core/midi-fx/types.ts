@@ -77,6 +77,8 @@ export interface MidiFxDef {
   readonly id: string;
   /** Plain name for lists and the window. */
   readonly name: string;
+  /** Three capital letters for the small badge in the channel rack ("ARP"). */
+  readonly short: string;
   /** One plain sentence: what it does. */
   readonly description: string;
   readonly params: ParamSpecs;

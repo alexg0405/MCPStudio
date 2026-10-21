@@ -18,6 +18,7 @@ import { recentFiles } from '../../persistence/recent-files';
 import { referenceLines } from '../../reference/summary';
 import type { Services } from '../../services';
 import { aiCommands } from '../commands';
+import { cachedForProject } from './project-cache';
 import type { ResolvedFocus } from '../focus';
 import { noteLines } from '../note-lines';
 import { deckLines } from '../ops/decks';
@@ -110,7 +111,7 @@ function optionalSections(services: Services, project: Project): string[] {
   }
   const lyricLines = lyricTrackLines(project);
   if (lyricLines.length) lines.push('', 'Lyrics (first bar of each line):', ...lyricLines.map((line) => `  ${line}`));
-  const arrangement = arrangementLines(project);
+  const arrangement = cachedForProject(project, 'arrangement', () => arrangementLines(project));
   if (arrangement.length) lines.push(...arrangement);
   const sections = [
     djLines(project),

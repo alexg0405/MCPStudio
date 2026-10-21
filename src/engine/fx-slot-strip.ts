@@ -12,6 +12,11 @@
  * gates (bypass, loading, missing, failed, instance swaps) are separate gains that glide. A slot
  * that isn't live is exactly its input (bypass 1, everything else 0).
  *
+ * That mix stage (dryGate, dryMix, wetMix, the constant source: `FxMixStage`) exists only while it matters. A slot at
+ * mix 1 that no automation drives wires the effect's wet gate straight to the output and has no dry path, which sounds
+ * the same (the wet path passes at gain 1, the dry one at 0) and leaves out five nodes and an always-running
+ * source per slot; the stage is made, in the same step, when the mix first moves off 1 or automation takes it over.
+ *
  * Effects are created through HostImpl (owner { kind: 'fx', insertId, slotId }), asynchronously and
  * guarded by a generation token. While an effect loads, is missing, has failed or is disabled the
  * slot passes audio through (~10 ms crossfade), and a disabled effect's input (and key) is
@@ -26,6 +31,7 @@ import type { AnyEffectDef, JsonValue, PluginDef } from '@agstudio/sdk';
 import { clampOrFallback, glide } from './audio-graph';
 import type { EngineCore } from './engine-core';
 import { FxInstance } from './fx-instance';
+import { FxMixStage } from './fx-mix-stage';
 import { HostImpl } from './host';
 import { AutoLane } from './param-lane';
 
@@ -46,11 +52,8 @@ export class FxSlotStrip {
   readonly input: GainNode;
   readonly output: GainNode;
   private readonly bypass: GainNode;
-  private readonly dryGate: GainNode;
-  private readonly dryMix: GainNode;
-  private readonly wetMix: GainNode;
-  private readonly mixSource: ConstantSourceNode;
-  private readonly mixInvert: GainNode;
+  /** The dry/wet blend; null while the slot is at mix 1 with nothing driving it (see the file comment). */
+  private mixStage: FxMixStage | null = null;
   private readonly mixLane: AutoLane;
   private readonly unregisterMix: () => void;
   /** The current instance (null while loading, or when missing/failed). */
@@ -59,6 +62,9 @@ export class FxSlotStrip {
   private readonly retiring = new Set<FxInstance>();
   private readonly timers = new Set<ReturnType<typeof setTimeout>>();
   private unfeedTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The bypass path (input → bypass → output) is in the graph: always while not live, and until the fade is over after. */
+  private isBypassWired = true;
+  private bypassTimer: ReturnType<typeof setTimeout> | null = null;
   /** Counts loads: a load that finds a newer number when it finishes is stale and is thrown away. */
   private generation = 0;
   private pending: Promise<void> = Promise.resolve();
@@ -90,13 +96,6 @@ export class FxSlotStrip {
     this.input = new GainNode(ctx);
     this.output = new GainNode(ctx);
     this.bypass = new GainNode(ctx, { gain: 1 });
-    this.dryGate = new GainNode(ctx, { gain: 0 });
-    this.dryMix = new GainNode(ctx, { gain: 1 });
-    this.wetMix = new GainNode(ctx, { gain: 0 });
-    this.mixSource = new ConstantSourceNode(ctx, { offset: 0 });
-    this.mixInvert = new GainNode(ctx, { gain: -1 });
-    this.mixSource.connect(this.wetMix.gain);
-    this.mixSource.connect(this.mixInvert).connect(this.dryMix.gain);
     this.mixLane = new AutoLane(
       ctx,
       targetKey({ kind: 'slot', insertId, slotId: slot.id, param: 'mix' }),
@@ -104,14 +103,29 @@ export class FxSlotStrip {
       clampOrFallback(slot.mix, 0, 1, 1),
       SLOT_GLIDE_TAU_SEC,
     );
-    this.mixLane.bind(this.mixSource.offset);
+    // Automation that starts to drive the mix needs the stage to write to.
+    this.mixLane.onFirstDrive = () => this.ensureMixStage();
     this.unregisterMix = core.params.register(this.mixLane);
-    this.mixSource.start();
     this.input.connect(this.bypass).connect(this.output);
-    this.input.connect(this.dryGate).connect(this.dryMix);
-    this.dryMix.connect(this.output);
-    this.wetMix.connect(this.output);
+    if (clampOrFallback(slot.mix, 0, 1, 1) !== 1) this.ensureMixStage();
     this.load();
+  }
+
+  /** Where an effect's wet sound goes: through the mix stage's wet gain, or (at mix 1, nothing driving it) straight out. */
+  private get wetDestination(): AudioNode {
+    return this.mixStage?.wetMix ?? this.output;
+  }
+
+  /**
+   * Makes the dry/wet stage when it is needed and moves the effects already here onto it: the wet gates go through its
+   * wet gain and the latency-aligned dry paths join its dry gain. One step, so no sound is dropped or doubled.
+   */
+  private ensureMixStage(): void {
+    if (this.mixStage) return;
+    const stage = new FxMixStage(this.core.ctx, this.input, this.output, this.mixLane);
+    this.mixStage = stage;
+    for (const instance of this.instances()) instance.useMixStage(stage.wetMix, stage.dryMix);
+    this.applyGains();
   }
 
   get id(): SlotId {
@@ -170,7 +184,11 @@ export class FxSlotStrip {
     }
     const ctx = this.core.ctx;
     if (prev.plugin !== next.plugin) this.current?.host.apply(next.plugin, project, ctx.currentTime);
-    if (prev.mix !== next.mix) this.mixLane.setBase(clampOrFallback(next.mix, 0, 1, 1), ctx.currentTime);
+    if (prev.mix !== next.mix) {
+      const mix = clampOrFallback(next.mix, 0, 1, 1);
+      if (mix !== 1) this.ensureMixStage();
+      this.mixLane.setBase(mix, ctx.currentTime);
+    }
     if (prev.enabled !== next.enabled) this.applyGains();
   }
 
@@ -211,20 +229,17 @@ export class FxSlotStrip {
     this.timers.clear();
     if (this.unfeedTimer) clearTimeout(this.unfeedTimer);
     this.unfeedTimer = null;
+    if (this.bypassTimer) clearTimeout(this.bypassTimer);
+    this.bypassTimer = null;
     for (const instance of this.retiring) instance.dispose(this.input);
     this.retiring.clear();
     this.current?.dispose(this.input);
     this.current = null;
     this.unregisterMix();
     this.mixLane.dispose();
-    try {
-      this.mixSource.stop();
-    } catch {
-      /* not started */
-    }
-    for (const node of [this.mixSource, this.mixInvert, this.input, this.bypass, this.dryGate, this.dryMix, this.wetMix]) {
-      node.disconnect();
-    }
+    this.mixStage?.dispose(this.input);
+    this.mixStage = null;
+    for (const node of [this.input, this.bypass]) node.disconnect();
     this.output.disconnect();
   }
 
@@ -245,8 +260,9 @@ export class FxSlotStrip {
   private applyGains(): void {
     const ctx = this.core.ctx;
     const live = this.live ? this.current : null;
+    this.wireBypass(live === null);
     glide(this.bypass.gain, live ? 0 : 1, ctx, SLOT_GLIDE_TAU_SEC);
-    glide(this.dryGate.gain, live && !live.dryDelay ? 1 : 0, ctx, SLOT_GLIDE_TAU_SEC);
+    if (this.mixStage) glide(this.mixStage.dryGate.gain, live && !live.dryDelay ? 1 : 0, ctx, SLOT_GLIDE_TAU_SEC);
     for (const instance of this.instances()) {
       const isHeard = instance === live;
       glide(instance.wetGate.gain, isHeard ? 1 : 0, ctx, SLOT_GLIDE_TAU_SEC);
@@ -259,6 +275,37 @@ export class FxSlotStrip {
     if (live) live.feed(this.input, true);
     else if (this.current) this.unfeedLater(this.current);
     this.reportLatencyChange();
+  }
+
+  /**
+   * Puts the bypass path in the graph (at once, before it fades in) or takes it out once its fade-out is over (at once
+   * before the context runs). A live effect leaves the bypass at gain 0, which adds nothing to the output, and a gain
+   * node that stays in the graph costs the audio thread time on every block: a mixer has hundreds of slots.
+   */
+  private wireBypass(wanted: boolean): void {
+    if (this.bypassTimer) clearTimeout(this.bypassTimer);
+    this.bypassTimer = null;
+    if (wanted) {
+      if (this.isBypassWired) return;
+      this.input.connect(this.bypass).connect(this.output);
+      this.isBypassWired = true;
+      return;
+    }
+    if (!this.isBypassWired) return;
+    if (this.isBeforeStart) {
+      this.unwireBypass();
+      return;
+    }
+    this.bypassTimer = setTimeout(() => {
+      this.bypassTimer = null;
+      if (this.live) this.unwireBypass();
+    }, UNFEED_DELAY_MS);
+  }
+
+  private unwireBypass(): void {
+    this.input.disconnect(this.bypass);
+    this.bypass.disconnect();
+    this.isBypassWired = false;
   }
 
   /** Tells the insert when the slot's live latency or its listening to a sidechain changed. */
@@ -368,7 +415,7 @@ export class FxSlotStrip {
       host.onState = (state) => effect.setState?.(state as never);
       const latencySec = typeof effect.latency === 'number' ? clampOrFallback(effect.latency, 0, MAX_EFFECT_LATENCY_SEC, 0) : 0;
       const latencyFrames = Math.round(latencySec * ctx.sampleRate);
-      this.current = new FxInstance(ctx, effect, host, this.wetMix, this.dryMix, latencyFrames);
+      this.current = new FxInstance(ctx, effect, host, this.wetDestination, this.mixStage?.dryMix ?? null, latencyFrames);
       this.keyInstance(this.current);
       this.faulted = false;
       // Catch up with edits made while the effect was loading.

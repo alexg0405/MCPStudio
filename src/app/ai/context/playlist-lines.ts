@@ -5,6 +5,7 @@ import { songLength } from '@core/query/playlist';
 import { songSections } from '@core/query/sections';
 import { barSpan } from '@core/time/bars';
 import { ticksPerBar } from '@core/time/ppq';
+import { cachedForProject } from './project-cache';
 import { fullRender, SHORT_NOTE, SHORT_RUNS, type ContextRender } from './budget';
 import { formatDb } from './units';
 
@@ -58,6 +59,14 @@ function trackLine(
   return `- Track ${trackNumber}${name}${flags ? ` (${flags})` : ''}: ${parts.join('; ')}${more}`;
 }
 
+/** Every track's runs, split at the marker sections; worked out once per project version (shortening renders reuse it). */
+function allLaneRuns(project: Project): Map<LaneId, ReturnType<typeof laneRuns>> {
+  return cachedForProject(project, 'lane-runs', () => {
+    const cuts = songSections(project).map((section) => section.from);
+    return new Map(project.playlist.laneOrder.map((laneId) => [laneId, laneRuns(project, laneId, cuts)] as const));
+  });
+}
+
 /**
  * The playlist: every track's clips, back-to-back repeats as one run ("“Drop” ×8 bars 37–52"), split
  * at the marker sections, which are listed first. Clip ids for short runs; longer runs are found by
@@ -80,9 +89,9 @@ export function playlistLines(project: Project, render: ContextRender = fullRend
     lines.push('The playlist is empty.');
     return lines;
   }
-  const cuts = sections.map((section) => section.from);
+  const runsByLane = allLaneRuns(project);
   project.playlist.laneOrder.forEach((laneId, index) => {
-    const runs = laneRuns(project, laneId, cuts);
+    const runs = runsByLane.get(laneId) ?? [];
     if (!runs.length) return;
     if (runs.length > cap && render.shorten.runs) render.cut.add('playlist');
     lines.push(trackLine(project, laneId, index + 1, runs, cap));
@@ -93,6 +102,10 @@ export function playlistLines(project: Project, render: ContextRender = fullRend
 
 /** Problems in the arrangement, in plain words with the action that fixes them. */
 export function songCheckLines(project: Project): string[] {
+  return cachedForProject(project, 'song-check-lines', () => writeSongCheckLines(project));
+}
+
+function writeSongCheckLines(project: Project): string[] {
   const timeSig = project.transport.timeSig;
   const trackName = (laneId: string) => `Track ${project.playlist.laneOrder.indexOf(laneId as LaneId) + 1}`;
   const patternName = (patternId: keyof Project['patterns']) => project.patterns[patternId]?.name ?? '?';

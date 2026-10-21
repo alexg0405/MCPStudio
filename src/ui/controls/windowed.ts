@@ -11,17 +11,30 @@ export interface Windowed {
   padBottom: number;
 }
 
+/** What `useWindowedRows` can be told besides the list itself. */
+export interface WindowedOptions {
+  /** Rows kept beyond each edge of the view. */
+  overscan?: number;
+  /** Lists with this many rows or fewer render whole (nothing to gain, and the markup stays as it was). */
+  minRows?: number;
+  /** The list runs left to right (the mixer's strips): the "rows" are columns, `rowHeight` their pitch in pixels. */
+  horizontal?: boolean;
+  /** Pixels of other content before the first row in the scrolling direction (the mixer's Master strip). */
+  leading?: number;
+}
+
 /**
  * Windowing for a long list of equal-height rows inside the scrolling element `ref` points at: only the rows near the viewport are in
  * the DOM. Lists shorter than `minRows` render whole (nothing to gain, and the markup stays as it was).
  * The row height is fixed by the caller's CSS; the window re-computes on scroll, resize and when the count changes,
- * and re-renders only when the first or last row changes.
+ * and re-renders only when the first or last row changes. With `horizontal` the list runs sideways and `rowHeight` is
+ * the width of one column, gap included.
  */
 export function useWindowedRows(
   ref: RefObject<HTMLElement | null>,
   count: number,
   rowHeight: number,
-  { overscan = 8, minRows = 60 } = {},
+  { overscan = 8, minRows = 60, horizontal = false, leading = 0 }: WindowedOptions = {},
 ): Windowed {
   const [range, setRange] = useState({ first: 0, last: Math.min(count, minRows) });
   const whole = count <= minRows;
@@ -29,10 +42,12 @@ export function useWindowedRows(
   const update = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    const first = Math.max(0, Math.floor(el.scrollTop / rowHeight) - overscan);
-    const last = Math.min(count, Math.ceil((el.scrollTop + el.clientHeight) / rowHeight) + overscan);
+    const scroll = (horizontal ? el.scrollLeft : el.scrollTop) - leading;
+    const extent = horizontal ? el.clientWidth : el.clientHeight;
+    const first = Math.max(0, Math.floor(scroll / rowHeight) - overscan);
+    const last = Math.min(count, Math.ceil((scroll + extent) / rowHeight) + overscan);
     setRange((r) => (r.first === first && r.last === last ? r : { first, last }));
-  }, [ref, count, rowHeight, overscan]);
+  }, [ref, count, rowHeight, overscan, horizontal, leading]);
 
   useLayoutEffect(() => {
     update();

@@ -160,6 +160,7 @@ const FIXTURES = {
   notes10k: 'notes10k',
   mix30: 'mix30',
   rack150: 'rack150',
+  huge: 'huge',
 };
 
 async function newPage(browser, fixture) {
@@ -357,7 +358,7 @@ scenario({
 
 scenario({
   id: 'piano-roll drag 50 notes',
-  fixtures: ['notes10k'],
+  fixtures: ['notes10k', 'huge'],
   async setup(page) {
     await only(page, 'piano-roll');
     await page.evaluate(() => window.__ag.editor.getState().setPianoRoll({ tool: 'select', scrollTick: 0 }));
@@ -378,7 +379,7 @@ scenario({
 
 scenario({
   id: 'piano-roll resize',
-  fixtures: ['notes10k'],
+  fixtures: ['notes10k', 'huge'],
   async setup(page) {
     await only(page, 'piano-roll');
     await page.evaluate(() => window.__ag.editor.getState().setPianoRoll({ tool: 'select', scrollTick: 0 }));
@@ -398,7 +399,7 @@ scenario({
 
 scenario({
   id: 'piano-roll undo 1000-note delete',
-  fixtures: ['notes10k'],
+  fixtures: ['notes10k', 'huge'],
   async setup(page) {
     await only(page, 'piano-roll');
   },
@@ -427,7 +428,7 @@ scenario({
 
 scenario({
   id: 'control: pointermove over an inert area',
-  fixtures: ['stacked'],
+  fixtures: ['stacked', 'huge'],
   async setup() {},
   async rep(page) {
     return paint(page, async () => {
@@ -446,7 +447,7 @@ async function clipPoint(page) {
 }
 scenario({
   id: 'playlist click empty (menu)',
-  fixtures: ['stacked', 'mix30'],
+  fixtures: ['stacked', 'mix30', 'huge'],
   async setup(page) {
     await only(page, 'playlist');
     await page.evaluate(() => window.__ag.view.getState());
@@ -469,7 +470,7 @@ scenario({
 
 scenario({
   id: 'playlist drag a clip',
-  fixtures: ['stacked', 'mix30'],
+  fixtures: ['stacked', 'mix30', 'huge'],
   async setup(page) {
     await only(page, 'playlist');
     await page.evaluate(() => window.__ag.view.getState());
@@ -488,7 +489,7 @@ scenario({
 
 scenario({
   id: 'playlist rubber-band select',
-  fixtures: ['stacked', 'mix30'],
+  fixtures: ['stacked', 'mix30', 'huge'],
   async setup(page) {
     await only(page, 'playlist');
     await page.evaluate(() => window.__ag.view.getState());
@@ -509,7 +510,7 @@ scenario({
 
 scenario({
   id: 'playlist zoom (ctrl+wheel)',
-  fixtures: ['stacked', 'mix30'],
+  fixtures: ['stacked', 'mix30', 'huge'],
   async setup(page) {
     await only(page, 'playlist');
   },
@@ -530,7 +531,7 @@ scenario({
 
 scenario({
   id: 'playlist scroll (wheel, no zoom)',
-  fixtures: ['stacked'],
+  fixtures: ['stacked', 'huge'],
   async setup(page) {
     await only(page, 'playlist');
   },
@@ -550,7 +551,7 @@ scenario({
 // -- mixer
 scenario({
   id: 'mixer drag a fader',
-  fixtures: ['mix30'],
+  fixtures: ['mix30', 'huge'],
   async setup(page) {
     await only(page, 'mixer');
   },
@@ -569,7 +570,7 @@ scenario({
 
 scenario({
   id: 'mixer drag a knob',
-  fixtures: ['mix30'],
+  fixtures: ['mix30', 'huge'],
   async setup(page) {
     await only(page, 'mixer');
   },
@@ -591,7 +592,7 @@ scenario({
 // -- channel rack
 scenario({
   id: 'channel rack click a step',
-  fixtures: ['rack150', 'stacked'],
+  fixtures: ['rack150', 'stacked', 'huge'],
   async setup(page) {
     await only(page, 'channel-rack');
   },
@@ -618,7 +619,7 @@ scenario({
 });
 
 // -- windows and menus
-const WIN_FIXTURES = ['stacked', 'notes10k', 'mix30', 'rack150'];
+const WIN_FIXTURES = ['stacked', 'notes10k', 'mix30', 'rack150', 'huge'];
 scenario({
   id: 'open Studio window',
   fixtures: WIN_FIXTURES,
@@ -654,7 +655,7 @@ scenario({
 
 scenario({
   id: 'open a plugin window',
-  fixtures: ['mix30', 'rack150', 'stacked'],
+  fixtures: ['mix30', 'rack150', 'stacked', 'huge'],
   async setup(page) {
     await only(page, 'channel-rack');
   },
@@ -732,7 +733,7 @@ scenario({
 
 scenario({
   id: 'switch patterns',
-  fixtures: ['rack150', 'stacked'],
+  fixtures: ['rack150', 'stacked', 'huge'],
   async setup(page) {
     await only(page, 'channel-rack');
   },
@@ -762,7 +763,7 @@ scenario({
 
 scenario({
   id: 'undo / redo a clip move',
-  fixtures: ['stacked', 'mix30'],
+  fixtures: ['stacked', 'mix30', 'huge'],
   async setup(page) {
     await only(page, 'playlist');
   },
@@ -775,6 +776,68 @@ scenario({
     await sleep(200);
     const redo = await settle(page, 'keydown', () => page.keyboard.press('ControlOrMeta+Shift+z'), { window: 600 });
     await sleep(200);
+    await undoLast(page);
+    return { samples: [...undo.samples, ...redo.samples], loaf: [...undo.loaf, ...redo.loaf], timing: [...undo.timing, ...redo.timing], extra: { undo: undo.samples[0], redo: redo.samples[0] } };
+  },
+});
+
+// -- big-project scenarios
+scenario({
+  id: 'open the mixer',
+  fixtures: ['mix30', 'huge'],
+  async setup(page) {
+    await only(page, 'channel-rack');
+  },
+  async rep(page) {
+    const res = await settle(page, 'keydown', () => page.keyboard.press('F9'), {
+      pred: `document.querySelectorAll('[data-window-type="mixer"] [role="slider"]').length > 5`,
+      window: 2500,
+    });
+    await sleep(300);
+    await page.evaluate(() => window.__ag.view.getState().hideWindow('mixer'));
+    await sleep(300);
+    return res;
+  },
+});
+
+scenario({
+  id: 'channel rack scroll (wheel)',
+  fixtures: ['rack150', 'huge'],
+  async setup(page) {
+    await only(page, 'channel-rack');
+  },
+  async rep(page, i) {
+    const b = await rect(page, '[data-window-type="channel-rack"]');
+    await page.mouse.move(b.x + b.w / 2, b.y + b.h / 2);
+    return paint(page, async () => {
+      for (let k = 0; k < 10; k++) {
+        await page.mouse.wheel(0, i % 2 ? -240 : 240);
+        await sleep(30);
+      }
+    }, ['wheel']);
+  },
+});
+
+scenario({
+  id: 'undo / redo a 1,000-clip delete',
+  fixtures: ['huge'],
+  async setup(page) {
+    await only(page, 'playlist');
+  },
+  async rep(page) {
+    await page.evaluate(() => {
+      const s = window.__ag;
+      const ids = Object.keys(s.doc.getState().project.playlist.clips).slice(0, 1000);
+      s.history.transact('Delete 1000 clips', (d) => {
+        for (const id of ids) delete d.playlist.clips[id];
+      });
+    });
+    await sleep(500);
+    await page.mouse.move(700, 400);
+    const undo = await settle(page, 'keydown', () => page.keyboard.press('ControlOrMeta+z'), { window: 900 });
+    await sleep(400);
+    const redo = await settle(page, 'keydown', () => page.keyboard.press('ControlOrMeta+Shift+z'), { window: 900 });
+    await sleep(400);
     await undoLast(page);
     return { samples: [...undo.samples, ...redo.samples], loaf: [...undo.loaf, ...redo.loaf], timing: [...undo.timing, ...redo.timing], extra: { undo: undo.samples[0], redo: redo.samples[0] } };
   },

@@ -4383,6 +4383,111 @@ machine is shared, so compare runs by their control row ("pointermove over an in
   - Known and left: the wheel latency above (browser side; ctrl+wheel must be a blocking listener to stop the page
     zoom); the per-move React commit of a fader (a controlled value through the document store: ~0.4 ms of JS).
 
+### Big projects (`?perf=huge`, `app/fixtures/huge-song.ts`)
+
+A project far past what the other fixtures hold, built to find what stops scaling: 200 sound channels (120 synths over six
+built-in instruments, 20 samplers, 20 drum pads and 40 audio clip channels) plus 60 automation channels, so 260 rack
+rows, 100 mixer tracks with 3 to 7 effects each (481 effect slots, 84 tracks feeding 16 buses), 500 patterns holding
+37,102 notes (one of them 16 bars with 5,000 notes on a single synth), 2,000 playlist clips over 300 bars on 60 tracks
+(1,424 pattern, 300 automation, 276 audio clips; six take groups with a comp, six clips with pitch or cleanup edits whose
+"renders" are other built-in samples), 38 markers, a chord a bar and 864 lyric words. The project JSON is 3.9 MB, 823 KB
+zipped. It is generated from a seeded `Rng` (`?perf=huge` also seeds the ids, so every load is the same project), and
+`buildHugeSong(draft, size)` takes a `HugeSongSize` (`SMALL_HUGE_SIZE` is a tiny one for tests). Measured with
+`scripts/perf-huge.mjs` (load, save, memory, idle, engine, AI context, a 30 s offline render), `scripts/perf-ui.mjs
+--fixture huge` and `scripts/perf-follow.mjs --fixture huge` (it mutes the channels and fixes the audio buffer, see below),
+on a shared M-series Mac in headless Chrome against the dev server (medians of three fresh pages; the interface rows of
+five repetitions). Before = the code at the start of this work, run back to back with after.
+
+| | before | after |
+|---|---|---|
+| open: page to painted project (cold) | 616 ms | 724 ms (noise: nothing changed) |
+| open: read the .agproj (parse, migrate, repair) | 79 ms | 79 ms |
+| open: replace the project, painted | 151 ms | 151 ms |
+| save: build the .agproj (JSON + zip) | 87 ms | 88 ms (JSON text reused when the project is unchanged: 73 ms in this run) |
+| autosave: serialize on the main thread / zip in the Worker | 9.6 / 88 ms | 3.4 / 92 ms |
+| version save point (whole) / longest main-thread block | 108 ms / 42 ms | 100 ms / 28 ms |
+| JS heap / page memory / decoded audio | 101 / 134 MB / 2 MB | 109 / 142 MB / 2 MB (+8 MB, probably the cached JSON text and context answers) |
+| audio nodes (live) / gains / worklets | 9,555 / 6,754 / 453 | 6,690 / 4,760 / 453 |
+| idle frame cost, React commits at idle | 0.03 ms, 0 | 0.02 ms, 0 |
+| engine, idle: audio clock vs wall clock (1.0 keeps up) | 0.71 | 1.02 |
+| engine, idle: audio thread load (CDP render capacity) | 100 % | 100 % (still at its limit) |
+| engine, everything playing: audio clock rate, keep-up | 0.08, 0.39 | 0.09, 0.47 (more than one core of real DSP) |
+| engine reboot | 992 ms | 700 ms |
+| offline render of 30 s | 113 s (0.27x) | 93 s (0.32x) |
+| AI context: first build / the same project again | 675 / 627 ms | 148 / 21 ms (110,447 characters, same text) |
+| follow (playing, smooth follow, playlist and piano roll side by side): frame JS median, allocation | 0.32 ms, 2.0 MB/s | 0.27 ms, 0.8 MB/s |
+| open the mixer (paint) | 129 ms, one 97 ms frame | 56 ms, longest frame 24 ms |
+| mixer fader / knob drag, from the page's handler to paint | 9.6 / 9.3 ms | 4.2 / 4.0 ms |
+
+Interface rows that were already fine on this project and did not move (medians, paint to paint, dev build, the wheel
+rows sit on the browser's own 19-20 ms wheel floor): piano roll with 5,000 notes (drag 50 notes 4.8 ms, resize 4.3,
+undo of a 1,000-note delete 14.8), playlist (drag a clip 4.0, rubber band 4.1, zoom 21, scroll 20), undo and redo of
+a 1,000-clip delete (14-18 ms), action search open 20 ms, channel-rack step click 15 ms, open a plugin window 16.
+
+What was found and done, in the order of what it cost:
+
+- **The mixer graph, 9,555 audio nodes** (the first thing that stops a project like this: the audio thread was at its limit
+  with nothing playing, and a reboot or an offline render took seconds). Chrome charges about 0.7 us per node per
+  render block, silent or not, so cost follows the node count. An effect slot was nine nodes plus the effect: input, output,
+  bypass, wet gate, and a dry/wet stage of four gains and an always-running ConstantSource whose two AudioParam
+  connections cost the most. Now a slot at mix 1 that no automation drives has no dry/wet stage (`engine/fx-mix-stage.ts`,
+  made by `FxSlotStrip.ensureMixStage` the moment the mix moves off 1 or automation takes it over: the lane's
+  `onFirstDrive` hook, and binding replays what the lane holds), a live effect takes its bypass gain out of the graph
+  after the fade (a gain at 0 adds nothing), and an effect with latency keeps its dry delay line running from the start so a
+  stage made later has the history it needs. A channel at pitch 0 that is not automated or bent has no pitch
+  ConstantSources (`PitchSignal` makes them on demand). Renders are identical: the same hash at 4 and 8 bars on the huge
+  project, and `test/browser/slot-mix-stage.test.ts` renders each case with and without the stage and compares every
+  sample (a delay, and the limiter, which reports latency). Nodes 9,555 -> 6,690, constant sources 1,975 -> 1,184 (offline,
+  `test/browser/big-project.test.ts`). The 453 worklets stay: an asleep kernel still costs a `process()` call per block
+  (about 3 us each, the largest share left: 453 of them are half the audio thread's budget), and returning false does not
+  let Chrome skip it unless its input is flagged silent, which needs the instruments upstream to be flagged too, and a
+  worklet that returned false cannot be woken again. See Left to do.
+- **The AI context**, 675 ms for 110 kB of text: the text is built up to seven times (each pass shortens one more part
+  when it is over its budget, which a project this size always is), and each pass worked out the arrangement
+  (`inferSections`, 100 ms), the song check, the playlist runs and the pattern summaries again. These are now worked out once per
+  project version (`app/ai/context/project-cache.ts`, a WeakMap on the immutable project; the core queries are not
+  memoized because they also run on drafts), and `isPlainInsert` no longer scans every channel for every track. The text is
+  byte for byte the same.
+- **Smooth follow with a chord track and lyrics**: both lanes redrew every scroll frame from the first chord and word of the
+  song and worked out the song's key (`channelRoles` over every channel) each time: 340 and 280 KB/s of garbage and most of
+  the script time of a following playhead. They now start at the first span that ends on screen (`core/query/spans.ts`,
+  binary search) and keep the key per project version.
+- **The channel rack scrolling**: after every row that scrolled in, the roving-focus code (`ui/a11y/roving.ts`) looked at
+  every control of the whole rack again (a thousand step buttons: `closest` and `getClientRects` on each), 1.3 s of 7.4 s of
+  script in a scroll test. It now only looks at what was added, and moves the Tab stop by touching the two controls
+  involved. Script time in that test fell to a quarter; the paint latency of a wheel notch did not move (it is mostly mounting
+  the rows, 4 ms a row in a dev build).
+- **The mixer window**: 100 strips are drawn whole. A mixer of more than 40 strips now draws the ones near the view with spacers
+  (`useWindowedRows` with `horizontal`), the Master always. Opening it takes less than half as long.
+- **The reload snapshot and autosave** serialized the whole project (800 KB, 20-90 ms in dev) every second after any change,
+  including a window move. `core/io/project-json.ts` keeps the JSON text for a project object, so a change of view reuses it.
+
+Things measured and found fine: one edit on this project costs 0.3 ms (an insert volume), 1.1 ms (a channel volume), 1.9 ms
+(a clip move) of script including the engine's reconcile, 2-4 ms while playing; saving a version point 15 ms on the main thread;
+opening a project 6 ms synchronously and one frame to paint; the idle frame loop 0.03 ms.
+
+Guard rails: `test/unit/big-project.test.ts` (tag `perf`: writing and reading the file, the AI context cold and again; limits
+300 / 450 / 700 / 120 ms under `npm run test:perf`, far looser in the regular run) and `test/browser/big-project.test.ts`
+(node counts of the mixer, always checked; offline render speed at least a tenth of real time with everything sounding, a scroll
+frame under 2 ms and an idle frame under 0.3 ms of script, `perf`-tagged).
+
+Left to do:
+
+- **Idle audio load is still at the limit.** 453 sleeping worklets (about 3 us a block each), 4,800 gains and 1,200 constant
+  sources. Ideas that need more than a local change: a sleeping instrument told to the host so the host takes it out of the
+  graph until its next event (the processor's sleep is exact; the host would have to keep the sync barriers and the editor
+  taps working for a node that is not being processed), after which sleeping effects could return false and Chrome would skip the
+  whole silent chain; or merging the mixer's per-track unity gains (chIn, chLink path, routeIn).
+- **Muted channels with no notes anywhere** (25 here) still get a strip and an instrument. They could wait until unmuted or
+  given a note; it saves about 3 % of the nodes here and a first preview of an unmuted unused channel would have to wait for
+  the instrument to load, so it was left.
+- **Offline renders are not bit-identical between page loads.** A 30 s render of the huge project ends in one of two values
+  (one ulp, at most 1.8e-7, from sample 3,000 on), in the old code as well as the new: Chrome adds the inputs of a node that has
+  three or more in an order that depends on memory addresses, and some node in a plugin's graph is not behind an `OrderedMix`.
+  4- and 8-bar renders are always the same. Not tracked down.
+- The numbers above are dev builds like every other number in this chapter, and a dev build makes mounting rows and strips
+  look worse than production does (`jsxDEV` is a large share of the rack's 4 ms a row).
+
 ## Testing
 
 - Unit (Vitest, Node): scheduler core, time/snap, queries, ops, history invariants (fast-check: random ops then undo-all
@@ -4416,7 +4521,7 @@ machine is shared, so compare runs by their control row ("pointermove over an in
   (`loudness-stage-<style>`, `edm-pack-<style>`, `dj-long-analysis-*`, `reference-studio`; shared parts in `test/helpers`). Vitest runs
   the longest files first by their recorded time, so a file it has not seen yet runs last the first time.
 - In the app: `window.__ag` (dev) exposes services (stores, history, commands, engine, files) and `__ag.perf`
-  (piano roll draw times, React commit count; `?perf=notes10k` loads a 10k-note fixture).
+  (piano roll draw times, React commit count; `?perf=notes10k` loads a 10k-note fixture, `?perf=huge` the very big project of "Big projects" above).
 - Measured at M7 (Chrome, M-series Mac): piano roll redraw with 10k notes median 0.6 ms, p95 0.9 ms; 0 React
   commits during idle playback (mixer open); an 8-bar song with reverb and delay exports (24-bit) in ~1.1 s.
 

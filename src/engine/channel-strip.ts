@@ -149,7 +149,7 @@ export class ChannelStrip {
     if (prev.volume !== next.volume) this.volLane.setBase(next.volume, t);
     if (prev.pan !== next.pan) this.panLane.setBase(next.pan, t);
     if (next.kind === 'instrument' && (prev.kind !== 'instrument' || prev.pitch !== next.pitch))
-      this.pitch?.lane.setBase(next.pitch ?? 0, t);
+      this.pitch?.setKnob(next.pitch ?? 0, t);
     if (prev.output !== next.output) {
       this.detachFromInsert();
       this.detachFromInsert = this.core.insertInput(next.output).attach(this.out);

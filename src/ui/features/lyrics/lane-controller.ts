@@ -10,6 +10,7 @@ import type { Services } from '@app/services';
 import { wordLabel } from '@core/lyrics/lines';
 import type { LyricId, LyricWord, Project, Tick } from '@core/model/types';
 import { lyricsSorted } from '@core/query/lyrics';
+import { firstEndingAfter } from '@core/query/spans';
 import { ticksPerBar, ticksPerBeat } from '@core/time/ppq';
 import { gridTicks } from '@core/time/snap';
 import { emitHint } from '@agstudio/sdk/ui';
@@ -155,10 +156,14 @@ export class LyricsLaneController {
     this.boxes = [];
     const words = lyricsSorted(p);
     if (words.length === 0 && !this.drag) this.drawEmptyHint(ctx, theme);
-    for (const word of words) {
+    // Only the words on screen are looked at (a dragged one can be previewed anywhere, so a drag looks at them all).
+    const first = this.drag ? 0 : firstEndingAfter(words, view.scrollTick);
+    for (let i = first; i < words.length; i++) {
+      const word = words[i] as LyricWord;
       const span = this.drag?.kind === 'word' && this.drag.id === word.id ? this.drag.preview : word;
       const left = (span.tick - view.scrollTick) * view.pxPerTick;
       const right = (span.tick + span.length - view.scrollTick) * view.pxPerTick;
+      if (!this.drag && left > width) break;
       if (right < 0 || left > width) continue;
       this.boxes.push({ id: word.id, left, right });
       this.drawWord(ctx, theme, word, left, right);

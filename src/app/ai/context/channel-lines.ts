@@ -15,6 +15,7 @@ import { patternSpans } from '@core/query/arrangement';
 import { insertLabel } from '@core/query/mixer';
 import type { Services } from '../../services';
 import { SHORT_VALUES, FULL_CHANNELS, type ContextRender, type Section } from './budget';
+import { cachedForProject } from './project-cache';
 import { formatDb, round2 } from './units';
 
 /** A plugin's name, or its id marked missing when it isn't installed. */
@@ -48,6 +49,10 @@ export function paramSummary(
 
 /** Channels with notes in a pattern the song plays, or with a clip on the playlist. */
 export function channelsThatPlay(project: Project): Set<string> {
+  return cachedForProject(project, 'channels-that-play', () => findChannelsThatPlay(project));
+}
+
+function findChannelsThatPlay(project: Project): Set<string> {
   const playing = new Set<string>();
   for (const patternId of patternSpans(project).keys()) {
     const pattern = project.patterns[patternId];

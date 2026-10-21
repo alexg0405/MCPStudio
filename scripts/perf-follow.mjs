@@ -2,7 +2,7 @@
 /**
  * Per-frame cost while a song plays with smooth follow (the view scrolls a little every frame), dev server:
  *
- *   node scripts/perf-follow.mjs [--url http://localhost:5422] [--seconds 12] [--fixture stacked-song|notes10k|mix30]
+ *   node scripts/perf-follow.mjs [--url http://localhost:5422] [--seconds 12] [--fixture stacked-song|notes10k|mix30|huge]
  *                                [--json out.json] [--label before]
  *
  * Playlist and piano roll are both open side by side. Reports, over the measurement window:
@@ -34,7 +34,7 @@ const pct = (xs, p) => {
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
 const results = [];
 try {
-  for (const fixture of ['stacked-song', 'notes10k', 'mix30']) {
+  for (const fixture of ['stacked-song', 'notes10k', 'mix30', 'huge']) {
     if (ONLY && ONLY !== fixture) continue;
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
@@ -73,6 +73,16 @@ try {
       const cid = Object.keys(pat?.notes ?? {}).find((k) => Object.keys(pat.notes[k]).length > 0);
       if (cid) s.session.getState().selectChannel(cid);
       s.prefs.getState().set({ followPlayhead: true, followStyle: 'smooth' });
+      // The huge project's sound is more than one core of audio work: the song would crawl and nothing would scroll.
+      // Silence the channels so the clock keeps up; the playlist and piano roll still draw all their clips and notes.
+      if (window.__fx === 'huge') {
+        // A fixed audio buffer: the automatic one would restart the engine (and the frame numbers with it) if it saw a stall.
+        s.prefs.getState().set({ audioBuffer: 'large' });
+      }
+      if (window.__fx === 'huge')
+        s.history.transact('Perf: mute', (d) => {
+          for (const c of Object.values(d.channels)) if (c.kind !== 'automation') c.muted = true;
+        });
       // Zoom in so the song really scrolls.
       s.editor.getState().setPlaylist({ pxPerTick: 0.04, scrollTick: 0 });
       s.editor.getState().setPianoRoll({ scrollTick: 0 });

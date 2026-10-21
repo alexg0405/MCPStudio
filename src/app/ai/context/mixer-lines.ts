@@ -3,19 +3,30 @@ import { MASTER, type Insert, type Project } from '@core/model/types';
 import { insertLabel } from '@core/query/mixer';
 import type { Services } from '../../services';
 import type { ContextRender } from './budget';
+import { cachedForProject } from './project-cache';
 import { paramSummary, pluginName } from './channel-lines';
 import { formatDb, round2 } from './units';
+
+/** Which tracks have a channel playing through them and which are sent to by another track (one pass over the project). */
+function usedInserts(project: Project): { withChannel: Set<string>; sentTo: Set<string> } {
+  return cachedForProject(project, 'used-inserts', () => {
+    const withChannel = new Set<string>();
+    for (const channelId of project.channelOrder) {
+      const channel = project.channels[channelId];
+      if (channel && channel.kind !== 'automation') withChannel.add(channel.output);
+    }
+    const sentTo = new Set<string>();
+    for (const other of Object.values(project.mixer.inserts)) for (const route of other.routes) sentTo.add(route.to);
+    return { withChannel, sentTo };
+  });
+}
 
 /** A track nobody uses: default name, level and routing, no effects, no channel and nothing sent to it. */
 export function isPlainInsert(project: Project, insert: Insert): boolean {
   if (insert.id === MASTER) return false;
-  const hasChannel = project.channelOrder.some((channelId) => {
-    const channel = project.channels[channelId];
-    return channel && channel.kind !== 'automation' && channel.output === insert.id;
-  });
-  const isSentTo = Object.values(project.mixer.inserts).some((other) =>
-    other.routes.some((route) => route.to === insert.id),
-  );
+  const { withChannel, sentTo } = usedInserts(project);
+  const hasChannel = withChannel.has(insert.id);
+  const isSentTo = sentTo.has(insert.id);
   return (
     !hasChannel &&
     insert.fx.length === 0 &&

@@ -5,12 +5,13 @@
  * `runReadTool` runs one by name and turns a bad argument into `{ error }` instead of a throw.
  *
  * The tools live in one module per group: `project-tools` (overview, transport, selection, settings, windows),
- * `music-tools` (notes, chords), `sound-tools` (mixer, channels, plugins, chains), `plugin-library-tools` (your own plugins), `arrangement-tools`
+ * `music-tools` (notes, chords), `sound-tools` (mixer, channels, plugins, chains), `catalog-tools` (details and search of the plugins, tools, chains and commands the catalog index lists), `plugin-library-tools` (your own plugins), `arrangement-tools`
  * (clips, automation, takes, launcher), `mix-state-tools` (mixer snapshots and groups), `versions-tools` (save points and your projects) and `measurement-tools` (reference, loudness, pitch, vocal cleanup, MIDI conversion, samples).
  */
 import type { Services } from '../../services';
 import { isObj } from '../ops/values';
 import { getAutomation, getClips, getLauncher, getTakes } from './arrangement-tools';
+import { getCommands, getPluginDetails, searchCatalog } from './catalog-tools';
 import { getLyrics } from './lyrics-tools';
 import { getAlignment, getCleanup, getMidiConversion, listSampleSounds, getLoudness, getPitch, getReference } from './measurement-tools';
 import { getMixGroups, getMixSnapshots } from './mix-state-tools';
@@ -45,6 +46,9 @@ export const readTools: readonly ReadTool[] = [
   getSettings,
   getWindows,
   getPlugins,
+  getPluginDetails,
+  searchCatalog,
+  getCommands,
   getUserPlugins,
   getChains,
   getReference,

@@ -88,11 +88,13 @@ describe('the ChatGPT backend', () => {
     const { a, calls } = setup({ subscription: NO, codex: OK, api: NO });
     await a.send('trap beat');
     expect(calls[0]).toMatchObject({ backend: 'codex', model: '', session: null });
-    expect(String(calls[0]!.text)).toContain('<plugins>');
+    // The catalog index is in the system prompt; the turn's text carries no catalog.
+    expect(String(calls[0]!.system)).toContain('Catalog index v');
+    expect(String(calls[0]!.text)).not.toContain('<plugins>');
     await a.send('busier hats');
     expect(calls[1]).toMatchObject({ backend: 'codex', model: '', session: 'codex-thread-1' });
-    // the follow-up has nothing new to tell the thread about the plugins
-    expect(String(calls[1]!.text)).not.toContain('<plugins>');
+    // the follow-up has nothing new to tell the thread about the catalog
+    expect(String(calls[1]!.text)).not.toContain('<catalog-changes>');
     a.set({ codexModel: 'gpt-5.5' });
     await a.send('more 808');
     expect(calls[2]).toMatchObject({ backend: 'codex', model: 'gpt-5.5' });
@@ -133,9 +135,9 @@ describe('one conversation per backend', () => {
       ['codex', null], // not the Claude session id
       ['subscription', 'subscription-thread-1'],
     ]);
-    // the new thread is told what the plugin catalog is; the continued one is not
-    expect(String(calls[1]!.text)).toContain('<plugins>');
-    expect(String(calls[2]!.text)).not.toContain('<plugins>');
+    // every thread starts from the same system prompt (the catalog index is in it); a continued one is told of no change
+    expect(calls[1]!.system).toBe(calls[0]!.system);
+    expect(String(calls[2]!.text)).not.toContain('<catalog-changes>');
   });
 
   it('New chat forgets every conversation', async () => {
@@ -145,7 +147,7 @@ describe('one conversation per backend', () => {
     a.newBeat();
     await a.send('boom bap');
     expect(calls[1]).toMatchObject({ session: null });
-    expect(String(calls[1]!.text)).toContain('<plugins>');
+    expect(calls[1]!.system).toBe(calls[0]!.system);
   });
 
   it('a reload keeps them', async () => {
@@ -159,7 +161,8 @@ describe('one conversation per backend', () => {
     second.a.set({ backend: 'codex' });
     await second.a.send('busier');
     expect(second.calls[0]).toMatchObject({ backend: 'codex', session: 'codex-thread-1' });
-    expect(String(second.calls[0]!.text)).not.toContain('<plugins>');
+    // the saved index version still matches: the thread is not told of a change
+    expect(String(second.calls[0]!.text)).not.toContain('<catalog-changes>');
   });
 });
 
@@ -212,8 +215,8 @@ describe('fetchAiStatus', () => {
     const down = await fetchAiStatus((async () => {
       throw new TypeError('x');
     }) as typeof fetch);
-    expect(Object.values(down).every((v) => !v.ok)).toBe(true);
-    expect(Object.keys(down).sort()).toEqual(['api', 'codex', 'subscription']);
+    expect([down.subscription, down.api, down.codex].every((v) => !v.ok)).toBe(true);
+    expect(Object.keys(down).sort()).toEqual(['api', 'codex', 'lookups', 'subscription']);
   });
 });
 

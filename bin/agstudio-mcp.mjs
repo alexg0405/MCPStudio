@@ -5,6 +5,9 @@
 //
 //   AGSTUDIO_URL         where AGstudio runs (default http://localhost:5390)
 //   AGSTUDIO_MCP_TOKEN   the access token; default: read from .agstudio/mcp-token next to this script's repo
+//   AGSTUDIO_MCP_TOKEN_FILE  a file holding the token, read for every request, used when AGSTUDIO_MCP_TOKEN is not set
+//                        (Studio's own AI backends use it, so no config file or command line ever holds the token)
+//   AGSTUDIO_MCP_URL     the whole endpoint, e.g. http://localhost:5390/mcp?scope=lookup (the read-only face)
 //
 // Run `bin/agstudio-mcp` (the wrapper that finds Node), not this file, from a Claude Desktop config.
 import { readFileSync } from 'node:fs';
@@ -21,7 +24,7 @@ const V = 'io.modelcontextprotocol';
 function token() {
   if (process.env.AGSTUDIO_MCP_TOKEN) return process.env.AGSTUDIO_MCP_TOKEN.trim();
   try {
-    return readFileSync(join(root, '.agstudio', 'mcp-token'), 'utf8').trim();
+    return readFileSync(process.env.AGSTUDIO_MCP_TOKEN_FILE || join(root, '.agstudio', 'mcp-token'), 'utf8').trim();
   } catch {
     return '';
   }

@@ -70,6 +70,8 @@ export interface AiStatus {
   subscription: AiBackendStatus;
   api: AiBackendStatus;
   codex: AiBackendStatus;
+  /** What the AI server can offer a turn besides the AI itself (an older server says nothing: no tools). */
+  lookups?: { mcp: boolean };
 }
 
 export type AiErrorKind =
@@ -207,10 +209,14 @@ export class ClaudeChat {
 
   async ask<T>(input: {
     system: string;
+    /** The blocks `system` is made of, so the API backend can put a cache breakpoint after each. */
+    systemBlocks?: string[];
     schema: object;
     text: string;
     model: string;
     backend: AiBackend;
+    /** The AI may call read tools during the turn (the server attaches them through MCP when it can). */
+    readTools?: boolean;
     signal?: AbortSignal;
     read(raw: unknown): { value: T } | { error: string };
   }): Promise<T> {
@@ -221,8 +227,10 @@ export class ClaudeChat {
         model: input.model,
         session: this.book.get(input.backend),
         system: input.system,
+        ...(input.systemBlocks ? { systemBlocks: input.systemBlocks } : {}),
         schema: input.schema,
         text,
+        ...(input.readTools ? { readTools: true } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
       });
       this.book.set(input.backend, reply.session);
@@ -241,8 +249,10 @@ async function postTurn(
     model: string;
     session: string | null;
     system: string;
+    systemBlocks?: string[];
     schema: object;
     text: string;
+    readTools?: boolean;
     signal?: AbortSignal;
   },
 ): Promise<{ session: string; beat: unknown }> {
@@ -329,7 +339,7 @@ const UNREACHABLE: AiBackendStatus = { ok: false, reason: AI_SERVER_MISSING_SHOR
 
 /** Which ways to reach an AI work right now. Never throws. */
 export async function fetchAiStatus(fetchImpl: typeof fetch = (...args) => fetch(...args)): Promise<AiStatus> {
-  const unreachable = { subscription: UNREACHABLE, api: UNREACHABLE, codex: UNREACHABLE };
+  const unreachable = { subscription: UNREACHABLE, api: UNREACHABLE, codex: UNREACHABLE, lookups: { mcp: false } };
   try {
     const res = await fetchImpl('/api/ai/status');
     if (!res.ok) return unreachable;
@@ -339,7 +349,12 @@ export async function fetchAiStatus(fetchImpl: typeof fetch = (...args) => fetch
         ? (v as AiBackendStatus)
         : UNREACHABLE;
     // An older server has no `codex` entry: it simply isn't there.
-    return { subscription: pick(body.subscription), api: pick(body.api), codex: pick(body.codex) };
+    return {
+      subscription: pick(body.subscription),
+      api: pick(body.api),
+      codex: pick(body.codex),
+      lookups: { mcp: body.lookups?.mcp === true },
+    };
   } catch {
     return unreachable;
   }

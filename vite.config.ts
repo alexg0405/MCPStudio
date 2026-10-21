@@ -110,7 +110,7 @@ function workletHmr(): Plugin {
 export default defineConfig(({ mode }) => ({
   plugins: [
     // The beat assistant reaches Claude through the dev/preview server (subscription or API key).
-    aiServer(() => loadEnv(mode, root, '')),
+    aiServer(() => loadEnv(mode, root, ''), { root }),
     // AI apps (Claude Code, Claude Desktop…) control the open project over MCP: POST /mcp, relayed to the tab.
     mcpServer({ root }),
     // Plugins the AI studio writes: drafts in plugins/_drafts, checked, installed on request.

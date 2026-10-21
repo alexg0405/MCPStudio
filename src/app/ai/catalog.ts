@@ -1,11 +1,14 @@
 /**
  * The plugin catalog as the AI sees it: every instrument and effect with its params (id, type, range,
- * unit, default) and preset names. Sent at the start of a conversation and whenever it changes.
+ * unit, default) and preset names. The whole text is what the MCP tool `list_plugins` returns; Studio's chat sends the
+ * compact index (`catalog-index.ts`) and the details of the plugins a request needs, which are written by the
+ * functions here.
  */
 import type { ParamSpec, PluginDef } from '@agstudio/sdk';
 import type { PluginRegistry } from '@app/plugins/registry';
 import type { PresetLibrary } from '@app/presets';
 import { chainChoices, type ChainChoice } from '@app/chains';
+import { hashText } from './text-hash';
 
 /** A param's kind and range without its name or default: "float 20..20000 Hz log". */
 function shape(spec: ParamSpec): string {
@@ -80,7 +83,8 @@ function describeParams(params: Record<string, ParamSpec>): { lines: string[]; f
   return { lines, families };
 }
 
-function describePlugin(def: PluginDef, presets?: PresetLibrary): { text: string; families: boolean } {
+/** One plugin as the details show it: its head line, its settings (kind, range, unit, default) and its presets. */
+export function describePlugin(def: PluginDef, presets?: PresetLibrary): { text: string; families: boolean } {
   const head = `- ${def.id} "${def.name}"${def.category ? ` [${def.category}]` : ''}${
     def.kind === 'effect' && def.sidechain ? ' (has a sidechain input)' : ''
   }${def.description ? `: ${def.description}` : ''}`;
@@ -95,28 +99,34 @@ function describePlugin(def: PluginDef, presets?: PresetLibrary): { text: string
 }
 
 /** One chain: its name, what it is for and its effects in order (a send marks where a return takes over). */
-function describeChain(c: ChainChoice): string {
+export function describeChain(c: ChainChoice): string {
   const steps = c.steps.map((x) => (x.send ? `${x.label} (a send to the ${x.send.to} return when the song has one)` : x.label));
   return `- "${c.name}"${c.source === 'user' ? " (the musician's own)" : ''}${c.description ? `: ${c.description}` : ''}\n  effects, in order: ${steps.join('; ')}`;
 }
+
+/** One piano-roll tool (note script): its head line and its settings. */
+export function describeScript(def: { id: string; name: string; description?: string; params: unknown }): {
+  text: string;
+  families: boolean;
+} {
+  const described = describeParams(def.params as Record<string, ParamSpec>);
+  const head = `- ${def.id} "${def.name}"${def.description ? `: ${def.description}` : ''}`;
+  const text = described.lines.length ? `${head}\n  params: ${described.lines.join('; ')}` : head;
+  return { text, families: described.families };
+}
+
+/** Said once above details that have numbered settings (`pad1..16Sound`). */
+export const FAMILY_NOTE =
+  'A numbered range such as pad1..16Sound stands for one setting per number (pad1Sound, pad2Sound … pad16Sound); its defaults are listed in order.';
 
 /** The catalog text and a key that changes when it does. */
 export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary): { text: string; key: string } {
   const instruments = registry.list('instrument').map((e) => describePlugin(e.def, presets));
   const effects = registry.list('effect').map((e) => describePlugin(e.def, presets));
-  const scripts = registry.scripts().map((e) => {
-    const params = describeParams(e.def.params as Record<string, ParamSpec>).lines;
-    const head = `- ${e.def.id} "${e.def.name}"${e.def.description ? `: ${e.def.description}` : ''}`;
-    return params.length ? `${head}\n  params: ${params.join('; ')}` : head;
-  });
+  const scripts = registry.scripts().map((e) => describeScript(e.def).text);
   const families = [...instruments, ...effects].some((d) => d.families);
   const text = [
-    ...(families
-      ? [
-          'A numbered range such as pad1..16Sound stands for one setting per number (pad1Sound, pad2Sound … pad16Sound); its defaults are listed in order.',
-          '',
-        ]
-      : []),
+    ...(families ? [FAMILY_NOTE, ''] : []),
     'Instruments (for channels):',
     ...instruments.map((d) => d.text),
     '',
@@ -127,7 +137,5 @@ export function pluginCatalog(registry: PluginRegistry, presets?: PresetLibrary)
     ...chainChoices(presets?.chains() ?? []).map(describeChain),
     ...(scripts.length ? ['', 'Piano-roll tools (note_tool action):', ...scripts] : []),
   ].join('\n');
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-  return { text, key: (h >>> 0).toString(36) };
+  return { text, key: hashText(text) };
 }

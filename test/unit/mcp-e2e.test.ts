@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, type ViteDevServer } from 'vite';
 import { chromium, type Browser, type Page } from 'playwright';
+import { writeFakeCli } from '../helpers/fake-cli.ts';
 
 /**
  * End to end: the real dev server (the project's vite.config.ts, on a free port) and the real app in
@@ -22,6 +23,43 @@ let page: Page;
 let base = '';
 let token = '';
 let skipReason = '';
+
+/**
+ * A stand-in `claude` for the look-up test: like the real CLI it reads the MCP config it was given, starts the stdio helper
+ * that names, asks it for the tools, calls a read tool and a write tool, and answers with what it got.
+ */
+const FAKE_CLAUDE_WITH_MCP = `const fs = require('fs');
+const { spawn } = require('child_process');
+const readline = require('readline');
+const args = process.argv.slice(2);
+if (args[0] === 'auth') { console.log(JSON.stringify({ authMethod: 'claude.ai' })); process.exit(0); }
+process.stdin.resume();
+process.stdin.on('end', async () => {
+  const at = args.indexOf('--mcp-config');
+  if (at < 0) {
+    console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, session_id: 's', structured_output: { args } }));
+    return;
+  }
+  const server = JSON.parse(fs.readFileSync(args[at + 1], 'utf8')).mcpServers.agstudio;
+  const helper = spawn(server.command, server.args, { env: { ...process.env, ...server.env }, stdio: ['pipe', 'pipe', 'inherit'] });
+  const lines = readline.createInterface({ input: helper.stdout })[Symbol.asyncIterator]();
+  let id = 0;
+  const ask = async (method, params) => {
+    helper.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }) + '\\n');
+    return JSON.parse((await lines.next()).value);
+  };
+  await ask('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'claude-code', version: '2' } });
+  helper.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\\n');
+  const list = await ask('tools/list', {});
+  const details = await ask('tools/call', { name: 'get_plugin_details', arguments: { ids: ['agstudio.reverb'] } });
+  const write = await ask('tools/call', { name: 'apply_actions', arguments: { actions: [] } });
+  helper.stdin.end();
+  console.log(JSON.stringify({
+    type: 'result', subtype: 'success', is_error: false, session_id: 's',
+    structured_output: { args, tools: list.result.tools.map((t) => t.name), details: details.result.content[0].text, writeError: write.error },
+  }));
+});
+`;
 
 const freePort = () =>
   new Promise<number>((resolve, reject) => {
@@ -275,6 +313,75 @@ describe('MCP end to end (dev server + app in Chrome)', () => {
     // The same name again does not overwrite it.
     const again = await tool('export_audio', { bars: { from_bar: 1, to_bar: 2 }, format: 'wav', file_name: 'MCP Demo' });
     expect((again.structuredContent!.files as string[])[0]).toBe(join(dir, 'exports', 'MCP Demo (2).wav'));
+  });
+
+  live('offers Studio’s own AI backends only the read tools (/mcp?scope=lookup), run by the page, unseen in the settings', async () => {
+    const lookup = (method: string, params: unknown) =>
+      fetch(`${base}/mcp?scope=lookup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: nextId++, method, params }),
+      }).then((res) => res.json() as Promise<Rpc>);
+    const list = await lookup('tools/list', {});
+    const names = (list.result!.tools as { name: string; annotations?: { readOnlyHint?: boolean } }[]).map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(['get_plugin_details', 'get_commands', 'search_catalog', 'get_mixer', 'get_pattern_notes']));
+    for (const write of ['apply_actions', 'run_command', 'play', 'export_audio', 'undo']) expect(names).not.toContain(write);
+    // a read runs in the page, against the real catalog
+    const details = await lookup('tools/call', { name: 'get_plugin_details', arguments: { ids: ['agstudio.reverb'] } });
+    expect(details.result!.isError).toBeUndefined();
+    expect(textOf(details.result!)).toContain('agstudio.reverb');
+    expect(textOf(details.result!)).toContain('decay');
+    // a write is "no such tool", and nothing changed
+    const stepsBefore = await page.evaluate(() => (window as any).__ag.history.steps().done.length);
+    const refused = await lookup('tools/call', { name: 'apply_actions', arguments: { actions: [{ op: 'song', bpm: 99 }] } });
+    expect(refused.error?.code).toBe(-32602);
+    expect(await page.evaluate(() => (window as any).__ag.history.steps().done.length)).toBe(stepsBefore);
+    // Studio reading its own project is not a connected app
+    const info = await page.evaluate(() => fetch('/api/mcp/info', { headers: { 'x-agstudio': '1' } }).then((r) => r.json()));
+    expect(JSON.stringify(info.status.clients)).not.toContain('agstudio-studio');
+  });
+
+  live('a Studio turn with read tools: the server hands the CLI a config for the helper, which reaches the page (no real AI)', async () => {
+    // A stand-in `claude` that does what the real one would with --mcp-config: start the helper it names, list the tools,
+    // call a read tool and a write tool, and hand what it saw back as the answer.
+    const fake = await writeFakeCli(dir, 'claude', FAKE_CLAUDE_WITH_MCP);
+    process.env.AGSTUDIO_CLAUDE_BIN = fake;
+    try {
+      const status = (await (await fetch(`${base}/api/ai/status`)).json()) as { lookups: { mcp: boolean } };
+      expect(status.lookups).toEqual({ mcp: true });
+      const res = await fetch(`${base}/api/ai/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-agstudio': '1' },
+        body: JSON.stringify({
+          backend: 'subscription',
+          model: 'claude-opus-5-5',
+          session: null,
+          system: 'You are Studio.',
+          schema: { type: 'object' },
+          text: '<request>add reverb</request>',
+          readTools: true,
+        }),
+      });
+      const body = (await res.json()) as { beat: { args: string[]; tools: string[]; details: string; writeError: { code: number } } };
+      expect(res.status, JSON.stringify(body)).toBe(200);
+      const { args } = body.beat;
+      expect(args).toEqual(expect.arrayContaining(['--mcp-config', '--strict-mcp-config', '--allowedTools']));
+      expect(body.beat.tools).toEqual(expect.arrayContaining(['get_plugin_details', 'search_catalog']));
+      expect(body.beat.tools).not.toContain('apply_actions');
+      // the tool's JSON, as the CLI would hand it to the model
+      expect((JSON.parse(body.beat.details) as { details: string }).details).toContain('- agstudio.reverb "Reverb"');
+      expect(body.beat.writeError.code).toBe(-32602);
+      expect(JSON.stringify(body)).not.toContain(token);
+      // without readTools the same server starts the CLI with none of it
+      const plain = await fetch(`${base}/api/ai/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-agstudio': '1' },
+        body: JSON.stringify({ backend: 'subscription', model: 'claude-opus-5-5', session: null, system: 's', schema: { type: 'object' }, text: 'hi' }),
+      });
+      expect(((await plain.json()) as { beat: { args: string[] } }).beat.args).not.toContain('--mcp-config');
+    } finally {
+      delete process.env.AGSTUDIO_CLAUDE_BIN;
+    }
   });
 
   live('shows who is connected in Settings, and a new token locks the old one out', async () => {

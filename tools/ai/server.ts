@@ -1,14 +1,26 @@
+import { existsSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Plugin } from 'vite';
+import { join } from 'node:path';
+import type { Plugin, ViteDevServer } from 'vite';
+import { sharedTokenStore, tokenFilePath } from '../mcp/token.ts';
 import { apiBackend } from './api-backend.ts';
 import { codexBackend } from './codex-backend.ts';
+import { LOOKUP_SCOPE } from './lookup.ts';
 import { subscriptionBackend } from './subscription-backend.ts';
-import { AiServerError, MAX_SYSTEM_CHARS, MAX_TEXT_CHARS, type Backend, type BackendId, type BeatRequest } from './types.ts';
+import {
+  AiServerError,
+  MAX_SYSTEM_CHARS,
+  MAX_TEXT_CHARS,
+  type Backend,
+  type BackendId,
+  type BeatRequest,
+  type LookupAccess,
+} from './types.ts';
 
 /**
  * The AI studio's server side, on the dev and preview servers (the browser never holds a key):
  *
- *   GET  /api/ai/status → { subscription: BackendStatus, api: BackendStatus, codex: BackendStatus }
+ *   GET  /api/ai/status → { subscription: BackendStatus, api: BackendStatus, codex: BackendStatus, lookups: { mcp: boolean } }
  *   POST /api/ai/chat   → BeatRequest → BeatReply, or { error: { type, message } } (also /api/ai/beat)
  *
  * Three ways to reach an AI: the musician's Claude subscription through their signed-in Claude Code
@@ -60,7 +72,7 @@ function sameOrigin(req: IncomingMessage): boolean {
   }
 }
 
-function parseRequest(raw: string): BeatRequest {
+export function parseRequest(raw: string): BeatRequest {
   let b: Record<string, unknown>;
   try {
     b = JSON.parse(raw) as Record<string, unknown>;
@@ -84,22 +96,68 @@ function parseRequest(raw: string): BeatRequest {
     throw new AiServerError('Missing prompt.', 'invalid_request_error', 400);
   if (typeof b.schema !== 'object' || b.schema === null || Array.isArray(b.schema))
     throw new AiServerError('Missing schema.', 'invalid_request_error', 400);
+  const blocks = systemBlocksOf(b.systemBlocks, b.system as string);
   return {
     backend: b.backend,
     model: b.model as string,
     session: typeof b.session === 'string' && b.session.length <= 200 ? b.session : null,
     system: b.system as string,
+    ...(blocks ? { systemBlocks: blocks } : {}),
     schema: b.schema as Record<string, unknown>,
     text: b.text as string,
+    ...(b.readTools === true ? { readTools: true } : {}),
   };
 }
 
-export function aiServer(env: () => Record<string, string | undefined>): Plugin {
+/** The system prompt's blocks, when they are strings that add up to the system prompt (else the API backend sends one block). */
+function systemBlocksOf(value: unknown, system: string): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || !value.every((part) => typeof part === 'string')) return undefined;
+  return value.join('\n\n') === system ? (value as string[]) : undefined;
+}
+
+/** The port this dev server listens on. */
+function listeningPort(server: ViteDevServer): number | null {
+  const address = server.httpServer?.address();
+  if (address && typeof address === 'object') return address.port;
+  return server.config.server.port ?? null;
+}
+
+/**
+ * How a backend reaches the read tools during a turn: this dev server's read-only MCP endpoint, the helper that talks to it
+ * over stdio, and the names of the read tools (read from the app, so a new read tool is there at once). Null when this server
+ * is not listening or has no token file.
+ */
+async function lookupAccess(server: ViteDevServer, root: string): Promise<LookupAccess | null> {
+  const port = listeningPort(server);
+  if (port === null) return null;
+  const tokenFile = tokenFilePath(root);
+  // The same store the endpoint checks against: it makes the file when there is none, and a new token reaches both.
+  sharedTokenStore(tokenFile).get();
+  if (!existsSync(tokenFile)) return null;
+  const defs = (await server.ssrLoadModule('/src/app/mcp/defs.ts')) as { LOOKUP_TOOL_NAMES: readonly string[] };
+  return {
+    url: `http://localhost:${port}/mcp?scope=${LOOKUP_SCOPE}`,
+    tokenFile,
+    command: process.execPath,
+    args: [join(root, 'bin', 'agstudio-mcp.mjs')],
+    tools: defs.LOOKUP_TOOL_NAMES,
+  };
+}
+
+export interface AiServerOptions {
+  /** The AGstudio folder: where the MCP access token (.agstudio/mcp-token) and the stdio helper (bin/agstudio-mcp.mjs) are. */
+  root: string;
+}
+
+export function aiServer(env: () => Record<string, string | undefined>, options: AiServerOptions): Plugin {
   const backends: Record<BackendId, Backend> = {
     api: apiBackend(() => env().ANTHROPIC_API_KEY || undefined),
     subscription: subscriptionBackend(() => env().AGSTUDIO_CLAUDE_BIN || undefined),
     codex: codexBackend(() => env().AGSTUDIO_CODEX_BIN || undefined),
   };
+
+  // The dev server, which has the MCP endpoint. A preview server has none, so its turns have no read tools.
+  let devServer: ViteDevServer | null = null;
 
   const handle = async (req: IncomingMessage, res: ServerResponse, next: Next) => {
     const path = (req.url ?? '').split('?')[0];
@@ -109,7 +167,7 @@ export function aiServer(env: () => Record<string, string | undefined>): Plugin 
         backends.api.status(),
         backends.codex.status(),
       ]);
-      send(res, 200, { subscription, api, codex });
+      send(res, 200, { subscription, api, codex, lookups: { mcp: devServer !== null } });
       return;
     }
     if (path !== '/chat' && path !== '/beat') return next();
@@ -123,7 +181,9 @@ export function aiServer(env: () => Record<string, string | undefined>): Plugin 
     });
     try {
       const request = parseRequest(await readBody(req));
-      send(res, 200, await backends[request.backend].beat(request, abort.signal));
+      const lookup =
+        request.readTools && devServer ? await lookupAccess(devServer, options.root).catch(() => null) : null;
+      send(res, 200, await backends[request.backend].beat(request, abort.signal, lookup ?? undefined));
     } catch (e) {
       if (abort.signal.aborted) return;
       if (e instanceof AiServerError) return fail(res, e.status, e.type, e.message);
@@ -132,8 +192,15 @@ export function aiServer(env: () => Record<string, string | undefined>): Plugin 
     }
   };
 
-  const use = (server: { middlewares: { use(path: string, fn: Middleware): unknown } }) => {
+  const mount = (server: { middlewares: { use(path: string, fn: Middleware): unknown } }) => {
     server.middlewares.use('/api/ai', (req, res, next) => void handle(req, res, next));
   };
-  return { name: 'ag:ai-server', configureServer: use, configurePreviewServer: use };
+  return {
+    name: 'ag:ai-server',
+    configureServer(server) {
+      devServer = server;
+      mount(server);
+    },
+    configurePreviewServer: mount,
+  };
 }

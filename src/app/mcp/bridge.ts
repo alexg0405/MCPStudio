@@ -17,6 +17,7 @@ import { clientLabel } from './common';
 import type { McpTools } from './tools';
 import {
   BRIDGE_EVENTS,
+  STUDIO_LOOKUP_CLIENT,
   type BridgeCall,
   type BridgeHello,
   type BridgeResult,
@@ -198,7 +199,8 @@ export class McpLink {
     try {
       if (!this.s.prefs.getState().mcpEnabled)
         throw new Error('The musician switched off connections from AI apps (Options → Settings → Connect AI apps).');
-      this.greet(call.client);
+      // Studio's own AI backends reading the project during a turn are not an app the musician connected: no toast.
+      if (call.client?.name !== STUDIO_LOOKUP_CLIENT) this.greet(call.client);
       const tools = await this.loadTools();
       const result = await tools.call(call.name, call.args, { client: call.client, ticket: call.ticket });
       reply = { id: call.id, ok: true, result };

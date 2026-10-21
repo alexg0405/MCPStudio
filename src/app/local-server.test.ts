@@ -21,10 +21,12 @@ describe('features that need the local server', () => {
 
   it('the AI studio: no server is a plain message, not a stack trace', async () => {
     const status = await fetchAiStatus(down);
-    for (const backend of Object.values(status)) {
+    for (const backend of [status.subscription, status.api, status.codex]) {
       expect(backend.ok).toBe(false);
       expect(backend.reason).toMatch(/`agstudio --app`/);
     }
+    // with no server there are no read tools to offer either
+    expect(status.lookups).toEqual({ mcp: false });
     await expect(
       new ClaudeBeatChat(down).request({ prompt: 'a beat', project: '{}', model: 'm', backend: 'subscription' }),
     ).rejects.toMatchObject({ kind: 'network', message: AI_SERVER_MISSING });

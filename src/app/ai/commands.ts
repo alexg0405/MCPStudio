@@ -4,6 +4,7 @@
  * works without an action of its own. Sent with the plugin catalog, when it changes.
  */
 import type { Services } from '../services';
+import { hashText } from './text-hash';
 
 /** Commands the AI can run: every registered one except those marked `ai: false`, or that need arguments nobody described. */
 export function aiCommands(services: Services) {
@@ -15,18 +16,19 @@ export function aiCommands(services: Services) {
     .sort((a, b) => (a.category ?? '').localeCompare(b.category ?? '') || a.id.localeCompare(b.id));
 }
 
-/** The catalog text and a key that changes when it does. */
+/** One command as the details show it: id, title, hint and what it takes. */
+export function describeCommand(def: ReturnType<typeof aiCommands>[number]): string {
+  const notes = [
+    def.checked ? 'on/off' : '',
+    def.gesture ? 'the musician confirms with one click' : '',
+    def.argsHint ? `args: ${def.argsHint}` : '',
+  ].filter(Boolean);
+  return `- ${def.id} "${def.title}"${def.hint ? `: ${def.hint}` : ''}${notes.length ? ` [${notes.join('; ')}]` : ''}`;
+}
+
+/** The whole command list as text (the MCP tool `list_commands`) and a key that changes when it does. */
 export function commandCatalog(services: Services): { text: string; key: string } {
-  const lines = aiCommands(services).map((def) => {
-    const notes = [
-      def.checked ? 'on/off' : '',
-      def.gesture ? 'the musician confirms with one click' : '',
-      def.argsHint ? `args: ${def.argsHint}` : '',
-    ].filter(Boolean);
-    return `- ${def.id} "${def.title}"${def.hint ? `: ${def.hint}` : ''}${notes.length ? ` [${notes.join('; ')}]` : ''}`;
-  });
+  const lines = aiCommands(services).map(describeCommand);
   const text = ['App commands (run with the command action, after the edits):', ...lines].join('\n');
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-  return { text, key: (h >>> 0).toString(36) };
+  return { text, key: hashText(text) };
 }

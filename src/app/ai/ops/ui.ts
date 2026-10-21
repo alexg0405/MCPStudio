@@ -48,9 +48,9 @@ export const ui: OpModule = {
     ),
     S.op(
       'command',
-      'Runs any app command from the <commands> list, after the edits: save, save as, open, export, undo or redo, show windows, layouts, metronome, the tour… Commands that open a file dialog ask the musician to confirm with one click.',
+      'Runs any app command from the catalog index, after the edits: save, save as, open, export, undo or redo, show windows, layouts, metronome, the tour… Commands that open a file dialog ask the musician to confirm with one click.',
       {
-        id: S.str('Command id from <commands>, e.g. "file.save".'),
+        id: S.str('Command id from the catalog index, e.g. "file.save".'),
         args: S.VALUE('Only for commands that list args.'),
       },
       ['id'],

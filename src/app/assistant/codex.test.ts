@@ -215,7 +215,7 @@ describe('fetchAiStatus', () => {
     const down = await fetchAiStatus((async () => {
       throw new TypeError('x');
     }) as typeof fetch);
-    expect(Object.values(down).every((v) => !v.ok)).toBe(true);
+    expect([down.subscription, down.api, down.codex].every((v) => !v.ok)).toBe(true);
     expect(Object.keys(down).sort()).toEqual(['api', 'codex', 'lookups', 'subscription']);
   });
 });

@@ -45,6 +45,7 @@ export class PluginMeta {
   private entries: Record<string, PluginMetaEntry> = {};
   private readonly loading: Promise<void>;
   private readonly listeners = new Set<() => void>();
+  private version = 0;
 
   constructor(private readonly storage: PluginMetaStorage = idbPluginMeta) {
     this.loading = storage
@@ -91,7 +92,13 @@ export class PluginMeta {
     return () => this.listeners.delete(fn);
   }
 
+  /** Goes up with every change (for `useSyncExternalStore`). */
+  getVersion(): number {
+    return this.version;
+  }
+
   private emit(): void {
+    this.version++;
     for (const fn of this.listeners) fn();
   }
 }

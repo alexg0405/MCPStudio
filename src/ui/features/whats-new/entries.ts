@@ -48,6 +48,19 @@ export const WHATS_NEW: readonly WhatsNewEntry[] = [
     },
   },
   {
+    id: 'share-plugins',
+    title: 'Share your own plugins',
+    text: 'Pack an instrument or effect you wrote into one file for a friend, install one you were sent after seeing what it can do, and keep your plugins tidy in My plugins, with a gallery of examples to try.',
+    art: 'samples',
+    show: {
+      id: 'show-my-plugins',
+      target: 'window:plugin-manager',
+      title: 'My plugins',
+      body: 'Share, import, duplicate, switch off or delete your own plugins here. Press {key:view.pluginManager} to open it any time.',
+      prepare: showWindow('plugin-manager'),
+    },
+  },
+  {
     id: 'keyboard',
     title: 'Use AGstudio without a mouse',
     text: 'Every window, menu, grid and editor works from the keyboard, with a cursor in the playlist, the piano roll and the pitch editor, and a screen reader says where you are and what changed.',

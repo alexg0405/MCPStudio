@@ -25,7 +25,7 @@ function useManagerData(services: Services) {
     },
     [services, up],
   );
-  const version = useSyncExternalStore(subscribe, () => services.plugins.getVersion());
+  const version = useSyncExternalStore(subscribe, () => `${services.plugins.getVersion()}:${up.meta.getVersion()}`);
   // The rows are worked out again whenever one of these changes: what is installed, what is on disk, or where the song uses it.
   const rows = useMemo(() => up.rows(), [up, version, state, channels, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
   const trash = useMemo(() => up.trashRows(), [up, state]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -1,0 +1,7 @@
+{
+  "name": "FM Bell",
+  "kind": "instrument",
+  "author": "AGstudio",
+  "description": "A simple FM bell: two sine operators that ring and fade like a struck metal bar.",
+  "style": "Worklet instrument: TypeScript sound code on the audio thread"
+}

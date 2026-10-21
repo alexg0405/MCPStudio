@@ -1,0 +1,7 @@
+{
+  "name": "Wobble Filter",
+  "kind": "effect",
+  "author": "AGstudio",
+  "description": "A resonant low-pass filter that a slow wave sweeps up and down.",
+  "style": "Faust effect: a few lines of a language made for sound"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Bit Crusher",
+  "kind": "effect",
+  "author": "AGstudio",
+  "description": "Lo-fi grit from fewer bits and a lower sample rate.",
+  "style": "Worklet effect: TypeScript sound code on the audio thread"
+}

@@ -1,0 +1,7 @@
+{
+  "name": "Tape Stop",
+  "kind": "effect",
+  "author": "AGstudio",
+  "description": "Slows the sound to a stop like a tape machine switched off, and spins it back up.",
+  "style": "Worklet effect: TypeScript sound code on the audio thread"
+}

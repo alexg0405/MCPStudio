@@ -12,6 +12,7 @@ import type {
   RackBranch,
   SlotId,
 } from '../model/types';
+import type { PluginInfoResolver } from '../automation/labels';
 import { isRackSlot, macroIndexOfParam } from '../model/rack';
 
 /** Where a slot sits: on the insert itself, or in a branch of a rack slot on it. */
@@ -100,4 +101,30 @@ export function innerPluginIds(insert: Insert): string[] {
 export function macroNameOf(slot: FxSlot, paramId: string): string | null {
   const index = macroIndexOfParam(paramId);
   return index >= 0 && slot.rack ? (slot.rack.macros[index]?.name ?? null) : null;
+}
+
+/**
+ * What a macro target is, in plain words: "Squashed · Compressor · Threshold", "Squashed · Level", "Crossover 1",
+ * "Rack output". Null when the target is not in the rack. `plugins` gives an effect's name and parameter labels.
+ */
+export function describeMacroTarget(rack: Rack, target: MacroTarget, plugins: PluginInfoResolver): string | null {
+  if (!macroTargetExists(rack, target)) return null;
+  switch (target.kind) {
+    case 'param':
+    case 'mix': {
+      const branch = rack.branches.find((candidate) => candidate.fx.some((slot) => slot.id === target.slotId));
+      const slot = branch?.fx.find((candidate) => candidate.id === target.slotId);
+      const info = slot ? plugins(slot.plugin.pluginId) : undefined;
+      const what = target.kind === 'mix' ? 'Dry/wet' : (info?.params[target.paramId]?.label ?? target.paramId);
+      return `${branch?.name ?? 'Branch'} · ${info?.name ?? 'Effect'} · ${what}`;
+    }
+    case 'branch': {
+      const branch = rack.branches.find((candidate) => candidate.id === target.branchId);
+      return `${branch?.name ?? 'Branch'} · ${target.param === 'level' ? 'Level' : 'Pan'}`;
+    }
+    case 'crossover':
+      return `Crossover ${target.index + 1}`;
+    case 'gain':
+      return 'Rack output';
+  }
 }

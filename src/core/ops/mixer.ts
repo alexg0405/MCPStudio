@@ -11,6 +11,7 @@ import {
   type SlotId,
 } from '../model/types';
 import { targetUsesInsert, targetUsesSlot } from '../model/targets';
+import { RACK_PLUGIN_ID, makeRack } from '../model/rack';
 import { locateSlot, innerSlots } from '../query/rack';
 import { dropControllers, retargetChannels } from './channels';
 import { dropFromGroups } from './groups';
@@ -148,6 +149,8 @@ export function addFxSlot(
   const fx = slotsOf(d, insertId);
   if (!fx || fx.length >= MAX_FX_SLOTS || locateSlot(d.mixer.inserts[insertId], id)) return null;
   const slot: FxSlot = { id, plugin, enabled: true, mix: 1, sidechain: null };
+  // The rack plugin is only a rack with something inside it: whoever adds it gets an empty one.
+  if (plugin.pluginId === RACK_PLUGIN_ID) slot.rack = makeRack();
   const at = index === undefined ? fx.length : Math.max(0, Math.min(Math.round(index), fx.length));
   fx.splice(at, 0, slot as Draft<FxSlot>);
   return id;
@@ -187,10 +190,21 @@ export function setFxSlotMix(d: Draft<Project>, insertId: InsertId, slotId: Slot
   if (slot) slot.mix = clamp(mix, 0, 1, 1);
 }
 
-/** Puts a different effect (or a fresh instance of the same one) in an existing slot. */
+/**
+ * Puts a different effect (or a fresh instance of the same one) in an existing slot. A rack replaced by another effect
+ * loses what was in it (and its controller links); another effect replaced by a rack becomes an empty one.
+ */
 export function replaceFxPlugin(d: Draft<Project>, insertId: InsertId, slotId: SlotId, plugin: PluginInstance): void {
   const slot = slotOf(d, insertId, slotId);
-  if (slot) slot.plugin = plugin as Draft<PluginInstance>;
+  if (!slot) return;
+  const wasRack = slot.plugin.pluginId === RACK_PLUGIN_ID;
+  const isRack = plugin.pluginId === RACK_PLUGIN_ID;
+  if (wasRack && !isRack) {
+    for (const inner of innerSlots(slot as FxSlot)) dropControllers(d, (t) => targetUsesSlot(t, insertId, inner.id));
+    delete slot.rack;
+  }
+  slot.plugin = plugin as Draft<PluginInstance>;
+  if (isRack && !slot.rack) slot.rack = makeRack() as Draft<FxSlot>['rack'];
 }
 
 function clamp(v: number, lo: number, hi: number, fallback = lo): number {

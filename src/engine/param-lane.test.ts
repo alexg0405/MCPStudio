@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { p } from '@agstudio/sdk';
+import { ParamHandleImpl } from './param-handle';
 import { AutoLane, ParamRegistry } from './param-lane';
 
 type Ev = [method: string, value: number, time: number, extra?: number];
@@ -340,5 +341,21 @@ describe('AutoLane.follow', () => {
     source.setBase(0.25, 0);
     expect(param.at(0)).toBeCloseTo(2.5, 9);
     expect(param.events.every((e) => e[0] === 'set')).toBe(true);
+  });
+
+  it('makes a plugin param report the followed value, and tell its listeners about each change the macro makes', () => {
+    const clock = { currentTime: 1 } as { currentTime: number };
+    const source = new AutoLane(clock as BaseAudioContext, 'macro', p.float(0, 1, 0), 0.5, 0.01);
+    const handle = new ParamHandleImpl(clock as BaseAudioContext, 'target', p.float(0, 10, 3), 3);
+    expect(handle.value).toBe(3);
+    const heard: number[] = [];
+    handle.onChange((value) => heard.push(value as number));
+    handle.lane.follow(source, (v) => v * 10, { bent: false });
+    // A plugin made now (its worklet reads `value`) starts where the macro has the param, not at the document's value.
+    expect(handle.value).toBeCloseTo(5, 9);
+    source.setBase(1, 1);
+    expect(heard.at(-1)).toBe(10);
+    handle.set(9, 1);
+    expect(handle.value).toBeCloseTo(5, 9);
   });
 });

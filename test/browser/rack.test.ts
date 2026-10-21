@@ -465,6 +465,18 @@ describe('editing a rack while the engine runs', () => {
     expect(rmsRange(out, 24000, 72000) / base).toBeCloseTo(0.5, 2);
   });
 
+  it('an effect in a rack whose plugin is not installed passes the sound through, and keeps its settings', async () => {
+    const { project, patternId, ins } = sineProject();
+    const empty = withRack(project, ins[1]!, { branches: 1 });
+    const missing = withRack(project, ins[1]!, { branches: 1 }, (d, { rackId, branches }) => {
+      addRackFx(d, ins[1]!, rackId, branches[0]!, makePluginInstance('user.not-installed', 3, { amount: 0.7 }));
+    });
+    const plain = await renderDocs([empty], patternId, plugins);
+    const out = await renderDocs([missing], patternId, plugins);
+    expect(maxDiff(out, plain)).toBe(0);
+    expect(missing.mixer.inserts[ins[1]!]!.fx[0]!.rack!.branches[0]!.fx[0]!.plugin.params.amount).toBe(0.7);
+  });
+
   it('renders the same every time', async () => {
     const { project, patternId, ins } = sineProject();
     const doc = withRack(project, ins[1]!, { split: 'bands', branches: 3 }, (d, rack) => {

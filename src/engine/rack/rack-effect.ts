@@ -71,6 +71,10 @@ export class RackEffect implements EffectInstance, NestedEffect {
     this.hooks = {
       hostCreated: (slotId, slotHost) => {
         this.hosts.set(slotId, slotHost);
+        // A host that goes away (its effect was replaced, reloaded or removed) is forgotten, so a reload does not pile them up.
+        slotHost.onDispose(() => {
+          if (this.hosts.get(slotId) === slotHost) this.hosts.delete(slotId);
+        });
         this.links.sync(this.rack.macros);
       },
     };

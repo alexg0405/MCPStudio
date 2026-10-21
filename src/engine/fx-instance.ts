@@ -55,11 +55,9 @@ export class FxInstance {
     this.dryAlign?.connect(dryMix);
   }
 
-  /** Calls `onAwake` whenever the effect wakes from sleep (see the SDK's `Sleeper`). */
-  watchSleep(onAwake: () => void): void {
-    this.stopWatchingSleep = this.effect.sleep?.onChange((asleep) => {
-      if (!asleep) onAwake();
-    }) ?? (() => {});
+  /** Calls `onChange` whenever the effect wakes from sleep or falls asleep (see the SDK's `Sleeper`). */
+  watchSleep(onChange: (asleep: boolean) => void): void {
+    this.stopWatchingSleep = this.effect.sleep?.onChange(onChange) ?? (() => {});
   }
 
   /** The effect has a sidechain input. */

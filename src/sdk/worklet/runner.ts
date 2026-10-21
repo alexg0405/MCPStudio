@@ -210,6 +210,7 @@ export class KernelRunner {
     } else this.quietFrames = 0;
   }
 
+  /** Wakes the kernel. If the host was told it sleeps, it is told it is awake (once per change of state, never per block: the post allocates). */
   private wake(): void {
     if (this.asleep && this.sleepReportedAt >= 0) this.post({ t: 'wake' });
     this.asleep = false;

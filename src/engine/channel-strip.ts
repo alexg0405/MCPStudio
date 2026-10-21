@@ -198,7 +198,7 @@ export class ChannelStrip {
       this.detachFromInsert();
       this.detachFromInsert = this.isParked ? () => {} : this.core.insertInput(next.output).attach(this.tail);
       this.setShift(this.core.channelShift(next.output));
-      this.core.idle?.changed();
+      this.core.idle?.rewired();
     }
     if (prev.kind !== next.kind) {
       this.load(next, project);
@@ -431,10 +431,11 @@ export class ChannelStrip {
     }
   }
 
-  /** Idle parking hears when the instrument wakes (it brings the channel back at once); it falls asleep quietly. */
+  /** Idle parking hears when the instrument wakes (it brings the channel back at once) and when it falls asleep (it looks on its next tick). */
   private watchSleep(instance: InstrumentInstance): void {
     this.stopWatchingSleep = instance.sleep?.onChange((asleep) => {
-      if (!asleep) this.core.idle?.changed();
+      if (asleep) this.core.idle?.slept();
+      else this.core.idle?.changed();
     }) ?? (() => {});
   }
 

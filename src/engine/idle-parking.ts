@@ -44,6 +44,9 @@ export class IdleParking implements IdleSignals {
   private readonly planner = new InsertParkingPlanner();
   private timer: ReturnType<typeof setInterval> | null = null;
   private isEvaluating = false;
+  /** Something fell asleep, or something is still counting down to be parked: the next tick has work to do. */
+  private isLookNeeded = true;
+  private isLookQueued = false;
   /** Since when (context time) each channel's instrument has been asleep. */
   private readonly asleepSince = new Map<ChannelStrip, number>();
 
@@ -55,7 +58,9 @@ export class IdleParking implements IdleSignals {
 
   /** Starts looking for what may be parked, every tick. */
   start(): void {
-    this.timer ??= setInterval(() => this.changed(), PARKING_TICK_MS);
+    this.timer ??= setInterval(() => {
+      if (this.isLookNeeded) this.changed();
+    }, PARKING_TICK_MS);
   }
 
   /** Stops looking (the engine is being shut down). */
@@ -70,6 +75,22 @@ export class IdleParking implements IdleSignals {
     let inserts = 0;
     for (const strip of this.mixer.parkingView.strips.values()) if (strip.parked) inserts++;
     return { channels, inserts };
+  }
+
+  /** A plugin fell asleep: the next tick looks. */
+  slept(): void {
+    this.isLookNeeded = true;
+  }
+
+  /** The wiring changed: one look at the end of the task, however many changes it made. */
+  rewired(): void {
+    this.isLookNeeded = true;
+    if (this.isLookQueued) return;
+    this.isLookQueued = true;
+    queueMicrotask(() => {
+      this.isLookQueued = false;
+      this.changed();
+    });
   }
 
   /** Works out what may be parked and what must come back, and does it. */
@@ -94,6 +115,12 @@ export class IdleParking implements IdleSignals {
     return strip.parked || now - since >= PARK_AFTER_SEC;
   }
 
+  /** Some instrument is asleep but not parked yet: it needs the half second of PARK_AFTER_SEC to pass. */
+  private isCountingDown(now: number): boolean {
+    for (const [strip, since] of this.asleepSince) if (!strip.parked && now - since < PARK_AFTER_SEC) return true;
+    return false;
+  }
+
   private evaluate(): void {
     const now = this.ctx.currentTime;
     const feeds = new Map<InsertId, ChannelFeed>();
@@ -112,6 +139,8 @@ export class IdleParking implements IdleSignals {
       for (const strip of this.asleepSince.keys()) if (!current.has(strip)) this.asleepSince.delete(strip);
     }
     const plan = this.planner.plan(this.mixer.parkingView, feeds, now);
+    // Quiet again until something falls asleep or changes, unless a channel or an insert is still counting down.
+    this.isLookNeeded = plan.isWaiting || this.isCountingDown(now);
     // Waking goes from the inserts out to the channels, so the path is open before sound can come down it; parking the other way.
     for (const insert of plan.unpark) insert.unpark();
     for (const channel of unparkChannels) channel.unpark();

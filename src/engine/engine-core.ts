@@ -14,6 +14,13 @@ export interface IdleSignals {
    * opposite (a plugin fell asleep) are not made: parking waits for the next tick, waking cannot.
    */
   changed(): void;
+  /**
+   * The wiring changed (a route, a slot, a channel's output, an effect that finished loading): look again, once, after the
+   * current task, however many changes there were (a project loads hundreds).
+   */
+  rewired(): void;
+  /** A plugin fell asleep: worth looking at on the next tick (nothing is done at once). */
+  slept(): void;
 }
 
 /** What channel strips and mixer inserts need from the engine (keeps them decoupled from it). */

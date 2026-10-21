@@ -450,13 +450,13 @@ export class FxSlotStrip {
       const latencyFrames = Math.round(latencySec * ctx.sampleRate);
       this.current = new FxInstance(ctx, effect, host, this.wetDestination, this.mixStage?.dryMix ?? null, latencyFrames);
       this.keyInstance(this.current);
-      this.current.watchSleep(() => this.core.idle?.changed());
+      this.current.watchSleep((asleep) => (asleep ? this.core.idle?.slept() : this.core.idle?.changed()));
       if (this.isParked) host.setParked(true);
       this.faulted = false;
       // Catch up with edits made while the effect was loading.
       host.apply(this.slot.plugin, this.project, ctx.currentTime);
       this.applyGains();
-      this.core.idle?.changed();
+      this.core.idle?.rewired();
     } catch (err) {
       host.dispose();
       if (generation === this.generation) this.fault(err);

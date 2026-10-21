@@ -145,7 +145,7 @@ export class MixerGraph {
         this.dirty = true;
       });
       // New routes may bring sound to an insert that is parked.
-      this.core.idle?.changed();
+      this.core.idle?.rewired();
     }
     if (prev && prev.samples !== next.samples) for (const strip of this.strips.values()) strip.samplesChanged(next);
     return removed;

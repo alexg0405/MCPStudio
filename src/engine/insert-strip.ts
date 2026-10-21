@@ -286,7 +286,7 @@ export class InsertStrip {
     }
     // Slot order decides how much latency sits ahead of each sidechain input.
     if (reordered) this.onLatency();
-    if (reordered || removed.length > 0) this.core.idle?.changed();
+    if (reordered || removed.length > 0) this.core.idle?.rewired();
   }
 
   /** Connects routeIn → each slot in turn → scTap. */

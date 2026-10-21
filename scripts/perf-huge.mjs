@@ -5,7 +5,7 @@
  * and the smooth-follow row is `scripts/perf-follow.mjs --fixture huge`; this script measures the rest:
  *
  *   node scripts/perf-huge.mjs [--url http://localhost:5402] [--only load,save,memory,idle,engine,context,render]
- *                              [--reps 3] [--json out.json] [--label before] [--query '&nopark']
+ *                              [--reps 3] [--json out.json] [--label before] [--query '&nopark'] [--section-quantile 0.5]
  *
  *  load     page start to a painted project, then the file round trip: build the .agproj, read it, replace the project
  *  save     file build, autosave (serialize on the main thread, zip in the Worker), a version save point; main-thread
@@ -13,7 +13,7 @@
  *  memory   JS heap after a collection, decoded audio in the sample cache, the page's whole memory, live audio nodes
  *  idle     per-frame JS and React commits with nothing happening; script time per second
  *  engine   audio thread load (CDP render capacity) idle and playing everything, the audio clock's keep-up, reboot time
- *  section  a typical stretch of the song (the 4 bars whose number of sounding channels is the median) played: load, keep-up
+ *  section  a stretch of the song (the 4 bars whose number of sounding channels is the median, or another quantile) played: load, keep-up
  *  context  the AI context text: time to build and its size
  *  render   a 30 s offline render: time, times realtime, and the hash of the audio (must not change between builds)
  *
@@ -35,6 +35,8 @@ const JSON_OUT = arg('json', '');
 const FIXTURE = arg('fixture', 'huge');
 /** Extra query parameters for the page, e.g. `&nopark` to keep every idle plugin in the audio graph (the engine as it was before idle parking). */
 const QUERY = arg('query', '');
+/** Which 4-bar stretch the `section` stage plays: the one whose number of sounding channels is this quantile of all of them (0.5 = the median, 0.1 = a light one). */
+const SECTION_QUANTILE = Number(arg('section-quantile', '0.5'));
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => {
@@ -195,6 +197,8 @@ async function stageMemory(env) {
 async function stageIdle(env) {
   const { page, client } = env;
   await sleep(3000);
+  // With idle parking on, the first seconds are spent parking: this is the cost of a project that has settled.
+  await untilParkingSettles(page);
   await page.evaluate(() => {
     const s = window.__ag;
     s.perf.frames.samples.length = 0;
@@ -223,10 +227,29 @@ async function stageIdle(env) {
   };
 }
 
+/** Waits until what is parked has not changed for 3 s (or 60 s have passed); returns how long it waited. */
+async function untilParkingSettles(page) {
+  const started = Date.now();
+  let last = '';
+  let since = Date.now();
+  while (Date.now() - started < 60000) {
+    const now = JSON.stringify(await page.evaluate(() => window.__ag.engine.stats().parked ?? null));
+    if (now !== last) {
+      last = now;
+      since = Date.now();
+    }
+    if (Date.now() - since >= 3000) break;
+    await sleep(500);
+  }
+  return (since - started) / 1000;
+}
+
 async function stageEngine(env) {
   const { page, client, watch } = env;
   await sleep(2500);
   const out = {};
+  // Idle parking takes a few seconds to settle (a second for the kernels to sleep, then its ticks): measure idle once it has.
+  out.idleSettleSec = await untilParkingSettles(page);
   const idle = await audioLoad(client, watch, 5);
   out.idleAudioLoad = idle.capacity;
   out.idleClockRate = idle.clockRate;
@@ -255,8 +278,9 @@ async function stageEngine(env) {
 /** A typical stretch: the 4 bars whose count of channels with notes is the median of all 4-bar windows, played for a while. */
 async function stageSection(env) {
   const { page, client, watch } = env;
-  await sleep(4000);
-  const chosen = await page.evaluate(() => {
+  await sleep(2500);
+  await untilParkingSettles(page);
+  const chosen = await page.evaluate((quantile) => {
     const project = window.__ag.doc.getState().project;
     const BAR = 3840;
     const WINDOW_BARS = 4;
@@ -274,19 +298,21 @@ async function stageSection(env) {
       }
     }
     const windows = [];
-    for (let b = 0; b + WINDOW_BARS <= bars; b++) {
+    // Not the last bars: the song must not end while it is being measured.
+    for (let b = 0; b + WINDOW_BARS + 12 <= bars; b++) {
       const union = new Set();
       for (let k = 0; k < WINDOW_BARS; k++) for (const c of active[b + k]) union.add(c);
       windows.push({ bar: b, count: union.size });
     }
     const sorted = [...windows].sort((a, b) => a.count - b.count);
-    const median = sorted[Math.floor(sorted.length / 2)];
+    const median = sorted[Math.floor((sorted.length - 1) * quantile)];
     return { startTick: median.bar * BAR, channels: median.count, ofChannels: Object.values(project.channels).filter((c) => c.kind !== 'automation').length };
-  });
+  }, SECTION_QUANTILE);
   const out = { sectionChannelsSounding: chosen.channels, sectionOfChannels: chosen.ofChannels };
   await page.evaluate((tick) => window.__ag.engine.play(tick), chosen.startTick);
-  await sleep(3000);
-  const playing = await audioLoad(client, watch, 8);
+  // The 4 bars last about 7.5 s at 128 BPM: the first second (the notes waking their channels) and then 5 s inside them.
+  await sleep(1000);
+  const playing = await audioLoad(client, watch, 5);
   out.sectionAudioLoad = playing.capacity;
   out.sectionClockRate = playing.clockRate;
   const stats = await page.evaluate(() => window.__ag.engine.stats());

@@ -67,6 +67,14 @@ describe('InsertParkingPlanner', () => {
     expect(planner.plan(view, feeds({ a: quiet() }), 15).park).toEqual([]);
   });
 
+  it('says it is waiting while an insert with nothing feeding it still has effects awake or ringing', () => {
+    const view = mixer({ a: { needs: { busy: true, tailSec: 0 } }, b: { needs: { busy: false, tailSec: 3 } }, c: {}, [MASTER]: {} }, []);
+    const planner = new InsertParkingPlanner();
+    expect(planner.plan(view, feeds({ a: quiet(), b: quiet(), c: quiet() }), 10).isWaiting).toBe(true);
+    const settled = mixer({ c: { parked: true }, [MASTER]: {} }, []);
+    expect(new InsertParkingPlanner().plan(settled, feeds({ c: quiet() }), 10).isWaiting).toBe(false);
+  });
+
   it('parks a bus only once everything routed into it is parked', () => {
     const view = mixer({ a: {}, bus: {}, [MASTER]: {} }, [route('a', 'bus'), route('bus', MASTER)]);
     const planner = new InsertParkingPlanner();
@@ -91,7 +99,7 @@ describe('InsertParkingPlanner', () => {
   it('brings a parked insert back when a source wakes, and keeps it parked while all stay quiet', () => {
     const view = mixer({ a: { parked: true }, bus: { parked: true }, [MASTER]: {} }, [route('a', 'bus'), route('bus', MASTER)]);
     const planner = new InsertParkingPlanner();
-    expect(planner.plan(view, feeds({ a: quiet(0), bus: quiet() }), 10)).toEqual({ park: [], unpark: [] });
+    expect(planner.plan(view, feeds({ a: quiet(0), bus: quiet() }), 10)).toMatchObject({ park: [], unpark: [] });
     const awake = planner.plan(view, feeds({ a: { attached: 0, silent: false }, bus: quiet() }), 11);
     expect(names(awake.unpark, view)).toEqual([id('a'), id('bus')]);
   });

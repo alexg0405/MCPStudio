@@ -33,6 +33,8 @@ export interface ParkingView {
 export interface ParkingPlan {
   park: InsertStrip[];
   unpark: InsertStrip[];
+  /** Some insert has nothing feeding it but is not parked yet because its effects are still awake or ringing: look again soon. */
+  isWaiting: boolean;
 }
 
 /**
@@ -71,11 +73,12 @@ export class InsertParkingPlanner {
       return result;
     };
 
-    const plan: ParkingPlan = { park: [], unpark: [] };
+    const plan: ParkingPlan = { park: [], unpark: [], isWaiting: false };
     for (const [id, strip] of view.strips) {
       const isWanted = shouldPark(id);
       if (isWanted && !strip.parked) plan.park.push(strip);
       else if (!isWanted && strip.parked) plan.unpark.push(strip);
+      else if (!isWanted && this.silentSince.has(id)) plan.isWaiting = true;
     }
     for (const id of [...this.silentSince.keys()]) if (!view.strips.has(id)) this.silentSince.delete(id);
     return plan;

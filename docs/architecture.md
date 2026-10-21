@@ -79,6 +79,10 @@ does):
   `ui/features/audio-to-midi`. The "Audio to MIDI" section has the details.
 - **Actions** (`app/actions`): the pitch renderer is `PitchRenderer` in `pitch-render.ts` (with `pitch-clip.ts` for the clip
   lookup and error type; `pitch.ts` keeps the door); the arranger's `transitionInDraft` is `app/arrange/transition.ts`.
+- **Effect racks**: the model in `core/model/rack.ts` and `types/rack.ts`, the edits in `core/ops/racks.ts`, the queries in `core/query/rack.ts`, the macro
+  maths and the `.agrack` file in `core/rack/`, repair in `schema/repair/rack.ts`; the engine's rack in `engine/rack/` (`rack-effect.ts` the graph,
+  `rack-split.ts` the four splits, `rack-branch.ts`, `macro-links.ts`) on top of `engine/slot-chain.ts`; the factory racks, your racks and the files in
+  `app/racks/`, the AI's in `app/ai/ops/racks.ts` and `read/rack-tools.ts`, the window in `ui/features/rack`. The "Effect racks" section has the details.
 - **Engine** (`src/engine`): `engine.ts` is the facade; see the list under [Graph](#graph) for what each file does.
 
 ## Data model (`src/core/model`)
@@ -203,7 +207,7 @@ Routes, sidechains, delay compensation and the persistent per-insert nodes are d
   `offline-hooks.ts` (what an offline render calls instead of the clock: start, pump, end, prepare) and
   `output-stage.ts` (the master, preview and monitor buses, the safety limiter, the panic duck, the fade-out when an
   engine is replaced, the output visualizer tap; reachable as `Engine.output`).
-- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too), `engine/fx-slot-strip.ts` `FxSlotStrip` (with `fx-instance.ts`
+- `engine/insert-strip.ts` has `InsertStrip` (the master uses it too), `engine/slot-chain.ts` `SlotChain` (the row of effect slots an insert and a rack branch both are), `engine/fx-slot-strip.ts` `FxSlotStrip` (with `fx-instance.ts`
   and, for the peak meters, `insert-meters.ts`); `engine/mixer-graph.ts` owns them. Every insert id has one persistent channel input (`Engine.insertInput(id)`): it feeds the insert while the
   insert exists and the master otherwise (not created yet, deleted, unknown id), so channels never reconnect when
   inserts come and go, undo included.
@@ -2198,6 +2202,134 @@ Linking applies to the mixer's own controls (faders, pans, strip buttons): a MID
 moves the one track it names; use the VCA (a link target and automation target) to move a group from a controller. The A/B
 glide covers faders, pans, mutes and sends; effect parameters and bypass jump the way they always do. A track is in at
 most one group. Snapshots do not keep effect plugin `state` (only parameter values) or the order of effect slots.
+
+## Effect racks (`core/model/rack.ts`, `core/ops/racks.ts`, `core/rack`, `engine/rack`, `engine/slot-chain.ts`, `app/racks`, `ui/features/rack`)
+
+A rack is one effect slot of an insert that holds a small graph of effects, so a sound designer can build a complex effect from
+the built-ins, move many settings with eight macro knobs, save it and share it. Everything inside is ordinary data and
+ordinary effect instances: nothing about a rack needs a new kind of plugin.
+
+### What is stored (`FxSlot.rack`, optional, added in v3 without a version bump)
+
+- The slot's plugin is the built-in `agstudio.rack` (`RACK_PARAMS`: `macro1` … `macro8` as 0–1 floats and an output `gain` in dB), so
+  the macros are **plugin parameters**: automation, MIDI learn, mixer snapshots, the AI's settings and the generic knob panel work on
+  them with no rack-specific code. The rack's dry/wet is the slot's `mix`.
+- `Rack` (`core/model/types/rack.ts`): a `split` (`parallel`, `bands`, `midside`, `leftright`), `crossovers` (Hz, one fewer than the
+  bands), one to four `branches` (id, name, `levelDb`, `pan`, mute, solo, and `fx`: ordinary `FxSlot`s with no sidechain, never racks:
+  at most 8 per branch) and eight `macros` (a name and `MacroMapping`s: a target, `min`, `max` in the target's own units and a
+  `curve`: linear, exponential or inverted).
+- **An effect inside a rack has a slot id that is unique on its insert**, so `{ insertId, slotId }` finds it anywhere: its plugin
+  window, presets, taps, `setPluginParam`, controller links, automation targets and snapshots needed no new owner type. The
+  lookups that went through `insert.fx.find` use `locateSlot` (`core/query/rack.ts`) now.
+- Targets of a mapping (`MacroTarget`): an effect's parameter, an effect's dry/wet, a branch's level or pan, a crossover, the rack's
+  output. A target follows at most one macro. `pruneMappings` drops mappings whose target went (an effect removed or moved out, a
+  branch merged, a split that has no crossovers).
+- Edits (`core/ops/racks.ts`, draft mutators like the mixer's: one `history.transact` each, so one undo step): `addRackSlot`,
+  `groupIntoRack` (the chosen effects become one branch, keeping their ids), `ungroupRack`, `setRackSplit` (branches are added or the
+  last ones removed to fit; default names follow the split), `addBranch`, `removeBranch` (a `bands` rack merges the band and drops a
+  crossover), `setBranch`, `setCrossover(s)`, `addRackFx`, `removeRackFx`, `moveRackFx` and the macro edits. `addFxSlot` and
+  `replaceFxPlugin` give anyone who adds the rack plugin an empty rack.
+- Repair (`core/schema/repair/rack.ts`): the number of branches a split takes, crossovers ascending and apart, eight macros with names,
+  unique ids, no rack in a rack, no sidechain inside, mappings only to targets that exist, one macro per target.
+- Mixer snapshots keep what a recall can restore: the macros and output (parameters of the rack slot), every effect inside under its
+  own slot id (`SnapshotSlot`), and `SnapshotSlot.rack` (branch level, pan, mute, solo and the crossovers); the diff names them.
+
+### Engine (`engine/rack/`, `engine/slot-chain.ts`)
+
+```
+input ─► split ─► branch 1 … branch N ─► sum (OrderedMix) ─► output gain ─► output
+branch : feed ─► head ─► effect 1 … effect N ─► tail (mute/solo gate) ─► [alignment delay] ─► level ─► pan
+```
+
+- **`SlotChain`** is what an insert's slots always were (keyed `FxSlotStrip`s wired in series, their latency, tail, parking,
+  alignment, automation and plugin reloads), pulled out of `InsertStrip` so a branch uses the same code: an effect inside a rack is an
+  `FxSlotStrip` like any other (async load, fades, bypass, faults, taps, sleeping kernels). The rack is an `EffectInstance`
+  (`RackEffect`) made by the slot through the built-in definition `RACK_DEF` (`HostDeps.rack` hands it the slot's view; the engine
+  wraps its plugin resolver so the rack needs no installing).
+- **Splits** (`rack-split.ts`, native nodes): `parallel` feeds every branch the input; `bands` is a Linkwitz-Riley tree (24 dB/oct from two
+  Butterworth biquads per side; every band but the top passes through a second-order allpass per crossover above it, because the sum
+  of an LR4 pair is exactly that allpass), so the bands add up to the input again with only the phase turned: **flat to 1e-5 dB from
+  30 Hz to 18 kHz for 2, 3 and 4 bands**; `midside` gives the first branch (L+R)/2 and the second (L−R)/2, each on both channels, and puts
+  the mid back as it is and the side as (+S, −S), so an empty M/S rack is the input to within 1e-6 (and effects that make stereo out of
+  a dual-mono side keep it); `leftright` gives each branch one channel and puts each result (mixed down to one channel) back on its side.
+- **Latency** (PDC): a branch's latency is the sum of its live effects'; the rack's is the slowest branch's, and every quicker branch (the
+  dry one, an empty one) gets a delay of the difference after its chain, so the branches add up in time (an impulse through branches of
+  375, 160 and 0 frames comes out as one impulse). The rack reports the total to its slot (`RackBuild.onLatency`), which rebuilds its
+  latency-aligned dry path (`FxInstance.setLatencyFrames`) and tells the mixer's delay compensation; it follows effects loading,
+  bypass, adding and removing. **Muting or soloing a branch never changes the latency** (the delay stays), so nothing shifts in time.
+  Parameter shifts follow: each branch's chain is moved by the preceding effects' latency, the levels and pans by the rack's total.
+- **Sleeping and cost**: a branch that does not sound (muted, or left out by a solo) fades out and is then cut off at both ends and its
+  chain parked, so nothing in it is processed (an unused branch costs nothing). The rack asks of its insert's idle parking only what the
+  audible branches need (`NestedEffect.idleNeeds`: the effects that report their sleep must sleep, the others need silence for their
+  tail), reports its own tail (the longest chain), and passes `setParked` to the effects' taps. Offline renders never park.
+- **Determinism**: the branches join through an `OrderedMix`, the M/S and L/R decodes are attached in a fixed order, and two offline
+  renders of a rack with latent effects, bands and automated macros are bit for bit the same.
+
+### Macros (`macro-links.ts`, `AutoLane.follow`, `core/rack/mapping.ts`)
+
+A macro is the `ParamHandle` lane of its rack parameter, so it already has everything a parameter has: the document value, automation
+clips (scheduled ahead on the audio clock), controller links. A mapped target's lane **follows** it (`AutoLane.follow(source, map)`): the
+source lane binds a small relay in place of an `AudioParam`, and every `set`, ramp, target and cancel it schedules reaches the target
+lane mapped through `macroTargetValue` (and from there the target's own `AudioParam`s and its `onChange` listeners, so effects that
+take a parameter as an event follow too). So a macro sweeps a mapped parameter sample-accurately in realtime and offline, a long ramp
+of a bent map (exponential, log knob, stepped parameter) is cut into 20 ms pieces (at most 64) so a frequency sweep stays even in
+octaves, a plugin made later starts at the followed value (`ParamHandleImpl.value`), and a followed lane ignores its own document
+value and automation until the mapping goes (it then ramps back to its own value). The map works in the target's **knob travel**
+(`toNormalized`/`fromNormalized`), so 200 Hz → 8 kHz moves evenly in octaves; `exponential` is the position squared. A new mapping
+starts at the target's value now and sweeps toward the end of its range that is further away (`startingRange`), so the sound does not
+jump. Effects inside a rack run as full processors (AudioParams) while the rack's macros are automated.
+
+### Racks you can pick (`app/racks`, `core/rack/file.ts`)
+
+- **Factory racks** (`factory.ts`, data: plugin ids, presets, settings and what each macro moves, by place in the rack): Parallel NY
+  compression, Multiband saturation, Mid/side widener, Dub delay throws with macro, Lo-fi tape with macro. Each builds with new ids
+  (`build.ts`), every macro moves something real (a test sweeps each macro 0 → 1 on stereo noise and requires a change), and each stays
+  within 9 dB of the level that went in.
+- **Your racks**: `PresetLibrary.saveRack` (IndexedDB `user-racks:v1`, repaired when read), by name like chains; `.agrack` files
+  (`{ format: 'agstudio-rack', version, name, description?, slot }`, `readRackFile` says what is wrong in plain words and repairs small
+  damage, listing each repair; samples and sidechains are not kept; the rack needs its effects installed). A rack put on a track is
+  cloned with new slot, branch and mapping ids (`cloneSlotWithNewIds`).
+- AI and MCP: `add_rack` (a catalog name, or an empty rack with a split), `edit_rack` (split, crossovers, dry/wet, output, bypass,
+  ungroup), `rack_branch`, `rack_effect`, `rack_macro` (name, value, map with range and curve, unmap, clear), `group_into_rack`,
+  `save_rack`; `edit_effect` and `remove_effect` take an effect inside a rack by id or `@ref`; the read tools `get_racks` and the
+  rack inside `get_mixer` (branches, effects, macros with what each drives and the sweep in units); the plugin catalog lists the racks.
+  A macro is automated through the automation action with the rack's `macro1` … `macro8`.
+
+### UI (`ui/features/rack`)
+
+- **Rack window** (type `rack`, opened by double-clicking a rack slot, from the browser's Racks, or with `open`): the split selector, the
+  rack's dry/wet and output, the eight macro knobs (named, double-click to rename, a ◆ count of what each moves; click one to list its
+  mappings with the range ends in the target's own kind of input, the curve and a way to let go), and a column per branch (rename, mute,
+  solo, level and pan knobs, effect cards with bypass, dry/wet and a menu, **drag a card to another branch or place**, drop an effect
+  dragged from the browser, `+ Add effect`), with a crossover knob between two bands. An empty rack and an empty branch say what to do.
+- **Map to macro** is a submenu of the right-click menu of every control a macro can move (`addParamMenuItems`: an effect's knobs in its own
+  window or a card, its dry/wet, the rack's output; the branch and crossover knobs have their own menu): the macro starts where the
+  setting is. A mapped knob shows a diamond mark (`ParamStatus` kind `macro`) and says which macro moves it; an effect's own window says
+  "In rack · branch" with a button back to the rack.
+- **Mixer slots**: a rack slot shows "Rack · 2 branches" and opens the rack window; Ctrl- or Shift-click marks slots (an outline,
+  `session.markedSlotIds`), right-click offers **Group into a rack** (the marked slots, or just this one), and for a rack **Ungroup**,
+  Save as my rack…, Export as a file…; Add ▸ Effect rack and the browser's Racks section put a factory rack, one of yours or an empty
+  one on the selected track. Commands: `mixer.addRack`, `mixer.groupIntoRack`, `mixer.importRack`.
+
+### Tests and measurements
+
+`src/core/ops/racks.test.ts`, `core/rack/rack.test.ts` (ops, undo, repair, snapshots, mapping maths, `.agrack` round trip),
+`app/racks/racks.test.ts`, `app/ai/ops/racks.test.ts`, `engine/param-lane.test.ts` (follow), `test/browser/rack.test.ts` (alignment of
+branches of 375, 160 and 0 frames; PDC total 535 for chains in series, 160 after bypassing the slow effect; bands flat; mid/side and
+left/right round trips to 1e-6; macro maths by hand and by automation, exact; renders identical), `rack-factory.test.ts` (the five
+racks on stereo noise), `rack-realtime.test.ts` (a live engine: a macro turned while the song plays, the latency the lo-fi effect
+inside reports), `rack-ui.test.ts` (the window, menus, drag and drop, named controls).
+Cost (offline, 8 s of noise through EQ Pro, Compressor, Saturator and Chorus, best of four, wall clock around the render only, a busy
+machine): the four effects on the insert 732 ms, the same four in a one-branch rack 745 ms (+2 %), one to each of four parallel
+branches 775 ms against 768 ms (+1 %), one to each of four bands 969 ms (+26 %: fifteen biquads and the extra sums).
+
+### Limits
+
+A rack cannot contain a rack, and an effect inside one takes no sidechain from a track (it keys from its own input). Moving an effect
+to another branch rebuilds its instance (its tail restarts). Macro automation reaches an effect that sits after latent effects in its branch earlier than it
+is heard (by their latency: a few milliseconds at most). A rack's own latency is not shown as a number
+(the mixer's "Delay comp." is). Ungrouping a multi-branch rack puts all the effects in one chain (the parallel routing and the macros are
+lost). A snapshot does not keep branch order, names or macro mappings.
 
 ## Composition tools and note scripts (M11)
 
@@ -6076,7 +6208,7 @@ files). No Electron and no dependency: a manifest, a hand-written service worker
 - **Manifest** (`public/manifest.webmanifest`, linked from `index.html`): `id`/`start_url`/`scope` `/`, `display: standalone`
   with `display_override: [window-controls-overlay, standalone]`, `background_color` = `--ag-bg`, `theme_color` = `--ag-surface-1`
   (the page keeps `<meta name=theme-color>` on the toolbar color of the current theme, `ui/theme/apply.ts`), icons 192/512 plus a
-  maskable one, `file_handlers` for `.agproj` (`application/x-agstudio-project`), `.agchain` and `.agpreset`, and
+  maskable one, `file_handlers` for `.agproj` (`application/x-agstudio-project`), `.agchain`, `.agpreset` and `.agrack`, and
   `launch_handler: focus-existing` (a file opened while the app runs goes to that window, no second one and no reload).
   Window controls overlay (`Shell.module.css`, only under `@media (display-mode: window-controls-overlay)`): the toolbar keeps
   clear of the controls (`env(titlebar-area-*)`) and its empty parts drag the window; everything with a button, role, tabindex or
@@ -6112,8 +6244,8 @@ files). No Electron and no dependency: a manifest, a hand-written service worker
   gives the steps for Chrome's own install icon. Not for the AI studio (`NOT_FOR_AI` in `test/unit/ai-coverage.test.ts`): the prompt
   needs the musician's own click and changes the computer, not the project.
 - **Files** (`src/app/pwa/launch.ts`): `launchQueue.setConsumer` receives the handles: the first `.agproj` opens through the normal
-  open path (`ProjectFiles.openFile`, with the handle, so Save writes back and "unsaved changes" is asked first); `.agchain` and
-  `.agpreset` files are added to the chains and presets (`importChainText`, `importPresetText`, the same code as the file pickers);
+  open path (`ProjectFiles.openFile`, with the handle, so Save writes back and "unsaved changes" is asked first); `.agchain`,
+  `.agpreset` and `.agrack` files are added to the chains, presets and racks (`importChainText`, `importPresetText`, `importRackText`, the same code as the file pickers);
   anything else says what it cannot open.
 - **What needs a server** (`src/app/local-server.ts` has the words; each feature says them instead of failing obscurely). Offline,
   with no server: the whole editor, the engine, projects (File System Access, OPFS, IndexedDB), export, the offline beat generator,

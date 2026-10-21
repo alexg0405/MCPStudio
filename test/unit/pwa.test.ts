@@ -77,11 +77,11 @@ describe('web app manifest: installability', () => {
 });
 
 describe('opening files with the app', () => {
-  it('registers the project, chain and preset files, one window for all of them', () => {
+  it('registers the project, chain, preset and rack files, one window for all of them', () => {
     const [handler] = manifest.file_handlers;
     expect(handler?.action).toBe('/');
     const extensions = Object.values(handler?.accept ?? {}).flat();
-    expect(extensions.sort()).toEqual(['.agchain', '.agpreset', PROJECT_FILE_EXTENSION].sort());
+    expect(extensions.sort()).toEqual(['.agchain', '.agpreset', '.agrack', PROJECT_FILE_EXTENSION].sort());
     expect(handler?.accept[PROJECT_FILE_MIME]).toEqual([PROJECT_FILE_EXTENSION]);
     expect(handler?.launch_type).toBe('single-client');
   });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makePluginInstance } from '@core/model/defaults';
 import { RACK_PLUGIN_ID, isRackSlot } from '@core/model/rack';
 import type { InsertId, SlotId } from '@core/model/types';
-import { MAX_FX_SLOTS, addFxSlot } from '@core/ops/mixer';
+import { MAX_FX_SLOTS, addFxSlot, removeFxSlot } from '@core/ops/mixer';
 import { targetKey } from '@core/model/targets';
 import { removeEffect } from '../actions/mixer';
 import { macroTargetValue } from '@core/rack/mapping';
@@ -254,4 +254,20 @@ describe('around a rack in the app', () => {
     expect(s.automation.statusOf(targetKey({ kind: 'plugin', owner: { kind: 'fx', insertId, slotId }, paramId: 'gain' }))).toMatchObject({ kind: 'macro' });
     expect(s.automation.statusOf(targetKey({ kind: 'plugin', owner: { kind: 'fx', insertId, slotId }, paramId: 'macro1' }))).toBeNull();
   });
+
+  it('learns a MIDI controller for a macro like for any setting, and the controller moves the macro in one undo step', async () => {
+    const { s, insertId, slotId } = withRack();
+    const target = { kind: 'plugin', owner: { kind: 'fx', insertId, slotId }, paramId: 'macro2' } as const;
+    const learned = s.controllers.learn(target);
+    s.live.controlChange(21, 0.5, { source: 'midi', device: 'Pad', midiChannel: 0 });
+    expect(await learned).toMatchObject({ cc: 21, target });
+    const before = s.history.steps().done.length;
+    for (const v of [0.2, 0.9]) s.live.controlChange(21, v, { source: 'midi', device: 'Pad', midiChannel: 0 });
+    expect(Number(rackAt(s, insertId, slotId)!.plugin.params.macro2)).toBeCloseTo(0.9, 6);
+    expect(s.history.steps().done.length).toBe(before + 1);
+    // Taking the rack away takes the link with it.
+    s.history.transact('remove', (d) => void removeFxSlot(d, insertId, slotId));
+    expect(Object.keys(s.doc.getState().project.controllers)).toEqual([]);
+  });
 });
+

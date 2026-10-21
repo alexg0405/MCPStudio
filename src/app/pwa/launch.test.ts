@@ -11,6 +11,7 @@ describe('files the app is opened with', () => {
     expect(launchedKind('SONG.AGPROJ')).toBe('project');
     expect(launchedKind('Wide.agchain')).toBe('chain');
     expect(launchedKind('Pad.agpreset')).toBe('preset');
+    expect(launchedKind('Crush.agrack')).toBe('rack');
     expect(launchedKind('notes.txt')).toBe('unknown');
   });
 
